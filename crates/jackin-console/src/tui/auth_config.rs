@@ -186,6 +186,16 @@ pub trait ModalAuthTokenGenerateStart<Target, SourcePickerState>: Sized {
     ) -> Option<Target>;
 }
 
+pub trait ModalAuthPlainSourceOpen<TextInputTarget, TextInputState, AuthFormFocus>: Sized {
+    fn open_auth_plain_source_text_input(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        credential_focus: AuthFormFocus,
+        text_input_target: TextInputTarget,
+        make_text_input: impl FnOnce(String) -> TextInputState,
+    ) -> bool;
+}
+
 #[must_use]
 pub const fn settings_auth_form_can_generate_token(kind: AuthKind, mode: Option<AuthMode>) -> bool {
     can_generate_claude_oauth_token(kind, mode)

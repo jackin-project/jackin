@@ -269,6 +269,85 @@ impl<
     AuthForm,
     AuthFormFocus,
     SecretsScopeTag,
+> crate::tui::auth_config::ModalAuthPlainSourceOpen<TextInputTarget, TextInputState, AuthFormFocus>
+    for ConsoleModal<
+        TextInputTarget,
+        TextInputState,
+        FileBrowserTarget,
+        FileBrowserState,
+        MountDstChoiceState,
+        WorkdirPickState,
+        ConfirmTarget,
+        ConfirmState,
+        SaveDiscardState,
+        GithubPickerState,
+        ConfirmSaveState,
+        ErrorPopupState,
+        ContainerInfoState,
+        StatusPopupState,
+        OpPickerState,
+        RolePickerState,
+        SourcePickerState,
+        ScopePickerState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+        SecretsScopeTag,
+    >
+{
+    fn open_auth_plain_source_text_input(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        credential_focus: AuthFormFocus,
+        text_input_target: TextInputTarget,
+        make_text_input: impl FnOnce(String) -> TextInputState,
+    ) -> bool {
+        let Some(Self::AuthForm {
+            target,
+            state,
+            literal_buffer,
+            ..
+        }) = modal_parents.pop()
+        else {
+            return false;
+        };
+        modal_parents.push(Self::AuthForm {
+            target,
+            state,
+            focus: credential_focus,
+            literal_buffer: literal_buffer.clone(),
+        });
+        *modal = Some(Self::TextInput {
+            target: text_input_target,
+            state: make_text_input(literal_buffer),
+        });
+        true
+    }
+}
+
+impl<
+    TextInputTarget,
+    TextInputState,
+    FileBrowserTarget,
+    FileBrowserState,
+    MountDstChoiceState,
+    WorkdirPickState,
+    ConfirmTarget,
+    ConfirmState,
+    SaveDiscardState,
+    GithubPickerState,
+    ConfirmSaveState,
+    ErrorPopupState,
+    ContainerInfoState,
+    StatusPopupState,
+    OpPickerState,
+    RolePickerState,
+    SourcePickerState,
+    ScopePickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+    SecretsScopeTag,
 > crate::tui::auth_config::ModalAuthTokenGenerateStart<AuthFormTarget, SourcePickerState>
     for ConsoleModal<
         TextInputTarget,
@@ -1446,6 +1525,61 @@ mod tests {
         ));
         assert_eq!(parents.len(), 1);
         assert!(matches!(modal, Some(TestModal::AuthSourcePicker { .. })));
+    }
+
+    #[test]
+    fn console_modal_opens_plain_source_text_input() {
+        type TestModal = ConsoleModal<
+            &'static str,
+            String,
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
+            crate::tui::components::auth_panel::AuthForm<jackin_core::EnvValue>,
+            crate::tui::screens::settings::model::AuthFormFocus,
+            (),
+        >;
+
+        let mut modal = None;
+        let mut parents = vec![TestModal::AuthForm {
+            target: crate::tui::screens::settings::model::AuthFormTarget::Workspace {
+                kind: crate::tui::auth::AuthKind::Claude,
+            },
+            state: Box::new(crate::tui::components::auth_panel::AuthForm::new(
+                crate::tui::auth::AuthKind::Claude,
+            )),
+            focus: crate::tui::screens::settings::model::AuthFormFocus::Mode,
+            literal_buffer: "existing".into(),
+        }];
+
+        let opened =
+            crate::tui::auth_config::ModalAuthPlainSourceOpen::open_auth_plain_source_text_input(
+                &mut modal,
+                &mut parents,
+                crate::tui::screens::settings::model::AuthFormFocus::CredentialSource,
+                "auth",
+                |literal| literal,
+            );
+
+        assert!(opened);
+        assert_eq!(parents.len(), 1);
+        assert!(
+            matches!(modal, Some(TestModal::TextInput { target: "auth", state }) if state == "existing")
+        );
     }
 
     #[test]

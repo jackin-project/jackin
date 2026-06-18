@@ -305,31 +305,19 @@ fn log_missing_return_path(code: &'static str, fn_name: &'static str, suffix: &s
 /// focus pinned to `CredentialSource`, then mounts a `Modal::TextInput`
 /// pre-filled from the round-trip's literal buffer.
 pub(super) fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_>) {
-    let Some(Modal::AuthForm {
-        target,
-        state,
-        literal_buffer,
-        ..
-    }) = editor.modal_parents.pop()
-    else {
+    if !jackin_console::tui::auth_config::ModalAuthPlainSourceOpen::open_auth_plain_source_text_input(
+        &mut editor.modal,
+        &mut editor.modal_parents,
+        AuthFormFocus::CredentialSource,
+        TextInputTarget::AuthCredential,
+        auth_credential_input_state,
+    ) {
         log_missing_return_path(
             AUTH_MISSING_PLAIN_SOURCE,
             "apply_plain_source_picker_to_auth_form",
             "",
         );
-        return;
-    };
-    // Re-push with focus pinned to CredentialSource for the TextInput round-trip.
-    editor.modal_parents.push(Modal::AuthForm {
-        target,
-        state,
-        focus: AuthFormFocus::CredentialSource,
-        literal_buffer: literal_buffer.clone(),
-    });
-    editor.modal = Some(Modal::TextInput {
-        target: TextInputTarget::AuthCredential,
-        state: auth_credential_input_state(literal_buffer),
-    });
+    }
 }
 
 /// Commit branch for the credential `Modal::TextInput`. Lifts the
