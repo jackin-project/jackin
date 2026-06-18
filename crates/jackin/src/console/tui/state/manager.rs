@@ -14,7 +14,7 @@ use jackin_console::tui::screens::workspaces::update::{
     preview_pane_selected_index, selected_index, workspace_last_selectable_index,
     workspace_list_current_directory_selected, workspace_list_new_workspace_selected,
     workspace_list_saved_workspace_index, workspace_row_at, workspace_row_at_visual_index,
-    workspace_row_index, workspace_visual_selected_index,
+    workspace_row_index, workspace_selected_row, workspace_visual_selected_index,
 };
 use jackin_env::OpCache;
 use jackin_tui::components::FocusOwner;
@@ -351,10 +351,7 @@ impl ManagerState<'_> {
     /// What the operator currently has highlighted.
     #[must_use]
     pub fn selected_row(&self) -> ManagerListRow {
-        self.selectable_rows_vec()
-            .get(self.selected)
-            .copied()
-            .unwrap_or(ManagerListRow::CurrentDirectory)
+        workspace_selected_row(&self.selectable_rows_vec(), self.selected)
     }
 
     /// Convenience: `true` when the selection is on the synthetic

@@ -274,6 +274,10 @@ fn workspace_row_lookup_helpers_handle_selectable_and_visual_rows() {
         Some(ManagerListRow::NewWorkspace)
     );
     assert_eq!(workspace_row_at(&rows, 9), None);
+    assert_eq!(
+        workspace_selected_row(&rows, 9),
+        ManagerListRow::CurrentDirectory
+    );
     assert_eq!(workspace_row_at_visual_index(&visual_rows, 1), None);
     assert_eq!(
         workspace_row_at_visual_index(&visual_rows, 2),

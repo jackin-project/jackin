@@ -351,6 +351,11 @@ pub fn workspace_row_at(rows: &[ManagerListRow], idx: usize) -> Option<ManagerLi
 }
 
 #[must_use]
+pub fn workspace_selected_row(rows: &[ManagerListRow], selected: usize) -> ManagerListRow {
+    workspace_row_at(rows, selected).unwrap_or(ManagerListRow::CurrentDirectory)
+}
+
+#[must_use]
 pub fn workspace_row_at_visual_index(
     visual_rows: &[Option<ManagerListRow>],
     idx: usize,
