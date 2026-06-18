@@ -21,11 +21,11 @@ use jackin_console::tui::screens::settings::view::{
     settings_frame_areas,
 };
 use jackin_console::tui::view::{
-    ReservedFooterHeightFacts, delete_confirm_area, effective_footer_height,
-    measured_footer_height, modal_backdrop_area, modal_overlay_state_for_route,
-    modal_overlay_visible, purge_confirm_area, render_footer, render_header, render_modal_backdrop,
-    reserved_footer_height_for_facts, settings_error_area, status_overlay_area,
-    workspace_frame_areas, workspace_header_title,
+    ConsoleMainFramePlan, ReservedFooterHeightFacts, console_main_frame_plan, delete_confirm_area,
+    effective_footer_height, measured_footer_height, modal_backdrop_area,
+    modal_overlay_state_for_route, modal_overlay_visible, purge_confirm_area, render_footer,
+    render_header, render_modal_backdrop, reserved_footer_height_for_facts, settings_error_area,
+    status_overlay_area, workspace_frame_areas, workspace_header_title,
 };
 use jackin_tui::HintSpan;
 
@@ -38,24 +38,34 @@ pub fn render(
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
-    if let ManagerStage::Editor(editor) = &state.stage {
-        editor::render_editor(frame, area, editor, config, state.op_available);
-    } else if let ManagerStage::Settings(settings) = &state.stage {
-        settings::render_settings(frame, area, settings, state.op_available);
-    } else {
-        let areas = workspace_frame_areas(area);
-
-        render_header(frame, areas.header, workspace_header_title());
-
-        if matches!(&state.stage, ManagerStage::List) {
-            render_list_body(frame, areas.body, state, config, cwd);
+    match console_main_frame_plan(state.stage.route()) {
+        ConsoleMainFramePlan::Editor => {
+            if let ManagerStage::Editor(editor) = &state.stage {
+                editor::render_editor(frame, area, editor, config, state.op_available);
+            }
         }
+        ConsoleMainFramePlan::Settings => {
+            if let ManagerStage::Settings(settings) = &state.stage {
+                settings::render_settings(frame, area, settings, state.op_available);
+            }
+        }
+        ConsoleMainFramePlan::Workspace {
+            render_list_body: show_list_body,
+        } => {
+            let areas = workspace_frame_areas(area);
 
-        render_footer(
-            frame,
-            areas.footer,
-            &workspace_footer_items(state, config, cwd, area),
-        );
+            render_header(frame, areas.header, workspace_header_title());
+
+            if show_list_body {
+                render_list_body(frame, areas.body, state, config, cwd);
+            }
+
+            render_footer(
+                frame,
+                areas.footer,
+                &workspace_footer_items(state, config, cwd, area),
+            );
+        }
     }
 
     if has_modal_overlay(state) {

@@ -63,6 +63,29 @@ pub struct StageFooterHeightFacts {
     pub settings_footer_height: u16,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsoleMainFramePlan {
+    Editor,
+    Settings,
+    Workspace { render_list_body: bool },
+}
+
+#[must_use]
+pub const fn console_main_frame_plan(route: ConsoleManagerStageRoute) -> ConsoleMainFramePlan {
+    match route {
+        ConsoleManagerStageRoute::Editor => ConsoleMainFramePlan::Editor,
+        ConsoleManagerStageRoute::Settings => ConsoleMainFramePlan::Settings,
+        ConsoleManagerStageRoute::List => ConsoleMainFramePlan::Workspace {
+            render_list_body: true,
+        },
+        ConsoleManagerStageRoute::CreatePrelude
+        | ConsoleManagerStageRoute::ConfirmDelete
+        | ConsoleManagerStageRoute::ConfirmInstancePurge => ConsoleMainFramePlan::Workspace {
+            render_list_body: false,
+        },
+    }
+}
+
 #[must_use]
 pub const fn reserved_footer_height_for_facts(facts: ReservedFooterHeightFacts) -> u16 {
     if let Some(height) = facts.editor_footer_height {

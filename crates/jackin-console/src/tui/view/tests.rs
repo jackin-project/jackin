@@ -3,6 +3,36 @@ use super::*;
 use crate::tui::app::{ConsoleManagerStageRoute, ConsoleStageModalFacts};
 
 #[test]
+fn console_main_frame_plan_routes_workspace_and_fullscreen_stages() {
+    assert_eq!(
+        console_main_frame_plan(ConsoleManagerStageRoute::Editor),
+        ConsoleMainFramePlan::Editor
+    );
+    assert_eq!(
+        console_main_frame_plan(ConsoleManagerStageRoute::Settings),
+        ConsoleMainFramePlan::Settings
+    );
+    assert_eq!(
+        console_main_frame_plan(ConsoleManagerStageRoute::List),
+        ConsoleMainFramePlan::Workspace {
+            render_list_body: true
+        }
+    );
+    assert_eq!(
+        console_main_frame_plan(ConsoleManagerStageRoute::CreatePrelude),
+        ConsoleMainFramePlan::Workspace {
+            render_list_body: false
+        }
+    );
+    assert_eq!(
+        console_main_frame_plan(ConsoleManagerStageRoute::ConfirmInstancePurge),
+        ConsoleMainFramePlan::Workspace {
+            render_list_body: false
+        }
+    );
+}
+
+#[test]
 fn workspace_frame_areas_match_header_body_footer_contract() {
     let areas = workspace_frame_areas(Rect::new(0, 0, 80, 24));
 
