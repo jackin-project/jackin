@@ -44,6 +44,8 @@ exclude = [
   "https://milvus\\.io/blog/claude-context-vs-claude-code-complete-code-context-solution-for-ai-coding-assistants\\.md",
   "https://milvus\\.io/blog/claude-context-reduce-claude-code-token-usage\\.md",
   "https://milvus\\.io/docs/overview\\.md",
+  # Manus blog post is public in browsers but returns HTTP 403 to lychee in CI.
+  "https://manus\\.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus",
   # Public vendor/project pages below intermittently reject or fail requests
   # from the link-check environment.
   "https://grok\\.com/supergrok",
