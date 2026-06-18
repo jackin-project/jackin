@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 81 Rust files and 35,412 lines, versus 143 Rust files and 37,858 lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 81 Rust files and 35,414 lines, versus 143 Rust files and 37,887 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -38,12 +38,12 @@ Approximate local inventory:
 
 | Area | Files | Lines | Current role |
 |---|---:|---:|---|
-| `crates/jackin/src/console` total | 81 | 35,412 | Remaining root console implementation |
+| `crates/jackin/src/console` total | 81 | 35,414 | Remaining root console implementation |
 | `domain.rs` | 1 | 157 | Role-source logging, provider derivation, and root instance snapshot alias |
 | `services.rs` + `services/` | 9 | 850 | Side-effect adapters around config, Docker, runtime, op, token setup |
 | `effects.rs` | 1 | 1,226 | Root effect executor and background polling |
 | `terminal.rs` | 1 | 50 | Host terminal ownership adapter |
-| `tui/` | 66 | 32,708 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
+| `tui/` | 66 | 32,710 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
 
 Largest root files:
 
@@ -70,7 +70,7 @@ Largest root files:
 
 This confirms `jackin-console` is already the intended home for reusable console logic. The current split is not "all console in root"; it is a partial extraction with many root adapters still remaining.
 
-Progress since this findings pass: save-preview rows, auth/environment diffing, workspace/settings preview snapshot construction, save-preview line builders, collapse row construction, and their tests have moved into `crates/jackin-console/src/tui/components/save_preview.rs`. The root save-preview module has been removed. Production console code now also imports `AppConfig`, `RoleSource`, `GlobalMountRow`, workspace-resolution helpers, `EnvValue`, `OpRef`, `OpCache`, token-setup types, and role-picker state from `jackin-config`, `jackin-core`, `jackin-env`, and `jackin-console` instead of the root shims. Pure workspace-choice and launch-dispatch resolution now lives in `crates/jackin-console/src/services/launch.rs`; root `domain.rs` no longer owns those rules. The generic instance-refresh snapshot carrier now lives in `jackin-console/src/tui/subscriptions.rs`; root supplies the concrete instance/session/snapshot types through an alias. More root-console tests now use owner crates for agent, selector, config/workspace, and op data types instead of root shim paths. The diagnostics screen mapping for root console stages now lives in `jackin-console/src/tui/run.rs`; root maps concrete stages into lower-crate facts.
+Progress since this findings pass: save-preview rows, auth/environment diffing, workspace/settings preview snapshot construction, save-preview line builders, collapse row construction, and their tests have moved into `crates/jackin-console/src/tui/components/save_preview.rs`. The root save-preview module has been removed. Production console code now also imports `AppConfig`, `RoleSource`, `GlobalMountRow`, workspace-resolution helpers, `EnvValue`, `OpRef`, `OpCache`, token-setup types, and role-picker state from `jackin-config`, `jackin-core`, `jackin-env`, and `jackin-console` instead of the root shims. Pure workspace-choice and launch-dispatch resolution now lives in `crates/jackin-console/src/services/launch.rs`; root `domain.rs` no longer owns those rules. The generic instance-refresh snapshot carrier now lives in `jackin-console/src/tui/subscriptions.rs`; root supplies the concrete instance/session/snapshot types through an alias. More root-console tests now use owner crates for agent, selector, config/workspace, and op data types instead of root shim paths. Diagnostics screen mapping and plain-main-list quit policy now live in `jackin-console/src/tui/run.rs`; root maps concrete stages into lower-crate facts.
 
 ## What Still Lives In Root Console
 

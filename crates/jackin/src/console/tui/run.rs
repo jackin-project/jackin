@@ -23,10 +23,11 @@ use jackin_console::tui::components::status_popup::{
     instance_action_busy_message, instance_action_busy_title,
 };
 use jackin_console::tui::run::{
-    ConsoleScreenStage, LetterInputModalKind, LetterInputState, ModalBlockState,
+    ConsoleScreenStage, LetterInputModalKind, LetterInputState, MainScreenState, ModalBlockState,
     QuitInterceptState, TokenGenerateScopeLabel, debug_chip_row, debug_run_id_label,
-    diagnostics_screen_for_stage, quit_confirm_area, quit_confirm_state, should_debug_log_mouse,
-    should_open_quit_confirm, split_debug_area, token_generate_status_message,
+    diagnostics_screen_for_stage, is_main_screen, quit_confirm_area, quit_confirm_state,
+    should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
+    token_generate_status_message,
 };
 
 use crate::paths::JackinPaths;
@@ -54,11 +55,12 @@ impl std::fmt::Debug for ConsoleRunOptions<'_> {
     }
 }
 
-/// Bare `Q` exits silently only on the main list — anywhere else
-/// (editor, prelude, confirm, list modal) pops the exit prompt.
 pub(crate) const fn is_on_main_screen(state: &ConsoleState) -> bool {
     let ConsoleStage::Manager(ms) = &state.stage;
-    matches!(ms.stage, crate::console::tui::state::ManagerStage::List) && ms.list_modal.is_none()
+    is_main_screen(MainScreenState {
+        workspace_list: matches!(ms.stage, crate::console::tui::state::ManagerStage::List),
+        list_modal_open: ms.list_modal.is_some(),
+    })
 }
 
 pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_diagnostics::Screen {

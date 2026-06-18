@@ -12,6 +12,19 @@ pub enum ConsoleScreenStage {
     ConfirmInstancePurge,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MainScreenState {
+    pub workspace_list: bool,
+    pub list_modal_open: bool,
+}
+
+/// Bare `q` exits directly only from the plain workspace list. Other screens
+/// or overlays use the quit confirmation flow.
+#[must_use]
+pub const fn is_main_screen(state: MainScreenState) -> bool {
+    state.workspace_list && !state.list_modal_open
+}
+
 /// Which diagnostics screen owns the visible console stage. Confirm dialogs
 /// overlay the workspace list, so their telemetry remains attached to `List`.
 #[must_use]

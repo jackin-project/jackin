@@ -41,6 +41,22 @@ fn diagnostics_screen_maps_confirm_overlays_to_list() {
 }
 
 #[test]
+fn main_screen_requires_plain_workspace_list() {
+    assert!(is_main_screen(MainScreenState {
+        workspace_list: true,
+        list_modal_open: false,
+    }));
+    assert!(!is_main_screen(MainScreenState {
+        workspace_list: true,
+        list_modal_open: true,
+    }));
+    assert!(!is_main_screen(MainScreenState {
+        workspace_list: false,
+        list_modal_open: false,
+    }));
+}
+
+#[test]
 fn quit_intercept_opens_off_main_for_bare_q() {
     let state = QuitInterceptState {
         on_main_screen: false,
