@@ -19,43 +19,168 @@ Baseline, so the remaining work below has context. Do not re-document the mechan
 
 The `compat` default is a verified no-op: it emits no new Docker flags, so any launch without explicit profile/grant configuration behaves exactly as before this PR.
 
-## Remaining work
+## Remaining work (priority index)
 
-### 1. Network egress allowlist enforcement (highest priority)
+One line per work package. Full design, integration points, and tests are in the [Implementation Plan](#implementation-plan) below.
 
-The allowlist is computed (`EffectiveGrants.allowed_hosts`, the `firewall-apply` capsule subcommand) but never enforced: nothing sets `JACKIN_ALLOWED_HOSTS` / `JACKIN_NETWORK_MODE` on the container, and nothing invokes `jackin-capsule firewall-apply`. Today `hardened`/`locked` resolve `network = allowlist` but run on an open bridge with full egress — a silent gap operators could mistake for isolation.
+1. **WP0 — Acceptance test matrix harness.** Objective pass/fail gate for "profile X still runs workflow Y"; every later WP cites it. Land first.
+2. **WP1 — Network egress allowlist enforcement** (highest priority). The allowlist is computed then discarded — `hardened`/`locked` advertise an allowlist that does not exist and run open egress. Wire the container env + `firewall-apply` exec.
+3. **WP2 — `internal` network for `locked`.** Block egress at the Docker network layer, not only via in-container iptables. Ships with WP1.
+4. **WP3 — Launch observability.** `format_session_contract` is never called; AppArmor/cgroup probes and the per-decision telemetry lines do not exist; the Phase-1 host-socket regression test is missing.
+5. **WP4 — DinD-free auto-skip.** Stop starting the privileged sidecar for `hardened`+ roles that need no inner engine. Schema already exists.
+6. **WP5 — Rootless DinD / Sysbox** (research / blocked).
+7. **WP6 — `compat` → `standard` default flip + `no-new-privileges` for `standard`** (blocked on base-image `NOPASSWD:ALL` sudo audit).
+8. **WP7 — Credential posture integration** (after WP3).
 
-- Inject `JACKIN_NETWORK_MODE` and `JACKIN_ALLOWED_HOSTS` (operator/role hosts + the agent's API endpoints from `default_allowed_hosts_for_agent` + forwarded GitHub) as `-e` flags in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> when `grants.network == Allowlist`.
-- After the container starts, run `jackin-capsule firewall-apply` via `docker exec --user root` (root without setuid, so it composes with `no-new-privileges`), gated on `network == Allowlist`, and set `JACKIN_FIREWALL_INSTALLED=1`. The capsule entrypoint already warns when `network=allowlist` but the firewall is not installed.
-- Fail-closed semantics already live in <RepoFile path="crates/jackin-capsule/src/firewall.rs" /> (`-P OUTPUT DROP` first; empty allowlist = no egress). Surface a `partial` enforcement label when sudo, `user=root`, or DinD can bypass host iptables (`network_enforcement_label` already computes this).
-- The allowlist is IPv4-only (ipset). IPv6 / `ip6tables` egress policy is deferred.
+## Implementation Plan
 
-### 2. `internal` network for `locked`
+Detailed, sequenced plan for the undelivered work. Each work package (WP) lists the concrete integration points (file + function), the changes, schema/env additions, tests, telemetry, and exit criteria. The PR breakdown and ordering are at the end.
 
-`create_network` in <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> has no `internal` parameter. For `locked`, create the bridge with `internal: true` (blocks external egress at the Docker network layer) rather than relying solely on the iptables allowlist. Verify DinD inner containers inherit the restriction or emit a `partial` warning.
+### Sequencing rationale
 
-### 3. Launch observability
+The order is driven by dependencies and by user-visible risk, not by the original Phase 1–5 numbering:
 
-`format_session_contract` exists but is never called, and the per-decision telemetry lines specified for this contract are not emitted (only the one summary line ships).
+1. **WP1 (egress enforcement)** is first because it closes the one active correctness gap: `hardened`/`locked` advertise an allowlist that does not exist. Until it lands, those profiles give a false sense of isolation. Everything else is additive polish on top of already-correct behavior.
+2. **WP2 (`internal` network for `locked`)** is a small, self-contained hardening that pairs naturally with WP1 (both touch the network path) and can ship in the same PR.
+3. **WP3 (observability)** comes next because once enforcement exists, operators need to *see* what was applied — and the session contract is the surface that tells them the difference between `full` and `partial` enforcement that WP1 introduces.
+4. **WP4 (DinD-free auto-skip)** is independent and can land any time after WP1; it makes `hardened` meaningfully lighter and improves WP1's enforcement label (no DinD ⇒ `full` instead of `partial`).
+5. **WP5 / WP6** are research/blocked and must not block the above.
+6. **WP0 (test matrix harness)** is cross-cutting and should land first or alongside WP1, because every later WP cites it as its acceptance gate.
 
-- Call `format_session_contract` at launch and surface it under `--debug` so operators see the effective per-dimension contract (profile, caps, root fs, DinD, network mode + enforcement, resources, credentials, residual risk).
-- Add an AppArmor probe (`docker info --format '{{.SecurityOptions}}'` or `{{.OperatingSystem}}`) and a cgroup-version probe (`stat -fc %T /sys/fs/cgroup/` or `/proc/self/cgroup`) at launch; feed both into the contract and telemetry. Cache per session — the probe adds 100–500 ms on some Docker Desktop setups. On cgroup v1 under `hardened`/`locked`, fail-closed; under `standard`, downgrade `memory_reservation` with a warning.
-- Emit the per-decision `debug_log!("launch", …)` lines: `cap_drop_all` + `cap_add`, `no_new_privileges enforced=… reason=…`, `seccomp`, `apparmor`, `read_only_root`, `cgroup_version`, `resource_limit`, `dind … tls_certs_path=…`, `host_socket_check`.
-- Add the host-socket regression test (`role_container_never_mounts_host_docker_socket`) — it was specified for Phase 1 but does not exist. It must fail if any change mounts `/var/run/docker.sock` into the role container.
+```text
+WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net)   [same PR as WP1]
+                           │                 └─> WP3 (observability)
+                           ├─> WP4 (DinD-free auto-skip)
+                           ├─> WP6 (default flip) ── blocked on sudo audit
+                           └─> WP5 (rootless DinD / Sysbox) ── research
+                                WP7 (credential posture) ── after WP3
+```
 
-### 4. DinD reduction track (research / blocked)
+### WP0 — Acceptance test matrix harness (cross-cutting, land first)
 
-- **DinD-free roles:** auto-skip the sidecar when `profile >= hardened` and the role does not require an inner engine. The schema (`dind` grant) exists; the launch-time skip + `debug_log` is the remaining work.
-- **Rootless DinD** (`docker:dind-rootless`, drop `--privileged`): blocked on cgroup v2 + passing the compatibility matrix. Research only.
-- **Sysbox on Linux:** blocked — needs a host-side runtime registration that conflicts with the "never mutate host silently" rule. Decide operator-confirmed opt-in vs hard-skip before any work.
+**Goal:** an objective, repeatable way to answer "does profile X still run workflow Y" so every later WP has a pass/fail gate instead of a judgment call.
 
-### 5. `compat` → `standard` default flip + `no-new-privileges` for `standard` (blocked)
+**Changes:**
+- Define the acceptance set as data: agent runtimes (`claude`, `codex`, `amp`, `kimi`, `opencode`) × workflows (`apt install build-essential`, native-dep `npm install`, `pip install <wheel>`, `cargo build`, `git clone+push`, in-DinD `docker build`, Compose, Testcontainers, `gh pr create`).
+- Add a gated integration test (feature flag or `JACKIN_E2E=1`, like the existing `dind_e2e`) that launches each (profile, workflow) cell and asserts success/expected-failure. `locked`/`hardened` rows that are *expected* to reject a workflow (e.g. `apt install` under read-only root) assert the failure is the documented named error, not a crash.
+- Record the matrix outcome in a checked-in table so "the 8-cap minimum is validated" has a dated artifact.
 
-Blocked on the base-image `NOPASSWD:ALL` sudo audit. With `--security-opt no-new-privileges`, `sudo` fails at the kernel level — silent, confusing runtime breakage for `apt`/`dpkg`/`npm` scripts, worse than not shipping. Resolution: audit every `sudo` call site in <RepoFile path="docker/construct/Dockerfile" /> and replace each with a file capability (`setcap`), then flip the compiled-in default to `standard` and enable `no-new-privileges` there. Until then `standard` keeps `no-new-privileges` off.
+**Exit criteria:** matrix runs in CI (or a documented manual gate) and every later WP references the relevant rows.
 
-### 6. Credential posture integration
+### WP1 — Network egress allowlist enforcement (highest priority)
 
-Under `hardened`/`locked`, prefer env-only credential injection over file copies; emit a `credential_posture` telemetry line per agent auth type. Tracked jointly with [Container credential exposure](/reference/roadmap/container-credential-exposure/).
+**Goal:** make `network = allowlist` actually restrict egress. Today the allowlist is computed into `EffectiveGrants.allowed_hosts` and then dropped on the floor.
+
+**Integration points:**
+- <RepoFile path="crates/jackin-core/src/env_model.rs" /> — add `JACKIN_NETWORK_MODE_ENV_NAME = "JACKIN_NETWORK_MODE"`, `JACKIN_ALLOWED_HOSTS_ENV_NAME = "JACKIN_ALLOWED_HOSTS"`, `JACKIN_FIREWALL_INSTALLED_ENV_NAME = "JACKIN_FIREWALL_INSTALLED"`; add all three to the `RUNTIME_OWNED_ENV_VARS` table so role manifests cannot set them.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />, `launch_role_runtime` — env injection near the `env_strings` block (~line 648). When `grants.network == Allowlist`, push `JACKIN_NETWORK_MODE=allowlist` and `JACKIN_ALLOWED_HOSTS=<comma-joined>`. The host list is `grants.allowed_hosts` ∪ `default_allowed_hosts_for_agent(agent)` ∪ forwarded GitHub host(s). For `open`, push `JACKIN_NETWORK_MODE=open` (informational, no firewall). For `none`, the existing `--network none` path already covers it.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />, `launch_role_runtime` — firewall invocation in the post-`run_role.await?` window (~line 860, after `docker run -d` succeeds, before `reconnect_or_create_session_with_focus`). When `grants.network == Allowlist`, run `docker exec --user root <container> /jackin/runtime/jackin-capsule firewall-apply` via `runner.run(...)`. Root-via-`exec` needs no setuid, so it composes with `no-new-privileges`. On non-zero exit, fail the launch (fail-closed) with an actionable error — do **not** drop the operator into a session that believes it is firewalled but is not.
+- <RepoFile path="crates/jackin-capsule/src/firewall.rs" /> — no behavior change needed; `apply()` already does `-P OUTPUT DROP` first, accepts loopback/ESTABLISHED/DNS, resolves the allowlist into an ipset, and treats an empty list as fail-closed (no egress).
+
+**Open design point — `JACKIN_FIREWALL_INSTALLED` timing:** the entrypoint checks this env at container start and warns if `network=allowlist` but it is unset. The host applies the firewall *after* start, so it cannot satisfy that check via a `docker run -e`. Resolve one of: (a) treat the entrypoint check as informational only and rely on the host's fail-closed exec result as the source of truth (simplest); or (b) have `firewall-apply` itself write a marker file the capsule reads. Recommend (a).
+
+**Enforcement honesty:** reuse `network_enforcement_label(grants)` (already written) to report `full` vs `partial (sudo grants iptables access)` vs `partial (DinD inner containers bypass host iptables)`. This label must appear in the session contract (WP3) so operators are never told "allowlist" without the caveat.
+
+**Tests:**
+- Unit: env injection present for `allowlist`, absent for `open`/`none`; host list composition (agent endpoints + GitHub + configured hosts, deduped).
+- Unit: `firewall-apply` exec is emitted only for `allowlist`, with `--user root`.
+- E2E (WP0 rows): under `hardened`, a curl to a non-allowlisted host fails; an allowlisted host succeeds; DNS resolves.
+
+**Telemetry:** `debug_log!("launch", "network_enforcement mode=allowlist label=<full|partial:…> hosts=<n>")` and `firewall_apply exit=<code>`.
+
+**Exit criteria:** an agent launched under `hardened` cannot reach a non-allowlisted host; the launch fails closed if `firewall-apply` errors; the enforcement label is truthful.
+
+### WP2 — `internal` network for `locked` (ship with WP1)
+
+**Goal:** block external egress at the Docker network layer for `locked`, independent of in-container iptables.
+
+**Integration points:**
+- <RepoFile path="crates/jackin-core/src/docker.rs" /> — `DockerApi::create_network` gains an `internal: bool` parameter.
+- <RepoFile path="crates/jackin-docker/src/docker_client.rs" />, `create_network` — set `NetworkCreateRequest.internal = Some(internal)`.
+- <RepoFile path="crates/jackin-runtime/src/runtime/test_support.rs" /> — update the fake `create_network` to record the flag.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_dind.rs" />, `create_role_network` (~line 90) — thread the flag; pass `internal: true` when `profile == locked`.
+
+**Open verification:** when DinD is enabled under `standard`, confirm inner containers created by the sidecar inherit the restriction; if not, emit a `partial` enforcement warning rather than implying full coverage.
+
+**Tests:** unit — `locked` creates the network with `internal=true`; other profiles `internal=false`. E2E — `locked` container has no route off-bridge even before `firewall-apply`.
+
+**Telemetry:** `debug_log!("launch", "network internal=<bool> profile=<name>")`.
+
+### WP3 — Launch observability (session contract + probes + telemetry)
+
+**Goal:** make every applied control visible at launch. The data already exists; the surface does not.
+
+**Integration points:**
+- <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" /> — `format_session_contract(...)` exists but is never called. Call it from `launch_role_runtime` and print under `--debug` (and emit via `debug_log!`).
+- New probe helpers (in `docker_profile.rs` or a sibling `host_probe.rs`):
+  - **AppArmor:** `docker info --format '{{.SecurityOptions}}'` (or `{{.OperatingSystem}}`) via `runner.capture(...)`; parse for `apparmor`. Feeds `apparmor_available` + `apparmor_layer` (host vs backend-VM on Docker Desktop/OrbStack).
+  - **cgroup version:** `stat -fc %T /sys/fs/cgroup/` or read `/proc/self/cgroup`. Feeds the `cgroup_version` contract field. On v1 under `hardened`/`locked`, fail-closed; under `standard`, downgrade `memory_reservation` with a warning.
+  - **Cache + parallelism:** the `docker info` probe can cost 100–500 ms on Docker Desktop; cache per session and/or run concurrently with the image-pull check.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — replace the single summary `debug_log!` line with the full per-decision telemetry set (below).
+
+**Telemetry surface (minimum lines):**
+- `profile_selected profile=<name> source=<cli|workspace|config|default>`
+- `cap_drop_all` + `cap_add cap=<name> reason=<jackin-default|role-required|opt-in>`
+- `no_new_privileges enforced=<yes|no> reason=<profile|sudo-audit-pending>`
+- `seccomp profile=<docker-default|custom|unconfined>`
+- `apparmor available=<yes|no> profile=<…> layer=<host|backend-vm>`
+- `read_only_root enforced=<yes|no> tmpfs=<list>`
+- `cgroup_version v=<v1|v2|hybrid>`
+- `resource_limit kind=<memory|cpus|pids> value=<v> flag=<docker-flag>`
+- `dind enabled=<yes|no> mode=<privileged|rootless> tls_certs_path=<path>`
+- `host_socket_check passed=<yes|no>`
+
+**Tests:**
+- **Host-socket regression test** (`role_container_never_mounts_host_docker_socket`) — specified for Phase 1 but missing. Assert no `-v …/docker.sock` ever appears in `run_args`. This is a hard rule; the test must exist.
+- Unit: contract string renders each dimension correctly per profile (snapshot-style).
+- Unit: probe parsers handle apparmor present/absent and cgroup v1/v2/hybrid.
+
+**Exit criteria:** `jackin load … --debug` prints a complete, accurate per-dimension contract; the host-socket test guards the hard rule.
+
+### WP4 — DinD-free auto-skip (independent)
+
+**Goal:** stop starting the privileged sidecar when a `hardened`+ role does not need an inner engine. Schema is already in place (`dind` grant / role `dind`).
+
+**Integration points:**
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — grant resolution already downgrades `dind` to `None` when the role declares it. Confirm the default for `hardened`/`locked` is `DindGrant::None` (it is, in `profile_base_grants`).
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — the sidecar block is already gated on `dind_enabled(grants)`; the remaining work is the explicit telemetry and verifying the no-DinD path skips cert volume + network wiring cleanly (the merge already made cert mount conditional).
+
+**Tests:** unit — `hardened` with no inner-engine need starts no DinD container, mounts no certs, and reports `network_enforcement = full` (no DinD bypass). E2E — a no-DinD `hardened` launch runs an agent successfully.
+
+**Telemetry:** `debug_log!("launch", "dind enabled=no reason=profile-no-inner-engine")`.
+
+### WP5 — Rootless DinD / Sysbox (research, not blocking)
+
+- **Rootless DinD:** prototype swapping `docker:dind` → `docker:dind-rootless` and dropping `--privileged` on cgroup v2 hosts under `standard`. Gate behind the WP0 matrix; do not default until all rows pass.
+- **Sysbox:** needs host-side runtime registration that conflicts with the "never mutate host silently" rule. Decide operator-confirmed opt-in vs hard-skip *before* any code. Document the decision in this item.
+
+### WP6 — `compat` → `standard` default flip + `no-new-privileges` for `standard` (blocked)
+
+Blocked on the base-image `NOPASSWD:ALL` sudo audit. Sequence once unblocked:
+1. Audit every `sudo` call site in <RepoFile path="docker/construct/Dockerfile" /> and role Dockerfiles.
+2. Replace each with a file capability (`setcap cap_…+ep <binary>`), removing the blanket `NOPASSWD:ALL`.
+3. Run the WP0 matrix under `standard` with `--security-opt no-new-privileges`.
+4. Flip the compiled-in default in `profile_base_grants` / `resolve_profile` from `Compat` to `Standard` and enable `no_new_privileges` for `standard`.
+5. Update the guide, schema-versions, and this item.
+
+Until step 4, `standard` keeps `no_new_privileges = false` and `compat` stays the default — the current shipped behavior.
+
+### WP7 — Credential posture integration (after WP3)
+
+Under `hardened`/`locked`, prefer env-only credential injection over file copies; emit a `credential_posture` telemetry line per agent auth type. Coordinated with [Container credential exposure](/reference/roadmap/container-credential-exposure/). Depends on WP3 so the posture is reportable in the contract.
+
+### PR breakdown and ordering
+
+| PR | Contents | Depends on | Schema bump |
+|---|---|---|---|
+| A | WP0 test matrix harness | — | none |
+| B | WP1 egress enforcement + WP2 internal network | A | none (env-only; `DockerApi` signature change is internal) |
+| C | WP3 observability (contract + probes + telemetry + host-socket test) | B | none |
+| D | WP4 DinD-free auto-skip | B | none |
+| E | WP6 default flip + `no-new-privileges` for `standard` | C, sudo audit | none (behavior default change — call out in changelog) |
+| — | WP5 research, WP7 credential posture | C | per their own items |
+
+None of A–D require a schema bump — the config/workspace/manifest schema for every grant dimension already shipped in #528. That is deliberate: operators can write the configs today; these PRs turn the already-parsed fields into enforced behavior.
 
 ## Open questions
 
