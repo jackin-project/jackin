@@ -443,10 +443,9 @@ pub(super) fn handle_settings_confirm_modal(
                     outcome = commit_text(&mut settings.mounts, &committed_target, &value);
                 }
                 InlinePickerPlan::Dismiss => {
-                    settings.mounts.pop_modal_chain();
-                    if settings.mounts.modal.is_none() {
-                        settings.mounts.add_draft = None;
-                    }
+                    settings
+                        .mounts
+                        .pop_modal_chain_and_clear_add_draft_if_closed();
                 }
                 InlinePickerPlan::Continue => {
                     settings.mounts.modal = Some(GlobalMountModal::Text { target, state });
@@ -458,10 +457,9 @@ pub(super) fn handle_settings_confirm_modal(
             let browser_outcome = state.handle_key_with_page_rows(key, Some(page_rows));
             match file_browser_modal_plan(browser_outcome) {
                 FileBrowserModalPlan::Dismiss => {
-                    settings.mounts.pop_modal_chain();
-                    if settings.mounts.modal.is_none() {
-                        settings.mounts.add_draft = None;
-                    }
+                    settings
+                        .mounts
+                        .pop_modal_chain_and_clear_add_draft_if_closed();
                 }
                 FileBrowserModalPlan::ResolveGitUrl(path) => {
                     settings.mounts.modal = Some(GlobalMountModal::FileBrowser { state });
@@ -502,10 +500,9 @@ pub(super) fn handle_settings_confirm_modal(
                     ));
                 }
                 MountDstChoicePlan::Dismiss => {
-                    settings.mounts.pop_modal_chain();
-                    if settings.mounts.modal.is_none() {
-                        settings.mounts.add_draft = None;
-                    }
+                    settings
+                        .mounts
+                        .pop_modal_chain_and_clear_add_draft_if_closed();
                 }
                 MountDstChoicePlan::Continue => {
                     settings.mounts.modal = Some(GlobalMountModal::MountDstChoice { state });
@@ -525,10 +522,9 @@ pub(super) fn handle_settings_confirm_modal(
                     outcome = commit_add_scope_choice(settings, choice);
                 }
                 ScopePickerPlan::Dismiss => {
-                    settings.mounts.pop_modal_chain();
-                    if settings.mounts.modal.is_none() {
-                        settings.mounts.add_draft = None;
-                    }
+                    settings
+                        .mounts
+                        .pop_modal_chain_and_clear_add_draft_if_closed();
                 }
                 ScopePickerPlan::Continue => {
                     settings.mounts.modal = Some(GlobalMountModal::ScopePicker { state });
@@ -554,10 +550,9 @@ pub(super) fn handle_settings_confirm_modal(
                     }
                 }
                 InlinePickerPlan::Dismiss => {
-                    settings.mounts.pop_modal_chain();
-                    if settings.mounts.modal.is_none() {
-                        settings.mounts.add_draft = None;
-                    }
+                    settings
+                        .mounts
+                        .pop_modal_chain_and_clear_add_draft_if_closed();
                 }
                 InlinePickerPlan::Continue => {
                     settings.mounts.modal = Some(GlobalMountModal::RolePicker { state: picker });

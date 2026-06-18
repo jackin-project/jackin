@@ -965,6 +965,13 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
         self.modal = self.modal_parents.pop();
     }
 
+    pub fn pop_modal_chain_and_clear_add_draft_if_closed(&mut self) {
+        self.pop_modal_chain();
+        if self.modal.is_none() {
+            self.add_draft = None;
+        }
+    }
+
     pub fn clear_modal_chain(&mut self) {
         self.modal = None;
         self.modal_parents.clear();
@@ -1643,6 +1650,31 @@ mod tests {
         assert_eq!(state.original, vec![String::from("one")]);
         assert!(state.modal.is_none());
         assert!(!state.exit_requested);
+    }
+
+    #[test]
+    fn global_mounts_pop_modal_chain_preserves_add_draft_when_parent_remains() {
+        let mut state = GlobalMountsState::<String, i32>::from_rows(Vec::new());
+        state.modal = Some(2);
+        state.modal_parents.push(1);
+        state.add_draft = Some(super::GlobalMountDraft::default());
+
+        state.pop_modal_chain_and_clear_add_draft_if_closed();
+
+        assert_eq!(state.modal, Some(1));
+        assert!(state.add_draft.is_some());
+    }
+
+    #[test]
+    fn global_mounts_pop_modal_chain_clears_add_draft_when_closed() {
+        let mut state = GlobalMountsState::<String, i32>::from_rows(Vec::new());
+        state.modal = Some(1);
+        state.add_draft = Some(super::GlobalMountDraft::default());
+
+        state.pop_modal_chain_and_clear_add_draft_if_closed();
+
+        assert_eq!(state.modal, None);
+        assert!(state.add_draft.is_none());
     }
 
     #[test]
