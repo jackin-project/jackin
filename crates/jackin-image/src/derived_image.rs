@@ -316,7 +316,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
     let digest = Sha256::digest(bytes);
     digest.iter().fold(String::new(), |mut acc, byte| {
-        let _unused = write!(acc, "{byte:02x}");
+        let _ = write!(acc, "{byte:02x}");
         acc
     })
 }
