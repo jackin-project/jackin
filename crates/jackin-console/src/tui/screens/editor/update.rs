@@ -57,6 +57,12 @@ pub fn editor_tab_at_position(row: u16, col: u16) -> Option<EditorTab> {
 }
 
 #[must_use]
+pub fn editor_tab_hover_plan(row: u16, col: u16) -> Option<usize> {
+    let labels: Vec<&str> = EditorTab::ALL.iter().map(|tab| tab.label()).collect();
+    crate::tui::layout::tab_hover_index_at_position(row, col, &labels)
+}
+
+#[must_use]
 pub const fn editor_tab_move_plan(
     active_tab: EditorTab,
     delta: isize,

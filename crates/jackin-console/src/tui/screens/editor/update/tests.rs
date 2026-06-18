@@ -72,6 +72,22 @@ fn editor_tab_at_position_maps_tab_strip_cells() {
 }
 
 #[test]
+fn editor_tab_hover_plan_maps_strip() {
+    assert_eq!(
+        editor_tab_hover_plan(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
+        Some(0)
+    );
+    assert_eq!(
+        editor_tab_hover_plan(crate::tui::layout::SCREEN_HEADER_HEIGHT, 11),
+        Some(1)
+    );
+    assert_eq!(
+        editor_tab_hover_plan(crate::tui::layout::SCREEN_HEADER_HEIGHT - 1, 1),
+        None
+    );
+}
+
+#[test]
 fn editor_general_field_modal_plan_routes_editable_rows() {
     assert_eq!(
         editor_general_field_modal_plan(EditorTab::General, 0, false),

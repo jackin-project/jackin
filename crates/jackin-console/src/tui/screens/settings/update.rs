@@ -126,6 +126,12 @@ pub const fn settings_tab_bar_focus_plan(focused: bool) -> bool {
 }
 
 #[must_use]
+pub fn settings_tab_hover_plan(row: u16, col: u16) -> Option<usize> {
+    let labels: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.label()).collect();
+    crate::tui::layout::tab_hover_index_at_position(row, col, &labels)
+}
+
+#[must_use]
 pub const fn settings_shell_key_plan(
     key: KeyCode,
     tab_bar_focused: bool,

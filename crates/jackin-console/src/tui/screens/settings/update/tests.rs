@@ -988,6 +988,22 @@ fn settings_tab_at_position_maps_tab_strip_cells() {
 }
 
 #[test]
+fn settings_tab_hover_plan_maps_strip() {
+    assert_eq!(
+        settings_tab_hover_plan(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
+        Some(0)
+    );
+    assert_eq!(
+        settings_tab_hover_plan(crate::tui::layout::SCREEN_HEADER_HEIGHT, 11),
+        Some(1)
+    );
+    assert_eq!(
+        settings_tab_hover_plan(crate::tui::layout::SCREEN_HEADER_HEIGHT - 1, 1),
+        None
+    );
+}
+
+#[test]
 fn settings_auth_detail_row_count_adds_source_row_only_when_needed() {
     assert_eq!(
         settings_auth_detail_row_count(AuthKind::Github, AuthMode::Token),

@@ -22,7 +22,6 @@ use jackin_console::tui::layout::{
     apply_horizontal_scroll, apply_scrollbar_drag, apply_vertical_scroll,
     bordered_content_hit_at_position, horizontal_split_pane_dims, is_horizontally_scrollable,
     point_in_rect, scroll_selection_at_position, scroll_viewport_width, split_seam_column,
-    tab_hover_index_at_position,
 };
 #[cfg(test)]
 use jackin_console::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
@@ -30,11 +29,12 @@ use jackin_console::tui::mount_display::global_config_mounts_content_width as gl
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width as workspace_mounts_content_width;
 use jackin_console::tui::screens::editor::update::{
     auth_focusable_index_at_visual_row, editor_mount_index_at_visual_row, editor_scroll_focus_plan,
-    editor_tab_at_position,
+    editor_tab_at_position, editor_tab_hover_plan,
 };
 use jackin_console::tui::screens::settings::update::{
     settings_modal_open as settings_modal_open_fact, settings_scroll_focus_plan,
-    settings_tab_at_position, settings_trust_clickable_at_position, settings_trust_row_at_position,
+    settings_tab_at_position, settings_tab_hover_plan, settings_trust_clickable_at_position,
+    settings_trust_row_at_position,
 };
 use jackin_console::tui::screens::workspaces::update::{
     WorkspaceListMousePlan, workspace_list_clickable_at_position,
@@ -731,16 +731,14 @@ fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> boo
 fn update_tab_hover(state: &mut ManagerState<'_>, mouse: MouseEvent) {
     match &mut state.stage {
         ManagerStage::Editor(editor) if editor.modal.is_none() => {
-            let labels: Vec<&str> = EditorTab::ALL.iter().map(|tab| tab.label()).collect();
-            editor.hover_target = tab_hover_index_at_position(mouse.row, mouse.column, &labels)
-                .map(EditorHoverTarget::Tab);
+            editor.hover_target =
+                editor_tab_hover_plan(mouse.row, mouse.column).map(EditorHoverTarget::Tab);
         }
         ManagerStage::Settings(settings)
             if settings.mounts.modal.is_none() && settings.env.modal.is_none() =>
         {
-            let labels: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.label()).collect();
-            settings.hover_target = tab_hover_index_at_position(mouse.row, mouse.column, &labels)
-                .map(SettingsHoverTarget::Tab);
+            settings.hover_target =
+                settings_tab_hover_plan(mouse.row, mouse.column).map(SettingsHoverTarget::Tab);
         }
         _ => {}
     }
