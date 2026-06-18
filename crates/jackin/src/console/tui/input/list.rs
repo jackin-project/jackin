@@ -22,15 +22,15 @@ use jackin_console::tui::components::github_picker::{GithubOpenPlan, github_open
 use jackin_console::tui::components::provider_picker::ProviderPickerOutcome;
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
-    PreviewPaneKeyPlan, SelectedInstanceActionPlan, SelectedInstancePurgeConfirmPlan,
+    PreviewPaneActionPlan, SelectedInstanceActionPlan, SelectedInstancePurgeConfirmPlan,
     WorkspaceInstanceAction, WorkspaceInstanceLookupEntry, WorkspaceInstanceLookupScope,
     WorkspaceInstanceScopePlan, WorkspaceInstanceStatus, WorkspaceListEnterPlan,
     WorkspaceListHorizontalPlan, WorkspaceListKeyPlan, WorkspaceListNewSessionPlan,
-    is_preview_pane_entry_target, preview_pane_key_plan, preview_pane_selected_index,
-    selected_instance_action_plan, selected_instance_container_for_action,
-    selected_instance_purge_confirm_plan, should_enter_preview_pane, workspace_list_enter_plan,
-    workspace_list_horizontal_plan, workspace_list_key_plan, workspace_list_new_session_plan,
-    workspace_list_saved_workspace_index, workspace_list_settings_available,
+    is_preview_pane_entry_target, preview_pane_action_plan, selected_instance_action_plan,
+    selected_instance_container_for_action, selected_instance_purge_confirm_plan,
+    should_enter_preview_pane, workspace_list_enter_plan, workspace_list_horizontal_plan,
+    workspace_list_key_plan, workspace_list_new_session_plan, workspace_list_saved_workspace_index,
+    workspace_list_settings_available,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
@@ -342,27 +342,23 @@ fn handle_preview_focused_key(state: &mut ManagerState<'_>, key: KeyEvent) -> In
         .get(&container)
         .copied()
         .unwrap_or(0);
-    match preview_pane_key_plan(key.code, panes.len()) {
-        PreviewPaneKeyPlan::ExitPreview => {
+    match preview_pane_action_plan(key.code, Some(cursor), panes.iter().map(|(_, id)| *id)) {
+        PreviewPaneActionPlan::ExitPreview => {
             dispatch_manager(state, ManagerMessage::ExitPreview);
             InputOutcome::Continue
         }
-        PreviewPaneKeyPlan::Move { delta } => {
+        PreviewPaneActionPlan::Move { delta } => {
             dispatch_manager(state, ManagerMessage::MovePreviewPane { container, delta });
             InputOutcome::Continue
         }
-        PreviewPaneKeyPlan::ReconnectSelected => {
-            let Some(cursor) = preview_pane_selected_index(panes.len(), Some(cursor)) else {
-                return InputOutcome::Continue;
-            };
-            let (_, session_id) = panes[cursor];
+        PreviewPaneActionPlan::ReconnectSelected { session_id } => {
             dispatch_manager(state, ManagerMessage::ExitPreview);
             InputOutcome::InstanceAction {
                 container,
                 action: ConsoleInstanceAction::ReconnectFocus(session_id),
             }
         }
-        PreviewPaneKeyPlan::Continue => InputOutcome::Continue,
+        PreviewPaneActionPlan::Continue => InputOutcome::Continue,
     }
 }
 

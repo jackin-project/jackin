@@ -45,6 +45,14 @@ pub enum PreviewPaneKeyPlan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewPaneActionPlan {
+    Continue,
+    ExitPreview,
+    Move { delta: isize },
+    ReconnectSelected { session_id: u64 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PreviewFocusPlan {
     pub focused: bool,
 }
@@ -896,6 +904,32 @@ pub fn preview_pane_cursor_plan(
     Some(crate::tui::focus::moved_selection(
         cursor, pane_count, delta,
     ))
+}
+
+#[must_use]
+pub fn preview_pane_action_plan(
+    key: KeyCode,
+    current_cursor: Option<usize>,
+    session_ids: impl IntoIterator<Item = u64>,
+) -> PreviewPaneActionPlan {
+    let session_ids: Vec<u64> = session_ids.into_iter().collect();
+    match preview_pane_key_plan(key, session_ids.len()) {
+        PreviewPaneKeyPlan::ExitPreview => PreviewPaneActionPlan::ExitPreview,
+        PreviewPaneKeyPlan::Move { delta } => PreviewPaneActionPlan::Move { delta },
+        PreviewPaneKeyPlan::ReconnectSelected => {
+            let Some(cursor) = preview_pane_selected_index(session_ids.len(), current_cursor)
+            else {
+                return PreviewPaneActionPlan::Continue;
+            };
+            session_ids
+                .get(cursor)
+                .copied()
+                .map_or(PreviewPaneActionPlan::Continue, |session_id| {
+                    PreviewPaneActionPlan::ReconnectSelected { session_id }
+                })
+        }
+        PreviewPaneKeyPlan::Continue => PreviewPaneActionPlan::Continue,
+    }
 }
 
 #[must_use]

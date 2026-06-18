@@ -675,6 +675,34 @@ fn preview_pane_cursor_plan_clamps_current_and_delta() {
 }
 
 #[test]
+fn preview_pane_action_plan_routes_key_cursor_and_sessions() {
+    assert_eq!(
+        preview_pane_action_plan(KeyCode::Esc, Some(1), [11, 22]),
+        PreviewPaneActionPlan::ExitPreview
+    );
+    assert_eq!(
+        preview_pane_action_plan(KeyCode::Char('j'), Some(1), [11, 22]),
+        PreviewPaneActionPlan::Move { delta: 1 }
+    );
+    assert_eq!(
+        preview_pane_action_plan(KeyCode::Enter, Some(1), [11, 22]),
+        PreviewPaneActionPlan::ReconnectSelected { session_id: 22 }
+    );
+    assert_eq!(
+        preview_pane_action_plan(KeyCode::Enter, Some(9), [11, 22]),
+        PreviewPaneActionPlan::ReconnectSelected { session_id: 22 }
+    );
+    assert_eq!(
+        preview_pane_action_plan(KeyCode::Enter, Some(0), []),
+        PreviewPaneActionPlan::ExitPreview
+    );
+    assert_eq!(
+        preview_pane_action_plan(KeyCode::Tab, Some(0), [11]),
+        PreviewPaneActionPlan::Continue
+    );
+}
+
+#[test]
 fn should_enter_preview_pane_requires_instance_row_key_and_panes() {
     assert!(should_enter_preview_pane(
         KeyCode::Tab,
