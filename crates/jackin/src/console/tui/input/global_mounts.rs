@@ -234,7 +234,9 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                     let ManagerStage::Settings(settings) = &mut state.stage else {
                         return;
                     };
-                    settings.mounts.error = Some(global_mount_no_github_url_message().into());
+                    settings
+                        .mounts
+                        .set_error(global_mount_no_github_url_message());
                 }
                 GlobalMountGithubOpenPlan::Open(web_url) => {
                     state.request_effect(ManagerEffect::OpenUrl(web_url));
@@ -544,8 +546,9 @@ pub(super) fn handle_settings_confirm_modal(
                             outcome = SettingsModalOutcome::OpenGlobalMountFileBrowser;
                         }
                         GlobalMountRolePickerCommitPlan::MissingDraft => {
-                            settings.mounts.error =
-                                Some(global_mount_add_draft_lost_message().into());
+                            settings
+                                .mounts
+                                .set_error(global_mount_add_draft_lost_message());
                         }
                     }
                 }
@@ -566,8 +569,9 @@ pub(super) fn handle_settings_confirm_modal(
                 }
                 settings_update::SettingsConfirmPlan::Cancel { abort_sensitive } => {
                     if abort_sensitive {
-                        settings.mounts.error =
-                            Some(settings_sensitive_paths_not_confirmed_message().into());
+                        settings
+                            .mounts
+                            .set_error(settings_sensitive_paths_not_confirmed_message());
                     }
                     settings.mounts.clear_modal_chain();
                 }
@@ -785,7 +789,7 @@ fn commit_settings_confirm(
         }
         settings_update::SettingsConfirmCommitPlan::DiscardAll => {
             settings.discard_all();
-            settings.mounts.exit_requested = true;
+            settings.mounts.request_exit();
             SettingsModalOutcome::Continue
         }
         settings_update::SettingsConfirmCommitPlan::Noop => SettingsModalOutcome::Continue,
@@ -824,11 +828,11 @@ fn commit_text(
             plan,
         ) {
             GlobalMountEditTextApplyPlan::MissingRow => {
-                global.error = Some(global_mount_gone_message().into());
+                global.set_error(global_mount_gone_message());
                 return SettingsModalOutcome::Continue;
             }
             GlobalMountEditTextApplyPlan::EmptyName => {
-                global.error = Some(global_mount_name_empty_message().into());
+                global.set_error(global_mount_name_empty_message());
                 return SettingsModalOutcome::Continue;
             }
             GlobalMountEditTextApplyPlan::Applied => {
@@ -956,7 +960,7 @@ fn apply_global_mount_add_text(
 ) -> SettingsModalOutcome {
     match settings_update::global_mount_add_text_apply_plan(&mut global.add_draft, plan) {
         GlobalMountAddTextApplyPlan::MissingDraft => {
-            global.error = Some(global_mount_add_draft_lost_message().into());
+            global.set_error(global_mount_add_draft_lost_message());
             SettingsModalOutcome::Continue
         }
         GlobalMountAddTextApplyPlan::OpenFileBrowser => {
@@ -992,10 +996,10 @@ fn finalize_global_mount_add(global: &mut crate::console::tui::state::GlobalMoun
         &mut global.add_draft,
     ) {
         GlobalMountAddFinalizeApplyPlan::MissingDraft => {
-            global.error = Some(global_mount_add_draft_lost_message().into());
+            global.set_error(global_mount_add_draft_lost_message());
         }
         GlobalMountAddFinalizeApplyPlan::EmptyDestination => {
-            global.error = Some(global_mount_destination_empty_message().into());
+            global.set_error(global_mount_destination_empty_message());
         }
         GlobalMountAddFinalizeApplyPlan::Add { row, selected } => {
             global.add_row_and_close(row, selected);
@@ -1131,12 +1135,11 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
         // most one error field is set at a time — `or_else` laziness is safe.
         let error = settings
             .mounts
-            .error
-            .take()
+            .take_error()
             .or_else(|| settings.env.error.take())
             .or_else(|| settings.auth.error.take())
             .or_else(|| settings.trust.error.take());
-        let exit = std::mem::take(&mut settings.mounts.exit_requested);
+        let exit = settings.mounts.take_exit_requested();
         (exit, error)
     };
     if let Some(msg) = error {
@@ -1184,7 +1187,9 @@ fn commit_add_scope_choice(
 fn open_global_mount_role_picker(settings: &mut crate::console::tui::state::SettingsState<'_>) {
     match settings_update::global_mount_role_picker_open_plan(&settings.trust.pending) {
         RolePickerOpenPlan::NoRoles => {
-            settings.mounts.error = Some(settings_no_registered_roles_error_message().into());
+            settings
+                .mounts
+                .set_error(settings_no_registered_roles_error_message());
         }
         RolePickerOpenPlan::Open(roles) => {
             settings

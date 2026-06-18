@@ -1047,6 +1047,22 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
         self.modal = None;
         self.modal_parents.clear();
     }
+
+    pub fn set_error(&mut self, error: impl Into<String>) {
+        self.error = Some(error.into());
+    }
+
+    pub fn take_error(&mut self) -> Option<String> {
+        self.error.take()
+    }
+
+    pub const fn request_exit(&mut self) {
+        self.exit_requested = true;
+    }
+
+    pub fn take_exit_requested(&mut self) -> bool {
+        std::mem::take(&mut self.exit_requested)
+    }
 }
 
 impl<Modal> GlobalMountsState<jackin_config::GlobalMountRow, Modal> {
@@ -1913,6 +1929,26 @@ mod tests {
 
         assert_eq!(state.pending, vec![String::from("two")]);
         assert_eq!(state.selected, 0);
+    }
+
+    #[test]
+    fn global_mounts_set_and_take_error_moves_error_message() {
+        let mut state = GlobalMountsState::<String, i32>::from_rows(Vec::new());
+
+        state.set_error("missing mount");
+
+        assert_eq!(state.take_error(), Some(String::from("missing mount")));
+        assert!(state.take_error().is_none());
+    }
+
+    #[test]
+    fn global_mounts_request_and_take_exit_flag() {
+        let mut state = GlobalMountsState::<String, i32>::from_rows(Vec::new());
+
+        state.request_exit();
+
+        assert!(state.take_exit_requested());
+        assert!(!state.take_exit_requested());
     }
 
     #[test]
