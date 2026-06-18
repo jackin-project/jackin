@@ -410,7 +410,7 @@ fn apply_op_picker_to_auth_form_with_validator(
     op_ref: jackin_core::OpRef,
     validate: impl FnOnce(&jackin_core::OpRef) -> anyhow::Result<()>,
 ) {
-    if !matches!(editor.modal_parents.last(), Some(Modal::AuthForm { .. })) {
+    if !editor.has_auth_form_parent() {
         log_missing_return_path(
             AUTH_MISSING_OP_COMMIT,
             "apply_op_picker_to_auth_form",

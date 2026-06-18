@@ -1064,6 +1064,16 @@ impl<
             .and_then(crate::tui::auth_config::ModalAuthFormFocusInspect::active_auth_form_focus)
     }
 
+    #[must_use]
+    pub fn has_auth_form_parent(&self) -> bool
+    where
+        Modal: crate::tui::auth_config::ModalAuthFormParentInspect,
+    {
+        self.modal_parents
+            .last()
+            .is_some_and(crate::tui::auth_config::ModalAuthFormParentInspect::is_auth_form_parent)
+    }
+
     pub fn start_auth_token_generate<SourcePickerState>(
         &mut self,
         source_picker_state: SourcePickerState,
@@ -2338,6 +2348,12 @@ mod tests {
         }
     }
 
+    impl crate::tui::auth_config::ModalAuthFormParentInspect for TestAuthModal {
+        fn is_auth_form_parent(&self) -> bool {
+            matches!(self, Self::Auth { .. })
+        }
+    }
+
     type TestEditorWithAuthModal = EditorState<
         WorkspaceConfig,
         (),
@@ -2630,6 +2646,22 @@ mod tests {
             editor.active_auth_form_focus(),
             Some(crate::tui::screens::settings::model::AuthFormFocus::Save)
         );
+    }
+
+    #[test]
+    fn has_auth_form_parent_checks_top_parent_only() {
+        let mut editor =
+            TestEditorWithAuthModal::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        assert!(!editor.has_auth_form_parent());
+
+        editor.modal_parents.push(TestAuthModal::Auth {
+            focus: crate::tui::screens::settings::model::AuthFormFocus::Mode,
+        });
+        assert!(editor.has_auth_form_parent());
+
+        editor.modal_parents.push(TestAuthModal::Other);
+        assert!(!editor.has_auth_form_parent());
     }
 
     #[test]
