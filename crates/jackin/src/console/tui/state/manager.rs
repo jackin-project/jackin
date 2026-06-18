@@ -11,7 +11,7 @@ use jackin_console::tui::app::ConsoleAnimationTick;
 use jackin_console::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
 use jackin_console::tui::screens::workspaces::model::hovered_list_row;
 use jackin_console::tui::screens::workspaces::update::{
-    WorkspaceListSelectionState, WorkspaceTreeDisclosureState,
+    WorkspaceListHoverState, WorkspaceListSelectionState, WorkspaceTreeDisclosureState,
     collapsed_current_dir_selected_index, collapsed_workspace_selected_index,
     initial_workspace_selected_index, preview_pane_selected_index, selected_index,
     workspace_last_selectable_index, workspace_list_current_directory_selected,
@@ -837,6 +837,12 @@ impl WorkspaceListSelectionState for ManagerState<'_> {
 
     fn set_selected(&mut self, selected: usize) {
         self.selected = selected;
+    }
+}
+
+impl WorkspaceListHoverState for ManagerState<'_> {
+    fn set_workspace_list_hover_target(&mut self, target: Option<super::ManagerHoverTarget>) {
+        self.hover_target = target;
     }
 }
 

@@ -303,6 +303,31 @@ fn apply_workspace_list_selection_plan_keeps_selection_when_unchanged() {
     assert_eq!(state.selected, None);
 }
 
+#[derive(Default)]
+struct TestListHover {
+    target: Option<ManagerHoverTarget>,
+}
+
+impl WorkspaceListHoverState for TestListHover {
+    fn set_workspace_list_hover_target(&mut self, target: Option<ManagerHoverTarget>) {
+        self.target = target;
+    }
+}
+
+#[test]
+fn apply_workspace_list_hover_target_updates_storage() {
+    let mut state = TestListHover::default();
+    let target = Some(ManagerHoverTarget::ListRow(ManagerListRow::SavedWorkspace(
+        2,
+    )));
+
+    apply_workspace_list_hover_target(&mut state, target);
+    assert_eq!(state.target, target);
+
+    apply_workspace_list_hover_target(&mut state, None);
+    assert_eq!(state.target, None);
+}
+
 #[test]
 fn initial_workspace_selected_index_prefers_matching_saved_workspace() {
     assert_eq!(initial_workspace_selected_index(3, Some(1)), 2);

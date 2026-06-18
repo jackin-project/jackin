@@ -10,7 +10,7 @@ use crossterm::event::{KeyCode, MouseEvent};
 use jackin_tui::ModalOutcome;
 use ratatui::layout::Rect;
 
-use super::model::ManagerListRow;
+use super::model::{ManagerHoverTarget, ManagerListRow};
 use crate::mount_info_cache::MountInfoCache;
 use crate::tui::components::error_popup::{
     no_instance_state_for_workspace_message, no_purgeable_instance_for_workspace_message,
@@ -807,6 +807,17 @@ pub fn apply_workspace_list_selection_plan(
         state.reset_list_scroll();
         state.set_selected(plan.selected);
     }
+}
+
+pub trait WorkspaceListHoverState {
+    fn set_workspace_list_hover_target(&mut self, target: Option<ManagerHoverTarget>);
+}
+
+pub fn apply_workspace_list_hover_target(
+    state: &mut impl WorkspaceListHoverState,
+    target: Option<ManagerHoverTarget>,
+) {
+    state.set_workspace_list_hover_target(target);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

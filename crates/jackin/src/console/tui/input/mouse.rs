@@ -10,8 +10,8 @@ use crate::console::tui::layout::list::{
 };
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    EditorTab, GlobalMountModal, ManagerHoverTarget, ManagerListRow, ManagerStage, ManagerState,
-    Modal, MountScrollFocus, SettingsAuthModal, SettingsTab,
+    EditorTab, GlobalMountModal, ManagerListRow, ManagerStage, ManagerState, Modal,
+    MountScrollFocus, SettingsAuthModal, SettingsTab,
 };
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
@@ -41,9 +41,9 @@ use jackin_console::tui::screens::settings::update::{
     settings_trust_row_at_position,
 };
 use jackin_console::tui::screens::workspaces::update::{
-    WorkspaceListMousePlan, workspace_list_clickable_at_position,
-    workspace_list_hover_row_at_position, workspace_list_mouse_plan,
-    workspace_list_scroll_focus_plan,
+    WorkspaceListMousePlan, apply_workspace_list_hover_target,
+    workspace_list_clickable_at_position, workspace_list_hover_row_at_position,
+    workspace_list_mouse_plan, workspace_list_scroll_focus_plan,
 };
 use jackin_console::tui::update::{
     ConsoleMouseWheelPlan, GlobalMountModalScrollTarget, ListModalScrollTarget,
@@ -645,8 +645,11 @@ fn scroll_settings_auth_modal_selection(
 /// background, mirroring the tab-hover cue. Cleared when off the list pane,
 /// over the seam, or when a list modal is open.
 fn update_list_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
-    state.hover_target =
-        list_row_hover_at(state, mouse, term_size).map(ManagerHoverTarget::ListRow);
+    apply_workspace_list_hover_target(
+        state,
+        list_row_hover_at(state, mouse, term_size)
+            .map(jackin_console::tui::screens::workspaces::model::ManagerHoverTarget::ListRow),
+    );
 }
 
 /// Track the hovered row on the editor Mounts tab and the Settings Trust tab so
