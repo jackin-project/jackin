@@ -21,6 +21,7 @@ use super::model::SettingsTab;
 use super::model::SettingsTrustRow;
 use super::model::SettingsTrustState;
 use super::update::forbidden_settings_env_keys;
+use jackin_tui::HintSpan;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -32,7 +33,7 @@ use std::collections::BTreeMap;
 use crate::tui::components::editor_rows::{
     AUTH_LABEL_COL_WIDTH, AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind,
     AuthSourceValue, SecretValueDisplay, action_row_style, auth_source_display, disclosure_style,
-    render_secret_key_line,
+    render_secret_key_line, render_tab_strip,
 };
 use crate::tui::components::footer_hints::{
     SettingsContextFooterMode, content_footer_items, settings_contextual_row_footer_items,
@@ -41,6 +42,9 @@ use crate::tui::components::footer_hints::{
 use crate::tui::components::mount_rows::MOUNT_MODE_COL_WIDTH;
 use crate::tui::mount_display::{
     MountDisplayRow, format_config_mount_rows_with_cache, mount_path_width,
+};
+use crate::tui::view::{
+    effective_footer_height, measured_footer_height, render_footer, render_header,
 };
 
 // Structural exception: settings rows are form/table rows with labels, values,
@@ -95,6 +99,72 @@ pub fn settings_frame_areas(area: Rect, footer_h: u16) -> SettingsFrameAreas {
         body: chunks[2],
         footer: chunks[3],
     }
+}
+
+#[allow(clippy::type_complexity)]
+pub fn render_settings_screen<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+    FooterItems,
+>(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+    mut footer_items: FooterItems,
+) where
+    FooterItems: FnMut(
+        &ConsoleSettingsState<
+            MountModal,
+            EnvModal,
+            AuthModal,
+            ErrorPopup,
+            PendingToken,
+            PendingOpCommit,
+        >,
+        Rect,
+    ) -> Vec<HintSpan<'static>>,
+{
+    let provisional_body =
+        settings_frame_areas(area, effective_footer_height(state.cached_footer_h)).body;
+    let footer = footer_items(state, provisional_body);
+    let mut footer_h = measured_footer_height(&footer, area.width);
+    let mut areas = settings_frame_areas(area, footer_h);
+    let mut footer = footer_items(state, areas.body);
+    let exact_footer_h = measured_footer_height(&footer, area.width);
+    if exact_footer_h != footer_h {
+        footer_h = exact_footer_h;
+        areas = settings_frame_areas(area, footer_h);
+        footer = footer_items(state, areas.body);
+    }
+    render_header(frame, areas.header, settings_header_title());
+    render_tab_strip(
+        frame,
+        areas.tabs,
+        &tab_labels(state.active_tab),
+        state.tab_bar_focused(),
+        state.hovered_tab(),
+    );
+
+    match state.active_tab {
+        SettingsTab::General => render_general_tab(frame, state, areas.body),
+        SettingsTab::Mounts => render_mounts_tab(frame, state, areas.body),
+        SettingsTab::Environments => render_env_tab(frame, state, areas.body),
+        SettingsTab::Auth => render_auth_tab(frame, state, areas.body),
+        SettingsTab::Trust => render_trust_tab(frame, state, areas.body),
+    }
+
+    render_footer(frame, areas.footer, &footer);
 }
 
 #[allow(clippy::type_complexity)]
@@ -284,7 +354,7 @@ pub fn settings_footer_items<
     >,
     op_available: bool,
     body_area: Rect,
-) -> Vec<jackin_tui::HintSpan<'static>> {
+) -> Vec<HintSpan<'static>> {
     if state.tab_bar_focused() {
         return tab_bar_footer_items(
             settings_save_footer_label(),

@@ -1,6 +1,6 @@
 //! Tests for `settings`.
 use super::*;
-use crate::console::tui::state::SettingsState;
+use crate::console::tui::state::{SettingsState, SettingsTab};
 use jackin_config::AppConfig;
 use ratatui::{Terminal, backend::TestBackend};
 
