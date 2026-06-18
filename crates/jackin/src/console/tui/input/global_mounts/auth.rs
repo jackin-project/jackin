@@ -101,7 +101,7 @@ pub(crate) fn settings_auth_can_generate_token(
     auth: &crate::console::tui::state::SettingsAuthState,
 ) -> bool {
     matches!(
-        auth.modal.as_ref(),
+        auth.modal_ref(),
         Some(SettingsAuthModal::AuthForm { state, .. })
             if settings_auth_form_can_generate_token(state.kind, state.mode)
     )
@@ -120,7 +120,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
     op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
     term_size: ratatui::layout::Rect,
 ) -> SettingsAuthOutcome {
-    let Some(mut modal) = auth.modal.take() else {
+    let Some(mut modal) = auth.take_modal() else {
         return SettingsAuthOutcome::Continue;
     };
     match &mut modal {
@@ -170,7 +170,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                 AuthFormKeyPlan::OpenCredentialSource => {
                     let Some(env_var) = state.mode.and_then(|m| state.kind.required_env_var(m))
                     else {
-                        auth.modal = Some(modal);
+                        auth.set_modal(modal);
                         return SettingsAuthOutcome::Continue;
                     };
                     auth.open_child_modal(
@@ -205,7 +205,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                     return SettingsAuthOutcome::Continue;
                 }
             }
-            auth.modal = Some(modal);
+            auth.set_modal(modal);
         }
         SettingsAuthModal::SourcePicker { state } => {
             let outcome = state.handle_key(key);
@@ -231,7 +231,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                         // `generating_token` stays set so the Create-mode
                         // OpPicker commit routes through
                         // `handle_settings_token_generate_pick`.
-                        auth.modal = Some(SettingsAuthModal::OpPicker {
+                        auth.set_modal(SettingsAuthModal::OpPicker {
                             state: Box::new(
                                 crate::console::tui::op_picker::OpPickerState::new_create_with_cache(
                                     op_cache,
@@ -251,7 +251,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                         auth.finish_generating_token();
                         restore_settings_auth_form(auth);
                     }
-                    SourcePickerPlan::Continue => auth.modal = Some(modal),
+                    SourcePickerPlan::Continue => auth.set_modal(modal),
                 }
                 return SettingsAuthOutcome::Continue;
             }
@@ -268,25 +268,25 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                             }
                         })
                         .unwrap_or_default();
-                    auth.modal = Some(SettingsAuthModal::TextInput {
+                    auth.set_modal(SettingsAuthModal::TextInput {
                         state: Box::new(auth_credential_input_state(literal)),
                     });
                 }
                 SourcePickerPlan::Op => {
-                    auth.modal = Some(SettingsAuthModal::OpPicker {
+                    auth.set_modal(SettingsAuthModal::OpPicker {
                         state: Box::new(
                             crate::console::tui::op_picker::OpPickerState::new_with_cache(op_cache),
                         ),
                     });
                 }
                 SourcePickerPlan::Dismiss => restore_settings_auth_form(auth),
-                SourcePickerPlan::Continue => auth.modal = Some(modal),
+                SourcePickerPlan::Continue => auth.set_modal(modal),
             }
         }
         SettingsAuthModal::TextInput { state } => match inline_picker_plan(state.handle_key(key)) {
             InlinePickerPlan::Commit(value) => apply_plain_text_to_settings_auth_form(auth, &value),
             InlinePickerPlan::Dismiss => restore_settings_auth_form(auth),
-            InlinePickerPlan::Continue => auth.modal = Some(modal),
+            InlinePickerPlan::Continue => auth.set_modal(modal),
         },
         SettingsAuthModal::SourceFolderPicker { state } => {
             let page_rows = page_rows_for_modal(term_size, state);
@@ -307,13 +307,13 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                         // leaves the picker so the operator can pick another.
                         Err(reason) => {
                             auth.set_error(reason);
-                            auth.modal = Some(modal);
+                            auth.set_modal(modal);
                         }
                     }
                 }
                 AuthSourceFolderPickerPlan::Close => {}
                 AuthSourceFolderPickerPlan::KeepModal => {
-                    auth.modal = Some(modal);
+                    auth.set_modal(modal);
                 }
             }
         }
@@ -338,11 +338,11 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                 ) => {
                     // Close the OpPicker — the auth form stays stashed on
                     // modal_parents so the _committed / _failed helpers find it.
-                    auth.modal = None;
+                    auth.clear_modal();
                     return SettingsAuthOutcome::ValidateOpRef(op_ref);
                 }
                 InlinePickerPlan::Dismiss => restore_settings_auth_form(auth),
-                InlinePickerPlan::Continue => auth.modal = Some(modal),
+                InlinePickerPlan::Continue => auth.set_modal(modal),
             }
         }
     }
@@ -407,7 +407,7 @@ fn handle_settings_token_generate_pick(
         }
         // Still drilling — leave the picker open and stay armed.
         CreateOpPickerPlan::Continue => {
-            auth.modal = Some(modal);
+            auth.set_modal(modal);
             return;
         }
         // `Existing` is unreachable in Create mode; a Cancel restores the
@@ -451,7 +451,7 @@ pub(in crate::console) fn apply_plain_text_to_settings_auth_form(
         return;
     };
     state.set_literal(value.to_owned());
-    auth.modal = Some(SettingsAuthModal::AuthForm {
+    auth.set_modal(SettingsAuthModal::AuthForm {
         target,
         state,
         focus: AuthFormFocus::Save,
@@ -477,7 +477,7 @@ fn apply_source_folder_to_settings_auth_form(
         return;
     };
     state.set_source_folder(path);
-    auth.modal = Some(SettingsAuthModal::AuthForm {
+    auth.set_modal(SettingsAuthModal::AuthForm {
         target,
         state,
         focus: AuthFormFocus::Save,
@@ -534,7 +534,7 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
     match validate(&op_ref) {
         Ok(()) => {
             state.set_op_ref(op_ref);
-            auth.modal = Some(SettingsAuthModal::AuthForm {
+            auth.set_modal(SettingsAuthModal::AuthForm {
                 target,
                 state,
                 focus: AuthFormFocus::Save,
@@ -582,7 +582,7 @@ pub(in crate::console) fn apply_op_picker_to_settings_auth_form_committed(
     };
     // The read already succeeded; set the ref directly without re-reading.
     state.set_op_ref(op_ref);
-    auth.modal = Some(SettingsAuthModal::AuthForm {
+    auth.set_modal(SettingsAuthModal::AuthForm {
         target,
         state,
         focus: AuthFormFocus::Save,

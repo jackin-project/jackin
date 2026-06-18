@@ -1169,7 +1169,7 @@ pub(crate) fn poll_picker_loads(state: &mut ManagerState<'_>) -> bool {
     }
     if let ManagerStage::Settings(settings) = &mut state.stage
         && let Some(crate::console::tui::state::SettingsAuthModal::OpPicker { state }) =
-            settings.auth.modal.as_mut()
+            settings.auth.modal_mut()
     {
         dirty |= poll_op_picker_load(state);
     }

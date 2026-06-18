@@ -1452,6 +1452,32 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         self.modal = self.pop_parent_modal();
     }
 
+    #[must_use]
+    pub const fn has_modal(&self) -> bool {
+        self.modal.is_some()
+    }
+
+    #[must_use]
+    pub const fn modal_ref(&self) -> Option<&Modal> {
+        self.modal.as_ref()
+    }
+
+    pub const fn modal_mut(&mut self) -> Option<&mut Modal> {
+        self.modal.as_mut()
+    }
+
+    pub fn take_modal(&mut self) -> Option<Modal> {
+        self.modal.take()
+    }
+
+    pub fn set_modal(&mut self, modal: Modal) {
+        self.modal = Some(modal);
+    }
+
+    pub fn clear_modal(&mut self) {
+        self.modal = None;
+    }
+
     pub fn set_error(&mut self, error: impl Into<String>) {
         self.error = Some(error.into());
     }
@@ -2422,6 +2448,29 @@ mod tests {
         assert_eq!(state.modal, Some(2));
         assert_eq!(state.pop_parent_modal(), Some(1));
         assert_eq!(state.pop_parent_modal(), None);
+    }
+
+    #[test]
+    fn settings_auth_modal_slot_methods_round_trip() {
+        let mut state = SettingsAuthState::<EnvValue, i32, ()>::from_rows_and_github_env(
+            Vec::new(),
+            BTreeMap::new(),
+        );
+
+        assert!(!state.has_modal());
+
+        state.set_modal(7);
+
+        assert!(state.has_modal());
+        assert_eq!(state.modal_ref(), Some(&7));
+        assert_eq!(state.modal_mut().map(|modal| *modal), Some(7));
+        assert_eq!(state.take_modal(), Some(7));
+        assert!(!state.has_modal());
+
+        state.set_modal(9);
+        state.clear_modal();
+
+        assert!(!state.has_modal());
     }
 
     #[test]

@@ -203,7 +203,7 @@ pub fn handle_key(
         return Ok(InputOutcome::Continue);
     }
     if let ManagerStage::Settings(settings) = &mut state.stage
-        && settings.auth.modal.is_some()
+        && settings.auth.has_modal()
     {
         let auth_outcome = global_mounts::handle_settings_auth_modal(
             &mut settings.auth,

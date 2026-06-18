@@ -890,7 +890,7 @@ impl ManagerState<'_> {
                 if let Some(SettingsEnvModal::OpPicker { state }) = settings.env.modal.as_mut() {
                     dirty |= state.tick();
                 }
-                if let Some(SettingsAuthModal::OpPicker { state }) = settings.auth.modal.as_mut() {
+                if let Some(SettingsAuthModal::OpPicker { state }) = settings.auth.modal_mut() {
                     dirty |= state.tick();
                 }
             }
