@@ -1239,7 +1239,7 @@ fn try_drag_vertical_scrollbar(
                 ),
                 SettingsTab::Auth => apply_scrollbar_drag(
                     ScrollbarAxis::Vertical,
-                    &mut settings.auth.scroll_y,
+                    settings.auth.scroll_y_mut(),
                     area,
                     content_height,
                     mouse.column,
@@ -1454,7 +1454,7 @@ fn scroll_active_panel_vertical(
                 SettingsTab::Auth => {
                     let content_height = settings.auth_content_height();
                     apply_vertical_scroll(
-                        &mut settings.auth.scroll_y,
+                        settings.auth.scroll_y_mut(),
                         delta,
                         content_area,
                         content_height,

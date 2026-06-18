@@ -1426,6 +1426,20 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
             .is_some_and(crate::tui::screens::settings::update::settings_auth_row_is_focusable)
     }
 
+    #[must_use]
+    pub const fn selected_kind(&self) -> Option<AuthKind> {
+        self.selected_kind
+    }
+
+    #[must_use]
+    pub const fn has_selected_kind(&self) -> bool {
+        self.selected_kind.is_some()
+    }
+
+    pub const fn scroll_y_mut(&mut self) -> &mut u16 {
+        &mut self.scroll_y
+    }
+
     pub fn discard(&mut self)
     where
         EnvValue: Clone,
@@ -2495,6 +2509,30 @@ mod tests {
 
         assert_eq!(state.selected_kind, None);
         assert_eq!(state.selected, 0);
+    }
+
+    #[test]
+    fn settings_auth_selected_kind_and_scroll_accessors_reflect_state() {
+        let rows = vec![SettingsAuthRow {
+            kind: crate::tui::auth::AuthKind::Github,
+            mode: crate::tui::auth::AuthMode::Sync,
+            sync_source_dir: None,
+        }];
+        let mut state =
+            SettingsAuthState::<EnvValue, (), ()>::from_rows_and_github_env(rows, BTreeMap::new());
+
+        assert_eq!(state.selected_kind(), None);
+        assert!(!state.has_selected_kind());
+
+        state.enter_selected_kind();
+        *state.scroll_y_mut() = 3;
+
+        assert_eq!(
+            state.selected_kind(),
+            Some(crate::tui::auth::AuthKind::Github)
+        );
+        assert!(state.has_selected_kind());
+        assert_eq!(state.scroll_y, 3);
     }
 
     #[test]

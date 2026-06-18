@@ -21,7 +21,7 @@ pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     };
     match key.code {
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') if settings.auth.selected_kind.is_some() => {
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') if settings.auth.has_selected_kind() => {
             dispatch_manager(state, ManagerMessage::ClearSettingsAuthKind);
             return;
         }
@@ -39,7 +39,7 @@ pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             );
             return;
         }
-        KeyCode::Enter if settings.auth.selected_kind.is_none() => {
+        KeyCode::Enter if !settings.auth.has_selected_kind() => {
             dispatch_manager(state, ManagerMessage::EnterSettingsAuthKind);
             return;
         }
@@ -296,7 +296,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
             match auth_source_folder_picker_plan(applied) {
                 AuthSourceFolderPickerPlan::Commit(path) => {
                     match crate::console::domain::validate_auth_source_folder(
-                        auth.selected_kind,
+                        auth.selected_kind(),
                         &path,
                     ) {
                         Ok(()) => apply_source_folder_to_settings_auth_form(auth, path),

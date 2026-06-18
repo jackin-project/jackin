@@ -73,7 +73,7 @@ pub(super) fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key
     match settings_update::settings_shell_key_plan(
         key.code,
         settings.tab_bar_focused(),
-        settings.auth.selected_kind.is_some(),
+        settings.auth.has_selected_kind(),
     ) {
         SettingsShellKeyPlan::MoveTab {
             delta,
