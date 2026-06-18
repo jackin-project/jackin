@@ -25,10 +25,10 @@ use jackin_console::tui::components::status_popup::{
 use jackin_console::tui::run::{
     ConsoleChromeHover, ConsoleModalMouseFacts, ConsoleScreenStage, LetterInputModalKind,
     LetterInputState, MainScreenState, ModalBlockState, QuitConfirmPlan, QuitInterceptState,
-    TokenGenerateScopeLabel, debug_chip_row, debug_run_id_label, diagnostics_screen_for_stage,
-    is_main_screen, modal_mouse_layer_consumes, quit_confirm_area, quit_confirm_plan,
-    quit_confirm_state, should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
-    token_generate_status_message,
+    TokenGenerateScopeLabel, console_pointer_hand, debug_chip_activation_allowed, debug_chip_row,
+    debug_run_id_label, diagnostics_screen_for_stage, is_main_screen, modal_mouse_layer_consumes,
+    quit_confirm_area, quit_confirm_plan, quit_confirm_state, should_debug_log_mouse,
+    should_open_quit_confirm, split_debug_area, token_generate_status_message,
 };
 
 use crate::paths::JackinPaths;
@@ -823,14 +823,18 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                     } else if let ConsoleStage::Manager(ms) = &mut state.stage {
                         // Layer 3: chrome (debug chip) — only fires when no modal.
                         // Debug chip click: open the shared container/session info popup.
-                        if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_))
-                            && no_modal_open
-                            && chrome_hover_tracker.is_hovered(
-                                mouse.column,
-                                mouse.row,
-                                &ConsoleChromeHover::DebugChip,
-                            )
-                            && let Some(run) = crate::diagnostics::active_run()
+                        let debug_chip_hovered = chrome_hover_tracker.is_hovered(
+                            mouse.column,
+                            mouse.row,
+                            &ConsoleChromeHover::DebugChip,
+                        );
+                        let active_run = crate::diagnostics::active_run();
+                        if debug_chip_activation_allowed(
+                            mouse,
+                            no_modal_open,
+                            debug_chip_hovered,
+                            active_run.is_some(),
+                        ) && let Some(run) = active_run
                         {
                             let log_path = run.path().display().to_string();
                             let _unused = crate::console::tui::update_manager(
@@ -872,13 +876,15 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                             chrome_hover = next_chrome_hover;
                             needs_redraw = true;
                         }
-                        let hand = chrome_hover.is_some()
-                            || crate::console::tui::input::clickable_at(
+                        let hand = console_pointer_hand(
+                            chrome_hover.is_some(),
+                            crate::console::tui::input::clickable_at(
                                 ms,
                                 mouse,
                                 term_size,
                                 Some(&config),
-                            );
+                            ),
+                        );
                         if hand != pointer_is_hand {
                             pointer_is_hand = hand;
                             let seq = if hand {

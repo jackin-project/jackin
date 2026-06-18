@@ -332,6 +332,48 @@ fn modal_mouse_layer_policy_routes_container_info_wheel_to_base() {
 }
 
 #[test]
+fn debug_chip_activation_requires_click_hover_and_run() {
+    assert!(debug_chip_activation_allowed(
+        mouse(MouseEventKind::Down(crossterm::event::MouseButton::Left)),
+        true,
+        true,
+        true,
+    ));
+    assert!(!debug_chip_activation_allowed(
+        mouse(MouseEventKind::Moved),
+        true,
+        true,
+        true,
+    ));
+    assert!(!debug_chip_activation_allowed(
+        mouse(MouseEventKind::Down(crossterm::event::MouseButton::Left)),
+        false,
+        true,
+        true,
+    ));
+    assert!(!debug_chip_activation_allowed(
+        mouse(MouseEventKind::Down(crossterm::event::MouseButton::Left)),
+        true,
+        false,
+        true,
+    ));
+    assert!(!debug_chip_activation_allowed(
+        mouse(MouseEventKind::Down(crossterm::event::MouseButton::Left)),
+        true,
+        true,
+        false,
+    ));
+}
+
+#[test]
+fn console_pointer_hand_uses_chrome_or_base_clickability() {
+    assert!(!console_pointer_hand(false, false));
+    assert!(console_pointer_hand(true, false));
+    assert!(console_pointer_hand(false, true));
+    assert!(console_pointer_hand(true, true));
+}
+
+#[test]
 fn startup_error_modal_blocks_outside_click_dismissal() {
     let modal_rect = Rect::new(10, 5, 30, 10);
 

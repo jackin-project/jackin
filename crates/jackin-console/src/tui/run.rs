@@ -260,6 +260,24 @@ pub const fn modal_mouse_layer_consumes(
     false
 }
 
+#[must_use]
+pub const fn debug_chip_activation_allowed(
+    mouse: crossterm::event::MouseEvent,
+    no_modal_open: bool,
+    debug_chip_hovered: bool,
+    active_run_present: bool,
+) -> bool {
+    matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_))
+        && no_modal_open
+        && debug_chip_hovered
+        && active_run_present
+}
+
+#[must_use]
+pub const fn console_pointer_hand(chrome_hovered: bool, base_clickable: bool) -> bool {
+    chrome_hovered || base_clickable
+}
+
 const fn mouse_is_wheel(mouse: crossterm::event::MouseEvent) -> bool {
     matches!(
         mouse.kind,
