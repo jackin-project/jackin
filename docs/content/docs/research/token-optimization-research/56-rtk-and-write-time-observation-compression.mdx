@@ -150,6 +150,8 @@ Accept RTK for token optimization only if, versus the Hooks arm:
 
 All accessed 2026-06-18. RTK product numbers are vendor self-reported unless marked.
 
+> The **complete consolidated ledger** for all three tools together — plus the formal per-technique records and the unverified-claims register — is maintained in the hub: [Records, ledger & unverified](/research/caveman-headroom-rtk/07-records-ledger-and-unverified/). The chapter-specific citations are retained below as the original research record.
+
 - RTK repo + README: [github.com/rtk-ai/rtk](https://github.com/rtk-ai/rtk) (README on the `develop`/`master` branch; `main` 404s) · official site [rtk-ai.app](https://www.rtk-ai.app)
 - RTK stats (re-pulled 2026-06-18: 63,608★ / 3,913 forks / 146 watchers / 1,254 issues / Apache-2.0 / created 2026-01-22 / `v0.42.4`): `gh api repos/rtk-ai/rtk`. Same-pull cross-tool refresh: caveman 74,446★ / 166 watchers / `v1.9.0`; headroom 33,359★ / 111 watchers / `v0.26.0` (`gh api repos/JuliusBrussee/caveman`, `repos/chopratejas/headroom`)
 - **RTK internals (six-phase PARSE→ROUTE→EXECUTE→FILTER→PRINT→TRACK lifecycle, 12 filtering strategies, `src/core/filter.rs` None/Minimal/Aggressive code filter across 8 languages, SQLite `~/.local/share/rtk/history.db` with ~4-chars/token heuristic, exit-code preservation, fail-safe fallback, `-vvv` raw output, ~4.1 MB binary / ~5–15 ms per command):** RTK [`docs/contributing/ARCHITECTURE.md`](https://github.com/rtk-ai/rtk/blob/develop/docs/contributing/ARCHITECTURE.md) (accessed 2026-06-18)
