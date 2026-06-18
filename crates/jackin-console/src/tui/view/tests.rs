@@ -33,6 +33,30 @@ fn console_main_frame_plan_routes_workspace_and_fullscreen_stages() {
 }
 
 #[test]
+fn console_prepare_frame_plan_routes_only_mutating_pre_render_stages() {
+    assert_eq!(
+        console_prepare_frame_plan(ConsoleManagerStageRoute::Editor),
+        ConsolePrepareFramePlan::Editor
+    );
+    assert_eq!(
+        console_prepare_frame_plan(ConsoleManagerStageRoute::Settings),
+        ConsolePrepareFramePlan::Settings
+    );
+    assert_eq!(
+        console_prepare_frame_plan(ConsoleManagerStageRoute::List),
+        ConsolePrepareFramePlan::List
+    );
+    assert_eq!(
+        console_prepare_frame_plan(ConsoleManagerStageRoute::CreatePrelude),
+        ConsolePrepareFramePlan::None
+    );
+    assert_eq!(
+        console_prepare_frame_plan(ConsoleManagerStageRoute::ConfirmDelete),
+        ConsolePrepareFramePlan::None
+    );
+}
+
+#[test]
 fn workspace_frame_areas_match_header_body_footer_contract() {
     let areas = workspace_frame_areas(Rect::new(0, 0, 80, 24));
 

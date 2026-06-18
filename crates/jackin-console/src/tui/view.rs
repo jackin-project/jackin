@@ -70,6 +70,14 @@ pub enum ConsoleMainFramePlan {
     Workspace { render_list_body: bool },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsolePrepareFramePlan {
+    Editor,
+    Settings,
+    List,
+    None,
+}
+
 #[must_use]
 pub const fn console_main_frame_plan(route: ConsoleManagerStageRoute) -> ConsoleMainFramePlan {
     match route {
@@ -83,6 +91,20 @@ pub const fn console_main_frame_plan(route: ConsoleManagerStageRoute) -> Console
         | ConsoleManagerStageRoute::ConfirmInstancePurge => ConsoleMainFramePlan::Workspace {
             render_list_body: false,
         },
+    }
+}
+
+#[must_use]
+pub const fn console_prepare_frame_plan(
+    route: ConsoleManagerStageRoute,
+) -> ConsolePrepareFramePlan {
+    match route {
+        ConsoleManagerStageRoute::Editor => ConsolePrepareFramePlan::Editor,
+        ConsoleManagerStageRoute::Settings => ConsolePrepareFramePlan::Settings,
+        ConsoleManagerStageRoute::List => ConsolePrepareFramePlan::List,
+        ConsoleManagerStageRoute::CreatePrelude
+        | ConsoleManagerStageRoute::ConfirmDelete
+        | ConsoleManagerStageRoute::ConfirmInstancePurge => ConsolePrepareFramePlan::None,
     }
 }
 
