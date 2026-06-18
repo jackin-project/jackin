@@ -486,13 +486,24 @@ impl RoleState {
                 AuthProvisionOutcome::TokenMode
             }
             AuthForwardMode::Sync => {
-                if let Some(creds) = read_host_credentials_from_claude_config_dir(source_dir)
-                    .or_else(|| read_host_credentials(host_home))
+                // Read ONLY the selected source folder's credentials. An
+                // explicit source dir must never fall back to the default
+                // host `~/.claude` / default Keychain account — that leak
+                // is exactly the bug this path guards against (an operator
+                // who picked an Enterprise source folder would otherwise
+                // get their default Max account inside the capsule).
+                if let Some(creds) =
+                    read_host_credentials_from_claude_config_dir(source_dir, host_home)
                 {
                     copy_host_claude_json(&host_claude_json, account_json)?;
                     write_private_file(credentials_json, &creds)?;
                     AuthProvisionOutcome::Synced
                 } else {
+                    eprintln!(
+                        "[jackin] Claude source folder {} has no readable credentials — \
+                         leaving unauthenticated (no fallback to the default account)",
+                        source_dir.display()
+                    );
                     if !account_json.exists() {
                         write_private_file(account_json, "{}")?;
                     }
@@ -985,7 +996,8 @@ fn wipe_claude_state(account_json: &Path, credentials_json: &Path) -> anyhow::Re
     Ok(())
 }
 
-/// Read the host's Claude Code OAuth credentials.
+/// Read the host's Claude Code OAuth credentials for the default
+/// `~/.claude` config dir.
 ///
 /// Checks the file-based store at `~/.claude/.credentials.json` first
 /// (used on Linux, and makes the function testable with temp dirs).
@@ -1002,37 +1014,103 @@ fn read_host_credentials(host_home: &Path) -> Option<String> {
     // real home directory.  This keeps tests hermetic (they use temp
     // dirs) while still supporting the Keychain in production.
     #[cfg(target_os = "macos")]
-    {
-        let real_home = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf());
-        if real_home.as_deref() == Some(host_home) {
-            #[expect(
-                clippy::disallowed_methods,
-                reason = "macOS Keychain read runs inside spawn_blocking during launch"
-            )]
-            let output = std::process::Command::new("security")
-                .args([
-                    "find-generic-password",
-                    "-s",
-                    "Claude Code-credentials",
-                    "-w",
-                ])
-                .output()
-                .ok()?;
-            if output.status.success() {
-                let creds = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-                if !creds.is_empty() {
-                    return Some(creds);
-                }
-            }
-        }
+    if host_is_real_home(host_home) {
+        return read_claude_keychain(CLAUDE_KEYCHAIN_SERVICE_BASE);
     }
 
     None
 }
 
-fn read_host_credentials_from_claude_config_dir(source_dir: &Path) -> Option<String> {
+/// Read the host's Claude Code OAuth credentials for an explicit
+/// `CLAUDE_CONFIG_DIR` source folder (Workspace Auth sync mode).
+///
+/// Reads ONLY credentials belonging to `source_dir`: the file-based
+/// `source_dir/.credentials.json` first, then — on macOS — the Keychain
+/// entry Claude Code provisions for that specific config dir. It never
+/// falls back to the default `~/.claude` credentials or the default
+/// Keychain service; an operator who selected a source folder must get
+/// that folder's account (e.g. a Scentbird Enterprise login) or nothing,
+/// never the default Max account leaking in from the host.
+fn read_host_credentials_from_claude_config_dir(
+    source_dir: &Path,
+    host_home: &Path,
+) -> Option<String> {
+    // File-based credentials (Linux, or macOS with an explicit export).
     let creds_path = source_dir.join(".credentials.json");
-    std::fs::read_to_string(creds_path).ok()
+    if let Ok(content) = std::fs::read_to_string(creds_path) {
+        return Some(content);
+    }
+
+    // macOS Keychain — Claude Code stores per-config-dir credentials
+    // under a service name derived from the config dir path. Gated on the
+    // real home directory so tests stay hermetic (temp dirs never shell
+    // out to `security`).
+    #[cfg(target_os = "macos")]
+    if host_is_real_home(host_home) {
+        let service = claude_keychain_service_for_config_dir(source_dir, host_home);
+        return read_claude_keychain(&service);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    let _ = host_home;
+    None
+}
+
+/// Base macOS Keychain service name Claude Code uses for the default
+/// `~/.claude` config dir.
+#[cfg(target_os = "macos")]
+const CLAUDE_KEYCHAIN_SERVICE_BASE: &str = "Claude Code-credentials";
+
+/// `true` when `host_home` is the machine's real home directory. Keychain
+/// reads are gated on this so tests (which pass temp dirs) never shell out.
+#[cfg(target_os = "macos")]
+fn host_is_real_home(host_home: &Path) -> bool {
+    directories::BaseDirs::new().is_some_and(|b| b.home_dir() == host_home)
+}
+
+/// Read a credential blob from the macOS login Keychain under `service`.
+/// Returns `None` on lookup failure or an empty value.
+#[cfg(target_os = "macos")]
+fn read_claude_keychain(service: &str) -> Option<String> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "macOS Keychain read runs inside spawn_blocking during launch"
+    )]
+    let output = std::process::Command::new("security")
+        .args(["find-generic-password", "-s", service, "-w"])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let creds = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if !creds.is_empty() {
+            return Some(creds);
+        }
+    }
+    None
+}
+
+/// Derive the macOS Keychain service name Claude Code uses for a given
+/// `CLAUDE_CONFIG_DIR`.
+///
+/// Claude Code keys the default `~/.claude` config dir under the bare
+/// `"Claude Code-credentials"` service, and every other config dir under
+/// `"Claude Code-credentials-<suffix>"` where `<suffix>` is the first
+/// eight hex chars (four bytes) of the SHA-256 of the absolute config dir
+/// path. Verified against live Keychain entries (`~/.claude-scentbird`
+/// → `…-db49ea31`, `~/.claude-work` → `…-3342f2c7`).
+#[cfg(target_os = "macos")]
+fn claude_keychain_service_for_config_dir(source_dir: &Path, host_home: &Path) -> String {
+    use sha2::{Digest, Sha256};
+
+    // The default config dir uses the bare service name, not a suffix.
+    if source_dir == host_home.join(".claude") {
+        return CLAUDE_KEYCHAIN_SERVICE_BASE.to_owned();
+    }
+
+    let digest = Sha256::digest(source_dir.to_string_lossy().as_bytes());
+    let mut suffix = crate::instance::naming::hex_lower(&digest);
+    suffix.truncate(8);
+    format!("{CLAUDE_KEYCHAIN_SERVICE_BASE}-{suffix}")
 }
 
 /// Reject symlinks at `path` to prevent a compromised role from

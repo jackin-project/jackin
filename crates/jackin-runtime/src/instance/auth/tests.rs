@@ -4,6 +4,31 @@ use jackin_config::AuthForwardMode;
 use jackin_core::paths::JackinPaths;
 use tempfile::tempdir;
 
+/// The macOS Keychain service name Claude Code derives for a custom
+/// `CLAUDE_CONFIG_DIR` must match the live entries observed on disk:
+/// the default `~/.claude` uses the bare service, and any other config
+/// dir uses `Claude Code-credentials-<sha256(path)[..8]>`. Pure string
+/// derivation — no real Keychain access.
+#[cfg(target_os = "macos")]
+#[test]
+fn claude_keychain_service_name_matches_claude_scheme() {
+    use std::path::Path;
+    let home = Path::new("/Users/donbeave");
+
+    assert_eq!(
+        super::claude_keychain_service_for_config_dir(&home.join(".claude"), home),
+        "Claude Code-credentials"
+    );
+    assert_eq!(
+        super::claude_keychain_service_for_config_dir(&home.join(".claude-scentbird"), home),
+        "Claude Code-credentials-db49ea31"
+    );
+    assert_eq!(
+        super::claude_keychain_service_for_config_dir(&home.join(".claude-work"), home),
+        "Claude Code-credentials-3342f2c7"
+    );
+}
+
 const TEST_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"test","refreshToken":"test"}}"#;
 
 /// Set up a fake host auth environment in the temp dir.
@@ -143,8 +168,13 @@ fn sync_source_dir_copies_claude_config_dir_without_nested_home_layout() {
     assert_eq!(outcome, AuthProvisionOutcome::Synced);
 }
 
+/// Regression: an explicit Claude source folder with no readable
+/// credentials must NOT fall back to the default host `~/.claude`
+/// credentials. The operator selected a specific config dir (e.g. an
+/// Enterprise account); leaking the default Max account into the capsule
+/// is the bug this guards against. Expect `HostMissing`, not `Synced`.
 #[test]
-fn sync_source_dir_uses_claude_config_dir_with_default_credentials() {
+fn sync_source_dir_does_not_fall_back_to_default_host_credentials() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let source_dir = temp.path().join("claude-work");
@@ -154,6 +184,8 @@ fn sync_source_dir_uses_claude_config_dir_with_default_credentials() {
         r#"{"oauthAccount":{"emailAddress":"workspace@example.com"}}"#,
     )
     .unwrap();
+    // Default host credentials exist — but the source folder has none, so
+    // these must be ignored rather than leaked into the capsule.
     std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
     std::fs::write(
         temp.path().join(".claude/.credentials.json"),
@@ -176,16 +208,67 @@ fn sync_source_dir_uses_claude_config_dir_with_default_credentials() {
     )
     .unwrap();
 
+    // No fallback: the default host account never reaches the capsule.
+    assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+    let creds = state
+        .claude_credentials_json()
+        .and_then(|p| std::fs::read_to_string(p).ok());
+    assert!(
+        creds.as_deref() != Some(TEST_CREDENTIALS),
+        "default host credentials must not leak into an explicit source folder"
+    );
+}
+
+/// An explicit source folder that DOES carry its own file-based
+/// credentials syncs them straight through.
+#[test]
+fn sync_source_dir_uses_source_folder_own_credentials() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let source_dir = temp.path().join("claude-scentbird");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::write(
+        source_dir.join(".claude.json"),
+        r#"{"oauthAccount":{"emailAddress":"enterprise@scentbird.com"}}"#,
+    )
+    .unwrap();
+    let source_creds =
+        r#"{"claudeAiOauth":{"accessToken":"enterprise","refreshToken":"enterprise"}}"#;
+    std::fs::write(source_dir.join(".credentials.json"), source_creds).unwrap();
+    // A different default host account is present and must be ignored.
+    std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+    std::fs::write(
+        temp.path().join(".claude/.credentials.json"),
+        TEST_CREDENTIALS,
+    )
+    .unwrap();
+    let manifest = simple_manifest(&temp);
+
+    let (state, outcome) = RoleState::prepare(
+        &paths,
+        "jk-agent-smith",
+        &manifest,
+        &PrepareResolvers {
+            auth_modes: &|_| AuthForwardMode::Sync,
+            sync_source_dirs: &|_| Some(source_dir.clone()),
+        },
+        &crate::instance::GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::agent::Agent::Claude,
+    )
+    .unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
     assert!(
         std::fs::read_to_string(state.claude_account_json().unwrap())
             .unwrap()
-            .contains("workspace@example.com")
+            .contains("enterprise@scentbird.com")
     );
     assert_eq!(
         std::fs::read_to_string(state.claude_credentials_json().unwrap()).unwrap(),
-        TEST_CREDENTIALS
+        source_creds,
+        "source folder credentials must win over the default host account"
     );
-    assert_eq!(outcome, AuthProvisionOutcome::Synced);
 }
 
 #[test]
