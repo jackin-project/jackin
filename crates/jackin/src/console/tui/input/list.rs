@@ -32,8 +32,9 @@ use jackin_console::tui::screens::workspaces::update::{
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
-    InlinePickerShellPlan, InlineProviderFollowupPlan, inline_picker_shell_plan,
-    inline_provider_followup_plan,
+    DismissibleModalPlan, InlinePickerShellPlan, InlineProviderFollowupPlan, ListGithubPickerPlan,
+    ListRolePickerPlan, dismissible_modal_plan, inline_picker_shell_plan,
+    inline_provider_followup_plan, list_github_picker_plan, list_role_picker_plan,
 };
 use jackin_tui::ModalOutcome;
 
@@ -502,35 +503,39 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
         return InputOutcome::Continue;
     };
     match modal {
-        Modal::GithubPicker { state: picker } => match picker.handle_key(key) {
-            ModalOutcome::Commit(url) => {
+        Modal::GithubPicker { state: picker } => {
+            match list_github_picker_plan(picker.handle_key(key)) {
+                ListGithubPickerPlan::OpenUrl(url) => {
+                    dispatch_manager(state, ManagerMessage::DismissListModal);
+                    state.request_effect(ManagerEffect::OpenUrl(url));
+                    InputOutcome::Continue
+                }
+                ListGithubPickerPlan::Dismiss => {
+                    dispatch_manager(state, ManagerMessage::DismissListModal);
+                    InputOutcome::Continue
+                }
+                ListGithubPickerPlan::Continue => InputOutcome::Continue,
+            }
+        }
+        Modal::RolePicker { state: picker } => {
+            match list_role_picker_plan(picker.handle_key(key)) {
+                ListRolePickerPlan::Launch(role) => {
+                    dispatch_manager(state, ManagerMessage::DismissListModal);
+                    InputOutcome::LaunchWithAgent(role)
+                }
+                ListRolePickerPlan::Dismiss => {
+                    dispatch_manager(state, ManagerMessage::DismissListModal);
+                    InputOutcome::Continue
+                }
+                ListRolePickerPlan::Continue => InputOutcome::Continue,
+            }
+        }
+        Modal::ErrorPopup { state: popup } => match dismissible_modal_plan(popup.handle_key(key)) {
+            DismissibleModalPlan::Dismiss => {
                 dispatch_manager(state, ManagerMessage::DismissListModal);
-                state.request_effect(ManagerEffect::OpenUrl(url));
                 InputOutcome::Continue
             }
-            ModalOutcome::Cancel => {
-                dispatch_manager(state, ManagerMessage::DismissListModal);
-                InputOutcome::Continue
-            }
-            ModalOutcome::Continue => InputOutcome::Continue,
-        },
-        Modal::RolePicker { state: picker } => match picker.handle_key(key) {
-            ModalOutcome::Commit(role) => {
-                dispatch_manager(state, ManagerMessage::DismissListModal);
-                InputOutcome::LaunchWithAgent(role)
-            }
-            ModalOutcome::Cancel => {
-                dispatch_manager(state, ManagerMessage::DismissListModal);
-                InputOutcome::Continue
-            }
-            ModalOutcome::Continue => InputOutcome::Continue,
-        },
-        Modal::ErrorPopup { state: popup } => match popup.handle_key(key) {
-            ModalOutcome::Commit(()) | ModalOutcome::Cancel => {
-                dispatch_manager(state, ManagerMessage::DismissListModal);
-                InputOutcome::Continue
-            }
-            ModalOutcome::Continue => InputOutcome::Continue,
+            DismissibleModalPlan::Continue => InputOutcome::Continue,
         },
         Modal::ContainerInfo { state: info } => {
             if matches!(key.code, KeyCode::Enter)
@@ -547,12 +552,12 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
             if let Some(rect) = container_info_rect {
                 info.clamp_scroll(rect);
             }
-            match outcome {
-                ModalOutcome::Commit(()) | ModalOutcome::Cancel => {
+            match dismissible_modal_plan(outcome) {
+                DismissibleModalPlan::Dismiss => {
                     dispatch_manager(state, ManagerMessage::DismissListModal);
                     InputOutcome::Continue
                 }
-                ModalOutcome::Continue => InputOutcome::Continue,
+                DismissibleModalPlan::Continue => InputOutcome::Continue,
             }
         }
         _ => {

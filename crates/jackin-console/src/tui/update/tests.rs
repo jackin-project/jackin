@@ -205,3 +205,53 @@ fn inline_picker_shell_plan_routes_scroll_exit_and_delegate() {
         InlinePickerShellPlan::Delegate
     );
 }
+
+#[test]
+fn list_github_picker_plan_routes_picker_outcomes() {
+    assert_eq!(
+        list_github_picker_plan(jackin_tui::ModalOutcome::Commit(
+            "https://github.com/jackin-project/jackin".to_owned()
+        )),
+        ListGithubPickerPlan::OpenUrl("https://github.com/jackin-project/jackin".to_owned())
+    );
+    assert_eq!(
+        list_github_picker_plan(jackin_tui::ModalOutcome::Cancel),
+        ListGithubPickerPlan::Dismiss
+    );
+    assert_eq!(
+        list_github_picker_plan(jackin_tui::ModalOutcome::Continue),
+        ListGithubPickerPlan::Continue
+    );
+}
+
+#[test]
+fn list_role_picker_plan_routes_picker_outcomes() {
+    assert_eq!(
+        list_role_picker_plan(jackin_tui::ModalOutcome::Commit("agent-smith")),
+        ListRolePickerPlan::Launch("agent-smith")
+    );
+    assert_eq!(
+        list_role_picker_plan::<&str>(jackin_tui::ModalOutcome::Cancel),
+        ListRolePickerPlan::Dismiss
+    );
+    assert_eq!(
+        list_role_picker_plan::<&str>(jackin_tui::ModalOutcome::Continue),
+        ListRolePickerPlan::Continue
+    );
+}
+
+#[test]
+fn dismissible_modal_plan_dismisses_commit_and_cancel() {
+    assert_eq!(
+        dismissible_modal_plan(jackin_tui::ModalOutcome::Commit(())),
+        DismissibleModalPlan::Dismiss
+    );
+    assert_eq!(
+        dismissible_modal_plan::<()>(jackin_tui::ModalOutcome::Cancel),
+        DismissibleModalPlan::Dismiss
+    );
+    assert_eq!(
+        dismissible_modal_plan::<()>(jackin_tui::ModalOutcome::Continue),
+        DismissibleModalPlan::Continue
+    );
+}

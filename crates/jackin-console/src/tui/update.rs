@@ -36,6 +36,26 @@ pub enum InlinePickerShellPlan {
     Delegate,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ListGithubPickerPlan {
+    OpenUrl(String),
+    Dismiss,
+    Continue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ListRolePickerPlan<R> {
+    Launch(R),
+    Dismiss,
+    Continue,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DismissibleModalPlan {
+    Dismiss,
+    Continue,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListPreRenderFocusPlan {
     pub list_scroll_focus: Option<crate::tui::focus::MountScrollFocus>,
@@ -148,6 +168,34 @@ pub fn inline_picker_shell_plan(key: KeyEvent, exit_on_q: bool) -> InlinePickerS
         KeyCode::Right | KeyCode::Char('l' | 'L') => InlinePickerShellPlan::ScrollHorizontal(8),
         KeyCode::Char('q' | 'Q') if exit_on_q => InlinePickerShellPlan::Exit,
         _ => InlinePickerShellPlan::Delegate,
+    }
+}
+
+#[must_use]
+pub fn list_github_picker_plan(outcome: jackin_tui::ModalOutcome<String>) -> ListGithubPickerPlan {
+    match outcome {
+        jackin_tui::ModalOutcome::Commit(url) => ListGithubPickerPlan::OpenUrl(url),
+        jackin_tui::ModalOutcome::Cancel => ListGithubPickerPlan::Dismiss,
+        jackin_tui::ModalOutcome::Continue => ListGithubPickerPlan::Continue,
+    }
+}
+
+#[must_use]
+pub fn list_role_picker_plan<R>(outcome: jackin_tui::ModalOutcome<R>) -> ListRolePickerPlan<R> {
+    match outcome {
+        jackin_tui::ModalOutcome::Commit(role) => ListRolePickerPlan::Launch(role),
+        jackin_tui::ModalOutcome::Cancel => ListRolePickerPlan::Dismiss,
+        jackin_tui::ModalOutcome::Continue => ListRolePickerPlan::Continue,
+    }
+}
+
+#[must_use]
+pub fn dismissible_modal_plan<T>(outcome: jackin_tui::ModalOutcome<T>) -> DismissibleModalPlan {
+    match outcome {
+        jackin_tui::ModalOutcome::Commit(_) | jackin_tui::ModalOutcome::Cancel => {
+            DismissibleModalPlan::Dismiss
+        }
+        jackin_tui::ModalOutcome::Continue => DismissibleModalPlan::Continue,
     }
 }
 
