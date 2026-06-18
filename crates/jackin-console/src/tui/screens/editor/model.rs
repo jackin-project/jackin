@@ -223,6 +223,16 @@ pub enum EditorAuthActionKeyPlan {
     NotAuthAction,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorTabActionKeyPlan {
+    Role(EditorRoleActionKeyPlan),
+    Mount(EditorMountActionKeyPlan),
+    Secrets(EditorSecretsActionKeyPlan),
+    Auth(EditorAuthActionKeyPlan),
+    Enter(EditorEnterKeyPlan),
+    Noop,
+}
+
 #[derive(Debug, Clone)]
 pub enum EditorMode {
     Edit { name: String },
@@ -1474,6 +1484,43 @@ impl<
     }
 
     #[must_use]
+    pub fn tab_action_key_plan(
+        &self,
+        config: &jackin_config::AppConfig,
+        key_code: crossterm::event::KeyCode,
+        modifiers: crossterm::event::KeyModifiers,
+        op_available: bool,
+    ) -> EditorTabActionKeyPlan {
+        use crossterm::event::KeyCode;
+
+        let role_action = self.role_action_key_plan(key_code);
+        if !matches!(role_action, EditorRoleActionKeyPlan::NotRoleAction) {
+            return EditorTabActionKeyPlan::Role(role_action);
+        }
+
+        let mount_action = self.mount_action_key_plan(key_code);
+        if !matches!(mount_action, EditorMountActionKeyPlan::NotMountAction) {
+            return EditorTabActionKeyPlan::Mount(mount_action);
+        }
+
+        let secrets_action = self.secrets_action_key_plan(key_code, modifiers, op_available);
+        if !matches!(secrets_action, EditorSecretsActionKeyPlan::NotSecretsAction) {
+            return EditorTabActionKeyPlan::Secrets(secrets_action);
+        }
+
+        let auth_action = self.auth_action_key_plan(key_code);
+        if !matches!(auth_action, EditorAuthActionKeyPlan::NotAuthAction) {
+            return EditorTabActionKeyPlan::Auth(auth_action);
+        }
+
+        if key_code == KeyCode::Enter {
+            return EditorTabActionKeyPlan::Enter(self.enter_key_plan(config, op_available));
+        }
+
+        EditorTabActionKeyPlan::Noop
+    }
+
+    #[must_use]
     pub fn resolve_auth_form_target(
         &self,
         config: &jackin_config::AppConfig,
@@ -1713,8 +1760,8 @@ mod tests {
         EditorMode, EditorMountActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
         EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorSaveKeyPlan,
         EditorSaveModePlan, EditorSecretsActionKeyPlan, EditorState, EditorTab,
-        EditorTopLevelKeyPlan, FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
-        editor_save_mode_plan, editor_top_level_key_plan,
+        EditorTabActionKeyPlan, EditorTopLevelKeyPlan, FieldFocus, RoleHeaderExpansionPlan,
+        SecretsRow, editor_save_mode_plan, editor_top_level_key_plan,
     };
 
     type TestEditor =
@@ -2493,6 +2540,58 @@ mod tests {
         assert_eq!(
             editor.auth_action_key_plan(KeyCode::Char('d')),
             EditorAuthActionKeyPlan::NotAuthAction
+        );
+    }
+
+    #[test]
+    fn editor_tab_action_key_plan_routes_active_tab_precedence() {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        let config = jackin_config::AppConfig::default();
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        editor.active_tab = EditorTab::Mounts;
+        assert_eq!(
+            editor.tab_action_key_plan(&config, KeyCode::Char('a'), KeyModifiers::empty(), true,),
+            EditorTabActionKeyPlan::Mount(EditorMountActionKeyPlan::AddMount)
+        );
+
+        editor.active_tab = EditorTab::Secrets;
+        assert_eq!(
+            editor.tab_action_key_plan(&config, KeyCode::Char('p'), KeyModifiers::empty(), true,),
+            EditorTabActionKeyPlan::Secrets(EditorSecretsActionKeyPlan::OpenPicker)
+        );
+        assert_eq!(
+            editor.tab_action_key_plan(&config, KeyCode::Char('p'), KeyModifiers::empty(), false,),
+            EditorTabActionKeyPlan::Noop
+        );
+
+        editor.active_tab = EditorTab::Auth;
+        editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Claude);
+        assert_eq!(
+            editor.tab_action_key_plan(&config, KeyCode::Char('a'), KeyModifiers::empty(), true,),
+            EditorTabActionKeyPlan::Auth(EditorAuthActionKeyPlan::OpenRolePicker)
+        );
+    }
+
+    #[test]
+    fn editor_tab_action_key_plan_delegates_enter_after_actions() {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        let config = jackin_config::AppConfig::default();
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        editor.active_tab = EditorTab::General;
+        assert_eq!(
+            editor.tab_action_key_plan(&config, KeyCode::Enter, KeyModifiers::empty(), true),
+            EditorTabActionKeyPlan::Enter(EditorEnterKeyPlan::OpenGeneralField)
+        );
+
+        editor.active_tab = EditorTab::Auth;
+        editor.auth_selected_kind = None;
+        assert_eq!(
+            editor.tab_action_key_plan(&config, KeyCode::Enter, KeyModifiers::empty(), true),
+            EditorTabActionKeyPlan::Enter(EditorEnterKeyPlan::Auth(AuthEnterPlan::Noop))
         );
     }
 

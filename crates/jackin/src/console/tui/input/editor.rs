@@ -14,7 +14,7 @@ pub(super) use modal::{
 #[cfg(test)]
 pub(super) use jackin_console::tui::screens::editor::view::role_load_input_state;
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 
 use super::InputOutcome;
 use crate::console::tui::effect::ManagerEffect;
@@ -37,8 +37,8 @@ use jackin_console::tui::screens::editor::model::{
     EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan,
     EditorMountActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
     EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorSaveKeyPlan,
-    EditorSecretsActionKeyPlan, EditorTopLevelKeyPlan, RoleHeaderExpansionPlan,
-    editor_top_level_key_plan,
+    EditorSecretsActionKeyPlan, EditorTabActionKeyPlan, EditorTopLevelKeyPlan,
+    RoleHeaderExpansionPlan, editor_top_level_key_plan,
 };
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -154,36 +154,27 @@ pub(super) fn handle_editor_key(
         return Ok(InputOutcome::Continue);
     };
 
-    let role_action_plan = editor.role_action_key_plan(key.code);
-    let mount_action_plan = editor.mount_action_key_plan(key.code);
-    let secrets_action_plan = editor.secrets_action_key_plan(key.code, key.modifiers, op_available);
-    let auth_action_plan = editor.auth_action_key_plan(key.code);
-    match key.code {
-        _ if !matches!(role_action_plan, EditorRoleActionKeyPlan::NotRoleAction) => {
+    match editor.tab_action_key_plan(config, key.code, key.modifiers, op_available) {
+        EditorTabActionKeyPlan::Role(role_action_plan) => {
             dispatch_editor_role_action(editor, config, role_action_plan);
         }
-        _ if !matches!(mount_action_plan, EditorMountActionKeyPlan::NotMountAction) => {
+        EditorTabActionKeyPlan::Mount(mount_action_plan) => {
             if let Some(effect) = dispatch_editor_mount_action(editor, mount_action_plan) {
                 state.request_effect(effect);
             }
         }
-        _ if !matches!(
-            secrets_action_plan,
-            EditorSecretsActionKeyPlan::NotSecretsAction
-        ) =>
-        {
+        EditorTabActionKeyPlan::Secrets(secrets_action_plan) => {
             dispatch_editor_secrets_action(editor, op_cache, secrets_action_plan);
         }
-        _ if !matches!(auth_action_plan, EditorAuthActionKeyPlan::NotAuthAction) => {
+        EditorTabActionKeyPlan::Auth(auth_action_plan) => {
             dispatch_editor_auth_action(editor, config, auth_action_plan);
         }
-        KeyCode::Enter => {
-            let plan = editor.enter_key_plan(config, op_available);
-            if let Some(effect) = dispatch_editor_enter_key(editor, config, op_cache, plan) {
+        EditorTabActionKeyPlan::Enter(enter_plan) => {
+            if let Some(effect) = dispatch_editor_enter_key(editor, config, op_cache, enter_plan) {
                 state.request_effect(effect);
             }
         }
-        _ => {}
+        EditorTabActionKeyPlan::Noop => {}
     }
     Ok(InputOutcome::Continue)
 }
