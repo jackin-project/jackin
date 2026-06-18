@@ -167,6 +167,19 @@ pub struct ConsolePendingOpCommitResolution<OpRef> {
     pub origin: ConsolePendingOpCommitOrigin,
 }
 
+pub trait ConsoleAnimationTick {
+    fn tick_active_animation(&mut self) -> bool;
+}
+
+impl<T> ConsoleAnimationTick for Box<T>
+where
+    T: ConsoleAnimationTick + ?Sized,
+{
+    fn tick_active_animation(&mut self) -> bool {
+        self.as_mut().tick_active_animation()
+    }
+}
+
 pub trait ConsoleCreatePreludeModalPresence {
     fn create_prelude_modal_open(&self) -> bool;
 }
@@ -395,6 +408,23 @@ where
 
 impl<CreatePrelude, Editor, Settings> ConsoleManagerStage<CreatePrelude, Editor, Settings>
 where
+    Editor: ConsoleAnimationTick,
+    Settings: ConsoleAnimationTick,
+{
+    pub fn tick_active_animation(&mut self) -> bool {
+        match self {
+            Self::Editor(editor) => editor.tick_active_animation(),
+            Self::Settings(settings) => settings.tick_active_animation(),
+            Self::List
+            | Self::CreatePrelude(_)
+            | Self::ConfirmDelete { .. }
+            | Self::ConfirmInstancePurge { .. } => false,
+        }
+    }
+}
+
+impl<CreatePrelude, Editor, Settings> ConsoleManagerStage<CreatePrelude, Editor, Settings>
+where
     CreatePrelude: ConsoleCreatePreludeDebugFacts,
     Editor: ConsoleEditorDebugFacts,
     Settings: ConsoleSettingsDebugFacts,
@@ -408,6 +438,82 @@ where
             Self::CreatePrelude(prelude) => prelude.create_prelude_stage_debug(),
             Self::ConfirmDelete { .. } => ConsoleStageDebug::ConfirmDelete,
             Self::ConfirmInstancePurge { .. } => ConsoleStageDebug::ConfirmInstancePurge,
+        }
+    }
+}
+
+impl<
+    TextInputTarget,
+    TextInputState,
+    FileBrowserTarget,
+    FileBrowserState,
+    MountDstChoiceState,
+    WorkdirPickState,
+    ConfirmTarget,
+    ConfirmState,
+    SaveDiscardState,
+    GithubPickerState,
+    ConfirmSaveState,
+    ErrorPopupState,
+    ContainerInfoState,
+    StatusPopupState,
+    OpPickerState,
+    RolePickerState,
+    SourcePickerState,
+    ScopePickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+    SecretsScopeTag,
+> ConsoleAnimationTick
+    for ConsoleModal<
+        TextInputTarget,
+        TextInputState,
+        FileBrowserTarget,
+        FileBrowserState,
+        MountDstChoiceState,
+        WorkdirPickState,
+        ConfirmTarget,
+        ConfirmState,
+        SaveDiscardState,
+        GithubPickerState,
+        ConfirmSaveState,
+        ErrorPopupState,
+        ContainerInfoState,
+        StatusPopupState,
+        OpPickerState,
+        RolePickerState,
+        SourcePickerState,
+        ScopePickerState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+        SecretsScopeTag,
+    >
+where
+    OpPickerState: ConsoleAnimationTick,
+{
+    fn tick_active_animation(&mut self) -> bool {
+        match self {
+            Self::OpPicker { state } => state.tick_active_animation(),
+            Self::TextInput { .. }
+            | Self::FileBrowser { .. }
+            | Self::MountDstChoice { .. }
+            | Self::WorkdirPick { .. }
+            | Self::Confirm { .. }
+            | Self::SaveDiscardCancel { .. }
+            | Self::GithubPicker { .. }
+            | Self::ConfirmSave { .. }
+            | Self::ErrorPopup { .. }
+            | Self::ContainerInfo { .. }
+            | Self::StatusPopup { .. }
+            | Self::RolePicker { .. }
+            | Self::RoleOverridePicker { .. }
+            | Self::AuthRolePicker { .. }
+            | Self::SourcePicker { .. }
+            | Self::AuthSourcePicker { .. }
+            | Self::ScopePicker { .. }
+            | Self::AuthForm { .. } => false,
         }
     }
 }
@@ -2099,12 +2205,13 @@ mod tests {
     use crate::tui::screens::editor::model::CreateStep;
 
     use super::{
-        ConsoleApp, ConsoleAppStage, ConsoleCreatePreludeState, ConsoleInputDispatchFacts,
-        ConsoleInputDispatchPlan, ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal,
-        ConsoleStageModalFacts, CreatePreludeCompletionStatus, CreatePreludeFileBrowserPlan,
-        CreatePreludeKeyPlan, CreatePreludeModalStep, CreatePreludeMountDstChoicePlan,
-        CreatePreludeTextInputDstPlan, CreatePreludeTextInputNamePlan,
-        CreatePreludeWorkdirCancelPlan, CreatePreludeWorkdirPickPlan, console_input_dispatch_plan,
+        ConsoleAnimationTick, ConsoleApp, ConsoleAppStage, ConsoleCreatePreludeState,
+        ConsoleInputDispatchFacts, ConsoleInputDispatchPlan, ConsoleManagerStage,
+        ConsoleManagerStageRoute, ConsoleModal, ConsoleStageModalFacts,
+        CreatePreludeCompletionStatus, CreatePreludeFileBrowserPlan, CreatePreludeKeyPlan,
+        CreatePreludeModalStep, CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan,
+        CreatePreludeTextInputNamePlan, CreatePreludeWorkdirCancelPlan,
+        CreatePreludeWorkdirPickPlan, console_input_dispatch_plan,
         create_prelude_completion_status, create_prelude_file_browser_plan,
         create_prelude_key_plan, create_prelude_modal_step, create_prelude_mount_dst_choice_plan,
         create_prelude_text_input_dst_plan, create_prelude_text_input_name_plan,
@@ -3085,6 +3192,12 @@ mod tests {
         }
     }
 
+    impl ConsoleAnimationTick for TestOpPicker {
+        fn tick_active_animation(&mut self) -> bool {
+            self.0
+        }
+    }
+
     impl ModalOpPickerFooterState for TestOpPicker {
         fn footer_mode(&self, include_refresh: bool) -> ModalFooterMode {
             ModalFooterMode::FilteredPicker { include_refresh }
@@ -3356,6 +3469,56 @@ mod tests {
             RectTestModal::ErrorPopup { state: TestError }.shared_scroll_target(),
             crate::tui::update::SharedModalScrollTarget::None
         );
+    }
+
+    #[test]
+    fn console_modal_ticks_op_picker_animation_only() {
+        let mut op_picker = RectTestModal::OpPicker {
+            state: Box::new(TestOpPicker(true)),
+        };
+        assert!(op_picker.tick_active_animation());
+
+        let mut idle_op_picker = RectTestModal::OpPicker {
+            state: Box::new(TestOpPicker(false)),
+        };
+        assert!(!idle_op_picker.tick_active_animation());
+
+        let mut error = RectTestModal::ErrorPopup { state: TestError };
+        assert!(!error.tick_active_animation());
+    }
+
+    struct TestAnimationTick(bool);
+
+    impl ConsoleAnimationTick for TestAnimationTick {
+        fn tick_active_animation(&mut self) -> bool {
+            self.0
+        }
+    }
+
+    #[test]
+    fn console_manager_stage_ticks_editor_and_settings_only() {
+        type Stage = ConsoleManagerStage<(), TestAnimationTick, TestAnimationTick>;
+
+        let mut editor = Stage::Editor(TestAnimationTick(true));
+        assert!(editor.tick_active_animation());
+
+        let mut settings = Stage::Settings(TestAnimationTick(true));
+        assert!(settings.tick_active_animation());
+
+        let mut idle_editor = Stage::Editor(TestAnimationTick(false));
+        assert!(!idle_editor.tick_active_animation());
+
+        let mut list = Stage::List;
+        assert!(!list.tick_active_animation());
+
+        let mut create = Stage::CreatePrelude(());
+        assert!(!create.tick_active_animation());
+
+        let mut delete = Stage::ConfirmDelete {
+            name: "workspace".to_owned(),
+            state: jackin_tui::components::ConfirmState::new("Delete?"),
+        };
+        assert!(!delete.tick_active_animation());
     }
 
     #[test]

@@ -349,6 +349,42 @@ impl<
     PendingRoleLoad,
     PendingDriftCheck,
     PendingIsolationCleanup,
+    PendingOpCommit,
+> crate::tui::app::ConsoleAnimationTick
+    for EditorState<
+        WorkspaceConfig,
+        MountInfoCache,
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >
+where
+    Modal: crate::tui::app::ConsoleAnimationTick,
+{
+    fn tick_active_animation(&mut self) -> bool {
+        self.modal
+            .as_mut()
+            .is_some_and(crate::tui::app::ConsoleAnimationTick::tick_active_animation)
+    }
+}
+
+impl<
+    WorkspaceConfig,
+    MountInfoCache,
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
     OpRef,
 > crate::tui::app::ConsolePendingOpCommit
     for EditorState<

@@ -86,6 +86,18 @@ pub trait SettingsMountsTakeExit {
     fn take_mounts_exit_requested(&mut self) -> bool;
 }
 
+pub trait SettingsModalSlot {
+    type Modal;
+
+    fn modal_mut(&mut self) -> Option<&mut Self::Modal>;
+}
+
+pub trait SettingsAuthModalSlot {
+    type Modal;
+
+    fn modal_mut(&mut self) -> Option<&mut Self::Modal>;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsAfterEventOutcome {
     pub exit_requested: bool,
@@ -245,6 +257,26 @@ where
 
     fn poll_pending_op_commit(&mut self) -> Option<(Self::OpRef, anyhow::Result<()>)> {
         self.auth.poll_pending_op_commit()
+    }
+}
+
+impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> crate::tui::app::ConsoleAnimationTick
+    for SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
+where
+    Env: SettingsModalSlot,
+    Env::Modal: crate::tui::app::ConsoleAnimationTick,
+    Auth: SettingsAuthModalSlot,
+    Auth::Modal: crate::tui::app::ConsoleAnimationTick,
+{
+    fn tick_active_animation(&mut self) -> bool {
+        let mut dirty = false;
+        if let Some(modal) = self.env.modal_mut() {
+            dirty |= modal.tick_active_animation();
+        }
+        if let Some(modal) = self.auth.modal_mut() {
+            dirty |= modal.tick_active_animation();
+        }
+        dirty
     }
 }
 
@@ -513,6 +545,37 @@ pub enum SettingsEnvModal<
         action: SettingsEnvConfirm,
         state: ConfirmState,
     },
+}
+
+impl<
+    TextInputState,
+    SourcePickerState,
+    OpPickerState,
+    RolePickerState,
+    ScopePickerState,
+    ConfirmState,
+> crate::tui::app::ConsoleAnimationTick
+    for SettingsEnvModal<
+        TextInputState,
+        SourcePickerState,
+        OpPickerState,
+        RolePickerState,
+        ScopePickerState,
+        ConfirmState,
+    >
+where
+    OpPickerState: crate::tui::app::ConsoleAnimationTick,
+{
+    fn tick_active_animation(&mut self) -> bool {
+        match self {
+            Self::OpPicker { state } => state.tick_active_animation(),
+            Self::Text { .. }
+            | Self::SourcePicker { .. }
+            | Self::RolePicker { .. }
+            | Self::ScopePicker { .. }
+            | Self::Confirm { .. } => false,
+        }
+    }
 }
 
 impl<
@@ -860,6 +923,14 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
     pub fn is_unmasked(&self, scope: &SettingsEnvScope, key: &str) -> bool {
         self.unmasked_rows
             .contains(&(scope.clone(), key.to_owned()))
+    }
+}
+
+impl<EnvValue, Modal> SettingsModalSlot for SettingsEnvState<EnvValue, Modal> {
+    type Modal = Modal;
+
+    fn modal_mut(&mut self) -> Option<&mut Self::Modal> {
+        self.modal.as_mut()
     }
 }
 
@@ -1456,6 +1527,38 @@ impl<
     AuthFormTarget,
     AuthForm,
     AuthFormFocus,
+> crate::tui::app::ConsoleAnimationTick
+    for SettingsAuthModal<
+        TextInputState,
+        SourcePickerState,
+        OpPickerState,
+        FileBrowserState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+    >
+where
+    OpPickerState: crate::tui::app::ConsoleAnimationTick,
+{
+    fn tick_active_animation(&mut self) -> bool {
+        match self {
+            Self::OpPicker { state } => state.tick_active_animation(),
+            Self::TextInput { .. }
+            | Self::SourcePicker { .. }
+            | Self::SourceFolderPicker { .. }
+            | Self::AuthForm { .. } => false,
+        }
+    }
+}
+
+impl<
+    TextInputState,
+    SourcePickerState,
+    OpPickerState,
+    FileBrowserState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
 >
     SettingsAuthModal<
         TextInputState,
@@ -1806,6 +1909,16 @@ impl<EnvValue, Modal, OpRef> crate::tui::app::ConsolePendingOpCommit
         };
         let pending = self.pending_op_commit.take()?;
         Some((pending.op_ref, result))
+    }
+}
+
+impl<EnvValue, Modal, PendingOpCommit> SettingsAuthModalSlot
+    for SettingsAuthState<EnvValue, Modal, PendingOpCommit>
+{
+    type Modal = Modal;
+
+    fn modal_mut(&mut self) -> Option<&mut Self::Modal> {
+        self.modal.as_mut()
     }
 }
 

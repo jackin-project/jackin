@@ -7,6 +7,7 @@ use ratatui::layout::Rect;
 use crate::console::domain::InstanceRefreshSnapshot;
 use crate::console::tui::effect::ManagerEffect;
 use jackin_config::AppConfig;
+use jackin_console::tui::app::ConsoleAnimationTick;
 use jackin_console::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
 use jackin_console::tui::screens::workspaces::model::hovered_list_row;
 use jackin_console::tui::screens::workspaces::update::{
@@ -28,8 +29,8 @@ use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 use super::{
     DEFAULT_SPLIT_PCT, ManagerListRow, ManagerStage, ManagerState, Modal, MountInfoCache,
     MountInfoRefreshTarget, MountScrollFocus, PendingDriftCheck, PendingIsolationCleanup,
-    PendingMountInfoRefresh, PendingRoleLoad, PendingTokenGenerate, SettingsAuthModal,
-    SettingsEnvModal, WorkspaceSummary, active_instances_matching,
+    PendingMountInfoRefresh, PendingRoleLoad, PendingTokenGenerate, WorkspaceSummary,
+    active_instances_matching,
 };
 
 impl ManagerState<'_> {
@@ -778,28 +779,10 @@ impl ManagerState<'_> {
 
     pub(crate) fn tick_active_animation(&mut self) -> bool {
         let mut dirty = false;
-        if let Some(Modal::OpPicker { state }) = self.list_modal.as_mut() {
-            dirty |= state.tick();
+        if let Some(modal) = self.list_modal.as_mut() {
+            dirty |= modal.tick_active_animation();
         }
-        match &mut self.stage {
-            ManagerStage::Editor(editor) => {
-                if let Some(Modal::OpPicker { state }) = editor.modal.as_mut() {
-                    dirty |= state.tick();
-                }
-            }
-            ManagerStage::Settings(settings) => {
-                if let Some(SettingsEnvModal::OpPicker { state }) = settings.env.modal.as_mut() {
-                    dirty |= state.tick();
-                }
-                if let Some(SettingsAuthModal::OpPicker { state }) = settings.auth.modal_mut() {
-                    dirty |= state.tick();
-                }
-            }
-            ManagerStage::List
-            | ManagerStage::CreatePrelude(_)
-            | ManagerStage::ConfirmDelete { .. }
-            | ManagerStage::ConfirmInstancePurge { .. } => {}
-        }
+        dirty |= self.stage.tick_active_animation();
         dirty
     }
 }
