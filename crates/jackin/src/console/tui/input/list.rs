@@ -14,9 +14,7 @@ use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
 use jackin_console::tui::components::error_popup::{
     instance_unavailable_error_message, instance_unavailable_error_title, no_instance_error_title,
-    no_instance_state_for_workspace_message, no_purgeable_instance_for_workspace_message,
-    no_recoverable_instance_for_workspace_message, no_recoverable_instance_selected_message,
-    no_running_instance_for_workspace_message, no_running_instance_to_stop_message,
+    no_purgeable_instance_for_workspace_message, no_recoverable_instance_selected_message,
 };
 use jackin_console::tui::components::github_picker::{GithubOpenPlan, github_open_plan};
 use jackin_console::tui::components::provider_picker::ProviderPickerOutcome;
@@ -28,9 +26,9 @@ use jackin_console::tui::screens::workspaces::update::{
     WorkspaceListHorizontalPlan, WorkspaceListKeyPlan, WorkspaceListNewSessionPlan,
     is_preview_pane_entry_target, preview_pane_action_plan, selected_instance_action_plan,
     selected_instance_container_for_action, selected_instance_purge_confirm_plan,
-    should_enter_preview_pane, workspace_list_enter_plan, workspace_list_horizontal_plan,
-    workspace_list_key_plan, workspace_list_new_session_plan, workspace_list_saved_workspace_index,
-    workspace_list_settings_available,
+    should_enter_preview_pane, workspace_instance_empty_message, workspace_list_enter_plan,
+    workspace_list_horizontal_plan, workspace_list_key_plan, workspace_list_new_session_plan,
+    workspace_list_saved_workspace_index, workspace_list_settings_available,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
@@ -193,32 +191,16 @@ pub(super) fn handle_list_key(
 fn console_instance_action_and_empty_message(
     action: WorkspaceInstanceAction,
 ) -> (ConsoleInstanceAction, &'static str) {
-    match action {
-        WorkspaceInstanceAction::Reconnect => (
-            ConsoleInstanceAction::Reconnect,
-            no_recoverable_instance_for_workspace_message(),
-        ),
-        WorkspaceInstanceAction::NewSession => (
-            ConsoleInstanceAction::NewSession,
-            no_running_instance_for_workspace_message(),
-        ),
-        WorkspaceInstanceAction::Shell => (
-            ConsoleInstanceAction::Shell,
-            no_running_instance_for_workspace_message(),
-        ),
-        WorkspaceInstanceAction::Inspect => (
-            ConsoleInstanceAction::Inspect,
-            no_instance_state_for_workspace_message(),
-        ),
-        WorkspaceInstanceAction::Stop => (
-            ConsoleInstanceAction::Stop,
-            no_running_instance_to_stop_message(),
-        ),
-        WorkspaceInstanceAction::Purge => (
-            ConsoleInstanceAction::Purge,
-            no_purgeable_instance_for_workspace_message(),
-        ),
-    }
+    let action_message = workspace_instance_empty_message(action);
+    let action = match action {
+        WorkspaceInstanceAction::Reconnect => ConsoleInstanceAction::Reconnect,
+        WorkspaceInstanceAction::NewSession => ConsoleInstanceAction::NewSession,
+        WorkspaceInstanceAction::Shell => ConsoleInstanceAction::Shell,
+        WorkspaceInstanceAction::Inspect => ConsoleInstanceAction::Inspect,
+        WorkspaceInstanceAction::Stop => ConsoleInstanceAction::Stop,
+        WorkspaceInstanceAction::Purge => ConsoleInstanceAction::Purge,
+    };
+    (action, action_message)
 }
 
 fn clamp_list_scroll_after_key(

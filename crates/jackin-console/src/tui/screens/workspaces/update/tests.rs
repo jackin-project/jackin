@@ -1,5 +1,10 @@
 //! Tests for `update`.
 use super::*;
+use crate::tui::components::error_popup::{
+    no_instance_state_for_workspace_message, no_purgeable_instance_for_workspace_message,
+    no_recoverable_instance_for_workspace_message, no_running_instance_for_workspace_message,
+    no_running_instance_to_stop_message,
+};
 use ratatui::layout::Rect;
 
 #[test]
@@ -272,6 +277,34 @@ fn workspace_list_key_plan_routes_navigation_and_actions() {
     assert_eq!(
         workspace_list_key_plan(KeyCode::Char('?'), false),
         WorkspaceListKeyPlan::Continue
+    );
+}
+
+#[test]
+fn workspace_instance_empty_message_routes_action_messages() {
+    assert_eq!(
+        workspace_instance_empty_message(WorkspaceInstanceAction::Reconnect),
+        no_recoverable_instance_for_workspace_message()
+    );
+    assert_eq!(
+        workspace_instance_empty_message(WorkspaceInstanceAction::NewSession),
+        no_running_instance_for_workspace_message()
+    );
+    assert_eq!(
+        workspace_instance_empty_message(WorkspaceInstanceAction::Shell),
+        no_running_instance_for_workspace_message()
+    );
+    assert_eq!(
+        workspace_instance_empty_message(WorkspaceInstanceAction::Inspect),
+        no_instance_state_for_workspace_message()
+    );
+    assert_eq!(
+        workspace_instance_empty_message(WorkspaceInstanceAction::Stop),
+        no_running_instance_to_stop_message()
+    );
+    assert_eq!(
+        workspace_instance_empty_message(WorkspaceInstanceAction::Purge),
+        no_purgeable_instance_for_workspace_message()
     );
 }
 

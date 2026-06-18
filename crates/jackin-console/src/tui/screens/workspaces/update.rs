@@ -11,6 +11,11 @@ use jackin_tui::ModalOutcome;
 use ratatui::layout::Rect;
 
 use super::model::ManagerListRow;
+use crate::tui::components::error_popup::{
+    no_instance_state_for_workspace_message, no_purgeable_instance_for_workspace_message,
+    no_recoverable_instance_for_workspace_message, no_running_instance_for_workspace_message,
+    no_running_instance_to_stop_message,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceInstanceAction {
@@ -20,6 +25,19 @@ pub enum WorkspaceInstanceAction {
     Inspect,
     Stop,
     Purge,
+}
+
+#[must_use]
+pub fn workspace_instance_empty_message(action: WorkspaceInstanceAction) -> &'static str {
+    match action {
+        WorkspaceInstanceAction::Reconnect => no_recoverable_instance_for_workspace_message(),
+        WorkspaceInstanceAction::NewSession | WorkspaceInstanceAction::Shell => {
+            no_running_instance_for_workspace_message()
+        }
+        WorkspaceInstanceAction::Inspect => no_instance_state_for_workspace_message(),
+        WorkspaceInstanceAction::Stop => no_running_instance_to_stop_message(),
+        WorkspaceInstanceAction::Purge => no_purgeable_instance_for_workspace_message(),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
