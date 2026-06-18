@@ -8,6 +8,7 @@ use crate::tui::screens::editor::model::EditorState;
 use jackin_config::{
     AgentAuthConfig, AppConfig, AuthForwardMode, EnvValue, WorkspaceConfig, WorkspaceRoleOverride,
 };
+use jackin_core::env_model;
 use std::path::PathBuf;
 
 type TestEditorState =
@@ -111,7 +112,7 @@ fn workspace_save_preview_lists_auth_mode_and_credential_without_secret_value() 
         ..Default::default()
     });
     pending.env.insert(
-        "ANTHROPIC_API_KEY".to_owned(),
+        env_model::ANTHROPIC_API_KEY_ENV_NAME.to_owned(),
         EnvValue::Plain("super-secret".to_owned()),
     );
 

@@ -232,6 +232,50 @@ fn selected_instance_container_for_action_rejects_disallowed_status() {
 }
 
 #[test]
+fn workspace_list_key_plan_routes_navigation_and_actions() {
+    assert_eq!(
+        workspace_list_key_plan(KeyCode::Esc, false),
+        WorkspaceListKeyPlan::Exit
+    );
+    assert_eq!(
+        workspace_list_key_plan(KeyCode::Left, false),
+        WorkspaceListKeyPlan::HorizontalTreeOrScroll { delta: -8 }
+    );
+    assert_eq!(
+        workspace_list_key_plan(KeyCode::Char('l'), false),
+        WorkspaceListKeyPlan::ScrollHorizontal { delta: 8 }
+    );
+    assert_eq!(
+        workspace_list_key_plan(KeyCode::Up, false),
+        WorkspaceListKeyPlan::MoveSelection { delta: -1 }
+    );
+    assert_eq!(
+        workspace_list_key_plan(KeyCode::Char('J'), true),
+        WorkspaceListKeyPlan::ScrollFocusedVertical { delta: 3 }
+    );
+    assert_eq!(
+        workspace_list_key_plan(KeyCode::Enter, false),
+        WorkspaceListKeyPlan::Enter
+    );
+    assert_eq!(
+        workspace_list_key_plan(KeyCode::Char('r'), false),
+        WorkspaceListKeyPlan::InstanceAction(WorkspaceInstanceAction::Reconnect)
+    );
+    assert_eq!(
+        workspace_list_key_plan(KeyCode::Char('A'), false),
+        WorkspaceListKeyPlan::InstanceAction(WorkspaceInstanceAction::NewSession)
+    );
+    assert_eq!(
+        workspace_list_key_plan(KeyCode::Char('p'), false),
+        WorkspaceListKeyPlan::ConfirmPurge
+    );
+    assert_eq!(
+        workspace_list_key_plan(KeyCode::Char('?'), false),
+        WorkspaceListKeyPlan::Continue
+    );
+}
+
+#[test]
 fn workspace_list_new_session_plan_preserves_existing_instance_only_route() {
     assert_eq!(
         workspace_list_new_session_plan(ManagerListRow::WorkspaceInstance(2, 5)),

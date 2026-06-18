@@ -23,14 +23,14 @@ use jackin_console::tui::components::provider_picker::ProviderPickerOutcome;
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
     PreviewPaneKeyPlan, SelectedInstanceActionPlan, SelectedInstancePurgeConfirmPlan,
-    WorkspaceInstanceLookupEntry, WorkspaceInstanceLookupScope, WorkspaceInstanceScopePlan,
-    WorkspaceInstanceStatus, WorkspaceListEnterPlan, WorkspaceListHorizontalPlan,
-    WorkspaceListNewSessionPlan, is_preview_pane_entry_target, preview_pane_key_plan,
-    preview_pane_selected_index, selected_instance_action_plan,
-    selected_instance_container_for_action, selected_instance_purge_confirm_plan,
-    should_enter_preview_pane, workspace_list_enter_plan, workspace_list_horizontal_plan,
-    workspace_list_new_session_plan, workspace_list_saved_workspace_index,
-    workspace_list_settings_available,
+    WorkspaceInstanceAction, WorkspaceInstanceLookupEntry, WorkspaceInstanceLookupScope,
+    WorkspaceInstanceScopePlan, WorkspaceInstanceStatus, WorkspaceListEnterPlan,
+    WorkspaceListHorizontalPlan, WorkspaceListKeyPlan, WorkspaceListNewSessionPlan,
+    is_preview_pane_entry_target, preview_pane_key_plan, preview_pane_selected_index,
+    selected_instance_action_plan, selected_instance_container_for_action,
+    selected_instance_purge_confirm_plan, should_enter_preview_pane, workspace_list_enter_plan,
+    workspace_list_horizontal_plan, workspace_list_key_plan, workspace_list_new_session_plan,
+    workspace_list_saved_workspace_index, workspace_list_settings_available,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
@@ -76,48 +76,30 @@ pub(super) fn handle_list_key(
         dispatch_manager(state, ManagerMessage::EnterPreview);
         return Ok(InputOutcome::Continue);
     }
-    match key.code {
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') => Ok(InputOutcome::ExitJackin),
+    match workspace_list_key_plan(key.code, state.list_scroll_focus().is_some()) {
+        WorkspaceListKeyPlan::Exit => Ok(InputOutcome::ExitJackin),
         // Left/Right arrows: tree expand/collapse when the selected row owns
         // that direction, otherwise horizontal scroll if the focused list
         // overflows. h/l remain alternate horizontal-scroll keys.
-        KeyCode::Left => {
-            handle_list_left_right(state, config, cwd, -8);
+        WorkspaceListKeyPlan::HorizontalTreeOrScroll { delta } => {
+            handle_list_left_right(state, config, cwd, delta);
             Ok(InputOutcome::Continue)
         }
-        KeyCode::Right => {
-            handle_list_left_right(state, config, cwd, 8);
-            Ok(InputOutcome::Continue)
-        }
-        KeyCode::Char('h' | 'H') => {
-            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(-8));
+        WorkspaceListKeyPlan::ScrollHorizontal { delta } => {
+            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(delta));
             clamp_list_scroll_after_key(state, config, cwd);
             Ok(InputOutcome::Continue)
         }
-        KeyCode::Char('l' | 'L') => {
-            dispatch_manager(state, ManagerMessage::ScrollListHorizontal(8));
+        WorkspaceListKeyPlan::MoveSelection { delta } => {
+            dispatch_manager(state, ManagerMessage::MoveListSelection(delta));
+            Ok(InputOutcome::Continue)
+        }
+        WorkspaceListKeyPlan::ScrollFocusedVertical { delta } => {
+            dispatch_manager(state, ManagerMessage::ScrollFocusedListBlockVertical(delta));
             clamp_list_scroll_after_key(state, config, cwd);
             Ok(InputOutcome::Continue)
         }
-        KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            if state.list_scroll_focus().is_some() {
-                dispatch_manager(state, ManagerMessage::ScrollFocusedListBlockVertical(-3));
-                clamp_list_scroll_after_key(state, config, cwd);
-            } else {
-                dispatch_manager(state, ManagerMessage::MoveListSelection(-1));
-            }
-            Ok(InputOutcome::Continue)
-        }
-        KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            if state.list_scroll_focus().is_some() {
-                dispatch_manager(state, ManagerMessage::ScrollFocusedListBlockVertical(3));
-                clamp_list_scroll_after_key(state, config, cwd);
-            } else {
-                dispatch_manager(state, ManagerMessage::MoveListSelection(1));
-            }
-            Ok(InputOutcome::Continue)
-        }
-        KeyCode::Enter => match workspace_list_enter_plan(state.selected_row()) {
+        WorkspaceListKeyPlan::Enter => match workspace_list_enter_plan(state.selected_row()) {
             WorkspaceListEnterPlan::LaunchCurrentDir => Ok(InputOutcome::LaunchCurrentDir),
             WorkspaceListEnterPlan::CreateNewWorkspace => {
                 state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowser);
@@ -135,7 +117,7 @@ pub(super) fn handle_list_key(
                 no_recoverable_instance_selected_message(),
             )),
         },
-        KeyCode::Char('e' | 'E') => {
+        WorkspaceListKeyPlan::Edit => {
             if let Some(i) = workspace_list_saved_workspace_index(state.selected_row())
                 && let Some(summary) = state.workspaces.get(i)
             {
@@ -149,7 +131,7 @@ pub(super) fn handle_list_key(
             }
             Ok(InputOutcome::Continue)
         }
-        KeyCode::Char('n' | 'N') => {
+        WorkspaceListKeyPlan::NewSession => {
             match workspace_list_new_session_plan(state.selected_row()) {
                 WorkspaceListNewSessionPlan::ExistingWorkspaceInstance {
                     workspace_idx,
@@ -180,7 +162,7 @@ pub(super) fn handle_list_key(
             }
             Ok(InputOutcome::Continue)
         }
-        KeyCode::Char('d' | 'D') => {
+        WorkspaceListKeyPlan::Delete => {
             if let Some(i) = workspace_list_saved_workspace_index(state.selected_row())
                 && let Some(ws) = state.workspaces.get(i)
             {
@@ -189,34 +171,13 @@ pub(super) fn handle_list_key(
             }
             Ok(InputOutcome::Continue)
         }
-        KeyCode::Char('o' | 'O') => Ok(handle_list_open_in_github(state, config)),
-        KeyCode::Char('r' | 'R') => Ok(instance_action_outcome(
-            state,
-            ConsoleInstanceAction::Reconnect,
-            no_recoverable_instance_for_workspace_message(),
-        )),
-        KeyCode::Char('a' | 'A') => Ok(instance_action_outcome(
-            state,
-            ConsoleInstanceAction::NewSession,
-            no_running_instance_for_workspace_message(),
-        )),
-        KeyCode::Char('x' | 'X') => Ok(instance_action_outcome(
-            state,
-            ConsoleInstanceAction::Shell,
-            no_running_instance_for_workspace_message(),
-        )),
-        KeyCode::Char('i' | 'I') => Ok(instance_action_outcome(
-            state,
-            ConsoleInstanceAction::Inspect,
-            no_instance_state_for_workspace_message(),
-        )),
-        KeyCode::Char('p' | 'P') => Ok(confirm_purge_outcome(state)),
-        KeyCode::Char('t' | 'T') => Ok(instance_action_outcome(
-            state,
-            ConsoleInstanceAction::Stop,
-            no_running_instance_to_stop_message(),
-        )),
-        KeyCode::Char('s' | 'S') => {
+        WorkspaceListKeyPlan::OpenGithub => Ok(handle_list_open_in_github(state, config)),
+        WorkspaceListKeyPlan::InstanceAction(action) => {
+            let (action, message) = console_instance_action_and_empty_message(action);
+            Ok(instance_action_outcome(state, action, message))
+        }
+        WorkspaceListKeyPlan::ConfirmPurge => Ok(confirm_purge_outcome(state)),
+        WorkspaceListKeyPlan::Settings => {
             if workspace_list_settings_available(state.selected_row()) {
                 dispatch_manager(
                     state,
@@ -225,7 +186,38 @@ pub(super) fn handle_list_key(
             }
             Ok(InputOutcome::Continue)
         }
-        _ => Ok(InputOutcome::Continue),
+        WorkspaceListKeyPlan::Continue => Ok(InputOutcome::Continue),
+    }
+}
+
+fn console_instance_action_and_empty_message(
+    action: WorkspaceInstanceAction,
+) -> (ConsoleInstanceAction, &'static str) {
+    match action {
+        WorkspaceInstanceAction::Reconnect => (
+            ConsoleInstanceAction::Reconnect,
+            no_recoverable_instance_for_workspace_message(),
+        ),
+        WorkspaceInstanceAction::NewSession => (
+            ConsoleInstanceAction::NewSession,
+            no_running_instance_for_workspace_message(),
+        ),
+        WorkspaceInstanceAction::Shell => (
+            ConsoleInstanceAction::Shell,
+            no_running_instance_for_workspace_message(),
+        ),
+        WorkspaceInstanceAction::Inspect => (
+            ConsoleInstanceAction::Inspect,
+            no_instance_state_for_workspace_message(),
+        ),
+        WorkspaceInstanceAction::Stop => (
+            ConsoleInstanceAction::Stop,
+            no_running_instance_to_stop_message(),
+        ),
+        WorkspaceInstanceAction::Purge => (
+            ConsoleInstanceAction::Purge,
+            no_purgeable_instance_for_workspace_message(),
+        ),
     }
 }
 

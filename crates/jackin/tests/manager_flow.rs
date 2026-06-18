@@ -26,6 +26,7 @@ use jackin::{
     workspace::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride},
 };
 use jackin_console::tui::auth::AuthKind;
+use jackin_core::env_model;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use tempfile::tempdir;
@@ -611,7 +612,9 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         "form commit must set workspace × claude mode in pending"
     );
     assert!(
-        pending.env.contains_key("ANTHROPIC_API_KEY"),
+        pending
+            .env
+            .contains_key(env_model::ANTHROPIC_API_KEY_ENV_NAME),
         "form commit must set credential env var in pending"
     );
 
@@ -645,7 +648,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     );
     let env_value = ws_on_disk
         .env
-        .get("ANTHROPIC_API_KEY")
+        .get(env_model::ANTHROPIC_API_KEY_ENV_NAME)
         .expect("reload must see ANTHROPIC_API_KEY in workspace env");
     match env_value {
         jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "sk-ant-test"),
@@ -667,7 +670,10 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         "raw TOML must carry auth_forward = \"api_key\"; got:\n{toml}"
     );
     assert!(
-        toml.contains(r#"ANTHROPIC_API_KEY = "sk-ant-test""#),
+        toml.contains(&format!(
+            r#"{} = "sk-ant-test""#,
+            env_model::ANTHROPIC_API_KEY_ENV_NAME
+        )),
         "raw TOML must carry the credential env var; got:\n{toml}"
     );
     Ok(())
@@ -724,7 +730,7 @@ fn auth_credential_source_enter_opens_source_picker() -> Result<()> {
             editor(&state).modal
         );
     };
-    assert_eq!(picker.key, "ANTHROPIC_API_KEY");
+    assert_eq!(picker.key, env_model::ANTHROPIC_API_KEY_ENV_NAME);
 
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
     assert!(
@@ -1051,7 +1057,7 @@ fn auth_workspace_source_d_is_noop() -> Result<()> {
         ..Default::default()
     });
     ws.env.insert(
-        "ANTHROPIC_API_KEY".into(),
+        env_model::ANTHROPIC_API_KEY_ENV_NAME.into(),
         jackin::operator_env::EnvValue::Plain("k".into()),
     );
 

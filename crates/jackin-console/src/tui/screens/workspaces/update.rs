@@ -126,6 +126,24 @@ pub enum WorkspaceListEnterPlan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceListKeyPlan {
+    Exit,
+    HorizontalTreeOrScroll { delta: i16 },
+    ScrollHorizontal { delta: i16 },
+    MoveSelection { delta: isize },
+    ScrollFocusedVertical { delta: i16 },
+    Enter,
+    Edit,
+    NewSession,
+    Delete,
+    OpenGithub,
+    InstanceAction(WorkspaceInstanceAction),
+    ConfirmPurge,
+    Settings,
+    Continue,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceInstanceScopePlan {
     CurrentDirectory,
     SavedWorkspace(usize),
@@ -177,6 +195,57 @@ pub const fn workspace_list_enter_plan(row: ManagerListRow) -> WorkspaceListEnte
         ManagerListRow::WorkspaceInstance(_, _) | ManagerListRow::CurrentDirectoryInstance(_) => {
             WorkspaceListEnterPlan::InstanceAction
         }
+    }
+}
+
+#[must_use]
+pub const fn workspace_list_key_plan(
+    key: KeyCode,
+    list_scroll_focused: bool,
+) -> WorkspaceListKeyPlan {
+    match key {
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => WorkspaceListKeyPlan::Exit,
+        KeyCode::Left => WorkspaceListKeyPlan::HorizontalTreeOrScroll { delta: -8 },
+        KeyCode::Right => WorkspaceListKeyPlan::HorizontalTreeOrScroll { delta: 8 },
+        KeyCode::Char('h' | 'H') => WorkspaceListKeyPlan::ScrollHorizontal { delta: -8 },
+        KeyCode::Char('l' | 'L') => WorkspaceListKeyPlan::ScrollHorizontal { delta: 8 },
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+            if list_scroll_focused {
+                WorkspaceListKeyPlan::ScrollFocusedVertical { delta: -3 }
+            } else {
+                WorkspaceListKeyPlan::MoveSelection { delta: -1 }
+            }
+        }
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            if list_scroll_focused {
+                WorkspaceListKeyPlan::ScrollFocusedVertical { delta: 3 }
+            } else {
+                WorkspaceListKeyPlan::MoveSelection { delta: 1 }
+            }
+        }
+        KeyCode::Enter => WorkspaceListKeyPlan::Enter,
+        KeyCode::Char('e' | 'E') => WorkspaceListKeyPlan::Edit,
+        KeyCode::Char('n' | 'N') => WorkspaceListKeyPlan::NewSession,
+        KeyCode::Char('d' | 'D') => WorkspaceListKeyPlan::Delete,
+        KeyCode::Char('o' | 'O') => WorkspaceListKeyPlan::OpenGithub,
+        KeyCode::Char('r' | 'R') => {
+            WorkspaceListKeyPlan::InstanceAction(WorkspaceInstanceAction::Reconnect)
+        }
+        KeyCode::Char('a' | 'A') => {
+            WorkspaceListKeyPlan::InstanceAction(WorkspaceInstanceAction::NewSession)
+        }
+        KeyCode::Char('x' | 'X') => {
+            WorkspaceListKeyPlan::InstanceAction(WorkspaceInstanceAction::Shell)
+        }
+        KeyCode::Char('i' | 'I') => {
+            WorkspaceListKeyPlan::InstanceAction(WorkspaceInstanceAction::Inspect)
+        }
+        KeyCode::Char('p' | 'P') => WorkspaceListKeyPlan::ConfirmPurge,
+        KeyCode::Char('t' | 'T') => {
+            WorkspaceListKeyPlan::InstanceAction(WorkspaceInstanceAction::Stop)
+        }
+        KeyCode::Char('s' | 'S') => WorkspaceListKeyPlan::Settings,
+        _ => WorkspaceListKeyPlan::Continue,
     }
 }
 

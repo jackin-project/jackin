@@ -11,7 +11,7 @@ use jackin_config::{
 use jackin_config::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride};
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::components::auth_panel::CredentialInput;
-use jackin_core::OpRef;
+use jackin_core::{OpRef, env_model};
 use jackin_env::OpRunner;
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -204,7 +204,7 @@ fn auth_form_save_persists_workspace_layer_into_pending() {
     let value = editor
         .pending
         .env
-        .get("ANTHROPIC_API_KEY")
+        .get(env_model::ANTHROPIC_API_KEY_ENV_NAME)
         .expect("credential env var must be set");
     match value {
         EnvValue::Plain(s) => assert_eq!(s, "secret"),
@@ -598,7 +598,7 @@ fn auth_form_save_persists_role_layer_into_pending() {
     assert_eq!(cfg.auth_forward, AuthForwardMode::ApiKey);
     let env_val = role_entry
         .env
-        .get("ANTHROPIC_API_KEY")
+        .get(env_model::ANTHROPIC_API_KEY_ENV_NAME)
         .expect("role env credential must be set");
     match env_val {
         EnvValue::Plain(s) => assert_eq!(s, "abc"),

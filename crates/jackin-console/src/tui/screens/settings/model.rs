@@ -2715,7 +2715,10 @@ mod tests {
         let mut state =
             SettingsAuthState::<EnvValue, (), ()>::from_rows_and_github_env(rows, BTreeMap::new());
         state.selected_kind = Some(crate::tui::auth::AuthKind::Claude);
-        let agent_env = BTreeMap::from([(String::from("ANTHROPIC_API_KEY"), "secret".into())]);
+        let agent_env = BTreeMap::from([(
+            String::from(jackin_core::env_model::ANTHROPIC_API_KEY_ENV_NAME),
+            "secret".into(),
+        )]);
 
         state.open_selected_auth_modal(&agent_env, |kind, row, existing| {
             assert_eq!(kind, crate::tui::auth::AuthKind::Claude);
@@ -2773,7 +2776,7 @@ mod tests {
 
         assert_eq!(state.pending[0].mode, crate::tui::auth::AuthMode::Sync);
         assert_eq!(state.pending[0].sync_source_dir, None);
-        assert!(!agent_env.contains_key("ANTHROPIC_API_KEY"));
+        assert!(!agent_env.contains_key(jackin_core::env_model::ANTHROPIC_API_KEY_ENV_NAME));
     }
 
     #[test]
