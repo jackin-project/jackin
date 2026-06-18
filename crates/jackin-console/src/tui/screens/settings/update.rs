@@ -414,6 +414,13 @@ pub enum RolePickerOpenPlan {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GlobalMountGithubOpenPlan {
+    NoSelection,
+    NoGithubUrl,
+    Open(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GlobalMountAddFinalizePlan {
     EmptyDestination(GlobalMountDraft),
     Add {
@@ -755,6 +762,21 @@ pub fn global_mount_role_picker_roles(rows: &[SettingsTrustRow]) -> Vec<RoleSele
 #[must_use]
 pub fn global_mount_role_picker_open_plan(rows: &[SettingsTrustRow]) -> RolePickerOpenPlan {
     role_picker_open_plan(global_mount_role_picker_roles(rows))
+}
+
+#[must_use]
+pub fn global_mount_github_open_plan(
+    rows: &[jackin_config::GlobalMountRow],
+    selected: usize,
+    cache: &crate::mount_info_cache::MountInfoCache,
+) -> GlobalMountGithubOpenPlan {
+    let Some(row) = rows.get(selected) else {
+        return GlobalMountGithubOpenPlan::NoSelection;
+    };
+    match cache.github_web_url(&row.mount.src) {
+        Some(web_url) => GlobalMountGithubOpenPlan::Open(web_url),
+        None => GlobalMountGithubOpenPlan::NoGithubUrl,
+    }
 }
 
 #[must_use]

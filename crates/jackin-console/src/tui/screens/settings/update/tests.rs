@@ -680,6 +680,59 @@ fn global_mount_role_picker_open_plan_requires_roles() {
 }
 
 #[test]
+fn global_mount_github_open_plan_uses_selected_row_cache_entry() {
+    let rows = vec![
+        jackin_config::GlobalMountRow {
+            scope: None,
+            name: "plain".to_owned(),
+            mount: jackin_config::MountConfig {
+                src: "/plain".to_owned(),
+                dst: "/jackin/plain".to_owned(),
+                readonly: false,
+                isolation: jackin_config::MountIsolation::Shared,
+            },
+        },
+        jackin_config::GlobalMountRow {
+            scope: Some("ops".to_owned()),
+            name: "repo".to_owned(),
+            mount: jackin_config::MountConfig {
+                src: "/repo".to_owned(),
+                dst: "/jackin/repo".to_owned(),
+                readonly: true,
+                isolation: jackin_config::MountIsolation::Shared,
+            },
+        },
+    ];
+    let cache = crate::mount_info_cache::MountInfoCache::default();
+    cache.store_entries([
+        ("/plain".to_owned(), crate::mount_info::MountKind::Folder),
+        (
+            "/repo".to_owned(),
+            crate::mount_info::MountKind::Git {
+                branch: crate::mount_info::GitBranch::Named("main".to_owned()),
+                origin: Some(crate::mount_info::GitOrigin::Github {
+                    remote_url: "git@github.com:owner/repo.git".to_owned(),
+                    web_url: "https://github.com/owner/repo/tree/main".to_owned(),
+                }),
+            },
+        ),
+    ]);
+
+    assert_eq!(
+        global_mount_github_open_plan(&rows, 0, &cache),
+        GlobalMountGithubOpenPlan::NoGithubUrl
+    );
+    assert_eq!(
+        global_mount_github_open_plan(&rows, 1, &cache),
+        GlobalMountGithubOpenPlan::Open("https://github.com/owner/repo/tree/main".to_owned())
+    );
+    assert_eq!(
+        global_mount_github_open_plan(&rows, 2, &cache),
+        GlobalMountGithubOpenPlan::NoSelection
+    );
+}
+
+#[test]
 fn settings_env_text_commit_plan_routes_keys_and_values() {
     let role_scope = SettingsEnvScope::Role("ops".to_owned());
     let target = SettingsEnvTextTarget::EnvKey {

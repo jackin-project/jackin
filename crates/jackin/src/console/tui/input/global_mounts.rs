@@ -30,12 +30,12 @@ use jackin_console::tui::mount_display::settings_global_config_mounts_content_wi
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::update::{
     GlobalMountAddFinalizePlan, GlobalMountAddTextApplyPlan, GlobalMountEditTextApplyPlan,
-    GlobalMountScopePickerCommitPlan, GlobalMountTextCommitPlan, RolePickerOpenPlan,
-    SettingsEnvHeaderKeyPlan, SettingsEnvKeyPlan, SettingsEnvOpPickerCommitPlan,
-    SettingsEnvScopePickerCommitPlan, SettingsEnvScopePickerSelection,
-    SettingsEnvSourcePickerCommitPlan, SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan,
-    SettingsGeneralKeyPlan, SettingsGlobalMountsKeyPlan, SettingsShellKeyPlan,
-    SettingsTrustKeyPlan,
+    GlobalMountGithubOpenPlan, GlobalMountScopePickerCommitPlan, GlobalMountTextCommitPlan,
+    RolePickerOpenPlan, SettingsEnvHeaderKeyPlan, SettingsEnvKeyPlan,
+    SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
+    SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
+    SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan, SettingsGeneralKeyPlan,
+    SettingsGlobalMountsKeyPlan, SettingsShellKeyPlan, SettingsTrustKeyPlan,
 };
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -217,24 +217,28 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Remove));
         }
         SettingsGlobalMountsKeyPlan::OpenGithub => {
-            let open_url = {
+            let plan = {
                 let ManagerStage::Settings(settings) = &mut state.stage else {
                     return;
                 };
                 let global = &mut settings.mounts;
-                if let Some(row) = global.pending.get(global.selected) {
-                    if let Some(web_url) = global.mount_info_cache.github_web_url(&row.mount.src) {
-                        Some(web_url)
-                    } else {
-                        global.error = Some(global_mount_no_github_url_message().into());
-                        None
-                    }
-                } else {
-                    None
-                }
+                settings_update::global_mount_github_open_plan(
+                    &global.pending,
+                    global.selected,
+                    &global.mount_info_cache,
+                )
             };
-            if let Some(web_url) = open_url {
-                state.request_effect(ManagerEffect::OpenUrl(web_url));
+            match plan {
+                GlobalMountGithubOpenPlan::NoSelection => {}
+                GlobalMountGithubOpenPlan::NoGithubUrl => {
+                    let ManagerStage::Settings(settings) = &mut state.stage else {
+                        return;
+                    };
+                    settings.mounts.error = Some(global_mount_no_github_url_message().into());
+                }
+                GlobalMountGithubOpenPlan::Open(web_url) => {
+                    state.request_effect(ManagerEffect::OpenUrl(web_url));
+                }
             }
         }
         SettingsGlobalMountsKeyPlan::OpenEdit(target) => open_edit_text(state, target),
