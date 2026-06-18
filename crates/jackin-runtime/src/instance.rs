@@ -587,11 +587,11 @@ impl RoleState {
         let kimi_home_dir = home_dir.join(".kimi-code");
         std::fs::create_dir_all(&kimi_dir)?;
         std::fs::create_dir_all(&kimi_home_dir)?;
-        let effective_source = sync_source_dir
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| host_home.join(".kimi-code"));
-        let (outcome, forward_auth) =
-            Self::provision_kimi_auth_from_source_dir(&kimi_dir, mode, &effective_source)?;
+        let (outcome, forward_auth) = if let Some(source_dir) = sync_source_dir {
+            Self::provision_kimi_auth_from_source_dir(&kimi_dir, mode, source_dir)?
+        } else {
+            Self::provision_kimi_auth(&kimi_dir, mode, host_home)?
+        };
         Ok((KimiAuth { forward_auth }, outcome))
     }
 
