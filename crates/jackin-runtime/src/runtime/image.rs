@@ -2413,7 +2413,7 @@ async fn published_image_is_stale(
     )
 }
 
-// Phase 2: collapsed from 5-arm match to AgentRuntime adapter dispatch.
+// Collapsed from a 5-arm match to AgentRuntime adapter dispatch.
 // `runtime().label()` → display label; `runtime().parse_version(raw)` → semver parse;
 // `version_check::store_version(paths, agent, image, version)` → unified store.
 async fn extract_agent_version(

@@ -172,7 +172,7 @@ pub enum GithubProvisionKind {
 
 /// Runtime state for the selected agent (identity + model override).
 ///
-/// Collapsed from a 5-variant enum to a single struct (Phase 2/3).
+/// Collapsed from a 5-variant enum to a single struct.
 /// Auth paths for provisioned agents are tracked separately on
 /// [`ProvisionedAuth`]. The launch path provisions auth state for every agent
 /// in `manifest.supported_agents()` so each agent's home directory is
@@ -189,9 +189,9 @@ pub struct AgentRuntimeState {
 /// Claude's provisioned auth slot.
 ///
 /// `forward_auth` is `true` only for modes that mount real credential
-/// files (`Sync` / `OAuthToken`); `ApiKey` and `Ignore` leave the
-/// placeholder files on disk but do not mount them, so they reach
-/// the container via env rather than `/jackin/claude/`.
+/// files (`Sync` / `OAuthToken`); `ApiKey` and `Ignore` wipe the
+/// role-state credential files and do not mount them — the agent
+/// authenticates via env var rather than `/jackin/claude/`.
 #[derive(Debug, Clone)]
 pub struct ClaudeAuth {
     pub account_json: PathBuf,
@@ -285,8 +285,8 @@ impl RoleState {
         self.auth.claude.as_ref().map(|c| c.account_json.as_path())
     }
 
-    /// `Some` only when the selected runtime is Claude; the field on
-    /// Manifest model override for Claude, or `None` if not Claude or no override.
+    /// Manifest model override for Claude, or `None` when the selected agent
+    /// is not Claude or when no override is configured.
     #[must_use]
     pub fn claude_model(&self) -> Option<&str> {
         if self.agent_runtime.agent == jackin_core::agent::Agent::Claude {
@@ -430,10 +430,9 @@ impl RoleState {
     /// Provision auth state only for the provided agents.
     ///
     /// Accepts an explicit `provision_agents` list so callers that intentionally
-    /// need only a subset (such as tests or background prewarm) can pass a
-    /// narrower slice. The foreground launch path passes the full
-    /// `manifest.supported_agents()` set; [`Self::prepare`] is a convenience
-    /// wrapper that does the same.
+    /// need only a subset (such as tests) can pass a narrower slice. The
+    /// foreground launch path passes the full `manifest.supported_agents()` set;
+    /// [`Self::prepare`] is a convenience wrapper that does the same.
     #[tracing::instrument(skip_all, fields(container = container_name, agent = agent.slug()))]
     #[expect(
         clippy::too_many_arguments,
@@ -587,7 +586,7 @@ impl RoleState {
             }
         }
 
-        // Single struct construction — no per-variant dispatch needed (Phase 2/3).
+        // Single struct construction — no per-variant dispatch needed.
         let agent_runtime = AgentRuntimeState {
             agent,
             model: manifest.agent_model(agent).map(str::to_owned),
@@ -916,17 +915,31 @@ impl RoleState {
                 )
             })?;
             let dst = bin_dir.join("grok");
-            if std::fs::copy(&src, &dst).is_ok() {
+            match std::fs::copy(&src, &dst) {
+                Err(e) => {
+                    jackin_diagnostics::emit_compact_line(
+                        "grok",
+                        &format!(
+                            "warning: could not stage grok binary at {}: {e}; \
+                             grok will be unavailable in container",
+                            dst.display()
+                        ),
+                    );
+                }
+                Ok(_) => {
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt as _;
                     if let Err(e) =
                         std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o755))
                     {
-                        jackin_diagnostics::debug_log!(
+                        jackin_diagnostics::emit_compact_line(
                             "grok",
-                            "could not make grok binary executable at {}: {e}",
-                            dst.display()
+                            &format!(
+                                "warning: could not make grok binary executable at {}: {e}; \
+                                 grok may fail to start in container",
+                                dst.display()
+                            ),
                         );
                     }
                     let agent_link = bin_dir.join("agent");
@@ -946,6 +959,7 @@ impl RoleState {
                     // mount source for Linux container; copy the binary under both names
                     // so both `grok` and `agent` resolve without symlinks.
                     let _ = std::fs::copy(&dst, bin_dir.join("agent"));
+                }
                 }
             }
         }

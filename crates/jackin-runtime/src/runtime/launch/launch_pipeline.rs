@@ -1282,7 +1282,8 @@ pub(crate) async fn load_role_with(
                         &role_key_owned,
                     )
                 };
-                // Each agent may have an operator-configured sync-source-dir override that replaces host_home for auth sync.
+                // Each agent may have an operator-configured sync-source-dir override
+                // that replaces host_home for auth sync.
                 let resolve_sync_src = |a: jackin_core::agent::Agent| {
                     jackin_config::resolve_sync_source_dir(
                         &config_owned,
