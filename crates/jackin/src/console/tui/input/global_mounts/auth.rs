@@ -160,10 +160,12 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                 auth.start_generating_token();
                 // modal was taken from auth.modal at the start of this fn;
                 // push it directly to preserve the in-progress form state.
-                auth.modal_parents.push(modal);
-                auth.modal = Some(SettingsAuthModal::SourcePicker {
-                    state: generated_token_source_picker_state(op_available),
-                });
+                auth.open_child_modal(
+                    modal,
+                    SettingsAuthModal::SourcePicker {
+                        state: generated_token_source_picker_state(op_available),
+                    },
+                );
                 return SettingsAuthOutcome::Continue;
             }
             let plan = auth_form_key_plan_with_source_folder(
@@ -183,17 +185,21 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                         auth.modal = Some(modal);
                         return SettingsAuthOutcome::Continue;
                     };
-                    auth.modal_parents.push(modal);
-                    auth.modal = Some(SettingsAuthModal::SourcePicker {
-                        state: auth_source_picker_state(env_var, op_available),
-                    });
+                    auth.open_child_modal(
+                        modal,
+                        SettingsAuthModal::SourcePicker {
+                            state: auth_source_picker_state(env_var, op_available),
+                        },
+                    );
                     return SettingsAuthOutcome::Continue;
                 }
                 AuthFormKeyPlan::OpenSourceFolderBrowser => {
                     match jackin_console::services::file_browser::state_from_home_with_hidden() {
                         Ok(state) => {
-                            auth.modal_parents.push(modal);
-                            auth.modal = Some(SettingsAuthModal::SourceFolderPicker { state });
+                            auth.open_child_modal(
+                                modal,
+                                SettingsAuthModal::SourceFolderPicker { state },
+                            );
                         }
                         Err(error) => {
                             auth.set_error(error.to_string());
@@ -447,7 +453,7 @@ pub(in crate::console) fn apply_plain_text_to_settings_auth_form(
 ) {
     let Some(SettingsAuthModal::AuthForm {
         target, mut state, ..
-    }) = auth.modal_parents.pop()
+    }) = auth.pop_parent_modal()
     else {
         crate::debug_log!(
             "auth",
@@ -474,7 +480,7 @@ fn apply_source_folder_to_settings_auth_form(
         mut state,
         literal_buffer,
         ..
-    }) = auth.modal_parents.pop()
+    }) = auth.pop_parent_modal()
     else {
         crate::debug_log!(
             "auth",
@@ -524,7 +530,7 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
         mut state,
         focus,
         literal_buffer,
-    }) = auth.modal_parents.pop()
+    }) = auth.pop_parent_modal()
     else {
         // Mirrors the editor twin's missing-stash breadcrumb: a minted
         // global token with no form to return to would otherwise vanish
@@ -577,7 +583,7 @@ pub(in crate::console) fn apply_op_picker_to_settings_auth_form_committed(
         mut state,
         literal_buffer,
         ..
-    }) = auth.modal_parents.pop()
+    }) = auth.pop_parent_modal()
     else {
         crate::debug_log!(
             "auth",

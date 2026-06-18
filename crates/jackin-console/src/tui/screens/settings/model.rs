@@ -1449,7 +1449,7 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
     }
 
     pub fn restore_pending_auth_form(&mut self) {
-        self.modal = self.modal_parents.pop();
+        self.modal = self.pop_parent_modal();
     }
 
     pub fn set_error(&mut self, error: impl Into<String>) {
@@ -1478,6 +1478,15 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
             self.selected,
             self.row_count(),
         );
+    }
+
+    pub fn open_child_modal(&mut self, parent_modal: Modal, child_modal: Modal) {
+        self.modal_parents.push(parent_modal);
+        self.modal = Some(child_modal);
+    }
+
+    pub fn pop_parent_modal(&mut self) -> Option<Modal> {
+        self.modal_parents.pop()
     }
 
     /// Push the current auth modal onto the parent stack so a sub-modal can
@@ -2292,6 +2301,20 @@ mod tests {
         state.clamp_selected_row();
 
         assert_eq!(state.selected, 0);
+    }
+
+    #[test]
+    fn settings_auth_child_modal_stack_round_trips_parent() {
+        let mut state = SettingsAuthState::<EnvValue, i32, ()>::from_rows_and_github_env(
+            Vec::new(),
+            BTreeMap::new(),
+        );
+
+        state.open_child_modal(1, 2);
+
+        assert_eq!(state.modal, Some(2));
+        assert_eq!(state.pop_parent_modal(), Some(1));
+        assert_eq!(state.pop_parent_modal(), None);
     }
 
     #[test]
