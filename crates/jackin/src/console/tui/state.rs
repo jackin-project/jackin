@@ -246,23 +246,23 @@ pub(crate) fn open_role_resolution_error(
             repository_role_load_error_message(raw, source_url, friendly_role_resolution_error(err))
         },
     );
-    editor.modal = Some(Modal::ErrorPopup {
-        state: jackin_console::tui::components::error_popup::role_load_error_popup_state(message),
-    });
+    editor.open_error_popup(
+        jackin_console::tui::components::error_popup::role_load_error_popup_state(message),
+    );
 }
 
 pub(crate) fn open_editor_action_error(editor: &mut EditorState<'_>, err: &dyn std::fmt::Display) {
     crate::debug_log!("editor", "failed to apply confirmed editor action: {err}");
-    editor.modal = Some(Modal::ErrorPopup {
-        state: jackin_console::tui::components::error_popup::editor_action_error_popup_state(err),
-    });
+    editor.open_error_popup(
+        jackin_console::tui::components::error_popup::editor_action_error_popup_state(err),
+    );
 }
 
 pub(crate) fn open_role_input_error(editor: &mut EditorState<'_>, message: &str) {
     crate::debug_log!("role", "showing direct role-load error popup: {message}");
-    editor.modal = Some(Modal::ErrorPopup {
-        state: jackin_console::tui::components::error_popup::role_load_error_popup_state(message),
-    });
+    editor.open_error_popup(
+        jackin_console::tui::components::error_popup::role_load_error_popup_state(message),
+    );
 }
 
 /// Translate a runtime role-resolution error into the operator-facing

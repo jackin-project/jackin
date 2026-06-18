@@ -94,6 +94,8 @@ Save-discard modal opening now lives in `jackin-console/src/tui/screens/editor/m
 
 Editor error-popup modal opening now lives in `jackin-console/src/tui/screens/editor/model.rs`; root no-GitHub, save-failure, and auth OpRef validation paths supply only the concrete error state.
 
+Role-resolution, editor-action, and direct role-input error helpers now also use the shared editor error-popup opener; root state helpers supply only concrete error-popup state.
+
 Letter-input modal route assignment now lives in `jackin-console/src/tui/run.rs`; root supplies concrete list/stage modal letter-input kinds.
 
 Top-level main-frame route planning now lives in `jackin-console/src/tui/view.rs`; root supplies the concrete route and executes the editor, settings, or workspace render adapter.
