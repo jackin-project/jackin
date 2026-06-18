@@ -147,6 +147,36 @@ fn list_pre_render_scroll_reset_plan_resets_missing_scroll_slots() {
 }
 
 #[test]
+fn list_pre_render_plan_combines_scroll_reset_and_focus() {
+    let plan = list_pre_render_plan(ListPreRenderFacts {
+        list_scroll_focus: Some(crate::tui::focus::MountScrollFocus::Roles),
+        list_names_focused: false,
+        preview_focused: true,
+        sidebar_available: true,
+        focused_block_scrollable: false,
+        role_global_available: false,
+        roles_available: true,
+    });
+
+    assert_eq!(
+        plan.scroll_reset,
+        ListPreRenderScrollResetPlan {
+            reset_workspace: false,
+            reset_global: false,
+            reset_role_global: true,
+            reset_roles: false,
+        }
+    );
+    assert_eq!(
+        plan.focus,
+        ListPreRenderFocusPlan {
+            list_scroll_focus: None,
+            list_names_focused: true,
+        }
+    );
+}
+
+#[test]
 fn inline_provider_followup_plan_opens_picker_only_when_supported() {
     assert_eq!(
         inline_provider_followup_plan("container", "claude", vec!["anthropic", "zai"]),

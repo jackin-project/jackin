@@ -146,6 +146,23 @@ pub struct ListPreRenderScrollResetPlan {
     pub reset_roles: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListPreRenderFacts {
+    pub list_scroll_focus: Option<crate::tui::focus::MountScrollFocus>,
+    pub list_names_focused: bool,
+    pub preview_focused: bool,
+    pub sidebar_available: bool,
+    pub focused_block_scrollable: bool,
+    pub role_global_available: bool,
+    pub roles_available: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListPreRenderPlan {
+    pub scroll_reset: ListPreRenderScrollResetPlan,
+    pub focus: ListPreRenderFocusPlan,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InlineProviderFollowupPlan<C, A, P> {
     StartSession { context: C, agent: A },
@@ -216,6 +233,24 @@ pub const fn list_pre_render_scroll_reset_plan(
         reset_global: false,
         reset_role_global: !role_global_available,
         reset_roles: !roles_available,
+    }
+}
+
+#[must_use]
+pub const fn list_pre_render_plan(facts: ListPreRenderFacts) -> ListPreRenderPlan {
+    ListPreRenderPlan {
+        scroll_reset: list_pre_render_scroll_reset_plan(
+            facts.sidebar_available,
+            facts.role_global_available,
+            facts.roles_available,
+        ),
+        focus: list_pre_render_focus_plan(
+            facts.list_scroll_focus,
+            facts.list_names_focused,
+            facts.preview_focused,
+            facts.sidebar_available,
+            facts.focused_block_scrollable,
+        ),
     }
 }
 

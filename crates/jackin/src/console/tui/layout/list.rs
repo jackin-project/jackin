@@ -9,7 +9,7 @@ pub(crate) use jackin_console::tui::sidebar_layout::{
     SelectedSidebarTarget, SidebarInstanceFacts, SidebarInstanceQuery, SidebarLayout,
     SidebarScrollAreas,
 };
-use jackin_console::tui::update::{list_pre_render_focus_plan, list_pre_render_scroll_reset_plan};
+use jackin_console::tui::update::{ListPreRenderFacts, list_pre_render_plan};
 
 pub(crate) fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> usize {
     let visual_rows = state.visual_rows_vec();
@@ -96,11 +96,16 @@ pub(crate) fn clamp_list_scroll_for_area(
         }
     }
 
-    let reset_plan = list_pre_render_scroll_reset_plan(
+    let pre_render_plan = list_pre_render_plan(ListPreRenderFacts {
+        list_scroll_focus: state.list_scroll_focus(),
+        list_names_focused: state.list_names_focused(),
+        preview_focused: state.preview_focused,
         sidebar_available,
+        focused_block_scrollable,
         role_global_available,
         roles_available,
-    );
+    });
+    let reset_plan = pre_render_plan.scroll_reset;
     if reset_plan.reset_workspace {
         state.list_mounts_scroll_x = 0;
         state.list_mounts_scroll_y = 0;
@@ -118,13 +123,7 @@ pub(crate) fn clamp_list_scroll_for_area(
         state.list_roles_scroll_y = 0;
     }
 
-    let focus_plan = list_pre_render_focus_plan(
-        state.list_scroll_focus(),
-        state.list_names_focused(),
-        state.preview_focused,
-        sidebar_available,
-        focused_block_scrollable,
-    );
+    let focus_plan = pre_render_plan.focus;
     state.set_list_scroll_focus(focus_plan.list_scroll_focus);
     state.set_list_names_focused(focus_plan.list_names_focused);
 
