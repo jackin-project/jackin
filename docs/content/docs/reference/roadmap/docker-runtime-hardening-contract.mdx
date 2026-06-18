@@ -6,6 +6,16 @@ title: "Docker Runtime Hardening Contract"
 
 This item tracks only undelivered work. Operator-facing detail for what shipped lives in the [Docker Security Profiles guide](/guides/docker-profiles/), the [role manifest reference](/developing/role-manifest/), [Configuration](/reference/runtime/configuration/), and [Schema Versions](/reference/runtime/schema-versions/).
 
+## Decisions (finalized)
+
+These are agreed and drive the plan below. Do not re-litigate without flagging it.
+
+1. **Land everything wired, enforce nothing by default.** Every feature below ships fully wired but takes effect only when an operator opts into a profile. The `compat` default stays a verified no-op, so no existing user's workflow breaks. This is the core guarantee for the whole effort.
+2. **PR #528 ships the enforcement bundle, not a skeleton.** #528 does not merge until the opt-in features actually work end to end. Scope: WP0 + WP1 + WP2 + WP3 + WP4 in one PR.
+3. **Fail-closed on firewall failure.** Under `hardened`/`locked`, if `firewall-apply` cannot install the egress allowlist, the launch aborts and the container is torn down with an actionable error. The agent never runs with open egress when the operator asked for a boundary.
+4. **`standard` becomes the default eventually — not now.** The long-term goal is security-by-default (`standard`: resource limits + `no-new-privileges` on). That flip is the one change that alters default behavior, so it is deferred behind the base-image `NOPASSWD:ALL` sudo audit (WP6). Until then `compat` stays the default.
+5. **Deferred out of #528:** credential env-only posture (WP7 → owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/)), rootless DinD / Sysbox research (WP5), and the `standard` default flip (WP6). Each lands as its own follow-up; none blocks #528.
+
 ## What shipped (PR #528)
 
 Baseline, so the remaining work below has context. Do not re-document the mechanics here — link to the canonical pages above.
@@ -23,14 +33,19 @@ The `compat` default is a verified no-op: it emits no new Docker flags, so any l
 
 One line per work package. Full design, integration points, and tests are in the [Implementation Plan](#implementation-plan) below.
 
-1. **WP0 — Acceptance test matrix harness.** Objective pass/fail gate for "profile X still runs workflow Y"; every later WP cites it. Land first.
-2. **WP1 — Network egress allowlist enforcement** (highest priority). The allowlist is computed then discarded — `hardened`/`locked` advertise an allowlist that does not exist and run open egress. Wire the container env + `firewall-apply` exec.
-3. **WP2 — `internal` network for `locked`.** Block egress at the Docker network layer, not only via in-container iptables. Ships with WP1.
+**In PR #528** (one bundle; all wired, `compat` enforces nothing):
+
+1. **WP0 — Acceptance test matrix harness.** Objective pass/fail gate for "profile X still runs workflow Y"; every other WP cites it.
+2. **WP1 — Network egress allowlist enforcement** (highest priority). The allowlist is computed then discarded — `hardened`/`locked` advertise an allowlist that does not exist and run open egress. Wire the container env + `firewall-apply` exec, fail-closed (Decision 3).
+3. **WP2 — `internal` network for `locked`.** Block egress at the Docker network layer, not only via in-container iptables.
 4. **WP3 — Launch observability.** `format_session_contract` is never called; AppArmor/cgroup probes and the per-decision telemetry lines do not exist; the Phase-1 host-socket regression test is missing.
 5. **WP4 — DinD-free auto-skip.** Stop starting the privileged sidecar for `hardened`+ roles that need no inner engine. Schema already exists.
-6. **WP5 — Rootless DinD / Sysbox** (research / blocked).
-7. **WP6 — `compat` → `standard` default flip + `no-new-privileges` for `standard`** (blocked on base-image `NOPASSWD:ALL` sudo audit).
-8. **WP7 — Credential posture integration** (after WP3).
+
+**Deferred to follow-up PRs** (Decision 5):
+
+6. **WP5 — Rootless DinD / Sysbox** (research; needs host-install policy ruling).
+7. **WP6 — `compat` → `standard` default flip + `no-new-privileges` for `standard`** (blocked on base-image `NOPASSWD:ALL` sudo audit; the only default-behavior change).
+8. **WP7 — Credential env-only posture under `hardened`/`locked`** (owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/); touches the sensitive credential path, reviewed on its own).
 
 ## Implementation Plan
 
@@ -171,27 +186,35 @@ Under `hardened`/`locked`, prefer env-only credential injection over file copies
 
 ### PR breakdown and ordering
 
-| PR | Contents | Depends on | Schema bump |
-|---|---|---|---|
-| A | WP0 test matrix harness | — | none |
-| B | WP1 egress enforcement + WP2 internal network | A | none (env-only; `DockerApi` signature change is internal) |
-| C | WP3 observability (contract + probes + telemetry + host-socket test) | B | none |
-| D | WP4 DinD-free auto-skip | B | none |
-| E | WP6 default flip + `no-new-privileges` for `standard` | C, sudo audit | none (behavior default change — call out in changelog) |
-| — | WP5 research, WP7 credential posture | C | per their own items |
+PR #528 lands WP0–WP4 as one bundle (Decision 2). Internal build order within the PR (so reviewers and the author can stage the work):
 
-None of A–D require a schema bump — the config/workspace/manifest schema for every grant dimension already shipped in #528. That is deliberate: operators can write the configs today; these PRs turn the already-parsed fields into enforced behavior.
+| Step in #528 | Contents | Depends on |
+|---|---|---|
+| 1 | WP0 test matrix harness | — |
+| 2 | WP1 egress enforcement (fail-closed) + WP2 internal network | WP0 |
+| 3 | WP3 observability (contract + probes + telemetry + host-socket test) | WP1 |
+| 4 | WP4 DinD-free auto-skip | WP1 |
+
+Deferred to their own follow-up PRs (Decision 5), none blocking #528:
+
+| Follow-up | Contents | Depends on | Notes |
+|---|---|---|---|
+| F1 | WP7 credential env-only posture | #528 (WP3) | owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/); isolated review of the credential path |
+| F2 | WP6 `standard` default flip + `no-new-privileges` for `standard` | sudo audit | the only default-behavior change — call out in changelog |
+| — | WP5 rootless DinD / Sysbox | research | needs host-install policy ruling first |
+
+No work package in #528 requires a schema bump — the config/workspace/manifest schema for every grant dimension already shipped earlier in #528's history. That is deliberate: operators can write the configs today; this bundle turns the already-parsed fields into enforced behavior, active only under an opted-in profile.
 
 ## Open questions
 
 - **Acceptance test matrix.** The exact agent-runtime × workflow set that validates the 8-cap minimum and each profile (e.g. `apt install build-essential`, native-dep `npm install`, `cargo build`, in-DinD `docker build`, Testcontainers, `gh pr create`). Without it, "validate the cap set" has no objective answer.
-- **AppArmor on macOS.** What jackin' prints under `standard` on Docker Desktop / OrbStack, derived from the backend probe (item 3).
+- **AppArmor on macOS.** What jackin' prints under `standard` on Docker Desktop / OrbStack, derived from the backend probe (WP3).
 - **Read-only root `$HOME` audit.** Before tightening read-only root, enumerate every non-bind-mount runtime write target under `/home/agent/` (shell history, `.zsh_sessions/`, oh-my-zsh markers, `mise` shims) and give each a tmpfs entry or state bind mount. `runtime-setup` writes are already on bind-mount paths.
 
 ## Constraints that stay true
 
 - **Agent bypass flags are not per-profile.** Every agent launches with its maximum-bypass flag in <RepoFile path="docker/runtime/entrypoint.sh" /> (`claude --dangerously-skip-permissions`, etc.). The Docker boundary is the only enforceable isolation layer; the session contract must state this so operators trust Docker isolation, not the agent's own permission system.
-- **Host Docker socket exclusion is a hard rule** (see the regression test in item 3).
+- **Host Docker socket exclusion is a hard rule** (see the regression test in WP3).
 - Hardened Docker is still a shared-kernel boundary — the contract must not overstate it.
 
 ## Related Files
@@ -201,7 +224,7 @@ None of A–D require a schema bump — the config/workspace/manifest schema for
 - <RepoFile path="crates/jackin-capsule/src/firewall.rs" /> - in-container iptables egress allowlist (`firewall-apply`).
 - <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> - typed Docker API boundary and network creation.
 - <RepoFile path="docker/runtime/entrypoint.sh" /> - runtime startup, agent bypass flags, firewall hook.
-- <RepoFile path="docker/construct/Dockerfile" /> - base runtime image, `NOPASSWD:ALL` sudo (blocks item 5).
+- <RepoFile path="docker/construct/Dockerfile" /> - base runtime image, `NOPASSWD:ALL` sudo (blocks WP6).
 
 ## Related Roadmap Items
 
