@@ -41,23 +41,27 @@ fn settings_tab_bar_focus_plan_returns_requested_focus() {
 fn global_mount_text_commit_plan_routes_targets_and_trims_values() {
     assert_eq!(
         global_mount_text_commit_plan(&GlobalMountTextTarget::AddScope, " ops "),
-        GlobalMountTextCommitPlan::AddScope("ops".to_owned())
+        GlobalMountTextCommitPlan::AddScope(Some("ops".to_owned()))
+    );
+    assert_eq!(
+        global_mount_text_commit_plan(&GlobalMountTextTarget::AddScope, " "),
+        GlobalMountTextCommitPlan::AddScope(None)
     );
     assert_eq!(
         global_mount_text_commit_plan(&GlobalMountTextTarget::AddName, " cache "),
         GlobalMountTextCommitPlan::AddName("cache".to_owned())
     );
     assert_eq!(
-        global_mount_text_commit_plan(&GlobalMountTextTarget::AddSource, " ./data "),
-        GlobalMountTextCommitPlan::AddSource("./data".to_owned())
+        global_mount_text_commit_plan(&GlobalMountTextTarget::AddSource, " /tmp/data "),
+        GlobalMountTextCommitPlan::AddSource("/tmp/data".to_owned())
     );
     assert_eq!(
         global_mount_text_commit_plan(&GlobalMountTextTarget::AddDestination, " /jackin/data "),
         GlobalMountTextCommitPlan::AddDestination("/jackin/data".to_owned())
     );
     assert_eq!(
-        global_mount_text_commit_plan(&GlobalMountTextTarget::Source, " ./src "),
-        GlobalMountTextCommitPlan::SetSource("./src".to_owned())
+        global_mount_text_commit_plan(&GlobalMountTextTarget::Source, " /tmp/src "),
+        GlobalMountTextCommitPlan::SetSource("/tmp/src".to_owned())
     );
     assert_eq!(
         global_mount_text_commit_plan(&GlobalMountTextTarget::Destination, " /dst "),

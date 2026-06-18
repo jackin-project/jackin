@@ -18,7 +18,6 @@ use crate::console::tui::state::{
     SettingsAuthModal, SettingsEnvConfirm, SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvRow,
     SettingsEnvScope, SettingsEnvTextTarget, SettingsTab,
 };
-use jackin_config::resolve_path;
 use jackin_console::tui::auth_config::{
     apply_settings_auth_env_commit, clear_settings_auth_env_values,
 };
@@ -936,7 +935,7 @@ fn commit_text(
 ) -> SettingsModalOutcome {
     match settings_update::global_mount_text_commit_plan(target, value) {
         GlobalMountTextCommitPlan::AddScope(value) => {
-            return commit_add_scope_text(global, &value);
+            return commit_add_scope_text(global, value);
         }
         GlobalMountTextCommitPlan::AddName(value) => {
             commit_add_name_text(global, &value);
@@ -952,7 +951,7 @@ fn commit_text(
                 global.error = Some(global_mount_gone_message().into());
                 return SettingsModalOutcome::Continue;
             };
-            row.mount.src = resolve_path(&value);
+            row.mount.src = value;
             global.clear_modal_chain();
         }
         GlobalMountTextCommitPlan::SetDestination(value) => {
@@ -1116,13 +1115,13 @@ fn open_settings_env_role_picker(env: &mut crate::console::tui::state::SettingsE
 
 fn commit_add_scope_text(
     global: &mut crate::console::tui::state::GlobalMountsState<'_>,
-    value: &str,
+    value: Option<String>,
 ) -> SettingsModalOutcome {
     let Some(draft) = global.add_draft.as_mut() else {
         global.error = Some(global_mount_add_draft_lost_message().into());
         return SettingsModalOutcome::Continue;
     };
-    draft.scope = jackin_console::services::workspace::global_mount_scope_value(value);
+    draft.scope = value;
     SettingsModalOutcome::OpenGlobalMountFileBrowser
 }
 
@@ -1151,7 +1150,7 @@ fn commit_add_source_text(
         global.error = Some(global_mount_add_draft_lost_message().into());
         return;
     };
-    draft.src = resolve_path(value);
+    draft.src = value.to_owned();
     global.open_sub_modal(text_modal_for_target(
         GlobalMountTextTarget::AddDestination,
         "",

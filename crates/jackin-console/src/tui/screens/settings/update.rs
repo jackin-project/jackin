@@ -132,7 +132,7 @@ pub enum SettingsConfirmCommitPlan {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GlobalMountTextCommitPlan {
-    AddScope(String),
+    AddScope(Option<String>),
     AddName(String),
     AddSource(String),
     AddDestination(String),
@@ -259,18 +259,22 @@ pub fn global_mount_text_commit_plan(
 ) -> GlobalMountTextCommitPlan {
     let trimmed = value.trim();
     match target {
-        GlobalMountTextTarget::AddScope => GlobalMountTextCommitPlan::AddScope(trimmed.to_owned()),
+        GlobalMountTextTarget::AddScope => GlobalMountTextCommitPlan::AddScope(
+            crate::services::workspace::global_mount_scope_value(trimmed),
+        ),
         GlobalMountTextTarget::AddName if trimmed.is_empty() => {
             GlobalMountTextCommitPlan::EmptyName
         }
         GlobalMountTextTarget::AddName => GlobalMountTextCommitPlan::AddName(trimmed.to_owned()),
         GlobalMountTextTarget::AddSource => {
-            GlobalMountTextCommitPlan::AddSource(trimmed.to_owned())
+            GlobalMountTextCommitPlan::AddSource(jackin_config::resolve_path(trimmed))
         }
         GlobalMountTextTarget::AddDestination => {
             GlobalMountTextCommitPlan::AddDestination(trimmed.to_owned())
         }
-        GlobalMountTextTarget::Source => GlobalMountTextCommitPlan::SetSource(trimmed.to_owned()),
+        GlobalMountTextTarget::Source => {
+            GlobalMountTextCommitPlan::SetSource(jackin_config::resolve_path(trimmed))
+        }
         GlobalMountTextTarget::Destination => {
             GlobalMountTextCommitPlan::SetDestination(trimmed.to_owned())
         }
