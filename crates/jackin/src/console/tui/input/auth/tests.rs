@@ -126,8 +126,7 @@ fn auth_form_saving_workspace_zai_ignore_removes_key() {
     let mut form = AuthForm::new(AuthKind::Zai);
     form.set_mode(AuthMode::Ignore);
 
-    persist_form(
-        &mut editor,
+    editor.persist_auth_form(
         &AuthFormTarget::Workspace {
             kind: AuthKind::Zai,
         },
@@ -147,8 +146,7 @@ fn auth_form_saving_role_zai_ignore_removes_key() {
     let mut form = AuthForm::new(AuthKind::Zai);
     form.set_mode(AuthMode::Ignore);
 
-    persist_form(
-        &mut editor,
+    editor.persist_auth_form(
         &AuthFormTarget::WorkspaceRole {
             role: "smith".into(),
             kind: AuthKind::Zai,

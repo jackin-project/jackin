@@ -544,6 +544,74 @@ impl<
         Some((target, form))
     }
 
+    /// Apply a successful auth-form commit to the draft workspace config.
+    ///
+    /// Writes both the kind block (`auth_forward`) and the credential env var
+    /// when the form outcome includes one.
+    pub fn persist_auth_form(
+        &mut self,
+        target: &crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
+        form: &crate::tui::components::auth_panel::AuthForm<jackin_core::EnvValue>,
+    ) {
+        let Some(outcome) = form.commit() else {
+            return;
+        };
+        match target {
+            crate::tui::screens::settings::model::AuthFormTarget::Workspace { kind } => {
+                crate::tui::auth_config::apply_workspace_auth_commit(
+                    &mut self.pending,
+                    *kind,
+                    outcome.mode,
+                    outcome.env_var_name,
+                    outcome.env_value.clone(),
+                );
+                crate::tui::auth_config::set_workspace_sync_source_dir(
+                    &mut self.pending,
+                    *kind,
+                    outcome.source_folder,
+                );
+            }
+            crate::tui::screens::settings::model::AuthFormTarget::WorkspaceRole { role, kind } => {
+                let entry = self.pending.roles.entry(role.clone()).or_default();
+                crate::tui::auth_config::apply_role_auth_commit(
+                    entry,
+                    *kind,
+                    outcome.mode,
+                    outcome.env_var_name,
+                    outcome.env_value.clone(),
+                );
+                crate::tui::auth_config::set_role_sync_source_dir(
+                    entry,
+                    *kind,
+                    outcome.source_folder,
+                );
+            }
+        }
+    }
+
+    /// Clear the auth layer and source-folder override for the form target.
+    pub fn clear_auth_form_layer(
+        &mut self,
+        target: &crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
+    ) {
+        match target {
+            crate::tui::screens::settings::model::AuthFormTarget::Workspace { kind } => {
+                crate::tui::auth_config::clear_workspace_auth_layer(&mut self.pending, *kind);
+                crate::tui::auth_config::set_workspace_sync_source_dir(
+                    &mut self.pending,
+                    *kind,
+                    None,
+                );
+            }
+            crate::tui::screens::settings::model::AuthFormTarget::WorkspaceRole { role, kind } => {
+                if let Some(entry) = self.pending.roles.get_mut(role) {
+                    crate::tui::auth_config::clear_role_auth_layer(entry, *kind);
+                    crate::tui::auth_config::set_role_sync_source_dir(entry, *kind, None);
+                }
+            }
+        }
+    }
+
     fn auth_form_mode_and_credential(
         &self,
         target: &crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
@@ -994,6 +1062,50 @@ mod tests {
                 .focused_auth_form(&jackin_config::AppConfig::default())
                 .is_none()
         );
+    }
+
+    #[test]
+    fn editor_persist_auth_form_writes_workspace_layer() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        let mut form =
+            crate::tui::components::auth_panel::AuthForm::new(crate::tui::auth::AuthKind::Zai);
+        form.set_mode(crate::tui::auth::AuthMode::ApiKey);
+        form.set_literal("zai-key".into());
+
+        editor.persist_auth_form(
+            &crate::tui::screens::settings::model::AuthFormTarget::Workspace {
+                kind: crate::tui::auth::AuthKind::Zai,
+            },
+            &form,
+        );
+
+        assert_eq!(
+            editor
+                .pending
+                .env
+                .get(jackin_core::env_model::ZAI_API_KEY_ENV_NAME),
+            Some(&jackin_config::EnvValue::Plain("zai-key".into()))
+        );
+    }
+
+    #[test]
+    fn editor_clear_auth_form_layer_clears_role_source_folder() {
+        let mut workspace = WorkspaceConfig::default();
+        workspace.roles.entry("dev".into()).or_default().claude =
+            Some(jackin_config::AgentAuthConfig {
+                auth_forward: jackin_config::AuthForwardMode::Sync,
+                sync_source_dir: Some(std::path::PathBuf::from("/role/claude")),
+            });
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+
+        editor.clear_auth_form_layer(
+            &crate::tui::screens::settings::model::AuthFormTarget::WorkspaceRole {
+                role: "dev".into(),
+                kind: crate::tui::auth::AuthKind::Claude,
+            },
+        );
+
+        assert_eq!(editor.pending.roles["dev"].claude, None);
     }
 
     #[test]

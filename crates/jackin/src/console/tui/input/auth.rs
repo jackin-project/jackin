@@ -16,16 +16,12 @@ use std::path::PathBuf;
 use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::state::RolePickerState;
 use crate::console::tui::state::{
-    AuthForm, AuthFormFocus, AuthFormTarget, EditorState, FileBrowserTarget, Modal, TextInputTarget,
+    AuthForm, AuthFormFocus, EditorState, FileBrowserTarget, Modal, TextInputTarget,
 };
 use jackin_config::AppConfig;
 #[cfg(test)]
 use jackin_console::tui::auth::AuthMode;
-use jackin_console::tui::auth_config::{
-    apply_role_auth_commit, apply_workspace_auth_commit, clear_role_auth_layer,
-    clear_workspace_auth_layer, editor_auth_form_can_generate_token, set_role_sync_source_dir,
-    set_workspace_sync_source_dir,
-};
+use jackin_console::tui::auth_config::editor_auth_form_can_generate_token;
 use jackin_console::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
     auth_source_picker_state, generated_token_source_picker_state,
@@ -627,7 +623,7 @@ fn commit_auth_form_save(editor: &mut EditorState<'_>) -> bool {
     let kind = state.kind;
     let form = std::mem::replace(state.as_mut(), AuthForm::new(kind));
     editor.modal = None;
-    persist_form(editor, &committed_target, &form);
+    editor.persist_auth_form(&committed_target, &form);
     true
 }
 
@@ -637,65 +633,8 @@ fn reset_auth_form_layer(editor: &mut EditorState<'_>) -> bool {
     };
     let committed_target = target.clone();
     editor.modal = None;
-    clear_layer(editor, &committed_target);
+    editor.clear_auth_form_layer(&committed_target);
     true
-}
-
-/// Apply a successful form commit to `editor.pending`. Writes both the
-/// kind block (`auth_forward`) AND the credential env var when the
-/// form's outcome includes one.
-///
-/// Claude / Codex credentials land on the workspace / role env block
-/// (`[workspaces.<ws>.env]` / `[…roles.<role>.env]`); Github
-/// credentials land under the kind-scoped `[github.env]` block at the
-/// matching layer (parallel to the global `[github.env]` map and
-/// resolved through [`jackin_config::build_github_env_layers`]).
-fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &AuthForm) {
-    let Some(outcome) = form.commit() else {
-        return;
-    };
-    match target {
-        AuthFormTarget::Workspace { kind } => {
-            apply_workspace_auth_commit(
-                &mut editor.pending,
-                *kind,
-                outcome.mode,
-                outcome.env_var_name,
-                outcome.env_value.clone(),
-            );
-            set_workspace_sync_source_dir(&mut editor.pending, *kind, outcome.source_folder);
-        }
-        AuthFormTarget::WorkspaceRole { role, kind } => {
-            let entry = editor.pending.roles.entry(role.clone()).or_default();
-            apply_role_auth_commit(
-                entry,
-                *kind,
-                outcome.mode,
-                outcome.env_var_name,
-                outcome.env_value.clone(),
-            );
-            set_role_sync_source_dir(entry, *kind, outcome.source_folder);
-        }
-    }
-}
-
-/// Clear the `auth_forward` at the form's target layer. Does NOT touch
-/// the credential env var — operators delete those via the Secrets tab
-/// (Claude / Codex) or the Github env block on the workspace × github
-/// layer.
-fn clear_layer(editor: &mut EditorState<'_>, target: &AuthFormTarget) {
-    match target {
-        AuthFormTarget::Workspace { kind } => {
-            clear_workspace_auth_layer(&mut editor.pending, *kind);
-            set_workspace_sync_source_dir(&mut editor.pending, *kind, None);
-        }
-        AuthFormTarget::WorkspaceRole { role, kind } => {
-            if let Some(entry) = editor.pending.roles.get_mut(role) {
-                clear_role_auth_layer(entry, *kind);
-                set_role_sync_source_dir(entry, *kind, None);
-            }
-        }
-    }
 }
 
 #[cfg(test)]
