@@ -113,8 +113,7 @@ pub(crate) fn handle_mouse_with_config(
     let container_info_rect = state
         .list_modal
         .as_ref()
-        .filter(|modal| matches!(modal, Modal::ContainerInfo { .. }))
-        .map(|modal| modal.rect(term_size));
+        .and_then(|modal| modal.container_info_rect(term_size));
     if let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut()
         && let Some(rect) = container_info_rect
         && info.scroll.on_mouse_scroll_for_axes(
@@ -329,13 +328,12 @@ fn try_copy_container_info_value(
     mouse: MouseEvent,
     term_size: Rect,
 ) -> bool {
-    let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_ref() else {
+    let Some(modal @ Modal::ContainerInfo { state: info }) = state.list_modal.as_ref() else {
         return false;
     };
-    let area = Modal::ContainerInfo {
-        state: info.clone(),
-    }
-    .rect(term_size);
+    let Some(area) = modal.container_info_rect(term_size) else {
+        return false;
+    };
     let Some((row, payload)) =
         jackin_tui::components::container_info_copy_payload_at(area, info, mouse.column, mouse.row)
     else {
@@ -353,7 +351,9 @@ fn container_info_copyable_row_at(
     let Some(modal @ Modal::ContainerInfo { state: info }) = state.list_modal.as_ref() else {
         return false;
     };
-    let area = modal.rect(term_size);
+    let Some(area) = modal.container_info_rect(term_size) else {
+        return false;
+    };
     jackin_tui::components::container_info_copy_payload_at(area, info, mouse.column, mouse.row)
         .is_some()
 }
@@ -364,7 +364,9 @@ fn update_container_info_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, 
     let Some(modal @ Modal::ContainerInfo { .. }) = state.list_modal.as_ref() else {
         return;
     };
-    let area = modal.rect(term_size);
+    let Some(area) = modal.container_info_rect(term_size) else {
+        return;
+    };
     let Some(Modal::ContainerInfo { state: info }) = state.list_modal.as_mut() else {
         return;
     };

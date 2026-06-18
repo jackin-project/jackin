@@ -1369,6 +1369,25 @@ impl<
         crate::tui::components::modal_rects::modal_rect_for_mode(outer, self.rect_mode(outer))
     }
 
+    #[must_use]
+    pub fn container_info_rect(&self, outer: Rect) -> Option<Rect>
+    where
+        ConfirmState: ModalConfirmState,
+        GithubPickerState: ModalGithubPickerState,
+        ConfirmSaveState: ModalConfirmSaveState,
+        ErrorPopupState: ModalErrorPopupState,
+        ContainerInfoState: ModalContainerInfoState,
+        OpPickerState: ModalOpPickerState,
+        RolePickerState: ModalRolePickerState,
+        AuthForm: ModalAuthFormState,
+    {
+        if matches!(self, Self::ContainerInfo { .. }) {
+            Some(self.rect(outer))
+        } else {
+            None
+        }
+    }
+
     pub fn prepare_for_render(&mut self, outer: Rect)
     where
         ConfirmState: ModalConfirmState,
@@ -3558,6 +3577,20 @@ mod tests {
             ModalRectMode::ErrorPopup {
                 required_height: 14
             }
+        );
+    }
+
+    #[test]
+    fn console_modal_container_info_rect_reports_only_container_info_area() {
+        let outer = Rect::new(0, 0, 100, 40);
+        let modal = RectTestModal::ContainerInfo {
+            state: TestContainerInfo,
+        };
+
+        assert_eq!(modal.container_info_rect(outer), Some(modal.rect(outer)));
+        assert_eq!(
+            RectTestModal::ErrorPopup { state: TestError }.container_info_rect(outer),
+            None
         );
     }
 
