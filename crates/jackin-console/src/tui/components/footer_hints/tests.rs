@@ -39,6 +39,7 @@ fn workspace_list_footer_role_picker_includes_quit() {
             "launch",
             "Esc",
             "return to workspaces",
+            "type to filter",
             "↑↓",
             "scroll",
             "Ctrl+Q",

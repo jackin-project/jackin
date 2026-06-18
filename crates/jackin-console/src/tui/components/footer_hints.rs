@@ -351,6 +351,9 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
                 HintSpan::Sep,
                 HintSpan::Key("P"),
                 HintSpan::Text("purge"),
+                HintSpan::Sep,
+                HintSpan::Key("I"),
+                HintSpan::Text("info"),
             ];
             if has_snapshot {
                 items.push(HintSpan::Sep);

@@ -117,9 +117,9 @@ Quit-policy spine: <RepoFile path="crates/jackin/src/console/tui/run.rs" /> call
 **D. Vim `h/j/k/l` aliases — register as `HiddenAlias` (no behaviour change; makes them known to the registry + enforcement test).** Sites: `input/list.rs` (`~:84/89/94/103`); `screens/workspaces/update.rs` preview pane (`~:311/312/313`) plus `→` as alias of `⇥` into preview (`~:277`); `input/editor.rs` (`~:126/146/164/178/192/203/214/228`); `input/global_mounts.rs` (`~:97/214/225/236/247/319/330/408/415/461/472/483/494`) and `auth.rs` (`~:23/30`); inline pickers in `update.rs` (`~:147/148`) and `agent_choice.rs` (`~:51/58`, also add `J`/`K` for parity with list/editor which accept `j|J`/`k|K`).
 
 **E. Instance-row hidden actions.**
-- [ ] `input/list.rs` `~:212` `i/I` Inspect (ContainerInfo) — register **Shown** and add `I info` to the InstanceRow footer items (`footer_hints.rs ~:104`); currently undiscoverable.
-- [ ] `input/list.rs` `~:197` `r/R` (Reconnect) and `~:202` `a/A` (NewSession) on instance rows — delete (redundant with Enter / N) or register as `HiddenAlias`.
-- [ ] `input/list.rs` `~:197-222` `r/a/x/i/p/t` on a non-instance WorkspaceRow — gate to instance selection (they currently pop a "no instance" error popup) or accept and leave unadvertised; recommended gate.
+- [x] `input/list.rs` `~:212` `i/I` Inspect: added `I info` to `InstanceRow` footer items in `footer_hints.rs` — now discoverable.
+- [x] `input/list.rs` `~:197-222` `r/a/x/i/p/t` on a workspace row with no instances: `instance_action_outcome` now silently returns `Continue` when `has_any_instance_for_selection` is false — eliminates unadvertised error popups. Popup is still shown when an instance exists but is in the wrong state (action rejected for that status).
+- `r/R` and `a/A` as aliases for Enter/N: left as-is (redundant but not harmful; keeping them unadvertised is acceptable until full keymap migration).
 
 **F. Editor Auth `D reset` coverage.**
 - [x] `footer_hints.rs` `~:339` (`AuthRowFooterMode::EditMode`): added `D reset` — WorkspaceMode/RoleMode rows now advertise the `d/D` handled in `auth.rs`.
