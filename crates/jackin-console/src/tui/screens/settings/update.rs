@@ -159,6 +159,25 @@ pub enum SettingsEnvTextCommitPlan {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsEnvSourcePickerSelection {
+    Plain,
+    Op,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsEnvSourcePickerCommitPlan {
+    MissingPendingKey,
+    OpenPlainText {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+    OpenOpPicker {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+}
+
 #[must_use]
 pub const fn settings_confirm_plan(
     action: GlobalMountConfirm,
@@ -260,6 +279,28 @@ pub fn settings_env_text_commit_plan(
                 value: value.to_owned(),
             }
         }
+    }
+}
+
+#[must_use]
+pub fn settings_env_source_picker_commit_plan(
+    selection: SettingsEnvSourcePickerSelection,
+    pending_env_key: Option<&(SettingsEnvScope, String)>,
+) -> SettingsEnvSourcePickerCommitPlan {
+    let Some((scope, key)) = pending_env_key else {
+        return SettingsEnvSourcePickerCommitPlan::MissingPendingKey;
+    };
+    match selection {
+        SettingsEnvSourcePickerSelection::Plain => {
+            SettingsEnvSourcePickerCommitPlan::OpenPlainText {
+                scope: scope.clone(),
+                key: key.clone(),
+            }
+        }
+        SettingsEnvSourcePickerSelection::Op => SettingsEnvSourcePickerCommitPlan::OpenOpPicker {
+            scope: scope.clone(),
+            key: key.clone(),
+        },
     }
 }
 

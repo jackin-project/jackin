@@ -169,6 +169,36 @@ fn settings_env_text_commit_plan_routes_keys_and_values() {
 }
 
 #[test]
+fn settings_env_source_picker_commit_plan_requires_pending_key() {
+    assert_eq!(
+        settings_env_source_picker_commit_plan(SettingsEnvSourcePickerSelection::Plain, None),
+        SettingsEnvSourcePickerCommitPlan::MissingPendingKey
+    );
+
+    let pending = (SettingsEnvScope::Role("ops".to_owned()), "TOKEN".to_owned());
+    assert_eq!(
+        settings_env_source_picker_commit_plan(
+            SettingsEnvSourcePickerSelection::Plain,
+            Some(&pending),
+        ),
+        SettingsEnvSourcePickerCommitPlan::OpenPlainText {
+            scope: SettingsEnvScope::Role("ops".to_owned()),
+            key: "TOKEN".to_owned(),
+        }
+    );
+    assert_eq!(
+        settings_env_source_picker_commit_plan(
+            SettingsEnvSourcePickerSelection::Op,
+            Some(&pending)
+        ),
+        SettingsEnvSourcePickerCommitPlan::OpenOpPicker {
+            scope: SettingsEnvScope::Role("ops".to_owned()),
+            key: "TOKEN".to_owned(),
+        }
+    );
+}
+
+#[test]
 fn settings_tab_at_position_maps_tab_strip_cells() {
     assert_eq!(
         settings_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),

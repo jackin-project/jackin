@@ -30,7 +30,8 @@ use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::mount_display::settings_global_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::update::{
-    GlobalMountAddFinalizePlan, GlobalMountTextCommitPlan, SettingsEnvTextCommitPlan,
+    GlobalMountAddFinalizePlan, GlobalMountTextCommitPlan, SettingsEnvSourcePickerCommitPlan,
+    SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan,
 };
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -742,33 +743,20 @@ pub(super) fn handle_settings_env_modal(
         SettingsEnvModal::SourcePicker { state: mut source } => {
             match source_picker_plan(source.handle_key(key)) {
                 SourcePickerPlan::Plain => {
-                    let Some((scope, key)) = env.pending_env_key.clone() else {
-                        env.clear_modal_chain();
-                        return;
-                    };
-                    env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
-                    env.open_sub_modal(env_text_modal(
-                        SettingsEnvTextTarget::EnvValue {
-                            scope,
-                            key: key.clone(),
-                        },
-                        &settings_env_value_text_label(&key),
-                        "",
-                    ));
+                    commit_settings_env_source_picker(
+                        env,
+                        SettingsEnvSourcePickerSelection::Plain,
+                        source,
+                        op_cache,
+                    );
                 }
                 SourcePickerPlan::Op => {
-                    let Some((scope, key)) = env.pending_env_key.clone() else {
-                        env.clear_modal_chain();
-                        return;
-                    };
-                    env.pending_picker_target = Some((scope, Some(key)));
-                    env.pending_env_key = None;
-                    env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
-                    env.open_sub_modal(SettingsEnvModal::OpPicker {
-                        state: Box::new(
-                            crate::console::tui::op_picker::OpPickerState::new_with_cache(op_cache),
-                        ),
-                    });
+                    commit_settings_env_source_picker(
+                        env,
+                        SettingsEnvSourcePickerSelection::Op,
+                        source,
+                        op_cache,
+                    );
                 }
                 SourcePickerPlan::Dismiss => {
                     env.pop_modal_chain();
@@ -1041,6 +1029,43 @@ fn commit_env_text(
             set_settings_env_value_typed(env, &scope, &key, jackin_core::EnvValue::Plain(value));
             env.pending_env_key = None;
             env.clear_modal_chain();
+        }
+    }
+}
+
+fn commit_settings_env_source_picker(
+    env: &mut crate::console::tui::state::SettingsEnvState<'_>,
+    selection: SettingsEnvSourcePickerSelection,
+    source: jackin_console::tui::components::source_picker::SourcePickerState,
+    op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
+) {
+    match settings_update::settings_env_source_picker_commit_plan(
+        selection,
+        env.pending_env_key.as_ref(),
+    ) {
+        SettingsEnvSourcePickerCommitPlan::MissingPendingKey => {
+            env.clear_modal_chain();
+        }
+        SettingsEnvSourcePickerCommitPlan::OpenPlainText { scope, key } => {
+            env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
+            env.open_sub_modal(env_text_modal(
+                SettingsEnvTextTarget::EnvValue {
+                    scope,
+                    key: key.clone(),
+                },
+                &settings_env_value_text_label(&key),
+                "",
+            ));
+        }
+        SettingsEnvSourcePickerCommitPlan::OpenOpPicker { scope, key } => {
+            env.pending_picker_target = Some((scope, Some(key)));
+            env.pending_env_key = None;
+            env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
+            env.open_sub_modal(SettingsEnvModal::OpPicker {
+                state: Box::new(
+                    crate::console::tui::op_picker::OpPickerState::new_with_cache(op_cache),
+                ),
+            });
         }
     }
 }
