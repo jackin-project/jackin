@@ -711,6 +711,15 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
         self.pending_picker_value = Some(value);
     }
 
+    #[must_use]
+    pub fn has_pending_picker_value(&self) -> bool {
+        self.pending_picker_value.is_some()
+    }
+
+    pub fn take_pending_picker_value(&mut self) -> Option<EnvValue> {
+        self.pending_picker_value.take()
+    }
+
     pub fn set_value(&mut self, scope: &SettingsEnvScope, key: &str, value: EnvValue) {
         crate::tui::screens::settings::update::set_settings_env_value(
             &mut self.pending,
@@ -1828,6 +1837,19 @@ mod tests {
         state.stash_pending_picker_value("value".into());
 
         assert_eq!(state.pending_picker_value, Some(String::from("value")));
+    }
+
+    #[test]
+    fn settings_env_take_pending_picker_value_moves_value() {
+        let mut state = SettingsEnvState::<String, i32>::from_pending(empty_env_config());
+        state.stash_pending_picker_value("value".into());
+
+        assert!(state.has_pending_picker_value());
+        assert_eq!(
+            state.take_pending_picker_value(),
+            Some(String::from("value"))
+        );
+        assert!(!state.has_pending_picker_value());
     }
 
     #[test]

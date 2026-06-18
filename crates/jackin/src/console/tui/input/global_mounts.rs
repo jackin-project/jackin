@@ -852,7 +852,7 @@ fn commit_env_text(
     match settings_update::settings_env_text_commit_plan(
         target,
         value,
-        env.pending_picker_value.is_some(),
+        env.has_pending_picker_value(),
     ) {
         SettingsEnvTextCommitPlan::EmptyKey { scope } => {
             env.set_error(settings_env_empty_key_error_message());
@@ -864,7 +864,7 @@ fn commit_env_text(
             });
         }
         SettingsEnvTextCommitPlan::SetPendingPickerValue { scope, key } => {
-            if let Some(stashed) = env.pending_picker_value.take() {
+            if let Some(stashed) = env.take_pending_picker_value() {
                 set_settings_env_value_typed(env, &scope, &key, stashed);
                 env.clear_pending_env_key();
                 env.clear_modal_chain();
