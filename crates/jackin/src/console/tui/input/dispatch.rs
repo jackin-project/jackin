@@ -17,6 +17,7 @@ use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::tui::screens::workspaces::update::{
     DestructiveConfirmPlan, destructive_confirm_plan,
 };
+use jackin_console::tui::update::{DismissibleModalPlan, dismissible_modal_plan};
 
 #[expect(
     clippy::too_many_lines,
@@ -152,10 +153,12 @@ pub fn handle_key(
     if let ManagerStage::Settings(settings) = &mut state.stage
         && settings.error_popup.is_some()
     {
-        let dismiss = settings
-            .error_popup
-            .as_ref()
-            .is_some_and(|p| matches!(p.handle_key(key), jackin_tui::ModalOutcome::Cancel));
+        let dismiss = settings.error_popup.as_ref().is_some_and(|p| {
+            matches!(
+                dismissible_modal_plan(p.handle_key(key)),
+                DismissibleModalPlan::Dismiss
+            )
+        });
         if dismiss {
             drop(update_manager(
                 state,
