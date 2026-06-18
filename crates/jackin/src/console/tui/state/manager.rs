@@ -743,7 +743,7 @@ impl ManagerState<'_> {
         }
         // Settings path.
         if let ManagerStage::Settings(settings) = &mut self.stage {
-            if let Some(pending) = settings.auth.pending_op_commit.as_mut() {
+            if let Some(pending) = settings.auth.pending_op_commit_mut() {
                 let result = match pending.rx.poll_next() {
                     SubscriptionPoll::Ready(result) => Some(result),
                     SubscriptionPoll::Pending => None,
@@ -757,8 +757,7 @@ impl ManagerState<'_> {
                     };
                     let pending = settings
                         .auth
-                        .pending_op_commit
-                        .take()
+                        .take_pending_op_commit()
                         .expect("polled above");
                     return result.map(|r| (pending.op_ref, r, true));
                 }

@@ -1473,6 +1473,18 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         self.generating_token
     }
 
+    pub fn set_pending_op_commit(&mut self, pending: PendingOpCommit) {
+        self.pending_op_commit = Some(pending);
+    }
+
+    pub const fn pending_op_commit_mut(&mut self) -> Option<&mut PendingOpCommit> {
+        self.pending_op_commit.as_mut()
+    }
+
+    pub fn take_pending_op_commit(&mut self) -> Option<PendingOpCommit> {
+        self.pending_op_commit.take()
+    }
+
     pub fn clamp_selected_row(&mut self) {
         self.selected = crate::tui::screens::settings::update::settings_auth_selected_index(
             self.selected,
@@ -2393,6 +2405,20 @@ mod tests {
         state.move_selection(1);
 
         assert_eq!(state.selected, 1);
+    }
+
+    #[test]
+    fn settings_auth_pending_op_commit_round_trips() {
+        let mut state = SettingsAuthState::<EnvValue, (), i32>::from_rows_and_github_env(
+            Vec::new(),
+            BTreeMap::new(),
+        );
+
+        state.set_pending_op_commit(7);
+
+        assert_eq!(state.pending_op_commit_mut().copied(), Some(7));
+        assert_eq!(state.take_pending_op_commit(), Some(7));
+        assert_eq!(state.take_pending_op_commit(), None);
     }
 
     #[test]

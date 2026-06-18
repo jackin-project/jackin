@@ -831,8 +831,11 @@ fn execute_op_commit_validation(
     let rx = crate::console::services::op::start_ref_validation(op_ref.clone());
     if is_settings {
         if let ManagerStage::Settings(settings) = &mut state.stage {
-            settings.auth.pending_op_commit =
-                Some(crate::console::tui::state::PendingOpCommit::new(op_ref, rx));
+            settings
+                .auth
+                .set_pending_op_commit(crate::console::tui::state::PendingOpCommit::new(
+                    op_ref, rx,
+                ));
         }
     } else if let ManagerStage::Editor(editor) = &mut state.stage {
         editor.pending_op_commit =
