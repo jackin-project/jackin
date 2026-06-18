@@ -695,6 +695,14 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
         self.pending_picker_target = Some(target);
     }
 
+    pub fn clear_pending_picker_target(&mut self) {
+        self.pending_picker_target = None;
+    }
+
+    pub fn stash_pending_picker_value(&mut self, value: EnvValue) {
+        self.pending_picker_value = Some(value);
+    }
+
     pub fn set_value(&mut self, scope: &SettingsEnvScope, key: &str, value: EnvValue) {
         crate::tui::screens::settings::update::set_settings_env_value(
             &mut self.pending,
@@ -1727,6 +1735,25 @@ mod tests {
             state.pending_picker_target,
             Some((SettingsEnvScope::Global, Some(String::from("KEY"))))
         );
+    }
+
+    #[test]
+    fn settings_env_clear_pending_picker_target_removes_scope_and_key() {
+        let mut state = SettingsEnvState::<String, i32>::from_pending(empty_env_config());
+        state.set_pending_picker_target((SettingsEnvScope::Global, Some("KEY".into())));
+
+        state.clear_pending_picker_target();
+
+        assert!(state.pending_picker_target.is_none());
+    }
+
+    #[test]
+    fn settings_env_stash_pending_picker_value_stores_value() {
+        let mut state = SettingsEnvState::<String, i32>::from_pending(empty_env_config());
+
+        state.stash_pending_picker_value("value".into());
+
+        assert_eq!(state.pending_picker_value, Some(String::from("value")));
     }
 
     #[test]

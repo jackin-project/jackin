@@ -658,7 +658,7 @@ pub(super) fn handle_settings_env_modal(
                     let plan = settings_update::settings_env_op_picker_commit_plan(
                         env.pending_picker_target.as_ref(),
                     );
-                    env.pending_picker_target.take();
+                    env.clear_pending_picker_target();
                     match plan {
                         SettingsEnvOpPickerCommitPlan::SetExisting { scope, key } => {
                             set_settings_env_value_typed(
@@ -670,7 +670,7 @@ pub(super) fn handle_settings_env_modal(
                             env.clear_modal_chain();
                         }
                         SettingsEnvOpPickerCommitPlan::StashForNewKey { scope } => {
-                            env.pending_picker_value = Some(jackin_core::EnvValue::OpRef(op_ref));
+                            env.stash_pending_picker_value(jackin_core::EnvValue::OpRef(op_ref));
                             let plan = settings_env_new_key_after_picker_text_plan(scope);
                             let state = settings_env_key_input_state(
                                 &env.pending,
