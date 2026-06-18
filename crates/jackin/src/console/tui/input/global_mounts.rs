@@ -1156,13 +1156,10 @@ fn open_settings_env_picker_modal(
 }
 
 fn delete_selected_settings_env(env: &mut crate::console::tui::state::SettingsEnvState<'_>) {
-    let rows = settings_update::settings_env_flat_rows(&env.pending, &env.expanded);
-    let selected = env.selected;
-    settings_update::remove_settings_env_row(
+    settings_update::remove_selected_settings_env_row(
         &mut env.pending,
         &env.expanded,
         &mut env.selected,
-        rows.get(selected),
     );
 }
 

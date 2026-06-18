@@ -1048,6 +1048,34 @@ fn remove_settings_env_row_deletes_key_and_clamps_selection() {
 }
 
 #[test]
+fn remove_selected_settings_env_row_uses_current_flat_selection() {
+    let mut pending = env_config();
+    let expanded = BTreeSet::from(["alpha".to_owned()]);
+    let rows = settings_env_flat_rows(&pending, &expanded);
+    let mut selected = rows
+        .iter()
+        .position(|row| {
+            matches!(
+                row,
+                SettingsEnvRow::Key {
+                    scope: SettingsEnvScope::Role(role),
+                    key,
+                } if role == "alpha" && key == "ROLE_A"
+            )
+        })
+        .unwrap_or(usize::MAX);
+
+    assert!(remove_selected_settings_env_row(
+        &mut pending,
+        &expanded,
+        &mut selected,
+    ));
+
+    assert!(!pending.roles["alpha"].contains_key("ROLE_A"));
+    assert!(selected < settings_env_flat_row_count(&pending, &expanded));
+}
+
+#[test]
 fn settings_env_add_target_follows_row_scope() {
     let global = SettingsEnvRow::GlobalAddSentinel;
     let role = SettingsEnvRow::Key {

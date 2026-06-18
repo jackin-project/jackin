@@ -1189,6 +1189,15 @@ pub fn remove_settings_env_row<V>(
     true
 }
 
+pub fn remove_selected_settings_env_row<V>(
+    pending: &mut SettingsEnvConfig<V>,
+    expanded_roles: &BTreeSet<String>,
+    selected: &mut usize,
+) -> bool {
+    let rows = settings_env_flat_rows(pending, expanded_roles);
+    remove_settings_env_row(pending, expanded_roles, selected, rows.get(*selected))
+}
+
 #[must_use]
 pub fn settings_env_add_target_for_row(row: Option<&SettingsEnvRow>) -> Option<SettingsEnvScope> {
     match row? {
