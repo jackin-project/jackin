@@ -86,3 +86,9 @@ fn instance_refresh_throttle_plan_wraps_generation() {
     assert_eq!(plan.generation, 0);
     assert_eq!(plan.start_generation, Some(0));
 }
+
+#[test]
+fn forced_instance_refresh_generation_wraps() {
+    assert_eq!(forced_instance_refresh_generation(4), 5);
+    assert_eq!(forced_instance_refresh_generation(u64::MAX), 0);
+}

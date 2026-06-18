@@ -17,7 +17,8 @@ use jackin_console::tui::screens::workspaces::update::{
     workspace_visual_selected_index,
 };
 use jackin_console::tui::subscriptions::{
-    InstanceRefreshThrottleState, instance_refresh_throttle_plan,
+    InstanceRefreshThrottleState, forced_instance_refresh_generation,
+    instance_refresh_throttle_plan,
 };
 use jackin_env::OpCache;
 use jackin_tui::components::FocusOwner;
@@ -860,7 +861,8 @@ impl ManagerState<'_> {
     /// state immediately instead of waiting up to `REFRESH_INTERVAL`.
     pub fn force_refresh_instances(&mut self) {
         self.instances_last_refresh = None;
-        self.instances_refresh_generation = self.instances_refresh_generation.wrapping_add(1);
+        self.instances_refresh_generation =
+            forced_instance_refresh_generation(self.instances_refresh_generation);
         self.instances_refresh_rx = None;
     }
 
@@ -869,7 +871,8 @@ impl ManagerState<'_> {
     #[cfg(test)]
     pub fn force_refresh_instances_for_test(&mut self) {
         self.instances_last_refresh = None;
-        self.instances_refresh_generation = self.instances_refresh_generation.wrapping_add(1);
+        self.instances_refresh_generation =
+            forced_instance_refresh_generation(self.instances_refresh_generation);
         self.instances_refresh_rx = None;
     }
 

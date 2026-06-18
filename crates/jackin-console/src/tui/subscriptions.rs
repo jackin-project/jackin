@@ -78,6 +78,11 @@ pub fn instance_refresh_throttle_plan(
     }
 }
 
+#[must_use]
+pub const fn forced_instance_refresh_generation(generation: u64) -> u64 {
+    generation.wrapping_add(1)
+}
+
 #[derive(Debug)]
 pub struct InstanceRefreshSnapshot<Instance, Session, Snapshot> {
     pub instances: Vec<Instance>,
