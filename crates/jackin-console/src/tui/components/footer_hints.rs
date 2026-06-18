@@ -49,6 +49,32 @@ pub struct WorkspaceListFooterFacts {
     pub show_open_in_github: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceFooterScrollFacts {
+    pub inline_agent_picker: bool,
+    pub inline_role_picker: bool,
+    pub inline_picker_scroll_axes: ScrollAxes,
+    pub focused_block_scroll_axes: Option<ScrollAxes>,
+    pub list_names_focused: bool,
+    pub list_names_scroll_axes: ScrollAxes,
+    pub show_expand: bool,
+    pub show_collapse: bool,
+}
+
+#[must_use]
+pub fn workspace_footer_scroll_axes(facts: WorkspaceFooterScrollFacts) -> ScrollAxes {
+    if facts.inline_agent_picker || facts.inline_role_picker {
+        return facts.inline_picker_scroll_axes;
+    }
+    if let Some(axes) = facts.focused_block_scroll_axes {
+        return axes;
+    }
+    if facts.list_names_focused && !facts.show_expand && !facts.show_collapse {
+        return facts.list_names_scroll_axes;
+    }
+    ScrollAxes::none()
+}
+
 #[must_use]
 pub fn workspace_list_footer_mode_for_facts(
     facts: WorkspaceListFooterFacts,

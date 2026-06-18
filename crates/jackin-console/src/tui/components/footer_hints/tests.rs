@@ -121,6 +121,58 @@ fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
 }
 
 #[test]
+fn workspace_footer_scroll_axes_prioritize_inline_then_focus_then_names() {
+    let inline_axes = ScrollAxes {
+        vertical: true,
+        horizontal: false,
+    };
+    let focus_axes = ScrollAxes {
+        vertical: false,
+        horizontal: true,
+    };
+
+    assert_eq!(
+        workspace_footer_scroll_axes(WorkspaceFooterScrollFacts {
+            inline_agent_picker: true,
+            inline_role_picker: false,
+            inline_picker_scroll_axes: inline_axes,
+            focused_block_scroll_axes: Some(focus_axes),
+            list_names_focused: true,
+            list_names_scroll_axes: ScrollAxes::none(),
+            show_expand: false,
+            show_collapse: false,
+        }),
+        inline_axes
+    );
+    assert_eq!(
+        workspace_footer_scroll_axes(WorkspaceFooterScrollFacts {
+            inline_agent_picker: false,
+            inline_role_picker: false,
+            inline_picker_scroll_axes: ScrollAxes::none(),
+            focused_block_scroll_axes: Some(focus_axes),
+            list_names_focused: true,
+            list_names_scroll_axes: inline_axes,
+            show_expand: false,
+            show_collapse: false,
+        }),
+        focus_axes
+    );
+    assert_eq!(
+        workspace_footer_scroll_axes(WorkspaceFooterScrollFacts {
+            inline_agent_picker: false,
+            inline_role_picker: false,
+            inline_picker_scroll_axes: ScrollAxes::none(),
+            focused_block_scroll_axes: None,
+            list_names_focused: true,
+            list_names_scroll_axes: inline_axes,
+            show_expand: true,
+            show_collapse: false,
+        }),
+        ScrollAxes::none()
+    );
+}
+
+#[test]
 fn selected_instance_snapshot_routes_by_row_kind() {
     assert!(selected_instance_snapshot_available(
         ManagerListRow::WorkspaceInstance(2, 3),

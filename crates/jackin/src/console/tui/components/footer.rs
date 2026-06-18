@@ -4,7 +4,8 @@ use crate::console::tui::layout::list::list_names_content_width;
 use crate::console::tui::state::{ManagerListRow, ManagerState};
 use jackin_config::AppConfig;
 use jackin_console::tui::components::footer_hints::{
-    WorkspaceListFooterFacts, selected_instance_snapshot_available, workspace_list_footer_items,
+    WorkspaceFooterScrollFacts, WorkspaceListFooterFacts, selected_instance_snapshot_available,
+    workspace_footer_scroll_axes, workspace_list_footer_items,
     workspace_list_footer_mode_for_facts,
 };
 use jackin_console::tui::list_geometry;
@@ -86,27 +87,35 @@ fn workspace_scroll_axes(
     show_expand: bool,
     show_collapse: bool,
 ) -> ScrollAxes {
-    if state.inline_agent_picker.is_some() || state.inline_role_picker.is_some() {
-        return inline_picker_scroll_axes(state);
-    }
-    if let Some(focus) = state.list_scroll_focus() {
-        let body = jackin_console::tui::layout::list_body_area(state.cached_term_size);
-        let columns = list_geometry::split_list_columns(body, state.list_split_pct);
-        let areas = crate::console::tui::layout::list::selected_sidebar_scroll_areas(
-            columns.preview,
-            state,
-            config,
-            cwd,
-        );
-        return jackin_console::tui::sidebar_layout::focused_scroll_area_axes(
-            focus.into(),
-            areas.as_ref(),
-        );
-    }
-    if state.list_names_focused() && !show_expand && !show_collapse {
-        return list_names_scroll_axes(state);
-    }
-    ScrollAxes::none()
+    workspace_footer_scroll_axes(WorkspaceFooterScrollFacts {
+        inline_agent_picker: state.inline_agent_picker.is_some(),
+        inline_role_picker: state.inline_role_picker.is_some(),
+        inline_picker_scroll_axes: inline_picker_scroll_axes(state),
+        focused_block_scroll_axes: focused_block_scroll_axes(state, config, cwd),
+        list_names_focused: state.list_names_focused(),
+        list_names_scroll_axes: list_names_scroll_axes(state),
+        show_expand,
+        show_collapse,
+    })
+}
+
+fn focused_block_scroll_axes(
+    state: &ManagerState<'_>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+) -> Option<ScrollAxes> {
+    let focus = state.list_scroll_focus()?;
+    let body = jackin_console::tui::layout::list_body_area(state.cached_term_size);
+    let columns = list_geometry::split_list_columns(body, state.list_split_pct);
+    let areas = crate::console::tui::layout::list::selected_sidebar_scroll_areas(
+        columns.preview,
+        state,
+        config,
+        cwd,
+    );
+    Some(
+        jackin_console::tui::sidebar_layout::focused_scroll_area_axes(focus.into(), areas.as_ref()),
+    )
 }
 
 fn inline_picker_scroll_axes(state: &ManagerState<'_>) -> ScrollAxes {
