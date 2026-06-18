@@ -1,5 +1,6 @@
 use super::{
-    AgentPickerChoices, ConsoleInstanceAction, agent_picker_choices_for_workspace,
+    AgentPickerChoices, AgentPickerResolution, ConsoleInstanceAction, OnPromptFailure,
+    PromptOutcome, agent_picker_choices_for_workspace, launch_agent_prompt_plan,
     launch_prompt_should_probe_agents,
 };
 use crate::tui::screens::workspaces::update::WorkspaceInstanceAction;
@@ -64,4 +65,40 @@ fn agent_picker_choices_preserve_probe_result_when_prompt_needed() {
 fn launch_prompt_probe_policy_skips_workspace_default_agent() {
     assert!(!launch_prompt_should_probe_agents(true));
     assert!(launch_prompt_should_probe_agents(false));
+}
+
+#[test]
+fn launch_agent_prompt_plan_routes_opened_and_not_needed() {
+    let opened =
+        launch_agent_prompt_plan(AgentPickerResolution::Opened, OnPromptFailure::ClearPending);
+    assert_eq!(opened.outcome, PromptOutcome::Defer);
+    assert!(opened.store_pending_launch);
+    assert!(opened.error.is_none());
+
+    let not_needed = launch_agent_prompt_plan(
+        AgentPickerResolution::NotNeeded,
+        OnPromptFailure::RestorePending,
+    );
+    assert_eq!(not_needed.outcome, PromptOutcome::Launch);
+    assert!(!not_needed.store_pending_launch);
+    assert!(not_needed.error.is_none());
+}
+
+#[test]
+fn launch_agent_prompt_plan_restores_pending_only_when_requested() {
+    let clear = launch_agent_prompt_plan(
+        AgentPickerResolution::Failed(anyhow::anyhow!("missing role")),
+        OnPromptFailure::ClearPending,
+    );
+    assert_eq!(clear.outcome, PromptOutcome::Defer);
+    assert!(!clear.store_pending_launch);
+    assert!(clear.error.is_some());
+
+    let restore = launch_agent_prompt_plan(
+        AgentPickerResolution::Failed(anyhow::anyhow!("missing role")),
+        OnPromptFailure::RestorePending,
+    );
+    assert_eq!(restore.outcome, PromptOutcome::Defer);
+    assert!(restore.store_pending_launch);
+    assert!(restore.error.is_some());
 }

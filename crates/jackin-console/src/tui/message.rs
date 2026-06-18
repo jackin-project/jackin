@@ -376,6 +376,37 @@ pub const fn launch_prompt_should_probe_agents(default_agent_configured: bool) -
     !default_agent_configured
 }
 
+#[derive(Debug)]
+pub struct LaunchAgentPromptPlan {
+    pub outcome: PromptOutcome,
+    pub store_pending_launch: bool,
+    pub error: Option<anyhow::Error>,
+}
+
+#[must_use]
+pub fn launch_agent_prompt_plan(
+    resolution: AgentPickerResolution,
+    on_failure: OnPromptFailure,
+) -> LaunchAgentPromptPlan {
+    match resolution {
+        AgentPickerResolution::Opened => LaunchAgentPromptPlan {
+            outcome: PromptOutcome::Defer,
+            store_pending_launch: true,
+            error: None,
+        },
+        AgentPickerResolution::NotNeeded => LaunchAgentPromptPlan {
+            outcome: PromptOutcome::Launch,
+            store_pending_launch: false,
+            error: None,
+        },
+        AgentPickerResolution::Failed(error) => LaunchAgentPromptPlan {
+            outcome: PromptOutcome::Defer,
+            store_pending_launch: matches!(on_failure, OnPromptFailure::RestorePending),
+            error: Some(error),
+        },
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PromptOutcome {
     Launch,

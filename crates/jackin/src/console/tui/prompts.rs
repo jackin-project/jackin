@@ -7,7 +7,9 @@ use jackin_console::tui::components::error_popup::{
     role_resolution_error_message, role_resolution_error_title,
 };
 use jackin_console::tui::components::status_popup::role_resolution_status_popup_state;
-use jackin_console::tui::message::{AgentPickerResolution, agent_picker_choices_for_workspace};
+use jackin_console::tui::message::{
+    AgentPickerResolution, agent_picker_choices_for_workspace, launch_agent_prompt_plan,
+};
 pub(in crate::console) use jackin_console::tui::message::{OnPromptFailure, PromptOutcome};
 use jackin_core::RoleSelector;
 
@@ -82,20 +84,17 @@ pub(in crate::console) fn prompt_agent_for_launch(
     on_failure: OnPromptFailure,
     choices: AgentPickerChoices,
 ) -> PromptOutcome {
-    match try_prompt_for_agent(state, role, workspace, choices) {
-        AgentPickerResolution::Opened => {
-            state.pending_launch = Some(input);
-            PromptOutcome::Defer
-        }
-        AgentPickerResolution::NotNeeded => PromptOutcome::Launch,
-        AgentPickerResolution::Failed(error) => {
-            if matches!(on_failure, OnPromptFailure::RestorePending) {
-                state.pending_launch = Some(input);
-            }
-            show_role_resolution_error(state, role, &error);
-            PromptOutcome::Defer
-        }
+    let plan = launch_agent_prompt_plan(
+        try_prompt_for_agent(state, role, workspace, choices),
+        on_failure,
+    );
+    if plan.store_pending_launch {
+        state.pending_launch = Some(input);
     }
+    if let Some(error) = plan.error {
+        show_role_resolution_error(state, role, &error);
+    }
+    plan.outcome
 }
 
 pub(super) fn dispatch_launch_prompt(
