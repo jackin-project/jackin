@@ -382,6 +382,70 @@ fn workspace_preview_pane_plan_routes_all_row_kinds() {
 }
 
 #[test]
+fn workspace_sidebar_plan_routes_picker_precedence() {
+    assert_eq!(
+        workspace_sidebar_plan(WorkspaceSidebarFacts {
+            inline_provider_picker_open: true,
+            launch_provider_picker_open: true,
+            inline_new_session_picker_open: true,
+            inline_agent_picker_open: true,
+            inline_role_picker_open: true,
+        }),
+        WorkspaceSidebarPlan::InlineProviderPicker
+    );
+    assert_eq!(
+        workspace_sidebar_plan(WorkspaceSidebarFacts {
+            inline_provider_picker_open: false,
+            launch_provider_picker_open: true,
+            inline_new_session_picker_open: true,
+            inline_agent_picker_open: true,
+            inline_role_picker_open: true,
+        }),
+        WorkspaceSidebarPlan::LaunchProviderPicker
+    );
+    assert_eq!(
+        workspace_sidebar_plan(WorkspaceSidebarFacts {
+            inline_provider_picker_open: false,
+            launch_provider_picker_open: false,
+            inline_new_session_picker_open: true,
+            inline_agent_picker_open: true,
+            inline_role_picker_open: true,
+        }),
+        WorkspaceSidebarPlan::InlineNewSessionPicker
+    );
+    assert_eq!(
+        workspace_sidebar_plan(WorkspaceSidebarFacts {
+            inline_provider_picker_open: false,
+            launch_provider_picker_open: false,
+            inline_new_session_picker_open: false,
+            inline_agent_picker_open: true,
+            inline_role_picker_open: true,
+        }),
+        WorkspaceSidebarPlan::InlineAgentPicker
+    );
+    assert_eq!(
+        workspace_sidebar_plan(WorkspaceSidebarFacts {
+            inline_provider_picker_open: false,
+            launch_provider_picker_open: false,
+            inline_new_session_picker_open: false,
+            inline_agent_picker_open: false,
+            inline_role_picker_open: true,
+        }),
+        WorkspaceSidebarPlan::InlineRolePicker
+    );
+    assert_eq!(
+        workspace_sidebar_plan(WorkspaceSidebarFacts {
+            inline_provider_picker_open: false,
+            launch_provider_picker_open: false,
+            inline_new_session_picker_open: false,
+            inline_agent_picker_open: false,
+            inline_role_picker_open: false,
+        }),
+        WorkspaceSidebarPlan::ListNames
+    );
+}
+
+#[test]
 fn workspace_list_display_row_for_row_returns_none_for_missing_backing_data() {
     assert_eq!(
         workspace_list_display_row_for_row(

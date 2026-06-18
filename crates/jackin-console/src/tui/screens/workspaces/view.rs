@@ -87,6 +87,25 @@ pub enum WorkspacePreviewPanePlan {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceSidebarPlan {
+    InlineProviderPicker,
+    LaunchProviderPicker,
+    InlineNewSessionPicker,
+    InlineAgentPicker,
+    InlineRolePicker,
+    ListNames,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceSidebarFacts {
+    pub inline_provider_picker_open: bool,
+    pub launch_provider_picker_open: bool,
+    pub inline_new_session_picker_open: bool,
+    pub inline_agent_picker_open: bool,
+    pub inline_role_picker_open: bool,
+}
+
 #[must_use]
 pub const fn workspace_preview_pane_plan(row: ManagerListRow) -> WorkspacePreviewPanePlan {
     match row {
@@ -106,6 +125,26 @@ pub const fn workspace_preview_pane_plan(row: ManagerListRow) -> WorkspacePrevie
             }
         }
     }
+}
+
+#[must_use]
+pub const fn workspace_sidebar_plan(facts: WorkspaceSidebarFacts) -> WorkspaceSidebarPlan {
+    if facts.inline_provider_picker_open {
+        return WorkspaceSidebarPlan::InlineProviderPicker;
+    }
+    if facts.launch_provider_picker_open {
+        return WorkspaceSidebarPlan::LaunchProviderPicker;
+    }
+    if facts.inline_new_session_picker_open {
+        return WorkspaceSidebarPlan::InlineNewSessionPicker;
+    }
+    if facts.inline_agent_picker_open {
+        return WorkspaceSidebarPlan::InlineAgentPicker;
+    }
+    if facts.inline_role_picker_open {
+        return WorkspaceSidebarPlan::InlineRolePicker;
+    }
+    WorkspaceSidebarPlan::ListNames
 }
 
 #[must_use]
