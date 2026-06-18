@@ -283,6 +283,18 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   inferred via `count_tokens`). Caveats: PolyForm-Noncommercial license; dollar views assume API pricing,
   not a Max subscription (file 41). The JSONL-reading, no-proxy class is the safe measurement front-end of
   the validation harness.
+- **[`56-rtk-and-write-time-observation-compression.md`](56-rtk-and-write-time-observation-compression/)** —
+  deep dive on `rtk-ai/rtk` ("Rust Token Killer") and the **three-way** Caveman vs Headroom vs RTK
+  comparison the operator asked for. RTK is the deterministic, Claude-Code-native productization of the
+  cache-safe **write-time observation-compression** design point files 53 (H1) and 54 named: it compresses
+  shell-command output (tests/git/logs/builds) at the tool boundary via a PreToolUse hook — no ML, no MCP
+  rent, cache-safe by construction — but reaches only Bash calls (not native `Read`/`Grep`). The "60–90%"
+  is a per-command best case (no whole-session telemetry, no independent benchmark; 63.5k★ is PR-inflated
+  per file 54 §A), corrected to low-double-digit whole-bill, same as the caveman K1 / headroom H-K1 moves.
+  Verdict: caveman for output; RTK *or* headroom for input (deterministic-narrow vs ML-broad, not both);
+  RTK is the most container-adoptable of the three, pilot it role-scoped with the host-write/hook-conflict
+  guardrails. File 51's ast-grep coverage was also extended into a full verdict (structural-search token
+  economics + the skill-vs-MCP-vs-CLI form-factor analysis).
 
 ### Final completion audit 
 

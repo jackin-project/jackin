@@ -78,7 +78,7 @@ best tools for this use case?** Not universally.
 | **Claude Context** (`zilliztech/claude-context`) | Open-source semantic code search MCP / RAG layer | You want vector+keyword semantic retrieval with a published benchmark claiming token reduction, and structural symbol graph is less important. | You need exact callers/dependencies or edits by symbol; embedding retrieval can return plausible but wrong context. | Public benchmark claims 39.4% token reduction on a code-search task set; needs local reproduction. |
 | **CodeGraphContext (CGC)** | Open-source code knowledge graph / MCP | You want a graph-first repo memory layer and are willing to evaluate a newer system against codedb. | Maturity, setup cost, and token evidence are less clear; overlap with codedb is large. | Interesting codedb competitor, but not enough public evidence to call it better. |
 | **rust-analyzer / language-server MCPs** | LSP-backed definitions, references, hover/type tools | You need exact language semantics. For Rust specifically, rust-analyzer is the quality floor, not optional. | You need broad repo retrieval, natural-language search, or cross-language summaries. | Negative-cost when a definition/reference call replaces grep + multiple reads; schema/tooling overhead must be bounded. |
-| **ast-grep / Semgrep MCP** | Structural pattern search and rewrite | You need syntax-pattern matches or safe mechanical refactors (`unwrap`, derive blocks, call shapes). | You need semantic references/call graph or fuzzy natural-language retrieval. | Strong for targeted structural tasks; not a general replacement. |
+| **ast-grep / Semgrep MCP** | Structural pattern search and rewrite | You need syntax-pattern matches or safe mechanical refactors (`unwrap`, derive blocks, call shapes). | You need semantic references/call graph or fuzzy natural-language retrieval. | Strong for targeted structural tasks; not a general replacement. **Full verdict + skill/MCP/CLI form-factor analysis: [ast-grep verdict](#ast-grep-verdict-structural-search-as-an-agent-skill) below.** |
 | **aider repo-map / repomix / RepoPrompt-style packers** | Context packaging and repo maps | You need a compact up-front orientation artifact for a small/medium repo. | You are optimizing token spend aggressively; packers can front-load context instead of avoiding reads. | Useful baseline/control, not "significantly better" for token saving than bounded retrieval. |
 
 ### Ranking by use case
@@ -229,6 +229,63 @@ workflow example is more concrete but still a selected vendor example.
 **Local adoption verdict:** Do not fold CodeGraff into jackin' core. If useful,
 model it as an explicit role/toolchain experiment. Extract the technique pattern
 first: function-scope read, bounded search, diff-returning edits, and batch tools.
+
+### ast-grep verdict (structural search as an agent skill)
+
+ast-grep appears in the recommended local stack above and in the row table, but it
+was never given a full verdict. This section closes that gap (added 2026-06-18,
+prompted by the operator's request to research the official
+[`ast-grep/agent-skill`](https://github.com/ast-grep/agent-skill) package).
+
+**What it is.** ast-grep (`ast-grep/ast-grep`, 14,617★, MIT, created 2022 — a mature,
+monthly-released project; gh api 2026-06-18) is a Rust CLI for **structural** code
+search, lint, and rewrite: it matches tree-sitter AST patterns (`$X.unwrap()`,
+`async fn` without error handling, a specific call shape) and can rewrite them as
+codemods across thousands of files, deterministically, never matching inside
+comments or string literals. There are three ways an agent reaches it:
+
+| Form | What it is | Standing token cost | Trade-off |
+|---|---|---|---|
+| **CLI** (`ast-grep` on `PATH`) | The binary, called from a shell | **Zero** schema rent; cross-runtime | The agent must know the flags / be told to use it |
+| **Agent skill** ([`ast-grep/agent-skill`](https://github.com/ast-grep/agent-skill), 750★, Claude-only, created 2025-11; **last pushed 2026-01**, ~5 months stale) | A Claude Code Skill teaching a verify-before-search loop (write rule → test on examples → search) | **Near-zero** — only the skill's frontmatter is advertised; full `SKILL.md` loads on trigger | Claude "cannot automatically detect when to use ast-grep" (the repo's own admission) — the user must name it; simple prompting "requires a model with up-to-date knowledge of ast-grep" |
+| **MCP** ([`ast-grep/ast-grep-mcp`](https://github.com/ast-grep/ast-grep-mcp), 423★, **explicitly experimental**) | 4 tools: `dump_syntax_tree`, `test_match_code_rule`, `find_code`, `find_code_by_rule` | **Schema rent every turn**, used or not, plus `uv`/MCP setup | Deterministic structured rule-refinement loop; no reliance on the model's trained ast-grep knowledge |
+
+**Token economics — real mechanism, evidence by category not by ast-grep.** The
+saving is the same lever as codedb's symbol search: a structural match returns only
+the nodes that match, with `file:line`, so the agent skips the grep → read-whole-file
+→ confirm-context loop that burns input tokens. The mechanism is sound and
+directionally well-supported, **but there is no ast-grep-specific A/B token
+benchmark anywhere.** The headline numbers that circulate — ~32× (`AddObservation`
+31,530 → 972 tokens), "3–50× fewer tokens per response", an "average 6×" output
+compression — all come from independent analysts measuring **graph/symbol** tools
+(Gortex, LSP-backed) or synthesizing the CoREB/SWEzze papers, **not** from ast-grep
+itself. Tellingly, ast-grep's own materials (`ast-grep.github.io`, the AI-rules blog)
+make **zero token claims** — they argue *reliability* of AI-generated rules via
+test-before-search, not economics. Evidence tier: **T4 for any ast-grep-specific
+token percentage** (none published); **T2/T3 for the category mechanism** (structural
+retrieval beats grep+read — the same lever this file reproduces locally at −98% for
+symbol search). The honest read: ast-grep saves tokens for the same structural reason
+codedb does, and the magnitude is plausibly in the same band, but no one has measured
+ast-grep specifically — treat the 32×/6× figures as cousins' numbers, not its own.
+
+**Niche — and the hard limit.** ast-grep owns the **structural** modality in the
+lexical → structural → graph escalation: it is the deterministic middle that needs no
+language server, ideal for syntax-shape queries and especially **codemods/rewrites**.
+It **cannot resolve names across files** — it cannot tell which `parseConfig` a call
+refers to. Cross-file symbol resolution is LSP / rust-analyzer / Serena territory
+(the graph modality); fuzzy/conceptual queries are embedding/semantic territory. So
+ast-grep is a complement to, not a replacement for, codedb's caller/dependency graph
+and rust-analyzer's compiler truth — exactly the routing the recommended stack and
+the architect roadmap already encode.
+
+**jackin' verdict.** For a multi-runtime role, the **CLI form on `PATH` plus a shared
+guidance file is the right default** — zero schema rent, every runtime reaches it,
+no Claude-only lock-in — which is precisely what the the-architect pilot chose (the
+Claude-only skill is deliberately *not* in that pilot, and the experimental MCP's
+per-turn rent is not justified when the CLI is free). The skill is worth knowing as
+the lowest-effort Claude-only on-ramp, but its explicit-invocation gating and
+five-month staleness make it a weak default. Decision record and routing:
+<RepoFile path="docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx">docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx</RepoFile>.
 
 ## Recommended setup for AI agents
 
@@ -483,7 +540,11 @@ economics; a jackin' container setup; and a runnable validation protocol — is 
 - Claude Context benchmark article: [https://milvus.io/blog/claude-context-vs-claude-code-complete-code-context-solution-for-ai-coding-assistants.md](https://milvus.io/blog/claude-context-vs-claude-code-complete-code-context-solution-for-ai-coding-assistants.md)
 - CodeGraphContext: [https://github.com/CodeGraphContext/CodeGraphContext](https://github.com/CodeGraphContext/CodeGraphContext)
 - aider repo map: [https://aider.chat/docs/repomap.html](https://aider.chat/docs/repomap.html)
-- ast-grep: [https://ast-grep.github.io/](https://ast-grep.github.io/)
+- ast-grep core: [https://ast-grep.github.io/](https://ast-grep.github.io/) · AI-prompting docs (four integration modes, no token claims) [https://ast-grep.github.io/advanced/prompting.html](https://ast-grep.github.io/advanced/prompting.html)
+- ast-grep agent skill (Claude-only, reliability-focused `SKILL.md`, 750★, stale since 2026-01): [https://github.com/ast-grep/agent-skill](https://github.com/ast-grep/agent-skill)
+- ast-grep MCP (experimental, 4 tools, 423★): [https://github.com/ast-grep/ast-grep-mcp](https://github.com/ast-grep/ast-grep-mcp)
+- Structural-vs-graph token analysis (independent; the 32× / 3–50× figures are graph-tool numbers, not ast-grep's): [https://zzet.org/gortex/grep-replacement-for-ai-agents/](https://zzet.org/gortex/grep-replacement-for-ai-agents/) · "which tool when" (lexical/structural/graph/semantic modalities) [https://ceaksan.com/en/code-search-for-ai-agents-which-tool-when](https://ceaksan.com/en/code-search-for-ai-agents-which-tool-when)
+- ast-grep CLI/skill decision record for jackin' roles: <RepoFile path="docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx">docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx</RepoFile>
 - Existing jackin' fff pilot roadmap:
  <RepoFile path="docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx">docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx</RepoFile>
 
