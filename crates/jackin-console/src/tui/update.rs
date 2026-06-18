@@ -14,11 +14,39 @@ pub enum StatusOverlayPlan {
     Dismiss,
 }
 
+pub trait StatusOverlayState {
+    fn set_status_overlay(&mut self, overlay: Option<jackin_tui::components::StatusPopupState>);
+}
+
+pub fn apply_status_overlay_plan(state: &mut impl StatusOverlayState, plan: StatusOverlayPlan) {
+    match plan {
+        StatusOverlayPlan::Open(overlay) => state.set_status_overlay(Some(overlay)),
+        StatusOverlayPlan::Dismiss => state.set_status_overlay(None),
+    }
+}
+
 #[derive(Debug)]
 pub enum ListModalPlan {
     ContainerInfo(jackin_tui::components::ContainerInfoState),
     GithubPicker(crate::tui::components::github_picker::GithubPickerState),
     Dismiss,
+}
+
+pub trait ListModalState {
+    fn open_container_info_modal(&mut self, state: jackin_tui::components::ContainerInfoState);
+    fn open_github_picker_modal(
+        &mut self,
+        state: crate::tui::components::github_picker::GithubPickerState,
+    );
+    fn dismiss_list_modal(&mut self);
+}
+
+pub fn apply_list_modal_plan(state: &mut impl ListModalState, plan: ListModalPlan) {
+    match plan {
+        ListModalPlan::ContainerInfo(info) => state.open_container_info_modal(info),
+        ListModalPlan::GithubPicker(picker) => state.open_github_picker_modal(picker),
+        ListModalPlan::Dismiss => state.dismiss_list_modal(),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +56,27 @@ pub enum InlinePickerDismissal {
     Agent,
     Provider,
     LaunchProvider,
+}
+
+pub trait InlinePickerDismissalState {
+    fn clear_inline_new_session_picker(&mut self);
+    fn clear_inline_role_picker(&mut self);
+    fn clear_inline_agent_picker(&mut self);
+    fn clear_inline_provider_picker(&mut self);
+    fn clear_launch_provider_picker(&mut self);
+}
+
+pub fn apply_inline_picker_dismissal_plan(
+    state: &mut impl InlinePickerDismissalState,
+    plan: InlinePickerDismissal,
+) {
+    match plan {
+        InlinePickerDismissal::NewSession => state.clear_inline_new_session_picker(),
+        InlinePickerDismissal::Role => state.clear_inline_role_picker(),
+        InlinePickerDismissal::Agent => state.clear_inline_agent_picker(),
+        InlinePickerDismissal::Provider => state.clear_inline_provider_picker(),
+        InlinePickerDismissal::LaunchProvider => state.clear_launch_provider_picker(),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

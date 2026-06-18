@@ -45,11 +45,127 @@ fn status_overlay_plans_construct_open_and_dismiss() {
     ));
 }
 
+#[derive(Default)]
+struct TestStatusOverlay {
+    overlay: Option<jackin_tui::components::StatusPopupState>,
+}
+
+impl StatusOverlayState for TestStatusOverlay {
+    fn set_status_overlay(&mut self, overlay: Option<jackin_tui::components::StatusPopupState>) {
+        self.overlay = overlay;
+    }
+}
+
+#[test]
+fn apply_status_overlay_plan_opens_and_dismisses() {
+    let mut state = TestStatusOverlay::default();
+
+    apply_status_overlay_plan(&mut state, open_status_overlay_plan("Title", "Body"));
+    assert!(state.overlay.is_some());
+
+    apply_status_overlay_plan(&mut state, dismiss_status_overlay_plan());
+    assert!(state.overlay.is_none());
+}
+
+#[derive(Default)]
+struct TestListModal {
+    opened: Option<&'static str>,
+}
+
+impl ListModalState for TestListModal {
+    fn open_container_info_modal(&mut self, _state: jackin_tui::components::ContainerInfoState) {
+        self.opened = Some("container-info");
+    }
+
+    fn open_github_picker_modal(
+        &mut self,
+        _state: crate::tui::components::github_picker::GithubPickerState,
+    ) {
+        self.opened = Some("github-picker");
+    }
+
+    fn dismiss_list_modal(&mut self) {
+        self.opened = None;
+    }
+}
+
+#[test]
+fn apply_list_modal_plan_routes_modal_storage() {
+    let mut state = TestListModal::default();
+
+    apply_list_modal_plan(
+        &mut state,
+        open_container_info_modal_plan(jackin_tui::components::ContainerInfoState::new(
+            "title",
+            vec![jackin_tui::components::ContainerInfoRow::new(
+                "label", "value",
+            )],
+        )),
+    );
+    assert_eq!(state.opened, Some("container-info"));
+
+    apply_list_modal_plan(&mut state, dismiss_list_modal_plan());
+    assert_eq!(state.opened, None);
+}
+
 #[test]
 fn inline_picker_dismissal_plan_returns_requested_kind() {
     assert_eq!(
         inline_picker_dismissal_plan(InlinePickerDismissal::Agent),
         InlinePickerDismissal::Agent
+    );
+}
+
+#[derive(Default)]
+struct TestInlinePickers {
+    cleared: Vec<&'static str>,
+}
+
+impl InlinePickerDismissalState for TestInlinePickers {
+    fn clear_inline_new_session_picker(&mut self) {
+        self.cleared.push("new-session");
+    }
+
+    fn clear_inline_role_picker(&mut self) {
+        self.cleared.push("role");
+    }
+
+    fn clear_inline_agent_picker(&mut self) {
+        self.cleared.push("agent");
+    }
+
+    fn clear_inline_provider_picker(&mut self) {
+        self.cleared.push("provider");
+    }
+
+    fn clear_launch_provider_picker(&mut self) {
+        self.cleared.push("launch-provider");
+    }
+}
+
+#[test]
+fn apply_inline_picker_dismissal_plan_clears_requested_picker() {
+    let mut state = TestInlinePickers::default();
+
+    for dismissal in [
+        InlinePickerDismissal::NewSession,
+        InlinePickerDismissal::Role,
+        InlinePickerDismissal::Agent,
+        InlinePickerDismissal::Provider,
+        InlinePickerDismissal::LaunchProvider,
+    ] {
+        apply_inline_picker_dismissal_plan(&mut state, dismissal);
+    }
+
+    assert_eq!(
+        state.cleared,
+        [
+            "new-session",
+            "role",
+            "agent",
+            "provider",
+            "launch-provider",
+        ]
     );
 }
 

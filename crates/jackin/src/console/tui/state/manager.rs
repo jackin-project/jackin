@@ -23,6 +23,7 @@ use jackin_console::tui::subscriptions::{
     InstanceRefreshThrottleState, forced_instance_refresh_generation,
     instance_refresh_throttle_plan,
 };
+use jackin_console::tui::update::{InlinePickerDismissalState, ListModalState, StatusOverlayState};
 use jackin_env::OpCache;
 use jackin_tui::components::FocusOwner;
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
@@ -833,5 +834,50 @@ impl WorkspaceListSelectionState for ManagerState<'_> {
 
     fn set_selected(&mut self, selected: usize) {
         self.selected = selected;
+    }
+}
+
+impl StatusOverlayState for ManagerState<'_> {
+    fn set_status_overlay(&mut self, overlay: Option<jackin_tui::components::StatusPopupState>) {
+        self.status_overlay = overlay;
+    }
+}
+
+impl ListModalState for ManagerState<'_> {
+    fn open_container_info_modal(&mut self, state: jackin_tui::components::ContainerInfoState) {
+        self.list_modal = Some(Modal::ContainerInfo { state });
+    }
+
+    fn open_github_picker_modal(
+        &mut self,
+        state: jackin_console::tui::components::github_picker::GithubPickerState,
+    ) {
+        self.list_modal = Some(Modal::GithubPicker { state });
+    }
+
+    fn dismiss_list_modal(&mut self) {
+        self.list_modal = None;
+    }
+}
+
+impl InlinePickerDismissalState for ManagerState<'_> {
+    fn clear_inline_new_session_picker(&mut self) {
+        self.inline_new_session_picker = None;
+    }
+
+    fn clear_inline_role_picker(&mut self) {
+        self.inline_role_picker = None;
+    }
+
+    fn clear_inline_agent_picker(&mut self) {
+        self.inline_agent_picker = None;
+    }
+
+    fn clear_inline_provider_picker(&mut self) {
+        self.inline_provider_picker = None;
+    }
+
+    fn clear_launch_provider_picker(&mut self) {
+        self.launch_provider_picker = None;
     }
 }
