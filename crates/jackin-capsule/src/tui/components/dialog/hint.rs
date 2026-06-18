@@ -47,7 +47,7 @@ pub(super) const PALETTE_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↵"),
     HintSpan::Text("select"),
     HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
+    HintSpan::Key("Ctrl-C/Esc"),
     HintSpan::Text("cancel"),
 ];
 
@@ -60,7 +60,7 @@ pub(super) const PICKER_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↵"),
     HintSpan::Text("launch"),
     HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
+    HintSpan::Key("Ctrl-C/Esc"),
     HintSpan::Text("cancel"),
 ];
 
@@ -72,7 +72,7 @@ pub(super) const PROVIDER_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↵"),
     HintSpan::Text("select"),
     HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
+    HintSpan::Key("Ctrl-C/Esc"),
     HintSpan::Text("cancel"),
 ];
 
@@ -80,7 +80,7 @@ pub(super) const RENAME_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↵"),
     HintSpan::Text("save"),
     HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
+    HintSpan::Key("Ctrl-C/Esc"),
     HintSpan::Text("cancel"),
     HintSpan::GroupSep,
     HintSpan::Text("empty = auto name"),
