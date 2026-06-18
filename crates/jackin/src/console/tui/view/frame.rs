@@ -18,8 +18,8 @@ use jackin_console::tui::components::footer_hints::{
 };
 use jackin_console::tui::screens::editor::view::editor_frame_areas;
 use jackin_console::tui::screens::settings::view::{
-    render_global_mount_modal, render_settings_auth_modal, render_settings_env_modal,
-    settings_frame_areas,
+    SettingsModalRenderPlan, render_global_mount_modal, render_settings_auth_modal,
+    render_settings_env_modal, settings_frame_areas, settings_modal_render_plan,
 };
 use jackin_console::tui::view::{
     ConsoleMainFramePlan, ConsoleModalRenderPlan, ConsoleReservedFooterHeightPlan,
@@ -124,22 +124,41 @@ pub fn render(
         }
         ConsoleModalRenderPlan::Settings => {
             if let ManagerStage::Settings(settings) = &state.stage {
-                if let Some(popup) = &settings.error_popup {
-                    let inner_width = (area.width * 60 / 100).saturating_sub(4);
-                    let max_rows = area.height.saturating_sub(2);
-                    let h = jackin_tui::components::error_dialog::required_height(
-                        popup,
-                        inner_width,
-                        max_rows,
-                    );
-                    let popup_area = settings_error_area(area, h);
-                    jackin_tui::components::render_error_dialog(frame, popup_area, popup);
-                } else if let Some(modal) = &settings.mounts.modal {
-                    render_global_mount_modal(frame, modal);
-                } else if let Some(modal) = &settings.env.modal {
-                    render_settings_env_modal(frame, modal);
-                } else if let Some(modal) = settings.auth.modal_ref() {
-                    render_settings_auth_modal(frame, modal);
+                match settings_modal_render_plan(
+                    settings.error_popup.is_some(),
+                    settings.mounts.modal.is_some(),
+                    settings.env.modal.is_some(),
+                    settings.auth.modal_ref().is_some(),
+                ) {
+                    SettingsModalRenderPlan::ErrorPopup => {
+                        if let Some(popup) = &settings.error_popup {
+                            let inner_width = (area.width * 60 / 100).saturating_sub(4);
+                            let max_rows = area.height.saturating_sub(2);
+                            let h = jackin_tui::components::error_dialog::required_height(
+                                popup,
+                                inner_width,
+                                max_rows,
+                            );
+                            let popup_area = settings_error_area(area, h);
+                            jackin_tui::components::render_error_dialog(frame, popup_area, popup);
+                        }
+                    }
+                    SettingsModalRenderPlan::Mounts => {
+                        if let Some(modal) = &settings.mounts.modal {
+                            render_global_mount_modal(frame, modal);
+                        }
+                    }
+                    SettingsModalRenderPlan::Environments => {
+                        if let Some(modal) = &settings.env.modal {
+                            render_settings_env_modal(frame, modal);
+                        }
+                    }
+                    SettingsModalRenderPlan::Auth => {
+                        if let Some(modal) = settings.auth.modal_ref() {
+                            render_settings_auth_modal(frame, modal);
+                        }
+                    }
+                    SettingsModalRenderPlan::None => {}
                 }
             }
         }

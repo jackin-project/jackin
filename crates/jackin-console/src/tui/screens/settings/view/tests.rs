@@ -34,6 +34,30 @@ fn settings_header_title_is_screen_owned() {
 }
 
 #[test]
+fn settings_modal_render_plan_prioritizes_visible_modal_family() {
+    assert_eq!(
+        settings_modal_render_plan(true, true, true, true),
+        SettingsModalRenderPlan::ErrorPopup
+    );
+    assert_eq!(
+        settings_modal_render_plan(false, true, true, true),
+        SettingsModalRenderPlan::Mounts
+    );
+    assert_eq!(
+        settings_modal_render_plan(false, false, true, true),
+        SettingsModalRenderPlan::Environments
+    );
+    assert_eq!(
+        settings_modal_render_plan(false, false, false, true),
+        SettingsModalRenderPlan::Auth
+    );
+    assert_eq!(
+        settings_modal_render_plan(false, false, false, false),
+        SettingsModalRenderPlan::None
+    );
+}
+
+#[test]
 fn clamp_mounts_scroll_x_for_frame_uses_settings_body_area() {
     let mut scroll_x = u16::MAX;
     let area = Rect::new(0, 0, 80, 20);

@@ -67,6 +67,15 @@ pub struct SettingsFrameAreas {
     pub footer: Rect,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsModalRenderPlan {
+    ErrorPopup,
+    Mounts,
+    Environments,
+    Auth,
+    None,
+}
+
 pub type ConsoleSettingsState<
     MountModal,
     EnvModal,
@@ -99,6 +108,28 @@ pub fn settings_frame_areas(area: Rect, footer_h: u16) -> SettingsFrameAreas {
         body: chunks[2],
         footer: chunks[3],
     }
+}
+
+#[must_use]
+pub const fn settings_modal_render_plan(
+    error_popup_open: bool,
+    mounts_modal_open: bool,
+    env_modal_open: bool,
+    auth_modal_open: bool,
+) -> SettingsModalRenderPlan {
+    if error_popup_open {
+        return SettingsModalRenderPlan::ErrorPopup;
+    }
+    if mounts_modal_open {
+        return SettingsModalRenderPlan::Mounts;
+    }
+    if env_modal_open {
+        return SettingsModalRenderPlan::Environments;
+    }
+    if auth_modal_open {
+        return SettingsModalRenderPlan::Auth;
+    }
+    SettingsModalRenderPlan::None
 }
 
 #[allow(clippy::type_complexity)]
