@@ -7,6 +7,66 @@ fn container_init_marker_is_container_local() {
     assert_eq!(CONTAINER_INIT_MARKER, "/jackin/state/container-init.done");
 }
 
+// ── Agent config-dir env resolution ─────────────────────────────────
+// Pure `_from` cores so no process-global env mutation is needed.
+
+#[test]
+fn claude_paths_default_when_config_dir_unset() {
+    // Unset: credentials live inside ~/.claude, but .claude.json sits at the
+    // home root — the asymmetry jackin must preserve.
+    assert_eq!(
+        claude_config_dir_from(None),
+        PathBuf::from("/home/agent/.claude")
+    );
+    assert_eq!(
+        claude_account_path_from(None),
+        PathBuf::from("/home/agent/.claude.json")
+    );
+}
+
+#[test]
+fn claude_paths_follow_config_dir_when_set() {
+    // Set: BOTH .credentials.json and .claude.json move inside the dir. This is
+    // the regression fix — previously .claude.json stayed at the home root and
+    // the CLI fell back to the login screen.
+    let dir = "/home/agent/.claude-work";
+    assert_eq!(claude_config_dir_from(Some(dir)), PathBuf::from(dir));
+    assert_eq!(
+        claude_account_path_from(Some(dir)),
+        PathBuf::from("/home/agent/.claude-work/.claude.json")
+    );
+    assert_eq!(
+        claude_config_dir_from(Some(dir)).join(".credentials.json"),
+        PathBuf::from("/home/agent/.claude-work/.credentials.json")
+    );
+}
+
+#[test]
+fn codex_home_honors_env_else_defaults() {
+    assert_eq!(codex_home_from(None), PathBuf::from("/home/agent/.codex"));
+    assert_eq!(
+        codex_home_from(Some("/home/agent/.codex-alt")).join("auth.json"),
+        PathBuf::from("/home/agent/.codex-alt/auth.json")
+    );
+}
+
+#[test]
+fn xdg_data_home_drives_amp_and_opencode() {
+    assert_eq!(
+        xdg_data_home_from(None),
+        PathBuf::from("/home/agent/.local/share")
+    );
+    let xdg = "/home/agent/.xdg-data";
+    assert_eq!(
+        xdg_data_home_from(Some(xdg)).join("amp/secrets.json"),
+        PathBuf::from("/home/agent/.xdg-data/amp/secrets.json")
+    );
+    assert_eq!(
+        xdg_data_home_from(Some(xdg)).join("opencode/auth.json"),
+        PathBuf::from("/home/agent/.xdg-data/opencode/auth.json")
+    );
+}
+
 #[test]
 fn agent_auth_marker_is_agent_scoped() {
     assert_eq!(AGENT_AUTH_MARKER_DIR, "/jackin/state/agent-auth");
@@ -69,25 +129,27 @@ fn should_copy_auth_decision_is_per_agent() {
 
 #[test]
 fn agent_live_credential_path_maps_file_based_agents() {
+    // Default paths when no config-dir env var is set (the env-resolved
+    // variants are covered by the `*_from` resolver tests above).
     assert_eq!(
         agent_live_credential_path("claude"),
-        Some("/home/agent/.claude/.credentials.json")
+        Some(PathBuf::from("/home/agent/.claude/.credentials.json"))
     );
     assert_eq!(
         agent_live_credential_path("codex"),
-        Some("/home/agent/.codex/auth.json")
+        Some(PathBuf::from("/home/agent/.codex/auth.json"))
     );
     assert_eq!(
         agent_live_credential_path("amp"),
-        Some("/home/agent/.local/share/amp/secrets.json")
+        Some(PathBuf::from("/home/agent/.local/share/amp/secrets.json"))
     );
     assert_eq!(
         agent_live_credential_path("opencode"),
-        Some("/home/agent/.local/share/opencode/auth.json")
+        Some(PathBuf::from("/home/agent/.local/share/opencode/auth.json"))
     );
     assert_eq!(
         agent_live_credential_path("grok"),
-        Some("/home/agent/.grok/auth.json")
+        Some(PathBuf::from("/home/agent/.grok/auth.json"))
     );
     assert_eq!(
         agent_live_credential_path("kimi"),

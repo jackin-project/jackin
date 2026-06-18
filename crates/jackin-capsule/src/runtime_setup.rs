@@ -16,15 +16,86 @@ use serde_json::json;
 const CONTAINER_INIT_MARKER: &str = "/jackin/state/container-init.done";
 const AGENT_AUTH_MARKER_DIR: &str = "/jackin/state/agent-auth";
 
-// In-container credential file each file-based agent reads. Single source of
-// truth shared by the `setup_*` copy/remove sites and `agent_live_credential_path`
-// (the skip-path probe behind `warn_if_credentials_missing`) so the two cannot
-// drift and silently defeat the missing-credential warning.
-const CLAUDE_CREDENTIALS_PATH: &str = "/home/agent/.claude/.credentials.json";
-const CODEX_AUTH_PATH: &str = "/home/agent/.codex/auth.json";
-const AMP_SECRETS_PATH: &str = "/home/agent/.local/share/amp/secrets.json";
-const OPENCODE_AUTH_PATH: &str = "/home/agent/.local/share/opencode/auth.json";
+// Container home for the `agent` user. Every default agent config/credential
+// location hangs off this. The per-agent resolvers below honor an agent's
+// standard config-dir env var (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+// `XDG_DATA_HOME`) when the role sets one, falling back here otherwise — so a
+// role that exports e.g. `CLAUDE_CONFIG_DIR` has its credentials written where
+// the CLI actually looks, instead of the fixed default the CLI no longer reads.
+const AGENT_HOME: &str = "/home/agent";
+
+// Grok has no standard config-dir env var, so its credential path is fixed.
 const GROK_AUTH_PATH: &str = "/home/agent/.grok/auth.json";
+
+// Each resolver pairs a thin env-reading wrapper with a pure `_from` core, so
+// path composition is unit-tested without mutating process-global env (which is
+// racy across parallel tests and `unsafe` under Rust 2024). Same split as
+// `write_codex_provider_config` / `write_codex_provider_config_inner`.
+
+/// Resolve Claude Code's config directory, honoring `CLAUDE_CONFIG_DIR` when the
+/// role sets it (default `~/.claude`). Claude reads `.credentials.json` — and,
+/// when the env var is set, `.claude.json` — from this directory.
+fn claude_config_dir() -> PathBuf {
+    claude_config_dir_from(nonempty_env("CLAUDE_CONFIG_DIR").as_deref())
+}
+
+fn claude_config_dir_from(env: Option<&str>) -> PathBuf {
+    env.map_or_else(|| Path::new(AGENT_HOME).join(".claude"), PathBuf::from)
+}
+
+/// `.credentials.json` always lives inside the resolved Claude config dir.
+fn claude_credentials_path() -> PathBuf {
+    claude_config_dir().join(".credentials.json")
+}
+
+/// `.claude.json` placement is asymmetric: with `CLAUDE_CONFIG_DIR` set it lives
+/// inside that dir; with it unset Claude reads `$HOME/.claude.json` (home root).
+/// Writing it on the wrong side leaves the CLI unable to find its onboarding
+/// state, so it falls back to the interactive login screen even though a valid
+/// `.credentials.json` was forwarded.
+fn claude_account_path() -> PathBuf {
+    claude_account_path_from(nonempty_env("CLAUDE_CONFIG_DIR").as_deref())
+}
+
+fn claude_account_path_from(env: Option<&str>) -> PathBuf {
+    match env {
+        Some(dir) => Path::new(dir).join(".claude.json"),
+        None => Path::new(AGENT_HOME).join(".claude.json"),
+    }
+}
+
+/// Codex reads `auth.json` and `config.toml` from `CODEX_HOME` (default `~/.codex`).
+fn codex_home() -> PathBuf {
+    codex_home_from(nonempty_env("CODEX_HOME").as_deref())
+}
+
+fn codex_home_from(env: Option<&str>) -> PathBuf {
+    env.map_or_else(|| Path::new(AGENT_HOME).join(".codex"), PathBuf::from)
+}
+
+fn codex_auth_path() -> PathBuf {
+    codex_home().join("auth.json")
+}
+
+/// XDG data root honored by Amp and opencode (default `~/.local/share`).
+fn xdg_data_home() -> PathBuf {
+    xdg_data_home_from(nonempty_env("XDG_DATA_HOME").as_deref())
+}
+
+fn xdg_data_home_from(env: Option<&str>) -> PathBuf {
+    env.map_or_else(
+        || Path::new(AGENT_HOME).join(".local/share"),
+        PathBuf::from,
+    )
+}
+
+fn amp_secrets_path() -> PathBuf {
+    xdg_data_home().join("amp/secrets.json")
+}
+
+fn opencode_auth_path() -> PathBuf {
+    xdg_data_home().join("opencode/auth.json")
+}
 const CAPSULE_RUNTIME_BIN: &str = "/jackin/runtime/jackin-capsule";
 const GIT_HOOKS_DIR: &str = "/jackin/state/git-hooks";
 const GIT_HOOK_PATH: &str = "/jackin/state/git-hooks/prepare-commit-msg";
@@ -234,13 +305,13 @@ fn should_copy_auth(marker: &Path) -> bool {
 /// In-container credential file each agent reads, probed on the skip path to
 /// surface a start with no forwarded credential. `None` for kimi (directory copy
 /// or env-key auth, no single file).
-fn agent_live_credential_path(agent: &str) -> Option<&'static str> {
+fn agent_live_credential_path(agent: &str) -> Option<PathBuf> {
     match agent {
-        "claude" => Some(CLAUDE_CREDENTIALS_PATH),
-        "codex" => Some(CODEX_AUTH_PATH),
-        "amp" => Some(AMP_SECRETS_PATH),
-        "opencode" => Some(OPENCODE_AUTH_PATH),
-        "grok" => Some(GROK_AUTH_PATH),
+        "claude" => Some(claude_credentials_path()),
+        "codex" => Some(codex_auth_path()),
+        "amp" => Some(amp_secrets_path()),
+        "opencode" => Some(opencode_auth_path()),
+        "grok" => Some(PathBuf::from(GROK_AUTH_PATH)),
         _ => None,
     }
 }
@@ -250,10 +321,11 @@ fn agent_live_credential_path(agent: &str) -> Option<&'static str> {
 /// silently unauthenticated start.
 fn warn_if_credentials_missing(agent: &str) {
     if let Some(cred) = agent_live_credential_path(agent)
-        && !Path::new(cred).is_file()
+        && !cred.is_file()
     {
         crate::clog!(
-            "agent {agent}: WARNING auth marker present but no credential file at {cred}; agent will start unauthenticated unless an API-key env var is set"
+            "agent {agent}: WARNING auth marker present but no credential file at {}; agent will start unauthenticated unless an API-key env var is set",
+            cred.display()
         );
     }
 }
@@ -267,25 +339,21 @@ fn mark_agent_auth_initialized(marker: &Path, agent: &str) -> Result<()> {
 }
 
 fn setup_claude(copy_auth: bool) -> Result<()> {
-    seed_home_dir("/jackin/default-home/.claude", "/home/agent/.claude")?;
+    // Seed into the resolved config dir so baked global instructions
+    // (CLAUDE.md, settings) land where the CLI reads them under any
+    // CLAUDE_CONFIG_DIR, not only the default ~/.claude.
+    seed_home_dir("/jackin/default-home/.claude", claude_config_dir())?;
     if copy_auth {
         if Path::new("/jackin/claude/account.json").is_file() {
-            copy_file_with_mode(
-                "/jackin/claude/account.json",
-                "/home/agent/.claude.json",
-                0o600,
-            )?;
+            copy_file_with_mode("/jackin/claude/account.json", claude_account_path(), 0o600)?;
         }
+        let credentials_path = claude_credentials_path();
         if Path::new("/jackin/claude/credentials.json").is_file() {
-            copy_file_with_mode(
-                "/jackin/claude/credentials.json",
-                CLAUDE_CREDENTIALS_PATH,
-                0o600,
-            )?;
+            copy_file_with_mode("/jackin/claude/credentials.json", &credentials_path, 0o600)?;
         } else {
             // First-setup only (inside `if copy_auth`): never clear a token a
             // later tab refreshed. See the run_agent_setup gate comment.
-            remove_file_if_exists(CLAUDE_CREDENTIALS_PATH)?;
+            remove_file_if_exists(&credentials_path)?;
             crate::output::stderr_line(format_args!(
                 "[entrypoint] claude: no credentials.json forwarded - agent will start unauthenticated unless ANTHROPIC_API_KEY is set"
             ));
@@ -316,17 +384,19 @@ fn setup_claude(copy_auth: bool) -> Result<()> {
 }
 
 fn setup_codex(copy_auth: bool) -> Result<()> {
-    seed_home_dir("/jackin/default-home/.codex", "/home/agent/.codex")?;
+    let codex_home = codex_home();
+    seed_home_dir("/jackin/default-home/.codex", &codex_home)?;
     // Provider config (idempotent, runs every tab) before the credential copy so
     // the copy is the last fallible step: the auth marker then gates strictly on
     // copy success, not on a post-copy write that could fail and force a re-copy
     // over a refreshed token on the next launch.
-    write_codex_provider_config(Path::new("/home/agent/.codex"))?;
+    write_codex_provider_config(&codex_home)?;
     if copy_auth {
+        let auth_path = codex_auth_path();
         if Path::new("/jackin/codex/auth.json").is_file() {
-            copy_file_with_mode("/jackin/codex/auth.json", CODEX_AUTH_PATH, 0o600)?;
+            copy_file_with_mode("/jackin/codex/auth.json", &auth_path, 0o600)?;
         } else {
-            remove_file_if_exists(CODEX_AUTH_PATH)?;
+            remove_file_if_exists(&auth_path)?;
             crate::output::stderr_line(format_args!(
                 "[entrypoint] codex: no auth.json forwarded - agent will start unauthenticated unless OPENAI_API_KEY is set"
             ));
@@ -587,22 +657,23 @@ fn build_minimax_catalog(
 }
 
 fn setup_amp(copy_auth: bool) -> Result<()> {
+    let secrets_path = amp_secrets_path();
     seed_home_dir(
         "/jackin/default-home/.local/share/amp",
-        "/home/agent/.local/share/amp",
+        xdg_data_home().join("amp"),
     )?;
     if copy_auth {
         if Path::new("/jackin/amp/secrets.json").is_file() {
             crate::output::stderr_line(format_args!(
                 "[entrypoint] amp: forwarding host secrets.json into ~/.local/share/amp/"
             ));
-            copy_file_with_mode("/jackin/amp/secrets.json", AMP_SECRETS_PATH, 0o600)?;
+            copy_file_with_mode("/jackin/amp/secrets.json", &secrets_path, 0o600)?;
         } else if nonempty_env("AMP_API_KEY").is_some() {
             crate::output::stderr_line(format_args!(
                 "[entrypoint] amp: AMP_API_KEY present in env; agent will use api-key auth"
             ));
         } else {
-            remove_file_if_exists(AMP_SECRETS_PATH)?;
+            remove_file_if_exists(&secrets_path)?;
             crate::output::stderr_line(format_args!(
                 "[entrypoint] amp: no secrets.json mounted and AMP_API_KEY unset - agent will require interactive login"
             ));
@@ -642,12 +713,15 @@ fn setup_kimi(copy_auth: bool) -> Result<()> {
 }
 
 fn setup_opencode(copy_auth: bool) -> Result<()> {
+    let auth_path = opencode_auth_path();
     seed_home_dir(
         "/jackin/default-home/.local/share/opencode",
-        "/home/agent/.local/share/opencode",
+        xdg_data_home().join("opencode"),
     )?;
     // Config write before the credential copy — see setup_codex for why the copy
-    // must be the last fallible step.
+    // must be the last fallible step. opencode reads its config from
+    // XDG_CONFIG_HOME (distinct from the XDG_DATA_HOME auth dir); the role does
+    // not override that here, so the fixed ~/.config/opencode path stands.
     use std::os::unix::fs::DirBuilderExt as _;
     fs::DirBuilder::new()
         .recursive(true)
@@ -660,13 +734,13 @@ fn setup_opencode(copy_auth: bool) -> Result<()> {
             crate::output::stderr_line(format_args!(
                 "[entrypoint] opencode: forwarding host auth.json into ~/.local/share/opencode/"
             ));
-            copy_file_with_mode("/jackin/opencode/auth.json", OPENCODE_AUTH_PATH, 0o600)?;
+            copy_file_with_mode("/jackin/opencode/auth.json", &auth_path, 0o600)?;
         } else if nonempty_env("OPENCODE_API_KEY").is_some() {
             crate::output::stderr_line(format_args!(
                 "[entrypoint] opencode: OPENCODE_API_KEY present in env; agent will use api-key auth"
             ));
         } else {
-            remove_file_if_exists(OPENCODE_AUTH_PATH)?;
+            remove_file_if_exists(&auth_path)?;
             crate::output::stderr_line(format_args!(
                 "[entrypoint] opencode: no auth.json mounted and OPENCODE_API_KEY unset - agent will require interactive login"
             ));
