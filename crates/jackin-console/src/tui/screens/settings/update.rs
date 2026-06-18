@@ -12,6 +12,7 @@ use super::model::{
     SettingsGeneralState, SettingsTab, SettingsTrustState,
 };
 use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
+use jackin_core::RoleSelector;
 use jackin_tui::ModalOutcome;
 use ratatui::layout::Rect;
 
@@ -202,6 +203,11 @@ pub enum SettingsEnvScopePickerCommitPlan {
     OpenRolePicker,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsEnvRolePickerCommitPlan {
+    pub scope: SettingsEnvScope,
+}
+
 #[must_use]
 pub const fn settings_confirm_plan(
     action: GlobalMountConfirm,
@@ -357,6 +363,15 @@ pub const fn settings_env_scope_picker_commit_plan(
         SettingsEnvScopePickerSelection::SpecificAgent => {
             SettingsEnvScopePickerCommitPlan::OpenRolePicker
         }
+    }
+}
+
+#[must_use]
+pub fn settings_env_role_picker_commit_plan(
+    role: &RoleSelector,
+) -> SettingsEnvRolePickerCommitPlan {
+    SettingsEnvRolePickerCommitPlan {
+        scope: SettingsEnvScope::Role(role.key()),
     }
 }
 

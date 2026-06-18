@@ -241,6 +241,17 @@ fn settings_env_scope_picker_commit_plan_routes_scope_choices() {
 }
 
 #[test]
+fn settings_env_role_picker_commit_plan_maps_role_to_scope() {
+    let role = RoleSelector::parse("ops").unwrap();
+    assert_eq!(
+        settings_env_role_picker_commit_plan(&role),
+        SettingsEnvRolePickerCommitPlan {
+            scope: SettingsEnvScope::Role("ops".to_owned()),
+        }
+    );
+}
+
+#[test]
 fn settings_tab_at_position_maps_tab_strip_cells() {
     assert_eq!(
         settings_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),

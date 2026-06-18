@@ -823,17 +823,16 @@ pub(super) fn handle_settings_env_modal(
         SettingsEnvModal::RolePicker { state: mut picker } => {
             match inline_picker_plan(picker.handle_key(key)) {
                 InlinePickerPlan::Commit(role) => {
-                    let role_key = role.key();
-                    let scope = SettingsEnvScope::Role(role_key);
+                    let plan = settings_update::settings_env_role_picker_commit_plan(&role);
                     let state = settings_env_key_input_state(
                         &env.pending,
-                        &scope,
-                        settings_env_new_key_label(&scope),
+                        &plan.scope,
+                        settings_env_new_key_label(&plan.scope),
                         "",
                     );
                     env.modal = Some(SettingsEnvModal::RolePicker { state: picker });
                     env.open_sub_modal(SettingsEnvModal::Text {
-                        target: SettingsEnvTextTarget::EnvKey { scope },
+                        target: SettingsEnvTextTarget::EnvKey { scope: plan.scope },
                         state: Box::new(state),
                     });
                 }
