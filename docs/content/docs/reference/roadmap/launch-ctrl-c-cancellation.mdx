@@ -38,15 +38,16 @@ The relevant code paths:
 | <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> | Hosts `load_role_with()` — the top-level pipeline future; needs to await cancellation in parallel with each pipeline step |
 | <RepoFile path="crates/jackin-runtime/src/runtime/launch/progress_helpers.rs" /> | `StepCounter::while_waiting()` wraps long-running docker/git futures — the choke point for wiring cancellation into individual steps |
 
-### Cancellation primitive: `tokio_util::CancellationToken`
+### Cancellation primitive: `tokio_util::CancellationToken` ✓ settled
 
-`tokio_util::CancellationToken` is the idiomatic Rust async cancellation primitive. It is:
+`tokio_util::CancellationToken` is the primitive. It is:
 
 - Clone-able and `Send + Sync` — safe to share between the render task and the pipeline task.
 - Awaitable — `token.cancelled()` is a future that resolves when `token.cancel()` is called.
 - Composable with `tokio::select!` without wrapping every future in an `Option`.
+- Provides sync `is_cancelled()` for the render loop's per-tick check.
 
-`tokio_util` is already an implicit transitive dependency (via `tokio`); if it is not a direct workspace dependency it must be added to `Cargo.toml` for explicit semver control.
+`tokio-util` is not a current direct dep in any crate. Add it to the workspace `[workspace.dependencies]` in the root `Cargo.toml`, then reference it from `jackin-launch/Cargo.toml` with the `sync` feature. Only `jackin-launch` needs it directly — `LaunchProgress`, `RichDriver`, and `handle_cockpit_input()` all live there; callers in `jackin-runtime` just call `progress.while_waiting(fut).await?` with no token type visible to them.
 
 ### Signal flow
 
@@ -108,9 +109,13 @@ pub async fn while_waiting<T>(
 3. Thread the `CancellationToken` from `RichDriver` → `StepCounter` → every `while_waiting()` call site in `launch_role_runtime()` and the DinD sidecar path.
 4. For pipeline stages that do not use `while_waiting()` (e.g., `resolve_restore_candidate`, trust prompts), wrap the await with `tokio::select!` directly or extract a `cancellable()` helper.
 
-**Phase 3 — Top-level `load_role_with()` guard**
+**Phase 3 — Coverage audit and cooperative cancellation guarantee**
 
-Wrap the outermost `load_role_with()` call at the CLI entry point in a `tokio::select!` that also listens to `cancel_token.cancelled()`. This catches any pipeline step not yet covered by Phase 2, providing a belt-and-suspenders guarantee.
+A `tokio::select!` wrapping `load_role_with()` at the top level is NOT the right guard. Dropping the pipeline future abruptly skips `LoadCleanup::run()` (called inside the existing error-propagation chain, not via `Drop`). The correct model is **cooperative cancellation**: `while_waiting()` returning `Err` propagates via `?` through the existing error handlers, which call `cleanup.run()`.
+
+The slow pipeline operations (image build, docker pull, DinD startup probe, workspace materialisation) all go through `while_waiting()`. Fast operations (docker API calls, git identity, container name claim) do not — but they complete in <1 s, so cancellation is felt at the next `while_waiting()` boundary. This latency is acceptable.
+
+Phase 3 work: audit every pipeline step to confirm it either (a) goes through `while_waiting()` or (b) is fast enough that waiting for the next `while_waiting()` boundary is fine. If any non-`while_waiting()` step can block for seconds (e.g., a slow docker API call), wrap it in a direct `tokio::select!` that returns the same cancellation error — still cooperative, still hits `?`.
 
 **Phase 4 — Cleanup and terminal restoration**
 
