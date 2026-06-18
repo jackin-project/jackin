@@ -46,6 +46,14 @@ pub struct SettingsTabMovePlan {
     pub tab_bar_focused: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsShellKeyPlan {
+    MoveTab { delta: isize, focus_tab_bar: bool },
+    FocusContent,
+    FocusTabBar { clear_auth_kind: bool },
+    Continue,
+}
+
 #[must_use]
 pub const fn settings_tab_move_plan(
     active_tab: SettingsTab,
@@ -73,6 +81,48 @@ pub const fn settings_tab_select_plan(selected_tab: SettingsTab) -> SettingsTabM
 #[must_use]
 pub const fn settings_tab_bar_focus_plan(focused: bool) -> bool {
     focused
+}
+
+#[must_use]
+pub const fn settings_shell_key_plan(
+    key: KeyCode,
+    tab_bar_focused: bool,
+    auth_kind_selected: bool,
+) -> SettingsShellKeyPlan {
+    if tab_bar_focused {
+        match key {
+            KeyCode::Left | KeyCode::BackTab => {
+                return SettingsShellKeyPlan::MoveTab {
+                    delta: -1,
+                    focus_tab_bar: true,
+                };
+            }
+            KeyCode::Right => {
+                return SettingsShellKeyPlan::MoveTab {
+                    delta: 1,
+                    focus_tab_bar: true,
+                };
+            }
+            KeyCode::Tab | KeyCode::Down | KeyCode::Char('j' | 'J') => {
+                return SettingsShellKeyPlan::FocusContent;
+            }
+            _ => {}
+        }
+    }
+
+    match key {
+        KeyCode::Tab => SettingsShellKeyPlan::MoveTab {
+            delta: 1,
+            focus_tab_bar: true,
+        },
+        KeyCode::BackTab => SettingsShellKeyPlan::FocusTabBar {
+            clear_auth_kind: false,
+        },
+        KeyCode::Esc if !tab_bar_focused => SettingsShellKeyPlan::FocusTabBar {
+            clear_auth_kind: auth_kind_selected,
+        },
+        _ => SettingsShellKeyPlan::Continue,
+    }
 }
 
 #[must_use]

@@ -38,6 +38,59 @@ fn settings_tab_bar_focus_plan_returns_requested_focus() {
 }
 
 #[test]
+fn settings_shell_key_plan_routes_tab_shell_keys_from_facts() {
+    assert_eq!(
+        settings_shell_key_plan(KeyCode::Left, true, false),
+        SettingsShellKeyPlan::MoveTab {
+            delta: -1,
+            focus_tab_bar: true,
+        }
+    );
+    assert_eq!(
+        settings_shell_key_plan(KeyCode::Right, true, false),
+        SettingsShellKeyPlan::MoveTab {
+            delta: 1,
+            focus_tab_bar: true,
+        }
+    );
+    assert_eq!(
+        settings_shell_key_plan(KeyCode::Down, true, false),
+        SettingsShellKeyPlan::FocusContent
+    );
+    assert_eq!(
+        settings_shell_key_plan(KeyCode::Char('J'), true, false),
+        SettingsShellKeyPlan::FocusContent
+    );
+    assert_eq!(
+        settings_shell_key_plan(KeyCode::Tab, false, false),
+        SettingsShellKeyPlan::MoveTab {
+            delta: 1,
+            focus_tab_bar: true,
+        }
+    );
+    assert_eq!(
+        settings_shell_key_plan(KeyCode::BackTab, false, false),
+        SettingsShellKeyPlan::FocusTabBar {
+            clear_auth_kind: false,
+        }
+    );
+    assert_eq!(
+        settings_shell_key_plan(KeyCode::Esc, false, true),
+        SettingsShellKeyPlan::FocusTabBar {
+            clear_auth_kind: true,
+        }
+    );
+    assert_eq!(
+        settings_shell_key_plan(KeyCode::Char('s'), true, false),
+        SettingsShellKeyPlan::Continue
+    );
+    assert_eq!(
+        settings_shell_key_plan(KeyCode::Esc, true, true),
+        SettingsShellKeyPlan::Continue
+    );
+}
+
+#[test]
 fn global_mount_text_commit_plan_routes_targets_and_trims_values() {
     assert_eq!(
         global_mount_text_commit_plan(&GlobalMountTextTarget::AddScope, " ops "),

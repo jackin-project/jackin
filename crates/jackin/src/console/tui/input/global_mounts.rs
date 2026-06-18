@@ -33,6 +33,7 @@ use jackin_console::tui::screens::settings::update::{
     GlobalMountTextCommitPlan, SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
     SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
     SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan, SettingsGlobalMountsKeyPlan,
+    SettingsShellKeyPlan,
 };
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -65,71 +66,41 @@ pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     handle_settings_key_with_effects(state, key);
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 pub(super) fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &state.stage else {
         return;
     };
 
-    // W3C ARIA Tabs: when tab_bar_focused, Left/Right cycle tabs and Tab/↓
-    // enters the content area.
-    if settings.tab_bar_focused() {
-        match key.code {
-            KeyCode::Left | KeyCode::BackTab => {
-                dispatch_manager(
-                    state,
-                    ManagerMessage::MoveSettingsTab {
-                        delta: -1,
-                        focus_tab_bar: true,
-                    },
-                );
-                return;
-            }
-            KeyCode::Right => {
-                dispatch_manager(
-                    state,
-                    ManagerMessage::MoveSettingsTab {
-                        delta: 1,
-                        focus_tab_bar: true,
-                    },
-                );
-                return;
-            }
-            KeyCode::Tab | KeyCode::Down | KeyCode::Char('j') => {
-                dispatch_manager(state, ManagerMessage::FocusSettingsContent);
-                return;
-            }
-            _ => {}
-        }
-        // All other keys (S, Esc, etc.) fall through to content handling.
-    }
-
-    match key.code {
-        KeyCode::Tab => {
+    match settings_update::settings_shell_key_plan(
+        key.code,
+        settings.tab_bar_focused(),
+        settings.auth.selected_kind.is_some(),
+    ) {
+        SettingsShellKeyPlan::MoveTab {
+            delta,
+            focus_tab_bar,
+        } => {
             dispatch_manager(
                 state,
                 ManagerMessage::MoveSettingsTab {
-                    delta: 1,
-                    focus_tab_bar: true,
+                    delta,
+                    focus_tab_bar,
                 },
             );
             return;
         }
-        KeyCode::BackTab => {
-            dispatch_manager(state, ManagerMessage::FocusSettingsTabBar);
+        SettingsShellKeyPlan::FocusContent => {
+            dispatch_manager(state, ManagerMessage::FocusSettingsContent);
             return;
         }
-        KeyCode::Esc if !settings.tab_bar_focused() => {
-            if settings.auth.selected_kind.is_some() {
+        SettingsShellKeyPlan::FocusTabBar { clear_auth_kind } => {
+            if clear_auth_kind {
                 dispatch_manager(state, ManagerMessage::ClearSettingsAuthKind);
             }
             dispatch_manager(state, ManagerMessage::FocusSettingsTabBar);
             return;
         }
-        _ => {}
+        SettingsShellKeyPlan::Continue => {}
     }
 
     let ManagerStage::Settings(settings) = &state.stage else {
