@@ -149,6 +149,21 @@ fn settings_env_value_edit_text_plan_owns_lookup_and_labels() {
 }
 
 #[test]
+fn settings_env_plain_value_text_plan_owns_empty_value_modal() {
+    assert_eq!(
+        settings_env_plain_value_text_plan(SettingsEnvScope::Global, "TOKEN".to_owned()),
+        SettingsEnvValueEditTextPlan {
+            target: SettingsEnvTextTarget::EnvValue {
+                scope: SettingsEnvScope::Global,
+                key: "TOKEN".to_owned(),
+            },
+            label: "Edit TOKEN".to_owned(),
+            current: String::new(),
+        }
+    );
+}
+
+#[test]
 fn settings_env_source_picker_state_names_key() {
     let state = settings_env_source_picker_state("TOKEN");
 
@@ -401,6 +416,16 @@ fn settings_env_key_text_plans_own_target_and_label() {
                 scope: SettingsEnvScope::Role("alpha".to_owned()),
             },
             label: "New environment key for alpha".to_owned(),
+        }
+    );
+    assert_eq!(
+        settings_env_empty_key_text_plan(SettingsEnvScope::Global),
+        SettingsEnvKeyTextPlan {
+            scope: SettingsEnvScope::Global,
+            target: SettingsEnvTextTarget::EnvKey {
+                scope: SettingsEnvScope::Global,
+            },
+            label: "Key cannot be empty".to_owned(),
         }
     );
 }

@@ -43,11 +43,11 @@ use jackin_console::tui::screens::settings::view::{
     global_mount_scope_picker_state, global_mount_selected_edit_text_plan,
     global_mount_text_input_state, global_mount_text_target_label,
     settings_auth_op_read_failed_message, settings_env_delete_confirm_state,
-    settings_env_empty_key_error_message, settings_env_empty_key_label,
+    settings_env_empty_key_error_message, settings_env_empty_key_text_plan,
     settings_env_key_input_state, settings_env_new_key_after_picker_text_plan,
-    settings_env_new_key_text_plan, settings_env_scope_picker_state,
-    settings_env_source_picker_state, settings_env_text_input_state,
-    settings_env_value_edit_text_plan, settings_env_value_text_label, settings_error_popup_title,
+    settings_env_new_key_text_plan, settings_env_plain_value_text_plan,
+    settings_env_scope_picker_state, settings_env_source_picker_state,
+    settings_env_text_input_state, settings_env_value_edit_text_plan, settings_error_popup_title,
     settings_no_registered_roles_error_message, settings_sensitive_paths_not_confirmed_message,
 };
 use jackin_console::tui::update::{
@@ -869,14 +869,10 @@ fn commit_env_text(
     ) {
         SettingsEnvTextCommitPlan::EmptyKey { scope } => {
             env.error = Some(settings_env_empty_key_error_message().into());
-            let state = settings_env_key_input_state(
-                &env.pending,
-                &scope,
-                settings_env_empty_key_label(),
-                "",
-            );
+            let plan = settings_env_empty_key_text_plan(scope);
+            let state = settings_env_key_input_state(&env.pending, &plan.scope, plan.label, "");
             env.modal = Some(SettingsEnvModal::Text {
-                target: SettingsEnvTextTarget::EnvKey { scope },
+                target: plan.target,
                 state: Box::new(state),
             });
         }
@@ -916,14 +912,8 @@ fn commit_settings_env_source_picker(
         }
         SettingsEnvSourcePickerCommitPlan::OpenPlainText { scope, key } => {
             env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
-            env.open_sub_modal(env_text_modal(
-                SettingsEnvTextTarget::EnvValue {
-                    scope,
-                    key: key.clone(),
-                },
-                &settings_env_value_text_label(&key),
-                "",
-            ));
+            let plan = settings_env_plain_value_text_plan(scope, key);
+            env.open_sub_modal(env_text_modal(plan.target, plan.label, plan.current));
         }
         SettingsEnvSourcePickerCommitPlan::OpenOpPicker { scope, key } => {
             env.pending_picker_target = Some((scope, Some(key)));
@@ -1246,8 +1236,8 @@ fn text_modal_for_target(
 
 fn env_text_modal(
     target: SettingsEnvTextTarget,
-    label: &str,
-    initial: &str,
+    label: impl Into<String>,
+    initial: impl Into<String>,
 ) -> SettingsEnvModal<'static> {
     let state = settings_env_text_input_state(&target, label, initial);
     SettingsEnvModal::Text {

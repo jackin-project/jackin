@@ -799,6 +799,21 @@ pub fn settings_env_value_edit_text_plan(
 }
 
 #[must_use]
+pub fn settings_env_plain_value_text_plan(
+    scope: SettingsEnvScope,
+    key: String,
+) -> SettingsEnvValueEditTextPlan {
+    SettingsEnvValueEditTextPlan {
+        target: SettingsEnvTextTarget::EnvValue {
+            scope,
+            key: key.clone(),
+        },
+        label: settings_env_value_text_label(&key),
+        current: String::new(),
+    }
+}
+
+#[must_use]
 pub fn settings_env_source_picker_state(
     key: impl Into<String>,
 ) -> crate::tui::components::source_picker::SourcePickerState {
@@ -874,6 +889,11 @@ pub fn settings_env_new_key_after_picker_text_plan(
 ) -> SettingsEnvKeyTextPlan {
     let label = settings_env_new_key_after_picker_label(&scope);
     settings_env_key_text_plan(scope, label)
+}
+
+#[must_use]
+pub fn settings_env_empty_key_text_plan(scope: SettingsEnvScope) -> SettingsEnvKeyTextPlan {
+    settings_env_key_text_plan(scope, settings_env_empty_key_label())
 }
 
 #[must_use]
