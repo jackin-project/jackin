@@ -185,6 +185,16 @@ pub const fn workspace_list_new_session_plan(row: ManagerListRow) -> WorkspaceLi
 }
 
 #[must_use]
+pub const fn workspace_list_current_directory_selected(row: ManagerListRow) -> bool {
+    matches!(row, ManagerListRow::CurrentDirectory)
+}
+
+#[must_use]
+pub const fn workspace_list_new_workspace_selected(row: ManagerListRow) -> bool {
+    matches!(row, ManagerListRow::NewWorkspace)
+}
+
+#[must_use]
 pub const fn workspace_list_saved_workspace_index(row: ManagerListRow) -> Option<usize> {
     match row {
         ManagerListRow::SavedWorkspace(idx) => Some(idx),

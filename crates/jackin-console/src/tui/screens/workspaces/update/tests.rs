@@ -68,6 +68,18 @@ fn workspace_list_row_action_policies_route_by_row_kind() {
     assert!(!workspace_list_settings_available(
         ManagerListRow::CurrentDirectoryInstance(0)
     ));
+    assert!(workspace_list_current_directory_selected(
+        ManagerListRow::CurrentDirectory
+    ));
+    assert!(!workspace_list_current_directory_selected(
+        ManagerListRow::SavedWorkspace(0)
+    ));
+    assert!(workspace_list_new_workspace_selected(
+        ManagerListRow::NewWorkspace
+    ));
+    assert!(!workspace_list_new_workspace_selected(
+        ManagerListRow::CurrentDirectory
+    ));
 }
 
 #[test]

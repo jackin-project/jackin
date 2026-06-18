@@ -7,6 +7,10 @@ use ratatui::layout::Rect;
 use crate::console::domain::InstanceRefreshSnapshot;
 use crate::console::tui::effect::ManagerEffect;
 use jackin_config::AppConfig;
+use jackin_console::tui::screens::workspaces::update::{
+    workspace_list_current_directory_selected, workspace_list_new_workspace_selected,
+    workspace_list_saved_workspace_index,
+};
 use jackin_env::OpCache;
 use jackin_tui::components::FocusOwner;
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
@@ -361,14 +365,14 @@ impl ManagerState<'_> {
     /// "Current directory" row.
     #[must_use]
     pub fn is_current_dir_selected(&self) -> bool {
-        matches!(self.selected_row(), ManagerListRow::CurrentDirectory)
+        workspace_list_current_directory_selected(self.selected_row())
     }
 
     /// Convenience: `true` when the selection is on the "+ New workspace"
     /// sentinel.
     #[must_use]
     pub fn is_new_workspace_selected(&self) -> bool {
-        matches!(self.selected_row(), ManagerListRow::NewWorkspace)
+        workspace_list_new_workspace_selected(self.selected_row())
     }
 
     /// Whether the workspace tree node at `ws_idx` is expanded.
@@ -446,11 +450,8 @@ impl ManagerState<'_> {
     /// selection is on Current Directory, New Workspace, or a `WorkspaceInstance`.
     #[must_use]
     pub fn selected_workspace_summary(&self) -> Option<&WorkspaceSummary> {
-        if let ManagerListRow::SavedWorkspace(i) = self.selected_row() {
-            self.workspaces.get(i)
-        } else {
-            None
-        }
+        workspace_list_saved_workspace_index(self.selected_row())
+            .and_then(|i| self.workspaces.get(i))
     }
 
     // ── Tree expand / collapse ────────────────────────────────────
