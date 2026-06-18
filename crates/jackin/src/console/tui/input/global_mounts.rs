@@ -965,14 +965,8 @@ fn commit_settings_env_scope_picker(
 
 fn open_settings_env_role_picker(env: &mut crate::console::tui::state::SettingsEnvState<'_>) {
     use crate::console::tui::state::RolePickerState;
-    use jackin_core::RoleSelector;
 
-    let roles = env
-        .pending
-        .roles
-        .keys()
-        .filter_map(|role| RoleSelector::parse(role).ok())
-        .collect::<Vec<_>>();
+    let roles = settings_update::settings_env_role_picker_roles(&env.pending);
     if roles.is_empty() {
         env.error = Some(settings_no_registered_roles_error_message().into());
         return;

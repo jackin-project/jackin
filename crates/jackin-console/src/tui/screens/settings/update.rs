@@ -788,6 +788,15 @@ pub fn settings_env_role_picker_commit_plan(
     }
 }
 
+#[must_use]
+pub fn settings_env_role_picker_roles<V>(pending: &SettingsEnvConfig<V>) -> Vec<RoleSelector> {
+    pending
+        .roles
+        .keys()
+        .filter_map(|role| RoleSelector::parse(role).ok())
+        .collect()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SettingsAuthKindPlan<K> {
     pub selected_kind: Option<K>,

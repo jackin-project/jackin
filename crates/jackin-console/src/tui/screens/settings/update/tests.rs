@@ -686,6 +686,27 @@ fn settings_env_role_picker_commit_plan_maps_role_to_scope() {
 }
 
 #[test]
+fn settings_env_role_picker_roles_parse_registered_roles() {
+    let pending = SettingsEnvConfig {
+        env: BTreeMap::new(),
+        roles: BTreeMap::from([
+            ("ops".to_owned(), BTreeMap::<String, &'static str>::new()),
+            ("chainargos/agent-brown".to_owned(), BTreeMap::new()),
+        ]),
+    };
+
+    let keys = settings_env_role_picker_roles(&pending)
+        .into_iter()
+        .map(|role| role.key())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        keys,
+        vec!["chainargos/agent-brown".to_owned(), "ops".to_owned()]
+    );
+}
+
+#[test]
 fn settings_tab_at_position_maps_tab_strip_cells() {
     assert_eq!(
         settings_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
