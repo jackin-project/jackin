@@ -43,9 +43,9 @@ use jackin_console::tui::screens::editor::view::{
     secret_new_key_label, secret_new_value_input_state,
 };
 use jackin_console::tui::update::{
-    ConfirmSaveModalPlan, FileBrowserModalPlan, InlinePickerPlan, MountDstChoicePlan,
-    SaveDiscardModalPlan, confirm_save_modal_plan, file_browser_modal_plan, inline_picker_plan,
-    mount_dst_choice_plan, save_discard_modal_plan,
+    ConfirmSaveModalPlan, DismissibleModalPlan, FileBrowserModalPlan, InlinePickerPlan,
+    MountDstChoicePlan, SaveDiscardModalPlan, confirm_save_modal_plan, dismissible_modal_plan,
+    file_browser_modal_plan, inline_picker_plan, mount_dst_choice_plan, save_discard_modal_plan,
 };
 use jackin_tui::ModalOutcome;
 #[cfg(test)]
@@ -590,15 +590,15 @@ pub(super) fn handle_editor_modal(
                 }
             }
         }
-        Modal::WorkdirPick { state } => match state.handle_key(key) {
-            ModalOutcome::Commit(workdir) => {
+        Modal::WorkdirPick { state } => match inline_picker_plan(state.handle_key(key)) {
+            InlinePickerPlan::Commit(workdir) => {
                 editor.pending.workdir = workdir;
                 editor.clear_modal_chain();
             }
-            ModalOutcome::Cancel => {
+            InlinePickerPlan::Dismiss => {
                 editor.pop_modal_chain();
             }
-            ModalOutcome::Continue => {}
+            InlinePickerPlan::Continue => {}
         },
         Modal::Confirm { target, state } => match state.handle_key(key) {
             ModalOutcome::Commit(yes) => {
@@ -728,36 +728,38 @@ pub(super) fn handle_editor_modal(
                 ConfirmSaveModalPlan::Continue => {}
             }
         }
-        Modal::ErrorPopup { state: popup_state } => match popup_state.handle_key(key) {
-            ModalOutcome::Cancel | ModalOutcome::Commit(()) => {
-                // A source-folder validation rejection stacks this popup
-                // directly over the auth source-folder picker. Dismissing it
-                // returns to that picker so the operator can pick another
-                // folder, rather than tearing down the whole auth flow.
-                if matches!(
-                    editor.modal_parents.last(),
-                    Some(Modal::FileBrowser {
-                        target: FileBrowserTarget::AuthFormSourceFolder,
-                        ..
-                    })
-                ) {
-                    editor.pop_modal_chain();
-                    return EditorModalOutcome::Continue;
+        Modal::ErrorPopup { state: popup_state } => {
+            match dismissible_modal_plan(popup_state.handle_key(key)) {
+                DismissibleModalPlan::Dismiss => {
+                    // A source-folder validation rejection stacks this popup
+                    // directly over the auth source-folder picker. Dismissing it
+                    // returns to that picker so the operator can pick another
+                    // folder, rather than tearing down the whole auth flow.
+                    if matches!(
+                        editor.modal_parents.last(),
+                        Some(Modal::FileBrowser {
+                            target: FileBrowserTarget::AuthFormSourceFolder,
+                            ..
+                        })
+                    ) {
+                        editor.pop_modal_chain();
+                        return EditorModalOutcome::Continue;
+                    }
+                    editor.clear_modal_chain();
+                    editor.save_flow = EditorSaveFlow::Idle;
+                    // If the popup was raised by a failed OpPicker commit
+                    // for the auth form, the form's state was re-stashed
+                    // into `pending_auth_form_return` instead of being
+                    // re-mounted directly — restore it now so the operator
+                    // lands back on the form with the prior credential
+                    // unchanged, ready to retry through the source picker.
+                    if !editor.modal_parents.is_empty() {
+                        super::auth::restore_auth_form_after_op_picker_cancel(editor);
+                    }
                 }
-                editor.clear_modal_chain();
-                editor.save_flow = EditorSaveFlow::Idle;
-                // If the popup was raised by a failed OpPicker commit
-                // for the auth form, the form's state was re-stashed
-                // into `pending_auth_form_return` instead of being
-                // re-mounted directly — restore it now so the operator
-                // lands back on the form with the prior credential
-                // unchanged, ready to retry through the source picker.
-                if !editor.modal_parents.is_empty() {
-                    super::auth::restore_auth_form_after_op_picker_cancel(editor);
-                }
+                DismissibleModalPlan::Continue => {}
             }
-            ModalOutcome::Continue => {}
-        },
+        }
         Modal::StatusPopup { .. } | Modal::ContainerInfo { .. } => {}
         Modal::ScopePicker { state: scope_state } => {
             use jackin_console::tui::components::scope_picker::ScopeChoice;
