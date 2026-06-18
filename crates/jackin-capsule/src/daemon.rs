@@ -886,13 +886,27 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         session_id,
                         mut reason,
                     } => {
-                        let tail = mux
-                            .sessions
-                            .get(&session_id)
-                            .and_then(|session| session.diagnostic_tail(12));
-                        if let (Some(base), Some(tail)) = (reason.take(), tail) {
-                            crate::clog!("session {session_id}: final output tail:\n{tail}");
-                            reason = Some(format!("{base}\nlast pane output:\n{tail}"));
+                        // Only a non-clean exit carries a `reason`; skip the
+                        // pane snapshot entirely on clean teardown so the grid
+                        // render never runs on the common exit path. When the
+                        // pane has no tail to attach (PTY never rendered, or the
+                        // session was already removed), keep the base reason —
+                        // dropping it would misroute a real failure into the
+                        // clean-shutdown branch and swallow it.
+                        if let Some(base) = reason.take() {
+                            let tail = mux
+                                .sessions
+                                .get(&session_id)
+                                .and_then(|session| session.diagnostic_tail(12));
+                            reason = Some(match tail {
+                                Some(tail) => {
+                                    crate::clog!(
+                                        "session {session_id}: final output tail:\n{tail}"
+                                    );
+                                    format!("{base}\nlast pane output:\n{tail}")
+                                }
+                                None => base,
+                            });
                         }
                         // Remove the pane / tab immediately rather than
                         // leaving a stale `○ Done` placeholder behind.

@@ -219,6 +219,10 @@ pub fn encode_server(frame: ServerFrame) -> Vec<u8> {
         ServerFrame::Welcome { session_count } => encode(TAG_WELCOME, &session_count.to_be_bytes()),
         ServerFrame::Output(bytes) => encode(TAG_OUTPUT, &bytes),
         ServerFrame::SessionList(json) => encode(TAG_SESSION_LIST, &json),
+        // The wire payload is the reason bytes; an empty payload means "no
+        // reason". `Some("")` therefore round-trips back as `None` on decode —
+        // no caller emits an empty reason (all are non-empty or genuine
+        // `None`), so this normalization is safe, not lossy in practice.
         ServerFrame::Shutdown { reason } => encode(
             TAG_SHUTDOWN,
             reason.as_deref().unwrap_or_default().as_bytes(),
