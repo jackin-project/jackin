@@ -7,8 +7,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::model::{
-    GlobalMountConfirm, GlobalMountTextTarget, SettingsEnvConfig, SettingsEnvEnterPlan,
-    SettingsEnvRow, SettingsEnvScope, SettingsGeneralState, SettingsTab, SettingsTrustState,
+    GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfig,
+    SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope, SettingsGeneralState, SettingsTab,
+    SettingsTrustState,
 };
 use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
 use jackin_tui::ModalOutcome;
@@ -129,6 +130,15 @@ pub enum GlobalMountTextCommitPlan {
     EmptyName,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GlobalMountAddFinalizePlan {
+    EmptyDestination(GlobalMountDraft),
+    Add {
+        row: jackin_config::GlobalMountRow,
+        selected: usize,
+    },
+}
+
 #[must_use]
 pub const fn settings_confirm_plan(
     action: GlobalMountConfirm,
@@ -170,6 +180,30 @@ pub fn global_mount_text_commit_plan(
         ),
         GlobalMountTextTarget::Rename if trimmed.is_empty() => GlobalMountTextCommitPlan::EmptyName,
         GlobalMountTextTarget::Rename => GlobalMountTextCommitPlan::Rename(trimmed.to_owned()),
+    }
+}
+
+#[must_use]
+pub fn global_mount_add_finalize_plan(
+    pending: &[jackin_config::GlobalMountRow],
+    mut draft: GlobalMountDraft,
+) -> GlobalMountAddFinalizePlan {
+    if draft.dst.trim().is_empty() {
+        return GlobalMountAddFinalizePlan::EmptyDestination(draft);
+    }
+    draft.name = crate::services::workspace::unique_global_mount_name(
+        pending,
+        draft.scope.as_deref(),
+        &draft.dst,
+    );
+    let selected = settings_global_mounts_added_index(pending.len() + 1);
+    GlobalMountAddFinalizePlan::Add {
+        row: jackin_config::GlobalMountRow {
+            scope: draft.scope,
+            name: draft.name,
+            mount: crate::services::workspace::shared_mount_config(draft.src, draft.dst, false),
+        },
+        selected,
     }
 }
 

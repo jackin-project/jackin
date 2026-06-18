@@ -86,6 +86,46 @@ fn global_mount_text_commit_plan_routes_targets_and_trims_values() {
 }
 
 #[test]
+fn global_mount_add_finalize_plan_validates_and_builds_row() {
+    let empty_dst = GlobalMountDraft {
+        name: String::new(),
+        src: "/host/cache".to_owned(),
+        dst: " ".to_owned(),
+        scope: Some("ops".to_owned()),
+    };
+    assert_eq!(
+        global_mount_add_finalize_plan(&[], empty_dst.clone()),
+        GlobalMountAddFinalizePlan::EmptyDestination(empty_dst)
+    );
+
+    let pending = vec![jackin_config::GlobalMountRow {
+        scope: Some("ops".to_owned()),
+        name: "cache".to_owned(),
+        mount: crate::services::workspace::shared_mount_config(
+            "/host/old".to_owned(),
+            "/jackin/cache".to_owned(),
+            false,
+        ),
+    }];
+    let draft = GlobalMountDraft {
+        name: String::new(),
+        src: "/host/cache".to_owned(),
+        dst: "/jackin/cache".to_owned(),
+        scope: Some("ops".to_owned()),
+    };
+    let plan = global_mount_add_finalize_plan(&pending, draft);
+    assert!(matches!(plan, GlobalMountAddFinalizePlan::Add { .. }));
+    if let GlobalMountAddFinalizePlan::Add { row, selected } = plan {
+        assert_eq!(selected, 1);
+        assert_eq!(row.scope.as_deref(), Some("ops"));
+        assert_eq!(row.name, "cache-2");
+        assert_eq!(row.mount.src, "/host/cache");
+        assert_eq!(row.mount.dst, "/jackin/cache");
+        assert!(!row.mount.readonly);
+    }
+}
+
+#[test]
 fn settings_tab_at_position_maps_tab_strip_cells() {
     assert_eq!(
         settings_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),

@@ -29,7 +29,9 @@ use jackin_console::tui::components::auth_panel::{
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::mount_display::settings_global_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::settings::update as settings_update;
-use jackin_console::tui::screens::settings::update::GlobalMountTextCommitPlan;
+use jackin_console::tui::screens::settings::update::{
+    GlobalMountAddFinalizePlan, GlobalMountTextCommitPlan,
+};
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
     global_mount_destination_empty_message, global_mount_edit_text_initial,
@@ -1130,29 +1132,21 @@ fn open_global_mount_scope_picker(global: &mut crate::console::tui::state::Globa
 }
 
 fn finalize_global_mount_add(global: &mut crate::console::tui::state::GlobalMountsState<'_>) {
-    let Some(mut draft) = global.add_draft.take() else {
+    let Some(draft) = global.add_draft.take() else {
         global.error = Some(global_mount_add_draft_lost_message().into());
         return;
     };
-    if draft.dst.trim().is_empty() {
-        global.error = Some(global_mount_destination_empty_message().into());
-        global.add_draft = Some(draft);
-        return;
+    match settings_update::global_mount_add_finalize_plan(&global.pending, draft) {
+        GlobalMountAddFinalizePlan::EmptyDestination(draft) => {
+            global.error = Some(global_mount_destination_empty_message().into());
+            global.add_draft = Some(draft);
+        }
+        GlobalMountAddFinalizePlan::Add { row, selected } => {
+            global.pending.push(row);
+            global.selected = selected;
+            global.clear_modal_chain();
+        }
     }
-    draft.name = jackin_console::services::workspace::unique_global_mount_name(
-        &global.pending,
-        draft.scope.as_deref(),
-        &draft.dst,
-    );
-    global.pending.push(jackin_config::GlobalMountRow {
-        scope: draft.scope,
-        name: draft.name,
-        mount: jackin_console::services::workspace::shared_mount_config(
-            draft.src, draft.dst, false,
-        ),
-    });
-    global.selected = settings_update::settings_global_mounts_added_index(global.pending.len());
-    global.clear_modal_chain();
 }
 
 fn open_edit_text(state: &mut ManagerState<'_>, target: GlobalMountTextTarget) {

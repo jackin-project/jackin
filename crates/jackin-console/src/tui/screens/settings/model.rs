@@ -1113,7 +1113,7 @@ pub fn settings_trust_rows_from_app_config(
         .collect()
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct GlobalMountDraft {
     pub name: String,
     pub src: String,
