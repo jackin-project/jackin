@@ -833,6 +833,19 @@ impl<
     }
 
     #[must_use]
+    pub fn selection_bounds(&self, config: &jackin_config::AppConfig) -> (usize, Vec<usize>) {
+        let secrets_rows = self.secrets_flat_rows();
+        let auth_rows = self.auth_flat_rows(config);
+        crate::tui::screens::editor::update::editor_selection_bounds(
+            self.active_tab,
+            self.pending.mounts.len(),
+            config.roles.len(),
+            &secrets_rows,
+            &auth_rows,
+        )
+    }
+
+    #[must_use]
     pub fn resolve_auth_form_target(
         &self,
         config: &jackin_config::AppConfig,
@@ -1002,9 +1015,9 @@ pub enum CreateStep {
 
 #[cfg(test)]
 mod tests {
-    use jackin_config::{MountConfig, MountIsolation, WorkspaceConfig};
+    use jackin_config::{MountConfig, MountIsolation, RoleSource, WorkspaceConfig};
 
-    use super::{AuthRow, EditorState, FieldFocus, SecretsRow};
+    use super::{AuthRow, EditorState, EditorTab, FieldFocus, SecretsRow};
 
     type TestEditor =
         EditorState<WorkspaceConfig, (), (), (), jackin_config::EnvValue, (), (), (), (), (), ()>;
@@ -1212,6 +1225,38 @@ mod tests {
             row,
             SecretsRow::WorkspaceKeyRow(key) if key == "TOKEN"
         )));
+    }
+
+    #[test]
+    fn editor_selection_bounds_reads_state_and_config_counts() {
+        let workspace = WorkspaceConfig {
+            mounts: vec![
+                MountConfig {
+                    src: "/src-a".into(),
+                    dst: "/dst-a".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Shared,
+                },
+                MountConfig {
+                    src: "/src-b".into(),
+                    dst: "/dst-b".into(),
+                    readonly: true,
+                    isolation: MountIsolation::Shared,
+                },
+            ],
+            ..Default::default()
+        };
+        let mut config = jackin_config::AppConfig::default();
+        config.roles.insert("alpha".into(), RoleSource::default());
+        config.roles.insert("beta".into(), RoleSource::default());
+        config.roles.insert("gamma".into(), RoleSource::default());
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+
+        editor.active_tab = EditorTab::Mounts;
+        assert_eq!(editor.selection_bounds(&config), (2, Vec::new()));
+
+        editor.active_tab = EditorTab::Roles;
+        assert_eq!(editor.selection_bounds(&config), (3, Vec::new()));
     }
 
     #[test]
