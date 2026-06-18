@@ -328,7 +328,7 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
             HintSpan::Key("Esc"),
             HintSpan::Text("back"),
             HintSpan::GroupSep,
-            HintSpan::Key("Q"),
+            HintSpan::Key("Ctrl+Q"),
             HintSpan::Text("quit"),
         ],
         WorkspaceListFooterMode::InstanceRow { has_snapshot } => {
@@ -360,7 +360,7 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
                 HintSpan::Key("\u{2190}"),
                 HintSpan::Text("back"),
                 HintSpan::GroupSep,
-                HintSpan::Key("Q"),
+                HintSpan::Key("Ctrl+Q"),
                 HintSpan::Text("quit"),
             ]);
             items
@@ -414,7 +414,7 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
                 items.push(HintSpan::Text("open in GitHub"));
             }
             items.push(HintSpan::GroupSep);
-            items.push(HintSpan::Key("Q"));
+            items.push(HintSpan::Key("Ctrl+Q"));
             items.push(HintSpan::Text("quit"));
             items
         }
@@ -743,7 +743,7 @@ fn workspace_picker_footer_items(
     }
     if include_quit {
         items.push(HintSpan::GroupSep);
-        items.push(HintSpan::Key("Q"));
+        items.push(HintSpan::Key("Ctrl+Q"));
         items.push(HintSpan::Text("quit"));
     }
     items

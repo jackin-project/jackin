@@ -146,7 +146,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
-    use crossterm::event::{Event, KeyCode, KeyEventKind};
+    use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
     use futures_util::{FutureExt as _, StreamExt as _};
 
     let startup_error_pending = options.startup_error.is_some();
@@ -381,6 +381,15 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                         ),
                         console_location_debug(&state)
                     );
+                    // Ctrl+C: immediate quit — hard exit on any screen, no
+                    // confirmation, and it wins even when the exit confirm is
+                    // already open. Mirrors the launch cockpit's Ctrl+C.
+                    if matches!(key.code, KeyCode::Char('c'))
+                        && key.modifiers.contains(KeyModifiers::CONTROL)
+                    {
+                        break 'main Ok(None);
+                    }
+
                     if let Some(plan) = state.handle_quit_confirm_key(key) {
                         match plan {
                             QuitConfirmPlan::Exit => break 'main Ok(None),
@@ -390,8 +399,9 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                         continue;
                     }
 
-                    // Q intercept: outside main screen, pop the exit
-                    // confirm. SHIFT tolerated for caps-lock parity.
+                    // Quit-confirm intercept: Ctrl+Q on any screen, or bare
+                    // `q`/`Q` off the main screen (SHIFT tolerated for
+                    // caps-lock parity). Checked before stage input.
                     if should_open_quit_confirm(key, quit_intercept_state_for_console(&state)) {
                         state.open_quit_confirm();
                         continue;
