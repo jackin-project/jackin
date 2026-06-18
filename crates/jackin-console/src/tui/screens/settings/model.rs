@@ -1480,6 +1480,38 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         );
     }
 
+    pub const fn clear_selected_kind(&mut self) {
+        self.selected_kind = None;
+        self.selected = 0;
+    }
+
+    pub fn enter_selected_kind(&mut self) {
+        if let Some(row) = self.pending.get(self.selected) {
+            self.selected_kind = Some(row.kind);
+            self.selected = 0;
+        }
+    }
+
+    pub fn move_selection(&mut self, delta: isize) {
+        let rows = self
+            .selected_kind
+            .and_then(|kind| {
+                self.pending.iter().find(|row| row.kind == kind).map(|row| {
+                    crate::tui::screens::settings::update::settings_auth_detail_rows(kind, row.mode)
+                })
+            })
+            .unwrap_or_else(|| {
+                (0..self.pending.len())
+                    .map(|_| crate::tui::screens::settings::update::SettingsAuthDetailRow::Mode)
+                    .collect()
+            });
+        self.selected = crate::tui::screens::settings::update::settings_auth_selection_plan(
+            self.selected,
+            &rows,
+            delta,
+        );
+    }
+
     pub fn open_child_modal(&mut self, parent_modal: Modal, child_modal: Modal) {
         self.modal_parents.push(parent_modal);
         self.modal = Some(child_modal);
@@ -2315,6 +2347,52 @@ mod tests {
         assert_eq!(state.modal, Some(2));
         assert_eq!(state.pop_parent_modal(), Some(1));
         assert_eq!(state.pop_parent_modal(), None);
+    }
+
+    #[test]
+    fn settings_auth_enter_and_clear_selected_kind_update_selection() {
+        let rows = vec![SettingsAuthRow {
+            kind: crate::tui::auth::AuthKind::Github,
+            mode: crate::tui::auth::AuthMode::Sync,
+            sync_source_dir: None,
+        }];
+        let mut state =
+            SettingsAuthState::<EnvValue, (), ()>::from_rows_and_github_env(rows, BTreeMap::new());
+
+        state.enter_selected_kind();
+
+        assert_eq!(
+            state.selected_kind,
+            Some(crate::tui::auth::AuthKind::Github)
+        );
+        assert_eq!(state.selected, 0);
+
+        state.clear_selected_kind();
+
+        assert_eq!(state.selected_kind, None);
+        assert_eq!(state.selected, 0);
+    }
+
+    #[test]
+    fn settings_auth_move_selection_uses_current_rows() {
+        let rows = vec![
+            SettingsAuthRow {
+                kind: crate::tui::auth::AuthKind::Github,
+                mode: crate::tui::auth::AuthMode::Sync,
+                sync_source_dir: None,
+            },
+            SettingsAuthRow {
+                kind: crate::tui::auth::AuthKind::Claude,
+                mode: crate::tui::auth::AuthMode::Sync,
+                sync_source_dir: None,
+            },
+        ];
+        let mut state =
+            SettingsAuthState::<EnvValue, (), ()>::from_rows_and_github_env(rows, BTreeMap::new());
+
+        state.move_selection(1);
+
+        assert_eq!(state.selected, 1);
     }
 
     #[test]

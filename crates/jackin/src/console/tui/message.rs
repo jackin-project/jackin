@@ -23,13 +23,11 @@ use jackin_console::tui::screens::editor::update::{
     toggle_secret_mask as toggle_editor_secret_mask_row,
 };
 use jackin_console::tui::screens::settings::update::{
-    clear_settings_auth_kind_plan, enter_settings_auth_kind_plan, move_general_selection,
-    set_role_expanded as set_settings_role_expanded, settings_auth_detail_rows,
-    settings_auth_selection_plan, settings_env_selection_plan,
-    settings_global_mounts_selection_plan, settings_horizontal_scroll_plan,
-    settings_tab_bar_focus_plan, settings_tab_move_plan, settings_tab_select_plan,
-    settings_trust_row_select_plan, settings_trust_selection_plan, toggle_general_selected,
-    toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
+    move_general_selection, set_role_expanded as set_settings_role_expanded,
+    settings_env_selection_plan, settings_global_mounts_selection_plan,
+    settings_horizontal_scroll_plan, settings_tab_bar_focus_plan, settings_tab_move_plan,
+    settings_tab_select_plan, settings_trust_row_select_plan, settings_trust_selection_plan,
+    toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
 };
 use jackin_console::tui::screens::workspaces::update::{
     PreviewFocusPlan, WorkspaceTreeDisclosurePlan, collapse_selected_tree_plan,
@@ -392,13 +390,11 @@ fn reload_from_config(state: &mut ManagerState<'_>, config: &AppConfig, cwd: &st
     *state = ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
 }
 
-const fn clear_settings_auth_kind(state: &mut ManagerState<'_>) {
+fn clear_settings_auth_kind(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    let plan = clear_settings_auth_kind_plan();
-    settings.auth.selected_kind = plan.selected_kind;
-    settings.auth.selected = plan.selected;
+    settings.auth.clear_selected_kind();
 }
 
 fn dismiss_settings_error_popup(state: &mut ManagerState<'_>) {
@@ -467,15 +463,7 @@ fn enter_settings_auth_kind(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    let selected_kind = settings
-        .auth
-        .pending
-        .get(settings.auth.selected)
-        .map(|row| row.kind);
-    if let Some(plan) = enter_settings_auth_kind_plan(selected_kind) {
-        settings.auth.selected_kind = plan.selected_kind;
-        settings.auth.selected = plan.selected;
-    }
+    settings.auth.enter_selected_kind();
 }
 
 fn move_editor_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bool) {
@@ -621,25 +609,7 @@ fn move_settings_auth_selection(state: &mut ManagerState<'_>, delta: isize) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    let rows = settings
-        .auth
-        .selected_kind
-        .and_then(|kind| {
-            settings
-                .auth
-                .pending
-                .iter()
-                .find(|row| row.kind == kind)
-                .map(|row| settings_auth_detail_rows(kind, row.mode))
-        })
-        .unwrap_or_else(|| {
-            (0..settings.auth.pending.len())
-                .map(|_| {
-                    jackin_console::tui::screens::settings::update::SettingsAuthDetailRow::Mode
-                })
-                .collect()
-        });
-    settings.auth.selected = settings_auth_selection_plan(settings.auth.selected, &rows, delta);
+    settings.auth.move_selection(delta);
 }
 
 fn scroll_editor_tab_horizontal(
