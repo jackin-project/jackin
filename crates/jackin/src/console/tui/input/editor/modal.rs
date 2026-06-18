@@ -260,12 +260,7 @@ pub(in crate::console::tui::input) fn apply_text_input_to_pending(
             editor.commit_workdir_input(value);
         }
         TextInputTarget::MountDst => {
-            // Provisional mount with src==dst was inserted at FileBrowser
-            // commit; update its dst now.
-            if let Some(last) = editor.pending.mounts.last_mut() {
-                last.dst = value.to_owned();
-            }
-            editor.clear_modal_chain();
+            editor.commit_last_mount_dst_input(value);
         }
         TextInputTarget::Role => {
             crate::debug_log!("role", "role loader input committed: raw={value:?}");

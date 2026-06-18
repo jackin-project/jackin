@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,434 lines, versus 143 Rust files and 57,464 lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,429 lines, versus 143 Rust files and 57,487 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -38,12 +38,12 @@ Approximate local inventory:
 
 | Area | Files | Lines | Current role |
 |---|---:|---:|---|
-| `crates/jackin/src/console` total | 80 | 34,434 | Remaining root console implementation |
+| `crates/jackin/src/console` total | 80 | 34,429 | Remaining root console implementation |
 | `domain.rs` | 1 | 149 | Role-source logging, provider derivation, and root instance snapshot alias |
 | `services.rs` + `services/` | 9 | 861 | Side-effect adapters around config, Docker, runtime, op, token setup |
 | `effects.rs` | 1 | 1,250 | Root effect executor and background polling |
 | `terminal.rs` | 1 | 50 | Host terminal ownership adapter |
-| `tui/` | 65 | 31,688 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
+| `tui/` | 65 | 31,683 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
 
 Largest root files:
 
@@ -103,6 +103,8 @@ Quit-confirm open/dismiss/key lifecycle now lives on `jackin-console/src/tui/app
 Editor workspace-name text-input commit lifecycle now lives in `jackin-console/src/tui/screens/editor/model.rs`; root text-input handling no longer writes the editor `pending_name` field directly.
 
 Editor workdir text-input commit lifecycle now lives in `jackin-console/src/tui/screens/editor/model.rs`; root text-input handling no longer writes the editor `pending.workdir` field directly.
+
+Editor mount-destination text-input commit lifecycle now lives in `jackin-console/src/tui/screens/editor/model.rs`; root text-input handling no longer rewrites the last mount destination directly.
 
 Settings top-level key precedence now lives in `jackin-console/src/tui/screens/settings/update.rs`; root executes the crate-owned shell/header/delegate plan instead of deciding shell-vs-environment-header-vs-tab dispatch order itself.
 

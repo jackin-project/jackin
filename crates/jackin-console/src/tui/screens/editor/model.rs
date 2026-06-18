@@ -1084,6 +1084,13 @@ impl<
         self.clear_modal_chain();
     }
 
+    pub fn commit_last_mount_dst_input(&mut self, dst: impl Into<String>) {
+        if let Some(last) = self.pending.mounts.last_mut() {
+            last.dst = dst.into();
+        }
+        self.clear_modal_chain();
+    }
+
     #[must_use]
     pub fn is_dirty(&self) -> bool {
         if self.pending != self.original {
@@ -2472,6 +2479,22 @@ mod tests {
         editor.commit_workdir_input("/repo");
 
         assert_eq!(editor.pending.workdir, "/repo");
+    }
+
+    #[test]
+    fn commit_last_mount_dst_input_updates_last_mount() {
+        let mut workspace = WorkspaceConfig::default();
+        workspace.mounts.push(MountConfig {
+            src: "/src".into(),
+            dst: "/src".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        });
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+
+        editor.commit_last_mount_dst_input("/dst");
+
+        assert_eq!(editor.pending.mounts[0].dst, "/dst");
     }
 
     #[test]
