@@ -209,9 +209,7 @@ fn dispatch_editor_escape(
         }
         EditorEscapeKeyPlan::OpenSaveDiscard => {
             if let ManagerStage::Editor(editor) = &mut state.stage {
-                editor.modal = Some(Modal::SaveDiscardCancel {
-                    state: editor_exit_save_discard_state(),
-                });
+                editor.open_save_discard_cancel(editor_exit_save_discard_state());
             }
         }
         EditorEscapeKeyPlan::ReloadFromConfig => {

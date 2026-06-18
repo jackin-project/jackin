@@ -263,6 +263,10 @@ pub trait EditorRoleOverridePickerModal {
     fn is_role_override_picker(&self) -> bool;
 }
 
+pub trait EditorSaveDiscardModal<SaveDiscardState> {
+    fn save_discard_cancel_modal(state: SaveDiscardState) -> Self;
+}
+
 #[derive(Debug)]
 pub struct EditorState<
     WorkspaceConfig,
@@ -1007,6 +1011,13 @@ impl<
             self.modal_parents.push(parent);
         }
         self.modal = Some(child);
+    }
+
+    pub fn open_save_discard_cancel<SaveDiscardState>(&mut self, state: SaveDiscardState)
+    where
+        Modal: EditorSaveDiscardModal<SaveDiscardState>,
+    {
+        self.modal = Some(Modal::save_discard_cancel_modal(state));
     }
 
     pub fn pop_modal_chain(&mut self) {
@@ -2337,6 +2348,16 @@ mod tests {
         }
     }
 
+    impl super::EditorSaveDiscardModal<u8> for TestStatusModal {
+        fn save_discard_cancel_modal(state: u8) -> Self {
+            if state == 0 {
+                Self::Status
+            } else {
+                Self::Other
+            }
+        }
+    }
+
     type TestEditorWithStatusModal = EditorState<
         WorkspaceConfig,
         (),
@@ -2647,6 +2668,16 @@ mod tests {
         editor.modal_parents.push(TestStatusModal::Other);
 
         assert!(editor.has_modal_parent());
+    }
+
+    #[test]
+    fn open_save_discard_cancel_sets_modal() {
+        let mut editor =
+            TestEditorWithStatusModal::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        editor.open_save_discard_cancel(1);
+
+        assert!(matches!(editor.modal, Some(TestStatusModal::Other)));
     }
 
     #[test]

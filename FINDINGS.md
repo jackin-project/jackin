@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,415 lines, versus 143 Rust files and 57,984 lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,413 lines, versus 143 Rust files and 58,069 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -38,12 +38,12 @@ Approximate local inventory:
 
 | Area | Files | Lines | Current role |
 |---|---:|---:|---|
-| `crates/jackin/src/console` total | 80 | 34,415 | Remaining root console implementation |
+| `crates/jackin/src/console` total | 80 | 34,413 | Remaining root console implementation |
 | `domain.rs` | 1 | 149 | Role-source logging, provider derivation, and root instance snapshot alias |
 | `services.rs` + `services/` | 9 | 861 | Side-effect adapters around config, Docker, runtime, op, token setup |
 | `effects.rs` | 1 | 1,250 | Root effect executor and background polling |
 | `terminal.rs` | 1 | 50 | Host terminal ownership adapter |
-| `tui/` | 65 | 31,669 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
+| `tui/` | 65 | 31,667 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
 
 Largest root files:
 
@@ -89,6 +89,8 @@ Auth-form parent presence checks now live in `jackin-console/src/tui/screens/edi
 Generic modal-parent presence checks now live in `jackin-console/src/tui/screens/editor/model.rs`; root editor modal routing no longer inspects the parent-stack vector directly for Auth-form round trips.
 
 Role-override picker active-state checks now live in `jackin-console/src/tui/screens/editor/model.rs`; root scope-picker routing no longer matches the concrete RoleOverridePicker modal after attempting to open the picker.
+
+Save-discard modal opening now lives in `jackin-console/src/tui/screens/editor/model.rs`; root Escape routing supplies only the concrete dialog state instead of constructing the modal variant.
 
 Letter-input modal route assignment now lives in `jackin-console/src/tui/run.rs`; root supplies concrete list/stage modal letter-input kinds.
 

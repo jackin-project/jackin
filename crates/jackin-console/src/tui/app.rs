@@ -18,7 +18,7 @@ use crate::tui::debug::{
     ConsoleSettingsDebugFacts, ConsoleStageDebug,
 };
 use crate::tui::screens::editor::model::{
-    CreateStep, EditorRoleOverridePickerModal, EditorStatusPopupModal,
+    CreateStep, EditorRoleOverridePickerModal, EditorSaveDiscardModal, EditorStatusPopupModal,
 };
 
 /// Single-variant today; kept as `enum` so future stages can land without
@@ -1001,6 +1001,60 @@ impl<
             self,
             editing_existing_workspace,
         )
+    }
+}
+
+impl<
+    TextInputTarget,
+    TextInputState,
+    FileBrowserTarget,
+    FileBrowserState,
+    MountDstChoiceState,
+    WorkdirPickState,
+    ConfirmTarget,
+    ConfirmState,
+    SaveDiscardState,
+    GithubPickerState,
+    ConfirmSaveState,
+    ErrorPopupState,
+    ContainerInfoState,
+    StatusPopupState,
+    OpPickerState,
+    RolePickerState,
+    SourcePickerState,
+    ScopePickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+    SecretsScopeTag,
+> EditorSaveDiscardModal<SaveDiscardState>
+    for ConsoleModal<
+        TextInputTarget,
+        TextInputState,
+        FileBrowserTarget,
+        FileBrowserState,
+        MountDstChoiceState,
+        WorkdirPickState,
+        ConfirmTarget,
+        ConfirmState,
+        SaveDiscardState,
+        GithubPickerState,
+        ConfirmSaveState,
+        ErrorPopupState,
+        ContainerInfoState,
+        StatusPopupState,
+        OpPickerState,
+        RolePickerState,
+        SourcePickerState,
+        ScopePickerState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+        SecretsScopeTag,
+    >
+{
+    fn save_discard_cancel_modal(state: SaveDiscardState) -> Self {
+        Self::SaveDiscardCancel { state }
     }
 }
 
