@@ -662,6 +662,24 @@ fn global_mount_role_picker_roles_parse_trust_rows() {
 }
 
 #[test]
+fn global_mount_role_picker_open_plan_requires_roles() {
+    assert_eq!(
+        global_mount_role_picker_open_plan(&[]),
+        RolePickerOpenPlan::NoRoles
+    );
+
+    let rows = vec![SettingsTrustRow {
+        role: "ops".to_owned(),
+        git: "https://example.invalid/ops.git".to_owned(),
+        trusted: true,
+    }];
+    assert!(matches!(
+        global_mount_role_picker_open_plan(&rows),
+        RolePickerOpenPlan::Open(roles) if roles.len() == 1 && roles[0].key() == "ops"
+    ));
+}
+
+#[test]
 fn settings_env_text_commit_plan_routes_keys_and_values() {
     let role_scope = SettingsEnvScope::Role("ops".to_owned());
     let target = SettingsEnvTextTarget::EnvKey {
@@ -806,6 +824,27 @@ fn settings_env_role_picker_roles_parse_registered_roles() {
         keys,
         vec!["chainargos/agent-brown".to_owned(), "ops".to_owned()]
     );
+}
+
+#[test]
+fn settings_env_role_picker_open_plan_requires_roles() {
+    let empty = SettingsEnvConfig::<&'static str> {
+        env: BTreeMap::new(),
+        roles: BTreeMap::new(),
+    };
+    assert_eq!(
+        settings_env_role_picker_open_plan(&empty),
+        RolePickerOpenPlan::NoRoles
+    );
+
+    let pending = SettingsEnvConfig {
+        env: BTreeMap::new(),
+        roles: BTreeMap::from([("ops".to_owned(), BTreeMap::<String, &'static str>::new())]),
+    };
+    assert!(matches!(
+        settings_env_role_picker_open_plan(&pending),
+        RolePickerOpenPlan::Open(roles) if roles.len() == 1 && roles[0].key() == "ops"
+    ));
 }
 
 #[test]

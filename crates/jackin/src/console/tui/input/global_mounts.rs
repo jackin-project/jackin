@@ -30,11 +30,12 @@ use jackin_console::tui::mount_display::settings_global_config_mounts_content_wi
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::update::{
     GlobalMountAddFinalizePlan, GlobalMountAddTextApplyPlan, GlobalMountEditTextApplyPlan,
-    GlobalMountScopePickerCommitPlan, GlobalMountTextCommitPlan, SettingsEnvHeaderKeyPlan,
-    SettingsEnvKeyPlan, SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
-    SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
-    SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan, SettingsGeneralKeyPlan,
-    SettingsGlobalMountsKeyPlan, SettingsShellKeyPlan, SettingsTrustKeyPlan,
+    GlobalMountScopePickerCommitPlan, GlobalMountTextCommitPlan, RolePickerOpenPlan,
+    SettingsEnvHeaderKeyPlan, SettingsEnvKeyPlan, SettingsEnvOpPickerCommitPlan,
+    SettingsEnvScopePickerCommitPlan, SettingsEnvScopePickerSelection,
+    SettingsEnvSourcePickerCommitPlan, SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan,
+    SettingsGeneralKeyPlan, SettingsGlobalMountsKeyPlan, SettingsShellKeyPlan,
+    SettingsTrustKeyPlan,
 };
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -937,14 +938,16 @@ fn commit_settings_env_scope_picker(
 fn open_settings_env_role_picker(env: &mut crate::console::tui::state::SettingsEnvState<'_>) {
     use crate::console::tui::state::RolePickerState;
 
-    let roles = settings_update::settings_env_role_picker_roles(&env.pending);
-    if roles.is_empty() {
-        env.error = Some(settings_no_registered_roles_error_message().into());
-        return;
+    match settings_update::settings_env_role_picker_open_plan(&env.pending) {
+        RolePickerOpenPlan::NoRoles => {
+            env.error = Some(settings_no_registered_roles_error_message().into());
+        }
+        RolePickerOpenPlan::Open(roles) => {
+            env.open_sub_modal(SettingsEnvModal::RolePicker {
+                state: RolePickerState::new(roles),
+            });
+        }
     }
-    env.open_sub_modal(SettingsEnvModal::RolePicker {
-        state: RolePickerState::new(roles),
-    });
 }
 
 fn apply_global_mount_add_text(
@@ -1185,16 +1188,18 @@ fn commit_add_scope_choice(
 }
 
 fn open_global_mount_role_picker(settings: &mut crate::console::tui::state::SettingsState<'_>) {
-    let roles = settings_update::global_mount_role_picker_roles(&settings.trust.pending);
-    if roles.is_empty() {
-        settings.mounts.error = Some(settings_no_registered_roles_error_message().into());
-        return;
+    match settings_update::global_mount_role_picker_open_plan(&settings.trust.pending) {
+        RolePickerOpenPlan::NoRoles => {
+            settings.mounts.error = Some(settings_no_registered_roles_error_message().into());
+        }
+        RolePickerOpenPlan::Open(roles) => {
+            settings
+                .mounts
+                .open_sub_modal(GlobalMountModal::RolePicker {
+                    state: RolePickerState::new(roles),
+                });
+        }
     }
-    settings
-        .mounts
-        .open_sub_modal(GlobalMountModal::RolePicker {
-            state: RolePickerState::new(roles),
-        });
 }
 
 fn text_modal(

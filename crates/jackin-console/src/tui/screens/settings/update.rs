@@ -408,6 +408,12 @@ pub enum GlobalMountEditTextApplyPlan {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RolePickerOpenPlan {
+    NoRoles,
+    Open(Vec<RoleSelector>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GlobalMountAddFinalizePlan {
     EmptyDestination(GlobalMountDraft),
     Add {
@@ -747,6 +753,11 @@ pub fn global_mount_role_picker_roles(rows: &[SettingsTrustRow]) -> Vec<RoleSele
 }
 
 #[must_use]
+pub fn global_mount_role_picker_open_plan(rows: &[SettingsTrustRow]) -> RolePickerOpenPlan {
+    role_picker_open_plan(global_mount_role_picker_roles(rows))
+}
+
+#[must_use]
 pub fn settings_env_text_commit_plan(
     target: &SettingsEnvTextTarget,
     value: &str,
@@ -852,6 +863,20 @@ pub fn settings_env_role_picker_roles<V>(pending: &SettingsEnvConfig<V>) -> Vec<
         .keys()
         .filter_map(|role| RoleSelector::parse(role).ok())
         .collect()
+}
+
+#[must_use]
+pub fn settings_env_role_picker_open_plan<V>(pending: &SettingsEnvConfig<V>) -> RolePickerOpenPlan {
+    role_picker_open_plan(settings_env_role_picker_roles(pending))
+}
+
+#[must_use]
+pub fn role_picker_open_plan(roles: Vec<RoleSelector>) -> RolePickerOpenPlan {
+    if roles.is_empty() {
+        RolePickerOpenPlan::NoRoles
+    } else {
+        RolePickerOpenPlan::Open(roles)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
