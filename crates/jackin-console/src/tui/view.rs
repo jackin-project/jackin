@@ -55,6 +55,14 @@ pub struct VisibleModalPrepareAreas {
     pub stage_modal: Option<StageModalArea>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StageFooterHeightFacts {
+    pub route: ConsoleManagerStageRoute,
+    pub workspace_footer_height: u16,
+    pub editor_footer_height: u16,
+    pub settings_footer_height: u16,
+}
+
 #[must_use]
 pub const fn reserved_footer_height_for_facts(facts: ReservedFooterHeightFacts) -> u16 {
     if let Some(height) = facts.editor_footer_height {
@@ -176,6 +184,28 @@ pub const fn visible_modal_prepare_areas(
         list_modal: areas.workspace,
         stage_modal: stage_modal_area_for_route(route, areas),
     }
+}
+
+#[must_use]
+pub const fn visible_modal_prepare_areas_for_stage_facts(
+    area: Rect,
+    facts: StageFooterHeightFacts,
+) -> VisibleModalPrepareAreas {
+    visible_modal_prepare_areas(
+        area,
+        facts.workspace_footer_height,
+        if matches!(facts.route, ConsoleManagerStageRoute::Editor) {
+            facts.editor_footer_height
+        } else {
+            0
+        },
+        if matches!(facts.route, ConsoleManagerStageRoute::Settings) {
+            facts.settings_footer_height
+        } else {
+            0
+        },
+        facts.route,
+    )
 }
 
 #[must_use]

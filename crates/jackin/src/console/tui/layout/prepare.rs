@@ -9,8 +9,8 @@ use jackin_config::AppConfig;
 use jackin_console::tui::screens::editor::view::editor_frame_areas;
 use jackin_console::tui::screens::settings::view::settings_frame_areas;
 use jackin_console::tui::view::{
-    StageModalArea, effective_footer_height, measured_footer_height, visible_modal_prepare_areas,
-    workspace_frame_areas,
+    StageModalArea, effective_footer_height, measured_footer_height,
+    visible_modal_prepare_areas_for_stage_facts, workspace_frame_areas,
 };
 
 pub fn prepare_for_render(
@@ -54,12 +54,11 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
     // Modals must never overlap the reserved status/hint bar at the bottom.
     // Compute the content area (full terminal minus the footer rows) and
     // center/clamp all modals within it.
-    let areas = visible_modal_prepare_areas(
+    let areas = visible_modal_prepare_areas_for_stage_facts(
         area,
-        workspace_frame_areas(area).footer.height,
-        editor_footer_height(state),
-        settings_footer_height(state),
-        state.stage.route(),
+        state
+            .stage
+            .footer_height_facts(workspace_frame_areas(area).footer.height),
     );
 
     if let Some(modal) = &mut state.list_modal {
@@ -89,18 +88,4 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
 
 fn prepare_modal(outer: Rect, modal: &mut crate::console::tui::state::Modal<'_>) {
     modal.prepare_for_render(outer);
-}
-
-fn editor_footer_height(state: &ManagerState<'_>) -> u16 {
-    match &state.stage {
-        ManagerStage::Editor(editor) => editor.cached_footer_h,
-        _ => 0,
-    }
-}
-
-fn settings_footer_height(state: &ManagerState<'_>) -> u16 {
-    match &state.stage {
-        ManagerStage::Settings(settings) => settings.cached_footer_h,
-        _ => 0,
-    }
 }

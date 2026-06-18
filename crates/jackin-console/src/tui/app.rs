@@ -100,8 +100,16 @@ pub trait ConsoleEditorModalPresence {
     fn editor_modal_open(&self) -> bool;
 }
 
+pub trait ConsoleEditorFooterHeight {
+    fn editor_cached_footer_height(&self) -> u16;
+}
+
 pub trait ConsoleSettingsModalPresence {
     fn settings_modal_facts(&self) -> ConsoleStageModalFacts;
+}
+
+pub trait ConsoleSettingsFooterHeight {
+    fn settings_cached_footer_height(&self) -> u16;
 }
 
 pub trait ConsoleCreatePreludeModalPresence {
@@ -190,6 +198,31 @@ where
                     ..ConsoleStageModalFacts::default()
                 }
             }
+        }
+    }
+}
+
+impl<CreatePrelude, Editor, Settings> ConsoleManagerStage<CreatePrelude, Editor, Settings>
+where
+    Editor: ConsoleEditorFooterHeight,
+    Settings: ConsoleSettingsFooterHeight,
+{
+    #[must_use]
+    pub fn footer_height_facts(
+        &self,
+        workspace_footer_height: u16,
+    ) -> crate::tui::view::StageFooterHeightFacts {
+        crate::tui::view::StageFooterHeightFacts {
+            route: self.route(),
+            workspace_footer_height,
+            editor_footer_height: match self {
+                Self::Editor(editor) => editor.editor_cached_footer_height(),
+                _ => 0,
+            },
+            settings_footer_height: match self {
+                Self::Settings(settings) => settings.settings_cached_footer_height(),
+                _ => 0,
+            },
         }
     }
 }
@@ -1689,6 +1722,7 @@ mod tests {
 
     struct TestEditor {
         modal_open: bool,
+        footer_height: u16,
     }
 
     impl super::ConsoleEditorModalPresence for TestEditor {
@@ -1697,13 +1731,26 @@ mod tests {
         }
     }
 
+    impl super::ConsoleEditorFooterHeight for TestEditor {
+        fn editor_cached_footer_height(&self) -> u16 {
+            self.footer_height
+        }
+    }
+
     struct TestSettings {
         facts: ConsoleStageModalFacts,
+        footer_height: u16,
     }
 
     impl super::ConsoleSettingsModalPresence for TestSettings {
         fn settings_modal_facts(&self) -> ConsoleStageModalFacts {
             self.facts
+        }
+    }
+
+    impl super::ConsoleSettingsFooterHeight for TestSettings {
+        fn settings_cached_footer_height(&self) -> u16 {
+            self.footer_height
         }
     }
 
@@ -1760,7 +1807,11 @@ mod tests {
 
         assert_eq!(Stage::List.modal_facts(), ConsoleStageModalFacts::default());
         assert_eq!(
-            Stage::Editor(TestEditor { modal_open: true }).modal_facts(),
+            Stage::Editor(TestEditor {
+                modal_open: true,
+                footer_height: 4,
+            })
+            .modal_facts(),
             ConsoleStageModalFacts {
                 editor_modal_open: true,
                 ..ConsoleStageModalFacts::default()
@@ -1775,6 +1826,7 @@ mod tests {
         assert_eq!(
             Stage::Settings(TestSettings {
                 facts: settings_facts,
+                footer_height: 6,
             })
             .modal_facts(),
             settings_facts
@@ -1808,6 +1860,47 @@ mod tests {
             ConsoleStageModalFacts {
                 destructive_confirm_open: true,
                 ..ConsoleStageModalFacts::default()
+            }
+        );
+    }
+
+    #[test]
+    fn console_manager_stage_reports_footer_height_facts() {
+        type Stage = ConsoleManagerStage<(), TestEditor, TestSettings>;
+
+        assert_eq!(
+            Stage::Editor(TestEditor {
+                modal_open: false,
+                footer_height: 4,
+            })
+            .footer_height_facts(2),
+            crate::tui::view::StageFooterHeightFacts {
+                route: ConsoleManagerStageRoute::Editor,
+                workspace_footer_height: 2,
+                editor_footer_height: 4,
+                settings_footer_height: 0,
+            }
+        );
+        assert_eq!(
+            Stage::Settings(TestSettings {
+                facts: ConsoleStageModalFacts::default(),
+                footer_height: 6,
+            })
+            .footer_height_facts(2),
+            crate::tui::view::StageFooterHeightFacts {
+                route: ConsoleManagerStageRoute::Settings,
+                workspace_footer_height: 2,
+                editor_footer_height: 0,
+                settings_footer_height: 6,
+            }
+        );
+        assert_eq!(
+            Stage::List.footer_height_facts(2),
+            crate::tui::view::StageFooterHeightFacts {
+                route: ConsoleManagerStageRoute::List,
+                workspace_footer_height: 2,
+                editor_footer_height: 0,
+                settings_footer_height: 0,
             }
         );
     }

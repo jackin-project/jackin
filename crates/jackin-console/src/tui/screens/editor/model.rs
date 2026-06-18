@@ -340,6 +340,38 @@ impl<
     PendingDriftCheck,
     PendingIsolationCleanup,
     PendingOpCommit,
+> crate::tui::app::ConsoleEditorFooterHeight
+    for EditorState<
+        WorkspaceConfig,
+        MountInfoCache,
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >
+{
+    fn editor_cached_footer_height(&self) -> u16 {
+        self.cached_footer_h
+    }
+}
+
+impl<
+    WorkspaceConfig,
+    MountInfoCache,
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
 >
     EditorState<
         WorkspaceConfig,

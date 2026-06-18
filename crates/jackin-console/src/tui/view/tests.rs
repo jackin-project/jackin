@@ -104,6 +104,52 @@ fn visible_modal_prepare_areas_routes_list_and_stage_modals() {
 }
 
 #[test]
+fn visible_modal_prepare_areas_for_stage_facts_uses_active_stage_footer() {
+    let area = Rect::new(0, 0, 80, 24);
+
+    let editor = visible_modal_prepare_areas_for_stage_facts(
+        area,
+        StageFooterHeightFacts {
+            route: ConsoleManagerStageRoute::Editor,
+            workspace_footer_height: 2,
+            editor_footer_height: 4,
+            settings_footer_height: 6,
+        },
+    );
+    assert_eq!(editor.list_modal, Rect::new(0, 0, 80, 22));
+    assert_eq!(
+        editor.stage_modal,
+        Some(StageModalArea::Editor(Rect::new(0, 0, 80, 20)))
+    );
+
+    let settings = visible_modal_prepare_areas_for_stage_facts(
+        area,
+        StageFooterHeightFacts {
+            route: ConsoleManagerStageRoute::Settings,
+            workspace_footer_height: 2,
+            editor_footer_height: 4,
+            settings_footer_height: 6,
+        },
+    );
+    assert_eq!(
+        settings.stage_modal,
+        Some(StageModalArea::Settings(Rect::new(0, 0, 80, 18)))
+    );
+
+    let list = visible_modal_prepare_areas_for_stage_facts(
+        area,
+        StageFooterHeightFacts {
+            route: ConsoleManagerStageRoute::List,
+            workspace_footer_height: 2,
+            editor_footer_height: 4,
+            settings_footer_height: 6,
+        },
+    );
+    assert_eq!(list.list_modal, Rect::new(0, 0, 80, 22));
+    assert_eq!(list.stage_modal, None);
+}
+
+#[test]
 fn reserved_footer_height_prefers_screen_specific_heights() {
     assert_eq!(
         reserved_footer_height_for_facts(ReservedFooterHeightFacts {

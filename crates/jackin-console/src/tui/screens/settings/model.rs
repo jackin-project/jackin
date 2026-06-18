@@ -1803,6 +1803,32 @@ impl<
     }
 }
 
+impl<
+    MountRow,
+    MountModal,
+    EnvValue,
+    EnvModal,
+    AuthValue,
+    AuthModal,
+    PendingOpCommit,
+    Trust,
+    ErrorPopup,
+    PendingToken,
+> crate::tui::app::ConsoleSettingsFooterHeight
+    for SettingsState<
+        GlobalMountsState<MountRow, MountModal>,
+        SettingsEnvState<EnvValue, EnvModal>,
+        SettingsAuthState<AuthValue, AuthModal, PendingOpCommit>,
+        Trust,
+        ErrorPopup,
+        PendingToken,
+    >
+{
+    fn settings_cached_footer_height(&self) -> u16 {
+        self.cached_footer_h
+    }
+}
+
 impl<EnvValue, Modal, PendingOpCommit> SettingsPanelDirty
     for SettingsAuthState<EnvValue, Modal, PendingOpCommit>
 where
