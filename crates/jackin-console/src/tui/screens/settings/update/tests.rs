@@ -1114,6 +1114,22 @@ fn settings_tab_hover_plan_maps_strip() {
 }
 
 #[test]
+fn settings_tab_hover_target_plan_maps_strip_without_blocking_modals() {
+    assert_eq!(
+        settings_tab_hover_target_plan(false, false, crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
+        Some(SettingsHoverTarget::Tab(0))
+    );
+    assert_eq!(
+        settings_tab_hover_target_plan(true, false, crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
+        None
+    );
+    assert_eq!(
+        settings_tab_hover_target_plan(false, true, crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
+        None
+    );
+}
+
+#[test]
 fn settings_auth_detail_row_count_adds_source_row_only_when_needed() {
     assert_eq!(
         settings_auth_detail_row_count(AuthKind::Github, AuthMode::Token),
@@ -1221,6 +1237,28 @@ fn settings_trust_row_at_position_skips_header_and_applies_scroll() {
     assert_eq!(settings_trust_row_at_position(area, 1, 6, 0, 3), None);
     assert_eq!(settings_trust_row_at_position(area, 1, 10, 0, 3), None);
     assert_eq!(settings_trust_row_at_position(area, 80, 6, 0, 3), None);
+}
+
+#[test]
+fn settings_trust_hover_target_at_position_maps_trust_rows() {
+    let area = Rect::new(0, 5, 80, 10);
+
+    assert_eq!(
+        settings_trust_hover_target_at_position(SettingsTab::Trust, false, area, 1, 7, 0, 3),
+        Some(SettingsHoverTarget::TrustRow(0))
+    );
+    assert_eq!(
+        settings_trust_hover_target_at_position(SettingsTab::Trust, false, area, 1, 8, 2, 5),
+        Some(SettingsHoverTarget::TrustRow(3))
+    );
+    assert_eq!(
+        settings_trust_hover_target_at_position(SettingsTab::Mounts, false, area, 1, 7, 0, 3),
+        None
+    );
+    assert_eq!(
+        settings_trust_hover_target_at_position(SettingsTab::Trust, true, area, 1, 7, 0, 3),
+        None
+    );
 }
 
 #[test]

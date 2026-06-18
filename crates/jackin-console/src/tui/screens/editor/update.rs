@@ -6,7 +6,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::model::{AuthRow, EditorTab, SecretsEnterPlan, SecretsRow, SecretsScopeTag};
+use super::model::{
+    AuthRow, EditorHoverTarget, EditorTab, SecretsEnterPlan, SecretsRow, SecretsScopeTag,
+};
 use crate::tui::screens::editor::model::EditorMode;
 use crate::tui::screens::settings::model::AuthFormTarget;
 use jackin_config::MountConfig;
@@ -60,6 +62,49 @@ pub fn editor_tab_at_position(row: u16, col: u16) -> Option<EditorTab> {
 pub fn editor_tab_hover_plan(row: u16, col: u16) -> Option<usize> {
     let labels: Vec<&str> = EditorTab::ALL.iter().map(|tab| tab.label()).collect();
     crate::tui::layout::tab_hover_index_at_position(row, col, &labels)
+}
+
+#[must_use]
+pub fn editor_tab_hover_target_plan(
+    modal_open: bool,
+    row: u16,
+    col: u16,
+) -> Option<EditorHoverTarget> {
+    (!modal_open)
+        .then(|| editor_tab_hover_plan(row, col).map(EditorHoverTarget::Tab))
+        .flatten()
+}
+
+#[must_use]
+pub fn editor_mount_index_at_position(
+    active_tab: EditorTab,
+    modal_open: bool,
+    area: ratatui::layout::Rect,
+    col: u16,
+    row: u16,
+    scroll_y: u16,
+    mounts: &[MountConfig],
+) -> Option<usize> {
+    if active_tab != EditorTab::Mounts || modal_open {
+        return None;
+    }
+    crate::tui::layout::bordered_content_hit_at_position(area, col, row, scroll_y, |visual_row| {
+        editor_mount_index_at_visual_row(mounts, visual_row)
+    })
+}
+
+#[must_use]
+pub fn editor_mount_hover_target_at_position(
+    active_tab: EditorTab,
+    modal_open: bool,
+    area: ratatui::layout::Rect,
+    col: u16,
+    row: u16,
+    scroll_y: u16,
+    mounts: &[MountConfig],
+) -> Option<EditorHoverTarget> {
+    editor_mount_index_at_position(active_tab, modal_open, area, col, row, scroll_y, mounts)
+        .map(EditorHoverTarget::MountRow)
 }
 
 #[must_use]

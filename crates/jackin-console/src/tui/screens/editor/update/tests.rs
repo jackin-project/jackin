@@ -88,6 +88,53 @@ fn editor_tab_hover_plan_maps_strip() {
 }
 
 #[test]
+fn editor_tab_hover_target_plan_maps_strip_when_no_modal() {
+    assert_eq!(
+        editor_tab_hover_target_plan(false, crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
+        Some(EditorHoverTarget::Tab(0))
+    );
+    assert_eq!(
+        editor_tab_hover_target_plan(true, crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
+        None
+    );
+}
+
+#[test]
+fn editor_mount_hover_target_at_position_maps_mount_rows() {
+    let mounts = vec![
+        MountConfig {
+            src: "/src".into(),
+            dst: "/dst".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        },
+        MountConfig {
+            src: "/src2".into(),
+            dst: "/dst2".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        },
+    ];
+    let area = ratatui::layout::Rect::new(0, 4, 80, 8);
+    assert_eq!(
+        editor_mount_index_at_position(EditorTab::Mounts, false, area, 1, 6, 0, &mounts),
+        Some(0)
+    );
+    assert_eq!(
+        editor_mount_hover_target_at_position(EditorTab::Mounts, false, area, 1, 6, 0, &mounts),
+        Some(EditorHoverTarget::MountRow(0))
+    );
+    assert_eq!(
+        editor_mount_hover_target_at_position(EditorTab::General, false, area, 1, 6, 0, &mounts),
+        None
+    );
+    assert_eq!(
+        editor_mount_hover_target_at_position(EditorTab::Mounts, true, area, 1, 6, 0, &mounts),
+        None
+    );
+}
+
+#[test]
 fn editor_general_field_modal_plan_routes_editable_rows() {
     assert_eq!(
         editor_general_field_modal_plan(EditorTab::General, 0, false),

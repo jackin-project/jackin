@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::model::{
     GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfig,
     SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget,
-    SettingsGeneralState, SettingsTab, SettingsTrustRow, SettingsTrustState,
+    SettingsGeneralState, SettingsHoverTarget, SettingsTab, SettingsTrustRow, SettingsTrustState,
 };
 use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
 use crate::tui::components::scope_picker::ScopeChoice;
@@ -151,6 +151,18 @@ pub const fn settings_tab_bar_focus_plan(focused: bool) -> bool {
 pub fn settings_tab_hover_plan(row: u16, col: u16) -> Option<usize> {
     let labels: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.label()).collect();
     crate::tui::layout::tab_hover_index_at_position(row, col, &labels)
+}
+
+#[must_use]
+pub fn settings_tab_hover_target_plan(
+    mounts_modal_open: bool,
+    env_modal_open: bool,
+    row: u16,
+    col: u16,
+) -> Option<SettingsHoverTarget> {
+    (!mounts_modal_open && !env_modal_open)
+        .then(|| settings_tab_hover_plan(row, col).map(SettingsHoverTarget::Tab))
+        .flatten()
 }
 
 #[must_use]
@@ -1323,6 +1335,23 @@ pub fn settings_trust_row_at_position(
     let line = usize::from(row.saturating_sub(area.y + 1)) + usize::from(scroll_y);
     let row = line.checked_sub(1)?;
     (row < row_count).then_some(row)
+}
+
+#[must_use]
+pub fn settings_trust_hover_target_at_position(
+    active_tab: SettingsTab,
+    mounts_modal_open: bool,
+    area: Rect,
+    col: u16,
+    row: u16,
+    scroll_y: u16,
+    row_count: usize,
+) -> Option<SettingsHoverTarget> {
+    if active_tab != SettingsTab::Trust || mounts_modal_open {
+        return None;
+    }
+    settings_trust_row_at_position(area, col, row, scroll_y, row_count)
+        .map(SettingsHoverTarget::TrustRow)
 }
 
 #[must_use]

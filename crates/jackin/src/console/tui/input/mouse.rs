@@ -10,9 +10,8 @@ use crate::console::tui::layout::list::{
 };
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    EditorHoverTarget, EditorTab, FieldFocus, GlobalMountModal, ManagerHoverTarget, ManagerListRow,
-    ManagerStage, ManagerState, Modal, MountScrollFocus, SettingsAuthModal, SettingsHoverTarget,
-    SettingsTab,
+    EditorTab, FieldFocus, GlobalMountModal, ManagerHoverTarget, ManagerListRow, ManagerStage,
+    ManagerState, Modal, MountScrollFocus, SettingsAuthModal, SettingsTab,
 };
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
@@ -31,13 +30,14 @@ use jackin_console::tui::run::{
     ConsoleClickStageFacts, ConsoleClickabilityFacts, console_clickable_at,
 };
 use jackin_console::tui::screens::editor::update::{
-    auth_focusable_index_at_visual_row, editor_mount_index_at_visual_row, editor_scroll_focus_plan,
-    editor_tab_at_position, editor_tab_hover_plan,
+    auth_focusable_index_at_visual_row, editor_mount_hover_target_at_position,
+    editor_mount_index_at_position, editor_scroll_focus_plan, editor_tab_at_position,
+    editor_tab_hover_target_plan,
 };
 use jackin_console::tui::screens::settings::update::{
     settings_modal_open as settings_modal_open_fact, settings_scroll_focus_plan,
-    settings_tab_at_position, settings_tab_hover_plan, settings_trust_clickable_at_position,
-    settings_trust_row_at_position,
+    settings_tab_at_position, settings_tab_hover_target_plan, settings_trust_clickable_at_position,
+    settings_trust_hover_target_at_position, settings_trust_row_at_position,
 };
 use jackin_console::tui::screens::workspaces::update::{
     WorkspaceListMousePlan, workspace_list_clickable_at_position,
@@ -699,19 +699,32 @@ fn update_list_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_s
 fn update_row_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
     match &mut state.stage {
         ManagerStage::Editor(editor) => {
-            if let Some(index) = editor_mount_index_at(editor, mouse, term_size) {
-                editor.hover_target = Some(EditorHoverTarget::MountRow(index));
-            } else if matches!(editor.hover_target, Some(EditorHoverTarget::MountRow(_))) {
+            if let Some(target) = editor_mount_hover_target_at_position(
+                editor.active_tab,
+                editor.modal.is_some(),
+                editor_scroll_area(editor, term_size).area,
+                mouse.column,
+                mouse.row,
+                editor.tab_scroll_y,
+                editor.pending.mounts.as_slice(),
+            ) {
+                editor.hover_target = Some(target);
+            } else if editor.hovered_mount_row().is_some() {
                 editor.hover_target = None;
             }
         }
         ManagerStage::Settings(settings) => {
-            if let Some(index) = settings_trust_row_at(settings, mouse, term_size) {
-                settings.hover_target = Some(SettingsHoverTarget::TrustRow(index));
-            } else if matches!(
-                settings.hover_target,
-                Some(SettingsHoverTarget::TrustRow(_))
+            if let Some(target) = settings_trust_hover_target_at_position(
+                settings.active_tab,
+                settings.mounts.modal.is_some(),
+                settings.content_area(term_size),
+                mouse.column,
+                mouse.row,
+                settings.trust.scroll_y,
+                settings.trust.pending.len(),
             ) {
+                settings.hover_target = Some(target);
+            } else if settings.hovered_trust_row().is_some() {
                 settings.hover_target = None;
             }
         }
@@ -738,27 +751,6 @@ fn list_row_hover_at(
     )
 }
 
-/// Trust-tab pending-entry index under the pointer, or `None`. Matches the
-/// click handler's geometry: skip the column header (content line 0) and add
-/// the rendered vertical scroll, same as `try_select_settings_trust_row`.
-fn settings_trust_row_at(
-    settings: &crate::console::tui::state::SettingsState<'_>,
-    mouse: MouseEvent,
-    term_size: Rect,
-) -> Option<usize> {
-    if settings.active_tab != SettingsTab::Trust || settings.mounts.modal.is_some() {
-        return None;
-    }
-    let area = settings.content_area(term_size);
-    settings_trust_row_at_position(
-        area,
-        mouse.column,
-        mouse.row,
-        settings.trust.scroll_y,
-        settings.trust.pending.len(),
-    )
-}
-
 fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> bool {
     let ManagerStage::Editor(editor) = &state.stage else {
         return false;
@@ -780,15 +772,17 @@ fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> boo
 /// clears the highlight.
 fn update_tab_hover(state: &mut ManagerState<'_>, mouse: MouseEvent) {
     match &mut state.stage {
-        ManagerStage::Editor(editor) if editor.modal.is_none() => {
+        ManagerStage::Editor(editor) => {
             editor.hover_target =
-                editor_tab_hover_plan(mouse.row, mouse.column).map(EditorHoverTarget::Tab);
+                editor_tab_hover_target_plan(editor.modal.is_some(), mouse.row, mouse.column);
         }
-        ManagerStage::Settings(settings)
-            if settings.mounts.modal.is_none() && settings.env.modal.is_none() =>
-        {
-            settings.hover_target =
-                settings_tab_hover_plan(mouse.row, mouse.column).map(SettingsHoverTarget::Tab);
+        ManagerStage::Settings(settings) => {
+            settings.hover_target = settings_tab_hover_target_plan(
+                settings.mounts.modal.is_some(),
+                settings.env.modal.is_some(),
+                mouse.row,
+                mouse.column,
+            );
         }
         _ => {}
     }
@@ -844,16 +838,14 @@ fn editor_mount_index_at(
     mouse: MouseEvent,
     term_size: Rect,
 ) -> Option<usize> {
-    if editor.active_tab != EditorTab::Mounts || editor.modal.is_some() {
-        return None;
-    }
-    let area = editor_scroll_area(editor, term_size).area;
-    bordered_content_hit_at_position(
-        area,
+    editor_mount_index_at_position(
+        editor.active_tab,
+        editor.modal.is_some(),
+        editor_scroll_area(editor, term_size).area,
         mouse.column,
         mouse.row,
         editor.tab_scroll_y,
-        |visual_row| editor_mount_index_at_visual_row(editor.pending.mounts.as_slice(), visual_row),
+        editor.pending.mounts.as_slice(),
     )
 }
 
