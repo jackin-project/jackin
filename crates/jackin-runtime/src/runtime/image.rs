@@ -347,22 +347,21 @@ pub(super) async fn decide_agent_image(
 
     let head_sha = role_git_sha_for_recipe(cached_repo, None, runner).await;
     let mut refresh_reason = None;
-    if let Some(published) = base_image_override {
-        if published_image_is_stale(
+    if let Some(published) = base_image_override
+        && published_image_is_stale(
             published,
             &validated_repo.dockerfile.construct_version,
             head_sha.as_deref(),
             docker,
         )
         .await
-        {
-            jackin_diagnostics::debug_log!(
-                "image",
-                "published image {published} is out of date; checking workspace-image recipe"
-            );
-            base_image_override = None;
-            refresh_reason = Some(ImageInvalidationReason::PublishedImageStale);
-        }
+    {
+        jackin_diagnostics::debug_log!(
+            "image",
+            "published image {published} is out of date; checking workspace-image recipe"
+        );
+        base_image_override = None;
+        refresh_reason = Some(ImageInvalidationReason::PublishedImageStale);
     }
     jackin_diagnostics::active_timing_started("derived image", "image_recipe", None);
     let mut expected_recipes = expected_image_recipes(
@@ -648,6 +647,10 @@ fn selected_agent_install_for_recipe(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "computes the full set of expected image recipes from independent repo/agent/override inputs"
+)]
 fn expected_image_recipes(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
@@ -931,6 +934,10 @@ pub(crate) fn image_recipe_label_map_for_test(
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "test helper builds an image recipe label map from the same independent inputs as the recipe builder"
+)]
 fn image_recipe_label_map_for_install_test(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
@@ -1199,7 +1206,6 @@ pub(super) fn spawn_sibling_image_prewarm(
                 Some(selected_agent.slug()),
             );
         }
-        return;
     }
 
     #[cfg(not(test))]
@@ -1727,11 +1733,7 @@ fn agent_binary_prepare_summary(
 }
 
 /// Build the Docker image for the role. Returns the image name.
-#[expect(
-    clippy::similar_names,
-    clippy::too_many_arguments,
-    clippy::too_many_lines
-)]
+#[expect(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(super) async fn build_agent_image(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -2042,17 +2044,16 @@ async fn role_git_sha_for_recipe(
     runner: &mut impl CommandRunner,
 ) -> Option<String> {
     jackin_diagnostics::active_timing_started("derived image", "role_git_sha", None);
-    let (head_sha, detail) = match known_head_sha {
-        Some(sha) => (Some(sha.to_owned()), "known"),
-        None => {
-            let resolved = git_head_sha(&cached_repo.repo_dir, runner).await;
-            let detail = if resolved.is_some() {
-                "resolved"
-            } else {
-                "unavailable"
-            };
-            (resolved, detail)
-        }
+    let (head_sha, detail) = if let Some(sha) = known_head_sha {
+        (Some(sha.to_owned()), "known")
+    } else {
+        let resolved = git_head_sha(&cached_repo.repo_dir, runner).await;
+        let detail = if resolved.is_some() {
+            "resolved"
+        } else {
+            "unavailable"
+        };
+        (resolved, detail)
     };
     jackin_diagnostics::active_timing_done("derived image", "role_git_sha", Some(detail));
     head_sha
@@ -2486,30 +2487,29 @@ async fn record_built_agent_version(
     if matches!(
         runtime_binaries.agent_installs.get(&agent),
         Some(AgentInstall::Prefetched(_))
-    ) {
-        if let Some(version) = runtime_binaries.prefetched_agent_versions.get(&agent) {
-            jackin_diagnostics::active_timing_started(
-                "derived image",
-                "selected_agent_version_probe",
-                Some(agent.slug()),
+    ) && let Some(version) = runtime_binaries.prefetched_agent_versions.get(&agent)
+    {
+        jackin_diagnostics::active_timing_started(
+            "derived image",
+            "selected_agent_version_probe",
+            Some(agent.slug()),
+        );
+        jackin_diagnostics::active_timing_done(
+            "derived image",
+            "selected_agent_version_probe",
+            Some("prefetched"),
+        );
+        version_check::store_version(paths, agent, image, version);
+        if debug {
+            jackin_diagnostics::emit_debug_line(
+                "image",
+                &format!(
+                    "{} {version} recorded from prefetched binary metadata; Docker probe skipped",
+                    agent.runtime().label()
+                ),
             );
-            jackin_diagnostics::active_timing_done(
-                "derived image",
-                "selected_agent_version_probe",
-                Some("prefetched"),
-            );
-            version_check::store_version(paths, agent, image, version);
-            if debug {
-                jackin_diagnostics::emit_debug_line(
-                    "image",
-                    &format!(
-                        "{} {version} recorded from prefetched binary metadata; Docker probe skipped",
-                        agent.runtime().label()
-                    ),
-                );
-            }
-            return;
         }
+        return;
     }
     extract_agent_version(paths, image, agent, debug, runner).await;
 }

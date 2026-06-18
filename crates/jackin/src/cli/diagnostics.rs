@@ -91,7 +91,7 @@ fn compare(args: &DiagnosticsCompareArgs, paths: &JackinPaths) -> anyhow::Result
         .collect::<anyhow::Result<Vec<_>>>()?;
     match args.format {
         DiagnosticsCompareFormat::Text => {
-            print_comparison(&runs, args.top, args.baseline, &args.labels)
+            print_comparison(&runs, args.top, args.baseline, &args.labels);
         }
         DiagnosticsCompareFormat::Json => {
             let output = render_comparison_json(&runs, args.baseline, &args.labels)?;
@@ -503,8 +503,7 @@ fn cache_decision_counts(
         let key = summary
             .cache_events
             .first()
-            .map(|event| event.kind.as_str())
-            .unwrap_or("none");
+            .map_or("none", |event| event.kind.as_str());
         *counts.entry(key.to_owned()).or_insert(0) += 1;
     }
     counts
@@ -515,9 +514,8 @@ fn prewarmed_dind_adoption_counts(
 ) -> std::collections::BTreeMap<String, usize> {
     let mut counts = std::collections::BTreeMap::new();
     for (_, summary) in runs {
-        let key = last_prewarmed_dind_adoption(summary)
-            .map(|event| event.outcome.as_str())
-            .unwrap_or("none");
+        let key =
+            last_prewarmed_dind_adoption(summary).map_or("none", |event| event.outcome.as_str());
         *counts.entry(key.to_owned()).or_insert(0) += 1;
     }
     counts
@@ -588,7 +586,7 @@ fn startup_delta_ms(current: Option<u128>, baseline: Option<u128>) -> Option<i64
 }
 
 fn startup_saved_ms(current: Option<u128>, baseline: Option<u128>) -> Option<i64> {
-    startup_delta_ms(current, baseline).and_then(|delta| delta.checked_neg())
+    startup_delta_ms(current, baseline).and_then(i64::checked_neg)
 }
 
 fn startup_ratio(current: Option<u128>, baseline: Option<u128>) -> Option<f64> {

@@ -111,7 +111,7 @@ pub async fn run(
         Ok(path) => println!("  {}  capsule  {}", "✓".green(), path.display()),
         Err(error) => {
             println!("  {}  capsule  {error:#}", "✗".red().bold());
-            return Err(error.into());
+            return Err(error);
         }
     }
 
@@ -388,7 +388,7 @@ impl PrewarmRoleTarget {
                 role_git: source.git.clone(),
             });
         }
-        targets.sort_by(|a, b| a.selector.key().cmp(&b.selector.key()));
+        targets.sort_by_key(|a| a.selector.key());
         Ok(targets)
     }
 

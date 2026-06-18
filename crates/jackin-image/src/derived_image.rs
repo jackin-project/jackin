@@ -83,11 +83,9 @@ fn render_hook_section(hooks: Option<&HooksConfig>) -> HookRender {
         "install -d /jackin/runtime/hooks \\\n    && install -d -o agent -g agent /jackin/state /jackin/state/hooks",
     );
     for entry in &entries {
-        let _unused = write!(
+        let _unused = writeln!(
             copy_section,
-            "\
-COPY --link --chown=agent:agent --chmod=0755 {src} /jackin/runtime/hooks/{dst}
-",
+            "COPY --link --chown=agent:agent --chmod=0755 {src} /jackin/runtime/hooks/{dst}",
             src = entry.path,
             dst = entry.filename,
         );
@@ -116,12 +114,9 @@ COPY --link --chown=agent:agent --chmod=0755 {src} /jackin/runtime/hooks/{dst}
         // the source call while still letting `export VAR=...` inside
         // `source.sh` leak into the caller's env (which is the whole
         // point of the shim).
-        let _unused = write!(
+        let _unused = writeln!(
             copy_section,
-            "\
-COPY --link --chown=agent:agent --chmod=0644 {src} /jackin/runtime/zshenv-source-shim
-",
-            src = ZSHENV_SOURCE_SHIM_PATH,
+            "COPY --link --chown=agent:agent --chmod=0644 {ZSHENV_SOURCE_SHIM_PATH} /jackin/runtime/zshenv-source-shim",
         );
         final_commands.push_str(" \\\n    && ");
         final_commands.push_str(
@@ -318,8 +313,12 @@ RUN --mount=type=cache,id=jackin-claude-plugin-bundle-{recipe_key},target=/jacki
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
     let digest = Sha256::digest(bytes);
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+    digest.iter().fold(String::new(), |mut acc, byte| {
+        let _unused = write!(acc, "{byte:02x}");
+        acc
+    })
 }
 
 /// Single-quote `value` for safe inclusion in a `/bin/sh -c` string. Embedded
@@ -531,7 +530,7 @@ fn copy_declared_hook_files(
     hooks: Option<&HooksConfig>,
 ) -> anyhow::Result<()> {
     for entry in hooks.into_iter().flat_map(HooksConfig::entries) {
-        let src = repo_dir.join(&entry.path);
+        let src = repo_dir.join(entry.path);
         let metadata = std::fs::symlink_metadata(&src).map_err(|e| {
             anyhow::anyhow!(
                 "failed to inspect hook {} for derived build context: {e}",
@@ -547,7 +546,7 @@ fn copy_declared_hook_files(
         if !metadata.is_file() {
             anyhow::bail!("hook {} is not a regular file", entry.path);
         }
-        let dst = context_dir.join(&entry.path);
+        let dst = context_dir.join(entry.path);
         if let Some(parent) = dst.parent() {
             std::fs::create_dir_all(parent)?;
         }

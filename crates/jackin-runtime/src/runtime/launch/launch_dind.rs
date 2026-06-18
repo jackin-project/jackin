@@ -86,7 +86,7 @@ impl DindSidecarOwner<'_> {
 ///
 /// This lets fresh launches overlap sidecar startup with other foreground
 /// requirements, such as workspace materialization, while keeping the same
-/// DockerApi calls and diagnostics.
+/// `DockerApi` calls and diagnostics.
 pub(super) async fn run_dind_sidecar_headless(
     container_name: &str,
     network: &str,
@@ -224,7 +224,7 @@ async fn run_dind_sidecar_headless_with_owner(
     Ok(())
 }
 
-/// Start a disposable DinD sidecar through the same path fresh launches use,
+/// Start a disposable `DinD` sidecar through the same path fresh launches use,
 /// wait until Docker/TLS is ready, then tear it down. This warms the local
 /// Docker daemon/container/cert-generation path without preserving a live
 /// sidecar for a future role instance.
@@ -380,17 +380,14 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
         "adopt_prewarmed_dind",
         Some(PREWARM_STATE_FILE),
     );
-    let lock = match try_lock_prewarmed_dind(paths) {
-        Some(lock) => lock,
-        None => {
-            jackin_diagnostics::active_timing_done(
-                "sidecar",
-                "adopt_prewarmed_dind",
-                Some("skip:locked"),
-            );
-            emit_prewarmed_dind_adoption("skipped", "locked");
-            return None;
-        }
+    let Some(lock) = try_lock_prewarmed_dind(paths) else {
+        jackin_diagnostics::active_timing_done(
+            "sidecar",
+            "adopt_prewarmed_dind",
+            Some("skip:locked"),
+        );
+        emit_prewarmed_dind_adoption("skipped", "locked");
+        return None;
     };
     let state = match read_prewarmed_dind_state(paths) {
         Ok(Some(state)) if state.schema_version == 1 && state.kept => state,

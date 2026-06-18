@@ -84,8 +84,10 @@ async fn role_git_sha_for_recipe_uses_known_sha_without_git_capture() {
     let _active = run.activate();
     let selector = RoleSelector::new(None, "agent-smith");
     let (cached_repo, _) = validated_test_repo(&paths, &selector);
-    let mut runner = FakeRunner::default();
-    runner.fail_on = vec!["git -C".to_owned()];
+    let mut runner = FakeRunner {
+        fail_on: vec!["git -C".to_owned()],
+        ..Default::default()
+    };
 
     let sha = role_git_sha_for_recipe(&cached_repo, Some("abc123"), &mut runner).await;
 
@@ -504,8 +506,10 @@ async fn record_built_agent_version_skips_docker_probe_for_prefetched_version() 
         prefetched_agent_versions: BTreeMap::from([(Agent::Claude, "2.1.91".to_owned())]),
         jackin_capsule_src: "/tmp/jackin-capsule".to_owned(),
     };
-    let mut runner = FakeRunner::default();
-    runner.fail_on = vec!["docker run --rm --entrypoint".to_owned()];
+    let mut runner = FakeRunner {
+        fail_on: vec!["docker run --rm --entrypoint".to_owned()],
+        ..Default::default()
+    };
 
     record_built_agent_version(
         &paths,
@@ -1550,6 +1554,10 @@ async fn prewarm_reuse_emits_prewarm_launch_plan_and_skips_build() {
         .inspect_image_labels_queue
         .borrow_mut()
         .push_back(labels);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test opens the role lock file directly to pass a real File handle to the prewarm helper"
+    )]
     let repo_lock = std::fs::File::open(cached_repo.repo_dir.join("jackin.role.toml")).unwrap();
     let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
 
@@ -1638,8 +1646,12 @@ plugins = []
         .borrow_mut()
         .push_back(HashMap::from([(
             LABEL_IMAGE_CONSTRUCT.to_owned(),
-            jackin_manifest::repo_contract::construct_image().to_owned(),
+            jackin_manifest::repo_contract::construct_image(),
         )]));
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test opens the role lock file directly to pass a real File handle to the prewarm helper"
+    )]
     let repo_lock = std::fs::File::open(cached_repo.repo_dir.join("jackin.role.toml")).unwrap();
     let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned(), "abc123".to_owned()]);
 
