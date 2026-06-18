@@ -8,12 +8,13 @@ use crate::console::tui::effect::{
 use crate::console::tui::op_picker::OpPickerState;
 use jackin_config::AppConfig;
 use jackin_console::tui::effect::ConsoleEffect;
+use jackin_console::tui::screens::workspaces::update::saved_workspace_selected_index;
 use jackin_tui::runtime::spawn_blocking_subscription;
 
 use crate::console::tui::message::{ManagerBackgroundEvent, ManagerMessage, update_manager};
 use crate::console::tui::state::{
     CreatePreludeState, EditorMode, EditorSaveFlow, EditorState, FileBrowserTarget,
-    GlobalMountModal, ManagerListRow, ManagerStage, ManagerState, Modal, PendingDriftCheck,
+    GlobalMountModal, ManagerStage, ManagerState, Modal, PendingDriftCheck,
     PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad,
 };
 use jackin_console::tui::components::error_popup;
@@ -995,9 +996,7 @@ pub(crate) fn execute_workspace_save_write(
                     .iter()
                     .position(|w| w.name == saved.current_name)
                 {
-                    state.selected = ManagerListRow::SavedWorkspace(idx)
-                        .to_screen_index(saved_count)
-                        .unwrap_or(0);
+                    state.selected = saved_workspace_selected_index(saved_count, idx);
                 }
             }
         }

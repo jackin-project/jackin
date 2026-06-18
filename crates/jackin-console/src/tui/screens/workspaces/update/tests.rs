@@ -41,6 +41,7 @@ fn initial_workspace_selected_index_prefers_matching_saved_workspace() {
     assert_eq!(initial_workspace_selected_index(3, Some(1)), 2);
     assert_eq!(initial_workspace_selected_index(3, None), 0);
     assert_eq!(initial_workspace_selected_index(0, None), 0);
+    assert_eq!(saved_workspace_selected_index(3, 1), 2);
 }
 
 #[test]
