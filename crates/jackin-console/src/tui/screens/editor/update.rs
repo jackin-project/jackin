@@ -352,6 +352,16 @@ pub const fn editor_max_row_for_tab(
     }
 }
 
+#[must_use]
+pub const fn editor_mount_add_row_selected(selected_row: usize, mount_count: usize) -> bool {
+    selected_row == mount_count
+}
+
+#[must_use]
+pub const fn editor_role_add_row_selected(selected_row: usize, role_count: usize) -> bool {
+    selected_row == role_count
+}
+
 pub fn toggle_general_selected(
     row: usize,
     keep_awake_enabled: &mut bool,

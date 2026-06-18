@@ -136,6 +136,10 @@ fn editor_max_row_for_tab_uses_tab_specific_counts() {
     assert_eq!(editor_max_row_for_tab(EditorTab::Roles, 9, 8, 7, 6), 8);
     assert_eq!(editor_max_row_for_tab(EditorTab::Secrets, 9, 8, 7, 6), 6);
     assert_eq!(editor_max_row_for_tab(EditorTab::Auth, 9, 8, 7, 6), 5);
+    assert!(editor_mount_add_row_selected(9, 9));
+    assert!(!editor_mount_add_row_selected(8, 9));
+    assert!(editor_role_add_row_selected(8, 8));
+    assert!(!editor_role_add_row_selected(7, 8));
 }
 
 #[test]

@@ -35,7 +35,8 @@ use jackin_console::tui::components::file_browser::{FileBrowserOutcome, page_row
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::editor::update::{
-    auth_skipped_rows, editor_max_row_for_tab, editor_secrets_selection_bounds,
+    auth_skipped_rows, editor_max_row_for_tab, editor_mount_add_row_selected,
+    editor_role_add_row_selected, editor_secrets_selection_bounds,
 };
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -340,7 +341,7 @@ pub(super) fn handle_editor_key(
             EditorTab::General => general::open_editor_field_modal(editor),
             EditorTab::Mounts => {
                 let FieldFocus::Row(n) = editor.active_field;
-                if n == editor.pending.mounts.len() {
+                if editor_mount_add_row_selected(n, editor.pending.mounts.len()) {
                     state.request_effect(ManagerEffect::OpenEditorAddMountFileBrowser);
                     return Ok(InputOutcome::Continue);
                 }
@@ -371,7 +372,7 @@ pub(super) fn handle_editor_key(
             }
             EditorTab::Roles => {
                 let FieldFocus::Row(n) = editor.active_field;
-                if n == config.roles.len() {
+                if editor_role_add_row_selected(n, config.roles.len()) {
                     agents::open_role_input(editor, config);
                 }
             }
