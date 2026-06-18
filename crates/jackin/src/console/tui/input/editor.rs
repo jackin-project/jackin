@@ -34,7 +34,7 @@ use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::screens::editor::model::{
     AuthEnterPlan, EditorHorizontalScrollKeyPlan, EditorMountGithubOpenPlan,
-    RoleHeaderExpansionPlan,
+    EditorRoleHeaderExpansionKeyPlan, RoleHeaderExpansionPlan,
 };
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -213,48 +213,12 @@ pub(super) fn handle_editor_key(
                 );
                 return Ok(InputOutcome::Continue);
             }
-            KeyCode::Right if editor.active_tab == EditorTab::Secrets => {
-                match editor.focused_secrets_role_expansion_plan(true) {
-                    RoleHeaderExpansionPlan::Set { role, expanded } => dispatch_manager(
-                        state,
-                        ManagerMessage::SetEditorSecretsRoleExpanded { role, expanded },
-                    ),
-                    RoleHeaderExpansionPlan::HeaderNoop => {}
-                    RoleHeaderExpansionPlan::NotHeader => return Ok(InputOutcome::Continue),
-                }
-                return Ok(InputOutcome::Continue);
-            }
-            KeyCode::Left if editor.active_tab == EditorTab::Secrets => {
-                match editor.focused_secrets_role_expansion_plan(false) {
-                    RoleHeaderExpansionPlan::Set { role, expanded } => dispatch_manager(
-                        state,
-                        ManagerMessage::SetEditorSecretsRoleExpanded { role, expanded },
-                    ),
-                    RoleHeaderExpansionPlan::HeaderNoop => {}
-                    RoleHeaderExpansionPlan::NotHeader => return Ok(InputOutcome::Continue),
-                }
-                return Ok(InputOutcome::Continue);
-            }
-            KeyCode::Right if editor.active_tab == EditorTab::Auth => {
-                match editor.focused_auth_role_expansion_plan(config, true) {
-                    RoleHeaderExpansionPlan::Set { role, expanded } => dispatch_manager(
-                        state,
-                        ManagerMessage::SetEditorAuthRoleExpanded { role, expanded },
-                    ),
-                    RoleHeaderExpansionPlan::HeaderNoop => {}
-                    RoleHeaderExpansionPlan::NotHeader => return Ok(InputOutcome::Continue),
-                }
-                return Ok(InputOutcome::Continue);
-            }
-            KeyCode::Left if editor.active_tab == EditorTab::Auth => {
-                match editor.focused_auth_role_expansion_plan(config, false) {
-                    RoleHeaderExpansionPlan::Set { role, expanded } => dispatch_manager(
-                        state,
-                        ManagerMessage::SetEditorAuthRoleExpanded { role, expanded },
-                    ),
-                    RoleHeaderExpansionPlan::HeaderNoop => {}
-                    RoleHeaderExpansionPlan::NotHeader => return Ok(InputOutcome::Continue),
-                }
+            KeyCode::Right | KeyCode::Left => {
+                let plan = editor.focused_role_header_expansion_key_plan(
+                    config,
+                    matches!(key.code, KeyCode::Right),
+                );
+                dispatch_editor_role_header_expansion(state, plan);
                 return Ok(InputOutcome::Continue);
             }
             KeyCode::Enter if editor.active_tab == EditorTab::Auth => {
@@ -436,6 +400,34 @@ fn dispatch_editor_horizontal_scroll(
                 content_width,
             },
         ),
+    }
+}
+
+fn dispatch_editor_role_header_expansion(
+    state: &mut ManagerState<'_>,
+    plan: EditorRoleHeaderExpansionKeyPlan,
+) {
+    match plan {
+        EditorRoleHeaderExpansionKeyPlan::Secrets(RoleHeaderExpansionPlan::Set {
+            role,
+            expanded,
+        }) => {
+            dispatch_manager(
+                state,
+                ManagerMessage::SetEditorSecretsRoleExpanded { role, expanded },
+            );
+        }
+        EditorRoleHeaderExpansionKeyPlan::Auth(RoleHeaderExpansionPlan::Set { role, expanded }) => {
+            dispatch_manager(
+                state,
+                ManagerMessage::SetEditorAuthRoleExpanded { role, expanded },
+            );
+        }
+        EditorRoleHeaderExpansionKeyPlan::Secrets(RoleHeaderExpansionPlan::HeaderNoop)
+        | EditorRoleHeaderExpansionKeyPlan::Auth(RoleHeaderExpansionPlan::HeaderNoop) => {}
+        EditorRoleHeaderExpansionKeyPlan::Secrets(RoleHeaderExpansionPlan::NotHeader)
+        | EditorRoleHeaderExpansionKeyPlan::Auth(RoleHeaderExpansionPlan::NotHeader)
+        | EditorRoleHeaderExpansionKeyPlan::NotRoleHeaderTab => {}
     }
 }
 

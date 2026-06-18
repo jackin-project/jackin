@@ -59,6 +59,13 @@ pub enum RoleHeaderExpansionPlan {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorRoleHeaderExpansionKeyPlan {
+    Secrets(RoleHeaderExpansionPlan),
+    Auth(RoleHeaderExpansionPlan),
+    NotRoleHeaderTab,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthEnterPlan {
     AddRoleOverride,
     ToggleRole(String),
@@ -948,6 +955,25 @@ impl<
     }
 
     #[must_use]
+    pub fn focused_role_header_expansion_key_plan(
+        &self,
+        config: &jackin_config::AppConfig,
+        expanded: bool,
+    ) -> EditorRoleHeaderExpansionKeyPlan {
+        match self.active_tab {
+            EditorTab::Secrets => EditorRoleHeaderExpansionKeyPlan::Secrets(
+                self.focused_secrets_role_expansion_plan(expanded),
+            ),
+            EditorTab::Auth => EditorRoleHeaderExpansionKeyPlan::Auth(
+                self.focused_auth_role_expansion_plan(config, expanded),
+            ),
+            EditorTab::General | EditorTab::Mounts | EditorTab::Roles => {
+                EditorRoleHeaderExpansionKeyPlan::NotRoleHeaderTab
+            }
+        }
+    }
+
+    #[must_use]
     pub fn focused_mount_add_row_selected(&self) -> bool {
         let FieldFocus::Row(n) = self.active_field;
         crate::tui::screens::editor::update::editor_mount_add_row_selected(
@@ -1211,7 +1237,8 @@ mod tests {
 
     use super::{
         AuthEnterPlan, AuthRow, EditorHorizontalScrollKeyPlan, EditorMountGithubOpenPlan,
-        EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
+        EditorRoleHeaderExpansionKeyPlan, EditorState, EditorTab, FieldFocus,
+        RoleHeaderExpansionPlan, SecretsRow,
     };
 
     type TestEditor =
@@ -1419,6 +1446,63 @@ mod tests {
                 role: "dev".into(),
                 expanded: false
             }
+        );
+    }
+
+    #[test]
+    fn editor_focused_role_header_expansion_key_plan_routes_by_tab() {
+        let mut workspace = WorkspaceConfig::default();
+        workspace
+            .roles
+            .entry("dev".into())
+            .or_default()
+            .env
+            .insert("TOKEN".into(), jackin_config::EnvValue::Plain("one".into()));
+        workspace.roles.entry("dev".into()).or_default().github =
+            Some(jackin_config::GithubAuthConfig {
+                auth_forward: jackin_config::GithubAuthMode::Token,
+                ..Default::default()
+            });
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+        let config = jackin_config::AppConfig::default();
+
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(
+            editor
+                .secrets_flat_rows()
+                .iter()
+                .position(|row| matches!(row, SecretsRow::RoleHeader { role, .. } if role == "dev"))
+                .expect("secrets role header row"),
+        );
+        assert_eq!(
+            editor.focused_role_header_expansion_key_plan(&config, true),
+            EditorRoleHeaderExpansionKeyPlan::Secrets(RoleHeaderExpansionPlan::Set {
+                role: "dev".into(),
+                expanded: true
+            })
+        );
+
+        editor.active_tab = EditorTab::Auth;
+        editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Github);
+        editor.active_field = FieldFocus::Row(
+            editor
+                .auth_flat_rows(&config)
+                .iter()
+                .position(|row| matches!(row, AuthRow::RoleHeader { role, .. } if role == "dev"))
+                .expect("auth role header row"),
+        );
+        assert_eq!(
+            editor.focused_role_header_expansion_key_plan(&config, true),
+            EditorRoleHeaderExpansionKeyPlan::Auth(RoleHeaderExpansionPlan::Set {
+                role: "dev".into(),
+                expanded: true
+            })
+        );
+
+        editor.active_tab = EditorTab::Roles;
+        assert_eq!(
+            editor.focused_role_header_expansion_key_plan(&config, true),
+            EditorRoleHeaderExpansionKeyPlan::NotRoleHeaderTab
         );
     }
 
