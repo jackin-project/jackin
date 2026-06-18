@@ -79,7 +79,8 @@ pub enum GithubProvisionOutcome {
 /// start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GithubTokenSource {
-    /// Operator-resolved `[github.env]` / scoped GitHub env supplied `GH_TOKEN`.
+    /// `GH_TOKEN` resolved from operator-configured `[github.env]` declarations
+    /// before consulting the host `gh` CLI or `hosts.yml`.
     ConfiguredEnv,
     /// `gh auth token --hostname github.com` (live, Keychain-aware).
     GhCli,
@@ -173,9 +174,10 @@ pub enum GithubProvisionKind {
 ///
 /// Collapsed from a 5-variant enum to a single struct (Phase 2/3).
 /// Auth paths for provisioned agents are tracked separately on
-/// [`ProvisionedAuth`]. The launch path provisions only the selected
-/// foreground runtime; callers that need every manifest-supported slot can
-/// call [`RoleState::prepare`].
+/// [`ProvisionedAuth`]. The launch path provisions auth state for every agent
+/// in `manifest.supported_agents()` so each agent's home directory is
+/// bind-mounted at `docker run` and sibling tabs can authenticate without
+/// re-launching.
 #[derive(Debug, Clone)]
 pub struct AgentRuntimeState {
     /// The selected agent for this session.
@@ -391,14 +393,15 @@ pub struct PrepareResolvers<'a> {
 }
 
 impl RoleState {
-    /// Provision per-supported-agent auth state.
+    /// Provision auth state for every agent in `manifest.supported_agents()` by
+    /// delegating to [`Self::prepare_for_agents`] with the full supported set.
     ///
-    /// `resolvers.auth_modes` is invoked once per agent in `manifest.supported_agents()`
-    /// — pass `jackin_config::resolve_mode(config, a, ws, role)` so each
-    /// agent gets its own configured forward mode. Reusing the *selected*
-    /// agent's mode for sibling agents silently wipes their durable state
-    /// when modes diverge (e.g. `claude.auth_forward = sync` next to
-    /// `codex.auth_forward = api_key`).
+    /// `resolvers.auth_modes` is invoked once per agent — pass
+    /// `jackin_config::resolve_mode(config, a, ws, role)` so each agent gets
+    /// its own configured forward mode. Reusing the *selected* agent's mode for
+    /// sibling agents silently wipes their durable state when modes diverge
+    /// (e.g. `claude.auth_forward = sync` next to `codex.auth_forward =
+    /// api_key`).
     ///
     /// `resolvers.sync_source_dirs` returns an optional override source
     /// directory for each agent's auth sync, overriding `host_home`.
@@ -426,10 +429,11 @@ impl RoleState {
 
     /// Provision auth state only for the provided agents.
     ///
-    /// The foreground launch path uses this with the selected agent only so a
-    /// Claude launch does not block on Codex/Amp/Kimi/OpenCode/Grok auth
-    /// discovery. `prepare` keeps the full manifest-supported behavior for
-    /// callers that intentionally need every slot.
+    /// Accepts an explicit `provision_agents` list so callers that intentionally
+    /// need only a subset (such as tests or background prewarm) can pass a
+    /// narrower slice. The foreground launch path passes the full
+    /// `manifest.supported_agents()` set; [`Self::prepare`] is a convenience
+    /// wrapper that does the same.
     #[tracing::instrument(skip_all, fields(container = container_name, agent = agent.slug()))]
     #[expect(
         clippy::too_many_arguments,
@@ -475,7 +479,7 @@ impl RoleState {
         let paths_for_grok = paths.clone();
 
         let (gh_provision_outcome, auth_provisions) = std::thread::scope(|scope| {
-            let handles: Vec<_> = supported_auth
+            let handles: Vec<(jackin_core::agent::Agent, _)> = supported_auth
                 .iter()
                 .map(|(supported, mode, sync_src)| {
                     let root = root_path.clone();
@@ -485,7 +489,7 @@ impl RoleState {
                     let paths = paths_for_grok.clone();
                     let supported = *supported;
                     let mode = *mode;
-                    scope.spawn(move || {
+                    let handle = scope.spawn(move || {
                         Self::provision_agent_auth_slot(
                             &paths,
                             &root,
@@ -495,7 +499,8 @@ impl RoleState {
                             mode,
                             sync_src.as_deref(),
                         )
-                    })
+                    });
+                    (supported, handle)
                 })
                 .collect();
 
@@ -549,11 +554,16 @@ impl RoleState {
                 };
 
             let mut auth_provisions = Vec::with_capacity(handles.len());
-            for handle in handles {
+            for (agent, handle) in handles {
                 auth_provisions.push(
                     handle
                         .join()
-                        .map_err(|_| anyhow::anyhow!("agent auth provisioning task panicked"))??,
+                        .map_err(|_| {
+                            anyhow::anyhow!(
+                                "{} auth provisioning task panicked",
+                                agent.slug()
+                            )
+                        })??,
                 );
             }
 
@@ -899,14 +909,36 @@ impl RoleState {
             jackin_core::agent::Agent::Grok,
         ) {
             let bin_dir = grok_home_dir.join("bin");
-            std::fs::create_dir_all(&bin_dir).ok();
+            std::fs::create_dir_all(&bin_dir).with_context(|| {
+                format!(
+                    "failed to create grok bin dir at {}",
+                    bin_dir.display()
+                )
+            })?;
             let dst = bin_dir.join("grok");
             if std::fs::copy(&src, &dst).is_ok() {
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt as _;
-                    std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o755)).ok();
-                    std::os::unix::fs::symlink("grok", bin_dir.join("agent")).ok();
+                    if let Err(e) =
+                        std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o755))
+                    {
+                        jackin_diagnostics::debug_log!(
+                            "grok",
+                            "could not make grok binary executable at {}: {e}",
+                            dst.display()
+                        );
+                    }
+                    let agent_link = bin_dir.join("agent");
+                    if let Err(e) = std::os::unix::fs::symlink("grok", &agent_link)
+                        && e.kind() != std::io::ErrorKind::AlreadyExists
+                    {
+                        jackin_diagnostics::debug_log!(
+                            "grok",
+                            "could not create grok agent symlink at {}: {e}",
+                            agent_link.display()
+                        );
+                    }
                 }
                 #[cfg(not(unix))]
                 {

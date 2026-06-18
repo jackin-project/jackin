@@ -35,7 +35,12 @@ pub fn stored_version(paths: &JackinPaths, agent: Agent, image: &str) -> Option<
 /// Persist the agent version that was just installed into an image.
 pub fn store_version(paths: &JackinPaths, agent: Agent, image: &str, version: &str) {
     let path = image_version_cache_path(paths, agent, image);
-    drop(write_cached(&path, version));
+    if let Err(e) = write_cached(&path, version) {
+        stderr_line(format_args!(
+            "warning: failed to cache {agent} version for {image}: {e}; \
+             subsequent launch-time version checks will re-probe the image"
+        ));
+    }
 }
 
 pub async fn needs_agent_update(paths: &JackinPaths, image: &str, agent: Agent) -> bool {

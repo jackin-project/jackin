@@ -1225,6 +1225,9 @@ pub(crate) async fn load_role_with(
         // Token/env preflights are complete, so the per-instance sidecar can
         // start while role-state auth is prepared. This preserves fail-fast
         // missing-token behavior but removes the old auth-then-DinD serial wait.
+        // DinD startup races role_state_future via tokio::select!; the later
+        // join with workspace materialization further overlaps sidecar readiness
+        // with mount setup.
         if let Some(progress) = steps.progress_mut() {
             progress.stage_started(
                 crate::runtime::progress::LaunchStage::Network,
@@ -1279,7 +1282,7 @@ pub(crate) async fn load_role_with(
                         &role_key_owned,
                     )
                 };
-                // Phase B.2: resolve the operator's sync-source-dir override for each agent.
+                // Each agent may have an operator-configured sync-source-dir override that replaces host_home for auth sync.
                 let resolve_sync_src = |a: jackin_core::agent::Agent| {
                     jackin_config::resolve_sync_source_dir(
                         &config_owned,

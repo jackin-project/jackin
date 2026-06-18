@@ -182,9 +182,9 @@ use progress_helpers::{
 ///
 /// Every provisioned agent is represented on `state.auth`, so the mount block
 /// checks `auth.*` flags rather than matching the selected-agent variant. The
-/// foreground launch path provisions only the selected runtime; broader
-/// prewarm flows can provision additional slots when they prepare sibling
-/// runtimes.
+/// foreground launch path provisions all manifest-supported agents so sibling
+/// tabs opened via `hardline --new --agent <other>` find their homes
+/// bind-mounted from the start.
 fn agent_mounts(state: &RoleState) -> Vec<String> {
     let mut mounts = vec![format!(
         "{}:/jackin/state",

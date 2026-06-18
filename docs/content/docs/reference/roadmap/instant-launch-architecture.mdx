@@ -87,7 +87,7 @@ The launch path is centered in <RepoFile path="crates/jackin-runtime/src/runtime
 9. Prepares only the selected foreground agent binary plus `jackin-capsule` in <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> for rebuild paths. Sibling-runtime preparation is deferred to future background/prewarm work.
 10. Creates a temporary derived build context in <RepoFile path="crates/jackin-image/src/derived_image.rs" /> by copying the role repo without `.git` or pre-existing `.jackin-runtime` internals and writing `.jackin-runtime/DerivedDockerfile` for rebuild paths.
 11. Resolves a GitHub build token only when the generated Dockerfile contains `id=github_token`, runs `docker build`, then stores the selected agent version from prefetched release metadata. If the selected install used a fallback script or metadata is missing, it runs `docker run --rm --entrypoint <agent> <image> --version` and stores the parsed version.
-12. Creates/updates the instance manifest and prepares selected-agent auth state.
+12. Creates/updates the instance manifest and prepares auth state for every agent in `manifest.supported_agents()`, so all sibling agent homes are bind-mounted from the start.
 13. Starts per-instance Docker network/`docker:dind` sidecar readiness in parallel with workspace mount materialization and isolated clone/worktree setup, then joins before role-container creation.
 14. Waits for sidecar readiness (`docker info` and TLS certs) and materialized workspace mounts before assembling the role `docker run`.
 15. Starts the role container with a long `docker run -d` command and bind mounts for auth, homes, workspace mounts, shared caches, socket dir, and DinD certs.
