@@ -23,8 +23,8 @@ use crate::console::tui::op_picker::OpPickerState;
 #[cfg(test)]
 use crate::console::tui::state::PendingRoleLoad;
 use crate::console::tui::state::{
-    ConfirmTarget, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FileBrowserTarget,
-    ManagerStage, ManagerState, Modal, SecretsScopeTag, TextInputTarget, open_editor_action_error,
+    ConfirmTarget, EditorSaveFlow, EditorState, ExitIntent, FileBrowserTarget, ManagerStage,
+    ManagerState, Modal, SecretsScopeTag, TextInputTarget, open_editor_action_error,
     open_role_input_error, open_role_resolution_error,
 };
 use crate::paths::JackinPaths;
@@ -37,7 +37,8 @@ use jackin_console::tui::screens::editor::model::{
     EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan,
     EditorMountActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
     EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorSaveKeyPlan,
-    EditorSecretsActionKeyPlan, RoleHeaderExpansionPlan,
+    EditorSecretsActionKeyPlan, EditorTopLevelKeyPlan, RoleHeaderExpansionPlan,
+    editor_top_level_key_plan,
 };
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -66,10 +67,20 @@ pub(super) fn handle_editor_key(
     cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
-    // s and Esc handled outside the editor borrow — both need to call
-    // back into state/config.
-    match key.code {
-        KeyCode::Char('s' | 'S') => {
+    // Capture before the editor borrow (separate fields, but explicit is cleaner).
+    let op_cache = std::rc::Rc::clone(&state.op_cache);
+    let op_available = state.op_available;
+    let term_width = state.cached_term_size.width;
+    let term_size = state.cached_term_size;
+
+    let top_level_plan = match &state.stage {
+        ManagerStage::Editor(editor) => {
+            editor_top_level_key_plan(key.code, editor.tab_bar_focused())
+        }
+        _ => EditorTopLevelKeyPlan::ContinueToTabActions,
+    };
+    match top_level_plan {
+        EditorTopLevelKeyPlan::Save => {
             if let Some(plan) = match &state.stage {
                 ManagerStage::Editor(editor) => Some(editor.save_key_plan()),
                 _ => None,
@@ -81,7 +92,7 @@ pub(super) fn handle_editor_key(
             let _unused = paths;
             return Ok(InputOutcome::Continue);
         }
-        KeyCode::Esc => {
+        EditorTopLevelKeyPlan::Escape => {
             if let Some(plan) = match &state.stage {
                 ManagerStage::Editor(editor) => Some(editor.escape_key_plan()),
                 _ => None,
@@ -90,70 +101,53 @@ pub(super) fn handle_editor_key(
             }
             return Ok(InputOutcome::Continue);
         }
-        _ => {}
-    }
-
-    // Capture before the editor borrow (separate fields, but explicit is cleaner).
-    let op_cache = std::rc::Rc::clone(&state.op_cache);
-    let op_available = state.op_available;
-    let term_width = state.cached_term_size.width;
-    let term_size = state.cached_term_size;
-
-    let navigation_plan = match &state.stage {
-        ManagerStage::Editor(editor) => editor.navigation_key_plan(key.code),
-        _ => EditorNavigationKeyPlan::NotNavigation,
-    };
-    if dispatch_editor_navigation(state, navigation_plan) {
-        return Ok(InputOutcome::Continue);
-    }
-
-    if let ManagerStage::Editor(editor) = &state.stage {
-        match key.code {
-            KeyCode::Char('h' | 'H') if editor.active_tab == EditorTab::Mounts => {
-                let plan = editor.horizontal_scroll_key_plan(-8);
+        EditorTopLevelKeyPlan::Navigation(plan) => {
+            dispatch_editor_navigation(state, plan);
+            return Ok(InputOutcome::Continue);
+        }
+        EditorTopLevelKeyPlan::ScrollHorizontal { delta } => {
+            if let Some(plan) = match &state.stage {
+                ManagerStage::Editor(editor) => Some(editor.horizontal_scroll_key_plan(delta)),
+                _ => None,
+            } {
                 dispatch_editor_horizontal_scroll(state, plan, term_width);
-                return Ok(InputOutcome::Continue);
             }
-            KeyCode::Char('l' | 'L') if editor.active_tab == EditorTab::Mounts => {
-                let plan = editor.horizontal_scroll_key_plan(8);
-                dispatch_editor_horizontal_scroll(state, plan, term_width);
-                return Ok(InputOutcome::Continue);
-            }
-            KeyCode::Char('h' | 'H') => {
-                let plan = editor.horizontal_scroll_key_plan(-8);
-                dispatch_editor_horizontal_scroll(state, plan, term_width);
-                return Ok(InputOutcome::Continue);
-            }
-            KeyCode::Char('l' | 'L') => {
-                let plan = editor.horizontal_scroll_key_plan(8);
-                dispatch_editor_horizontal_scroll(state, plan, term_width);
-                return Ok(InputOutcome::Continue);
-            }
-            KeyCode::Up | KeyCode::Char('k' | 'K') => {
-                let plan = editor.field_selection_key_plan(config, -1, term_size);
-                dispatch_editor_field_selection(state, plan);
-                return Ok(InputOutcome::Continue);
-            }
-            KeyCode::Down | KeyCode::Char('j' | 'J') => {
-                let plan = editor.field_selection_key_plan(config, 1, term_size);
-                dispatch_editor_field_selection(state, plan);
-                return Ok(InputOutcome::Continue);
-            }
-            KeyCode::Right | KeyCode::Left => {
-                let plan = editor.focused_role_header_expansion_key_plan(
-                    config,
-                    matches!(key.code, KeyCode::Right),
-                );
-                dispatch_editor_role_header_expansion(state, plan);
-                return Ok(InputOutcome::Continue);
-            }
-            _ => {
-                let plan = editor.immediate_action_key_plan(config, key.code, key.modifiers);
-                if dispatch_editor_immediate_action(state, plan) {
-                    return Ok(InputOutcome::Continue);
+            return Ok(InputOutcome::Continue);
+        }
+        EditorTopLevelKeyPlan::MoveField { delta } => {
+            if let Some(plan) = match &state.stage {
+                ManagerStage::Editor(editor) => {
+                    Some(editor.field_selection_key_plan(config, delta, term_size))
                 }
+                _ => None,
+            } {
+                dispatch_editor_field_selection(state, plan);
+            }
+            return Ok(InputOutcome::Continue);
+        }
+        EditorTopLevelKeyPlan::SetRoleHeaderExpanded { expanded } => {
+            if let Some(plan) = match &state.stage {
+                ManagerStage::Editor(editor) => {
+                    Some(editor.focused_role_header_expansion_key_plan(config, expanded))
+                }
+                _ => None,
+            } {
+                dispatch_editor_role_header_expansion(state, plan);
+            }
+            return Ok(InputOutcome::Continue);
+        }
+        EditorTopLevelKeyPlan::CheckImmediateAction => {
+            let plan = match &state.stage {
+                ManagerStage::Editor(editor) => {
+                    editor.immediate_action_key_plan(config, key.code, key.modifiers)
+                }
+                _ => EditorImmediateActionKeyPlan::NotImmediateAction,
+            };
+            if dispatch_editor_immediate_action(state, plan) {
+                return Ok(InputOutcome::Continue);
             }
         }
+        EditorTopLevelKeyPlan::ContinueToTabActions => {}
     }
 
     let ManagerStage::Editor(editor) = &mut state.stage else {

@@ -129,6 +129,59 @@ pub enum EditorNavigationKeyPlan {
     NotNavigation,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorTopLevelKeyPlan {
+    Save,
+    Escape,
+    Navigation(EditorNavigationKeyPlan),
+    ScrollHorizontal { delta: i16 },
+    MoveField { delta: isize },
+    SetRoleHeaderExpanded { expanded: bool },
+    CheckImmediateAction,
+    ContinueToTabActions,
+}
+
+#[must_use]
+pub const fn editor_top_level_key_plan(
+    key_code: crossterm::event::KeyCode,
+    tab_bar_focused: bool,
+) -> EditorTopLevelKeyPlan {
+    use crossterm::event::KeyCode;
+
+    match key_code {
+        KeyCode::Char('s' | 'S') => EditorTopLevelKeyPlan::Save,
+        KeyCode::Esc => EditorTopLevelKeyPlan::Escape,
+        KeyCode::Left | KeyCode::BackTab if tab_bar_focused => {
+            EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::MoveTab {
+                delta: -1,
+                focus_tab_bar: true,
+            })
+        }
+        KeyCode::Right if tab_bar_focused => {
+            EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::MoveTab {
+                delta: 1,
+                focus_tab_bar: true,
+            })
+        }
+        KeyCode::Tab | KeyCode::Down | KeyCode::Char('j' | 'J') if tab_bar_focused => {
+            EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::FocusContent)
+        }
+        KeyCode::Tab => EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::MoveTab {
+            delta: 1,
+            focus_tab_bar: true,
+        }),
+        KeyCode::BackTab => EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::FocusTabBar),
+        KeyCode::Char('h' | 'H') => EditorTopLevelKeyPlan::ScrollHorizontal { delta: -8 },
+        KeyCode::Char('l' | 'L') => EditorTopLevelKeyPlan::ScrollHorizontal { delta: 8 },
+        KeyCode::Up | KeyCode::Char('k' | 'K') => EditorTopLevelKeyPlan::MoveField { delta: -1 },
+        KeyCode::Down | KeyCode::Char('j' | 'J') => EditorTopLevelKeyPlan::MoveField { delta: 1 },
+        KeyCode::Right => EditorTopLevelKeyPlan::SetRoleHeaderExpanded { expanded: true },
+        KeyCode::Left => EditorTopLevelKeyPlan::SetRoleHeaderExpanded { expanded: false },
+        KeyCode::Char(_) | KeyCode::Enter => EditorTopLevelKeyPlan::CheckImmediateAction,
+        _ => EditorTopLevelKeyPlan::ContinueToTabActions,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditorImmediateActionKeyPlan {
     EnterAuthKind(crate::tui::auth::AuthKind),
@@ -1585,8 +1638,9 @@ mod tests {
         EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan,
         EditorMode, EditorMountActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
         EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorSaveKeyPlan,
-        EditorSaveModePlan, EditorSecretsActionKeyPlan, EditorState, EditorTab, FieldFocus,
-        RoleHeaderExpansionPlan, SecretsRow, editor_save_mode_plan,
+        EditorSaveModePlan, EditorSecretsActionKeyPlan, EditorState, EditorTab,
+        EditorTopLevelKeyPlan, FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
+        editor_save_mode_plan, editor_top_level_key_plan,
     };
 
     type TestEditor =
@@ -2097,6 +2151,74 @@ mod tests {
         assert_eq!(
             editor.navigation_key_plan(KeyCode::Down),
             EditorNavigationKeyPlan::NotNavigation
+        );
+    }
+
+    #[test]
+    fn editor_top_level_key_plan_preserves_dispatch_precedence() {
+        use crossterm::event::KeyCode;
+
+        assert_eq!(
+            editor_top_level_key_plan(KeyCode::Char('s'), false),
+            EditorTopLevelKeyPlan::Save
+        );
+        assert_eq!(
+            editor_top_level_key_plan(KeyCode::Esc, false),
+            EditorTopLevelKeyPlan::Escape
+        );
+        assert_eq!(
+            editor_top_level_key_plan(KeyCode::Left, true),
+            EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::MoveTab {
+                delta: -1,
+                focus_tab_bar: true,
+            })
+        );
+        assert_eq!(
+            editor_top_level_key_plan(KeyCode::Right, true),
+            EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::MoveTab {
+                delta: 1,
+                focus_tab_bar: true,
+            })
+        );
+        assert_eq!(
+            editor_top_level_key_plan(KeyCode::Down, true),
+            EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::FocusContent)
+        );
+        assert_eq!(
+            editor_top_level_key_plan(KeyCode::BackTab, false),
+            EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::FocusTabBar)
+        );
+        assert_eq!(
+            editor_top_level_key_plan(KeyCode::Char('h'), false),
+            EditorTopLevelKeyPlan::ScrollHorizontal { delta: -8 }
+        );
+        assert_eq!(
+            editor_top_level_key_plan(KeyCode::Char('L'), false),
+            EditorTopLevelKeyPlan::ScrollHorizontal { delta: 8 }
+        );
+        assert_eq!(
+            editor_top_level_key_plan(KeyCode::Char('k'), false),
+            EditorTopLevelKeyPlan::MoveField { delta: -1 }
+        );
+        assert_eq!(
+            editor_top_level_key_plan(KeyCode::Down, false),
+            EditorTopLevelKeyPlan::MoveField { delta: 1 }
+        );
+        assert_eq!(
+            editor_top_level_key_plan(KeyCode::Right, false),
+            EditorTopLevelKeyPlan::SetRoleHeaderExpanded { expanded: true }
+        );
+        assert_eq!(
+            editor_top_level_key_plan(KeyCode::Left, false),
+            EditorTopLevelKeyPlan::SetRoleHeaderExpanded { expanded: false }
+        );
+        assert_eq!(
+            editor_top_level_key_plan(KeyCode::Enter, false),
+            EditorTopLevelKeyPlan::CheckImmediateAction
+        );
+        assert_eq!(
+            editor_top_level_key_plan(KeyCode::PageDown, false),
+            EditorTopLevelKeyPlan::ContinueToTabActions
         );
     }
 
