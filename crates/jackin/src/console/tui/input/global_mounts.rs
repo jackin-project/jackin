@@ -855,7 +855,7 @@ fn commit_env_text(
         env.pending_picker_value.is_some(),
     ) {
         SettingsEnvTextCommitPlan::EmptyKey { scope } => {
-            env.error = Some(settings_env_empty_key_error_message().into());
+            env.set_error(settings_env_empty_key_error_message());
             let plan = settings_env_empty_key_text_plan(scope);
             let state = settings_env_key_input_state(&env.pending, &plan.scope, plan.label, "");
             env.modal = Some(SettingsEnvModal::Text {
@@ -944,7 +944,7 @@ fn open_settings_env_role_picker(env: &mut crate::console::tui::state::SettingsE
 
     match settings_update::settings_env_role_picker_open_plan(&env.pending) {
         RolePickerOpenPlan::NoRoles => {
-            env.error = Some(settings_no_registered_roles_error_message().into());
+            env.set_error(settings_no_registered_roles_error_message());
         }
         RolePickerOpenPlan::Open(roles) => {
             env.open_sub_modal(SettingsEnvModal::RolePicker {
@@ -1136,7 +1136,7 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
         let error = settings
             .mounts
             .take_error()
-            .or_else(|| settings.env.error.take())
+            .or_else(|| settings.env.take_error())
             .or_else(|| settings.auth.error.take())
             .or_else(|| settings.trust.error.take());
         let exit = settings.mounts.take_exit_requested();

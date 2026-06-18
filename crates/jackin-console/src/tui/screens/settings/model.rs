@@ -739,6 +739,14 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
         self.drop_modal_scratch();
     }
 
+    pub fn set_error(&mut self, error: impl Into<String>) {
+        self.error = Some(error.into());
+    }
+
+    pub fn take_error(&mut self) -> Option<String> {
+        self.error.take()
+    }
+
     fn drop_modal_scratch(&mut self) {
         self.pending_picker_value = None;
     }
@@ -1822,6 +1830,16 @@ mod tests {
         state.expand_role("default".into());
 
         assert!(state.expanded.contains("default"));
+    }
+
+    #[test]
+    fn settings_env_set_and_take_error_moves_error_message() {
+        let mut state = SettingsEnvState::<String, i32>::from_pending(empty_env_config());
+
+        state.set_error("missing role");
+
+        assert_eq!(state.take_error(), Some(String::from("missing role")));
+        assert!(state.take_error().is_none());
     }
 
     #[test]
