@@ -51,6 +51,13 @@ pub enum EditorHoverTarget {
     MountRow(usize),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RoleHeaderExpansionPlan {
+    Set { role: String, expanded: bool },
+    HeaderNoop,
+    NotHeader,
+}
+
 #[derive(Debug, Clone)]
 pub enum EditorMode {
     Edit { name: String },
@@ -529,6 +536,28 @@ impl<
         }
     }
 
+    #[must_use]
+    pub fn focused_auth_role_expansion_plan(
+        &self,
+        config: &jackin_config::AppConfig,
+        expanded: bool,
+    ) -> RoleHeaderExpansionPlan {
+        let FieldFocus::Row(n) = self.active_field;
+        let rows = self.auth_flat_rows(config);
+        let Some(AuthRow::RoleHeader {
+            role,
+            expanded: current,
+        }) = rows.get(n).cloned()
+        else {
+            return RoleHeaderExpansionPlan::NotHeader;
+        };
+        if current == expanded {
+            RoleHeaderExpansionPlan::HeaderNoop
+        } else {
+            RoleHeaderExpansionPlan::Set { role, expanded }
+        }
+    }
+
     pub fn clear_auth_row_at_cursor(&mut self, config: &jackin_config::AppConfig) {
         let FieldFocus::Row(n) = self.active_field;
         let rows = self.auth_flat_rows(config);
@@ -771,6 +800,24 @@ impl<
     }
 
     #[must_use]
+    pub fn focused_secrets_role_expansion_plan(&self, expanded: bool) -> RoleHeaderExpansionPlan {
+        let FieldFocus::Row(n) = self.active_field;
+        let rows = self.secrets_flat_rows();
+        let Some(SecretsRow::RoleHeader {
+            role,
+            expanded: current,
+        }) = rows.get(n).cloned()
+        else {
+            return RoleHeaderExpansionPlan::NotHeader;
+        };
+        if current == expanded {
+            RoleHeaderExpansionPlan::HeaderNoop
+        } else {
+            RoleHeaderExpansionPlan::Set { role, expanded }
+        }
+    }
+
+    #[must_use]
     pub fn synthesize_app_config_for_auth(
         &self,
         config: &jackin_config::AppConfig,
@@ -830,6 +877,19 @@ impl<
                 },
             },
         )
+    }
+
+    #[must_use]
+    pub fn focused_auth_kind(
+        &self,
+        config: &jackin_config::AppConfig,
+    ) -> Option<crate::tui::auth::AuthKind> {
+        let FieldFocus::Row(n) = self.active_field;
+        let rows = self.auth_flat_rows(config);
+        match rows.get(n) {
+            Some(AuthRow::AuthKindRow { kind }) => Some(*kind),
+            _ => None,
+        }
     }
 
     #[must_use]
@@ -1015,9 +1075,11 @@ pub enum CreateStep {
 
 #[cfg(test)]
 mod tests {
-    use jackin_config::{MountConfig, MountIsolation, RoleSource, WorkspaceConfig};
+    use jackin_config::{
+        MountConfig, MountIsolation, RoleSource, WorkspaceConfig, WorkspaceRoleOverride,
+    };
 
-    use super::{AuthRow, EditorState, EditorTab, FieldFocus, SecretsRow};
+    use super::{AuthRow, EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan, SecretsRow};
 
     type TestEditor =
         EditorState<WorkspaceConfig, (), (), (), jackin_config::EnvValue, (), (), (), (), (), ()>;
@@ -1164,6 +1226,68 @@ mod tests {
 
         editor.toggle_auth_role_expanded("dev".into());
         assert!(!editor.auth_expanded.contains("dev"));
+    }
+
+    #[test]
+    fn editor_focused_auth_role_expansion_plan_reads_current_row() {
+        let workspace = WorkspaceConfig {
+            roles: std::collections::BTreeMap::from([(
+                "dev".into(),
+                WorkspaceRoleOverride {
+                    github: Some(jackin_config::GithubAuthConfig {
+                        auth_forward: jackin_config::GithubAuthMode::Token,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+        editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Github);
+        let config = jackin_config::AppConfig::default();
+        editor.active_field = FieldFocus::Row(
+            editor
+                .auth_flat_rows(&config)
+                .iter()
+                .position(|row| matches!(row, AuthRow::RoleHeader { role, .. } if role == "dev"))
+                .expect("role header row"),
+        );
+
+        assert_eq!(
+            editor.focused_auth_role_expansion_plan(&config, true),
+            RoleHeaderExpansionPlan::Set {
+                role: "dev".into(),
+                expanded: true
+            }
+        );
+
+        editor.auth_expanded.insert("dev".into());
+        assert_eq!(
+            editor.focused_auth_role_expansion_plan(&config, true),
+            RoleHeaderExpansionPlan::HeaderNoop
+        );
+        assert_eq!(
+            editor.focused_auth_role_expansion_plan(&config, false),
+            RoleHeaderExpansionPlan::Set {
+                role: "dev".into(),
+                expanded: false
+            }
+        );
+    }
+
+    #[test]
+    fn editor_focused_auth_kind_reads_current_row() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        let config = jackin_config::AppConfig::default();
+
+        assert_eq!(
+            editor.focused_auth_kind(&config),
+            Some(crate::tui::auth::AuthKind::Claude)
+        );
+
+        editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Claude);
+        assert_eq!(editor.focused_auth_kind(&config), None);
     }
 
     #[test]
@@ -1372,6 +1496,46 @@ mod tests {
         assert_eq!(
             editor.focused_secret_enter_plan(),
             super::SecretsEnterPlan::OpenScopePicker
+        );
+    }
+
+    #[test]
+    fn editor_focused_secrets_role_expansion_plan_reads_current_row() {
+        let workspace = WorkspaceConfig {
+            roles: std::collections::BTreeMap::from([(
+                "dev".into(),
+                WorkspaceRoleOverride::default(),
+            )]),
+            ..Default::default()
+        };
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+        editor.active_field = FieldFocus::Row(
+            editor
+                .secrets_flat_rows()
+                .iter()
+                .position(|row| matches!(row, SecretsRow::RoleHeader { role, .. } if role == "dev"))
+                .expect("role header row"),
+        );
+
+        assert_eq!(
+            editor.focused_secrets_role_expansion_plan(true),
+            RoleHeaderExpansionPlan::Set {
+                role: "dev".into(),
+                expanded: true
+            }
+        );
+
+        editor.secrets_expanded.insert("dev".into());
+        assert_eq!(
+            editor.focused_secrets_role_expansion_plan(true),
+            RoleHeaderExpansionPlan::HeaderNoop
+        );
+        assert_eq!(
+            editor.focused_secrets_role_expansion_plan(false),
+            RoleHeaderExpansionPlan::Set {
+                role: "dev".into(),
+                expanded: false
+            }
         );
     }
 

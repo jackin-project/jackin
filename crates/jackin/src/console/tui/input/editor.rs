@@ -33,6 +33,7 @@ use jackin_console::tui::components::error_popup::no_github_url_error_popup_stat
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
+use jackin_console::tui::screens::editor::model::RoleHeaderExpansionPlan;
 use jackin_console::tui::screens::editor::update::{
     editor_mount_add_row_selected, editor_role_add_row_selected,
 };
@@ -244,74 +245,52 @@ pub(super) fn handle_editor_key(
                 return Ok(InputOutcome::Continue);
             }
             KeyCode::Right if editor.active_tab == EditorTab::Secrets => {
-                let FieldFocus::Row(n) = editor.active_field;
-                let rows = editor.secrets_flat_rows();
-                if let Some(SecretsRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
-                    if !expanded {
-                        dispatch_manager(
-                            state,
-                            ManagerMessage::SetEditorSecretsRoleExpanded {
-                                role,
-                                expanded: true,
-                            },
-                        );
-                    }
-                    return Ok(InputOutcome::Continue);
+                match editor.focused_secrets_role_expansion_plan(true) {
+                    RoleHeaderExpansionPlan::Set { role, expanded } => dispatch_manager(
+                        state,
+                        ManagerMessage::SetEditorSecretsRoleExpanded { role, expanded },
+                    ),
+                    RoleHeaderExpansionPlan::HeaderNoop => {}
+                    RoleHeaderExpansionPlan::NotHeader => return Ok(InputOutcome::Continue),
                 }
+                return Ok(InputOutcome::Continue);
             }
             KeyCode::Left if editor.active_tab == EditorTab::Secrets => {
-                let FieldFocus::Row(n) = editor.active_field;
-                let rows = editor.secrets_flat_rows();
-                if let Some(SecretsRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
-                    if expanded {
-                        dispatch_manager(
-                            state,
-                            ManagerMessage::SetEditorSecretsRoleExpanded {
-                                role,
-                                expanded: false,
-                            },
-                        );
-                    }
-                    return Ok(InputOutcome::Continue);
+                match editor.focused_secrets_role_expansion_plan(false) {
+                    RoleHeaderExpansionPlan::Set { role, expanded } => dispatch_manager(
+                        state,
+                        ManagerMessage::SetEditorSecretsRoleExpanded { role, expanded },
+                    ),
+                    RoleHeaderExpansionPlan::HeaderNoop => {}
+                    RoleHeaderExpansionPlan::NotHeader => return Ok(InputOutcome::Continue),
                 }
+                return Ok(InputOutcome::Continue);
             }
             KeyCode::Right if editor.active_tab == EditorTab::Auth => {
-                let FieldFocus::Row(n) = editor.active_field;
-                let rows = editor.auth_flat_rows(config);
-                if let Some(AuthRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
-                    if !expanded {
-                        dispatch_manager(
-                            state,
-                            ManagerMessage::SetEditorAuthRoleExpanded {
-                                role,
-                                expanded: true,
-                            },
-                        );
-                    }
-                    return Ok(InputOutcome::Continue);
+                match editor.focused_auth_role_expansion_plan(config, true) {
+                    RoleHeaderExpansionPlan::Set { role, expanded } => dispatch_manager(
+                        state,
+                        ManagerMessage::SetEditorAuthRoleExpanded { role, expanded },
+                    ),
+                    RoleHeaderExpansionPlan::HeaderNoop => {}
+                    RoleHeaderExpansionPlan::NotHeader => return Ok(InputOutcome::Continue),
                 }
+                return Ok(InputOutcome::Continue);
             }
             KeyCode::Left if editor.active_tab == EditorTab::Auth => {
-                let FieldFocus::Row(n) = editor.active_field;
-                let rows = editor.auth_flat_rows(config);
-                if let Some(AuthRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
-                    if expanded {
-                        dispatch_manager(
-                            state,
-                            ManagerMessage::SetEditorAuthRoleExpanded {
-                                role,
-                                expanded: false,
-                            },
-                        );
-                    }
-                    return Ok(InputOutcome::Continue);
+                match editor.focused_auth_role_expansion_plan(config, false) {
+                    RoleHeaderExpansionPlan::Set { role, expanded } => dispatch_manager(
+                        state,
+                        ManagerMessage::SetEditorAuthRoleExpanded { role, expanded },
+                    ),
+                    RoleHeaderExpansionPlan::HeaderNoop => {}
+                    RoleHeaderExpansionPlan::NotHeader => return Ok(InputOutcome::Continue),
                 }
+                return Ok(InputOutcome::Continue);
             }
             KeyCode::Enter if editor.active_tab == EditorTab::Auth => {
-                let FieldFocus::Row(n) = editor.active_field;
-                let rows = editor.auth_flat_rows(config);
-                if let Some(AuthRow::AuthKindRow { kind }) = rows.get(n) {
-                    dispatch_manager(state, ManagerMessage::EnterEditorAuthKind { kind: *kind });
+                if let Some(kind) = editor.focused_auth_kind(config) {
+                    dispatch_manager(state, ManagerMessage::EnterEditorAuthKind { kind });
                     return Ok(InputOutcome::Continue);
                 }
             }
