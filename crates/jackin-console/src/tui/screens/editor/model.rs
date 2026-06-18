@@ -813,6 +813,10 @@ impl<
         self.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
     }
 
+    pub fn select_auth_row(&mut self, row: usize) {
+        self.active_field = FieldFocus::Row(row);
+    }
+
     pub fn apply_tab_horizontal_scroll_plan(
         &mut self,
         plan: crate::tui::screens::editor::update::EditorHorizontalScrollPlan,
@@ -2241,6 +2245,9 @@ mod tests {
         );
         assert_eq!(editor.active_field, FieldFocus::Row(3));
         assert!(editor.workspace_mounts_scroll_focused());
+
+        editor.select_auth_row(5);
+        assert_eq!(editor.active_field, FieldFocus::Row(5));
 
         editor.apply_tab_horizontal_scroll_plan(
             crate::tui::screens::editor::update::editor_tab_horizontal_scroll_plan(0, 8, 20, 80),

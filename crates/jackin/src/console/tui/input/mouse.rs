@@ -10,8 +10,8 @@ use crate::console::tui::layout::list::{
 };
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    EditorTab, FieldFocus, GlobalMountModal, ManagerHoverTarget, ManagerListRow, ManagerStage,
-    ManagerState, Modal, MountScrollFocus, SettingsAuthModal, SettingsTab,
+    EditorTab, GlobalMountModal, ManagerHoverTarget, ManagerListRow, ManagerStage, ManagerState,
+    Modal, MountScrollFocus, SettingsAuthModal, SettingsTab,
 };
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
@@ -834,7 +834,7 @@ fn try_select_editor_auth_row(
     let Some(index) = editor_auth_row_index_at(editor, config, mouse, term_size) else {
         return false;
     };
-    editor.active_field = FieldFocus::Row(index);
+    editor.select_auth_row(index);
     true
 }
 
