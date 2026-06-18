@@ -349,6 +349,56 @@ fn sync_source_dir_uses_source_folder_own_credentials() {
     );
 }
 
+/// An empty `.credentials.json` in the source folder must be treated as
+/// absent, never as valid credentials: an empty file must not provision the
+/// capsule with blank creds (booting the agent unauthenticated with no
+/// signal) nor let the default host account leak in as a fallback.
+#[test]
+fn sync_source_dir_empty_credentials_file_is_not_treated_as_valid() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let source_dir = temp.path().join("claude-empty");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    // Present but blank — the bug guard: whitespace-only must not count.
+    std::fs::write(source_dir.join(".credentials.json"), "   \n").unwrap();
+    // A different default host account is present and must never leak in.
+    std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+    std::fs::write(
+        temp.path().join(".claude/.credentials.json"),
+        TEST_CREDENTIALS,
+    )
+    .unwrap();
+    let manifest = simple_manifest(&temp);
+
+    let (state, outcome) = RoleState::prepare(
+        &paths,
+        "jk-agent-smith",
+        &manifest,
+        &PrepareResolvers {
+            auth_modes: &|_| AuthForwardMode::Sync,
+            sync_source_dirs: &|_| Some(source_dir.clone()),
+        },
+        &crate::instance::GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::agent::Agent::Claude,
+    )
+    .unwrap();
+
+    assert_eq!(
+        outcome,
+        AuthProvisionOutcome::HostMissing,
+        "an empty source credentials file must not resolve as Synced"
+    );
+    if let Some(creds_json) = state.claude_credentials_json() {
+        let written = std::fs::read_to_string(creds_json).unwrap_or_default();
+        assert!(
+            !written.contains("accessToken"),
+            "no credentials (default host account included) may be written when \
+             the source file is empty"
+        );
+    }
+}
+
 #[test]
 fn sync_mode_falls_back_to_empty_json_when_host_has_none() {
     let temp = tempdir().unwrap();

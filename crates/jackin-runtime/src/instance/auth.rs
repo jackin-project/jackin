@@ -1067,6 +1067,24 @@ fn wipe_claude_state(account_json: &Path, credentials_json: &Path) -> anyhow::Re
     Ok(())
 }
 
+/// Read a Claude `.credentials.json` file, treating empty/whitespace as
+/// absent so a blank file neither shadows the macOS Keychain fallback nor
+/// provisions the capsule with credentials that boot the agent
+/// unauthenticated. A read error on a file the operator explicitly selected
+/// (permissions, IO) is a real failure — log it rather than folding it into
+/// the silent not-found path; only `NotFound` is treated as "no file here".
+fn read_nonempty_credentials_file(path: &Path) -> Option<String> {
+    match std::fs::read_to_string(path) {
+        Ok(content) if !content.trim().is_empty() => Some(content),
+        Ok(_) => None,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            eprintln!("[jackin] warning: failed to read {}: {e}", path.display());
+            None
+        }
+    }
+}
+
 /// Read the host's Claude Code OAuth credentials for the default
 /// `~/.claude` config dir.
 ///
@@ -1077,7 +1095,7 @@ fn wipe_claude_state(account_json: &Path, credentials_json: &Path) -> anyhow::Re
 fn read_host_credentials(host_home: &Path) -> Option<String> {
     // File-based credentials (Linux, or macOS with an explicit export).
     let creds_path = host_home.join(".claude/.credentials.json");
-    if let Ok(content) = std::fs::read_to_string(creds_path) {
+    if let Some(content) = read_nonempty_credentials_file(&creds_path) {
         return Some(content);
     }
 
@@ -1085,7 +1103,7 @@ fn read_host_credentials(host_home: &Path) -> Option<String> {
     // real home directory.  This keeps tests hermetic (they use temp
     // dirs) while still supporting the Keychain in production.
     #[cfg(target_os = "macos")]
-    if host_is_real_home(host_home) {
+    if host_home_is_real(host_home) {
         return read_claude_keychain(CLAUDE_KEYCHAIN_SERVICE_BASE);
     }
 
@@ -1108,7 +1126,7 @@ fn read_host_credentials_from_claude_config_dir(
 ) -> Option<String> {
     // File-based credentials (Linux, or macOS with an explicit export).
     let creds_path = source_dir.join(".credentials.json");
-    if let Ok(content) = std::fs::read_to_string(creds_path) {
+    if let Some(content) = read_nonempty_credentials_file(&creds_path) {
         return Some(content);
     }
 
@@ -1117,7 +1135,7 @@ fn read_host_credentials_from_claude_config_dir(
     // real home directory so tests stay hermetic (temp dirs never shell
     // out to `security`).
     #[cfg(target_os = "macos")]
-    if host_is_real_home(host_home) {
+    if host_home_is_real(host_home) {
         let service = claude_keychain_service_for_config_dir(source_dir, host_home);
         return read_claude_keychain(&service);
     }
@@ -1131,13 +1149,6 @@ fn read_host_credentials_from_claude_config_dir(
 /// `~/.claude` config dir.
 #[cfg(target_os = "macos")]
 const CLAUDE_KEYCHAIN_SERVICE_BASE: &str = "Claude Code-credentials";
-
-/// `true` when `host_home` is the machine's real home directory. Keychain
-/// reads are gated on this so tests (which pass temp dirs) never shell out.
-#[cfg(target_os = "macos")]
-fn host_is_real_home(host_home: &Path) -> bool {
-    directories::BaseDirs::new().is_some_and(|b| b.home_dir() == host_home)
-}
 
 /// Read a credential blob from the macOS login Keychain under `service`.
 /// Returns `None` on lookup failure or an empty value.
