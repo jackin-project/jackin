@@ -57,6 +57,34 @@ fn console_prepare_frame_plan_routes_only_mutating_pre_render_stages() {
 }
 
 #[test]
+fn console_modal_render_plan_routes_modal_families() {
+    assert_eq!(
+        console_modal_render_plan(ConsoleManagerStageRoute::List),
+        ConsoleModalRenderPlan::List
+    );
+    assert_eq!(
+        console_modal_render_plan(ConsoleManagerStageRoute::Editor),
+        ConsoleModalRenderPlan::Editor
+    );
+    assert_eq!(
+        console_modal_render_plan(ConsoleManagerStageRoute::Settings),
+        ConsoleModalRenderPlan::Settings
+    );
+    assert_eq!(
+        console_modal_render_plan(ConsoleManagerStageRoute::CreatePrelude),
+        ConsoleModalRenderPlan::CreatePrelude
+    );
+    assert_eq!(
+        console_modal_render_plan(ConsoleManagerStageRoute::ConfirmDelete),
+        ConsoleModalRenderPlan::ConfirmDelete
+    );
+    assert_eq!(
+        console_modal_render_plan(ConsoleManagerStageRoute::ConfirmInstancePurge),
+        ConsoleModalRenderPlan::ConfirmInstancePurge
+    );
+}
+
+#[test]
 fn workspace_frame_areas_match_header_body_footer_contract() {
     let areas = workspace_frame_areas(Rect::new(0, 0, 80, 24));
 

@@ -78,6 +78,16 @@ pub enum ConsolePrepareFramePlan {
     None,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsoleModalRenderPlan {
+    List,
+    Editor,
+    Settings,
+    CreatePrelude,
+    ConfirmDelete,
+    ConfirmInstancePurge,
+}
+
 #[must_use]
 pub const fn console_main_frame_plan(route: ConsoleManagerStageRoute) -> ConsoleMainFramePlan {
     match route {
@@ -105,6 +115,20 @@ pub const fn console_prepare_frame_plan(
         ConsoleManagerStageRoute::CreatePrelude
         | ConsoleManagerStageRoute::ConfirmDelete
         | ConsoleManagerStageRoute::ConfirmInstancePurge => ConsolePrepareFramePlan::None,
+    }
+}
+
+#[must_use]
+pub const fn console_modal_render_plan(route: ConsoleManagerStageRoute) -> ConsoleModalRenderPlan {
+    match route {
+        ConsoleManagerStageRoute::List => ConsoleModalRenderPlan::List,
+        ConsoleManagerStageRoute::Editor => ConsoleModalRenderPlan::Editor,
+        ConsoleManagerStageRoute::Settings => ConsoleModalRenderPlan::Settings,
+        ConsoleManagerStageRoute::CreatePrelude => ConsoleModalRenderPlan::CreatePrelude,
+        ConsoleManagerStageRoute::ConfirmDelete => ConsoleModalRenderPlan::ConfirmDelete,
+        ConsoleManagerStageRoute::ConfirmInstancePurge => {
+            ConsoleModalRenderPlan::ConfirmInstancePurge
+        }
     }
 }
 

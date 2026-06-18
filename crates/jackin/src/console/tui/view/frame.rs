@@ -21,7 +21,8 @@ use jackin_console::tui::screens::settings::view::{
     settings_frame_areas,
 };
 use jackin_console::tui::view::{
-    ConsoleMainFramePlan, ReservedFooterHeightFacts, console_main_frame_plan, delete_confirm_area,
+    ConsoleMainFramePlan, ConsoleModalRenderPlan, ReservedFooterHeightFacts,
+    console_main_frame_plan, console_modal_render_plan, delete_confirm_area,
     effective_footer_height, measured_footer_height, modal_backdrop_area,
     modal_overlay_state_for_route, modal_overlay_visible, purge_confirm_area, render_footer,
     render_header, render_modal_backdrop, reserved_footer_height_for_facts, settings_error_area,
@@ -75,48 +76,52 @@ pub fn render(
         render_modal_backdrop(frame, modal_backdrop_area(area, footer_h));
     }
 
-    // List-anchored modal lives on `ManagerState`, not on a stage
-    // variant, so the borrow splits separately from stage-anchored
-    // modals.
-    let is_list_stage = matches!(state.stage, ManagerStage::List);
-    if is_list_stage {
-        if let Some(modal) = &state.list_modal {
-            render_modal(frame, modal);
+    match console_modal_render_plan(state.stage.route()) {
+        ConsoleModalRenderPlan::List => {
+            if let Some(modal) = &state.list_modal {
+                render_modal(frame, modal);
+            }
         }
-    } else {
-        match &state.stage {
-            ManagerStage::Editor(editor) => {
-                if let Some(modal) = &editor.modal {
-                    render_modal(frame, modal);
-                }
+        ConsoleModalRenderPlan::Editor => {
+            if let ManagerStage::Editor(editor) = &state.stage
+                && let Some(modal) = &editor.modal
+            {
+                render_modal(frame, modal);
             }
-            ManagerStage::CreatePrelude(prelude) => {
-                if let Some(modal) = &prelude.modal {
-                    render_modal(frame, modal);
-                }
+        }
+        ConsoleModalRenderPlan::CreatePrelude => {
+            if let ManagerStage::CreatePrelude(prelude) = &state.stage
+                && let Some(modal) = &prelude.modal
+            {
+                render_modal(frame, modal);
             }
-            ManagerStage::ConfirmDelete {
+        }
+        ConsoleModalRenderPlan::ConfirmDelete => {
+            if let ManagerStage::ConfirmDelete {
                 state: confirm_state,
                 ..
-            } => {
+            } = &state.stage
+            {
                 // ConfirmState is a top-level field on the variant, not wrapped
                 // in Modal::Confirm, so render it directly.
                 let modal_area = delete_confirm_area(area);
                 jackin_tui::components::render_confirm_dialog(frame, modal_area, confirm_state);
             }
-            ManagerStage::ConfirmInstancePurge {
+        }
+        ConsoleModalRenderPlan::ConfirmInstancePurge => {
+            if let ManagerStage::ConfirmInstancePurge {
                 state: confirm_state,
                 ..
-            } => {
+            } = &state.stage
+            {
                 // The two-line prompt is taller than ConfirmDelete's
                 // single line, so allocate more rows for the modal.
                 let modal_area = purge_confirm_area(area);
                 jackin_tui::components::render_confirm_dialog(frame, modal_area, confirm_state);
             }
-            ManagerStage::List => {
-                // Handled above via the `is_list_stage` early branch.
-            }
-            ManagerStage::Settings(settings) => {
+        }
+        ConsoleModalRenderPlan::Settings => {
+            if let ManagerStage::Settings(settings) = &state.stage {
                 if let Some(popup) = &settings.error_popup {
                     let inner_width = (area.width * 60 / 100).saturating_sub(4);
                     let max_rows = area.height.saturating_sub(2);
