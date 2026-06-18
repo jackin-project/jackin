@@ -612,11 +612,7 @@ pub(super) fn handle_settings_env_modal(
                     commit_env_text(env, &committed_target, &value);
                 }
                 InlinePickerPlan::Dismiss => {
-                    env.pop_modal_chain();
-                    if env.modal.is_none() {
-                        env.pending_env_key = None;
-                        env.pending_picker_value = None;
-                    }
+                    env.pop_modal_chain_and_clear_pending_env_key_if_closed();
                 }
                 InlinePickerPlan::Continue => {
                     env.modal = Some(SettingsEnvModal::Text { target, state });
@@ -642,9 +638,7 @@ pub(super) fn handle_settings_env_modal(
                     );
                 }
                 SourcePickerPlan::Dismiss => {
-                    env.pop_modal_chain();
-                    env.pending_env_key = None;
-                    env.pending_picker_value = None;
+                    env.pop_modal_chain_and_clear_pending_env_key();
                 }
                 SourcePickerPlan::Continue => {
                     env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
@@ -694,9 +688,7 @@ pub(super) fn handle_settings_env_modal(
                     }
                 }
                 InlinePickerPlan::Dismiss => {
-                    env.pop_modal_chain();
-                    env.pending_picker_target = None;
-                    env.pending_picker_value = None;
+                    env.pop_modal_chain_and_clear_picker_target();
                 }
                 InlinePickerPlan::Continue => {
                     env.modal = Some(SettingsEnvModal::OpPicker { state: picker });

@@ -672,6 +672,25 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
         }
     }
 
+    pub fn pop_modal_chain_and_clear_pending_env_key_if_closed(&mut self) {
+        self.pop_modal_chain();
+        if self.modal.is_none() {
+            self.pending_env_key = None;
+        }
+    }
+
+    pub fn pop_modal_chain_and_clear_pending_env_key(&mut self) {
+        self.pop_modal_chain();
+        self.pending_env_key = None;
+        self.pending_picker_value = None;
+    }
+
+    pub fn pop_modal_chain_and_clear_picker_target(&mut self) {
+        self.pop_modal_chain();
+        self.pending_picker_target = None;
+        self.pending_picker_value = None;
+    }
+
     pub fn clear_modal_chain(&mut self) {
         self.modal = None;
         self.modal_parents.clear();
@@ -1578,6 +1597,13 @@ mod tests {
         }
     }
 
+    fn empty_env_config<V>() -> SettingsEnvConfig<V> {
+        SettingsEnvConfig {
+            env: BTreeMap::new(),
+            roles: BTreeMap::new(),
+        }
+    }
+
     #[test]
     fn settings_env_config_from_app_config_copies_global_and_role_env() {
         let mut config = AppConfig::default();
@@ -1616,6 +1642,57 @@ mod tests {
         assert_eq!(state.original, state.pending);
         assert!(state.modal.is_none());
         assert_eq!(state.selected, 0);
+    }
+
+    #[test]
+    fn settings_env_pop_modal_chain_clears_pending_key_only_when_closed() {
+        let mut state = SettingsEnvState::<String, i32>::from_pending(empty_env_config());
+        state.modal = Some(2);
+        state.modal_parents.push(1);
+        state.pending_env_key = Some((SettingsEnvScope::Global, "KEY".into()));
+        state.pending_picker_value = Some("value".into());
+
+        state.pop_modal_chain_and_clear_pending_env_key_if_closed();
+
+        assert_eq!(state.modal, Some(1));
+        assert!(state.pending_env_key.is_some());
+        assert!(state.pending_picker_value.is_some());
+
+        state.pop_modal_chain_and_clear_pending_env_key_if_closed();
+
+        assert!(state.modal.is_none());
+        assert!(state.pending_env_key.is_none());
+        assert!(state.pending_picker_value.is_none());
+    }
+
+    #[test]
+    fn settings_env_pop_modal_chain_can_clear_pending_key_immediately() {
+        let mut state = SettingsEnvState::<String, i32>::from_pending(empty_env_config());
+        state.modal = Some(2);
+        state.modal_parents.push(1);
+        state.pending_env_key = Some((SettingsEnvScope::Global, "KEY".into()));
+        state.pending_picker_value = Some("value".into());
+
+        state.pop_modal_chain_and_clear_pending_env_key();
+
+        assert_eq!(state.modal, Some(1));
+        assert!(state.pending_env_key.is_none());
+        assert!(state.pending_picker_value.is_none());
+    }
+
+    #[test]
+    fn settings_env_pop_modal_chain_can_clear_picker_target_immediately() {
+        let mut state = SettingsEnvState::<String, i32>::from_pending(empty_env_config());
+        state.modal = Some(2);
+        state.modal_parents.push(1);
+        state.pending_picker_target = Some((SettingsEnvScope::Global, Some("KEY".into())));
+        state.pending_picker_value = Some("value".into());
+
+        state.pop_modal_chain_and_clear_picker_target();
+
+        assert_eq!(state.modal, Some(1));
+        assert!(state.pending_picker_target.is_none());
+        assert!(state.pending_picker_value.is_none());
     }
 
     #[test]
