@@ -74,6 +74,17 @@ pub enum AuthEnterPlan {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorEnterKeyPlan {
+    OpenGeneralField,
+    OpenMountFileBrowser,
+    OpenSecretsPicker,
+    OpenSecretsEnterModal,
+    OpenRoleInput,
+    Auth(AuthEnterPlan),
+    Noop,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditorMountGithubOpenPlan {
     NoSelection,
     NoGithubUrl,
@@ -1043,6 +1054,30 @@ impl<
     }
 
     #[must_use]
+    pub fn enter_key_plan(
+        &self,
+        config: &jackin_config::AppConfig,
+        op_available: bool,
+    ) -> EditorEnterKeyPlan {
+        match self.active_tab {
+            EditorTab::General => EditorEnterKeyPlan::OpenGeneralField,
+            EditorTab::Mounts if self.focused_mount_add_row_selected() => {
+                EditorEnterKeyPlan::OpenMountFileBrowser
+            }
+            EditorTab::Mounts => EditorEnterKeyPlan::Noop,
+            EditorTab::Secrets if self.focused_secret_is_op_ref() && op_available => {
+                EditorEnterKeyPlan::OpenSecretsPicker
+            }
+            EditorTab::Secrets => EditorEnterKeyPlan::OpenSecretsEnterModal,
+            EditorTab::Roles if self.focused_role_add_row_selected(config) => {
+                EditorEnterKeyPlan::OpenRoleInput
+            }
+            EditorTab::Roles => EditorEnterKeyPlan::Noop,
+            EditorTab::Auth => EditorEnterKeyPlan::Auth(self.focused_auth_enter_plan(config)),
+        }
+    }
+
+    #[must_use]
     pub fn focused_role_header_expansion_key_plan(
         &self,
         config: &jackin_config::AppConfig,
@@ -1455,11 +1490,11 @@ mod tests {
     };
 
     use super::{
-        AuthEnterPlan, AuthRow, EditorAuthActionKeyPlan, EditorFieldSelectionKeyPlan,
-        EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan, EditorMountActionKeyPlan,
-        EditorMountGithubOpenPlan, EditorNavigationKeyPlan, EditorRoleActionKeyPlan,
-        EditorRoleHeaderExpansionKeyPlan, EditorSecretsActionKeyPlan, EditorState, EditorTab,
-        FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
+        AuthEnterPlan, AuthRow, EditorAuthActionKeyPlan, EditorEnterKeyPlan,
+        EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan,
+        EditorMountActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
+        EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorSecretsActionKeyPlan,
+        EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
     };
 
     type TestEditor =
@@ -2153,6 +2188,83 @@ mod tests {
         assert_eq!(
             editor.auth_action_key_plan(KeyCode::Char('d')),
             EditorAuthActionKeyPlan::NotAuthAction
+        );
+    }
+
+    #[test]
+    fn editor_enter_key_plan_routes_tab_actions() {
+        let mut config = jackin_config::AppConfig::default();
+        config.roles.insert("dev".into(), RoleSource::default());
+
+        let mut workspace = WorkspaceConfig::default();
+        workspace.env.insert(
+            "A_PLAIN".into(),
+            jackin_config::EnvValue::Plain("secret".into()),
+        );
+        workspace.env.insert(
+            "Z_OP".into(),
+            jackin_config::EnvValue::OpRef(jackin_core::OpRef {
+                op: "op://vault/item/field".into(),
+                path: "Vault/Item/Field".into(),
+                account: None,
+            }),
+        );
+        workspace.mounts.push(MountConfig {
+            src: "/src".into(),
+            dst: "/dst".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        });
+
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+
+        editor.active_tab = EditorTab::General;
+        assert_eq!(
+            editor.enter_key_plan(&config, true),
+            EditorEnterKeyPlan::OpenGeneralField
+        );
+
+        editor.active_tab = EditorTab::Mounts;
+        editor.active_field = FieldFocus::Row(0);
+        assert_eq!(
+            editor.enter_key_plan(&config, true),
+            EditorEnterKeyPlan::Noop
+        );
+        editor.active_field = FieldFocus::Row(1);
+        assert_eq!(
+            editor.enter_key_plan(&config, true),
+            EditorEnterKeyPlan::OpenMountFileBrowser
+        );
+
+        editor.active_tab = EditorTab::Secrets;
+        editor.active_field = FieldFocus::Row(0);
+        assert_eq!(
+            editor.enter_key_plan(&config, true),
+            EditorEnterKeyPlan::OpenSecretsEnterModal
+        );
+        editor.active_field = FieldFocus::Row(1);
+        assert_eq!(
+            editor.enter_key_plan(&config, true),
+            EditorEnterKeyPlan::OpenSecretsPicker
+        );
+        assert_eq!(
+            editor.enter_key_plan(&config, false),
+            EditorEnterKeyPlan::OpenSecretsEnterModal
+        );
+
+        editor.active_tab = EditorTab::Roles;
+        editor.active_field = FieldFocus::Row(1);
+        assert_eq!(
+            editor.enter_key_plan(&config, true),
+            EditorEnterKeyPlan::OpenRoleInput
+        );
+
+        editor.active_tab = EditorTab::Auth;
+        editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Github);
+        editor.active_field = FieldFocus::Row(0);
+        assert_eq!(
+            editor.enter_key_plan(&config, true),
+            EditorEnterKeyPlan::Auth(AuthEnterPlan::OpenForm)
         );
     }
 

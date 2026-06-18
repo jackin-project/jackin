@@ -33,7 +33,7 @@ use jackin_console::tui::components::error_popup::no_github_url_error_popup_stat
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::screens::editor::model::{
-    AuthEnterPlan, EditorAuthActionKeyPlan, EditorFieldSelectionKeyPlan,
+    AuthEnterPlan, EditorAuthActionKeyPlan, EditorEnterKeyPlan, EditorFieldSelectionKeyPlan,
     EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan, EditorMountActionKeyPlan,
     EditorMountGithubOpenPlan, EditorNavigationKeyPlan, EditorRoleActionKeyPlan,
     EditorRoleHeaderExpansionKeyPlan, EditorSecretsActionKeyPlan, RoleHeaderExpansionPlan,
@@ -211,43 +211,57 @@ pub(super) fn handle_editor_key(
         _ if !matches!(auth_action_plan, EditorAuthActionKeyPlan::NotAuthAction) => {
             dispatch_editor_auth_action(editor, config, auth_action_plan);
         }
-        KeyCode::Enter => match editor.active_tab {
-            EditorTab::General => general::open_editor_field_modal(editor),
-            EditorTab::Mounts => {
-                if editor.focused_mount_add_row_selected() {
-                    state.request_effect(ManagerEffect::OpenEditorAddMountFileBrowser);
-                    return Ok(InputOutcome::Continue);
-                }
+        KeyCode::Enter => {
+            let plan = editor.enter_key_plan(config, op_available);
+            if let Some(effect) = dispatch_editor_enter_key(editor, config, op_cache, plan) {
+                state.request_effect(effect);
             }
-            EditorTab::Secrets => {
-                // For op-ref rows Enter re-opens the 1Password picker (same as P).
-                if editor.focused_secret_is_op_ref() && op_available {
-                    open_secrets_picker_modal(editor, op_cache);
-                } else {
-                    secrets::open_secrets_enter_modal(editor);
-                }
-            }
-            EditorTab::Roles => {
-                if editor.focused_role_add_row_selected(config) {
-                    agents::open_role_input(editor, config);
-                }
-            }
-            EditorTab::Auth => match editor.focused_auth_enter_plan(config) {
-                AuthEnterPlan::AddRoleOverride => {
-                    super::auth::open_auth_role_picker(editor, config);
-                }
-                AuthEnterPlan::ToggleRole(role) => {
-                    super::auth::toggle_role_expand(editor, role);
-                }
-                AuthEnterPlan::OpenForm => {
-                    super::auth::open_auth_form_modal(editor, config);
-                }
-                AuthEnterPlan::Noop => {}
-            },
-        },
+        }
         _ => {}
     }
     Ok(InputOutcome::Continue)
+}
+
+fn dispatch_editor_enter_key(
+    editor: &mut EditorState<'_>,
+    config: &AppConfig,
+    op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
+    plan: EditorEnterKeyPlan,
+) -> Option<ManagerEffect> {
+    match plan {
+        EditorEnterKeyPlan::OpenGeneralField => {
+            general::open_editor_field_modal(editor);
+            None
+        }
+        EditorEnterKeyPlan::OpenMountFileBrowser => {
+            Some(ManagerEffect::OpenEditorAddMountFileBrowser)
+        }
+        EditorEnterKeyPlan::OpenSecretsPicker => {
+            open_secrets_picker_modal(editor, op_cache);
+            None
+        }
+        EditorEnterKeyPlan::OpenSecretsEnterModal => {
+            secrets::open_secrets_enter_modal(editor);
+            None
+        }
+        EditorEnterKeyPlan::OpenRoleInput => {
+            agents::open_role_input(editor, config);
+            None
+        }
+        EditorEnterKeyPlan::Auth(AuthEnterPlan::AddRoleOverride) => {
+            super::auth::open_auth_role_picker(editor, config);
+            None
+        }
+        EditorEnterKeyPlan::Auth(AuthEnterPlan::ToggleRole(role)) => {
+            super::auth::toggle_role_expand(editor, role);
+            None
+        }
+        EditorEnterKeyPlan::Auth(AuthEnterPlan::OpenForm) => {
+            super::auth::open_auth_form_modal(editor, config);
+            None
+        }
+        EditorEnterKeyPlan::Auth(AuthEnterPlan::Noop) | EditorEnterKeyPlan::Noop => None,
+    }
 }
 
 fn dispatch_editor_auth_action(
