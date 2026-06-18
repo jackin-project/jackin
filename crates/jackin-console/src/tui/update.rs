@@ -276,6 +276,17 @@ pub enum InlineProviderFollowupPlan<C, A, P> {
     OpenProviderPicker(ProviderPickerState<C, A, P>),
 }
 
+pub trait InlineProviderPickerState<C, A, P> {
+    fn set_inline_provider_picker(&mut self, picker: ProviderPickerState<C, A, P>);
+}
+
+pub fn apply_inline_provider_picker_plan<C, A, P>(
+    state: &mut impl InlineProviderPickerState<C, A, P>,
+    picker: ProviderPickerState<C, A, P>,
+) {
+    state.set_inline_provider_picker(picker);
+}
+
 #[must_use]
 pub const fn list_scroll_focus_plan(
     focus: Option<crate::tui::focus::MountScrollFocus>,

@@ -23,7 +23,9 @@ use jackin_console::tui::subscriptions::{
     InstanceRefreshThrottleState, forced_instance_refresh_generation,
     instance_refresh_throttle_plan,
 };
-use jackin_console::tui::update::{InlinePickerDismissalState, ListModalState, StatusOverlayState};
+use jackin_console::tui::update::{
+    InlinePickerDismissalState, InlineProviderPickerState, ListModalState, StatusOverlayState,
+};
 use jackin_env::OpCache;
 use jackin_tui::components::FocusOwner;
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
@@ -883,5 +885,20 @@ impl InlinePickerDismissalState for ManagerState<'_> {
 
     fn clear_launch_provider_picker(&mut self) {
         self.launch_provider_picker = None;
+    }
+}
+
+impl InlineProviderPickerState<String, jackin_core::Agent, jackin_protocol::Provider>
+    for ManagerState<'_>
+{
+    fn set_inline_provider_picker(
+        &mut self,
+        picker: jackin_console::tui::components::provider_picker::ProviderPickerState<
+            String,
+            jackin_core::Agent,
+            jackin_protocol::Provider,
+        >,
+    ) {
+        self.inline_provider_picker = Some(picker);
     }
 }

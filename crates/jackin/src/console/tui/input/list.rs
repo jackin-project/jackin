@@ -35,9 +35,10 @@ use jackin_console::tui::screens::workspaces::update::{
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
     DismissibleModalPlan, InlinePickerPlan, InlinePickerShellPlan, InlineProviderFollowupPlan,
-    ListGithubPickerPlan, ListModalKeyTarget, ListRolePickerPlan, dismissible_modal_plan,
-    inline_picker_plan, inline_picker_shell_plan, inline_provider_followup_plan,
-    list_github_picker_plan, list_role_picker_plan,
+    ListGithubPickerPlan, ListModalKeyTarget, ListRolePickerPlan,
+    apply_inline_provider_picker_plan, dismissible_modal_plan, inline_picker_plan,
+    inline_picker_shell_plan, inline_provider_followup_plan, list_github_picker_plan,
+    list_role_picker_plan,
 };
 
 #[allow(
@@ -660,7 +661,7 @@ pub(super) fn handle_new_session_picker(
                     }
                 }
                 InlineProviderFollowupPlan::OpenProviderPicker(picker) => {
-                    state.inline_provider_picker = Some(picker);
+                    apply_inline_provider_picker_plan(state, picker);
                     InputOutcome::Continue
                 }
             }

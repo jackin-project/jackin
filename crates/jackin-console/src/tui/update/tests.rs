@@ -531,6 +531,26 @@ fn inline_provider_followup_plan_opens_picker_only_when_supported() {
     );
 }
 
+#[derive(Default)]
+struct TestInlineProviderPicker<C, A, P> {
+    picker: Option<ProviderPickerState<C, A, P>>,
+}
+
+impl<C, A, P> InlineProviderPickerState<C, A, P> for TestInlineProviderPicker<C, A, P> {
+    fn set_inline_provider_picker(&mut self, picker: ProviderPickerState<C, A, P>) {
+        self.picker = Some(picker);
+    }
+}
+
+#[test]
+fn inline_provider_picker_plan_application_opens_picker() {
+    let mut state = TestInlineProviderPicker::default();
+    let picker = ProviderPickerState::new("container", "claude", vec!["anthropic", "zai"]);
+
+    apply_inline_provider_picker_plan(&mut state, picker.clone());
+    assert_eq!(state.picker, Some(picker));
+}
+
 #[test]
 fn inline_picker_shell_plan_routes_scroll_exit_and_delegate() {
     assert_eq!(
