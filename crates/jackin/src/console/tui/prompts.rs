@@ -6,11 +6,13 @@ use jackin_config::{LoadWorkspaceInput, ResolvedWorkspace};
 use jackin_console::tui::components::error_popup::{
     role_resolution_error_message, role_resolution_error_title,
 };
-use jackin_console::tui::components::status_popup::role_resolution_status_popup_state;
 use jackin_console::tui::message::{
     AgentPickerResolution, agent_picker_choices_for_workspace, launch_agent_prompt_plan,
 };
 pub(in crate::console) use jackin_console::tui::message::{OnPromptFailure, PromptOutcome};
+use jackin_console::tui::update::{
+    apply_status_overlay_plan, dismiss_status_overlay_plan, role_resolution_status_overlay_plan,
+};
 use jackin_core::RoleSelector;
 
 use super::{ConsoleStage, ConsoleState};
@@ -30,11 +32,11 @@ where
     B::Error: std::error::Error + Send + Sync + 'static,
 {
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    ms.status_overlay = Some(role_resolution_status_popup_state(role.key()));
+    apply_status_overlay_plan(ms, role_resolution_status_overlay_plan(role.key()));
     terminal.draw(|frame| {
         crate::console::tui::render(frame, frame.area(), ms, config, cwd);
     })?;
-    ms.status_overlay = None;
+    apply_status_overlay_plan(ms, dismiss_status_overlay_plan());
     Ok(())
 }
 

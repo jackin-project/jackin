@@ -847,6 +847,13 @@ pub fn open_status_overlay_plan(
 }
 
 #[must_use]
+pub fn role_resolution_status_overlay_plan(role_key: impl std::fmt::Display) -> StatusOverlayPlan {
+    StatusOverlayPlan::Open(
+        crate::tui::components::status_popup::role_resolution_status_popup_state(role_key),
+    )
+}
+
+#[must_use]
 pub const fn dismiss_status_overlay_plan() -> StatusOverlayPlan {
     StatusOverlayPlan::Dismiss
 }

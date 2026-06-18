@@ -45,6 +45,16 @@ fn status_overlay_plans_construct_open_and_dismiss() {
     ));
 }
 
+#[test]
+fn role_resolution_status_overlay_plan_names_role() {
+    let StatusOverlayPlan::Open(state) = role_resolution_status_overlay_plan("agent-smith") else {
+        panic!("expected open plan");
+    };
+    let debug = format!("{state:?}");
+    assert!(debug.contains("Resolving agent role"));
+    assert!(debug.contains("agent-smith"));
+}
+
 #[derive(Default)]
 struct TestStatusOverlay {
     overlay: Option<jackin_tui::components::StatusPopupState>,
