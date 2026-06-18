@@ -15,6 +15,7 @@ use jackin_manifest::RoleManifest;
 use std::path::{Path, PathBuf};
 
 mod auth;
+pub use auth::validate_sync_source_dir;
 pub mod manifest;
 pub mod naming;
 pub use manifest::{
@@ -515,9 +516,17 @@ impl RoleState {
         auth::create_private_file_if_absent(&claude_account_home, b"{}")?;
         let account_json = claude_dir.join("account.json");
         let credentials_json = claude_dir.join("credentials.json");
-        let effective_home = sync_source_dir.unwrap_or(host_home);
-        let (outcome, forward_auth) =
-            Self::provision_claude_auth(&account_json, &credentials_json, mode, effective_home)?;
+        let (outcome, forward_auth) = if let Some(source_dir) = sync_source_dir {
+            Self::provision_claude_auth_from_config_dir(
+                &account_json,
+                &credentials_json,
+                mode,
+                host_home,
+                source_dir,
+            )?
+        } else {
+            Self::provision_claude_auth(&account_json, &credentials_json, mode, host_home)?
+        };
         Ok((
             ClaudeAuth {
                 account_json,
@@ -540,9 +549,11 @@ impl RoleState {
         std::fs::create_dir_all(&codex_dir)?;
         std::fs::create_dir_all(&codex_home_dir)?;
         let auth_json_path = codex_dir.join("auth.json");
-        let effective_home = sync_source_dir.unwrap_or(host_home);
-        let (outcome, auth_json) =
-            Self::provision_codex_auth(&auth_json_path, mode, effective_home)?;
+        let (outcome, auth_json) = if let Some(source_dir) = sync_source_dir {
+            Self::provision_codex_auth_from_source_dir(&auth_json_path, mode, source_dir)?
+        } else {
+            Self::provision_codex_auth(&auth_json_path, mode, host_home)?
+        };
         Ok((CodexAuth { auth_json }, outcome))
     }
 
@@ -558,9 +569,11 @@ impl RoleState {
         std::fs::create_dir_all(&amp_dir)?;
         std::fs::create_dir_all(&amp_home_dir)?;
         let secrets_json_path = amp_dir.join("secrets.json");
-        let effective_home = sync_source_dir.unwrap_or(host_home);
-        let (outcome, secrets_json) =
-            Self::provision_amp_auth(&secrets_json_path, mode, effective_home)?;
+        let (outcome, secrets_json) = if let Some(source_dir) = sync_source_dir {
+            Self::provision_amp_auth_from_source_dir(&secrets_json_path, mode, source_dir)?
+        } else {
+            Self::provision_amp_auth(&secrets_json_path, mode, host_home)?
+        };
         Ok((AmpAuth { secrets_json }, outcome))
     }
 
@@ -575,8 +588,11 @@ impl RoleState {
         let kimi_home_dir = home_dir.join(".kimi-code");
         std::fs::create_dir_all(&kimi_dir)?;
         std::fs::create_dir_all(&kimi_home_dir)?;
-        let effective_home = sync_source_dir.unwrap_or(host_home);
-        let (outcome, forward_auth) = Self::provision_kimi_auth(&kimi_dir, mode, effective_home)?;
+        let (outcome, forward_auth) = if let Some(source_dir) = sync_source_dir {
+            Self::provision_kimi_auth_from_source_dir(&kimi_dir, mode, source_dir)?
+        } else {
+            Self::provision_kimi_auth(&kimi_dir, mode, host_home)?
+        };
         Ok((KimiAuth { forward_auth }, outcome))
     }
 
@@ -592,9 +608,11 @@ impl RoleState {
         std::fs::create_dir_all(&opencode_dir)?;
         std::fs::create_dir_all(&opencode_home_dir)?;
         let auth_json_path = opencode_dir.join("auth.json");
-        let effective_home = sync_source_dir.unwrap_or(host_home);
-        let (outcome, auth_json) =
-            Self::provision_opencode_auth(&auth_json_path, mode, effective_home)?;
+        let (outcome, auth_json) = if let Some(source_dir) = sync_source_dir {
+            Self::provision_opencode_auth_from_source_dir(&auth_json_path, mode, source_dir)?
+        } else {
+            Self::provision_opencode_auth(&auth_json_path, mode, host_home)?
+        };
         Ok((OpencodeAuth { auth_json }, outcome))
     }
 
@@ -611,9 +629,11 @@ impl RoleState {
         std::fs::create_dir_all(&grok_dir)?;
         std::fs::create_dir_all(&grok_home_dir)?;
         let auth_json_path = grok_dir.join("auth.json");
-        let effective_home = sync_source_dir.unwrap_or(host_home);
-        let (outcome, auth_json) =
-            Self::provision_grok_auth(&auth_json_path, mode, effective_home)?;
+        let (outcome, auth_json) = if let Some(source_dir) = sync_source_dir {
+            Self::provision_grok_auth_from_source_dir(&auth_json_path, mode, source_dir)?
+        } else {
+            Self::provision_grok_auth(&auth_json_path, mode, host_home)?
+        };
 
         // Populate the prepared host-side ~/.grok/bin/grok (plus "agent" symlink)
         // from the (linux) agent cache. The bind-mount of this dir into the

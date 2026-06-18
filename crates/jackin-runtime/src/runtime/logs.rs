@@ -197,7 +197,7 @@ fn print_tail(path: &Path, n: usize) -> Result<()> {
 /// alternative — `read_to_string` then split — would balloon to file
 /// size in memory for a long-lived log; a `tail`-style ring keeps
 /// memory proportional to `n` regardless of file size.
-fn read_tail(path: &Path, n: usize) -> Result<Vec<String>> {
+pub(super) fn read_tail(path: &Path, n: usize) -> Result<Vec<String>> {
     if n == 0 {
         return Ok(Vec::new());
     }

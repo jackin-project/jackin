@@ -315,7 +315,21 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
             );
             match applied {
                 FileBrowserOutcome::Commit(path) => {
-                    apply_source_folder_to_settings_auth_form(auth, path);
+                    match crate::console::domain::validate_auth_source_folder(
+                        auth.selected_kind,
+                        &path,
+                    ) {
+                        Ok(()) => apply_source_folder_to_settings_auth_form(auth, path),
+                        // Wrong folder for this agent: keep the picker open and
+                        // raise the standard error dialog (promoted from
+                        // `auth.error`) over it, rather than committing a folder
+                        // that yields no credentials. Dismissing the dialog
+                        // leaves the picker so the operator can pick another.
+                        Err(reason) => {
+                            auth.error = Some(reason);
+                            auth.modal = Some(modal);
+                        }
+                    }
                 }
                 FileBrowserOutcome::Cancel => {}
                 FileBrowserOutcome::Continue
