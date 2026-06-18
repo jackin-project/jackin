@@ -1303,6 +1303,18 @@ pub fn settings_env_enter_plan_for_row<V>(
 }
 
 #[must_use]
+pub fn settings_env_selected_enter_plan(
+    pending: &SettingsEnvConfig<EnvValue>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+) -> SettingsEnvEnterPlan {
+    let rows = settings_env_flat_rows(pending, expanded_roles);
+    settings_env_enter_plan_for_row(pending, rows.get(selected), |value| {
+        !value.is_some_and(|v| matches!(v, EnvValue::OpRef(_)))
+    })
+}
+
+#[must_use]
 pub fn step_cursor_down_by<F>(candidate: usize, max: usize, mut is_skipped: F) -> usize
 where
     F: FnMut(usize) -> bool,

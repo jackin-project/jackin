@@ -1055,11 +1055,10 @@ fn open_edit_text(state: &mut ManagerState<'_>, target: GlobalMountTextTarget) {
 }
 
 fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::SettingsState<'_>) {
-    let rows = settings.env_flat_rows();
-    let plan = settings_update::settings_env_enter_plan_for_row(
+    let plan = settings_update::settings_env_selected_enter_plan(
         &settings.env.pending,
-        rows.get(settings.env.selected),
-        |value| !value.is_some_and(|v| matches!(v, jackin_core::EnvValue::OpRef(_))),
+        &settings.env.expanded,
+        settings.env.selected,
     );
     match plan {
         SettingsEnvEnterPlan::EditValue { scope, key } => {

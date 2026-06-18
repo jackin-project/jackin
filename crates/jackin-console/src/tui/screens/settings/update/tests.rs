@@ -1277,6 +1277,46 @@ fn settings_env_enter_plan_handles_add_rows() {
 }
 
 #[test]
+fn settings_env_selected_enter_plan_skips_op_ref_values() {
+    let pending = SettingsEnvConfig {
+        env: BTreeMap::from([
+            ("PLAIN".to_owned(), EnvValue::Plain("value".to_owned())),
+            (
+                "SECRET".to_owned(),
+                EnvValue::OpRef(jackin_core::OpRef {
+                    op: "op://vault/item/password".to_owned(),
+                    path: "Vault/Item/password".to_owned(),
+                    account: None,
+                }),
+            ),
+        ]),
+        roles: BTreeMap::new(),
+    };
+    let expanded = BTreeSet::new();
+    let rows = settings_env_flat_rows(&pending, &expanded);
+    let plain = rows
+        .iter()
+        .position(|row| matches!(row, SettingsEnvRow::Key { key, .. } if key == "PLAIN"))
+        .unwrap_or(usize::MAX);
+    let secret = rows
+        .iter()
+        .position(|row| matches!(row, SettingsEnvRow::Key { key, .. } if key == "SECRET"))
+        .unwrap_or(usize::MAX);
+
+    assert_eq!(
+        settings_env_selected_enter_plan(&pending, &expanded, plain),
+        SettingsEnvEnterPlan::EditValue {
+            scope: SettingsEnvScope::Global,
+            key: "PLAIN".to_owned()
+        }
+    );
+    assert_eq!(
+        settings_env_selected_enter_plan(&pending, &expanded, secret),
+        SettingsEnvEnterPlan::Noop
+    );
+}
+
+#[test]
 fn settings_confirm_plan_routes_confirm_cancel_and_continue() {
     assert_eq!(
         settings_confirm_plan(GlobalMountConfirm::Save, ModalOutcome::Commit(true)),
