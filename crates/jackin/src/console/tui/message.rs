@@ -428,8 +428,7 @@ fn dismiss_settings_error_popup(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.error_popup = None;
-    settings.auth.restore_pending_auth_form();
+    settings.dismiss_error_popup();
 }
 
 fn open_settings_error_popup(
@@ -440,8 +439,7 @@ fn open_settings_error_popup(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    settings.error_popup =
-        Some(jackin_console::tui::components::error_popup::error_popup_state(title, message));
+    settings.open_error_popup(title, message);
 }
 
 fn apply_op_commit_result(

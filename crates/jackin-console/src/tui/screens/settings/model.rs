@@ -82,6 +82,10 @@ pub trait SettingsPanelTakeError {
     fn take_panel_error(&mut self) -> Option<String>;
 }
 
+pub trait SettingsAuthRestorePendingForm {
+    fn restore_pending_auth_form(&mut self);
+}
+
 pub trait SettingsMountsTakeExit {
     fn take_mounts_exit_requested(&mut self) -> bool;
 }
@@ -113,6 +117,14 @@ pub enum SettingsHoverTarget {
 impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
     SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
 {
+    pub fn dismiss_error_popup(&mut self)
+    where
+        Auth: SettingsAuthRestorePendingForm,
+    {
+        self.error_popup = None;
+        self.auth.restore_pending_auth_form();
+    }
+
     #[must_use]
     pub const fn focus_owner(&self) -> FocusOwner<SettingsTab> {
         self.focus_owner
@@ -271,6 +283,16 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
 
     fn take_pending_token_generate(&mut self) -> Option<Self::PendingTokenGenerate> {
         self.pending_token_generate.take()
+    }
+}
+
+impl<Mounts, Env, Auth, Trust, PendingToken>
+    SettingsState<Mounts, Env, Auth, Trust, jackin_tui::components::ErrorPopupState, PendingToken>
+{
+    pub fn open_error_popup(&mut self, title: impl Into<String>, message: impl Into<String>) {
+        self.error_popup = Some(crate::tui::components::error_popup::error_popup_state(
+            title, message,
+        ));
     }
 }
 
@@ -1987,6 +2009,14 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsPanelTakeError
     }
 }
 
+impl<EnvValue, Modal, PendingOpCommit> SettingsAuthRestorePendingForm
+    for SettingsAuthState<EnvValue, Modal, PendingOpCommit>
+{
+    fn restore_pending_auth_form(&mut self) {
+        Self::restore_pending_auth_form(self);
+    }
+}
+
 impl<EnvValue, Modal, OpRef> crate::tui::app::ConsolePendingOpCommit
     for SettingsAuthState<EnvValue, Modal, crate::tui::subscriptions::PendingOpCommit<OpRef>>
 {
@@ -2328,7 +2358,7 @@ mod tests {
         AgentAuthConfig, AppConfig, AuthForwardMode, EnvValue, GlobalMountRow, MountConfig,
         RoleSource,
     };
-    use jackin_tui::components::FocusOwner;
+    use jackin_tui::components::{ErrorPopupState, FocusOwner};
 
     use crate::tui::components::footer_hints::{
         ModalAuthFormFooterState, ModalConfirmSaveFooterState, ModalFileBrowserFooterState,
@@ -2356,6 +2386,39 @@ mod tests {
     }
 
     struct TestConfirm;
+
+    fn minimal_settings_state()
+    -> SettingsState<(), (), SettingsAuthState<String, &'static str, ()>, (), ErrorPopupState, ()>
+    {
+        SettingsState {
+            active_tab: super::SettingsTab::General,
+            focus_owner: FocusOwner::TabBar,
+            hover_target: None,
+            general: SettingsGeneralState::from_values(false, false),
+            mounts: (),
+            env: (),
+            auth: SettingsAuthState::from_rows_and_github_env(Vec::new(), BTreeMap::new()),
+            trust: (),
+            error_popup: None,
+            pending_token_generate: None,
+            cached_footer_h: 1,
+        }
+    }
+
+    #[test]
+    fn settings_error_popup_open_and_dismiss_live_on_state() {
+        let mut state = minimal_settings_state();
+
+        state.open_error_popup("Settings error", "bad value");
+        assert!(state.error_popup.is_some());
+
+        state.auth.modal = Some("child");
+        state.auth.modal_parents.push("parent");
+        state.dismiss_error_popup();
+
+        assert!(state.error_popup.is_none());
+        assert_eq!(state.auth.modal, Some("parent"));
+    }
 
     impl ModalConfirmState for TestConfirm {
         fn width_pct(&self) -> u16 {
