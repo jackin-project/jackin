@@ -455,6 +455,33 @@ impl<
     }
 
     #[must_use]
+    pub fn create_prelude_step(&self) -> CreatePreludeModalStep
+    where
+        TextInputTarget: CreatePreludeTextInputTarget,
+        FileBrowserTarget: CreatePreludeFileBrowserTarget,
+    {
+        create_prelude_modal_step(
+            matches!(
+                self,
+                Self::FileBrowser { target, .. } if target.is_create_first_mount_src()
+            ),
+            matches!(
+                self,
+                Self::MountDstChoice { target, .. } if target.is_create_first_mount_src()
+            ),
+            matches!(
+                self,
+                Self::TextInput { target, .. } if target.is_create_mount_dst()
+            ),
+            matches!(self, Self::WorkdirPick { .. }),
+            matches!(
+                self,
+                Self::TextInput { target, .. } if target.is_create_workspace_name()
+            ),
+        )
+    }
+
+    #[must_use]
     pub fn auth_form_can_generate_token(&self, editing_existing_workspace: bool) -> bool
     where
         AuthFormTarget: crate::tui::auth_config::AuthFormGenerateTarget,
@@ -1499,6 +1526,31 @@ pub enum CreatePreludeModalStep {
     WorkdirPick,
     TextInputName,
     Other,
+}
+
+pub trait CreatePreludeFileBrowserTarget {
+    fn is_create_first_mount_src(&self) -> bool;
+}
+
+pub trait CreatePreludeTextInputTarget {
+    fn is_create_mount_dst(&self) -> bool;
+    fn is_create_workspace_name(&self) -> bool;
+}
+
+impl CreatePreludeFileBrowserTarget for crate::tui::screens::editor::model::FileBrowserTarget {
+    fn is_create_first_mount_src(&self) -> bool {
+        matches!(self, Self::CreateFirstMountSrc)
+    }
+}
+
+impl CreatePreludeTextInputTarget for crate::tui::screens::editor::model::TextInputTarget {
+    fn is_create_mount_dst(&self) -> bool {
+        matches!(self, Self::MountDst)
+    }
+
+    fn is_create_workspace_name(&self) -> bool {
+        matches!(self, Self::Name)
+    }
 }
 
 #[must_use]
@@ -2567,6 +2619,81 @@ mod tests {
         (),
         (),
     >;
+
+    type PreludeStepTestModal = ConsoleModal<
+        crate::tui::screens::editor::model::TextInputTarget,
+        (),
+        crate::tui::screens::editor::model::FileBrowserTarget,
+        TestFileBrowser,
+        (),
+        (),
+        (),
+        TestConfirm,
+        (),
+        TestGithubPicker,
+        TestConfirmSave,
+        TestError,
+        TestContainerInfo,
+        (),
+        TestOpPicker,
+        TestRolePicker,
+        (),
+        (),
+        (),
+        TestAuthForm,
+        (),
+        (),
+    >;
+
+    #[test]
+    fn console_modal_create_prelude_step_maps_create_modal_targets() {
+        use crate::tui::screens::editor::model::{FileBrowserTarget, TextInputTarget};
+
+        assert_eq!(
+            PreludeStepTestModal::FileBrowser {
+                target: FileBrowserTarget::CreateFirstMountSrc,
+                state: TestFileBrowser,
+            }
+            .create_prelude_step(),
+            CreatePreludeModalStep::FileBrowserSrc
+        );
+        assert_eq!(
+            PreludeStepTestModal::MountDstChoice {
+                target: FileBrowserTarget::CreateFirstMountSrc,
+                state: (),
+            }
+            .create_prelude_step(),
+            CreatePreludeModalStep::MountDstChoice
+        );
+        assert_eq!(
+            PreludeStepTestModal::TextInput {
+                target: TextInputTarget::MountDst,
+                state: (),
+            }
+            .create_prelude_step(),
+            CreatePreludeModalStep::TextInputDst
+        );
+        assert_eq!(
+            PreludeStepTestModal::WorkdirPick { state: () }.create_prelude_step(),
+            CreatePreludeModalStep::WorkdirPick
+        );
+        assert_eq!(
+            PreludeStepTestModal::TextInput {
+                target: TextInputTarget::Name,
+                state: (),
+            }
+            .create_prelude_step(),
+            CreatePreludeModalStep::TextInputName
+        );
+        assert_eq!(
+            PreludeStepTestModal::FileBrowser {
+                target: FileBrowserTarget::EditAddMountSrc,
+                state: TestFileBrowser,
+            }
+            .create_prelude_step(),
+            CreatePreludeModalStep::Other
+        );
+    }
 
     #[test]
     fn console_modal_list_key_target_maps_list_modal_key_handlers() {

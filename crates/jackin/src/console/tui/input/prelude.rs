@@ -13,9 +13,8 @@ use jackin_console::tui::app::{
     CreatePreludeFileBrowserPlan, CreatePreludeKeyPlan, CreatePreludeModalStep,
     CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan, CreatePreludeTextInputNamePlan,
     CreatePreludeWorkdirPickPlan, create_prelude_file_browser_plan, create_prelude_key_plan,
-    create_prelude_modal_step, create_prelude_mount_dst_choice_plan,
-    create_prelude_text_input_dst_plan, create_prelude_text_input_name_plan,
-    create_prelude_workdir_pick_plan,
+    create_prelude_mount_dst_choice_plan, create_prelude_text_input_dst_plan,
+    create_prelude_text_input_name_plan, create_prelude_workdir_pick_plan,
 };
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::screens::workspaces::view::{
@@ -58,7 +57,10 @@ pub(super) fn handle_prelude_modal(
 ) -> PreludeModalOutcome {
     use crate::console::tui::state::TextInputTarget;
 
-    let dis = create_prelude_modal_step_for_root_modal(prelude.modal.as_ref());
+    let dis = prelude
+        .modal
+        .as_ref()
+        .map_or(CreatePreludeModalStep::Other, Modal::create_prelude_step);
 
     match dis {
         CreatePreludeModalStep::FileBrowserSrc => {
@@ -212,42 +214,6 @@ pub(super) fn handle_prelude_modal(
         CreatePreludeModalStep::Other => {}
     }
     PreludeModalOutcome::Continue
-}
-
-fn create_prelude_modal_step_for_root_modal(modal: Option<&Modal<'_>>) -> CreatePreludeModalStep {
-    use crate::console::tui::state::{FileBrowserTarget, TextInputTarget};
-
-    create_prelude_modal_step(
-        matches!(
-            modal,
-            Some(Modal::FileBrowser {
-                target: FileBrowserTarget::CreateFirstMountSrc,
-                ..
-            })
-        ),
-        matches!(
-            modal,
-            Some(Modal::MountDstChoice {
-                target: FileBrowserTarget::CreateFirstMountSrc,
-                ..
-            })
-        ),
-        matches!(
-            modal,
-            Some(Modal::TextInput {
-                target: TextInputTarget::MountDst,
-                ..
-            })
-        ),
-        matches!(modal, Some(Modal::WorkdirPick { .. })),
-        matches!(
-            modal,
-            Some(Modal::TextInput {
-                target: TextInputTarget::Name,
-                ..
-            })
-        ),
-    )
 }
 
 /// Reopen the `MountDstChoice` modal seeded from the stashed mount src.
