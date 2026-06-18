@@ -694,6 +694,23 @@ pub fn global_mount_scope_text_value(scope: Option<&str>) -> String {
 }
 
 #[must_use]
+pub fn global_mount_edit_text_initial(
+    row: &jackin_config::GlobalMountRow,
+    target: &GlobalMountTextTarget,
+) -> Option<String> {
+    match target {
+        GlobalMountTextTarget::Rename => Some(row.name.clone()),
+        GlobalMountTextTarget::Source => Some(row.mount.src.clone()),
+        GlobalMountTextTarget::Destination => Some(row.mount.dst.clone()),
+        GlobalMountTextTarget::Scope => Some(global_mount_scope_text_value(row.scope.as_deref())),
+        GlobalMountTextTarget::AddScope
+        | GlobalMountTextTarget::AddName
+        | GlobalMountTextTarget::AddSource
+        | GlobalMountTextTarget::AddDestination => None,
+    }
+}
+
+#[must_use]
 pub const fn global_mount_text_target_label(
     target: &GlobalMountTextTarget,
 ) -> Option<&'static str> {

@@ -137,6 +137,41 @@ fn global_mount_scope_text_value_uses_empty_global_fallback() {
 }
 
 #[test]
+fn global_mount_edit_text_initial_routes_edit_targets() {
+    let row = jackin_config::GlobalMountRow {
+        scope: Some("ops".to_owned()),
+        name: "cache".to_owned(),
+        mount: jackin_config::MountConfig {
+            src: "/host/cache".to_owned(),
+            dst: "/jackin/cache".to_owned(),
+            readonly: true,
+            isolation: jackin_config::MountIsolation::Shared,
+        },
+    };
+
+    assert_eq!(
+        global_mount_edit_text_initial(&row, &GlobalMountTextTarget::Rename),
+        Some("cache".to_owned())
+    );
+    assert_eq!(
+        global_mount_edit_text_initial(&row, &GlobalMountTextTarget::Source),
+        Some("/host/cache".to_owned())
+    );
+    assert_eq!(
+        global_mount_edit_text_initial(&row, &GlobalMountTextTarget::Destination),
+        Some("/jackin/cache".to_owned())
+    );
+    assert_eq!(
+        global_mount_edit_text_initial(&row, &GlobalMountTextTarget::Scope),
+        Some("ops".to_owned())
+    );
+    assert_eq!(
+        global_mount_edit_text_initial(&row, &GlobalMountTextTarget::AddSource),
+        None
+    );
+}
+
+#[test]
 fn global_mount_text_target_labels_are_settings_owned() {
     assert_eq!(
         global_mount_text_target_label(&GlobalMountTextTarget::Rename),

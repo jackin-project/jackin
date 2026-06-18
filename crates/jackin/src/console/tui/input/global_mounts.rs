@@ -31,14 +31,13 @@ use jackin_console::tui::mount_display::settings_global_config_mounts_content_wi
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
-    global_mount_destination_empty_message, global_mount_gone_message,
-    global_mount_name_empty_message, global_mount_no_github_url_message,
-    global_mount_scope_picker_state, global_mount_scope_text_value, global_mount_text_input_state,
-    global_mount_text_target_label, settings_auth_op_read_failed_message,
-    settings_env_delete_confirm_state, settings_env_empty_key_error_message,
-    settings_env_empty_key_label, settings_env_key_input_state,
-    settings_env_new_key_after_picker_label, settings_env_new_key_label,
-    settings_env_scope_picker_state, settings_env_source_picker_state,
+    global_mount_destination_empty_message, global_mount_edit_text_initial,
+    global_mount_gone_message, global_mount_name_empty_message, global_mount_no_github_url_message,
+    global_mount_scope_picker_state, global_mount_text_input_state, global_mount_text_target_label,
+    settings_auth_op_read_failed_message, settings_env_delete_confirm_state,
+    settings_env_empty_key_error_message, settings_env_empty_key_label,
+    settings_env_key_input_state, settings_env_new_key_after_picker_label,
+    settings_env_new_key_label, settings_env_scope_picker_state, settings_env_source_picker_state,
     settings_env_text_input_state, settings_env_value_current_text, settings_env_value_text_label,
     settings_error_popup_title, settings_no_registered_roles_error_message,
     settings_sensitive_paths_not_confirmed_message,
@@ -1164,16 +1163,8 @@ fn open_edit_text(state: &mut ManagerState<'_>, target: GlobalMountTextTarget) {
     let Some(row) = global.pending.get(global.selected) else {
         return;
     };
-    let initial = match target {
-        GlobalMountTextTarget::Rename => row.name.clone(),
-        GlobalMountTextTarget::Source => row.mount.src.clone(),
-        GlobalMountTextTarget::Destination => row.mount.dst.clone(),
-        GlobalMountTextTarget::Scope => global_mount_scope_text_value(row.scope.as_deref()),
-        // Add-flow targets are driven by the four-step text wizard, not this entry point.
-        GlobalMountTextTarget::AddScope
-        | GlobalMountTextTarget::AddName
-        | GlobalMountTextTarget::AddSource
-        | GlobalMountTextTarget::AddDestination => return,
+    let Some(initial) = global_mount_edit_text_initial(row, &target) else {
+        return;
     };
     let Some(label) = global_mount_text_target_label(&target) else {
         return;
