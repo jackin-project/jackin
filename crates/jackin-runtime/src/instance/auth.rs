@@ -1029,7 +1029,7 @@ fn read_host_credentials(host_home: &Path) -> Option<String> {
 /// entry Claude Code provisions for that specific config dir. It never
 /// falls back to the default `~/.claude` credentials or the default
 /// Keychain service; an operator who selected a source folder must get
-/// that folder's account (e.g. a Scentbird Enterprise login) or nothing,
+/// that folder's account (e.g. a company Enterprise login) or nothing,
 /// never the default Max account leaking in from the host.
 fn read_host_credentials_from_claude_config_dir(
     source_dir: &Path,
@@ -1096,8 +1096,8 @@ fn read_claude_keychain(service: &str) -> Option<String> {
 /// `"Claude Code-credentials"` service, and every other config dir under
 /// `"Claude Code-credentials-<suffix>"` where `<suffix>` is the first
 /// eight hex chars (four bytes) of the SHA-256 of the absolute config dir
-/// path. Verified against live Keychain entries (`~/.claude-scentbird`
-/// → `…-db49ea31`, `~/.claude-work` → `…-3342f2c7`).
+/// path. Verified against a live Keychain entry (`~/.claude-work`
+/// → `…-3342f2c7`).
 #[cfg(target_os = "macos")]
 fn claude_keychain_service_for_config_dir(source_dir: &Path, host_home: &Path) -> String {
     use sha2::{Digest, Sha256};

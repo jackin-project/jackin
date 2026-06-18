@@ -20,8 +20,8 @@ fn claude_keychain_service_name_matches_claude_scheme() {
         "Claude Code-credentials"
     );
     assert_eq!(
-        super::claude_keychain_service_for_config_dir(&home.join(".claude-scentbird"), home),
-        "Claude Code-credentials-db49ea31"
+        super::claude_keychain_service_for_config_dir(&home.join(".claude-chainargos"), home),
+        "Claude Code-credentials-93aecf3d"
     );
     assert_eq!(
         super::claude_keychain_service_for_config_dir(&home.join(".claude-work"), home),
@@ -225,11 +225,11 @@ fn sync_source_dir_does_not_fall_back_to_default_host_credentials() {
 fn sync_source_dir_uses_source_folder_own_credentials() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
-    let source_dir = temp.path().join("claude-scentbird");
+    let source_dir = temp.path().join("claude-chainargos");
     std::fs::create_dir_all(&source_dir).unwrap();
     std::fs::write(
         source_dir.join(".claude.json"),
-        r#"{"oauthAccount":{"emailAddress":"enterprise@scentbird.com"}}"#,
+        r#"{"oauthAccount":{"emailAddress":"enterprise@chainargos.com"}}"#,
     )
     .unwrap();
     let source_creds =
@@ -262,7 +262,7 @@ fn sync_source_dir_uses_source_folder_own_credentials() {
     assert!(
         std::fs::read_to_string(state.claude_account_json().unwrap())
             .unwrap()
-            .contains("enterprise@scentbird.com")
+            .contains("enterprise@chainargos.com")
     );
     assert_eq!(
         std::fs::read_to_string(state.claude_credentials_json().unwrap()).unwrap(),
