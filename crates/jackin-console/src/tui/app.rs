@@ -148,6 +148,25 @@ pub trait ConsolePendingIsolationCleanup {
     ) -> Option<(Self::PendingIsolationCleanup, anyhow::Result<()>)>;
 }
 
+pub trait ConsolePendingOpCommit {
+    type OpRef;
+
+    fn poll_pending_op_commit(&mut self) -> Option<(Self::OpRef, anyhow::Result<()>)>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsolePendingOpCommitOrigin {
+    Editor,
+    Settings,
+}
+
+#[derive(Debug)]
+pub struct ConsolePendingOpCommitResolution<OpRef> {
+    pub op_ref: OpRef,
+    pub result: anyhow::Result<()>,
+    pub origin: ConsolePendingOpCommitOrigin,
+}
+
 pub trait ConsoleCreatePreludeModalPresence {
     fn create_prelude_modal_open(&self) -> bool;
 }
@@ -336,6 +355,37 @@ where
             Self::Editor(editor) => editor.poll_pending_isolation_cleanup(),
             Self::List
             | Self::Settings(_)
+            | Self::CreatePrelude(_)
+            | Self::ConfirmDelete { .. }
+            | Self::ConfirmInstancePurge { .. } => None,
+        }
+    }
+}
+
+impl<CreatePrelude, Editor, Settings, OpRef> ConsoleManagerStage<CreatePrelude, Editor, Settings>
+where
+    Editor: ConsolePendingOpCommit<OpRef = OpRef>,
+    Settings: ConsolePendingOpCommit<OpRef = OpRef>,
+{
+    pub fn poll_pending_op_commit(&mut self) -> Option<ConsolePendingOpCommitResolution<OpRef>> {
+        match self {
+            Self::Editor(editor) => editor.poll_pending_op_commit().map(|(op_ref, result)| {
+                ConsolePendingOpCommitResolution {
+                    op_ref,
+                    result,
+                    origin: ConsolePendingOpCommitOrigin::Editor,
+                }
+            }),
+            Self::Settings(settings) => {
+                settings.poll_pending_op_commit().map(|(op_ref, result)| {
+                    ConsolePendingOpCommitResolution {
+                        op_ref,
+                        result,
+                        origin: ConsolePendingOpCommitOrigin::Settings,
+                    }
+                })
+            }
+            Self::List
             | Self::CreatePrelude(_)
             | Self::ConfirmDelete { .. }
             | Self::ConfirmInstancePurge { .. } => None,
@@ -2178,6 +2228,18 @@ mod tests {
         }
     }
 
+    struct TestOpCommit {
+        pending: Option<(u8, anyhow::Result<()>)>,
+    }
+
+    impl super::ConsolePendingOpCommit for TestOpCommit {
+        type OpRef = u8;
+
+        fn poll_pending_op_commit(&mut self) -> Option<(Self::OpRef, anyhow::Result<()>)> {
+            self.pending.take()
+        }
+    }
+
     struct TestDebugModal;
 
     impl super::ConsoleModalDebugKind for TestDebugModal {
@@ -2527,6 +2589,59 @@ mod tests {
                 state: jackin_tui::components::ConfirmState::new("Purge?"),
             }
             .poll_pending_isolation_cleanup()
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn console_manager_stage_polls_pending_op_commit_with_origin() {
+        type Stage = ConsoleManagerStage<(), TestOpCommit, TestOpCommit>;
+
+        let mut editor = Stage::Editor(TestOpCommit {
+            pending: Some((3, Ok(()))),
+        });
+        let Some(resolution) = editor.poll_pending_op_commit() else {
+            panic!("expected pending editor op commit");
+        };
+        assert_eq!(resolution.op_ref, 3);
+        assert!(resolution.result.is_ok());
+        assert_eq!(
+            resolution.origin,
+            super::ConsolePendingOpCommitOrigin::Editor
+        );
+        assert!(editor.poll_pending_op_commit().is_none());
+
+        let mut settings = Stage::Settings(TestOpCommit {
+            pending: Some((5, Ok(()))),
+        });
+        let Some(resolution) = settings.poll_pending_op_commit() else {
+            panic!("expected pending settings op commit");
+        };
+        assert_eq!(resolution.op_ref, 5);
+        assert!(resolution.result.is_ok());
+        assert_eq!(
+            resolution.origin,
+            super::ConsolePendingOpCommitOrigin::Settings
+        );
+        assert!(settings.poll_pending_op_commit().is_none());
+
+        assert!(Stage::List.poll_pending_op_commit().is_none());
+        assert!(Stage::CreatePrelude(()).poll_pending_op_commit().is_none());
+        assert!(
+            Stage::ConfirmDelete {
+                name: "workspace".to_owned(),
+                state: jackin_tui::components::ConfirmState::new("Delete?"),
+            }
+            .poll_pending_op_commit()
+            .is_none()
+        );
+        assert!(
+            Stage::ConfirmInstancePurge {
+                container: "container".to_owned(),
+                label: "label".to_owned(),
+                state: jackin_tui::components::ConfirmState::new("Purge?"),
+            }
+            .poll_pending_op_commit()
             .is_none()
         );
     }

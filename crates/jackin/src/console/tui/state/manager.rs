@@ -659,59 +659,19 @@ impl ManagerState<'_> {
         self.stage.poll_pending_role_load()
     }
 
-    /// Poll the in-flight 1Password op-ref read for the auth-form op picker commit.
-    ///
-    /// Returns `Some((op_ref, result, is_settings))` when the read has finished,
-    /// taking ownership so the caller can apply it via `_committed` or `_failed`.
-    /// `is_settings` is `true` when the pending commit belongs to the Settings
-    /// auth state rather than the editor auth form.
-    /// Returns `None` when the read is still in progress or no commit is pending.
-    #[allow(clippy::collapsible_if)]
     pub(crate) fn poll_pending_op_commit(
         &mut self,
     ) -> Option<(jackin_core::OpRef, anyhow::Result<()>, bool)> {
-        // Editor path.
-        if let ManagerStage::Editor(editor) = &mut self.stage {
-            if let Some(pending) = editor.pending_op_commit.as_mut() {
-                let result = match pending.rx.poll_next() {
-                    SubscriptionPoll::Ready(result) => Some(result),
-                    SubscriptionPoll::Pending => None,
-                    SubscriptionPoll::Closed => Some(Err(anyhow::anyhow!(
-                        jackin_console::tui::subscriptions::op_read_worker_disconnected_message()
-                    ))),
-                };
-                if result.is_some() {
-                    let ManagerStage::Editor(editor) = &mut self.stage else {
-                        unreachable!("stage cannot change while polling editor op commit")
-                    };
-                    let pending = editor.pending_op_commit.take().expect("polled above");
-                    return result.map(|r| (pending.op_ref, r, false));
-                }
-            }
-        }
-        // Settings path.
-        if let ManagerStage::Settings(settings) = &mut self.stage {
-            if let Some(pending) = settings.auth.pending_op_commit_mut() {
-                let result = match pending.rx.poll_next() {
-                    SubscriptionPoll::Ready(result) => Some(result),
-                    SubscriptionPoll::Pending => None,
-                    SubscriptionPoll::Closed => Some(Err(anyhow::anyhow!(
-                        jackin_console::tui::subscriptions::op_read_worker_disconnected_message()
-                    ))),
-                };
-                if result.is_some() {
-                    let ManagerStage::Settings(settings) = &mut self.stage else {
-                        unreachable!("stage cannot change while polling settings op commit")
-                    };
-                    let pending = settings
-                        .auth
-                        .take_pending_op_commit()
-                        .expect("polled above");
-                    return result.map(|r| (pending.op_ref, r, true));
-                }
-            }
-        }
-        None
+        self.stage.poll_pending_op_commit().map(|resolution| {
+            (
+                resolution.op_ref,
+                resolution.result,
+                matches!(
+                    resolution.origin,
+                    jackin_console::tui::app::ConsolePendingOpCommitOrigin::Settings
+                ),
+            )
+        })
     }
 
     fn drain_instance_refresh(&mut self) -> Option<Result<InstanceRefreshSnapshot, String>> {

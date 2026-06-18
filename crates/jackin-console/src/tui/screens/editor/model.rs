@@ -347,6 +347,51 @@ impl<
     AuthFormTarget,
     PendingTokenGenerate,
     PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    OpRef,
+> crate::tui::app::ConsolePendingOpCommit
+    for EditorState<
+        WorkspaceConfig,
+        MountInfoCache,
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        crate::tui::subscriptions::PendingOpCommit<OpRef>,
+    >
+{
+    type OpRef = OpRef;
+
+    fn poll_pending_op_commit(&mut self) -> Option<(Self::OpRef, anyhow::Result<()>)> {
+        use jackin_tui::runtime::{Subscription, SubscriptionPoll};
+
+        let pending = self.pending_op_commit.as_mut()?;
+        let result = match pending.rx.poll_next() {
+            SubscriptionPoll::Ready(result) => result,
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => Err(anyhow::anyhow!(
+                crate::tui::subscriptions::op_read_worker_disconnected_message()
+            )),
+        };
+        let pending = self.pending_op_commit.take()?;
+        Some((pending.op_ref, result))
+    }
+}
+
+impl<
+    WorkspaceConfig,
+    MountInfoCache,
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
     DriftDetection,
     SavePlan,
     PendingIsolationCleanup,
