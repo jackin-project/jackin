@@ -10,10 +10,11 @@ use jackin_config::AppConfig;
 use jackin_console::tui::screens::workspaces::model::hovered_list_row;
 use jackin_console::tui::screens::workspaces::update::{
     WorkspaceCollapseSelectionPlan, collapse_current_dir_selection_plan,
-    collapsed_workspace_selected_index, initial_workspace_selected_index, selected_index,
-    workspace_last_selectable_index, workspace_list_current_directory_selected,
-    workspace_list_new_workspace_selected, workspace_list_saved_workspace_index, workspace_row_at,
-    workspace_row_at_visual_index, workspace_row_index, workspace_visual_selected_index,
+    collapsed_workspace_selected_index, initial_workspace_selected_index,
+    preview_pane_selected_index, selected_index, workspace_last_selectable_index,
+    workspace_list_current_directory_selected, workspace_list_new_workspace_selected,
+    workspace_list_saved_workspace_index, workspace_row_at, workspace_row_at_visual_index,
+    workspace_row_index, workspace_visual_selected_index,
 };
 use jackin_env::OpCache;
 use jackin_tui::components::FocusOwner;
@@ -432,12 +433,10 @@ impl ManagerState<'_> {
         if panes.is_empty() {
             return None;
         }
-        let cursor = self
-            .preview_pane_cursor
-            .get(container_base)
-            .copied()
-            .unwrap_or(0)
-            .min(panes.len() - 1);
+        let cursor = preview_pane_selected_index(
+            panes.len(),
+            self.preview_pane_cursor.get(container_base).copied(),
+        )?;
         panes.get(cursor).copied()
     }
 

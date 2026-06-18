@@ -25,9 +25,9 @@ use jackin_console::tui::screens::workspaces::update::{
     PreviewPaneKeyPlan, WorkspaceInstanceScopePlan, WorkspaceInstanceStatus,
     WorkspaceListEnterPlan, WorkspaceListHorizontalPlan, WorkspaceListNewSessionPlan,
     WorkspaceListSelectedInstancePlan, instance_action_accepts_status,
-    is_preview_pane_entry_target, preview_pane_key_plan, selected_instance_plan,
-    selected_instance_scope_plan, should_enter_preview_pane, workspace_list_enter_plan,
-    workspace_list_horizontal_plan, workspace_list_new_session_plan,
+    is_preview_pane_entry_target, preview_pane_key_plan, preview_pane_selected_index,
+    selected_instance_plan, selected_instance_scope_plan, should_enter_preview_pane,
+    workspace_list_enter_plan, workspace_list_horizontal_plan, workspace_list_new_session_plan,
     workspace_list_saved_workspace_index, workspace_list_settings_available,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
@@ -343,7 +343,10 @@ fn handle_preview_focused_key(state: &mut ManagerState<'_>, key: KeyEvent) -> In
             InputOutcome::Continue
         }
         PreviewPaneKeyPlan::ReconnectSelected => {
-            let (_, session_id) = panes[cursor.min(panes.len() - 1)];
+            let Some(cursor) = preview_pane_selected_index(panes.len(), Some(cursor)) else {
+                return InputOutcome::Continue;
+            };
+            let (_, session_id) = panes[cursor];
             dispatch_manager(state, ManagerMessage::ExitPreview);
             InputOutcome::InstanceAction {
                 container,

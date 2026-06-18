@@ -682,15 +682,23 @@ pub const fn preview_pane_key_plan(key: KeyCode, pane_count: usize) -> PreviewPa
 }
 
 #[must_use]
+pub fn preview_pane_selected_index(
+    pane_count: usize,
+    current_cursor: Option<usize>,
+) -> Option<usize> {
+    if pane_count == 0 {
+        return None;
+    }
+    Some(current_cursor.unwrap_or(0).min(pane_count - 1))
+}
+
+#[must_use]
 pub fn preview_pane_cursor_plan(
     pane_count: usize,
     current_cursor: Option<usize>,
     delta: isize,
 ) -> Option<usize> {
-    if pane_count == 0 {
-        return None;
-    }
-    let cursor = current_cursor.unwrap_or(0).min(pane_count - 1);
+    let cursor = preview_pane_selected_index(pane_count, current_cursor)?;
     Some(crate::tui::focus::moved_selection(
         cursor, pane_count, delta,
     ))

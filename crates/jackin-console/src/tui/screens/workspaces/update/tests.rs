@@ -497,6 +497,8 @@ fn preview_pane_key_plan_routes_navigation() {
 
 #[test]
 fn preview_pane_cursor_plan_clamps_current_and_delta() {
+    assert_eq!(preview_pane_selected_index(0, Some(4)), None);
+    assert_eq!(preview_pane_selected_index(3, Some(9)), Some(2));
     assert_eq!(preview_pane_cursor_plan(0, Some(4), 1), None);
     assert_eq!(preview_pane_cursor_plan(3, None, 1), Some(1));
     assert_eq!(preview_pane_cursor_plan(3, Some(9), 1), Some(2));
