@@ -2,7 +2,7 @@
 title: "Unify keybindings and hint bars (one keymap registry)"
 ---
 
-**Status**: Open
+**Status**: Partially implemented
 
 This item is written as a hand-off plan: an engineer (or a Sonnet-class agent) should be able to execute it mechanically without re-discovering anything. Every divergence is listed with its file and the prescribed resolution. Line numbers are accurate as of the audit (branch `feature/launch-ctrl-c-cancellation`, 2026-06-19) and should be re-confirmed by reading each file before editing, since earlier phases shift later lines.
 
@@ -186,23 +186,42 @@ The registry must collapse these per-widget divergences. `ConfirmState::handle_k
 
 - [ ] <RepoFile path="crates/jackin-tui-lookbook/src/main.rs" /> (`~:54-72`, `~:442-519`): `Home/End/PageUp/PageDown` (sidebar) and `PgUp/PgDn` (preview) are handled but never advertised in the lookbook's own hint constants — register once the shared registry exists.
 
+## Mandatory hint bar on every operational screen
+
+An additional requirement was added after the audit: every operational TUI screen must carry a visible hint bar. Intro and outro animations are the only exceptions. Screens where an operator makes a selection, confirms an action, or navigates a list must always advertise the available keys — the hint bar is the only discovery surface.
+
+An audit of all four surfaces (console, launch cockpit, capsule, lookbook) confirmed no screen was completely missing a hint bar call. The gaps found were incomplete hints — keys handled but not advertised in an existing hint bar. Six sites were fixed in this branch:
+
+| Surface | File | Fix |
+|---|---|---|
+| Launch | `prompts.rs CONFIRM_HINT` | Added `↵ confirm` |
+| Console | `run.rs CONFIRM_HINT` | Added `↵ confirm` |
+| Capsule | `dialog/hint.rs CONFIRM_HINT` | Added `↵ select` and `⇥ toggle`; normalised `N/Esc no` |
+| Capsule | `dialog/hint.rs main_view_hint` | Added `Ctrl+Q quit` to the non-scrollback branch |
+| Lookbook | `main.rs SIDEBAR_HINT` | Added `Home/End first/last` |
+| Lookbook | `main.rs PREVIEW_FOCUS_HINT` | Added `PgUp/PgDn page` |
+
+Remaining hint gaps (handled but unadvertised) are in the divergence catalogue above and are addressed as part of Phase 2.
+
 ## Tasks
 
 **Phase 0 — Stop the dangerous divergence + visible truncation (correctness, independent of the refactor):**
-- [ ] Console main-list silent quit (catalogue A) and inline-picker `exit_on_q` symmetry (B).
-- [ ] Launch pre-pipeline `Ctrl-C`/`Ctrl+Q`/`Esc` mislabels and the cockpit quit-confirm missing hint bar (launch list).
-- [ ] Capsule exit-confirm box-width truncation (`dialog.rs box_rect`).
+- [x] Console main-list silent quit (catalogue A): `input/list.rs` `Esc | Char('q'|'Q')` split — `Char('q'|'Q')` removed, `Esc` made no-op; `run.rs` `quit_intercept_state` passes `on_main_screen: false` always; `run/tests.rs` expectations updated.
+- [ ] Console inline-picker `exit_on_q` symmetry (catalogue B).
+- [x] Launch stale comments: `subscriptions.rs` "Ctrl+Q confirmed" → "Yes confirmed"; `build_log_dialog.rs` and `subscriptions.rs` "`q` closes" → "`Esc` closes".
+- [x] Capsule exit-confirm box-width truncation: `dialog.rs box_rect` — `ConfirmKind::Exit` now uses 70% terminal width instead of hardcoded `PALETTE_WIDTH`.
+- [x] Mandatory hint bar audit: confirmed all screens have hint bars; fixed six missing-key gaps (see table above).
 
 **Phase 1 — Registry foundation (`jackin-tui`):**
-- [ ] `LogicalKey` / `Mods` / `KeyChord` neutral key types satisfying the capsule requirements above; `From<KeyEvent>` for the crossterm surfaces and a byte→`KeyChord` parser for the capsule.
-- [ ] `KeyBinding<A>`, `Keymap<A>`, `Visibility`, `chord_glyph`, `Keymap::dispatch`/`hint_spans`/`hint_spans_for_axes` in `keymap.rs`; hint bar renders from a `Keymap`.
+- [x] `LogicalKey` / `Mods` / `KeyChord` neutral key types; `From<crossterm::event::KeyEvent> for KeyChord` for crossterm surfaces; byte→`KeyChord` parser left for capsule migration (Phase 2).
+- [x] `KeyBinding<A>`, `Keymap<A>`, `Visibility`, `chord_glyph`, `Keymap::dispatch`/`hint_spans`/`hint_spans_for_axes` in <RepoFile path="crates/jackin-tui/src/keymap.rs" />; 9 unit tests in `keymap/tests.rs`; `pub mod keymap;` in `lib.rs`; re-exported through `components.rs`.
 
 **Phase 2 — Migrate every surface onto the registry:**
 - [ ] Shared widgets (ConfirmState pilot first), then TextInput/SelectList/ErrorPopup/ContainerInfo/SaveDiscard.
 - [ ] Capsule `input.rs`/`dialog.rs`/`dialog/input.rs` dispatch and `dialog/hint.rs`/`status_bar.rs` advertisement; register `Ctrl+Q`, `Ctrl+\`, prefix keys, resize, read-only dismiss aliases; resolve env-configurable labels; delete dead Exit strings.
-- [ ] Launch `subscriptions.rs`/`run.rs` dispatch and `prompts.rs`/overlay hints; reconcile failure-popup, pre-pipeline, and quit-confirm advertisement; fix stale comments.
+- [ ] Launch `subscriptions.rs`/`run.rs` dispatch and `prompts.rs`/overlay hints; reconcile failure-popup, pre-pipeline, and quit-confirm advertisement.
 - [ ] Console `input/*.rs` + `file_browser`/`git_prompt` dispatch and `footer_hints.rs` advertisement; register vim aliases and workspace-row/instance actions; delete dead settings arms.
-- [ ] Lookbook hints.
+- [ ] Lookbook hints (migrate from hand-written arrays to registry-derived spans).
 
 **Phase 3 — Enforcement and cleanup:**
 - [ ] Per-context tests asserting handled-set ≡ keymap (both directions).

@@ -28,12 +28,13 @@ use jackin_console::tui::prompts::{
     prompt_agent_for_launch,
 };
 use jackin_console::tui::run::{
-    ConsoleChromeHover, ConsoleModalMouseLayerFacts, QuitConfirmPlan, console_pointer_hand,
-    debug_chip_activation_allowed, debug_chip_row, debug_run_id_label,
-    letter_input_state_for_console, modal_mouse_layer_plan, no_modal_open, quit_confirm_area,
-    quit_intercept_state_for_console, should_debug_log_mouse, should_open_quit_confirm,
-    split_debug_area, startup_error_dismissed, startup_error_modal_active_for_console,
-    token_generate_scope_label_for_console, token_generate_status_message,
+    ConsoleChromeHover, ConsoleModalMouseLayerFacts, LetterInputModalKind, LetterInputState,
+    QuitConfirmPlan, QuitInterceptState, console_pointer_hand, debug_chip_activation_allowed,
+    debug_chip_row, debug_run_id_label, letter_input_state_for_console, modal_mouse_layer_plan,
+    quit_confirm_area, quit_intercept_state_for_console, should_debug_log_mouse,
+    should_open_quit_confirm, split_debug_area, startup_error_dismissed,
+    startup_error_modal_active_for_console, token_generate_scope_label_for_console,
+    token_generate_status_message,
 };
 
 use crate::paths::JackinPaths;
@@ -59,6 +60,9 @@ impl std::fmt::Debug for ConsoleRunOptions<'_> {
 /// Footer-hint keys for the exit confirmation, matching the shared confirm
 /// key model (Y commits, N/Esc cancels, Tab toggles focus).
 const CONFIRM_HINT: &[jackin_tui::HintSpan<'static>] = &[
+    jackin_tui::HintSpan::Key("\u{21b5}"),
+    jackin_tui::HintSpan::Text("confirm"),
+    jackin_tui::HintSpan::GroupSep,
     jackin_tui::HintSpan::Key("Y"),
     jackin_tui::HintSpan::Text("yes"),
     jackin_tui::HintSpan::GroupSep,
@@ -69,8 +73,9 @@ const CONFIRM_HINT: &[jackin_tui::HintSpan<'static>] = &[
     jackin_tui::HintSpan::Text("focus"),
 ];
 
-/// Bare `Q` exits silently only on the main list — anywhere else
-/// (editor, prelude, confirm, list modal) pops the exit prompt.
+/// True when the operator is on the bare workspace list (no modal, no editor).
+/// Used only in tests to verify state shape.
+#[cfg(test)]
 pub(crate) const fn is_on_main_screen(state: &ConsoleState) -> bool {
     let ConsoleStage::Manager(ms) = &state.stage;
     matches!(ms.stage, crate::console::tui::state::ManagerStage::List) && ms.list_modal.is_none()
@@ -94,6 +99,87 @@ pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_diagnostics::Scree
         ManagerStage::CreatePrelude(_) => Screen::Create,
     }
 }
+
+/// Modals that consume letters (`TextInput`, pickers with filter-as-
+/// you-type) must shadow the Q-intercept so `Q` types the letter.
+pub(crate) const fn consumes_letter_input(state: &ConsoleState) -> bool {
+    jackin_console::tui::run::consumes_letter_input(letter_input_state(state))
+}
+
+const fn letter_input_state(state: &ConsoleState) -> LetterInputState {
+    use crate::console::tui::state::{GlobalMountModal, ManagerStage, Modal};
+    let ConsoleStage::Manager(ms) = &state.stage;
+
+    let mut input_state = LetterInputState {
+        list_modal: match &ms.list_modal {
+            Some(Modal::RolePicker { .. } | Modal::OpPicker { .. }) => {
+                Some(LetterInputModalKind::FilterPicker)
+            }
+            Some(_) => Some(LetterInputModalKind::Other),
+            None => None,
+        },
+        editor_modal: None,
+        create_prelude_modal: None,
+        settings_mount_modal: None,
+    };
+
+    match &ms.stage {
+        ManagerStage::Editor(editor) => {
+            input_state.editor_modal = match &editor.modal {
+                Some(Modal::TextInput { .. }) => Some(LetterInputModalKind::TextInput),
+                Some(
+                    Modal::OpPicker { .. }
+                    | Modal::RolePicker { .. }
+                    | Modal::RoleOverridePicker { .. },
+                ) => Some(LetterInputModalKind::FilterPicker),
+                Some(_) => Some(LetterInputModalKind::Other),
+                None => None,
+            };
+        }
+        ManagerStage::CreatePrelude(prelude) => {
+            input_state.create_prelude_modal = match &prelude.modal {
+                Some(Modal::TextInput { .. }) => Some(LetterInputModalKind::TextInput),
+                Some(_) => Some(LetterInputModalKind::Other),
+                None => None,
+            };
+        }
+        ManagerStage::Settings(settings) => {
+            input_state.settings_mount_modal = match &settings.mounts.modal {
+                Some(GlobalMountModal::Text { .. }) => Some(LetterInputModalKind::TextInput),
+                Some(_) => Some(LetterInputModalKind::Other),
+                None => None,
+            };
+        }
+        ManagerStage::List
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => {}
+    }
+
+    input_state
+}
+
+pub(crate) const fn quit_intercept_state(state: &ConsoleState) -> QuitInterceptState {
+    QuitInterceptState {
+        // Workspace list is no longer exempt from the bare-q intercept — bare q
+        // now opens the same confirm as Ctrl+Q on every screen.
+        on_main_screen: false,
+        consumes_letter_input: consumes_letter_input(state),
+    }
+}
+
+/// True iff no modal overlay is currently blocking input on the console surface.
+///
+/// Used by the mouse routing layer to enforce single-consumer precedence: when
+/// this returns `false`, chrome interactions (debug chip) and base-surface mouse
+/// handling are suppressed so only the active modal handles the event.
+pub(crate) const fn no_modal_open(state: &ConsoleState) -> bool {
+    use crate::console::tui::state::ManagerStage;
+    let ConsoleStage::Manager(ms) = &state.stage;
+    state.quit_confirm.is_none()
+        && ms.list_modal.is_none()
+        && !matches!(&ms.stage, ManagerStage::Editor(e) if e.modal.is_some())
+}
+
 
 async fn execute_launch_prompt<B>(
     terminal: &mut ratatui::Terminal<B>,

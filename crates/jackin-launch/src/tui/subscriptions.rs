@@ -276,7 +276,7 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             update_build_log_scroll_from_top_offset(v, ctx.area, top_offset);
         }
         // Plain body clicks are swallowed while the build log owns the overlay.
-        // Close stays keyboard-only (`Esc`/`q`); scrollbar hits remain interactive.
+        // Close stays keyboard-only (`Esc`); scrollbar hits remain interactive.
     } else if hit_footer_container_chip(
         v,
         ctx.run_id,
@@ -406,7 +406,7 @@ pub fn handle_cockpit_input(
                 && k.kind == KeyEventKind::Press
                 && apply_quit_confirm_key(&mut v, k) == QuitConfirmOutcome::Confirmed
             {
-                // Ctrl+Q confirmed: graceful cancel. The pipeline unwinds via
+                // Yes confirmed: graceful cancel. The pipeline unwinds via
                 // `Err` and runs `LoadCleanup` (removes the half-built
                 // container, network, volume) before exiting.
                 cancel_token.cancel();

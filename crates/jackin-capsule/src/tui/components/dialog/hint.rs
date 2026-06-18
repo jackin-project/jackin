@@ -28,6 +28,9 @@ pub(crate) fn main_view_hint(
         spans.push(HintSpan::GroupSep);
         spans.push(HintSpan::Key("click"));
         spans.push(HintSpan::Text("focus pane"));
+        spans.push(HintSpan::GroupSep);
+        spans.push(HintSpan::Key("Ctrl+Q"));
+        spans.push(HintSpan::Text("quit"));
         spans
     }
 }
@@ -93,14 +96,17 @@ pub(super) const READ_ONLY_HINT: &[HintSpan<'static>] =
     &[HintSpan::Key("Esc"), HintSpan::Text("dismiss")];
 
 pub(super) const CONFIRM_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("↵"),
+    HintSpan::Text("select"),
+    HintSpan::GroupSep,
     HintSpan::Key("Y"),
-    HintSpan::Text("confirm"),
+    HintSpan::Text("yes"),
     HintSpan::GroupSep,
-    HintSpan::Key("N"),
-    HintSpan::Text("cancel"),
+    HintSpan::Key("N/Esc"),
+    HintSpan::Text("no"),
     HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("back"),
+    HintSpan::Key("⇥"),
+    HintSpan::Text("toggle"),
 ];
 
 #[cfg(test)]

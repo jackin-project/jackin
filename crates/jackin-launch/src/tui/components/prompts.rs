@@ -136,6 +136,9 @@ const TEXT_PROMPT_SKIP_HINT: &[HintSpan<'static>] = &[
 ];
 
 const CONFIRM_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("↵"),
+    HintSpan::Text("confirm"),
+    HintSpan::GroupSep,
     HintSpan::Key("Y"),
     HintSpan::Text("yes"),
     HintSpan::GroupSep,

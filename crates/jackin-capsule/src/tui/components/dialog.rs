@@ -1278,6 +1278,12 @@ impl Dialog {
             Self::ContainerInfo { .. } | Self::GitHubContext { .. } => CONTAINER_INFO_WIDTH
                 .min(term_cols.saturating_sub(4))
                 .max(PALETTE_WIDTH),
+            // Exit data-loss confirm has two warning notes wider than PALETTE_WIDTH.
+            // Use the shared Details width percentage (70%) so the notes don't truncate.
+            Self::ConfirmAction { kind: ConfirmKind::Exit, .. } => (term_cols
+                .saturating_mul(70)
+                / 100)
+                .clamp(PALETTE_WIDTH, term_cols.saturating_sub(4).max(PALETTE_WIDTH)),
             _ => PALETTE_WIDTH,
         };
         // Filterable dialogs reserve 2 extra rows: one for the filter

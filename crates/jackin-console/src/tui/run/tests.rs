@@ -139,14 +139,8 @@ fn quit_intercept_opens_off_main_for_bare_q() {
 }
 
 #[test]
-fn quit_intercept_ignores_main_text_input_and_modified_keys() {
-    assert!(!should_open_quit_confirm(
-        key(KeyCode::Char('q'), KeyModifiers::NONE),
-        QuitInterceptState {
-            on_main_screen: true,
-            consumes_letter_input: false,
-        },
-    ));
+fn quit_intercept_ignores_letter_input_and_allows_ctrl_q_everywhere() {
+    // Bare q is blocked when a field consumes letter input (e.g. text filter).
     assert!(!should_open_quit_confirm(
         key(KeyCode::Char('q'), KeyModifiers::NONE),
         QuitInterceptState {
@@ -155,14 +149,17 @@ fn quit_intercept_ignores_main_text_input_and_modified_keys() {
         },
     ));
     // Ctrl+Q is the explicit quit chord: it opens the confirm everywhere,
-    // even on the main screen and while a field is consuming letter input.
+    // even while a field is consuming letter input.
     assert!(should_open_quit_confirm(
         key(KeyCode::Char('q'), KeyModifiers::CONTROL),
         QuitInterceptState {
-            on_main_screen: true,
+            on_main_screen: false,
             consumes_letter_input: true,
         },
     ));
+    // on_main_screen=true is preserved in the struct for API compatibility but
+    // the host console no longer passes true — bare q opens the confirm on
+    // every screen now that the workspace list is not exempt.
 }
 
 #[test]
