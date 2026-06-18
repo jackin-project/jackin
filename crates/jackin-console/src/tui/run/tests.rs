@@ -13,6 +13,34 @@ fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
 }
 
 #[test]
+fn diagnostics_screen_maps_confirm_overlays_to_list() {
+    assert_eq!(
+        diagnostics_screen_for_stage(ConsoleScreenStage::List),
+        jackin_diagnostics::Screen::List
+    );
+    assert_eq!(
+        diagnostics_screen_for_stage(ConsoleScreenStage::ConfirmDelete),
+        jackin_diagnostics::Screen::List
+    );
+    assert_eq!(
+        diagnostics_screen_for_stage(ConsoleScreenStage::ConfirmInstancePurge),
+        jackin_diagnostics::Screen::List
+    );
+    assert_eq!(
+        diagnostics_screen_for_stage(ConsoleScreenStage::Editor),
+        jackin_diagnostics::Screen::Editor
+    );
+    assert_eq!(
+        diagnostics_screen_for_stage(ConsoleScreenStage::Settings),
+        jackin_diagnostics::Screen::Settings
+    );
+    assert_eq!(
+        diagnostics_screen_for_stage(ConsoleScreenStage::CreatePrelude),
+        jackin_diagnostics::Screen::Create
+    );
+}
+
+#[test]
 fn quit_intercept_opens_off_main_for_bare_q() {
     let state = QuitInterceptState {
         on_main_screen: false,

@@ -3,6 +3,30 @@
 use ratatui::layout::Rect;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsoleScreenStage {
+    List,
+    Editor,
+    Settings,
+    CreatePrelude,
+    ConfirmDelete,
+    ConfirmInstancePurge,
+}
+
+/// Which diagnostics screen owns the visible console stage. Confirm dialogs
+/// overlay the workspace list, so their telemetry remains attached to `List`.
+#[must_use]
+pub const fn diagnostics_screen_for_stage(stage: ConsoleScreenStage) -> jackin_diagnostics::Screen {
+    match stage {
+        ConsoleScreenStage::List
+        | ConsoleScreenStage::ConfirmDelete
+        | ConsoleScreenStage::ConfirmInstancePurge => jackin_diagnostics::Screen::List,
+        ConsoleScreenStage::Editor => jackin_diagnostics::Screen::Editor,
+        ConsoleScreenStage::Settings => jackin_diagnostics::Screen::Settings,
+        ConsoleScreenStage::CreatePrelude => jackin_diagnostics::Screen::Create,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuitInterceptState {
     pub on_main_screen: bool,
     pub consumes_letter_input: bool,

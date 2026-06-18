@@ -23,10 +23,10 @@ use jackin_console::tui::components::status_popup::{
     instance_action_busy_message, instance_action_busy_title,
 };
 use jackin_console::tui::run::{
-    LetterInputModalKind, LetterInputState, ModalBlockState, QuitInterceptState,
-    TokenGenerateScopeLabel, debug_chip_row, debug_run_id_label, quit_confirm_area,
-    quit_confirm_state, should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
-    token_generate_status_message,
+    ConsoleScreenStage, LetterInputModalKind, LetterInputState, ModalBlockState,
+    QuitInterceptState, TokenGenerateScopeLabel, debug_chip_row, debug_run_id_label,
+    diagnostics_screen_for_stage, quit_confirm_area, quit_confirm_state, should_debug_log_mouse,
+    should_open_quit_confirm, split_debug_area, token_generate_status_message,
 };
 
 use crate::paths::JackinPaths;
@@ -61,23 +61,19 @@ pub(crate) const fn is_on_main_screen(state: &ConsoleState) -> bool {
     matches!(ms.stage, crate::console::tui::state::ManagerStage::List) && ms.list_modal.is_none()
 }
 
-/// Which telemetry screen the visible manager stage maps to. Confirm dialogs
-/// overlay the list, so they stay on `List`; the create *prelude* and the
-/// field editor are distinct screens (the create flow shows as `create` then
-/// `editor`).
 pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_diagnostics::Screen {
     use crate::console::tui::state::ManagerStage;
-    use jackin_diagnostics::Screen;
 
     let ConsoleStage::Manager(ms) = &state.stage;
-    match ms.stage {
-        ManagerStage::List
-        | ManagerStage::ConfirmDelete { .. }
-        | ManagerStage::ConfirmInstancePurge { .. } => Screen::List,
-        ManagerStage::Editor(_) => Screen::Editor,
-        ManagerStage::Settings(_) => Screen::Settings,
-        ManagerStage::CreatePrelude(_) => Screen::Create,
-    }
+    let stage = match ms.stage {
+        ManagerStage::List => ConsoleScreenStage::List,
+        ManagerStage::ConfirmDelete { .. } => ConsoleScreenStage::ConfirmDelete,
+        ManagerStage::ConfirmInstancePurge { .. } => ConsoleScreenStage::ConfirmInstancePurge,
+        ManagerStage::Editor(_) => ConsoleScreenStage::Editor,
+        ManagerStage::Settings(_) => ConsoleScreenStage::Settings,
+        ManagerStage::CreatePrelude(_) => ConsoleScreenStage::CreatePrelude,
+    };
+    diagnostics_screen_for_stage(stage)
 }
 
 pub(crate) const fn letter_input_state(state: &ConsoleState) -> LetterInputState {
