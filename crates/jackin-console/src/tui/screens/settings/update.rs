@@ -1219,6 +1219,17 @@ pub fn toggle_selected_settings_env_mask<V>(
     toggle_settings_env_mask_for_row(unmasked_rows, pending, rows.get(selected), is_maskable)
 }
 
+pub fn toggle_selected_settings_env_maskable_value(
+    unmasked_rows: &mut BTreeSet<(SettingsEnvScope, String)>,
+    pending: &SettingsEnvConfig<EnvValue>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+) -> bool {
+    toggle_selected_settings_env_mask(unmasked_rows, pending, expanded_roles, selected, |value| {
+        !matches!(value, EnvValue::OpRef(_))
+    })
+}
+
 pub fn remove_settings_env_row<V>(
     pending: &mut SettingsEnvConfig<V>,
     expanded_roles: &BTreeSet<String>,

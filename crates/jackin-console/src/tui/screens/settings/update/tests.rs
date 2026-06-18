@@ -1163,6 +1163,48 @@ fn toggle_selected_settings_env_mask_uses_current_flat_selection() {
 }
 
 #[test]
+fn toggle_selected_settings_env_maskable_value_skips_op_refs() {
+    let pending = SettingsEnvConfig {
+        env: BTreeMap::from([
+            ("PLAIN".to_owned(), EnvValue::Plain("value".to_owned())),
+            (
+                "SECRET".to_owned(),
+                EnvValue::OpRef(jackin_core::OpRef {
+                    op: "op://vault/item/password".to_owned(),
+                    path: "Vault/Item/password".to_owned(),
+                    account: None,
+                }),
+            ),
+        ]),
+        roles: BTreeMap::new(),
+    };
+    let expanded = BTreeSet::new();
+    let rows = settings_env_flat_rows(&pending, &expanded);
+    let plain = rows
+        .iter()
+        .position(|row| matches!(row, SettingsEnvRow::Key { key, .. } if key == "PLAIN"))
+        .unwrap_or(usize::MAX);
+    let secret = rows
+        .iter()
+        .position(|row| matches!(row, SettingsEnvRow::Key { key, .. } if key == "SECRET"))
+        .unwrap_or(usize::MAX);
+    let mut unmasked = BTreeSet::new();
+
+    assert!(toggle_selected_settings_env_maskable_value(
+        &mut unmasked,
+        &pending,
+        &expanded,
+        plain,
+    ));
+    assert!(!toggle_selected_settings_env_maskable_value(
+        &mut unmasked,
+        &pending,
+        &expanded,
+        secret,
+    ));
+}
+
+#[test]
 fn remove_settings_env_row_deletes_key_and_clamps_selection() {
     let mut pending = env_config();
     let expanded = BTreeSet::from(["alpha".to_owned()]);
