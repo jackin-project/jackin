@@ -455,6 +455,14 @@ pub enum CreatePreludeWorkdirCancelPlan {
     ReopenMountDstChoice,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CreatePreludeWorkdirPickPlan<T> {
+    Commit(T),
+    ReopenTextInputDst,
+    ReopenMountDstChoice,
+    Continue,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CreatePreludeMountDstChoicePlan {
     CommitSamePath,
@@ -478,6 +486,26 @@ pub fn create_prelude_text_input_dst_plan<T>(
         jackin_tui::ModalOutcome::Commit(dst) => CreatePreludeTextInputDstPlan::Commit(dst),
         jackin_tui::ModalOutcome::Cancel => CreatePreludeTextInputDstPlan::ReopenMountDstChoice,
         jackin_tui::ModalOutcome::Continue => CreatePreludeTextInputDstPlan::Continue,
+    }
+}
+
+#[must_use]
+pub fn create_prelude_workdir_pick_plan<T>(
+    outcome: jackin_tui::ModalOutcome<T>,
+    used_edit_dst: bool,
+) -> CreatePreludeWorkdirPickPlan<T> {
+    match outcome {
+        jackin_tui::ModalOutcome::Commit(workdir) => CreatePreludeWorkdirPickPlan::Commit(workdir),
+        jackin_tui::ModalOutcome::Cancel => match create_prelude_workdir_cancel_plan(used_edit_dst)
+        {
+            CreatePreludeWorkdirCancelPlan::ReopenTextInputDst => {
+                CreatePreludeWorkdirPickPlan::ReopenTextInputDst
+            }
+            CreatePreludeWorkdirCancelPlan::ReopenMountDstChoice => {
+                CreatePreludeWorkdirPickPlan::ReopenMountDstChoice
+            }
+        },
+        jackin_tui::ModalOutcome::Continue => CreatePreludeWorkdirPickPlan::Continue,
     }
 }
 
@@ -662,9 +690,9 @@ mod tests {
         ConsoleCreatePreludeState, ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal,
         CreatePreludeCompletionStatus, CreatePreludeKeyPlan, CreatePreludeMountDstChoicePlan,
         CreatePreludeTextInputDstPlan, CreatePreludeWorkdirCancelPlan,
-        create_prelude_completion_status, create_prelude_key_plan,
+        CreatePreludeWorkdirPickPlan, create_prelude_completion_status, create_prelude_key_plan,
         create_prelude_mount_dst_choice_plan, create_prelude_text_input_dst_plan,
-        create_prelude_workdir_cancel_plan,
+        create_prelude_workdir_cancel_plan, create_prelude_workdir_pick_plan,
     };
 
     struct TestConfirm;
@@ -797,6 +825,29 @@ mod tests {
         assert_eq!(
             create_prelude_text_input_dst_plan::<String>(jackin_tui::ModalOutcome::Continue),
             CreatePreludeTextInputDstPlan::Continue
+        );
+    }
+
+    #[test]
+    fn create_prelude_workdir_pick_plan_routes_input_outcomes() {
+        assert_eq!(
+            create_prelude_workdir_pick_plan(
+                jackin_tui::ModalOutcome::Commit("src".to_owned()),
+                true
+            ),
+            CreatePreludeWorkdirPickPlan::Commit("src".to_owned())
+        );
+        assert_eq!(
+            create_prelude_workdir_pick_plan::<String>(jackin_tui::ModalOutcome::Cancel, true),
+            CreatePreludeWorkdirPickPlan::ReopenTextInputDst
+        );
+        assert_eq!(
+            create_prelude_workdir_pick_plan::<String>(jackin_tui::ModalOutcome::Cancel, false),
+            CreatePreludeWorkdirPickPlan::ReopenMountDstChoice
+        );
+        assert_eq!(
+            create_prelude_workdir_pick_plan::<String>(jackin_tui::ModalOutcome::Continue, true),
+            CreatePreludeWorkdirPickPlan::Continue
         );
     }
 

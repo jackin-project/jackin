@@ -11,8 +11,8 @@ use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
 use jackin_console::tui::app::{
     CreatePreludeKeyPlan, CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan,
-    CreatePreludeWorkdirCancelPlan, create_prelude_key_plan, create_prelude_mount_dst_choice_plan,
-    create_prelude_text_input_dst_plan, create_prelude_workdir_cancel_plan,
+    CreatePreludeWorkdirPickPlan, create_prelude_key_plan, create_prelude_mount_dst_choice_plan,
+    create_prelude_text_input_dst_plan, create_prelude_workdir_pick_plan,
 };
 use jackin_console::tui::components::file_browser::{FileBrowserOutcome, page_rows_for_modal};
 use jackin_console::tui::screens::workspaces::view::{
@@ -222,8 +222,10 @@ pub(super) fn handle_prelude_modal(
             } else {
                 return PreludeModalOutcome::Continue;
             };
-            match outcome {
-                ModalOutcome::Commit(workdir) => {
+            // Step-back rewinds to TextInputDst when the operator edited the
+            // destination, otherwise MountDstChoice for the same-path branch.
+            match create_prelude_workdir_pick_plan(outcome, prelude.used_edit_dst) {
+                CreatePreludeWorkdirPickPlan::Commit(workdir) => {
                     prelude.modal = None;
                     prelude.accept_workdir(workdir);
                     let default_name = prelude.default_name();
@@ -232,26 +234,19 @@ pub(super) fn handle_prelude_modal(
                         state: create_prelude_workspace_name_input_state(default_name),
                     });
                 }
-                ModalOutcome::Cancel => {
-                    // Step-back: rewind to whichever dst-step the operator
-                    // took — TextInputDst if they edited the destination,
-                    // otherwise MountDstChoice (fast-path mount at same path).
-                    match create_prelude_workdir_cancel_plan(prelude.used_edit_dst) {
-                        CreatePreludeWorkdirCancelPlan::ReopenTextInputDst => {
-                            let current_dst = create_prelude_mount_destination_default(
-                                prelude.pending_mount_dst.as_deref(),
-                            );
-                            prelude.modal = Some(Modal::TextInput {
-                                target: TextInputTarget::MountDst,
-                                state: create_prelude_mount_destination_input_state(current_dst),
-                            });
-                        }
-                        CreatePreludeWorkdirCancelPlan::ReopenMountDstChoice => {
-                            reopen_mount_dst_choice(prelude);
-                        }
-                    }
+                CreatePreludeWorkdirPickPlan::ReopenTextInputDst => {
+                    let current_dst = create_prelude_mount_destination_default(
+                        prelude.pending_mount_dst.as_deref(),
+                    );
+                    prelude.modal = Some(Modal::TextInput {
+                        target: TextInputTarget::MountDst,
+                        state: create_prelude_mount_destination_input_state(current_dst),
+                    });
                 }
-                ModalOutcome::Continue => {}
+                CreatePreludeWorkdirPickPlan::ReopenMountDstChoice => {
+                    reopen_mount_dst_choice(prelude);
+                }
+                CreatePreludeWorkdirPickPlan::Continue => {}
             }
         }
         PreludeModalDis::TextInputName => {
