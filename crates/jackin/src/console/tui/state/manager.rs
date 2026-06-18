@@ -7,7 +7,7 @@ use ratatui::layout::Rect;
 use crate::console::domain::InstanceRefreshSnapshot;
 use crate::console::tui::effect::ManagerEffect;
 use jackin_config::AppConfig;
-use jackin_console::tui::app::ConsoleAnimationTick;
+use jackin_console::tui::app::{ConsoleAnimationTick, ConsoleManagerStageState};
 use jackin_console::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
 use jackin_console::tui::screens::workspaces::model::hovered_list_row;
 use jackin_console::tui::screens::workspaces::update::{
@@ -837,6 +837,12 @@ impl WorkspaceListSelectionState for ManagerState<'_> {
 
     fn set_selected(&mut self, selected: usize) {
         self.selected = selected;
+    }
+}
+
+impl ConsoleManagerStageState<ManagerStage<'static>> for ManagerState<'_> {
+    fn set_manager_stage(&mut self, stage: ManagerStage<'static>) {
+        self.stage = stage;
     }
 }
 

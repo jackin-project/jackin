@@ -12,6 +12,7 @@ use crate::console::tui::state::{
     PendingRoleLoad, SecretsScopeTag, SettingsState, SettingsTab,
 };
 use jackin_config::AppConfig;
+use jackin_console::tui::app::apply_manager_stage;
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::screens::editor::update::{
     clear_editor_auth_kind_plan, editor_field_selection_plan, editor_mount_row_select_plan,
@@ -93,14 +94,14 @@ pub(crate) fn update_manager(
             enter_create_editor(state, name, workspace);
         }
         ManagerMessage::EnterCreatePrelude(prelude) => {
-            state.stage = ManagerStage::CreatePrelude(prelude);
+            apply_manager_stage(state, ManagerStage::CreatePrelude(prelude));
         }
         ManagerMessage::EnterEditor(editor) => {
-            state.stage = ManagerStage::Editor(editor);
+            apply_manager_stage(state, ManagerStage::Editor(editor));
         }
         ManagerMessage::EnterEditorAuthKind { kind } => enter_editor_auth_kind(state, kind),
         ManagerMessage::EnterSettings(settings) => {
-            state.stage = ManagerStage::Settings(settings);
+            apply_manager_stage(state, ManagerStage::Settings(settings));
         }
         ManagerMessage::InstancesRefreshed(result) => state.apply_instance_refresh(result),
         ManagerMessage::MountInfoRefreshed(result) => {
@@ -218,7 +219,7 @@ pub(crate) fn update_manager(
         ManagerMessage::ReloadFromConfig { config, cwd } => {
             reload_from_config(state, &config, &cwd);
         }
-        ManagerMessage::ReturnToList => state.stage = ManagerStage::List,
+        ManagerMessage::ReturnToList => apply_manager_stage(state, ManagerStage::List),
         ManagerMessage::ScrollListHorizontal(delta) => scroll_list_horizontal(state, delta),
         ManagerMessage::ScrollFocusedListBlockVertical(delta) => {
             scroll_focused_mount_block_vertical(state, delta);
@@ -378,19 +379,25 @@ fn enter_editor_auth_kind(state: &mut ManagerState<'_>, kind: AuthKind) {
 
 fn enter_confirm_delete(state: &mut ManagerState<'_>, name: String) {
     let plan = workspace_delete_confirm_plan(name);
-    state.stage = ManagerStage::ConfirmDelete {
-        state: plan.state,
-        name: plan.name,
-    };
+    apply_manager_stage(
+        state,
+        ManagerStage::ConfirmDelete {
+            state: plan.state,
+            name: plan.name,
+        },
+    );
 }
 
 fn enter_confirm_instance_purge(state: &mut ManagerState<'_>, container: String, label: String) {
     let plan = instance_purge_confirm_plan(container, label);
-    state.stage = ManagerStage::ConfirmInstancePurge {
-        container: plan.container,
-        state: plan.state,
-        label: plan.label,
-    };
+    apply_manager_stage(
+        state,
+        ManagerStage::ConfirmInstancePurge {
+            container: plan.container,
+            state: plan.state,
+            label: plan.label,
+        },
+    );
 }
 
 fn enter_create_editor(
@@ -401,7 +408,7 @@ fn enter_create_editor(
     let mut editor = EditorState::new_create();
     editor.pending = workspace;
     editor.pending_name = Some(name);
-    state.stage = ManagerStage::Editor(editor);
+    apply_manager_stage(state, ManagerStage::Editor(editor));
 }
 
 fn reload_from_config(state: &mut ManagerState<'_>, config: &AppConfig, cwd: &std::path::Path) {

@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,392 lines, versus 143 Rust files and 56,800 lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,405 lines, versus 143 Rust files and 56,831 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -38,12 +38,12 @@ Approximate local inventory:
 
 | Area | Files | Lines | Current role |
 |---|---:|---:|---|
-| `crates/jackin/src/console` total | 80 | 34,392 | Remaining root console implementation |
+| `crates/jackin/src/console` total | 80 | 34,405 | Remaining root console implementation |
 | `domain.rs` | 1 | 149 | Role-source logging, provider derivation, and root instance snapshot alias |
 | `services.rs` + `services/` | 9 | 861 | Side-effect adapters around config, Docker, runtime, op, token setup |
 | `effects.rs` | 1 | 1,250 | Root effect executor and background polling |
 | `terminal.rs` | 1 | 50 | Host terminal ownership adapter |
-| `tui/` | 65 | 31,646 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
+| `tui/` | 65 | 31,659 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
 
 Largest root files:
 
@@ -137,6 +137,8 @@ Workspace-list footer fact assembly and Open-in-GitHub row visibility policy now
 Generic manager-stage footer-height fact extraction and base-surface modal-blocking policy now live in `jackin-console/src/tui/app.rs`, and modal prepare-area routing uses `jackin-console/src/tui/view.rs`; root supplies cached editor/settings footer heights, concrete modal mutation, and manager modal-presence facts.
 
 Generic manager-stage debug fact extraction now lives in `jackin-console/src/tui/app.rs`, with modal debug-kind traits in `jackin-console/src/tui/debug.rs`; root supplies only concrete console state and list-modal debug facts.
+
+Generic manager-stage assignment now lives behind `jackin-console/src/tui/app.rs`; root manager state implements the narrow stage storage hook while root-specific transitions still construct concrete stage payloads.
 
 Workspace-list name sidebar viewport, sidebar focus ownership, and selected-row follow-scroll planning now live in `jackin-console/src/tui/screens/workspaces/view.rs`; root supplies concrete row counts, selected index, area, scroll offset, and modal-open/focus facts.
 

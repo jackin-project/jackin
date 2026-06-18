@@ -55,6 +55,14 @@ pub enum ConsoleManagerStageRoute {
     ConfirmInstancePurge,
 }
 
+pub trait ConsoleManagerStageState<Stage> {
+    fn set_manager_stage(&mut self, stage: Stage);
+}
+
+pub fn apply_manager_stage<Stage>(state: &mut impl ConsoleManagerStageState<Stage>, stage: Stage) {
+    state.set_manager_stage(stage);
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsoleInputDispatchPlan {
     ListModal,
@@ -2207,11 +2215,11 @@ mod tests {
     use super::{
         ConsoleAnimationTick, ConsoleApp, ConsoleAppStage, ConsoleCreatePreludeState,
         ConsoleInputDispatchFacts, ConsoleInputDispatchPlan, ConsoleManagerStage,
-        ConsoleManagerStageRoute, ConsoleModal, ConsoleStageModalFacts,
+        ConsoleManagerStageRoute, ConsoleManagerStageState, ConsoleModal, ConsoleStageModalFacts,
         CreatePreludeCompletionStatus, CreatePreludeFileBrowserPlan, CreatePreludeKeyPlan,
         CreatePreludeModalStep, CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan,
         CreatePreludeTextInputNamePlan, CreatePreludeWorkdirCancelPlan,
-        CreatePreludeWorkdirPickPlan, console_input_dispatch_plan,
+        CreatePreludeWorkdirPickPlan, apply_manager_stage, console_input_dispatch_plan,
         create_prelude_completion_status, create_prelude_file_browser_plan,
         create_prelude_key_plan, create_prelude_modal_step, create_prelude_mount_dst_choice_plan,
         create_prelude_text_input_dst_plan, create_prelude_text_input_name_plan,
@@ -2445,6 +2453,29 @@ mod tests {
             }
             .route(),
             ConsoleManagerStageRoute::ConfirmInstancePurge
+        );
+    }
+
+    #[derive(Default)]
+    struct TestStageState {
+        stage: Option<ConsoleManagerStage<(), (), ()>>,
+    }
+
+    impl ConsoleManagerStageState<ConsoleManagerStage<(), (), ()>> for TestStageState {
+        fn set_manager_stage(&mut self, stage: ConsoleManagerStage<(), (), ()>) {
+            self.stage = Some(stage);
+        }
+    }
+
+    #[test]
+    fn apply_manager_stage_updates_storage() {
+        let mut state = TestStageState::default();
+
+        apply_manager_stage(&mut state, ConsoleManagerStage::List);
+
+        assert_eq!(
+            state.stage.as_ref().map(ConsoleManagerStage::route),
+            Some(ConsoleManagerStageRoute::List)
         );
     }
 
