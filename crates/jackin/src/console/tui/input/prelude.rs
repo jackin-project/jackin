@@ -10,9 +10,9 @@ use crate::console::tui::state::{ManagerState, Modal};
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
 use jackin_console::tui::app::{
-    CreatePreludeKeyPlan, CreatePreludeMountDstChoicePlan, CreatePreludeWorkdirCancelPlan,
-    create_prelude_key_plan, create_prelude_mount_dst_choice_plan,
-    create_prelude_workdir_cancel_plan,
+    CreatePreludeKeyPlan, CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan,
+    CreatePreludeWorkdirCancelPlan, create_prelude_key_plan, create_prelude_mount_dst_choice_plan,
+    create_prelude_text_input_dst_plan, create_prelude_workdir_cancel_plan,
 };
 use jackin_console::tui::components::file_browser::{FileBrowserOutcome, page_rows_for_modal};
 use jackin_console::tui::screens::workspaces::view::{
@@ -201,19 +201,19 @@ pub(super) fn handle_prelude_modal(
             } else {
                 return PreludeModalOutcome::Continue;
             };
-            match outcome {
-                ModalOutcome::Commit(dst) => {
+            match create_prelude_text_input_dst_plan(outcome) {
+                CreatePreludeTextInputDstPlan::Commit(dst) => {
                     prelude.modal = None;
                     // readonly defaults to false (toggle for readonly is
                     // future work — spec allows this simplification).
                     prelude.accept_mount_dst(dst, false);
                     prelude_advance_to_workdir_pick(prelude);
                 }
-                ModalOutcome::Cancel => {
+                CreatePreludeTextInputDstPlan::ReopenMountDstChoice => {
                     // Step-back: reopen MountDstChoice with the stashed src.
                     reopen_mount_dst_choice(prelude);
                 }
-                ModalOutcome::Continue => {}
+                CreatePreludeTextInputDstPlan::Continue => {}
             }
         }
         PreludeModalDis::WorkdirPick => {

@@ -463,6 +463,24 @@ pub enum CreatePreludeMountDstChoicePlan {
     Continue,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CreatePreludeTextInputDstPlan<T> {
+    Commit(T),
+    ReopenMountDstChoice,
+    Continue,
+}
+
+#[must_use]
+pub fn create_prelude_text_input_dst_plan<T>(
+    outcome: jackin_tui::ModalOutcome<T>,
+) -> CreatePreludeTextInputDstPlan<T> {
+    match outcome {
+        jackin_tui::ModalOutcome::Commit(dst) => CreatePreludeTextInputDstPlan::Commit(dst),
+        jackin_tui::ModalOutcome::Cancel => CreatePreludeTextInputDstPlan::ReopenMountDstChoice,
+        jackin_tui::ModalOutcome::Continue => CreatePreludeTextInputDstPlan::Continue,
+    }
+}
+
 #[must_use]
 pub const fn create_prelude_mount_dst_choice_plan(
     outcome: jackin_tui::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
@@ -643,8 +661,10 @@ mod tests {
     use super::{
         ConsoleCreatePreludeState, ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal,
         CreatePreludeCompletionStatus, CreatePreludeKeyPlan, CreatePreludeMountDstChoicePlan,
-        CreatePreludeWorkdirCancelPlan, create_prelude_completion_status, create_prelude_key_plan,
-        create_prelude_mount_dst_choice_plan, create_prelude_workdir_cancel_plan,
+        CreatePreludeTextInputDstPlan, CreatePreludeWorkdirCancelPlan,
+        create_prelude_completion_status, create_prelude_key_plan,
+        create_prelude_mount_dst_choice_plan, create_prelude_text_input_dst_plan,
+        create_prelude_workdir_cancel_plan,
     };
 
     struct TestConfirm;
@@ -759,6 +779,24 @@ mod tests {
         assert_eq!(
             create_prelude_mount_dst_choice_plan(jackin_tui::ModalOutcome::Continue),
             CreatePreludeMountDstChoicePlan::Continue
+        );
+    }
+
+    #[test]
+    fn create_prelude_text_input_dst_plan_routes_input_outcomes() {
+        assert_eq!(
+            create_prelude_text_input_dst_plan(jackin_tui::ModalOutcome::Commit(
+                "/workspace".to_owned()
+            )),
+            CreatePreludeTextInputDstPlan::Commit("/workspace".to_owned())
+        );
+        assert_eq!(
+            create_prelude_text_input_dst_plan::<String>(jackin_tui::ModalOutcome::Cancel),
+            CreatePreludeTextInputDstPlan::ReopenMountDstChoice
+        );
+        assert_eq!(
+            create_prelude_text_input_dst_plan::<String>(jackin_tui::ModalOutcome::Continue),
+            CreatePreludeTextInputDstPlan::Continue
         );
     }
 
