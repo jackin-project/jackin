@@ -22,9 +22,10 @@ use jackin_console::tui::components::github_picker::{GithubOpenPlan, github_open
 use jackin_console::tui::components::provider_picker::ProviderPickerOutcome;
 use jackin_console::tui::layout::list_body_area;
 use jackin_console::tui::screens::workspaces::update::{
-    PreviewPaneKeyPlan, WorkspaceInstanceStatus, WorkspaceListEnterPlan,
-    instance_action_accepts_status, is_preview_pane_entry_target, preview_pane_key_plan,
-    should_enter_preview_pane, workspace_list_enter_plan, workspace_list_saved_workspace_index,
+    PreviewPaneKeyPlan, WorkspaceInstanceScopePlan, WorkspaceInstanceStatus,
+    WorkspaceListEnterPlan, instance_action_accepts_status, is_preview_pane_entry_target,
+    preview_pane_key_plan, selected_instance_scope_plan, should_enter_preview_pane,
+    workspace_list_enter_plan, workspace_list_saved_workspace_index,
     workspace_list_settings_available, workspace_row_owns_left, workspace_row_owns_right,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
@@ -391,26 +392,28 @@ fn selected_instance_container(
 fn selected_instance_scope<'a>(
     state: &'a ManagerState<'_>,
 ) -> Option<(Option<&'a str>, &'a str, &'a str)> {
-    match state.selected_row() {
-        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
+    match selected_instance_scope_plan(state.selected_row()) {
+        WorkspaceInstanceScopePlan::CurrentDirectory => {
             let current_dir = state.current_dir.as_str();
             Some((None, current_dir, current_dir))
         }
-        ManagerListRow::SavedWorkspace(i) => state.workspaces.get(i).map(|summary| {
+        WorkspaceInstanceScopePlan::SavedWorkspace(i) => state.workspaces.get(i).map(|summary| {
             (
                 Some(summary.name.as_str()),
                 summary.name.as_str(),
                 summary.workdir.as_str(),
             )
         }),
-        ManagerListRow::WorkspaceInstance(ws_idx, _) => state.workspaces.get(ws_idx).map(|ws| {
-            (
-                Some(ws.name.as_str()),
-                ws.name.as_str(),
-                ws.workdir.as_str(),
-            )
-        }),
-        ManagerListRow::NewWorkspace => None,
+        WorkspaceInstanceScopePlan::WorkspaceInstance(ws_idx) => {
+            state.workspaces.get(ws_idx).map(|ws| {
+                (
+                    Some(ws.name.as_str()),
+                    ws.name.as_str(),
+                    ws.workdir.as_str(),
+                )
+            })
+        }
+        WorkspaceInstanceScopePlan::None => None,
     }
 }
 

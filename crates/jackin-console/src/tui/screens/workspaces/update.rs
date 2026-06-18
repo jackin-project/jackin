@@ -86,6 +86,14 @@ pub enum WorkspaceListEnterPlan {
     InstanceAction,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceInstanceScopePlan {
+    CurrentDirectory,
+    SavedWorkspace(usize),
+    WorkspaceInstance(usize),
+    None,
+}
+
 #[must_use]
 pub const fn workspace_list_enter_plan(row: ManagerListRow) -> WorkspaceListEnterPlan {
     match row {
@@ -95,6 +103,20 @@ pub const fn workspace_list_enter_plan(row: ManagerListRow) -> WorkspaceListEnte
         ManagerListRow::WorkspaceInstance(_, _) | ManagerListRow::CurrentDirectoryInstance(_) => {
             WorkspaceListEnterPlan::InstanceAction
         }
+    }
+}
+
+#[must_use]
+pub const fn selected_instance_scope_plan(row: ManagerListRow) -> WorkspaceInstanceScopePlan {
+    match row {
+        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
+            WorkspaceInstanceScopePlan::CurrentDirectory
+        }
+        ManagerListRow::SavedWorkspace(idx) => WorkspaceInstanceScopePlan::SavedWorkspace(idx),
+        ManagerListRow::WorkspaceInstance(ws_idx, _) => {
+            WorkspaceInstanceScopePlan::WorkspaceInstance(ws_idx)
+        }
+        ManagerListRow::NewWorkspace => WorkspaceInstanceScopePlan::None,
     }
 }
 

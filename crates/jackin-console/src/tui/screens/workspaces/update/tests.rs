@@ -71,6 +71,30 @@ fn workspace_list_row_action_policies_route_by_row_kind() {
 }
 
 #[test]
+fn selected_instance_scope_plan_routes_workspace_contexts() {
+    assert_eq!(
+        selected_instance_scope_plan(ManagerListRow::CurrentDirectory),
+        WorkspaceInstanceScopePlan::CurrentDirectory
+    );
+    assert_eq!(
+        selected_instance_scope_plan(ManagerListRow::CurrentDirectoryInstance(2)),
+        WorkspaceInstanceScopePlan::CurrentDirectory
+    );
+    assert_eq!(
+        selected_instance_scope_plan(ManagerListRow::SavedWorkspace(3)),
+        WorkspaceInstanceScopePlan::SavedWorkspace(3)
+    );
+    assert_eq!(
+        selected_instance_scope_plan(ManagerListRow::WorkspaceInstance(4, 1)),
+        WorkspaceInstanceScopePlan::WorkspaceInstance(4)
+    );
+    assert_eq!(
+        selected_instance_scope_plan(ManagerListRow::NewWorkspace),
+        WorkspaceInstanceScopePlan::None
+    );
+}
+
+#[test]
 fn workspace_list_scroll_focus_plan_routes_mouse_regions() {
     assert_eq!(
         workspace_list_scroll_focus_plan(true, true, true, true, true, true),
