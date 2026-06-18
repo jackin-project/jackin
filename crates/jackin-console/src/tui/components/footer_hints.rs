@@ -96,6 +96,12 @@ pub struct WorkspaceFooterScrollFacts {
     pub show_collapse: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WorkspaceInlinePickerContentFacts {
+    pub agent_picker_count: Option<usize>,
+    pub role_picker_count: Option<usize>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkspaceScreenFooterFacts {
     List {
@@ -190,6 +196,14 @@ pub fn workspace_footer_scroll_axes(facts: WorkspaceFooterScrollFacts) -> Scroll
         return facts.list_names_scroll_axes;
     }
     ScrollAxes::none()
+}
+
+#[must_use]
+pub fn workspace_inline_picker_content_height(facts: WorkspaceInlinePickerContentFacts) -> usize {
+    facts
+        .agent_picker_count
+        .or(facts.role_picker_count)
+        .unwrap_or(0)
 }
 
 #[must_use]

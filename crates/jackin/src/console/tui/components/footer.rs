@@ -4,8 +4,9 @@ use crate::console::tui::layout::list::list_names_content_width;
 use crate::console::tui::state::{ManagerListRow, ManagerState};
 use jackin_config::AppConfig;
 use jackin_console::tui::components::footer_hints::{
-    WorkspaceFooterScrollFacts, WorkspaceListFooterFacts, selected_instance_snapshot_available,
-    workspace_footer_scroll_axes, workspace_list_footer_items,
+    WorkspaceFooterScrollFacts, WorkspaceInlinePickerContentFacts, WorkspaceListFooterFacts,
+    selected_instance_snapshot_available, workspace_footer_scroll_axes,
+    workspace_inline_picker_content_height, workspace_list_footer_items,
     workspace_list_footer_mode_for_facts, workspace_list_footer_row_facts,
 };
 use jackin_console::tui::list_geometry;
@@ -115,17 +116,16 @@ fn focused_block_scroll_axes(
 }
 
 fn inline_picker_scroll_axes(state: &ManagerState<'_>) -> ScrollAxes {
-    let content = state
-        .inline_agent_picker
-        .as_ref()
-        .map(|(_, picker)| picker.choices.len())
-        .or_else(|| {
-            state
-                .inline_role_picker
-                .as_ref()
-                .map(|picker| picker.filtered.len())
-        })
-        .unwrap_or(0);
+    let content = workspace_inline_picker_content_height(WorkspaceInlinePickerContentFacts {
+        agent_picker_count: state
+            .inline_agent_picker
+            .as_ref()
+            .map(|(_, picker)| picker.choices.len()),
+        role_picker_count: state
+            .inline_role_picker
+            .as_ref()
+            .map(|picker| picker.filtered.len()),
+    });
     list_geometry::workspace_inline_picker_scroll_axes(
         content,
         state.cached_term_size,

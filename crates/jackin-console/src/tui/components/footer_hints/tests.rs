@@ -209,6 +209,28 @@ fn workspace_footer_scroll_axes_prioritize_inline_then_focus_then_names() {
 }
 
 #[test]
+fn workspace_inline_picker_content_height_prefers_agent_picker() {
+    assert_eq!(
+        workspace_inline_picker_content_height(WorkspaceInlinePickerContentFacts {
+            agent_picker_count: Some(3),
+            role_picker_count: Some(9),
+        }),
+        3
+    );
+    assert_eq!(
+        workspace_inline_picker_content_height(WorkspaceInlinePickerContentFacts {
+            agent_picker_count: None,
+            role_picker_count: Some(9),
+        }),
+        9
+    );
+    assert_eq!(
+        workspace_inline_picker_content_height(WorkspaceInlinePickerContentFacts::default()),
+        0
+    );
+}
+
+#[test]
 fn workspace_screen_footer_prefers_modal_items() {
     let modal = vec![HintSpan::Key("Esc"), HintSpan::Text("dismiss")];
     let list = vec![HintSpan::Key("Q"), HintSpan::Text("quit")];
