@@ -316,6 +316,24 @@ pub fn workspace_visual_selected_index(
 }
 
 #[must_use]
+pub fn workspace_row_index(rows: &[ManagerListRow], row: ManagerListRow) -> Option<usize> {
+    rows.iter().position(|candidate| *candidate == row)
+}
+
+#[must_use]
+pub fn workspace_row_at(rows: &[ManagerListRow], idx: usize) -> Option<ManagerListRow> {
+    rows.get(idx).copied()
+}
+
+#[must_use]
+pub fn workspace_row_at_visual_index(
+    visual_rows: &[Option<ManagerListRow>],
+    idx: usize,
+) -> Option<ManagerListRow> {
+    visual_rows.get(idx).copied().flatten()
+}
+
+#[must_use]
 pub fn workspace_list_hover_row_at_position(
     visual_rows: &[Option<ManagerListRow>],
     col: u16,

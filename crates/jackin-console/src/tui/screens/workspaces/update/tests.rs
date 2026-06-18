@@ -251,6 +251,36 @@ fn workspace_visual_selected_index_skips_spacers() {
 }
 
 #[test]
+fn workspace_row_lookup_helpers_handle_selectable_and_visual_rows() {
+    let rows = [
+        ManagerListRow::CurrentDirectory,
+        ManagerListRow::SavedWorkspace(0),
+        ManagerListRow::NewWorkspace,
+    ];
+    let visual_rows = [
+        Some(ManagerListRow::CurrentDirectory),
+        None,
+        Some(ManagerListRow::SavedWorkspace(0)),
+        Some(ManagerListRow::NewWorkspace),
+    ];
+
+    assert_eq!(
+        workspace_row_index(&rows, ManagerListRow::SavedWorkspace(0)),
+        Some(1)
+    );
+    assert_eq!(
+        workspace_row_at(&rows, 2),
+        Some(ManagerListRow::NewWorkspace)
+    );
+    assert_eq!(workspace_row_at(&rows, 9), None);
+    assert_eq!(workspace_row_at_visual_index(&visual_rows, 1), None);
+    assert_eq!(
+        workspace_row_at_visual_index(&visual_rows, 2),
+        Some(ManagerListRow::SavedWorkspace(0))
+    );
+}
+
+#[test]
 fn destructive_confirm_states_name_targets() {
     let delete = workspace_delete_confirm_plan("alpha".to_owned());
     let delete_debug = format!("{:?}", delete.state);

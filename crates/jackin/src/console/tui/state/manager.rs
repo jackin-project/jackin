@@ -11,7 +11,8 @@ use jackin_console::tui::screens::workspaces::update::{
     WorkspaceCollapseSelectionPlan, collapse_current_dir_selection_plan,
     collapse_workspace_selection_plan, initial_workspace_selected_index,
     workspace_list_current_directory_selected, workspace_list_new_workspace_selected,
-    workspace_list_saved_workspace_index, workspace_visual_selected_index,
+    workspace_list_saved_workspace_index, workspace_row_at, workspace_row_at_visual_index,
+    workspace_row_index, workspace_visual_selected_index,
 };
 use jackin_env::OpCache;
 use jackin_tui::components::FocusOwner;
@@ -302,7 +303,7 @@ impl ManagerState<'_> {
     /// Returns the position of `row` in `selectable_rows_vec`, or `None`.
     #[must_use]
     pub fn index_of_row(&self, row: ManagerListRow) -> Option<usize> {
-        self.selectable_rows_vec().iter().position(|r| *r == row)
+        workspace_row_index(&self.selectable_rows_vec(), row)
     }
 
     // ── Core navigation ───────────────────────────────────────────
@@ -322,14 +323,14 @@ impl ManagerState<'_> {
     /// Decode a selectable-list index into a [`ManagerListRow`].
     #[must_use]
     pub fn row_at(&self, idx: usize) -> Option<ManagerListRow> {
-        self.selectable_rows_vec().get(idx).copied()
+        workspace_row_at(&self.selectable_rows_vec(), idx)
     }
 
     /// Decode a visual-list index (may include the non-selectable spacer)
     /// into a [`ManagerListRow`]. Returns `None` for the spacer row.
     #[must_use]
     pub fn row_at_visual_index(&self, idx: usize) -> Option<ManagerListRow> {
-        self.visual_rows_vec().get(idx).copied().flatten()
+        workspace_row_at_visual_index(&self.visual_rows_vec(), idx)
     }
 
     /// Visual-list index of the currently selected row (for ratatui
