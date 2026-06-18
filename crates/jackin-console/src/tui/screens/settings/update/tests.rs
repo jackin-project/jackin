@@ -979,6 +979,32 @@ fn settings_env_selected_key_is_op_ref_checks_selected_value_shape() {
 }
 
 #[test]
+fn settings_env_selected_is_op_ref_builds_current_rows() {
+    let pending = SettingsEnvConfig {
+        env: BTreeMap::from([(
+            "GLOBAL".to_owned(),
+            EnvValue::OpRef(jackin_core::OpRef {
+                op: "op://vault/item/password".to_owned(),
+                path: "Vault/Item/password".to_owned(),
+                account: None,
+            }),
+        )]),
+        roles: BTreeMap::new(),
+    };
+
+    assert!(settings_env_selected_is_op_ref(
+        &pending,
+        &BTreeSet::new(),
+        0
+    ));
+    assert!(!settings_env_selected_is_op_ref(
+        &pending,
+        &BTreeSet::new(),
+        usize::MAX,
+    ));
+}
+
+#[test]
 fn settings_env_delete_key_for_row_extracts_key_rows_only() {
     let key_row = SettingsEnvRow::Key {
         scope: SettingsEnvScope::Global,
@@ -995,6 +1021,30 @@ fn settings_env_delete_key_for_row_extracts_key_rows_only() {
     );
     assert_eq!(settings_env_delete_key_for_row(Some(&header)), None);
     assert_eq!(settings_env_delete_key_for_row(None), None);
+}
+
+#[test]
+fn settings_env_selected_delete_key_extracts_current_selected_key() {
+    let pending = env_config();
+    let expanded = BTreeSet::from(["alpha".to_owned()]);
+    let rows = settings_env_flat_rows(&pending, &expanded);
+    let selected = rows
+        .iter()
+        .position(|row| {
+            matches!(
+                row,
+                SettingsEnvRow::Key {
+                    scope: SettingsEnvScope::Role(role),
+                    key,
+                } if role == "alpha" && key == "ROLE_B"
+            )
+        })
+        .unwrap_or(usize::MAX);
+
+    assert_eq!(
+        settings_env_selected_delete_key(&pending, &expanded, selected),
+        Some("ROLE_B".to_owned())
+    );
 }
 
 #[test]

@@ -248,10 +248,9 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     };
     let footer_h = settings.cached_footer_h;
-    let rows = settings.env_flat_rows();
-    let selected_is_op_ref = settings_update::settings_env_selected_key_is_op_ref(
+    let selected_is_op_ref = settings_update::settings_env_selected_is_op_ref(
         &settings.env.pending,
-        &rows,
+        &settings.env.expanded,
         settings.env.selected,
     );
     let plan = settings_update::settings_env_key_plan(
@@ -1116,15 +1115,16 @@ fn open_settings_env_add_modal(settings: &mut crate::console::tui::state::Settin
 }
 
 fn open_settings_env_delete_confirm(settings: &mut crate::console::tui::state::SettingsState<'_>) {
-    let rows = settings.env_flat_rows();
-    let Some(key) =
-        settings_update::settings_env_delete_key_for_row(rows.get(settings.env.selected))
-    else {
+    let Some(key) = settings_update::settings_env_selected_delete_key(
+        &settings.env.pending,
+        &settings.env.expanded,
+        settings.env.selected,
+    ) else {
         return;
     };
     settings.env.modal = Some(SettingsEnvModal::Confirm {
         action: SettingsEnvConfirm::Delete,
-        state: settings_env_delete_confirm_state(key),
+        state: settings_env_delete_confirm_state(&key),
     });
 }
 

@@ -273,11 +273,31 @@ pub fn settings_env_selected_key_is_op_ref(
 }
 
 #[must_use]
+pub fn settings_env_selected_is_op_ref(
+    config: &SettingsEnvConfig<EnvValue>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+) -> bool {
+    let rows = settings_env_flat_rows(config, expanded_roles);
+    settings_env_selected_key_is_op_ref(config, &rows, selected)
+}
+
+#[must_use]
 pub fn settings_env_delete_key_for_row(row: Option<&SettingsEnvRow>) -> Option<&str> {
     match row {
         Some(SettingsEnvRow::Key { key, .. }) => Some(key.as_str()),
         _ => None,
     }
+}
+
+#[must_use]
+pub fn settings_env_selected_delete_key<V>(
+    pending: &SettingsEnvConfig<V>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+) -> Option<String> {
+    let rows = settings_env_flat_rows(pending, expanded_roles);
+    settings_env_delete_key_for_row(rows.get(selected)).map(str::to_owned)
 }
 
 #[must_use]
