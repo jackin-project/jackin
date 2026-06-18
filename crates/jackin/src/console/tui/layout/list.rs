@@ -7,7 +7,7 @@ use jackin_config::AppConfig;
 pub(crate) use jackin_console::tui::sidebar_layout::{
     ConfigSidebarInputs as SidebarInputs, ConfigSidebarSelectionInputs, GlobalMountRowsSelection,
     SelectedSidebarTarget, SidebarInstanceFacts, SidebarInstanceQuery, SidebarLayout,
-    SidebarScrollAreas,
+    SidebarScrollAreas, inline_picker_active as sidebar_inline_picker_active,
 };
 use jackin_console::tui::update::{list_pre_render_facts_from_scroll_areas, list_pre_render_plan};
 
@@ -160,8 +160,10 @@ pub(crate) fn sidebar_inputs_for_workspace<'a>(
     let ws_config = config.workspaces.get(&ws.name);
     let mounts = ws_config.map_or(&[][..], |w| w.mounts.as_slice());
     let picker_role = picker_role_from_state(state);
-    let inline_picker_active =
-        state.inline_role_picker.is_some() || state.inline_agent_picker.is_some();
+    let inline_picker_active = sidebar_inline_picker_active(
+        state.inline_role_picker.is_some(),
+        state.inline_agent_picker.is_some(),
+    );
     sidebar_inputs_for_selection(
         ConfigSidebarSelectionInputs {
             workdir: ws.workdir.as_str(),

@@ -80,6 +80,14 @@ fn inline_picker_role_prefers_role_picker_selection() {
 }
 
 #[test]
+fn inline_picker_active_accepts_either_picker() {
+    assert!(inline_picker_active(true, false));
+    assert!(inline_picker_active(false, true));
+    assert!(inline_picker_active(true, true));
+    assert!(!inline_picker_active(false, false));
+}
+
+#[test]
 fn omits_optional_blocks_without_consuming_slots() {
     let layout = compute_sidebar_layout(
         Rect::new(0, 0, 40, 30),

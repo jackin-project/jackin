@@ -112,6 +112,11 @@ pub fn inline_picker_role<Role>(
     selected_role_picker_role.or(agent_picker_role)
 }
 
+#[must_use]
+pub const fn inline_picker_active(role_picker_open: bool, agent_picker_open: bool) -> bool {
+    role_picker_open || agent_picker_open
+}
+
 /// Shared facts for the right-pane sidebar body. Root adapters supply concrete
 /// workspace/config rows; crate-owned layout helpers consume the generic shape.
 #[derive(Debug)]
