@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,420 lines, versus 143 Rust files and 56,941 lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,423 lines, versus 143 Rust files and 57,076 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -38,12 +38,12 @@ Approximate local inventory:
 
 | Area | Files | Lines | Current role |
 |---|---:|---:|---|
-| `crates/jackin/src/console` total | 80 | 34,420 | Remaining root console implementation |
+| `crates/jackin/src/console` total | 80 | 34,423 | Remaining root console implementation |
 | `domain.rs` | 1 | 149 | Role-source logging, provider derivation, and root instance snapshot alias |
 | `services.rs` + `services/` | 9 | 861 | Side-effect adapters around config, Docker, runtime, op, token setup |
 | `effects.rs` | 1 | 1,250 | Root effect executor and background polling |
 | `terminal.rs` | 1 | 50 | Host terminal ownership adapter |
-| `tui/` | 65 | 31,674 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
+| `tui/` | 65 | 31,677 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
 
 Largest root files:
 
@@ -143,6 +143,8 @@ Generic manager-stage assignment now lives behind `jackin-console/src/tui/app.rs
 Role-resolution status-overlay planning now lives in `jackin-console/src/tui/update.rs`; root prompt drawing applies the crate-owned overlay open/dismiss plans while retaining terminal draw ownership.
 
 Launch agent-prompt open/pending-role planning now lives in `jackin-console/src/tui/app.rs`; root manager state implements only the concrete inline picker storage hook.
+
+Launch role-picker open/pending-launch planning now lives in `jackin-console/src/tui/app.rs`; root launch dispatch keeps service resolution and list-error display only.
 
 Workspace-list name sidebar viewport, sidebar focus ownership, and selected-row follow-scroll planning now live in `jackin-console/src/tui/screens/workspaces/view.rs`; root supplies concrete row counts, selected index, area, scroll offset, and modal-open/focus facts.
 

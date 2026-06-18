@@ -9,6 +9,7 @@ use crate::console::tui::effect::ManagerEffect;
 use jackin_config::AppConfig;
 use jackin_console::tui::app::{
     ConsoleAnimationTick, ConsoleManagerStageState, LaunchAgentPromptManagerState,
+    LaunchRolePromptManagerState,
 };
 use jackin_console::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
 use jackin_console::tui::screens::workspaces::model::hovered_list_row;
@@ -861,6 +862,17 @@ impl LaunchAgentPromptManagerState<jackin_core::RoleSelector, jackin_core::Agent
 
     fn clear_launch_role_prompt(&mut self) {
         self.inline_role_picker = None;
+    }
+}
+
+impl LaunchRolePromptManagerState<jackin_core::RoleSelector> for ManagerState<'_> {
+    fn open_launch_role_prompt(
+        &mut self,
+        picker: jackin_console::tui::components::role_picker::RolePickerState<
+            jackin_core::RoleSelector,
+        >,
+    ) {
+        self.inline_role_picker = Some(picker);
     }
 }
 

@@ -7,6 +7,7 @@
 use jackin_config::AppConfig;
 use jackin_config::{LoadWorkspaceInput, ResolvedWorkspace};
 use jackin_console::services::launch::LaunchDispatchResolution;
+use jackin_console::tui::app::{clear_pending_launch_plan, open_launch_role_prompt_plan};
 use jackin_console::tui::components::error_popup::{
     no_eligible_roles_error_message, no_eligible_roles_error_title,
 };
@@ -43,8 +44,7 @@ pub fn dispatch_launch_for_workspace(
                     },
                 );
             }
-            state.pending_launch = None;
-            state.pending_launch_role = None;
+            clear_pending_launch_plan(state);
         }
         LaunchDispatchResolution::SingleRole { role, workspace } => {
             return Ok(Some((role, workspace, None)));
@@ -54,16 +54,7 @@ pub fn dispatch_launch_for_workspace(
             roles,
             selected,
         } => {
-            state.pending_launch = Some(input);
-            state.pending_launch_role = None;
-            if let ConsoleStage::Manager(ms) = &mut state.stage {
-                let mut picker =
-                    jackin_console::tui::components::role_picker::RolePickerState::launch(roles);
-                if let Some(selected) = selected {
-                    picker.list_state.select(Some(selected));
-                }
-                ms.inline_role_picker = Some(picker);
-            }
+            open_launch_role_prompt_plan(state, input, roles, selected);
         }
     }
     Ok(None)

@@ -75,6 +75,77 @@ where
     }
 }
 
+pub trait LaunchRolePromptManagerState<RoleSelector>
+where
+    RoleSelector: crate::tui::components::role_picker::RoleChoice,
+{
+    fn open_launch_role_prompt(
+        &mut self,
+        picker: crate::tui::components::role_picker::RolePickerState<RoleSelector>,
+    );
+}
+
+pub fn open_launch_role_prompt_plan<LaunchInput, RoleSelector>(
+    state: &mut impl LaunchRolePromptState<LaunchInput, RoleSelector>,
+    input: LaunchInput,
+    roles: Vec<RoleSelector>,
+    selected: Option<usize>,
+) where
+    RoleSelector: crate::tui::components::role_picker::RoleChoice,
+{
+    state.open_launch_role_prompt(input, roles, selected);
+}
+
+pub fn clear_pending_launch_plan<LaunchInput, RoleSelector>(
+    state: &mut impl LaunchRolePromptState<LaunchInput, RoleSelector>,
+) where
+    RoleSelector: crate::tui::components::role_picker::RoleChoice,
+{
+    state.clear_pending_launch();
+}
+
+pub trait LaunchRolePromptState<LaunchInput, RoleSelector>
+where
+    RoleSelector: crate::tui::components::role_picker::RoleChoice,
+{
+    fn open_launch_role_prompt(
+        &mut self,
+        input: LaunchInput,
+        roles: Vec<RoleSelector>,
+        selected: Option<usize>,
+    );
+
+    fn clear_pending_launch(&mut self);
+}
+
+impl<Manager, LaunchInput, RoleSelector, OpCache> LaunchRolePromptState<LaunchInput, RoleSelector>
+    for ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache>
+where
+    Manager: LaunchRolePromptManagerState<RoleSelector>,
+    RoleSelector: crate::tui::components::role_picker::RoleChoice,
+{
+    fn open_launch_role_prompt(
+        &mut self,
+        input: LaunchInput,
+        roles: Vec<RoleSelector>,
+        selected: Option<usize>,
+    ) {
+        let mut picker = crate::tui::components::role_picker::RolePickerState::launch(roles);
+        if let Some(selected) = selected {
+            picker.list_state.select(Some(selected));
+        }
+        let ConsoleAppStage::Manager(manager) = &mut self.stage;
+        manager.open_launch_role_prompt(picker);
+        self.pending_launch = Some(input);
+        self.pending_launch_role = None;
+    }
+
+    fn clear_pending_launch(&mut self) {
+        self.pending_launch = None;
+        self.pending_launch_role = None;
+    }
+}
+
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum ConsoleManagerStage<CreatePrelude, Editor, Settings> {
@@ -2432,6 +2503,18 @@ mod tests {
         opened_role: Option<&'static str>,
         picker_choices: Vec<jackin_core::Agent>,
         role_prompt_cleared: bool,
+        role_picker_keys: Vec<&'static str>,
+        role_picker_selected: Option<usize>,
+        role_picker_confirm_label: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct TestPromptRole(&'static str);
+
+    impl crate::tui::components::role_picker::RoleChoice for TestPromptRole {
+        fn key(&self) -> String {
+            self.0.to_owned()
+        }
     }
 
     impl super::LaunchAgentPromptManagerState<&'static str, jackin_core::Agent>
@@ -2448,6 +2531,17 @@ mod tests {
 
         fn clear_launch_role_prompt(&mut self) {
             self.role_prompt_cleared = true;
+        }
+    }
+
+    impl super::LaunchRolePromptManagerState<TestPromptRole> for TestLaunchPromptManager {
+        fn open_launch_role_prompt(
+            &mut self,
+            picker: crate::tui::components::role_picker::RolePickerState<TestPromptRole>,
+        ) {
+            self.role_picker_keys = picker.roles.iter().map(|role| role.0).collect();
+            self.role_picker_selected = picker.list_state.selected;
+            self.role_picker_confirm_label = picker.confirm_label;
         }
     }
 
@@ -2470,6 +2564,47 @@ mod tests {
         assert_eq!(manager.opened_role, Some("architect"));
         assert_eq!(manager.picker_choices, vec![jackin_core::Agent::Claude]);
         assert!(manager.role_prompt_cleared);
+    }
+
+    #[test]
+    fn open_launch_role_prompt_plan_updates_app_and_manager() {
+        let mut app: ConsoleApp<TestLaunchPromptManager, &'static str, TestPromptRole, ()> =
+            ConsoleApp::new(
+                ConsoleAppStage::Manager(TestLaunchPromptManager::default()),
+                (),
+                false,
+            );
+
+        super::open_launch_role_prompt_plan(
+            &mut app,
+            "workspace-input",
+            vec![TestPromptRole("architect"), TestPromptRole("reviewer")],
+            Some(1),
+        );
+
+        assert_eq!(app.pending_launch, Some("workspace-input"));
+        assert_eq!(app.pending_launch_role, None);
+        let ConsoleAppStage::Manager(manager) = app.stage;
+        assert_eq!(manager.role_picker_keys, vec!["architect", "reviewer"]);
+        assert_eq!(manager.role_picker_selected, Some(1));
+        assert_eq!(manager.role_picker_confirm_label, "launch");
+    }
+
+    #[test]
+    fn clear_pending_launch_plan_clears_launch_state() {
+        let mut app: ConsoleApp<TestLaunchPromptManager, &'static str, TestPromptRole, ()> =
+            ConsoleApp::new(
+                ConsoleAppStage::Manager(TestLaunchPromptManager::default()),
+                (),
+                false,
+            );
+        app.pending_launch = Some("workspace-input");
+        app.pending_launch_role = Some(TestPromptRole("architect"));
+
+        super::clear_pending_launch_plan(&mut app);
+
+        assert_eq!(app.pending_launch, None);
+        assert_eq!(app.pending_launch_role, None);
     }
 
     impl ModalConfirmState for TestConfirm {
