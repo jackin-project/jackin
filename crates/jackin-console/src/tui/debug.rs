@@ -105,6 +105,26 @@ pub enum ConsoleStageDebug {
     },
 }
 
+pub trait ConsoleModalDebugKind {
+    fn modal_debug_kind(&self) -> ModalDebugKind;
+}
+
+pub trait ConsoleSettingsMountModalDebugKind {
+    fn settings_mount_modal_debug_kind(&self) -> SettingsMountModalDebugKind;
+}
+
+pub trait ConsoleEditorDebugFacts {
+    fn editor_stage_debug(&self) -> ConsoleStageDebug;
+}
+
+pub trait ConsoleCreatePreludeDebugFacts {
+    fn create_prelude_stage_debug(&self) -> ConsoleStageDebug;
+}
+
+pub trait ConsoleSettingsDebugFacts {
+    fn settings_stage_debug(&self) -> ConsoleStageDebug;
+}
+
 #[must_use]
 pub fn console_location_debug_name(location: &ConsoleLocationDebug) -> String {
     if location.quit_confirm {

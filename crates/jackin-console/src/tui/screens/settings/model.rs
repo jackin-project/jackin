@@ -1023,6 +1023,30 @@ impl<
     }
 }
 
+impl<
+    TextInputState,
+    FileBrowserState,
+    MountDstChoiceState,
+    ScopePickerState,
+    RolePickerState,
+    ConfirmState,
+    ConfirmSaveState,
+> crate::tui::debug::ConsoleSettingsMountModalDebugKind
+    for GlobalMountModal<
+        TextInputState,
+        FileBrowserState,
+        MountDstChoiceState,
+        ScopePickerState,
+        RolePickerState,
+        ConfirmState,
+        ConfirmSaveState,
+    >
+{
+    fn settings_mount_modal_debug_kind(&self) -> crate::tui::debug::SettingsMountModalDebugKind {
+        self.debug_kind()
+    }
+}
+
 #[derive(Debug)]
 pub struct GlobalMountsState<Row, Modal> {
     pub selected: usize,
@@ -1826,6 +1850,42 @@ impl<
 {
     fn settings_cached_footer_height(&self) -> u16 {
         self.cached_footer_h
+    }
+}
+
+impl<
+    MountRow,
+    MountModal,
+    EnvValue,
+    EnvModal,
+    AuthValue,
+    AuthModal,
+    PendingOpCommit,
+    Trust,
+    ErrorPopup,
+    PendingToken,
+> crate::tui::debug::ConsoleSettingsDebugFacts
+    for SettingsState<
+        GlobalMountsState<MountRow, MountModal>,
+        SettingsEnvState<EnvValue, EnvModal>,
+        SettingsAuthState<AuthValue, AuthModal, PendingOpCommit>,
+        Trust,
+        ErrorPopup,
+        PendingToken,
+    >
+where
+    MountModal: crate::tui::debug::ConsoleSettingsMountModalDebugKind,
+{
+    fn settings_stage_debug(&self) -> crate::tui::debug::ConsoleStageDebug {
+        crate::tui::debug::ConsoleStageDebug::Settings {
+            tab: format!("{:?}", self.active_tab),
+            selected: self.mounts.selected,
+            modal: self
+                .mounts
+                .modal
+                .as_ref()
+                .map(crate::tui::debug::ConsoleSettingsMountModalDebugKind::settings_mount_modal_debug_kind),
+        }
     }
 }
 

@@ -13,6 +13,10 @@ use crate::tui::components::modal_rects::{
     ModalContainerInfoState, ModalErrorPopupState, ModalGithubPickerState, ModalOpPickerState,
     ModalRectMode, ModalRolePickerState,
 };
+use crate::tui::debug::{
+    ConsoleCreatePreludeDebugFacts, ConsoleEditorDebugFacts, ConsoleModalDebugKind,
+    ConsoleSettingsDebugFacts, ConsoleStageDebug,
+};
 use crate::tui::screens::editor::model::CreateStep;
 
 /// Single-variant today; kept as `enum` so future stages can land without
@@ -227,6 +231,25 @@ where
     }
 }
 
+impl<CreatePrelude, Editor, Settings> ConsoleManagerStage<CreatePrelude, Editor, Settings>
+where
+    CreatePrelude: ConsoleCreatePreludeDebugFacts,
+    Editor: ConsoleEditorDebugFacts,
+    Settings: ConsoleSettingsDebugFacts,
+{
+    #[must_use]
+    pub fn debug_stage(&self) -> ConsoleStageDebug {
+        match self {
+            Self::List => ConsoleStageDebug::List,
+            Self::Editor(editor) => editor.editor_stage_debug(),
+            Self::Settings(settings) => settings.settings_stage_debug(),
+            Self::CreatePrelude(prelude) => prelude.create_prelude_stage_debug(),
+            Self::ConfirmDelete { .. } => ConsoleStageDebug::ConfirmDelete,
+            Self::ConfirmInstancePurge { .. } => ConsoleStageDebug::ConfirmInstancePurge,
+        }
+    }
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum ConsoleModal<
@@ -405,6 +428,60 @@ impl<
             self,
             editing_existing_workspace,
         )
+    }
+}
+
+impl<
+    TextInputTarget,
+    TextInputState,
+    FileBrowserTarget,
+    FileBrowserState,
+    MountDstChoiceState,
+    WorkdirPickState,
+    ConfirmTarget,
+    ConfirmState,
+    SaveDiscardState,
+    GithubPickerState,
+    ConfirmSaveState,
+    ErrorPopupState,
+    ContainerInfoState,
+    StatusPopupState,
+    OpPickerState,
+    RolePickerState,
+    SourcePickerState,
+    ScopePickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+    SecretsScopeTag,
+> ConsoleModalDebugKind
+    for ConsoleModal<
+        TextInputTarget,
+        TextInputState,
+        FileBrowserTarget,
+        FileBrowserState,
+        MountDstChoiceState,
+        WorkdirPickState,
+        ConfirmTarget,
+        ConfirmState,
+        SaveDiscardState,
+        GithubPickerState,
+        ConfirmSaveState,
+        ErrorPopupState,
+        ContainerInfoState,
+        StatusPopupState,
+        OpPickerState,
+        RolePickerState,
+        SourcePickerState,
+        ScopePickerState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+        SecretsScopeTag,
+    >
+{
+    fn modal_debug_kind(&self) -> crate::tui::debug::ModalDebugKind {
+        self.debug_kind()
     }
 }
 
@@ -1350,6 +1427,21 @@ impl<Modal> ConsoleCreatePreludeModalPresence for ConsoleCreatePreludeState<Moda
     }
 }
 
+impl<Modal> ConsoleCreatePreludeDebugFacts for ConsoleCreatePreludeState<Modal>
+where
+    Modal: ConsoleModalDebugKind,
+{
+    fn create_prelude_stage_debug(&self) -> ConsoleStageDebug {
+        ConsoleStageDebug::CreatePrelude {
+            step: format!("{:?}", self.step),
+            modal: self
+                .modal
+                .as_ref()
+                .map(ConsoleModalDebugKind::modal_debug_kind),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CreatePreludeCompletionStatus {
     InProgress,
@@ -1703,6 +1795,7 @@ mod tests {
         ModalErrorPopupState, ModalGithubPickerState, ModalOpPickerState, ModalRectMode,
         ModalRolePickerState,
     };
+    use crate::tui::debug::{ConsoleStageDebug, ModalDebugKind};
     use crate::tui::screens::editor::model::CreateStep;
 
     use super::{
@@ -1737,6 +1830,17 @@ mod tests {
         }
     }
 
+    impl super::ConsoleEditorDebugFacts for TestEditor {
+        fn editor_stage_debug(&self) -> ConsoleStageDebug {
+            ConsoleStageDebug::Editor {
+                mode: "TestMode".to_owned(),
+                tab: "TestTab".to_owned(),
+                field: "TestField".to_owned(),
+                modal: self.modal_open.then_some(ModalDebugKind::TextInput),
+            }
+        }
+    }
+
     struct TestSettings {
         facts: ConsoleStageModalFacts,
         footer_height: u16,
@@ -1751,6 +1855,24 @@ mod tests {
     impl super::ConsoleSettingsFooterHeight for TestSettings {
         fn settings_cached_footer_height(&self) -> u16 {
             self.footer_height
+        }
+    }
+
+    impl super::ConsoleSettingsDebugFacts for TestSettings {
+        fn settings_stage_debug(&self) -> ConsoleStageDebug {
+            ConsoleStageDebug::Settings {
+                tab: "Mounts".to_owned(),
+                selected: 2,
+                modal: None,
+            }
+        }
+    }
+
+    struct TestDebugModal;
+
+    impl super::ConsoleModalDebugKind for TestDebugModal {
+        fn modal_debug_kind(&self) -> ModalDebugKind {
+            ModalDebugKind::ErrorPopup
         }
     }
 
@@ -1901,6 +2023,60 @@ mod tests {
                 workspace_footer_height: 2,
                 editor_footer_height: 0,
                 settings_footer_height: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn console_manager_stage_reports_debug_stage() {
+        type Stage = ConsoleManagerStage<
+            ConsoleCreatePreludeState<TestDebugModal>,
+            TestEditor,
+            TestSettings,
+        >;
+
+        assert_eq!(Stage::List.debug_stage(), ConsoleStageDebug::List);
+        assert_eq!(
+            Stage::Editor(TestEditor {
+                modal_open: true,
+                footer_height: 4,
+            })
+            .debug_stage(),
+            ConsoleStageDebug::Editor {
+                mode: "TestMode".to_owned(),
+                tab: "TestTab".to_owned(),
+                field: "TestField".to_owned(),
+                modal: Some(ModalDebugKind::TextInput),
+            }
+        );
+        assert_eq!(
+            Stage::CreatePrelude(ConsoleCreatePreludeState {
+                step: CreateStep::PickFirstMountSrc,
+                pending_mount_src: None,
+                pending_mount_dst: None,
+                pending_readonly: false,
+                pending_workdir: None,
+                pending_name: None,
+                modal: Some(TestDebugModal),
+                last_browser_cwd: None,
+                used_edit_dst: false,
+            })
+            .debug_stage(),
+            ConsoleStageDebug::CreatePrelude {
+                step: "PickFirstMountSrc".to_owned(),
+                modal: Some(ModalDebugKind::ErrorPopup),
+            }
+        );
+        assert_eq!(
+            Stage::Settings(TestSettings {
+                facts: ConsoleStageModalFacts::default(),
+                footer_height: 6,
+            })
+            .debug_stage(),
+            ConsoleStageDebug::Settings {
+                tab: "Mounts".to_owned(),
+                selected: 2,
+                modal: None,
             }
         );
     }
@@ -2455,10 +2631,7 @@ mod tests {
             state: (),
         };
 
-        assert_eq!(
-            modal.debug_kind(),
-            crate::tui::debug::ModalDebugKind::TextInput
-        );
+        assert_eq!(modal.debug_kind(), ModalDebugKind::TextInput);
     }
 
     #[test]

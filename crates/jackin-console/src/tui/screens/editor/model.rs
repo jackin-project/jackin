@@ -372,6 +372,48 @@ impl<
     PendingDriftCheck,
     PendingIsolationCleanup,
     PendingOpCommit,
+> crate::tui::debug::ConsoleEditorDebugFacts
+    for EditorState<
+        WorkspaceConfig,
+        MountInfoCache,
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >
+where
+    Modal: crate::tui::debug::ConsoleModalDebugKind,
+{
+    fn editor_stage_debug(&self) -> crate::tui::debug::ConsoleStageDebug {
+        crate::tui::debug::ConsoleStageDebug::Editor {
+            mode: format!("{:?}", self.mode),
+            tab: format!("{:?}", self.active_tab),
+            field: format!("{:?}", self.active_field),
+            modal: self
+                .modal
+                .as_ref()
+                .map(crate::tui::debug::ConsoleModalDebugKind::modal_debug_kind),
+        }
+    }
+}
+
+impl<
+    WorkspaceConfig,
+    MountInfoCache,
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
 >
     EditorState<
         WorkspaceConfig,
