@@ -32,11 +32,11 @@ use jackin_console::tui::screens::workspaces::update::{
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
-    DismissibleModalPlan, InlinePickerShellPlan, InlineProviderFollowupPlan, ListGithubPickerPlan,
-    ListRolePickerPlan, dismissible_modal_plan, inline_picker_shell_plan,
-    inline_provider_followup_plan, list_github_picker_plan, list_role_picker_plan,
+    DismissibleModalPlan, InlinePickerPlan, InlinePickerShellPlan, InlineProviderFollowupPlan,
+    ListGithubPickerPlan, ListRolePickerPlan, dismissible_modal_plan, inline_picker_plan,
+    inline_picker_shell_plan, inline_provider_followup_plan, list_github_picker_plan,
+    list_role_picker_plan,
 };
-use jackin_tui::ModalOutcome;
 
 #[allow(
     clippy::too_many_lines,
@@ -580,16 +580,16 @@ pub(super) fn handle_inline_role_picker(
             InputOutcome::Continue
         }
         InlinePickerShellPlan::Exit => InputOutcome::ExitJackin,
-        InlinePickerShellPlan::Delegate => match picker.handle_key(key) {
-            ModalOutcome::Commit(role) => {
+        InlinePickerShellPlan::Delegate => match inline_picker_plan(picker.handle_key(key)) {
+            InlinePickerPlan::Commit(role) => {
                 dispatch_manager(state, ManagerMessage::DismissInlineRolePicker);
                 InputOutcome::LaunchWithAgent(role)
             }
-            ModalOutcome::Cancel => {
+            InlinePickerPlan::Dismiss => {
                 dispatch_manager(state, ManagerMessage::DismissInlineRolePicker);
                 InputOutcome::Continue
             }
-            ModalOutcome::Continue => InputOutcome::Continue,
+            InlinePickerPlan::Continue => InputOutcome::Continue,
         },
     }
 }
@@ -607,16 +607,16 @@ pub(super) fn handle_inline_agent_picker(
             InputOutcome::Continue
         }
         InlinePickerShellPlan::Exit => InputOutcome::ExitJackin,
-        InlinePickerShellPlan::Delegate => match picker.handle_key(key) {
-            ModalOutcome::Commit(agent) => {
+        InlinePickerShellPlan::Delegate => match inline_picker_plan(picker.handle_key(key)) {
+            InlinePickerPlan::Commit(agent) => {
                 dispatch_manager(state, ManagerMessage::DismissInlineAgentPicker);
                 InputOutcome::LaunchWithRuntimeAgent(agent)
             }
-            ModalOutcome::Cancel => {
+            InlinePickerPlan::Dismiss => {
                 dispatch_manager(state, ManagerMessage::DismissInlineAgentPicker);
                 InputOutcome::Continue
             }
-            ModalOutcome::Continue => InputOutcome::Continue,
+            InlinePickerPlan::Continue => InputOutcome::Continue,
         },
     }
 }
@@ -633,8 +633,8 @@ pub(super) fn handle_new_session_picker(
     let Some((container, picker, providers)) = state.inline_new_session_picker.as_mut() else {
         return InputOutcome::Continue;
     };
-    match picker.handle_key(key) {
-        ModalOutcome::Commit(agent) => {
+    match inline_picker_plan(picker.handle_key(key)) {
+        InlinePickerPlan::Commit(agent) => {
             let container = container.clone();
             // Running-container path passes an empty list → no provider picker.
             let plan = inline_provider_followup_plan(container, agent, providers.clone());
@@ -652,11 +652,11 @@ pub(super) fn handle_new_session_picker(
                 }
             }
         }
-        ModalOutcome::Cancel => {
+        InlinePickerPlan::Dismiss => {
             dispatch_manager(state, ManagerMessage::DismissInlineSessionPicker);
             InputOutcome::Continue
         }
-        ModalOutcome::Continue => InputOutcome::Continue,
+        InlinePickerPlan::Continue => InputOutcome::Continue,
     }
 }
 

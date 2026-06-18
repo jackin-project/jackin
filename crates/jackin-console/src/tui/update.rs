@@ -37,6 +37,13 @@ pub enum InlinePickerShellPlan {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InlinePickerPlan<T> {
+    Commit(T),
+    Dismiss,
+    Continue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListGithubPickerPlan {
     OpenUrl(String),
     Dismiss,
@@ -168,6 +175,15 @@ pub fn inline_picker_shell_plan(key: KeyEvent, exit_on_q: bool) -> InlinePickerS
         KeyCode::Right | KeyCode::Char('l' | 'L') => InlinePickerShellPlan::ScrollHorizontal(8),
         KeyCode::Char('q' | 'Q') if exit_on_q => InlinePickerShellPlan::Exit,
         _ => InlinePickerShellPlan::Delegate,
+    }
+}
+
+#[must_use]
+pub fn inline_picker_plan<T>(outcome: jackin_tui::ModalOutcome<T>) -> InlinePickerPlan<T> {
+    match outcome {
+        jackin_tui::ModalOutcome::Commit(value) => InlinePickerPlan::Commit(value),
+        jackin_tui::ModalOutcome::Cancel => InlinePickerPlan::Dismiss,
+        jackin_tui::ModalOutcome::Continue => InlinePickerPlan::Continue,
     }
 }
 

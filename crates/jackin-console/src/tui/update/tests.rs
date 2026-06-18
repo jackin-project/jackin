@@ -207,6 +207,22 @@ fn inline_picker_shell_plan_routes_scroll_exit_and_delegate() {
 }
 
 #[test]
+fn inline_picker_plan_routes_modal_outcomes() {
+    assert_eq!(
+        inline_picker_plan(jackin_tui::ModalOutcome::Commit("agent-smith")),
+        InlinePickerPlan::Commit("agent-smith")
+    );
+    assert_eq!(
+        inline_picker_plan::<&str>(jackin_tui::ModalOutcome::Cancel),
+        InlinePickerPlan::Dismiss
+    );
+    assert_eq!(
+        inline_picker_plan::<&str>(jackin_tui::ModalOutcome::Continue),
+        InlinePickerPlan::Continue
+    );
+}
+
+#[test]
 fn list_github_picker_plan_routes_picker_outcomes() {
     assert_eq!(
         list_github_picker_plan(jackin_tui::ModalOutcome::Commit(
