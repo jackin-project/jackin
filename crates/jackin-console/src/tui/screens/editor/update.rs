@@ -357,6 +357,29 @@ pub const fn editor_mount_add_row_selected(selected_row: usize, mount_count: usi
     selected_row == mount_count
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorGeneralFieldModalPlan {
+    RenameWorkspace,
+    PickWorkdir,
+    None,
+}
+
+#[must_use]
+pub const fn editor_general_field_modal_plan(
+    active_tab: EditorTab,
+    selected_row: usize,
+    has_mounts: bool,
+) -> EditorGeneralFieldModalPlan {
+    if !matches!(active_tab, EditorTab::General) {
+        return EditorGeneralFieldModalPlan::None;
+    }
+    match selected_row {
+        0 => EditorGeneralFieldModalPlan::RenameWorkspace,
+        1 if has_mounts => EditorGeneralFieldModalPlan::PickWorkdir,
+        _ => EditorGeneralFieldModalPlan::None,
+    }
+}
+
 #[must_use]
 pub const fn editor_role_add_row_selected(selected_row: usize, role_count: usize) -> bool {
     selected_row == role_count

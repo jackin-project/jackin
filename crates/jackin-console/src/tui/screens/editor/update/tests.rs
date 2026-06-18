@@ -72,6 +72,26 @@ fn editor_tab_at_position_maps_tab_strip_cells() {
 }
 
 #[test]
+fn editor_general_field_modal_plan_routes_editable_rows() {
+    assert_eq!(
+        editor_general_field_modal_plan(EditorTab::General, 0, false),
+        EditorGeneralFieldModalPlan::RenameWorkspace
+    );
+    assert_eq!(
+        editor_general_field_modal_plan(EditorTab::General, 1, true),
+        EditorGeneralFieldModalPlan::PickWorkdir
+    );
+    assert_eq!(
+        editor_general_field_modal_plan(EditorTab::General, 1, false),
+        EditorGeneralFieldModalPlan::None
+    );
+    assert_eq!(
+        editor_general_field_modal_plan(EditorTab::Mounts, 0, true),
+        EditorGeneralFieldModalPlan::None
+    );
+}
+
+#[test]
 fn editor_auth_kind_entry_plan_selects_kind_and_resets_view_state() {
     assert_eq!(
         enter_editor_auth_kind_plan(TestAuthKind::Claude),
