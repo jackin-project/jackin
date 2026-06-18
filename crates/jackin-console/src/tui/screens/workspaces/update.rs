@@ -237,6 +237,14 @@ pub const fn collapse_current_dir_selection_plan(
 }
 
 #[must_use]
+pub const fn collapsed_current_dir_selected_index(selected_row: ManagerListRow) -> Option<usize> {
+    match collapse_current_dir_selection_plan(selected_row) {
+        WorkspaceCollapseSelectionPlan::Parent => Some(0),
+        WorkspaceCollapseSelectionPlan::Clamp => None,
+    }
+}
+
+#[must_use]
 pub const fn collapse_workspace_selection_plan(
     row: ManagerListRow,
     workspace_idx: usize,

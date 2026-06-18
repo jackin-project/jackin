@@ -333,8 +333,16 @@ fn collapse_selection_plans_route_child_rows_to_parent() {
         WorkspaceCollapseSelectionPlan::Parent
     );
     assert_eq!(
+        collapsed_current_dir_selected_index(ManagerListRow::CurrentDirectoryInstance(2)),
+        Some(0)
+    );
+    assert_eq!(
         collapse_current_dir_selection_plan(ManagerListRow::SavedWorkspace(1)),
         WorkspaceCollapseSelectionPlan::Clamp
+    );
+    assert_eq!(
+        collapsed_current_dir_selected_index(ManagerListRow::SavedWorkspace(1)),
+        None
     );
     assert_eq!(
         collapse_workspace_selection_plan(ManagerListRow::WorkspaceInstance(3, 1), 3),

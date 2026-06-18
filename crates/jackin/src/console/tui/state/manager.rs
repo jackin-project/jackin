@@ -9,12 +9,12 @@ use crate::console::tui::effect::ManagerEffect;
 use jackin_config::AppConfig;
 use jackin_console::tui::screens::workspaces::model::hovered_list_row;
 use jackin_console::tui::screens::workspaces::update::{
-    WorkspaceCollapseSelectionPlan, collapse_current_dir_selection_plan,
-    collapsed_workspace_selected_index, initial_workspace_selected_index,
-    preview_pane_selected_index, selected_index, workspace_last_selectable_index,
-    workspace_list_current_directory_selected, workspace_list_new_workspace_selected,
-    workspace_list_saved_workspace_index, workspace_row_at, workspace_row_at_visual_index,
-    workspace_row_index, workspace_selected_row, workspace_visual_selected_index,
+    collapsed_current_dir_selected_index, collapsed_workspace_selected_index,
+    initial_workspace_selected_index, preview_pane_selected_index, selected_index,
+    workspace_last_selectable_index, workspace_list_current_directory_selected,
+    workspace_list_new_workspace_selected, workspace_list_saved_workspace_index, workspace_row_at,
+    workspace_row_at_visual_index, workspace_row_index, workspace_selected_row,
+    workspace_visual_selected_index,
 };
 use jackin_env::OpCache;
 use jackin_tui::components::FocusOwner;
@@ -470,10 +470,10 @@ impl ManagerState<'_> {
         if !self.current_dir_expanded {
             return;
         }
-        let selection_plan = collapse_current_dir_selection_plan(self.selected_row());
+        let selected = collapsed_current_dir_selected_index(self.selected_row());
         self.current_dir_expanded = false;
-        if selection_plan == WorkspaceCollapseSelectionPlan::Parent {
-            self.selected = 0; // CurrentDirectory is always row 0
+        if let Some(selected) = selected {
+            self.selected = selected;
         }
     }
 
