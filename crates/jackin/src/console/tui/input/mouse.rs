@@ -28,7 +28,6 @@ use jackin_console::tui::layout::{
 use jackin_console::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
 #[cfg(test)]
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width as workspace_mounts_content_width;
-use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::editor::update::{
     auth_focusable_index_at_visual_row, editor_mount_index_at_visual_row, editor_scroll_focus_plan,
     editor_tab_at_position,
@@ -1551,10 +1550,7 @@ fn editor_scroll_area(
 ) -> ScrollArea {
     ScrollArea {
         area: editor.content_area(term_size),
-        content_width: workspace_config_mounts_content_width_with_cache(
-            editor.pending.mounts.as_slice(),
-            &editor.mount_info_cache,
-        ),
+        content_width: editor.workspace_mounts_content_width(),
     }
 }
 

@@ -1013,15 +1013,19 @@ impl<
     >
 {
     #[must_use]
+    pub fn workspace_mounts_content_width(&self) -> usize {
+        crate::tui::mount_display::workspace_config_mounts_content_width_with_cache(
+            &self.pending.mounts,
+            &self.mount_info_cache,
+        )
+    }
+
+    #[must_use]
     pub fn horizontal_scroll_key_plan(&self, delta: i16) -> EditorHorizontalScrollKeyPlan {
         if self.active_tab == EditorTab::Mounts {
             return EditorHorizontalScrollKeyPlan::WorkspaceMounts {
                 delta,
-                content_width:
-                    crate::tui::mount_display::workspace_config_mounts_content_width_with_cache(
-                        &self.pending.mounts,
-                        &self.mount_info_cache,
-                    ),
+                content_width: self.workspace_mounts_content_width(),
             };
         }
         EditorHorizontalScrollKeyPlan::TabContent {
@@ -1672,11 +1676,7 @@ mod tests {
         );
 
         editor.active_tab = EditorTab::Mounts;
-        let expected_content_width =
-            crate::tui::mount_display::workspace_config_mounts_content_width_with_cache(
-                &editor.pending.mounts,
-                &editor.mount_info_cache,
-            );
+        let expected_content_width = editor.workspace_mounts_content_width();
         assert_eq!(
             editor.horizontal_scroll_key_plan(8),
             EditorHorizontalScrollKeyPlan::WorkspaceMounts {
