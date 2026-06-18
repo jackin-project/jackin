@@ -149,7 +149,9 @@ Why this rule exists: confirms are the operator's "are you sure?" gate. They app
 
 **`Ctrl+Q` is the universal quit chord.** It opens the exit confirmation on the console, the launch cockpit, and the capsule — regardless of screen or focus, since it is a control chord rather than a text character. The console also accepts a bare `q` off the main screen as a convenience, but `Ctrl+Q` always works. Default focus = `No`, so a reflexive Enter dismisses rather than quits.
 
-**`Ctrl+C` is not a quit confirmation — it is an immediate hard cancel** during launch: it aborts the in-progress launch at once, with no dialog, and wins even when the exit confirmation is already open. `Ctrl+Q` asks first and is reversible (No resumes); `Ctrl+C` does not ask.
+**`Ctrl+C` is not a quit confirmation — it is an immediate hard exit.** On the launch cockpit it aborts the in-progress launch at once; on the console it quits at once. Either way there is no dialog, and it wins even when the exit confirmation is already open. `Ctrl+Q` asks first and is reversible (No resumes); `Ctrl+C` does not ask. (In the capsule, `Ctrl+C` belongs to the focused agent's PTY as SIGINT and is not intercepted; quit there is `Ctrl+Q`.)
+
+**The exit confirmation preserves the bottom chrome.** The dialog dims only the body and centers in it; the hint row, the blank separator, and the status bar render beneath it in the usual order, so the status bar (always present in `--debug`, per [chrome](/reference/tui/chrome)) is never hidden by the dialog. This is the same overlay shape every launch overlay uses.
 
 **The capsule's exit confirmation carries extra warning notes** because quitting there force-stops the container and reaps every agent immediately — work not persisted outside the container is lost. It therefore uses `exit_confirm_state_with_data_loss()` (prompt + notes) instead of the plain prompt; the box is sized from the shared `confirm_required_height` so the notes are never clipped. Confirming routes to the same `ExitAllSessions` teardown the command palette's Exit item already used.
 

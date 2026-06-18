@@ -248,6 +248,11 @@ Before starting implementation, confirm `tokio_util` appears in <RepoFile path="
 - [x] Capsule: `Ctrl+Q` (byte `0x11`) opens the exit confirm using the data-loss variant (force-stop / container-data warning); routes to `ExitAllSessions`
 - [x] Document the unified exit confirmation + `Ctrl+Q` / `Ctrl+C` contract in [TUI dialogs reference](/reference/tui/dialogs)
 
+**Phase 7 — Cancel actually stops work; keys + chrome consistent (shipped):**
+- [x] `ShellRunner` sets `kill_on_drop(true)` on every spawned child, so a Ctrl+C that drops the run future kills `docker build` and frees the daemon — fixes the build-stage freeze where `LoadCleanup` blocked behind the still-running build
+- [x] Console: `Ctrl+C` immediate quit on any screen; `Ctrl+Q` opens the confirm on any screen (incl. the main workspace list); hint reads `Ctrl+Q quit`
+- [x] Exit confirmation preserves bottom chrome on launch + console (status bar + hint row beneath the dialog, not a blank floating gap)
+
 **Validation:**
 - [x] Unit tests for `while_waiting()` in `crates/jackin-launch/src/progress/tests.rs` (separate file per crate layout rules)
 - [x] Unit tests for the `StepCounter` cancel seam + typed sentinel in `crates/jackin-runtime/src/runtime/launch/progress_helpers/tests.rs`
