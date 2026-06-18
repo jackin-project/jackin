@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::model::{AuthRow, EditorTab, SecretsEnterPlan, SecretsRow, SecretsScopeTag};
+use crate::tui::screens::editor::model::EditorMode;
 use crate::tui::screens::settings::model::AuthFormTarget;
 use jackin_config::MountConfig;
 
@@ -383,6 +384,29 @@ pub enum EditorGeneralFieldModalPlan {
     RenameWorkspace,
     PickWorkdir,
     None,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorAuthGenerateScopePlan {
+    Workspace(String),
+    WorkspaceRole { workspace: String, role: String },
+}
+
+#[must_use]
+pub fn editor_auth_generate_scope_plan<K>(
+    mode: &EditorMode,
+    target: &AuthFormTarget<K>,
+) -> Option<EditorAuthGenerateScopePlan> {
+    let EditorMode::Edit { name } = mode else {
+        return None;
+    };
+    Some(match target {
+        AuthFormTarget::Workspace { .. } => EditorAuthGenerateScopePlan::Workspace(name.clone()),
+        AuthFormTarget::WorkspaceRole { role, .. } => EditorAuthGenerateScopePlan::WorkspaceRole {
+            workspace: name.clone(),
+            role: role.clone(),
+        },
+    })
 }
 
 #[must_use]

@@ -208,6 +208,51 @@ fn editor_mount_row_select_plan_focuses_workspace_mounts() {
 }
 
 #[test]
+fn editor_auth_generate_scope_plan_routes_edit_mode_targets() {
+    let mode = EditorMode::Edit {
+        name: "workspace".to_owned(),
+    };
+
+    assert_eq!(
+        editor_auth_generate_scope_plan(
+            &mode,
+            &AuthFormTarget::Workspace {
+                kind: TestAuthKind::Claude,
+            },
+        ),
+        Some(EditorAuthGenerateScopePlan::Workspace(
+            "workspace".to_owned()
+        ))
+    );
+    assert_eq!(
+        editor_auth_generate_scope_plan(
+            &mode,
+            &AuthFormTarget::WorkspaceRole {
+                role: "role-a".to_owned(),
+                kind: TestAuthKind::Claude,
+            },
+        ),
+        Some(EditorAuthGenerateScopePlan::WorkspaceRole {
+            workspace: "workspace".to_owned(),
+            role: "role-a".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn editor_auth_generate_scope_plan_rejects_create_mode() {
+    assert_eq!(
+        editor_auth_generate_scope_plan(
+            &EditorMode::Create,
+            &AuthFormTarget::Workspace {
+                kind: TestAuthKind::Claude,
+            },
+        ),
+        None
+    );
+}
+
+#[test]
 fn editor_scroll_focus_plan_routes_by_tab_and_modal() {
     assert_eq!(
         editor_scroll_focus_plan(EditorTab::Mounts, false, true, true),

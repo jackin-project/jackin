@@ -5,7 +5,9 @@ use crate::console::tui::state::{
     EditorState, FieldFocus, Modal, SecretsScopeTag, TextInputTarget, open_role_input_error,
 };
 use jackin_console::tui::components::auth_panel::generated_token_op_item_name;
-use jackin_console::tui::screens::editor::update as editor_update;
+use jackin_console::tui::screens::editor::update::{
+    self as editor_update, EditorAuthGenerateScopePlan, editor_auth_generate_scope_plan,
+};
 use jackin_console::tui::screens::editor::view::{
     secret_empty_key_label, secret_key_input_state_from_pending, secret_source_picker_state,
 };
@@ -39,19 +41,10 @@ fn generate_scope_for_target(
     target: &crate::console::tui::state::AuthFormTarget,
 ) -> Option<jackin_env::TokenSetupScope> {
     use jackin_env::TokenSetupScope;
-    let crate::console::tui::state::EditorMode::Edit { name } = &editor.mode else {
-        return None;
-    };
-    let workspace = name.clone();
-    Some(match target {
-        crate::console::tui::state::AuthFormTarget::WorkspaceRole { role, .. } => {
-            TokenSetupScope::WorkspaceRole {
-                workspace,
-                role: role.clone(),
-            }
-        }
-        crate::console::tui::state::AuthFormTarget::Workspace { .. } => {
-            TokenSetupScope::Workspace(workspace)
+    editor_auth_generate_scope_plan(&editor.mode, target).map(|plan| match plan {
+        EditorAuthGenerateScopePlan::Workspace(workspace) => TokenSetupScope::Workspace(workspace),
+        EditorAuthGenerateScopePlan::WorkspaceRole { workspace, role } => {
+            TokenSetupScope::WorkspaceRole { workspace, role }
         }
     })
 }
