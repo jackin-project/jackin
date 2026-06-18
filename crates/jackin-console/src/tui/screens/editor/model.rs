@@ -73,6 +73,12 @@ pub enum EditorMountGithubOpenPlan {
     Open(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorHorizontalScrollKeyPlan {
+    WorkspaceMounts { delta: i16, content_width: usize },
+    TabContent { delta: i16, content_width: usize },
+}
+
 #[derive(Debug, Clone)]
 pub enum EditorMode {
     Edit { name: String },
@@ -1007,6 +1013,24 @@ impl<
     >
 {
     #[must_use]
+    pub fn horizontal_scroll_key_plan(&self, delta: i16) -> EditorHorizontalScrollKeyPlan {
+        if self.active_tab == EditorTab::Mounts {
+            return EditorHorizontalScrollKeyPlan::WorkspaceMounts {
+                delta,
+                content_width:
+                    crate::tui::mount_display::workspace_config_mounts_content_width_with_cache(
+                        &self.pending.mounts,
+                        &self.mount_info_cache,
+                    ),
+            };
+        }
+        EditorHorizontalScrollKeyPlan::TabContent {
+            delta,
+            content_width: self.tab_content_width,
+        }
+    }
+
+    #[must_use]
     pub fn focused_mount_github_open_plan(&self) -> EditorMountGithubOpenPlan {
         let FieldFocus::Row(n) = self.active_field;
         let Some(mount) = self.pending.mounts.get(n) else {
@@ -1182,8 +1206,8 @@ mod tests {
     };
 
     use super::{
-        AuthEnterPlan, AuthRow, EditorMountGithubOpenPlan, EditorState, EditorTab, FieldFocus,
-        RoleHeaderExpansionPlan, SecretsRow,
+        AuthEnterPlan, AuthRow, EditorHorizontalScrollKeyPlan, EditorMountGithubOpenPlan,
+        EditorState, EditorTab, FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
     };
 
     type TestEditor =
@@ -1622,6 +1646,43 @@ mod tests {
         assert_eq!(
             editor.focused_mount_github_open_plan(),
             EditorMountGithubOpenPlan::NoSelection
+        );
+    }
+
+    #[test]
+    fn editor_horizontal_scroll_key_plan_targets_active_area() {
+        let workspace = WorkspaceConfig {
+            mounts: vec![MountConfig {
+                src: "/repo".into(),
+                dst: "/repo".into(),
+                readonly: false,
+                isolation: MountIsolation::Shared,
+            }],
+            ..Default::default()
+        };
+        let mut editor = TestEditorWithMountCache::new_edit("alpha".into(), workspace);
+        editor.tab_content_width = 123;
+
+        assert_eq!(
+            editor.horizontal_scroll_key_plan(-8),
+            EditorHorizontalScrollKeyPlan::TabContent {
+                delta: -8,
+                content_width: 123,
+            }
+        );
+
+        editor.active_tab = EditorTab::Mounts;
+        let expected_content_width =
+            crate::tui::mount_display::workspace_config_mounts_content_width_with_cache(
+                &editor.pending.mounts,
+                &editor.mount_info_cache,
+            );
+        assert_eq!(
+            editor.horizontal_scroll_key_plan(8),
+            EditorHorizontalScrollKeyPlan::WorkspaceMounts {
+                delta: 8,
+                content_width: expected_content_width,
+            }
         );
     }
 

@@ -32,9 +32,9 @@ use jackin_config::AppConfig;
 use jackin_console::tui::components::error_popup::no_github_url_error_popup_state;
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
-use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::editor::model::{
-    AuthEnterPlan, EditorMountGithubOpenPlan, RoleHeaderExpansionPlan,
+    AuthEnterPlan, EditorHorizontalScrollKeyPlan, EditorMountGithubOpenPlan,
+    RoleHeaderExpansionPlan,
 };
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -166,53 +166,23 @@ pub(super) fn handle_editor_key(
                 return Ok(InputOutcome::Continue);
             }
             KeyCode::Char('h' | 'H') if editor.active_tab == EditorTab::Mounts => {
-                dispatch_manager(
-                    state,
-                    ManagerMessage::ScrollEditorWorkspaceMountsHorizontal {
-                        delta: -8,
-                        term_width,
-                        content_width: workspace_config_mounts_content_width_with_cache(
-                            &editor.pending.mounts,
-                            &editor.mount_info_cache,
-                        ),
-                    },
-                );
+                let plan = editor.horizontal_scroll_key_plan(-8);
+                dispatch_editor_horizontal_scroll(state, plan, term_width);
                 return Ok(InputOutcome::Continue);
             }
             KeyCode::Char('l' | 'L') if editor.active_tab == EditorTab::Mounts => {
-                dispatch_manager(
-                    state,
-                    ManagerMessage::ScrollEditorWorkspaceMountsHorizontal {
-                        delta: 8,
-                        term_width,
-                        content_width: workspace_config_mounts_content_width_with_cache(
-                            &editor.pending.mounts,
-                            &editor.mount_info_cache,
-                        ),
-                    },
-                );
+                let plan = editor.horizontal_scroll_key_plan(8);
+                dispatch_editor_horizontal_scroll(state, plan, term_width);
                 return Ok(InputOutcome::Continue);
             }
             KeyCode::Char('h' | 'H') => {
-                dispatch_manager(
-                    state,
-                    ManagerMessage::ScrollEditorTabHorizontal {
-                        delta: -8,
-                        term_width,
-                        content_width: editor.tab_content_width,
-                    },
-                );
+                let plan = editor.horizontal_scroll_key_plan(-8);
+                dispatch_editor_horizontal_scroll(state, plan, term_width);
                 return Ok(InputOutcome::Continue);
             }
             KeyCode::Char('l' | 'L') => {
-                dispatch_manager(
-                    state,
-                    ManagerMessage::ScrollEditorTabHorizontal {
-                        delta: 8,
-                        term_width,
-                        content_width: editor.tab_content_width,
-                    },
-                );
+                let plan = editor.horizontal_scroll_key_plan(8);
+                dispatch_editor_horizontal_scroll(state, plan, term_width);
                 return Ok(InputOutcome::Continue);
             }
             KeyCode::Up | KeyCode::Char('k' | 'K') => {
@@ -436,6 +406,37 @@ pub(super) fn handle_editor_key(
 
 fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
     let _dirty = update_manager(state, message);
+}
+
+fn dispatch_editor_horizontal_scroll(
+    state: &mut ManagerState<'_>,
+    plan: EditorHorizontalScrollKeyPlan,
+    term_width: u16,
+) {
+    match plan {
+        EditorHorizontalScrollKeyPlan::WorkspaceMounts {
+            delta,
+            content_width,
+        } => dispatch_manager(
+            state,
+            ManagerMessage::ScrollEditorWorkspaceMountsHorizontal {
+                delta,
+                term_width,
+                content_width,
+            },
+        ),
+        EditorHorizontalScrollKeyPlan::TabContent {
+            delta,
+            content_width,
+        } => dispatch_manager(
+            state,
+            ManagerMessage::ScrollEditorTabHorizontal {
+                delta,
+                term_width,
+                content_width,
+            },
+        ),
+    }
 }
 
 pub(super) type EditorModalOutcome = jackin_console::tui::message::ConsoleEditorModalOutcome<
