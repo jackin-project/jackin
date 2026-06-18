@@ -267,6 +267,10 @@ pub trait EditorSaveDiscardModal<SaveDiscardState> {
     fn save_discard_cancel_modal(state: SaveDiscardState) -> Self;
 }
 
+pub trait EditorErrorPopupModal<ErrorPopupState> {
+    fn error_popup_modal(state: ErrorPopupState) -> Self;
+}
+
 #[derive(Debug)]
 pub struct EditorState<
     WorkspaceConfig,
@@ -1018,6 +1022,13 @@ impl<
         Modal: EditorSaveDiscardModal<SaveDiscardState>,
     {
         self.modal = Some(Modal::save_discard_cancel_modal(state));
+    }
+
+    pub fn open_error_popup<ErrorPopupState>(&mut self, state: ErrorPopupState)
+    where
+        Modal: EditorErrorPopupModal<ErrorPopupState>,
+    {
+        self.modal = Some(Modal::error_popup_modal(state));
     }
 
     pub fn pop_modal_chain(&mut self) {
@@ -2358,6 +2369,16 @@ mod tests {
         }
     }
 
+    impl super::EditorErrorPopupModal<u8> for TestStatusModal {
+        fn error_popup_modal(state: u8) -> Self {
+            if state == 0 {
+                Self::Status
+            } else {
+                Self::Other
+            }
+        }
+    }
+
     type TestEditorWithStatusModal = EditorState<
         WorkspaceConfig,
         (),
@@ -2676,6 +2697,16 @@ mod tests {
             TestEditorWithStatusModal::new_edit("alpha".into(), WorkspaceConfig::default());
 
         editor.open_save_discard_cancel(1);
+
+        assert!(matches!(editor.modal, Some(TestStatusModal::Other)));
+    }
+
+    #[test]
+    fn open_error_popup_sets_modal() {
+        let mut editor =
+            TestEditorWithStatusModal::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        editor.open_error_popup(1);
 
         assert!(matches!(editor.modal, Some(TestStatusModal::Other)));
     }

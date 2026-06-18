@@ -368,11 +368,9 @@ pub(in crate::console) fn apply_op_picker_commit_failed(
     editor: &mut EditorState<'_>,
     error: &anyhow::Error,
 ) {
-    editor.modal = Some(Modal::ErrorPopup {
-        state: jackin_console::tui::components::error_popup::op_read_failed_error_popup_state(
-            error,
-        ),
-    });
+    editor.open_error_popup(
+        jackin_console::tui::components::error_popup::op_read_failed_error_popup_state(error),
+    );
 }
 
 /// Restore the auth-form modal unchanged after the operator cancels
@@ -420,11 +418,9 @@ fn apply_op_picker_to_auth_form_with_validator(
     }
     let read_result = validate(&op_ref);
     if let Err(e) = read_result {
-        editor.modal = Some(Modal::ErrorPopup {
-            state: jackin_console::tui::components::error_popup::op_read_failed_error_popup_state(
-                e,
-            ),
-        });
+        editor.open_error_popup(
+            jackin_console::tui::components::error_popup::op_read_failed_error_popup_state(e),
+        );
         return;
     }
     apply_op_picker_to_auth_form_committed(editor, op_ref);

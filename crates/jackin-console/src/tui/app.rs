@@ -18,7 +18,8 @@ use crate::tui::debug::{
     ConsoleSettingsDebugFacts, ConsoleStageDebug,
 };
 use crate::tui::screens::editor::model::{
-    CreateStep, EditorRoleOverridePickerModal, EditorSaveDiscardModal, EditorStatusPopupModal,
+    CreateStep, EditorErrorPopupModal, EditorRoleOverridePickerModal, EditorSaveDiscardModal,
+    EditorStatusPopupModal,
 };
 
 /// Single-variant today; kept as `enum` so future stages can land without
@@ -1001,6 +1002,60 @@ impl<
             self,
             editing_existing_workspace,
         )
+    }
+}
+
+impl<
+    TextInputTarget,
+    TextInputState,
+    FileBrowserTarget,
+    FileBrowserState,
+    MountDstChoiceState,
+    WorkdirPickState,
+    ConfirmTarget,
+    ConfirmState,
+    SaveDiscardState,
+    GithubPickerState,
+    ConfirmSaveState,
+    ErrorPopupState,
+    ContainerInfoState,
+    StatusPopupState,
+    OpPickerState,
+    RolePickerState,
+    SourcePickerState,
+    ScopePickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+    SecretsScopeTag,
+> EditorErrorPopupModal<ErrorPopupState>
+    for ConsoleModal<
+        TextInputTarget,
+        TextInputState,
+        FileBrowserTarget,
+        FileBrowserState,
+        MountDstChoiceState,
+        WorkdirPickState,
+        ConfirmTarget,
+        ConfirmState,
+        SaveDiscardState,
+        GithubPickerState,
+        ConfirmSaveState,
+        ErrorPopupState,
+        ContainerInfoState,
+        StatusPopupState,
+        OpPickerState,
+        RolePickerState,
+        SourcePickerState,
+        ScopePickerState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+        SecretsScopeTag,
+    >
+{
+    fn error_popup_modal(state: ErrorPopupState) -> Self {
+        Self::ErrorPopup { state }
     }
 }
 

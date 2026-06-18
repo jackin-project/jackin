@@ -318,9 +318,7 @@ fn dispatch_editor_mount_action(
         EditorMountActionKeyPlan::OpenGithub => match editor.focused_mount_github_open_plan() {
             EditorMountGithubOpenPlan::Open(web_url) => Some(ManagerEffect::OpenUrl(web_url)),
             EditorMountGithubOpenPlan::NoGithubUrl => {
-                editor.modal = Some(Modal::ErrorPopup {
-                    state: no_github_url_error_popup_state(),
-                });
+                editor.open_error_popup(no_github_url_error_popup_state());
                 None
             }
             EditorMountGithubOpenPlan::NoSelection => None,
