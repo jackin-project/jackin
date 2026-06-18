@@ -2392,6 +2392,36 @@ impl<Manager, LaunchInput, RoleSelector, OpCache>
             quit_confirm: None,
         }
     }
+
+    #[must_use]
+    pub fn quit_confirm_state(&self) -> Option<&jackin_tui::components::ConfirmState> {
+        self.quit_confirm.as_ref()
+    }
+
+    #[must_use]
+    pub fn quit_confirm_open(&self) -> bool {
+        self.quit_confirm.is_some()
+    }
+
+    pub fn open_quit_confirm(&mut self) {
+        self.quit_confirm = Some(crate::tui::run::quit_confirm_state());
+    }
+
+    pub fn dismiss_quit_confirm(&mut self) {
+        self.quit_confirm = None;
+    }
+
+    pub fn handle_quit_confirm_key(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+    ) -> Option<crate::tui::run::QuitConfirmPlan> {
+        let confirm = self.quit_confirm.as_mut()?;
+        let plan = crate::tui::run::quit_confirm_plan(confirm.handle_key(key));
+        if matches!(plan, crate::tui::run::QuitConfirmPlan::Dismiss) {
+            self.dismiss_quit_confirm();
+        }
+        Some(plan)
+    }
 }
 
 impl<Manager, LaunchInput, RoleSelector, OpCache>
@@ -2850,10 +2880,10 @@ mod tests {
 
         assert!(app.base_surface_unblocked());
 
-        app.quit_confirm = Some(jackin_tui::components::ConfirmState::new("Exit?"));
+        app.open_quit_confirm();
         assert!(!app.base_surface_unblocked());
 
-        app.quit_confirm = None;
+        app.dismiss_quit_confirm();
         app.stage = ConsoleAppStage::Manager(TestManager {
             list_modal_open: true,
             editor_modal_open: false,
@@ -2865,6 +2895,28 @@ mod tests {
             editor_modal_open: true,
         });
         assert!(!app.base_surface_unblocked());
+    }
+
+    #[test]
+    fn console_app_quit_confirm_key_dismisses_dialog() {
+        let mut app: ConsoleApp<TestManager, (), (), ()> = ConsoleApp::new(
+            ConsoleAppStage::Manager(TestManager {
+                list_modal_open: false,
+                editor_modal_open: false,
+            }),
+            (),
+            false,
+        );
+
+        app.open_quit_confirm();
+
+        let plan = app.handle_quit_confirm_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Esc,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        assert_eq!(plan, Some(crate::tui::run::QuitConfirmPlan::Dismiss));
+        assert!(!app.quit_confirm_open());
     }
 
     #[test]

@@ -29,8 +29,8 @@ use jackin_console::tui::run::{
     QuitInterceptState, TokenGenerateScopeLabel, console_pointer_hand,
     console_screen_stage_for_route, debug_chip_activation_allowed, debug_chip_row,
     debug_run_id_label, diagnostics_screen_for_stage, is_main_screen_for_route,
-    letter_input_state_for_route, modal_mouse_layer_plan, quit_confirm_area, quit_confirm_plan,
-    quit_confirm_state, should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
+    letter_input_state_for_route, modal_mouse_layer_plan, quit_confirm_area,
+    should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
     token_generate_status_message,
 };
 
@@ -474,10 +474,10 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                         ),
                         console_location_debug(&state)
                     );
-                    if let Some(confirm) = state.quit_confirm.as_mut() {
-                        match quit_confirm_plan(confirm.handle_key(key)) {
+                    if let Some(plan) = state.handle_quit_confirm_key(key) {
+                        match plan {
                             QuitConfirmPlan::Exit => break 'main Ok(None),
-                            QuitConfirmPlan::Dismiss => state.quit_confirm = None,
+                            QuitConfirmPlan::Dismiss => {}
                             QuitConfirmPlan::Continue => {}
                         }
                         continue;
@@ -486,7 +486,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                     // Q intercept: outside main screen, pop the exit
                     // confirm. SHIFT tolerated for caps-lock parity.
                     if should_open_quit_confirm(key, quit_intercept_state(&state)) {
-                        state.quit_confirm = Some(quit_confirm_state());
+                        state.open_quit_confirm();
                         continue;
                     }
 
@@ -709,8 +709,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                         let (main_area, _) =
                             split_debug_area(full_area, crate::tui::is_debug_mode());
                         let quit_confirm_rect = state
-                            .quit_confirm
-                            .as_ref()
+                            .quit_confirm_state()
                             .map(|confirm| quit_confirm_area(main_area, confirm));
                         let ConsoleStage::Manager(ms) = &state.stage;
                         let list_modal_rect =
@@ -732,7 +731,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                         )
                     };
                     if modal_plan.dismiss_quit_confirm {
-                        state.quit_confirm = None;
+                        state.dismiss_quit_confirm();
                     }
                     if modal_plan.dismiss_list_modal {
                         let ConsoleStage::Manager(ms) = &mut state.stage;

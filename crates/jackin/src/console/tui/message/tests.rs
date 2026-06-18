@@ -1153,7 +1153,7 @@ fn chip_click_does_not_fire_while_quit_confirm_open() {
     let mut state = ConsoleState::new(ConsoleStage::Manager(manager), op_cache, false);
 
     assert!(no_modal_open(&state), "no modal by default");
-    state.quit_confirm = Some(jackin_tui::components::ConfirmState::new("Are you sure?"));
+    state.open_quit_confirm();
     assert!(!no_modal_open(&state), "quit_confirm → chip must not fire");
 }
 
