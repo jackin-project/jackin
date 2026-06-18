@@ -112,6 +112,19 @@ The decisive fact for "do I need all three": because caveman touches *only outpu
 | Agent *platform*: large JSON/API/RAG, long histories, cross-agent memory, reversibility required | **headroom (+ caveman for output)** | Only headroom reaches native reads, RAG, history, and offers CCR recall. RTK can't see non-Bash reads. |
 | Maximal coverage, willing to pay the cost and run the harness | **all three** | caveman (output) + RTK (Bash observations) + headroom (everything else on the wire) — but only after each clears the harness on its own slice. |
 
+## The caveman family vs headroom: ecosystem overlap and the memory either/or
+
+Caveman is not one tool but a family (caveman + caveman-compress/commit/review + cavemem + cavekit + cavecrew). Most of that family is output-side and orthogonal to headroom and RTK, but three members map onto headroom features — and one of those overlaps is a genuine either/or you must decide.
+
+| Caveman-family member | Headroom counterpart | Relationship |
+|---|---|---|
+| caveman (output register) | headroom compression (input) | Different token classes — they stack, no overlap |
+| **cavemem** (compressed-memory MCP; single-agent, lossy, no recovery) | **headroom cross-agent memory + CCR** (reversible, multi-agent, auto-dedup) | **Either/or — pick one.** headroom's is the stronger design (reversibility removes the "confidently-wrong recalled fact" failure mode; cross-agent dedup helps a multi-tool operator); cavemem is the lighter, Claude-only, plugin-native option |
+| cavekit (durable up-front `SPEC.md`) | `headroom learn` (mines *failed* sessions → corrections in CLAUDE.md/AGENTS.md) | Same meta-goal (persist hard-won context so it is not re-derived); different mechanism; not mutually exclusive |
+| cavecrew (compressed subagent reports, measured −43.9%) | headroom `SharedContext` (cross-agent transfer) | Same goal (cheaper agent-to-agent transfer); cavecrew is Claude-Code-native, `SharedContext` is framework-level |
+
+The single genuine either/or is **memory**: run cavemem *or* headroom memory, never both — running two memory layers is pure overhead. Pick headroom's if you work across Claude + Codex + Gemini and value reversibility; pick cavemem's if you are Claude-only and want the lighter, plugin-native option. Both still lack the net-accounting the dossier demanded (neither publishes injection-cost-vs-re-exploration-saved), so meter whichever you choose.
+
 ## What "all three" must *not* mean
 
 Stacking is additive only if you avoid pointing two tools of the *same kind* at the *same tokens*:

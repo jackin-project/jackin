@@ -259,8 +259,8 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   for docs/examples/decisions/pattern recall and accept it only if it beats that planned stack by
   ≥20% tokens per solved task at equal quality.
 - **[`53-headroom-and-context-compression.md`](53-headroom-and-context-compression/)** — deep dive on
-  `chopratejas/headroom` (the input-side context-compression layer) and a deep comparison to the
-  caveman ecosystem. Headroom compresses what the model *reads* (tool outputs/logs/RAG/files, the 61%
+  `chopratejas/headroom` (the input-side context-compression layer); the cross-tool comparison to the
+  caveman ecosystem and RTK is consolidated in the dedicated [Caveman vs Headroom vs RTK](/research/caveman-headroom-rtk/) folder. Headroom compresses what the model *reads* (tool outputs/logs/RAG/files, the 61%
   cache buckets); caveman compresses what the model *writes* (prose, 17%) — orthogonal, they stack,
   neither touches thinking (20%). Headroom's **live-zone** design (stabilize the cached prefix,
   compress only the volatile tail) is the cache-safe input-compression design that refines the
@@ -286,8 +286,8 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   not a Max subscription (file 41). The JSONL-reading, no-proxy class is the safe measurement front-end of
   the validation harness.
 - **[`56-rtk-and-write-time-observation-compression.md`](56-rtk-and-write-time-observation-compression/)** —
-  deep dive on `rtk-ai/rtk` ("Rust Token Killer") and the **three-way** Caveman vs Headroom vs RTK
-  comparison the operator asked for. RTK is the deterministic, Claude-Code-native productization of the
+  deep dive on `rtk-ai/rtk` ("Rust Token Killer") — the dossier's RTK record. The **three-way** Caveman vs Headroom vs RTK
+  comparison it originally carried now lives, expanded, in the dedicated [Caveman vs Headroom vs RTK](/research/caveman-headroom-rtk/) folder (single source of truth). RTK is the deterministic, Claude-Code-native productization of the
   cache-safe **write-time observation-compression** design point files 53 (H1) and 54 named: it compresses
   shell-command output (tests/git/logs/builds) at the tool boundary via a PreToolUse hook — no ML, no MCP
   rent, cache-safe by construction — but reaches only Bash calls (not native `Read`/`Grep`). The "60–90%"
