@@ -813,8 +813,12 @@ impl<
         self.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
     }
 
-    pub fn select_auth_row(&mut self, row: usize) {
+    pub fn select_row(&mut self, row: usize) {
         self.active_field = FieldFocus::Row(row);
+    }
+
+    pub fn select_auth_row(&mut self, row: usize) {
+        self.select_row(row);
     }
 
     pub fn apply_tab_horizontal_scroll_plan(
@@ -2257,7 +2261,7 @@ mod tests {
         assert_eq!(editor.active_field, FieldFocus::Row(3));
         assert!(editor.workspace_mounts_scroll_focused());
 
-        editor.select_auth_row(5);
+        editor.select_row(5);
         assert_eq!(editor.active_field, FieldFocus::Row(5));
 
         editor.set_hover_target(Some(super::EditorHoverTarget::MountRow(2)));

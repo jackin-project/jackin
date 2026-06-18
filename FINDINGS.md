@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,343 lines, versus 143 Rust files and 56,301 lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,343 lines, versus 143 Rust files and 56,305 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -148,7 +148,7 @@ Settings tab move/select, tab-bar focus, General selection/toggle, environment r
 
 Status-overlay, list-modal, and inline-picker dismissal plan application now lives in `jackin-console/src/tui/update.rs`; root manager state implements narrow mutation traits for concrete overlay storage, list-modal variant storage, and inline picker slots.
 
-Editor auth-kind, tab move/select, tab-bar focus, field-selection, mount-row selection, General toggles, selected-mount readonly toggles, role expansion, secret mask toggles, scroll-focus plan application, and horizontal-scroll plan application now lives on the shared editor state in `jackin-console/src/tui/screens/editor/model.rs`; root message and mouse handling construct plans and delegate mutation to the owner model.
+Editor auth-kind, tab move/select, tab-bar focus, field-selection, row-focus, mount-row selection, General toggles, selected-mount readonly toggles, role expansion, secret mask toggles, scroll-focus plan application, and horizontal-scroll plan application now lives on the shared editor state in `jackin-console/src/tui/screens/editor/model.rs`; root message, mouse handling, and root service adapters construct plans and delegate mutation to the owner model.
 
 ## What Still Lives In Root Console
 

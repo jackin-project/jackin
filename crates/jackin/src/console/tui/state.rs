@@ -342,7 +342,7 @@ pub(crate) fn add_role_to_workspace_editor(
         config.roles.keys(),
         key,
     ) {
-        editor.active_field = FieldFocus::Row(idx);
+        editor.select_row(idx);
     }
 }
 
