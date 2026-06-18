@@ -50,6 +50,19 @@ pub struct WorkspaceListFooterFacts {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceListFooterInputFacts {
+    pub selected_row: ManagerListRow,
+    pub inline_agent_picker: bool,
+    pub inline_role_picker: bool,
+    pub preview_focused: bool,
+    pub selected_instance_has_snapshot: bool,
+    pub show_expand: bool,
+    pub show_collapse: bool,
+    pub workspace_scroll_axes: ScrollAxes,
+    pub show_open_in_github: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceListFooterRowFacts {
     pub selected_instance: bool,
     pub selected_saved_workspace: bool,
@@ -81,6 +94,26 @@ pub const fn workspace_list_footer_row_facts(row: ManagerListRow) -> WorkspaceLi
             selected_saved_workspace: false,
             selected_new_workspace: false,
         },
+    }
+}
+
+#[must_use]
+pub const fn workspace_list_footer_facts(
+    facts: WorkspaceListFooterInputFacts,
+) -> WorkspaceListFooterFacts {
+    let row_facts = workspace_list_footer_row_facts(facts.selected_row);
+    WorkspaceListFooterFacts {
+        inline_agent_picker: facts.inline_agent_picker,
+        inline_role_picker: facts.inline_role_picker,
+        selected_instance: row_facts.selected_instance,
+        preview_focused: facts.preview_focused,
+        selected_instance_has_snapshot: facts.selected_instance_has_snapshot,
+        selected_saved_workspace: row_facts.selected_saved_workspace,
+        selected_new_workspace: row_facts.selected_new_workspace,
+        show_expand: facts.show_expand,
+        show_collapse: facts.show_collapse,
+        workspace_scroll_axes: facts.workspace_scroll_axes,
+        show_open_in_github: facts.show_open_in_github,
     }
 }
 

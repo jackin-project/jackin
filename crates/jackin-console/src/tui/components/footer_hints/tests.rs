@@ -77,6 +77,42 @@ fn workspace_list_footer_facts_prioritize_inline_pickers() {
 }
 
 #[test]
+fn workspace_list_footer_facts_derive_row_flags_from_input() {
+    assert_eq!(
+        workspace_list_footer_facts(WorkspaceListFooterInputFacts {
+            selected_row: ManagerListRow::SavedWorkspace(4),
+            inline_agent_picker: false,
+            inline_role_picker: true,
+            preview_focused: true,
+            selected_instance_has_snapshot: true,
+            show_expand: false,
+            show_collapse: true,
+            workspace_scroll_axes: ScrollAxes {
+                vertical: true,
+                horizontal: false,
+            },
+            show_open_in_github: true,
+        }),
+        WorkspaceListFooterFacts {
+            inline_agent_picker: false,
+            inline_role_picker: true,
+            selected_instance: false,
+            preview_focused: true,
+            selected_instance_has_snapshot: true,
+            selected_saved_workspace: true,
+            selected_new_workspace: false,
+            show_expand: false,
+            show_collapse: true,
+            workspace_scroll_axes: ScrollAxes {
+                vertical: true,
+                horizontal: false,
+            },
+            show_open_in_github: true,
+        }
+    );
+}
+
+#[test]
 fn workspace_list_footer_row_facts_route_row_kinds() {
     assert_eq!(
         workspace_list_footer_row_facts(ManagerListRow::WorkspaceInstance(1, 2)),

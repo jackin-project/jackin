@@ -4,10 +4,10 @@ use crate::console::tui::layout::list::list_names_content_width;
 use crate::console::tui::state::{ManagerListRow, ManagerState};
 use jackin_config::AppConfig;
 use jackin_console::tui::components::footer_hints::{
-    WorkspaceFooterScrollFacts, WorkspaceInlinePickerContentFacts, WorkspaceListFooterFacts,
+    WorkspaceFooterScrollFacts, WorkspaceInlinePickerContentFacts, WorkspaceListFooterInputFacts,
     selected_instance_snapshot_available, workspace_footer_scroll_axes,
-    workspace_inline_picker_content_height, workspace_list_footer_items,
-    workspace_list_footer_mode_for_facts, workspace_list_footer_row_facts,
+    workspace_inline_picker_content_height, workspace_list_footer_facts,
+    workspace_list_footer_items, workspace_list_footer_mode_for_facts,
 };
 use jackin_console::tui::list_geometry;
 use jackin_console::tui::screens::workspaces::update::{
@@ -24,18 +24,17 @@ pub(crate) fn workspace_list_footer_items_for_state(
     cwd: &std::path::Path,
 ) -> Vec<HintSpan<'static>> {
     workspace_list_footer_items(workspace_list_footer_mode_for_facts(
-        workspace_list_footer_facts(state, config, cwd),
+        workspace_list_footer_facts_for_state(state, config, cwd),
     ))
 }
 
-fn workspace_list_footer_facts(
+fn workspace_list_footer_facts_for_state(
     state: &ManagerState<'_>,
     config: &AppConfig,
     cwd: &std::path::Path,
-) -> WorkspaceListFooterFacts {
+) -> jackin_console::tui::components::footer_hints::WorkspaceListFooterFacts {
     let selected = state.selected_row();
-    let row_facts = workspace_list_footer_row_facts(selected);
-    let show_open_in_github = row_facts.selected_saved_workspace
+    let show_open_in_github = matches!(selected, ManagerListRow::SavedWorkspace(_))
         && state
             .selected_workspace_summary()
             .and_then(|s| config.workspaces.get(&s.name))
@@ -62,19 +61,17 @@ fn workspace_list_footer_facts(
     let workspace_scroll_axes =
         workspace_scroll_axes(state, config, cwd, show_expand, show_collapse);
 
-    WorkspaceListFooterFacts {
+    workspace_list_footer_facts(WorkspaceListFooterInputFacts {
+        selected_row: selected,
         inline_agent_picker: state.inline_agent_picker.is_some(),
         inline_role_picker: state.inline_role_picker.is_some(),
-        selected_instance: row_facts.selected_instance,
         preview_focused: state.preview_focused,
         selected_instance_has_snapshot: selected_instance_has_snapshot(state, selected),
-        selected_saved_workspace: row_facts.selected_saved_workspace,
-        selected_new_workspace: row_facts.selected_new_workspace,
         show_expand,
         show_collapse,
         workspace_scroll_axes,
         show_open_in_github,
-    }
+    })
 }
 
 fn workspace_scroll_axes(
