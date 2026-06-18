@@ -71,8 +71,6 @@ pub struct StatusBar {
     pub hint_region: Option<(u16, u16)>,
     pub prefix_mode: PrefixMode,
     pub prefix_enabled: bool,
-    pub prefix_label: String,
-    pub palette_label: String,
     /// Full role-container name (`jk-<short>-<workspace>-<role>`).
     /// Consumed by the `ContainerInfo` modal and copy action.
     pub identity_label: String,
@@ -111,8 +109,6 @@ impl StatusBar {
             hint_region: None,
             prefix_mode: PrefixMode::Idle,
             prefix_enabled: false,
-            prefix_label: "Ctrl+B".to_owned(),
-            palette_label: "Ctrl+\\".to_owned(),
             identity_label,
             instance_id_label,
             role,
