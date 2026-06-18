@@ -7,8 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::model::{
-    GlobalMountConfirm, SettingsEnvConfig, SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope,
-    SettingsGeneralState, SettingsTab, SettingsTrustState,
+    GlobalMountConfirm, GlobalMountTextTarget, SettingsEnvConfig, SettingsEnvEnterPlan,
+    SettingsEnvRow, SettingsEnvScope, SettingsGeneralState, SettingsTab, SettingsTrustState,
 };
 use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
 use jackin_tui::ModalOutcome;
@@ -116,6 +116,19 @@ pub enum SettingsConfirmPlan {
     Cancel { abort_sensitive: bool },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GlobalMountTextCommitPlan {
+    AddScope(String),
+    AddName(String),
+    AddSource(String),
+    AddDestination(String),
+    SetSource(String),
+    SetDestination(String),
+    SetScope(Option<String>),
+    Rename(String),
+    EmptyName,
+}
+
 #[must_use]
 pub const fn settings_confirm_plan(
     action: GlobalMountConfirm,
@@ -127,6 +140,36 @@ pub const fn settings_confirm_plan(
             abort_sensitive: matches!(action, GlobalMountConfirm::Sensitive),
         },
         ModalOutcome::Continue => SettingsConfirmPlan::Continue,
+    }
+}
+
+#[must_use]
+pub fn global_mount_text_commit_plan(
+    target: &GlobalMountTextTarget,
+    value: &str,
+) -> GlobalMountTextCommitPlan {
+    let trimmed = value.trim();
+    match target {
+        GlobalMountTextTarget::AddScope => GlobalMountTextCommitPlan::AddScope(trimmed.to_owned()),
+        GlobalMountTextTarget::AddName if trimmed.is_empty() => {
+            GlobalMountTextCommitPlan::EmptyName
+        }
+        GlobalMountTextTarget::AddName => GlobalMountTextCommitPlan::AddName(trimmed.to_owned()),
+        GlobalMountTextTarget::AddSource => {
+            GlobalMountTextCommitPlan::AddSource(trimmed.to_owned())
+        }
+        GlobalMountTextTarget::AddDestination => {
+            GlobalMountTextCommitPlan::AddDestination(trimmed.to_owned())
+        }
+        GlobalMountTextTarget::Source => GlobalMountTextCommitPlan::SetSource(trimmed.to_owned()),
+        GlobalMountTextTarget::Destination => {
+            GlobalMountTextCommitPlan::SetDestination(trimmed.to_owned())
+        }
+        GlobalMountTextTarget::Scope => GlobalMountTextCommitPlan::SetScope(
+            crate::services::workspace::global_mount_scope_value(trimmed),
+        ),
+        GlobalMountTextTarget::Rename if trimmed.is_empty() => GlobalMountTextCommitPlan::EmptyName,
+        GlobalMountTextTarget::Rename => GlobalMountTextCommitPlan::Rename(trimmed.to_owned()),
     }
 }
 

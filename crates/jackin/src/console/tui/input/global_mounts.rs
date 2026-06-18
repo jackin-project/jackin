@@ -29,6 +29,7 @@ use jackin_console::tui::components::auth_panel::{
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::mount_display::settings_global_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::settings::update as settings_update;
+use jackin_console::tui::screens::settings::update::GlobalMountTextCommitPlan;
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
     global_mount_destination_empty_message, global_mount_edit_text_initial,
@@ -945,55 +946,54 @@ fn commit_text(
     target: &GlobalMountTextTarget,
     value: &str,
 ) -> SettingsModalOutcome {
-    let trimmed = value.trim();
-    match target {
-        GlobalMountTextTarget::AddScope => {
-            return commit_add_scope_text(global, trimmed);
+    match settings_update::global_mount_text_commit_plan(target, value) {
+        GlobalMountTextCommitPlan::AddScope(value) => {
+            return commit_add_scope_text(global, &value);
         }
-        GlobalMountTextTarget::AddName => {
-            commit_add_name_text(global, trimmed);
+        GlobalMountTextCommitPlan::AddName(value) => {
+            commit_add_name_text(global, &value);
         }
-        GlobalMountTextTarget::AddSource => {
-            commit_add_source_text(global, trimmed);
+        GlobalMountTextCommitPlan::AddSource(value) => {
+            commit_add_source_text(global, &value);
         }
-        GlobalMountTextTarget::AddDestination => {
-            commit_add_destination_text(global, trimmed);
+        GlobalMountTextCommitPlan::AddDestination(value) => {
+            commit_add_destination_text(global, &value);
         }
-        GlobalMountTextTarget::Source => {
+        GlobalMountTextCommitPlan::SetSource(value) => {
             let Some(row) = global.pending.get_mut(global.selected) else {
                 global.error = Some(global_mount_gone_message().into());
                 return SettingsModalOutcome::Continue;
             };
-            row.mount.src = resolve_path(trimmed);
+            row.mount.src = resolve_path(&value);
             global.clear_modal_chain();
         }
-        GlobalMountTextTarget::Destination => {
+        GlobalMountTextCommitPlan::SetDestination(value) => {
             let Some(row) = global.pending.get_mut(global.selected) else {
                 global.error = Some(global_mount_gone_message().into());
                 return SettingsModalOutcome::Continue;
             };
-            row.mount.dst = trimmed.to_owned();
+            row.mount.dst = value;
             global.clear_modal_chain();
         }
-        GlobalMountTextTarget::Scope => {
+        GlobalMountTextCommitPlan::SetScope(scope) => {
             let Some(row) = global.pending.get_mut(global.selected) else {
                 global.error = Some(global_mount_gone_message().into());
                 return SettingsModalOutcome::Continue;
             };
-            row.scope = jackin_console::services::workspace::global_mount_scope_value(trimmed);
+            row.scope = scope;
             global.clear_modal_chain();
         }
-        GlobalMountTextTarget::Rename => {
-            if trimmed.is_empty() {
-                global.error = Some(global_mount_name_empty_message().into());
-                return SettingsModalOutcome::Continue;
-            }
+        GlobalMountTextCommitPlan::Rename(value) => {
             let Some(row) = global.pending.get_mut(global.selected) else {
                 global.error = Some(global_mount_gone_message().into());
                 return SettingsModalOutcome::Continue;
             };
-            row.name = trimmed.to_owned();
+            row.name = value;
             global.clear_modal_chain();
+        }
+        GlobalMountTextCommitPlan::EmptyName => {
+            global.error = Some(global_mount_name_empty_message().into());
+            return SettingsModalOutcome::Continue;
         }
     }
     SettingsModalOutcome::Continue

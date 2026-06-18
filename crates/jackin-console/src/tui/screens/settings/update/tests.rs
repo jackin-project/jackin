@@ -38,6 +38,54 @@ fn settings_tab_bar_focus_plan_returns_requested_focus() {
 }
 
 #[test]
+fn global_mount_text_commit_plan_routes_targets_and_trims_values() {
+    assert_eq!(
+        global_mount_text_commit_plan(&GlobalMountTextTarget::AddScope, " ops "),
+        GlobalMountTextCommitPlan::AddScope("ops".to_owned())
+    );
+    assert_eq!(
+        global_mount_text_commit_plan(&GlobalMountTextTarget::AddName, " cache "),
+        GlobalMountTextCommitPlan::AddName("cache".to_owned())
+    );
+    assert_eq!(
+        global_mount_text_commit_plan(&GlobalMountTextTarget::AddSource, " ./data "),
+        GlobalMountTextCommitPlan::AddSource("./data".to_owned())
+    );
+    assert_eq!(
+        global_mount_text_commit_plan(&GlobalMountTextTarget::AddDestination, " /jackin/data "),
+        GlobalMountTextCommitPlan::AddDestination("/jackin/data".to_owned())
+    );
+    assert_eq!(
+        global_mount_text_commit_plan(&GlobalMountTextTarget::Source, " ./src "),
+        GlobalMountTextCommitPlan::SetSource("./src".to_owned())
+    );
+    assert_eq!(
+        global_mount_text_commit_plan(&GlobalMountTextTarget::Destination, " /dst "),
+        GlobalMountTextCommitPlan::SetDestination("/dst".to_owned())
+    );
+    assert_eq!(
+        global_mount_text_commit_plan(&GlobalMountTextTarget::Scope, " role "),
+        GlobalMountTextCommitPlan::SetScope(Some("role".to_owned()))
+    );
+    assert_eq!(
+        global_mount_text_commit_plan(&GlobalMountTextTarget::Scope, " "),
+        GlobalMountTextCommitPlan::SetScope(None)
+    );
+    assert_eq!(
+        global_mount_text_commit_plan(&GlobalMountTextTarget::Rename, " renamed "),
+        GlobalMountTextCommitPlan::Rename("renamed".to_owned())
+    );
+    assert_eq!(
+        global_mount_text_commit_plan(&GlobalMountTextTarget::Rename, " "),
+        GlobalMountTextCommitPlan::EmptyName
+    );
+    assert_eq!(
+        global_mount_text_commit_plan(&GlobalMountTextTarget::AddName, " "),
+        GlobalMountTextCommitPlan::EmptyName
+    );
+}
+
+#[test]
 fn settings_tab_at_position_maps_tab_strip_cells() {
     assert_eq!(
         settings_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
