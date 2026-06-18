@@ -134,6 +134,41 @@ pub enum DismissibleModalPlan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListModalScrollTarget {
+    GithubPicker,
+    RolePicker,
+    OpPicker,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SharedModalScrollTarget {
+    WorkdirPick,
+    RolePicker,
+    OpPicker,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsEnvModalScrollTarget {
+    OpPicker,
+    RolePicker,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsAuthModalScrollTarget {
+    OpPicker,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalMountModalScrollTarget {
+    RolePicker,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListPreRenderFocusPlan {
     pub list_scroll_focus: Option<crate::tui::focus::MountScrollFocus>,
     pub list_names_focused: bool,
@@ -180,6 +215,74 @@ pub const fn list_scroll_focus_plan(
 #[must_use]
 pub const fn list_names_focus_plan(focused: bool) -> bool {
     focused
+}
+
+#[must_use]
+pub const fn list_modal_scroll_target(
+    github_picker: bool,
+    role_picker: bool,
+    op_picker: bool,
+) -> ListModalScrollTarget {
+    if github_picker {
+        ListModalScrollTarget::GithubPicker
+    } else if role_picker {
+        ListModalScrollTarget::RolePicker
+    } else if op_picker {
+        ListModalScrollTarget::OpPicker
+    } else {
+        ListModalScrollTarget::None
+    }
+}
+
+#[must_use]
+pub const fn shared_modal_scroll_target(
+    workdir_pick: bool,
+    role_picker: bool,
+    role_override_picker: bool,
+    auth_role_picker: bool,
+    op_picker: bool,
+) -> SharedModalScrollTarget {
+    if workdir_pick {
+        SharedModalScrollTarget::WorkdirPick
+    } else if role_picker || role_override_picker || auth_role_picker {
+        SharedModalScrollTarget::RolePicker
+    } else if op_picker {
+        SharedModalScrollTarget::OpPicker
+    } else {
+        SharedModalScrollTarget::None
+    }
+}
+
+#[must_use]
+pub const fn settings_env_modal_scroll_target(
+    op_picker: bool,
+    role_picker: bool,
+) -> SettingsEnvModalScrollTarget {
+    if op_picker {
+        SettingsEnvModalScrollTarget::OpPicker
+    } else if role_picker {
+        SettingsEnvModalScrollTarget::RolePicker
+    } else {
+        SettingsEnvModalScrollTarget::None
+    }
+}
+
+#[must_use]
+pub const fn settings_auth_modal_scroll_target(op_picker: bool) -> SettingsAuthModalScrollTarget {
+    if op_picker {
+        SettingsAuthModalScrollTarget::OpPicker
+    } else {
+        SettingsAuthModalScrollTarget::None
+    }
+}
+
+#[must_use]
+pub const fn global_mount_modal_scroll_target(role_picker: bool) -> GlobalMountModalScrollTarget {
+    if role_picker {
+        GlobalMountModalScrollTarget::RolePicker
+    } else {
+        GlobalMountModalScrollTarget::None
+    }
 }
 
 #[must_use]

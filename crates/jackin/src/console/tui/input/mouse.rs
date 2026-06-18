@@ -44,6 +44,12 @@ use jackin_console::tui::screens::workspaces::update::{
     workspace_list_hover_row_at_position, workspace_list_mouse_plan,
     workspace_list_scroll_focus_plan,
 };
+use jackin_console::tui::update::{
+    GlobalMountModalScrollTarget, ListModalScrollTarget, SettingsAuthModalScrollTarget,
+    SettingsEnvModalScrollTarget, SharedModalScrollTarget, global_mount_modal_scroll_target,
+    list_modal_scroll_target, settings_auth_modal_scroll_target, settings_env_modal_scroll_target,
+    shared_modal_scroll_target,
+};
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
 
@@ -542,19 +548,21 @@ fn scroll_list_modal_selection(state: &mut ManagerState<'_>, delta: i16) -> bool
     let Some(modal) = state.list_modal.as_mut() else {
         return false;
     };
-    match modal {
-        Modal::GithubPicker { state } => {
+    let target = list_modal_scroll_target_for_root_modal(modal);
+    match (target, modal) {
+        (ListModalScrollTarget::GithubPicker, Modal::GithubPicker { state }) => {
             let _changed = state.scroll_selection(delta);
             true
         }
-        Modal::RolePicker { state } => {
+        (ListModalScrollTarget::RolePicker, Modal::RolePicker { state }) => {
             let _changed = state.scroll_selection(delta);
             true
         }
-        Modal::OpPicker { state } => {
+        (ListModalScrollTarget::OpPicker, Modal::OpPicker { state }) => {
             let _changed = state.scroll_selection(delta);
             true
         }
+        (ListModalScrollTarget::None, _) => false,
         _ => false,
     }
 }
@@ -563,21 +571,29 @@ fn scroll_modal_selection(modal: Option<&mut Modal<'_>>, delta: i16) -> bool {
     let Some(modal) = modal else {
         return false;
     };
-    match modal {
-        Modal::WorkdirPick { state } => {
+    let target = shared_modal_scroll_target_for_root_modal(modal);
+    match (target, modal) {
+        (SharedModalScrollTarget::WorkdirPick, Modal::WorkdirPick { state }) => {
             let _changed = state.scroll_selection(delta);
             true
         }
-        Modal::RolePicker { state }
-        | Modal::RoleOverridePicker { state }
-        | Modal::AuthRolePicker { state } => {
+        (SharedModalScrollTarget::RolePicker, Modal::RolePicker { state }) => {
             let _changed = state.scroll_selection(delta);
             true
         }
-        Modal::OpPicker { state } => {
+        (SharedModalScrollTarget::RolePicker, Modal::RoleOverridePicker { state }) => {
             let _changed = state.scroll_selection(delta);
             true
         }
+        (SharedModalScrollTarget::RolePicker, Modal::AuthRolePicker { state }) => {
+            let _changed = state.scroll_selection(delta);
+            true
+        }
+        (SharedModalScrollTarget::OpPicker, Modal::OpPicker { state }) => {
+            let _changed = state.scroll_selection(delta);
+            true
+        }
+        (SharedModalScrollTarget::None, _) => false,
         _ => false,
     }
 }
@@ -588,13 +604,15 @@ fn scroll_global_mount_modal_selection(
     term_size: Rect,
     delta: i16,
 ) -> bool {
-    match modal {
-        GlobalMountModal::RolePicker { state } => {
+    let target = global_mount_modal_scroll_target_for_root_modal(modal);
+    match (target, modal) {
+        (GlobalMountModalScrollTarget::RolePicker, GlobalMountModal::RolePicker { state }) => {
             let area = modal_rects::role_picker_rect_for_count(term_size, state.filtered.len());
             scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
                 state.scroll_selection(delta)
             })
         }
+        (GlobalMountModalScrollTarget::None, _) => false,
         _ => false,
     }
 }
@@ -605,19 +623,27 @@ fn scroll_settings_env_modal_selection(
     term_size: Rect,
     delta: i16,
 ) -> bool {
-    match modal {
-        crate::console::tui::state::SettingsEnvModal::OpPicker { state } => {
+    let target = settings_env_modal_scroll_target_for_root_modal(modal);
+    match (target, modal) {
+        (
+            SettingsEnvModalScrollTarget::OpPicker,
+            crate::console::tui::state::SettingsEnvModal::OpPicker { state },
+        ) => {
             let area = modal_rects::op_picker_rect(term_size);
             scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
                 state.scroll_selection(delta)
             })
         }
-        crate::console::tui::state::SettingsEnvModal::RolePicker { state } => {
+        (
+            SettingsEnvModalScrollTarget::RolePicker,
+            crate::console::tui::state::SettingsEnvModal::RolePicker { state },
+        ) => {
             let area = modal_rects::role_picker_rect_for_count(term_size, state.filtered.len());
             scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
                 state.scroll_selection(delta)
             })
         }
+        (SettingsEnvModalScrollTarget::None, _) => false,
         _ => false,
     }
 }
@@ -628,15 +654,62 @@ fn scroll_settings_auth_modal_selection(
     term_size: Rect,
     delta: i16,
 ) -> bool {
-    match modal {
-        SettingsAuthModal::OpPicker { state } => {
+    let target = settings_auth_modal_scroll_target_for_root_modal(modal);
+    match (target, modal) {
+        (SettingsAuthModalScrollTarget::OpPicker, SettingsAuthModal::OpPicker { state }) => {
             let area = modal_rects::op_picker_rect(term_size);
             scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
                 state.scroll_selection(delta)
             })
         }
+        (SettingsAuthModalScrollTarget::None, _) => false,
         _ => false,
     }
+}
+
+fn list_modal_scroll_target_for_root_modal(modal: &Modal<'_>) -> ListModalScrollTarget {
+    list_modal_scroll_target(
+        matches!(modal, Modal::GithubPicker { .. }),
+        matches!(modal, Modal::RolePicker { .. }),
+        matches!(modal, Modal::OpPicker { .. }),
+    )
+}
+
+fn shared_modal_scroll_target_for_root_modal(modal: &Modal<'_>) -> SharedModalScrollTarget {
+    shared_modal_scroll_target(
+        matches!(modal, Modal::WorkdirPick { .. }),
+        matches!(modal, Modal::RolePicker { .. }),
+        matches!(modal, Modal::RoleOverridePicker { .. }),
+        matches!(modal, Modal::AuthRolePicker { .. }),
+        matches!(modal, Modal::OpPicker { .. }),
+    )
+}
+
+fn global_mount_modal_scroll_target_for_root_modal(
+    modal: &GlobalMountModal<'_>,
+) -> GlobalMountModalScrollTarget {
+    global_mount_modal_scroll_target(matches!(modal, GlobalMountModal::RolePicker { .. }))
+}
+
+fn settings_env_modal_scroll_target_for_root_modal(
+    modal: &crate::console::tui::state::SettingsEnvModal<'_>,
+) -> SettingsEnvModalScrollTarget {
+    settings_env_modal_scroll_target(
+        matches!(
+            modal,
+            crate::console::tui::state::SettingsEnvModal::OpPicker { .. }
+        ),
+        matches!(
+            modal,
+            crate::console::tui::state::SettingsEnvModal::RolePicker { .. }
+        ),
+    )
+}
+
+fn settings_auth_modal_scroll_target_for_root_modal(
+    modal: &SettingsAuthModal<'_>,
+) -> SettingsAuthModalScrollTarget {
+    settings_auth_modal_scroll_target(matches!(modal, SettingsAuthModal::OpPicker { .. }))
 }
 
 /// Track the list row under the pointer so the renderer can lift its

@@ -70,6 +70,60 @@ fn shell_state_plans_return_normalized_values() {
 }
 
 #[test]
+fn modal_scroll_targets_route_by_modal_facts() {
+    assert_eq!(
+        list_modal_scroll_target(true, true, true),
+        ListModalScrollTarget::GithubPicker
+    );
+    assert_eq!(
+        list_modal_scroll_target(false, true, true),
+        ListModalScrollTarget::RolePicker
+    );
+    assert_eq!(
+        list_modal_scroll_target(false, false, true),
+        ListModalScrollTarget::OpPicker
+    );
+    assert_eq!(
+        list_modal_scroll_target(false, false, false),
+        ListModalScrollTarget::None
+    );
+
+    assert_eq!(
+        shared_modal_scroll_target(true, true, true, true, true),
+        SharedModalScrollTarget::WorkdirPick
+    );
+    assert_eq!(
+        shared_modal_scroll_target(false, false, true, false, true),
+        SharedModalScrollTarget::RolePicker
+    );
+    assert_eq!(
+        shared_modal_scroll_target(false, false, false, false, true),
+        SharedModalScrollTarget::OpPicker
+    );
+    assert_eq!(
+        shared_modal_scroll_target(false, false, false, false, false),
+        SharedModalScrollTarget::None
+    );
+
+    assert_eq!(
+        settings_env_modal_scroll_target(true, true),
+        SettingsEnvModalScrollTarget::OpPicker
+    );
+    assert_eq!(
+        settings_env_modal_scroll_target(false, true),
+        SettingsEnvModalScrollTarget::RolePicker
+    );
+    assert_eq!(
+        settings_auth_modal_scroll_target(true),
+        SettingsAuthModalScrollTarget::OpPicker
+    );
+    assert_eq!(
+        global_mount_modal_scroll_target(true),
+        GlobalMountModalScrollTarget::RolePicker
+    );
+}
+
+#[test]
 fn list_pre_render_focus_plan_handles_sidebar_liveness() {
     let missing_sidebar = list_pre_render_focus_plan(
         Some(crate::tui::focus::MountScrollFocus::Workspace),
