@@ -12,6 +12,7 @@ use std::str::FromStr;
 
 use crate::auth::AuthForwardMode;
 use crate::constants::CLAUDE_OAUTH_TOKEN_ENV;
+use crate::env_model;
 
 /// The set of AI agents jackin' can provision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -170,7 +171,7 @@ RUN set -euxo pipefail && \\
     pub const fn required_env_var(self, mode: AuthForwardMode) -> Option<&'static str> {
         use AuthForwardMode as M;
         match (self, mode) {
-            (Self::Claude, M::ApiKey) => Some("ANTHROPIC_API_KEY"),
+            (Self::Claude, M::ApiKey) => Some(env_model::ANTHROPIC_API_KEY_ENV_NAME),
             (Self::Claude, M::OAuthToken) => Some(CLAUDE_OAUTH_TOKEN_ENV),
             (Self::Codex, M::ApiKey) => Some("OPENAI_API_KEY"),
             (Self::Amp, M::ApiKey) => Some("AMP_API_KEY"),

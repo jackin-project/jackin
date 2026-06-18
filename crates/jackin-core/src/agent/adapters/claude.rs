@@ -2,6 +2,7 @@
 
 use crate::auth::AuthForwardMode;
 use crate::constants::CLAUDE_OAUTH_TOKEN_ENV;
+use crate::env_model;
 
 use crate::agent::runtime::{
     AgentRuntime, AgentStatePaths, looks_like_version, render_fallback_install_block,
@@ -53,7 +54,7 @@ RUN set -euxo pipefail && \\
 
     fn required_env_var(&self, mode: AuthForwardMode) -> Option<&'static str> {
         match mode {
-            AuthForwardMode::ApiKey => Some("ANTHROPIC_API_KEY"),
+            AuthForwardMode::ApiKey => Some(env_model::ANTHROPIC_API_KEY_ENV_NAME),
             AuthForwardMode::OAuthToken => Some(CLAUDE_OAUTH_TOKEN_ENV),
             AuthForwardMode::Sync | AuthForwardMode::Ignore => None,
         }

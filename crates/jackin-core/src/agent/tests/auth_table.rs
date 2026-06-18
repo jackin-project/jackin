@@ -1,13 +1,14 @@
 //! Tests for `agent` — auth table tests.
 use super::*;
 use crate::auth::AuthForwardMode;
+use crate::env_model;
 
 #[test]
 fn required_env_var_table() {
     assert_eq!(Agent::Claude.required_env_var(AuthForwardMode::Sync), None);
     assert_eq!(
         Agent::Claude.required_env_var(AuthForwardMode::ApiKey),
-        Some("ANTHROPIC_API_KEY")
+        Some(env_model::ANTHROPIC_API_KEY_ENV_NAME)
     );
     assert_eq!(
         Agent::Claude.required_env_var(AuthForwardMode::OAuthToken),
