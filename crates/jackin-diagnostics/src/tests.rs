@@ -109,6 +109,20 @@ fn writes_jsonl_events() {
 }
 
 #[test]
+fn writes_error_jsonl_events() {
+    init_test_tracing();
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, true, "load").unwrap();
+
+    run.error("attach_error", "capsule attach failed");
+
+    let contents = fs::read_to_string(run.path()).unwrap();
+    assert!(contents.contains("\"kind\":\"attach_error\""), "{contents}");
+    assert!(contents.contains("capsule attach failed"), "{contents}");
+}
+
+#[test]
 fn jsonl_events_include_current_span_id() {
     init_test_tracing();
     let tmp = tempfile::tempdir().unwrap();

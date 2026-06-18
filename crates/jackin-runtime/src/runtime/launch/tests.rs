@@ -1136,6 +1136,28 @@ fn read_text_tail_returns_recent_lines_only() {
     );
 }
 
+#[test]
+fn attach_failure_error_includes_capsule_log_tail() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("capsule.log");
+    std::fs::write(&path, "agent stderr\nfatal: missing token\n").unwrap();
+
+    let error = attach_failure_error(
+        "jk-test",
+        &anyhow::anyhow!("command failed: docker exec ..."),
+        &path,
+        &path.display().to_string(),
+    )
+    .to_string();
+
+    assert!(
+        error.contains("capsule attach failed for jk-test"),
+        "{error}"
+    );
+    assert!(error.contains("command failed: docker exec"), "{error}");
+    assert!(error.contains("fatal: missing token"), "{error}");
+}
+
 /// A Codex-authed role state rooted at `root` plus a workspace whose
 /// workdir (`/workspace`) and single mount (`/workspace/repo`) are the two
 /// paths `seed_codex_project_trust` should mark trusted.

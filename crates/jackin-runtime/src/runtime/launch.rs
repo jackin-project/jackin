@@ -861,26 +861,12 @@ pub(super) async fn launch_role_runtime(
         {
             return Err(diag);
         }
+        let attach_error =
+            attach_failure_error(container_name, &err, &capsule_log_path, &capsule_log_str);
         if let Some(run) = jackin_diagnostics::active_run() {
-            run.compact(
-                "attach_error",
-                &format!(
-                    "capsule attach failed for {container_name}: {err}; capsule_log={capsule_log_str}"
-                ),
-            );
-            match read_text_tail(&capsule_log_path, 40) {
-                Ok(Some(tail)) => run.compact("capsule_log_tail", &tail),
-                Ok(None) => run.compact(
-                    "capsule_log_tail",
-                    &format!("no capsule log output at {}", capsule_log_path.display()),
-                ),
-                Err(error) => run.compact(
-                    "capsule_log_tail",
-                    &format!("failed to read {}: {error}", capsule_log_path.display()),
-                ),
-            }
+            run.error("attach_error", &attach_error.to_string());
         }
-        return Err(err);
+        return Err(attach_error);
     }
     if let Some(progress) = steps.progress_mut() {
         progress.stage_done(super::progress::LaunchStage::Hardline, "open");
@@ -1054,6 +1040,22 @@ fn read_text_tail(path: &Path, max_lines: usize) -> anyhow::Result<Option<String
     } else {
         Ok(Some(ring.into_iter().collect::<Vec<_>>().join("\n")))
     }
+}
+
+fn attach_failure_error(
+    container_name: &str,
+    err: &anyhow::Error,
+    capsule_log_path: &Path,
+    capsule_log_str: &str,
+) -> anyhow::Error {
+    let evidence = match read_text_tail(capsule_log_path, 40) {
+        Ok(Some(tail)) => format!("last 40 capsule log lines:\n{tail}"),
+        Ok(None) => format!("capsule log {capsule_log_str} had no output"),
+        Err(error) => format!("failed to read capsule log {capsule_log_str}: {error:#}"),
+    };
+    anyhow::anyhow!(
+        "capsule attach failed for {container_name}: {err}\ncapsule log: {capsule_log_str}\n{evidence}"
+    )
 }
 
 /// Query a container's post-attach state for use by `finalize_foreground_session`.
