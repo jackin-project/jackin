@@ -16,6 +16,9 @@ use jackin_console::tui::screens::workspaces::update::{
     workspace_row_at_visual_index, workspace_row_index, workspace_selected_row,
     workspace_visual_selected_index,
 };
+use jackin_console::tui::subscriptions::{
+    InstanceRefreshThrottleState, instance_refresh_throttle_plan,
+};
 use jackin_env::OpCache;
 use jackin_tui::components::FocusOwner;
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
@@ -504,19 +507,18 @@ impl ManagerState<'_> {
     }
 
     pub(crate) fn next_instance_refresh_generation_if_due(&mut self) -> Option<u64> {
-        const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
-        if self.instances_refresh_rx.is_some() {
-            return None;
-        }
         let now = std::time::Instant::now();
-        if let Some(last) = self.instances_last_refresh
-            && now.duration_since(last) < REFRESH_INTERVAL
-        {
-            return None;
-        }
-        self.instances_last_refresh = Some(now);
-        self.instances_refresh_generation = self.instances_refresh_generation.wrapping_add(1);
-        Some(self.instances_refresh_generation)
+        let plan = instance_refresh_throttle_plan(
+            InstanceRefreshThrottleState {
+                in_flight: self.instances_refresh_rx.is_some(),
+                last_refresh: self.instances_last_refresh,
+                generation: self.instances_refresh_generation,
+            },
+            now,
+        );
+        self.instances_last_refresh = plan.last_refresh;
+        self.instances_refresh_generation = plan.generation;
+        plan.start_generation
     }
 
     #[cfg(test)]
