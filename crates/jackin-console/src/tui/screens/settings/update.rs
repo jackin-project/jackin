@@ -1232,6 +1232,19 @@ pub fn settings_trust_row_at_position(
 }
 
 #[must_use]
+pub fn settings_trust_clickable_at_position(
+    active_tab: SettingsTab,
+    modal_open: bool,
+    content_area: Rect,
+    col: u16,
+    row: u16,
+) -> bool {
+    active_tab == SettingsTab::Trust
+        && !modal_open
+        && crate::tui::layout::point_in_rect(col, row, content_area)
+}
+
+#[must_use]
 pub fn trust_content_width(state: &SettingsTrustState) -> usize {
     state
         .pending

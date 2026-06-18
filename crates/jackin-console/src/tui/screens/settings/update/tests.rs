@@ -1098,6 +1098,40 @@ fn settings_trust_row_at_position_skips_header_and_applies_scroll() {
 }
 
 #[test]
+fn settings_trust_clickable_at_position_requires_trust_content_without_modal() {
+    let area = Rect::new(0, 5, 80, 10);
+
+    assert!(settings_trust_clickable_at_position(
+        SettingsTab::Trust,
+        false,
+        area,
+        1,
+        6,
+    ));
+    assert!(!settings_trust_clickable_at_position(
+        SettingsTab::Mounts,
+        false,
+        area,
+        1,
+        6,
+    ));
+    assert!(!settings_trust_clickable_at_position(
+        SettingsTab::Trust,
+        true,
+        area,
+        1,
+        6,
+    ));
+    assert!(!settings_trust_clickable_at_position(
+        SettingsTab::Trust,
+        false,
+        area,
+        80,
+        6,
+    ));
+}
+
+#[test]
 fn settings_scroll_focus_plan_routes_by_tab_and_modal() {
     assert_eq!(
         settings_scroll_focus_plan(SettingsTab::Mounts, false, true),

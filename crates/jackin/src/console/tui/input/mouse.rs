@@ -35,7 +35,7 @@ use jackin_console::tui::screens::editor::update::{
 };
 use jackin_console::tui::screens::settings::update::{
     settings_modal_open as settings_modal_open_fact, settings_scroll_focus_plan,
-    settings_tab_at_position, settings_trust_row_at_position,
+    settings_tab_at_position, settings_trust_clickable_at_position, settings_trust_row_at_position,
 };
 use jackin_console::tui::screens::workspaces::update::{
     WorkspaceListMousePlan, workspace_list_clickable_at_position,
@@ -323,7 +323,13 @@ pub(crate) fn clickable_at(
             if settings.mounts.modal.is_none() && settings.env.modal.is_none() =>
         {
             settings_tab_at_position(mouse.row, mouse.column).is_some()
-                || settings_trust_clickable(settings, mouse, term_size)
+                || settings_trust_clickable_at_position(
+                    settings.active_tab,
+                    settings.mounts.modal.is_some(),
+                    settings.content_area(term_size),
+                    mouse.column,
+                    mouse.row,
+                )
         }
         ManagerStage::List if state.list_modal.is_none() => workspace_list_clickable_at_position(
             mouse.column,
@@ -386,19 +392,6 @@ fn update_container_info_hover(state: &mut ManagerState<'_>, mouse: MouseEvent, 
         jackin_tui::components::container_info_copy_payload_at(area, info, mouse.column, mouse.row)
             .map(|(row, _)| row);
     info.set_hovered_row(hovered);
-}
-
-/// Whether the pointer is inside the Settings → Trust content area (a click
-/// there selects a row / activates scroll). Shared by the click handler and the
-/// hover cue.
-fn settings_trust_clickable(
-    settings: &crate::console::tui::state::SettingsState<'_>,
-    mouse: MouseEvent,
-    term_size: Rect,
-) -> bool {
-    settings.active_tab == SettingsTab::Trust
-        && settings.mounts.modal.is_none()
-        && point_in_rect(mouse.column, mouse.row, settings.content_area(term_size))
 }
 
 /// Resolve the active file-browser modal and its state from whichever stage
