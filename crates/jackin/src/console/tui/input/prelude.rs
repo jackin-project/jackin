@@ -266,12 +266,7 @@ pub(super) fn handle_prelude_modal(
 /// Used by step-back navigation from `TextInputDst` / `WorkdirPick`.
 fn reopen_mount_dst_choice(prelude: &mut crate::console::tui::state::CreatePreludeState<'_>) {
     use crate::console::tui::state::FileBrowserTarget;
-    let src_display = prelude
-        .pending_mount_src
-        .as_ref()
-        .map(|p| p.display().to_string());
-    let src = create_prelude_mount_destination_default(src_display.as_deref());
-    prelude.modal = Some(Modal::MountDstChoice {
+    prelude.reopen_mount_dst_choice(|src| Modal::MountDstChoice {
         target: FileBrowserTarget::CreateFirstMountSrc,
         state: create_prelude_mount_dst_choice_state(src),
     });

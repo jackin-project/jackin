@@ -1422,6 +1422,11 @@ impl<Modal> ConsoleCreatePreludeState<Modal> {
         self.pending_name = Some(name);
     }
 
+    pub fn reopen_mount_dst_choice(&mut self, make_modal: impl FnOnce(String) -> Modal) {
+        let src = self.default_mount_dst();
+        self.modal = Some(make_modal(src));
+    }
+
     #[must_use]
     pub fn name(&self) -> Option<&str> {
         self.pending_name.as_deref()
@@ -1868,6 +1873,16 @@ mod tests {
         assert_eq!(mount.dst, "/work/proj");
         assert!(mount.readonly);
         assert_eq!(mount.isolation, MountIsolation::Shared);
+    }
+
+    #[test]
+    fn create_prelude_reopens_mount_dst_choice_from_source() {
+        let mut prelude = ConsoleCreatePreludeState::<String>::new();
+        prelude.accept_mount_src(PathBuf::from("/host/proj"));
+
+        prelude.reopen_mount_dst_choice(|src| src);
+
+        assert_eq!(prelude.modal.as_deref(), Some("/host/proj"));
     }
 
     #[test]
