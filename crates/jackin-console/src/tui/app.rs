@@ -269,6 +269,73 @@ impl<
     AuthForm,
     AuthFormFocus,
     SecretsScopeTag,
+> crate::tui::auth_config::ModalAuthOpPickerOpen<OpPickerState, AuthFormFocus>
+    for ConsoleModal<
+        TextInputTarget,
+        TextInputState,
+        FileBrowserTarget,
+        FileBrowserState,
+        MountDstChoiceState,
+        WorkdirPickState,
+        ConfirmTarget,
+        ConfirmState,
+        SaveDiscardState,
+        GithubPickerState,
+        ConfirmSaveState,
+        ErrorPopupState,
+        ContainerInfoState,
+        StatusPopupState,
+        OpPickerState,
+        RolePickerState,
+        SourcePickerState,
+        ScopePickerState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+        SecretsScopeTag,
+    >
+{
+    fn open_auth_op_picker(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        credential_focus: AuthFormFocus,
+        make_op_picker: impl FnOnce() -> OpPickerState,
+    ) -> bool {
+        let Some(Self::AuthForm { focus, .. }) = modal_parents.last_mut() else {
+            *modal = None;
+            return false;
+        };
+        *focus = credential_focus;
+        *modal = Some(Self::OpPicker {
+            state: Box::new(make_op_picker()),
+        });
+        true
+    }
+}
+
+impl<
+    TextInputTarget,
+    TextInputState,
+    FileBrowserTarget,
+    FileBrowserState,
+    MountDstChoiceState,
+    WorkdirPickState,
+    ConfirmTarget,
+    ConfirmState,
+    SaveDiscardState,
+    GithubPickerState,
+    ConfirmSaveState,
+    ErrorPopupState,
+    ContainerInfoState,
+    StatusPopupState,
+    OpPickerState,
+    RolePickerState,
+    SourcePickerState,
+    ScopePickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+    SecretsScopeTag,
     OpRef,
 > crate::tui::auth_config::ModalAuthFormOpRefApply<AuthFormFocus, OpRef>
     for ConsoleModal<
@@ -1922,6 +1989,63 @@ mod tests {
         assert!(
             matches!(modal, Some(TestModal::TextInput { target: "auth", state }) if state == "existing")
         );
+    }
+
+    #[test]
+    fn console_modal_opens_auth_op_picker() {
+        type TestModal = ConsoleModal<
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            &'static str,
+            (),
+            (),
+            (),
+            crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
+            crate::tui::components::auth_panel::AuthForm<jackin_core::EnvValue>,
+            crate::tui::screens::settings::model::AuthFormFocus,
+            (),
+        >;
+
+        let mut modal = None;
+        let mut parents = vec![TestModal::AuthForm {
+            target: crate::tui::screens::settings::model::AuthFormTarget::Workspace {
+                kind: crate::tui::auth::AuthKind::Claude,
+            },
+            state: Box::new(crate::tui::components::auth_panel::AuthForm::new(
+                crate::tui::auth::AuthKind::Claude,
+            )),
+            focus: crate::tui::screens::settings::model::AuthFormFocus::Mode,
+            literal_buffer: String::new(),
+        }];
+
+        let opened = crate::tui::auth_config::ModalAuthOpPickerOpen::open_auth_op_picker(
+            &mut modal,
+            &mut parents,
+            crate::tui::screens::settings::model::AuthFormFocus::CredentialSource,
+            || "op-picker",
+        );
+
+        assert!(opened);
+        assert!(matches!(
+            parents.last(),
+            Some(TestModal::AuthForm {
+                focus: crate::tui::screens::settings::model::AuthFormFocus::CredentialSource,
+                ..
+            })
+        ));
+        assert!(matches!(modal, Some(TestModal::OpPicker { state }) if *state == "op-picker"));
     }
 
     #[test]

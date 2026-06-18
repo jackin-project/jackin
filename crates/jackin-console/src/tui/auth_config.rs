@@ -196,6 +196,15 @@ pub trait ModalAuthPlainSourceOpen<TextInputTarget, TextInputState, AuthFormFocu
     ) -> bool;
 }
 
+pub trait ModalAuthOpPickerOpen<OpPickerState, AuthFormFocus>: Sized {
+    fn open_auth_op_picker(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        credential_focus: AuthFormFocus,
+        make_op_picker: impl FnOnce() -> OpPickerState,
+    ) -> bool;
+}
+
 pub trait AuthFormCredentialEdit {
     type OpRef;
 

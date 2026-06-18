@@ -341,19 +341,18 @@ pub(super) fn open_op_picker_from_auth_source(
     editor: &mut EditorState<'_>,
     op_cache: std::rc::Rc<std::cell::RefCell<OpCache>>,
 ) {
-    let Some(Modal::AuthForm { focus, .. }) = editor.modal_parents.last_mut() else {
+    if !jackin_console::tui::auth_config::ModalAuthOpPickerOpen::open_auth_op_picker(
+        &mut editor.modal,
+        &mut editor.modal_parents,
+        AuthFormFocus::CredentialSource,
+        || OpPickerState::new_with_cache(op_cache),
+    ) {
         log_missing_return_path(
             AUTH_MISSING_OP_SOURCE,
             "open_op_picker_from_auth_source",
             " — closing modal",
         );
-        editor.modal = None;
-        return;
-    };
-    *focus = AuthFormFocus::CredentialSource;
-    editor.modal = Some(Modal::OpPicker {
-        state: Box::new(OpPickerState::new_with_cache(op_cache)),
-    });
+    }
 }
 
 /// Re-mount the auth-form modal with a freshly-picked `OpRef` applied
