@@ -226,6 +226,17 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
 }
 
 impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
+    crate::tui::app::ConsolePendingTokenGenerate
+    for SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
+{
+    type PendingTokenGenerate = PendingToken;
+
+    fn take_pending_token_generate(&mut self) -> Option<Self::PendingTokenGenerate> {
+        self.pending_token_generate.take()
+    }
+}
+
+impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
     SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
 where
     Mounts: SettingsMountsTakeExit + SettingsPanelTakeError,

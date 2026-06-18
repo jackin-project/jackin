@@ -187,11 +187,7 @@ impl ManagerState<'_> {
 
     #[allow(clippy::missing_const_for_fn)]
     pub(crate) fn take_pending_token_generate(&mut self) -> Option<PendingTokenGenerate> {
-        match &mut self.stage {
-            ManagerStage::Editor(editor) => editor.pending_token_generate.take(),
-            ManagerStage::Settings(settings) => settings.pending_token_generate.take(),
-            _ => None,
-        }
+        self.stage.take_pending_token_generate()
     }
 
     // ── Tree navigation helpers ────────────────────────────────────

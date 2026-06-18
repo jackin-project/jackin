@@ -116,6 +116,12 @@ pub trait ConsoleSettingsFooterHeight {
     fn settings_cached_footer_height(&self) -> u16;
 }
 
+pub trait ConsolePendingTokenGenerate {
+    type PendingTokenGenerate;
+
+    fn take_pending_token_generate(&mut self) -> Option<Self::PendingTokenGenerate>;
+}
+
 pub trait ConsoleCreatePreludeModalPresence {
     fn create_prelude_modal_open(&self) -> bool;
 }
@@ -232,6 +238,24 @@ where
                 Self::Settings(settings) => settings.settings_cached_footer_height(),
                 _ => 0,
             },
+        }
+    }
+}
+
+impl<CreatePrelude, Editor, Settings, PendingTokenGenerate>
+    ConsoleManagerStage<CreatePrelude, Editor, Settings>
+where
+    Editor: ConsolePendingTokenGenerate<PendingTokenGenerate = PendingTokenGenerate>,
+    Settings: ConsolePendingTokenGenerate<PendingTokenGenerate = PendingTokenGenerate>,
+{
+    pub fn take_pending_token_generate(&mut self) -> Option<PendingTokenGenerate> {
+        match self {
+            Self::Editor(editor) => editor.take_pending_token_generate(),
+            Self::Settings(settings) => settings.take_pending_token_generate(),
+            Self::List
+            | Self::CreatePrelude(_)
+            | Self::ConfirmDelete { .. }
+            | Self::ConfirmInstancePurge { .. } => None,
         }
     }
 }
@@ -2011,6 +2035,18 @@ mod tests {
         }
     }
 
+    struct TestTokenDrain {
+        pending: Option<u8>,
+    }
+
+    impl super::ConsolePendingTokenGenerate for TestTokenDrain {
+        type PendingTokenGenerate = u8;
+
+        fn take_pending_token_generate(&mut self) -> Option<Self::PendingTokenGenerate> {
+            self.pending.take()
+        }
+    }
+
     struct TestDebugModal;
 
     impl super::ConsoleModalDebugKind for TestDebugModal {
@@ -2214,6 +2250,38 @@ mod tests {
                 settings_footer_height: 0,
             }
         );
+    }
+
+    #[test]
+    fn console_manager_stage_takes_pending_token_generate_from_editor_or_settings() {
+        type Stage = ConsoleManagerStage<(), TestTokenDrain, TestTokenDrain>;
+
+        let mut editor = Stage::Editor(TestTokenDrain { pending: Some(7) });
+        assert_eq!(editor.take_pending_token_generate(), Some(7));
+        assert_eq!(editor.take_pending_token_generate(), None);
+
+        let mut settings = Stage::Settings(TestTokenDrain { pending: Some(9) });
+        assert_eq!(settings.take_pending_token_generate(), Some(9));
+        assert_eq!(settings.take_pending_token_generate(), None);
+
+        let mut list = Stage::List;
+        assert_eq!(list.take_pending_token_generate(), None);
+
+        let mut create = Stage::CreatePrelude(());
+        assert_eq!(create.take_pending_token_generate(), None);
+
+        let mut delete = Stage::ConfirmDelete {
+            name: "workspace".to_owned(),
+            state: jackin_tui::components::ConfirmState::new("Delete?"),
+        };
+        assert_eq!(delete.take_pending_token_generate(), None);
+
+        let mut purge = Stage::ConfirmInstancePurge {
+            container: "container".to_owned(),
+            label: "label".to_owned(),
+            state: jackin_tui::components::ConfirmState::new("Purge?"),
+        };
+        assert_eq!(purge.take_pending_token_generate(), None);
     }
 
     #[test]

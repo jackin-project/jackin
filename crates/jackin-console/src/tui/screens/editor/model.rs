@@ -350,6 +350,40 @@ impl<
     PendingDriftCheck,
     PendingIsolationCleanup,
     PendingOpCommit,
+> crate::tui::app::ConsolePendingTokenGenerate
+    for EditorState<
+        WorkspaceConfig,
+        MountInfoCache,
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >
+{
+    type PendingTokenGenerate = PendingTokenGenerate;
+
+    fn take_pending_token_generate(&mut self) -> Option<Self::PendingTokenGenerate> {
+        self.pending_token_generate.take()
+    }
+}
+
+impl<
+    WorkspaceConfig,
+    MountInfoCache,
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
 > crate::tui::app::ConsoleEditorFooterHeight
     for EditorState<
         WorkspaceConfig,
