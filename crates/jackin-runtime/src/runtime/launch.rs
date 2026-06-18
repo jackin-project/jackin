@@ -53,7 +53,7 @@ use jackin_config::AppConfig;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::attach::{ContainerState, reconnect_or_create_session_with_focus};
 use super::discovery::list_running_agent_names;
@@ -843,13 +843,10 @@ pub(super) async fn launch_role_runtime(
     if let Err(err) = session_result {
         // Single inspect — the previous two-call shape opened a TOCTOU
         // window where the container could transition Running→Stopped(0)
-        // between the diagnose and swallow checks. `diagnose_premature_exit`
-        // returns a synthesized error for surfaceable exits; otherwise
-        // the post-attach happy path is `Stopped(exit 0, !oom)` from a
-        // clean multiplexer shutdown — swallow `docker exec`'s broken
-        // pipe in that case. External `docker rm` (NotFound) is rare
-        // and must propagate the real exec error so the operator sees
-        // why the container vanished mid-session.
+        // between the diagnose and swallow checks. If the attach command
+        // itself returned Err, propagate it even when PID 1 exited cleanly:
+        // the capsule attach protocol uses that path to report failed final
+        // sessions while the daemon still shuts down as init with exit 0.
         let inspect = docker.inspect_container_state(container_name).await;
         if let Some(diag) = diagnose_with_state(
             runner,
@@ -862,16 +859,12 @@ pub(super) async fn launch_role_runtime(
         {
             return Err(diag);
         }
-        if matches!(
-            inspect,
-            ContainerState::Stopped {
-                exit_code: 0,
-                oom_killed: false,
-            }
-        ) {
-            return Ok(());
+        let attach_error =
+            attach_failure_error(container_name, &err, &capsule_log_path, &capsule_log_str);
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.error("attach_error", &attach_error.to_string());
         }
-        return Err(err);
+        return Err(attach_error);
     }
     if let Some(progress) = steps.progress_mut() {
         progress.stage_done(super::progress::LaunchStage::Hardline, "open");
@@ -1022,6 +1015,31 @@ async fn diagnose_with_state(
     }
 }
 
+fn read_text_tail(path: &Path, max_lines: usize) -> anyhow::Result<Option<String>> {
+    let lines = super::logs::read_tail(path, max_lines)?;
+    if lines.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(lines.join("\n")))
+    }
+}
+
+fn attach_failure_error(
+    container_name: &str,
+    err: &anyhow::Error,
+    capsule_log_path: &Path,
+    capsule_log_str: &str,
+) -> anyhow::Error {
+    let evidence = match read_text_tail(capsule_log_path, 40) {
+        Ok(Some(tail)) => format!("last 40 capsule log lines:\n{tail}"),
+        Ok(None) => format!("capsule log {capsule_log_str} had no output"),
+        Err(error) => format!("failed to read capsule log {capsule_log_str}: {error:#}"),
+    };
+    anyhow::anyhow!(
+        "capsule attach failed for {container_name}: {err}\ncapsule log: {capsule_log_str}\n{evidence}"
+    )
+}
+
 /// Query a container's post-attach state for use by `finalize_foreground_session`.
 ///
 /// Returns `AttachOutcome::still_running` when the container is still running
@@ -1085,7 +1103,7 @@ pub(super) enum GitPullResult {
 fn pull_workspace_repos_with_git(
     workspace: &jackin_config::ResolvedWorkspace,
     debug: bool,
-    git_program: &std::path::Path,
+    git_program: &Path,
 ) -> Vec<GitPullResult> {
     pull_git_sources_with_git(git_pull_sources(workspace), debug, git_program, true)
 }
@@ -1094,8 +1112,7 @@ pub(super) fn git_pull_sources(workspace: &jackin_config::ResolvedWorkspace) -> 
     let mut sources = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for mount in &workspace.mounts {
-        if std::path::Path::new(&mount.src).join(".git").exists() && seen.insert(mount.src.clone())
-        {
+        if Path::new(&mount.src).join(".git").exists() && seen.insert(mount.src.clone()) {
             sources.push(mount.src.clone());
         }
     }
@@ -1105,7 +1122,7 @@ pub(super) fn git_pull_sources(workspace: &jackin_config::ResolvedWorkspace) -> 
 pub(super) fn pull_git_sources_with_git(
     sources: Vec<String>,
     debug: bool,
-    git_program: &std::path::Path,
+    git_program: &Path,
     print_starts: bool,
 ) -> Vec<GitPullResult> {
     let mut pulls = Vec::new();

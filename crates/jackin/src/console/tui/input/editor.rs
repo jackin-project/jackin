@@ -768,6 +768,20 @@ pub(super) fn handle_editor_modal(
         }
         Modal::ErrorPopup { state: popup_state } => match popup_state.handle_key(key) {
             ModalOutcome::Cancel | ModalOutcome::Commit(()) => {
+                // A source-folder validation rejection stacks this popup
+                // directly over the auth source-folder picker. Dismissing it
+                // returns to that picker so the operator can pick another
+                // folder, rather than tearing down the whole auth flow.
+                if matches!(
+                    editor.modal_parents.last(),
+                    Some(Modal::FileBrowser {
+                        target: FileBrowserTarget::AuthFormSourceFolder,
+                        ..
+                    })
+                ) {
+                    editor.pop_modal_chain();
+                    return EditorModalOutcome::Continue;
+                }
                 editor.clear_modal_chain();
                 editor.save_flow = EditorSaveFlow::Idle;
                 // If the popup was raised by a failed OpPicker commit

@@ -1107,7 +1107,7 @@ async fn workspace_mise_paths_cover_workdir_and_mount_destinations() {
 
 #[tokio::test]
 async fn workspace_mise_env_does_not_override_operator_value() {
-    let workspace = repo_workspace(std::path::Path::new("/host/repo"));
+    let workspace = repo_workspace(Path::new("/host/repo"));
     let mut vars = vec![(
         MISE_TRUSTED_CONFIG_PATHS_ENV.to_owned(),
         "/operator/trusted".to_owned(),
@@ -1124,10 +1124,44 @@ async fn workspace_mise_env_does_not_override_operator_value() {
     );
 }
 
+#[test]
+fn read_text_tail_returns_recent_lines_only() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("capsule.log");
+    std::fs::write(&path, "one\ntwo\nthree\nfour\n").unwrap();
+
+    assert_eq!(
+        read_text_tail(&path, 2).unwrap(),
+        Some("three\nfour".to_owned())
+    );
+}
+
+#[test]
+fn attach_failure_error_includes_capsule_log_tail() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("capsule.log");
+    std::fs::write(&path, "agent stderr\nfatal: missing token\n").unwrap();
+
+    let error = attach_failure_error(
+        "jk-test",
+        &anyhow::anyhow!("command failed: docker exec ..."),
+        &path,
+        &path.display().to_string(),
+    )
+    .to_string();
+
+    assert!(
+        error.contains("capsule attach failed for jk-test"),
+        "{error}"
+    );
+    assert!(error.contains("command failed: docker exec"), "{error}");
+    assert!(error.contains("fatal: missing token"), "{error}");
+}
+
 /// A Codex-authed role state rooted at `root` plus a workspace whose
 /// workdir (`/workspace`) and single mount (`/workspace/repo`) are the two
 /// paths `seed_codex_project_trust` should mark trusted.
-fn codex_trust_fixture(root: &std::path::Path) -> (RoleState, jackin_config::ResolvedWorkspace) {
+fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorkspace) {
     let state = RoleState {
         root: root.to_path_buf(),
         gh_config_dir: root.join("gh"),
@@ -1318,7 +1352,7 @@ echo "pulled $2"
     assert!(marker_dir.join("repo-b.started").is_file());
 }
 
-fn repo_workspace(repo_dir: &std::path::Path) -> jackin_config::ResolvedWorkspace {
+fn repo_workspace(repo_dir: &Path) -> jackin_config::ResolvedWorkspace {
     jackin_config::ResolvedWorkspace {
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_owned(),
@@ -2189,7 +2223,7 @@ fn console_resolution_fixture() -> ConsoleResolutionFixture {
     }
 }
 
-fn write_role_repo(repo_dir: &std::path::Path, manifest: &str) {
+fn write_role_repo(repo_dir: &Path, manifest: &str) {
     std::fs::create_dir_all(repo_dir).unwrap();
     std::fs::write(
         repo_dir.join("Dockerfile"),
@@ -2199,7 +2233,7 @@ fn write_role_repo(repo_dir: &std::path::Path, manifest: &str) {
     std::fs::write(repo_dir.join("jackin.role.toml"), manifest).unwrap();
 }
 
-fn seed_cached_repo(repo_dir: &std::path::Path, manifest: &str) {
+fn seed_cached_repo(repo_dir: &Path, manifest: &str) {
     write_role_repo(repo_dir, manifest);
     std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
 }
@@ -5374,6 +5408,79 @@ async fn build_mode_resolution_role_override_wins() {
     assert_eq!(trace[0].1, Some(AuthForwardMode::OAuthToken));
     assert_eq!(trace[1].1, None);
     assert_eq!(trace[2].1, None);
+}
+
+#[tokio::test]
+async fn sync_source_resolution_uses_workspace_role_scope_per_agent() {
+    use jackin_config::{AgentAuthConfig, WorkspaceConfig, WorkspaceRoleOverride};
+    use jackin_core::agent::Agent;
+    use std::path::PathBuf;
+
+    let mut cfg = AppConfig {
+        codex: Some(AgentAuthConfig {
+            sync_source_dir: Some(PathBuf::from("/global/codex")),
+            ..Default::default()
+        }),
+        amp: Some(AgentAuthConfig {
+            sync_source_dir: Some(PathBuf::from("/global/amp")),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let mut workspace = WorkspaceConfig {
+        codex: Some(AgentAuthConfig {
+            sync_source_dir: Some(PathBuf::from("/workspace/codex")),
+            ..Default::default()
+        }),
+        amp: Some(AgentAuthConfig {
+            sync_source_dir: Some(PathBuf::from("/workspace/amp")),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    workspace.roles.insert(
+        "architect".to_owned(),
+        WorkspaceRoleOverride {
+            codex: Some(AgentAuthConfig {
+                sync_source_dir: Some(PathBuf::from("/role/architect/codex")),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    );
+    workspace.roles.insert(
+        "builder".to_owned(),
+        WorkspaceRoleOverride {
+            amp: Some(AgentAuthConfig {
+                sync_source_dir: Some(PathBuf::from("/role/builder/amp")),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    );
+    cfg.workspaces.insert("proj".to_owned(), workspace);
+
+    let architect_source =
+        |agent| jackin_config::resolve_sync_source_dir(&cfg, agent, "proj", "architect");
+    let builder_source =
+        |agent| jackin_config::resolve_sync_source_dir(&cfg, agent, "proj", "builder");
+
+    assert_eq!(
+        architect_source(Agent::Codex),
+        Some(PathBuf::from("/role/architect/codex"))
+    );
+    assert_eq!(
+        architect_source(Agent::Amp),
+        Some(PathBuf::from("/workspace/amp"))
+    );
+    assert_eq!(
+        builder_source(Agent::Codex),
+        Some(PathBuf::from("/workspace/codex"))
+    );
+    assert_eq!(
+        builder_source(Agent::Amp),
+        Some(PathBuf::from("/role/builder/amp"))
+    );
 }
 
 #[tokio::test]
