@@ -2552,6 +2552,7 @@ dependencies = [
  "ratatui",
  "serde",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

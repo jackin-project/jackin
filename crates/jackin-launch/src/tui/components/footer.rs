@@ -44,6 +44,7 @@ pub fn render_footer(
         frame,
         area,
         &format_activity(&view.status),
+        Some("Ctrl+C abort  ·  Ctrl+Q exit?"),
         &instance,
         debug_chip,
         alpha,

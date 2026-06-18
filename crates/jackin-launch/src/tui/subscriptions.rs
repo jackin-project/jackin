@@ -8,6 +8,7 @@ use crossterm::event::{
 };
 use jackin_tui::components::{ScrollAxes, StatusFooterHover};
 use ratatui::layout::Rect;
+use tokio_util::sync::CancellationToken;
 
 use crate::tui::components::build_log_dialog::{
     build_log_scrollbar_top_offset_for_row_cached, refresh_build_log_layout,
@@ -316,6 +317,7 @@ pub fn handle_cockpit_input(
     run_log_path: &str,
     terminal: &dyn LaunchHostTerminal,
     jackin_version: &'static str,
+    cancel_token: &CancellationToken,
 ) {
     let area = current_terminal_area();
     let ctx = CockpitContext {
@@ -333,6 +335,41 @@ pub fn handle_cockpit_input(
             return;
         };
         match ev {
+            // Ctrl+C: hard cancel — no dialog, immediate teardown.
+            Event::Key(k)
+                if k.kind == KeyEventKind::Press
+                    && k.code == KeyCode::Char('c')
+                    && k.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                cancel_token.cancel();
+                return;
+            }
+            // Ctrl+Q: toggle exit confirm overlay — pipeline keeps running.
+            Event::Key(k)
+                if k.kind == KeyEventKind::Press
+                    && k.code == KeyCode::Char('q')
+                    && k.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                if v.exit_confirm_open {
+                    let _dirty = update_launch_view(&mut v, LaunchMessage::ExitConfirmClosed);
+                } else {
+                    let _dirty = update_launch_view(&mut v, LaunchMessage::ExitConfirmOpened);
+                }
+            }
+            // Exit confirm modal captures Y/N/Esc when open.
+            Event::Key(k) if k.kind == KeyEventKind::Press && v.exit_confirm_open => {
+                match k.code {
+                    KeyCode::Char('y' | 'Y') | KeyCode::Enter => {
+                        cancel_token.cancel();
+                        return;
+                    }
+                    KeyCode::Char('n' | 'N') | KeyCode::Esc => {
+                        let _dirty =
+                            update_launch_view(&mut v, LaunchMessage::ExitConfirmClosed);
+                    }
+                    _ => {}
+                }
+            }
             Event::Mouse(m) => {
                 // Durable telemetry: capture exactly what the terminal delivers
                 // for a dialog mouse event so a `--debug` run reveals whether a

@@ -215,6 +215,15 @@ pub(crate) fn stories() -> Vec<Story> {
             story_status_footer_launch_progress,
         ),
         Story::new(
+            "status-footer/launch-with-hint",
+            "Status footer",
+            "StatusFooter",
+            "White launch status footer with keybinding hint text.",
+            72,
+            1,
+            story_status_footer_launch_with_hint,
+        ),
+        Story::new(
             "text-input/workspace-name",
             "Text input",
             "TextInput",
@@ -511,11 +520,29 @@ fn story_status_footer_launch_progress(frame: &mut Frame<'_>, area: Rect) {
         frame,
         area,
         "Building role image: rust-dev",
+        None,
         "s7f8a2c1",
         Some("jk-run-3d7e23"),
         1.0, // fully opaque — the real launch cockpit fades in over ~30 frames
         StatusFooterHover {
             left: true,
+            right: false,
+            right_debug: false,
+        },
+    );
+}
+
+fn story_status_footer_launch_with_hint(frame: &mut Frame<'_>, area: Rect) {
+    render_status_footer(
+        frame,
+        area,
+        "Building role image: rust-dev",
+        Some("Ctrl+C abort  ·  Ctrl+Q exit?"),
+        "s7f8a2c1",
+        Some("jk-run-3d7e23"),
+        1.0,
+        StatusFooterHover {
+            left: false,
             right: false,
             right_debug: false,
         },

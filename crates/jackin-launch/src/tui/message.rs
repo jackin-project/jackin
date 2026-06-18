@@ -41,4 +41,6 @@ pub enum LaunchMessage {
     ContainerInfoClosed,
     ContainerInfoCopied(usize),
     ContainerInfoHovered(Option<usize>),
+    ExitConfirmOpened,
+    ExitConfirmClosed,
 }

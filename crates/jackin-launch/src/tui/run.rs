@@ -6,6 +6,7 @@ use anyhow::Context;
 use crossterm::ExecutableCommand;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
+use tokio_util::sync::CancellationToken;
 use jackin_tui::ModalOutcome;
 use jackin_tui::components::{ConfirmState, ErrorPopupState, SelectListState, TextInputState};
 use ratatui::backend::Backend as _;
@@ -66,6 +67,7 @@ impl RichDriver {
         run_log_path: String,
         host: &'static dyn LaunchHostTerminal,
         jackin_version: &'static str,
+        cancel_token: CancellationToken,
     ) -> Self {
         use std::sync::atomic::Ordering;
         let renderer = std::sync::Arc::new(std::sync::Mutex::new(renderer));
@@ -78,13 +80,13 @@ impl RichDriver {
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
                     interval.tick().await;
-                    if stop.load(Ordering::Relaxed) {
+                    if stop.load(Ordering::Relaxed) || cancel_token.is_cancelled() {
                         break;
                     }
                     let Ok(mut rr) = renderer.try_lock() else {
                         continue;
                     };
-                    handle_cockpit_input(&view, &run_id, &run_log_path, host, jackin_version);
+                    handle_cockpit_input(&view, &run_id, &run_log_path, host, jackin_version, &cancel_token);
                     let snapshot = match view.lock() {
                         Ok(mut v) => {
                             let build_log_lines = crate::build_log::snapshot();
@@ -149,7 +151,11 @@ fn read_pressed_key(context: &'static str) -> anyhow::Result<KeyEvent> {
         if key.kind != KeyEventKind::Press {
             continue;
         }
-        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        let is_ctrl_c =
+            key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL);
+        let is_ctrl_q =
+            key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL);
+        if is_ctrl_c || is_ctrl_q {
             anyhow::bail!("launch cancelled by operator");
         }
         return Ok(key);

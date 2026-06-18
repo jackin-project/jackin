@@ -4,8 +4,11 @@
 //! Not responsible for: executing launch stages (see `runtime`) or
 //! capsule attach after handoff.
 
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
+
+use tokio_util::sync::CancellationToken;
 
 use crate::tui::run::{RichDriver, RichRenderer};
 use crate::tui::subscriptions::SharedView;
@@ -25,6 +28,7 @@ pub struct LaunchProgress {
     renderer: Renderer,
     view: SharedView,
     host: &'static dyn LaunchHostTerminal,
+    cancel_token: CancellationToken,
 }
 
 enum Renderer {
@@ -43,6 +47,7 @@ impl LaunchProgress {
         jackin_version: &'static str,
     ) -> anyhow::Result<Self> {
         crate::tui::terminal::require_rich_terminal()?;
+        let cancel_token = CancellationToken::new();
         let view: SharedView = Arc::new(std::sync::Mutex::new(initial_view()));
         let rich = RichRenderer::enter(no_motion, host, jackin_version)?;
         let renderer = Renderer::Rich(RichDriver::spawn(
@@ -52,12 +57,14 @@ impl LaunchProgress {
             diagnostics.path().display().to_string(),
             host,
             jackin_version,
+            cancel_token.clone(),
         ));
         Ok(Self {
             diagnostics,
             renderer,
             view,
             host,
+            cancel_token,
         })
     }
 
@@ -68,6 +75,7 @@ impl LaunchProgress {
             renderer: Renderer::Test,
             view: Arc::new(std::sync::Mutex::new(initial_view())),
             host: crate::test_support::test_host_terminal(),
+            cancel_token: CancellationToken::new(),
         }
     }
 
@@ -276,14 +284,22 @@ impl LaunchProgress {
         })
     }
 
-    #[allow(clippy::unused_self)]
-    pub async fn while_waiting<T, E, F>(&self, future: F) -> Result<T, E>
+    /// Returns a clone of the cancellation token so callers in `jackin-runtime`
+    /// can register additional cancel-aware tasks without owning the token.
+    pub fn cancel_token(&self) -> CancellationToken {
+        self.cancel_token.clone()
+    }
+
+    pub async fn while_waiting<T, F>(&self, future: F) -> anyhow::Result<T>
     where
-        F: Future<Output = Result<T, E>>,
+        F: Future<Output = anyhow::Result<T>>,
     {
-        // The background render task ticks the cockpit independently, so the
-        // awaited work no longer needs to interleave a draw — just await it.
-        future.await
+        tokio::select! {
+            result = future => result,
+            () = self.cancel_token.cancelled() => {
+                anyhow::bail!("launch cancelled by operator")
+            }
+        }
     }
 }
 

@@ -56,6 +56,13 @@ pub fn draw_confirm(frame: &mut Frame<'_>, state: &ConfirmState) {
     render_hint_bar(frame, hint_area, CONFIRM_HINT);
 }
 
+pub fn draw_exit_confirm(frame: &mut Frame<'_>) {
+    let state = ConfirmState::new("Abort launch?");
+    let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
+    render_confirm_dialog(frame, confirm_rect(box_area, &state), &state);
+    render_hint_bar(frame, hint_area, EXIT_CONFIRM_HINT);
+}
+
 pub fn draw_error_popup(frame: &mut Frame<'_>, state: &ErrorPopupState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
     render_error_dialog_in(frame, error_popup_rect(box_area, state), state);
@@ -144,6 +151,17 @@ const CONFIRM_HINT: &[HintSpan<'static>] = &[
     HintSpan::GroupSep,
     HintSpan::Key("⇥"),
     HintSpan::Text("focus"),
+];
+
+const EXIT_CONFIRM_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Y"),
+    HintSpan::Text("abort launch"),
+    HintSpan::GroupSep,
+    HintSpan::Key("N/Esc"),
+    HintSpan::Text("continue"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Ctrl-Q"),
+    HintSpan::Text("close"),
 ];
 
 const ERROR_POPUP_HINT: &[HintSpan<'static>] = &[HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")];

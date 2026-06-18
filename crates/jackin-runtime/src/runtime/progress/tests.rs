@@ -527,6 +527,7 @@ fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
         container_info_copied: None,
         container_info_hover: None,
         container_info_scroll: jackin_tui::components::DialogBodyScroll::new(),
+        exit_confirm_open: false,
     };
     refresh_build_log_layout(&mut view, Rect::new(0, 0, 56, 12), true);
     terminal
@@ -584,6 +585,7 @@ fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
         container_info_copied: None,
         container_info_hover: None,
         container_info_scroll: jackin_tui::components::DialogBodyScroll::new(),
+        exit_confirm_open: false,
     };
 
     view.build_log_scroll.scroll_by(filled, -1);
@@ -646,6 +648,7 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
         container_info_copied: None,
         container_info_hover: None,
         container_info_scroll: jackin_tui::components::DialogBodyScroll::new(),
+        exit_confirm_open: false,
     };
     terminal
         .draw(|frame| {
