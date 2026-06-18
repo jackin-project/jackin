@@ -396,6 +396,14 @@ impl<MountModal, EnvModal, AuthModal, PendingOpCommit, ErrorPopup, PendingToken>
         );
     }
 
+    pub fn apply_trust_row_select_plan(
+        &mut self,
+        plan: crate::tui::screens::settings::update::SettingsTrustRowSelectPlan,
+    ) {
+        let content_focused = self.trust.apply_row_select_plan(plan);
+        self.set_content_focused(SettingsTab::Trust, content_focused);
+    }
+
     #[must_use]
     pub fn mounts_content_height(&self) -> usize {
         crate::tui::screens::settings::view::mounts_content_height(
@@ -3300,6 +3308,30 @@ mod tests {
         );
 
         assert!(state.content_focused(super::SettingsTab::Environments));
+    }
+
+    #[test]
+    fn settings_state_applies_trust_row_select_plan_and_focus() {
+        type TestState = SettingsState<
+            GlobalMountsState<GlobalMountRow, ()>,
+            SettingsEnvState<EnvValue, ()>,
+            SettingsAuthState<EnvValue, (), ()>,
+            SettingsTrustState,
+            (),
+            (),
+        >;
+        let mut state = TestState::from_config(&AppConfig::default());
+        state.set_tab_bar_focused(true);
+
+        state.apply_trust_row_select_plan(
+            crate::tui::screens::settings::update::SettingsTrustRowSelectPlan {
+                selected: Some(2),
+                content_focused: true,
+            },
+        );
+
+        assert_eq!(state.trust.selected, 2);
+        assert!(state.content_focused(super::SettingsTab::Trust));
     }
 
     #[test]

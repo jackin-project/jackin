@@ -717,8 +717,7 @@ fn select_settings_trust_row(state: &mut ManagerState<'_>, row: usize) {
         return;
     };
     let plan = settings_trust_row_select_plan(row, settings.trust.pending.len());
-    let content_focused = settings.trust.apply_row_select_plan(plan);
-    settings.set_content_focused(SettingsTab::Trust, content_focused);
+    settings.apply_trust_row_select_plan(plan);
 }
 
 fn move_preview_pane(state: &mut ManagerState<'_>, container: &str, delta: isize) {
