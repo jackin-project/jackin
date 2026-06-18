@@ -10,6 +10,7 @@ use crate::tui::components::file_browser::FileBrowserState;
 use crate::tui::components::op_picker::OpPickerRenderState;
 use crate::tui::components::op_picker::OpPickerStage;
 use crate::tui::screens::settings::model::AuthFormFocus;
+use crate::tui::screens::workspaces::model::ManagerListRow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceListFooterMode {
@@ -193,6 +194,23 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
             items.push(HintSpan::Text("quit"));
             items
         }
+    }
+}
+
+#[must_use]
+pub fn selected_instance_snapshot_available(
+    selected: ManagerListRow,
+    workspace_has_snapshot: impl FnOnce(usize, usize) -> bool,
+    current_dir_has_snapshot: impl FnOnce(usize) -> bool,
+) -> bool {
+    match selected {
+        ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => {
+            workspace_has_snapshot(ws_idx, inst_idx)
+        }
+        ManagerListRow::CurrentDirectoryInstance(inst_idx) => current_dir_has_snapshot(inst_idx),
+        ManagerListRow::CurrentDirectory
+        | ManagerListRow::SavedWorkspace(_)
+        | ManagerListRow::NewWorkspace => false,
     }
 }
 

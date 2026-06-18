@@ -4,7 +4,8 @@ use crate::console::tui::layout::list::list_names_content_width;
 use crate::console::tui::state::{ManagerListRow, ManagerState};
 use jackin_config::AppConfig;
 use jackin_console::tui::components::footer_hints::{
-    WorkspaceListFooterFacts, workspace_list_footer_items, workspace_list_footer_mode_for_facts,
+    WorkspaceListFooterFacts, selected_instance_snapshot_available, workspace_list_footer_items,
+    workspace_list_footer_mode_for_facts,
 };
 use jackin_console::tui::list_geometry;
 use jackin_console::tui::screens::workspaces::update::{
@@ -134,17 +135,21 @@ fn list_names_scroll_axes(state: &ManagerState<'_>) -> ScrollAxes {
 }
 
 fn selected_instance_has_snapshot(state: &ManagerState<'_>, selected: ManagerListRow) -> bool {
-    match selected {
-        ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => state
-            .workspace_active_instances(ws_idx)
-            .get(inst_idx)
-            .copied()
-            .is_some_and(|entry| state.instance_snapshots.contains_key(&entry.container_base)),
-        ManagerListRow::CurrentDirectoryInstance(inst_idx) => state
-            .current_dir_active_instances()
-            .get(inst_idx)
-            .copied()
-            .is_some_and(|entry| state.instance_snapshots.contains_key(&entry.container_base)),
-        _ => false,
-    }
+    selected_instance_snapshot_available(
+        selected,
+        |ws_idx, inst_idx| {
+            state
+                .workspace_active_instances(ws_idx)
+                .get(inst_idx)
+                .copied()
+                .is_some_and(|entry| state.instance_snapshots.contains_key(&entry.container_base))
+        },
+        |inst_idx| {
+            state
+                .current_dir_active_instances()
+                .get(inst_idx)
+                .copied()
+                .is_some_and(|entry| state.instance_snapshots.contains_key(&entry.container_base))
+        },
+    )
 }

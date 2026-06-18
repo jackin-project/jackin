@@ -121,6 +121,25 @@ fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
 }
 
 #[test]
+fn selected_instance_snapshot_routes_by_row_kind() {
+    assert!(selected_instance_snapshot_available(
+        ManagerListRow::WorkspaceInstance(2, 3),
+        |ws, inst| ws == 2 && inst == 3,
+        |_| false,
+    ));
+    assert!(selected_instance_snapshot_available(
+        ManagerListRow::CurrentDirectoryInstance(4),
+        |_, _| false,
+        |inst| inst == 4,
+    ));
+    assert!(!selected_instance_snapshot_available(
+        ManagerListRow::SavedWorkspace(1),
+        |_, _| true,
+        |_| true,
+    ));
+}
+
+#[test]
 fn workspace_list_footer_saved_workspace_shows_row_actions() {
     assert_eq!(
         labels(workspace_list_footer_items(
