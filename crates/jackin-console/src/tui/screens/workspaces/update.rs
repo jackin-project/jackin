@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, MouseEvent};
 use jackin_tui::ModalOutcome;
 use ratatui::layout::Rect;
 
@@ -614,6 +614,67 @@ pub enum WorkspaceListScrollTargetPlan {
     ListNames,
     FocusedBlock(crate::tui::focus::MountScrollFocus),
     None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceListMousePlan {
+    StartDrag(crate::tui::split::DragState),
+    UpdateSplit(u16),
+    EndDrag,
+    SelectRow(ManagerListRow),
+    Continue,
+}
+
+#[must_use]
+pub fn workspace_list_mouse_plan(
+    mouse: MouseEvent,
+    term_size: Rect,
+    split_pct: u16,
+    drag_state: Option<crate::tui::split::DragState>,
+    list_modal_open: bool,
+    visual_rows: &[Option<ManagerListRow>],
+    selectable: impl FnMut(ManagerListRow) -> bool,
+) -> WorkspaceListMousePlan {
+    if list_modal_open {
+        return WorkspaceListMousePlan::Continue;
+    }
+    match mouse.kind {
+        crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+            let seam_x = crate::tui::layout::split_seam_column(split_pct, term_size.width);
+            if crate::tui::layout::near_seam(mouse.column, seam_x) {
+                return WorkspaceListMousePlan::StartDrag(crate::tui::split::DragState {
+                    anchor_pct: split_pct,
+                    anchor_x: mouse.column,
+                });
+            }
+            workspace_list_hover_row_at_position(
+                visual_rows,
+                mouse.column,
+                mouse.row,
+                term_size,
+                seam_x,
+                selectable,
+            )
+            .map_or(WorkspaceListMousePlan::Continue, |row| {
+                WorkspaceListMousePlan::SelectRow(row)
+            })
+        }
+        crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left) => drag_state
+            .map_or(WorkspaceListMousePlan::Continue, |anchor| {
+                WorkspaceListMousePlan::UpdateSplit(crate::tui::split::clamp_split(
+                    crate::tui::layout::split_pct_from_drag(
+                        anchor.anchor_pct,
+                        anchor.anchor_x,
+                        mouse.column,
+                        term_size.width,
+                    ),
+                ))
+            }),
+        crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left) => {
+            WorkspaceListMousePlan::EndDrag
+        }
+        _ => WorkspaceListMousePlan::Continue,
+    }
 }
 
 #[must_use]

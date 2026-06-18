@@ -10,9 +10,9 @@ use crate::console::tui::layout::list::{
 };
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    DragState, EditorHoverTarget, EditorTab, FieldFocus, GlobalMountModal, ManagerHoverTarget,
-    ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus, SettingsAuthModal,
-    SettingsHoverTarget, SettingsTab, clamp_split,
+    EditorHoverTarget, EditorTab, FieldFocus, GlobalMountModal, ManagerHoverTarget, ManagerListRow,
+    ManagerStage, ManagerState, Modal, MountScrollFocus, SettingsAuthModal, SettingsHoverTarget,
+    SettingsTab,
 };
 use jackin_console::tui::components::file_browser::FileBrowserState;
 use jackin_console::tui::components::modal_rects::{self, ModalRectMode};
@@ -22,7 +22,7 @@ use jackin_console::tui::layout::{
     apply_horizontal_scroll, apply_scrollbar_drag, apply_vertical_scroll,
     bordered_content_hit_at_position, horizontal_split_pane_dims, is_horizontally_scrollable,
     near_seam, point_in_rect, scroll_selection_at_position, scroll_viewport_width,
-    split_pct_from_drag, split_seam_column, tab_hover_index_at_position,
+    split_seam_column, tab_hover_index_at_position,
 };
 #[cfg(test)]
 use jackin_console::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
@@ -38,7 +38,8 @@ use jackin_console::tui::screens::settings::update::{
     settings_tab_at_position, settings_trust_row_at_position,
 };
 use jackin_console::tui::screens::workspaces::update::{
-    workspace_list_hover_row_at_position, workspace_list_scroll_focus_plan,
+    WorkspaceListMousePlan, workspace_list_hover_row_at_position, workspace_list_mouse_plan,
+    workspace_list_scroll_focus_plan,
 };
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
@@ -246,42 +247,34 @@ pub(crate) fn handle_mouse_with_config(
     }
 
     match mouse.kind {
-        MouseEventKind::Down(MouseButton::Left) => {
-            let seam_x = split_seam_column(state.list_split_pct, term_size.width);
-            // Seam hit always wins — a click on the seam column starts a
-            // drag, never a row select. Even if the seam happens to overlap
-            // a valid row position, the resize affordance takes precedence.
-            if near_seam(mouse.column, seam_x) {
-                dispatch_manager(
-                    state,
-                    ManagerMessage::SetDragState(Some(DragState {
-                        anchor_pct: state.list_split_pct,
-                        anchor_x: mouse.column,
-                    })),
-                );
-                return super::InputOutcome::Continue;
+        MouseEventKind::Down(MouseButton::Left)
+        | MouseEventKind::Drag(MouseButton::Left)
+        | MouseEventKind::Up(MouseButton::Left) => {
+            match workspace_list_mouse_plan(
+                mouse,
+                term_size,
+                state.list_split_pct,
+                state.drag_state,
+                state.list_modal.is_some(),
+                state.visual_rows_vec().as_slice(),
+                |row| state.index_of_row(row).is_some(),
+            ) {
+                WorkspaceListMousePlan::StartDrag(drag) => {
+                    dispatch_manager(state, ManagerMessage::SetDragState(Some(drag)));
+                }
+                WorkspaceListMousePlan::UpdateSplit(pct) => {
+                    dispatch_manager(state, ManagerMessage::SetListSplitPct(pct));
+                }
+                WorkspaceListMousePlan::EndDrag => {
+                    dispatch_manager(state, ManagerMessage::SetDragState(None));
+                }
+                WorkspaceListMousePlan::SelectRow(row) => {
+                    if let Some(selected) = state.index_of_row(row) {
+                        dispatch_manager(state, ManagerMessage::SelectListRow(selected));
+                    }
+                }
+                WorkspaceListMousePlan::Continue => {}
             }
-            // Otherwise, treat as click-to-select if the click lands inside
-            // the list pane's content area (excluding borders).
-            if let Some(row) = list_row_hover_at(state, mouse, term_size)
-                && let Some(selected) = state.index_of_row(row)
-            {
-                dispatch_manager(state, ManagerMessage::SelectListRow(selected));
-            }
-        }
-        MouseEventKind::Drag(MouseButton::Left) => {
-            if let Some(anchor) = state.drag_state {
-                let new_pct = split_pct_from_drag(
-                    anchor.anchor_pct,
-                    anchor.anchor_x,
-                    mouse.column,
-                    term_size.width,
-                );
-                dispatch_manager(state, ManagerMessage::SetListSplitPct(clamp_split(new_pct)));
-            }
-        }
-        MouseEventKind::Up(MouseButton::Left) => {
-            dispatch_manager(state, ManagerMessage::SetDragState(None));
         }
         _ => {}
     }

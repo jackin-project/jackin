@@ -389,6 +389,147 @@ fn workspace_list_hover_row_at_position_skips_seam_spacers_and_unselectable_rows
     );
 }
 
+fn mouse(kind: crossterm::event::MouseEventKind, column: u16, row: u16) -> MouseEvent {
+    MouseEvent {
+        kind,
+        column,
+        row,
+        modifiers: crossterm::event::KeyModifiers::empty(),
+    }
+}
+
+#[test]
+fn workspace_list_mouse_plan_routes_seam_drag_and_row_selection() {
+    let rows = [
+        Some(ManagerListRow::CurrentDirectory),
+        Some(ManagerListRow::SavedWorkspace(0)),
+        None,
+        Some(ManagerListRow::NewWorkspace),
+    ];
+    let term = Rect {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 20,
+    };
+
+    assert_eq!(
+        workspace_list_mouse_plan(
+            mouse(
+                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                30,
+                4,
+            ),
+            term,
+            30,
+            None,
+            false,
+            &rows,
+            |_| true,
+        ),
+        WorkspaceListMousePlan::StartDrag(crate::tui::split::DragState {
+            anchor_pct: 30,
+            anchor_x: 30,
+        })
+    );
+    assert_eq!(
+        workspace_list_mouse_plan(
+            mouse(
+                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                10,
+                4,
+            ),
+            term,
+            30,
+            None,
+            false,
+            &rows,
+            |_| true,
+        ),
+        WorkspaceListMousePlan::SelectRow(ManagerListRow::SavedWorkspace(0))
+    );
+    assert_eq!(
+        workspace_list_mouse_plan(
+            mouse(
+                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                10,
+                5,
+            ),
+            term,
+            30,
+            None,
+            false,
+            &rows,
+            |_| true,
+        ),
+        WorkspaceListMousePlan::Continue
+    );
+}
+
+#[test]
+fn workspace_list_mouse_plan_routes_drag_update_end_and_modal_gate() {
+    let rows = [Some(ManagerListRow::CurrentDirectory)];
+    let term = Rect {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 20,
+    };
+    let drag = crate::tui::split::DragState {
+        anchor_pct: 30,
+        anchor_x: 30,
+    };
+
+    assert_eq!(
+        workspace_list_mouse_plan(
+            mouse(
+                crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left),
+                55,
+                4,
+            ),
+            term,
+            30,
+            Some(drag),
+            false,
+            &rows,
+            |_| true,
+        ),
+        WorkspaceListMousePlan::UpdateSplit(55)
+    );
+    assert_eq!(
+        workspace_list_mouse_plan(
+            mouse(
+                crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
+                55,
+                4,
+            ),
+            term,
+            30,
+            Some(drag),
+            false,
+            &rows,
+            |_| true,
+        ),
+        WorkspaceListMousePlan::EndDrag
+    );
+    assert_eq!(
+        workspace_list_mouse_plan(
+            mouse(
+                crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                30,
+                4,
+            ),
+            term,
+            30,
+            None,
+            true,
+            &rows,
+            |_| true,
+        ),
+        WorkspaceListMousePlan::Continue
+    );
+}
+
 #[test]
 fn workspace_visual_selected_index_skips_spacers() {
     let rows = [
