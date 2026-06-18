@@ -470,8 +470,7 @@ fn try_scroll_file_browser_modal(
             if let Some(GlobalMountModal::FileBrowser { state }) = settings.mounts.modal.as_mut() {
                 return scroll_file_browser_state_at(state, area, mouse, delta);
             }
-            if let Some(SettingsAuthModal::SourceFolderPicker { state }) =
-                settings.auth.modal.as_mut()
+            if let Some(SettingsAuthModal::SourceFolderPicker { state }) = settings.auth.modal_mut()
             {
                 return scroll_file_browser_state_at(state, area, mouse, delta);
             }
@@ -538,7 +537,7 @@ fn try_scroll_picker_modal(
             if let Some(modal) = settings.env.modal.as_mut() {
                 return scroll_settings_env_modal_selection(modal, mouse, term_size, delta);
             }
-            if let Some(modal) = settings.auth.modal.as_mut() {
+            if let Some(modal) = settings.auth.modal_mut() {
                 return scroll_settings_auth_modal_selection(modal, mouse, term_size, delta);
             }
             false
@@ -1132,7 +1131,7 @@ const fn settings_modal_open(settings: &crate::console::tui::state::SettingsStat
         settings.error_popup.is_some(),
         settings.mounts.modal.is_some(),
         settings.env.modal.is_some(),
-        settings.auth.modal.is_some(),
+        settings.auth.has_modal(),
     )
 }
 

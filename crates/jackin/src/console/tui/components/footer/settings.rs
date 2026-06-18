@@ -13,7 +13,7 @@ pub(crate) fn settings_footer_items(
     body_area: Rect,
 ) -> Vec<HintSpan<'static>> {
     settings_screen_footer_items(SettingsScreenFooterFacts {
-        auth_modal_items: state.auth.modal.as_ref().map(|modal| {
+        auth_modal_items: state.auth.modal_ref().map(|modal| {
             modal.footer_items(
                 crate::console::tui::input::global_mounts::settings_auth_can_generate_token(
                     &state.auth,

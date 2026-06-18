@@ -124,7 +124,7 @@ pub fn render(
                     render_global_mount_modal(frame, modal);
                 } else if let Some(modal) = &settings.env.modal {
                     render_settings_env_modal(frame, modal);
-                } else if let Some(modal) = &settings.auth.modal {
+                } else if let Some(modal) = settings.auth.modal_ref() {
                     render_settings_auth_modal(frame, modal);
                 }
             }
@@ -214,7 +214,7 @@ fn has_modal_overlay(state: &ManagerState<'_>) -> bool {
             overlay.settings_error = settings.error_popup.is_some();
             overlay.settings_mounts_modal = settings.mounts.modal.is_some();
             overlay.settings_env_modal = settings.env.modal.is_some();
-            overlay.settings_auth_modal = settings.auth.modal.is_some();
+            overlay.settings_auth_modal = settings.auth.has_modal();
         }
         ManagerStage::CreatePrelude(prelude) => {
             overlay.create_prelude_modal = prelude.modal.is_some();

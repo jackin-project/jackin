@@ -1355,6 +1355,13 @@ pub struct SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     pub scroll_y: u16,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct SettingsAuthSaveRefs<'a, EnvValue> {
+    pub pending: &'a [SettingsAuthRow<AuthKind, AuthMode>],
+    pub original_github_env: &'a BTreeMap<String, EnvValue>,
+    pub github_env: &'a BTreeMap<String, EnvValue>,
+}
+
 impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     #[must_use]
     pub fn from_config(config: &jackin_config::AppConfig) -> Self
@@ -1438,6 +1445,15 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
 
     pub const fn scroll_y_mut(&mut self) -> &mut u16 {
         &mut self.scroll_y
+    }
+
+    #[must_use]
+    pub fn save_refs(&self) -> SettingsAuthSaveRefs<'_, EnvValue> {
+        SettingsAuthSaveRefs {
+            pending: &self.pending,
+            original_github_env: &self.original_github_env,
+            github_env: &self.github_env,
+        }
     }
 
     pub fn discard(&mut self)
@@ -2533,6 +2549,31 @@ mod tests {
         );
         assert!(state.has_selected_kind());
         assert_eq!(state.scroll_y, 3);
+    }
+
+    #[test]
+    fn settings_auth_save_refs_expose_persisted_inputs() {
+        let rows = vec![SettingsAuthRow {
+            kind: crate::tui::auth::AuthKind::Github,
+            mode: crate::tui::auth::AuthMode::Sync,
+            sync_source_dir: None,
+        }];
+        let state = SettingsAuthState::<EnvValue, (), ()>::from_rows_and_github_env(
+            rows,
+            BTreeMap::from([(String::from("GH_TOKEN"), "token".into())]),
+        );
+
+        let refs = state.save_refs();
+
+        assert_eq!(refs.pending.len(), 1);
+        assert_eq!(
+            refs.original_github_env.get("GH_TOKEN"),
+            Some(&EnvValue::from("token"))
+        );
+        assert_eq!(
+            refs.github_env.get("GH_TOKEN"),
+            Some(&EnvValue::from("token"))
+        );
     }
 
     #[test]
