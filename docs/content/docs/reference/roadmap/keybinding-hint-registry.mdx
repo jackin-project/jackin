@@ -158,7 +158,7 @@ Global facts: `Ctrl+C` (HardExit) and `Ctrl+Q` (open quit-confirm) are evaluated
 The capsule decodes raw PTY bytes into `InputEvent` rather than `crossterm::KeyEvent`. The byte-level chords are exact below.
 
 - [x] `dialog/hint.rs` `main_view_hint`: added `Ctrl+Q quit` to both main and scrollback branches.
-- [ ] `dialog/hint.rs` `main_view_hint`: add an `Alt+Shift+◆ resize` span (or a help overlay) for `ResizePane` (`input.rs ~:762`, CSI `\x1b[1;4A/B/C/D`).
+- `dialog/hint.rs` `main_view_hint`: `Alt+Shift+↑↓←→ resize pane` group is 29 extra display chars. At 80-col terminal with vertical scroll also shown (typical case), total `padded_total` exceeds 80 and the entire hint row silently hides. Adding the group requires hint-row graceful truncation first. Deferred.
 - [ ] Prefix keymap: the entire opt-in `prefix_binding` set (`input.rs ~:585-602`: `c n p 0-9 " % h j k l z x & Ctrl+L d space :`) is handled but never advertised. Add a discoverable surface (help dialog, or extended footer when `InputParser::prefix_enabled()`); at minimum advertise `prefix space/:` → palette.
 - `input.rs` `~:602`: `b'r' => Redraw` produces `FullRedrawReason::ExplicitRedraw` via `prefix_full_redraw_reason` (which IS a real action — forces terminal refresh); `prefix_command_action` returns `None` meaning no daemon side-effect, which is correct. Not dead; no change needed.
 - [x] `dialog.rs` ConfirmAction: migrated to `CONFIRM_KEYMAP.dispatch(raw_bytes_to_chord(key))` (Phase 2). `↵ confirm` (CommitFocused), `Y yes`, `N/Esc no`, `⇥ focus` all shown. `Ctrl+C` and arrow/`Tab` toggle are `HiddenAlias`.

@@ -36,8 +36,9 @@ fn main_view_hint_advertises_only_visible_scroll_axis() {
         },
     ));
     assert!(hint.contains("↑↓/j/k scroll"));
+    assert!(hint.contains("click focus pane"));
     assert!(
-        !hint.contains("←→"),
+        !hint.contains("←→/h/l scroll"),
         "vertical-only pane must not advertise horizontal scroll: {hint}"
     );
 }
