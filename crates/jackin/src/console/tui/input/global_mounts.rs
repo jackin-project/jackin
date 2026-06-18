@@ -862,19 +862,19 @@ fn commit_env_text(
         SettingsEnvTextCommitPlan::SetPendingPickerValue { scope, key } => {
             if let Some(stashed) = env.pending_picker_value.take() {
                 set_settings_env_value_typed(env, &scope, &key, stashed);
-                env.pending_env_key = None;
+                env.clear_pending_env_key();
                 env.clear_modal_chain();
             }
         }
         SettingsEnvTextCommitPlan::OpenSourcePicker { scope, key } => {
-            env.pending_env_key = Some((scope, key.clone()));
+            env.set_pending_env_key(scope, key.clone());
             env.open_sub_modal(SettingsEnvModal::SourcePicker {
                 state: settings_env_source_picker_state(key),
             });
         }
         SettingsEnvTextCommitPlan::SetPlainValue { scope, key, value } => {
             set_settings_env_value_typed(env, &scope, &key, jackin_core::EnvValue::Plain(value));
-            env.pending_env_key = None;
+            env.clear_pending_env_key();
             env.clear_modal_chain();
         }
     }
@@ -899,8 +899,8 @@ fn commit_settings_env_source_picker(
             env.open_sub_modal(env_text_modal(plan.target, plan.label, plan.current));
         }
         SettingsEnvSourcePickerCommitPlan::OpenOpPicker { scope, key } => {
-            env.pending_picker_target = Some((scope, Some(key)));
-            env.pending_env_key = None;
+            env.set_pending_picker_target((scope, Some(key)));
+            env.clear_pending_env_key();
             env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
             env.open_sub_modal(SettingsEnvModal::OpPicker {
                 state: Box::new(
