@@ -50,6 +50,41 @@ pub struct WorkspaceListFooterFacts {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceListFooterRowFacts {
+    pub selected_instance: bool,
+    pub selected_saved_workspace: bool,
+    pub selected_new_workspace: bool,
+}
+
+#[must_use]
+pub const fn workspace_list_footer_row_facts(row: ManagerListRow) -> WorkspaceListFooterRowFacts {
+    match row {
+        ManagerListRow::WorkspaceInstance(_, _) | ManagerListRow::CurrentDirectoryInstance(_) => {
+            WorkspaceListFooterRowFacts {
+                selected_instance: true,
+                selected_saved_workspace: false,
+                selected_new_workspace: false,
+            }
+        }
+        ManagerListRow::SavedWorkspace(_) => WorkspaceListFooterRowFacts {
+            selected_instance: false,
+            selected_saved_workspace: true,
+            selected_new_workspace: false,
+        },
+        ManagerListRow::NewWorkspace => WorkspaceListFooterRowFacts {
+            selected_instance: false,
+            selected_saved_workspace: false,
+            selected_new_workspace: true,
+        },
+        ManagerListRow::CurrentDirectory => WorkspaceListFooterRowFacts {
+            selected_instance: false,
+            selected_saved_workspace: false,
+            selected_new_workspace: false,
+        },
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceFooterScrollFacts {
     pub inline_agent_picker: bool,
     pub inline_role_picker: bool,

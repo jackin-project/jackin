@@ -77,6 +77,42 @@ fn workspace_list_footer_facts_prioritize_inline_pickers() {
 }
 
 #[test]
+fn workspace_list_footer_row_facts_route_row_kinds() {
+    assert_eq!(
+        workspace_list_footer_row_facts(ManagerListRow::WorkspaceInstance(1, 2)),
+        WorkspaceListFooterRowFacts {
+            selected_instance: true,
+            selected_saved_workspace: false,
+            selected_new_workspace: false,
+        }
+    );
+    assert_eq!(
+        workspace_list_footer_row_facts(ManagerListRow::CurrentDirectoryInstance(0)),
+        WorkspaceListFooterRowFacts {
+            selected_instance: true,
+            selected_saved_workspace: false,
+            selected_new_workspace: false,
+        }
+    );
+    assert_eq!(
+        workspace_list_footer_row_facts(ManagerListRow::SavedWorkspace(3)),
+        WorkspaceListFooterRowFacts {
+            selected_instance: false,
+            selected_saved_workspace: true,
+            selected_new_workspace: false,
+        }
+    );
+    assert_eq!(
+        workspace_list_footer_row_facts(ManagerListRow::NewWorkspace),
+        WorkspaceListFooterRowFacts {
+            selected_instance: false,
+            selected_saved_workspace: false,
+            selected_new_workspace: true,
+        }
+    );
+}
+
+#[test]
 fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
     assert_eq!(
         workspace_list_footer_mode_for_facts(WorkspaceListFooterFacts {

@@ -6,7 +6,7 @@ use jackin_config::AppConfig;
 use jackin_console::tui::components::footer_hints::{
     WorkspaceFooterScrollFacts, WorkspaceListFooterFacts, selected_instance_snapshot_available,
     workspace_footer_scroll_axes, workspace_list_footer_items,
-    workspace_list_footer_mode_for_facts,
+    workspace_list_footer_mode_for_facts, workspace_list_footer_row_facts,
 };
 use jackin_console::tui::list_geometry;
 use jackin_console::tui::screens::workspaces::update::{
@@ -33,12 +33,8 @@ fn workspace_list_footer_facts(
     cwd: &std::path::Path,
 ) -> WorkspaceListFooterFacts {
     let selected = state.selected_row();
-    let selected_instance = matches!(
-        selected,
-        ManagerListRow::WorkspaceInstance(_, _) | ManagerListRow::CurrentDirectoryInstance(_)
-    );
-    let is_saved = matches!(selected, ManagerListRow::SavedWorkspace(_));
-    let show_open_in_github = is_saved
+    let row_facts = workspace_list_footer_row_facts(selected);
+    let show_open_in_github = row_facts.selected_saved_workspace
         && state
             .selected_workspace_summary()
             .and_then(|s| config.workspaces.get(&s.name))
@@ -68,11 +64,11 @@ fn workspace_list_footer_facts(
     WorkspaceListFooterFacts {
         inline_agent_picker: state.inline_agent_picker.is_some(),
         inline_role_picker: state.inline_role_picker.is_some(),
-        selected_instance,
+        selected_instance: row_facts.selected_instance,
         preview_focused: state.preview_focused,
         selected_instance_has_snapshot: selected_instance_has_snapshot(state, selected),
-        selected_saved_workspace: is_saved,
-        selected_new_workspace: matches!(selected, ManagerListRow::NewWorkspace),
+        selected_saved_workspace: row_facts.selected_saved_workspace,
+        selected_new_workspace: row_facts.selected_new_workspace,
         show_expand,
         show_collapse,
         workspace_scroll_axes,
