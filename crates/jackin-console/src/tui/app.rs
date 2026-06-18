@@ -118,6 +118,12 @@ pub fn clear_pending_launch_plan<LaunchInput, RoleSelector>(
     state.clear_pending_launch();
 }
 
+pub fn clear_pending_launch_role_plan<Manager, LaunchInput, RoleSelector, OpCache>(
+    state: &mut ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache>,
+) {
+    state.pending_launch_role = None;
+}
+
 pub fn store_pending_launch_plan<LaunchInput, RoleSelector>(
     state: &mut impl LaunchRolePromptState<LaunchInput, RoleSelector>,
     input: LaunchInput,
@@ -2720,6 +2726,23 @@ mod tests {
         super::store_pending_launch_plan(&mut app, "workspace-input");
 
         assert_eq!(app.pending_launch, Some("workspace-input"));
+    }
+
+    #[test]
+    fn clear_pending_launch_role_plan_clears_only_role() {
+        let mut app: ConsoleApp<TestLaunchPromptManager, &'static str, TestPromptRole, ()> =
+            ConsoleApp::new(
+                ConsoleAppStage::Manager(TestLaunchPromptManager::default()),
+                (),
+                false,
+            );
+        app.pending_launch = Some("workspace-input");
+        app.pending_launch_role = Some(TestPromptRole("architect"));
+
+        super::clear_pending_launch_role_plan(&mut app);
+
+        assert_eq!(app.pending_launch, Some("workspace-input"));
+        assert_eq!(app.pending_launch_role, None);
     }
 
     #[test]

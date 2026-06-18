@@ -16,6 +16,7 @@ use crate::console::tui::prompts::{
     launch_with_committed_agent, prompt_agent_for_launch,
 };
 use crate::console::{ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler};
+use jackin_console::tui::app::clear_pending_launch_role_plan;
 use jackin_console::tui::components::error_popup::{
     instance_action_failed_error_message, instance_action_failed_error_title,
 };
@@ -191,7 +192,7 @@ where
         choices,
     ) {
         PromptOutcome::Launch => {
-            state.pending_launch_role = None;
+            clear_pending_launch_role_plan(state);
             Ok(Some(ConsoleOutcome::Launch(
                 request.role,
                 request.workspace,
