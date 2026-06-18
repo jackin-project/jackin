@@ -110,6 +110,8 @@ Editor mount-destination text-input commit lifecycle now lives in `jackin-consol
 
 Confirm-save final-mount application now lives in `jackin-console/src/tui/screens/editor/model.rs`; root save handling passes the approved mount set without writing `pending.mounts` directly.
 
+Auth-form save/reset/cancel paths now use the editor-owned modal clearing lifecycle in `jackin-console/src/tui/screens/editor/model.rs`; root auth handling no longer closes those forms by writing the modal slot directly.
+
 Settings top-level key precedence now lives in `jackin-console/src/tui/screens/settings/update.rs`; root executes the crate-owned shell/header/delegate plan instead of deciding shell-vs-environment-header-vs-tab dispatch order itself.
 
 Editor top-level key routing now lives in `jackin-console/src/tui/screens/editor/model.rs`; root supplies config-backed payload lookup, concrete state mutation, and effect requests.

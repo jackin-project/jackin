@@ -169,7 +169,7 @@ pub(super) fn handle_auth_form_key(
         }
         AuthFormKeyPlan::Save => commit_auth_form_save(editor),
         AuthFormKeyPlan::Cancel => {
-            editor.modal = None;
+            editor.clear_modal_chain();
             true
         }
         AuthFormKeyPlan::Reset => reset_auth_form_layer(editor),
@@ -442,7 +442,7 @@ fn commit_auth_form_save(editor: &mut EditorState<'_>) -> bool {
     let committed_target = target.clone();
     let kind = state.kind;
     let form = std::mem::replace(state.as_mut(), AuthForm::new(kind));
-    editor.modal = None;
+    editor.clear_modal_chain();
     editor.persist_auth_form(&committed_target, &form);
     true
 }
@@ -452,7 +452,7 @@ fn reset_auth_form_layer(editor: &mut EditorState<'_>) -> bool {
         return false;
     };
     let committed_target = target.clone();
-    editor.modal = None;
+    editor.clear_modal_chain();
     editor.clear_auth_form_layer(&committed_target);
     true
 }
