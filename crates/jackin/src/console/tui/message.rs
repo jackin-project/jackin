@@ -405,9 +405,7 @@ fn enter_create_editor(
     name: String,
     workspace: jackin_config::WorkspaceConfig,
 ) {
-    let mut editor = EditorState::new_create();
-    editor.pending = workspace;
-    editor.pending_name = Some(name);
+    let editor = EditorState::new_create_with_workspace(name, workspace);
     apply_manager_stage(state, ManagerStage::Editor(editor));
 }
 

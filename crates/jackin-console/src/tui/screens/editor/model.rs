@@ -972,6 +972,17 @@ impl<
         Self::new_edit(String::new(), empty).into_create_mode()
     }
 
+    pub fn new_create_with_workspace(name: String, workspace: WorkspaceConfig) -> Self
+    where
+        WorkspaceConfig: Clone,
+        MountInfoCache: Default,
+        SaveFlow: Default,
+    {
+        let mut editor = Self::new_edit(String::new(), workspace).into_create_mode();
+        editor.pending_name = Some(name);
+        editor
+    }
+
     #[must_use]
     fn into_create_mode(mut self) -> Self {
         self.mode = EditorMode::Create;
@@ -2419,6 +2430,20 @@ mod tests {
 
         editor.pending_name = Some("draft".into());
         assert_eq!(editor.workspace_name_for_panel(), "draft");
+    }
+
+    #[test]
+    fn new_create_with_workspace_sets_pending_name_and_config() {
+        let workspace = WorkspaceConfig {
+            workdir: "/repo".into(),
+            ..Default::default()
+        };
+
+        let editor = TestEditor::new_create_with_workspace("draft".into(), workspace);
+
+        assert!(matches!(editor.mode, EditorMode::Create));
+        assert_eq!(editor.pending_name.as_deref(), Some("draft"));
+        assert_eq!(editor.pending.workdir, "/repo");
     }
 
     #[test]
