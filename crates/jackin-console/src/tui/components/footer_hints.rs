@@ -1372,6 +1372,9 @@ fn append_save_and_escape(
         } else {
             "back"
         }),
+        HintSpan::Sep,
+        HintSpan::Key("Ctrl+Q"),
+        HintSpan::Text("quit"),
     ]);
 }
 

@@ -132,15 +132,16 @@ Quit-policy spine: <RepoFile path="crates/jackin/src/console/tui/run.rs" /> call
 - [x] <RepoFile path="crates/jackin-console/src/tui/components/file_browser/state.rs" /> (`~:54-70`): hint updated to `↑↓/j/k navigate`, `↵/l open`, `H/h/← up` — vim aliases now advertised.
 - [x] <RepoFile path="crates/jackin-console/src/tui/components/file_browser/git_prompt.rs" /> (`~:222-240`): `git_prompt_footer_items` extended with `⇥/→ next · ⇤/← prev · ↵ select` group — focus-nav and commit keys now advertised.
 
-**I. Optional discoverability:** editor/create footers (`tab_bar_footer_items`/`content_footer_items`) never show `Ctrl+Q quit` though it works via the intercept — optionally append it for consistency.
+**I. Optional discoverability.**
+- [x] Editor/create/settings footers: `append_save_and_escape` now appends `· Ctrl+Q quit` after the `Esc back/discard` span — `Ctrl+Q` is advertised on every surface it intercepts.
 
 ### Launch cockpit (`jackin-launch`)
 
 Global facts: `Ctrl+C` (HardExit) and `Ctrl+Q` (open quit-confirm) are evaluated in `handle_cockpit_input` before modal routing; the pre-pipeline prompt loops use `read_pressed_key` in <RepoFile path="crates/jackin-launch/src/tui/run.rs" /> which treats both `Ctrl+C` and `Ctrl+Q` as cancel.
 
 **Comment fixes (no behaviour change):**
-- [ ] `subscriptions.rs` (`~:409`): reword "Ctrl+Q confirmed: graceful cancel" → "Yes confirmed: graceful cancel" (the confirmed branch fires for any Yes commit, not `Ctrl+Q`).
-- [ ] `build_log_dialog.rs` (`~:189`) and `subscriptions.rs` (`~:279`): the comments claim bare `q` dismisses the build-log overlay; the handler is `Esc`-only. Change to `Esc`.
+- [x] `subscriptions.rs` (`~:409`): reworded to "Yes confirmed: graceful cancel".
+- [x] `build_log_dialog.rs` (`~:189`) and `subscriptions.rs` (`~:279`): comments updated to `Esc closes`.
 
 **Hint reconciliations:**
 - [x] `failure_dialog.rs` `FAILURE_HINT`: added `Ctrl-C abort · Ctrl+Q quit` group.
