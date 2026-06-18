@@ -11,6 +11,9 @@ use super::{
 };
 use jackin_console::tui::auth_config::settings_auth_form_can_generate_token;
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
+use jackin_console::tui::update::{
+    InlinePickerPlan, SourcePickerPlan, inline_picker_plan, source_picker_plan,
+};
 use jackin_tui::ModalOutcome;
 
 pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
@@ -210,7 +213,6 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
             auth.modal = Some(modal);
         }
         SettingsAuthModal::SourcePicker { state } => {
-            use jackin_console::tui::components::source_picker::SourceChoice;
             let outcome = state.handle_key(key);
             // Generate wins over the provide dispatch: the `g`/`G` trigger
             // sets `generating_token` (and stashes the form into
@@ -218,8 +220,8 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
             // the generate branch is reachable only on that path and the
             // provide arms below stay untouched.
             if auth.generating_token {
-                match outcome {
-                    ModalOutcome::Commit(SourceChoice::Plain) => {
+                match source_picker_plan(outcome) {
+                    SourcePickerPlan::Plain => {
                         auth.generating_token = false;
                         *pending_token_generate =
                             Some(crate::console::tui::state::PendingTokenGenerate {
@@ -230,7 +232,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                                 },
                             });
                     }
-                    ModalOutcome::Commit(SourceChoice::Op) => {
+                    SourcePickerPlan::Op => {
                         // `generating_token` stays set so the Create-mode
                         // OpPicker commit routes through
                         // `handle_settings_token_generate_pick`.
@@ -250,16 +252,16 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                     // Cancel before minting: restore the stashed form so
                     // the operator lands back on the Edit-auth dialog
                     // unchanged (matches the provide-path cancel below).
-                    ModalOutcome::Cancel => {
+                    SourcePickerPlan::Dismiss => {
                         auth.generating_token = false;
                         restore_settings_auth_form(auth);
                     }
-                    ModalOutcome::Continue => auth.modal = Some(modal),
+                    SourcePickerPlan::Continue => auth.modal = Some(modal),
                 }
                 return SettingsAuthOutcome::Continue;
             }
-            match outcome {
-                ModalOutcome::Commit(SourceChoice::Plain) => {
+            match source_picker_plan(outcome) {
+                SourcePickerPlan::Plain => {
                     let literal = auth
                         .modal_parents
                         .last()
@@ -275,21 +277,21 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                         state: Box::new(auth_credential_input_state(literal)),
                     });
                 }
-                ModalOutcome::Commit(SourceChoice::Op) => {
+                SourcePickerPlan::Op => {
                     auth.modal = Some(SettingsAuthModal::OpPicker {
                         state: Box::new(
                             crate::console::tui::op_picker::OpPickerState::new_with_cache(op_cache),
                         ),
                     });
                 }
-                ModalOutcome::Cancel => restore_settings_auth_form(auth),
-                ModalOutcome::Continue => auth.modal = Some(modal),
+                SourcePickerPlan::Dismiss => restore_settings_auth_form(auth),
+                SourcePickerPlan::Continue => auth.modal = Some(modal),
             }
         }
-        SettingsAuthModal::TextInput { state } => match state.handle_key(key) {
-            ModalOutcome::Commit(value) => apply_plain_text_to_settings_auth_form(auth, &value),
-            ModalOutcome::Cancel => restore_settings_auth_form(auth),
-            ModalOutcome::Continue => auth.modal = Some(modal),
+        SettingsAuthModal::TextInput { state } => match inline_picker_plan(state.handle_key(key)) {
+            InlinePickerPlan::Commit(value) => apply_plain_text_to_settings_auth_form(auth, &value),
+            InlinePickerPlan::Dismiss => restore_settings_auth_form(auth),
+            InlinePickerPlan::Continue => auth.modal = Some(modal),
         },
         SettingsAuthModal::SourceFolderPicker { state } => {
             let page_rows = page_rows_for_modal(term_size, state);
@@ -335,13 +337,13 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                 handle_settings_token_generate_pick(auth, pending_token_generate, outcome, modal);
                 return SettingsAuthOutcome::Continue;
             }
-            match outcome {
+            match inline_picker_plan(outcome) {
                 // Browse-mode caller: only `Existing` is reachable.
-                ModalOutcome::Commit(
+                InlinePickerPlan::Commit(
                     crate::console::tui::op_picker::OpPickerSelection::NewItem { .. }
                     | crate::console::tui::op_picker::OpPickerSelection::EditItemField { .. },
                 ) => unreachable!("settings-auth browse OpPicker runs in Browse mode"),
-                ModalOutcome::Commit(
+                InlinePickerPlan::Commit(
                     crate::console::tui::op_picker::OpPickerSelection::Existing(op_ref),
                 ) => {
                     // Close the OpPicker — the auth form stays stashed on
@@ -349,8 +351,8 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                     auth.modal = None;
                     return SettingsAuthOutcome::ValidateOpRef(op_ref);
                 }
-                ModalOutcome::Cancel => restore_settings_auth_form(auth),
-                ModalOutcome::Continue => auth.modal = Some(modal),
+                InlinePickerPlan::Dismiss => restore_settings_auth_form(auth),
+                InlinePickerPlan::Continue => auth.modal = Some(modal),
             }
         }
     }
