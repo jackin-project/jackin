@@ -841,6 +841,41 @@ pub fn settings_env_new_key_after_picker_label(scope: &SettingsEnvScope) -> Stri
     format!("New environment key for {}", env_scope_label(scope))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsEnvKeyTextPlan {
+    pub scope: SettingsEnvScope,
+    pub target: SettingsEnvTextTarget,
+    pub label: String,
+}
+
+#[must_use]
+pub fn settings_env_key_text_plan(
+    scope: SettingsEnvScope,
+    label: impl Into<String>,
+) -> SettingsEnvKeyTextPlan {
+    SettingsEnvKeyTextPlan {
+        target: SettingsEnvTextTarget::EnvKey {
+            scope: scope.clone(),
+        },
+        scope,
+        label: label.into(),
+    }
+}
+
+#[must_use]
+pub fn settings_env_new_key_text_plan(scope: SettingsEnvScope) -> SettingsEnvKeyTextPlan {
+    let label = settings_env_new_key_label(&scope);
+    settings_env_key_text_plan(scope, label)
+}
+
+#[must_use]
+pub fn settings_env_new_key_after_picker_text_plan(
+    scope: SettingsEnvScope,
+) -> SettingsEnvKeyTextPlan {
+    let label = settings_env_new_key_after_picker_label(&scope);
+    settings_env_key_text_plan(scope, label)
+}
+
 #[must_use]
 pub fn settings_env_empty_key_label() -> &'static str {
     "Key cannot be empty"

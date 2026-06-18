@@ -44,10 +44,10 @@ use jackin_console::tui::screens::settings::view::{
     global_mount_text_input_state, global_mount_text_target_label,
     settings_auth_op_read_failed_message, settings_env_delete_confirm_state,
     settings_env_empty_key_error_message, settings_env_empty_key_label,
-    settings_env_key_input_state, settings_env_new_key_after_picker_label,
-    settings_env_new_key_label, settings_env_scope_picker_state, settings_env_source_picker_state,
-    settings_env_text_input_state, settings_env_value_edit_text_plan,
-    settings_env_value_text_label, settings_error_popup_title,
+    settings_env_key_input_state, settings_env_new_key_after_picker_text_plan,
+    settings_env_new_key_text_plan, settings_env_scope_picker_state,
+    settings_env_source_picker_state, settings_env_text_input_state,
+    settings_env_value_edit_text_plan, settings_env_value_text_label, settings_error_popup_title,
     settings_no_registered_roles_error_message, settings_sensitive_paths_not_confirmed_message,
 };
 use jackin_console::tui::update::{
@@ -669,15 +669,16 @@ pub(super) fn handle_settings_env_modal(
                         }
                         SettingsEnvOpPickerCommitPlan::StashForNewKey { scope } => {
                             env.pending_picker_value = Some(jackin_core::EnvValue::OpRef(op_ref));
+                            let plan = settings_env_new_key_after_picker_text_plan(scope);
                             let state = settings_env_key_input_state(
                                 &env.pending,
-                                &scope,
-                                settings_env_new_key_after_picker_label(&scope),
+                                &plan.scope,
+                                plan.label,
                                 "",
                             );
                             env.modal = Some(SettingsEnvModal::OpPicker { state: picker });
                             env.open_sub_modal(SettingsEnvModal::Text {
-                                target: SettingsEnvTextTarget::EnvKey { scope },
+                                target: plan.target,
                                 state: Box::new(state),
                             });
                         }
@@ -698,15 +699,16 @@ pub(super) fn handle_settings_env_modal(
             match inline_picker_plan(picker.handle_key(key)) {
                 InlinePickerPlan::Commit(role) => {
                     let plan = settings_update::settings_env_role_picker_commit_plan(&role);
+                    let text_plan = settings_env_new_key_text_plan(plan.scope);
                     let state = settings_env_key_input_state(
                         &env.pending,
-                        &plan.scope,
-                        settings_env_new_key_label(&plan.scope),
+                        &text_plan.scope,
+                        text_plan.label,
                         "",
                     );
                     env.modal = Some(SettingsEnvModal::RolePicker { state: picker });
                     env.open_sub_modal(SettingsEnvModal::Text {
-                        target: SettingsEnvTextTarget::EnvKey { scope: plan.scope },
+                        target: text_plan.target,
                         state: Box::new(state),
                     });
                 }
@@ -942,18 +944,15 @@ fn commit_settings_env_scope_picker(
 ) {
     match settings_update::settings_env_scope_picker_commit_plan(selection) {
         SettingsEnvScopePickerCommitPlan::OpenGlobalKeyInput { scope } => {
-            let input_state = settings_env_key_input_state(
-                &env.pending,
-                &scope,
-                settings_env_new_key_label(&scope),
-                "",
-            );
+            let plan = settings_env_new_key_text_plan(scope);
+            let input_state =
+                settings_env_key_input_state(&env.pending, &plan.scope, plan.label, "");
             // Don't stash the just-committed ScopePicker as
             // the Text modal's parent — Esc on Text would
             // pop back into a consumed picker. Start the
             // child modal with an empty parent chain.
             env.open_sub_modal(SettingsEnvModal::Text {
-                target: SettingsEnvTextTarget::EnvKey { scope },
+                target: plan.target,
                 state: Box::new(input_state),
             });
         }
@@ -1067,10 +1066,11 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
             settings.env.expanded.insert(role);
         }
         SettingsEnvEnterPlan::AddRoleKey { scope } => {
-            let label = settings_env_new_key_label(&scope);
-            let state = settings_env_key_input_state(&settings.env.pending, &scope, label, "");
+            let plan = settings_env_new_key_text_plan(scope);
+            let state =
+                settings_env_key_input_state(&settings.env.pending, &plan.scope, plan.label, "");
             settings.env.modal = Some(SettingsEnvModal::Text {
-                target: SettingsEnvTextTarget::EnvKey { scope },
+                target: plan.target,
                 state: Box::new(state),
             });
         }
@@ -1086,10 +1086,10 @@ fn open_settings_env_add_modal(settings: &mut crate::console::tui::state::Settin
     ) else {
         return;
     };
-    let label = settings_env_new_key_label(&scope);
-    let state = settings_env_key_input_state(&settings.env.pending, &scope, label, "");
+    let plan = settings_env_new_key_text_plan(scope);
+    let state = settings_env_key_input_state(&settings.env.pending, &plan.scope, plan.label, "");
     settings.env.modal = Some(SettingsEnvModal::Text {
-        target: SettingsEnvTextTarget::EnvKey { scope },
+        target: plan.target,
         state: Box::new(state),
     });
 }

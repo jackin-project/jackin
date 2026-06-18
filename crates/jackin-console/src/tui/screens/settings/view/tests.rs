@@ -382,6 +382,30 @@ fn settings_env_new_key_labels_name_scope() {
 }
 
 #[test]
+fn settings_env_key_text_plans_own_target_and_label() {
+    assert_eq!(
+        settings_env_new_key_text_plan(SettingsEnvScope::Global),
+        SettingsEnvKeyTextPlan {
+            scope: SettingsEnvScope::Global,
+            target: SettingsEnvTextTarget::EnvKey {
+                scope: SettingsEnvScope::Global,
+            },
+            label: "New global environment key".to_owned(),
+        }
+    );
+    assert_eq!(
+        settings_env_new_key_after_picker_text_plan(SettingsEnvScope::Role("alpha".to_owned())),
+        SettingsEnvKeyTextPlan {
+            scope: SettingsEnvScope::Role("alpha".to_owned()),
+            target: SettingsEnvTextTarget::EnvKey {
+                scope: SettingsEnvScope::Role("alpha".to_owned()),
+            },
+            label: "New environment key for alpha".to_owned(),
+        }
+    );
+}
+
+#[test]
 fn trust_lines_include_header_empty_row_and_truncate_long_role() {
     let rows = [SettingsTrustRow {
         role: "very-long-role-name-that-will-truncate".to_owned(),
