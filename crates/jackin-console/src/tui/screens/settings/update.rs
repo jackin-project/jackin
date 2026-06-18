@@ -1176,6 +1176,17 @@ pub fn toggle_settings_env_mask_for_row<V>(
     true
 }
 
+pub fn toggle_selected_settings_env_mask<V>(
+    unmasked_rows: &mut BTreeSet<(SettingsEnvScope, String)>,
+    pending: &SettingsEnvConfig<V>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+    is_maskable: impl FnOnce(&V) -> bool,
+) -> bool {
+    let rows = settings_env_flat_rows(pending, expanded_roles);
+    toggle_settings_env_mask_for_row(unmasked_rows, pending, rows.get(selected), is_maskable)
+}
+
 pub fn remove_settings_env_row<V>(
     pending: &mut SettingsEnvConfig<V>,
     expanded_roles: &BTreeSet<String>,

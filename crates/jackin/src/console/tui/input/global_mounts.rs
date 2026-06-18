@@ -1129,11 +1129,11 @@ fn open_settings_env_delete_confirm(settings: &mut crate::console::tui::state::S
 }
 
 fn toggle_settings_env_mask(settings: &mut crate::console::tui::state::SettingsState<'_>) {
-    let rows = settings.env_flat_rows();
-    settings_update::toggle_settings_env_mask_for_row(
+    settings_update::toggle_selected_settings_env_mask(
         &mut settings.env.unmasked_rows,
         &settings.env.pending,
-        rows.get(settings.env.selected),
+        &settings.env.expanded,
+        settings.env.selected,
         |value| !matches!(value, jackin_core::EnvValue::OpRef(_)),
     );
 }

@@ -1047,6 +1047,39 @@ fn toggle_settings_env_mask_for_row_skips_unmaskable_values() {
 }
 
 #[test]
+fn toggle_selected_settings_env_mask_uses_current_flat_selection() {
+    let pending = env_config();
+    let expanded = BTreeSet::from(["alpha".to_owned()]);
+    let rows = settings_env_flat_rows(&pending, &expanded);
+    let selected = rows
+        .iter()
+        .position(|row| {
+            matches!(
+                row,
+                SettingsEnvRow::Key {
+                    scope: SettingsEnvScope::Role(role),
+                    key,
+                } if role == "alpha" && key == "ROLE_A"
+            )
+        })
+        .unwrap_or(usize::MAX);
+    let mut unmasked = BTreeSet::new();
+
+    assert!(toggle_selected_settings_env_mask(
+        &mut unmasked,
+        &pending,
+        &expanded,
+        selected,
+        |_| true
+    ));
+
+    assert!(unmasked.contains(&(
+        SettingsEnvScope::Role("alpha".to_owned()),
+        "ROLE_A".to_owned()
+    )));
+}
+
+#[test]
 fn remove_settings_env_row_deletes_key_and_clamps_selection() {
     let mut pending = env_config();
     let expanded = BTreeSet::from(["alpha".to_owned()]);
