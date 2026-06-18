@@ -323,6 +323,11 @@ pub fn secrets_skipped_rows(rows: &[SecretsRow]) -> Vec<usize> {
 }
 
 #[must_use]
+pub fn editor_secrets_selection_bounds(rows: &[SecretsRow]) -> (usize, Vec<usize>) {
+    (rows.len().saturating_sub(1), secrets_skipped_rows(rows))
+}
+
+#[must_use]
 pub fn auth_skipped_rows<K>(rows: &[AuthRow<K>]) -> Vec<usize> {
     rows.iter()
         .enumerate()

@@ -34,8 +34,9 @@ use jackin_console::tui::components::error_popup::no_github_url_error_popup_stat
 use jackin_console::tui::components::file_browser::{FileBrowserOutcome, page_rows_for_modal};
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width_with_cache;
-use jackin_console::tui::screens::editor::update::editor_max_row_for_tab;
-use jackin_console::tui::screens::editor::update::{auth_skipped_rows, secrets_skipped_rows};
+use jackin_console::tui::screens::editor::update::{
+    auth_skipped_rows, editor_max_row_for_tab, editor_secrets_selection_bounds,
+};
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
     secret_new_key_label, secret_new_value_input_state,
@@ -474,7 +475,7 @@ fn editor_selection_bounds(editor: &EditorState<'_>, config: &AppConfig) -> (usi
     match editor.active_tab {
         EditorTab::Secrets => {
             let rows = editor.secrets_flat_rows();
-            (rows.len().saturating_sub(1), secrets_skipped_rows(&rows))
+            editor_secrets_selection_bounds(&rows)
         }
         EditorTab::Auth => {
             let rows = editor.auth_flat_rows(config);

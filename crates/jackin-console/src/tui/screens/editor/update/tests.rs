@@ -115,6 +115,7 @@ fn skipped_row_helpers_mark_inert_editor_rows() {
         },
     ];
     assert_eq!(secrets_skipped_rows(&secrets), vec![1]);
+    assert_eq!(editor_secrets_selection_bounds(&secrets), (2, vec![1]));
 
     let auth = [
         AuthRow::WorkspaceMode {
