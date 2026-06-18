@@ -40,7 +40,7 @@ fn workspace_list_footer_role_picker_includes_quit() {
             "Esc",
             "return to workspaces",
             "type to filter",
-            "↑↓",
+            "↑↓/j/k",
             "scroll",
             "Ctrl+Q",
             "quit",
@@ -506,7 +506,7 @@ fn workspace_list_footer_workspace_row_shows_scroll_axes() {
             }
         )),
         vec![
-            "\u{2190}\u{2192}",
+            "←→/h/l",
             "scroll",
             "↵",
             "launch",
@@ -557,7 +557,7 @@ fn settings_context_footer_routes_mounts_and_auth() {
             "edit dst",
             "3",
             "edit scope",
-            "←→",
+            "←→/h/l",
             "scroll",
         ]
     );
@@ -765,7 +765,7 @@ fn settings_trust_footer_depends_on_roles() {
                 horizontal: true,
             }
         )),
-        vec!["␣", "trust/untrust", "←→", "scroll"]
+        vec!["␣", "trust/untrust", "←→/h/l", "scroll"]
     );
 }
 

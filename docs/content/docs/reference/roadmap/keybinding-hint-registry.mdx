@@ -227,7 +227,7 @@ Remaining hint gaps (handled but unadvertised) are in the divergence catalogue a
 - [ ] Launch `subscriptions.rs`/`run.rs` dispatch + failure-popup and pre-pipeline overlay hints.
 - [ ] Console `input/*.rs` + `file_browser`/`git_prompt` dispatch and remaining `footer_hints.rs` builders; register vim aliases and workspace-row/instance actions; delete dead settings arms.
 - [ ] `ContainerInfoState` phantom `↵ copy value` hint (callers own copy, not widget) — resolve by adding `CopyValue` action to widget keymap or marking caller-owned.
-- [ ] Lookbook hints (migrate from hand-written arrays to registry-derived spans).
+- [ ] Lookbook hints: `SIDEBAR_HINT` and `PREVIEW_FOCUS_HINT` remain hand-written — lookbook navigation is unique (not a standard component), so registry derivation would require new keymaps with no operator-visible benefit. Deferred; acceptable since lookbook is internal tooling.
 
 **Phase 3 — Enforcement and cleanup:**
 - [x] Per-context chord-coverage tests in `keymap/tests.rs`: `assert_all_chords_dispatch` + `assert_has_shown_hints` applied to all five shared-widget keymaps; `raw_bytes_to_chord` round-trip tests including `CONFIRM_KEYMAP` dispatch via raw bytes.

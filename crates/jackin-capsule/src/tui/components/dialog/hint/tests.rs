@@ -35,7 +35,7 @@ fn main_view_hint_advertises_only_visible_scroll_axis() {
             horizontal: false,
         },
     ));
-    assert!(hint.contains("↑↓ scroll"));
+    assert!(hint.contains("↑↓/j/k scroll"));
     assert!(
         !hint.contains("←→"),
         "vertical-only pane must not advertise horizontal scroll: {hint}"
