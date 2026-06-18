@@ -887,28 +887,31 @@ fn commit_settings_confirm(
     settings: &mut crate::console::tui::state::SettingsState<'_>,
     action: GlobalMountConfirm,
 ) -> SettingsModalOutcome {
-    match action {
-        GlobalMountConfirm::Remove => {
-            let global = &mut settings.mounts;
-            if global.selected < global.pending.len() {
-                global.pending.remove(global.selected);
-                global.selected = settings_update::settings_global_mounts_selected_index(
-                    global.selected,
-                    global.pending.len(),
-                );
-            }
+    let plan = settings_update::settings_confirm_commit_plan(
+        action,
+        settings.mounts.selected,
+        settings.mounts.pending.len(),
+    );
+    match plan {
+        settings_update::SettingsConfirmCommitPlan::Remove {
+            remove_index,
+            selected,
+        } => {
+            settings.mounts.pending.remove(remove_index);
+            settings.mounts.selected = selected;
             SettingsModalOutcome::Continue
         }
-        GlobalMountConfirm::Save => request_settings_save(settings),
-        GlobalMountConfirm::Sensitive => {
+        settings_update::SettingsConfirmCommitPlan::Save => request_settings_save(settings),
+        settings_update::SettingsConfirmCommitPlan::OpenSavePreview => {
             open_settings_save_preview(settings);
             SettingsModalOutcome::Continue
         }
-        GlobalMountConfirm::Discard => {
+        settings_update::SettingsConfirmCommitPlan::DiscardAll => {
             settings.discard_all();
             settings.mounts.exit_requested = true;
             SettingsModalOutcome::Continue
         }
+        settings_update::SettingsConfirmCommitPlan::Noop => SettingsModalOutcome::Continue,
     }
 }
 

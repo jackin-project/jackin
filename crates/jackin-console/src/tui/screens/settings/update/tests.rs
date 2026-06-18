@@ -715,3 +715,37 @@ fn settings_confirm_plan_routes_confirm_cancel_and_continue() {
         SettingsConfirmPlan::Continue
     );
 }
+
+#[test]
+fn settings_confirm_commit_plan_routes_confirmed_actions() {
+    assert_eq!(
+        settings_confirm_commit_plan(GlobalMountConfirm::Remove, 1, 3),
+        SettingsConfirmCommitPlan::Remove {
+            remove_index: 1,
+            selected: 1,
+        }
+    );
+    assert_eq!(
+        settings_confirm_commit_plan(GlobalMountConfirm::Remove, 2, 3),
+        SettingsConfirmCommitPlan::Remove {
+            remove_index: 2,
+            selected: 2,
+        }
+    );
+    assert_eq!(
+        settings_confirm_commit_plan(GlobalMountConfirm::Remove, 9, 3),
+        SettingsConfirmCommitPlan::Noop
+    );
+    assert_eq!(
+        settings_confirm_commit_plan(GlobalMountConfirm::Save, 0, 0),
+        SettingsConfirmCommitPlan::Save
+    );
+    assert_eq!(
+        settings_confirm_commit_plan(GlobalMountConfirm::Sensitive, 0, 0),
+        SettingsConfirmCommitPlan::OpenSavePreview
+    );
+    assert_eq!(
+        settings_confirm_commit_plan(GlobalMountConfirm::Discard, 0, 0),
+        SettingsConfirmCommitPlan::DiscardAll
+    );
+}

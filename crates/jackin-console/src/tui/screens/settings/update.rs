@@ -118,6 +118,18 @@ pub enum SettingsConfirmPlan {
     Cancel { abort_sensitive: bool },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsConfirmCommitPlan {
+    Remove {
+        remove_index: usize,
+        selected: usize,
+    },
+    Save,
+    OpenSavePreview,
+    DiscardAll,
+    Noop,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GlobalMountTextCommitPlan {
     AddScope(String),
@@ -219,6 +231,24 @@ pub const fn settings_confirm_plan(
             abort_sensitive: matches!(action, GlobalMountConfirm::Sensitive),
         },
         ModalOutcome::Continue => SettingsConfirmPlan::Continue,
+    }
+}
+
+#[must_use]
+pub fn settings_confirm_commit_plan(
+    action: GlobalMountConfirm,
+    selected: usize,
+    mount_count: usize,
+) -> SettingsConfirmCommitPlan {
+    match action {
+        GlobalMountConfirm::Remove if selected < mount_count => SettingsConfirmCommitPlan::Remove {
+            remove_index: selected,
+            selected: settings_global_mounts_selected_index(selected, mount_count - 1),
+        },
+        GlobalMountConfirm::Remove => SettingsConfirmCommitPlan::Noop,
+        GlobalMountConfirm::Save => SettingsConfirmCommitPlan::Save,
+        GlobalMountConfirm::Sensitive => SettingsConfirmCommitPlan::OpenSavePreview,
+        GlobalMountConfirm::Discard => SettingsConfirmCommitPlan::DiscardAll,
     }
 }
 
