@@ -132,6 +132,11 @@ RUN groupadd -g "$GID" agent && \
     useradd -m -u "$UID" -g "$GID" -s /bin/zsh agent && \
     install -d -o agent -g agent /home/agent/.claude /home/agent/.codex /home/agent/.jackin
 
+# Install starship prompt as root so the installer can write to /usr/local/bin
+# without sudo. Must run before USER agent: no baked sudoers are configured
+# (WP-SUDO provisions sudo at runtime only), so the installer cannot escalate.
+RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
+
 # Default to a UTF-8 locale so shell prompts and CLI output render correctly,
 # including `docker exec` sessions that bypass jackin's runtime entrypoint.
 ENV LANG=C.UTF-8 \
@@ -144,9 +149,6 @@ ENV PATH="/home/agent/.local/share/mise/shims:/home/agent/.local/bin:${PATH}"
 # Install oh-my-zsh and plugins
 RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended && \
     git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-/home/agent/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
-
-# Install starship prompt
-RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
 COPY --chown=agent:agent zshrc /home/agent/.zshrc
 
