@@ -8,6 +8,7 @@ use crate::tui::mount_display::{
     global_config_mounts_content_width_with_cache, workspace_config_mounts_content_height,
     workspace_config_mounts_content_width_with_cache,
 };
+use crate::tui::screens::workspaces::model::ManagerListRow;
 
 /// Fixed height of the compact running-instances badge (borders + 1 text line).
 pub const COMPACT_INSTANCES_HEIGHT: u16 = 3;
@@ -58,6 +59,49 @@ pub enum SidebarScrollFocus {
     Global,
     RoleGlobal,
     Roles,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectedSidebarTarget {
+    CurrentDirectory,
+    SavedWorkspace(usize),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GlobalMountRowsSelection<Role> {
+    None,
+    CurrentDirectory,
+    SavedWorkspace { picker_role: Option<Role> },
+}
+
+#[must_use]
+pub const fn selected_sidebar_target(row: ManagerListRow) -> Option<SelectedSidebarTarget> {
+    match row {
+        ManagerListRow::CurrentDirectory => Some(SelectedSidebarTarget::CurrentDirectory),
+        ManagerListRow::SavedWorkspace(idx) => Some(SelectedSidebarTarget::SavedWorkspace(idx)),
+        ManagerListRow::NewWorkspace
+        | ManagerListRow::WorkspaceInstance(_, _)
+        | ManagerListRow::CurrentDirectoryInstance(_) => None,
+    }
+}
+
+#[must_use]
+pub fn global_mount_rows_selection<Role>(
+    row: ManagerListRow,
+    saved_workspace_exists: impl FnOnce(usize) -> bool,
+    picker_role: Option<Role>,
+) -> GlobalMountRowsSelection<Role> {
+    match row {
+        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
+            GlobalMountRowsSelection::CurrentDirectory
+        }
+        ManagerListRow::SavedWorkspace(idx) if saved_workspace_exists(idx) => {
+            GlobalMountRowsSelection::SavedWorkspace { picker_role }
+        }
+        ManagerListRow::SavedWorkspace(_)
+        | ManagerListRow::NewWorkspace
+        | ManagerListRow::WorkspaceInstance(_, _) => GlobalMountRowsSelection::None,
+    }
 }
 
 /// Shared facts for the right-pane sidebar body. Root adapters supply concrete

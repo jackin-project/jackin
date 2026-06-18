@@ -5,8 +5,8 @@ use ratatui::layout::Rect;
 use crate::console::tui::state::{ManagerListRow, ManagerState, WorkspaceSummary};
 use jackin_config::AppConfig;
 pub(crate) use jackin_console::tui::sidebar_layout::{
-    ConfigSidebarInputs as SidebarInputs, ConfigSidebarSelectionInputs, SidebarLayout,
-    SidebarScrollAreas,
+    ConfigSidebarInputs as SidebarInputs, ConfigSidebarSelectionInputs, GlobalMountRowsSelection,
+    SelectedSidebarTarget, SidebarLayout, SidebarScrollAreas,
 };
 use jackin_console::tui::update::{list_pre_render_focus_plan, list_pre_render_scroll_reset_plan};
 
@@ -131,22 +131,19 @@ pub(crate) fn selected_sidebar_scroll_areas(
     config: &AppConfig,
     cwd: &std::path::Path,
 ) -> Option<SidebarScrollAreas> {
-    match state.selected_row() {
-        ManagerListRow::CurrentDirectory => {
+    match jackin_console::tui::sidebar_layout::selected_sidebar_target(state.selected_row())? {
+        SelectedSidebarTarget::CurrentDirectory => {
             let cwd_str = cwd.display().to_string();
             let mounts = [jackin_console::services::workspace::current_dir_mount_config(&cwd_str)];
             let inputs = sidebar_inputs_for_current_dir(&cwd_str, &mounts, config, state);
             Some(compute_sidebar_scroll_areas(right_pane, &inputs, config))
         }
-        ManagerListRow::SavedWorkspace(i) => {
+        SelectedSidebarTarget::SavedWorkspace(i) => {
             let summary = state.workspaces.get(i).cloned()?;
             config.workspaces.get(&summary.name)?;
             let inputs = sidebar_inputs_for_workspace(&summary, config, state);
             Some(compute_sidebar_scroll_areas(right_pane, &inputs, config))
         }
-        ManagerListRow::NewWorkspace
-        | ManagerListRow::WorkspaceInstance(_, _)
-        | ManagerListRow::CurrentDirectoryInstance(_) => None,
     }
 }
 
@@ -291,23 +288,26 @@ pub(crate) fn global_rows_for_selected_row(
     state: &ManagerState<'_>,
     config: &AppConfig,
 ) -> Vec<jackin_config::GlobalMountRow> {
-    match state.selected_row() {
-        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
+    match jackin_console::tui::sidebar_layout::global_mount_rows_selection(
+        state.selected_row(),
+        |idx| {
+            state
+                .workspaces
+                .get(idx)
+                .is_some_and(|summary| config.workspaces.contains_key(&summary.name))
+        },
+        picker_role_from_state(state),
+    ) {
+        GlobalMountRowsSelection::CurrentDirectory => {
             jackin_console::services::workspace::global_rows_for_picker(config, None)
         }
-        ManagerListRow::SavedWorkspace(i) => {
-            let Some(summary) = state.workspaces.get(i) else {
-                return Vec::new();
-            };
-            if !config.workspaces.contains_key(&summary.name) {
-                return Vec::new();
-            }
+        GlobalMountRowsSelection::SavedWorkspace { picker_role } => {
             jackin_console::services::workspace::global_rows_for_picker(
                 config,
-                picker_role_from_state(state).as_ref(),
+                picker_role.as_ref(),
             )
         }
-        ManagerListRow::NewWorkspace | ManagerListRow::WorkspaceInstance(_, _) => Vec::new(),
+        GlobalMountRowsSelection::None => Vec::new(),
     }
 }
 

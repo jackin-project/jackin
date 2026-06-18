@@ -5,6 +5,67 @@ use jackin_config::{
     AppConfig, EnvValue, GlobalMountRow, MountConfig, MountIsolation, RoleSource, WorkspaceConfig,
 };
 
+use crate::tui::screens::workspaces::model::ManagerListRow;
+
+#[test]
+fn selected_sidebar_target_routes_only_workspace_rows() {
+    assert_eq!(
+        selected_sidebar_target(ManagerListRow::CurrentDirectory),
+        Some(SelectedSidebarTarget::CurrentDirectory)
+    );
+    assert_eq!(
+        selected_sidebar_target(ManagerListRow::SavedWorkspace(2)),
+        Some(SelectedSidebarTarget::SavedWorkspace(2))
+    );
+    assert_eq!(
+        selected_sidebar_target(ManagerListRow::CurrentDirectoryInstance(0)),
+        None
+    );
+    assert_eq!(
+        selected_sidebar_target(ManagerListRow::WorkspaceInstance(0, 1)),
+        None
+    );
+    assert_eq!(selected_sidebar_target(ManagerListRow::NewWorkspace), None);
+}
+
+#[test]
+fn global_mount_rows_selection_routes_current_dir_and_existing_workspace() {
+    assert_eq!(
+        global_mount_rows_selection::<String>(ManagerListRow::CurrentDirectory, |_| false, None),
+        GlobalMountRowsSelection::CurrentDirectory
+    );
+    assert_eq!(
+        global_mount_rows_selection::<String>(
+            ManagerListRow::CurrentDirectoryInstance(0),
+            |_| false,
+            Some("smith".into())
+        ),
+        GlobalMountRowsSelection::CurrentDirectory
+    );
+    assert_eq!(
+        global_mount_rows_selection(
+            ManagerListRow::SavedWorkspace(2),
+            |idx| idx == 2,
+            Some("smith".to_owned())
+        ),
+        GlobalMountRowsSelection::SavedWorkspace {
+            picker_role: Some("smith".to_owned())
+        }
+    );
+    assert_eq!(
+        global_mount_rows_selection::<String>(ManagerListRow::SavedWorkspace(9), |_| false, None),
+        GlobalMountRowsSelection::None
+    );
+    assert_eq!(
+        global_mount_rows_selection::<String>(
+            ManagerListRow::WorkspaceInstance(0, 1),
+            |_| true,
+            None
+        ),
+        GlobalMountRowsSelection::None
+    );
+}
+
 #[test]
 fn omits_optional_blocks_without_consuming_slots() {
     let layout = compute_sidebar_layout(
