@@ -85,6 +85,20 @@ where
     );
 }
 
+pub trait LaunchProviderPickerManagerState<RoleSelector, Agent, Provider>
+where
+    RoleSelector: crate::tui::components::role_picker::RoleChoice,
+{
+    fn open_launch_provider_picker(
+        &mut self,
+        picker: crate::tui::components::provider_picker::ProviderPickerState<
+            RoleSelector,
+            Agent,
+            Provider,
+        >,
+    );
+}
+
 pub fn open_launch_role_prompt_plan<LaunchInput, RoleSelector>(
     state: &mut impl LaunchRolePromptState<LaunchInput, RoleSelector>,
     input: LaunchInput,
@@ -113,6 +127,18 @@ pub fn store_pending_launch_plan<LaunchInput, RoleSelector>(
     state.store_pending_launch(input);
 }
 
+pub fn open_launch_provider_picker_plan<LaunchInput, RoleSelector, Agent, Provider>(
+    state: &mut impl LaunchProviderPickerState<LaunchInput, RoleSelector, Agent, Provider>,
+    input: LaunchInput,
+    role: RoleSelector,
+    agent: Agent,
+    providers: Vec<Provider>,
+) where
+    RoleSelector: crate::tui::components::role_picker::RoleChoice + Clone,
+{
+    state.open_launch_provider_picker(input, role, agent, providers);
+}
+
 pub trait LaunchRolePromptState<LaunchInput, RoleSelector>
 where
     RoleSelector: crate::tui::components::role_picker::RoleChoice,
@@ -127,6 +153,19 @@ where
     fn clear_pending_launch(&mut self);
 
     fn store_pending_launch(&mut self, input: LaunchInput);
+}
+
+pub trait LaunchProviderPickerState<LaunchInput, RoleSelector, Agent, Provider>
+where
+    RoleSelector: crate::tui::components::role_picker::RoleChoice + Clone,
+{
+    fn open_launch_provider_picker(
+        &mut self,
+        input: LaunchInput,
+        role: RoleSelector,
+        agent: Agent,
+        providers: Vec<Provider>,
+    );
 }
 
 impl<Manager, LaunchInput, RoleSelector, OpCache> LaunchRolePromptState<LaunchInput, RoleSelector>
@@ -158,6 +197,32 @@ where
 
     fn store_pending_launch(&mut self, input: LaunchInput) {
         self.pending_launch = Some(input);
+    }
+}
+
+impl<Manager, LaunchInput, RoleSelector, OpCache, Agent, Provider>
+    LaunchProviderPickerState<LaunchInput, RoleSelector, Agent, Provider>
+    for ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache>
+where
+    Manager: LaunchProviderPickerManagerState<RoleSelector, Agent, Provider>,
+    RoleSelector: crate::tui::components::role_picker::RoleChoice + Clone,
+{
+    fn open_launch_provider_picker(
+        &mut self,
+        input: LaunchInput,
+        role: RoleSelector,
+        agent: Agent,
+        providers: Vec<Provider>,
+    ) {
+        let picker = crate::tui::components::provider_picker::ProviderPickerState::new(
+            role.clone(),
+            agent,
+            providers,
+        );
+        let ConsoleAppStage::Manager(manager) = &mut self.stage;
+        manager.open_launch_provider_picker(picker);
+        self.pending_launch = Some(input);
+        self.pending_launch_role = Some(role);
     }
 }
 
@@ -2521,6 +2586,9 @@ mod tests {
         role_picker_keys: Vec<&'static str>,
         role_picker_selected: Option<usize>,
         role_picker_confirm_label: String,
+        provider_picker_role: Option<TestPromptRole>,
+        provider_picker_agent: Option<jackin_core::Agent>,
+        provider_picker_providers: Vec<&'static str>,
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2557,6 +2625,24 @@ mod tests {
             self.role_picker_keys = picker.roles.iter().map(|role| role.0).collect();
             self.role_picker_selected = picker.list_state.selected;
             self.role_picker_confirm_label = picker.confirm_label;
+        }
+    }
+
+    impl super::LaunchProviderPickerManagerState<TestPromptRole, jackin_core::Agent, &'static str>
+        for TestLaunchPromptManager
+    {
+        fn open_launch_provider_picker(
+            &mut self,
+            picker: crate::tui::components::provider_picker::ProviderPickerState<
+                TestPromptRole,
+                jackin_core::Agent,
+                &'static str,
+            >,
+        ) {
+            let providers = picker.providers().to_vec();
+            self.provider_picker_role = Some(picker.context);
+            self.provider_picker_agent = Some(picker.agent);
+            self.provider_picker_providers = providers;
         }
     }
 
@@ -2634,6 +2720,37 @@ mod tests {
         super::store_pending_launch_plan(&mut app, "workspace-input");
 
         assert_eq!(app.pending_launch, Some("workspace-input"));
+    }
+
+    #[test]
+    fn open_launch_provider_picker_plan_updates_app_and_manager() {
+        let mut app: ConsoleApp<TestLaunchPromptManager, &'static str, TestPromptRole, ()> =
+            ConsoleApp::new(
+                ConsoleAppStage::Manager(TestLaunchPromptManager::default()),
+                (),
+                false,
+            );
+
+        super::open_launch_provider_picker_plan(
+            &mut app,
+            "workspace-input",
+            TestPromptRole("architect"),
+            jackin_core::Agent::Claude,
+            vec!["anthropic", "zai"],
+        );
+
+        assert_eq!(app.pending_launch, Some("workspace-input"));
+        assert_eq!(app.pending_launch_role, Some(TestPromptRole("architect")));
+        let ConsoleAppStage::Manager(manager) = app.stage;
+        assert_eq!(
+            manager.provider_picker_role,
+            Some(TestPromptRole("architect"))
+        );
+        assert_eq!(
+            manager.provider_picker_agent,
+            Some(jackin_core::Agent::Claude)
+        );
+        assert_eq!(manager.provider_picker_providers, vec!["anthropic", "zai"]);
     }
 
     impl ModalConfirmState for TestConfirm {

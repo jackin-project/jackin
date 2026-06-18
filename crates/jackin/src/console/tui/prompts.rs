@@ -3,7 +3,9 @@
 use crate::console::ConsoleOutcome;
 use jackin_config::AppConfig;
 use jackin_config::{LoadWorkspaceInput, ResolvedWorkspace};
-use jackin_console::tui::app::{open_launch_agent_prompt_plan, store_pending_launch_plan};
+use jackin_console::tui::app::{
+    open_launch_agent_prompt_plan, open_launch_provider_picker_plan, store_pending_launch_plan,
+};
 use jackin_console::tui::components::error_popup::{
     role_resolution_error_message, role_resolution_error_title,
 };
@@ -179,14 +181,12 @@ pub(super) fn launch_with_committed_agent(
         )));
     }
 
-    if let ConsoleStage::Manager(ms) = &mut state.stage {
-        ms.launch_provider_picker = Some(crate::console::tui::state::ProviderPickerState::new(
-            resolved.role.clone(),
-            agent,
-            resolved.providers,
-        ));
-    }
-    state.pending_launch = Some(resolved.input);
-    state.pending_launch_role = Some(resolved.role);
+    open_launch_provider_picker_plan(
+        state,
+        resolved.input,
+        resolved.role,
+        agent,
+        resolved.providers,
+    );
     Ok(None)
 }

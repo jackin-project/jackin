@@ -9,7 +9,7 @@ use crate::console::tui::effect::ManagerEffect;
 use jackin_config::AppConfig;
 use jackin_console::tui::app::{
     ConsoleAnimationTick, ConsoleManagerStageState, LaunchAgentPromptManagerState,
-    LaunchRolePromptManagerState,
+    LaunchProviderPickerManagerState, LaunchRolePromptManagerState,
 };
 use jackin_console::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
 use jackin_console::tui::screens::workspaces::model::hovered_list_row;
@@ -873,6 +873,25 @@ impl LaunchRolePromptManagerState<jackin_core::RoleSelector> for ManagerState<'_
         >,
     ) {
         self.inline_role_picker = Some(picker);
+    }
+}
+
+impl
+    LaunchProviderPickerManagerState<
+        jackin_core::RoleSelector,
+        jackin_core::Agent,
+        jackin_protocol::Provider,
+    > for ManagerState<'_>
+{
+    fn open_launch_provider_picker(
+        &mut self,
+        picker: jackin_console::tui::components::provider_picker::ProviderPickerState<
+            jackin_core::RoleSelector,
+            jackin_core::Agent,
+            jackin_protocol::Provider,
+        >,
+    ) {
+        self.launch_provider_picker = Some(picker);
     }
 }
 
