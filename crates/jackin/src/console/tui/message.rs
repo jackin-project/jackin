@@ -725,12 +725,18 @@ fn move_settings_trust_selection(
 }
 
 fn collapse_selected_tree(state: &mut ManagerState<'_>) {
-    state.inline_new_session_picker = None;
+    apply_inline_picker_dismissal_plan(
+        state,
+        inline_picker_dismissal_plan(InlinePickerDismissal::NewSession),
+    );
     apply_workspace_tree_disclosure_plan(state, collapse_selected_tree_plan(state.selected_row()));
 }
 
 fn expand_selected_tree(state: &mut ManagerState<'_>) {
-    state.inline_new_session_picker = None;
+    apply_inline_picker_dismissal_plan(
+        state,
+        inline_picker_dismissal_plan(InlinePickerDismissal::NewSession),
+    );
     apply_workspace_tree_disclosure_plan(state, expand_selected_tree_plan(state.selected_row()));
 }
 
