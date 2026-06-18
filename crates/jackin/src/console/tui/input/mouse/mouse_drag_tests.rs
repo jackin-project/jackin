@@ -7,18 +7,20 @@
 use super::{
     MOUSE_HORIZONTAL_SCROLL_STEP, handle_mouse, handle_mouse_with_config, list_scroll_areas,
 };
+use crate::config::{AgentAuthConfig, AuthForwardMode};
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::state::{
     DEFAULT_SPLIT_PCT, EditorHoverTarget, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
     GlobalMountModal, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerHoverTarget, ManagerListRow,
     ManagerStage, ManagerState, Modal, MountScrollFocus, SecretsScopeTag, SettingsAuthModal,
-    SettingsHoverTarget, SettingsTab, SettingsTrustRow, settings_state_from_config,
+    SettingsHoverTarget, SettingsTab, SettingsTrustRow, auth_flat_rows, settings_state_from_config,
 };
 use crate::workspace::{MountConfig, WorkspaceConfig};
 use crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseButton, MouseEvent,
     MouseEventKind,
 };
+use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::screens::settings::view::global_mount_confirm_state;
 use ratatui::layout::Rect;
@@ -587,6 +589,59 @@ fn mouse_motion_sets_and_clears_editor_mount_row_hover() {
         panic!("expected editor stage");
     };
     assert_eq!(editor.hover_target, None);
+}
+
+#[test]
+fn click_on_editor_auth_preview_row_does_not_focus_or_activate() {
+    let mut state = list_state();
+    let mut config = crate::config::AppConfig::default();
+    let ws = WorkspaceConfig {
+        workdir: "/w".into(),
+        claude: Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::Sync,
+            sync_source_dir: Some(std::path::PathBuf::from("/host/claude")),
+        }),
+        ..Default::default()
+    };
+    config.workspaces.insert("x".into(), ws.clone());
+    let mut editor = EditorState::new_edit("x".into(), ws);
+    editor.active_tab = EditorTab::Auth;
+    editor.auth_selected_kind = Some(AuthKind::Claude);
+    editor.active_field = FieldFocus::Row(0);
+    let row_idx = auth_flat_rows(&editor, &config)
+        .iter()
+        .position(|row| {
+            matches!(
+                row,
+                crate::console::tui::state::AuthRow::WorkspaceSourceFolder {
+                    kind: AuthKind::Claude
+                }
+            )
+        })
+        .expect("sync mode must render a source-folder preview row");
+    let area = super::editor_content_area(&editor, term(100));
+    let click_row = area
+        .y
+        .saturating_add(1)
+        .saturating_add(u16::try_from(row_idx).unwrap());
+    state.stage = ManagerStage::Editor(editor);
+
+    handle_mouse_with_config(
+        &mut state,
+        mouse_kind_at(
+            MouseEventKind::Down(MouseButton::Left),
+            area.x.saturating_add(2),
+            click_row,
+        ),
+        term(100),
+        Some(&config),
+    );
+
+    let ManagerStage::Editor(editor) = &state.stage else {
+        panic!("expected editor stage");
+    };
+    assert_eq!(editor.active_field, FieldFocus::Row(0));
+    assert!(editor.modal.is_none());
 }
 
 #[test]

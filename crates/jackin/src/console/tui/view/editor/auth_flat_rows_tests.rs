@@ -233,6 +233,10 @@ fn resolve_auth_row_target_returns_none_for_navigation_and_header_rows() {
             AuthRow::AuthKindRow { .. }
             | AuthRow::AddSentinel { .. }
             | AuthRow::Spacer
+            | AuthRow::WorkspaceSource { .. }
+            | AuthRow::RoleSource { .. }
+            | AuthRow::WorkspaceSourceFolder { .. }
+            | AuthRow::RoleSourceFolder { .. }
             | AuthRow::RoleHeader { .. } => assert!(
                 super::resolve_auth_row_target(&editor, &cfg, idx).is_none(),
                 "row {idx} ({row:?}) must not resolve to an editable target"

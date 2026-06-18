@@ -124,7 +124,7 @@ The current Docker backend has useful properties:
 
 ### As shipped
 
-The contract described in this document has largely shipped — see **Status** above. Live today: the capability grant model, the four profiles (`locked`/`hardened`/`standard`/`compat`), per-dimension `[docker.grants]`, the CLI flag assembly in `launch_role_runtime` (`--cap-drop=ALL` + minimum `--cap-add` set, `--read-only` + `--tmpfs`, `--memory`/`--memory-reservation`/`--cpus`/`--pids-limit`/`--ulimit`, `--security-opt no-new-privileges` for `hardened`/`locked`), the `jackin-capsule firewall-apply` IPv4 egress allowlist, the `internal` network mode for the locked/no-DinD case, and the config/workspace/manifest schema (config + workspace `v1alpha7`, manifest `v1alpha5`). Operator usage is in the [Docker Security Profiles guide](/guides/docker-profiles/); the on-disk schema is in [Configuration](/reference/runtime/configuration/) and [Schema Versions](/reference/runtime/schema-versions/).
+The contract described in this document has largely shipped — see **Status** above. Live today: the capability grant model, the four profiles (`locked`/`hardened`/`standard`/`compat`), per-dimension `[docker.grants]`, the CLI flag assembly in `launch_role_runtime` (`--cap-drop=ALL` + minimum `--cap-add` set, `--read-only` + `--tmpfs`, `--memory`/`--memory-reservation`/`--cpus`/`--pids-limit`/`--ulimit`, `--security-opt no-new-privileges` for `hardened`/`locked`), the `jackin-capsule firewall-apply` IPv4 egress allowlist, the `internal` network mode for the locked/no-DinD case, and the config/workspace/manifest schema (config + workspace `v1alpha7`, manifest `v1alpha6`). Operator usage is in the [Docker Security Profiles guide](/guides/docker-profiles/); the on-disk schema is in [Configuration](/reference/runtime/configuration/) and [Schema Versions](/reference/runtime/schema-versions/).
 
 The remaining sections record design rationale (capability taxonomy, profile defaults, control matrix, DinD track) and the genuinely-open items: the `compat`→`standard` default flip and `--security-opt no-new-privileges` for `standard` (both blocked on the base-image `NOPASSWD:ALL` sudo audit), rootless DinD as a default, Sysbox, and an `ip6tables` IPv6 egress policy (the allowlist is IPv4-only). **Read those sections as design history, not current API.** Several names shipped differently than they were proposed below: the config key is `[docker] profile` (not `default_profile`); DinD opt-out is the role manifest's `dind` grant (not `requires_inner_engine`); egress is `jackin-capsule firewall-apply` (not `init-firewall.sh`); root for the firewall comes from host-side `docker exec --user root` (not `agent_scoped_sudo`); DinD TLS certs live at `/jackin/run/dind-certs` (not `/certs`); and line-pinned `<RepoFile … line N>` anchors predate the implementation. A full retirement of this design doc — trimming it to status + links once the sudo-audit-blocked pieces land — is tracked as remaining work.
 
@@ -632,7 +632,7 @@ This module provides:
 
 **<RepoFile path="crates/jackin-config/src/migrations.rs" />** — `CURRENT_CONFIG_VERSION = "v1alpha6"`, `CURRENT_WORKSPACE_VERSION = "v1alpha6"` on `main`. Both bump to `v1alpha7` when `DockerConfig.profile`, `DockerConfig.grants`, and `WorkspaceDockerConfig` land. They land in the same PR (one bump per file kind per PR). Fixture dirs: `crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/` and `crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/`.
 
-**<RepoFile path="crates/jackin-manifest/src/migrations.rs" />** — `CURRENT_MANIFEST_VERSION = "v1alpha4"` on `main`. Bumps to `v1alpha5` when manifest-level Docker grants land in `RoleManifest`. Fixture dir: `crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha4/`.
+**<RepoFile path="crates/jackin-manifest/src/migrations.rs" />** — `CURRENT_MANIFEST_VERSION = "v1alpha5"` on `main` (per-provider model overrides). Bumps to `v1alpha6` when manifest-level Docker grants land in `RoleManifest`. Fixture dir: `crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha5/`.
 
 ### Secondary files
 
@@ -1185,7 +1185,7 @@ Goal: make profiles actually read from config/workspace; add the full `DockerGra
 
 Goal: reduce DinD blast radius; let roles opt out of the sidecar entirely.
 
-- Add `requires_inner_engine: Option<bool>` to `RoleManifest` (lands in the same `v1alpha5` bump as `min_profile` from Phase 1).
+- Add `requires_inner_engine: Option<bool>` to `RoleManifest` (lands in the same `v1alpha6` bump as `min_profile` from Phase 1).
 - In `launch_role_runtime`, skip the DinD sidecar block (lines 690–716) when `profile >= hardened && !requires_inner_engine`. Emit `debug_log!("launch", "dind enabled=no reason=profile-hardened-no-inner-engine-required")`.
 - Prototype `docker:dind-rootless`: swap the `docker:dind` image for `docker:dind-rootless` on cgroup v2 hosts under `standard`. Drop `--privileged` from `dind_args`. Evaluate against the compatibility test matrix. Do not make it the default until all rows in the matrix pass.
 - Add the DinD cert path note: emit `debug_log!("dind", "TLS certs generated, lifetime=launch, path=/jackin/run/<instance>/dind-certs/")`. Verify cert volume is stored under `/jackin/run/` per the container path convention — the bind mount at `launch.rs:1007` already mounts the socket dir; certs need their own subdirectory under the same base.
@@ -1246,15 +1246,15 @@ Roles build their own images, today on the host Docker engine. The build phase i
 
 ## Schema Migration Footprint
 
-This contract introduces three new config surfaces. Per the rules in <RepoFile path="AGENTS.md" />, each lands with a `CURRENT_*_VERSION` bump:
+This contract introduces three new config surfaces. Per the rules in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>, each lands with a `CURRENT_*_VERSION` bump:
 
 | Surface | File kind | Type touched | Current version | Target version | Action |
 |---|---|---|---|---|---|
 | `[docker] profile = "..."` and `[docker.grants]` | `config.toml` | `AppConfig` → `DockerConfig` | `v1alpha6` (<RepoFile path="crates/jackin-config/src/migrations.rs" />) | `v1alpha7` | bump `CURRENT_CONFIG_VERSION`, add fixture `crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/`, re-bake all existing `after.toml`s, add Schema Versions entry. |
 | `[docker] profile = "..."` and `[docker.grants]` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` | `v1alpha6` (<RepoFile path="crates/jackin-config/src/migrations.rs" />) | `v1alpha7` | bump `CURRENT_WORKSPACE_VERSION`, fixture `crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/`, same bake + entry procedure. Config and workspace versions track together; one PR bumps both to `v1alpha7`. |
-| `[docker] min_profile = "..."`, `[docker] dind = "..."`, `[docker] allowed_hosts = [...]`, and `[docker] capabilities_add = [...]` | `jackin.role.toml` | `RoleManifest` | `v1alpha4` (<RepoFile path="crates/jackin-manifest/src/migrations.rs" />) | `v1alpha5` | bump `CURRENT_MANIFEST_VERSION`, fixture `crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha4/`, same bake + entry procedure. |
+| `[docker] min_profile = "..."`, `[docker] dind = "..."`, `[docker] allowed_hosts = [...]`, and `[docker] capabilities_add = [...]` | `jackin.role.toml` | `RoleManifest` | `v1alpha5` (<RepoFile path="crates/jackin-manifest/src/migrations.rs" />) | `v1alpha6` | bump `CURRENT_MANIFEST_VERSION`, fixture `crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha5/`, same bake + entry procedure. |
 
-All three additions are additive (new optional fields with serde defaults), so each bump is a single migration step. The "one schema version bump per PR" rule in AGENTS.md still applies: this PR bumps config and workspace to `v1alpha7` and manifest to `v1alpha5`.
+All three additions are additive (new optional fields with serde defaults), so each bump is a single migration step. The "one schema version bump per PR" rule in AGENTS.md still applies: this PR bumps config and workspace to `v1alpha7` and manifest to `v1alpha6` (manifest `v1alpha5` having shipped separately for per-provider model overrides).
 
 The exact TOML shape for the role manifest fields:
 

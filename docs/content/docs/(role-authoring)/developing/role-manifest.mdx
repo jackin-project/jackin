@@ -20,7 +20,7 @@ jackin' enforces **strict parsing** — unknown fields are rejected with an erro
 ## Full schema
 
 ```toml title="jackin.role.toml"
-version = "v1alpha5"
+version = "v1alpha6"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex", "amp", "kimi", "opencode"]
 
@@ -211,6 +211,36 @@ agents = ["opencode"]
 model = "zai-coding-plan/glm-5.1"
 ```
 
+## `[<agent>.providers.<provider>]`
+
+Claude Code, Codex, and OpenCode can run against alternative providers chosen from the provider picker at session launch. By default each provider uses jackin's built-in model for that agent. A `[<agent>.providers.<provider>]` table overrides the model used **when that provider is the selected provider**, without changing the agent's own `model` default. This matters most for OpenCode, which has no model of its own and resolves its model entirely from the selected provider.
+
+| Field | Required | Description |
+|---|---|---|
+| `model` | No | Model used when this provider is selected for the agent. For OpenCode, the `provider/model` string passed to `opencode -m`; for Claude and Codex, the provider's model name |
+
+`<provider>` is the provider's lowercase id: `anthropic`, `openai`, `zai`, `minimax`, or `kimi`. Resolution order when a provider is picked: the `[<agent>.providers.<provider>]` model, then jackin's built-in default for that pair, then the agent's own `model`.
+
+```toml title="jackin.role.toml"
+[claude]
+model = "claude-sonnet-4-6"
+
+# Pin a different model when MiniMax is picked for Claude.
+[claude.providers.minimax]
+model = "MiniMax-M3"
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+
+# OpenCode routes through the selected provider's block, so the model names
+# its provider id as well.
+[opencode.providers.minimax]
+model = "minimax/MiniMax-M3"
+
+[opencode.providers.zai]
+model = "zai-coding-plan/glm-5.1"
+```
+
 ### `[[claude.marketplaces]]`
 
 Each marketplace block declares one Claude marketplace source to register before plugin installation.
@@ -312,7 +342,7 @@ Declare Docker security requirements for this role. All fields are optional — 
 **Practical use:**
 
 ```toml title="jackin.role.toml — role that needs DinD and ptrace"
-version = "v1alpha5"
+version = "v1alpha6"
 dockerfile = "Dockerfile"
 
 [docker]
@@ -323,7 +353,7 @@ allowed_hosts = ["registry.npmjs.org", "crates.io", "static.crates.io"]
 ```
 
 ```toml title="jackin.role.toml — pure read-only analysis role"
-version = "v1alpha5"
+version = "v1alpha6"
 dockerfile = "Dockerfile"
 
 [docker]
@@ -332,7 +362,7 @@ dind = "none"  # skip DinD sidecar
 ```
 
 ```toml title="jackin.role.toml — role that doesn't need DinD under any profile"
-version = "v1alpha5"
+version = "v1alpha6"
 dockerfile = "Dockerfile"
 
 [docker]
@@ -468,7 +498,7 @@ Interactive prompts happen before the Docker image build, so you won't wait thro
 The smallest valid manifest:
 
 ```toml title="jackin.role.toml"
-version = "v1alpha5"
+version = "v1alpha6"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -478,7 +508,7 @@ plugins = []
 ## Complete example
 
 ```toml title="jackin.role.toml"
-version = "v1alpha5"
+version = "v1alpha6"
 dockerfile = "docker/Dockerfile.agent"
 
 [identity]

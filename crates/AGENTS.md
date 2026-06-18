@@ -1,12 +1,12 @@
 # crates/AGENTS.md
 
-Rules specific to the `crates/` workspace crates. These apply to all crates under this directory in addition to the root `AGENTS.md`.
+Rules for `crates/` workspace crates. Apply to all crates under this dir, in addition to root `AGENTS.md`.
 
 ## Rust module layout (workspace crates — hard rule)
 
 **Use Rust 2024 self-named module files. Do not create `mod.rs` files.**
 
-For modules with child files, use a self-named module root:
+Modules with child files use a self-named module root:
 
 ```text
 # correct
@@ -25,30 +25,30 @@ crates/jackin-foo/src/bar/baz.rs
 
 `lib.rs` and `main.rs` are the allowed crate-root exceptions.
 
-`clippy::mod_module_files = "deny"` is enabled in the workspace `[lints.clippy]` table and enforced by CI. Any PR that introduces a new `mod.rs` will fail.
+`clippy::mod_module_files = "deny"` is enabled in workspace `[lints.clippy]` and CI-enforced. Any PR introducing a new `mod.rs` fails.
 
 ### Rationale
 
-Rust 2024 edition explicitly recommends the self-named layout: `mod foo;` can load either `foo.rs` or `foo/mod.rs`, and the Rust Reference encourages `foo.rs` because it avoids dozens of files all named `mod.rs`. The `jackin-tui`, `jackin-console`, and other workspace crates already follow this convention.
+Rust 2024 recommends self-named layout: `mod foo;` loads `foo.rs` or `foo/mod.rs`; the Reference encourages `foo.rs` to avoid dozens of `mod.rs` files. `jackin-tui`, `jackin-console`, other crates already follow this.
 
 ## Naming
 
-Follow standard Rust naming:
+Standard Rust naming:
 
 - crates/modules/files: `snake_case`
 - functions/methods/variables: `snake_case`
 - types/traits/enums/structs: `UpperCamelCase`
 - constants/statics: `SCREAMING_SNAKE_CASE`
 
-Avoid clever abbreviations unless they are established domain terms (e.g. `tui`, `cli`, `dind`, `pty` are acceptable; `mgr`, `cfg_ed`, `ws` are not).
+Avoid clever abbreviations unless established domain terms (`tui`, `cli`, `dind`, `pty` OK; `mgr`, `cfg_ed`, `ws` not).
 
 ## Migration note (root `src/` crate)
 
-The legacy root `src/` crate (`src/config/mod.rs`, `src/runtime/mod.rs`, etc.) uses the old `mod.rs` layout while it is still a monolith. When a module is extracted into a new workspace crate, the extracted crate **must** use the self-named layout from the start. Legacy `src/mod.rs` files are tolerated only until each module is extracted.
+Legacy root `src/` crate (`src/config/mod.rs`, `src/runtime/mod.rs`, etc.) uses old `mod.rs` layout while still a monolith. A module extracted into a new workspace crate **must** use self-named layout from the start. Legacy `src/mod.rs` files tolerated only until each module is extracted.
 
 ## Workspace lint baseline (hard rule)
 
-All crates inherit the root workspace metadata and lints:
+All crates inherit root workspace metadata and lints:
 
 ```toml
 [lints]
@@ -57,70 +57,55 @@ workspace = true
 
 Do not add per-crate copies of `edition`, `rust-version`, `license`, `repository`, or lint tables unless the crate has a documented reason to diverge.
 
-The root `[workspace.lints.rust]` table is the source of truth. Dead-code and hygiene lints stay at deny: `unused`, `unused_imports`, `unused_variables`, `unused_must_use`, `dead_code`, and `unreachable_pub`. Rust 2024 unsafe-hygiene lints are enabled, and `unsafe_code = "forbid"` remains workspace-wide. The table also denies the current strict allowed-by-default set (`unused_qualifications`, `unused_lifetimes`, `redundant_lifetimes`, `trivial_casts`, `trivial_numeric_casts`, `unnameable_types`, `unit_bindings`, `macro_use_extern_crate`, `meta_variable_misuse`, `single_use_lifetimes`, `let_underscore_drop`) and keeps `missing_debug_implementations` at `warn`, which CI promotes during the clippy gate.
+Root `[workspace.lints.rust]` is source of truth. Dead-code + hygiene lints stay deny: `unused`, `unused_imports`, `unused_variables`, `unused_must_use`, `dead_code`, `unreachable_pub`. Rust 2024 unsafe-hygiene lints enabled; `unsafe_code = "forbid"` workspace-wide. Table also denies the current strict allowed-by-default set (`unused_qualifications`, `unused_lifetimes`, `redundant_lifetimes`, `trivial_casts`, `trivial_numeric_casts`, `unnameable_types`, `unit_bindings`, `macro_use_extern_crate`, `meta_variable_misuse`, `single_use_lifetimes`, `let_underscore_drop`) and keeps `missing_debug_implementations` at `warn`, which CI promotes during the clippy gate.
 
-Clippy is enforced by CI with:
+Clippy is CI-enforced with:
 
 ```text
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 ```
 
-The workspace enables `clippy::all` at deny and `pedantic`/`cargo` as the modern baseline, then carries explicit allow entries for noisy style-only lints that do not match jackin' current API shape. `warnings = "deny"` is deliberately not baked into the manifest; the `-D warnings` gate stays in CI so a future compiler warning does not brick local builds while jackin' rides each new stable toolchain. Do not enable `nursery` or `restriction` wholesale. Cherry-pick individual lints only.
+Workspace enables `clippy::all` deny and `pedantic`/`cargo` as modern baseline, then carries explicit allow entries for noisy style-only lints not matching jackin' current API shape. `warnings = "deny"` deliberately not baked into the manifest; the `-D warnings` gate stays in CI so a future compiler warning doesn't brick local builds while jackin' rides each new stable toolchain. Do not enable `nursery` or `restriction` wholesale. Cherry-pick individual lints only.
 
 Suppression discipline:
 
 - Prefer fixing the finding.
-- If code must intentionally stay unused, use `#[expect(dead_code, reason = "...")]`, never a blanket `#[allow(dead_code)]`.
-- `clippy::disallowed_methods` is enabled for blocking `Command::output`,
+- Code intentionally unused: `#[expect(dead_code, reason = "...")]`, never a blanket `#[allow(dead_code)]`.
+- `clippy::disallowed_methods` blocks `Command::output`,
   `std::thread::sleep`, `std::fs::File::open`, and
-  `std::fs::OpenOptions::open`. New render/runtime-thread call sites must move
+  `std::fs::OpenOptions::open`. New render/runtime-thread call sites move
   behind async helpers or `spawn_blocking`. Non-render exceptions need a local
   `#[expect(clippy::disallowed_methods, reason = "...")]` naming the boundary
   (startup, build helper, test harness, owned OS thread, etc.).
 - `unused_crate_dependencies` stays off; dependency scanners cover that class with fewer Cargo target false positives.
-- `print_stdout`, `print_stderr`, `unwrap_used`, `expect_used`, and `panic` are enforced from the workspace lint table. Prefer routing command output through explicit writer helpers and replacing runtime-data panics with `Result`/`Option` control flow. Any survivor must be a narrow `#[expect(..., reason = "...")]` at the smallest practical scope. Runtime input paths must not use `unwrap()`/`expect()` as validation. `exit` stays at `warn`.
-- The allowed-by-default maintainability lints are split deliberately. `manual_assert` is `deny`; `manual_let_else`, `match_bool`, `trivially_copy_pass_by_ref`, `large_enum_variant`, `result_large_err`, `rc_buffer`, `str_to_string`, `clone_on_ref_ptr`, and `return_self_not_must_use` are `warn` and therefore gate under CI `-D warnings`. `needless_pass_by_value` and `large_futures` stay `allow` for now because the first currently fires on many intentional by-value state/view handoffs and the second on capsule async protocol readers where boxing every call site would add indirection without a measured win. `string_to_string` is not in the table because Clippy 1.96 removed it in favor of `implicit_clone`. `large_futures`, `needless_pass_by_value`, and `implicit_clone` need a fresh cleanup pass before being raised.
+- `print_stdout`, `print_stderr`, `unwrap_used`, `expect_used`, `panic` enforced from workspace lint table. Route command output through explicit writer helpers; replace runtime-data panics with `Result`/`Option` control flow. Any survivor: narrow `#[expect(..., reason = "...")]` at smallest practical scope. Runtime input paths must not use `unwrap()`/`expect()` as validation. `exit` stays `warn`.
+- Allowed-by-default maintainability lints split deliberately. `manual_assert` is `deny`; `manual_let_else`, `match_bool`, `trivially_copy_pass_by_ref`, `large_enum_variant`, `result_large_err`, `rc_buffer`, `str_to_string`, `clone_on_ref_ptr`, `return_self_not_must_use` are `warn` and gate under CI `-D warnings`. `needless_pass_by_value` and `large_futures` stay `allow` for now: the first fires on many intentional by-value state/view handoffs, the second on capsule async protocol readers where boxing every call site adds indirection without measured win. `string_to_string` not in table because Clippy 1.96 removed it for `implicit_clone`. `large_futures`, `needless_pass_by_value`, `implicit_clone` need a fresh cleanup pass before being raised.
 
 Dead-code scanner layers:
 
-- `cargo shear` is PR-blocking in CI. It detects unused dependencies, misplaced dependencies, and unlinked Rust source files.
-- Tools are installed through `mise`, not ad-hoc `cargo install` in workflows.
+- `cargo shear` is PR-blocking in CI. Detects unused dependencies, misplaced dependencies, unlinked Rust source files.
+- Tools installed via `mise`, not ad-hoc `cargo install` in workflows.
 
 ## Supply-chain and feature-matrix hygiene
 
-PR CI runs both the standalone RustSec gate and deterministic policy checks:
+PR CI runs the standalone RustSec gate and deterministic policy checks:
 
 ```text
 cargo audit
 cargo deny check licenses bans sources
 ```
 
-The scheduled hygiene workflow runs:
+Scheduled hygiene workflow runs:
 
 ```text
 cargo deny check advisories
 cargo hack check --workspace --feature-powerset --all-targets --locked
 ```
 
-`deny.toml` is strict by default: crates.io is the only allowed registry, Git
-sources are denied, wildcard dependencies are denied, yanked crates are denied,
-and the license allowlist is Apache-2.0 plus MIT. Any non-Apache/MIT license
-must be a version-pinned exception with a short comment explaining that it
-awaits an operator ruling.
+`deny.toml` strict by default: crates.io is only allowed registry; Git sources denied; wildcard dependencies denied; yanked crates denied; license allowlist is Apache-2.0 plus MIT. Any non-Apache/MIT license must be a version-pinned exception with a short comment noting it awaits an operator ruling.
 
-`.cargo/audit.toml` mirrors any RustSec advisory ignores from `deny.toml` so
-the standalone `cargo audit` PR gate and the scheduled `cargo-deny` advisory
-gate agree on accepted risk. Keep the rationale comments in both files in sync.
+`.cargo/audit.toml` mirrors any RustSec advisory ignores from `deny.toml` so the standalone `cargo audit` PR gate and the scheduled `cargo-deny` advisory gate agree on accepted risk. Keep rationale comments in both files in sync.
 
-Current transitive duplicate-version debt is recorded as version-pinned
-`bans.skip` entries. Keep `multiple-versions = "warn"` so a new duplicate
-version still trips the gate; do not add broad duplicate allows.
+Current transitive duplicate-version debt recorded as version-pinned `bans.skip` entries. Keep `multiple-versions = "warn"` so a new duplicate version still trips the gate; no broad duplicate allows.
 
-`cargo-audit` is a deliberately duplicated RustSec PR gate so a pull request
-that changes `Cargo.lock` cannot introduce a known-vulnerable dependency while
-waiting for the scheduled hygiene workflow. `cargo-vet` and `cargo-crev` are
-deliberately not adopted while jackin' is a solo-maintainer project: they are
-shared-audit systems, and there is no audit-sharing organization here. Revisit
-them only if jackin' gains a real multi-person review/audit group or production
-deployment requirements that need provenance attestations beyond RustSec
-advisory checks.
+`cargo-audit` is a deliberately duplicated RustSec PR gate so a PR changing `Cargo.lock` can't introduce a known-vulnerable dependency while waiting for the scheduled hygiene workflow. `cargo-vet` and `cargo-crev` deliberately not adopted while jackin' is solo-maintainer: they're shared-audit systems, no audit-sharing org here. Revisit only if jackin' gains a real multi-person review/audit group or production deployment needs provenance attestations beyond RustSec advisory checks.

@@ -174,17 +174,17 @@ fn focus_events_flag_tracks_dec_1004() {
 }
 
 #[test]
-fn title_and_cwd_changes_mark_pane_chrome_dirty() {
+fn title_and_cwd_updates_track_latest_values() {
+    // Derived rendering: chrome state is read fresh every frame, so the
+    // session only retains the latest title/cwd — no dirty flag.
     let mut session = test_session_with_policy(OscPolicy::default());
-    assert!(!session.pane_chrome_dirty());
+    assert!(session.title().is_none());
 
     session.feed_pty(b"\x1b]2;prompt title\x07");
-    assert!(session.pane_chrome_dirty());
+    assert_eq!(session.title(), Some("prompt title"));
 
-    session.clear_pane_chrome_dirty();
-    assert!(!session.pane_chrome_dirty());
     session.feed_pty(b"\x1b]7;file:///workspace/project\x07");
-    assert!(session.pane_chrome_dirty());
+    assert_eq!(session.cwd(), Some("/workspace/project"));
 }
 
 #[test]
@@ -219,12 +219,17 @@ fn unhandled_csi_modify_other_keys_is_re_emitted() {
 }
 
 #[test]
-fn unhandled_csi_bsu_esu_is_forwarded() {
-    let drained = drained(b"\x1b[?2026h");
-    assert!(
-        drained.iter().any(|f| f == b"\x1b[?2026h"),
-        "?2026h must reach the outer terminal: {drained:?}"
-    );
+fn agent_synchronized_output_toggles_are_absorbed() {
+    // The capsule's own frame brackets supersede the agent's BSU/ESU; a
+    // forwarded `?2026h` whose matching `l` is dropped froze the outer
+    // terminal (D6), so the grid absorbs both toggles.
+    for toggle in [&b"\x1b[?2026h"[..], &b"\x1b[?2026l"[..]] {
+        let drained = drained(toggle);
+        assert!(
+            drained.is_empty(),
+            "agent ?2026 toggles must never reach the outer terminal: {drained:?}"
+        );
+    }
 }
 
 #[test]
@@ -307,55 +312,6 @@ fn drain_clears_pending_between_calls() {
         second.is_empty(),
         "drain must clear pending; got {second:?}"
     );
-}
-
-#[test]
-fn focus_swap_reset_covers_every_mode_current_mode_state_may_emit() {
-    // Symmetry contract: every mode that `current_mode_state` can
-    // set on the outer terminal during focus-in must have a
-    // matching off-toggle in `focus_swap_reset`, otherwise the
-    // previous pane's mode silently leaks into the new pane.
-    //
-    // `current_mode_state` can emit:
-    //   - `\x1b[?2004h` (bracketed paste)   → reset `?2004l`
-    //   - `\x1b[?1h`    (application cursor) → reset `?1l`
-    //   - `\x1b[>{n}u`  (kitty kb push)     → reset `\x1b[<u` (pop)
-    //   - `\x1b[?25h/l` (cursor visibility) → intentionally NOT in
-    //                                         reset; `current_mode_state`
-    //                                         unconditionally re-asserts.
-    let reset = Session::focus_swap_reset();
-    for needle in [&b"\x1b[?2004l"[..], &b"\x1b[?1l"[..], &b"\x1b[<u"[..]] {
-        assert!(
-            reset.windows(needle.len()).any(|w| w == needle),
-            "focus_swap_reset missing {needle:?}; got {reset:?}"
-        );
-    }
-}
-
-#[test]
-fn focus_swap_reset_leaves_client_owned_modes_alone() {
-    // The attach client owns mouse reporting, focus reporting,
-    // alt-screen, and alternate-scroll suppression. The reset must
-    // not touch them; clobbering them here drops the multiplexer's
-    // ability to receive tab clicks, drag-resize, FocusIn/FocusOut,
-    // or wheel mouse events for the remainder of the session.
-    let reset = Session::focus_swap_reset();
-    for forbidden in [
-        &b"\x1b[?1000l"[..],
-        &b"\x1b[?1002l"[..],
-        &b"\x1b[?1003l"[..],
-        &b"\x1b[?1006l"[..],
-        &b"\x1b[?1007l"[..],
-        &b"\x1b[?1004l"[..],
-        &b"\x1b[?1049l"[..],
-        &b"\x1b[?25l"[..],
-        &b"\x1b[?25h"[..],
-    ] {
-        assert!(
-            !reset.windows(forbidden.len()).any(|w| w == forbidden),
-            "focus_swap_reset must not toggle {forbidden:?}"
-        );
-    }
 }
 
 #[test]
@@ -520,4 +476,66 @@ fn validate_agent_slug_rejects_slug_outside_launch_config_allowlist() {
         validate_agent_slug("codex", &supported).unwrap_err(),
         "not in launch config allowlist"
     );
+}
+
+// ── exit-reason classification ────────────────────────────────────────────
+// `child_exit_reason` drives whether a session exit surfaces as a Shutdown
+// reason (operator-facing error) or a clean teardown. A regression that
+// reported `Some(..)` on a clean exit would turn every normal `/exit` into a
+// spurious error dialog + container teardown notice.
+
+#[test]
+fn child_exit_reason_clean_exit_is_none() {
+    let status = portable_pty::ExitStatus::with_exit_code(0);
+    assert_eq!(child_exit_reason(Ok(&status)), None);
+}
+
+#[test]
+fn child_exit_reason_nonzero_code_reports_code() {
+    let status = portable_pty::ExitStatus::with_exit_code(137);
+    assert_eq!(
+        child_exit_reason(Ok(&status)).as_deref(),
+        Some("session process exited with code 137")
+    );
+}
+
+#[test]
+fn child_exit_reason_signal_reports_signal() {
+    let status = portable_pty::ExitStatus::with_signal("SIGKILL");
+    assert_eq!(
+        child_exit_reason(Ok(&status)).as_deref(),
+        Some("session process exited after signal SIGKILL")
+    );
+}
+
+#[test]
+fn child_exit_reason_wait_error_reports_failure() {
+    let err = std::io::Error::other("boom");
+    let reason = child_exit_reason(Err(&err)).expect("a wait error must yield a reason");
+    assert!(reason.starts_with("session process wait failed:"));
+    assert!(reason.contains("boom"));
+}
+
+// ── diagnostic tail ───────────────────────────────────────────────────────
+
+#[test]
+fn diagnostic_tail_zero_rows_is_none() {
+    let session = test_session_with_policy(OscPolicy::default());
+    assert_eq!(session.diagnostic_tail(0), None);
+}
+
+#[test]
+fn diagnostic_tail_blank_pane_is_none() {
+    let session = test_session_with_policy(OscPolicy::default());
+    assert_eq!(session.diagnostic_tail(12), None);
+}
+
+#[test]
+fn diagnostic_tail_returns_last_nonblank_rows_oldest_first() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.feed_pty(b"alpha\r\nbravo\r\ncharlie\r\n");
+    let tail = session
+        .diagnostic_tail(2)
+        .expect("rendered rows must yield a tail");
+    assert_eq!(tail, "bravo\ncharlie");
 }

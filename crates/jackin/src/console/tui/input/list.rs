@@ -639,7 +639,10 @@ pub(super) fn handle_inline_agent_picker(
 }
 
 /// Handle key events while the new-session agent picker is open in the left
-/// sidebar. Commit → dispatch `NewSessionWithAgent`; Cancel/Esc → dismiss.
+/// sidebar. Commit runs `inline_provider_followup_plan`; the running-container
+/// path always supplies an empty provider list (the daemon, not host config,
+/// owns the captured env), so in practice this dispatches `NewSessionWithAgent`
+/// directly and the provider picker never opens here. Cancel/Esc dismisses.
 pub(super) fn handle_new_session_picker(
     state: &mut ManagerState<'_>,
     key: KeyEvent,
@@ -650,12 +653,8 @@ pub(super) fn handle_new_session_picker(
     match picker.handle_key(key) {
         ModalOutcome::Commit(agent) => {
             let container = container.clone();
-            let plan = inline_provider_followup_plan(
-                container,
-                agent,
-                providers.clone(),
-                agent == crate::agent::Agent::Claude,
-            );
+            // Running-container path passes an empty list → no provider picker.
+            let plan = inline_provider_followup_plan(container, agent, providers.clone());
             dispatch_manager(state, ManagerMessage::DismissInlineSessionPicker);
             match plan {
                 InlineProviderFollowupPlan::StartSession { context, agent } => {

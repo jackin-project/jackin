@@ -1,24 +1,18 @@
 # Contributing to jackin'
 
-Thanks for your interest in contributing. A few ground rules.
+Thanks for contributing. A few ground rules.
 
 ## License
 
-jackin' is licensed under the Apache License, Version 2.0. By submitting
-a contribution, you agree that it will be licensed under the same terms
-in accordance with Section 5 of the Apache License 2.0.
+jackin' is licensed under the Apache License, Version 2.0. By submitting a contribution, you agree it will be licensed under the same terms per Section 5 of the Apache License 2.0.
 
 ## Developer Certificate of Origin (DCO)
 
-All contributions must be signed off under the Developer Certificate
-of Origin v1.1 (https://developercertificate.org/). Sign off every
-commit with:
+All contributions must be signed off under the Developer Certificate of Origin v1.1 (https://developercertificate.org/). Sign off every commit with:
 
     git commit -s
 
-This adds a `Signed-off-by: Your Name <email>` trailer asserting that
-you have the right to submit the contribution under the project's
-license.
+This adds a `Signed-off-by: Your Name <email>` trailer asserting you have the right to submit the contribution under the project's license.
 
 The full DCO text:
 
@@ -51,15 +45,9 @@ The full DCO text:
 
 ## Contributions made on behalf of an employer
 
-If your contribution is made in the course of your employment, or if
-your employer has rights to inventions you make, you are responsible
-for ensuring that you have authorization to contribute the work under
-the Apache License 2.0 and to sign the DCO. If in doubt, please do not
-submit the contribution until you have confirmed this with your
-employer in writing.
+If your contribution is made in the course of your employment, or if your employer has rights to inventions you make, you are responsible for ensuring you have authorization to contribute the work under the Apache License 2.0 and to sign the DCO. If in doubt, do not submit until you have confirmed this with your employer in writing.
 
-Please use a personal email address (not an employer email) in your
-commit author identity and DCO sign-off.
+Use a personal email address (not an employer email) in your commit author identity and DCO sign-off.
 
 ## How to submit
 
@@ -71,8 +59,4 @@ commit author identity and DCO sign-off.
 
 ## Non-trivial contributions
 
-For contributions beyond small bug fixes or typos, maintainers may ask
-you to confirm in the PR thread that the work was done outside the
-scope of any employer's employment agreement and that you are
-authorized to submit it. This is standard due diligence, not an
-accusation.
+For contributions beyond small bug fixes or typos, maintainers may ask you to confirm in the PR thread that the work was done outside the scope of any employer's employment agreement and that you are authorized to submit it. Standard due diligence, not an accusation.

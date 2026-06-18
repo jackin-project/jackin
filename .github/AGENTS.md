@@ -1,14 +1,14 @@
 # `.github/` rules — agent reference
 
-This file is the canonical home for rules covering everything an agent does on the surfaces under `.github/`: opening pull requests, copying the PR template, iterating on review feedback, merging, and authoring CI workflows under `.github/workflows/` plus composite actions under `.github/actions/`.
+Canonical home for rules covering everything an agent does on surfaces under `.github/`: opening PRs, copying the PR template, iterating on review feedback, merging, authoring CI workflows under `.github/workflows/` plus composite actions under `.github/actions/`.
 
 Discovery flow the agent follows:
 
-1. Operator asks for a PR. Agent reads [`PULL_REQUESTS.md`](../PULL_REQUESTS.md) at the repo root for the shared flow + template-body shape (the shared surface humans read too).
-2. `PULL_REQUESTS.md` points at [`.github/PULL_REQUEST_TEMPLATE.md`](PULL_REQUEST_TEMPLATE.md) as the canonical body shape.
-3. The template's preamble points at this file. The accompanying `.github/CLAUDE.md` is `@AGENTS.md`, so Claude Code auto-loads this file whenever the working directory is under `.github/`.
+1. Operator asks for a PR. Agent reads [`PULL_REQUESTS.md`](../PULL_REQUESTS.md) at repo root for shared flow + template-body shape (shared surface humans read too).
+2. `PULL_REQUESTS.md` points at [`.github/PULL_REQUEST_TEMPLATE.md`](PULL_REQUEST_TEMPLATE.md) as canonical body shape.
+3. Template's preamble points at this file, which harness auto-loads whenever working directory is under `.github/`.
 
-The split: `PULL_REQUESTS.md` is the **shared** PR flow (humans + agents). This file is the **agent-extras** — rules that govern agent-specific behavior (merge authorization, force-push policy, smoke-test mandates, squash-commit format, shell-quoting in body construction). Humans can read this file; nothing is secret. The agent-facing language is preserved because the agent is the canonical reader.
+The split: `PULL_REQUESTS.md` is **shared** PR flow (humans + agents). This file is **agent-extras** — rules governing agent-specific behavior (merge authorization, force-push policy, smoke-test mandates, squash-commit format, shell-quoting in body construction). Humans can read this file; nothing is secret. Agent-facing language preserved because agent is canonical reader.
 
 ---
 
@@ -16,109 +16,111 @@ The split: `PULL_REQUESTS.md` is the **shared** PR flow (humans + agents). This 
 
 ## Per-PR merge authorization (hard rule)
 
-**Agents must never merge a pull request without explicit per-PR confirmation from the human operator.**
+**Agents must never merge a PR without explicit per-PR confirmation from the human operator.**
 
-- Open the PR, share the URL, and stop. The default response after creating a PR is "PR URL — ready for your review" — not a merge command in the same turn.
-- Prior "just do it" / "don't wait for me" / "proceed autonomously" / "merge silently" authorizations apply only to the specific workstream the operator was discussing when they issued them. They do not carry forward to later PRs in the same session or to new sessions. Treat each PR as a fresh approval gate.
-- `--admin` / branch-protection bypass is a privilege, not a default. Use it only when the operator explicitly authorizes merging *this specific PR*.
+- Open PR, share URL, stop. Default response after creating a PR is "PR URL — ready for your review" — not a merge command in same turn.
+- Prior "just do it" / "don't wait for me" / "proceed autonomously" / "merge silently" authorizations apply only to the specific workstream operator was discussing when issued. They don't carry forward to later PRs in same session or to new sessions. Treat each PR as a fresh approval gate.
+- `--admin` / branch-protection bypass is a privilege, not a default. Use only when operator explicitly authorizes merging *this specific PR*.
 - Phrasing that does NOT authorize merge (ask anyway): "proceed", "don't wait for me", "do everything autonomously", "looks good". Phrasing that does: "merge it", "merge this one", "you can merge now", "ship it" (still prefer to confirm "ship = merge now?" for high-blast-radius PRs).
-- Bounded authorization: if the operator says "merge all the PRs we just discussed" or similar, merge only the named set — not unrelated PRs that exist or that you open later.
+- Bounded authorization: if operator says "merge all the PRs we just discussed" or similar, merge only the named set — not unrelated PRs that exist or you open later.
 
-If you are uncertain whether authorization applies to the PR in front of you, ask. The cost of pausing is ~30 seconds; the cost of merging something the operator wasn't ready for is much higher.
+If uncertain whether authorization applies to the PR in front of you, ask. Pausing costs ~30 seconds; merging something operator wasn't ready for costs much more.
 
 ## Base branch for agent-created PRs
 
-All pull requests created by agents must target `main` as the base branch unless the operator explicitly names a different target branch in the same request. Checking out, researching, or stacking on another branch does not imply that the opened pull request should target that branch. If a change depends on an unmerged branch, open a `main`-targeted PR only after the dependency is merged or explicitly ask the operator how they want the dependency represented.
+All PRs created by agents must target `main` as base branch unless operator explicitly names a different target in same request. Checking out, researching, or stacking on another branch does not imply opened PR targets that branch. If a change depends on an unmerged branch, open a `main`-targeted PR only after dependency merged, or explicitly ask operator how they want dependency represented.
 
 ## Force-push authorization
 
-Agents must never rewrite an existing remote branch (`git push --force`, `git push --force-with-lease`, `git push +<ref>`) without explicit per-action operator approval. The full rule lives in [`BRANCHING.md`](../BRANCHING.md). Approval applies to the specific force-push the operator authorized, not to subsequent ones in the same session or branch.
+Agents must never rewrite an existing remote branch (`git push --force`, `git push --force-with-lease`, `git push +<ref>`) without explicit per-action operator approval. Full rule lives in [`BRANCHING.md`](../BRANCHING.md). Approval applies to the specific force-push operator authorized, not subsequent ones in same session or branch.
 
-A normal follow-up commit is acceptable during review unless the operator has explicitly asked to keep the PR as one amended commit.
+A normal follow-up commit is acceptable during review unless operator explicitly asked to keep PR as one amended commit.
 
 ## PR-body refresh policy
 
-PR-body refreshes during iteration are **operator-triggered, not commit-triggered.** Do not rewrite the body after every follow-up commit. The operator may iterate on a PR for many commits before deciding the shape is right; auto-updating the body each time wastes attention and produces churn. Refresh the body only when:
+PR-body refreshes during iteration are **operator-triggered, not commit-triggered.** Do not rewrite body after every follow-up commit. Operator may iterate many commits before deciding shape is right; auto-updating body each time wastes attention + produces churn. Refresh body only when:
 
-1. The operator explicitly asks for it ("refresh the PR body", "update the description", "the body is out of date").
-2. The PR is moving to merge-readiness — see [Verify PR title and description before merging](#verify-pr-title-and-description-before-merging) for the merge-time reconciliation step.
-3. The current body has become *actively misleading* for a reviewer landing on the PR right now (e.g. the body claims a feature that was descoped, or a test count the runner now contradicts).
+1. Operator explicitly asks ("refresh the PR body", "update the description", "the body is out of date").
+2. PR moving to merge-readiness — see [Verify PR title and description before merging](#verify-pr-title-and-description-before-merging) for merge-time reconciliation step.
+3. Current body has become *actively misleading* for a reviewer landing on PR right now (e.g. body claims a descoped feature, or a test count runner now contradicts).
 
-When the operator does ask for a refresh, re-read the full diff (`gh pr diff <PR>` + `git log` on the branch) and rewrite the affected sections so they match what's currently shipped. Surface the changes briefly in your reply.
+When operator asks for a refresh, re-read full diff (`gh pr diff <PR>` + `git log` on branch) and rewrite affected sections to match what's currently shipped. Surface changes briefly in reply.
 
 ## Include local checkout instructions in every PR
 
-Every pull request created by an agent must include a copy-pasteable "Verify locally" section in the PR body, and the agent's final response should repeat the same commands after sharing the PR URL.
+Every PR created by an agent must include copy-pasteable "Verify locally" section in body, and agent's final response should repeat same commands after sharing PR URL.
 
-Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a PR-specific test directory (`$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>`) so the operator can inspect multiple PRs at once without checkout collisions. Use the PR number instead of the branch name for this directory: PR numbers are unique and stable, while branch names can contain slashes, be reused, or change during iteration. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
+Use template's bootstrap clone plus `cargo xtask pr prepare <PR_NUMBER>` with real PR number and verification commands. Bootstrap exists because `cargo xtask` lives inside repo: first clone/refresh PR into `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/jackin`, then let xtask own full checkout/build/isolation prep. Xtask starts from PR-specific test directory so operator can inspect multiple PRs at once without checkout collisions. Uses PR number, not branch name, for this directory: PR numbers unique + stable; branch names can contain slashes, be reused, or change during iteration. Clone/fetch step idempotent, force-updates fetched ref, prefers actual head branch name for same-repository PRs, falls back to GitHub's synthetic PR ref for fork PRs.
 
-The checkout block must export `JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"` and `JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"` immediately after the `PATH` export for every PR, even docs-only or pure-refactor PRs. Do not leave isolation as a separate optional section: a PR binary can migrate config or write runtime state before the operator notices, and shared live config can make older PR branches unusable after a newer schema branch has been tested.
+Checkout block must source env file generated by `cargo xtask pr prepare <PR_NUMBER>` for every PR, even docs-only or pure-refactor PRs. That env file exports `PATH`, `JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"`, `JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"`. Do not leave isolation as a separate optional section: a PR binary can migrate config or write runtime state before operator notices, and shared live config can make older PR branches unusable after a newer schema branch is tested.
 
-The canonical body shape, intent-split block list, and mandatory isolation env-var rule live in [`PULL_REQUESTS.md`](../PULL_REQUESTS.md) — read them first. The agent-specific extras below override or extend that shared content.
+Canonical body shape, intent-split block list, mandatory isolation env-var rule live in [`PULL_REQUESTS.md`](../PULL_REQUESTS.md) — read first. Agent-specific extras below override or extend that shared content.
 
 ## `jackin-capsule` PRs (hard rule)
 
-`jackin-capsule` is the in-container Capsule control-plane binary at `crates/jackin-capsule/`. Any PR that touches any file under `crates/jackin-capsule/` requires the Checkout block to end with the capsule build eval, plus a dedicated smoke block:
+`jackin-capsule` is the in-container Capsule control-plane binary at `crates/jackin-capsule/`. Any PR touching any file under `crates/jackin-capsule/` requires Checkout block to run `cargo xtask pr prepare <PR_NUMBER> --capsule`, source generated env file, include a dedicated smoke block:
 
-1. Capsule build eval — runs `eval "$(cargo run --bin build-jackin-capsule -- --export)"` as its own fenced paste at the end of the Checkout section, after `cargo build --bin jackin`, `PATH` export, and `which jackin`. Keep it a separate fence, not a line appended to the checkout block, so the operator can paste it independently. **MUST come before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the eval first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes. Reviewers must reject any `crates/jackin-capsule/` PR whose Verify-locally puts a `jackin console` / `jackin load` step before the Checkout block's capsule build eval, regardless of how the body is otherwise structured.
-2. `### jackin-capsule smoke` — runs `jackin load the-architect . --debug` and the in-container verify checklist. Unit tests and CI alone are not sufficient — the multiplexer only works end-to-end when running as PID 1 inside a container, and the only way to verify the status bar, input routing, pane splits, and session switching is a live `jackin load`. Do not repeat the eval here; it already ran in Checkout.
+1. Capsule prepare — runs `cargo xtask pr prepare <PR_NUMBER> --capsule` in Checkout section + sources generated env file. **MUST come before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` after it consumes whichever binary `ensure_available` resolves first — without export first, launches use cached or preview-release binary and silently skip PR's container-side changes. Reviewers must reject any `crates/jackin-capsule/` PR whose Verify-locally puts a `jackin console` / `jackin load` step before Checkout block's capsule prepare command, regardless of how body is otherwise structured.
+2. `### jackin-capsule smoke` — runs `jackin load the-architect . --debug` + in-container verify checklist. Unit tests + CI alone not sufficient — multiplexer only works end-to-end running as PID 1 inside a container, and the only way to verify status bar, input routing, pane splits, session switching is a live `jackin load`. Do not rebuild capsule here; Checkout already exported `JACKIN_CAPSULE_BIN`.
 
 ### How `ensure_available` picks the binary
 
-`ensure_available` in `src/capsule_binary.rs` resolves the binary in this priority order:
+`ensure_available` in `src/capsule_binary.rs` resolves binary in this priority order:
 
-1. **`JACKIN_CAPSULE_BIN=/path` env override.** Used directly, no cache, no download. Set this when iterating on `crates/jackin-capsule/` source — the path should point at a Linux build produced by `cargo run --bin build-jackin-capsule`.
-2. **Cache hit** at `~/.jackin/cache/jackin-capsule/<version>/linux-<arch>/jackin-capsule`. The cache key is `JACKIN_VERSION` (commit SHA suffix included), so any `cargo build` of jackin invalidates it.
-3. **Download** from the `preview` rolling GitHub Release tag (for `-dev` / `-preview.` versions) or the `v<version>` tag (for tagged releases). Cached after first successful download.
+1. **`JACKIN_CAPSULE_BIN=/path` env override.** Used directly, no cache, no download. Set when iterating on `crates/jackin-capsule/` source — path should point at a Linux build produced by `cargo run --bin build-jackin-capsule`.
+2. **Cache hit** at `~/.jackin/cache/jackin-capsule/<version>/linux-<arch>/jackin-capsule`. Cache key is `JACKIN_VERSION` (commit SHA suffix included), so any `cargo build` of jackin invalidates it.
+3. **Download** from `preview` rolling GitHub Release tag (for `-dev` / `-preview.` versions) or `v<version>` tag (for tagged releases). Cached after first successful download.
 
-The host does **not** auto-rebuild `crates/jackin-capsule/` on source edits. To pick up local changes, the operator must re-run the build command — which is why the Checkout block's eval one-shot is mandatory.
+Host does **not** auto-rebuild `crates/jackin-capsule/` on source edits. To pick up local changes, operator must re-run prepare command with `--capsule` — why Checkout block's capsule prepare step is mandatory.
 
-### Required Checkout eval for jackin-capsule PRs
+### Required Checkout prepare for jackin-capsule PRs
 
-Keep this command at the end of the Checkout block for any PR touching `crates/jackin-capsule/`:
+Use this command in Checkout block for any PR touching `crates/jackin-capsule/`:
 
 ```sh
-eval "$(cargo run --bin build-jackin-capsule -- --export)"
+cargo xtask pr prepare <PR_NUMBER> --capsule
 ```
 
-`build-jackin-capsule` invokes `cargo zigbuild` (not Docker) to cross-compile the Linux binary, writes the artifact to the host cache, and the `--export` flag prints `export JACKIN_CAPSULE_BIN=<path>` — wrapping in `eval` both builds and points `ensure_available` at the freshly built binary in one step. The eval form is required (not optional) because hand-rolled `target/<triple>/release/jackin-capsule` exports silently break when the operator switches architectures or moves checkouts. First build takes ~2-3 minutes via cargo-zigbuild; subsequent builds are incremental. Editing any file under `crates/jackin-capsule/src/` does NOT auto-invalidate the binary on disk — re-run the eval to rebuild. To purge the cache entirely (e.g. switching between published and locally built binaries): `rm -rf ~/.jackin/cache/jackin-capsule/`.
+`build-jackin-capsule` invokes `cargo zigbuild` (not Docker) to cross-compile Linux binary, writes artifact to host cache, and `--export` flag prints `export JACKIN_CAPSULE_BIN=<path>`. Xtask captures that export + writes it into PR env file so sourcing `env.sh` points `ensure_available` at freshly built binary. This path is required (not optional) because hand-rolled `target/<triple>/release/jackin-capsule` exports silently break when operator switches architectures or moves checkouts. First build ~2-3 minutes via cargo-zigbuild; subsequent builds incremental. Editing any file under `crates/jackin-capsule/src/` does NOT auto-invalidate the binary on disk — re-run prepare command with `--capsule` to rebuild. To purge cache entirely (e.g. switching between published + locally built binaries): `rm -rf ~/.jackin/cache/jackin-capsule/`.
 
-If the build step prints a `cargo zigbuild` error, the operator should paste the full `--debug` output (`cargo-zigbuild` and `zig` must be on `PATH`; install via `mise install zig cargo:cargo-zigbuild`).
+Xtask cannot export into parent shell directly. Review that Checkout block sources `$JACKIN_PR_TEST_DIR/env.sh` after `cargo xtask pr prepare ... --capsule`; only then does `JACKIN_CAPSULE_BIN` exist in operator's environment.
 
-This line is positionally load-bearing: it must stay in Checkout, **before** `### User smoke` and `### jackin-capsule smoke` (and before any other block that runs `jackin console` / `jackin load`). Without the eval first, every subsequent `jackin` invocation resolves the cached or downloaded binary instead of the freshly built one, so the PR's container-side changes are silently absent from every launch in the verify recipe.
+If build step prints a `cargo zigbuild` error, operator should paste full `--debug` output (`cargo-zigbuild` and `zig` must be on `PATH`; install via `mise install zig cargo:cargo-zigbuild`).
+
+This line is positionally load-bearing: must stay in Checkout, **before** `### User smoke` and `### jackin-capsule smoke` (and before any other block running `jackin console` / `jackin load`). Without `--capsule` first, every subsequent `jackin` invocation resolves cached or downloaded binary instead of freshly built one, so PR's container-side changes silently absent from every launch in verify recipe.
 
 ### Required `### jackin-capsule smoke` launch + verify list
 
-The launch command must hit the changed surface — usually:
+Launch command must hit changed surface — usually:
 
 ```sh
 jackin load the-architect . --debug
 ```
 
-or `jackin console --debug` for console-side changes. Do not repeat the eval here; Checkout has already exported `JACKIN_CAPSULE_BIN`.
+or `jackin console --debug` for console-side changes. Do not rebuild capsule here; Checkout already exported `JACKIN_CAPSULE_BIN`.
 
-Inside the container, the operator must verify:
+Inside container, operator must verify:
 
 - Row 0 status bar is visible: `jackin'  [<agent-name>]`
-- Agent TUI starts and renders correctly below the status bar
-- `Ctrl+\` opens the command palette (override with `JACKIN_PALETTE_KEY`)
-- Mouse clicks, arrow keys, and paste reach the agent unmodified
+- Agent TUI starts and renders correctly below status bar
+- `Ctrl+\` opens command palette (override with `JACKIN_PALETTE_KEY`)
+- Mouse clicks, arrow keys, paste reach agent unmodified
 - The specific behavior changed by the PR was observed to work — one sentence (e.g. "Split pane rendered after `Ctrl+\ → Split pane │`", "Session switch preserved agent output")
 
-PRs touching the tmux-style prefix surface (`Ctrl+B Space` palette, `Ctrl+B "` / `Ctrl+B %` splits, `Ctrl+B d` detach) must opt in before launching and call out the surface in the verify list:
+PRs touching tmux-style prefix surface (`Ctrl+B Space` palette, `Ctrl+B "` / `Ctrl+B %` splits, `Ctrl+B d` detach) must opt in before launching + call out surface in verify list:
 
 ```sh
 export JACKIN_PREFIX=C-b
 ```
 
-A `crates/jackin-capsule/` PR without this block is incomplete. Unit tests passing is necessary but not sufficient. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](PULL_REQUEST_TEMPLATE.md) ships this block under `### jackin-capsule smoke` — copy it verbatim rather than rewriting the build invocation.
+A `crates/jackin-capsule/` PR without this block is incomplete. Unit tests passing is necessary but not sufficient. PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](PULL_REQUEST_TEMPLATE.md) ships this block under `### jackin-capsule smoke` — copy verbatim rather than rewriting build invocation.
 
 ## Author the PR body so it renders correctly on GitHub
 
-The PR body is Markdown — what the operator sees on GitHub is what matters. Two recurring failure modes when an agent constructs the body inside a shell command:
+PR body is Markdown — what operator sees on GitHub is what matters. Two recurring failure modes when an agent constructs body inside a shell command:
 
-1. **Do not escape backticks or `$`.** Triple-backtick fences must be literal `` ``` ``, not `\`\`\``. Variable references inside fenced code blocks (e.g. `$HOME`, `$PR_NUMBER`) must be literal `$`, not `\$`. Escaping them produces visibly broken output like `\`\`\`sh` and `\$HOME` in the rendered PR.
-2. **Use `gh pr create --body-file <file>` (not `--body "..."`)** when the body contains code fences, dollar signs, or anything else that interacts with shell quoting. Write the body to a temp file with a single-quoted `<<'EOF'` heredoc — single quotes already disable shell expansion and command substitution, so no manual escaping is needed inside the heredoc. The pattern is:
+1. **Do not escape backticks or `$`.** Triple-backtick fences must be literal `` ``` ``, not `\`\`\``. Variable references inside fenced code blocks (e.g. `$HOME`, `$PR_NUMBER`) must be literal `$`, not `\$`. Escaping them produces visibly broken output like `\`\`\`sh` and `\$HOME` in rendered PR.
+2. **Use `gh pr create --body-file <file>` (not `--body "..."`)** when body contains code fences, dollar signs, or anything else interacting with shell quoting. Write body to a temp file with a single-quoted `<<'EOF'` heredoc — single quotes already disable shell expansion + command substitution, so no manual escaping needed inside heredoc. Pattern:
 
    ~~~sh
    cat > /tmp/pr-body.md <<'EOF'
@@ -131,78 +133,77 @@ The PR body is Markdown — what the operator sees on GitHub is what matters. Tw
    gh pr create --body-file /tmp/pr-body.md ...
    ~~~
 
-   Then immediately verify the rendered body with `gh pr view <PR> --json body -q .body`. If you see `\`` or `\$` anywhere, the body is broken — fix it with `gh pr edit <PR> --body-file <file>` before moving on.
+   Then immediately verify rendered body with `gh pr view <PR> --json body -q .body`. If you see `\`` or `\$` anywhere, body is broken — fix with `gh pr edit <PR> --body-file <file>` before moving on.
 
 ## Applying review fixes to an open PR
 
-When the operator asks for code review fixes on a PR that has **not yet been merged**, commit the fixes directly to the PR's existing branch — do not create a new branch or open a new PR unless the operator explicitly requests it.
+When operator asks for code review fixes on a PR **not yet merged**, commit fixes directly to PR's existing branch — do not create a new branch or open a new PR unless operator explicitly requests it.
 
-- Check out the PR branch (`gh pr checkout <PR>` or `git checkout <branch>`) before making changes.
-- Commit fixes to that branch and push; the open PR picks up the new commits automatically.
-- Creating a separate PR on top of an unmerged PR fragments review history and forces an extra merge step — avoid it.
+- Check out PR branch (`gh pr checkout <PR>` or `git checkout <branch>`) before making changes.
+- Commit fixes to that branch + push; open PR picks up new commits automatically.
+- Creating a separate PR on top of an unmerged PR fragments review history + forces an extra merge step — avoid it.
 
 ## Iterating on operator feedback for an open PR
 
-When the operator gives design or behavior feedback on an open PR, treat it as an iteration step unless they explicitly say the PR is ready for final verification, merge preparation, or review handoff.
+When operator gives design or behavior feedback on an open PR, treat as an iteration step unless they explicitly say PR is ready for final verification, merge preparation, or review handoff.
 
 During iteration:
 
-- Make the requested code changes on the PR branch.
-- It is okay to run a narrow, targeted test or command that directly exercises the code just changed, especially when it catches obvious local breakage cheaply.
-- Do **not** run broad/final verification by default during iteration. In particular, do not run `cargo fmt -- --check`, `cargo clippy -- -D warnings`, `cargo nextest run`, or GitHub Actions polling unless the operator explicitly asks for verification/final prep or the PR is moving to merge-readiness.
-- If a small targeted run reveals a formatting or clippy issue, fix the obvious local cause when it is part of the changed code, but do not escalate into the full formatting + clippy + full-suite pipeline unless the operator asks.
-- Do not update the PR body after every iteration unless the operator asks for it or the PR description has become actively misleading for someone reviewing right now.
-- Do not amend, force-push, or wait for GitHub Actions as a reflex after every small feedback pass. Force-pushes require explicit operator approval per [`BRANCHING.md`](../BRANCHING.md). If the branch already has a PR open, a normal follow-up commit is acceptable during review unless the operator asked to keep the PR as one amended commit.
-- Summarize what changed and tell the operator what lightweight local check, if any, was run. Then stop so the operator can validate the UI/behavior.
+- Make requested code changes on PR branch.
+- OK to run a narrow, targeted test or command that directly exercises just-changed code, especially when it catches obvious local breakage cheaply.
+- Do **not** run broad/final verification by default during iteration. In particular, do not run `cargo fmt -- --check`, `cargo clippy -- -D warnings`, `cargo nextest run`, or GitHub Actions polling unless operator explicitly asks for verification/final prep or PR is moving to merge-readiness.
+- If a small targeted run reveals a formatting or clippy issue, fix the obvious local cause when part of changed code, but don't escalate into full formatting + clippy + full-suite pipeline unless operator asks.
+- Do not update PR body after every iteration unless operator asks or description has become actively misleading for someone reviewing right now.
+- Do not amend, force-push, or wait for GitHub Actions as a reflex after every small feedback pass. Force-pushes require explicit operator approval per [`BRANCHING.md`](../BRANCHING.md). If branch already has a PR open, a normal follow-up commit is acceptable during review unless operator asked to keep PR as one amended commit.
+- Summarize what changed + tell operator what lightweight local check, if any, was run. Then stop so operator can validate UI/behavior.
 
-Move to merge-readiness only when the operator gives a clear signal such as "this is correct", "prepare it", "ready for review", "run the full checks", or "now we can merge". At that point run the full verification suite, reconcile the PR body with the final diff, push/update the branch, and check CI.
+Move to merge-readiness only when operator gives a clear signal such as "this is correct", "prepare it", "ready for review", "run the full checks", or "now we can merge". At that point run full verification suite, reconcile PR body with final diff, push/update branch, check CI.
 
-Why this rule exists: the operator often needs several UI/behavior iterations before deciding the shape is right. Running formatting, clippy, the full test suite, PR body updates, and CI checks on every intermediate pass wastes time and tokens before the operator has validated the design.
+Rationale: operator often needs several UI/behavior iterations before deciding shape is right; running formatting, clippy, full test suite, PR body updates, CI checks on every intermediate pass wastes time + tokens before validation.
 
 ## CI must be green before merging (hard rule)
 
-**Never merge a pull request unless all required CI checks pass.** This is non-negotiable regardless of how the operator phrases the merge request.
+**Never merge a PR unless all required CI checks pass.** Non-negotiable regardless of how operator phrases merge request.
 
-Before invoking the merge command:
+Before invoking merge command:
 
 1. **Check CI status**: run `gh pr checks <PR> --repo <owner/repo>` and confirm every required check shows `pass`. A check in `pending` or `fail` state means do not merge — wait or fix first.
-2. **Do not force-merge to bypass failures**: do not use `--admin` or other bypass flags to override failing checks unless the operator explicitly names the specific failing check and states it is safe to bypass for an articulated reason.
-3. **Always use `gh` (GitHub CLI) for all GitHub interactions**: PR creation, review, status checks, and merging must go through `gh`, not GitHub connectors, raw `git push` to protected branches, or direct API calls. This keeps the audit trail consistent and ensures branch-protection rules are respected.
+2. **Do not force-merge to bypass failures**: do not use `--admin` or other bypass flags to override failing checks unless operator explicitly names the specific failing check + states it is safe to bypass for an articulated reason.
+3. **Always use `gh` (GitHub CLI) for all GitHub interactions**: PR creation, review, status checks, merging must go through `gh`, not GitHub connectors, raw `git push` to protected branches, or direct API calls. Keeps audit trail consistent + ensures branch-protection rules respected.
 
-If CI is red when the operator says "merge it", respond: "CI is failing on `<check name>` — I won't merge until it's green. Fix the failure and then I'll merge." If the operator insists on merging anyway, ask them to explicitly acknowledge the specific failing check.
+If CI is red when operator says "merge it", respond: "CI is failing on `<check name>` — I won't merge until it's green. Fix the failure and then I'll merge." If operator insists anyway, ask them to explicitly acknowledge the specific failing check.
 
-Why this rule exists: a red main branch blocks the whole team. The cost of one bad merge far exceeds the cost of pausing to fix CI.
+Rationale: a red main branch blocks the whole team; one bad merge costs far more than pausing to fix CI.
 
 ## Verify PR title and description before merging
 
-When the operator confirms a PR can be merged, verify the PR's title and description still match the actual code being merged **before invoking the merge**.
+When operator confirms a PR can be merged, verify PR's title + description still match actual code being merged **before invoking the merge**.
 
-- Read the current metadata: `gh pr view <PR>`.
-- Read the actual diff being merged: `gh pr diff <PR>` (and `git log` on the PR branch if the diff is large).
-- Check whether the PR ships, advances, defers, or invalidates any roadmap item under `docs/content/docs/reference/roadmap/`. If the roadmap is stale, update the roadmap item and `docs/content/docs/reference/roadmap/index.mdx`, refresh the PR description, push that change, and only then continue toward merge. A merge request is the final freshness gate, even if earlier review missed the roadmap update.
-- Compare. The metadata is stale if any of these are true: commits added scope that the title/body doesn't reflect; a feature was descoped after the PR opened; the test plan is wrong relative to what was actually verified; file paths cited in the body have moved or been renamed; the title still says "design doc only" / "WIP" / etc. while the PR now contains implementation.
-- If stale, update the title and/or body via `gh pr edit <PR>` *before* running the merge. Squash-merge writes the PR title verbatim into the commit message; merging with stale metadata bakes the drift into history permanently.
+- Read current metadata: `gh pr view <PR>`.
+- Read actual diff being merged: `gh pr diff <PR>` (and `git log` on PR branch if diff is large).
+- Check whether PR ships, advances, defers, or invalidates any roadmap item under `docs/content/docs/reference/roadmap/`. If roadmap stale, update roadmap item + `docs/content/docs/reference/roadmap/index.mdx`, refresh PR description, push that change, only then continue toward merge. A merge request is the final freshness gate, even if earlier review missed the roadmap update.
+- Compare. Metadata is stale if any are true: commits added scope title/body doesn't reflect; a feature was descoped after PR opened; test plan is wrong relative to what was verified; file paths cited in body have moved or been renamed; title still says "design doc only" / "WIP" / etc. while PR now contains implementation.
+- If stale, update title and/or body via `gh pr edit <PR>` *before* running merge. Squash-merge writes PR title verbatim into commit message; merging with stale metadata bakes drift into history permanently.
 
-Don't ask the operator for permission to bring the metadata into agreement with the diff — they've authorized merging the *content*, and reconciling the description is part of finishing the merge cleanly. *Do* surface the discrepancy briefly in your reply ("title was 'docs(specs):' but the PR now ships the feature too — updated to 'feat(cli):' before merging") so the operator can object if your interpretation is wrong. Only pause for confirmation if the metadata rewrite would represent a meaningful change the operator might not have noticed (e.g. the PR has grown from "fix bug" into "rewrite module" — flag it and confirm before both updating and merging).
+Don't ask operator for permission to bring metadata into agreement with diff — they've authorized merging the *content*, and reconciling description is part of finishing merge cleanly. *Do* surface the discrepancy briefly in reply ("title was 'docs(specs):' but PR now ships the feature too — updated to 'feat(cli):' before merging") so operator can object if your interpretation is wrong. Only pause for confirmation if metadata rewrite would represent a meaningful change operator might not have noticed (e.g. PR grew from "fix bug" into "rewrite module" — flag + confirm before both updating and merging).
 
-Why this rule exists: the operator relies on PR titles and bodies as the long-term navigable record of what shipped. Drift between description and diff is the single most common cause of "what does this PR actually do?" archaeology after the fact.
+Rationale: operator relies on PR titles + bodies as the long-term navigable record of what shipped; drift between description and diff is the top cause of "what does this PR actually do?" archaeology after the fact.
 
 ## PR squash merge messages
 
-When an agent merges a pull request, the resulting squash commit must preserve the GitHub PR reference and enough attribution to make the shipped history auditable.
+When an agent merges a PR, resulting squash commit must preserve GitHub PR reference so shipped history is auditable.
 
-- Always use squash merge. Agents must not use merge commits or rebase merges for jackin pull requests.
-- Use `gh pr merge <PR> --squash --body-file <file>` for the merge operation; never use a GitHub connector or direct API call to merge.
-- The squash commit title must be the final PR title with the PR number suffix: `type(scope): summary (#PR_NUMBER)`.
+- Always use squash merge. Agents must not use merge commits or rebase merges for jackin PRs.
+- Use `gh pr merge <PR> --squash --body-file <file>`; never use a GitHub connector or direct API call to merge.
+- Squash commit title must be final PR title with PR number suffix: `type(scope): summary (#PR_NUMBER)`.
 - Prefer GitHub's default squash title when it already matches that format.
-- If overriding the commit title, manually append `(#PR_NUMBER)`.
-- For Codex `gh` merges: do not pass a custom title unless necessary; if one is passed, it must include `(#PR_NUMBER)`.
-- Before merging, explicitly check the exact title that will be written to history. If using GitHub's default, confirm it already includes `(#PR_NUMBER)`. If passing `--subject`, build it from the final PR title plus the PR suffix and read it back before running the merge command.
-- Generate the squash commit body at merge time in a temporary file. Do not pollute the visible PR description with commit-only trailer footers just to influence GitHub's default squash message.
-- The generated squash commit body must summarize what actually shipped in clear prose. Use the PR title/body, diff, and commit messages as source material, but do not paste the full PR body, local verification instructions, checklists, or raw commit list into the final commit.
-- The generated body can be one paragraph for small PRs or a few concise paragraphs for larger PRs. It should be detailed enough to explain the change when reading `git log`, but free of process noise.
-- Extract trailers from the PR commits with `gh pr view <PR> --json commits` and carry them into the generated squash body. Include the operator's `Signed-off-by` trailer when present/required and one `Co-authored-by` trailer for each AI agent listed on the PR commits. Include multiple agent trailers when multiple agents touched the PR.
-- Keep trailers at the very end of the generated squash body so Git parses them as trailers. De-duplicate repeated trailers from multi-commit PRs.
+- If overriding commit title, manually append `(#PR_NUMBER)`.
+- For Codex `gh` merges: do not pass a custom title unless necessary; if passed, must include `(#PR_NUMBER)`.
+- Before merging, explicitly check exact title that will be written to history. If using GitHub's default, confirm it already includes `(#PR_NUMBER)`. If passing `--subject`, build from final PR title plus PR suffix + read it back before running merge command.
+- Generate squash commit body at merge time in a temporary file. Do not pollute visible PR description with commit-only footers.
+- Generated squash commit body must summarize what actually shipped in clear prose. Use PR title/body, diff, commit messages as source material, but do not paste full PR body, local verification instructions, checklists, or raw commit list into final commit.
+- Generated body can be one paragraph for small PRs or a few concise paragraphs for larger PRs. Detailed enough to explain change when reading `git log`, but free of process noise.
+- Use `jackin-pr-trailers` helper (see below) to reliably extract + deduplicate all trailers (`Signed-off-by`, `Co-authored-by`, any others) from PR's commits and append at end of body.
 
 Good squash body:
 
@@ -237,54 +238,80 @@ Co-authored-by: Codex <codex@openai.com>
 Co-authored-by: Claude <noreply@anthropic.com>
 ```
 
-This keeps commit history, GitHub commit pages, and local `git log --oneline` visibly linked back to the PR.
+Keeps commit history, GitHub commit pages, local `git log --oneline` visibly linked back to PR.
+
+## Trailer extraction helper (`jackin-pr-trailers`)
+
+For reliable extraction of trailers from all commits in a PR (to include in squash body), use the small dedicated CLI:
+
+```sh
+cargo run -p jackin-pr-trailers -- --pr <PR_NUMBER> [--repo owner/repo]
+```
+
+Shells out to `gh pr view`, pipes each commit message through `git interpret-trailers --parse --only-trailers --unfold`, deduplicates trailers, prints them in a useful order (Signed-off-by first, then Co-authored-by, then others). If `--pr` omitted, auto-detects PR for current branch after verifying local HEAD matches `origin/<branch>`; falls back to local `git log --format=%B%x00` extraction only when no PR exists.
+
+Example usage when preparing the body file (run from within feature branch; --pr can be omitted to auto-detect from branch name + remote sync check):
+
+```sh
+BODY_FILE=$(mktemp)
+# ... write the prose summary to $BODY_FILE ...
+
+# Auto-detect branch/PR (if not provided), verify local == remote (push first if not),
+# extract trailers from the PR or branch commits, and append the block to the body file.
+cargo run -p jackin-pr-trailers -- --body-file "$BODY_FILE"
+
+gh pr merge "$PR" --squash --body-file "$BODY_FILE"
+rm "$BODY_FILE"
+```
+
+Source in `crates/jackin-pr-trailers/`. Minimal dependencies + tests for the git-native trailer path.
 
 ---
 
 # GitHub Actions workflow authoring rules
 
-Rules for writing and maintaining workflows under `.github/workflows/` and composite actions under `.github/actions/`. These apply to all contributors — human and AI.
+Rules for writing + maintaining workflows under `.github/workflows/` and composite actions under `.github/actions/`. Apply to all contributors — human + AI.
 
 ## Tool installation: always use mise (hard rule)
 
 **All tools — in CI and locally — must be installed through mise. Never add `actions-rust-lang/setup-rust-toolchain`, `dtolnay/rust-toolchain`, `actions/setup-node`, `actions/setup-go`, `actions/setup-python`, `extractions/setup-just`, or any other language- or tool-specific setup action to a workflow.**
 
-`mise.toml` is the single source of truth for tool versions. This gives local development and CI identical environments, one place to bump versions, and one mental model for every contributor and agent.
+`mise.toml` is single source of truth for tool versions. Gives local development + CI identical environments, one place to bump versions, one mental model for every contributor + agent.
 
 **In GitHub Actions workflows:**
 - Use `jdx/mise-action` for every tool installation — Rust, Node, Bun, Zig, cargo tools, everything.
 - **Rust toolchain version**: channel declared in `rust-toolchain.toml`. mise reads it automatically via `idiomatic_version_file` — no version pin in `install_args` needed. mise does **not** install `components` from `rust-toolchain.toml`; add a `rustup component add <components>` step after mise when a job needs non-default components (e.g. `rustfmt`, `clippy`).
-- **Cross-compilation targets**: run `rustup target add <target>` after the mise step; `actions-rust-lang/setup-rust-toolchain`'s `target:` parameter is not available.
+- **Cross-compilation targets**: run `rustup target add <target>` after mise step; `actions-rust-lang/setup-rust-toolchain`'s `target:` parameter not available.
 - **Cargo-registry tools used across all jobs** (e.g. `cargo-nextest`): declare in `mise.toml` with a pinned version (`"cargo:cargo-nextest" = "0.9.136"`). Tools needed by only one job (e.g. `cargo-zigbuild`, `cross`) can use `install_args: "cargo:<crate>"` instead.
-- **MSRV override** (the `msrv` CI job only): read the version from `Cargo.toml`'s `rust-version` field at job runtime — never hardcode it. Use `install_args: "rust@${{ steps.msrv.outputs.version }}"` and pin the cargo step with `RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}`.
-- **Multiple tools in one step**: space-separate in `install_args: "rust zig cargo:cargo-zigbuild"`. Use a GHA expression when the set is matrix-conditional: `install_args: "${{ matrix.zigbuild && 'rust zig cargo:cargo-zigbuild' || 'rust' }}"`.
+- **MSRV override** (the `msrv` CI job only): read version from `Cargo.toml`'s `rust-version` field at job runtime — never hardcode. Use `install_args: "rust@${{ steps.msrv.outputs.version }}"` and pin cargo step with `RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}`.
+- **Multiple tools in one step**: space-separate in `install_args: "rust zig cargo:cargo-zigbuild"`. Use a GHA expression when set is matrix-conditional: `install_args: "${{ matrix.zigbuild && 'rust zig cargo:cargo-zigbuild' || 'rust' }}"`.
 
-**Locally:** `mise install` from the repo root installs every tool at the version CI uses.
+**Locally:** `mise install` from repo root installs every tool at version CI uses.
 
 ## Env-var scope: job level, not workflow level
 
-Environment variables that a third-party CLI reads as a default-selection (`BUILDX_BUILDER`, `DOCKER_BUILDKIT`, `GH_TOKEN`, `RUSTUP_TOOLCHAIN`, `AWS_PROFILE`, etc.) MUST be declared at the **job** level, not the workflow level. Workflow-level `env:` leaks into every job; a job that didn't opt into the corresponding tool setup will fail at runtime when the CLI dereferences a missing resource.
+Environment variables a third-party CLI reads as a default-selection (`BUILDX_BUILDER`, `DOCKER_BUILDKIT`, `GH_TOKEN`, `RUSTUP_TOOLCHAIN`, `AWS_PROFILE`, etc.) MUST be declared at **job** level, not workflow level. Workflow-level `env:` leaks into every job; a job that didn't opt into corresponding tool setup fails at runtime when CLI dereferences a missing resource.
 
-Workflow-level `env:` is reserved for in-house naming (`DIGEST_DIR`, internal labels) where the value has no runtime side-effect on third-party tooling.
+Workflow-level `env:` is reserved for in-house naming (`DIGEST_DIR`, internal labels) where value has no runtime side-effect on third-party tooling.
 
-See the canonical break in [jackin-project/jackin#266](https://github.com/jackin-project/jackin/pull/266) — `BUILDX_BUILDER` hoisted to workflow level blew up every job that didn't create that builder.
+See canonical break in [jackin-project/jackin#266](https://github.com/jackin-project/jackin/pull/266) — `BUILDX_BUILDER` hoisted to workflow level blew up every job that didn't create that builder.
 
 ## Publishing steps must gate on `main`
 
-Every workflow that writes to a public registry, tag, release, or Homebrew formula MUST gate the actual publish step on `main`. PRs and dispatches from feature branches may build and test but must never publish. Derive a single `is_publish` boolean once (in the `changes` job), gate every side-effect step on it — do not restate the branch conditions inline at multiple steps.
+Every workflow that writes to a public registry, tag, release, or Homebrew formula MUST gate actual publish step on `main`. PRs + dispatches from feature branches may build + test but must never publish. Derive a single `is_publish` boolean once (in `changes` job), gate every side-effect step on it — do not restate branch conditions inline at multiple steps.
 
 ## Smoke-test push-only jobs before merging
 
-Jobs gated to `push to main`, `workflow_dispatch && ref == main`, or `workflow_run` events do not run on `pull_request`. If a PR modifies such a job, smoke-test it via `gh workflow run --ref <feature-branch>` before merging — PR-time CI will never exercise it.
+Jobs gated to `push to main`, `workflow_dispatch && ref == main`, or `workflow_run` events do not run on `pull_request`. If a PR modifies such a job, smoke-test via `gh workflow run --ref <feature-branch>` before merging — PR-time CI never exercises it.
 
 ## PR/main check parity (hard rule)
 
-**Every invariant that can fail a push-to-main run must be evaluated identically at PR time, against the same inputs. A green PR must mean a green main.** The cost of a violation is a red `main` that no PR could have caught — exactly the failure mode branch protection exists to prevent.
+**Every invariant that can fail a push-to-main run must be evaluated identically at PR time, against the same inputs. A green PR must mean a green main.** Cost of a violation is a red `main` no PR could have caught — exactly the failure mode branch protection exists to prevent.
 
-Two anti-patterns produce a PR-green/main-red gap; both are forbidden:
+Two anti-patterns produce a PR-green/main-red gap; both forbidden:
 
-1. **Main-only validation.** A check that runs only when `is_publish == 'true'` (push to main / dispatch from main) and is skipped or stubbed on PRs cannot gate the PR. When a publish step enforces an invariant (a version tag must not already exist, an artifact must be well-formed, a manifest must resolve), that invariant must also run on `pull_request` in a read-only form. Registry *reads* of public images need no credentials, so the guard is runnable at PR time even when the publish *write* is not — see the `construct-assert-version-unpublished` mise task (a `jackin-xtask` subcommand), shared between `publish-manifest` (main) and `publish-manifest-rehearsal` (PR). A publish job whose failure mode has no PR-time mirror is incomplete.
+1. **Main-only validation.** A check that runs only when `is_publish == 'true'` (push to main / dispatch from main) and is skipped or stubbed on PRs cannot gate the PR. When a publish step enforces an invariant (a version tag must not already exist, an artifact must be well-formed, a manifest must resolve), that invariant must also run on `pull_request` in a read-only form. Registry *reads* of public images need no credentials, so guard is runnable at PR time even when publish *write* is not — see `construct-assert-version-unpublished` mise task (a `jackin-xtask` subcommand), shared between `publish-manifest` (main) and `publish-manifest-rehearsal` (PR). A publish job whose failure mode has no PR-time mirror is incomplete.
 
-2. **Non-deterministic required checks.** A required check that depends on live third-party network state (external link liveness, an upstream API's rate-limit mood, a remote registry's transient 5xx) can pass on the PR and fail on main, or vice versa, with no code change between them. Caches keyed by `github.ref_name` make this worse: the PR branch's warm cache hides a failure the cold main run then hits. Required checks must be deterministic — key shared caches without the ref, authenticate API calls so they aren't rate-limited (host-scoped tokens, not unauthenticated remaps that strip the auth), and move genuinely-flaky external liveness checks to a non-blocking or scheduled job rather than gating merges on them.
+2. **Non-deterministic required checks.** A required check depending on live third-party network state (external link liveness, an upstream API's rate-limit mood, a remote registry's transient 5xx) can pass on PR + fail on main, or vice versa, with no code change between. Caches keyed by `github.ref_name` make this worse: PR branch's warm cache hides a failure the cold main run then hits. Required checks must be deterministic — key shared caches without ref, authenticate API calls so they aren't rate-limited (host-scoped tokens, not unauthenticated remaps that strip auth), move genuinely-flaky external liveness checks to a non-blocking or scheduled job rather than gating merges on them.
 
-When adding or modifying any workflow, ask: *what runs on push-to-main that does not run on this PR, and what makes a green PR here not guarantee a green main?* If the answer names a job, an invariant, or a network dependency, close the gap in the same PR.
+When adding or modifying any workflow, ask: *what runs on push-to-main that does not run on this PR, and what makes a green PR here not guarantee a green main?* If answer names a job, an invariant, or a network dependency, close the gap in same PR.

@@ -27,8 +27,8 @@ use crate::selector::RoleSelector;
 use crate::workspace::resolve_path;
 use jackin_console::tui::auth::can_generate_claude_oauth_token;
 use jackin_console::tui::components::auth_panel::{
-    AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan, auth_source_picker_state,
-    generated_token_op_item_name, generated_token_source_picker_state,
+    AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
+    auth_source_picker_state, generated_token_op_item_name, generated_token_source_picker_state,
 };
 use jackin_console::tui::components::file_browser::{
     FileBrowserOutcome, FileBrowserState, listing_rect,

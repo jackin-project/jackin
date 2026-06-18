@@ -9,6 +9,13 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      lanes:
+        description: |
+          Which runner(s) to run on. Default github; use both for parity runs.
+        type: choice
+        default: github
+        options: [github, velnor, both]
 
 permissions:
   contents: read
@@ -18,6 +25,25 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  matrix-setup:
+    name: Select runner lane
+    runs-on: ubuntu-latest
+    outputs:
+      configs: ${{ steps.set.outputs.configs }}
+    steps:
+      - id: set
+        env:
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+        run: |
+          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\""}'
+          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]"}'
+          case "$LANES" in
+            velnor) configs="[$velnor]" ;;
+            both)   configs="[$github,$velnor]" ;;
+            *)      configs="[$github]" ;;
+          esac
+          echo "configs=$configs" >> "$GITHUB_OUTPUT"
+
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -77,10 +103,14 @@ jobs:
               - '.github/workflows/**'
 
   actionlint:
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.workflows == 'true'
-    runs-on: ubuntu-latest
-    name: actionlint
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: actionlint (${{ matrix.config.lane }})
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
@@ -90,10 +120,14 @@ jobs:
       - run: actionlint .github/workflows/*.yml
 
   fmt:
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo fmt
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo fmt (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -125,11 +159,58 @@ jobs:
       - run: rustup component add rustfmt
       - run: cargo fmt --check
 
-  check-all-features:
-    needs: changes
+  schema-check:
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo check all features
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: schema-check (${{ matrix.config.lane }})
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Cache Rust toolchain
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          install_args: "rust"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - name: Cache Cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/registry/src
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
+      # schema-check compares the working tree against the base branch tip, so
+      # fetch `origin/main` (default checkout is the PR head only).
+      - name: Fetch base branch
+        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+      - run: cargo run -p jackin-xtask --locked -- schema-check --base origin/main
+
+  check-all-features:
+    needs: [changes, matrix-setup]
+    if: needs.changes.outputs.rust == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo check all features (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -189,10 +270,14 @@ jobs:
         run: sccache --show-stats
 
   clippy:
-    needs: [changes, check-all-features]
+    needs: [changes, check-all-features, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo clippy
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo clippy (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -253,10 +338,14 @@ jobs:
         run: sccache --show-stats
 
   dependency-policy:
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo dependency policy
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo dependency policy (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -296,10 +385,14 @@ jobs:
       - run: cargo deny check licenses bans sources
 
   check-default:
-    needs: [changes, check-all-features]
+    needs: [changes, check-all-features, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo check default
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo check default (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -385,6 +478,7 @@ jobs:
           set -euo pipefail
           set -a && source docker/construct/versions.env && set +a
           docker buildx build \
+            --cache-from type=registry,ref=projectjackin/construct:buildcache-amd64 \
             --cache-from type=gha,scope=construct-ci-e2e \
             --cache-to type=gha,scope=construct-ci-e2e,mode=max \
             --build-arg SHELLFIRM_VERSION="$SHELLFIRM_VERSION" \
@@ -400,10 +494,18 @@ jobs:
           retention-days: 1
 
   test:
-    needs: [changes, check-all-features, construct-e2e-image]
+    # construct-e2e-image is an optionally-skipped artifact producer (hence the
+    # always() + !failure() pattern). check-all-features was removed from needs:
+    # it only added up to ~2.5 min of dead critical-path time before the
+    # slowest job (nextest, ~9 min on main pushes) could start.
+    needs: [changes, construct-e2e-image, matrix-setup]
     if: always() && needs.changes.outputs.rust == 'true' && !failure() && !cancelled()
-    runs-on: ubuntu-latest
-    name: cargo nextest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo nextest (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -464,6 +566,7 @@ jobs:
             cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-nextest-
             cargo-target-${{ runner.os }}-${{ runner.arch }}-nextest-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ runner.arch }}-nextest-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
       - name: Download construct image for E2E
         if: needs.changes.outputs.construct_image == 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -492,10 +595,14 @@ jobs:
         run: sccache --show-stats
 
   fuzz:
-    needs: [changes, check-all-features]
+    needs: [changes, check-all-features, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo fuzz
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo fuzz (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -567,21 +674,21 @@ jobs:
         run: sccache --show-stats
 
   bench-build:
-    needs: [changes, check-all-features]
+    # One job builds both benches: the two matrix legs compiled the shared
+    # dependency graph twice with two separate target caches (cache-quota
+    # pressure -> eviction churn). bench-build also no longer waits on
+    # check-all-features — they validate independently.
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo bench build (${{ matrix.bench }})
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_TERM_COLOR: always
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - bench: console-frame
-            command: cargo build --bench console_frame -p jackin
-          - bench: pane-body
-            command: cargo build --bench pane_body -p jackin-capsule
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo bench build (${{ matrix.config.lane }})
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Cache Rust toolchain
@@ -622,33 +729,39 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-bench-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-bench-${{ matrix.bench }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-bench-${{ matrix.bench }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-bench-${{ matrix.bench }}-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-bench-${{ matrix.bench }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-bench-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-bench-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-bench-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-bench-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-bench-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-bench-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-bench-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-bench-
       # Build (but don't run) the frame-time and pane-body benchmarks to
       # ensure they compile on every CI run. Full criterion runs happen
       # locally or in dedicated perf workflows.
-      - run: ${{ matrix.command }}
+      - run: |
+          cargo build --bench console_frame -p jackin
+          cargo build --bench pane_body -p jackin-capsule
       - name: Show sccache stats
         if: always() && steps.sccache.outcome == 'success'
         run: sccache --show-stats
 
   msrv:
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
     # Verify that the crate still builds on its declared MSRV
     # (`rust-version` in Cargo.toml). This is independent of the toolchain
     # pin in rust-toolchain.toml, which tracks the latest tested stable
     # used for day-to-day builds.
-    runs-on: ubuntu-latest
-    name: cargo msrv check
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo msrv check (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -712,8 +825,17 @@ jobs:
         run: sccache --show-stats
 
   audit:
-    runs-on: ubuntu-latest
-    name: cargo audit
+    # Advisories are also covered daily by hygiene.yml (cargo deny check
+    # advisories); in PR CI the audit only needs to run when the dependency
+    # graph can change (the rust filter includes Cargo.lock).
+    needs: [changes, matrix-setup]
+    if: needs.changes.outputs.rust == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo audit (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -857,6 +979,7 @@ jobs:
   ci-required:
     if: always()
     needs:
+      - matrix-setup
       - changes
       - actionlint
       - audit

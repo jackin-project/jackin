@@ -12,12 +12,12 @@ impl vte::Perform for DamageGrid {
 
     fn execute(&mut self, byte: u8) {
         match byte {
-            // LF / VT / FF — newline.
+            // LF / VT / FF — newline. A plain cursor move dirties nothing;
+            // when the newline scrolls, `scroll_up` marks the moved rows
+            // itself (D16 — no spurious damage per line feed).
             0x0a..=0x0c => {
                 self.clear_pending_wrap();
                 self.newline_action();
-                self.dirty
-                    .mark_range(self.cursor_row, self.cursor_col, self.cols);
             }
             // CR — carriage return.
             0x0d => {
@@ -339,7 +339,14 @@ impl vte::Perform for DamageGrid {
                     5 => b"\x1b[0n".to_vec(),
                     6 => {
                         let row = self.cursor_row.saturating_add(1);
-                        let col = self.cursor_col.saturating_add(1);
+                        // Clamp the DECAWM phantom column (== cols while a
+                        // wrap is pending) to the last real column — agents
+                        // do layout math with this reply, and `cols + 1` is
+                        // not an addressable position (D13).
+                        let col = self
+                            .cursor_col
+                            .min(self.cols.saturating_sub(1))
+                            .saturating_add(1);
                         if intermediates == b"?" {
                             format!("\x1b[?{row};{col};1R").into_bytes()
                         } else {
@@ -369,6 +376,36 @@ impl vte::Perform for DamageGrid {
                 self.passthrough
                     .push(PassthroughEvent::Reply(reply.into_bytes()));
             }
+            // DECSCUSR — set cursor style (`CSI {n} SP q`). Tracked per pane
+            // and reconciled to the outer terminal by the capsule encoder per
+            // frame; forwarding it raw leaked one pane's cursor shape into
+            // every other pane (D5).
+            'q' if intermediates == b" " => {
+                self.cursor_style = p0;
+            }
+            // DECSTR — soft reset (`CSI ! p`). Handled in-grid and never
+            // forwarded: on the outer terminal it would soft-reset the host.
+            'p' if intermediates == b"!" => {
+                self.current_attrs = Attrs::default();
+                self.scroll_top = 0;
+                self.scroll_bottom = self.rows.saturating_sub(1);
+                self.pending_wrap = false;
+                self.hide_cursor = false;
+                self.application_cursor = false;
+                self.bracketed_paste = false;
+                self.saved_cursor_row = self.cursor_row;
+                self.saved_cursor_col = self.cursor_col;
+            }
+            // xterm modifyOtherKeys (`CSI > 4 ; n m`) — on the forward
+            // allowlist: the capsule's input layer relies on the outer
+            // terminal honoring it, and the session tracks the level so
+            // alternate-screen exit can reset it.
+            'm' if intermediates == b">" && p0 == 4 => {
+                let bytes = reconstruct_csi(params, intermediates, action as u8);
+                if !bytes.is_empty() {
+                    self.passthrough.push(PassthroughEvent::UnhandledCsi(bytes));
+                }
+            }
             // XTVERSION query (`\x1b[>q`). Suppress: the grid has no meaningful
             // terminal-version identity to advertise, and forwarding it let the
             // host answer with a real terminal's name + version, which steered
@@ -376,11 +413,15 @@ impl vte::Perform for DamageGrid {
             // agents fall back when the query goes unanswered.
             'q' if intermediates == b">" => {}
             _ => {
-                // Unhandled CSI — reconstruct the original bytes and forward
-                // raw so the capsule can pass it to the outer terminal.
+                // Default-deny (§3.6 of the capsule rendering plan): an
+                // unhandled CSI never reaches the client. The bytes are
+                // carried out as DroppedCsi so the capsule can `cdebug!`-log
+                // the exact sequence; allowlist additions (kitty keyboard
+                // push/pop above, modifyOtherKeys) require a documented
+                // sequence + reason in multiplexer-design-rules.
                 let bytes = reconstruct_csi(params, intermediates, action as u8);
                 if !bytes.is_empty() {
-                    self.passthrough.push(PassthroughEvent::UnhandledCsi(bytes));
+                    self.passthrough.push(PassthroughEvent::DroppedCsi(bytes));
                 }
             }
         }
@@ -440,8 +481,8 @@ impl vte::Perform for DamageGrid {
         }
     }
 
-    fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
-        self.handle_osc(params);
+    fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
+        self.handle_osc(params, bell_terminated);
     }
 
     fn hook(&mut self, _params: &vte::Params, _intermediates: &[u8], _ignore: bool, _action: char) {

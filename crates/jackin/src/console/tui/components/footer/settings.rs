@@ -108,10 +108,10 @@ fn settings_context_footer_mode(
         SettingsTab::Auth => {
             if state.auth.selected_kind.is_none() {
                 SettingsContextFooterMode::AuthManage
-            } else if state.auth.selected == 0 {
+            } else if selected_settings_auth_row_is_focusable(state) {
                 SettingsContextFooterMode::AuthEditMode
             } else {
-                SettingsContextFooterMode::AuthEditSource
+                SettingsContextFooterMode::Empty
             }
         }
         SettingsTab::Trust => SettingsContextFooterMode::Trust {
@@ -119,6 +119,19 @@ fn settings_context_footer_mode(
             scroll_axes: trust_scroll_axes(state, body_area),
         },
     }
+}
+
+fn selected_settings_auth_row_is_focusable(state: &SettingsState<'_>) -> bool {
+    let Some(kind) = state.auth.selected_kind else {
+        return true;
+    };
+    let Some(row) = state.auth.pending.iter().find(|row| row.kind == kind) else {
+        return false;
+    };
+    jackin_console::tui::screens::settings::update::settings_auth_detail_rows(kind, row.mode)
+        .get(state.auth.selected)
+        .copied()
+        .is_some_and(jackin_console::tui::screens::settings::update::settings_auth_row_is_focusable)
 }
 
 fn trust_scroll_axes(state: &SettingsState<'_>, body_area: Rect) -> ScrollAxes {

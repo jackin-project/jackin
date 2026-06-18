@@ -425,13 +425,7 @@ pub enum TextInputTarget {
 pub enum FileBrowserTarget {
     CreateFirstMountSrc,
     EditAddMountSrc,
-    AuthWorkspaceSourceFolder {
-        kind: crate::tui::auth::AuthKind,
-    },
-    AuthRoleSourceFolder {
-        role: String,
-        kind: crate::tui::auth::AuthKind,
-    },
+    AuthFormSourceFolder,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

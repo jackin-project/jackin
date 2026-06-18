@@ -17,7 +17,7 @@ pub const DOCKERFILE_NAME: &str = "Dockerfile";
 pub const CLAUDE_OAUTH_TOKEN_ENV: &str = "CLAUDE_CODE_OAUTH_TOKEN";
 
 /// Current role manifest schema version. Serde default for `RoleManifest.version`.
-pub const CURRENT_MANIFEST_VERSION: &str = "v1alpha5";
+pub const CURRENT_MANIFEST_VERSION: &str = "v1alpha6";
 
 /// Serde-default helper for `RoleManifest.version`.
 pub fn current_manifest_version() -> String {

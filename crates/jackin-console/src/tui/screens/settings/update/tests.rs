@@ -40,19 +40,19 @@ fn settings_tab_bar_focus_plan_returns_requested_focus() {
 fn settings_auth_detail_row_count_adds_source_row_only_when_needed() {
     assert_eq!(
         settings_auth_detail_row_count(AuthKind::Github, AuthMode::Token),
-        2
+        3
     );
     assert_eq!(
         settings_auth_detail_row_count(AuthKind::Github, AuthMode::Sync),
-        1
+        2
     );
     assert_eq!(
         settings_auth_detail_row_count(AuthKind::Claude, AuthMode::Sync),
-        2
+        3
     );
     assert_eq!(
         settings_auth_detail_row_count(AuthKind::Claude, AuthMode::ApiKey),
-        2
+        3
     );
 }
 
@@ -86,8 +86,28 @@ fn settings_auth_kind_clear_plan_clears_kind_and_resets_row() {
 
 #[test]
 fn settings_auth_selection_plan_clamps_to_rows() {
-    assert_eq!(settings_auth_selection_plan(0, 3, 99), 2);
-    assert_eq!(settings_auth_selection_plan(2, 3, -99), 0);
+    let rows = [
+        SettingsAuthDetailRow::Mode,
+        SettingsAuthDetailRow::Source,
+        SettingsAuthDetailRow::SourceFolder,
+        SettingsAuthDetailRow::Spacer,
+    ];
+    assert_eq!(settings_auth_selection_plan(0, &rows, 99), 0);
+    assert_eq!(settings_auth_selection_plan(2, &rows, -99), 0);
+}
+
+#[test]
+fn settings_auth_row_is_focusable_keeps_preview_rows_visible_but_skipped() {
+    assert!(settings_auth_row_is_focusable(SettingsAuthDetailRow::Mode));
+    assert!(!settings_auth_row_is_focusable(
+        SettingsAuthDetailRow::Source
+    ));
+    assert!(!settings_auth_row_is_focusable(
+        SettingsAuthDetailRow::SourceFolder
+    ));
+    assert!(!settings_auth_row_is_focusable(
+        SettingsAuthDetailRow::Spacer
+    ));
 }
 
 #[test]

@@ -1038,11 +1038,10 @@ fn auth_tab_cycle_off_auth_clears_selected_agent() -> Result<()> {
     Ok(())
 }
 
-/// Pressing D on a `WorkspaceSource` row clears the workspace-level
-/// auth-forward override for the focused kind. Mirrors the existing
-/// `RoleSource` clear test but for the workspace layer.
+/// Pressing D on a `WorkspaceSource` row is a no-op. The main auth panel
+/// renders source rows as previews; edits happen through the mode row's dialog.
 #[test]
-fn auth_workspace_source_d_clears_workspace_mode() -> Result<()> {
+fn auth_workspace_source_d_is_noop() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_config(&paths, temp.path())?;
@@ -1084,11 +1083,11 @@ fn auth_workspace_source_d_clears_workspace_mode() -> Result<()> {
     let ed = editor(&state);
     assert!(
         ed.modal.is_none(),
-        "workspace source clear must be silent (no modal)"
+        "workspace source preview no-op must be silent (no modal)"
     );
     assert!(
-        ed.pending.claude.is_none(),
-        "D on WorkspaceSource must drop the workspace-level claude override"
+        ed.pending.claude.is_some(),
+        "D on WorkspaceSource must keep the workspace-level claude override"
     );
     Ok(())
 }

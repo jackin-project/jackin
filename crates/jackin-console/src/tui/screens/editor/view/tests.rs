@@ -424,7 +424,6 @@ fn auth_workspace_source_rows_reserve_cursor_gutter() {
             display: AuthSourceFolderDisplay {
                 kind: AuthSourceFolderKind::Default,
                 path: "~/.claude".to_owned(),
-                env_var: Some("CLAUDE_CONFIG_DIR".to_owned()),
             },
         },
         EditorAuthLineRow::AddSentinel { eligible: 1 },
@@ -447,4 +446,49 @@ fn auth_workspace_source_rows_reserve_cursor_gutter() {
         folder_selected[2].spans[1].content.as_ref(),
         "Source folder "
     );
+    assert_eq!(
+        folder_selected[2].spans[2].content.as_ref(),
+        "default: ~/.claude"
+    );
+}
+
+#[test]
+fn auth_source_folder_rows_render_display_kinds_without_env_suffix() {
+    let rows = vec![
+        EditorAuthLineRow::WorkspaceSourceFolder {
+            display: AuthSourceFolderDisplay {
+                kind: AuthSourceFolderKind::Default,
+                path: "~/.claude".to_owned(),
+            },
+        },
+        EditorAuthLineRow::WorkspaceSourceFolder {
+            display: AuthSourceFolderDisplay {
+                kind: AuthSourceFolderKind::Inherited,
+                path: "/global/claude".to_owned(),
+            },
+        },
+        EditorAuthLineRow::WorkspaceSourceFolder {
+            display: AuthSourceFolderDisplay {
+                kind: AuthSourceFolderKind::Explicit,
+                path: "/workspace/claude".to_owned(),
+            },
+        },
+    ];
+    let lines = auth_lines(&rows, 0, true);
+
+    assert_eq!(lines[0].spans[2].content.as_ref(), "default: ~/.claude");
+    assert_eq!(
+        lines[1].spans[2].content.as_ref(),
+        "inherited: /global/claude"
+    );
+    assert_eq!(lines[2].spans[2].content.as_ref(), "/workspace/claude");
+    for line in lines {
+        let text = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert!(!text.contains("explicit:"), "{text}");
+        assert!(!text.contains('('), "{text}");
+    }
 }

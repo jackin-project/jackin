@@ -179,14 +179,13 @@ fn editor_auth_source_display(
     auth_source_display_for_required_env(env_name, value, mode_str(mode))
 }
 
-fn settings_source_folder_display(
+pub(crate) fn settings_source_folder_display(
     row: &crate::console::tui::state::SettingsAuthRow,
 ) -> AuthSourceFolderDisplay {
     let Some(agent) = auth_kind_agent(row.kind) else {
         return AuthSourceFolderDisplay {
             kind: AuthSourceFolderKind::Default,
             path: String::new(),
-            env_var: None,
         };
     };
     let paths = agent.runtime().state_paths();
@@ -201,11 +200,10 @@ fn settings_source_folder_display(
             || format!("~/{}", paths.credential_dir),
             |path| path.display().to_string(),
         ),
-        env_var: paths.folder_env_var.map(str::to_owned),
     }
 }
 
-fn editor_source_folder_display(
+pub(crate) fn editor_source_folder_display(
     synthesized: &AppConfig,
     workspace_name: &str,
     role: &str,
@@ -215,7 +213,6 @@ fn editor_source_folder_display(
         return AuthSourceFolderDisplay {
             kind: AuthSourceFolderKind::Default,
             path: String::new(),
-            env_var: None,
         };
     };
     let paths = agent.runtime().state_paths();
@@ -249,11 +246,7 @@ fn editor_source_folder_display(
             format!("~/{}", paths.credential_dir),
         )
     };
-    AuthSourceFolderDisplay {
-        kind,
-        path,
-        env_var: paths.folder_env_var.map(str::to_owned),
-    }
+    AuthSourceFolderDisplay { kind, path }
 }
 
 #[cfg(test)]
@@ -289,7 +282,6 @@ mod tests {
         );
         assert_eq!(workspace.kind, AuthSourceFolderKind::Inherited);
         assert_eq!(workspace.path, "/global/claude");
-        assert_eq!(workspace.env_var.as_deref(), Some("CLAUDE_CONFIG_DIR"));
 
         let role = editor_source_folder_display(
             &cfg,

@@ -31,21 +31,21 @@ routing. The phased plan below is the review strategy, not a reduced scope.
 - PR 283 implements the first daemon shape: per-user Unix socket, singleton
   lock, lifecycle commands, launchd / systemd install, keep-awake
   reconciliation, cache warmup, and macOS notification dispatch.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> already bind-mounts the daemon
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> already bind-mounts the daemon
   socket into role containers as `/jackin/daemon.sock` and injects
   `JACKIN_DAEMON_SOCKET=/jackin/daemon.sock` when available.
 - The daemon draft also proves the minimal container-to-host notification path
   over JSON Lines through `jackin-notify`.
-- <RepoFile path="crates/jackin/src/console/tui/state.rs" /> is the current TUI workspace
+- <RepoFile path="crates/jackin/src/console/tui/state.rs">crates/jackin/src/console/tui/state.rs</RepoFile> is the current TUI workspace
   manager model. It exposes the same concepts the desktop app needs: workspace
   list, General / Mounts / Roles / Secrets / Auth tabs, dirty-save flow, modal
   pickers, and per-workspace summaries.
-- <RepoFile path="crates/jackin-config/src/app_config_workspaces.rs" /> and <RepoFile path="crates/jackin/src/config.rs" />
+- <RepoFile path="crates/jackin-config/src/app_config_workspaces.rs">crates/jackin-config/src/app_config_workspaces.rs</RepoFile> and <RepoFile path="crates/jackin/src/config.rs">crates/jackin/src/config.rs</RepoFile>
   are the correct source of truth for workspace CRUD. Desktop should get
   workspace data through daemon endpoints that reuse these modules, with CLI or
   library calls reserved for fallback/bootstrap paths. It must not parse TOML
   itself.
-- <RepoFile path="crates/jackin-core/src/agent.rs" /> confirms the initial supported agents
+- <RepoFile path="crates/jackin-core/src/agent.rs">crates/jackin-core/src/agent.rs</RepoFile> confirms the initial supported agents
   are exactly `claude`, `codex`, `amp`, `kimi`, and `opencode`.
 
 ## Prototype research
@@ -376,7 +376,7 @@ The daemon should maintain an in-memory state cache and append a small event log
 ```
 
 Session discovery can start from Docker labels already present in
-<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />:
+<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile>:
 
 - `jackin.managed=true`
 - `jackin.kind=role`
@@ -535,8 +535,8 @@ Delivery rules:
   desktop window, attention integration, or host-bridge UI. Do not combine
   unrelated stages just because they are part of the same goal.
 - Follow the repo's existing PR and commit standards for every PR in the chain:
-  <RepoFile path="AGENTS.md" />, <RepoFile path="PULL_REQUESTS.md" />, and
-  <RepoFile path="COMMITS.md" />. This includes the expected PR body shape,
+  <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>, <RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile>, and
+  <RepoFile path="COMMITS.md">COMMITS.md</RepoFile>. This includes the expected PR body shape,
   verification notes, Conventional Commit subjects, DCO signoff, and the
   required agent co-author trailers when agents contribute.
 - Every PR must include focused tests or an explicit reason tests are not

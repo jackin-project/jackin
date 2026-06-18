@@ -45,6 +45,25 @@ pub(crate) const fn is_on_main_screen(state: &ConsoleState) -> bool {
     matches!(ms.stage, crate::console::tui::state::ManagerStage::List) && ms.list_modal.is_none()
 }
 
+/// Which telemetry screen the visible manager stage maps to. Confirm dialogs
+/// overlay the list, so they stay on `List`; the create *prelude* and the
+/// field editor are distinct screens (the create flow shows as `create` then
+/// `editor`).
+pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_diagnostics::Screen {
+    use crate::console::tui::state::ManagerStage;
+    use jackin_diagnostics::Screen;
+
+    let ConsoleStage::Manager(ms) = &state.stage;
+    match ms.stage {
+        ManagerStage::List
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => Screen::List,
+        ManagerStage::Editor(_) => Screen::Editor,
+        ManagerStage::Settings(_) => Screen::Settings,
+        ManagerStage::CreatePrelude(_) => Screen::Create,
+    }
+}
+
 /// Modals that consume letters (`TextInput`, pickers with filter-as-
 /// you-type) must shadow the Q-intercept so `Q` types the letter.
 pub(crate) const fn consumes_letter_input(state: &ConsoleState) -> bool {
@@ -251,7 +270,26 @@ pub async fn run_console<H: InstanceActionHandler>(
     // does not linger on the screen behind it.
     let mut container_info_overlay_active = false;
 
+    // Per-screen trace: each manager stage the operator visits is its own
+    // trace, linked to the screen they came from. The guard is swapped below
+    // whenever the visible stage changes.
+    let mut active_screen: Option<(jackin_diagnostics::Screen, jackin_diagnostics::ScreenGuard)> =
+        None;
+
     let result = 'main: loop {
+        // Sync the screen trace to the visible stage. On a change, the old
+        // screen span ends and a fresh linked trace starts for the new one.
+        {
+            let screen = screen_of(&state);
+            if active_screen.as_ref().map(|(s, _)| *s) != Some(screen) {
+                let from = active_screen.as_ref().map(|(s, _)| s.as_str());
+                active_screen = Some((screen, jackin_diagnostics::enter_screen(screen)));
+                if let Some(from) = from {
+                    jackin_diagnostics::record_action("navigate", Some(from));
+                }
+            }
+        }
+
         // Drain a pending token-generate request before render: suspend the
         // TUI, let the non-TUI effect executor run the interactive mint/write,
         // then resume. Done at the top of the loop (no live `&mut state.stage`
@@ -455,6 +493,10 @@ pub async fn run_console<H: InstanceActionHandler>(
                             );
                         }
                     }
+                    // A launching outcome ends the console (and its list-screen
+                    // span) before the launch flow starts in a later frame; snap
+                    // the link so the launch trace still points back to the list.
+                    jackin_diagnostics::carry_link_forward();
                     match outcome {
                         crate::console::tui::InputOutcome::Continue => {
                             if let ConsoleStage::Manager(ms) = &mut state.stage
@@ -472,6 +514,9 @@ pub async fn run_console<H: InstanceActionHandler>(
                             break 'main Ok(None);
                         }
                         crate::console::tui::InputOutcome::LaunchNamed(name) => {
+                            jackin_diagnostics::set_workspace(&name);
+                            jackin_diagnostics::set_workspace_kind("named");
+                            jackin_diagnostics::record_action("launch", Some(&name));
                             let dispatch = dispatch_launch_prompt(
                                 &mut state,
                                 &config,
@@ -493,6 +538,8 @@ pub async fn run_console<H: InstanceActionHandler>(
                             }
                         }
                         crate::console::tui::InputOutcome::LaunchCurrentDir => {
+                            jackin_diagnostics::set_workspace_kind("current-dir");
+                            jackin_diagnostics::record_action("launch", Some("current-dir"));
                             let dispatch = dispatch_launch_prompt(
                                 &mut state,
                                 &config,

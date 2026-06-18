@@ -19,9 +19,7 @@ pub enum Effect {
 pub(crate) enum InitialFrameKind {
     Welcome,
     ClientOwnedModes,
-    FocusedPaneModes,
     FirstAttach,
-    SpawnFailureBanner,
 }
 
 impl InitialFrameKind {
@@ -29,9 +27,7 @@ impl InitialFrameKind {
         match self {
             Self::Welcome => "Welcome",
             Self::ClientOwnedModes => "client-owned mode state",
-            Self::FocusedPaneModes => "focused-pane mode state",
             Self::FirstAttach => "first-attach frame",
-            Self::SpawnFailureBanner => "spawn-failure banner",
         }
     }
 }

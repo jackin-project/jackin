@@ -229,7 +229,10 @@ fn server_frames_roundtrip() {
     for frame in [
         ServerFrame::Output(b"raw bytes".to_vec()),
         ServerFrame::SessionList(br#"[{"id":1}]"#.to_vec()),
-        ServerFrame::Shutdown,
+        ServerFrame::Shutdown { reason: None },
+        ServerFrame::Shutdown {
+            reason: Some("agent exited with code 2".to_owned()),
+        },
         ServerFrame::Bell,
     ] {
         let bytes = encode_server(frame.clone());
@@ -433,6 +436,8 @@ fn hello_with_client_terminal_round_trips() {
         term: Some("xterm-ghostty".to_owned()),
         term_program: Some("ghostty".to_owned()),
         colorterm: Some("truecolor".to_owned()),
+        default_fg: Some((0xe6, 0xe6, 0xe6)),
+        default_bg: Some((0x17, 0x17, 0x17)),
     };
     let bytes = encode_client(ClientFrame::Hello {
         rows: 24,
@@ -572,4 +577,37 @@ fn read_client_frame_eof_after_tag_returns_none() {
         let result = read_client_frame(&mut b, TAG_INPUT).await.unwrap();
         assert!(result.is_none());
     });
+}
+
+#[test]
+fn hello_rejects_unknown_color_presence_byte() {
+    let bytes = encode_client(ClientFrame::Hello {
+        rows: 24,
+        cols: 80,
+        spawn: None,
+        env: Vec::new(),
+        terminal: ClientTerminal::default(),
+        focus_session: None,
+    })
+    .expect("hello encode");
+    // Both colors are None, so the fg presence byte is the second-to-last
+    // payload byte. Corrupt it to an undefined discriminant.
+    let mut payload = bytes[5..].to_vec();
+    let fg_presence = payload.len() - 2;
+    payload[fg_presence] = 2;
+    let err = decode_client(TAG_HELLO, payload).expect_err("presence byte 2 must fail");
+    assert!(
+        err.to_string().contains("default fg presence"),
+        "unexpected error: {err:#}"
+    );
+
+    // Same body, bg label: the final payload byte is the bg presence.
+    let mut payload = bytes[5..].to_vec();
+    let bg_presence = payload.len() - 1;
+    payload[bg_presence] = 7;
+    let err = decode_client(TAG_HELLO, payload).expect_err("presence byte 7 must fail");
+    assert!(
+        err.to_string().contains("default bg presence"),
+        "unexpected error: {err:#}"
+    );
 }

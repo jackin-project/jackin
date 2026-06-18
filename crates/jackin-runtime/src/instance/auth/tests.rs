@@ -4,7 +4,110 @@ use jackin_config::AuthForwardMode;
 use jackin_core::paths::JackinPaths;
 use tempfile::tempdir;
 
+/// The macOS Keychain service name Claude Code derives for a custom
+/// `CLAUDE_CONFIG_DIR` must match the live entries observed on disk:
+/// the default `~/.claude` uses the bare service, and any other config
+/// dir uses `Claude Code-credentials-<sha256(path)[..8]>`. Pure string
+/// derivation — no real Keychain access.
+#[cfg(target_os = "macos")]
+#[test]
+fn claude_keychain_service_name_matches_claude_scheme() {
+    use std::path::Path;
+    let home = Path::new("/Users/donbeave");
+
+    assert_eq!(
+        super::claude_keychain_service_for_config_dir(&home.join(".claude"), home),
+        "Claude Code-credentials"
+    );
+    assert_eq!(
+        super::claude_keychain_service_for_config_dir(&home.join(".claude-chainargos"), home),
+        "Claude Code-credentials-93aecf3d"
+    );
+    assert_eq!(
+        super::claude_keychain_service_for_config_dir(&home.join(".claude-work"), home),
+        "Claude Code-credentials-3342f2c7"
+    );
+}
+
 const TEST_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"test","refreshToken":"test"}}"#;
+
+// ── Source-folder validation ────────────────────────────────────────
+
+mod source_validation {
+    use crate::instance::validate_sync_source_dir;
+    use jackin_core::agent::Agent;
+    use tempfile::tempdir;
+
+    const TEST_CREDENTIALS: &str = super::TEST_CREDENTIALS;
+
+    #[test]
+    fn validate_rejects_non_directory() {
+        let temp = tempdir().unwrap();
+        let missing = temp.path().join("nope");
+        assert!(validate_sync_source_dir(Agent::Codex, &missing, temp.path()).is_err());
+    }
+
+    #[test]
+    fn validate_claude_accepts_file_credentials_rejects_bare_folder() {
+        let temp = tempdir().unwrap();
+        let good = temp.path().join("claude-good");
+        std::fs::create_dir_all(&good).unwrap();
+        std::fs::write(good.join(".credentials.json"), TEST_CREDENTIALS).unwrap();
+        assert!(validate_sync_source_dir(Agent::Claude, &good, temp.path()).is_ok());
+
+        // No .credentials.json file; host_home is a temp dir so the macOS
+        // Keychain probe is skipped — must be rejected, not accepted.
+        let bare = temp.path().join("claude-bare");
+        std::fs::create_dir_all(&bare).unwrap();
+        let err = validate_sync_source_dir(Agent::Claude, &bare, temp.path()).unwrap_err();
+        assert!(err.contains("Claude"), "msg should name the agent: {err}");
+    }
+
+    #[test]
+    fn validate_single_file_agents() {
+        let temp = tempdir().unwrap();
+        for (agent, name) in [
+            (Agent::Codex, "auth.json"),
+            (Agent::Grok, "auth.json"),
+            (Agent::Opencode, "auth.json"),
+            (Agent::Amp, "secrets.json"),
+        ] {
+            let dir = temp.path().join(format!("{agent:?}-good"));
+            std::fs::create_dir_all(&dir).unwrap();
+            // Empty file is rejected.
+            std::fs::write(dir.join(name), "").unwrap();
+            assert!(
+                validate_sync_source_dir(agent, &dir, temp.path()).is_err(),
+                "{agent:?}: empty {name} must be rejected"
+            );
+            // Non-empty credential file is accepted.
+            std::fs::write(dir.join(name), "{\"token\":\"x\"}").unwrap();
+            assert!(
+                validate_sync_source_dir(agent, &dir, temp.path()).is_ok(),
+                "{agent:?}: valid {name} must be accepted"
+            );
+            // Wrong folder (no credential file) is rejected.
+            let bad = temp.path().join(format!("{agent:?}-bad"));
+            std::fs::create_dir_all(&bad).unwrap();
+            assert!(validate_sync_source_dir(agent, &bad, temp.path()).is_err());
+        }
+    }
+
+    #[test]
+    fn validate_kimi_requires_config_and_credentials_tree() {
+        let temp = tempdir().unwrap();
+        let good = temp.path().join("kimi-good");
+        std::fs::create_dir_all(good.join("credentials")).unwrap();
+        std::fs::write(good.join("config.toml"), "x = 1\n").unwrap();
+        assert!(validate_sync_source_dir(Agent::Kimi, &good, temp.path()).is_ok());
+
+        // config.toml present but no credentials/ dir → rejected.
+        let bad = temp.path().join("kimi-bad");
+        std::fs::create_dir_all(&bad).unwrap();
+        std::fs::write(bad.join("config.toml"), "x = 1\n").unwrap();
+        assert!(validate_sync_source_dir(Agent::Kimi, &bad, temp.path()).is_err());
+    }
+}
 
 /// Set up a fake host auth environment in the temp dir.
 fn seed_host_auth(temp: &tempfile::TempDir) {
@@ -104,6 +207,199 @@ fn sync_mode_copies_host_auth_on_first_run() {
 }
 
 #[test]
+fn sync_source_dir_copies_claude_config_dir_without_nested_home_layout() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let source_dir = temp.path().join("claude-work");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::write(
+        source_dir.join(".claude.json"),
+        r#"{"oauthAccount":{"emailAddress":"workspace@example.com"}}"#,
+    )
+    .unwrap();
+    std::fs::write(source_dir.join(".credentials.json"), TEST_CREDENTIALS).unwrap();
+    let manifest = simple_manifest(&temp);
+
+    let (state, outcome) = RoleState::prepare(
+        &paths,
+        "jk-agent-smith",
+        &manifest,
+        &PrepareResolvers {
+            auth_modes: &|_| AuthForwardMode::Sync,
+            sync_source_dirs: &|_| Some(source_dir.clone()),
+        },
+        &crate::instance::GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::agent::Agent::Claude,
+    )
+    .unwrap();
+
+    assert!(
+        std::fs::read_to_string(state.claude_account_json().unwrap())
+            .unwrap()
+            .contains("workspace@example.com")
+    );
+    assert_eq!(
+        std::fs::read_to_string(state.claude_credentials_json().unwrap()).unwrap(),
+        TEST_CREDENTIALS
+    );
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+}
+
+/// Regression: an explicit Claude source folder with no readable
+/// credentials must NOT fall back to the default host `~/.claude`
+/// credentials. The operator selected a specific config dir (e.g. an
+/// Enterprise account); leaking the default Max account into the capsule
+/// is the bug this guards against. Expect `HostMissing`, not `Synced`.
+#[test]
+fn sync_source_dir_does_not_fall_back_to_default_host_credentials() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let source_dir = temp.path().join("claude-work");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::write(
+        source_dir.join(".claude.json"),
+        r#"{"oauthAccount":{"emailAddress":"workspace@example.com"}}"#,
+    )
+    .unwrap();
+    // Default host credentials exist — but the source folder has none, so
+    // these must be ignored rather than leaked into the capsule.
+    std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+    std::fs::write(
+        temp.path().join(".claude/.credentials.json"),
+        TEST_CREDENTIALS,
+    )
+    .unwrap();
+    let manifest = simple_manifest(&temp);
+
+    let (state, outcome) = RoleState::prepare(
+        &paths,
+        "jk-agent-smith",
+        &manifest,
+        &PrepareResolvers {
+            auth_modes: &|_| AuthForwardMode::Sync,
+            sync_source_dirs: &|_| Some(source_dir.clone()),
+        },
+        &crate::instance::GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::agent::Agent::Claude,
+    )
+    .unwrap();
+
+    // No fallback: the default host account never reaches the capsule.
+    assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+    let creds = state
+        .claude_credentials_json()
+        .and_then(|p| std::fs::read_to_string(p).ok());
+    assert!(
+        creds.as_deref() != Some(TEST_CREDENTIALS),
+        "default host credentials must not leak into an explicit source folder"
+    );
+}
+
+/// An explicit source folder that DOES carry its own file-based
+/// credentials syncs them straight through.
+#[test]
+fn sync_source_dir_uses_source_folder_own_credentials() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let source_dir = temp.path().join("claude-chainargos");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::write(
+        source_dir.join(".claude.json"),
+        r#"{"oauthAccount":{"emailAddress":"enterprise@chainargos.com"}}"#,
+    )
+    .unwrap();
+    let source_creds =
+        r#"{"claudeAiOauth":{"accessToken":"enterprise","refreshToken":"enterprise"}}"#;
+    std::fs::write(source_dir.join(".credentials.json"), source_creds).unwrap();
+    // A different default host account is present and must be ignored.
+    std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+    std::fs::write(
+        temp.path().join(".claude/.credentials.json"),
+        TEST_CREDENTIALS,
+    )
+    .unwrap();
+    let manifest = simple_manifest(&temp);
+
+    let (state, outcome) = RoleState::prepare(
+        &paths,
+        "jk-agent-smith",
+        &manifest,
+        &PrepareResolvers {
+            auth_modes: &|_| AuthForwardMode::Sync,
+            sync_source_dirs: &|_| Some(source_dir.clone()),
+        },
+        &crate::instance::GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::agent::Agent::Claude,
+    )
+    .unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert!(
+        std::fs::read_to_string(state.claude_account_json().unwrap())
+            .unwrap()
+            .contains("enterprise@chainargos.com")
+    );
+    assert_eq!(
+        std::fs::read_to_string(state.claude_credentials_json().unwrap()).unwrap(),
+        source_creds,
+        "source folder credentials must win over the default host account"
+    );
+}
+
+/// An empty `.credentials.json` in the source folder must be treated as
+/// absent, never as valid credentials: an empty file must not provision the
+/// capsule with blank creds (booting the agent unauthenticated with no
+/// signal) nor let the default host account leak in as a fallback.
+#[test]
+fn sync_source_dir_empty_credentials_file_is_not_treated_as_valid() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let source_dir = temp.path().join("claude-empty");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    // Present but blank — the bug guard: whitespace-only must not count.
+    std::fs::write(source_dir.join(".credentials.json"), "   \n").unwrap();
+    // A different default host account is present and must never leak in.
+    std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+    std::fs::write(
+        temp.path().join(".claude/.credentials.json"),
+        TEST_CREDENTIALS,
+    )
+    .unwrap();
+    let manifest = simple_manifest(&temp);
+
+    let (state, outcome) = RoleState::prepare(
+        &paths,
+        "jk-agent-smith",
+        &manifest,
+        &PrepareResolvers {
+            auth_modes: &|_| AuthForwardMode::Sync,
+            sync_source_dirs: &|_| Some(source_dir.clone()),
+        },
+        &crate::instance::GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::agent::Agent::Claude,
+    )
+    .unwrap();
+
+    assert_eq!(
+        outcome,
+        AuthProvisionOutcome::HostMissing,
+        "an empty source credentials file must not resolve as Synced"
+    );
+    if let Some(creds_json) = state.claude_credentials_json() {
+        let written = std::fs::read_to_string(creds_json).unwrap_or_default();
+        assert!(
+            !written.contains("accessToken"),
+            "no credentials (default host account included) may be written when \
+             the source file is empty"
+        );
+    }
+}
+
+#[test]
 fn sync_mode_falls_back_to_empty_json_when_host_has_none() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -130,6 +426,48 @@ fn sync_mode_falls_back_to_empty_json_when_host_has_none() {
     );
     assert!(!state.claude_credentials_json().unwrap().exists());
     assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+}
+
+#[test]
+fn sync_source_dir_copies_direct_opencode_auth_json() {
+    let temp = tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let source_dir = temp.path().join("opencode-work");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    let expected = r#"{"provider":{"credential":"workspace"}}"#;
+    std::fs::write(source_dir.join("auth.json"), expected).unwrap();
+
+    let (outcome, mounted) = RoleState::provision_opencode_auth_from_source_dir(
+        &auth_json,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(auth_json.as_path()));
+    assert_eq!(std::fs::read_to_string(&auth_json).unwrap(), expected);
+}
+
+#[test]
+fn sync_source_dir_copies_direct_grok_auth_json() {
+    let temp = tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let source_dir = temp.path().join("grok-work");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    let expected = r#"{"https://auth.x.ai::workspace":{"key":"jwt"}}"#;
+    std::fs::write(source_dir.join("auth.json"), expected).unwrap();
+
+    let (outcome, mounted) = RoleState::provision_grok_auth_from_source_dir(
+        &auth_json,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(auth_json.as_path()));
+    assert_eq!(std::fs::read_to_string(&auth_json).unwrap(), expected);
 }
 
 #[test]

@@ -33,6 +33,27 @@ fn sync_copies_host_secrets_json_when_present() {
 }
 
 #[test]
+fn sync_source_dir_copies_direct_secrets_json() {
+    let temp = tempdir().unwrap();
+    let secrets_json = temp.path().join("secrets.json");
+    let source_dir = temp.path().join("amp-work");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    let expected = "{\"apiKey@https://ampcode.com/\":\"sgamp_workspace_test\"}";
+    std::fs::write(source_dir.join("secrets.json"), expected).unwrap();
+
+    let (outcome, mounted) = RoleState::provision_amp_auth_from_source_dir(
+        &secrets_json,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(secrets_json.as_path()));
+    assert_eq!(std::fs::read_to_string(&secrets_json).unwrap(), expected);
+}
+
+#[test]
 fn sync_preserves_existing_secrets_when_host_file_missing() {
     let temp = tempdir().unwrap();
     let secrets_json = temp.path().join("secrets.json");

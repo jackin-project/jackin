@@ -1,0 +1,16 @@
+version = "v1alpha6"
+dockerfile = "Dockerfile"
+agents = ["claude", "opencode"]
+
+[claude]
+model = "claude-sonnet-4-6"
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+
+# v1alpha6 adds the optional role [docker] security block.
+[docker]
+min_profile = "hardened"
+dind = "none"
+allowed_hosts = ["registry.npmjs.org"]
+capabilities_add = ["NET_ADMIN"]

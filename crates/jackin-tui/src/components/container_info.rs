@@ -107,7 +107,7 @@ pub struct DebugInfo {
     pub agent: Option<String>,
     /// Working directory / target label.
     pub target: Option<String>,
-    /// Bare run id (`jk-run-xxxxxx`) — never the log path.
+    /// Bare run id — never the log path.
     pub run_id: Option<String>,
     /// Absolute path to the run's diagnostics JSONL. Rendered copyable with a
     /// `file://` hyperlink; the bare run id goes in [`Self::run_id`] instead.
@@ -406,6 +406,40 @@ pub fn copy_payload_at(
                 && col < p.screen_x.saturating_add(p.visible_target_cols)
         })
         .map(|p| (p.idx, state.rows[p.idx].value.clone()))
+}
+
+/// Visible hyperlink cells for the encoder's frame-layer OSC 8 emission:
+/// one `(rect, uri)` per linked row slice currently on screen. The capsule's
+/// cell encoder brackets exactly these cells during emission, replacing the
+/// raw post-frame overlay (the host console still uses
+/// [`hyperlink_overlay`]).
+#[must_use]
+pub fn hyperlink_regions(area: Rect, state: &ContainerInfoState) -> Vec<(Rect, String)> {
+    value_placements(area, state)
+        .into_iter()
+        .filter_map(|p| {
+            let row = &state.rows[p.idx];
+            let href = row.href()?;
+            let visible = crate::display_cols_slice(
+                row.value(),
+                p.skip_cols,
+                usize::from(p.visible_value_cols),
+            );
+            if visible.is_empty() {
+                return None;
+            }
+            let width = crate::display_cols(&visible) as u16;
+            Some((
+                Rect {
+                    x: p.screen_x.saturating_sub(1),
+                    y: p.screen_y.saturating_sub(1),
+                    width,
+                    height: 1,
+                },
+                href.to_owned(),
+            ))
+        })
+        .collect()
 }
 
 #[must_use]

@@ -91,10 +91,14 @@ pub async fn run(cli: Cli) -> Result<()> {
     let debug = cli.debug;
     tui::set_debug_mode(debug);
 
-    // Initialize the global tracing subscriber (Defect 47.1 foundation).
-    // Ignores "already installed" errors from test harnesses that set their
-    // own subscriber.
-    drop(jackin_diagnostics::init_tracing(debug));
+    // Fail fast and loud on an unsupported OTLP protocol: jackin exports over
+    // gRPC only. An OTLP endpoint configured with a non-grpc protocol would
+    // otherwise build an exporter that silently never delivers — surface it as a
+    // structured fatal error at startup rather than running with broken
+    // telemetry the operator believes is working.
+    if let Some(requested) = crate::diagnostics::unsupported_otlp_protocol() {
+        return Err(crate::error::JackinError::UnsupportedOtlpProtocol { requested }.into());
+    }
 
     // Resolve the subcommand. Bare `jackin` currently routes to the same
     // console handler as `jackin console`; the TTY-capability fallback and
@@ -106,6 +110,9 @@ pub async fn run(cli: Cli) -> Result<()> {
 
     let paths = JackinPaths::detect()?;
     let command_name = command_name(&command);
+    // Installs the global tracing subscriber (Defect 47.1 foundation) with
+    // the freshly minted run id, so OTLP export (when configured) stamps the
+    // id on every span and log record.
     let diagnostics = crate::diagnostics::RunDiagnostics::start(&paths, debug, command_name)?;
     let _diagnostics_guard = diagnostics.activate();
     crate::diagnostics::prune_old_runs(&paths);
@@ -113,6 +120,8 @@ pub async fn run(cli: Cli) -> Result<()> {
         announce_debug_run(&diagnostics);
     }
     let command = match command {
+        // OTLP flush on this early return is handled by `_diagnostics_guard`'s
+        // Drop, same as every other exit path.
         Command::Role(command) => return crate::role_authoring::run(command),
         command => command,
     };
@@ -173,6 +182,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
     };
     // Emit per-stage duration summary before the run guard drops (Defect 47.5).
+    // The guard's Drop then flushes OTLP, so the summary makes the export.
     diagnostics.emit_run_summary();
     result
 }
@@ -214,6 +224,23 @@ fn announce_debug_run(diagnostics: &crate::diagnostics::RunDiagnostics) {
         "[jackin]".bold()
     );
     let _unused = writeln!(err, "    {}", diagnostics.run_id());
+    if diagnostics.persists() {
+        let _unused = writeln!(err, "[jackin] diagnostics log:");
+        let _unused = writeln!(err, "    {}", diagnostics.path().display());
+    } else {
+        let _unused = writeln!(
+            err,
+            "[jackin] diagnostics file: off (OTLP active; set JACKIN_DIAGNOSTICS_FILE=1 to also write it)"
+        );
+    }
+    match crate::diagnostics::configured_endpoint_summary() {
+        Some(endpoint) => {
+            let _unused = writeln!(err, "[jackin] OTLP endpoint: {endpoint}");
+        }
+        None => {
+            let _unused = writeln!(err, "[jackin] OTLP export: disabled");
+        }
+    }
     if std::io::stdin().is_terminal() {
         let _unused = write!(err, "[jackin] press Enter to continue... ");
         drop(err.flush());

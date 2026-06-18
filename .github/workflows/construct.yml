@@ -145,8 +145,20 @@ jobs:
           restore-keys: |
             cargo-registry-${{ runner.os }}-${{ runner.arch }}-
 
+      - id: sccache
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        continue-on-error: true
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+
+      - name: Enable sccache
+        if: steps.sccache.outcome == 'success'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
       - name: Setup mise
-        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -184,7 +196,12 @@ jobs:
       - name: Build ${{ matrix.platform }} without push
         if: needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true'
         env:
-          CACHE_FROM: type=gha,scope=construct-pr-${{ matrix.platform }}
+          # Registry buildcache (written by main) is the primary warm source — avoids a cold
+          # GHA start when the scope is empty or evicted. GHA scope is secondary: persists
+          # layers written by earlier runs of this PR so mid-PR iterations stay warm too.
+          CACHE_FROM: |
+            type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.platform }}
+            type=gha,scope=construct-pr-${{ matrix.platform }}
           CACHE_TO: type=gha,scope=construct-pr-${{ matrix.platform }},mode=max
         run: mise run construct-build-platform ${{ matrix.platform }}
 
@@ -242,8 +259,20 @@ jobs:
           restore-keys: |
             cargo-registry-${{ runner.os }}-${{ runner.arch }}-
 
+      - id: sccache
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        continue-on-error: true
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+
+      - name: Enable sccache
+        if: steps.sccache.outcome == 'success'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
       - name: Setup mise
-        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -329,8 +358,20 @@ jobs:
           restore-keys: |
             cargo-registry-${{ runner.os }}-${{ runner.arch }}-
 
+      - id: sccache
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+        continue-on-error: true
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+
+      - name: Enable sccache
+        if: steps.sccache.outcome == 'success'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
       - name: Setup mise
-        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}

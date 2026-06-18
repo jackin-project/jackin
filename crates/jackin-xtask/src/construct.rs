@@ -246,14 +246,7 @@ fn build_platform(cfg: &Config, platform: Platform) -> Result<()> {
     ]);
     cfg.apply_bake_env(&mut cmd);
     cmd.env("LOCAL_PLATFORM", platform.docker());
-    if let Some(cache_from) = env_present("CACHE_FROM") {
-        cmd.arg("--set")
-            .arg(format!("construct-local.cache-from={cache_from}"));
-    }
-    if let Some(cache_to) = env_present("CACHE_TO") {
-        cmd.arg("--set")
-            .arg(format!("construct-local.cache-to={cache_to}"));
-    }
+    apply_cache_args(&mut cmd, "construct-local");
     cmd.arg("construct-local");
     run_checked(cmd)
 }
@@ -282,14 +275,7 @@ fn push_platform(cfg: &Config, platform: Platform) -> Result<()> {
         "construct-publish.output=type=image,name={},push-by-digest=true,name-canonical=true,push=true",
         cfg.registry_image
     ));
-    if let Some(cache_from) = env_present("CACHE_FROM") {
-        cmd.arg("--set")
-            .arg(format!("construct-publish.cache-from={cache_from}"));
-    }
-    if let Some(cache_to) = env_present("CACHE_TO") {
-        cmd.arg("--set")
-            .arg(format!("construct-publish.cache-to={cache_to}"));
-    }
+    apply_cache_args(&mut cmd, "construct-publish");
     cmd.arg("construct-publish");
     run_checked(cmd)?;
 
@@ -299,7 +285,7 @@ fn push_platform(cfg: &Config, platform: Platform) -> Result<()> {
         .with_context(|| format!("writing digest to {digest_file}"))?;
     #[expect(
         clippy::print_stdout,
-        reason = "xtask is a CLI; the digest path is its progress output"
+        reason = "jackin-xtask is a CLI; the digest path is its progress output"
     )]
     {
         println!("Wrote {} digest to {digest_file}", platform.name());
@@ -307,7 +293,37 @@ fn push_platform(cfg: &Config, platform: Platform) -> Result<()> {
     Ok(())
 }
 
+/// Apply `CACHE_FROM` and `CACHE_TO` env vars as `--set` overrides on a `docker buildx bake`
+/// command. `CACHE_FROM` may contain multiple newline-separated sources; each becomes its own
+/// `--set target.cache-from=<source>` flag so `docker buildx bake` appends them to the
+/// `cache-from` list rather than replacing it.
+fn apply_cache_args(cmd: &mut Command, target: &str) {
+    if let Some(cache_from) = env_present("CACHE_FROM") {
+        for source in cache_from.lines().map(str::trim).filter(|s| !s.is_empty()) {
+            cmd.arg("--set")
+                .arg(format!("{target}.cache-from={source}"));
+        }
+    }
+    if let Some(cache_to) = env_present("CACHE_TO") {
+        cmd.arg("--set")
+            .arg(format!("{target}.cache-to={cache_to}"));
+    }
+}
+
 fn assert_version_unpublished(cfg: &Config) -> Result<()> {
+    if version_published(cfg)? {
+        bail!(
+            "{} already exists in the registry.\nBump {VERSION_FILE} before publishing a new construct version.",
+            cfg.ref_for(&cfg.version_tag)
+        );
+    }
+    Ok(())
+}
+
+/// Probe the registry for the immutable per-version tag. An indeterminate
+/// probe (auth/network failure) is an error so an outage is never mistaken
+/// for a published or unpublished version.
+fn version_published(cfg: &Config) -> Result<bool> {
     if cfg.version_tag.is_empty() || cfg.version_tag == "unknown" {
         bail!(
             "VERSION_TAG is '{}' — {VERSION_FILE} is missing or empty.",
@@ -324,10 +340,8 @@ fn assert_version_unpublished(cfg: &Config) -> Result<()> {
         .with_context(|| format!("running docker buildx imagetools inspect {reference}"))?;
     let stderr = String::from_utf8_lossy(&output.stderr);
     match classify_inspect(output.status.success(), &stderr) {
-        VersionStatus::Unpublished => Ok(()),
-        VersionStatus::AlreadyPublished => Err(anyhow!(
-            "{reference} already exists in the registry.\nBump {VERSION_FILE} before publishing a new construct version."
-        )),
+        VersionStatus::AlreadyPublished => Ok(true),
+        VersionStatus::Unpublished => Ok(false),
         VersionStatus::UnknownError => Err(anyhow!(
             "registry check for {reference} failed unexpectedly:\n{}",
             stderr.trim()
@@ -337,6 +351,32 @@ fn assert_version_unpublished(cfg: &Config) -> Result<()> {
 
 fn publish_manifest(cfg: &Config) -> Result<()> {
     cfg.guard_local_publish()?;
+
+    // Same version-bump invariant the PR rehearsal enforces, with one
+    // difference: at publish time an existing tag is a successful no-op, not
+    // an error. The per-version tag is immutable, so re-running the publish
+    // workflow against an unchanged docker/construct/VERSION (e.g. a manual
+    // dispatch from main) has nothing left to publish. Image changes that
+    // forget the VERSION bump still fail before merge, because the PR-time
+    // rehearsal runs assert-version-unpublished, which keeps treating the
+    // collision as an error.
+    match manifest_action(version_published(cfg)?) {
+        ManifestAction::SkipAlreadyPublished => {
+            #[expect(
+                clippy::print_stdout,
+                reason = "xtask is a CLI; the skip notice is its progress output"
+            )]
+            {
+                println!(
+                    "{} already published; skipping manifest publish (bump {VERSION_FILE} to publish a new one)",
+                    cfg.ref_for(&cfg.version_tag)
+                );
+            }
+            return Ok(());
+        }
+        ManifestAction::Publish => {}
+    }
+
     let mut refs = Vec::new();
     for platform in [Platform::Amd64, Platform::Arm64] {
         let digest_file = format!("{}/{}.digest", cfg.digest_dir, platform.name());
@@ -352,10 +392,6 @@ fn publish_manifest(cfg: &Config) -> Result<()> {
         }
         refs.push(format!("{}@{}", cfg.registry_image, digest));
     }
-
-    // Same version-bump invariant the PR rehearsal enforces, so a content change
-    // that forgets to bump VERSION fails on the PR rather than post-merge.
-    assert_version_unpublished(cfg)?;
 
     let mut create = docker(["buildx", "imagetools", "create"]);
     for tag in [&cfg.stable_tag, &cfg.sha_tag, &cfg.version_tag] {
@@ -395,6 +431,27 @@ enum VersionStatus {
     Unpublished,
     AlreadyPublished,
     UnknownError,
+}
+
+/// What `publish-manifest` does after probing the registry for the immutable
+/// version tag.
+#[derive(Debug, PartialEq, Eq)]
+enum ManifestAction {
+    /// Tag absent: assemble and push the multi-platform manifest.
+    Publish,
+    /// Tag present: succeed without publishing. The tag is immutable and this
+    /// run could only recreate it, so the re-run is an idempotent no-op rather
+    /// than a failure. Forgotten VERSION bumps still fail at PR time via
+    /// `assert-version-unpublished`, which errors on the same condition.
+    SkipAlreadyPublished,
+}
+
+fn manifest_action(version_published: bool) -> ManifestAction {
+    if version_published {
+        ManifestAction::SkipAlreadyPublished
+    } else {
+        ManifestAction::Publish
+    }
 }
 
 /// Classify a `docker buildx imagetools inspect` result. A success means the
@@ -562,6 +619,16 @@ mod tests {
             classify_inspect(false, "unauthorized: authentication required"),
             VersionStatus::UnknownError
         );
+    }
+
+    #[test]
+    fn published_version_skips_manifest_publish() {
+        assert_eq!(manifest_action(true), ManifestAction::SkipAlreadyPublished);
+    }
+
+    #[test]
+    fn unpublished_version_publishes_manifest() {
+        assert_eq!(manifest_action(false), ManifestAction::Publish);
     }
 
     #[test]

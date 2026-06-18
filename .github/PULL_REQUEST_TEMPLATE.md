@@ -15,19 +15,22 @@ file alone if you are a human contributor.
 
 Rules in one line each:
 - One paragraph per section, no hard-wrap (GitHub flows the text).
+- Explain the shipped feature shape, not every implementation detail.
 - No design rationale narration here — link out to a contributor doc instead.
-- No file-by-file changelog (use the diff). No full test list (use the runner output).
+- No file-by-file changelog (use the diff). No function/struct inventory. No full test list (use the runner output).
 - No deployed-docs URLs (they break post-merge). Refer to docs by name only.
 - No mechanical CI-shaped checks (sidebar diffs, link audits). Those belong in CI.
   Exception: the docs verification gate (`### Docs checks`) is the one sanctioned
   copy-paste block — AGENTS.md requires docs authors run it before merge.
 - Verify-locally URLs use http://localhost:3000/... only — never deployed.
-- Each verify-locally docs page: bolded URL on its own line, soft-break (two
+- Each verify-locally docs page: bold URL on its own line, soft-break (two
   trailing spaces), description on the next line, blank line between blocks.
 - Drop the headings you don't need. "Related pull requests" is only when the PR
-  spans multiple repos. "Hard rule" is only when the PR introduces or honours a
-  non-trivial cross-cutting rule. "What's deferred" is only for the first slice
-  of a longer plan. "Migration notes" can read "None" during pre-release.
+  spans multiple repos. "Behavior changes" is only when it adds signal beyond
+  "What ships". "Hard rule" is only when the PR introduces or honours a
+  non-trivial cross-cutting rule. "Not included" is only when scope boundaries
+  or deferred work are useful to call out. "Migration notes" can read "None"
+  during pre-release.
 -->
 
 ## Related pull requests
@@ -42,9 +45,50 @@ entirely when the PR stands alone.>
 
 ## Summary
 
-<One paragraph: what shipped, who benefits, how it changes their flow. No file
-list, no rationale narration. Cross-references to other docs by name (no
-`/reference/...` links).>
+<One paragraph answering: what is this pull request for? Name the shipped
+feature or behavior, who benefits, and how it changes their flow. Keep this
+short; the feature-level detail goes in the next two sections. Cross-references
+to other docs by name only (no `/reference/...` links).>
+
+## What ships
+
+<Feature-level bullets grouped by user-visible or contributor-visible outcome.
+This is the place for "what ships" detail. Describe capabilities, behavior,
+configuration surfaces, docs, and verification coverage in plain terms. Avoid
+function names, struct names, raw fixture counts, file lists, and anything that
+is only useful because the diff already shows it. For large roadmap items,
+phase headings are fine when they help the reader understand the shipped shape.
+
+Good:
+- Operators can select `hardened` to drop Docker capabilities and run with a
+  read-only root filesystem.
+
+Too low-level:
+- Added `capability_flags()` and `readonly_root_flags()`.>
+
+- <Capability or behavior that now exists>
+- <Configuration, documentation, or workflow change operators can rely on>
+- <Regression coverage or validation added, stated as an outcome rather than a
+  test inventory>
+
+## Behavior changes
+
+<User-visible or maintainer-visible deltas: changed defaults, validation,
+errors, migration behavior, docs behavior, CI behavior, launch/runtime behavior,
+or cleanup semantics. Drop this section when it would only repeat "What ships".>
+
+- <Existing behavior that changes>
+- <New default, validation, migration, or runtime consequence>
+
+## What this addresses
+
+<Bullets naming the practical problem, roadmap gap, regression, or operator pain
+that is now resolved. This should answer "what in reality is addressed?" rather
+than restating the implementation. If the PR completes or advances a roadmap
+item, say that by name without linking to deployed docs.>
+
+- <Problem or gap addressed>
+- <Operator-visible or maintainer-visible outcome>
 
 ## Hard rule: <name of the rule, when relevant>
 
@@ -52,14 +96,15 @@ list, no rationale narration. Cross-references to other docs by name (no
 lives. Drop this section entirely when the PR doesn't introduce or honour a
 non-trivial cross-cutting rule.>
 
-## What's deferred (follow-up PRs)
+## Not included
 
-<Bulleted list of explicit follow-up items so reviewers know what's intentionally
-out of scope. Drop this section entirely when the PR is the whole feature, not
-the first slice of a plan.>
+<Scope boundaries and deferred work so reviewers know what is intentionally out
+of scope. This can name follow-up PRs, research-stage work, or related behavior
+that this PR deliberately leaves unchanged. Drop this section entirely when
+nothing meaningful is excluded.>
 
-- <follow-up 1>
-- <follow-up 2>
+- <Out-of-scope behavior or deferred follow-up>
+- <Related work intentionally left unchanged>
 
 ## Verify locally
 
@@ -83,36 +128,23 @@ if [ ! -d jackin/.git ]; then
 fi
 
 cd jackin
-mise trust
-git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
-git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
-mise trust
-mise install
-cargo build --bin jackin
-export PATH="$PWD/target/debug:$PATH"
-export JACKIN_CONFIG_DIR="$JACKIN_PR_TEST_DIR/.config/jackin"
-export JACKIN_HOME_DIR="$JACKIN_PR_TEST_DIR/.jackin"
+git fetch -f origin pull/<PR_NUMBER>/head:refs/remotes/origin/pr-<PR_NUMBER>-head
+git checkout -B pr-<PR_NUMBER> refs/remotes/origin/pr-<PR_NUMBER>-head
+cargo xtask pr prepare <PR_NUMBER> --config copy --replace-config --capsule
+cd "$JACKIN_PR_TEST_DIR/jackin"
+source "$JACKIN_PR_TEST_DIR/env.sh"
 which jackin
 ```
 
-<Capsule fence — keep ONLY for PRs touching `crates/jackin-capsule/`, drop it
-entirely otherwise. It is a separate paste, not a line appended to the block
-above, so the operator can run it on its own. It must still come before any
-`### User smoke` / `### jackin-capsule smoke` step, since every later `jackin`
-launch consumes whichever capsule binary `ensure_available` resolves first.>
+The default `cargo xtask pr prepare` flags above copy the host config into the
+PR-scoped dir (`--config copy`), refresh it on re-runs (`--replace-config`), and
+build + export the PR's `jackin-capsule` binary (`--capsule`). The capsule build
+adds ~2-3 minutes on the first run. After `source "$JACKIN_PR_TEST_DIR/env.sh"`,
+`echo "$JACKIN_CAPSULE_BIN"` must print the PR-built capsule path before any
+`### User smoke` / `### jackin-capsule smoke` step.
 
-Then build and export the jackin-capsule binary so the smoke steps below use it:
-
-```sh
-eval "$(cargo run --bin build-jackin-capsule -- --export)"
-```
-
-<For construct image PRs only, also add:>
-
-```sh
-mise run construct-build-local
-export JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"
-```
+<Construct image PRs only: add `--construct` to the `cargo xtask pr prepare`
+command so the env file exports `JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"`.>
 
 ### Static checks
 
@@ -189,15 +221,16 @@ workspace state, in-container commands, and expected output that disambiguate a
 pass/fail. Add narrower repeat checks after the console flow when helpful, e.g.
 `jackin load <role> <target> --debug`. Replace the console
 command only when the changed behavior has no meaningful console route. For PRs
-touching `crates/jackin-capsule/`, keep the capsule build eval at the end of
-the Checkout block — otherwise the console launches with a stale binary.>
+touching `crates/jackin-capsule/`, keep `--capsule` on the Checkout block's
+prepare command — otherwise the console launches with a stale binary.>
 
 ### jackin-capsule smoke
 
 <Drop this whole subsection when the PR does NOT touch `crates/jackin-capsule/`.
 Include it whenever any file under `crates/jackin-capsule/src/` is changed.
-This block assumes the Checkout block's capsule build eval has already run — do
-not repeat the eval here.>
+This block assumes the Checkout block used `cargo xtask pr prepare <PR_NUMBER>
+--capsule` and sourced the generated env file — do not repeat the capsule build
+here.>
 
 ```sh
 jackin load the-architect . --debug

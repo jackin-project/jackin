@@ -71,7 +71,7 @@ RUN set -euxo pipefail && \\
         AgentStatePaths {
             credential_dir: ".local/share/amp",
             credential_file: Some(".local/share/amp/secrets.json"),
-            folder_env_var: Some("AMP_DATA_HOME"),
+            folder_env_var: Some("XDG_DATA_HOME"),
         }
     }
 

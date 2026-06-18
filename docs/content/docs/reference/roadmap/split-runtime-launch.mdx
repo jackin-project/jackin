@@ -6,14 +6,14 @@ title: "Split runtime/launch.rs"
 
 ## Problem
 
-<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> is **7966L** total (was 5494L at original analysis — 45% growth). It is the single largest file in the codebase and the hardest to review. It owns: the public load API, trust verification, terminal setup, operator-env / auth handling, container slot claiming, workspace materialization, DinD sidecar launch, Docker network management, launch orchestration, attach/finalizer cleanup, env resolution with trace (duplicated from `config/roles.rs`), and extensive test infrastructure.
+<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> is **7966L** total (was 5494L at original analysis — 45% growth). It is the single largest file in the codebase and the hardest to review. It owns: the public load API, trust verification, terminal setup, operator-env / auth handling, container slot claiming, workspace materialization, DinD sidecar launch, Docker network management, launch orchestration, attach/finalizer cleanup, env resolution with trace (duplicated from `config/roles.rs`), and extensive test infrastructure.
 
 The file has grown significantly since the original analysis due to new agent runtime support (Kimi), instance identity features, and expanded error reporting.
 
 ## Duplication found within this file
 
-- `build_mode_resolution()` at ~line 2977 duplicates the 3-layer × 4-agent match (12 arms) from <RepoFile path="crates/jackin-config/src/app_config_roles.rs" /> `resolve_mode()` solely to capture the resolution trace for error rendering. Extract `resolve_mode_with_trace()` in `config/roles.rs` instead.
-- DinD sidecar launch args (~line 777) are duplicated identically in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> at ~line 472. Extract shared `fn run_dind_sidecar()`.
+- `build_mode_resolution()` at ~line 2977 duplicates the 3-layer × 4-agent match (12 arms) from <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile> `resolve_mode()` solely to capture the resolution trace for error rendering. Extract `resolve_mode_with_trace()` in `config/roles.rs` instead.
+- DinD sidecar launch args (~line 777) are duplicated identically in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> at ~line 472. Extract shared `fn run_dind_sidecar()`.
 - 17 inline `format!("{name}-dind")` / `format!("{name}-net")` derivations that should use a shared `DockerResources` naming helper.
 - The role container `docker run -d -it` argument list (~180 lines starting ~line 865) is a monolithic block interleaving env var injection, mount construction, and label assignment.
 
@@ -60,8 +60,8 @@ Do **last** among the Phase 2 splits. The test suite is the most complex (tests 
 
 ## Related files
 
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — target file (7575L)
-- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> — shares DinD sidecar and network logic (1130L)
-- <RepoFile path="crates/jackin-runtime/src/runtime/test_support.rs" /> — `FakeRunner` used by the test suite
-- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> — shares container teardown pattern
-- <RepoFile path="crates/jackin-config/src/app_config_roles.rs" /> — `resolve_mode()` duplicated for trace in launch.rs
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — target file (7575L)
+- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> — shares DinD sidecar and network logic (1130L)
+- <RepoFile path="crates/jackin-runtime/src/runtime/test_support.rs">crates/jackin-runtime/src/runtime/test_support.rs</RepoFile> — `FakeRunner` used by the test suite
+- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs">crates/jackin-runtime/src/runtime/cleanup.rs</RepoFile> — shares container teardown pattern
+- <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile> — `resolve_mode()` duplicated for trace in launch.rs

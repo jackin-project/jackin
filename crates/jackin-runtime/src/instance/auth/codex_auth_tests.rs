@@ -32,6 +32,27 @@ fn sync_copies_host_auth_json_when_present() {
 }
 
 #[test]
+fn sync_source_dir_copies_direct_auth_json() {
+    let temp = tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let source_dir = temp.path().join("codex-work");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    let expected = r#"{"auth_mode":"chatgpt","tokens":{"id_token":"workspace.test"}}"#;
+    std::fs::write(source_dir.join("auth.json"), expected).unwrap();
+
+    let (outcome, mounted) = RoleState::provision_codex_auth_from_source_dir(
+        &auth_json,
+        AuthForwardMode::Sync,
+        &source_dir,
+    )
+    .unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(auth_json.as_path()));
+    assert_eq!(std::fs::read_to_string(&auth_json).unwrap(), expected);
+}
+
+#[test]
 fn sync_returns_host_missing_when_host_lacks_auth_json() {
     let temp = tempdir().unwrap();
     let auth_json = temp.path().join("auth.json");

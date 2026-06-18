@@ -477,3 +477,44 @@ fn auth_flat_rows_detail_view_adds_source_folder_rows() {
         ]
     ));
 }
+
+#[test]
+fn auth_row_focusability_marks_preview_rows_inert() {
+    let focusable = [
+        AuthRow::AuthKindRow {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::WorkspaceMode {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::RoleMode {
+            role: "alpha".to_owned(),
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::RoleHeader {
+            role: "alpha".to_owned(),
+            expanded: true,
+        },
+        AuthRow::AddSentinel { eligible: 1 },
+    ];
+    assert!(focusable.iter().all(auth_row_is_focusable));
+
+    let inert = [
+        AuthRow::Spacer,
+        AuthRow::WorkspaceSource {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::WorkspaceSourceFolder {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::RoleSource {
+            role: "alpha".to_owned(),
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::RoleSourceFolder {
+            role: "alpha".to_owned(),
+            kind: TestAuthKind::Claude,
+        },
+    ];
+    assert!(inert.iter().all(|row| !auth_row_is_focusable(row)));
+}

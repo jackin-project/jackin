@@ -62,20 +62,33 @@ impl MasterPty for NullMasterPty {
 }
 
 #[test]
-fn spawn_failure_banner_wraps_in_save_restore_and_carries_reason() {
-    let bytes = spawn_failure_banner("boom: agent slug rejected");
-    assert!(bytes.starts_with(b"\x1b7\x1b[1;1H"));
-    assert!(bytes.ends_with(b"\x1b8"));
+fn spawn_failure_banner_rides_the_frame_until_a_keystroke_clears_it() {
+    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+    let mut mux = single_pane_tab_mux();
+    let (session, rx) = test_session(20, 78);
+    drop(rx);
+    mux.sessions.insert(1, session);
+    mux.spawn_failure = Some("boom: agent slug rejected".to_owned());
+    let frame = compose_after(&mut mux, FullRedrawReason::StatusChange);
     assert!(
-        bytes
-            .windows(b"boom: agent slug rejected".len())
-            .any(|w| w == b"boom: agent slug rejected"),
-        "reason missing from banner: {:?}",
-        String::from_utf8_lossy(&bytes)
+        contains(&frame, b"boom: agent slug rejected"),
+        "banner must ride the composed frame: {:?}",
+        String::from_utf8_lossy(&frame)
     );
+
+    // The next operator keystroke dismisses it.
+    drop(handle_input_frame(
+        &mut mux,
+        InputEvent::Data(b"x".to_vec()),
+    ));
     assert!(
-        bytes.windows(2).any(|w| w == b"\x1b["),
-        "missing SGR opener"
+        mux.spawn_failure.is_none(),
+        "keystroke must clear the banner"
+    );
+    let after = compose_after(&mut mux, FullRedrawReason::StatusChange);
+    assert!(
+        !contains(&after, b"boom: agent slug rejected"),
+        "cleared banner must not repaint"
     );
 }
 
@@ -88,13 +101,50 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             workdir: "/workspace".to_owned(),
             agents: Vec::new(),
             models: BTreeMap::new(),
+            provider_models: BTreeMap::new(),
             initial_provider: None,
         },
     )
     .unwrap_or_else(|error| panic!("test multiplexer construction failed: {error}"))
 }
 
-fn single_pane_tab_mux() -> Multiplexer {
+/// Compose the frame an invalidation with `reason` produces — the
+/// derived-rendering equivalent of the old per-tier compose calls.
+fn compose_after(mux: &mut Multiplexer, reason: FullRedrawReason) -> Vec<u8> {
+    mux.invalidate(reason);
+    mux.compose_pending_frame()
+}
+
+/// Drive `handle_input` then compose, mirroring one daemon loop pass.
+/// `None` when the event did not invalidate anything.
+fn handle_input_frame(mux: &mut Multiplexer, event: InputEvent) -> Option<Vec<u8>> {
+    mux.handle_input(event);
+    let frame = mux.compose_pending_frame();
+    (!frame.is_empty()).then_some(frame)
+}
+
+/// Drive `apply_action` then compose; `None` when nothing invalidated.
+fn apply_action_frame(mux: &mut Multiplexer, action: Action) -> Option<Vec<u8>> {
+    mux.apply_action(action);
+    let frame = mux.compose_pending_frame();
+    (!frame.is_empty()).then_some(frame)
+}
+
+/// Drive `handle_palette_command` then compose; `None` when empty.
+fn palette_command_frame(mux: &mut Multiplexer, cmd: PaletteCommand) -> Option<Vec<u8>> {
+    mux.handle_palette_command(cmd);
+    let frame = mux.compose_pending_frame();
+    (!frame.is_empty()).then_some(frame)
+}
+
+/// Drive `handle_prefix_command` then compose; `None` when empty.
+fn prefix_command_frame(mux: &mut Multiplexer, cmd: PrefixCommand) -> Option<Vec<u8>> {
+    mux.handle_prefix_command(cmd);
+    let frame = mux.compose_pending_frame();
+    (!frame.is_empty()).then_some(frame)
+}
+
+pub(super) fn single_pane_tab_mux() -> Multiplexer {
     single_pane_tab_mux_with_size(24, 80)
 }
 
@@ -102,6 +152,9 @@ fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer {
     let mut mux = test_mux(24, 80);
     mux.resize(rows, cols);
     mux.tabs.push(Tab::new_single("Shell", 1, "test"));
+    // Drain the construction-time Resize invalidation the way the real
+    // attach burst does, so tests observe only their own state changes.
+    drop(mux.compose_pending_frame());
     mux
 }
 
@@ -234,7 +287,7 @@ fn full_frame_emits_outer_terminal_title_once_until_context_changes() {
     mux.workdir = PathBuf::from("/workspace/jackin");
     mux.pull_request_context_branch = Some(branch("feat/capsule-pr-context-bar"));
 
-    let first = String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw))
+    let first = String::from_utf8_lossy(&compose_after(&mut mux, FullRedrawReason::ExplicitRedraw))
         .to_string();
     assert!(
         first.contains("\x1b]2;jackin · feat/capsule-pr-context-bar\x1b\\"),
@@ -242,7 +295,7 @@ fn full_frame_emits_outer_terminal_title_once_until_context_changes() {
     );
 
     let second =
-        String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw))
+        String::from_utf8_lossy(&compose_after(&mut mux, FullRedrawReason::ExplicitRedraw))
             .to_string();
     assert!(
         !second.contains("\x1b]2;jackin · feat/capsule-pr-context-bar\x1b\\"),
@@ -251,7 +304,7 @@ fn full_frame_emits_outer_terminal_title_once_until_context_changes() {
 
     mux.pull_request_context = Some(Arc::new(pull_request_fixture(436)));
     let updated =
-        String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw))
+        String::from_utf8_lossy(&compose_after(&mut mux, FullRedrawReason::ExplicitRedraw))
             .to_string();
     assert!(
         updated.contains("\x1b]2;jackin · PR #436 · Surface PR context in Capsule\x1b\\"),
@@ -266,7 +319,7 @@ fn full_frame_updates_outer_terminal_title_on_branch_switch() {
     mux.workdir_context.default_branch = Some("main".to_owned());
     mux.pull_request_context_branch = Some(branch("feat/a"));
 
-    let first = String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw))
+    let first = String::from_utf8_lossy(&compose_after(&mut mux, FullRedrawReason::ExplicitRedraw))
         .to_string();
     assert!(
         first.contains("\x1b]2;jackin · feat/a\x1b\\"),
@@ -275,7 +328,7 @@ fn full_frame_updates_outer_terminal_title_on_branch_switch() {
 
     mux.pull_request_context_branch = Some(branch("feat/b"));
     let switched =
-        String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw))
+        String::from_utf8_lossy(&compose_after(&mut mux, FullRedrawReason::ExplicitRedraw))
             .to_string();
     assert!(
         switched.contains("\x1b]2;jackin · feat/b\x1b\\"),
@@ -284,7 +337,7 @@ fn full_frame_updates_outer_terminal_title_on_branch_switch() {
 
     mux.pull_request_context_branch = Some(branch("main"));
     let default_branch =
-        String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw))
+        String::from_utf8_lossy(&compose_after(&mut mux, FullRedrawReason::ExplicitRedraw))
             .to_string();
     assert!(
         default_branch.contains("\x1b]2;jackin\x1b\\"),
@@ -296,7 +349,7 @@ fn full_frame_updates_outer_terminal_title_on_branch_switch() {
     );
 }
 
-fn test_session(rows: u16, cols: u16) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
+pub(super) fn test_session(rows: u16, cols: u16) -> (Session, mpsc::UnboundedReceiver<Vec<u8>>) {
     test_session_with_agent(rows, cols, Some("codex".to_owned()))
 }
 
@@ -318,24 +371,30 @@ fn test_pane_session(
 
 fn assert_focused_scroll_chrome(frame: &[u8], context: &str) {
     let rendered = String::from_utf8_lossy(frame);
-    let focused_scroll_fg = format!(
+    let thumb_fg = format!(
         "{}{}",
         jackin_tui::ansi::RESET,
-        jackin_tui::ansi::rgb_fg(jackin_tui::PHOSPHOR_GREEN)
+        jackin_tui::ansi::rgb_fg(jackin_tui::DIALOG_SCROLL_THUMB)
     );
     assert!(
-        rendered.contains(&focused_scroll_fg),
-        "focused {context} should use green chrome"
+        rendered.contains(&thumb_fg),
+        "focused {context} should use the shared scrollbar thumb color"
     );
     assert!(
-        rendered.contains('█'),
-        "focused {context} should draw a scrollbar thumb"
+        rendered.contains(jackin_tui::components::ScrollbarStyle::Line.vertical_thumb()),
+        "focused {context} should draw the shared scrollbar thumb"
+    );
+    assert!(
+        rendered.contains(jackin_tui::components::SCROLLBAR_TRACK),
+        "focused {context} should draw the shared scrollbar track"
     );
 }
 
 fn assert_no_scroll_thumb(frame: &[u8], context: &str) {
+    let rendered = String::from_utf8_lossy(frame);
     assert!(
-        !String::from_utf8_lossy(frame).contains('█'),
+        !rendered.contains(jackin_tui::components::ScrollbarStyle::Line.vertical_thumb())
+            && !rendered.contains('█'),
         "{context} should not draw fake scrollback chrome"
     );
 }
@@ -377,7 +436,7 @@ fn feed_top_anchored_inline_history(session: &mut Session, region_bottom: u16, l
     session.feed_pty(b"\x1b[r");
 }
 
-fn test_session_with_agent(
+pub(super) fn test_session_with_agent(
     rows: u16,
     cols: u16,
     agent: Option<String>,
@@ -440,11 +499,12 @@ fn split_metadata_inherits_focused_provider() {
     assert_eq!(env, expected_env);
 }
 
-fn split_tab_mux() -> Multiplexer {
+pub(super) fn split_tab_mux() -> Multiplexer {
     let mut mux = test_mux(24, 80);
     let mut tab = Tab::new_single("Shell", 1, "test");
     assert!(tab.tree.split_h(1, 2, SplitPosition::After));
     mux.tabs.push(tab);
+    drop(mux.compose_pending_frame());
     mux
 }
 
@@ -462,13 +522,10 @@ fn resize_zero_zero_normalizes_to_default_dimensions() {
 #[test]
 fn resize_then_full_frame_repaints_with_new_geometry() {
     let mut mux = single_pane_tab_mux_with_size(24, 80);
-    assert!(
-        !mux.compose_full_redraw(FullRedrawReason::FirstAttach)
-            .is_empty()
-    );
+    assert!(!compose_after(&mut mux, FullRedrawReason::FirstAttach).is_empty());
 
     mux.resize(30, 100);
-    let frame = mux.compose_full_redraw(FullRedrawReason::Resize);
+    let frame = compose_after(&mut mux, FullRedrawReason::Resize);
 
     assert_eq!((mux.term_rows, mux.term_cols), (30, 100));
     assert!(
@@ -483,10 +540,10 @@ fn resize_shrink_terminal_edge_frame_stays_inside_new_geometry() {
     let (mut session, _rx) = test_session(20, 78);
     session.feed_pty(b"\x1b[1;1HLEFT-EDGE\x1b[1;70HOLD-RIGHT-EDGE\x1b[20;70HOLD-BOTTOM");
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
     mux.resize(10, 30);
-    let frame = mux.compose_full_redraw(FullRedrawReason::Resize);
+    let frame = compose_after(&mut mux, FullRedrawReason::Resize);
 
     assert_frame_stays_within_geometry(&frame, 10, 30, "terminal-edge shrink");
 }
@@ -499,10 +556,10 @@ fn resize_shrink_split_frame_stays_inside_new_geometry() {
         session.feed_pty(format!("\x1b[1;1HPANE-{id}\x1b[20;30HOLD-SPLIT-{id}").as_bytes());
         mux.sessions.insert(id, session);
     }
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
     mux.resize(10, 40);
-    let frame = mux.compose_full_redraw(FullRedrawReason::Resize);
+    let frame = mux.compose_pending_frame();
 
     assert_frame_stays_within_geometry(&frame, 10, 40, "interior split shrink");
 }
@@ -522,17 +579,16 @@ fn dialog_dismiss_frame_repaints_covered_pane_body() {
     session.feed_pty(b"\x1b[1;1HHELLO-PANE-BODY");
     mux.sessions.insert(1, session);
 
-    let first = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
+    let first = compose_after(&mut mux, FullRedrawReason::FirstAttach);
     assert!(contains(&first), "first frame must paint the pane body");
 
     // Open a dialog: the full-screen backdrop covers the pane body.
     mux.open_container_info_dialog();
-    let opened = mux.compose_full_redraw(FullRedrawReason::DialogChange);
+    let opened = compose_after(&mut mux, FullRedrawReason::DialogChange);
     assert!(!contains(&opened), "backdrop must cover the pane body");
 
     // Dismiss returns the repaint frame directly; it must restore the body.
-    let dismissed = mux
-        .apply_action(Action::Dialog(DialogAction::Dismiss))
+    let dismissed = apply_action_frame(&mut mux, Action::Dialog(DialogAction::Dismiss))
         .expect("dismiss must emit a repaint frame");
     assert!(!mux.dialog_open(), "Dismiss must pop the dialog");
     assert!(
@@ -558,7 +614,7 @@ fn partial_ratatui_frame_repaints_non_dirty_split_pane_body() {
         session.feed_pty(format!("\x1b[1;1H{label}").as_bytes());
         mux.sessions.insert(id, session);
     }
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
     // Simulate an invalid/stale Ratatui backing buffer, matching what happens
     // after direct dirty-patch frames or attach-side terminal disruption. The
@@ -570,7 +626,7 @@ fn partial_ratatui_frame_repaints_non_dirty_split_pane_body() {
         .get_mut(&2)
         .expect("right pane session")
         .feed_pty(b"\x1b]2;right pane title\x07\x1b[2;1HRIGHT-PANE-UPDATE");
-    let frame = mux.compose_partial_frame(HashSet::from([2]));
+    let frame = compose_after(&mut mux, FullRedrawReason::PtyOutput);
 
     assert!(
         contains(&frame, left_needle),
@@ -585,203 +641,48 @@ fn partial_ratatui_frame_repaints_non_dirty_split_pane_body() {
 }
 
 #[test]
-fn partial_frame_direct_patches_non_focused_dirty_pane() {
-    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
-
-    let mut mux = split_tab_mux();
-    for (id, label) in [(1, "LEFT-PANE-STABLE"), (2, "RIGHT-PANE-STABLE")] {
-        let (mut session, _rx) = test_session(20, 38);
-        session.feed_pty(format!("\x1b[1;1H{label}").as_bytes());
-        mux.sessions.insert(id, session);
-    }
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
-
-    mux.sessions
-        .get_mut(&1)
-        .expect("left pane session")
-        .feed_pty(b"\x1b[2;1HLEFT-DIRECT");
-    let frame = mux.compose_partial_frame(HashSet::from([1]));
-
-    assert!(
-        contains(&frame, b"LEFT-DIRECT"),
-        "direct frame must patch a dirty non-focused pane: {:?}",
-        String::from_utf8_lossy(&frame)
-    );
-    assert!(
-        !contains(&frame, b"LEFT-PANE-STABLE") && !contains(&frame, b"RIGHT-PANE-STABLE"),
-        "direct non-focused pane frame should not snapshot unchanged pane bodies: {:?}",
-        String::from_utf8_lossy(&frame)
-    );
-}
-
-#[test]
-fn partial_frame_direct_patches_multiple_dirty_panes() {
-    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
-
-    let mut mux = split_tab_mux();
-    for (id, label) in [(1, "LEFT-PANE-STABLE"), (2, "RIGHT-PANE-STABLE")] {
-        let (mut session, _rx) = test_session(20, 38);
-        session.feed_pty(format!("\x1b[1;1H{label}").as_bytes());
-        mux.sessions.insert(id, session);
-    }
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
-
-    mux.sessions
-        .get_mut(&1)
-        .expect("left pane session")
-        .feed_pty(b"\x1b[2;1HLEFT-DIRECT");
-    mux.sessions
-        .get_mut(&2)
-        .expect("right pane session")
-        .feed_pty(b"\x1b[2;1HRIGHT-DIRECT");
-    let frame = mux.compose_partial_frame(HashSet::from([1, 2]));
-
-    assert!(
-        contains(&frame, b"LEFT-DIRECT"),
-        "direct multi-pane frame must patch the dirty sibling pane: {:?}",
-        String::from_utf8_lossy(&frame)
-    );
-    assert!(
-        contains(&frame, b"RIGHT-DIRECT"),
-        "direct multi-pane frame must patch the dirty focused pane: {:?}",
-        String::from_utf8_lossy(&frame)
-    );
-    assert!(
-        !contains(&frame, b"LEFT-PANE-STABLE") && !contains(&frame, b"RIGHT-PANE-STABLE"),
-        "direct multi-pane frame should not snapshot unchanged pane bodies: {:?}",
-        String::from_utf8_lossy(&frame)
-    );
-}
-
-#[test]
-fn new_tab_first_dirty_frame_waits_for_full_pane_repaint() {
-    // A newly spawned tab can produce PTY bytes immediately after the tab-switch
-    // frame. The direct dirty-row path is intentionally not self-contained: it
-    // patches only changed terminal cells and assumes the pane body was already
-    // painted at the current geometry. Keep that fast path disabled until a
-    // Ratatui pane frame has established the new pane canvas, otherwise stale
-    // cells from the previous tab can survive as bright background blocks.
-    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
-
-    let mut mux = single_pane_tab_mux();
-    let (mut first, _rx) = test_session(20, 78);
-    first.feed_pty(b"\x1b[1;1HFIRST-TAB");
-    mux.sessions.insert(1, first);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
-
-    let (mut second, _rx) = test_session(20, 78);
-    second.feed_pty(b"\x1b[1;1HNEW-TAB-FIRST-OUTPUT");
-    mux.sessions.insert(2, second);
-    mux.tabs.push(Tab::new_single("Codex", 2, "codex"));
-    mux.active_tab = 1;
-
-    assert!(
-        mux.sessions
-            .get(&2)
-            .expect("new tab session")
-            .pane_body_repaint_pending(),
-        "new session must require a full pane-body repaint"
-    );
-
-    let frame = mux.compose_partial_frame(HashSet::from([2]));
-
-    assert!(
-        contains(&frame, b"FIRST-OUTPUT"),
-        "first dirty frame must include the new pane body: {:?}",
-        String::from_utf8_lossy(&frame)
-    );
-    assert!(
-        contains(&frame, b"Codex"),
-        "first dirty frame for a new tab must fall back to the self-contained Ratatui frame: {:?}",
-        String::from_utf8_lossy(&frame)
-    );
-    assert!(
-        !mux.sessions
-            .get(&2)
-            .expect("new tab session")
-            .pane_body_repaint_pending(),
-        "Ratatui repaint must re-enable the direct dirty-row path"
-    );
-}
-
-#[test]
-fn resize_marks_panes_for_full_body_repaint_before_direct_patch() {
-    let mut mux = single_pane_tab_mux_with_size(24, 80);
-    let (mut session, _rx) = test_session(20, 78);
-    session.feed_pty(b"\x1b[1;1HRESIZE-BEFORE");
-    mux.sessions.insert(1, session);
-
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
-    assert!(
-        !mux.sessions
-            .get(&1)
-            .expect("test session")
-            .pane_body_repaint_pending(),
-        "initial full frame should clear the repaint guard"
-    );
-
-    mux.resize(30, 100);
-    assert!(
-        mux.sessions
-            .get(&1)
-            .expect("test session")
-            .pane_body_repaint_pending(),
-        "resize must require a full pane-body repaint at the new geometry"
-    );
-
-    mux.sessions
-        .get_mut(&1)
-        .expect("test session")
-        .feed_pty(b"\x1b[2;1HRESIZE-AFTER");
-    let frame = mux.compose_partial_frame(HashSet::from([1]));
-
-    assert!(
-        String::from_utf8_lossy(&frame).contains("RESIZE-AFTER"),
-        "resize-following PTY output must repaint the pane body: {:?}",
-        String::from_utf8_lossy(&frame)
-    );
-    assert!(
-        !mux.sessions
-            .get(&1)
-            .expect("test session")
-            .pane_body_repaint_pending(),
-        "Ratatui repaint after resize must clear the repaint guard"
-    );
-}
-
-#[test]
-fn unchanged_diff_frame_suppresses_cached_raw_bottom_chrome() {
+fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
     let mut mux = single_pane_tab_mux();
     let (mut session, _rx) = test_session(20, 78);
     session.feed_pty(b"\x1b[1;1Hstable pane");
+    // Retain scrollback so the scrolled-chrome step below can park the view
+    // in history (the grid clamps the offset to the filled scrollback).
+    for i in 0..30 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
     mux.sessions.insert(1, session);
 
     let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
 
-    let first = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
+    let first = compose_after(&mut mux, FullRedrawReason::FirstAttach);
     assert!(
         contains(&first, b"focus pane"),
         "first full frame must assert raw bottom chrome: {:?}",
         String::from_utf8_lossy(&first)
     );
 
-    let unchanged = mux.compose_diff_frame(status_change_redraw_reason());
+    // Chrome is widget cells now: every composed frame carries it inside the
+    // `?2026`-bracketed atomic frame, so re-emission cannot flicker and no
+    // byte cache exists to go stale.
+    let unchanged = compose_after(&mut mux, status_change_redraw_reason());
     assert!(
-        !contains(&unchanged, b"focus pane"),
-        "unchanged diff frame must not re-append cached raw bottom chrome: {:?}",
+        contains(&unchanged, b"focus pane"),
+        "chrome cells must ride every composed frame: {:?}",
         String::from_utf8_lossy(&unchanged)
     );
     assert!(
         !contains(&unchanged, b"exit scrollback"),
-        "unchanged diff frame must not append alternate raw bottom chrome either: {:?}",
+        "live view must not paint the scrollback hint: {:?}",
         String::from_utf8_lossy(&unchanged)
     );
 
-    mux.sessions
-        .get_mut(&1)
-        .expect("test session")
-        .scrollback_offset = 1;
-    let changed = mux.compose_diff_frame(FullRedrawReason::ScrollbackMovement);
+    assert!(
+        mux.sessions
+            .get_mut(&1)
+            .expect("test session")
+            .set_scrollback_offset(1)
+    );
+    let changed = compose_after(&mut mux, FullRedrawReason::ScrollbackMovement);
     assert!(
         contains(&changed, b"exit scrollback"),
         "changed scrollback chrome must re-emit the raw hint row: {:?}",
@@ -801,18 +702,19 @@ fn scan_emitted_frame_reports_geometry_fingerprint() {
 }
 
 #[test]
-fn full_redraw_always_emits_screen_erase() {
-    // Single-renderer invariant: every full frame clears the screen
-    // (Terminal::clear → SocketBackend::clear_region(All) → `\x1b[2J\x1b[H`)
-    // then re-emits every cell. A pure cell diff leaves stale cells behind for
-    // high-frequency alt-screen repainters (Claude Code, Amp) and on scrolled
-    // content; the unconditional wipe is what keeps every agent correct.
+fn wipe_policy_erases_only_on_first_attach_and_resize() {
+    // I4: no screen erase outside FirstAttach/Resize. Every other
+    // invalidation repaints in place — the sentinel-baseline re-emit
+    // overwrites every cell without flashing the screen blank (D7).
     let erase = b"\x1b[2J";
     let contains = |frame: &[u8]| frame.windows(erase.len()).any(|w| w == erase);
 
+    for reason in [FullRedrawReason::FirstAttach, FullRedrawReason::Resize] {
+        let mut mux = single_pane_tab_mux_with_size(24, 80);
+        let frame = compose_after(&mut mux, reason);
+        assert!(contains(&frame), "{reason:?} frame must erase the screen");
+    }
     for reason in [
-        FullRedrawReason::FirstAttach,
-        FullRedrawReason::Resize,
         FullRedrawReason::ExplicitRedraw,
         FullRedrawReason::FocusChange,
         FullRedrawReason::TabSwitch,
@@ -821,19 +723,24 @@ fn full_redraw_always_emits_screen_erase() {
         FullRedrawReason::StatusChange,
         FullRedrawReason::ScrollbackMovement,
         FullRedrawReason::DialogChange,
+        FullRedrawReason::PtyOutput,
     ] {
         let mut mux = single_pane_tab_mux_with_size(24, 80);
-        let frame = mux.compose_full_redraw(reason);
-        assert!(contains(&frame), "{reason:?} full frame must emit \\x1b[2J");
+        drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+        let frame = compose_after(&mut mux, reason);
+        assert!(
+            !contains(&frame),
+            "{reason:?} frame must repaint in place, not erase"
+        );
     }
 }
 
 #[test]
 fn pending_status_change_uses_no_clear_diff_frame() {
     let mut mux = single_pane_tab_mux_with_size(24, 80);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    mux.request_diff_redraw(status_change_redraw_reason());
+    mux.invalidate(status_change_redraw_reason());
     assert!(mux.has_pending_render());
     let frame = mux.compose_pending_frame();
 
@@ -844,25 +751,6 @@ fn pending_status_change_uses_no_clear_diff_frame() {
     assert!(
         !mux.has_pending_render(),
         "pending diff redraw should be drained after composition"
-    );
-}
-
-#[test]
-fn pending_full_redraw_takes_precedence_over_status_diff() {
-    let mut mux = single_pane_tab_mux_with_size(24, 80);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
-
-    mux.request_diff_redraw(status_change_redraw_reason());
-    mux.request_full_redraw(FullRedrawReason::Resize);
-    let frame = mux.compose_pending_frame();
-
-    assert!(
-        frame_contains_screen_erase(&frame),
-        "geometry redraw must keep full-redraw precedence over status diff"
-    );
-    assert!(
-        !mux.has_pending_render(),
-        "full redraw should clear any queued diff redraw"
     );
 }
 
@@ -881,7 +769,7 @@ fn resize_shrink_then_grow_does_not_panic() {
     mux.resize(50, 200);
     assert_eq!((mux.term_rows, mux.term_cols), (50, 200));
     // Full repaint after growth must not be empty.
-    let frame = mux.compose_full_redraw(FullRedrawReason::Resize);
+    let frame = mux.compose_pending_frame();
     assert!(!frame.is_empty(), "grow must produce repaint");
 }
 
@@ -953,7 +841,7 @@ fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
 
     fn assert_backdrop_opaque(mut mux: Multiplexer, context: &str) {
         let frame =
-            String::from_utf8_lossy(&mux.compose_full_redraw(FullRedrawReason::DialogChange))
+            String::from_utf8_lossy(&compose_after(&mut mux, FullRedrawReason::DialogChange))
                 .to_string();
 
         assert!(
@@ -988,10 +876,9 @@ fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
 #[test]
 fn palette_close_single_pane_opens_confirm_directly() {
     let mut mux = single_pane_tab_mux();
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .handle_palette_command(PaletteCommand::Close)
+    let frame = palette_command_frame(&mut mux, PaletteCommand::Close)
         .expect("single-pane close should redraw confirm dialog");
 
     assert!(matches!(
@@ -1010,10 +897,9 @@ fn palette_close_single_pane_opens_confirm_directly() {
 #[test]
 fn palette_close_split_tab_opens_target_picker() {
     let mut mux = split_tab_mux();
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .handle_palette_command(PaletteCommand::Close)
+    let frame = palette_command_frame(&mut mux, PaletteCommand::Close)
         .expect("split-tab close should redraw target picker");
 
     assert!(matches!(
@@ -2090,8 +1976,7 @@ fn palette_exit_opens_exit_confirm() {
 fn kitty_escape_in_agent_picker_returns_to_menu() {
     let mut mux = single_pane_tab_mux();
     mux.open_command_palette();
-    let frame = mux
-        .handle_input(InputEvent::Data(b"\r".to_vec()))
+    let frame = handle_input_frame(&mut mux, InputEvent::Data(b"\r".to_vec()))
         .expect("New tab command should redraw");
     assert!(String::from_utf8_lossy(&frame).contains("New tab"));
     assert!(matches!(mux.dialog_top(), Some(Dialog::AgentPicker { .. })));
@@ -2099,7 +1984,7 @@ fn kitty_escape_in_agent_picker_returns_to_menu() {
     let events = mux.input_parser.parse(b"\x1b[27;1u");
     assert_eq!(events, vec![InputEvent::Data(b"\x1b".to_vec())]);
     for event in events {
-        mux.handle_input(event);
+        handle_input_frame(&mut mux, event);
     }
 
     assert!(matches!(
@@ -2183,11 +2068,14 @@ fn wheel_forwards_to_mouse_enabled_tui() {
     session.feed_pty(b"\x1b[?1049h\x1b[?1003h\x1b[?1006h");
     mux.sessions.insert(1, session);
 
-    let redraw = mux.handle_input(InputEvent::MousePress {
-        row: STATUS_BAR_ROWS + 1,
-        col: 1,
-        button: 64,
-    });
+    let redraw = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        },
+    );
 
     assert!(
         redraw.is_none(),
@@ -2201,7 +2089,7 @@ fn wheel_forwards_to_mouse_enabled_tui() {
         input_rx.try_recv().is_err(),
         "wheel should not produce extra PTY input"
     );
-    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
 }
 
 #[test]
@@ -2212,14 +2100,17 @@ fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
         for i in 0..40 {
             session.feed_pty(format!("line {i}\r\n").as_bytes());
         }
-        assert_eq!(session.scrollback_offset, 0);
+        assert_eq!(session.scrollback_offset(), 0);
         mux.sessions.insert(1, session);
 
-        let redraw = mux.handle_input(InputEvent::MousePress {
-            row: STATUS_BAR_ROWS + 1,
-            col: 1,
-            button: 64,
-        });
+        let redraw = handle_input_frame(
+            &mut mux,
+            InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 64,
+            },
+        );
 
         assert!(
             redraw.is_some(),
@@ -2229,7 +2120,317 @@ fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
             input_rx.try_recv().is_err(),
             "mouse-disabled {pane_kind} panes must not receive raw wheel bytes"
         );
-        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
+    }
+}
+
+#[test]
+fn wheel_back_to_live_repaints_body_and_footer() {
+    let mut mux = single_pane_tab_mux();
+    // Size the session to the pane so the live tail is exactly the grid.
+    let pane = mux.visible_panes().into_iter().next().expect("one pane");
+    let (mut session, _input_rx) = test_session(pane.inner.rows, pane.inner.cols);
+    for i in 0..40 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+    mux.sessions.insert(1, session);
+    // The encoder skips cells identical to the reset baseline (the space in
+    // "line 39"), so assert on the digit pair unique to the tail row.
+    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+
+    // Park the view in history; the frame switches to the scrollback footer.
+    let scrolled = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        },
+    )
+    .expect("wheel into history must repaint");
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
+    assert!(
+        contains(&scrolled, b"exit scrollback"),
+        "scrolled frame must show the scrollback footer: {:?}",
+        String::from_utf8_lossy(&scrolled)
+    );
+
+    // Wheel-only return to the live tail: body and footer must repaint
+    // together — the D2 regression left the scrollback view and the
+    // "exit scrollback" footer on screen here.
+    let live = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 65,
+        },
+    )
+    .expect("wheel back to live must repaint");
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
+    assert!(
+        !contains(&live, b"exit scrollback"),
+        "footer must return to the live hint: {:?}",
+        String::from_utf8_lossy(&live)
+    );
+    assert!(
+        contains(&live, b"39"),
+        "body must repaint the live tail row: {:?}",
+        String::from_utf8_lossy(&live)
+    );
+    assert!(
+        !frame_contains_screen_erase(&live),
+        "returning to live must repaint in place, not wipe"
+    );
+}
+
+#[test]
+fn feed_while_scrolled_keeps_view_anchored() {
+    let (mut session, _rx) = test_session(20, 78);
+    for i in 0..40 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+    assert!(session.scroll_by(5));
+    let offset_before = session.scrollback_offset();
+    let top_before = view_row_text(&session, 0);
+
+    for i in 40..45 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+
+    assert_eq!(
+        session.scrollback_offset(),
+        offset_before + 5,
+        "offset must grow by the rows evicted into scrollback"
+    );
+    assert_eq!(
+        view_row_text(&session, 0),
+        top_before,
+        "the row under the reader must hold still while the agent streams"
+    );
+}
+
+/// Text of one visible row of the session's current scrollback view.
+fn view_row_text(session: &Session, row: u16) -> String {
+    let (grid_rows, _) = session.shadow_grid.size();
+    let view = session
+        .shadow_grid
+        .scrollback_view(session.scrollback_offset(), grid_rows);
+    (0..view.cols)
+        .map(|col| {
+            view.cell(row, col)
+                .map_or(' ', |cell| cell.contents().chars().next().unwrap_or(' '))
+        })
+        .collect::<String>()
+        .trim_end()
+        .to_owned()
+}
+
+#[test]
+fn cursor_reconciliation_hides_cursor_while_scrolled() {
+    // Frame-model contract (§3.4): the cursor is hidden whenever the view is
+    // not live, re-shown at the VT position when it is — derived per frame,
+    // no assertion site outside the encoder.
+    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+    let mut mux = single_pane_tab_mux();
+    let pane = mux.visible_panes().into_iter().next().expect("one pane");
+    let (mut session, _rx) = test_session(pane.inner.rows, pane.inner.cols);
+    for i in 0..40 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+    mux.sessions.insert(1, session);
+    let live = compose_after(&mut mux, FullRedrawReason::FirstAttach);
+    assert!(
+        contains(&live, b"\x1b[?25h"),
+        "live pane with a visible VT cursor must show it"
+    );
+
+    let scrolled = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        },
+    )
+    .expect("wheel into history must repaint");
+    assert!(
+        scrolled.ends_with(b"\x1b[?25l") || contains(&scrolled, b"\x1b[?25l"),
+        "scrolled pane must hide the cursor"
+    );
+    assert!(
+        !scrolled.windows(6).any(|w| w == b"\x1b[?25h"),
+        "scrolled pane must not re-show the cursor"
+    );
+
+    let back = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 65,
+        },
+    )
+    .expect("wheel back to live must repaint");
+    assert!(
+        contains(&back, b"\x1b[?25h"),
+        "returning to live must re-show the cursor"
+    );
+}
+
+#[test]
+fn mode_reconciliation_resets_agent_modes_on_focus_swap() {
+    // The reconciliation replaces the focus_swap_reset + current_mode_state
+    // pair: swapping focus from a pane with bracketed paste, application
+    // cursor, and a kitty push to a plain pane must switch each mode off,
+    // while the client-owned mouse/focus/alt-screen modes stay untouched.
+    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+    let mut mux = split_tab_mux();
+    let panes = mux.visible_panes();
+    for pane in &panes {
+        let (session, rx) = test_session(pane.inner.rows, pane.inner.cols);
+        drop(rx);
+        mux.sessions.insert(pane.id, session);
+    }
+    mux.sessions
+        .get_mut(&1)
+        .expect("first pane")
+        .feed_pty(b"\x1b[?2004h\x1b[?1h\x1b[>1u");
+    let asserted = compose_after(&mut mux, FullRedrawReason::FirstAttach);
+    for needle in [&b"\x1b[?2004h"[..], &b"\x1b[?1h"[..], &b"\x1b[>1u"[..]] {
+        assert!(
+            contains(&asserted, needle),
+            "focused pane's modes must be asserted: missing {needle:?}"
+        );
+    }
+
+    let target = panes.iter().find(|pane| pane.id == 2).expect("second pane");
+    let swapped = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: target.inner.row + 1,
+            col: target.inner.col + 1,
+            button: 0,
+        },
+    )
+    .expect("focus swap must repaint");
+    for needle in [&b"\x1b[?2004l"[..], &b"\x1b[?1l"[..], &b"\x1b[<u"[..]] {
+        assert!(
+            contains(&swapped, needle),
+            "swap to a plain pane must switch agent modes off: missing {needle:?}"
+        );
+    }
+    for forbidden in [
+        &b"\x1b[?1000l"[..],
+        &b"\x1b[?1003l"[..],
+        &b"\x1b[?1006l"[..],
+        &b"\x1b[?1004l"[..],
+        &b"\x1b[?1049l"[..],
+    ] {
+        assert!(
+            !contains(&swapped, forbidden),
+            "reconciliation must not toggle client-owned mode {forbidden:?}"
+        );
+    }
+}
+
+#[test]
+fn pane_scrollbar_renders_shared_component_glyphs_only() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(20, 78);
+    for i in 0..40 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+    mux.sessions.insert(1, session);
+
+    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
+    let rendered = String::from_utf8_lossy(&frame);
+    assert!(
+        rendered.contains(jackin_tui::components::ScrollbarStyle::Line.vertical_thumb()),
+        "pane scrollbar must use the shared Line thumb"
+    );
+    assert!(
+        rendered.contains(jackin_tui::components::SCROLLBAR_TRACK),
+        "pane scrollbar must paint the shared track"
+    );
+    assert!(
+        !rendered.contains('█'),
+        "hand-painted block thumb is a D14 regression"
+    );
+}
+
+#[test]
+fn scrollbar_click_jumps_scrollback() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(20, 78);
+    for i in 0..40 {
+        session.feed_pty(format!("line {i}\r\n").as_bytes());
+    }
+    let filled = session.scrollback_filled();
+    assert!(filled > 0);
+    mux.sessions.insert(1, session);
+    let pane = mux.visible_panes().into_iter().next().expect("one pane");
+    let track_col = pane.outer.col + pane.outer.cols - 1;
+    let track_top = pane.outer.row + 1;
+    let track_bottom = pane.outer.row + pane.outer.rows - 2;
+
+    // Click the top of the track → jump to the oldest retained rows.
+    let frame = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: track_top,
+            col: track_col,
+            button: 0,
+        },
+    );
+    assert!(frame.is_some(), "scrollbar jump must repaint");
+    assert_eq!(
+        mux.sessions.get(&1).unwrap().scrollback_offset(),
+        filled,
+        "top-of-track click must jump to the top of history"
+    );
+
+    // Click the bottom of the track → back to the live tail.
+    let frame = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: track_bottom,
+            col: track_col,
+            button: 0,
+        },
+    );
+    assert!(frame.is_some(), "scrollbar jump back to live must repaint");
+    assert_eq!(
+        mux.sessions.get(&1).unwrap().scrollback_offset(),
+        0,
+        "bottom-of-track click must return to the live tail"
+    );
+}
+
+#[test]
+fn diff_frames_repaint_in_place_without_screen_erase() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(20, 78);
+    session.feed_pty(b"hello capsule");
+    mux.sessions.insert(1, session);
+    let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
+
+    let first = compose_after(&mut mux, FullRedrawReason::FocusChange);
+    let second = compose_after(&mut mux, FullRedrawReason::FocusChange);
+    for (frame, which) in [(&first, "first"), (&second, "second")] {
+        assert!(
+            !frame_contains_screen_erase(frame),
+            "{which} diff frame must not erase the screen"
+        );
+        // Convergence stopgap: every Ratatui frame re-emits its cells so the
+        // physical screen converges even if another writer desynced it. The
+        // encoder skips cells identical to the reset baseline (the space
+        // between the words), so match the words separately.
+        assert!(
+            contains(frame, b"hello") && contains(frame, b"capsule"),
+            "{which} diff frame must re-emit pane cells: {:?}",
+            String::from_utf8_lossy(frame)
+        );
     }
 }
 
@@ -2241,20 +2442,20 @@ fn retained_scrollback_draws_scrollbar_at_live_tail() {
         for i in 0..40 {
             session.feed_pty(format!("line {i}\r\n").as_bytes());
         }
-        assert_eq!(session.scrollback_offset, 0);
+        assert_eq!(session.scrollback_offset(), 0);
         assert!(
             session.scrollback_filled() > 0,
             "{pane_kind} setup should retain scrollback"
         );
         mux.sessions.insert(1, session);
 
-        let frame = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
+        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
 
         assert_focused_scroll_chrome(
             &frame,
             &format!("{pane_kind} pane with retained scrollback at live tail"),
         );
-        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
     }
 }
 
@@ -2267,11 +2468,14 @@ fn wheel_noops_for_focused_normal_screen_pane_without_scrollback() {
         assert_eq!(session.scrollback_filled(), 0);
         mux.sessions.insert(1, session);
 
-        let redraw = mux.handle_input(InputEvent::MousePress {
-            row: STATUS_BAR_ROWS + 10,
-            col: 10,
-            button: 64,
-        });
+        let redraw = handle_input_frame(
+            &mut mux,
+            InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 10,
+                col: 10,
+                button: 64,
+            },
+        );
 
         assert!(
             redraw.is_none(),
@@ -2281,7 +2485,7 @@ fn wheel_noops_for_focused_normal_screen_pane_without_scrollback() {
             input_rx.try_recv().is_err(),
             "normal-screen {pane_kind} pane without scrollback must not receive cursor-key wheel fallback"
         );
-        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
     }
 }
 
@@ -2298,18 +2502,21 @@ fn wheel_scrolls_top_anchored_inline_history_for_all_panes() {
         );
         mux.sessions.insert(1, session);
 
-        let redraw = mux.handle_input(InputEvent::MousePress {
-            row: STATUS_BAR_ROWS + 1,
-            col: 1,
-            button: 64,
-        });
+        let redraw = handle_input_frame(
+            &mut mux,
+            InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 64,
+            },
+        );
 
         let frame = redraw.expect("inline history wheel should redraw");
         assert!(
             input_rx.try_recv().is_err(),
             "{pane_kind} pane must not receive cursor-key wheel fallback"
         );
-        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
         assert_focused_scroll_chrome(
             &frame,
             &format!("normal-screen {pane_kind} pane with inline history"),
@@ -2332,13 +2539,15 @@ fn scrolled_inline_history_preserves_color_and_selection_highlight() {
     session.feed_pty(b"\x1b[r\x1b[8;1Hlive prompt");
     mux.sessions.insert(1, session);
 
-    let frame = mux
-        .handle_input(InputEvent::MousePress {
+    let frame = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
             row: STATUS_BAR_ROWS + 1,
             col: 1,
             button: 64,
-        })
-        .expect("inline history wheel should redraw");
+        },
+    )
+    .expect("inline history wheel should redraw");
 
     assert!(
         input_rx.try_recv().is_err(),
@@ -2352,7 +2561,7 @@ fn scrolled_inline_history_preserves_color_and_selection_highlight() {
 
     let inner = mux.visible_panes()[0].inner;
     let session = mux.sessions.get(&1).unwrap();
-    let offset = session.scrollback_offset;
+    let offset = session.scrollback_offset();
     let filled = session.scrollback_filled();
     let top_content_row = filled.saturating_sub(offset);
     mux.selection = Some(SelectionState {
@@ -2363,7 +2572,7 @@ fn scrolled_inline_history_preserves_color_and_selection_highlight() {
         end_row: top_content_row,
         end_col: 10,
     });
-    let selected_frame = mux.compose_full_redraw(FullRedrawReason::SelectionRepaint);
+    let selected_frame = compose_after(&mut mux, FullRedrawReason::SelectionRepaint);
     let selected = String::from_utf8_lossy(&selected_frame);
     assert!(
         selected.contains("\x1b[7m\x1b[38;5;1mred history"),
@@ -2392,18 +2601,21 @@ fn wheel_scrolls_normal_screen_history_preserved_before_clear_for_all_panes() {
         );
         mux.sessions.insert(1, session);
 
-        let redraw = mux.handle_input(InputEvent::MousePress {
-            row: STATUS_BAR_ROWS + 1,
-            col: 1,
-            button: 64,
-        });
+        let redraw = handle_input_frame(
+            &mut mux,
+            InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 64,
+            },
+        );
 
         let frame = redraw.expect("clear-preserved history wheel should redraw");
         assert!(
             input_rx.try_recv().is_err(),
             "{pane_kind} pane must not receive cursor-key wheel fallback"
         );
-        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
         assert_focused_scroll_chrome(
             &frame,
             &format!("normal-screen {pane_kind} pane with clear-preserved history"),
@@ -2428,18 +2640,21 @@ fn wheel_scrolls_csi_scroll_up_inline_history_for_all_panes() {
         );
         mux.sessions.insert(1, session);
 
-        let redraw = mux.handle_input(InputEvent::MousePress {
-            row: STATUS_BAR_ROWS + 1,
-            col: 1,
-            button: 64,
-        });
+        let redraw = handle_input_frame(
+            &mut mux,
+            InputEvent::MousePress {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 64,
+            },
+        );
 
         let frame = redraw.expect("CSI S inline history wheel should redraw");
         assert!(
             input_rx.try_recv().is_err(),
             "{pane_kind} pane must not receive cursor-key wheel fallback"
         );
-        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 2);
+        assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 2);
         assert_focused_scroll_chrome(
             &frame,
             &format!("normal-screen {pane_kind} pane with CSI S inline history"),
@@ -2458,18 +2673,21 @@ fn wheel_sends_cursor_fallback_to_mouse_disabled_alt_screen_tui() {
     session.feed_pty(b"\x1b[?1049h");
     mux.sessions.insert(1, session);
 
-    let redraw = mux.handle_input(InputEvent::MousePress {
-        row: STATUS_BAR_ROWS + 1,
-        col: 1,
-        button: 64,
-    });
+    let redraw = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        },
+    );
 
     assert!(
         redraw.is_none(),
         "pane-owned fallback should not redraw jackin'"
     );
     assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1b[A\x1b[A\x1b[A");
-    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
 }
 
 #[test]
@@ -2490,18 +2708,21 @@ fn wheel_sends_cursor_fallback_to_alt_screen_tui_with_retained_primary_scrollbac
     );
     mux.sessions.insert(1, session);
 
-    let redraw = mux.handle_input(InputEvent::MousePress {
-        row: STATUS_BAR_ROWS + 1,
-        col: 1,
-        button: 64,
-    });
+    let redraw = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 64,
+        },
+    );
 
     assert!(
         redraw.is_none(),
         "alternate-screen fallback should not redraw jackin'"
     );
     assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1b[A\x1b[A\x1b[A");
-    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
 }
 
 #[test]
@@ -2511,11 +2732,14 @@ fn wheel_cursor_fallback_respects_application_cursor_mode() {
     session.feed_pty(b"\x1b[?1049h\x1b[?1h");
     mux.sessions.insert(1, session);
 
-    let redraw = mux.handle_input(InputEvent::MousePress {
-        row: STATUS_BAR_ROWS + 1,
-        col: 1,
-        button: 65,
-    });
+    let redraw = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 65,
+        },
+    );
 
     assert!(
         redraw.is_none(),
@@ -2535,7 +2759,7 @@ fn alt_screen_overflow_does_not_draw_scrollbar_without_retained_scrollback() {
     assert_eq!(session.scrollback_filled(), 0);
     mux.sessions.insert(1, session);
 
-    let frame = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
+    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
     assert_no_scroll_thumb(&frame, "alt-screen pane without retained scrollback");
 }
 
@@ -2549,7 +2773,7 @@ fn normal_screen_panes_do_not_draw_scrollbar_when_grid_is_full_without_scrollbac
         }
         mux.sessions.insert(1, session);
 
-        let frame = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
+        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
         assert_no_scroll_thumb(
             &frame,
             &format!("normal-screen {pane_kind} pane with full grid but no scrollback"),
@@ -2566,7 +2790,7 @@ fn normal_screen_panes_do_not_draw_scrollbar_when_content_spans_viewport_without
         assert_eq!(session.scrollback_filled(), 0);
         mux.sessions.insert(1, session);
 
-        let frame = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
+        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
         assert_no_scroll_thumb(
             &frame,
             &format!(
@@ -2585,7 +2809,7 @@ fn normal_screen_panes_do_not_keep_scrollbar_when_cursor_moves_without_scrollbac
         assert_eq!(session.scrollback_filled(), 0);
         mux.sessions.insert(1, session);
 
-        let frame = mux.compose_full_redraw(FullRedrawReason::FirstAttach);
+        let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
         assert_no_scroll_thumb(
             &frame,
             &format!("normal-screen {pane_kind} transcript pane after cursor moved up"),
@@ -2620,7 +2844,7 @@ fn pointer_shape_updates_only_when_shape_changes() {
     mux.status_bar.instance_id_label = "test".to_owned();
     mux.pull_request_context_branch = Some(branch("feature/context"));
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
     let hit = branch_context_bar_layout(
         mux.term_rows,
         mux.term_cols,
@@ -2633,10 +2857,12 @@ fn pointer_shape_updates_only_when_shape_changes() {
     .expect("branch context should fit");
 
     mux.update_pointer_shape_for_mouse(23, hit.start - 1, SGR_NO_BUTTON_MOTION);
+    mux.client.flush_out_of_band();
     let first = rx.try_recv().expect("first pointer-shape update");
     assert!(first.ends_with(b"\x1b]22;pointer\x1b\\"));
 
     mux.update_pointer_shape_for_mouse(23, hit.start, SGR_NO_BUTTON_MOTION);
+    mux.client.flush_out_of_band();
     assert!(rx.try_recv().is_err(), "unchanged shape should not re-emit");
 }
 
@@ -2644,9 +2870,9 @@ fn pointer_shape_updates_only_when_shape_changes() {
 fn pointer_shape_updates_for_clickable_top_chrome() {
     let mut mux = single_pane_tab_mux();
     mux.pointer_shapes_supported = true;
-    drop(mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw));
+    drop(compose_after(&mut mux, FullRedrawReason::ExplicitRedraw));
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
     let tab_col = mux
         .status_bar
         .tab_regions
@@ -2655,14 +2881,15 @@ fn pointer_shape_updates_for_clickable_top_chrome() {
         .expect("tab region should render");
 
     mux.update_pointer_shape_for_mouse(0, tab_col, SGR_NO_BUTTON_MOTION);
+    mux.client.flush_out_of_band();
     let tab_shape = rx.try_recv().expect("tab pointer-shape update");
     assert!(tab_shape.ends_with(b"\x1b]22;pointer\x1b\\"));
 
     let mut mux = single_pane_tab_mux();
     mux.pointer_shapes_supported = true;
-    drop(mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw));
+    drop(compose_after(&mut mux, FullRedrawReason::ExplicitRedraw));
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
     let menu_col = mux
         .status_bar
         .hint_region
@@ -2670,6 +2897,7 @@ fn pointer_shape_updates_for_clickable_top_chrome() {
         .expect("menu region should render");
 
     mux.update_pointer_shape_for_mouse(0, menu_col, SGR_NO_BUTTON_MOTION);
+    mux.client.flush_out_of_band();
     let menu_shape = rx.try_recv().expect("menu pointer-shape update");
     assert!(menu_shape.ends_with(b"\x1b]22;pointer\x1b\\"));
 }
@@ -2681,7 +2909,7 @@ fn pointer_shape_updates_for_clickable_dialog_copy_target() {
     mux.status_bar.identity_label = "jk-test-container".to_owned();
     mux.open_container_info_dialog();
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
     let dialog = mux.dialog_top().expect("container info dialog should open");
     let (row, col, _, _) = dialog.box_rect(mux.term_rows, mux.term_cols);
 
@@ -2691,6 +2919,7 @@ fn pointer_shape_updates_for_clickable_dialog_copy_target() {
         col.saturating_add(22),
         SGR_NO_BUTTON_MOTION,
     );
+    mux.client.flush_out_of_band();
     let shape = rx.try_recv().expect("dialog pointer-shape update");
     assert!(shape.ends_with(b"\x1b]22;pointer\x1b\\"));
 }
@@ -2700,9 +2929,9 @@ fn dialog_copy_hover_uses_overlay_frame_without_screen_erase() {
     let mut mux = single_pane_tab_mux_with_size(32, 100);
     mux.pointer_shapes_supported = false;
     mux.status_bar.identity_label = "jk-test-container".to_owned();
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
     drop(
-        mux.apply_action(Action::OpenContainerInfo)
+        apply_action_frame(&mut mux, Action::OpenContainerInfo)
             .expect("debug info dialog should render an overlay frame"),
     );
 
@@ -2723,22 +2952,15 @@ fn dialog_copy_hover_uses_overlay_frame_without_screen_erase() {
             .expect("debug info dialog should expose a copyable value")
     };
 
-    let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
-    mux.apply_action(Action::MouseChromeUpdate {
-        row: hover_row,
-        col: hover_col,
-        button: SGR_NO_BUTTON_MOTION,
-    });
-
-    let mut frame = Vec::new();
-    while let Ok(output) = rx.try_recv() {
-        frame.extend_from_slice(&output);
-    }
-    assert!(
-        !frame.is_empty(),
-        "dialog copy hover should repaint the hovered row"
-    );
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::MouseChromeUpdate {
+            row: hover_row,
+            col: hover_col,
+            button: SGR_NO_BUTTON_MOTION,
+        },
+    )
+    .expect("dialog copy hover should repaint the hovered row");
     assert!(
         !frame_contains_screen_erase(&frame),
         "dialog copy hover must not clear the full screen: {:?}",
@@ -2753,13 +2975,15 @@ fn wheel_scrolls_container_info_dialog_horizontally() {
         "jk-test-container-with-long-debug-value-that-overflows-dialog-width".to_owned();
     mux.open_container_info_dialog();
 
-    let frame = mux
-        .apply_action(Action::Wheel {
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::Wheel {
             row: 10,
             col: 10,
             button: 67,
-        })
-        .expect("horizontal wheel over debug dialog should redraw");
+        },
+    )
+    .expect("horizontal wheel over debug dialog should redraw");
 
     assert!(!frame.is_empty());
     let Some(Dialog::ContainerInfo { scroll, .. }) = mux.dialog_top() else {
@@ -2777,13 +3001,18 @@ fn wheel_on_container_info_unsupported_axis_does_not_scroll() {
     mux.status_bar.identity_label = "jk-test-container".to_owned();
     mux.open_container_info_dialog();
 
-    let frame = mux.apply_action(Action::Wheel {
-        row: 10,
-        col: 10,
-        button: 65,
-    });
+    // The hover pass may invalidate (first pointer position over the
+    // dialog), so assert on the scroll state — the wheel on an
+    // unsupported axis must not move the body.
+    drop(apply_action_frame(
+        &mut mux,
+        Action::Wheel {
+            row: 10,
+            col: 10,
+            button: 65,
+        },
+    ));
 
-    assert!(frame.is_none());
     let Some(Dialog::ContainerInfo { scroll, .. }) = mux.dialog_top() else {
         panic!("container info dialog should remain open");
     };
@@ -2799,7 +3028,7 @@ fn bottom_container_click_opens_container_info_without_copying() {
     mux.status_bar.role = "the-architect".to_owned();
     mux.pull_request_context_branch = Some(branch("feature/context"));
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
     let hit = branch_context_bar_layout(
         mux.term_rows,
         mux.term_cols,
@@ -2811,13 +3040,16 @@ fn bottom_container_click_opens_container_info_without_copying() {
     .and_then(|layout| layout.container_region)
     .expect("container should fit");
 
-    let frame = mux
-        .handle_input(InputEvent::MousePress {
-            row: mux.term_rows - 1,
+    let press_row = mux.term_rows - 1;
+    let frame = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: press_row,
             col: hit.start - 1,
             button: 0,
-        })
-        .expect("container click should redraw");
+        },
+    )
+    .expect("container click should redraw");
 
     while let Ok(output) = rx.try_recv() {
         assert!(
@@ -2858,23 +3090,22 @@ fn bottom_context_click_opens_github_context_dialog() {
     .and_then(|layout| layout.left_region)
     .expect("GitHub context should fit");
 
-    let frame = mux
-        .handle_input(InputEvent::MousePress {
-            row: mux.term_rows - 1,
+    let press_row = mux.term_rows - 1;
+    let frame = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: press_row,
             col: hit.start - 1,
             button: 0,
-        })
-        .expect("context click should redraw");
+        },
+    )
+    .expect("context click should redraw");
 
     let rendered = String::from_utf8_lossy(&frame);
     assert!(rendered.contains("GitHub context"));
     assert!(
         rendered.contains("copy GitHub URL"),
-        "dialog hint must render above the bottom branch/context bar: {rendered:?}"
-    );
-    assert!(
-        rendered.rfind("copy GitHub URL") > rendered.rfind("test"),
-        "dialog footer should be painted after the bottom branch/context bar so it clears its own rows: {rendered:?}"
+        "dialog hint must render with the dialog chrome: {rendered:?}"
     );
     let hint_row = mux.term_rows - 2;
     let bottom_row = mux.term_rows;
@@ -2941,21 +3172,24 @@ fn container_info_id_click_copies_and_renders_feedback() {
         scroll: jackin_tui::components::DialogBodyScroll::new(),
     });
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
     let (box_row, box_col, _, _) = mux
         .dialog_top()
         .expect("container info dialog should be open")
         .box_rect(mux.term_rows, mux.term_cols);
 
-    let frame = mux
-        .handle_input(InputEvent::MousePress {
+    let frame = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
             row: box_row + 1,
             // Click the value column (the cyan link), past the widest label.
             col: box_col + 22,
             button: 0,
-        })
-        .expect("container id click should redraw copy feedback");
+        },
+    )
+    .expect("container id click should redraw copy feedback");
 
+    mux.client.flush_out_of_band();
     let mut saw_osc52 = false;
     while let Ok(output) = rx.try_recv() {
         saw_osc52 |= output
@@ -3026,10 +3260,9 @@ fn apply_action_dismiss_closes_top_dialog() {
     let mut mux = single_pane_tab_mux();
     mux.open_command_palette();
     assert!(mux.dialog_open(), "palette should be open");
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .apply_action(Action::Dialog(DialogAction::Dismiss))
+    let frame = apply_action_frame(&mut mux, Action::Dialog(DialogAction::Dismiss))
         .expect("dialog dismiss should redraw");
 
     assert!(!mux.dialog_open(), "dismiss should close the dialog");
@@ -3044,11 +3277,10 @@ fn apply_action_dismiss_closes_top_dialog() {
 fn apply_action_open_palette_pushes_palette_dialog() {
     let mut mux = single_pane_tab_mux();
     assert!(!mux.dialog_open());
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .apply_action(Action::OpenPalette)
-        .expect("open palette should redraw");
+    let frame =
+        apply_action_frame(&mut mux, Action::OpenPalette).expect("open palette should redraw");
 
     assert!(
         matches!(mux.dialog_top(), Some(Dialog::CommandPalette { .. })),
@@ -3066,11 +3298,10 @@ fn apply_action_open_palette_closes_existing_dialog() {
     let mut mux = single_pane_tab_mux();
     mux.open_command_palette();
     assert!(mux.dialog_open());
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .apply_action(Action::OpenPalette)
-        .expect("close palette should redraw");
+    let frame =
+        apply_action_frame(&mut mux, Action::OpenPalette).expect("close palette should redraw");
 
     assert!(
         !mux.dialog_open(),
@@ -3104,10 +3335,9 @@ fn apply_action_open_container_info_pushes_dialog() {
 #[test]
 fn apply_action_open_rename_tab_pushes_dialog() {
     let mut mux = single_pane_tab_mux();
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .apply_action(Action::OpenRenameTab(0))
+    let frame = apply_action_frame(&mut mux, Action::OpenRenameTab(0))
         .expect("open rename dialog should redraw");
 
     assert!(matches!(
@@ -3125,7 +3355,7 @@ fn apply_action_open_rename_tab_pushes_dialog() {
 fn apply_action_switch_tab_moves_active_tab() {
     let mut mux = single_pane_tab_mux();
     mux.tabs.push(Tab::new_single("Shell", 2, "test"));
-    drop(mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw));
+    drop(compose_after(&mut mux, FullRedrawReason::ExplicitRedraw));
 
     mux.apply_action(Action::SwitchTab(1));
 
@@ -3136,7 +3366,7 @@ fn apply_action_switch_tab_moves_active_tab() {
 fn apply_action_status_bar_click_switches_tab() {
     let mut mux = single_pane_tab_mux();
     mux.tabs.push(Tab::new_single("Shell", 2, "test"));
-    drop(mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw));
+    drop(compose_after(&mut mux, FullRedrawReason::ExplicitRedraw));
     let col = (1..mux.term_cols)
         .find(|col| mux.status_bar.tab_at_col(*col) == Some(1))
         .expect("second tab should have a clickable column")
@@ -3150,7 +3380,7 @@ fn apply_action_status_bar_click_switches_tab() {
 #[test]
 fn apply_action_status_bar_double_click_opens_rename() {
     let mut mux = single_pane_tab_mux();
-    drop(mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw));
+    drop(compose_after(&mut mux, FullRedrawReason::ExplicitRedraw));
     let col = (1..mux.term_cols)
         .find(|col| mux.status_bar.tab_at_col(*col) == Some(0))
         .expect("first tab should have a clickable column")
@@ -3202,10 +3432,9 @@ fn apply_action_branch_context_bar_click_opens_container_info() {
 fn apply_action_palette_new_tab_pushes_agent_picker() {
     let mut mux = single_pane_tab_mux();
     mux.open_command_palette();
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .apply_action(Action::Palette(PaletteCommand::NewTab))
+    let frame = apply_action_frame(&mut mux, Action::Palette(PaletteCommand::NewTab))
         .expect("palette new tab should redraw agent picker");
 
     assert!(matches!(mux.dialog_top(), Some(Dialog::AgentPicker { .. })));
@@ -3218,10 +3447,9 @@ fn apply_action_palette_new_tab_pushes_agent_picker() {
 #[test]
 fn apply_action_open_agent_picker_pushes_picker() {
     let mut mux = single_pane_tab_mux();
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .apply_action(Action::OpenAgentPicker(PickerIntent::NewTab))
+    let frame = apply_action_frame(&mut mux, Action::OpenAgentPicker(PickerIntent::NewTab))
         .expect("open agent picker should redraw");
 
     assert!(matches!(mux.dialog_top(), Some(Dialog::AgentPicker { .. })));
@@ -3243,10 +3471,9 @@ fn apply_action_detach_sets_detach_request() {
 #[test]
 fn prefix_new_tab_routes_through_action_picker() {
     let mut mux = single_pane_tab_mux();
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .handle_prefix_command(PrefixCommand::NewTab)
+    let frame = prefix_command_frame(&mut mux, PrefixCommand::NewTab)
         .expect("prefix new-tab should redraw agent picker");
 
     assert!(matches!(mux.dialog_top(), Some(Dialog::AgentPicker { .. })));
@@ -3259,10 +3486,9 @@ fn prefix_new_tab_routes_through_action_picker() {
 #[test]
 fn prefix_palette_uses_overlay_frame_without_screen_erase() {
     let mut mux = single_pane_tab_mux();
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .handle_prefix_command(PrefixCommand::Palette)
+    let frame = prefix_command_frame(&mut mux, PrefixCommand::Palette)
         .expect("prefix palette should redraw command palette");
 
     assert!(matches!(
@@ -3278,10 +3504,9 @@ fn prefix_palette_uses_overlay_frame_without_screen_erase() {
 #[test]
 fn prefix_move_focus_uses_diff_frame_without_screen_erase() {
     let mut mux = split_tab_mux();
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .handle_prefix_command(PrefixCommand::MoveFocus(ArrowDir::Right))
+    let frame = prefix_command_frame(&mut mux, PrefixCommand::MoveFocus(ArrowDir::Right))
         .expect("prefix focus move should redraw");
 
     assert_eq!(mux.tabs[mux.active_tab].focused_id, 2);
@@ -3296,10 +3521,9 @@ fn prefix_clear_pane_uses_diff_frame_without_screen_erase() {
     let mut mux = single_pane_tab_mux();
     let (session, mut input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .handle_prefix_command(PrefixCommand::ClearPane)
+    let frame = prefix_command_frame(&mut mux, PrefixCommand::ClearPane)
         .expect("prefix clear-pane should redraw");
 
     assert_eq!(
@@ -3315,24 +3539,25 @@ fn prefix_clear_pane_uses_diff_frame_without_screen_erase() {
 }
 
 #[test]
-fn prefix_redraw_stays_explicit_full_screen_erase() {
+fn prefix_redraw_repaints_in_place_without_screen_erase() {
+    // The explicit-redraw chord re-emits every cell through the sentinel
+    // baseline; under the wipe policy (I4) only FirstAttach/Resize erase.
     let mut mux = single_pane_tab_mux();
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .handle_prefix_command(PrefixCommand::Redraw)
-        .expect("prefix redraw should emit explicit redraw frame");
+    let frame = prefix_command_frame(&mut mux, PrefixCommand::Redraw)
+        .expect("prefix redraw should emit a repaint frame");
 
     assert!(
-        frame_contains_screen_erase(&frame),
-        "prefix redraw intentionally stays in the clear-tier"
+        !frame_contains_screen_erase(&frame),
+        "prefix redraw repaints in place under the wipe policy (no 2J)"
     );
 }
 
 #[test]
 fn apply_action_focus_pane_at_changes_focus() {
     let mut mux = split_tab_mux();
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
     let target = mux
         .visible_panes()
         .into_iter()
@@ -3340,12 +3565,14 @@ fn apply_action_focus_pane_at_changes_focus() {
         .expect("second pane should be visible")
         .inner;
 
-    let frame = mux
-        .apply_action(Action::FocusPaneAt {
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::FocusPaneAt {
             row: target.row,
             col: target.col,
-        })
-        .expect("focus change should redraw");
+        },
+    )
+    .expect("focus change should redraw");
 
     assert_eq!(mux.tabs[mux.active_tab].focused_id, 2);
     assert!(!frame.is_empty(), "focus redraw frame should be emitted");
@@ -3358,10 +3585,9 @@ fn apply_action_focus_pane_at_changes_focus() {
 #[test]
 fn apply_action_move_focus_uses_diff_frame_without_screen_erase() {
     let mut mux = split_tab_mux();
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .apply_action(Action::MoveFocus(ArrowDir::Right))
+    let frame = apply_action_frame(&mut mux, Action::MoveFocus(ArrowDir::Right))
         .expect("keyboard focus move should redraw");
 
     assert_eq!(mux.tabs[mux.active_tab].focused_id, 2);
@@ -3377,11 +3603,10 @@ fn apply_action_clear_focused_pane_uses_diff_frame_without_screen_erase() {
     let mut mux = single_pane_tab_mux();
     let (session, mut input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .apply_action(Action::ClearFocusedPane)
-        .expect("clear pane should redraw");
+    let frame =
+        apply_action_frame(&mut mux, Action::ClearFocusedPane).expect("clear pane should redraw");
 
     assert_eq!(
         input_rx.try_recv().expect("clear pane should send Ctrl+L"),
@@ -3403,10 +3628,9 @@ fn palette_clear_pane_uses_diff_frame_without_screen_erase() {
     let (session, mut input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
     mux.open_command_palette();
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .apply_action(Action::Palette(PaletteCommand::ClearPane))
+    let frame = apply_action_frame(&mut mux, Action::Palette(PaletteCommand::ClearPane))
         .expect("palette clear pane should redraw");
 
     assert!(!mux.dialog_open(), "palette clear pane should close dialog");
@@ -3431,12 +3655,15 @@ fn apply_action_forward_mouse_sends_to_focused_pane() {
     session.feed_pty(b"\x1b[?1003h\x1b[?1006h");
     mux.sessions.insert(1, session);
 
-    let frame = mux.apply_action(Action::ForwardMouse {
-        row: STATUS_BAR_ROWS + 1,
-        col: 1,
-        button: 0,
-        press: true,
-    });
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::ForwardMouse {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+            button: 0,
+            press: true,
+        },
+    );
 
     assert!(frame.is_none(), "PTY mouse forward should not redraw");
     assert_eq!(
@@ -3450,11 +3677,10 @@ fn apply_action_dialog_consume_keeps_dialog_open() {
     let mut mux = single_pane_tab_mux();
     mux.open_command_palette();
     assert!(mux.dialog_open());
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
     // Consume should leave the dialog open (key was absorbed, no state change).
-    let frame = mux
-        .apply_action(Action::Dialog(DialogAction::Consume))
+    let frame = apply_action_frame(&mut mux, Action::Dialog(DialogAction::Consume))
         .expect("dialog consume should redraw");
 
     assert!(mux.dialog_open(), "Consume must not close the dialog");
@@ -3474,14 +3700,16 @@ fn apply_dialog_spawn_agent_provider_picker_uses_overlay_frame_without_screen_er
     mux.provider_keys
         .insert(jackin_protocol::Provider::Zai, "zai-test-token".to_owned());
     mux.open_command_palette();
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .apply_action(Action::Dialog(DialogAction::SpawnAgent {
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::Dialog(DialogAction::SpawnAgent {
             agent: Some("claude".to_owned()),
             intent: PickerIntent::NewTab,
-        }))
-        .expect("provider picker should redraw");
+        }),
+    )
+    .expect("provider picker should redraw");
 
     assert!(matches!(
         mux.dialog_top(),
@@ -3495,6 +3723,139 @@ fn apply_dialog_spawn_agent_provider_picker_uses_overlay_frame_without_screen_er
     assert!(
         !frame_contains_screen_erase(&frame),
         "provider picker must not clear the full terminal screen"
+    );
+}
+
+#[test]
+fn provider_spawn_env_injects_codex_profile_only_for_codex_with_key() {
+    let mut mux = test_mux(24, 80);
+    mux.provider_keys
+        .insert(jackin_protocol::Provider::Minimax, "mk".to_owned());
+
+    // codex + MiniMax + resolved key → activate the v2 profile.
+    let env = mux.provider_spawn_env("codex", jackin_protocol::Provider::Minimax);
+    assert!(
+        env.iter()
+            .any(|(k, v)| k == "JACKIN_CODEX_PROFILE" && v == "minimax"),
+        "codex+MiniMax with a key must activate the minimax profile"
+    );
+
+    // codex + OpenAI (native, no codex_profile) → no profile env.
+    let env = mux.provider_spawn_env("codex", jackin_protocol::Provider::Openai);
+    assert!(
+        !env.iter().any(|(k, _)| k == "JACKIN_CODEX_PROFILE"),
+        "native OpenAI must not set a Codex profile"
+    );
+
+    // claude + MiniMax → slug guard suppresses the Codex profile.
+    let env = mux.provider_spawn_env("claude", jackin_protocol::Provider::Minimax);
+    assert!(
+        !env.iter().any(|(k, _)| k == "JACKIN_CODEX_PROFILE"),
+        "non-codex agents must not set a Codex profile"
+    );
+}
+
+#[test]
+fn launch_model_uses_picked_provider_for_opencode() {
+    // OpenCode has no model of its own: the picked provider supplies the `-m`
+    // model. test_mux has no role-manifest model, so a wrong wiring shows as None.
+    let mux = test_mux(24, 80);
+    assert_eq!(
+        mux.launch_model("opencode", Some("MiniMax")),
+        Some("minimax/MiniMax-M3")
+    );
+    assert_eq!(
+        mux.launch_model("opencode", Some("Z.AI")),
+        Some("zai/glm-5.1")
+    );
+    assert_eq!(
+        mux.launch_model("opencode", Some("Kimi")),
+        Some("kimi/kimi-for-coding")
+    );
+    // Non-opencode agents ignore the provider for model selection (auth env only).
+    assert_eq!(mux.launch_model("codex", Some("MiniMax")), None);
+    // A provider with no opencode model falls back to the role-manifest model.
+    assert_eq!(mux.launch_model("opencode", Some("Anthropic")), None);
+}
+
+#[test]
+fn launch_model_prefers_manifest_provider_override_for_opencode() {
+    let mut mux = test_mux(24, 80);
+    mux.launch_config.provider_models.insert(
+        "opencode".to_owned(),
+        BTreeMap::from([("minimax".to_owned(), "minimax/custom".to_owned())]),
+    );
+    // The role's [opencode.providers.minimax].model override beats the built-in default.
+    assert_eq!(
+        mux.launch_model("opencode", Some("MiniMax")),
+        Some("minimax/custom")
+    );
+    // A provider with no override still uses the built-in default.
+    assert_eq!(
+        mux.launch_model("opencode", Some("Z.AI")),
+        Some("zai/glm-5.1")
+    );
+}
+
+#[test]
+fn provider_spawn_env_applies_claude_manifest_model_override() {
+    let mut mux = test_mux(24, 80);
+    mux.provider_keys
+        .insert(jackin_protocol::Provider::Minimax, "mk".to_owned());
+    mux.launch_config.provider_models.insert(
+        "claude".to_owned(),
+        BTreeMap::from([("minimax".to_owned(), "MiniMax-Pro".to_owned())]),
+    );
+    let env = mux.provider_spawn_env("claude", jackin_protocol::Provider::Minimax);
+    let model_vars: Vec<_> = env
+        .iter()
+        .filter(|(k, _)| k.starts_with("ANTHROPIC_DEFAULT_") && k.ends_with("_MODEL"))
+        .collect();
+    assert!(
+        !model_vars.is_empty(),
+        "claude+MiniMax must set ANTHROPIC_DEFAULT_*_MODEL"
+    );
+    for (key, value) in model_vars {
+        assert_eq!(
+            value, "MiniMax-Pro",
+            "{key} must carry the manifest override"
+        );
+    }
+}
+
+#[test]
+fn provider_spawn_env_skips_codex_profile_when_key_unresolved() {
+    // No MiniMax key captured → token unresolved. runtime-setup only writes the
+    // profile file when the key is present, so the flag must NOT be pushed:
+    // forcing `codex --profile minimax` against a missing file would hard-fail
+    // instead of falling back to native auth.
+    let mut mux = test_mux(24, 80);
+    // Multiplexer::new seeds provider_keys from the ambient env; drop the
+    // MiniMax key so the "unresolved" case holds regardless of MINIMAX_API_KEY.
+    mux.provider_keys
+        .remove(&jackin_protocol::Provider::Minimax);
+    let env = mux.provider_spawn_env("codex", jackin_protocol::Provider::Minimax);
+    assert!(
+        !env.iter().any(|(k, _)| k == "JACKIN_CODEX_PROFILE"),
+        "without a resolved key, codex must fall back to native auth, not force --profile"
+    );
+}
+
+#[test]
+fn env_for_spawn_keeps_allowlisted_drops_unknown() {
+    let mux = test_mux(24, 80);
+    let env = mux.env_for_spawn(&[
+        ("JACKIN_CODEX_PROFILE".to_owned(), "minimax".to_owned()),
+        ("TOTALLY_NOT_ALLOWLISTED".to_owned(), "x".to_owned()),
+    ]);
+    assert!(
+        env.iter()
+            .any(|(k, v)| k == "JACKIN_CODEX_PROFILE" && v == "minimax"),
+        "JACKIN_CODEX_PROFILE must survive the passthrough allowlist"
+    );
+    assert!(
+        !env.iter().any(|(k, _)| k == "TOTALLY_NOT_ALLOWLISTED"),
+        "non-allowlisted keys must be dropped"
     );
 }
 
@@ -3525,9 +3886,9 @@ fn apply_action_focus_report_does_not_open_dialog() {
 fn apply_action_mouse_chrome_update_sets_pointer_shape() {
     let mut mux = single_pane_tab_mux();
     mux.pointer_shapes_supported = true;
-    drop(mux.compose_full_redraw(FullRedrawReason::ExplicitRedraw));
+    drop(compose_after(&mut mux, FullRedrawReason::ExplicitRedraw));
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
     let tab_col = mux
         .status_bar
         .tab_regions
@@ -3541,6 +3902,7 @@ fn apply_action_mouse_chrome_update_sets_pointer_shape() {
         button: SGR_NO_BUTTON_MOTION,
     });
 
+    mux.client.flush_out_of_band();
     let mut outputs = Vec::new();
     while let Ok(output) = rx.try_recv() {
         outputs.push(output);
@@ -3570,21 +3932,23 @@ fn apply_action_wheel_scrolls_scrollback() {
         session.feed_pty(format!("line {i}\r\n").as_bytes());
     }
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .apply_action(Action::Wheel {
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::Wheel {
             row: STATUS_BAR_ROWS + 1,
             col: 1,
             button: 64,
-        })
-        .expect("wheel over retained scrollback should redraw");
+        },
+    )
+    .expect("wheel over retained scrollback should redraw");
 
     assert!(
         input_rx.try_recv().is_err(),
         "mouse-disabled pane must not receive raw wheel bytes"
     );
-    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 3);
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
     assert!(
         !frame.is_empty(),
         "scrollback redraw frame should be emitted"
@@ -3603,16 +3967,15 @@ fn typed_input_snaps_scrollback_to_live_without_screen_erase() {
         session.feed_pty(format!("line {i}\r\n").as_bytes());
     }
     session.scroll_by(3);
-    assert_eq!(session.scrollback_offset, 3);
+    assert_eq!(session.scrollback_offset(), 3);
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .apply_action(Action::PaneData(b"x".to_vec()))
+    let frame = apply_action_frame(&mut mux, Action::PaneData(b"x".to_vec()))
         .expect("typing while viewing scrollback should snap to live and repaint");
 
     assert_eq!(
-        mux.sessions.get(&1).unwrap().scrollback_offset,
+        mux.sessions.get(&1).unwrap().scrollback_offset(),
         0,
         "typing should return the pane to the live tail"
     );
@@ -3640,11 +4003,14 @@ fn apply_action_wheel_noops_at_scrollback_boundary() {
 
     let mut last = Some(Vec::new());
     for _ in 0..(filled + 2) {
-        last = mux.apply_action(Action::Wheel {
-            row: STATUS_BAR_ROWS + 1,
-            col: 1,
-            button: 64,
-        });
+        last = apply_action_frame(
+            &mut mux,
+            Action::Wheel {
+                row: STATUS_BAR_ROWS + 1,
+                col: 1,
+                button: 64,
+            },
+        );
         if last.is_none() {
             break;
         }
@@ -3654,7 +4020,7 @@ fn apply_action_wheel_noops_at_scrollback_boundary() {
         input_rx.try_recv().is_err(),
         "mouse-disabled pane must not receive raw wheel bytes"
     );
-    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, filled);
+    assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), filled);
     assert!(
         last.is_none(),
         "wheel event at max scrollback offset should not redraw"
@@ -3671,8 +4037,7 @@ fn apply_action_end_drag_resize_clears_drag_state() {
         rect: Rect::new(STATUS_BAR_ROWS, 0, mux.content_rows, mux.term_cols),
     });
 
-    let frame = mux
-        .apply_action(Action::EndDragResize)
+    let frame = apply_action_frame(&mut mux, Action::EndDragResize)
         .expect("ending drag should redraw layout");
 
     assert!(mux.drag.is_none(), "drag state should be cleared");
@@ -3689,13 +4054,15 @@ fn apply_action_mouse_release_ends_drag_resize() {
         rect: Rect::new(STATUS_BAR_ROWS, 0, mux.content_rows, mux.term_cols),
     });
 
-    let frame = mux
-        .apply_action(Action::MouseRelease {
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::MouseRelease {
             row: STATUS_BAR_ROWS,
             col: 1,
             button: 0,
-        })
-        .expect("left-button release should redraw layout after drag");
+        },
+    )
+    .expect("left-button release should redraw layout after drag");
 
     assert!(mux.drag.is_none(), "drag state should be cleared");
     assert!(!frame.is_empty(), "layout redraw frame should be emitted");
@@ -3709,7 +4076,7 @@ fn apply_action_start_drag_resize_sets_drag_state() {
         .find(|(row, col)| mux.detect_drag_start(*row, *col).is_some())
         .expect("split tab should expose a draggable border");
 
-    let frame = mux.apply_action(Action::StartDragResize { row, col });
+    let frame = apply_action_frame(&mut mux, Action::StartDragResize { row, col });
 
     assert!(frame.is_none(), "drag start should not redraw yet");
     assert!(mux.drag.is_some(), "drag state should be active");
@@ -3723,7 +4090,7 @@ fn apply_action_pane_primary_press_starts_drag_on_border() {
         .find(|(row, col)| mux.detect_drag_start(*row, *col).is_some())
         .expect("split tab should expose a draggable border");
 
-    let frame = mux.apply_action(Action::PanePrimaryPress { row, col });
+    let frame = apply_action_frame(&mut mux, Action::PanePrimaryPress { row, col });
 
     assert!(frame.is_none(), "drag start should not redraw yet");
     assert!(mux.drag.is_some(), "drag state should be active");
@@ -3734,12 +4101,15 @@ fn apply_action_pane_primary_press_only_arms_selection_for_shell() {
     let mut mux = single_pane_tab_mux();
     let (session, mut input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux.apply_action(Action::PanePrimaryPress {
-        row: STATUS_BAR_ROWS + 1,
-        col: 1,
-    });
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress {
+            row: STATUS_BAR_ROWS + 1,
+            col: 1,
+        },
+    );
 
     assert!(
         input_rx.try_recv().is_err(),
@@ -3761,23 +4131,28 @@ fn pane_button_motion_promotes_pending_selection() {
     let mut mux = single_pane_tab_mux();
     let (session, _input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
     let press_row = STATUS_BAR_ROWS + 1;
     let press_col = 1;
     assert!(
-        mux.apply_action(Action::PanePrimaryPress {
-            row: press_row,
-            col: press_col,
-        })
+        apply_action_frame(
+            &mut mux,
+            Action::PanePrimaryPress {
+                row: press_row,
+                col: press_col,
+            }
+        )
         .is_none()
     );
 
-    let frame = mux
-        .apply_action(Action::PaneButtonMotion {
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::PaneButtonMotion {
             row: press_row + 1,
             col: press_col + 2,
-        })
-        .expect("drag motion should promote pending selection and repaint");
+        },
+    )
+    .expect("drag motion should promote pending selection and repaint");
 
     assert!(mux.pending_selection.is_none());
     let selection = mux
@@ -3800,19 +4175,19 @@ fn mouse_release_without_drag_clears_pending_selection() {
     let mut mux = single_pane_tab_mux();
     let (session, _input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
     let row = STATUS_BAR_ROWS + 1;
     let col = 1;
-    assert!(
-        mux.apply_action(Action::PanePrimaryPress { row, col })
-            .is_none()
-    );
+    assert!(apply_action_frame(&mut mux, Action::PanePrimaryPress { row, col }).is_none());
 
-    let frame = mux.apply_action(Action::MouseRelease {
-        row,
-        col,
-        button: 0,
-    });
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::MouseRelease {
+            row,
+            col,
+            button: 0,
+        },
+    );
 
     assert!(frame.is_none(), "plain click release should not repaint");
     assert!(mux.pending_selection.is_none());
@@ -3827,14 +4202,16 @@ fn apply_action_start_selection_sets_selection_state() {
     let mut mux = single_pane_tab_mux();
     let (session, _input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux
-        .apply_action(Action::StartSelection {
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::StartSelection {
             row: STATUS_BAR_ROWS + 1,
             col: 1,
-        })
-        .expect("selection start should repaint");
+        },
+    )
+    .expect("selection start should repaint");
 
     let selection = mux.selection.expect("selection should be active");
     assert_eq!((selection.anchor_row, selection.anchor_col), (0, 0));
@@ -3853,7 +4230,7 @@ fn apply_action_selection_motion_updates_selection() {
     let mut mux = single_pane_tab_mux();
     let (session, _input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
     let inner = Rect::new(STATUS_BAR_ROWS + 1, 1, 10, 20);
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -3864,12 +4241,14 @@ fn apply_action_selection_motion_updates_selection() {
         end_col: 0,
     });
 
-    let frame = mux
-        .apply_action(Action::SelectionMotion {
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::SelectionMotion {
             row: inner.row + 2,
             col: inner.col + 3,
-        })
-        .expect("selection motion should redraw");
+        },
+    )
+    .expect("selection motion should redraw");
 
     let selection = mux.selection.expect("selection should remain active");
     assert_eq!((selection.end_row, selection.end_col), (2, 3));
@@ -3892,7 +4271,7 @@ fn selection_motion_above_pane_scrolls_into_history() {
     }
     assert!(session.scrollback_filled() > 0);
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
     let inner = mux.visible_panes()[0].inner;
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -3903,15 +4282,17 @@ fn selection_motion_above_pane_scrolls_into_history() {
         end_col: 0,
     });
 
-    let frame = mux
-        .apply_action(Action::SelectionMotion {
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::SelectionMotion {
             row: inner.row.saturating_sub(1),
             col: inner.col,
-        })
-        .expect("selection auto-scroll should repaint");
+        },
+    )
+    .expect("selection auto-scroll should repaint");
 
     assert_eq!(
-        mux.sessions.get(&1).unwrap().scrollback_offset,
+        mux.sessions.get(&1).unwrap().scrollback_offset(),
         1,
         "dragging above pane should move selection into retained history"
     );
@@ -3925,7 +4306,7 @@ fn selection_motion_above_pane_scrolls_into_history() {
         selection.end_row,
         session
             .scrollback_filled()
-            .saturating_sub(session.scrollback_offset),
+            .saturating_sub(session.scrollback_offset()),
         "selection end should clamp to the top visible content row"
     );
 }
@@ -3939,11 +4320,12 @@ fn selection_motion_below_pane_scrolls_toward_live_tail() {
     }
     session.scroll_by(4);
     assert_eq!(
-        session.scrollback_offset, 4,
+        session.scrollback_offset(),
+        4,
         "test setup should start away from the live tail"
     );
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
     let inner = mux.visible_panes()[0].inner;
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -3954,15 +4336,17 @@ fn selection_motion_below_pane_scrolls_toward_live_tail() {
         end_col: 0,
     });
 
-    let frame = mux
-        .apply_action(Action::SelectionMotion {
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::SelectionMotion {
             row: inner.row.saturating_add(inner.rows),
             col: inner.col,
-        })
-        .expect("selection auto-scroll should repaint");
+        },
+    )
+    .expect("selection auto-scroll should repaint");
 
     assert_eq!(
-        mux.sessions.get(&1).unwrap().scrollback_offset,
+        mux.sessions.get(&1).unwrap().scrollback_offset(),
         3,
         "dragging below pane should move selection toward the live tail"
     );
@@ -3973,7 +4357,7 @@ fn selection_motion_below_pane_scrolls_toward_live_tail() {
     let selection = mux.selection.expect("selection should remain active");
     let session = mux.sessions.get(&1).unwrap();
     let prefix = session
-        .scrollback_offset
+        .scrollback_offset()
         .min(session.scrollback_filled())
         .min(inner.rows as usize);
     assert_eq!(
@@ -3991,7 +4375,7 @@ fn apply_action_pane_button_motion_updates_selection() {
     let mut mux = single_pane_tab_mux();
     let (session, _input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
     let inner = Rect::new(STATUS_BAR_ROWS + 1, 1, 10, 20);
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -4002,12 +4386,14 @@ fn apply_action_pane_button_motion_updates_selection() {
         end_col: 0,
     });
 
-    let frame = mux
-        .apply_action(Action::PaneButtonMotion {
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::PaneButtonMotion {
             row: inner.row + 2,
             col: inner.col + 3,
-        })
-        .expect("button motion should repaint active selection");
+        },
+    )
+    .expect("button motion should repaint active selection");
 
     let selection = mux.selection.expect("selection should remain active");
     assert_eq!((selection.end_row, selection.end_col), (2, 3));
@@ -4027,7 +4413,7 @@ fn finalize_selection_keeps_highlight_and_shows_copied_toast() {
     let (mut session, _input_rx) = test_shell_session(20, 78);
     session.feed_pty(b"copy this text");
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
     let inner = mux.visible_panes()[0].inner;
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -4038,10 +4424,9 @@ fn finalize_selection_keeps_highlight_and_shows_copied_toast() {
         end_col: 8,
     });
     let (tx, mut rx) = mpsc::unbounded_channel();
-    mux.attached_out = Some(tx);
+    mux.client.attach(tx);
 
-    let frame = mux
-        .apply_action(Action::FinalizeSelection)
+    let frame = apply_action_frame(&mut mux, Action::FinalizeSelection)
         .expect("finalizing dragged selection should repaint");
 
     assert!(
@@ -4053,6 +4438,7 @@ fn finalize_selection_keeps_highlight_and_shows_copied_toast() {
         mux.selection_copy_feedback_deadline.is_some(),
         "selection copied toast should expire automatically"
     );
+    mux.client.flush_out_of_band();
     let clipboard = rx.try_recv().expect("selection should write OSC 52");
     assert!(
         clipboard
@@ -4080,7 +4466,7 @@ fn selection_copy_feedback_expires_without_clearing_highlight() {
     let mut mux = single_pane_tab_mux();
     let (session, _input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
     let inner = mux.visible_panes()[0].inner;
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -4108,7 +4494,7 @@ fn click_after_copied_selection_clears_highlight() {
     let mut mux = single_pane_tab_mux();
     let (session, _input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
     let inner = mux.visible_panes()[0].inner;
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -4119,14 +4505,16 @@ fn click_after_copied_selection_clears_highlight() {
         end_col: 8,
     });
     mux.selection_copied = true;
-    drop(mux.compose_diff_frame(selection_change_redraw_reason()));
+    drop(compose_after(&mut mux, selection_change_redraw_reason()));
 
-    let frame = mux
-        .apply_action(Action::PanePrimaryPress {
+    let frame = apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress {
             row: inner.row,
             col: inner.col,
-        })
-        .expect("click should clear copied selection");
+        },
+    )
+    .expect("click should clear copied selection");
 
     assert!(mux.selection.is_none(), "click should clear selection");
     assert!(!mux.selection_copied, "click should clear copied toast");
@@ -4146,7 +4534,7 @@ fn typed_input_after_copied_selection_clears_and_forwards() {
     let mut mux = single_pane_tab_mux();
     let (session, mut input_rx) = test_shell_session(20, 78);
     mux.sessions.insert(1, session);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
     let inner = mux.visible_panes()[0].inner;
     mux.selection = Some(SelectionState {
         session_id: 1,
@@ -4158,8 +4546,7 @@ fn typed_input_after_copied_selection_clears_and_forwards() {
     });
     mux.selection_copied = true;
 
-    let frame = mux
-        .apply_action(Action::PaneData(b"x".to_vec()))
+    let frame = apply_action_frame(&mut mux, Action::PaneData(b"x".to_vec()))
         .expect("typing should clear copied selection and repaint");
 
     assert!(mux.selection.is_none(), "typing should clear selection");
@@ -4177,15 +4564,331 @@ fn typed_input_after_copied_selection_clears_and_forwards() {
 }
 
 #[test]
-fn split_close_frame_contains_screen_erase() {
-    // Regression for Defect 29: pane/tab close reflows the layout, so the full
-    // frame must wipe (\x1b[2J) and repaint to flush cells from the removed pane.
+fn split_close_frame_repaints_in_place_without_screen_erase() {
+    // Defect 29 is covered by the sentinel baseline now: a layout reflow
+    // re-emits every cell of the new layout in place, so cells from the
+    // removed pane are overwritten without flashing the screen blank (I4).
     let mut mux = single_pane_tab_mux_with_size(24, 80);
-    drop(mux.compose_full_redraw(FullRedrawReason::FirstAttach));
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
-    let frame = mux.compose_full_redraw(FullRedrawReason::SplitClose);
+    let frame = compose_after(&mut mux, FullRedrawReason::SplitClose);
     assert!(
-        frame.windows(4).any(|w| w == b"\x1b[2J"),
-        "SplitClose frame must include \\x1b[2J to flush stale cells"
+        !frame.windows(4).any(|w| w == b"\x1b[2J"),
+        "SplitClose must repaint in place under the wipe policy (no 2J)"
     );
+}
+
+#[test]
+fn double_click_selects_word_and_copies_once() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"see /model to change");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+    let inner = mux.visible_panes()[0].inner;
+    // Cell (0, 6) sits inside "/model" (content columns 4..=9).
+    let row = inner.row;
+    let col = inner.col + 6;
+
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    assert!(
+        mux.selection.is_none(),
+        "first press must stay a plain click"
+    );
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+
+    let sel = mux.selection.expect("double-click selects the word");
+    assert_eq!(
+        (sel.anchor_row, sel.anchor_col, sel.end_row, sel.end_col),
+        (0, 4, 0, 9),
+        "selection must cover exactly /model"
+    );
+    assert!(mux.selection_copied, "word selection copies immediately");
+    mux.client.flush_out_of_band();
+    let clipboard = rx.try_recv().expect("word selection writes OSC 52");
+    let needle = crate::tui::view::encode_osc52_clipboard_write("/model");
+    assert!(
+        clipboard
+            .windows(needle.len())
+            .any(|w| w == needle.as_slice()),
+        "clipboard write must carry the bare word: {:?}",
+        String::from_utf8_lossy(&clipboard)
+    );
+
+    // The release that ends the double-click must not copy again or drop
+    // the highlight.
+    drop(apply_action_frame(
+        &mut mux,
+        Action::MouseRelease {
+            row,
+            col,
+            button: 0,
+        },
+    ));
+    assert!(
+        mux.selection.is_some(),
+        "word selection stays highlighted after release"
+    );
+    mux.client.flush_out_of_band();
+    assert!(
+        rx.try_recv().is_err(),
+        "release after a word click must not write the clipboard twice"
+    );
+}
+
+#[test]
+fn double_click_window_requires_same_cell_within_500ms() {
+    use std::time::{Duration, Instant};
+
+    use super::mouse_input::{PanePress, is_double_click};
+
+    let base = Instant::now();
+    let press = |session_id, content_row, col, at| PanePress {
+        session_id,
+        content_row,
+        col,
+        at,
+    };
+    let first = press(1, 4, 7, base);
+    let quick = press(1, 4, 7, base + Duration::from_millis(100));
+    let slow = press(1, 4, 7, base + Duration::from_millis(900));
+    let other_col = press(1, 4, 8, base + Duration::from_millis(100));
+    let other_row = press(1, 5, 7, base + Duration::from_millis(100));
+    let other_session = press(2, 4, 7, base + Duration::from_millis(100));
+
+    assert!(is_double_click(&first, &quick));
+    assert!(!is_double_click(&first, &slow), "outside the 500 ms window");
+    assert!(!is_double_click(&first, &other_col));
+    assert!(!is_double_click(&first, &other_row));
+    assert!(!is_double_click(&first, &other_session));
+}
+
+/// Attach a client channel and drain everything queued so far, returning a
+/// receiver that only sees what the test triggers next.
+fn attach_drained_client(mux: &mut Multiplexer) -> mpsc::UnboundedReceiver<Vec<u8>> {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+    mux.client.flush_out_of_band();
+    while rx.try_recv().is_ok() {}
+    rx
+}
+
+fn osc52_payloads(rx: &mut mpsc::UnboundedReceiver<Vec<u8>>) -> Vec<Vec<u8>> {
+    let mut found = Vec::new();
+    while let Ok(bytes) = rx.try_recv() {
+        let mut rest = bytes.as_slice();
+        while let Some(start) = rest
+            .windows(b"\x1b]52;c;".len())
+            .position(|w| w == b"\x1b]52;c;")
+        {
+            let after = &rest[start + 7..];
+            let end = after.iter().position(|&b| b == 0x07).unwrap_or(after.len());
+            found.push(after[..end].to_vec());
+            rest = &after[end..];
+        }
+    }
+    found
+}
+
+fn expected_osc52_payload(text: &str) -> Vec<u8> {
+    let encoded = crate::tui::view::encode_osc52_clipboard_write(text);
+    // strip "\x1b]52;c;" prefix and trailing BEL
+    encoded[7..encoded.len() - 1].to_vec()
+}
+
+/// Flush pending out-of-band bytes and assert the OSC 52 writes seen so far
+/// carry exactly `expected`, in order.
+fn assert_osc52_payloads(
+    mux: &mut Multiplexer,
+    rx: &mut mpsc::UnboundedReceiver<Vec<u8>>,
+    expected: &[&str],
+) {
+    mux.client.flush_out_of_band();
+    let payloads = osc52_payloads(rx);
+    assert_eq!(payloads.len(), expected.len(), "OSC 52 write count");
+    for (payload, text) in payloads.iter().zip(expected) {
+        assert_eq!(payload, &expected_osc52_payload(text));
+    }
+}
+
+#[test]
+fn drag_extending_a_word_click_recopies_on_release() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"see /model to change");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let inner = mux.visible_panes()[0].inner;
+    let row = inner.row;
+    let col = inner.col + 6; // inside "/model"
+    let mut rx = attach_drained_client(&mut mux);
+
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    assert!(mux.selection_copied, "word click copies immediately");
+
+    // Extend the selection past the word, then release: the clipboard no
+    // longer matches the highlight, so release must copy again.
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PaneButtonMotion {
+            row,
+            col: inner.col + 13,
+        },
+    ));
+    assert!(
+        !mux.selection_copied,
+        "motion must invalidate the word-click copy"
+    );
+    drop(apply_action_frame(
+        &mut mux,
+        Action::MouseRelease {
+            row,
+            col: inner.col + 13,
+            button: 0,
+        },
+    ));
+    assert!(mux.selection_copied, "release re-copies the extended span");
+
+    assert_osc52_payloads(&mut mux, &mut rx, &["/model", "/model to"]);
+}
+
+#[test]
+fn double_click_on_scrolled_back_row_copies_the_history_word() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    for i in 0..40 {
+        session.feed_pty(format!("w{i:02}\r\n").as_bytes());
+    }
+    let filled = session.scrollback_filled();
+    assert!(filled > 5, "history must exist for the scrolled press");
+    session.scroll_by(5);
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let inner = mux.visible_panes()[0].inner;
+    let row = inner.row; // top visible row = scrollback row filled-5
+    let col = inner.col + 1;
+    let mut rx = attach_drained_client(&mut mux);
+
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+
+    let sel = mux.selection.expect("double-click on history selects");
+    assert_eq!(
+        sel.anchor_row,
+        filled - 5,
+        "anchor must be the scrolled-to content row"
+    );
+    let expected = format!("w{:02}", filled - 5);
+    assert_osc52_payloads(&mut mux, &mut rx, &[expected.as_str()]);
+    assert_eq!(
+        mux.sessions.get(&1).expect("session").scrollback_offset(),
+        5,
+        "word selection must not move the scrollback view"
+    );
+}
+
+#[test]
+fn triple_click_clears_then_two_more_presses_reselect() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"see /model to change");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let inner = mux.visible_panes()[0].inner;
+    let row = inner.row;
+    let col = inner.col + 6;
+    let mut rx = attach_drained_client(&mut mux);
+
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    assert!(mux.selection.is_some(), "second press selects the word");
+
+    // Third quick press clears the highlight (and stamps a fresh cycle).
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    assert!(mux.selection.is_none(), "third press clears");
+
+    // Fourth quick press completes a new double-click on the same word.
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col },
+    ));
+    assert!(mux.selection.is_some(), "fourth press re-selects");
+
+    assert_osc52_payloads(&mut mux, &mut rx, &["/model", "/model"]);
+}
+
+#[test]
+fn double_click_on_a_second_word_needs_only_two_presses() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"alpha beta");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let inner = mux.visible_panes()[0].inner;
+    let row = inner.row;
+    let col_a = inner.col + 1; // inside "alpha"
+    let col_b = inner.col + 7; // inside "beta"
+    let mut rx = attach_drained_client(&mut mux);
+
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col: col_a },
+    ));
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col: col_a },
+    ));
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col: col_b },
+    ));
+    drop(apply_action_frame(
+        &mut mux,
+        Action::PanePrimaryPress { row, col: col_b },
+    ));
+
+    assert!(mux.selection.is_some(), "second word selected");
+    assert_osc52_payloads(&mut mux, &mut rx, &["alpha", "beta"]);
+}
+
+#[test]
+fn session_terminal_carries_the_attached_client_palette() {
+    let mut mux = single_pane_tab_mux();
+    mux.attached_terminal.default_fg = Some((1, 2, 3));
+    mux.attached_terminal.default_bg = Some((4, 5, 6));
+    let terminal = mux.session_terminal(10, 20);
+    assert_eq!(terminal.rows, 10);
+    assert_eq!(terminal.cols, 20);
+    assert_eq!(terminal.default_fg, Some((1, 2, 3)));
+    assert_eq!(terminal.default_bg, Some((4, 5, 6)));
 }

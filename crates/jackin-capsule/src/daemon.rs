@@ -41,8 +41,9 @@ use tokio::time::{Duration, interval};
 use portable_pty::CommandBuilder;
 
 use crate::attach_protocol::{
-    AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,
-    initial_spawn_request, perform_handshake, spawn_request_label,
+    AttachHandshake, detach_attached_task, detach_client, drain_and_exit,
+    drain_and_exit_with_reason, handle_attach_client, initial_spawn_request, perform_handshake,
+    spawn_request_label,
 };
 #[cfg(test)]
 use crate::git_context::{
@@ -116,14 +117,14 @@ use crate::tui::title::{
 #[cfg(test)]
 use crate::tui::update::prefix_full_redraw_reason;
 use crate::tui::update::{
-    ActionFramePlan, DialogActionFramePlan, FullRedrawReason, HoverFramePlan,
-    dialog_action_frame_plan, dialog_change_redraw_reason, drag_resize_ratio,
-    drag_resize_redraw_reason, explicit_redraw_reason, first_attach_redraw_reason,
-    focus_change_redraw_reason, hover_frame_plan, palette_route_frame_plan,
-    pane_data_redraw_reason, resize_redraw_reason, selection_change_redraw_reason,
+    FullRedrawReason, HoverFramePlan, dialog_action_frame_plan, dialog_change_redraw_reason,
+    drag_resize_ratio, drag_resize_redraw_reason, explicit_redraw_reason,
+    first_attach_redraw_reason, focus_change_redraw_reason, hover_frame_plan,
+    palette_route_frame_plan, pane_data_redraw_reason, selection_change_redraw_reason,
     selection_start_redraw_reason, session_exit_redraw_reason, status_change_redraw_reason,
+    wheel_scrollback_redraw_reason,
 };
-use crate::tui::view::{spawn_failure_banner, spawn_request_failure_message};
+use crate::tui::view::spawn_request_failure_message;
 
 mod compositor;
 mod context_mgmt;
@@ -175,14 +176,9 @@ pub struct Multiplexer {
     zoomed: Option<u64>,
     input_parser: InputParser,
     detach_requested: bool,
-    pub(crate) attached_out: Option<mpsc::UnboundedSender<Vec<u8>>>,
-    /// Latched true on the first `send_to_client` after `attached_out`
-    /// was set: once the receiver drops mid-attach, every subsequent
-    /// frame send into the same channel will also fail. Without this
-    /// latch the per-tick redraw + per-PTY output + per-OSC repaint
-    /// would write one `clog!` line each, swamping `multiplexer.log`.
-    /// Cleared whenever `attached_out` is reassigned (next attach).
-    pub(crate) attached_out_dead_logged: bool,
+    /// The only writer to the attach socket: composed frames are
+    /// `?2026`-bracketed, out-of-band bytes flush at frame boundaries.
+    pub(crate) client: crate::client_writer::ClientWriter,
     /// `JoinHandle` of the spawned `handle_attach_client` task for the
     /// currently-attached client. Tracked so a takeover (second `Hello`)
     /// can abort the old task's reader loop — without the abort, the
@@ -204,23 +200,32 @@ pub struct Multiplexer {
     /// Candidate text selection captured on primary press. Promoted to
     /// `selection` only after real drag motion leaves the anchor cell.
     pending_selection: Option<SelectionState>,
+    /// Previous primary press on a pane cell, kept one click long so the
+    /// next press can be classified as a double-click (word select).
+    last_pane_press: Option<mouse_input::PanePress>,
     /// True after a dragged selection was copied and its highlight remains
     /// visible. Cleared by the next click or typed input.
     selection_copied: bool,
     selection_copy_feedback_deadline: Option<Instant>,
-    /// Last visible pane-body snapshot per session. PTY output can
-    /// then repaint only rows whose grid cells changed.
-    /// Pane bodies dirtied by PTY output. The render ticker drains
-    /// this at most once per frame, preserving the existing coalescing
-    /// behavior while avoiding broad body redraws.
-    dirty_panes: HashSet<u64>,
-    /// Named full-frame invalidation, used whenever partial pane-body
-    /// repainting would be unsafe or when chrome/status/dialog/layout
-    /// changed outside the pane body.
-    pending_full_redraw: Option<FullRedrawReason>,
-    /// Named no-clear invalidation for chrome/status/dialog updates that can
-    /// safely ride Ratatui's cell diff instead of clearing the terminal.
-    pending_diff_redraw: Option<FullRedrawReason>,
+    /// Monotonic state-change counter: every mutation that can affect the
+    /// visible frame bumps it via `invalidate`. The render loop composes
+    /// when it moved past `rendered_generation` — there are no repaint
+    /// tiers and no per-cause request flags (derived rendering, §3.2 of
+    /// the capsule rendering plan).
+    frame_generation: u64,
+    /// Generation the last composed frame reflected.
+    rendered_generation: u64,
+    /// Wipe policy: a real `\x1b[2J` precedes the next frame only for
+    /// `FirstAttach` and `Resize` — the geometry events whose previous
+    /// layout must not survive. Every other invalidation repaints in place.
+    wipe_pending: Option<FullRedrawReason>,
+    /// Telemetry: the most recent invalidation reason, labelled on the next
+    /// composed frame's debug trace.
+    last_invalidate_reason: Option<FullRedrawReason>,
+    /// Cursor + mode state the encoder asserted with the last frame; the
+    /// per-frame reconciliation emits only transitions against this. `None`
+    /// (fresh attach) asserts everything explicitly.
+    last_asserted_client_state: Option<compositor::AssertedClientState>,
     /// Last pointer shape emitted through OSC 22. Stored so passive
     /// mouse motion does not spam the outer terminal with duplicate
     /// pointer-shape updates.
@@ -240,12 +245,9 @@ pub struct Multiplexer {
     /// tab list on every redraw. Reset to `None` when a child pane
     /// updates its own title so the next full frame re-asserts.
     last_outer_terminal_title: Option<String>,
-    /// Last raw bottom-chrome bytes (branch/PR bar, hint row, debug chip). The
-    /// chrome is appended after every Ratatui frame but rarely changes; skipping
-    /// the re-append when it is byte-identical stops the bottom bar flickering on
-    /// every frame under streaming output. Reset to `None` whenever a frame
-    /// clears the screen so the chrome is re-asserted after the wipe.
-    last_bottom_chrome: Option<Vec<u8>>,
+    /// Spawn-failure notice rendered as a top-row banner widget until the
+    /// next operator keystroke clears it.
+    spawn_failure: Option<String>,
     hover_target: Option<HoverTarget>,
     /// Deadline for hiding the transient "Copied!" badge in whichever
     /// dialog most recently performed a jackin-owned OSC 52 copy.
@@ -463,23 +465,25 @@ impl Multiplexer {
             zoomed: None,
             input_parser,
             detach_requested: false,
-            attached_out: None,
-            attached_out_dead_logged: false,
+            client: crate::client_writer::ClientWriter::default(),
             attached_task: None,
             last_tab_click: None,
             drag: None,
             selection: None,
             pending_selection: None,
+            last_pane_press: None,
             selection_copied: false,
             selection_copy_feedback_deadline: None,
-            dirty_panes: HashSet::new(),
-            pending_full_redraw: None,
-            pending_diff_redraw: None,
+            frame_generation: 0,
+            rendered_generation: 0,
+            wipe_pending: None,
+            last_invalidate_reason: None,
+            last_asserted_client_state: None,
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: false,
             attached_terminal: ClientTerminal::default(),
             last_outer_terminal_title: None,
-            last_bottom_chrome: None,
+            spawn_failure: None,
             hover_target: None,
             dialog_copy_feedback_deadline: None,
             pull_request_context_branch: None,
@@ -506,114 +510,21 @@ impl Multiplexer {
         })
     }
 
-    fn send_to_client(&mut self, frame: ServerFrame) {
-        if let Some(tx) = &self.attached_out
-            && tx.send(encode_server(frame)).is_err()
-            && !self.attached_out_dead_logged
-        {
-            self.attached_out_dead_logged = true;
-            crate::clog!(
-                "send_to_client: client receiver dropped; frame discarded (this attach is dead)"
-            );
-        }
+    /// Send a composed frame to the attached client through the single
+    /// writer. Queued out-of-band bytes flush ahead of the bracketed frame.
+    fn send_frame(&mut self, bytes: Vec<u8>) {
+        self.client.write_frame(bytes);
     }
 
-    fn send_output(&mut self, bytes: Vec<u8>) {
-        if crate::logging::debug_enabled() {
-            let (moves, max_row, max_col, erases) = scan_emitted_frame(&bytes);
-            crate::cdebug!(
-                "send: bytes={} cursor_moves={} max_row_addressed={} max_col_addressed={} erases={} term={}x{} over_rows={} over_cols={}",
-                bytes.len(),
-                moves,
-                max_row,
-                max_col,
-                erases,
-                self.term_cols,
-                self.term_rows,
-                max_row > self.term_rows,
-                max_col > self.term_cols,
-            );
-            // Verbatim dump of only the smallest frames (chrome-only). Capped
-            // tight so a steady-state run can't balloon the log to hundreds of
-            // MB — full frames are summarised by the `send:` line above.
-            if bytes.len() <= 1200 {
-                crate::cdebug!("send-bytes: {}", escape_for_log(&bytes));
-            }
-        }
-        self.send_to_client(ServerFrame::Output(bytes));
+    /// Queue bytes that are not cell content (OSC passthrough, clipboard,
+    /// pointer shapes, mode prefaces); they flush at the next frame boundary.
+    pub(crate) fn send_out_of_band(&mut self, bytes: Vec<u8>) {
+        self.client.enqueue_out_of_band(bytes);
     }
 }
 
-/// Scan an emitted frame for the diagnostic fingerprint a render bug leaves:
-/// how many absolute cursor moves it contains, the largest row/col it
-/// addresses (1-based, from `CSI row;col H`), and how many full-screen erases
-/// (`CSI 2 J`) it carries. A `max_row_addressed` greater than `term_rows` (or
-/// col greater than `term_cols`) is the signature of a geometry the capsule and
-/// the outer terminal disagree on — content lands off-screen or wraps. Two
-/// chrome blocks in one frame show up as a doubled cursor-move count. The scan
-/// is over our own trusted output, so the few lines of hand parsing are cheaper
-/// than a dependency.
-/// Render a frame's bytes as a single readable line: ESC as `\e`, other
-/// control bytes as `\xNN`, printable ASCII verbatim. Used only behind the
-/// debug flag to dump small chrome frames for triage.
-fn escape_for_log(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        match b {
-            0x1b => out.push_str("\\e"),
-            b'\n' => out.push_str("\\n"),
-            b'\r' => out.push_str("\\r"),
-            0x20..=0x7e => out.push(b as char),
-            _ => out.push_str(&format!("\\x{b:02x}")),
-        }
-    }
-    out
-}
-
-fn scan_emitted_frame(bytes: &[u8]) -> (usize, u16, u16, usize) {
-    let mut moves = 0usize;
-    let mut erases = 0usize;
-    let mut max_row = 0u16;
-    let mut max_col = 0u16;
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        if bytes[i] == 0x1b && bytes[i + 1] == b'[' {
-            let params_start = i + 2;
-            let mut j = params_start;
-            while j < bytes.len() && (bytes[j].is_ascii_digit() || bytes[j] == b';') {
-                j += 1;
-            }
-            if j < bytes.len() {
-                let final_byte = bytes[j];
-                let params = &bytes[params_start..j];
-                match final_byte {
-                    b'H' | b'f' => {
-                        moves += 1;
-                        let mut parts = params.split(|&b| b == b';');
-                        let row = parts
-                            .next()
-                            .and_then(|p| std::str::from_utf8(p).ok())
-                            .and_then(|s| s.parse::<u16>().ok())
-                            .unwrap_or(1);
-                        let col = parts
-                            .next()
-                            .and_then(|p| std::str::from_utf8(p).ok())
-                            .and_then(|s| s.parse::<u16>().ok())
-                            .unwrap_or(1);
-                        max_row = max_row.max(row);
-                        max_col = max_col.max(col);
-                    }
-                    b'J' if params == b"2" => erases += 1,
-                    _ => {}
-                }
-                i = j + 1;
-                continue;
-            }
-        }
-        i += 1;
-    }
-    (moves, max_row, max_col, erases)
-}
+#[cfg(test)]
+use crate::client_writer::scan_emitted_frame;
 
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
 pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> Result<()> {
@@ -633,6 +544,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // diagnostic. Failures fall back to stderr-only, so this is safe
     // to call unconditionally.
     crate::logging::init();
+    // OTLP export for this session — no-op unless the host injected an
+    // endpoint. Installs the tracing subscriber the clog!/cdebug! bridge and
+    // the session-anchor span feed into; the guard flushes on daemon exit.
+    let _otlp_flush = crate::telemetry::init();
     let _live_dhat_profiler = crate::alloc_telemetry::init_from_env();
     crate::debug_panic::panic_if_requested_from_env();
     crate::clog!(
@@ -653,8 +568,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let mut new_clients = socket::start_listener()?;
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
     let mut state_ticker = interval(STATE_TICK_INTERVAL);
-    let mut render_ticker = interval(RENDER_TICK_INTERVAL);
-    render_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut sigterm = signal(SignalKind::terminate())?;
     let mut sigint = signal(SignalKind::interrupt())?;
 
@@ -697,6 +610,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // select loop dozens of times per second, and a fresh deadline
     // each wake-up never lapses before the next PTY output resets it.
     let mut esc_deadline: Option<tokio::time::Instant> = None;
+    // Event-driven composition with a cadence cap (§3.10): compose
+    // immediately when the last frame is older than the cap, otherwise
+    // schedule at the cap. Latency is no longer floored at a fixed tick —
+    // the first event after an idle gap paints at once, and bursts coalesce
+    // to one frame per cap interval. Atomicity comes from the writer's
+    // `?2026` brackets, not from pacing.
+    let mut last_frame_at: Option<tokio::time::Instant> = None;
     loop {
         if mux.input_parser.esc_pending() {
             if esc_deadline.is_none() {
@@ -705,6 +625,16 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
         } else {
             esc_deadline = None;
         }
+        let render_deadline: Option<tokio::time::Instant> =
+            if mux.has_pending_render() || mux.client.has_out_of_band() {
+                Some(
+                    last_frame_at.map_or_else(tokio::time::Instant::now, |last| {
+                        (last + RENDER_TICK_INTERVAL).max(tokio::time::Instant::now())
+                    }),
+                )
+            } else {
+                None
+            };
         tokio::select! {
             biased;
 
@@ -756,7 +686,18 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 crate::cdebug!("resize-event: source=attach rows={rows} cols={cols}");
                 mux.resize(rows, cols);
                 mux.pointer_shapes_supported = terminal.pointer_shapes_supported();
+                // Attach-handshake outcome (clog tier): the triage line for
+                // "agent themed wrong" reports — None means the client could
+                // not read its terminal's palette and grids keep what they
+                // had.
+                crate::clog!(
+                    "attach: client terminal term={:?} colors fg={:?} bg={:?}",
+                    terminal.term,
+                    terminal.default_fg,
+                    terminal.default_bg,
+                );
                 mux.attached_terminal = terminal;
+                mux.apply_client_colors_to_sessions();
                 mux.pointer_shape = PointerShape::Default;
                 if mux.sessions.is_empty()
                     && let Some(request) = pending_initial_spawn.take()
@@ -812,8 +753,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     crate::clog!("takeover: drained {drained} stale frame(s) from prior client");
                 }
                 let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
-                mux.attached_out = Some(new_out_tx.clone());
-                mux.attached_out_dead_logged = false;
+                mux.client.attach(new_out_tx.clone());
                 // Build the initial-attach burst as a typed list so a
                 // typo at one call site cannot disagree with the clog
                 // label. A send failure here means the receiver was
@@ -839,28 +779,17 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         crate::tui::terminal::client_owned_mode_state().to_vec(),
                     )),
                 ));
-                if let Some(focused) = mux.active_focused_id()
-                    && let Some(session) = mux.sessions.get(&focused)
-                {
-                    for bytes in session.current_mode_state() {
-                        initial_frames.push((
-                            InitialFrameKind::FocusedPaneModes,
-                            encode_server(ServerFrame::Output(bytes)),
-                        ));
-                    }
-                }
+                // A fresh client has no asserted cursor/mode state; the
+                // first frame's reconciliation asserts everything explicitly.
+                mux.last_asserted_client_state = None;
+                mux.spawn_failure = spawn_failure;
+                mux.invalidate(first_attach_redraw_reason());
                 let mut initial = crate::tui::terminal::RESET_CLEAR_HOME.to_vec();
-                initial.extend(mux.compose_full_redraw(first_attach_redraw_reason()));
+                initial.extend(mux.compose_pending_frame());
                 initial_frames.push((
                     InitialFrameKind::FirstAttach,
                     encode_server(ServerFrame::Output(initial)),
                 ));
-                if let Some(reason) = spawn_failure {
-                    initial_frames.push((
-                        InitialFrameKind::SpawnFailureBanner,
-                        encode_server(ServerFrame::Output(spawn_failure_banner(&reason))),
-                    ));
-                }
                 let first_failure = initial_frames
                     .into_iter()
                     .find_map(|(kind, bytes)| new_out_tx.send(bytes).err().map(|_| kind));
@@ -869,7 +798,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         "attach: receiver closed before initial frame ({}); operator's terminal will not paint",
                         kind.label()
                     );
-                    mux.attached_out_dead_logged = true;
+                    mux.client.mark_dead_logged();
                 }
                 let cmd_tx_for_task = cmd_tx.clone();
                 mux.attached_task = Some(tokio::spawn(async move {
@@ -935,52 +864,68 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             // clipboard writes, and titles must not
                             // reach the operator's outer terminal.
                             let drained = session.drain_passthrough();
-                            // Mode-state transitions (bracketed paste,
-                            // etc.) round-trip through the outer
-                            // terminal. Drain regardless of focus for
-                            // the same reason; on focus swap,
-                            // `current_mode_state()` restores the
-                            // destination pane's full mode set in one
-                            // shot, so intermediate transitions of
-                            // backgrounded panes do not need to leak
-                            // out (and would be silently dropped here
-                            // anyway).
-                            let mode_transitions = session.drain_mode_transitions();
                             if is_focused {
                                 reassert_outer_terminal_title = !drained.is_empty();
                                 to_emit.extend(drained);
-                                to_emit.extend(mode_transitions);
                             }
                         }
                         for bytes in to_emit {
-                            mux.send_output(bytes);
+                            mux.send_out_of_band(bytes);
                         }
                         if reassert_outer_terminal_title {
                             mux.last_outer_terminal_title = None;
                         }
-                        // Mark the pane body dirty; the render ticker coalesces
-                        // bursts of PTY output into one frame per
-                        // tick. Dialog-open still invalidates — the
-                        // render ticker now paints the dialog overlay
-                        // against the latest pane state, so dismiss
-                        // doesn't produce a sudden burst of
-                        // accumulated frames.
-                        mux.request_pane_body_redraw(session_id);
+                        // Bump the generation; the render loop coalesces
+                        // bursts of PTY output into one frame per pass.
+                        // Dialog-open still invalidates — the next frame
+                        // paints the dialog overlay against the latest pane
+                        // state, so dismiss doesn't jump.
+                        mux.invalidate(FullRedrawReason::PtyOutput);
                     }
-                    SessionEvent::Exited { session_id } => {
+                    SessionEvent::Exited {
+                        session_id,
+                        mut reason,
+                    } => {
+                        // Only a non-clean exit carries a `reason`; skip the
+                        // pane snapshot entirely on clean teardown so the grid
+                        // render never runs on the common exit path. When the
+                        // pane has no tail to attach (PTY never rendered, or the
+                        // session was already removed), keep the base reason —
+                        // dropping it would misroute a real failure into the
+                        // clean-shutdown branch and swallow it.
+                        if let Some(base) = reason.take() {
+                            let tail = mux
+                                .sessions
+                                .get(&session_id)
+                                .and_then(|session| session.diagnostic_tail(12));
+                            reason = Some(match tail {
+                                Some(tail) => {
+                                    crate::clog!(
+                                        "session {session_id}: final output tail:\n{tail}"
+                                    );
+                                    format!("{base}\nlast pane output:\n{tail}")
+                                }
+                                None => base,
+                            });
+                        }
                         // Remove the pane / tab immediately rather than
                         // leaving a stale `○ Done` placeholder behind.
                         // Matches the operator's mental model: "agent
                         // exited → its tab is gone."
                         mux.remove_exited_session(session_id);
-                        mux.request_full_redraw(session_exit_redraw_reason());
+                        mux.invalidate(session_exit_redraw_reason());
                         // When the last live session exits — whether
                         // the operator typed `/exit` in the agent or
                         // the agent crashed — there is nothing left to
                         // attach to. Tear down the container so the
                         // host cleanup path fires.
                         if mux.no_live_sessions() {
-                            drain_and_exit(&mut mux).await;
+                            if let Some(reason) = reason {
+                                crate::clog!("session {session_id}: final session exited: {reason}");
+                                drain_and_exit_with_reason(&mut mux, Some(reason)).await;
+                            } else {
+                                drain_and_exit(&mut mux).await;
+                            }
                             return Ok(());
                         }
                     }
@@ -996,7 +941,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             context,
                             Instant::now(),
                         ) {
-                            mux.request_diff_redraw(status_change_redraw_reason());
+                            mux.invalidate(status_change_redraw_reason());
                         }
                     }
                     SessionEvent::PullRequestContextLoaded {
@@ -1012,7 +957,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             outcome,
                             Instant::now(),
                         ) {
-                            mux.request_diff_redraw(status_change_redraw_reason());
+                            mux.invalidate(status_change_redraw_reason());
                         }
                     }
                 }
@@ -1030,28 +975,24 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 esc_deadline = None;
                 let events = mux.input_parser.flush_pending_esc();
                 for event in events {
-                    if let Some(redraw) = mux.handle_input(event) {
-                        mux.send_output(redraw);
-                    }
+                    mux.handle_input(event);
                 }
             }
 
-            // Render ticker: drain dirty pane bodies or a named full-frame
-            // invalidation at ~30 fps. One
-            // frame per tick at most, regardless of how many PTY
-            // events arrived since the last tick. Full-frame fallback
-            // includes the dialog overlay when one is open, so the
-            // open-dialog case still composes (and the operator sees
-            // dialog content over the latest pane state) instead of
-            // accumulating dirty until dismiss — without this the
-            // dismiss frame was a sudden jump of N frames' worth of
-            // accumulated PTY output that the operator had no way to
-            // see coming.
-            _ = render_ticker.tick(), if mux.has_pending_render() => {
-                let frame_data = mux.compose_pending_frame();
-                if !frame_data.is_empty() {
-                    mux.send_output(frame_data);
+            // Render pass: fires the moment the deadline lapses — immediately
+            // after an idle gap, or one cadence-cap after the previous frame
+            // during a burst. An empty frame degenerates to an out-of-band
+            // flush inside the writer, so queued OSC bytes never sit past a
+            // pass.
+            () = async {
+                match render_deadline {
+                    Some(deadline) => tokio::time::sleep_until(deadline).await,
+                    None => std::future::pending().await,
                 }
+            }, if render_deadline.is_some() => {
+                let frame_data = mux.compose_pending_frame();
+                mux.send_frame(frame_data);
+                last_frame_at = Some(tokio::time::Instant::now());
             }
 
             // Branch changes are directly operator-triggered (`git checkout`)
@@ -1089,14 +1030,11 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let states_after: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
                 if mux.expire_dialog_copy_feedback(Instant::now()) {
-                    let frame_data =
-                        mux.compose_dialog_overlay_frame(dialog_change_redraw_reason());
-                    mux.send_output(frame_data);
+                    mux.invalidate(dialog_change_redraw_reason());
                     continue;
                 }
                 if mux.expire_selection_copy_feedback(Instant::now()) {
-                    let frame_data = mux.compose_partial_frame(HashSet::new());
-                    mux.send_output(frame_data);
+                    mux.invalidate(selection_change_redraw_reason());
                     continue;
                 }
                 // A modal owns the whole screen behind an opaque backdrop;
@@ -1110,8 +1048,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     continue;
                 }
                 mux.refresh_tab_labels();
-                let sbuf = mux.compose_diff_frame(status_change_redraw_reason());
-                mux.send_output(sbuf);
+                mux.invalidate(status_change_redraw_reason());
             }
         }
     }
@@ -1125,9 +1062,9 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         }
         ClientFrame::Resize { rows, cols } => {
             crate::cdebug!("resize-event: source=client-frame rows={rows} cols={cols}");
+            // resize() records the Resize invalidation (and its wipe); the
+            // render loop composes the resized frame on the next pass.
             mux.resize(rows, cols);
-            let frame_data = mux.compose_full_redraw(resize_redraw_reason());
-            mux.send_output(frame_data);
         }
         ClientFrame::Input(bytes) => {
             // Debug-only input-path telemetry: every chunk from the
@@ -1146,15 +1083,12 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             for event in events {
                 let mode = mux.mux_mode();
                 crate::cdebug!("  → InputEvent::{:?} mode={mode:?}", event,);
-                if let Some(redraw) = mux.handle_input(event) {
-                    mux.send_output(redraw);
-                }
+                mux.handle_input(event);
             }
             let prefix_mode = prefix_mode_for_mux_mode(mux.mux_mode());
             if mux.status_bar.prefix_mode != prefix_mode {
                 mux.status_bar.set_prefix_mode(prefix_mode);
-                let frame_data = mux.compose_full_redraw(explicit_redraw_reason());
-                mux.send_output(frame_data);
+                mux.invalidate(explicit_redraw_reason());
             }
         }
         ClientFrame::Command(_payload) => {
@@ -1188,5 +1122,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
     }
 }
 
+#[cfg(test)]
+mod render_conformance_tests;
 #[cfg(test)]
 mod tests;

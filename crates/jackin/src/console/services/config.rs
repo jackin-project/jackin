@@ -1,14 +1,25 @@
 //! Non-TUI config persistence services.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 
-use crate::config::{AppConfig, EnvScope, GlobalMountRow, RoleSource};
+use crate::agent::Agent;
+use crate::config::{AppConfig, AuthForwardMode, EnvScope, GlobalMountRow, RoleSource};
 use crate::console::domain::{auth_kind_agent, auth_mode_to_auth_forward, auth_mode_to_github};
 use crate::console::tui::state::{SettingsAuthRow, SettingsEnvConfig, SettingsTrustRow};
 use crate::operator_env::EnvValue;
 use crate::paths::JackinPaths;
-use crate::workspace::WorkspaceConfig;
+use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
 use jackin_console::tui::auth::AuthKind;
+
+const WORKSPACE_AUTH_AGENTS: [Agent; 6] = [
+    Agent::Claude,
+    Agent::Codex,
+    Agent::Amp,
+    Agent::Kimi,
+    Agent::Opencode,
+    Agent::Grok,
+];
 
 /// Upsert one role source into the operator config and reload the saved model.
 pub(crate) fn upsert_role_source(
@@ -216,6 +227,12 @@ pub(crate) fn save_workspace(
                 input.original,
                 input.pending,
             );
+            apply_sync_source_dir_diff(
+                &mut editor_doc,
+                &current_name,
+                input.original,
+                input.pending,
+            );
             (rename_to, current_name)
         }
         WorkspaceSaveMode::Create { name } => {
@@ -245,31 +262,12 @@ pub(crate) fn apply_auth_forward_diff(
     original: &WorkspaceConfig,
     pending: &WorkspaceConfig,
 ) {
-    use crate::agent::Agent;
-    let original_claude = original.claude.as_ref().map(|c| c.auth_forward);
-    let pending_claude = pending.claude.as_ref().map(|c| c.auth_forward);
-    if original_claude != pending_claude {
-        editor_doc.set_workspace_auth_forward(workspace_name, Agent::Claude, pending_claude);
-    }
-    let original_codex = original.codex.as_ref().map(|c| c.auth_forward);
-    let pending_codex = pending.codex.as_ref().map(|c| c.auth_forward);
-    if original_codex != pending_codex {
-        editor_doc.set_workspace_auth_forward(workspace_name, Agent::Codex, pending_codex);
-    }
-    let original_amp = original.amp.as_ref().map(|c| c.auth_forward);
-    let pending_amp = pending.amp.as_ref().map(|c| c.auth_forward);
-    if original_amp != pending_amp {
-        editor_doc.set_workspace_auth_forward(workspace_name, Agent::Amp, pending_amp);
-    }
-    let original_opencode = original.opencode.as_ref().map(|c| c.auth_forward);
-    let pending_opencode = pending.opencode.as_ref().map(|c| c.auth_forward);
-    if original_opencode != pending_opencode {
-        editor_doc.set_workspace_auth_forward(workspace_name, Agent::Opencode, pending_opencode);
-    }
-    let original_grok = original.grok.as_ref().map(|c| c.auth_forward);
-    let pending_grok = pending.grok.as_ref().map(|c| c.auth_forward);
-    if original_grok != pending_grok {
-        editor_doc.set_workspace_auth_forward(workspace_name, Agent::Grok, pending_grok);
+    for agent in WORKSPACE_AUTH_AGENTS {
+        let original_mode = original.auth_forward_for(agent);
+        let pending_mode = pending.auth_forward_for(agent);
+        if original_mode != pending_mode {
+            editor_doc.set_workspace_auth_forward(workspace_name, agent, pending_mode);
+        }
     }
     let original_github = original.github.as_ref().map(|g| g.auth_forward);
     let pending_github = pending.github.as_ref().map(|g| g.auth_forward);
@@ -281,70 +279,17 @@ pub(crate) fn apply_auth_forward_diff(
     for role in role_keys {
         let orig_override = original.roles.get(role);
         let pend_override = pending.roles.get(role);
-        let orig_claude = orig_override
-            .and_then(|o| o.claude.as_ref())
-            .map(|c| c.auth_forward);
-        let pend_claude = pend_override
-            .and_then(|p| p.claude.as_ref())
-            .map(|c| c.auth_forward);
-        if orig_claude != pend_claude {
-            editor_doc.set_workspace_role_auth_forward(
-                workspace_name,
-                role,
-                Agent::Claude,
-                pend_claude,
-            );
-        }
-        let orig_codex = orig_override
-            .and_then(|o| o.codex.as_ref())
-            .map(|c| c.auth_forward);
-        let pend_codex = pend_override
-            .and_then(|p| p.codex.as_ref())
-            .map(|c| c.auth_forward);
-        if orig_codex != pend_codex {
-            editor_doc.set_workspace_role_auth_forward(
-                workspace_name,
-                role,
-                Agent::Codex,
-                pend_codex,
-            );
-        }
-        let orig_amp = orig_override
-            .and_then(|o| o.amp.as_ref())
-            .map(|c| c.auth_forward);
-        let pend_amp = pend_override
-            .and_then(|p| p.amp.as_ref())
-            .map(|c| c.auth_forward);
-        if orig_amp != pend_amp {
-            editor_doc.set_workspace_role_auth_forward(workspace_name, role, Agent::Amp, pend_amp);
-        }
-        let orig_opencode = orig_override
-            .and_then(|o| o.opencode.as_ref())
-            .map(|c| c.auth_forward);
-        let pend_opencode = pend_override
-            .and_then(|p| p.opencode.as_ref())
-            .map(|c| c.auth_forward);
-        if orig_opencode != pend_opencode {
-            editor_doc.set_workspace_role_auth_forward(
-                workspace_name,
-                role,
-                Agent::Opencode,
-                pend_opencode,
-            );
-        }
-        let orig_grok = orig_override
-            .and_then(|o| o.grok.as_ref())
-            .map(|c| c.auth_forward);
-        let pend_grok = pend_override
-            .and_then(|p| p.grok.as_ref())
-            .map(|c| c.auth_forward);
-        if orig_grok != pend_grok {
-            editor_doc.set_workspace_role_auth_forward(
-                workspace_name,
-                role,
-                Agent::Grok,
-                pend_grok,
-            );
+        for agent in WORKSPACE_AUTH_AGENTS {
+            let original_mode = role_auth_forward_for(orig_override, agent);
+            let pending_mode = role_auth_forward_for(pend_override, agent);
+            if original_mode != pending_mode {
+                editor_doc.set_workspace_role_auth_forward(
+                    workspace_name,
+                    role,
+                    agent,
+                    pending_mode,
+                );
+            }
         }
         let orig_github = orig_override
             .and_then(|o| o.github.as_ref())
@@ -356,6 +301,54 @@ pub(crate) fn apply_auth_forward_diff(
             editor_doc.set_workspace_role_github_auth_forward(workspace_name, role, pend_github);
         }
     }
+}
+
+fn apply_sync_source_dir_diff(
+    editor_doc: &mut crate::config::ConfigEditor,
+    workspace_name: &str,
+    original: &WorkspaceConfig,
+    pending: &WorkspaceConfig,
+) {
+    for agent in WORKSPACE_AUTH_AGENTS {
+        let original_source = original.sync_source_dir_for(agent);
+        let pending_source = pending.sync_source_dir_for(agent);
+        if original_source != pending_source {
+            editor_doc.set_workspace_sync_source_dir(
+                workspace_name,
+                agent,
+                pending_source.as_deref(),
+            );
+        }
+    }
+
+    let role_keys: BTreeSet<&String> = original.roles.keys().chain(pending.roles.keys()).collect();
+    for role in role_keys {
+        let orig_override = original.roles.get(role);
+        let pend_override = pending.roles.get(role);
+        for agent in WORKSPACE_AUTH_AGENTS {
+            let original_source = role_sync_source_dir_for(orig_override, agent);
+            let pending_source = role_sync_source_dir_for(pend_override, agent);
+            if original_source != pending_source {
+                editor_doc.set_workspace_role_sync_source_dir(
+                    workspace_name,
+                    role,
+                    agent,
+                    pending_source.as_deref(),
+                );
+            }
+        }
+    }
+}
+
+fn role_auth_forward_for(
+    role: Option<&WorkspaceRoleOverride>,
+    agent: Agent,
+) -> Option<AuthForwardMode> {
+    role.and_then(|r| r.auth_forward_for(agent))
+}
+
+fn role_sync_source_dir_for(role: Option<&WorkspaceRoleOverride>, agent: Agent) -> Option<PathBuf> {
+    role.and_then(|r| r.sync_source_dir_for(agent))
 }
 
 fn apply_env_diff(
@@ -469,4 +462,118 @@ fn validate_settings_env_keys<'a>(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::{WorkspaceSaveInput, WorkspaceSaveMode, save_workspace};
+    use crate::config::{AgentAuthConfig, AppConfig, CURRENT_WORKSPACE_VERSION};
+    use crate::isolation::MountIsolation;
+    use crate::paths::JackinPaths;
+    use crate::workspace::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride};
+
+    fn workspace_file_contents(paths: &JackinPaths, name: &str) -> String {
+        std::fs::read_to_string(paths.workspaces_dir.join(format!("{name}.toml"))).unwrap()
+    }
+
+    #[test]
+    fn save_workspace_persists_and_clears_workspace_and_role_sync_source_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mount_src = tmp.path().join("repo");
+        std::fs::create_dir(&mount_src).unwrap();
+        let original = WorkspaceConfig {
+            version: CURRENT_WORKSPACE_VERSION.to_owned(),
+            workdir: "/workspace/proj".to_owned(),
+            mounts: vec![MountConfig {
+                src: mount_src.display().to_string(),
+                dst: "/workspace/proj".to_owned(),
+                readonly: false,
+                isolation: MountIsolation::Shared,
+            }],
+            ..WorkspaceConfig::default()
+        };
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        config
+            .workspaces
+            .insert("proj".to_owned(), original.clone());
+        std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
+
+        let workspace_source = PathBuf::from("/host/claude");
+        let role_source = PathBuf::from("/host/codex");
+        let mut pending = original.clone();
+        pending.claude = Some(AgentAuthConfig {
+            sync_source_dir: Some(workspace_source.clone()),
+            ..Default::default()
+        });
+        pending.roles.insert(
+            "smith".to_owned(),
+            WorkspaceRoleOverride {
+                codex: Some(AgentAuthConfig {
+                    sync_source_dir: Some(role_source.clone()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+
+        let saved = save_workspace(
+            &paths,
+            WorkspaceSaveInput {
+                mode: WorkspaceSaveMode::Edit {
+                    original_name: "proj".to_owned(),
+                    pending_name: None,
+                    effective_removals: Vec::new(),
+                },
+                original: &original,
+                pending: &pending,
+            },
+        )
+        .unwrap();
+
+        let reloaded = saved.config.workspaces.get("proj").unwrap();
+        assert_eq!(
+            reloaded
+                .claude
+                .as_ref()
+                .and_then(|c| c.sync_source_dir.clone()),
+            Some(workspace_source)
+        );
+        assert_eq!(
+            reloaded
+                .roles
+                .get("smith")
+                .and_then(|r| r.codex.as_ref())
+                .and_then(|c| c.sync_source_dir.clone()),
+            Some(role_source)
+        );
+
+        let mut cleared = reloaded.clone();
+        cleared.claude = None;
+        cleared.roles.clear();
+        save_workspace(
+            &paths,
+            WorkspaceSaveInput {
+                mode: WorkspaceSaveMode::Edit {
+                    original_name: "proj".to_owned(),
+                    pending_name: None,
+                    effective_removals: Vec::new(),
+                },
+                original: reloaded,
+                pending: &cleared,
+            },
+        )
+        .unwrap();
+
+        let reloaded = AppConfig::load_or_init(&paths).unwrap();
+        let workspace = reloaded.workspaces.get("proj").unwrap();
+        assert!(workspace.claude.is_none());
+        assert!(workspace.roles.is_empty());
+
+        let out = workspace_file_contents(&paths, "proj");
+        assert!(!out.contains("sync_source_dir"), "{out}");
+    }
 }

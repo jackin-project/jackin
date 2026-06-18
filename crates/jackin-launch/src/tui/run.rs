@@ -8,6 +8,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use jackin_tui::ModalOutcome;
 use jackin_tui::components::{ConfirmState, ErrorPopupState, SelectListState, TextInputState};
+use ratatui::backend::Backend as _;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -273,7 +274,16 @@ impl RichRenderer {
         // first redraw. Under the host guard we skipped EnterAlternateScreen
         // (which would have cleared), so the console's last frame is still on
         // the inherited screen — clear it or the cockpit renders over it.
-        terminal.clear().context("clearing launch screen")?;
+        // Use backend_mut().clear() instead of terminal.clear(): ratatui-core ≥ 0.1.1
+        // added a cursor-position save/restore around the erase that blocks on a DSR
+        // query. On non-interactive PTYs (e.g. the script-based E2E harness) the
+        // terminal never answers, causing a timeout error. The backend call issues the
+        // same erase without the query; a freshly constructed Terminal already has
+        // default (empty) buffers so the next draw will repaint everything anyway.
+        terminal
+            .backend_mut()
+            .clear()
+            .context("clearing launch screen")?;
         // Ancillary status printers (spinners) go silent while this surface
         // owns the alternate screen.
         host.set_rich_surface_active(true);

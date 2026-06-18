@@ -181,6 +181,85 @@ fn cycle_mode_wraps_supported_modes_and_updates_focus_target() {
 }
 
 #[test]
+fn source_folder_row_requires_form_source_state_and_supported_mode() {
+    let mut form = TestForm::new(AuthKind::Claude);
+    form.set_mode(AuthMode::Sync);
+    assert!(
+        !form.shows_source_folder(),
+        "settings forms opt in during their own phase"
+    );
+
+    let form = form.with_source_folder(
+        None,
+        Some(AuthSourceFolderDisplay {
+            kind: AuthSourceFolderKind::Default,
+            path: "~/.claude".to_owned(),
+        }),
+    );
+    assert!(form.shows_source_folder());
+    assert_eq!(form.next_focus_after_mode(), AuthFormFocus::SourceFolder);
+
+    let mut api_key = form;
+    api_key.set_mode(AuthMode::ApiKey);
+    assert!(!api_key.shows_source_folder());
+}
+
+#[test]
+fn source_folder_row_renders_fallback_and_staged_path() {
+    let mut form = TestForm::new(AuthKind::Claude).with_source_folder(
+        None,
+        Some(AuthSourceFolderDisplay {
+            kind: AuthSourceFolderKind::Default,
+            path: "~/.claude".to_owned(),
+        }),
+    );
+    form.set_mode(AuthMode::Sync);
+    let output = dump_form(&form);
+    assert!(output.contains("Source folder"));
+    assert!(output.contains("default: ~/.claude"));
+    assert!(!output.contains("CLAUDE_CONFIG_DIR"));
+
+    form.set_source_folder(PathBuf::from("/host/claude"));
+    let output = dump_form(&form);
+    assert!(output.contains("/host/claude"));
+    assert!(!output.contains("default: ~/.claude"));
+}
+
+#[test]
+fn source_folder_row_renders_display_kinds_without_env_suffix() {
+    for (kind, path, expected) in [
+        (
+            AuthSourceFolderKind::Default,
+            "~/.claude",
+            "default: ~/.claude",
+        ),
+        (
+            AuthSourceFolderKind::Inherited,
+            "/global/claude",
+            "inherited: /global/claude",
+        ),
+        (
+            AuthSourceFolderKind::Explicit,
+            "/workspace/claude",
+            "/workspace/claude",
+        ),
+    ] {
+        let mut form = TestForm::new(AuthKind::Claude).with_source_folder(
+            None,
+            Some(AuthSourceFolderDisplay {
+                kind,
+                path: path.to_owned(),
+            }),
+        );
+        form.set_mode(AuthMode::Sync);
+        let output = dump_form(&form);
+        assert!(output.contains(expected), "{output}");
+        assert!(!output.contains("explicit:"), "{output}");
+        assert!(!output.contains('('), "{output}");
+    }
+}
+
+#[test]
 fn auth_form_key_plan_routes_shared_focus_model() {
     assert_eq!(
         auth_form_key_plan(AuthFormFocus::Mode, KeyCode::Char(' '), false, false),
@@ -213,6 +292,54 @@ fn auth_form_key_plan_routes_shared_focus_model() {
     assert_eq!(
         auth_form_key_plan(AuthFormFocus::Reset, KeyCode::Enter, false, false),
         AuthFormKeyPlan::Reset
+    );
+}
+
+#[test]
+fn auth_form_key_plan_routes_source_folder_row() {
+    assert_eq!(
+        auth_form_key_plan_with_source_folder(AuthFormFocus::Mode, KeyCode::Tab, true, false, true),
+        AuthFormKeyPlan::Focus(AuthFormFocus::SourceFolder)
+    );
+    assert_eq!(
+        auth_form_key_plan_with_source_folder(
+            AuthFormFocus::SourceFolder,
+            KeyCode::Enter,
+            true,
+            false,
+            true
+        ),
+        AuthFormKeyPlan::OpenSourceFolderBrowser
+    );
+    assert_eq!(
+        auth_form_key_plan_with_source_folder(
+            AuthFormFocus::SourceFolder,
+            KeyCode::Down,
+            true,
+            true,
+            true
+        ),
+        AuthFormKeyPlan::Focus(AuthFormFocus::CredentialSource)
+    );
+    assert_eq!(
+        auth_form_key_plan_with_source_folder(
+            AuthFormFocus::CredentialSource,
+            KeyCode::Up,
+            true,
+            true,
+            true
+        ),
+        AuthFormKeyPlan::Focus(AuthFormFocus::SourceFolder)
+    );
+    assert_eq!(
+        auth_form_key_plan_with_source_folder(
+            AuthFormFocus::Save,
+            KeyCode::BackTab,
+            true,
+            false,
+            true
+        ),
+        AuthFormKeyPlan::Focus(AuthFormFocus::SourceFolder)
     );
 }
 

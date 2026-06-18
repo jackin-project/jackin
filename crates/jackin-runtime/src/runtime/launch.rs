@@ -53,7 +53,7 @@ use jackin_config::AppConfig;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::attach::{ContainerState, reconnect_or_create_session_with_focus};
 use super::discovery::list_running_agent_names;
@@ -371,11 +371,20 @@ pub(super) fn capsule_config(
 ) -> jackin_protocol::CapsuleConfig {
     let mut agents = Vec::new();
     let mut models = std::collections::BTreeMap::new();
+    let mut provider_models = std::collections::BTreeMap::new();
     for agent in manifest.supported_agents() {
         agents.push(agent.slug().to_owned());
         let model = manifest.agent_model(agent);
         if let Some(model) = model {
             models.insert(agent.slug().to_owned(), model.to_owned());
+        }
+        let per_provider = manifest.agent_provider_models(agent);
+        if !per_provider.is_empty() {
+            let inner = per_provider
+                .into_iter()
+                .map(|(id, model)| (id.to_owned(), model.to_owned()))
+                .collect();
+            provider_models.insert(agent.slug().to_owned(), inner);
         }
     }
     jackin_protocol::CapsuleConfig {
@@ -383,6 +392,7 @@ pub(super) fn capsule_config(
         workdir: workdir.to_owned(),
         agents,
         models,
+        provider_models,
         initial_provider,
     }
 }
@@ -733,6 +743,40 @@ pub(super) async fn launch_role_runtime(
         run_args.push("-e");
         run_args.push(env_str);
     }
+
+    // OTLP cross-process propagation: hand the container the launch trace
+    // context (W3C traceparent) and a container-reachable endpoint, so the
+    // capsule's telemetry links back to this launch trace and shares the run.
+    // host.docker.internal must be wired to the host gateway for the rewritten
+    // loopback endpoint to resolve on Linux engines.
+    let container_otlp = jackin_diagnostics::container_otlp();
+    let mut otlp_propagation: Vec<String> = Vec::new();
+    if let Some(otlp) = &container_otlp {
+        otlp_propagation.push(format!("OTEL_EXPORTER_OTLP_ENDPOINT={}", otlp.endpoint));
+        if let Some(traceparent) = jackin_diagnostics::current_traceparent() {
+            otlp_propagation.push(format!("TRACEPARENT={traceparent}"));
+        }
+        // Share parallax.run.id so capsule telemetry groups with the host run.
+        // In debug runs JACKIN_RUN_ID is already injected above; avoid a dupe.
+        if debug_run_id_env.is_none()
+            && let Some(run) = jackin_diagnostics::active_run()
+        {
+            otlp_propagation.push(format!("JACKIN_RUN_ID={}", run.run_id()));
+        }
+    }
+    for env_str in &otlp_propagation {
+        run_args.push("-e");
+        run_args.push(env_str);
+    }
+    if container_otlp
+        .as_ref()
+        .is_some_and(|otlp| otlp.needs_host_gateway)
+    {
+        run_args.extend_from_slice(&["--add-host", "host.docker.internal:host-gateway"]);
+    }
+
+    // DinD TLS certs are only mounted when the inner engine is enabled — the
+    // hardened/locked profiles run without DinD and must not see the cert dir.
     if dind_enabled {
         run_args.extend_from_slice(&["-v", &certs_agent_mount]);
     }
@@ -857,13 +901,10 @@ pub(super) async fn launch_role_runtime(
     if let Err(err) = session_result {
         // Single inspect — the previous two-call shape opened a TOCTOU
         // window where the container could transition Running→Stopped(0)
-        // between the diagnose and swallow checks. `diagnose_premature_exit`
-        // returns a synthesized error for surfaceable exits; otherwise
-        // the post-attach happy path is `Stopped(exit 0, !oom)` from a
-        // clean multiplexer shutdown — swallow `docker exec`'s broken
-        // pipe in that case. External `docker rm` (NotFound) is rare
-        // and must propagate the real exec error so the operator sees
-        // why the container vanished mid-session.
+        // between the diagnose and swallow checks. If the attach command
+        // itself returned Err, propagate it even when PID 1 exited cleanly:
+        // the capsule attach protocol uses that path to report failed final
+        // sessions while the daemon still shuts down as init with exit 0.
         let inspect = docker.inspect_container_state(container_name).await;
         if let Some(diag) = diagnose_with_state(
             runner,
@@ -876,16 +917,12 @@ pub(super) async fn launch_role_runtime(
         {
             return Err(diag);
         }
-        if matches!(
-            inspect,
-            ContainerState::Stopped {
-                exit_code: 0,
-                oom_killed: false,
-            }
-        ) {
-            return Ok(());
+        let attach_error =
+            attach_failure_error(container_name, &err, &capsule_log_path, &capsule_log_str);
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.error("attach_error", &attach_error.to_string());
         }
-        return Err(err);
+        return Err(attach_error);
     }
     if let Some(progress) = steps.progress_mut() {
         progress.stage_done(super::progress::LaunchStage::Hardline, "open");
@@ -1036,6 +1073,31 @@ async fn diagnose_with_state(
     }
 }
 
+fn read_text_tail(path: &Path, max_lines: usize) -> anyhow::Result<Option<String>> {
+    let lines = super::logs::read_tail(path, max_lines)?;
+    if lines.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(lines.join("\n")))
+    }
+}
+
+fn attach_failure_error(
+    container_name: &str,
+    err: &anyhow::Error,
+    capsule_log_path: &Path,
+    capsule_log_str: &str,
+) -> anyhow::Error {
+    let evidence = match read_text_tail(capsule_log_path, 40) {
+        Ok(Some(tail)) => format!("last 40 capsule log lines:\n{tail}"),
+        Ok(None) => format!("capsule log {capsule_log_str} had no output"),
+        Err(error) => format!("failed to read capsule log {capsule_log_str}: {error:#}"),
+    };
+    anyhow::anyhow!(
+        "capsule attach failed for {container_name}: {err}\ncapsule log: {capsule_log_str}\n{evidence}"
+    )
+}
+
 /// Query a container's post-attach state for use by `finalize_foreground_session`.
 ///
 /// Returns `AttachOutcome::still_running` when the container is still running
@@ -1099,7 +1161,7 @@ pub(super) enum GitPullResult {
 fn pull_workspace_repos_with_git(
     workspace: &jackin_config::ResolvedWorkspace,
     debug: bool,
-    git_program: &std::path::Path,
+    git_program: &Path,
 ) -> Vec<GitPullResult> {
     pull_git_sources_with_git(git_pull_sources(workspace), debug, git_program, true)
 }
@@ -1108,8 +1170,7 @@ pub(super) fn git_pull_sources(workspace: &jackin_config::ResolvedWorkspace) -> 
     let mut sources = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for mount in &workspace.mounts {
-        if std::path::Path::new(&mount.src).join(".git").exists() && seen.insert(mount.src.clone())
-        {
+        if Path::new(&mount.src).join(".git").exists() && seen.insert(mount.src.clone()) {
             sources.push(mount.src.clone());
         }
     }
@@ -1119,7 +1180,7 @@ pub(super) fn git_pull_sources(workspace: &jackin_config::ResolvedWorkspace) -> 
 pub(super) fn pull_git_sources_with_git(
     sources: Vec<String>,
     debug: bool,
-    git_program: &std::path::Path,
+    git_program: &Path,
     print_starts: bool,
 ) -> Vec<GitPullResult> {
     let mut pulls = Vec::new();

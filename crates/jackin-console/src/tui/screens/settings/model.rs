@@ -139,6 +139,7 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthFormFocus {
     Mode,
+    SourceFolder,
     CredentialSource,
     Save,
     Cancel,

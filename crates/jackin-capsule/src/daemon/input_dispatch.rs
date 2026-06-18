@@ -8,24 +8,24 @@ use crate::tui::update::prefix_full_redraw_reason;
 use crate::tui::view::encode_osc52_clipboard_write;
 
 use super::{
-    Action, ActionFramePlan, ConfirmedActionRoute, Dialog, DialogAction, DialogActionFramePlan,
-    FullRedrawReason, InputDispatchContext, InputEvent, Instant, Multiplexer, PaletteCommand,
-    PaletteCommandRoute, PaletteToggleRoute, PickerIntent, PrefixCommand, StatusBarClickState,
-    branch_context_bar_click_action, confirmed_action_route, dialog_action_frame_plan,
-    drag_resize_redraw_reason, encode_wheel_cursor_fallback, focus_change_redraw_reason,
-    github_context_view_from_state, input_event_action, mouse_chrome_update_action,
-    mouse_release_action, palette_command_route, palette_route_frame_plan, palette_toggle_route,
-    pane_button_motion_action, pane_data_redraw_reason, pane_wheel_cursor_fallback_reason,
-    prefix_command_action, selection_change_redraw_reason, selection_start_redraw_reason,
-    status_bar_click_action,
+    Action, ConfirmedActionRoute, Dialog, DialogAction, FullRedrawReason, InputDispatchContext,
+    InputEvent, Instant, Multiplexer, PaletteCommand, PaletteCommandRoute, PaletteToggleRoute,
+    PickerIntent, PrefixCommand, StatusBarClickState, branch_context_bar_click_action,
+    confirmed_action_route, dialog_action_frame_plan, drag_resize_redraw_reason,
+    encode_wheel_cursor_fallback, focus_change_redraw_reason, github_context_view_from_state,
+    input_event_action, mouse_chrome_update_action, mouse_release_action, palette_command_route,
+    palette_route_frame_plan, palette_toggle_route, pane_button_motion_action,
+    pane_data_redraw_reason, pane_wheel_cursor_fallback_reason, prefix_command_action,
+    selection_change_redraw_reason, selection_start_redraw_reason, status_bar_click_action,
+    wheel_scrollback_redraw_reason,
 };
 
 impl Multiplexer {
-    fn compose_action_frame_plan(&mut self, plan: ActionFramePlan) -> Vec<u8> {
-        match plan {
-            ActionFramePlan::Full(reason) => self.compose_full_redraw(reason),
-            ActionFramePlan::Overlay(reason) => self.compose_dialog_overlay_frame(reason),
-            ActionFramePlan::Diff(reason) => self.compose_diff_frame(reason),
+    /// Record the invalidation an action implies. Handlers only mutate
+    /// state; the render loop composes when the generation moved.
+    fn invalidate_for(&mut self, action: &Action) {
+        if let Some(plan) = action_frame_plan(action) {
+            self.invalidate(plan.reason());
         }
     }
 
@@ -33,7 +33,7 @@ impl Multiplexer {
     /// mouse-click and key-event paths call `Dialog::handle_*`
     /// and route the result here, so adding a new variant means
     /// updating one match arm instead of two.
-    pub(super) fn apply_dialog_action(&mut self, action: DialogAction) -> Vec<u8> {
+    pub(super) fn apply_dialog_action(&mut self, action: DialogAction) {
         // Compact breadcrumb (always logged) for the load-bearing
         // dispatch arms — Dismiss, Command, SpawnAgent, RenameTab. The
         // Redraw / Consume arms fire on every arrow key inside a dialog
@@ -61,10 +61,10 @@ impl Multiplexer {
             DialogAction::Command(cmd) => {
                 // `handle_palette_command` decides per-arm whether
                 // the command opens a sub-dialog (push) or finishes
-                // the flow (clear stack).
-                if let Some(frame) = self.apply_action(Action::Palette(cmd)) {
-                    return frame;
-                }
+                // the flow (clear stack). It records its own
+                // invalidation, so return before the generic one.
+                self.apply_action(Action::Palette(cmd));
+                return;
             }
             DialogAction::SpawnAgent { agent, intent } => {
                 let providers = self.providers_for_agent(agent.as_deref());
@@ -78,7 +78,8 @@ impl Multiplexer {
                         })
                         .collect();
                     self.dialog_push(Dialog::new_provider_picker(agent, choices, intent));
-                    return self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange);
+                    self.invalidate(FullRedrawReason::DialogChange);
+                    return;
                 }
                 // Zero or one provider — spawn immediately without
                 // a picker step (operator experience unchanged when
@@ -102,7 +103,9 @@ impl Multiplexer {
                             );
                             Vec::new()
                         },
-                        |provider| provider.env_overrides(self.token_for_provider(provider)),
+                        |provider| {
+                            self.provider_spawn_env(agent.as_deref().unwrap_or_default(), provider)
+                        },
                     );
                 self.dispatch_spawn_intent_with_provider(
                     agent,
@@ -136,7 +139,7 @@ impl Multiplexer {
                 // dialog's handle_key or row-click handler before this
                 // action returned).
                 // The badge expires from the daemon's tick loop.
-                self.send_output(encode_osc52_clipboard_write(&payload));
+                self.send_out_of_band(encode_osc52_clipboard_write(&payload));
                 self.dialog_copy_feedback_deadline =
                     Some(Instant::now() + DIALOG_COPY_FEEDBACK_DURATION);
             }
@@ -169,13 +172,10 @@ impl Multiplexer {
                 }
             }
         }
-        match frame_plan {
-            DialogActionFramePlan::Full(reason) => self.compose_full_redraw(reason),
-            DialogActionFramePlan::Overlay(reason) => self.compose_dialog_overlay_frame(reason),
-        }
+        self.invalidate(frame_plan.reason());
     }
 
-    pub(super) fn apply_action(&mut self, action: Action) -> Option<Vec<u8>> {
+    pub(super) fn apply_action(&mut self, action: Action) {
         match action {
             Action::OpenPalette => {
                 self.cancel_drag();
@@ -183,22 +183,19 @@ impl Multiplexer {
                     PaletteToggleRoute::CloseDialog => self.dialog_clear(),
                     PaletteToggleRoute::OpenPalette => self.open_command_palette(),
                 }
-                action_frame_plan(&Action::OpenPalette)
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::OpenPalette);
             }
             Action::OpenContainerInfo => {
                 self.open_container_info_dialog();
-                action_frame_plan(&Action::OpenContainerInfo)
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::OpenContainerInfo);
             }
             Action::OpenGithubContext => {
                 self.open_github_context_dialog(Instant::now());
-                action_frame_plan(&Action::OpenGithubContext)
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::OpenGithubContext);
             }
             Action::OpenRenameTab(idx) => {
                 if idx >= self.tabs.len() {
-                    return None;
+                    return;
                 }
                 self.cancel_drag();
                 let initial = self.tabs[idx]
@@ -207,96 +204,80 @@ impl Multiplexer {
                     .unwrap_or_default();
                 self.dialog_push(Dialog::new_rename_tab(idx, initial));
                 self.last_tab_click = None;
-                action_frame_plan(&Action::OpenRenameTab(idx))
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::OpenRenameTab(idx));
             }
             Action::OpenAgentPicker(intent) => {
                 let agents = self.available_agents.clone();
                 self.dialog_push(Dialog::new_agent_picker(agents, intent));
-                action_frame_plan(&Action::OpenAgentPicker(intent))
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::OpenAgentPicker(intent));
             }
             Action::SwitchTab(idx) => {
                 if idx >= self.tabs.len() || idx == self.active_tab {
-                    return None;
+                    return;
                 }
                 self.cancel_drag();
                 let prev = self.active_focused_id();
                 self.active_tab = idx;
                 self.synthesise_focus_swap(prev, self.active_focused_id());
-                action_frame_plan(&Action::SwitchTab(idx))
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::SwitchTab(idx));
             }
             Action::NextTab => {
                 self.next_tab();
-                action_frame_plan(&Action::NextTab).map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::NextTab);
             }
             Action::PreviousTab => {
                 self.prev_tab();
-                action_frame_plan(&Action::PreviousTab)
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::PreviousTab);
             }
             Action::JumpTab(idx) => {
                 self.jump_tab(idx);
-                action_frame_plan(&Action::JumpTab(idx))
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::JumpTab(idx));
             }
             Action::SplitFocused(direction) => {
                 if let Err(err) = self.split_focused(direction) {
                     crate::clog!("split ({direction:?}) failed: {err:?}");
                 }
-                action_frame_plan(&Action::SplitFocused(direction))
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::SplitFocused(direction));
             }
             Action::MoveFocus(dir) => {
                 self.move_focus(dir);
-                action_frame_plan(&Action::MoveFocus(dir))
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::MoveFocus(dir));
             }
             Action::ToggleZoom => {
                 self.toggle_zoom();
-                action_frame_plan(&Action::ToggleZoom)
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::ToggleZoom);
             }
             Action::CloseFocusedPane => {
                 self.close_focused_pane();
-                action_frame_plan(&Action::CloseFocusedPane)
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::CloseFocusedPane);
             }
             Action::CloseFocusedTab => {
                 self.close_focused_tab();
-                action_frame_plan(&Action::CloseFocusedTab)
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::CloseFocusedTab);
             }
             Action::ClearFocusedPane => {
                 self.clear_focused_pane();
-                action_frame_plan(&Action::ClearFocusedPane)
-                    .map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::ClearFocusedPane);
             }
             Action::Detach => {
                 self.detach_requested = true;
-                action_frame_plan(&Action::Detach).map(|plan| self.compose_action_frame_plan(plan))
+                self.invalidate_for(&Action::Detach);
             }
             Action::Palette(cmd) => self.handle_palette_command(cmd),
             Action::Prefix(cmd) => {
-                if self.dialog_captures_input() {
-                    None
-                } else {
-                    self.handle_prefix_command(cmd)
+                if !self.dialog_captures_input() {
+                    self.handle_prefix_command(cmd);
                 }
             }
             Action::ResizePane(dir) => {
-                if self.dialog_captures_input() {
-                    None
-                } else {
+                if !self.dialog_captures_input() {
                     self.resize_focused(dir);
-                    action_frame_plan(&Action::ResizePane(dir))
-                        .map(|plan| self.compose_action_frame_plan(plan))
+                    self.invalidate_for(&Action::ResizePane(dir));
                 }
             }
             Action::FocusReport(focused) => {
                 if self.dialog_captures_input() {
-                    return None;
+                    return;
                 }
                 let bytes = if focused {
                     b"\x1b[I".as_ref()
@@ -309,14 +290,10 @@ impl Multiplexer {
                 {
                     session.send_input(bytes);
                 }
-                None
             }
             Action::MouseChromeUpdate { row, col, button } => {
-                if let Some(frame) = self.update_hover_for_mouse(row, col) {
-                    self.send_output(frame);
-                }
+                self.update_hover_for_mouse(row, col);
                 self.update_pointer_shape_for_mouse(row, col, button);
-                None
             }
             Action::Wheel { row, col, button } => {
                 if self.dialog_open() {
@@ -338,14 +315,12 @@ impl Multiplexer {
                         .unwrap_or_default();
                     if let Some(scroll) = self.dialog_top_mut().and_then(|d| d.body_scroll_mut()) {
                         if !scroll.on_sgr_wheel_button_for_axes(button, axes) {
-                            return None;
+                            return;
                         }
                         self.clamp_dialog_top_scroll();
-                        return Some(
-                            self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange),
-                        );
+                        self.invalidate(FullRedrawReason::DialogChange);
                     }
-                    return None;
+                    return;
                 }
                 if self.forward_mouse_to_focused_pane_with_kind(col, row, button, true) {
                     crate::cdebug!(
@@ -354,11 +329,15 @@ impl Multiplexer {
                         col,
                         button
                     );
-                    return None;
+                    return;
                 }
                 let delta = if (button & 1) == 0 { 3 } else { -3 };
-                let focused = self.active_focused_id()?;
-                let session = self.sessions.get_mut(&focused)?;
+                let Some(focused) = self.active_focused_id() else {
+                    return;
+                };
+                let Some(session) = self.sessions.get_mut(&focused) else {
+                    return;
+                };
                 let debug_enabled = crate::logging::debug_enabled();
                 let (filled, vt_filled, inline_filled) = if debug_enabled {
                     let (vt_filled, inline_filled) = session.scrollback_counts();
@@ -390,7 +369,7 @@ impl Multiplexer {
                         buf
                     );
                     session.send_input(&buf);
-                    return None;
+                    return;
                 }
                 if filled == 0 {
                     crate::cdebug!(
@@ -405,7 +384,7 @@ impl Multiplexer {
                         vt_filled,
                         inline_filled
                     );
-                    return None;
+                    return;
                 }
                 crate::cdebug!(
                     "wheel dispatch: jackin-scrollback session={} row={} col={} button={} delta={} before={} filled={}",
@@ -414,51 +393,73 @@ impl Multiplexer {
                     col,
                     button,
                     delta,
-                    session.scrollback_offset,
+                    session.scrollback_offset(),
                     filled
                 );
                 let moved = session.scroll_by(delta);
                 crate::cdebug!(
                     "wheel dispatch: jackin-scrollback session={} after={} moved={}",
                     focused,
-                    session.scrollback_offset,
+                    session.scrollback_offset(),
                     moved
                 );
+                // Every wheel step that moved the offset repaints body and
+                // footer together — including the offset→0 return to live
+                // (D2).
                 if moved {
-                    Some(self.compose_partial_frame(std::collections::HashSet::from([focused])))
-                } else {
-                    None
+                    self.invalidate(wheel_scrollback_redraw_reason());
                 }
             }
             Action::FocusPaneAt { row, col } => {
-                focus_change_redraw_reason(self.focus_pane_at(row, col))
-                    .map(|reason| self.compose_diff_frame(reason))
+                if let Some(reason) = focus_change_redraw_reason(self.focus_pane_at(row, col)) {
+                    self.invalidate(reason);
+                }
             }
             Action::PanePrimaryPress { row, col } => {
                 if self.selection.is_some() || self.selection_copied {
                     self.selection = None;
                     self.selection_copied = false;
                     self.selection_copy_feedback_deadline = None;
-                    return Some(self.compose_diff_frame(selection_change_redraw_reason()));
+                    // Stamp the press even though it only cleared the old
+                    // highlight: a double-click on the next word should be
+                    // two presses, not three. The return value is ignored
+                    // because a double cannot resolve here — every selection
+                    // setter clears `last_pane_press` first, so this press
+                    // can only be a fresh first half.
+                    if let Some(candidate) = self.detect_selection_start(row, col) {
+                        self.register_pane_press(&candidate);
+                    }
+                    self.invalidate(selection_change_redraw_reason());
+                    return;
                 }
                 // Press on a shared pane border starts a drag — skip focus
                 // switch and PTY forward in that case.
                 if self.detect_drag_start(row, col).is_some() {
                     self.apply_action(Action::StartDragResize { row, col });
-                    return None;
+                    return;
+                }
+                // Press on the focused pane's scrollbar track jumps the
+                // scrollback view to the clicked position.
+                if self.scrollbar_jump_at(row, col) {
+                    return;
                 }
                 // Click on a pane other than the currently-focused one switches
                 // focus first so the operator never has to click twice. Selection
                 // or PTY-mouse forwarding then runs against the freshly-focused
                 // pane.
-                let focus_frame = self.apply_action(Action::FocusPaneAt { row, col });
+                self.apply_action(Action::FocusPaneAt { row, col });
                 // Press inside a pane whose program never asked for a mouse
-                // protocol arms a text selection. The selection becomes active
-                // only after motion leaves the press cell; a plain click must
-                // stay a click/focus gesture and must not interact with copy.
+                // protocol arms a text selection. A double-click selects and
+                // copies the word under the cursor immediately; a single
+                // press only becomes a selection after motion leaves the
+                // press cell, so a plain click stays a click/focus gesture
+                // and never interacts with copy.
                 if let Some(selection) = self.detect_selection_start(row, col) {
+                    if self.register_pane_press(&selection) {
+                        return;
+                    }
                     self.pending_selection = Some(selection);
-                    return focus_frame;
+                    return;
                 }
                 self.apply_action(Action::ForwardMouse {
                     row,
@@ -466,11 +467,11 @@ impl Multiplexer {
                     button: 0,
                     press: true,
                 });
-                focus_frame
             }
             Action::PaneButtonMotion { row, col } => {
                 if self.pending_selection.is_some() && self.selection.is_none() {
-                    return self.pending_selection_motion(row, col);
+                    self.pending_selection_motion(row, col);
+                    return;
                 }
                 let action = pane_button_motion_action(
                     self.drag.is_some(),
@@ -478,7 +479,7 @@ impl Multiplexer {
                     row,
                     col,
                 );
-                self.apply_action(action)
+                self.apply_action(action);
             }
             Action::StatusBarClick { col } => {
                 let tab = self.status_bar.tab_at_col(col + 1);
@@ -491,16 +492,18 @@ impl Multiplexer {
                         })
                     })
                     .is_some();
-                let action = status_bar_click_action(StatusBarClickState {
+                let Some(action) = status_bar_click_action(StatusBarClickState {
                     tab,
                     tab_count: self.tabs.len(),
                     double_click,
                     menu_hit: self.status_bar.hint_at(1, col + 1),
-                })?;
+                }) else {
+                    return;
+                };
                 if matches!(action, Action::SwitchTab(_)) {
                     self.last_tab_click = tab.map(|idx| (idx, now));
                 }
-                self.apply_action(action)
+                self.apply_action(action);
             }
             Action::BranchContextBarClick { row, col } => {
                 let hit = branch_context_bar_hit(
@@ -513,8 +516,10 @@ impl Multiplexer {
                     self.pull_request_context_loading(),
                     self.status_bar.instance_id_label(),
                 );
-                let action = branch_context_bar_click_action(hit)?;
-                self.apply_action(action)
+                let Some(action) = branch_context_bar_click_action(hit) else {
+                    return;
+                };
+                self.apply_action(action);
             }
             Action::ForwardMouse {
                 row,
@@ -523,12 +528,11 @@ impl Multiplexer {
                 press,
             } => {
                 self.forward_mouse_to_focused_pane_with_kind(col, row, button, press);
-                None
             }
             Action::MouseRelease { row, col, button } => {
                 if self.pending_selection.is_some() && self.selection.is_none() {
                     self.pending_selection = None;
-                    return None;
+                    return;
                 }
                 let action = mouse_release_action(
                     self.drag.is_some(),
@@ -537,9 +541,13 @@ impl Multiplexer {
                     col,
                     button,
                 );
-                self.apply_action(action)
+                self.apply_action(action);
             }
             Action::PaneData(bytes) => {
+                // Any operator keystroke dismisses the spawn-failure banner.
+                if self.spawn_failure.take().is_some() {
+                    self.invalidate(FullRedrawReason::StatusChange);
+                }
                 let cleared_selection = self.selection.is_some() || self.selection_copied;
                 self.pending_selection = None;
                 if cleared_selection {
@@ -552,7 +560,7 @@ impl Multiplexer {
                 if let Some(focused) = self.active_focused_id()
                     && let Some(session) = self.sessions.get_mut(&focused)
                 {
-                    if session.scrollback_offset != 0 {
+                    if session.scrollback_offset() != 0 {
                         session.scroll_to_live();
                         snapped = true;
                     }
@@ -560,28 +568,27 @@ impl Multiplexer {
                     session.send_input(&bytes);
                 }
                 if cleared_selection {
-                    Some(self.compose_diff_frame(selection_change_redraw_reason()))
-                } else {
-                    pane_data_redraw_reason(snapped, unblocked)
-                        .map(|reason| self.compose_diff_frame(reason))
+                    self.invalidate(selection_change_redraw_reason());
+                } else if let Some(reason) = pane_data_redraw_reason(snapped, unblocked) {
+                    self.invalidate(reason);
                 }
             }
             Action::StartDragResize { row, col } => {
                 self.drag = self.detect_drag_start(row, col);
-                None
             }
             Action::DragMotion { row, col } => self.drag_motion(row, col),
             Action::EndDragResize => {
                 self.drag = None;
-                Some(self.compose_full_redraw(drag_resize_redraw_reason()))
+                self.invalidate(drag_resize_redraw_reason());
             }
             Action::StartSelection { row, col } => {
                 self.pending_selection = None;
                 self.selection_copied = false;
                 self.selection_copy_feedback_deadline = None;
                 self.selection = self.detect_selection_start(row, col);
-                selection_start_redraw_reason(self.selection.is_some())
-                    .map(|reason| self.compose_diff_frame(reason))
+                if let Some(reason) = selection_start_redraw_reason(self.selection.is_some()) {
+                    self.invalidate(reason);
+                }
             }
             Action::SelectionMotion { row, col } => self.selection_motion(row, col),
             Action::FinalizeSelection => self.finalize_selection(),
@@ -597,18 +604,21 @@ impl Multiplexer {
                 // so the dialog can classify the modal click in render coords.
                 let term_rows = self.term_rows;
                 let term_cols = self.term_cols;
-                let action = self.dispatch_to_dialog_top(|dialog, github| {
+                let Some(action) = self.dispatch_to_dialog_top(|dialog, github| {
                     dialog.handle_click(row + 1, col + 1, term_rows, term_cols, github)
-                })?;
-                self.apply_action(Action::Dialog(action))
+                }) else {
+                    return;
+                };
+                self.apply_action(Action::Dialog(action));
             }
-            Action::Dialog(action) => Some(self.apply_dialog_action(action)),
+            Action::Dialog(action) => self.apply_dialog_action(action),
         }
     }
 
-    /// Handle a parsed input event from the client terminal.
-    /// Returns bytes to send to the client (e.g. redraws), if any.
-    pub(super) fn handle_input(&mut self, event: InputEvent) -> Option<Vec<u8>> {
+    /// Handle a parsed input event from the client terminal. Handlers only
+    /// mutate state and record an invalidation; the render loop composes the
+    /// next frame when the generation moved.
+    pub(super) fn handle_input(&mut self, event: InputEvent) {
         if let Some(action) = mouse_chrome_update_action(&event) {
             self.apply_action(action);
         }
@@ -617,13 +627,13 @@ impl Multiplexer {
                 self.dispatch_to_dialog_top(|dialog, github| dialog.handle_key(&bytes, github))
             {
                 self.clamp_dialog_top_scroll();
-                self.apply_action(Action::Dialog(action))
+                self.apply_action(Action::Dialog(action));
             } else {
                 // Any keyboard input from the operator returns the
                 // focused pane to the live tail. Matches the
                 // common multiplexer convention that "I'm typing
                 // again" implies "show me what's happening now."
-                self.apply_action(Action::PaneData(bytes))
+                self.apply_action(Action::PaneData(bytes));
             }
         } else {
             let branch_context_hit = match &event {
@@ -644,33 +654,33 @@ impl Multiplexer {
                 .is_some(),
                 _ => false,
             };
-            input_event_action(
+            if let Some(action) = input_event_action(
                 &event,
                 InputDispatchContext {
                     dialog_captures_input: self.dialog_captures_input(),
                     branch_context_hit,
                 },
-            )
-            .and_then(|action| self.apply_action(action))
+            ) {
+                self.apply_action(action);
+            }
         }
     }
 
-    pub(super) fn handle_prefix_command(&mut self, cmd: PrefixCommand) -> Option<Vec<u8>> {
+    pub(super) fn handle_prefix_command(&mut self, cmd: PrefixCommand) {
         // Action breadcrumb: every prefix-key chord lands here, so one
         // line per dispatch is enough to reconstruct what the operator
         // pressed when triaging a bug report. The Debug formatter
         // includes any payload (`JumpTab(i)`, `MoveFocus(dir)`).
         crate::clog!("action: prefix={cmd:?}");
-        let full_redraw_reason = prefix_full_redraw_reason(&cmd);
-        if let Some(action) = prefix_command_action(&cmd)
-            && let Some(frame) = self.apply_action(action)
-        {
-            return Some(frame);
+        if let Some(action) = prefix_command_action(&cmd) {
+            self.apply_action(action);
         }
-        Some(self.compose_full_redraw(full_redraw_reason))
+        // The prefix gesture itself invalidates (the status-bar prefix chip
+        // changes) even when the command maps to no action.
+        self.invalidate(prefix_full_redraw_reason(&cmd));
     }
 
-    pub(super) fn handle_palette_command(&mut self, cmd: PaletteCommand) -> Option<Vec<u8>> {
+    pub(super) fn handle_palette_command(&mut self, cmd: PaletteCommand) {
         // Per-arm decision: sub-dialog openings push onto the dialog
         // stack (Menu stays underneath for Esc → back); terminal
         // actions clear the stack and run the action. No blanket
@@ -723,6 +733,6 @@ impl Multiplexer {
                 self.clear_focused_pane();
             }
         }
-        Some(self.compose_action_frame_plan(palette_route_frame_plan(route)))
+        self.invalidate(palette_route_frame_plan(route).reason());
     }
 }
