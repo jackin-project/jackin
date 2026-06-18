@@ -196,6 +196,39 @@ pub trait ModalAuthPlainSourceOpen<TextInputTarget, TextInputState, AuthFormFocu
     ) -> bool;
 }
 
+pub trait AuthFormCredentialEdit {
+    fn set_auth_literal(&mut self, value: String);
+    fn set_auth_source_folder(&mut self, value: PathBuf);
+}
+
+impl<V: AuthCredential> AuthFormCredentialEdit for AuthForm<V> {
+    fn set_auth_literal(&mut self, value: String) {
+        self.set_literal(value);
+    }
+
+    fn set_auth_source_folder(&mut self, value: PathBuf) {
+        self.set_source_folder(value);
+    }
+}
+
+pub trait ModalAuthFormCredentialApply<AuthFormFocus>: Sized {
+    fn apply_auth_plain_text(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        save_focus: AuthFormFocus,
+        value: &str,
+    ) -> bool;
+
+    fn apply_auth_source_folder(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        save_focus: AuthFormFocus,
+        value: PathBuf,
+    ) -> bool;
+
+    fn restore_auth_form_modal(modal: &mut Option<Self>, modal_parents: &mut Vec<Self>) -> bool;
+}
+
 #[must_use]
 pub const fn settings_auth_form_can_generate_token(kind: AuthKind, mode: Option<AuthMode>) -> bool {
     can_generate_claude_oauth_token(kind, mode)

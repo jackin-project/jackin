@@ -269,6 +269,124 @@ impl<
     AuthForm,
     AuthFormFocus,
     SecretsScopeTag,
+> crate::tui::auth_config::ModalAuthFormCredentialApply<AuthFormFocus>
+    for ConsoleModal<
+        TextInputTarget,
+        TextInputState,
+        FileBrowserTarget,
+        FileBrowserState,
+        MountDstChoiceState,
+        WorkdirPickState,
+        ConfirmTarget,
+        ConfirmState,
+        SaveDiscardState,
+        GithubPickerState,
+        ConfirmSaveState,
+        ErrorPopupState,
+        ContainerInfoState,
+        StatusPopupState,
+        OpPickerState,
+        RolePickerState,
+        SourcePickerState,
+        ScopePickerState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+        SecretsScopeTag,
+    >
+where
+    AuthForm: crate::tui::auth_config::AuthFormCredentialEdit,
+{
+    fn apply_auth_plain_text(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        save_focus: AuthFormFocus,
+        value: &str,
+    ) -> bool {
+        let Some(Self::AuthForm {
+            target, mut state, ..
+        }) = modal_parents.pop()
+        else {
+            return false;
+        };
+        state.set_auth_literal(value.to_owned());
+        *modal = Some(Self::AuthForm {
+            target,
+            state,
+            focus: save_focus,
+            literal_buffer: value.to_owned(),
+        });
+        true
+    }
+
+    fn apply_auth_source_folder(
+        modal: &mut Option<Self>,
+        modal_parents: &mut Vec<Self>,
+        save_focus: AuthFormFocus,
+        value: PathBuf,
+    ) -> bool {
+        let Some(Self::AuthForm {
+            target,
+            mut state,
+            literal_buffer,
+            ..
+        }) = modal_parents.pop()
+        else {
+            return false;
+        };
+        state.set_auth_source_folder(value);
+        *modal = Some(Self::AuthForm {
+            target,
+            state,
+            focus: save_focus,
+            literal_buffer,
+        });
+        true
+    }
+
+    fn restore_auth_form_modal(modal: &mut Option<Self>, modal_parents: &mut Vec<Self>) -> bool {
+        let Some(Self::AuthForm {
+            target,
+            state,
+            focus,
+            literal_buffer,
+        }) = modal_parents.pop()
+        else {
+            return false;
+        };
+        *modal = Some(Self::AuthForm {
+            target,
+            state,
+            focus,
+            literal_buffer,
+        });
+        true
+    }
+}
+
+impl<
+    TextInputTarget,
+    TextInputState,
+    FileBrowserTarget,
+    FileBrowserState,
+    MountDstChoiceState,
+    WorkdirPickState,
+    ConfirmTarget,
+    ConfirmState,
+    SaveDiscardState,
+    GithubPickerState,
+    ConfirmSaveState,
+    ErrorPopupState,
+    ContainerInfoState,
+    StatusPopupState,
+    OpPickerState,
+    RolePickerState,
+    SourcePickerState,
+    ScopePickerState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+    SecretsScopeTag,
 > crate::tui::auth_config::ModalAuthPlainSourceOpen<TextInputTarget, TextInputState, AuthFormFocus>
     for ConsoleModal<
         TextInputTarget,
@@ -1580,6 +1698,122 @@ mod tests {
         assert!(
             matches!(modal, Some(TestModal::TextInput { target: "auth", state }) if state == "existing")
         );
+    }
+
+    #[test]
+    fn console_modal_applies_auth_plain_text() {
+        type TestModal = ConsoleModal<
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
+            crate::tui::components::auth_panel::AuthForm<jackin_core::EnvValue>,
+            crate::tui::screens::settings::model::AuthFormFocus,
+            (),
+        >;
+
+        let mut modal = None;
+        let mut parents = vec![TestModal::AuthForm {
+            target: crate::tui::screens::settings::model::AuthFormTarget::Workspace {
+                kind: crate::tui::auth::AuthKind::Claude,
+            },
+            state: Box::new(crate::tui::components::auth_panel::AuthForm::new(
+                crate::tui::auth::AuthKind::Claude,
+            )),
+            focus: crate::tui::screens::settings::model::AuthFormFocus::CredentialSource,
+            literal_buffer: String::new(),
+        }];
+
+        let applied = crate::tui::auth_config::ModalAuthFormCredentialApply::apply_auth_plain_text(
+            &mut modal,
+            &mut parents,
+            crate::tui::screens::settings::model::AuthFormFocus::Save,
+            "token",
+        );
+
+        assert!(applied);
+        assert!(parents.is_empty());
+        assert!(matches!(
+            modal,
+            Some(TestModal::AuthForm {
+                state,
+                focus: crate::tui::screens::settings::model::AuthFormFocus::Save,
+                literal_buffer,
+                ..
+            }) if state.literal_buffer() == "token" && literal_buffer == "token"
+        ));
+    }
+
+    #[test]
+    fn console_modal_restores_auth_form_modal() {
+        type TestModal = ConsoleModal<
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            (),
+            crate::tui::screens::settings::model::AuthFormTarget<crate::tui::auth::AuthKind>,
+            crate::tui::components::auth_panel::AuthForm<jackin_core::EnvValue>,
+            crate::tui::screens::settings::model::AuthFormFocus,
+            (),
+        >;
+
+        let mut modal = None;
+        let mut parents = vec![TestModal::AuthForm {
+            target: crate::tui::screens::settings::model::AuthFormTarget::Workspace {
+                kind: crate::tui::auth::AuthKind::Claude,
+            },
+            state: Box::new(crate::tui::components::auth_panel::AuthForm::new(
+                crate::tui::auth::AuthKind::Claude,
+            )),
+            focus: crate::tui::screens::settings::model::AuthFormFocus::CredentialSource,
+            literal_buffer: "existing".into(),
+        }];
+
+        let restored =
+            crate::tui::auth_config::ModalAuthFormCredentialApply::restore_auth_form_modal(
+                &mut modal,
+                &mut parents,
+            );
+
+        assert!(restored);
+        assert!(parents.is_empty());
+        assert!(matches!(
+            modal,
+            Some(TestModal::AuthForm {
+                focus: crate::tui::screens::settings::model::AuthFormFocus::CredentialSource,
+                literal_buffer,
+                ..
+            }) if literal_buffer == "existing"
+        ));
     }
 
     #[test]

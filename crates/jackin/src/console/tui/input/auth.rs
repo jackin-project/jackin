@@ -326,51 +326,36 @@ pub(super) fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_
 /// re-mount target for the plain-text generate path in the
 /// `run_console` loop, hence the wider visibility.
 pub(in crate::console) fn apply_plain_text_to_auth_form(editor: &mut EditorState<'_>, value: &str) {
-    let Some(Modal::AuthForm {
-        target, mut state, ..
-    }) = editor.modal_parents.pop()
-    else {
+    if !jackin_console::tui::auth_config::ModalAuthFormCredentialApply::apply_auth_plain_text(
+        &mut editor.modal,
+        &mut editor.modal_parents,
+        AuthFormFocus::Save,
+        value,
+    ) {
         log_missing_return_path(
             AUTH_MISSING_PLAIN_TEXT,
             "apply_plain_text_to_auth_form",
             " — typed credential dropped",
         );
-        return;
-    };
-    state.set_literal(value.to_owned());
-    editor.modal = Some(Modal::AuthForm {
-        target,
-        state,
-        focus: AuthFormFocus::Save,
-        literal_buffer: value.to_owned(),
-    });
+    }
 }
 
 pub(in crate::console) fn apply_source_folder_to_auth_form(
     editor: &mut EditorState<'_>,
     value: PathBuf,
 ) {
-    let Some(Modal::AuthForm {
-        target,
-        mut state,
-        literal_buffer,
-        ..
-    }) = editor.modal_parents.pop()
-    else {
+    if !jackin_console::tui::auth_config::ModalAuthFormCredentialApply::apply_auth_source_folder(
+        &mut editor.modal,
+        &mut editor.modal_parents,
+        AuthFormFocus::Save,
+        value,
+    ) {
         log_missing_return_path(
             AUTH_MISSING_FOLDER_COMMIT,
             "apply_source_folder_to_auth_form",
             " — selected folder dropped",
         );
-        return;
-    };
-    state.set_source_folder(value);
-    editor.modal = Some(Modal::AuthForm {
-        target,
-        state,
-        focus: AuthFormFocus::Save,
-        literal_buffer,
-    });
+    }
 }
 
 /// Commit branch for `Modal::AuthSourcePicker` when the operator picks
@@ -470,26 +455,16 @@ pub(in crate::console) fn apply_op_picker_commit_failed(
 /// the `OpPicker` or the literal `TextInput`. Both side modals share
 /// the same recovery shape, so the same helper handles both.
 pub(super) fn restore_auth_form_after_op_picker_cancel(editor: &mut EditorState<'_>) {
-    let Some(Modal::AuthForm {
-        target,
-        state,
-        focus,
-        literal_buffer,
-    }) = editor.modal_parents.pop()
-    else {
+    if !jackin_console::tui::auth_config::ModalAuthFormCredentialApply::restore_auth_form_modal(
+        &mut editor.modal,
+        &mut editor.modal_parents,
+    ) {
         log_missing_return_path(
             AUTH_MISSING_OP_CANCEL,
             "restore_auth_form_after_op_picker_cancel",
             "",
         );
-        return;
-    };
-    editor.modal = Some(Modal::AuthForm {
-        target,
-        state,
-        focus,
-        literal_buffer,
-    });
+    }
 }
 
 /// Inner helper split out so tests can inject a fake `OpRunner`
