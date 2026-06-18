@@ -181,6 +181,64 @@ pub const fn startup_error_modal_active(
     startup_error_pending && list_modal_is_error_popup
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsoleClickStageFacts {
+    List {
+        list_modal_open: bool,
+        workspace_list_target: bool,
+    },
+    Editor {
+        modal_open: bool,
+        tab_target: bool,
+        mount_row_target: bool,
+        auth_row_target: bool,
+    },
+    Settings {
+        mounts_modal_open: bool,
+        env_modal_open: bool,
+        tab_target: bool,
+        trust_target: bool,
+    },
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConsoleClickabilityFacts {
+    pub pointer_supported: bool,
+    pub file_browser_url_target: bool,
+    pub container_info_copy_target: bool,
+    pub stage: ConsoleClickStageFacts,
+}
+
+#[must_use]
+pub const fn console_clickable_at(facts: ConsoleClickabilityFacts) -> bool {
+    if !facts.pointer_supported {
+        return false;
+    }
+    if facts.file_browser_url_target || facts.container_info_copy_target {
+        return true;
+    }
+    match facts.stage {
+        ConsoleClickStageFacts::List {
+            list_modal_open,
+            workspace_list_target,
+        } => !list_modal_open && workspace_list_target,
+        ConsoleClickStageFacts::Editor {
+            modal_open,
+            tab_target,
+            mount_row_target,
+            auth_row_target,
+        } => !modal_open && (tab_target || mount_row_target || auth_row_target),
+        ConsoleClickStageFacts::Settings {
+            mounts_modal_open,
+            env_modal_open,
+            tab_target,
+            trust_target,
+        } => !mounts_modal_open && !env_modal_open && (tab_target || trust_target),
+        ConsoleClickStageFacts::Other => false,
+    }
+}
+
 #[must_use]
 pub fn should_dismiss_list_modal_for_outside_click(
     startup_error_modal_active: bool,

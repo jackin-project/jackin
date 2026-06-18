@@ -189,6 +189,94 @@ fn startup_error_policy_uses_pending_and_list_modal_facts() {
 }
 
 #[test]
+fn console_clickability_policy_routes_modal_and_stage_targets() {
+    assert!(!console_clickable_at(ConsoleClickabilityFacts {
+        pointer_supported: false,
+        file_browser_url_target: true,
+        container_info_copy_target: false,
+        stage: ConsoleClickStageFacts::Other,
+    }));
+
+    assert!(console_clickable_at(ConsoleClickabilityFacts {
+        pointer_supported: true,
+        file_browser_url_target: true,
+        container_info_copy_target: false,
+        stage: ConsoleClickStageFacts::Other,
+    }));
+    assert!(console_clickable_at(ConsoleClickabilityFacts {
+        pointer_supported: true,
+        file_browser_url_target: false,
+        container_info_copy_target: true,
+        stage: ConsoleClickStageFacts::Other,
+    }));
+
+    assert!(console_clickable_at(ConsoleClickabilityFacts {
+        pointer_supported: true,
+        file_browser_url_target: false,
+        container_info_copy_target: false,
+        stage: ConsoleClickStageFacts::List {
+            list_modal_open: false,
+            workspace_list_target: true,
+        },
+    }));
+    assert!(!console_clickable_at(ConsoleClickabilityFacts {
+        pointer_supported: true,
+        file_browser_url_target: false,
+        container_info_copy_target: false,
+        stage: ConsoleClickStageFacts::List {
+            list_modal_open: true,
+            workspace_list_target: true,
+        },
+    }));
+
+    assert!(console_clickable_at(ConsoleClickabilityFacts {
+        pointer_supported: true,
+        file_browser_url_target: false,
+        container_info_copy_target: false,
+        stage: ConsoleClickStageFacts::Editor {
+            modal_open: false,
+            tab_target: false,
+            mount_row_target: true,
+            auth_row_target: false,
+        },
+    }));
+    assert!(!console_clickable_at(ConsoleClickabilityFacts {
+        pointer_supported: true,
+        file_browser_url_target: false,
+        container_info_copy_target: false,
+        stage: ConsoleClickStageFacts::Editor {
+            modal_open: true,
+            tab_target: true,
+            mount_row_target: true,
+            auth_row_target: true,
+        },
+    }));
+
+    assert!(console_clickable_at(ConsoleClickabilityFacts {
+        pointer_supported: true,
+        file_browser_url_target: false,
+        container_info_copy_target: false,
+        stage: ConsoleClickStageFacts::Settings {
+            mounts_modal_open: false,
+            env_modal_open: false,
+            tab_target: false,
+            trust_target: true,
+        },
+    }));
+    assert!(!console_clickable_at(ConsoleClickabilityFacts {
+        pointer_supported: true,
+        file_browser_url_target: false,
+        container_info_copy_target: false,
+        stage: ConsoleClickStageFacts::Settings {
+            mounts_modal_open: false,
+            env_modal_open: true,
+            tab_target: true,
+            trust_target: true,
+        },
+    }));
+}
+
+#[test]
 fn startup_error_modal_blocks_outside_click_dismissal() {
     let modal_rect = Rect::new(10, 5, 30, 10);
 

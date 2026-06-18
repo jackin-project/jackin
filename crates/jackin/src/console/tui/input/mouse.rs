@@ -27,6 +27,9 @@ use jackin_console::tui::layout::{
 use jackin_console::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
 #[cfg(test)]
 use jackin_console::tui::mount_display::workspace_config_mounts_content_width as workspace_mounts_content_width;
+use jackin_console::tui::run::{
+    ConsoleClickStageFacts, ConsoleClickabilityFacts, console_clickable_at,
+};
 use jackin_console::tui::screens::editor::update::{
     auth_focusable_index_at_visual_row, editor_mount_index_at_visual_row, editor_scroll_focus_plan,
     editor_tab_at_position, editor_tab_hover_plan,
@@ -298,49 +301,50 @@ pub(crate) fn clickable_at(
     term_size: Rect,
     config: Option<&jackin_config::AppConfig>,
 ) -> bool {
-    let _ = config;
-    if term_size.width < MIN_DRAGGABLE_WIDTH {
-        return false;
-    }
-    // The git-prompt URL row is clickable whenever a file-browser modal with a
-    // resolved URL is open, regardless of stage.
-    if file_browser_url_row_at(state, mouse, term_size) {
-        return true;
-    }
-    if container_info_copyable_row_at(state, mouse, term_size) {
-        return true;
-    }
-    match &state.stage {
-        ManagerStage::Editor(editor) if editor.modal.is_none() => {
-            editor_tab_at_position(mouse.row, mouse.column).is_some()
-                || editor_mount_index_at(editor, mouse, term_size).is_some()
-                || config
-                    .and_then(|config| editor_auth_row_index_at(editor, config, mouse, term_size))
-                    .is_some()
-        }
-        ManagerStage::Settings(settings)
-            if settings.mounts.modal.is_none() && settings.env.modal.is_none() =>
-        {
-            settings_tab_at_position(mouse.row, mouse.column).is_some()
-                || settings_trust_clickable_at_position(
-                    settings.active_tab,
-                    settings.mounts.modal.is_some(),
-                    settings.content_area(term_size),
-                    mouse.column,
-                    mouse.row,
-                )
-        }
-        ManagerStage::List if state.list_modal.is_none() => workspace_list_clickable_at_position(
-            mouse.column,
-            mouse.row,
-            term_size,
-            state.list_split_pct,
-            state.list_modal.is_some(),
-            state.visual_rows_vec().as_slice(),
-            |row| state.index_of_row(row).is_some(),
-        ),
-        _ => false,
-    }
+    let stage = match &state.stage {
+        ManagerStage::Editor(editor) => ConsoleClickStageFacts::Editor {
+            modal_open: editor.modal.is_some(),
+            tab_target: editor_tab_at_position(mouse.row, mouse.column).is_some(),
+            mount_row_target: editor_mount_index_at(editor, mouse, term_size).is_some(),
+            auth_row_target: config
+                .and_then(|config| editor_auth_row_index_at(editor, config, mouse, term_size))
+                .is_some(),
+        },
+        ManagerStage::Settings(settings) => ConsoleClickStageFacts::Settings {
+            mounts_modal_open: settings.mounts.modal.is_some(),
+            env_modal_open: settings.env.modal.is_some(),
+            tab_target: settings_tab_at_position(mouse.row, mouse.column).is_some(),
+            trust_target: settings_trust_clickable_at_position(
+                settings.active_tab,
+                settings.mounts.modal.is_some(),
+                settings.content_area(term_size),
+                mouse.column,
+                mouse.row,
+            ),
+        },
+        ManagerStage::List => ConsoleClickStageFacts::List {
+            list_modal_open: state.list_modal.is_some(),
+            workspace_list_target: workspace_list_clickable_at_position(
+                mouse.column,
+                mouse.row,
+                term_size,
+                state.list_split_pct,
+                state.list_modal.is_some(),
+                state.visual_rows_vec().as_slice(),
+                |row| state.index_of_row(row).is_some(),
+            ),
+        },
+        ManagerStage::CreatePrelude(_)
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => ConsoleClickStageFacts::Other,
+    };
+
+    console_clickable_at(ConsoleClickabilityFacts {
+        pointer_supported: term_size.width >= MIN_DRAGGABLE_WIDTH,
+        file_browser_url_target: file_browser_url_row_at(state, mouse, term_size),
+        container_info_copy_target: container_info_copyable_row_at(state, mouse, term_size),
+        stage,
+    })
 }
 
 fn try_copy_container_info_value(
