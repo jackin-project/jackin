@@ -1150,6 +1150,22 @@ fn settings_env_add_target_follows_row_scope() {
 }
 
 #[test]
+fn settings_env_selected_add_target_uses_current_flat_selection() {
+    let pending = env_config();
+    let expanded = BTreeSet::from(["alpha".to_owned()]);
+    let rows = settings_env_flat_rows(&pending, &expanded);
+    let selected = rows
+        .iter()
+        .position(|row| matches!(row, SettingsEnvRow::RoleAddSentinel(role) if role == "alpha"))
+        .unwrap_or(usize::MAX);
+
+    assert_eq!(
+        settings_env_selected_add_target(&pending, &expanded, selected),
+        Some(SettingsEnvScope::Role("alpha".to_owned()))
+    );
+}
+
+#[test]
 fn settings_env_picker_target_skips_headers_and_spacers() {
     let key = SettingsEnvRow::Key {
         scope: SettingsEnvScope::Role("alpha".to_owned()),
@@ -1171,6 +1187,33 @@ fn settings_env_picker_target_skips_headers_and_spacers() {
     assert_eq!(
         settings_env_picker_target_for_row(Some(&SettingsEnvRow::GlobalAddSentinel)),
         Some((SettingsEnvScope::Global, None))
+    );
+}
+
+#[test]
+fn settings_env_selected_picker_target_uses_current_flat_selection() {
+    let pending = env_config();
+    let expanded = BTreeSet::from(["alpha".to_owned()]);
+    let rows = settings_env_flat_rows(&pending, &expanded);
+    let selected = rows
+        .iter()
+        .position(|row| {
+            matches!(
+                row,
+                SettingsEnvRow::Key {
+                    scope: SettingsEnvScope::Role(role),
+                    key,
+                } if role == "alpha" && key == "ROLE_A"
+            )
+        })
+        .unwrap_or(usize::MAX);
+
+    assert_eq!(
+        settings_env_selected_picker_target(&pending, &expanded, selected),
+        Some((
+            SettingsEnvScope::Role("alpha".to_owned()),
+            Some("ROLE_A".to_owned())
+        ))
     );
 }
 

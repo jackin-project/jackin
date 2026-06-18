@@ -1239,6 +1239,16 @@ pub fn settings_env_add_target_for_row(row: Option<&SettingsEnvRow>) -> Option<S
 }
 
 #[must_use]
+pub fn settings_env_selected_add_target<V>(
+    pending: &SettingsEnvConfig<V>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+) -> Option<SettingsEnvScope> {
+    let rows = settings_env_flat_rows(pending, expanded_roles);
+    settings_env_add_target_for_row(rows.get(selected))
+}
+
+#[must_use]
 pub fn settings_env_picker_target_for_row(
     row: Option<&SettingsEnvRow>,
 ) -> Option<(SettingsEnvScope, Option<String>)> {
@@ -1248,6 +1258,16 @@ pub fn settings_env_picker_target_for_row(
         SettingsEnvRow::RoleAddSentinel(role) => Some((SettingsEnvScope::Role(role.clone()), None)),
         SettingsEnvRow::RoleHeader { .. } | SettingsEnvRow::SectionSpacer => None,
     }
+}
+
+#[must_use]
+pub fn settings_env_selected_picker_target<V>(
+    pending: &SettingsEnvConfig<V>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+) -> Option<(SettingsEnvScope, Option<String>)> {
+    let rows = settings_env_flat_rows(pending, expanded_roles);
+    settings_env_picker_target_for_row(rows.get(selected))
 }
 
 #[must_use]

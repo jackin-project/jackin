@@ -1101,10 +1101,11 @@ fn open_settings_env_enter_modal(settings: &mut crate::console::tui::state::Sett
 }
 
 fn open_settings_env_add_modal(settings: &mut crate::console::tui::state::SettingsState<'_>) {
-    let rows = settings.env_flat_rows();
-    let Some(scope) =
-        settings_update::settings_env_add_target_for_row(rows.get(settings.env.selected))
-    else {
+    let Some(scope) = settings_update::settings_env_selected_add_target(
+        &settings.env.pending,
+        &settings.env.expanded,
+        settings.env.selected,
+    ) else {
         return;
     };
     let label = settings_env_new_key_label(&scope);
@@ -1142,10 +1143,11 @@ fn open_settings_env_picker_modal(
     settings: &mut crate::console::tui::state::SettingsState<'_>,
     op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
 ) {
-    let rows = settings.env_flat_rows();
-    let Some(target) =
-        settings_update::settings_env_picker_target_for_row(rows.get(settings.env.selected))
-    else {
+    let Some(target) = settings_update::settings_env_selected_picker_target(
+        &settings.env.pending,
+        &settings.env.expanded,
+        settings.env.selected,
+    ) else {
         return;
     };
     settings.env.pending_picker_target = Some(target);
