@@ -43,9 +43,9 @@ use jackin_console::tui::screens::editor::view::{
     secret_new_key_label, secret_new_value_input_state,
 };
 use jackin_console::tui::update::{
-    ConfirmSaveModalPlan, FileBrowserModalPlan, MountDstChoicePlan, SaveDiscardModalPlan,
-    confirm_save_modal_plan, file_browser_modal_plan, mount_dst_choice_plan,
-    save_discard_modal_plan,
+    ConfirmSaveModalPlan, FileBrowserModalPlan, InlinePickerPlan, MountDstChoicePlan,
+    SaveDiscardModalPlan, confirm_save_modal_plan, file_browser_modal_plan, inline_picker_plan,
+    mount_dst_choice_plan, save_discard_modal_plan,
 };
 use jackin_tui::ModalOutcome;
 #[cfg(test)]
@@ -671,8 +671,8 @@ pub(super) fn handle_editor_modal(
             editor.clear_modal_chain();
         }
         Modal::RoleOverridePicker { state: picker } => {
-            match picker.handle_key(key) {
-                ModalOutcome::Commit(role) => {
+            match inline_picker_plan(picker.handle_key(key)) {
+                InlinePickerPlan::Commit(role) => {
                     // The override section materializes organically on
                     // the first value commit; we don't touch
                     // `pending.roles` here, so a cancel mid-flow leaves
@@ -686,10 +686,10 @@ pub(super) fn handle_editor_modal(
                         state,
                     });
                 }
-                ModalOutcome::Cancel => {
+                InlinePickerPlan::Dismiss => {
                     editor.pop_modal_chain();
                 }
-                ModalOutcome::Continue => {}
+                InlinePickerPlan::Continue => {}
             }
         }
         Modal::ConfirmSave { state: modal_state } => {
@@ -872,8 +872,9 @@ pub(super) fn handle_editor_modal(
         Modal::AuthForm { .. } => {
             super::auth::handle_auth_form_key(editor, key, op_available);
         }
-        Modal::AuthRolePicker { state: picker } => match picker.handle_key(key) {
-            ModalOutcome::Commit(role) => {
+        Modal::AuthRolePicker { state: picker } => match inline_picker_plan(picker.handle_key(key))
+        {
+            InlinePickerPlan::Commit(role) => {
                 if let Some(kind) = editor.auth_selected_kind {
                     let target = crate::console::tui::state::AuthFormTarget::WorkspaceRole {
                         role: role.key(),
@@ -890,10 +891,10 @@ pub(super) fn handle_editor_modal(
                     editor.pop_modal_chain();
                 }
             }
-            ModalOutcome::Cancel => {
+            InlinePickerPlan::Dismiss => {
                 editor.pop_modal_chain();
             }
-            ModalOutcome::Continue => {}
+            InlinePickerPlan::Continue => {}
         },
         Modal::OpPicker { state: picker } => {
             let outcome = picker.handle_key(key);
