@@ -112,6 +112,14 @@ pub enum EditorImmediateActionKeyPlan {
     NotImmediateAction,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorRoleActionKeyPlan {
+    OpenRoleInput,
+    ToggleAllowed,
+    ToggleDefault,
+    NotRoleAction,
+}
+
 #[derive(Debug, Clone)]
 pub enum EditorMode {
     Edit { name: String },
@@ -1109,6 +1117,25 @@ impl<
     }
 
     #[must_use]
+    pub fn role_action_key_plan(
+        &self,
+        key_code: crossterm::event::KeyCode,
+    ) -> EditorRoleActionKeyPlan {
+        use crossterm::event::KeyCode;
+
+        if self.active_tab != EditorTab::Roles {
+            return EditorRoleActionKeyPlan::NotRoleAction;
+        }
+
+        match key_code {
+            KeyCode::Char('a' | 'A') => EditorRoleActionKeyPlan::OpenRoleInput,
+            KeyCode::Char(' ') => EditorRoleActionKeyPlan::ToggleAllowed,
+            KeyCode::Char('*') => EditorRoleActionKeyPlan::ToggleDefault,
+            _ => EditorRoleActionKeyPlan::NotRoleAction,
+        }
+    }
+
+    #[must_use]
     pub fn resolve_auth_form_target(
         &self,
         config: &jackin_config::AppConfig,
@@ -1345,8 +1372,8 @@ mod tests {
     use super::{
         AuthEnterPlan, AuthRow, EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan,
         EditorImmediateActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
-        EditorRoleHeaderExpansionKeyPlan, EditorState, EditorTab, FieldFocus,
-        RoleHeaderExpansionPlan, SecretsRow,
+        EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorState, EditorTab,
+        FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
     };
 
     type TestEditor =
@@ -1890,6 +1917,41 @@ mod tests {
         assert_eq!(
             editor.immediate_action_key_plan(&config, KeyCode::Char('m'), KeyModifiers::CONTROL),
             EditorImmediateActionKeyPlan::NotImmediateAction
+        );
+    }
+
+    #[test]
+    fn editor_role_action_key_plan_routes_role_tab_actions() {
+        use crossterm::event::KeyCode;
+
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::Roles;
+
+        assert_eq!(
+            editor.role_action_key_plan(KeyCode::Char('a')),
+            EditorRoleActionKeyPlan::OpenRoleInput
+        );
+        assert_eq!(
+            editor.role_action_key_plan(KeyCode::Char('A')),
+            EditorRoleActionKeyPlan::OpenRoleInput
+        );
+        assert_eq!(
+            editor.role_action_key_plan(KeyCode::Char(' ')),
+            EditorRoleActionKeyPlan::ToggleAllowed
+        );
+        assert_eq!(
+            editor.role_action_key_plan(KeyCode::Char('*')),
+            EditorRoleActionKeyPlan::ToggleDefault
+        );
+        assert_eq!(
+            editor.role_action_key_plan(KeyCode::Char('x')),
+            EditorRoleActionKeyPlan::NotRoleAction
+        );
+
+        editor.active_tab = EditorTab::Mounts;
+        assert_eq!(
+            editor.role_action_key_plan(KeyCode::Char('a')),
+            EditorRoleActionKeyPlan::NotRoleAction
         );
     }
 

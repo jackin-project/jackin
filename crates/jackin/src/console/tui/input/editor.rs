@@ -35,7 +35,7 @@ use jackin_console::tui::components::save_discard::editor_exit_save_discard_stat
 use jackin_console::tui::screens::editor::model::{
     AuthEnterPlan, EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan,
     EditorImmediateActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
-    EditorRoleHeaderExpansionKeyPlan, RoleHeaderExpansionPlan,
+    EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, RoleHeaderExpansionPlan,
 };
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -187,7 +187,11 @@ pub(super) fn handle_editor_key(
         return Ok(InputOutcome::Continue);
     };
 
+    let role_action_plan = editor.role_action_key_plan(key.code);
     match key.code {
+        _ if !matches!(role_action_plan, EditorRoleActionKeyPlan::NotRoleAction) => {
+            dispatch_editor_role_action(editor, config, role_action_plan);
+        }
         KeyCode::Enter => match editor.active_tab {
             EditorTab::General => general::open_editor_field_modal(editor),
             EditorTab::Mounts => {
@@ -222,19 +226,10 @@ pub(super) fn handle_editor_key(
                 AuthEnterPlan::Noop => {}
             },
         },
-        KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Roles => {
-            agents::open_role_input(editor, config);
-        }
         KeyCode::Char('a' | 'A')
             if editor.active_tab == EditorTab::Auth && editor.auth_selected_kind.is_some() =>
         {
             super::auth::open_auth_role_picker(editor, config);
-        }
-        KeyCode::Char(' ') if editor.active_tab == EditorTab::Roles => {
-            agents::toggle_agent_allowed_at_cursor(editor, config);
-        }
-        KeyCode::Char('*') if editor.active_tab == EditorTab::Roles => {
-            agents::toggle_default_agent_at_cursor(editor, config);
         }
         KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Mounts => {
             state.request_effect(ManagerEffect::OpenEditorAddMountFileBrowser);
@@ -301,6 +296,25 @@ pub(super) fn handle_editor_key(
         _ => {}
     }
     Ok(InputOutcome::Continue)
+}
+
+fn dispatch_editor_role_action(
+    editor: &mut EditorState<'_>,
+    config: &AppConfig,
+    plan: EditorRoleActionKeyPlan,
+) {
+    match plan {
+        EditorRoleActionKeyPlan::OpenRoleInput => {
+            agents::open_role_input(editor, config);
+        }
+        EditorRoleActionKeyPlan::ToggleAllowed => {
+            agents::toggle_agent_allowed_at_cursor(editor, config);
+        }
+        EditorRoleActionKeyPlan::ToggleDefault => {
+            agents::toggle_default_agent_at_cursor(editor, config);
+        }
+        EditorRoleActionKeyPlan::NotRoleAction => {}
+    }
 }
 
 fn dispatch_manager(state: &mut ManagerState<'_>, message: ManagerMessage) {
