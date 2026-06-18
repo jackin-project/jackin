@@ -6,6 +6,10 @@ title: "53 — Headroom and the context-compression layer (vs the caveman ecosys
 
 Volume III deep-dive requested after the code-intelligence sweep (51) and the vector-database follow-up (52): analyze `chopratejas/headroom`, compare it in depth to the caveman ecosystem the operator already runs, re-sweep the internet for context-compression projects the dossier missed, and fold the result back into the dossier without editing the frozen Volume I/II files. Research conducted 2026-06-15; every external claim carries a source + access date in the ledger; headroom's product numbers are vendor self-reported and are tiered accordingly.
 
+<Aside type="note">
+The **canonical, deepest Caveman vs Headroom vs RTK head-to-head** now lives in its own folder: [Caveman vs Headroom vs RTK](/research/caveman-headroom-rtk/) — equal-depth design teardowns of all three, a feature has/lacks matrix, best-case-of-each, and the combinability verdict. This chapter remains the full headroom deep-dive and source ledger that comparison points back to.
+</Aside>
+
 ## TL;DR
 
 - **Headroom is the input-side counterpart to caveman, not a competitor to it.** Caveman compresses what the model *writes* (visible prose, ~17% of heavy-session dollars); headroom compresses what the model *reads* (tool outputs, logs, RAG chunks, files, history — the content that rides the **29% cache-write + 32% cache-read lines = 61% of dollars**). They operate on different token classes, stack cleanly, and **neither touches thinking (20%)** — the dossier's largest unaddressed bucket stays unaddressed.
@@ -106,35 +110,15 @@ Accuracy (headroom self-report, 100-sample tests): GSM8K 0.870 → 0.870 (±0.00
 
 The whole-bill correction (the K1 move, applied to the input side): "60–95%" is a per-payload ratio on compressible observations. On the modeled heavy day, tool outputs/observations are only part of the 61% cache traffic (the rest is the system prefix, CLAUDE.md, conversation history, and code reads that headroom passes through at ~0%). The realistic whole-bill effect is `(compressible-observation share of the 61%) × compression% × (write-share + 0.1×read-share)`. With most observation tokens already living at the 0.1× read price after first write, the read-side win is worth a tenth of its face value — so even an aggressive deployment lands in the low double digits of the day's dollars, not 60–95% of the bill. That is still a real lever on the *largest* bucket; it is simply not the headline number.
 
-## Deep comparison: headroom vs the caveman ecosystem
+## How headroom compares to caveman and RTK
 
-The operator runs the caveman family (caveman + cavemem + cavekit + cavecrew + caveman-compress/commit/review). The honest comparison is that **the two ecosystems barely overlap** — they attack opposite ends of the token pipeline from opposite engineering philosophies — and the one place they do overlap (memory) is the place to choose between them.
+The full side-by-side comparison — headroom vs the caveman ecosystem vs RTK, the axis-by-axis table, the cache-safety asymmetry (output brevity is cache-neutral; input compression is cache-breaking unless done at write-time on new content), the family-overlap mapping, and the memory either/or — is consolidated as a **single source of truth** in the dedicated folder, not duplicated here:
 
-| Axis | Caveman ecosystem | Headroom |
-|---|---|---|
-| Direction | **Output** — what the model writes | **Input/context** — what the model reads |
-| Primary bucket | Visible prose (~17% of dollars) | Tool outputs/logs/RAG/files/history (the 61% cache lines) |
-| Mechanism | Skill-prompt register change (terse English / Classical Chinese) | Typed compressors (AST/JSON/log/search) + a trained text model + drop-low-value |
-| Lossiness | **Lossy, no recovery** — dropped caveats are gone | **Reversible** — originals in CCR, fetched via `headroom_retrieve` |
-| Touches code? | Passes code/diffs verbatim | Collapses function bodies, keeps signatures (outline); passes raw code ~0% |
-| Touches thinking? | **No** (README concedes it) | **No** |
-| Cache interaction | Neutral (output side) | Safe in MCP/library, risk in proxy |
-| Form factor | Claude Code plugin / skills (minutes to adopt) | pip/npm/docker + Rust core + local ML runtime (minutes–hours) |
-| Self-cost | ~940 tok/session skill-listing prefix (file 03) | Per-request ML model + proxy latency + MCP schema rent |
-| Evidence | Output ultra **−58.5% local** (token) vs the 75% claim | **−66.1% self-report**, 0% on code, no independent replication |
-| Adoption | caveman 72,759★ (created 2026-04-04) | 28,199★ (created 2026-01-07) — both gh api 2026-06-15, **both star counts PR-inflated in this niche; rank by evidence, not stars (file 54)** |
-| Engineering depth | Prompt/skill design | 190 releases, Rust core, provider-specific proxy |
+- [Caveman vs Headroom vs RTK — overview + master comparison table](/research/caveman-headroom-rtk/)
+- [Head-to-head: the feature has/lacks matrix and best-case-of-each](/research/caveman-headroom-rtk/04-head-to-head/)
+- [Combining all three: the layered stack, the ecosystem overlap, and the memory either/or](/research/caveman-headroom-rtk/05-combining-the-three/)
 
-Mapped component by component, the two ecosystems are near-mirror images rather than rivals:
-
-- **caveman (output register) ↔ headroom compression (input).** Different token classes; they **stack**. The combined ceiling is still bounded by the dossier's structural walls: caveman cuts a slice of the 17% you write, headroom cuts a slice of the 61% you read, and the 20% thinking bucket is untouched by both. There is no double-counting because they never touch the same tokens.
-- **cavemem (compressed memory MCP) ↔ headroom cross-agent memory + CCR.** This is the real overlap. cavemem stores caveman-compressed (lossy prose) memory in SQLite+FTS5 with BM25/vector retrieval, single-agent. Headroom's memory is **reversible** (the lossy form is a view; the original is retrievable) and **cross-agent** (one store shared across Claude, Codex, Gemini, with auto-dedup). On architecture, headroom's memory is the stronger design — reversibility removes cavemem's "confidently-wrong recalled fact" failure mode, and cross-agent dedup matters for a multi-tool operator. **Both still lack the net-accounting the dossier demanded** (white-space #5): neither publishes injection-cost-vs-re-exploration-saved.
-- **cavekit (spec-driven build loop) ↔ `headroom learn`.** Different mechanisms, same meta-layer ambition: persist hard-won context so it is not re-derived. cavekit writes a durable SPEC.md up front; `headroom learn` mines *failed* sessions after the fact and writes corrections into CLAUDE.md/AGENTS.md. `headroom learn` is the more novel idea (closed-loop self-correction) and is new to the dossier (H3).
-- **cavecrew (compressed subagents) ↔ headroom `SharedContext`.** cavecrew compresses subagent reports back into the main thread (dossier measured −43.9%, not the claimed 60%); `SharedContext().put/.get` passes compressed context across a multi-agent workflow. Same goal (cheaper agent-to-agent transfer); cavecrew is Claude-Code-native, SharedContext is framework-level.
-
-**The decisive asymmetry (2024–2026 literature, file 54): output brevity is cache-neutral; input compression is cache-breaking unless done at write-time on new content.** This is the structural reason caveman's lever is *safer* than headroom's, not merely smaller. Caveman shrinks generated output — it never touches the cached prefix, so it composes with caching for free and hits the 5×-priced output class. Headroom shrinks input, which on an already-caching Claude either (a) recompresses the cached prefix and busts it (the record-19 trap), or (b) is scoped to *new* observations at write-time (the live-zone / MCP path, H1) — the only cache-safe way to compress input. A pre-registered RCT on 358 Claude Sonnet 4.5 runs (arXiv 2603.23525) shows the failure mode: moderate input compression cut cost 27.9%, but aggressive compression *raised* cost 1.8% as output expanded — and it did not even price the cache it also breaks. Practical ordering: adopt output brevity (caveman) first because it is unconditionally cache-safe; adopt input compression (headroom) only at write-time on observations.
-
-The verdict the operator actually needs: **keep caveman for output, evaluate headroom (MCP mode) for input, and treat the memory layer as an either/or** — run cavemem *or* headroom memory, not both, and pick headroom's if the operator works across Claude + Codex + Gemini and values reversibility, cavemem's if the operator is Claude-only and wants the lighter, plugin-native option. Running both memory layers is pure overhead.
+The one structural point worth restating here because it drives headroom's whole design: **output brevity is cache-neutral, but input compression is cache-breaking unless it is done at write-time on new content** — which is exactly why headroom's live-zone / MCP path (compress a new observation before it is first cached) is cache-safe while its whole-prompt proxy in front of an already-caching Claude is not. The rest of this chapter is the dossier's **headroom record**: its typed compressors, the live-zone cache machinery, the H1–H4 technique records, the benchmarks, and the source ledger.
 
 ## Genuinely new techniques (per-technique records)
 
@@ -278,6 +262,8 @@ Per the dossier's standing rule: a per-payload compression ratio is not a banked
 
 All accessed 2026-06-15.
 
+> The **complete consolidated ledger** for all three tools together — plus the formal per-technique records and the unverified-claims register — is maintained in the hub: [Records, ledger & unverified](/research/caveman-headroom-rtk/07-records-ledger-and-unverified/). The chapter-specific citations are retained below as the original research record.
+
 - headroom repo + README: [github.com/chopratejas/headroom](https://github.com/chopratejas/headroom)
 - headroom stats (28,185★ / 1,908 forks / 30 contributors / 268 issues / Apache-2.0 / created 2026-01-07 / v0.25.0): `gh api repos/chopratejas/headroom`
 - headroom source tree (cache_stabilization, live_zone, ccr, transforms, benchmarks): `gh api repos/chopratejas/headroom/git/trees/main?recursive=1`; `cache_control` in 62 files (`gh api search/code`)
@@ -287,8 +273,8 @@ All accessed 2026-06-15.
 - kompress-base model (transformer trained on agentic traces, auto-downloaded default text compressor): [huggingface.co/chopratejas/kompress-base](https://huggingface.co/chopratejas/kompress-base)
 - PyPI (190 releases, v0.25.0, requires-python ≥3.10, summary "Cut costs by 50-90%"): [pypi.org/project/headroom-ai](https://pypi.org/project/headroom-ai/)
 - secondary write-ups (tutorial/promotional, all repeating maintainer numbers; explicit "measure on your own workloads" caveat): subratpati.medium.com; alphamatch.ai/blog/headroom-context-compression-ai-agents-2026; andrew.ooo/posts/headroom-context-compression-llm-agents-review; dev.to/arshtechpro
-- cross-references (caveman/cavemem/cavekit/cavecrew records, K1/K4, white-space map): [`03-prior-art-and-market-scan.md`](/research/token-optimization-research/03-prior-art-and-market-scan/)
-- cache-conflict + CompressionAttack + CAG/FL1/FL3: [`46-fresh-literature-and-market-delta.md`](/research/token-optimization-research/46-fresh-literature-and-market-delta/)
-- log-filter −94.2% / TOON −41.2% / minify −34.3% local reproductions: [`03-prior-art-and-market-scan.md`](/research/token-optimization-research/03-prior-art-and-market-scan/)
-- outline −91% / symbol-search −98% local reproductions: [`51-code-intelligence-tools.md`](/research/token-optimization-research/51-code-intelligence-tools/)
-- fresh-literature sources (write-time compression, code-domain SWE-bench gains, cache break-even, output-brevity dominance, context rot) and the compression-tool market sweep: [`54-context-compression-literature-and-market.md`](/research/token-optimization-research/54-context-compression-literature-and-market/). Key inline IDs: Squeez arXiv 2604.04979; AgentDiet arXiv 2509.23586; "Don't Break the Cache" arXiv 2601.06007; Claude 4.5 compression RCT arXiv 2603.23525; SWEzze arXiv 2603.28119; SWE-Pruner arXiv 2601.16746; Perplexity Paradox arXiv 2602.15843; Chain-of-Draft arXiv 2502.18600; brevity-hierarchy arXiv 2604.00025.
+- cross-references (caveman/cavemem/cavekit/cavecrew records, K1/K4, white-space map): [`03-prior-art-and-market-scan.md`](/research/token-optimization/03-prior-art-and-market-scan/)
+- cache-conflict + CompressionAttack + CAG/FL1/FL3: [`46-fresh-literature-and-market-delta.md`](/research/token-optimization/46-fresh-literature-and-market-delta/)
+- log-filter −94.2% / TOON −41.2% / minify −34.3% local reproductions: [`03-prior-art-and-market-scan.md`](/research/token-optimization/03-prior-art-and-market-scan/)
+- outline −91% / symbol-search −98% local reproductions: [`51-code-intelligence-tools.md`](/research/token-optimization/51-code-intelligence-tools/)
+- fresh-literature sources (write-time compression, code-domain SWE-bench gains, cache break-even, output-brevity dominance, context rot) and the compression-tool market sweep: [`54-context-compression-literature-and-market.md`](/research/token-optimization/54-context-compression-literature-and-market/). Key inline IDs: Squeez arXiv 2604.04979; AgentDiet arXiv 2509.23586; "Don't Break the Cache" arXiv 2601.06007; Claude 4.5 compression RCT arXiv 2603.23525; SWEzze arXiv 2603.28119; SWE-Pruner arXiv 2601.16746; Perplexity Paradox arXiv 2602.15843; Chain-of-Draft arXiv 2502.18600; brevity-hierarchy arXiv 2604.00025.

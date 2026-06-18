@@ -4,7 +4,7 @@ title: "Token-Optimization Research Brief"
 
 # Token-Optimization Research Brief
 
-> **How to run this file:** `/goal Follow token-optimization-research.md` (see the Operating Rules
+> **How to run this file:** `/goal Follow token-optimization.md` (see the Operating Rules
 > section for the exact constraints of the run). You — the agent reading this — are the researcher.
 > This brief is your full specification. Execute it end to end without asking the operator questions.
 
@@ -14,7 +14,7 @@ title: "Token-Optimization Research Brief"
 
 Produce the definitive research dossier on **extreme token optimization for coding-agent usage** —
 techniques that go an order of magnitude beyond what is common practice today, **without any loss in
-the quality of what the agent produces**. The deliverable is a folder, `token-optimization-research/`
+the quality of what the agent produces**. The deliverable is a folder, `token-optimization/`
 at the repository root, containing the reports specified in §10.
 
 The bar is explicitly not "10% better." The bar is: after reading this dossier, the operator can
@@ -277,10 +277,10 @@ workflows, parallel subagents) — fan out wide on search, verify adversarially,
 
 ## 10. Deliverables
 
-Create `token-optimization-research/` at the repository root:
+Create `token-optimization/` at the repository root:
 
 ```
-token-optimization-research/
+token-optimization/
 ├── README.md                            # index, how to read, the tier list, headline numbers, research date
 ├── 00-executive-summary.md              # findings in 2 pages: the stack, the math, the verdict on 10x
 ├── 01-economics-and-measurement.md      # token economics, measurement tooling, the modeled session profile
@@ -354,7 +354,7 @@ Design a runnable protocol the operator can use to verify any technique or stack
 - **Autonomy:** do not ask the operator questions. When a judgment call arises, make it, and record
   it in an Assumptions section of [the research index](./).
 - **Git discipline — commit and push on every finding:** all work happens on the
-  `chore/token-optimization-research` branch. Never switch branches and never commit to `main`.
+  `chore/token-optimization` branch. Never switch branches and never commit to `main`.
   Every time you complete or meaningfully update an artifact — a finished report file, a recorded
   measurement table, a phase milestone, a README/tier-list update — commit it and push to `origin`
   immediately, in the same step. Do not batch hours of work into one commit: the operator follows
@@ -362,7 +362,7 @@ Design a runnable protocol the operator can use to verify any technique or stack
   wait for, or verify CI/CD on these pushes — commit and push is the entire loop. Follow
   <RepoFile path="COMMITS.md">COMMITS.md</RepoFile>: Conventional Commits subject (`docs(research): &lt;what landed&gt;`) and DCO sign-off via
   `git commit -s`. Do not modify any pre-existing repository file; your writes are limited to
-  `token-optimization-research/`.
+  `token-optimization/`.
 - **Citations:** every external claim → source URL + access date. Every local measurement → the
   command or method that produced it.
 - **Live verification:** pricing, feature availability, and beta status checked against live
@@ -389,6 +389,6 @@ Design a runnable protocol the operator can use to verify any technique or stack
       discipline-dependent adoption, with a day-1 / week-1 / month-1 sequence.
 - [ ] Every external claim carries a source + access date; every measurement carries its method.
 - [ ] Every artifact landed as an incremental commit pushed to `origin` on
-      `chore/token-optimization-research` — no batched end-of-run dump; the final state is pushed.
+      `chore/token-optimization` — no batched end-of-run dump; the final state is pushed.
 - [ ] A final self-audit against this checklist is appended to [the research index](./), with each box checked
       or honestly marked failed.
