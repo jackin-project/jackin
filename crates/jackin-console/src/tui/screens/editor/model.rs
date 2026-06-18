@@ -935,6 +935,21 @@ impl<
     }
 
     #[must_use]
+    pub fn focused_mount_add_row_selected(&self) -> bool {
+        let FieldFocus::Row(n) = self.active_field;
+        crate::tui::screens::editor::update::editor_mount_add_row_selected(
+            n,
+            self.pending.mounts.len(),
+        )
+    }
+
+    #[must_use]
+    pub fn focused_role_add_row_selected(&self, config: &jackin_config::AppConfig) -> bool {
+        let FieldFocus::Row(n) = self.active_field;
+        crate::tui::screens::editor::update::editor_role_add_row_selected(n, config.roles.len())
+    }
+
+    #[must_use]
     pub fn selection_bounds(&self, config: &jackin_config::AppConfig) -> (usize, Vec<usize>) {
         let secrets_rows = self.secrets_flat_rows();
         let auth_rows = self.auth_flat_rows(config);
@@ -1464,6 +1479,38 @@ mod tests {
 
         editor.active_tab = EditorTab::Roles;
         assert_eq!(editor.selection_bounds(&config), (3, Vec::new()));
+    }
+
+    #[test]
+    fn editor_focused_add_row_selection_reads_counts() {
+        let workspace = WorkspaceConfig {
+            mounts: vec![
+                MountConfig {
+                    src: "/src-a".into(),
+                    dst: "/dst-a".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Shared,
+                },
+                MountConfig {
+                    src: "/src-b".into(),
+                    dst: "/dst-b".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Shared,
+                },
+            ],
+            ..Default::default()
+        };
+        let mut config = jackin_config::AppConfig::default();
+        config.roles.insert("alpha".into(), RoleSource::default());
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+
+        editor.active_field = FieldFocus::Row(1);
+        assert!(!editor.focused_mount_add_row_selected());
+        assert!(editor.focused_role_add_row_selected(&config));
+
+        editor.active_field = FieldFocus::Row(2);
+        assert!(editor.focused_mount_add_row_selected());
+        assert!(!editor.focused_role_add_row_selected(&config));
     }
 
     #[test]
