@@ -312,7 +312,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                         // that yields no credentials. Dismissing the dialog
                         // leaves the picker so the operator can pick another.
                         Err(reason) => {
-                            auth.error = Some(reason);
+                            auth.set_error(reason);
                             auth.modal = Some(modal);
                         }
                     }
