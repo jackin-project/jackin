@@ -18,13 +18,6 @@ pub fn invalid_source_folder_error_popup_state(
     error_popup_state("Invalid source folder", reason)
 }
 
-/// Title used for the source-folder rejection on the settings surface,
-/// where the error is promoted through the generic settings error slot.
-#[must_use]
-pub fn invalid_source_folder_error_title() -> &'static str {
-    "Invalid source folder"
-}
-
 pub fn role_load_error_popup_state(
     message: impl Into<String>,
 ) -> jackin_tui::components::ErrorPopupState {

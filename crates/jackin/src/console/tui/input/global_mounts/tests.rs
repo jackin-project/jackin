@@ -885,6 +885,78 @@ fn settings_auth_dialog_source_folder_stages_and_save_persists_global_kimi() {
     );
 }
 
+/// Committing a folder that lacks the agent's credentials must reject the
+/// pick: raise the standard error dialog (via `auth.error`) and keep the
+/// source-folder picker open so the operator can choose another folder,
+/// rather than staging an invalid source dir.
+#[test]
+fn settings_auth_dialog_invalid_source_folder_keeps_picker_open_and_sets_error() {
+    use jackin_console::tui::auth::AuthKind;
+    use jackin_console::tui::components::file_browser::FileBrowserState;
+
+    let tmp = tempfile::tempdir().unwrap();
+    // An empty folder: no Kimi `config.toml` + `credentials/`, so validation
+    // must reject it.
+    let source_dir = tmp.path().join("not-kimi");
+    std::fs::create_dir(&source_dir).unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    paths.ensure_base_dirs().unwrap();
+
+    let config = AppConfig::default();
+    let mut settings = settings_state_from_config(&config);
+    settings.active_tab = SettingsTab::Auth;
+    settings.set_tab_bar_focused(false);
+    settings.auth.selected_kind = Some(AuthKind::Kimi);
+    open_settings_auth_form(&mut settings.auth, &settings.env);
+    let Some(SettingsAuthModal::AuthForm { state, .. }) = settings.auth.modal.take() else {
+        panic!("auth form must be open");
+    };
+    settings
+        .auth
+        .modal_parents
+        .push(SettingsAuthModal::AuthForm {
+            target: AuthFormTarget::Workspace {
+                kind: AuthKind::Kimi,
+            },
+            state,
+            focus: AuthFormFocus::SourceFolder,
+            literal_buffer: String::new(),
+        });
+    settings.auth.modal = Some(SettingsAuthModal::SourceFolderPicker {
+        state: FileBrowserState::from_listing(jackin_console::services::file_browser::listing_at(
+            tmp.path().to_path_buf(),
+            source_dir.clone(),
+        )),
+    });
+
+    let op_cache = std::rc::Rc::new(std::cell::RefCell::new(
+        crate::operator_env::OpCache::default(),
+    ));
+    let mut pending = None;
+    handle_settings_auth_modal(
+        &mut settings.auth,
+        &mut settings.env,
+        &mut pending,
+        key(KeyCode::Char('s')),
+        true,
+        op_cache,
+        Rect::new(0, 0, 120, 40),
+    );
+
+    assert!(
+        settings.auth.error.is_some(),
+        "rejecting an invalid source folder must surface the error dialog"
+    );
+    assert!(
+        matches!(
+            settings.auth.modal,
+            Some(SettingsAuthModal::SourceFolderPicker { .. })
+        ),
+        "the picker must stay open after a rejected folder"
+    );
+    assert!(pending.is_none());
+}
+
 #[test]
 fn settings_auth_dialog_source_folder_row_is_generic_for_codex() {
     use jackin_console::tui::auth::AuthKind;

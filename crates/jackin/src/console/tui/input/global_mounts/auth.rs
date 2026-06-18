@@ -315,7 +315,10 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
             );
             match applied {
                 FileBrowserOutcome::Commit(path) => {
-                    match validate_picked_source_folder(auth, &path) {
+                    match crate::console::domain::validate_auth_source_folder(
+                        auth.selected_kind,
+                        &path,
+                    ) {
                         Ok(()) => apply_source_folder_to_settings_auth_form(auth, path),
                         // Wrong folder for this agent: keep the picker open and
                         // raise the standard error dialog (promoted from
@@ -476,16 +479,6 @@ pub(in crate::console) fn apply_plain_text_to_settings_auth_form(
         focus: AuthFormFocus::Save,
         literal_buffer: value.to_owned(),
     });
-}
-
-/// Validate a picked source folder against the agent the settings auth
-/// form targets. Delegates to the shared console-domain validator so the
-/// settings and workspace-editor pickers behave identically.
-fn validate_picked_source_folder(
-    auth: &crate::console::tui::state::SettingsAuthState,
-    path: &std::path::Path,
-) -> Result<(), String> {
-    crate::console::domain::validate_auth_source_folder(auth.selected_kind, path)
 }
 
 fn apply_source_folder_to_settings_auth_form(

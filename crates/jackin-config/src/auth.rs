@@ -29,8 +29,6 @@ pub struct AgentAuthConfig {
     ///
     /// **Precedence** (most-specific wins): workspace-role → workspace → global →
     /// per-agent hardcoded.  An absent value at a layer means "inherit from below."
-    ///
-    /// Optional source folder override for sync-mode credentials.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync_source_dir: Option<PathBuf>,
 }
