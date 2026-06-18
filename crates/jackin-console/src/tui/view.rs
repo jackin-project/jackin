@@ -25,6 +25,24 @@ pub struct ModalOverlayState {
     pub destructive_confirm: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReservedFooterHeightFacts {
+    pub editor_footer_height: Option<u16>,
+    pub settings_footer_height: Option<u16>,
+    pub workspace_footer_height: u16,
+}
+
+#[must_use]
+pub const fn reserved_footer_height_for_facts(facts: ReservedFooterHeightFacts) -> u16 {
+    if let Some(height) = facts.editor_footer_height {
+        return height;
+    }
+    if let Some(height) = facts.settings_footer_height {
+        return height;
+    }
+    facts.workspace_footer_height
+}
+
 #[must_use]
 pub const fn modal_overlay_visible(state: ModalOverlayState) -> bool {
     state.status_overlay

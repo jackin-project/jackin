@@ -25,6 +25,34 @@ fn modal_content_area_saturates_when_footer_exceeds_height() {
 }
 
 #[test]
+fn reserved_footer_height_prefers_screen_specific_heights() {
+    assert_eq!(
+        reserved_footer_height_for_facts(ReservedFooterHeightFacts {
+            editor_footer_height: Some(4),
+            settings_footer_height: Some(6),
+            workspace_footer_height: 2,
+        }),
+        4
+    );
+    assert_eq!(
+        reserved_footer_height_for_facts(ReservedFooterHeightFacts {
+            editor_footer_height: None,
+            settings_footer_height: Some(6),
+            workspace_footer_height: 2,
+        }),
+        6
+    );
+    assert_eq!(
+        reserved_footer_height_for_facts(ReservedFooterHeightFacts {
+            editor_footer_height: None,
+            settings_footer_height: None,
+            workspace_footer_height: 2,
+        }),
+        2
+    );
+}
+
+#[test]
 fn workspace_header_title_is_view_owned() {
     assert_eq!(workspace_header_title(), "workspaces");
 }

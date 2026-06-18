@@ -21,9 +21,10 @@ use jackin_console::tui::screens::settings::view::{
     settings_frame_areas,
 };
 use jackin_console::tui::view::{
-    ModalOverlayState, delete_confirm_area, footer_height, modal_overlay_visible,
-    purge_confirm_area, render_footer, render_header, render_modal_backdrop, settings_error_area,
-    status_overlay_area, workspace_frame_areas, workspace_header_title,
+    ModalOverlayState, ReservedFooterHeightFacts, delete_confirm_area, footer_height,
+    modal_overlay_visible, purge_confirm_area, render_footer, render_header, render_modal_backdrop,
+    reserved_footer_height_for_facts, settings_error_area, status_overlay_area,
+    workspace_frame_areas, workspace_header_title,
 };
 use jackin_tui::HintSpan;
 
@@ -170,23 +171,29 @@ fn workspace_footer_items(
 /// backdrop so the hints stay visible. Editor/settings size theirs to the hint
 /// content; the workspace footer is fixed.
 fn reserved_footer_height(state: &ManagerState<'_>, config: &AppConfig, area: Rect) -> u16 {
+    let mut facts = ReservedFooterHeightFacts {
+        editor_footer_height: None,
+        settings_footer_height: None,
+        workspace_footer_height: workspace_frame_areas(area).footer.height,
+    };
     match &state.stage {
         ManagerStage::Editor(editor) => {
             let body = editor_frame_areas(area, editor.cached_footer_h.max(1)).body;
-            footer_height(
+            facts.editor_footer_height = Some(footer_height(
                 &editor_footer_items(editor, config, state.op_available, body),
                 area.width,
-            )
+            ));
         }
         ManagerStage::Settings(settings) => {
             let body = settings_frame_areas(area, settings.cached_footer_h.max(1)).body;
-            footer_height(
+            facts.settings_footer_height = Some(footer_height(
                 &settings_footer_items(settings, state.op_available, body),
                 area.width,
-            )
+            ));
         }
-        _ => workspace_frame_areas(area).footer.height,
+        _ => {}
     }
+    reserved_footer_height_for_facts(facts)
 }
 
 fn has_modal_overlay(state: &ManagerState<'_>) -> bool {
