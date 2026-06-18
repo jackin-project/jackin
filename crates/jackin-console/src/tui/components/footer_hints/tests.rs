@@ -149,6 +149,26 @@ fn workspace_list_footer_row_facts_route_row_kinds() {
 }
 
 #[test]
+fn workspace_list_open_github_visible_requires_saved_workspace_with_mounts() {
+    assert!(workspace_list_open_github_visible(
+        ManagerListRow::SavedWorkspace(0),
+        true
+    ));
+    assert!(!workspace_list_open_github_visible(
+        ManagerListRow::SavedWorkspace(0),
+        false
+    ));
+    assert!(!workspace_list_open_github_visible(
+        ManagerListRow::CurrentDirectory,
+        true
+    ));
+    assert!(!workspace_list_open_github_visible(
+        ManagerListRow::NewWorkspace,
+        true
+    ));
+}
+
+#[test]
 fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
     assert_eq!(
         workspace_list_footer_mode_for_facts(WorkspaceListFooterFacts {

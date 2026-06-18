@@ -98,6 +98,14 @@ pub const fn workspace_list_footer_row_facts(row: ManagerListRow) -> WorkspaceLi
 }
 
 #[must_use]
+pub const fn workspace_list_open_github_visible(
+    row: ManagerListRow,
+    selected_workspace_has_github_mounts: bool,
+) -> bool {
+    matches!(row, ManagerListRow::SavedWorkspace(_)) && selected_workspace_has_github_mounts
+}
+
+#[must_use]
 pub const fn workspace_list_footer_facts(
     facts: WorkspaceListFooterInputFacts,
 ) -> WorkspaceListFooterFacts {

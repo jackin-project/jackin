@@ -8,6 +8,7 @@ use jackin_console::tui::components::footer_hints::{
     selected_instance_snapshot_available, workspace_footer_scroll_axes,
     workspace_inline_picker_content_height, workspace_list_footer_facts,
     workspace_list_footer_items, workspace_list_footer_mode_for_facts,
+    workspace_list_open_github_visible,
 };
 use jackin_console::tui::list_geometry;
 use jackin_console::tui::screens::workspaces::update::{
@@ -34,17 +35,18 @@ fn workspace_list_footer_facts_for_state(
     cwd: &std::path::Path,
 ) -> jackin_console::tui::components::footer_hints::WorkspaceListFooterFacts {
     let selected = state.selected_row();
-    let show_open_in_github = matches!(selected, ManagerListRow::SavedWorkspace(_))
-        && state
-            .selected_workspace_summary()
-            .and_then(|s| config.workspaces.get(&s.name))
-            .is_some_and(|ws| {
-                !jackin_console::github_mounts::resolve_for_workspace_from_cache(
-                    ws,
-                    &state.mount_info_cache,
-                )
-                .is_empty()
-            });
+    let selected_workspace_has_github_mounts = state
+        .selected_workspace_summary()
+        .and_then(|s| config.workspaces.get(&s.name))
+        .is_some_and(|ws| {
+            !jackin_console::github_mounts::resolve_for_workspace_from_cache(
+                ws,
+                &state.mount_info_cache,
+            )
+            .is_empty()
+        });
+    let show_open_in_github =
+        workspace_list_open_github_visible(selected, selected_workspace_has_github_mounts);
     let show_expand = workspace_row_owns_right(
         selected,
         state.current_dir_expanded,
