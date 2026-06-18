@@ -3,7 +3,7 @@
 //! `allowed_roles` is the "all allowed" shorthand.
 use super::super::render_roles_tab;
 use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
-use crate::workspace::WorkspaceConfig;
+use jackin_config::WorkspaceConfig;
 use jackin_config::{AppConfig, RoleSource};
 use jackin_console::tui::screens::editor::view::prepare_editor_tab_for_area;
 use jackin_tui::components::scrollable_panel::viewport_width as scroll_viewport_width;

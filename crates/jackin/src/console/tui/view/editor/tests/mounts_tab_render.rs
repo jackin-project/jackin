@@ -1,8 +1,8 @@
 //! Tests for `editor` mounts tab render rendering.
 use super::super::render_editor;
 use crate::console::tui::state::{EditorState, EditorTab, FieldFocus};
-use crate::workspace::{MountConfig, WorkspaceConfig};
 use jackin_config::AppConfig;
+use jackin_config::{MountConfig, WorkspaceConfig};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 

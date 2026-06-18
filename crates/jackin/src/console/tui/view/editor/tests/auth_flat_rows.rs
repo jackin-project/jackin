@@ -1,8 +1,8 @@
 //! Tests for `editor` auth flat rows rendering.
 use crate::console::tui::state::AuthRow;
 use crate::console::tui::state::EditorState;
-use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
 use jackin_config::AppConfig;
+use jackin_config::{WorkspaceConfig, WorkspaceRoleOverride};
 use jackin_console::tui::auth::{AuthKind, AuthMode};
 use jackin_console::tui::auth_config::resolve_panel_mode;
 
@@ -115,8 +115,8 @@ fn zai_panel_mode_uses_all_operator_env_layers() {
 
 #[test]
 fn role_with_override_renders_collapsed_header_then_sentinel() {
-    use crate::config::{AgentAuthConfig, AuthForwardMode};
-    use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+    use jackin_config::{AgentAuthConfig, AuthForwardMode};
+    use jackin_config::{WorkspaceConfig, WorkspaceRoleOverride};
     let mut ws = WorkspaceConfig {
         allowed_roles: vec!["the-architect".into(), "agent-smith".into()],
         ..Default::default()
@@ -159,8 +159,8 @@ fn role_with_override_renders_collapsed_header_then_sentinel() {
 
 #[test]
 fn role_with_override_when_expanded_emits_kind_rows() {
-    use crate::config::{AgentAuthConfig, AuthForwardMode};
-    use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+    use jackin_config::{AgentAuthConfig, AuthForwardMode};
+    use jackin_config::{WorkspaceConfig, WorkspaceRoleOverride};
     let mut ws = WorkspaceConfig {
         allowed_roles: vec!["the-architect".into()],
         ..Default::default()
@@ -196,7 +196,7 @@ fn role_with_override_when_expanded_emits_kind_rows() {
 #[test]
 fn resolve_auth_row_target_picks_workspace_default_for_workspacedefault_row() {
     use crate::console::tui::state::AuthFormTarget;
-    use crate::workspace::WorkspaceConfig;
+    use jackin_config::WorkspaceConfig;
 
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.auth_selected_kind = Some(AuthKind::Claude);
@@ -223,7 +223,7 @@ fn resolve_auth_row_target_picks_workspace_default_for_workspacedefault_row() {
 
 #[test]
 fn resolve_auth_row_target_returns_none_for_navigation_and_header_rows() {
-    use crate::workspace::WorkspaceConfig;
+    use jackin_config::WorkspaceConfig;
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.auth_selected_kind = Some(AuthKind::Claude);
     let cfg = AppConfig::default();
@@ -252,8 +252,8 @@ fn resolve_auth_row_target_returns_none_for_navigation_and_header_rows() {
 /// `claude` block of its own.
 #[test]
 fn workspace_source_surfaces_when_global_requires_credential() {
-    use crate::config::{AgentAuthConfig, AuthForwardMode};
-    use crate::workspace::WorkspaceConfig;
+    use jackin_config::WorkspaceConfig;
+    use jackin_config::{AgentAuthConfig, AuthForwardMode};
     let config = AppConfig {
         claude: Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::ApiKey,
@@ -308,7 +308,7 @@ fn github_detail_view_emits_workspace_mode_then_sentinel() {
 /// chasing an explicit workspace-level `[github]` block.
 #[test]
 fn github_workspace_source_surfaces_for_global_token_mode() {
-    use crate::config::{GithubAuthConfig, GithubAuthMode};
+    use jackin_config::{GithubAuthConfig, GithubAuthMode};
     let config = AppConfig {
         github: Some(GithubAuthConfig {
             auth_forward: GithubAuthMode::Token,
@@ -336,8 +336,8 @@ fn github_workspace_source_surfaces_for_global_token_mode() {
 /// Codex overrides do.
 #[test]
 fn github_role_override_emits_role_header_when_override_present() {
-    use crate::config::{GithubAuthConfig, GithubAuthMode};
-    use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+    use jackin_config::{GithubAuthConfig, GithubAuthMode};
+    use jackin_config::{WorkspaceConfig, WorkspaceRoleOverride};
     let mut ws = WorkspaceConfig {
         allowed_roles: vec!["the-architect".into()],
         ..Default::default()

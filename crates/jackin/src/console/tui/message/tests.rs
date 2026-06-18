@@ -20,9 +20,9 @@ fn state_with_saved_count(count: usize) -> ManagerState<'static> {
     for idx in 0..count {
         config.workspaces.insert(
             format!("workspace-{idx}"),
-            crate::workspace::WorkspaceConfig {
+            jackin_config::WorkspaceConfig {
                 workdir: format!("/tmp/workspace-{idx}"),
-                ..crate::workspace::WorkspaceConfig::default()
+                ..jackin_config::WorkspaceConfig::default()
             },
         );
     }
@@ -67,7 +67,7 @@ fn tab_bar_focus_messages_update_editor_and_settings_focus() {
     let mut state = state_with_saved_count(0);
     state.stage = ManagerStage::Editor(EditorState::new_edit(
         "workspace".into(),
-        crate::workspace::WorkspaceConfig::default(),
+        jackin_config::WorkspaceConfig::default(),
     ));
 
     assert!(update_manager(&mut state, ManagerMessage::FocusEditorTabBar).is_dirty());
@@ -103,7 +103,7 @@ fn focus_editor_content_on_mounts_focuses_mount_rows() {
     let mut state = state_with_saved_count(0);
     let mut editor = EditorState::new_edit(
         "workspace".into(),
-        crate::workspace::WorkspaceConfig::default(),
+        jackin_config::WorkspaceConfig::default(),
     );
     editor.active_tab = EditorTab::Mounts;
     state.stage = ManagerStage::Editor(editor);
@@ -123,7 +123,7 @@ fn mouse_selection_messages_update_tabs_and_rows() {
     let mut state = state_with_saved_count(0);
     let mut editor = EditorState::new_edit(
         "workspace".into(),
-        crate::workspace::WorkspaceConfig::default(),
+        jackin_config::WorkspaceConfig::default(),
     );
     editor.active_tab = EditorTab::Secrets;
     editor.secrets_expanded.insert("smith".into());
@@ -203,7 +203,7 @@ fn move_editor_tab_resets_tab_local_view_state() {
     let mut state = state_with_saved_count(0);
     let mut editor = EditorState::new_edit(
         "workspace".into(),
-        crate::workspace::WorkspaceConfig::default(),
+        jackin_config::WorkspaceConfig::default(),
     );
     editor.active_tab = EditorTab::Secrets;
     editor.set_tab_bar_focused(false);
@@ -240,7 +240,7 @@ fn editor_auth_kind_messages_reset_local_view_state() {
     let mut state = state_with_saved_count(0);
     let mut editor = EditorState::new_edit(
         "workspace".into(),
-        crate::workspace::WorkspaceConfig::default(),
+        jackin_config::WorkspaceConfig::default(),
     );
     editor.active_field = FieldFocus::Row(5);
     editor.tab_scroll_x = 9;
@@ -279,7 +279,7 @@ fn editor_role_header_messages_set_expansion() {
     let mut state = state_with_saved_count(0);
     state.stage = ManagerStage::Editor(EditorState::new_edit(
         "workspace".into(),
-        crate::workspace::WorkspaceConfig::default(),
+        jackin_config::WorkspaceConfig::default(),
     ));
 
     assert!(
@@ -315,7 +315,7 @@ fn move_editor_field_selection_skips_rows_and_scrolls() {
     let mut state = state_with_saved_count(0);
     let mut editor = EditorState::new_edit(
         "workspace".into(),
-        crate::workspace::WorkspaceConfig::default(),
+        jackin_config::WorkspaceConfig::default(),
     );
     editor.active_field = FieldFocus::Row(1);
     state.stage = ManagerStage::Editor(editor);
@@ -345,11 +345,11 @@ fn editor_toggle_messages_update_selected_content() {
     let mut state = state_with_saved_count(0);
     let mut editor = EditorState::new_edit(
         "workspace".into(),
-        crate::workspace::WorkspaceConfig::default(),
+        jackin_config::WorkspaceConfig::default(),
     );
     editor.active_field = FieldFocus::Row(2);
     editor.pending.keep_awake.enabled = false;
-    editor.pending.mounts.push(crate::workspace::MountConfig {
+    editor.pending.mounts.push(jackin_config::MountConfig {
         src: "/tmp/cache".into(),
         dst: "/home/agent/.cache".into(),
         readonly: false,
@@ -543,9 +543,9 @@ fn reload_from_config_preserves_session_cache_and_rebuilds_rows() {
     let mut config = jackin_config::AppConfig::default();
     config.workspaces.insert(
         "reloaded".into(),
-        crate::workspace::WorkspaceConfig {
+        jackin_config::WorkspaceConfig {
             workdir: cwd.display().to_string(),
-            ..crate::workspace::WorkspaceConfig::default()
+            ..jackin_config::WorkspaceConfig::default()
         },
     );
 
@@ -587,7 +587,7 @@ fn stage_entry_messages_open_requested_stage() {
             &mut state,
             ManagerMessage::EnterEditor(EditorState::new_edit(
                 "workspace".into(),
-                crate::workspace::WorkspaceConfig::default(),
+                jackin_config::WorkspaceConfig::default(),
             )),
         )
         .is_dirty()
@@ -599,7 +599,7 @@ fn stage_entry_messages_open_requested_stage() {
             &mut state,
             ManagerMessage::EnterCreateEditor {
                 name: "new-workspace".into(),
-                workspace: crate::workspace::WorkspaceConfig::default(),
+                workspace: jackin_config::WorkspaceConfig::default(),
             },
         )
         .is_dirty()
@@ -650,7 +650,7 @@ fn scroll_editor_tab_marks_panel_focus_and_updates_offset() {
     let mut state = state_with_saved_count(0);
     state.stage = ManagerStage::Editor(EditorState::new_edit(
         "workspace".into(),
-        crate::workspace::WorkspaceConfig::default(),
+        jackin_config::WorkspaceConfig::default(),
     ));
 
     assert!(
@@ -677,7 +677,7 @@ fn scroll_editor_workspace_mounts_marks_mounts_focus_and_updates_offset() {
     let mut state = state_with_saved_count(0);
     state.stage = ManagerStage::Editor(EditorState::new_edit(
         "workspace".into(),
-        crate::workspace::WorkspaceConfig::default(),
+        jackin_config::WorkspaceConfig::default(),
     ));
 
     assert!(
@@ -731,7 +731,7 @@ fn move_settings_global_mounts_selection_clamps_to_add_row() {
     settings.mounts.pending.push(jackin_config::GlobalMountRow {
         scope: None,
         name: "cache".into(),
-        mount: crate::workspace::MountConfig {
+        mount: jackin_config::MountConfig {
             src: "/tmp/cache".into(),
             dst: "/home/agent/.cache".into(),
             readonly: false,
@@ -833,7 +833,7 @@ fn settings_mount_and_trust_toggle_messages_update_selected_rows() {
     settings.mounts.pending.push(jackin_config::GlobalMountRow {
         scope: None,
         name: "cache".into(),
-        mount: crate::workspace::MountConfig {
+        mount: jackin_config::MountConfig {
             src: "/tmp/cache".into(),
             dst: "/home/agent/.cache".into(),
             readonly: false,

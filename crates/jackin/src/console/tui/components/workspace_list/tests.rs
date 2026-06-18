@@ -21,8 +21,8 @@ mod list_name_scroll {
     use crate::console::tui::state::{
         ConfirmTarget, ManagerListRow, ManagerState, Modal, SecretsScopeTag,
     };
-    use crate::workspace::WorkspaceConfig;
     use jackin_config::AppConfig;
+    use jackin_config::WorkspaceConfig;
     use jackin_tui::components::scrollable_panel::max_offset;
     use jackin_tui::theme::{PHOSPHOR_GREEN, TAB_BG_INACTIVE_HOVER};
     use ratatui::Terminal;
@@ -313,7 +313,7 @@ mod mount_table {
         MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows,
         mount_path_width, render_mount_lines,
     };
-    use crate::workspace::MountConfig;
+    use jackin_config::MountConfig;
     use jackin_console::tui::components::mount_rows::render_mount_header;
 
     /// Collapse a `Line` into a single plain string (concat of all span contents).
@@ -521,7 +521,7 @@ mod mount_block_height {
     //! against the "phantom empty row" regression where a fixed
     //! `Constraint::Length(5)` over-allocated by 1 for a single-mount
     //! current-directory workspace.
-    use crate::workspace::MountConfig;
+    use jackin_config::MountConfig;
 
     fn mount(path: &str) -> MountConfig {
         MountConfig {
@@ -596,8 +596,8 @@ mod subpanel_padding {
     //! the three blocks, giving the right pane a tidy left edge.
     use super::SUBPANEL_CONTENT_INDENT;
     use crate::console::tui::state::{MountInfoCache, WorkspaceSummary};
-    use crate::workspace::WorkspaceConfig;
     use jackin_config::AppConfig;
+    use jackin_config::WorkspaceConfig;
     use jackin_console::tui::screens::workspaces::view::{
         render_config_mounts_subpanel as render_mounts_subpanel, render_config_roles_subpanel,
         render_environments_subpanel, render_general_subpanel, workspace_env_rows,
@@ -667,7 +667,7 @@ mod subpanel_padding {
 
     fn ws_config_with_allowed(names: &[&str], default: Option<&str>) -> WorkspaceConfig {
         WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: "/tmp/demo".into(),
             mounts: vec![],
             allowed_roles: names.iter().map(|s| (*s).into()).collect(),
@@ -676,7 +676,7 @@ mod subpanel_padding {
             last_role: None,
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
-            keep_awake: crate::workspace::KeepAwakeConfig::default(),
+            keep_awake: jackin_config::KeepAwakeConfig::default(),
             claude: None,
             codex: None,
             amp: None,
@@ -1045,7 +1045,7 @@ mod subpanel_padding {
     #[test]
     fn preview_agents_block_no_longer_lists_overrides() {
         let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
-        let mut overrides = crate::workspace::WorkspaceRoleOverride::default();
+        let mut overrides = jackin_config::WorkspaceRoleOverride::default();
         overrides.env.insert("API_KEY".into(), "literal".into());
         overrides
             .env
@@ -1216,13 +1216,13 @@ mod subpanel_padding {
         ws.env.insert("API_KEY".into(), "literal".into());
         ws.env.insert("DB_URL".into(), "postgres://...".into());
 
-        let mut alpha_overrides = crate::workspace::WorkspaceRoleOverride::default();
+        let mut alpha_overrides = jackin_config::WorkspaceRoleOverride::default();
         alpha_overrides
             .env
             .insert("LOG_LEVEL".into(), "debug".into());
         ws.roles.insert("alpha".into(), alpha_overrides);
 
-        let mut beta_overrides = crate::workspace::WorkspaceRoleOverride::default();
+        let mut beta_overrides = jackin_config::WorkspaceRoleOverride::default();
         beta_overrides.env.insert("DEBUG".into(), "1".into());
         ws.roles.insert("beta".into(), beta_overrides);
 
@@ -1297,7 +1297,7 @@ mod subpanel_padding {
         ws.env.insert("API_KEY".into(), "literal".into());
         // Only alpha has overrides; beta is in the allowed list but
         // has no overrides.
-        let mut alpha_overrides = crate::workspace::WorkspaceRoleOverride::default();
+        let mut alpha_overrides = jackin_config::WorkspaceRoleOverride::default();
         alpha_overrides
             .env
             .insert("LOG_LEVEL".into(), "debug".into());
@@ -1338,7 +1338,7 @@ mod subpanel_padding {
     #[test]
     fn preview_environments_flat_row_per_agent_has_agent_label_on_right() {
         let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
-        let mut alpha_overrides = crate::workspace::WorkspaceRoleOverride::default();
+        let mut alpha_overrides = jackin_config::WorkspaceRoleOverride::default();
         alpha_overrides
             .env
             .insert("LOG_LEVEL".into(), "debug".into());
@@ -1368,7 +1368,7 @@ mod subpanel_padding {
     #[test]
     fn preview_environments_agent_label_has_one_cell_right_padding() {
         let mut ws = ws_config_with_allowed(&["agent-brown"], Some("agent-brown"));
-        let mut brown = crate::workspace::WorkspaceRoleOverride::default();
+        let mut brown = jackin_config::WorkspaceRoleOverride::default();
         brown.env.insert("TEST5".into(), "v".into());
         ws.roles.insert("agent-brown".into(), brown);
 
@@ -1433,7 +1433,7 @@ mod subpanel_padding {
     fn preview_environments_same_key_in_workspace_and_agent_renders_two_rows() {
         let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
         ws.env.insert("API_KEY".into(), "workspace-value".into());
-        let mut alpha_overrides = crate::workspace::WorkspaceRoleOverride::default();
+        let mut alpha_overrides = jackin_config::WorkspaceRoleOverride::default();
         alpha_overrides
             .env
             .insert("API_KEY".into(), "role-value".into());
@@ -1467,11 +1467,11 @@ mod subpanel_padding {
         ws.env.insert("DB_URL".into(), "postgres://...".into());
         ws.env.insert("API_KEY".into(), "literal".into());
 
-        let mut smith = crate::workspace::WorkspaceRoleOverride::default();
+        let mut smith = jackin_config::WorkspaceRoleOverride::default();
         smith.env.insert("DEBUG".into(), "1".into());
         ws.roles.insert("agent-smith".into(), smith);
 
-        let mut brown = crate::workspace::WorkspaceRoleOverride::default();
+        let mut brown = jackin_config::WorkspaceRoleOverride::default();
         brown.env.insert("LOG_LEVEL".into(), "debug".into());
         ws.roles.insert("agent-brown".into(), brown);
 
@@ -1609,7 +1609,7 @@ mod subpanel_padding {
             .insert("beta".into(), jackin_config::RoleSource::default());
         cfg.add_mount(
             "cargo",
-            crate::workspace::MountConfig {
+            jackin_config::MountConfig {
                 src: "/tmp/cargo".into(),
                 dst: "/home/agent/.cargo".into(),
                 readonly: false,
@@ -1619,7 +1619,7 @@ mod subpanel_padding {
         );
         cfg.add_mount(
             "beta-only",
-            crate::workspace::MountConfig {
+            jackin_config::MountConfig {
                 src: "/tmp/beta".into(),
                 dst: "/beta".into(),
                 readonly: true,
@@ -1787,7 +1787,7 @@ mod subpanel_padding {
     #[test]
     fn preview_includes_environments_block_when_only_per_agent_overrides_set() {
         let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
-        let mut alpha_overrides = crate::workspace::WorkspaceRoleOverride::default();
+        let mut alpha_overrides = jackin_config::WorkspaceRoleOverride::default();
         alpha_overrides
             .env
             .insert("LOG_LEVEL".into(), "debug".into());
@@ -1854,7 +1854,7 @@ mod subpanel_padding {
         // every block has visible content.
         let mut ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
         ws.workdir = "/workspace/demo".into();
-        ws.mounts.push(crate::workspace::MountConfig {
+        ws.mounts.push(jackin_config::MountConfig {
             src: "/tmp/demo".into(),
             dst: "/workspace/demo".into(),
             readonly: false,

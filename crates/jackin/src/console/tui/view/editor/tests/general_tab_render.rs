@@ -1,8 +1,8 @@
 //! Tests for `editor` general tab render rendering.
 use super::super::render_general_tab;
 use crate::console::tui::state::{EditorState, FieldFocus};
-use crate::workspace::WorkspaceConfig;
 use jackin_config::AppConfig;
+use jackin_config::WorkspaceConfig;
 use jackin_console::tui::screens::editor::view::prepare_editor_tab_for_area;
 use jackin_tui::components::scrollable_panel::viewport_width as scroll_viewport_width;
 use ratatui::Terminal;

@@ -4,8 +4,8 @@
 //! builder honours `secrets_expanded` for per-role override sections.
 use super::super::render_secrets_tab;
 use crate::console::tui::state::{EditorState, EditorTab, FieldFocus, SecretsScopeTag};
-use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
 use jackin_config::AppConfig;
+use jackin_config::{WorkspaceConfig, WorkspaceRoleOverride};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
@@ -173,7 +173,7 @@ fn secrets_tab_cursor_skips_workspace_header_label() {
 /// sequence, so a wrong order causes silent wrong-row selections.
 #[test]
 fn secrets_flat_rows_sequence_is_canonical() {
-    use crate::workspace::WorkspaceRoleOverride;
+    use jackin_config::WorkspaceRoleOverride;
 
     let mut env = std::collections::BTreeMap::new();
     env.insert("ALPHA".into(), "1".into());
