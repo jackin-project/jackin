@@ -843,13 +843,10 @@ pub(super) async fn launch_role_runtime(
     if let Err(err) = session_result {
         // Single inspect — the previous two-call shape opened a TOCTOU
         // window where the container could transition Running→Stopped(0)
-        // between the diagnose and swallow checks. `diagnose_premature_exit`
-        // returns a synthesized error for surfaceable exits; otherwise
-        // the post-attach happy path is `Stopped(exit 0, !oom)` from a
-        // clean multiplexer shutdown — swallow `docker exec`'s broken
-        // pipe in that case. External `docker rm` (NotFound) is rare
-        // and must propagate the real exec error so the operator sees
-        // why the container vanished mid-session.
+        // between the diagnose and swallow checks. If the attach command
+        // itself returned Err, propagate it even when PID 1 exited cleanly:
+        // the capsule attach protocol uses that path to report failed final
+        // sessions while the daemon still shuts down as init with exit 0.
         let inspect = docker.inspect_container_state(container_name).await;
         if let Some(diag) = diagnose_with_state(
             runner,
@@ -861,15 +858,6 @@ pub(super) async fn launch_role_runtime(
         .await
         {
             return Err(diag);
-        }
-        if matches!(
-            inspect,
-            ContainerState::Stopped {
-                exit_code: 0,
-                oom_killed: false,
-            }
-        ) {
-            return Ok(());
         }
         return Err(err);
     }
