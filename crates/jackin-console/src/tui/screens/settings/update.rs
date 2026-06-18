@@ -54,6 +54,16 @@ pub enum SettingsShellKeyPlan {
     Continue,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsTopLevelKeyPlan {
+    MoveTab { delta: isize, focus_tab_bar: bool },
+    FocusContent,
+    FocusTabBar { clear_auth_kind: bool },
+    SetEnvRoleExpanded { role: String, expanded: bool },
+    Consume,
+    Delegate(SettingsTab),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsGeneralKeyPlan {
     MoveSelection { delta: isize },
@@ -297,6 +307,50 @@ pub fn settings_env_selected_header_key_plan<V>(
 ) -> SettingsEnvHeaderKeyPlan {
     let rows = settings_env_flat_rows(pending, expanded_roles);
     settings_env_header_key_plan(key, active_tab, rows.get(selected))
+}
+
+#[must_use]
+pub fn settings_top_level_key_plan<V>(
+    key: KeyCode,
+    active_tab: SettingsTab,
+    tab_bar_focused: bool,
+    auth_kind_selected: bool,
+    env_pending: &SettingsEnvConfig<V>,
+    env_expanded_roles: &BTreeSet<String>,
+    env_selected: usize,
+) -> SettingsTopLevelKeyPlan {
+    match settings_shell_key_plan(key, tab_bar_focused, auth_kind_selected) {
+        SettingsShellKeyPlan::MoveTab {
+            delta,
+            focus_tab_bar,
+        } => {
+            return SettingsTopLevelKeyPlan::MoveTab {
+                delta,
+                focus_tab_bar,
+            };
+        }
+        SettingsShellKeyPlan::FocusContent => {
+            return SettingsTopLevelKeyPlan::FocusContent;
+        }
+        SettingsShellKeyPlan::FocusTabBar { clear_auth_kind } => {
+            return SettingsTopLevelKeyPlan::FocusTabBar { clear_auth_kind };
+        }
+        SettingsShellKeyPlan::Continue => {}
+    }
+
+    match settings_env_selected_header_key_plan(
+        key,
+        active_tab,
+        env_pending,
+        env_expanded_roles,
+        env_selected,
+    ) {
+        SettingsEnvHeaderKeyPlan::SetExpanded { role, expanded } => {
+            SettingsTopLevelKeyPlan::SetEnvRoleExpanded { role, expanded }
+        }
+        SettingsEnvHeaderKeyPlan::Consume => SettingsTopLevelKeyPlan::Consume,
+        SettingsEnvHeaderKeyPlan::Continue => SettingsTopLevelKeyPlan::Delegate(active_tab),
+    }
 }
 
 #[must_use]

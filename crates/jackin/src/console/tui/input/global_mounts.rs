@@ -28,11 +28,11 @@ use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::update::{
     GlobalMountAddFinalizeApplyPlan, GlobalMountAddTextApplyPlan, GlobalMountEditTextApplyPlan,
     GlobalMountGithubOpenPlan, GlobalMountRolePickerCommitPlan, GlobalMountScopePickerCommitPlan,
-    GlobalMountTextCommitPlan, RolePickerOpenPlan, SettingsAuthKeyPlan, SettingsEnvHeaderKeyPlan,
-    SettingsEnvKeyPlan, SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
+    GlobalMountTextCommitPlan, RolePickerOpenPlan, SettingsAuthKeyPlan, SettingsEnvKeyPlan,
+    SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
     SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
     SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan, SettingsGeneralKeyPlan,
-    SettingsGlobalMountsKeyPlan, SettingsShellKeyPlan, SettingsTrustKeyPlan,
+    SettingsGlobalMountsKeyPlan, SettingsTopLevelKeyPlan, SettingsTrustKeyPlan,
 };
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -70,12 +70,16 @@ pub(super) fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key
         return;
     };
 
-    match settings_update::settings_shell_key_plan(
+    match settings_update::settings_top_level_key_plan(
         key.code,
+        settings.active_tab,
         settings.tab_bar_focused(),
         settings.auth.has_selected_kind(),
+        &settings.env.pending,
+        &settings.env.expanded,
+        settings.env.selected,
     ) {
-        SettingsShellKeyPlan::MoveTab {
+        SettingsTopLevelKeyPlan::MoveTab {
             delta,
             focus_tab_bar,
         } => {
@@ -86,50 +90,30 @@ pub(super) fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key
                     focus_tab_bar,
                 },
             );
-            return;
         }
-        SettingsShellKeyPlan::FocusContent => {
+        SettingsTopLevelKeyPlan::FocusContent => {
             dispatch_manager(state, ManagerMessage::FocusSettingsContent);
-            return;
         }
-        SettingsShellKeyPlan::FocusTabBar { clear_auth_kind } => {
+        SettingsTopLevelKeyPlan::FocusTabBar { clear_auth_kind } => {
             if clear_auth_kind {
                 dispatch_manager(state, ManagerMessage::ClearSettingsAuthKind);
             }
             dispatch_manager(state, ManagerMessage::FocusSettingsTabBar);
-            return;
         }
-        SettingsShellKeyPlan::Continue => {}
-    }
-
-    let ManagerStage::Settings(settings) = &state.stage else {
-        return;
-    };
-    match settings_update::settings_env_selected_header_key_plan(
-        key.code,
-        settings.active_tab,
-        &settings.env.pending,
-        &settings.env.expanded,
-        settings.env.selected,
-    ) {
-        SettingsEnvHeaderKeyPlan::SetExpanded { role, expanded } => {
+        SettingsTopLevelKeyPlan::SetEnvRoleExpanded { role, expanded } => {
             dispatch_manager(
                 state,
                 ManagerMessage::SetSettingsEnvRoleExpanded { role, expanded },
             );
-            return;
         }
-        SettingsEnvHeaderKeyPlan::Consume => {
-            return;
-        }
-        SettingsEnvHeaderKeyPlan::Continue => {}
-    }
-    match settings.active_tab {
-        SettingsTab::General => handle_general_key(state, key),
-        SettingsTab::Mounts => handle_global_mounts_key(state, key),
-        SettingsTab::Environments => handle_env_key(state, key),
-        SettingsTab::Auth => handle_auth_key(state, key),
-        SettingsTab::Trust => handle_trust_key(state, key),
+        SettingsTopLevelKeyPlan::Consume => {}
+        SettingsTopLevelKeyPlan::Delegate(tab) => match tab {
+            SettingsTab::General => handle_general_key(state, key),
+            SettingsTab::Mounts => handle_global_mounts_key(state, key),
+            SettingsTab::Environments => handle_env_key(state, key),
+            SettingsTab::Auth => handle_auth_key(state, key),
+            SettingsTab::Trust => handle_trust_key(state, key),
+        },
     }
 }
 

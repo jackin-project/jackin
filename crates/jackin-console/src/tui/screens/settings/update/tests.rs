@@ -315,6 +315,68 @@ fn settings_env_selected_header_key_plan_uses_current_flat_selection() {
 }
 
 #[test]
+fn settings_top_level_key_plan_applies_shell_before_header_and_delegates() {
+    let pending = env_config();
+    let expanded = BTreeSet::new();
+    let rows = settings_env_flat_rows(&pending, &expanded);
+    let role_header = rows
+        .iter()
+        .position(|row| {
+            matches!(
+                row,
+                SettingsEnvRow::RoleHeader {
+                    role,
+                    expanded: false,
+                } if role == "alpha"
+            )
+        })
+        .unwrap_or(usize::MAX);
+
+    assert_eq!(
+        settings_top_level_key_plan(
+            KeyCode::Tab,
+            SettingsTab::Environments,
+            false,
+            false,
+            &pending,
+            &expanded,
+            role_header,
+        ),
+        SettingsTopLevelKeyPlan::MoveTab {
+            delta: 1,
+            focus_tab_bar: true,
+        }
+    );
+    assert_eq!(
+        settings_top_level_key_plan(
+            KeyCode::Right,
+            SettingsTab::Environments,
+            false,
+            false,
+            &pending,
+            &expanded,
+            role_header,
+        ),
+        SettingsTopLevelKeyPlan::SetEnvRoleExpanded {
+            role: "alpha".to_owned(),
+            expanded: true,
+        }
+    );
+    assert_eq!(
+        settings_top_level_key_plan(
+            KeyCode::Char('s'),
+            SettingsTab::Trust,
+            false,
+            false,
+            &pending,
+            &expanded,
+            role_header,
+        ),
+        SettingsTopLevelKeyPlan::Delegate(SettingsTab::Trust)
+    );
+}
+
+#[test]
 fn settings_trust_key_plan_routes_keys_from_facts() {
     assert_eq!(
         settings_trust_key_plan(KeyCode::Up, false),
