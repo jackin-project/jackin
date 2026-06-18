@@ -12,6 +12,11 @@ pub enum ConsoleScreenStage {
     ConfirmInstancePurge,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsoleChromeHover {
+    DebugChip,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MainScreenState {
     pub workspace_list: bool,

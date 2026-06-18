@@ -23,21 +23,16 @@ use jackin_console::tui::components::status_popup::{
     instance_action_busy_message, instance_action_busy_title,
 };
 use jackin_console::tui::run::{
-    ConsoleScreenStage, LetterInputModalKind, LetterInputState, MainScreenState, ModalBlockState,
-    QuitInterceptState, TokenGenerateScopeLabel, debug_chip_row, debug_run_id_label,
-    diagnostics_screen_for_stage, is_main_screen, quit_confirm_area, quit_confirm_state,
-    should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
+    ConsoleChromeHover, ConsoleScreenStage, LetterInputModalKind, LetterInputState,
+    MainScreenState, ModalBlockState, QuitInterceptState, TokenGenerateScopeLabel, debug_chip_row,
+    debug_run_id_label, diagnostics_screen_for_stage, is_main_screen, quit_confirm_area,
+    quit_confirm_state, should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
     token_generate_status_message,
 };
 
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
 use jackin_config::LoadWorkspaceInput;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ConsoleChromeHover {
-    DebugChip,
-}
 
 pub struct ConsoleRunOptions<'a> {
     pub op_available: bool,
