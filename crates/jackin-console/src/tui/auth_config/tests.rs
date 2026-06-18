@@ -524,6 +524,51 @@ fn clear_workspace_auth_layer_removes_github_block() {
 }
 
 #[test]
+fn clear_workspace_auth_layer_removes_env_only_keys() {
+    let mut ws = WorkspaceConfig::default();
+    ws.env.insert(
+        env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+        EnvValue::Plain("zai".into()),
+    );
+    ws.env.insert(
+        env_model::MINIMAX_API_KEY_ENV_NAME.to_owned(),
+        EnvValue::Plain("minimax".into()),
+    );
+
+    clear_workspace_auth_layer(&mut ws, AuthKind::Zai);
+    clear_workspace_auth_layer(&mut ws, AuthKind::Minimax);
+
+    assert!(!ws.env.contains_key(env_model::ZAI_API_KEY_ENV_NAME));
+    assert!(!ws.env.contains_key(env_model::MINIMAX_API_KEY_ENV_NAME));
+}
+
+#[test]
+fn clear_role_auth_layer_removes_typed_and_env_only_keys() {
+    let mut role = WorkspaceRoleOverride {
+        kimi: Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::ApiKey,
+            sync_source_dir: None,
+        }),
+        ..WorkspaceRoleOverride::default()
+    };
+    role.env.insert(
+        env_model::KIMI_CODE_API_KEY_ENV_NAME.to_owned(),
+        EnvValue::Plain("kimi".into()),
+    );
+    role.env.insert(
+        env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+        EnvValue::Plain("zai".into()),
+    );
+
+    clear_role_auth_layer(&mut role, AuthKind::Kimi);
+    clear_role_auth_layer(&mut role, AuthKind::Zai);
+
+    assert!(role.kimi.is_none());
+    assert!(!role.env.contains_key(env_model::KIMI_CODE_API_KEY_ENV_NAME));
+    assert!(!role.env.contains_key(env_model::ZAI_API_KEY_ENV_NAME));
+}
+
+#[test]
 fn apply_settings_auth_env_commit_routes_by_kind() {
     let mut github_env = BTreeMap::new();
     let mut agent_env = BTreeMap::new();

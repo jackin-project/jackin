@@ -459,6 +459,37 @@ impl<
         );
     }
 
+    pub fn toggle_auth_role_expanded(&mut self, role: String) {
+        if !self.auth_expanded.remove(&role) {
+            self.auth_expanded.insert(role);
+        }
+    }
+
+    pub fn clear_auth_row_at_cursor(&mut self, config: &jackin_config::AppConfig) {
+        let FieldFocus::Row(n) = self.active_field;
+        let rows = self.auth_flat_rows(config);
+        match rows.get(n).cloned() {
+            Some(AuthRow::RoleHeader { role, .. }) => {
+                if let Some(kind) = self.auth_selected_kind {
+                    self.clear_role_auth_kind(&role, kind);
+                }
+            }
+            Some(AuthRow::RoleMode { role, kind }) => {
+                self.clear_role_auth_kind(&role, kind);
+            }
+            Some(AuthRow::WorkspaceMode { kind }) => {
+                crate::tui::auth_config::clear_workspace_auth_layer(&mut self.pending, kind);
+            }
+            _ => {}
+        }
+    }
+
+    fn clear_role_auth_kind(&mut self, role: &str, kind: crate::tui::auth::AuthKind) {
+        if let Some(role_override) = self.pending.roles.get_mut(role) {
+            crate::tui::auth_config::clear_role_auth_layer(role_override, kind);
+        }
+    }
+
     #[must_use]
     pub fn secret_value(
         &self,
@@ -799,6 +830,64 @@ mod tests {
                 kind: crate::tui::auth::AuthKind::Zai
             }
         )));
+    }
+
+    #[test]
+    fn editor_toggle_auth_role_expanded_flips_role_section() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        editor.toggle_auth_role_expanded("dev".into());
+        assert!(editor.auth_expanded.contains("dev"));
+
+        editor.toggle_auth_role_expanded("dev".into());
+        assert!(!editor.auth_expanded.contains("dev"));
+    }
+
+    #[test]
+    fn editor_clear_auth_row_at_cursor_clears_workspace_auth_layer() {
+        let workspace = WorkspaceConfig {
+            env: std::collections::BTreeMap::from([(
+                jackin_core::env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+                jackin_config::EnvValue::Plain("zai".into()),
+            )]),
+            ..WorkspaceConfig::default()
+        };
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+        editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Zai);
+
+        editor.clear_auth_row_at_cursor(&jackin_config::AppConfig::default());
+
+        assert!(
+            !editor
+                .pending
+                .env
+                .contains_key(jackin_core::env_model::ZAI_API_KEY_ENV_NAME)
+        );
+    }
+
+    #[test]
+    fn editor_clear_auth_row_at_cursor_clears_role_auth_layer() {
+        let mut workspace = WorkspaceConfig::default();
+        workspace.roles.entry("dev".into()).or_default().env.insert(
+            jackin_core::env_model::ZAI_API_KEY_ENV_NAME.to_owned(),
+            jackin_config::EnvValue::Plain("zai".into()),
+        );
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+        editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Zai);
+
+        let rows = editor.auth_flat_rows(&jackin_config::AppConfig::default());
+        editor.active_field = FieldFocus::Row(
+            rows.iter()
+                .position(|row| matches!(row, AuthRow::RoleHeader { role, .. } if role == "dev"))
+                .expect("role header should be present"),
+        );
+        editor.clear_auth_row_at_cursor(&jackin_config::AppConfig::default());
+
+        assert!(
+            !editor.pending.roles["dev"]
+                .env
+                .contains_key(jackin_core::env_model::ZAI_API_KEY_ENV_NAME)
+        );
     }
 
     #[test]

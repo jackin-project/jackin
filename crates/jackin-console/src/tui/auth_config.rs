@@ -459,10 +459,28 @@ pub fn apply_role_auth_commit(
 
 pub fn clear_workspace_auth_layer(ws: &mut WorkspaceConfig, kind: AuthKind) {
     set_workspace_auth_mode(ws, kind, None);
+    clear_workspace_env_only_auth_values(ws, kind);
 }
 
 pub fn clear_role_auth_layer(role: &mut WorkspaceRoleOverride, kind: AuthKind) {
     set_role_auth_mode(role, kind, None);
+    clear_role_env_only_auth_values(role, kind);
+}
+
+fn clear_workspace_env_only_auth_values(ws: &mut WorkspaceConfig, kind: AuthKind) {
+    for mode in kind.supported_modes() {
+        if let Some(env_var) = kind.required_env_var(*mode) {
+            ws.env.remove(env_var);
+        }
+    }
+}
+
+fn clear_role_env_only_auth_values(role: &mut WorkspaceRoleOverride, kind: AuthKind) {
+    for mode in kind.supported_modes() {
+        if let Some(env_var) = kind.required_env_var(*mode) {
+            role.env.remove(env_var);
+        }
+    }
 }
 
 pub fn apply_settings_auth_env_commit(

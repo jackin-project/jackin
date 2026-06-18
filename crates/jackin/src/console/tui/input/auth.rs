@@ -16,11 +16,11 @@ use std::path::PathBuf;
 use crate::console::tui::op_picker::OpPickerState;
 use crate::console::tui::state::RolePickerState;
 use crate::console::tui::state::{
-    AuthForm, AuthFormFocus, AuthFormTarget, AuthRow, EditorState, FieldFocus, FileBrowserTarget,
-    Modal, TextInputTarget,
+    AuthForm, AuthFormFocus, AuthFormTarget, EditorState, FieldFocus, FileBrowserTarget, Modal,
+    TextInputTarget,
 };
 use jackin_config::AppConfig;
-use jackin_console::tui::auth::{AuthKind, AuthMode};
+use jackin_console::tui::auth::AuthMode;
 use jackin_console::tui::auth_config::{
     apply_role_auth_commit, apply_workspace_auth_commit, auth_kind_agent, clear_role_auth_layer,
     clear_workspace_auth_layer, editor_auth_form_can_generate_token, editor_source_folder_display,
@@ -148,9 +148,7 @@ pub(super) fn open_auth_role_picker(editor: &mut EditorState<'_>, config: &AppCo
 /// Toggle the expanded/collapsed state of a role section on the Auth tab.
 /// If the role is currently expanded, collapse it; otherwise expand it.
 pub(super) fn toggle_role_expand(editor: &mut EditorState<'_>, role: String) {
-    if !editor.auth_expanded.remove(&role) {
-        editor.auth_expanded.insert(role);
-    }
+    editor.toggle_auth_role_expanded(role);
 }
 
 /// Handle `D`/`d` on the Auth tab.
@@ -160,66 +158,7 @@ pub(super) fn toggle_role_expand(editor: &mut EditorState<'_>, role: String) {
 /// - `WorkspaceMode` → clear the workspace-level override for the selected auth kind.
 /// - Anything else (`AuthKindRow`, `AddSentinel`, `Spacer`) → no-op.
 pub(super) fn handle_d_on_auth_row(editor: &mut EditorState<'_>, config: &AppConfig) {
-    let FieldFocus::Row(n) = editor.active_field;
-    let rows = editor.auth_flat_rows(config);
-    match rows.get(n).cloned() {
-        Some(AuthRow::RoleHeader { role, .. }) => {
-            if let Some(kind) = editor.auth_selected_kind {
-                clear_role_kind(editor, &role, kind);
-            }
-        }
-        Some(AuthRow::RoleMode { role, kind }) => {
-            clear_role_kind(editor, &role, kind);
-        }
-        Some(AuthRow::WorkspaceMode { kind }) => {
-            clear_workspace_kind(&mut editor.pending, kind);
-        }
-        _ => {}
-    }
-}
-
-fn clear_role_kind(editor: &mut EditorState<'_>, role: &str, kind: AuthKind) {
-    if let Some(ro) = editor.pending.roles.get_mut(role) {
-        match kind {
-            AuthKind::Claude => ro.claude = None,
-            AuthKind::Codex => ro.codex = None,
-            AuthKind::Amp => ro.amp = None,
-            AuthKind::Kimi => {
-                ro.kimi = None;
-                ro.env.remove(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME);
-            }
-            AuthKind::Opencode => ro.opencode = None,
-            AuthKind::Grok => ro.grok = None,
-            AuthKind::Github => ro.github = None,
-            AuthKind::Zai => {
-                ro.env.remove(crate::env_model::ZAI_API_KEY_ENV_NAME);
-            }
-            AuthKind::Minimax => {
-                ro.env.remove(crate::env_model::MINIMAX_API_KEY_ENV_NAME);
-            }
-        }
-    }
-}
-
-fn clear_workspace_kind(ws: &mut jackin_config::WorkspaceConfig, kind: AuthKind) {
-    match kind {
-        AuthKind::Claude => ws.claude = None,
-        AuthKind::Codex => ws.codex = None,
-        AuthKind::Amp => ws.amp = None,
-        AuthKind::Kimi => {
-            ws.kimi = None;
-            ws.env.remove(crate::env_model::KIMI_CODE_API_KEY_ENV_NAME);
-        }
-        AuthKind::Opencode => ws.opencode = None,
-        AuthKind::Grok => ws.grok = None,
-        AuthKind::Github => ws.github = None,
-        AuthKind::Zai => {
-            ws.env.remove(crate::env_model::ZAI_API_KEY_ENV_NAME);
-        }
-        AuthKind::Minimax => {
-            ws.env.remove(crate::env_model::MINIMAX_API_KEY_ENV_NAME);
-        }
-    }
+    editor.clear_auth_row_at_cursor(config);
 }
 
 /// Read the current mode + credential for the form's target out of
