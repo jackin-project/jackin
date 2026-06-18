@@ -1,0 +1,189 @@
+---
+title: "Unify the auth modal subsystem"
+---
+
+**Status**: Partially implemented — the source-folder validation and the shared error dialog have shipped on both surfaces; the structural unification of the auth-form modal lifecycle is open.
+
+## Problem
+
+The auth-form modal lifecycle is implemented twice — once for the global **Settings → Auth** tab and once for the **workspace editor** Auth tab. Open, key dispatch, validate, apply, error, and cancel/restore each exist as a left/right twin across two parallel modal enums with two separate stash APIs. The form model, rendering, validation, and the error dialog are already shared; only the modal-enum wrapper, the dispatch handler, the stash API, and the apply/open glue are duplicated.
+
+This is the operator-facing goal: the auth experience in global settings and in the workspace editor is *the same thing* — same look, same keys, same behavior — so it must be one implementation, never two that drift.
+
+## Root cause — why the architecture permits this class of bug
+
+The source-folder bugs fixed during this work were not isolated defects; they are what the current structure guarantees. Because there are two modal subsystems for one concept, every behavior exists as a twin, and any change to one twin that is not mirrored to the other reproduces the same class of defect:
+
+- Source-folder validation landed in the settings commit path first; the editor commit path is a different function and stayed unvalidated, so a wrong folder (for example `~/.cargo` selected for Codex) was silently accepted.
+- The rejection rendered differently per surface (the file browser's inline reject line versus nothing) until both were pointed at the standard error dialog.
+- Earlier still, the new-tab credential overwrite and the source-folder-not-read defects lived in one provisioning path while the other was fine.
+
+The enabling condition is structural: two modal subsystems for one concept. Patching each twin as it bites leaves the structure — and the next divergence — in place. The correct fix removes the condition: one shared auth-modal subsystem both surfaces drive, so a behavior cannot exist on one surface and not the other. That the hard parts are already shared (`AuthForm`, `AuthFormTarget`, `FileBrowserState`, the key-plan, rendering, validation, and the error dialog) proves this is a convergence, not a rewrite.
+
+## Current duplication inventory
+
+`S` = <RepoFile path="crates/jackin/src/console/tui/input/global_mounts/auth.rs">global_mounts/auth.rs</RepoFile> (settings). `E` = <RepoFile path="crates/jackin/src/console/tui/input/auth.rs">input/auth.rs</RepoFile> (editor), with commit glue in <RepoFile path="crates/jackin/src/console/effects.rs">effects.rs</RepoFile> and <RepoFile path="crates/jackin/src/console/tui/input/editor.rs">input/editor.rs</RepoFile>. Every row is one concept implemented twice.
+
+| Lifecycle step | Settings twin | Editor twin |
+|---|---|---|
+| Open the auth form | `open_settings_auth_form` | `open_auth_form_modal` |
+| Modal key dispatch | `handle_settings_auth_modal` | `handle_auth_form_key` |
+| Open credential source picker | inline arm + `SourcePicker` | `open_auth_source_picker_from_form` |
+| Apply plain credential | `apply_plain_text_to_settings_auth_form` | `apply_plain_text_to_auth_form` |
+| Apply 1Password source pick | settings source-picker arm | `apply_plain_source_picker_to_auth_form` |
+| Open op picker | inline | `open_op_picker_from_auth_source` |
+| Apply op-picker commit | `apply_op_picker_to_settings_auth_form_committed` | `apply_op_picker_to_auth_form_committed` |
+| Op-picker read (runner) | `apply_op_picker_to_settings_auth_form_with_runner` | `apply_op_picker_to_auth_form_with_runner` |
+| Op-picker read (validator) | `apply_op_picker_to_settings_auth_form_with_validator` | `apply_op_picker_to_auth_form_with_validator` |
+| Op-picker commit failed | `apply_op_picker_settings_commit_failed` | `apply_op_picker_commit_failed` |
+| Open source-folder browser | inline `OpenSourceFolderBrowser` arm | `open_auth_source_folder_browser_from_form` |
+| Apply source folder | `apply_source_folder_to_settings_auth_form` | `apply_source_folder_to_auth_form` |
+| Validate source folder | `validate_picked_source_folder` | inline in `execute_editor_file_browser_outcome` |
+| Restore form after cancel | `restore_settings_auth_form` | `restore_auth_form_after_op_picker_cancel` |
+| Missing-stash logging | ad-hoc `debug_log!` | `log_missing_return_path` + `AUTH_MISSING_FOLDER_COMMIT` |
+| Persist on save | `persist_settings_auth_form` | `persist_form` |
+| Clear kind | `clear_settings_auth_kind` | `clear_layer` |
+
+That is roughly 17 paired functions plus two dispatch handlers plus two modal enums plus two stash APIs plus two render/footer/mouse arms — all for one concept.
+
+### The two modal shells
+
+Both modal enums are generic shells defined in `jackin-console` and instantiated through concrete aliases in the `jackin` app crate:
+
+- `SettingsAuthModal` — <RepoFile path="crates/jackin-console/src/tui/screens/settings/model.rs">screens/settings/model.rs</RepoFile>. Variants `TextInput`, `SourcePicker`, `OpPicker`, `SourceFolderPicker`, `AuthForm`. Carries a bespoke `SourceFolderPicker` and no target concept.
+- `ConsoleModal` (aliased `Modal`) — <RepoFile path="crates/jackin-console/src/tui/app.rs">tui/app.rs</RepoFile>. ~20 variants; source-folder rides the generic `FileBrowser { target }` with `FileBrowserTarget::AuthFormSourceFolder`.
+
+`SettingsAuthState` is already generic over its modal type, and `AuthForm` / `AuthFormTarget` are already shared (<RepoFile path="crates/jackin-console/src/tui/components/auth_panel.rs">components/auth_panel.rs</RepoFile>). The stash APIs differ: settings uses `push_auth_modal` / `restore_pending_auth_form`; the editor uses `open_sub_modal` / `pop_modal_chain` (<RepoFile path="crates/jackin-console/src/tui/screens/editor/model.rs">screens/editor/model.rs</RepoFile>).
+
+## Target architecture
+
+End state: **one shared auth-modal subsystem** that both surfaces drive. The whole lifecycle (open form, dispatch keys, open child pickers, apply each kind of pick, validate, error, cancel/restore, persist) lives once; each surface contributes only a thin trait impl describing how its state stashes/restores modals and opens the infra modals it already owns.
+
+This follows the [TUI architecture rules](/reference/tui/): the auth-modal **model** is terminal-interaction state and lives in `jackin-console` alongside the shared `AuthForm`; the **decision logic** (validate a pick) is a pure rule and lives in a `domain` module; the dispatch is a pure update over the shared model. No external work runs in any of it.
+
+### Shared `AuthModal` model
+
+Promote the auth-specific modal states into one shared enum in `jackin-console` (next to `AuthForm`), generic over the shared sub-state types exactly as the two current shells are:
+
+```rust
+// jackin-console: tui/components/auth_panel.rs (or a new tui/components/auth_modal.rs)
+pub enum AuthModal<SourcePickerState, OpPickerState, FileBrowserState, AuthForm, AuthFormFocus> {
+    Form { target: AuthFormTarget, state: Box<AuthForm>, focus: AuthFormFocus, literal_buffer: String },
+    CredentialSourcePicker { state: SourcePickerState },
+    SourceFolderBrowser { state: FileBrowserState },   // replaces SettingsAuthModal::SourceFolderPicker
+    OpPicker { state: Box<OpPickerState> },
+}
+```
+
+Both shells embed it: the editor's `Modal::AuthForm` / `Modal::AuthSourcePicker` / `Modal::FileBrowser{AuthFormSourceFolder}` collapse into `Modal::Auth(AuthModal)`, and `SettingsAuthModal` becomes an alias (or newtype) of `AuthModal`. Infra modals the editor shares with non-auth flows — `TextInput` (mount destinations, env keys) and the env-value `OpPicker` — stay surface-owned and are reached through host openers; they are not folded into `AuthModal`.
+
+### `AuthModalHost` trait
+
+A trait implemented by `EditorState` and `SettingsAuthState`, abstracting only what genuinely differs between the surfaces:
+
+```rust
+pub trait AuthModalHost {
+    fn stash_auth_modal(&mut self, child: AuthModalConcrete);      // unify push_auth_modal / open_sub_modal
+    fn restore_auth_modal(&mut self);                              // unify restore_pending_auth_form / pop_modal_chain
+    fn take_auth_form(&mut self) -> Option<StashedAuthForm>;       // pop the stashed AuthForm to apply onto
+    fn remount_auth_form(&mut self, form: StashedAuthForm, focus: AuthFormFocus);
+    fn open_text_input(&mut self, initial: String);               // infra modal, surface-owned
+    fn open_op_picker(&mut self);                                  // infra modal, surface-owned
+    fn show_auth_error(&mut self, reason: String);                // standard dialog, same title both sides
+}
+
+pub struct StashedAuthForm { pub target: AuthFormTarget, pub state: Box<AuthForm>, pub literal_buffer: String }
+```
+
+`StashedAuthForm` is enum-agnostic — it carries only the already-shared `AuthForm`, `AuthFormTarget`, and `literal_buffer`, so the trait never leaks one surface's modal type into the other.
+
+### One dispatch + one of each helper
+
+- One `handle_auth_modal<H: AuthModalHost>(host, key, …)` replaces `handle_settings_auth_modal` and `handle_auth_form_key`.
+- One generic helper per lifecycle step (`open_credential_source_picker`, `open_source_folder_browser`, `apply_plain_credential`, `apply_op_picker_committed` + `_with_validator`, `apply_op_picker_failed`, `apply_source_folder`, `restore_auth_form`) replaces all ~17 twins.
+- One missing-stash logger (`log_missing_return_path` + the existing constants) for both.
+
+### Source-folder decision (pure rule, already partly landed)
+
+The validate-then-apply-or-error decision is a pure rule and belongs in `domain`:
+
+```rust
+// crates/jackin/src/console/domain.rs
+pub enum AuthSourceFolderOutcome { Apply(PathBuf), Reject(String) }
+pub fn decide_auth_source_folder(kind: Option<AuthKind>, committed: PathBuf) -> AuthSourceFolderOutcome;
+```
+
+`decide_auth_source_folder` wraps the already-shared `validate_auth_source_folder` (<RepoFile path="crates/jackin/src/console/domain.rs">domain.rs</RepoFile>), which calls the runtime gate `validate_sync_source_dir` (<RepoFile path="crates/jackin-runtime/src/instance/auth.rs">instance/auth.rs</RepoFile>). The shared `commit_auth_source_folder(host, kind, committed)` calls it and then either `remount_auth_form` or `show_auth_error`.
+
+## Feasibility
+
+Per the project's correctness-first rule, the only valid reason to stop short is a proven impossibility. None is known.
+
+- The hard parts are already shared (`AuthForm`, `AuthFormTarget`, `FileBrowserState`, key-plan, rendering, validation, error dialog). The remaining duplication is wrapper/dispatch/stash glue — mechanically unifiable.
+- The twins are line-for-line equivalent except for the modal enum type and which `modal_parents` they pop; an existing code comment even notes the editor op-picker apply "mirrors" the settings one. A trait over `{stash, restore, take/remount form, open infra modal, show error}` captures the entire difference.
+- `SettingsAuthState` is already generic over its modal type, so embedding a shared `AuthModal` needs no new generic machinery there.
+
+Real constraints (capability, not cost): the editor's `TextInput` and `OpPicker` serve non-auth flows and therefore stay surface-owned, reached via host openers; unifying the modal **data** is independent of unifying **rendering**, so the render/footer/mouse convergence is its own increment that must be proven not to regress modal sizing or footer hints. If a genuine block surfaces during execution (for example a borrow/lifetime conflict in the host trait), it must be recorded here with the exact error before any symptom-layer fallback is chosen.
+
+## Parity invariants (verified by cross-surface tests)
+
+Both surfaces must be identical on:
+
+- open gates on `shows_source_folder()` / `shows_credential_block()`;
+- the file browser opens with hidden files visible (`from_home_with_hidden`);
+- footer hint text;
+- Esc/cancel returns to the same parent (the auth form);
+- validation accept/reject for the same (agent, folder);
+- error dialog — same widget, same title (`invalid_source_folder_error_popup_state`, <RepoFile path="crates/jackin-console/src/tui/components/error_popup.rs">error_popup.rs</RepoFile>), same dismiss target (returns to the picker);
+- apply sets `set_source_folder`, refocuses Save, preserves `literal_buffer`;
+- the missing-stash path logs via the shared logger (never a silent drop).
+
+## Decisions
+
+Locked:
+
+- Full collapse of the settings modal variant — `SettingsAuthModal::SourceFolderPicker` is retired in favor of the shared `AuthModal::SourceFolderBrowser`; both surfaces end on one modal shape, one open fn, one commit fn.
+- Per-step commits — commit and push after each sequencing step, suite-green and clippy-clean.
+
+Open (raise before the relevant step):
+
+- Whether the shared `AuthModal` type lives in `jackin-console` (leaning yes, beside `AuthForm`, so both screens reference one type) versus the app crate.
+- Whether `handle_auth_modal` and the apply helpers live in a new `jackin-console` screen-shared update module versus the app-crate input layer; the [TUI architecture](/reference/tui/) target is the update layer in `jackin-console`, but the current handlers live in the app crate's input layer, so the move may be staged.
+- Whether to retire `SettingsAuthModal` entirely (alias to `AuthModal`) or keep it as a newtype for screen-local additions.
+
+## Sequencing
+
+Source-folder slice (delivers the bug fix and proves the shared path); each step is one commit, full `jackin` / `jackin-console` / `jackin-runtime` suites green and clippy clean:
+
+1. Land shared `decide_auth_source_folder` + `AuthModalHost` (source-folder subset) + `commit_auth_source_folder`; wire the editor to it.
+2. Wire settings to the same shared fn; delete the settings source-folder apply twin and `validate_picked_source_folder`.
+3. Settings open parity: gate on `shows_source_folder()` (a current divergence — settings does not gate today).
+4. Full collapse: replace `SettingsAuthModal::SourceFolderPicker` with the shared `SourceFolderBrowser`; update render, footer, mouse, and tests.
+5. Unify the wrong-folder UX (one dialog, one title, same dismiss). Add the cross-surface equivalence test. Update the [Auth source-folder sync spec](/internal/specs/auth-source-folder-sync/) (INV-7) to record one shared commit path.
+
+Rest of the subsystem (each its own commit):
+
+6. Plain credential and the 1Password source pick.
+7. The op-picker family (committed / runner / validator / failed / open).
+8. One dispatch handler `handle_auth_modal<H>`.
+9. Open form, restore, persist, and clear-kind.
+10. Retire the second auth modal enum; final cross-surface equivalence tests for every lifecycle step.
+
+## What this does not change
+
+- No operator-visible behavior change beyond making the two surfaces identical and the rejection a proper dialog. Auth semantics — modes, provisioning, validation rules — are untouched.
+- Infra modals keep their non-auth uses intact.
+- The runtime `validate_sync_source_dir` gate (the actual correctness check) is already shared and is not modified here.
+
+## Definition of done
+
+- Every twin in the inventory table is gone; one generic `AuthModalHost`-driven implementation remains, with `handle_settings_auth_modal` and `handle_auth_form_key` collapsed into `handle_auth_modal<H>`.
+- A single shared `AuthModal` type referenced by both shells; only infra modals (`TextInput`, env-value `OpPicker`) remain surface-owned.
+- Cross-surface equivalence tests cover every lifecycle step (open, each apply, validate, error, cancel, persist).
+- Full suites green and clippy clean at each step; the [Auth source-folder sync spec](/internal/specs/auth-source-folder-sync/) updated.
+
+## Related
+
+- [Auth source-folder sync spec](/internal/specs/auth-source-folder-sync/) — the behavioral invariants this subsystem must preserve.
+- [Auth reliability program](/reference/roadmap/auth-reliability-program/) — the multi-company source-folder feature whose Phase 1 hardening surfaced this duplication.
+- [Split input/editor.rs](/reference/roadmap/split-input-editor/) — sibling codebase-health item touching the same editor input layer.
