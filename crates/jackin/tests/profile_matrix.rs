@@ -107,6 +107,22 @@ fn no_new_privileges_active(container: &str) -> bool {
     out.contains("nonewprivs:\t1") || out.contains("no_new_privs:\t1")
 }
 
+/// Read `CapEff` from `/proc/self/status` and test whether `bit` is set.
+///
+/// Linux capability bit numbers: NET_ADMIN=12, NET_RAW=13, SETPCAP=8.
+fn cap_eff_has_bit(container: &str, bit: u32) -> bool {
+    let out = docker_exec_output(container, &["sh", "-c", "cat /proc/self/status"]);
+    for line in out.lines() {
+        // The field is lowercase in `docker_exec_output` (it calls `.to_lowercase()`).
+        if let Some(hex) = line.strip_prefix("capeff:\t") {
+            if let Ok(val) = u64::from_str_radix(hex.trim(), 16) {
+                return (val >> bit) & 1 == 1;
+            }
+        }
+    }
+    false
+}
+
 // ── Tier 1: mechanism probes ──────────────────────────────────────────────────
 
 /// `locked` — read-only root, minimum caps + `NET_ADMIN`/`NET_RAW` (Allowlist implicit), `no-new-privileges`.
@@ -159,6 +175,21 @@ fn tier1_locked_posture() {
         no_new_privileges_active(container_ref(name)),
         "locked: no-new-privileges must be active"
     );
+
+    // Capability set: NET_ADMIN (12) and NET_RAW (13) present (Allowlist implicit);
+    // SETPCAP (8) absent (not in MINIMUM_CAPABILITIES — WP0 cap-set probe).
+    assert!(
+        cap_eff_has_bit(container_ref(name), 12),
+        "locked: NET_ADMIN (bit 12) must be present (Allowlist network implicit cap)"
+    );
+    assert!(
+        cap_eff_has_bit(container_ref(name), 13),
+        "locked: NET_RAW (bit 13) must be present (Allowlist network implicit cap)"
+    );
+    assert!(
+        !cap_eff_has_bit(container_ref(name), 8),
+        "locked: SETPCAP (bit 8) must be absent (not in MINIMUM_CAPABILITIES)"
+    );
 }
 
 /// `hardened` — read-only root, minimum caps + `NET_ADMIN`/`NET_RAW` (Allowlist implicit), `no-new-privileges`.
@@ -210,6 +241,21 @@ fn tier1_hardened_posture() {
         no_new_privileges_active(container_ref(name)),
         "hardened: no-new-privileges must be active"
     );
+
+    // Capability set: NET_ADMIN (12) and NET_RAW (13) present (Allowlist implicit);
+    // SETPCAP (8) absent (not in MINIMUM_CAPABILITIES — WP0 cap-set probe).
+    assert!(
+        cap_eff_has_bit(container_ref(name), 12),
+        "hardened: NET_ADMIN (bit 12) must be present (Allowlist network implicit cap)"
+    );
+    assert!(
+        cap_eff_has_bit(container_ref(name), 13),
+        "hardened: NET_RAW (bit 13) must be present (Allowlist network implicit cap)"
+    );
+    assert!(
+        !cap_eff_has_bit(container_ref(name), 8),
+        "hardened: SETPCAP (bit 8) must be absent (not in MINIMUM_CAPABILITIES)"
+    );
 }
 
 /// `standard` — writable root, no cap-drop, `no-new-privileges` (sudo off by default).
@@ -240,6 +286,17 @@ fn tier1_standard_posture() {
         no_new_privileges_active(container_ref(name)),
         "standard: no-new-privileges must be active (sudo=false by default)"
     );
+
+    // Capability set (Docker default — no --cap-drop): NET_ADMIN (12) absent;
+    // SETPCAP (8) present (Docker's 14-cap default — WP0 cap-set probe).
+    assert!(
+        !cap_eff_has_bit(container_ref(name), 12),
+        "standard: NET_ADMIN (bit 12) must be absent (not in Docker default caps)"
+    );
+    assert!(
+        cap_eff_has_bit(container_ref(name), 8),
+        "standard: SETPCAP (bit 8) must be present (Docker default caps)"
+    );
 }
 
 /// `compat` — writable root, no restrictions, no-new-privileges OFF (sudo=true).
@@ -268,6 +325,17 @@ fn tier1_compat_posture() {
     assert!(
         !no_new_privileges_active(container_ref(name)),
         "compat: no-new-privileges must be inactive (sudo=true)"
+    );
+
+    // Capability set (Docker default — no --cap-drop): NET_ADMIN (12) absent;
+    // SETPCAP (8) present (Docker's 14-cap default — WP0 cap-set probe).
+    assert!(
+        !cap_eff_has_bit(container_ref(name), 12),
+        "compat: NET_ADMIN (bit 12) must be absent (not in Docker default caps)"
+    );
+    assert!(
+        cap_eff_has_bit(container_ref(name), 8),
+        "compat: SETPCAP (bit 8) must be present (Docker default caps)"
     );
 }
 

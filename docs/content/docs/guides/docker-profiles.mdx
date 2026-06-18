@@ -236,12 +236,15 @@ The debug output includes:
 - `profile_selected profile=hardened source=cli` — which profile was chosen and why
 - `cap_drop_all` + `cap_add cap=CHOWN reason=jackin-default` — per-capability decisions
 - `no_new_privileges enforced=yes reason=profile`
-- `read_only_root enforced=yes tmpfs=/tmp,/run,… reason=profile`
-- `resource_limit kind=memory value=17179869184 flag=--memory`
-- `network_mode=allowlist hosts_count=3 hosts=api.anthropic.com,github.com,api.github.com`
-- `cgroup_version v=v2`
+- `seccomp profile=docker-default`
 - `apparmor available=yes profile=docker-default layer=host`
-- Compact summary: `launch profile=hardened source=cli cap_set=8 caps no_new_privileges=on read_only_root=on dind=disabled network=Allowlist`
+- `read_only_root enforced=yes tmpfs=/tmp,/run,…`
+- `cgroup_version v=v2`
+- `resource_limit kind=memory value=17179869184 flag=--memory`
+- `dind enabled=no mode=none tls_certs_path=/jackin/run/dind-certs/client`
+- `host_socket_check passed=yes`
+- `network_mode mode=allowlist enforcement=full`
+- Session contract (multi-line summary of every applied control)
 
 ## What the profiles cannot guarantee
 
@@ -303,4 +306,5 @@ min_profile = "compat"   # role needs full sudo + apt install at runtime
 | Item | Status |
 |---|---|
 | `standard` as compiled-in default | Deferred — waiting on workload compatibility matrix (cgroup v2 hosts) |
+| Credential posture: prefer `api_key`/`oauth_token` under `hardened`/`locked`; emit telemetry note on `sync` mode | Deferred — owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/) |
 | Network proxy sidecar (non-HTTP protocol allowlist) | Deferred — separate research; see [Network egress policy](/reference/roadmap/network-egress-policy/) |

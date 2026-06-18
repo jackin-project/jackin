@@ -1529,6 +1529,26 @@ mod tests {
         assert_eq!(grants.dind, DindGrant::Privileged, "compat keeps privileged DinD");
     }
 
+    #[test]
+    fn hardened_profile_base_grants_dind_none() {
+        let grants = profile_base_grants(DockerSecurityProfile::Hardened);
+        assert_eq!(
+            grants.dind,
+            DindGrant::None,
+            "hardened dind must default to None (Decision 12 / WP4)"
+        );
+    }
+
+    #[test]
+    fn locked_profile_base_grants_dind_none() {
+        let grants = profile_base_grants(DockerSecurityProfile::Locked);
+        assert_eq!(
+            grants.dind,
+            DindGrant::None,
+            "locked dind must default to None (Decision 12 / WP4)"
+        );
+    }
+
     // ── WP3: AppArmor probe parser ────────────────────────────────────────────
 
     #[test]

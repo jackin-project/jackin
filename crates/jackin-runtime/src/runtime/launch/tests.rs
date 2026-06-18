@@ -6009,3 +6009,289 @@ plugins = []
         "locked profile must create network with internal=true (WP2); got internal=false"
     );
 }
+
+// ── WP2: non-locked profiles create non-internal network ─────────────────────
+
+/// `hardened` profile must create its Docker network with `internal=false` —
+/// only `locked` uses an internal network (Decision WP2).
+#[tokio::test]
+async fn hardened_profile_creates_non_internal_network() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+    )
+    .unwrap();
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    let workspace = repo_workspace(&repo_dir);
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions {
+            docker_profile: Some(
+                crate::runtime::docker_profile::DockerSecurityProfile::Hardened,
+            ),
+            ..LoadOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let networks = docker.created_networks.borrow();
+    let role_network = networks
+        .first()
+        .expect("hardened launch must create a Docker network");
+    assert!(
+        !role_network.2,
+        "hardened profile must create network with internal=false (WP2); got internal=true"
+    );
+}
+
+// ── WP1: allowlist env injection + fail-closed ────────────────────────────────
+
+/// `hardened` profile (Allowlist network) must inject `JACKIN_NETWORK_MODE`,
+/// `JACKIN_ALLOWED_HOSTS`, and `JACKIN_NETWORK_ENFORCEMENT` into the role
+/// container run command (WP1).
+#[tokio::test]
+async fn hardened_allowlist_injects_network_enforcement_env() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+    )
+    .unwrap();
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    let workspace = repo_workspace(&repo_dir);
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions {
+            docker_profile: Some(
+                crate::runtime::docker_profile::DockerSecurityProfile::Hardened,
+            ),
+            ..LoadOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let role_run_cmd = runner
+        .recorded
+        .iter()
+        .find(|c| c.contains("docker run -d") && c.contains("jackin.kind=role"))
+        .expect("expected role docker run command");
+
+    assert!(
+        role_run_cmd.contains("JACKIN_NETWORK_MODE=allowlist"),
+        "hardened (Allowlist) must inject JACKIN_NETWORK_MODE=allowlist; got: {role_run_cmd}"
+    );
+    assert!(
+        role_run_cmd.contains("JACKIN_ALLOWED_HOSTS="),
+        "hardened (Allowlist) must inject JACKIN_ALLOWED_HOSTS; got: {role_run_cmd}"
+    );
+    assert!(
+        role_run_cmd.contains("JACKIN_NETWORK_ENFORCEMENT="),
+        "hardened (Allowlist) must inject JACKIN_NETWORK_ENFORCEMENT; got: {role_run_cmd}"
+    );
+}
+
+/// When `firewall-apply` fails, the launch must abort fail-closed — the agent
+/// must never run with open egress when the operator requested an allowlist
+/// boundary (Decision 3 / WP1).
+#[tokio::test]
+async fn allowlist_fail_closed_aborts_launch_on_firewall_error() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+    )
+    .unwrap();
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+    runner.fail_on.push("firewall-apply".to_owned());
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    let workspace = repo_workspace(&repo_dir);
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    let err = load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions {
+            docker_profile: Some(
+                crate::runtime::docker_profile::DockerSecurityProfile::Hardened,
+            ),
+            ..LoadOptions::default()
+        },
+    )
+    .await
+    .unwrap_err();
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("fail-closed"),
+        "firewall failure must produce a fail-closed error; got: {msg}"
+    );
+    assert!(
+        msg.contains("allowlist"),
+        "error must name the allowlist policy; got: {msg}"
+    );
+}
+
+// ── WP4: hardened profile starts no DinD sidecar ─────────────────────────────
+
+/// `hardened` profile defaults to `DindGrant::None` (Decision 12 / WP4):
+/// no DinD sidecar container is started, no DinD image appears in the run log.
+#[tokio::test]
+async fn hardened_profile_starts_no_dind_sidecar() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+"#,
+    )
+    .unwrap();
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    let workspace = repo_workspace(&repo_dir);
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions {
+            docker_profile: Some(
+                crate::runtime::docker_profile::DockerSecurityProfile::Hardened,
+            ),
+            ..LoadOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let has_dind = runner.recorded.iter().any(|c| c.contains("docker:dind"));
+    assert!(
+        !has_dind,
+        "hardened profile must start no DinD sidecar (DindGrant::None); found dind command: {:?}",
+        runner.recorded.iter().find(|c| c.contains("docker:dind"))
+    );
+}
