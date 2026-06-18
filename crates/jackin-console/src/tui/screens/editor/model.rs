@@ -1079,6 +1079,11 @@ impl<
         PendingOpCommit,
     >
 {
+    pub fn commit_workdir_input(&mut self, workdir: impl Into<String>) {
+        self.pending.workdir = workdir.into();
+        self.clear_modal_chain();
+    }
+
     #[must_use]
     pub fn is_dirty(&self) -> bool {
         if self.pending != self.original {
@@ -2458,6 +2463,15 @@ mod tests {
         editor.commit_workspace_name_input("renamed");
 
         assert_eq!(editor.pending_name.as_deref(), Some("renamed"));
+    }
+
+    #[test]
+    fn commit_workdir_input_updates_pending_workdir() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        editor.commit_workdir_input("/repo");
+
+        assert_eq!(editor.pending.workdir, "/repo");
     }
 
     #[test]

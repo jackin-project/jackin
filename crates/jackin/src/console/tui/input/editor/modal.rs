@@ -257,8 +257,7 @@ pub(in crate::console::tui::input) fn apply_text_input_to_pending(
             editor.commit_workspace_name_input(value);
         }
         TextInputTarget::Workdir => {
-            editor.pending.workdir = value.to_owned();
-            editor.clear_modal_chain();
+            editor.commit_workdir_input(value);
         }
         TextInputTarget::MountDst => {
             // Provisional mount with src==dst was inserted at FileBrowser
