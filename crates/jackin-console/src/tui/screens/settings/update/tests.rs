@@ -199,6 +199,34 @@ fn settings_env_source_picker_commit_plan_requires_pending_key() {
 }
 
 #[test]
+fn settings_env_op_picker_commit_plan_routes_targets() {
+    assert_eq!(
+        settings_env_op_picker_commit_plan(None),
+        SettingsEnvOpPickerCommitPlan::MissingTarget
+    );
+
+    let existing = (
+        SettingsEnvScope::Role("ops".to_owned()),
+        Some("TOKEN".to_owned()),
+    );
+    assert_eq!(
+        settings_env_op_picker_commit_plan(Some(&existing)),
+        SettingsEnvOpPickerCommitPlan::SetExisting {
+            scope: SettingsEnvScope::Role("ops".to_owned()),
+            key: "TOKEN".to_owned(),
+        }
+    );
+
+    let new_key = (SettingsEnvScope::Global, None);
+    assert_eq!(
+        settings_env_op_picker_commit_plan(Some(&new_key)),
+        SettingsEnvOpPickerCommitPlan::StashForNewKey {
+            scope: SettingsEnvScope::Global,
+        }
+    );
+}
+
+#[test]
 fn settings_tab_at_position_maps_tab_strip_cells() {
     assert_eq!(
         settings_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),

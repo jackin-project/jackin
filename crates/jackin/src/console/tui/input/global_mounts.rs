@@ -30,8 +30,8 @@ use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::mount_display::settings_global_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::update::{
-    GlobalMountAddFinalizePlan, GlobalMountTextCommitPlan, SettingsEnvSourcePickerCommitPlan,
-    SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan,
+    GlobalMountAddFinalizePlan, GlobalMountTextCommitPlan, SettingsEnvOpPickerCommitPlan,
+    SettingsEnvSourcePickerCommitPlan, SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan,
 };
 use jackin_console::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -778,9 +778,12 @@ pub(super) fn handle_settings_env_modal(
                 InlinePickerPlan::Commit(
                     crate::console::tui::op_picker::OpPickerSelection::Existing(op_ref),
                 ) => {
-                    let target = env.pending_picker_target.take();
-                    match target {
-                        Some((scope, Some(key))) => {
+                    let plan = settings_update::settings_env_op_picker_commit_plan(
+                        env.pending_picker_target.as_ref(),
+                    );
+                    env.pending_picker_target.take();
+                    match plan {
+                        SettingsEnvOpPickerCommitPlan::SetExisting { scope, key } => {
                             set_settings_env_value_typed(
                                 env,
                                 &scope,
@@ -789,7 +792,7 @@ pub(super) fn handle_settings_env_modal(
                             );
                             env.clear_modal_chain();
                         }
-                        Some((scope, None)) => {
+                        SettingsEnvOpPickerCommitPlan::StashForNewKey { scope } => {
                             env.pending_picker_value = Some(jackin_core::EnvValue::OpRef(op_ref));
                             let state = settings_env_key_input_state(
                                 &env.pending,
@@ -803,7 +806,7 @@ pub(super) fn handle_settings_env_modal(
                                 state: Box::new(state),
                             });
                         }
-                        None => env.clear_modal_chain(),
+                        SettingsEnvOpPickerCommitPlan::MissingTarget => env.clear_modal_chain(),
                     }
                 }
                 InlinePickerPlan::Dismiss => {

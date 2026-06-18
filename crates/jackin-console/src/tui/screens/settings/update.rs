@@ -178,6 +178,18 @@ pub enum SettingsEnvSourcePickerCommitPlan {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsEnvOpPickerCommitPlan {
+    MissingTarget,
+    SetExisting {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+    StashForNewKey {
+        scope: SettingsEnvScope,
+    },
+}
+
 #[must_use]
 pub const fn settings_confirm_plan(
     action: GlobalMountConfirm,
@@ -301,6 +313,22 @@ pub fn settings_env_source_picker_commit_plan(
             scope: scope.clone(),
             key: key.clone(),
         },
+    }
+}
+
+#[must_use]
+pub fn settings_env_op_picker_commit_plan(
+    pending_picker_target: Option<&(SettingsEnvScope, Option<String>)>,
+) -> SettingsEnvOpPickerCommitPlan {
+    match pending_picker_target {
+        Some((scope, Some(key))) => SettingsEnvOpPickerCommitPlan::SetExisting {
+            scope: scope.clone(),
+            key: key.clone(),
+        },
+        Some((scope, None)) => SettingsEnvOpPickerCommitPlan::StashForNewKey {
+            scope: scope.clone(),
+        },
+        None => SettingsEnvOpPickerCommitPlan::MissingTarget,
     }
 }
 
