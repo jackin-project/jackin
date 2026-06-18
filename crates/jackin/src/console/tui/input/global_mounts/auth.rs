@@ -157,7 +157,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
             if matches!(key.code, KeyCode::Char('g' | 'G'))
                 && settings_auth_form_can_generate_token(state.kind, state.mode)
             {
-                auth.generating_token = true;
+                auth.start_generating_token();
                 // modal was taken from auth.modal at the start of this fn;
                 // push it directly to preserve the in-progress form state.
                 auth.modal_parents.push(modal);
@@ -220,10 +220,10 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
             // `pending_auth_form_return` for the post-mint re-mount), so
             // the generate branch is reachable only on that path and the
             // provide arms below stay untouched.
-            if auth.generating_token {
+            if auth.is_generating_token() {
                 match source_picker_plan(outcome) {
                     SourcePickerPlan::Plain => {
-                        auth.generating_token = false;
+                        auth.finish_generating_token();
                         *pending_token_generate =
                             Some(crate::console::tui::state::PendingTokenGenerate {
                                 scope: jackin_env::TokenSetupScope::Global,
@@ -254,7 +254,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
                     // the operator lands back on the Edit-auth dialog
                     // unchanged (matches the provide-path cancel below).
                     SourcePickerPlan::Dismiss => {
-                        auth.generating_token = false;
+                        auth.finish_generating_token();
                         restore_settings_auth_form(auth);
                     }
                     SourcePickerPlan::Continue => auth.modal = Some(modal),
@@ -329,7 +329,7 @@ pub(in crate::console::tui::input) fn handle_settings_auth_modal(
             // `generating_token` is set exactly when the picker was opened
             // by the auth-form `g`/`G` trigger (Create mode), so the create
             // variants are reachable only on this path.
-            if auth.generating_token {
+            if auth.is_generating_token() {
                 handle_settings_token_generate_pick(auth, pending_token_generate, outcome, modal);
                 return SettingsAuthOutcome::Continue;
             }
@@ -419,13 +419,13 @@ fn handle_settings_token_generate_pick(
         // `Existing` is unreachable in Create mode; a Cancel restores the
         // stashed form. Both close without minting and disarm the marker.
         CreateOpPickerPlan::Dismiss => {
-            auth.generating_token = false;
+            auth.finish_generating_token();
             restore_settings_auth_form(auth);
             return;
         }
     };
 
-    auth.generating_token = false;
+    auth.finish_generating_token();
     *pending_token_generate = Some(crate::console::tui::state::PendingTokenGenerate {
         scope: jackin_env::TokenSetupScope::Global,
         args,

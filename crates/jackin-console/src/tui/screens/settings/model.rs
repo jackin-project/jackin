@@ -1460,6 +1460,19 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         self.error.take()
     }
 
+    pub const fn start_generating_token(&mut self) {
+        self.generating_token = true;
+    }
+
+    pub const fn finish_generating_token(&mut self) {
+        self.generating_token = false;
+    }
+
+    #[must_use]
+    pub const fn is_generating_token(&self) -> bool {
+        self.generating_token
+    }
+
     /// Push the current auth modal onto the parent stack so a sub-modal can
     /// open without losing the auth form's in-progress state.
     pub fn push_auth_modal(&mut self, sub_modal: Modal) {
@@ -2240,6 +2253,22 @@ mod tests {
 
         assert_eq!(state.take_error(), Some(String::from("auth failed")));
         assert!(state.take_error().is_none());
+    }
+
+    #[test]
+    fn settings_auth_token_generation_flag_can_start_and_finish() {
+        let mut state = SettingsAuthState::<EnvValue, (), ()>::from_rows_and_github_env(
+            Vec::new(),
+            BTreeMap::new(),
+        );
+
+        assert!(!state.is_generating_token());
+
+        state.start_generating_token();
+        assert!(state.is_generating_token());
+
+        state.finish_generating_token();
+        assert!(!state.is_generating_token());
     }
 
     #[test]
