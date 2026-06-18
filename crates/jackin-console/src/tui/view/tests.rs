@@ -85,6 +85,34 @@ fn console_modal_render_plan_routes_modal_families() {
 }
 
 #[test]
+fn console_reserved_footer_height_plan_routes_screen_footers() {
+    assert_eq!(
+        console_reserved_footer_height_plan(ConsoleManagerStageRoute::Editor),
+        ConsoleReservedFooterHeightPlan::Editor
+    );
+    assert_eq!(
+        console_reserved_footer_height_plan(ConsoleManagerStageRoute::Settings),
+        ConsoleReservedFooterHeightPlan::Settings
+    );
+    assert_eq!(
+        console_reserved_footer_height_plan(ConsoleManagerStageRoute::List),
+        ConsoleReservedFooterHeightPlan::Workspace
+    );
+    assert_eq!(
+        console_reserved_footer_height_plan(ConsoleManagerStageRoute::CreatePrelude),
+        ConsoleReservedFooterHeightPlan::Workspace
+    );
+    assert_eq!(
+        console_reserved_footer_height_plan(ConsoleManagerStageRoute::ConfirmDelete),
+        ConsoleReservedFooterHeightPlan::Workspace
+    );
+    assert_eq!(
+        console_reserved_footer_height_plan(ConsoleManagerStageRoute::ConfirmInstancePurge),
+        ConsoleReservedFooterHeightPlan::Workspace
+    );
+}
+
+#[test]
 fn workspace_frame_areas_match_header_body_footer_contract() {
     let areas = workspace_frame_areas(Rect::new(0, 0, 80, 24));
 

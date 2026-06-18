@@ -21,12 +21,13 @@ use jackin_console::tui::screens::settings::view::{
     settings_frame_areas,
 };
 use jackin_console::tui::view::{
-    ConsoleMainFramePlan, ConsoleModalRenderPlan, ReservedFooterHeightFacts,
-    console_main_frame_plan, console_modal_render_plan, delete_confirm_area,
-    effective_footer_height, measured_footer_height, modal_backdrop_area,
-    modal_overlay_state_for_route, modal_overlay_visible, purge_confirm_area, render_footer,
-    render_header, render_modal_backdrop, reserved_footer_height_for_facts, settings_error_area,
-    status_overlay_area, workspace_frame_areas, workspace_header_title,
+    ConsoleMainFramePlan, ConsoleModalRenderPlan, ConsoleReservedFooterHeightPlan,
+    ReservedFooterHeightFacts, console_main_frame_plan, console_modal_render_plan,
+    console_reserved_footer_height_plan, delete_confirm_area, effective_footer_height,
+    measured_footer_height, modal_backdrop_area, modal_overlay_state_for_route,
+    modal_overlay_visible, purge_confirm_area, render_footer, render_header, render_modal_backdrop,
+    reserved_footer_height_for_facts, settings_error_area, status_overlay_area,
+    workspace_frame_areas, workspace_header_title,
 };
 use jackin_tui::HintSpan;
 
@@ -192,24 +193,29 @@ fn reserved_footer_height(state: &ManagerState<'_>, config: &AppConfig, area: Re
         settings_footer_height: None,
         workspace_footer_height: workspace_frame_areas(area).footer.height,
     };
-    match &state.stage {
-        ManagerStage::Editor(editor) => {
-            let body =
-                editor_frame_areas(area, effective_footer_height(editor.cached_footer_h)).body;
-            facts.editor_footer_height = Some(measured_footer_height(
-                &editor_footer_items(editor, config, state.op_available, body),
-                area.width,
-            ));
+    match console_reserved_footer_height_plan(state.stage.route()) {
+        ConsoleReservedFooterHeightPlan::Editor => {
+            if let ManagerStage::Editor(editor) = &state.stage {
+                let body =
+                    editor_frame_areas(area, effective_footer_height(editor.cached_footer_h)).body;
+                facts.editor_footer_height = Some(measured_footer_height(
+                    &editor_footer_items(editor, config, state.op_available, body),
+                    area.width,
+                ));
+            }
         }
-        ManagerStage::Settings(settings) => {
-            let body =
-                settings_frame_areas(area, effective_footer_height(settings.cached_footer_h)).body;
-            facts.settings_footer_height = Some(measured_footer_height(
-                &settings_footer_items(settings, state.op_available, body),
-                area.width,
-            ));
+        ConsoleReservedFooterHeightPlan::Settings => {
+            if let ManagerStage::Settings(settings) = &state.stage {
+                let body =
+                    settings_frame_areas(area, effective_footer_height(settings.cached_footer_h))
+                        .body;
+                facts.settings_footer_height = Some(measured_footer_height(
+                    &settings_footer_items(settings, state.op_available, body),
+                    area.width,
+                ));
+            }
         }
-        _ => {}
+        ConsoleReservedFooterHeightPlan::Workspace => {}
     }
     reserved_footer_height_for_facts(facts)
 }

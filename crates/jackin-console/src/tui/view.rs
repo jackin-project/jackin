@@ -88,6 +88,13 @@ pub enum ConsoleModalRenderPlan {
     ConfirmInstancePurge,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsoleReservedFooterHeightPlan {
+    Workspace,
+    Editor,
+    Settings,
+}
+
 #[must_use]
 pub const fn console_main_frame_plan(route: ConsoleManagerStageRoute) -> ConsoleMainFramePlan {
     match route {
@@ -128,6 +135,22 @@ pub const fn console_modal_render_plan(route: ConsoleManagerStageRoute) -> Conso
         ConsoleManagerStageRoute::ConfirmDelete => ConsoleModalRenderPlan::ConfirmDelete,
         ConsoleManagerStageRoute::ConfirmInstancePurge => {
             ConsoleModalRenderPlan::ConfirmInstancePurge
+        }
+    }
+}
+
+#[must_use]
+pub const fn console_reserved_footer_height_plan(
+    route: ConsoleManagerStageRoute,
+) -> ConsoleReservedFooterHeightPlan {
+    match route {
+        ConsoleManagerStageRoute::Editor => ConsoleReservedFooterHeightPlan::Editor,
+        ConsoleManagerStageRoute::Settings => ConsoleReservedFooterHeightPlan::Settings,
+        ConsoleManagerStageRoute::List
+        | ConsoleManagerStageRoute::CreatePrelude
+        | ConsoleManagerStageRoute::ConfirmDelete
+        | ConsoleManagerStageRoute::ConfirmInstancePurge => {
+            ConsoleReservedFooterHeightPlan::Workspace
         }
     }
 }
