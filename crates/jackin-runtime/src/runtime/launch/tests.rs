@@ -3518,6 +3518,16 @@ fn credential_key_filter_resolves_every_supported_agent_credential() {
         &[Agent::Claude, Agent::Codex],
         "ANTHROPIC_API_KEY"
     ));
+    // Empty slice: no agent can run, so known credential keys are skipped;
+    // generic/unknown keys still pass through.
+    assert!(!launch_pipeline::credential_key_needed_for_role(
+        &[],
+        "ANTHROPIC_API_KEY"
+    ));
+    assert!(launch_pipeline::credential_key_needed_for_role(
+        &[],
+        "MY_CUSTOM_VAR"
+    ));
 }
 
 #[test]

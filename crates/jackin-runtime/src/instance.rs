@@ -190,8 +190,9 @@ pub struct AgentRuntimeState {
 ///
 /// `forward_auth` is `true` only for modes that mount real credential
 /// files (`Sync` / `OAuthToken`); `ApiKey` and `Ignore` wipe the
-/// role-state credential files and do not mount them — the agent
-/// authenticates via env var rather than `/jackin/claude/`.
+/// role-state credential files and do not mount them — `ApiKey`
+/// authenticates via `ANTHROPIC_API_KEY`; `Ignore` forces a fresh
+/// login inside the durable per-instance agent home.
 #[derive(Debug, Clone)]
 pub struct ClaudeAuth {
     pub account_json: PathBuf,
@@ -946,10 +947,13 @@ impl RoleState {
                     if let Err(e) = std::os::unix::fs::symlink("grok", &agent_link)
                         && e.kind() != std::io::ErrorKind::AlreadyExists
                     {
-                        jackin_diagnostics::debug_log!(
+                        jackin_diagnostics::emit_compact_line(
                             "grok",
-                            "could not create grok agent symlink at {}: {e}",
-                            agent_link.display()
+                            &format!(
+                                "warning: could not create grok agent symlink at {}: {e}; \
+                                 tools invoking `agent` may fail in container",
+                                agent_link.display()
+                            ),
                         );
                     }
                 }
