@@ -1018,6 +1018,10 @@ impl<
         self.drop_modal_scratch();
     }
 
+    pub fn dismiss_active_modal(&mut self) {
+        self.modal = None;
+    }
+
     pub fn dismiss_status_popup(&mut self)
     where
         Modal: EditorStatusPopupModal,
@@ -2521,6 +2525,25 @@ mod tests {
         editor.commit_workspace_name_input("renamed");
 
         assert_eq!(editor.pending_name.as_deref(), Some("renamed"));
+    }
+
+    #[test]
+    fn dismiss_active_modal_preserves_modal_stack_and_scratch() {
+        let mut editor =
+            TestEditorWithStatusModal::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor.modal = Some(TestStatusModal::Status);
+        editor.modal_parents.push(TestStatusModal::Other);
+        editor.pending_picker_value = Some(jackin_config::EnvValue::Plain("secret".into()));
+
+        editor.dismiss_active_modal();
+
+        assert!(editor.modal.is_none());
+        assert_eq!(editor.modal_parents.len(), 1);
+        assert!(matches!(editor.modal_parents[0], TestStatusModal::Other));
+        assert!(matches!(
+            editor.pending_picker_value,
+            Some(jackin_config::EnvValue::Plain(_))
+        ));
     }
 
     #[test]

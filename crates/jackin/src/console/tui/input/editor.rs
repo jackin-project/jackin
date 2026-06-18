@@ -524,7 +524,7 @@ pub(super) fn handle_editor_modal(
                     if matches!(target, TextInputTarget::AuthCredential) {
                         // Plain-text leg of the source-picker round trip
                         // recovers identically to the OpPicker leg.
-                        editor.modal = None;
+                        editor.dismiss_active_modal();
                         super::auth::restore_auth_form_after_op_picker_cancel(editor);
                         return EditorModalOutcome::Continue;
                     }
@@ -884,7 +884,7 @@ pub(super) fn handle_editor_modal(
                     if !editor.modal_parents.is_empty() {
                         // Close the OpPicker — the auth form stays stashed on
                         // modal_parents so the _committed / _failed helpers find it.
-                        editor.modal = None;
+                        editor.dismiss_active_modal();
                         return EditorModalOutcome::ValidateOpRef(op_ref);
                     }
                     // Operator picked a Vault → Item → Field path. The
