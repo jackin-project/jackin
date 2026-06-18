@@ -23,7 +23,6 @@ use jackin_console::tui::screens::settings::update::{
     settings_env_selection_plan, settings_global_mounts_selection_plan,
     settings_horizontal_scroll_plan, settings_tab_bar_focus_plan, settings_tab_move_plan,
     settings_tab_select_plan, settings_trust_row_select_plan, settings_trust_selection_plan,
-    toggle_readonly as toggle_settings_readonly,
 };
 use jackin_console::tui::screens::workspaces::update::{
     PreviewFocusPlan, WorkspaceListScrollTargetPlan, apply_workspace_list_selection_plan,
@@ -530,9 +529,7 @@ fn toggle_settings_global_mount_readonly(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    if let Some(row) = settings.mounts.pending.get_mut(settings.mounts.selected) {
-        toggle_settings_readonly(&mut row.mount.readonly);
-    }
+    settings.mounts.toggle_selected_readonly();
 }
 
 fn toggle_settings_trust_selected(state: &mut ManagerState<'_>) {

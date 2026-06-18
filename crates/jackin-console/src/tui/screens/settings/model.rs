@@ -1367,6 +1367,12 @@ impl<Modal> GlobalMountsState<jackin_config::GlobalMountRow, Modal> {
         self.selected = selected;
         self.clear_modal_chain();
     }
+
+    pub fn toggle_selected_readonly(&mut self) {
+        if let Some(row) = self.pending.get_mut(self.selected) {
+            row.mount.readonly = !row.mount.readonly;
+        }
+    }
 }
 
 impl<Row, Modal> SettingsPanelDirty for GlobalMountsState<Row, Modal>
@@ -2753,6 +2759,38 @@ mod tests {
         assert_eq!(state.selected, 0);
         assert!(state.modal.is_none());
         assert!(state.modal_parents.is_empty());
+    }
+
+    #[test]
+    fn global_mounts_toggle_selected_readonly_updates_selected_row() {
+        let mut state = GlobalMountsState::<GlobalMountRow, i32>::from_rows(vec![
+            GlobalMountRow {
+                scope: None,
+                name: "cache".into(),
+                mount: MountConfig {
+                    src: "/tmp/cache".into(),
+                    dst: "/home/agent/.cache".into(),
+                    readonly: false,
+                    isolation: jackin_core::isolation::MountIsolation::Shared,
+                },
+            },
+            GlobalMountRow {
+                scope: None,
+                name: "logs".into(),
+                mount: MountConfig {
+                    src: "/tmp/logs".into(),
+                    dst: "/home/agent/logs".into(),
+                    readonly: true,
+                    isolation: jackin_core::isolation::MountIsolation::Shared,
+                },
+            },
+        ]);
+        state.selected = 1;
+
+        state.toggle_selected_readonly();
+
+        assert!(!state.pending[1].mount.readonly);
+        assert!(!state.pending[0].mount.readonly);
     }
 
     #[test]

@@ -1364,10 +1364,6 @@ pub fn set_role_expanded(expanded_roles: &mut BTreeSet<String>, role: String, ex
     }
 }
 
-pub fn toggle_readonly(readonly: &mut bool) {
-    *readonly = !*readonly;
-}
-
 #[must_use]
 pub fn settings_env_flat_rows<V>(
     pending: &SettingsEnvConfig<V>,
