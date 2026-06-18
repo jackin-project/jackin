@@ -22,6 +22,7 @@ use jackin_console::tui::components::error_popup::{
 use jackin_console::tui::components::status_popup::{
     instance_action_busy_message, instance_action_busy_title,
 };
+use jackin_console::tui::message::launch_prompt_should_probe_agents;
 use jackin_console::tui::run::{
     ConsoleChromeHover, ConsoleModalMouseFacts, ConsoleScreenStage, LetterInputModalKind,
     LetterInputState, MainScreenState, ModalBlockState, QuitConfirmPlan, QuitInterceptState,
@@ -201,12 +202,12 @@ where
     B: ratatui::backend::Backend,
     B::Error: std::error::Error + Send + Sync + 'static,
 {
-    if request.workspace.default_agent.is_none() {
+    let should_probe_agents =
+        launch_prompt_should_probe_agents(request.workspace.default_agent.is_some());
+    if should_probe_agents {
         draw_role_resolution_dialog(terminal, state, config, cwd, &request.role)?;
     }
-    let choices = if request.workspace.default_agent.is_some() {
-        AgentPickerChoices::NotNeeded
-    } else {
+    let choices = if should_probe_agents {
         match crate::console::services::agents::load_inline_picker_choices(
             paths,
             config,
@@ -219,6 +220,8 @@ where
             Ok(None) => AgentPickerChoices::NotNeeded,
             Err(error) => AgentPickerChoices::Failed(error),
         }
+    } else {
+        AgentPickerChoices::NotNeeded
     };
     match prompt_agent_for_launch(
         state,

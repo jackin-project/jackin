@@ -371,6 +371,11 @@ pub fn agent_picker_choices_for_workspace<Agent>(
     }
 }
 
+#[must_use]
+pub const fn launch_prompt_should_probe_agents(default_agent_configured: bool) -> bool {
+    !default_agent_configured
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PromptOutcome {
     Launch,

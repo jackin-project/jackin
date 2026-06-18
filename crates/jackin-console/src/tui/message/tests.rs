@@ -1,4 +1,7 @@
-use super::{AgentPickerChoices, ConsoleInstanceAction, agent_picker_choices_for_workspace};
+use super::{
+    AgentPickerChoices, ConsoleInstanceAction, agent_picker_choices_for_workspace,
+    launch_prompt_should_probe_agents,
+};
 use crate::tui::screens::workspaces::update::WorkspaceInstanceAction;
 
 #[test]
@@ -55,4 +58,10 @@ fn agent_picker_choices_preserve_probe_result_when_prompt_needed() {
             panic!("expected choices to be preserved")
         }
     }
+}
+
+#[test]
+fn launch_prompt_probe_policy_skips_workspace_default_agent() {
+    assert!(!launch_prompt_should_probe_agents(true));
+    assert!(launch_prompt_should_probe_agents(false));
 }
