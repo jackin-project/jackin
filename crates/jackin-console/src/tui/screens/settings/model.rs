@@ -691,6 +691,10 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
         self.pending_picker_value = None;
     }
 
+    pub fn set_pending_picker_target(&mut self, target: (SettingsEnvScope, Option<String>)) {
+        self.pending_picker_target = Some(target);
+    }
+
     pub fn clear_modal_chain(&mut self) {
         self.modal = None;
         self.modal_parents.clear();
@@ -1693,6 +1697,18 @@ mod tests {
         assert_eq!(state.modal, Some(1));
         assert!(state.pending_picker_target.is_none());
         assert!(state.pending_picker_value.is_none());
+    }
+
+    #[test]
+    fn settings_env_set_pending_picker_target_stores_scope_and_key() {
+        let mut state = SettingsEnvState::<String, i32>::from_pending(empty_env_config());
+
+        state.set_pending_picker_target((SettingsEnvScope::Global, Some("KEY".into())));
+
+        assert_eq!(
+            state.pending_picker_target,
+            Some((SettingsEnvScope::Global, Some(String::from("KEY"))))
+        );
     }
 
     #[test]

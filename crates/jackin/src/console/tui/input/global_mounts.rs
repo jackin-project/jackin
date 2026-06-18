@@ -1101,7 +1101,7 @@ fn open_settings_env_picker_modal(
     ) else {
         return;
     };
-    settings.env.pending_picker_target = Some(target);
+    settings.env.set_pending_picker_target(target);
     settings.env.modal = Some(SettingsEnvModal::OpPicker {
         state: Box::new(crate::console::tui::op_picker::OpPickerState::new_with_cache(op_cache)),
     });
