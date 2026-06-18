@@ -14,7 +14,7 @@ pub(super) fn rename_tab_handle_key(
     key: &[u8],
 ) -> DialogAction {
     match key {
-        b"\x1b" | b"\x03" => DialogAction::Dismiss,
+        b"\x1b" | b"\x03" | b"\x11" => DialogAction::Dismiss,
         b"\r" | b"\n" => DialogAction::RenameTab {
             tab_idx,
             label: input.trimmed_value(),
@@ -67,16 +67,18 @@ pub(super) fn is_dismiss_key(key: &[u8]) -> bool {
         | b"q"
         | b"Q"
         | b"\x03"   // Ctrl+C
+        | b"\x11"   // Ctrl+Q
         | b"\x7f"   // Backspace
         | b"\x08" // Ctrl+H / older Backspace
     )
 }
 
-/// Narrow dismiss set for type-to-filter dialogs. Only Esc and
-/// Ctrl+C close the dialog — every other key either navigates the
-/// filtered list, confirms the selection, or builds the filter.
+/// Narrow dismiss set for type-to-filter dialogs. Only Esc,
+/// Ctrl+C, and Ctrl+Q close the dialog — every other key either
+/// navigates the filtered list, confirms the selection, or builds
+/// the filter.
 pub(super) fn is_filter_dismiss_key(key: &[u8]) -> bool {
-    matches!(key, b"\x1b" | b"\x03")
+    matches!(key, b"\x1b" | b"\x03" | b"\x11")
 }
 
 pub(super) fn is_backspace(key: &[u8]) -> bool {

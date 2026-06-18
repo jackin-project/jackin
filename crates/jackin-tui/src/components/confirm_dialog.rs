@@ -64,10 +64,11 @@ const CONFIRM_BINDINGS: &[KeyBinding<ConfirmAction>] = &[
         chords: &[
             KeyChord::plain(LogicalKey::Esc),
             KeyChord::ctrl(LogicalKey::Char('c')),
+            KeyChord::ctrl(LogicalKey::Char('q')),
         ],
         action: ConfirmAction::Cancel,
         hint: None,
-        // Esc/Ctrl+C advertised via the combined "N/Esc" glyph on the No binding.
+        // Esc/Ctrl+C/Ctrl+Q advertised via the combined "N/Esc" glyph on the No binding.
         visibility: Visibility::HiddenAlias,
         glyph: None,
     },
