@@ -301,6 +301,17 @@ impl<
     fn drop_modal_scratch(&mut self) {
         self.pending_picker_value = None;
     }
+
+    #[must_use]
+    pub fn auth_form_can_generate_token(&self) -> bool
+    where
+        Modal: crate::tui::auth_config::ModalAuthFormGenerate,
+    {
+        let editing_existing_workspace = matches!(self.mode, EditorMode::Edit { .. });
+        self.modal
+            .as_ref()
+            .is_some_and(|modal| modal.auth_form_can_generate_token(editing_existing_workspace))
+    }
 }
 
 impl<

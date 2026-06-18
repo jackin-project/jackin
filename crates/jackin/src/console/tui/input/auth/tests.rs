@@ -653,7 +653,7 @@ fn auth_form_generate_opens_source_picker_and_arms_target() {
         panic!("auth form must be open")
     };
     form.set_mode(AuthMode::OAuthToken);
-    assert!(auth_form_can_generate_token(editor));
+    assert!(editor.auth_form_can_generate_token());
 
     let closed = drive_key(editor, key(KeyCode::Char('g')));
     assert!(closed, "generate must consume the keystroke");
@@ -794,7 +794,7 @@ fn auth_form_generate_is_noop_for_non_oauth_token_mode() {
         panic!("auth form must be open")
     };
     form.set_mode(AuthMode::ApiKey);
-    assert!(!auth_form_can_generate_token(editor));
+    assert!(!editor.auth_form_can_generate_token());
 
     let closed = drive_key(editor, key(KeyCode::Char('g')));
     assert!(!closed, "g must be a no-op when not oauth_token");

@@ -174,6 +174,10 @@ pub fn auth_form_generate_eligible(
         && can_generate_claude_oauth_token(form.generate_kind(), form.generate_mode())
 }
 
+pub trait ModalAuthFormGenerate {
+    fn auth_form_can_generate_token(&self, editing_existing_workspace: bool) -> bool;
+}
+
 #[must_use]
 pub const fn settings_auth_form_can_generate_token(kind: AuthKind, mode: Option<AuthMode>) -> bool {
     can_generate_claude_oauth_token(kind, mode)

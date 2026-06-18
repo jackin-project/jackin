@@ -177,22 +177,6 @@ pub(super) fn handle_auth_form_key(
     }
 }
 
-/// Whether the open auth form is eligible for the `g`/`G` generate
-/// trigger: a Claude `oauth_token` slot in an existing (Edit-mode)
-/// workspace, at either the workspace layer or a per-role override. The
-/// scope is taken from the form's target — the operator picks the role
-/// by opening that role's auth form, so generate needs no role step.
-pub(crate) fn auth_form_can_generate_token(editor: &EditorState<'_>) -> bool {
-    let editing_existing_workspace = matches!(
-        editor.mode,
-        crate::console::tui::state::EditorMode::Edit { .. }
-    );
-    editor
-        .modal
-        .as_ref()
-        .is_some_and(|modal| modal.auth_form_can_generate_token(editing_existing_workspace))
-}
-
 /// Mint-path trigger: when the gate holds, stash the open form (so the
 /// post-mint re-mount lands the operator back on the same Edit-auth
 /// dialog with the minted credential staged, focus Save — exactly like
@@ -202,7 +186,7 @@ pub(crate) fn auth_form_can_generate_token(editor: &EditorState<'_>) -> bool {
 /// routes to GENERATE because `generating_token_target` is set. Returns
 /// `false` (a no-op) when the gate fails.
 fn try_start_token_generate(editor: &mut EditorState<'_>, op_available: bool) -> bool {
-    if !auth_form_can_generate_token(editor) {
+    if !editor.auth_form_can_generate_token() {
         return false;
     }
     if !matches!(

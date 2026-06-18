@@ -16,8 +16,8 @@ pub(crate) fn editor_footer_items(
     body_area: Rect,
 ) -> Vec<HintSpan<'static>> {
     if let Some(modal) = &state.modal {
-        let can_generate_token = matches!(modal, Modal::AuthForm { .. })
-            && crate::console::tui::input::auth::auth_form_can_generate_token(state);
+        let can_generate_token =
+            matches!(modal, Modal::AuthForm { .. }) && state.auth_form_can_generate_token();
         return editor_screen_footer_items(EditorScreenFooterFacts::Modal {
             items: modal.footer_items(can_generate_token),
         });
