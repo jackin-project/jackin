@@ -16,7 +16,7 @@ use crate::console::tui::prompts::{
     launch_with_committed_agent, prompt_agent_for_launch,
 };
 use crate::console::{ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler};
-use jackin_console::tui::app::clear_pending_launch_role_plan;
+use jackin_console::tui::app::{clear_pending_launch_role_plan, take_pending_launch_plan};
 use jackin_console::tui::components::error_popup::{
     instance_action_failed_error_message, instance_action_failed_error_title,
 };
@@ -614,7 +614,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                             agent,
                             provider,
                         } => {
-                            let Some(input) = state.pending_launch.take() else {
+                            let Some(input) = take_pending_launch_plan(&mut state) else {
                                 break 'main Ok(None);
                             };
                             let workspace =

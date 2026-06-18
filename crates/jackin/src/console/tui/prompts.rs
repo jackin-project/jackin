@@ -5,6 +5,7 @@ use jackin_config::AppConfig;
 use jackin_config::{LoadWorkspaceInput, ResolvedWorkspace};
 use jackin_console::tui::app::{
     open_launch_agent_prompt_plan, open_launch_provider_picker_plan, store_pending_launch_plan,
+    take_pending_launch_and_role_plan, take_pending_launch_plan,
 };
 use jackin_console::tui::components::error_popup::{
     role_resolution_error_message, role_resolution_error_title,
@@ -131,7 +132,7 @@ pub(super) fn committed_role_prompt(
     cwd: &std::path::Path,
     role: RoleSelector,
 ) -> anyhow::Result<LaunchPromptDispatch> {
-    let Some(input) = state.pending_launch.take() else {
+    let Some(input) = take_pending_launch_plan(state) else {
         return Ok(LaunchPromptDispatch::None);
     };
     let Some(resolved) =
@@ -162,10 +163,7 @@ pub(super) fn launch_with_committed_agent(
     cwd: &std::path::Path,
     agent: jackin_core::Agent,
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
-    let (Some(input), Some(role)) = (
-        state.pending_launch.take(),
-        state.pending_launch_role.take(),
-    ) else {
+    let Some((input, role)) = take_pending_launch_and_role_plan(state) else {
         return Ok(None);
     };
     let Some(resolved) =

@@ -124,6 +124,21 @@ pub fn clear_pending_launch_role_plan<Manager, LaunchInput, RoleSelector, OpCach
     state.pending_launch_role = None;
 }
 
+pub fn take_pending_launch_plan<Manager, LaunchInput, RoleSelector, OpCache>(
+    state: &mut ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache>,
+) -> Option<LaunchInput> {
+    state.pending_launch.take()
+}
+
+pub fn take_pending_launch_and_role_plan<Manager, LaunchInput, RoleSelector, OpCache>(
+    state: &mut ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache>,
+) -> Option<(LaunchInput, RoleSelector)> {
+    Some((
+        state.pending_launch.take()?,
+        state.pending_launch_role.take()?,
+    ))
+}
+
 pub fn store_pending_launch_plan<LaunchInput, RoleSelector>(
     state: &mut impl LaunchRolePromptState<LaunchInput, RoleSelector>,
     input: LaunchInput,
@@ -2742,6 +2757,42 @@ mod tests {
         super::clear_pending_launch_role_plan(&mut app);
 
         assert_eq!(app.pending_launch, Some("workspace-input"));
+        assert_eq!(app.pending_launch_role, None);
+    }
+
+    #[test]
+    fn take_pending_launch_plan_takes_input() {
+        let mut app: ConsoleApp<TestLaunchPromptManager, &'static str, TestPromptRole, ()> =
+            ConsoleApp::new(
+                ConsoleAppStage::Manager(TestLaunchPromptManager::default()),
+                (),
+                false,
+            );
+        app.pending_launch = Some("workspace-input");
+
+        assert_eq!(
+            super::take_pending_launch_plan(&mut app),
+            Some("workspace-input")
+        );
+        assert_eq!(app.pending_launch, None);
+    }
+
+    #[test]
+    fn take_pending_launch_and_role_plan_takes_pair() {
+        let mut app: ConsoleApp<TestLaunchPromptManager, &'static str, TestPromptRole, ()> =
+            ConsoleApp::new(
+                ConsoleAppStage::Manager(TestLaunchPromptManager::default()),
+                (),
+                false,
+            );
+        app.pending_launch = Some("workspace-input");
+        app.pending_launch_role = Some(TestPromptRole("architect"));
+
+        assert_eq!(
+            super::take_pending_launch_and_role_plan(&mut app),
+            Some(("workspace-input", TestPromptRole("architect")))
+        );
+        assert_eq!(app.pending_launch, None);
         assert_eq!(app.pending_launch_role, None);
     }
 
