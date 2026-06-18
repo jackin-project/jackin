@@ -28,8 +28,8 @@ use jackin_console::tui::run::{
     QuitInterceptState, TokenGenerateScopeLabel, console_pointer_hand,
     console_screen_stage_for_route, debug_chip_activation_allowed, debug_chip_row,
     debug_run_id_label, diagnostics_screen_for_stage, is_main_screen_for_route,
-    modal_mouse_layer_plan, quit_confirm_area, quit_confirm_plan, quit_confirm_state,
-    should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
+    letter_input_state_for_route, modal_mouse_layer_plan, quit_confirm_area, quit_confirm_plan,
+    quit_confirm_state, should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
     token_generate_status_message,
 };
 
@@ -67,41 +67,29 @@ pub(crate) const fn letter_input_state(state: &ConsoleState) -> LetterInputState
     use crate::console::tui::state::ManagerStage;
     let ConsoleStage::Manager(ms) = &state.stage;
 
-    let mut input_state = LetterInputState {
-        list_modal: match &ms.list_modal {
+    let list_modal = match &ms.list_modal {
+        Some(modal) => modal.letter_input_kind(),
+        None => None,
+    };
+    let stage_modal = match &ms.stage {
+        ManagerStage::Editor(editor) => match &editor.modal {
             Some(modal) => modal.letter_input_kind(),
             None => None,
         },
-        editor_modal: None,
-        create_prelude_modal: None,
-        settings_mount_modal: None,
-    };
-
-    match &ms.stage {
-        ManagerStage::Editor(editor) => {
-            input_state.editor_modal = match &editor.modal {
-                Some(modal) => modal.letter_input_kind(),
-                None => None,
-            };
-        }
-        ManagerStage::CreatePrelude(prelude) => {
-            input_state.create_prelude_modal = match &prelude.modal {
-                Some(modal) => modal.letter_input_kind(),
-                None => None,
-            };
-        }
-        ManagerStage::Settings(settings) => {
-            input_state.settings_mount_modal = match &settings.mounts.modal {
-                Some(modal) => modal.letter_input_kind(),
-                None => None,
-            };
-        }
+        ManagerStage::CreatePrelude(prelude) => match &prelude.modal {
+            Some(modal) => modal.letter_input_kind(),
+            None => None,
+        },
+        ManagerStage::Settings(settings) => match &settings.mounts.modal {
+            Some(modal) => modal.letter_input_kind(),
+            None => None,
+        },
         ManagerStage::List
         | ManagerStage::ConfirmDelete { .. }
-        | ManagerStage::ConfirmInstancePurge { .. } => {}
-    }
+        | ManagerStage::ConfirmInstancePurge { .. } => None,
+    };
 
-    input_state
+    letter_input_state_for_route(ms.stage.route(), list_modal, stage_modal)
 }
 
 pub(crate) const fn quit_intercept_state(state: &ConsoleState) -> QuitInterceptState {

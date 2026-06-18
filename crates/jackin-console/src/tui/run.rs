@@ -118,6 +118,35 @@ pub struct LetterInputState {
 }
 
 #[must_use]
+pub const fn letter_input_state_for_route(
+    route: ConsoleManagerStageRoute,
+    list_modal: Option<LetterInputModalKind>,
+    stage_modal: Option<LetterInputModalKind>,
+) -> LetterInputState {
+    let mut state = LetterInputState {
+        list_modal,
+        editor_modal: None,
+        create_prelude_modal: None,
+        settings_mount_modal: None,
+    };
+    match route {
+        ConsoleManagerStageRoute::Editor => {
+            state.editor_modal = stage_modal;
+        }
+        ConsoleManagerStageRoute::CreatePrelude => {
+            state.create_prelude_modal = stage_modal;
+        }
+        ConsoleManagerStageRoute::Settings => {
+            state.settings_mount_modal = stage_modal;
+        }
+        ConsoleManagerStageRoute::List
+        | ConsoleManagerStageRoute::ConfirmDelete
+        | ConsoleManagerStageRoute::ConfirmInstancePurge => {}
+    }
+    state
+}
+
+#[must_use]
 pub const fn letter_input_modal_kind(
     text_input: bool,
     filter_picker: bool,

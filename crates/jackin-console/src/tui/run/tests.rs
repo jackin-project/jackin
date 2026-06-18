@@ -215,6 +215,48 @@ fn letter_input_state_detects_text_and_filter_modals() {
 }
 
 #[test]
+fn letter_input_state_for_route_assigns_stage_modal_slot() {
+    let list_kind = Some(LetterInputModalKind::Other);
+    let stage_kind = Some(LetterInputModalKind::TextInput);
+
+    assert_eq!(
+        letter_input_state_for_route(ConsoleManagerStageRoute::Editor, list_kind, stage_kind),
+        LetterInputState {
+            list_modal: list_kind,
+            editor_modal: stage_kind,
+            ..LetterInputState::default()
+        }
+    );
+    assert_eq!(
+        letter_input_state_for_route(
+            ConsoleManagerStageRoute::CreatePrelude,
+            list_kind,
+            stage_kind
+        ),
+        LetterInputState {
+            list_modal: list_kind,
+            create_prelude_modal: stage_kind,
+            ..LetterInputState::default()
+        }
+    );
+    assert_eq!(
+        letter_input_state_for_route(ConsoleManagerStageRoute::Settings, list_kind, stage_kind),
+        LetterInputState {
+            list_modal: list_kind,
+            settings_mount_modal: stage_kind,
+            ..LetterInputState::default()
+        }
+    );
+    assert_eq!(
+        letter_input_state_for_route(ConsoleManagerStageRoute::List, list_kind, stage_kind),
+        LetterInputState {
+            list_modal: list_kind,
+            ..LetterInputState::default()
+        }
+    );
+}
+
+#[test]
 fn token_generate_status_message_names_target_scope() {
     assert_eq!(
         token_generate_scope_label(TokenGenerateScopeLabel::Workspace("proj")),
