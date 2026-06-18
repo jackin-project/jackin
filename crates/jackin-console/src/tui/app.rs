@@ -455,6 +455,32 @@ pub enum CreatePreludeWorkdirCancelPlan {
     ReopenMountDstChoice,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreatePreludeMountDstChoicePlan {
+    CommitSamePath,
+    OpenEditInput,
+    ReopenFileBrowserAtLastCwd,
+    Continue,
+}
+
+#[must_use]
+pub const fn create_prelude_mount_dst_choice_plan(
+    outcome: jackin_tui::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
+) -> CreatePreludeMountDstChoicePlan {
+    match outcome {
+        jackin_tui::ModalOutcome::Commit(
+            crate::tui::components::mount_dst_choice::MountDstChoice::SamePath,
+        ) => CreatePreludeMountDstChoicePlan::CommitSamePath,
+        jackin_tui::ModalOutcome::Commit(
+            crate::tui::components::mount_dst_choice::MountDstChoice::Edit,
+        ) => CreatePreludeMountDstChoicePlan::OpenEditInput,
+        jackin_tui::ModalOutcome::Cancel => {
+            CreatePreludeMountDstChoicePlan::ReopenFileBrowserAtLastCwd
+        }
+        jackin_tui::ModalOutcome::Continue => CreatePreludeMountDstChoicePlan::Continue,
+    }
+}
+
 #[must_use]
 pub const fn create_prelude_workdir_cancel_plan(
     used_edit_dst: bool,
@@ -616,9 +642,9 @@ mod tests {
 
     use super::{
         ConsoleCreatePreludeState, ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal,
-        CreatePreludeCompletionStatus, CreatePreludeKeyPlan, CreatePreludeWorkdirCancelPlan,
-        create_prelude_completion_status, create_prelude_key_plan,
-        create_prelude_workdir_cancel_plan,
+        CreatePreludeCompletionStatus, CreatePreludeKeyPlan, CreatePreludeMountDstChoicePlan,
+        CreatePreludeWorkdirCancelPlan, create_prelude_completion_status, create_prelude_key_plan,
+        create_prelude_mount_dst_choice_plan, create_prelude_workdir_cancel_plan,
     };
 
     struct TestConfirm;
@@ -707,6 +733,32 @@ mod tests {
         assert_eq!(
             create_prelude_workdir_cancel_plan(false),
             CreatePreludeWorkdirCancelPlan::ReopenMountDstChoice
+        );
+    }
+
+    #[test]
+    fn create_prelude_mount_dst_choice_plan_routes_choice_outcomes() {
+        use crate::tui::components::mount_dst_choice::MountDstChoice;
+
+        assert_eq!(
+            create_prelude_mount_dst_choice_plan(jackin_tui::ModalOutcome::Commit(
+                MountDstChoice::SamePath
+            )),
+            CreatePreludeMountDstChoicePlan::CommitSamePath
+        );
+        assert_eq!(
+            create_prelude_mount_dst_choice_plan(jackin_tui::ModalOutcome::Commit(
+                MountDstChoice::Edit
+            )),
+            CreatePreludeMountDstChoicePlan::OpenEditInput
+        );
+        assert_eq!(
+            create_prelude_mount_dst_choice_plan(jackin_tui::ModalOutcome::Cancel),
+            CreatePreludeMountDstChoicePlan::ReopenFileBrowserAtLastCwd
+        );
+        assert_eq!(
+            create_prelude_mount_dst_choice_plan(jackin_tui::ModalOutcome::Continue),
+            CreatePreludeMountDstChoicePlan::Continue
         );
     }
 

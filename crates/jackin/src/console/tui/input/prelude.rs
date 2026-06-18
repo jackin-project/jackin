@@ -10,7 +10,8 @@ use crate::console::tui::state::{ManagerState, Modal};
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
 use jackin_console::tui::app::{
-    CreatePreludeKeyPlan, CreatePreludeWorkdirCancelPlan, create_prelude_key_plan,
+    CreatePreludeKeyPlan, CreatePreludeMountDstChoicePlan, CreatePreludeWorkdirCancelPlan,
+    create_prelude_key_plan, create_prelude_mount_dst_choice_plan,
     create_prelude_workdir_cancel_plan,
 };
 use jackin_console::tui::components::file_browser::{FileBrowserOutcome, page_rows_for_modal};
@@ -158,14 +159,13 @@ pub(super) fn handle_prelude_modal(
             }
         }
         PreludeModalDis::MountDstChoice => {
-            use jackin_console::tui::components::mount_dst_choice::MountDstChoice;
             let outcome = if let Some(Modal::MountDstChoice { state, .. }) = &mut prelude.modal {
                 state.handle_key(key)
             } else {
                 return PreludeModalOutcome::Continue;
             };
-            match outcome {
-                ModalOutcome::Commit(MountDstChoice::SamePath) => {
+            match create_prelude_mount_dst_choice_plan(outcome) {
+                CreatePreludeMountDstChoicePlan::CommitSamePath => {
                     // Fast path: dst = src, skip TextInput, chain straight
                     // to WorkdirPick (mirrors the post-TextInputDst tail).
                     let default_dst = prelude.default_mount_dst();
@@ -174,7 +174,7 @@ pub(super) fn handle_prelude_modal(
                     prelude.accept_mount_dst(default_dst, false);
                     prelude_advance_to_workdir_pick(prelude);
                 }
-                ModalOutcome::Commit(MountDstChoice::Edit) => {
+                CreatePreludeMountDstChoicePlan::OpenEditInput => {
                     // Re-enter today's flow: open TextInput pre-filled with
                     // the host path. The TextInputDst branch below handles
                     // the advance to WorkdirPick once the operator commits.
@@ -185,14 +185,14 @@ pub(super) fn handle_prelude_modal(
                         state: create_prelude_mount_destination_input_state(default_dst),
                     });
                 }
-                ModalOutcome::Cancel => {
+                CreatePreludeMountDstChoicePlan::ReopenFileBrowserAtLastCwd => {
                     // Step-back: reopen FileBrowserSrc at the last-seen
                     // browser cwd (captured when src was committed). The
                     // mount src field is left stashed so `default_mount_dst`
                     // keeps working if the operator re-commits the same path.
                     return PreludeModalOutcome::ReopenFileBrowserAtLastCwd;
                 }
-                ModalOutcome::Continue => {}
+                CreatePreludeMountDstChoicePlan::Continue => {}
             }
         }
         PreludeModalDis::TextInputDst => {
