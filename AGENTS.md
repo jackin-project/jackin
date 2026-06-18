@@ -14,6 +14,7 @@ These bind every session. Full rule and examples in linked file.
 - **Never mutate the host machine silently.** No host-side writes — dotfiles, repo `.git`, `~/.config/gh`, `~/.gitconfig`, host remotes, user repos — without explicit opt-in surfaced in launch summary. Reads fine. → [`HOST_AND_CONTAINER.md`](HOST_AND_CONTAINER.md)
 - **Everything jackin' owns in a container lives under `/jackin/`.** No FHS roots (`/run`, `/var`, `/opt`, `/etc`, `/tmp/jackin*`). → [`HOST_AND_CONTAINER.md`](HOST_AND_CONTAINER.md)
 - **Brand is `jackin'`** in prose — lowercase, trailing apostrophe. No-apostrophe spelling only for code identifiers, paths, commands, env vars. → [`RULES.md`](RULES.md)
+- **Sign off every commit (DCO).** Always commit with `git commit -s` (long form `--signoff`); the `Signed-off-by` trailer must match the commit author and is enforced by the required `DCO` check. → [`COMMITS.md`](COMMITS.md)
 - **Push every commit immediately** after creating it; never leave commits local-only. → [`COMMITS.md`](COMMITS.md)
 - **Pre-release: breaking changes OK — no migration shims.** Exception: `config.toml`, per-workspace files, and `jackin.role.toml` versioned; schema changes ship five artifacts under one version bump per PR. → [`PRERELEASE.md`](PRERELEASE.md)
 

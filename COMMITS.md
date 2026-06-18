@@ -32,12 +32,14 @@ PR squash-merge: PR title becomes commit subject, so PR titles must also follow 
 
 ## Sign-off (DCO)
 
-Every commit in this repository MUST include a `Signed-off-by` trailer matching commit author. The `jackin-project` org enforces Developer Certificate of Origin via [DCO2 GitHub App](https://github.com/cncf/dco2); any PR containing an unsigned commit blocked by required `DCO` status check.
+Every commit in this repository MUST include a `Signed-off-by` trailer matching commit author. The `jackin-project` org enforces Developer Certificate of Origin via [DCO2 GitHub App](https://github.com/cncf/dco2); any PR containing an unsigned commit blocked by required `DCO` status check. See [cert-manager's sign-off guide](https://cert-manager.io/docs/contributing/sign-off/) for the DCO rationale and workflow.
 
-Create commits with `-s`:
+Sign off every commit as you make it — `-s` is short for `--signoff`:
 
 ```sh
 git commit -s -m "feat(scope): description"
+# -s is shorthand for --signoff; both add the Signed-off-by trailer:
+git commit --signoff -m "feat(scope): description"
 ```
 
 When amending, re-sign:
