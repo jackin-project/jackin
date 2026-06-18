@@ -9,17 +9,18 @@ use crate::console::tui::layout::list::{
 use crate::console::tui::state::{ManagerState, MountScrollFocus, WorkspaceSummary};
 use jackin_config::AppConfig;
 use jackin_console::tui::screens::workspaces::view::{
-    WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
-    WorkspaceInstanceTab, WorkspaceInstanceTabPane, WorkspaceListDisplayRowsFacts,
+    WorkspaceInstanceLivePaneFacts, WorkspaceInstanceLiveTabFacts, WorkspaceInstancePane,
+    WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow, WorkspaceListDisplayRowsFacts,
     WorkspacePreviewPanePlan, current_directory_workspace_title, global_mounts_title,
-    instance_sessions_empty_message, list_name_lines as workspace_list_name_lines,
-    provider_picker_title, render_agent_picker_sidebar, render_compact_instances_summary,
-    render_config_mounts_subpanel, render_config_roles_subpanel, render_environments_subpanel,
-    render_general_subpanel, render_global_mount_rows_section,
+    list_name_lines as workspace_list_name_lines, provider_picker_title,
+    render_agent_picker_sidebar, render_compact_instances_summary, render_config_mounts_subpanel,
+    render_config_roles_subpanel, render_environments_subpanel, render_general_subpanel,
+    render_global_mount_rows_section,
     render_instance_details_pane as render_workspace_instance_details_pane,
     render_list_names_block, render_picker_sidebar, render_role_picker_sidebar,
     render_sentinel_description_pane, role_global_mounts_title, workspace_env_rows,
-    workspace_instance_pane_agent_label, workspace_list_display_rows, workspace_preview_pane_plan,
+    workspace_instance_live_content, workspace_instance_pane, workspace_instance_session_content,
+    workspace_list_display_rows, workspace_preview_pane_plan,
 };
 
 pub(crate) fn render_list_body(
@@ -137,11 +138,11 @@ pub(crate) fn instance_details_pane(
     selected_pane: Option<u64>,
     preview_focused: bool,
 ) -> WorkspaceInstancePane {
-    WorkspaceInstancePane {
-        instance_id: entry.instance_id.clone(),
-        focused: preview_focused,
-        content: instance_details_content(sessions, session_load_error, snapshot, selected_pane),
-    }
+    workspace_instance_pane(
+        entry.instance_id.clone(),
+        preview_focused,
+        instance_details_content(sessions, session_load_error, snapshot, selected_pane),
+    )
 }
 
 fn instance_details_content(
@@ -151,44 +152,35 @@ fn instance_details_content(
     selected_pane: Option<u64>,
 ) -> WorkspaceInstancePaneContent {
     if let Some(snapshot) = snapshot {
-        return WorkspaceInstancePaneContent::Live {
-            tabs: snapshot
+        return workspace_instance_live_content(
+            snapshot.active_tab as usize,
+            selected_pane,
+            snapshot
                 .tabs
                 .iter()
-                .enumerate()
-                .map(|(tab_idx, tab)| WorkspaceInstanceTab {
-                    index: tab_idx,
+                .map(|tab| WorkspaceInstanceLiveTabFacts {
                     label: tab.label.clone(),
-                    active: tab_idx == snapshot.active_tab as usize,
+                    focused_pane: tab.focused_pane,
                     panes: tab
                         .panes
                         .iter()
-                        .map(|pane| WorkspaceInstanceTabPane {
+                        .map(|pane| WorkspaceInstanceLivePaneFacts {
+                            session_id: pane.session_id,
                             label: pane.label.clone(),
-                            agent_label: workspace_instance_pane_agent_label(pane.agent.as_deref()),
+                            agent: pane.agent.clone(),
                             state_label: pane.state.label().to_owned(),
-                            focused: pane.session_id == tab.focused_pane,
-                            selected: selected_pane == Some(pane.session_id),
                         })
                         .collect(),
-                })
-                .collect(),
-        };
+                }),
+        );
     }
-    if sessions.is_empty() {
-        return WorkspaceInstancePaneContent::Empty {
-            message: instance_sessions_empty_message(session_load_error).to_owned(),
-        };
-    }
-    WorkspaceInstancePaneContent::Sessions {
-        rows: sessions
-            .iter()
-            .map(|session| WorkspaceInstanceSessionRow {
-                name: session.tmux_name.clone(),
-                agent_runtime: session.agent_runtime.clone(),
-            })
-            .collect(),
-    }
+    workspace_instance_session_content(
+        session_load_error,
+        sessions.iter().map(|session| WorkspaceInstanceSessionRow {
+            name: session.tmux_name.clone(),
+            agent_runtime: session.agent_runtime.clone(),
+        }),
+    )
 }
 
 pub(crate) fn render_list_sidebar(frame: &mut Frame<'_>, area: Rect, state: &ManagerState<'_>) {

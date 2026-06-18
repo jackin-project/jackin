@@ -67,6 +67,130 @@ fn instance_session_empty_message_reports_load_state() {
 }
 
 #[test]
+fn workspace_instance_live_content_marks_active_focused_selected_and_shell_panes() {
+    let content = workspace_instance_live_content(
+        1,
+        Some(22),
+        vec![
+            WorkspaceInstanceLiveTabFacts {
+                label: "one".to_owned(),
+                focused_pane: 11,
+                panes: vec![WorkspaceInstanceLivePaneFacts {
+                    session_id: 11,
+                    label: "shell-pane".to_owned(),
+                    agent: None,
+                    state_label: "idle".to_owned(),
+                }],
+            },
+            WorkspaceInstanceLiveTabFacts {
+                label: "two".to_owned(),
+                focused_pane: 21,
+                panes: vec![
+                    WorkspaceInstanceLivePaneFacts {
+                        session_id: 21,
+                        label: "claude-pane".to_owned(),
+                        agent: Some("claude".to_owned()),
+                        state_label: "running".to_owned(),
+                    },
+                    WorkspaceInstanceLivePaneFacts {
+                        session_id: 22,
+                        label: "codex-pane".to_owned(),
+                        agent: Some("codex".to_owned()),
+                        state_label: "paused".to_owned(),
+                    },
+                ],
+            },
+        ],
+    );
+
+    assert_eq!(
+        content,
+        WorkspaceInstancePaneContent::Live {
+            tabs: vec![
+                WorkspaceInstanceTab {
+                    index: 0,
+                    label: "one".to_owned(),
+                    active: false,
+                    panes: vec![WorkspaceInstanceTabPane {
+                        label: "shell-pane".to_owned(),
+                        agent_label: "shell".to_owned(),
+                        state_label: "idle".to_owned(),
+                        focused: true,
+                        selected: false,
+                    }],
+                },
+                WorkspaceInstanceTab {
+                    index: 1,
+                    label: "two".to_owned(),
+                    active: true,
+                    panes: vec![
+                        WorkspaceInstanceTabPane {
+                            label: "claude-pane".to_owned(),
+                            agent_label: "claude".to_owned(),
+                            state_label: "running".to_owned(),
+                            focused: true,
+                            selected: false,
+                        },
+                        WorkspaceInstanceTabPane {
+                            label: "codex-pane".to_owned(),
+                            agent_label: "codex".to_owned(),
+                            state_label: "paused".to_owned(),
+                            focused: false,
+                            selected: true,
+                        },
+                    ],
+                },
+            ],
+        }
+    );
+}
+
+#[test]
+fn workspace_instance_session_content_routes_rows_and_empty_states() {
+    assert_eq!(
+        workspace_instance_session_content(false, Vec::new()),
+        WorkspaceInstancePaneContent::Empty {
+            message: "No sessions recorded".to_owned(),
+        }
+    );
+    assert_eq!(
+        workspace_instance_session_content(true, Vec::new()),
+        WorkspaceInstancePaneContent::Empty {
+            message: "Sessions unavailable (manifest read error)".to_owned(),
+        }
+    );
+    assert_eq!(
+        workspace_instance_session_content(
+            false,
+            vec![WorkspaceInstanceSessionRow {
+                name: "tmux-a".to_owned(),
+                agent_runtime: "claude".to_owned(),
+            }],
+        ),
+        WorkspaceInstancePaneContent::Sessions {
+            rows: vec![WorkspaceInstanceSessionRow {
+                name: "tmux-a".to_owned(),
+                agent_runtime: "claude".to_owned(),
+            }],
+        }
+    );
+}
+
+#[test]
+fn workspace_instance_pane_wraps_content_and_focus() {
+    let pane = workspace_instance_pane(
+        "abc123".to_owned(),
+        true,
+        WorkspaceInstancePaneContent::Empty {
+            message: "No sessions recorded".to_owned(),
+        },
+    );
+
+    assert_eq!(pane.instance_id, "abc123");
+    assert!(pane.focused);
+}
+
+#[test]
 fn workspace_list_display_helpers_own_visible_defaults() {
     let current = current_directory_display_row(true, true, true, false);
     assert_eq!(current.label, "Current directory");
