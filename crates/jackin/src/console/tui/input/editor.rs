@@ -906,13 +906,13 @@ pub(super) fn handle_editor_modal(
                 handle_token_generate_pick(editor, target, outcome);
                 return EditorModalOutcome::Continue;
             }
-            match outcome {
+            match inline_picker_plan(outcome) {
                 // Browse-mode caller: only `Existing` is reachable.
-                ModalOutcome::Commit(
+                InlinePickerPlan::Commit(
                     crate::console::tui::op_picker::OpPickerSelection::NewItem { .. }
                     | crate::console::tui::op_picker::OpPickerSelection::EditItemField { .. },
                 ) => unreachable!("Secrets-tab OpPicker runs in Browse mode"),
-                ModalOutcome::Commit(
+                InlinePickerPlan::Commit(
                     crate::console::tui::op_picker::OpPickerSelection::Existing(op_ref),
                 ) => {
                     // Auth-form round trip wins over the Secrets-tab
@@ -950,7 +950,7 @@ pub(super) fn handle_editor_modal(
                         }
                     }
                 }
-                ModalOutcome::Cancel => {
+                InlinePickerPlan::Dismiss => {
                     // Auth-form round trip: re-mount the form
                     // unchanged. Mirrors the Commit branch — the two
                     // callers (Secrets-tab `P`, auth-form Enter) are
@@ -965,7 +965,7 @@ pub(super) fn handle_editor_modal(
                     editor.pending_picker_target = None;
                     editor.pending_picker_value = None;
                 }
-                ModalOutcome::Continue => {}
+                InlinePickerPlan::Continue => {}
             }
         }
     }

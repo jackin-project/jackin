@@ -775,52 +775,54 @@ pub(super) fn handle_settings_env_modal(
                 }
             }
         }
-        SettingsEnvModal::OpPicker { state: mut picker } => match picker.handle_key(key) {
-            // Browse-mode caller: only `Existing` is reachable.
-            ModalOutcome::Commit(
-                crate::console::tui::op_picker::OpPickerSelection::NewItem { .. }
-                | crate::console::tui::op_picker::OpPickerSelection::EditItemField { .. },
-            ) => unreachable!("settings-env OpPicker runs in Browse mode"),
-            ModalOutcome::Commit(crate::console::tui::op_picker::OpPickerSelection::Existing(
-                op_ref,
-            )) => {
-                let target = env.pending_picker_target.take();
-                match target {
-                    Some((scope, Some(key))) => {
-                        set_settings_env_value_typed(
-                            env,
-                            &scope,
-                            &key,
-                            jackin_core::EnvValue::OpRef(op_ref),
-                        );
-                        env.clear_modal_chain();
+        SettingsEnvModal::OpPicker { state: mut picker } => {
+            match inline_picker_plan(picker.handle_key(key)) {
+                // Browse-mode caller: only `Existing` is reachable.
+                InlinePickerPlan::Commit(
+                    crate::console::tui::op_picker::OpPickerSelection::NewItem { .. }
+                    | crate::console::tui::op_picker::OpPickerSelection::EditItemField { .. },
+                ) => unreachable!("settings-env OpPicker runs in Browse mode"),
+                InlinePickerPlan::Commit(
+                    crate::console::tui::op_picker::OpPickerSelection::Existing(op_ref),
+                ) => {
+                    let target = env.pending_picker_target.take();
+                    match target {
+                        Some((scope, Some(key))) => {
+                            set_settings_env_value_typed(
+                                env,
+                                &scope,
+                                &key,
+                                jackin_core::EnvValue::OpRef(op_ref),
+                            );
+                            env.clear_modal_chain();
+                        }
+                        Some((scope, None)) => {
+                            env.pending_picker_value = Some(jackin_core::EnvValue::OpRef(op_ref));
+                            let state = settings_env_key_input_state(
+                                &env.pending,
+                                &scope,
+                                settings_env_new_key_after_picker_label(&scope),
+                                "",
+                            );
+                            env.modal = Some(SettingsEnvModal::OpPicker { state: picker });
+                            env.open_sub_modal(SettingsEnvModal::Text {
+                                target: SettingsEnvTextTarget::EnvKey { scope },
+                                state: Box::new(state),
+                            });
+                        }
+                        None => env.clear_modal_chain(),
                     }
-                    Some((scope, None)) => {
-                        env.pending_picker_value = Some(jackin_core::EnvValue::OpRef(op_ref));
-                        let state = settings_env_key_input_state(
-                            &env.pending,
-                            &scope,
-                            settings_env_new_key_after_picker_label(&scope),
-                            "",
-                        );
-                        env.modal = Some(SettingsEnvModal::OpPicker { state: picker });
-                        env.open_sub_modal(SettingsEnvModal::Text {
-                            target: SettingsEnvTextTarget::EnvKey { scope },
-                            state: Box::new(state),
-                        });
-                    }
-                    None => env.clear_modal_chain(),
+                }
+                InlinePickerPlan::Dismiss => {
+                    env.pop_modal_chain();
+                    env.pending_picker_target = None;
+                    env.pending_picker_value = None;
+                }
+                InlinePickerPlan::Continue => {
+                    env.modal = Some(SettingsEnvModal::OpPicker { state: picker });
                 }
             }
-            ModalOutcome::Cancel => {
-                env.pop_modal_chain();
-                env.pending_picker_target = None;
-                env.pending_picker_value = None;
-            }
-            ModalOutcome::Continue => {
-                env.modal = Some(SettingsEnvModal::OpPicker { state: picker });
-            }
-        },
+        }
         SettingsEnvModal::RolePicker { state: mut picker } => {
             match inline_picker_plan(picker.handle_key(key)) {
                 InlinePickerPlan::Commit(role) => {
