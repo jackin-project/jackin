@@ -246,13 +246,9 @@ pub(super) fn commit_editor_save_with_runner(
 
     let save_mode = editor_save_mode_plan(&editor.mode);
 
-    // Operator already approved the collapsed mount set in
-    // ConfirmSave; honour it now. Clone so subsequent source-drift logic
-    // can still inspect the full `plan`.
-    #[allow(clippy::redundant_clone)]
-    if let Some(final_mounts) = plan.final_mounts.clone() {
-        editor.pending.mounts = final_mounts;
-    }
+    // Operator already approved the collapsed mount set in ConfirmSave.
+    // Clone so subsequent source-drift logic can still inspect the full plan.
+    editor.apply_confirmed_mounts(plan.final_mounts.clone());
 
     // ── Source-drift safeguard ────────────────────────────────────────
     // Only meaningful in Edit mode — Create has no preserved state. Skip

@@ -1091,6 +1091,15 @@ impl<
         self.clear_modal_chain();
     }
 
+    pub fn apply_confirmed_mounts(
+        &mut self,
+        final_mounts: Option<Vec<jackin_config::MountConfig>>,
+    ) {
+        if let Some(final_mounts) = final_mounts {
+            self.pending.mounts = final_mounts;
+        }
+    }
+
     #[must_use]
     pub fn is_dirty(&self) -> bool {
         if self.pending != self.original {
@@ -2495,6 +2504,29 @@ mod tests {
         editor.commit_last_mount_dst_input("/dst");
 
         assert_eq!(editor.pending.mounts[0].dst, "/dst");
+    }
+
+    #[test]
+    fn apply_confirmed_mounts_replaces_pending_mounts_when_present() {
+        let mut workspace = WorkspaceConfig::default();
+        workspace.mounts.push(MountConfig {
+            src: "/old".into(),
+            dst: "/old".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        });
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+
+        editor.apply_confirmed_mounts(Some(vec![MountConfig {
+            src: "/new".into(),
+            dst: "/new".into(),
+            readonly: true,
+            isolation: MountIsolation::Shared,
+        }]));
+
+        assert_eq!(editor.pending.mounts.len(), 1);
+        assert_eq!(editor.pending.mounts[0].src, "/new");
+        assert!(editor.pending.mounts[0].readonly);
     }
 
     #[test]
