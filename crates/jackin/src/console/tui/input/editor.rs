@@ -1019,17 +1019,13 @@ fn dispatch_editor_mount_dst_choice(
     match mount_dst_choice_plan(outcome.clone()) {
         MountDstChoicePlan::CommitSamePath => {
             if target == FileBrowserTarget::EditAddMountSrc {
-                editor.pending.mounts.push(
-                    jackin_console::services::workspace::shared_mount_config(src, src, false),
-                );
+                editor.add_shared_mount(src, src);
             }
             editor.clear_modal_chain();
         }
         MountDstChoicePlan::OpenEditInput => {
             if target == FileBrowserTarget::EditAddMountSrc {
-                editor.pending.mounts.push(
-                    jackin_console::services::workspace::shared_mount_config(src, src, false),
-                );
+                editor.add_shared_mount(src, src);
                 editor.open_sub_modal(Modal::TextInput {
                     target: TextInputTarget::MountDst,
                     state: mount_destination_input_state(src),

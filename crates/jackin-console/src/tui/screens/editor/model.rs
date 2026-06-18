@@ -1157,6 +1157,14 @@ impl<
         }
     }
 
+    pub fn add_shared_mount(&mut self, src: &str, dst: &str) {
+        self.pending
+            .mounts
+            .push(crate::services::workspace::shared_mount_config(
+                src, dst, false,
+            ));
+    }
+
     pub fn toggle_general_selected(&mut self) {
         let FieldFocus::Row(row) = self.active_field;
         match row {
@@ -3760,6 +3768,18 @@ mod tests {
 
         assert_eq!(editor.pending.mounts.len(), 1);
         assert_eq!(editor.pending.mounts[0].src, "/host");
+    }
+
+    #[test]
+    fn editor_add_shared_mount_appends_pending_mount() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        editor.add_shared_mount("/host", "/work");
+
+        assert_eq!(editor.pending.mounts.len(), 1);
+        assert_eq!(editor.pending.mounts[0].src, "/host");
+        assert_eq!(editor.pending.mounts[0].dst, "/work");
+        assert_eq!(editor.pending.mounts[0].isolation, MountIsolation::Shared);
     }
 
     #[test]

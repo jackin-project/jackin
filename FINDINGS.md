@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,397 lines, versus 143 Rust files and 56,780 lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,393 lines, versus 143 Rust files and 56,800 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -38,12 +38,12 @@ Approximate local inventory:
 
 | Area | Files | Lines | Current role |
 |---|---:|---:|---|
-| `crates/jackin/src/console` total | 80 | 34,397 | Remaining root console implementation |
+| `crates/jackin/src/console` total | 80 | 34,393 | Remaining root console implementation |
 | `domain.rs` | 1 | 149 | Role-source logging, provider derivation, and root instance snapshot alias |
 | `services.rs` + `services/` | 9 | 861 | Side-effect adapters around config, Docker, runtime, op, token setup |
 | `effects.rs` | 1 | 1,250 | Root effect executor and background polling |
 | `terminal.rs` | 1 | 50 | Host terminal ownership adapter |
-| `tui/` | 65 | 31,651 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
+| `tui/` | 65 | 31,647 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
 
 Largest root files:
 
@@ -164,7 +164,7 @@ Status-overlay, list-modal, and inline-picker dismissal plan application now liv
 
 Editor auth-kind, tab move/select, tab-bar focus, field-selection, row-focus, mount-row selection, General toggles, selected-mount readonly toggles, role expansion, secret mask toggles, scroll-focus plan application, and horizontal-scroll plan application now lives on the shared editor state in `jackin-console/src/tui/screens/editor/model.rs`; root message, mouse handling, and root service adapters construct plans and delegate mutation to the owner model.
 
-Editor env-var deletion, empty role-override cleanup, and managed Claude OAuth token protection now live on the shared editor state in `jackin-console/src/tui/screens/editor/model.rs`; root confirm handling delegates the mutation and error policy to the owner model.
+Editor env-var deletion, empty role-override cleanup, managed Claude OAuth token protection, and shared-mount append mutation now live on the shared editor state in `jackin-console/src/tui/screens/editor/model.rs`; root confirm and mount-destination handling delegate those mutations and error policy to the owner model.
 
 ## What Still Lives In Root Console
 
