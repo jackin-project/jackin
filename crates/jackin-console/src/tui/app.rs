@@ -128,6 +128,26 @@ pub trait ConsolePendingRoleLoad {
     fn poll_pending_role_load(&mut self) -> Option<(Self::PendingRoleLoad, anyhow::Result<()>)>;
 }
 
+pub trait ConsolePendingDriftCheck {
+    type PendingDriftCheck;
+    type DriftDetection;
+
+    fn poll_pending_drift_check(
+        &mut self,
+    ) -> Option<(
+        Self::PendingDriftCheck,
+        anyhow::Result<Self::DriftDetection>,
+    )>;
+}
+
+pub trait ConsolePendingIsolationCleanup {
+    type PendingIsolationCleanup;
+
+    fn poll_pending_isolation_cleanup(
+        &mut self,
+    ) -> Option<(Self::PendingIsolationCleanup, anyhow::Result<()>)>;
+}
+
 pub trait ConsoleCreatePreludeModalPresence {
     fn create_prelude_modal_open(&self) -> bool;
 }
@@ -275,6 +295,45 @@ where
     ) -> Option<(Editor::PendingRoleLoad, anyhow::Result<()>)> {
         match self {
             Self::Editor(editor) => editor.poll_pending_role_load(),
+            Self::List
+            | Self::Settings(_)
+            | Self::CreatePrelude(_)
+            | Self::ConfirmDelete { .. }
+            | Self::ConfirmInstancePurge { .. } => None,
+        }
+    }
+}
+
+impl<CreatePrelude, Editor, Settings> ConsoleManagerStage<CreatePrelude, Editor, Settings>
+where
+    Editor: ConsolePendingDriftCheck,
+{
+    pub fn poll_pending_drift_check(
+        &mut self,
+    ) -> Option<(
+        Editor::PendingDriftCheck,
+        anyhow::Result<Editor::DriftDetection>,
+    )> {
+        match self {
+            Self::Editor(editor) => editor.poll_pending_drift_check(),
+            Self::List
+            | Self::Settings(_)
+            | Self::CreatePrelude(_)
+            | Self::ConfirmDelete { .. }
+            | Self::ConfirmInstancePurge { .. } => None,
+        }
+    }
+}
+
+impl<CreatePrelude, Editor, Settings> ConsoleManagerStage<CreatePrelude, Editor, Settings>
+where
+    Editor: ConsolePendingIsolationCleanup,
+{
+    pub fn poll_pending_isolation_cleanup(
+        &mut self,
+    ) -> Option<(Editor::PendingIsolationCleanup, anyhow::Result<()>)> {
+        match self {
+            Self::Editor(editor) => editor.poll_pending_isolation_cleanup(),
             Self::List
             | Self::Settings(_)
             | Self::CreatePrelude(_)
@@ -2085,6 +2144,40 @@ mod tests {
         }
     }
 
+    struct TestDriftCheck {
+        pending: Option<(u8, &'static str)>,
+    }
+
+    impl super::ConsolePendingDriftCheck for TestDriftCheck {
+        type PendingDriftCheck = u8;
+        type DriftDetection = &'static str;
+
+        fn poll_pending_drift_check(
+            &mut self,
+        ) -> Option<(
+            Self::PendingDriftCheck,
+            anyhow::Result<Self::DriftDetection>,
+        )> {
+            self.pending
+                .take()
+                .map(|(pending, detection)| (pending, Ok(detection)))
+        }
+    }
+
+    struct TestIsolationCleanup {
+        pending: Option<u8>,
+    }
+
+    impl super::ConsolePendingIsolationCleanup for TestIsolationCleanup {
+        type PendingIsolationCleanup = u8;
+
+        fn poll_pending_isolation_cleanup(
+            &mut self,
+        ) -> Option<(Self::PendingIsolationCleanup, anyhow::Result<()>)> {
+            self.pending.take().map(|pending| (pending, Ok(())))
+        }
+    }
+
     struct TestDebugModal;
 
     impl super::ConsoleModalDebugKind for TestDebugModal {
@@ -2352,6 +2445,88 @@ mod tests {
                 state: jackin_tui::components::ConfirmState::new("Purge?"),
             }
             .poll_pending_role_load()
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn console_manager_stage_polls_pending_drift_check_from_editor_only() {
+        type Stage = ConsoleManagerStage<(), TestDriftCheck, ()>;
+
+        let mut editor = Stage::Editor(TestDriftCheck {
+            pending: Some((3, "drift")),
+        });
+        let Some((check, result)) = editor.poll_pending_drift_check() else {
+            panic!("expected pending drift check");
+        };
+        assert_eq!(check, 3);
+        assert_eq!(result.ok(), Some("drift"));
+        assert!(editor.poll_pending_drift_check().is_none());
+
+        assert!(Stage::List.poll_pending_drift_check().is_none());
+        assert!(Stage::Settings(()).poll_pending_drift_check().is_none());
+        assert!(
+            Stage::CreatePrelude(())
+                .poll_pending_drift_check()
+                .is_none()
+        );
+        assert!(
+            Stage::ConfirmDelete {
+                name: "workspace".to_owned(),
+                state: jackin_tui::components::ConfirmState::new("Delete?"),
+            }
+            .poll_pending_drift_check()
+            .is_none()
+        );
+        assert!(
+            Stage::ConfirmInstancePurge {
+                container: "container".to_owned(),
+                label: "label".to_owned(),
+                state: jackin_tui::components::ConfirmState::new("Purge?"),
+            }
+            .poll_pending_drift_check()
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn console_manager_stage_polls_pending_isolation_cleanup_from_editor_only() {
+        type Stage = ConsoleManagerStage<(), TestIsolationCleanup, ()>;
+
+        let mut editor = Stage::Editor(TestIsolationCleanup { pending: Some(5) });
+        let Some((cleanup, result)) = editor.poll_pending_isolation_cleanup() else {
+            panic!("expected pending isolation cleanup");
+        };
+        assert_eq!(cleanup, 5);
+        assert!(result.is_ok());
+        assert!(editor.poll_pending_isolation_cleanup().is_none());
+
+        assert!(Stage::List.poll_pending_isolation_cleanup().is_none());
+        assert!(
+            Stage::Settings(())
+                .poll_pending_isolation_cleanup()
+                .is_none()
+        );
+        assert!(
+            Stage::CreatePrelude(())
+                .poll_pending_isolation_cleanup()
+                .is_none()
+        );
+        assert!(
+            Stage::ConfirmDelete {
+                name: "workspace".to_owned(),
+                state: jackin_tui::components::ConfirmState::new("Delete?"),
+            }
+            .poll_pending_isolation_cleanup()
+            .is_none()
+        );
+        assert!(
+            Stage::ConfirmInstancePurge {
+                container: "container".to_owned(),
+                label: "label".to_owned(),
+                state: jackin_tui::components::ConfirmState::new("Purge?"),
+            }
+            .poll_pending_isolation_cleanup()
             .is_none()
         );
     }

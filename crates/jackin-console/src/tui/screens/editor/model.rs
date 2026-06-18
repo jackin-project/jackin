@@ -346,6 +346,105 @@ impl<
     EnvValue,
     AuthFormTarget,
     PendingTokenGenerate,
+    PendingRoleLoad,
+    DriftDetection,
+    SavePlan,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+> crate::tui::app::ConsolePendingDriftCheck
+    for EditorState<
+        WorkspaceConfig,
+        MountInfoCache,
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        crate::tui::subscriptions::PendingDriftCheck<DriftDetection, SavePlan>,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >
+{
+    type PendingDriftCheck = crate::tui::subscriptions::PendingDriftCheck<DriftDetection, SavePlan>;
+    type DriftDetection = DriftDetection;
+
+    fn poll_pending_drift_check(
+        &mut self,
+    ) -> Option<(
+        Self::PendingDriftCheck,
+        anyhow::Result<Self::DriftDetection>,
+    )> {
+        use jackin_tui::runtime::{Subscription, SubscriptionPoll};
+
+        let check = self.pending_drift_check.as_mut()?;
+        let result = match check.rx.poll_next() {
+            SubscriptionPoll::Ready(result) => result,
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => Err(anyhow::anyhow!(
+                crate::tui::subscriptions::drift_check_worker_disconnected_message()
+            )),
+        };
+        let check = self.pending_drift_check.take()?;
+        Some((check, result))
+    }
+}
+
+impl<
+    WorkspaceConfig,
+    MountInfoCache,
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    SavePlan,
+    PendingOpCommit,
+> crate::tui::app::ConsolePendingIsolationCleanup
+    for EditorState<
+        WorkspaceConfig,
+        MountInfoCache,
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        crate::tui::subscriptions::PendingIsolationCleanup<SavePlan>,
+        PendingOpCommit,
+    >
+{
+    type PendingIsolationCleanup = crate::tui::subscriptions::PendingIsolationCleanup<SavePlan>;
+
+    fn poll_pending_isolation_cleanup(
+        &mut self,
+    ) -> Option<(Self::PendingIsolationCleanup, anyhow::Result<()>)> {
+        use jackin_tui::runtime::{Subscription, SubscriptionPoll};
+
+        let cleanup = self.pending_isolation_cleanup.as_mut()?;
+        let result = match cleanup.rx.poll_next() {
+            SubscriptionPoll::Ready(result) => result,
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => Err(anyhow::anyhow!(
+                crate::tui::subscriptions::isolation_cleanup_worker_disconnected_message()
+            )),
+        };
+        let cleanup = self.pending_isolation_cleanup.take()?;
+        Some((cleanup, result))
+    }
+}
+
+impl<
+    WorkspaceConfig,
+    MountInfoCache,
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
     RoleSource,
     PendingDriftCheck,
     PendingIsolationCleanup,

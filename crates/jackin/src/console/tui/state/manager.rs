@@ -644,46 +644,13 @@ impl ManagerState<'_> {
         PendingDriftCheck,
         anyhow::Result<crate::runtime::drift::DriftDetection>,
     )> {
-        let ManagerStage::Editor(editor) = &mut self.stage else {
-            return None;
-        };
-        let check = editor.pending_drift_check.as_mut()?;
-        let result = match check.rx.poll_next() {
-            SubscriptionPoll::Ready(result) => Some(result),
-            SubscriptionPoll::Pending => return None,
-            SubscriptionPoll::Closed => Some(Err(anyhow::anyhow!(
-                jackin_console::tui::subscriptions::drift_check_worker_disconnected_message()
-            ))),
-        };
-        let ManagerStage::Editor(editor) = &mut self.stage else {
-            unreachable!("stage cannot change while polling drift check")
-        };
-        let check = editor.pending_drift_check.take().expect("polled above");
-        result.map(|r| (check, r))
+        self.stage.poll_pending_drift_check()
     }
 
     pub(crate) fn poll_pending_isolation_cleanup(
         &mut self,
     ) -> Option<(PendingIsolationCleanup, anyhow::Result<()>)> {
-        let ManagerStage::Editor(editor) = &mut self.stage else {
-            return None;
-        };
-        let cleanup = editor.pending_isolation_cleanup.as_mut()?;
-        let result = match cleanup.rx.poll_next() {
-            SubscriptionPoll::Ready(result) => Some(result),
-            SubscriptionPoll::Pending => return None,
-            SubscriptionPoll::Closed => Some(Err(anyhow::anyhow!(
-                jackin_console::tui::subscriptions::isolation_cleanup_worker_disconnected_message()
-            ))),
-        };
-        let ManagerStage::Editor(editor) = &mut self.stage else {
-            unreachable!("stage cannot change while polling isolation cleanup")
-        };
-        let cleanup = editor
-            .pending_isolation_cleanup
-            .take()
-            .expect("polled above");
-        result.map(|r| (cleanup, r))
+        self.stage.poll_pending_isolation_cleanup()
     }
 
     pub(crate) fn poll_pending_role_load(
