@@ -1,21 +1,12 @@
-//! Editor-stage rendering.
-//!
-//! Full-screen editor with header, tab bar, per-tab body renderers
-//! (General / Mounts / Roles / Secrets), and the contextual footer
-//! composition that varies with the active tab + cursor.
-
 pub use crate::console::tui::state::AuthRow;
+use crate::console::tui::state::EditorState;
 #[cfg(test)]
 pub(crate) use crate::console::tui::state::SecretsRow;
-use crate::console::tui::state::{EditorState, EditorTab};
 use jackin_config::AppConfig;
-use jackin_console::tui::components::editor_rows::render_tab_strip;
-use jackin_console::tui::screens::editor::view::{
-    editor_frame_areas, editor_header_title, render_auth_tab, render_general_tab,
-    render_mounts_tab, render_roles_tab, render_secrets_tab, tab_labels,
-};
-use jackin_console::tui::view::{
-    effective_footer_height, measured_footer_height, render_footer, render_header,
+use jackin_console::tui::screens::editor::view::render_editor_screen;
+#[cfg(test)]
+pub(crate) use jackin_console::tui::screens::editor::view::{
+    render_general_tab, render_roles_tab, render_secrets_tab,
 };
 use ratatui::{Frame, layout::Rect};
 
@@ -28,53 +19,14 @@ pub(super) fn render_editor(
     config: &AppConfig,
     op_available: bool,
 ) {
-    let provisional_body =
-        editor_frame_areas(area, effective_footer_height(state.cached_footer_h)).body;
-    let items = crate::console::tui::components::footer::editor::editor_footer_items(
-        state,
-        config,
-        op_available,
-        provisional_body,
-    );
-    let mut footer_h = measured_footer_height(&items, area.width);
-    let mut areas = editor_frame_areas(area, footer_h);
-    let mut items = crate::console::tui::components::footer::editor::editor_footer_items(
-        state,
-        config,
-        op_available,
-        areas.body,
-    );
-    let exact_footer_h = measured_footer_height(&items, area.width);
-    if exact_footer_h != footer_h {
-        footer_h = exact_footer_h;
-        areas = editor_frame_areas(area, footer_h);
-        items = crate::console::tui::components::footer::editor::editor_footer_items(
+    render_editor_screen(frame, area, state, config, |state, config, body| {
+        crate::console::tui::components::footer::editor::editor_footer_items(
             state,
             config,
             op_available,
-            areas.body,
-        );
-    }
-
-    let title = editor_header_title(&state.mode);
-    render_header(frame, areas.header, &title);
-    render_tab_strip(
-        frame,
-        areas.tabs,
-        &tab_labels(state.active_tab),
-        state.tab_bar_focused(),
-        state.hovered_tab(),
-    );
-
-    match state.active_tab {
-        EditorTab::General => render_general_tab(frame, areas.body, state),
-        EditorTab::Mounts => render_mounts_tab(frame, areas.body, state),
-        EditorTab::Roles => render_roles_tab(frame, areas.body, state, config),
-        EditorTab::Secrets => render_secrets_tab(frame, areas.body, state, config),
-        EditorTab::Auth => render_auth_tab(frame, areas.body, state, config),
-    }
-
-    render_footer(frame, areas.footer, &items);
+            body,
+        )
+    });
 }
 
 #[cfg(test)]

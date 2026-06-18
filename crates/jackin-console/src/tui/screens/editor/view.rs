@@ -7,7 +7,7 @@ use super::update::forbidden_secret_keys;
 use crate::tui::components::editor_rows::{
     AUTH_LABEL_COL_WIDTH, AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind,
     AuthSourceValue, SecretValueDisplay, action_row_style, auth_source_display_for_required_env,
-    disclosure_style, render_secret_key_line,
+    disclosure_style, render_secret_key_line, render_tab_strip,
 };
 use crate::tui::components::env_value::secret_display;
 use crate::tui::components::footer_hints::{
@@ -19,6 +19,10 @@ use crate::tui::components::mount_rows::{
 use crate::tui::mount_display::{
     MountDisplayRow, format_config_mount_rows_with_cache, mount_path_width,
 };
+use crate::tui::view::{
+    effective_footer_height, measured_footer_height, render_footer, render_header,
+};
+use jackin_tui::HintSpan;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -115,6 +119,84 @@ pub fn editor_frame_areas(area: Rect, footer_h: u16) -> EditorFrameAreas {
 }
 
 #[allow(clippy::type_complexity)]
+pub fn render_editor_screen<
+    Modal,
+    SaveFlow,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+    FooterItems,
+>(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        jackin_core::EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+    mut footer_items: FooterItems,
+) where
+    FooterItems: FnMut(
+        &WorkspaceEditorState<
+            Modal,
+            SaveFlow,
+            jackin_core::EnvValue,
+            AuthFormTarget,
+            PendingTokenGenerate,
+            PendingRoleLoad,
+            PendingDriftCheck,
+            PendingIsolationCleanup,
+            PendingOpCommit,
+        >,
+        &jackin_config::AppConfig,
+        Rect,
+    ) -> Vec<HintSpan<'static>>,
+{
+    let provisional_body =
+        editor_frame_areas(area, effective_footer_height(state.cached_footer_h)).body;
+    let items = footer_items(state, config, provisional_body);
+    let mut footer_h = measured_footer_height(&items, area.width);
+    let mut areas = editor_frame_areas(area, footer_h);
+    let mut items = footer_items(state, config, areas.body);
+    let exact_footer_h = measured_footer_height(&items, area.width);
+    if exact_footer_h != footer_h {
+        footer_h = exact_footer_h;
+        areas = editor_frame_areas(area, footer_h);
+        items = footer_items(state, config, areas.body);
+    }
+
+    let title = editor_header_title(&state.mode);
+    render_header(frame, areas.header, &title);
+    render_tab_strip(
+        frame,
+        areas.tabs,
+        &tab_labels(state.active_tab),
+        state.tab_bar_focused(),
+        state.hovered_tab(),
+    );
+
+    match state.active_tab {
+        EditorTab::General => render_general_tab(frame, areas.body, state),
+        EditorTab::Mounts => render_mounts_tab(frame, areas.body, state),
+        EditorTab::Roles => render_roles_tab(frame, areas.body, state, config),
+        EditorTab::Secrets => render_secrets_tab(frame, areas.body, state, config),
+        EditorTab::Auth => render_auth_tab(frame, areas.body, state, config),
+    }
+
+    render_footer(frame, areas.footer, &items);
+}
+
+#[allow(clippy::type_complexity)]
 pub fn editor_contextual_footer_items<
     Modal,
     SaveFlow,
@@ -139,7 +221,7 @@ pub fn editor_contextual_footer_items<
     config: &jackin_config::AppConfig,
     op_available: bool,
     body_area: Rect,
-) -> Vec<jackin_tui::HintSpan<'static>> {
+) -> Vec<HintSpan<'static>> {
     editor_contextual_row_footer_items(
         editor_context_footer_mode(state, config, body_area),
         op_available,

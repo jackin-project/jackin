@@ -1,15 +1,13 @@
 //! Tests for `view`.
 use super::*;
 
-fn hint_labels(items: Vec<jackin_tui::HintSpan<'static>>) -> Vec<String> {
+fn hint_labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
     items
         .into_iter()
         .filter_map(|span| match span {
-            jackin_tui::HintSpan::Key(value) | jackin_tui::HintSpan::Text(value) => {
-                Some(value.to_owned())
-            }
-            jackin_tui::HintSpan::Dyn(value) => Some(value),
-            jackin_tui::HintSpan::Sep | jackin_tui::HintSpan::GroupSep => None,
+            HintSpan::Key(value) | HintSpan::Text(value) => Some(value.to_owned()),
+            HintSpan::Dyn(value) => Some(value),
+            HintSpan::Sep | HintSpan::GroupSep => None,
         })
         .collect()
 }
