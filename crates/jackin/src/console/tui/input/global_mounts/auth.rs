@@ -3,7 +3,7 @@
 use super::{
     AuthForm, AuthFormFocus, AuthFormKeyPlan, AuthFormTarget, FileBrowserOutcome,
     GlobalMountConfirm, KeyCode, KeyEvent, ManagerMessage, ManagerStage, ManagerState,
-    ModalOutcome, SettingsAuthModal, SettingsAuthOutcome, apply_settings_auth_env_commit,
+    SettingsAuthModal, SettingsAuthOutcome, apply_settings_auth_env_commit,
     auth_credential_input_state, auth_form_key_plan_with_source_folder, auth_source_picker_state,
     clear_settings_auth_env_values, confirm_modal, dispatch_manager, generated_token_op_item_name,
     generated_token_source_picker_state, open_settings_save_preview,
@@ -11,6 +11,7 @@ use super::{
 };
 use jackin_console::tui::auth_config::settings_auth_form_can_generate_token;
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
+use jackin_tui::ModalOutcome;
 
 pub(super) fn handle_auth_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &state.stage else {

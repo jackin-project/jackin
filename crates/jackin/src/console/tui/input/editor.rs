@@ -43,12 +43,12 @@ use jackin_console::tui::screens::editor::view::{
     secret_new_key_label, secret_new_value_input_state,
 };
 use jackin_console::tui::update::{
-    ConfirmSaveModalPlan, DismissibleModalPlan, FileBrowserModalPlan, InlinePickerPlan,
-    MountDstChoicePlan, SaveDiscardModalPlan, ScopePickerPlan, SourcePickerPlan,
-    confirm_save_modal_plan, dismissible_modal_plan, file_browser_modal_plan, inline_picker_plan,
-    mount_dst_choice_plan, save_discard_modal_plan, scope_picker_plan, source_picker_plan,
+    BoolConfirmModalPlan, ConfirmSaveModalPlan, DismissibleModalPlan, FileBrowserModalPlan,
+    InlinePickerPlan, MountDstChoicePlan, SaveDiscardModalPlan, ScopePickerPlan, SourcePickerPlan,
+    bool_confirm_modal_plan, confirm_save_modal_plan, dismissible_modal_plan,
+    file_browser_modal_plan, inline_picker_plan, mount_dst_choice_plan, save_discard_modal_plan,
+    scope_picker_plan, source_picker_plan,
 };
-use jackin_tui::ModalOutcome;
 #[cfg(test)]
 use jackin_tui::runtime::{Subscription, SubscriptionPoll};
 
@@ -601,46 +601,42 @@ pub(super) fn handle_editor_modal(
             }
             InlinePickerPlan::Continue => {}
         },
-        Modal::Confirm { target, state } => match state.handle_key(key) {
-            ModalOutcome::Commit(yes) => {
+        Modal::Confirm { target, state } => match bool_confirm_modal_plan(state.handle_key(key)) {
+            BoolConfirmModalPlan::Confirm => {
                 let target = target.clone();
                 editor.clear_modal_chain();
-                if yes {
-                    // Source-drift acknowledgement consumes `plan` and
-                    // re-stashes it as a `PendingCommit` for the outer
-                    // dispatcher (which owns `paths` / `cwd` / `runner`)
-                    // to drain via `commit_editor_save`.
-                    if let ConfirmTarget::DeleteIsolatedAndSave {
-                        mut plan,
+                // Source-drift acknowledgement consumes `plan` and
+                // re-stashes it as a `PendingCommit` for the outer
+                // dispatcher (which owns `paths` / `cwd` / `runner`)
+                // to drain via `commit_editor_save`.
+                if let ConfirmTarget::DeleteIsolatedAndSave {
+                    mut plan,
+                    exit_on_success,
+                    ..
+                } = target
+                {
+                    plan.delete_isolated_acknowledged = true;
+                    plan.isolated_cleanup_complete = false;
+                    editor.save_flow = EditorSaveFlow::PendingCommit {
+                        plan,
                         exit_on_success,
-                        ..
-                    } = target
-                    {
-                        plan.delete_isolated_acknowledged = true;
-                        plan.isolated_cleanup_complete = false;
-                        editor.save_flow = EditorSaveFlow::PendingCommit {
-                            plan,
-                            exit_on_success,
-                        };
-                    } else {
-                        match apply_editor_confirm(editor, &target) {
-                            Ok(EditorModalOutcome::Continue) => {}
-                            Ok(outcome) => return outcome,
-                            Err(e) => open_editor_action_error(editor, &e),
-                        }
+                    };
+                } else {
+                    match apply_editor_confirm(editor, &target) {
+                        Ok(EditorModalOutcome::Continue) => {}
+                        Ok(outcome) => return outcome,
+                        Err(e) => open_editor_action_error(editor, &e),
                     }
-                } else if matches!(target, ConfirmTarget::DeleteIsolatedAndSave { .. }) {
-                    editor.save_flow = EditorSaveFlow::Idle;
                 }
             }
-            ModalOutcome::Cancel => {
+            BoolConfirmModalPlan::Dismiss => {
                 let was_drift = matches!(target, ConfirmTarget::DeleteIsolatedAndSave { .. });
                 editor.clear_modal_chain();
                 if was_drift {
                     editor.save_flow = EditorSaveFlow::Idle;
                 }
             }
-            ModalOutcome::Continue => {}
+            BoolConfirmModalPlan::Continue => {}
         },
         Modal::MountDstChoice {
             target,
@@ -1093,7 +1089,9 @@ fn dispatch_editor_mount_dst_choice(
     editor: &mut EditorState<'_>,
     target: FileBrowserTarget,
     src: &str,
-    outcome: &ModalOutcome<jackin_console::tui::components::mount_dst_choice::MountDstChoice>,
+    outcome: &jackin_tui::ModalOutcome<
+        jackin_console::tui::components::mount_dst_choice::MountDstChoice,
+    >,
 ) {
     match mount_dst_choice_plan(outcome.clone()) {
         MountDstChoicePlan::CommitSamePath => {

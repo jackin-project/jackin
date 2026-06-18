@@ -45,12 +45,12 @@ use jackin_console::tui::screens::settings::view::{
     settings_sensitive_paths_not_confirmed_message,
 };
 use jackin_console::tui::update::{
-    ConfirmSaveModalPlan, FileBrowserModalPlan, InlinePickerPlan, MountDstChoicePlan,
-    ScopePickerPlan, SourcePickerPlan, confirm_save_modal_plan, file_browser_modal_plan,
-    inline_picker_plan, mount_dst_choice_plan, scope_picker_plan, source_picker_plan,
+    BoolConfirmModalPlan, ConfirmSaveModalPlan, FileBrowserModalPlan, InlinePickerPlan,
+    MountDstChoicePlan, ScopePickerPlan, SourcePickerPlan, bool_confirm_modal_plan,
+    confirm_save_modal_plan, file_browser_modal_plan, inline_picker_plan, mount_dst_choice_plan,
+    scope_picker_plan, source_picker_plan,
 };
 use jackin_core::RoleSelector;
-use jackin_tui::ModalOutcome;
 
 pub(super) type SettingsModalOutcome = jackin_console::tui::message::ConsoleSettingsModalOutcome;
 
@@ -882,18 +882,20 @@ pub(super) fn handle_settings_env_modal(
                 }
             }
         }
-        SettingsEnvModal::Confirm { action, mut state } => match state.handle_key(key) {
-            ModalOutcome::Commit(true) => match action {
-                SettingsEnvConfirm::Delete => {
-                    delete_selected_settings_env(env);
-                    env.clear_modal_chain();
+        SettingsEnvModal::Confirm { action, mut state } => {
+            match bool_confirm_modal_plan(state.handle_key(key)) {
+                BoolConfirmModalPlan::Confirm => match action {
+                    SettingsEnvConfirm::Delete => {
+                        delete_selected_settings_env(env);
+                        env.clear_modal_chain();
+                    }
+                },
+                BoolConfirmModalPlan::Dismiss => env.clear_modal_chain(),
+                BoolConfirmModalPlan::Continue => {
+                    env.modal = Some(SettingsEnvModal::Confirm { action, state });
                 }
-            },
-            ModalOutcome::Commit(false) | ModalOutcome::Cancel => env.clear_modal_chain(),
-            ModalOutcome::Continue => {
-                env.modal = Some(SettingsEnvModal::Confirm { action, state });
             }
-        },
+        }
     }
 }
 

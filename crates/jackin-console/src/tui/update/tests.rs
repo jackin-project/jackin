@@ -320,6 +320,26 @@ fn confirm_save_modal_plan_routes_confirm_outcomes() {
 }
 
 #[test]
+fn bool_confirm_modal_plan_routes_confirm_outcomes() {
+    assert_eq!(
+        bool_confirm_modal_plan(jackin_tui::ModalOutcome::Commit(true)),
+        BoolConfirmModalPlan::Confirm
+    );
+    assert_eq!(
+        bool_confirm_modal_plan(jackin_tui::ModalOutcome::Commit(false)),
+        BoolConfirmModalPlan::Dismiss
+    );
+    assert_eq!(
+        bool_confirm_modal_plan(jackin_tui::ModalOutcome::Cancel),
+        BoolConfirmModalPlan::Dismiss
+    );
+    assert_eq!(
+        bool_confirm_modal_plan(jackin_tui::ModalOutcome::Continue),
+        BoolConfirmModalPlan::Continue
+    );
+}
+
+#[test]
 fn scope_picker_plan_routes_scope_outcomes() {
     use crate::tui::components::scope_picker::ScopeChoice;
 

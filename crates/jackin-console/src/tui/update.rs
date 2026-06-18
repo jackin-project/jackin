@@ -76,6 +76,13 @@ pub enum ConfirmSaveModalPlan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoolConfirmModalPlan {
+    Confirm,
+    Dismiss,
+    Continue,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScopePickerPlan {
     AllAgents,
     SpecificAgent,
@@ -303,6 +310,19 @@ pub const fn confirm_save_modal_plan(
         ) => ConfirmSaveModalPlan::Commit,
         jackin_tui::ModalOutcome::Cancel => ConfirmSaveModalPlan::Dismiss,
         jackin_tui::ModalOutcome::Continue => ConfirmSaveModalPlan::Continue,
+    }
+}
+
+#[must_use]
+pub const fn bool_confirm_modal_plan(
+    outcome: jackin_tui::ModalOutcome<bool>,
+) -> BoolConfirmModalPlan {
+    match outcome {
+        jackin_tui::ModalOutcome::Commit(true) => BoolConfirmModalPlan::Confirm,
+        jackin_tui::ModalOutcome::Commit(false) | jackin_tui::ModalOutcome::Cancel => {
+            BoolConfirmModalPlan::Dismiss
+        }
+        jackin_tui::ModalOutcome::Continue => BoolConfirmModalPlan::Continue,
     }
 }
 
