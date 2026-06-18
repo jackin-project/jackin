@@ -85,6 +85,49 @@ pub type ConfigSidebarInputs<'a> = SidebarInputs<
     MountInfoCache,
 >;
 
+/// Facts needed to build the config-backed workspace preview sidebar. Root
+/// supplies only root-specific counts and selected rows; the layout crate owns
+/// the reusable sidebar input assembly.
+#[derive(Debug)]
+pub struct ConfigSidebarSelectionInputs<'a> {
+    pub workdir: &'a str,
+    pub mounts: &'a [jackin_config::MountConfig],
+    pub mount_info_cache: MountInfoCache,
+    pub ws_config: Option<&'a jackin_config::WorkspaceConfig>,
+    pub global_rows: Vec<jackin_config::GlobalMountRow>,
+    pub picker_role_label: String,
+    pub instance_count: usize,
+    pub instance_expanded: bool,
+    pub inline_picker_active: bool,
+    pub show_envs: bool,
+}
+
+#[must_use]
+pub fn config_sidebar_inputs_for_selection<'a>(
+    selection: ConfigSidebarSelectionInputs<'a>,
+    config: &'a jackin_config::AppConfig,
+) -> ConfigSidebarInputs<'a> {
+    let agent_count = if selection.inline_picker_active {
+        0
+    } else {
+        agents_block_agent_count_for_config(selection.ws_config, config)
+    };
+
+    ConfigSidebarInputs {
+        workdir: selection.workdir,
+        mounts: selection.mounts,
+        mount_info_cache: selection.mount_info_cache,
+        ws_config: selection.ws_config,
+        global_rows: selection.global_rows,
+        picker_role_label: selection.picker_role_label,
+        instance_count: selection.instance_count,
+        instance_expanded: selection.instance_expanded,
+        inline_picker_active: selection.inline_picker_active,
+        show_envs: selection.show_envs,
+        agent_count,
+    }
+}
+
 impl From<crate::tui::focus::MountScrollFocus> for SidebarScrollFocus {
     fn from(focus: crate::tui::focus::MountScrollFocus) -> Self {
         match focus {

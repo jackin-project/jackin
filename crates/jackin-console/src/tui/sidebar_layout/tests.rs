@@ -2,7 +2,7 @@
 use super::*;
 
 use jackin_config::{
-    AppConfig, EnvValue, GlobalMountRow, MountConfig, MountIsolation, WorkspaceConfig,
+    AppConfig, EnvValue, GlobalMountRow, MountConfig, MountIsolation, RoleSource, WorkspaceConfig,
 };
 
 #[test]
@@ -97,6 +97,34 @@ fn config_sidebar_layout_derives_optional_sections() {
     assert_eq!(areas.workspace.content_height, 2);
     assert_eq!(areas.global.content_height, 3);
     assert_eq!(areas.roles.expect("roles").content_height, 2);
+}
+
+#[test]
+fn config_sidebar_selection_builder_suppresses_agents_for_inline_picker() {
+    let mut config = AppConfig::default();
+    config.roles.insert("smith".into(), RoleSource::default());
+    let ws = WorkspaceConfig::default();
+
+    let inputs = config_sidebar_inputs_for_selection(
+        ConfigSidebarSelectionInputs {
+            workdir: "/repo",
+            mounts: &[],
+            mount_info_cache: MountInfoCache::default(),
+            ws_config: Some(&ws),
+            global_rows: Vec::new(),
+            picker_role_label: "smith".into(),
+            instance_count: 1,
+            instance_expanded: true,
+            inline_picker_active: true,
+            show_envs: false,
+        },
+        &config,
+    );
+
+    assert_eq!(inputs.agent_count, 0);
+    assert_eq!(inputs.picker_role_label, "smith");
+    assert_eq!(inputs.instance_count, 1);
+    assert!(inputs.inline_picker_active);
 }
 
 #[test]

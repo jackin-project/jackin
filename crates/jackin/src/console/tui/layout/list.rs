@@ -9,7 +9,8 @@ use jackin_console::tui::screens::workspaces::view::{
     current_directory_workspace_title, new_workspace_list_label,
 };
 pub(crate) use jackin_console::tui::sidebar_layout::{
-    ConfigSidebarInputs as SidebarInputs, SidebarLayout, SidebarScrollAreas,
+    ConfigSidebarInputs as SidebarInputs, ConfigSidebarSelectionInputs, SidebarLayout,
+    SidebarScrollAreas,
 };
 use jackin_console::tui::update::{list_pre_render_focus_plan, list_pre_render_scroll_reset_plan};
 
@@ -214,15 +215,21 @@ pub(crate) fn sidebar_inputs_for_workspace<'a>(
     let inline_picker_active =
         state.inline_role_picker.is_some() || state.inline_agent_picker.is_some();
     sidebar_inputs_for_selection(
-        SidebarSelectionInputs {
-            workspace_name: Some(ws.name.as_str()),
-            workspace_label: ws.name.as_str(),
+        ConfigSidebarSelectionInputs {
             workdir: ws.workdir.as_str(),
             mounts,
+            mount_info_cache: state.mount_info_cache.clone(),
             ws_config,
+            global_rows: global_rows_for_selected_row(state, config),
             picker_role_label: picker_role
                 .as_ref()
                 .map_or_else(String::new, jackin_core::RoleSelector::key),
+            instance_count: workspace_active_count(
+                &state.instances,
+                Some(ws.name.as_str()),
+                ws.name.as_str(),
+                ws.workdir.as_str(),
+            ),
             instance_expanded: state
                 .workspaces
                 .iter()
@@ -239,7 +246,6 @@ pub(crate) fn sidebar_inputs_for_workspace<'a>(
             }),
         },
         config,
-        state,
     )
 }
 
@@ -250,65 +256,27 @@ pub(crate) fn sidebar_inputs_for_current_dir<'a>(
     state: &ManagerState<'_>,
 ) -> SidebarInputs<'a> {
     sidebar_inputs_for_selection(
-        SidebarSelectionInputs {
-            workspace_name: None,
-            workspace_label: cwd_str,
+        ConfigSidebarSelectionInputs {
             workdir: cwd_str,
             mounts,
+            mount_info_cache: state.mount_info_cache.clone(),
             ws_config: None,
+            global_rows: global_rows_for_selected_row(state, config),
             picker_role_label: String::new(),
+            instance_count: workspace_active_count(&state.instances, None, cwd_str, cwd_str),
             instance_expanded: state.current_dir_expanded,
             inline_picker_active: false,
             show_envs: false,
         },
         config,
-        state,
     )
 }
 
-struct SidebarSelectionInputs<'a> {
-    workspace_name: Option<&'a str>,
-    workspace_label: &'a str,
-    workdir: &'a str,
-    mounts: &'a [jackin_config::MountConfig],
-    ws_config: Option<&'a jackin_config::WorkspaceConfig>,
-    picker_role_label: String,
-    instance_expanded: bool,
-    inline_picker_active: bool,
-    show_envs: bool,
-}
-
 fn sidebar_inputs_for_selection<'a>(
-    selection: SidebarSelectionInputs<'a>,
+    selection: ConfigSidebarSelectionInputs<'a>,
     config: &'a AppConfig,
-    state: &ManagerState<'_>,
 ) -> SidebarInputs<'a> {
-    let agent_count = if selection.inline_picker_active {
-        0
-    } else {
-        jackin_console::tui::sidebar_layout::agents_block_agent_count_for_config(
-            selection.ws_config,
-            config,
-        )
-    };
-    SidebarInputs {
-        workdir: selection.workdir,
-        mounts: selection.mounts,
-        mount_info_cache: state.mount_info_cache.clone(),
-        ws_config: selection.ws_config,
-        global_rows: global_rows_for_selected_row(state, config),
-        picker_role_label: selection.picker_role_label,
-        instance_count: workspace_active_count(
-            &state.instances,
-            selection.workspace_name,
-            selection.workspace_label,
-            selection.workdir,
-        ),
-        instance_expanded: selection.instance_expanded,
-        inline_picker_active: selection.inline_picker_active,
-        show_envs: selection.show_envs,
-        agent_count,
-    }
+    jackin_console::tui::sidebar_layout::config_sidebar_inputs_for_selection(selection, config)
 }
 
 pub(crate) fn picker_role_from_state(
