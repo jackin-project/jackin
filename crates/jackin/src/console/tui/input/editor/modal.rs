@@ -254,8 +254,7 @@ pub(in crate::console::tui::input) fn apply_text_input_to_pending(
 ) {
     match target {
         TextInputTarget::Name => {
-            editor.pending_name = Some(value.to_owned());
-            editor.clear_modal_chain();
+            editor.commit_workspace_name_input(value);
         }
         TextInputTarget::Workdir => {
             editor.pending.workdir = value.to_owned();

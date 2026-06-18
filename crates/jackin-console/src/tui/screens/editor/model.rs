@@ -983,6 +983,11 @@ impl<
         editor
     }
 
+    pub fn commit_workspace_name_input(&mut self, name: impl Into<String>) {
+        self.pending_name = Some(name.into());
+        self.clear_modal_chain();
+    }
+
     #[must_use]
     fn into_create_mode(mut self) -> Self {
         self.mode = EditorMode::Create;
@@ -2444,6 +2449,15 @@ mod tests {
         assert!(matches!(editor.mode, EditorMode::Create));
         assert_eq!(editor.pending_name.as_deref(), Some("draft"));
         assert_eq!(editor.pending.workdir, "/repo");
+    }
+
+    #[test]
+    fn commit_workspace_name_input_updates_pending_name() {
+        let mut editor = TestEditor::new_create();
+
+        editor.commit_workspace_name_input("renamed");
+
+        assert_eq!(editor.pending_name.as_deref(), Some("renamed"));
     }
 
     #[test]
