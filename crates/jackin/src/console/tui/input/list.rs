@@ -25,12 +25,12 @@ use jackin_console::tui::screens::workspaces::update::{
     WorkspaceInstanceScopePlan, WorkspaceInstanceStatus, WorkspaceListDeletePlan,
     WorkspaceListEditPlan, WorkspaceListEnterPlan, WorkspaceListHorizontalPlan,
     WorkspaceListKeyPlan, WorkspaceListNewSessionOpenPlan, WorkspaceListSettingsPlan,
-    is_preview_pane_entry_target, preview_pane_action_plan, selected_instance_action_plan,
+    WorkspaceListTopLevelKeyPlan, preview_pane_action_plan, selected_instance_action_plan,
     selected_instance_container_for_action, selected_instance_purge_confirm_plan,
-    should_enter_preview_pane, workspace_instance_empty_message, workspace_list_delete_plan,
-    workspace_list_edit_plan, workspace_list_enter_plan, workspace_list_github_open_plan,
-    workspace_list_horizontal_plan, workspace_list_key_plan, workspace_list_new_session_open_plan,
-    workspace_list_new_session_plan, workspace_list_settings_plan,
+    workspace_instance_empty_message, workspace_list_delete_plan, workspace_list_edit_plan,
+    workspace_list_enter_plan, workspace_list_github_open_plan, workspace_list_horizontal_plan,
+    workspace_list_new_session_open_plan, workspace_list_new_session_plan,
+    workspace_list_settings_plan, workspace_list_top_level_key_plan,
 };
 use jackin_console::tui::screens::workspaces::view::instance_purge_confirm_label;
 use jackin_console::tui::update::{
@@ -52,31 +52,28 @@ pub(super) fn handle_list_key(
     cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
-    // Preview-pane navigation mode: the operator dropped focus into
-    // the right-hand snapshot tree via Tab / →. Keys are reinterpreted
-    // for preview navigation; nothing falls through to the workspace
-    // tree until they Esc / ← / BackTab out.
-    if state.preview_focused {
-        return Ok(handle_preview_focused_key(state, key));
-    }
-    // Tab / → on a running-instance row drops focus INTO the preview
-    // pane. Tab takes precedence over the existing right-arrow
-    // tree-expand because instance rows have no expand semantics; →
-    // on a non-instance row continues to the existing handler below.
     let selected_row = state.selected_row();
-    if is_preview_pane_entry_target(key.code, selected_row)
-        && let Some(container) =
-            selected_instance_container(state, ConsoleInstanceAction::Reconnect)
-        && should_enter_preview_pane(
-            key.code,
-            selected_row,
-            state.flattened_preview_panes(&container).len(),
-        )
-    {
-        dispatch_manager(state, ManagerMessage::EnterPreview);
-        return Ok(InputOutcome::Continue);
-    }
-    match workspace_list_key_plan(key.code, state.list_scroll_focus().is_some()) {
+    let selected_preview_pane_count =
+        selected_instance_container(state, ConsoleInstanceAction::Reconnect)
+            .map(|container| state.flattened_preview_panes(&container).len());
+    let plan = workspace_list_top_level_key_plan(
+        key.code,
+        state.preview_focused,
+        selected_row,
+        selected_preview_pane_count,
+        state.list_scroll_focus().is_some(),
+    );
+    let plan = match plan {
+        WorkspaceListTopLevelKeyPlan::PreviewFocused => {
+            return Ok(handle_preview_focused_key(state, key));
+        }
+        WorkspaceListTopLevelKeyPlan::EnterPreview => {
+            dispatch_manager(state, ManagerMessage::EnterPreview);
+            return Ok(InputOutcome::Continue);
+        }
+        WorkspaceListTopLevelKeyPlan::ListKey(plan) => plan,
+    };
+    match plan {
         WorkspaceListKeyPlan::Exit => Ok(InputOutcome::ExitJackin),
         // Left/Right arrows: tree expand/collapse when the selected row owns
         // that direction, otherwise horizontal scroll if the focused list

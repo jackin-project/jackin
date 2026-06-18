@@ -1125,6 +1125,54 @@ fn should_enter_preview_pane_requires_instance_row_key_and_panes() {
 }
 
 #[test]
+fn workspace_list_top_level_key_plan_prioritizes_preview_then_list_keys() {
+    assert_eq!(
+        workspace_list_top_level_key_plan(
+            KeyCode::Char('q'),
+            true,
+            ManagerListRow::SavedWorkspace(0),
+            None,
+            false,
+        ),
+        WorkspaceListTopLevelKeyPlan::PreviewFocused
+    );
+    assert_eq!(
+        workspace_list_top_level_key_plan(
+            KeyCode::Right,
+            false,
+            ManagerListRow::WorkspaceInstance(0, 0),
+            Some(2),
+            false,
+        ),
+        WorkspaceListTopLevelKeyPlan::EnterPreview
+    );
+    assert_eq!(
+        workspace_list_top_level_key_plan(
+            KeyCode::Right,
+            false,
+            ManagerListRow::WorkspaceInstance(0, 0),
+            Some(0),
+            false,
+        ),
+        WorkspaceListTopLevelKeyPlan::ListKey(WorkspaceListKeyPlan::HorizontalTreeOrScroll {
+            delta: 8,
+        })
+    );
+    assert_eq!(
+        workspace_list_top_level_key_plan(
+            KeyCode::Down,
+            false,
+            ManagerListRow::SavedWorkspace(0),
+            None,
+            true,
+        ),
+        WorkspaceListTopLevelKeyPlan::ListKey(WorkspaceListKeyPlan::ScrollFocusedVertical {
+            delta: 3,
+        })
+    );
+}
+
+#[test]
 fn destructive_confirm_plan_routes_commit_cancel_and_continue() {
     assert_eq!(
         destructive_confirm_plan(ModalOutcome::Commit(true)),

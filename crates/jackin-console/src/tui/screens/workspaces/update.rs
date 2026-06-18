@@ -172,6 +172,13 @@ pub enum WorkspaceListKeyPlan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceListTopLevelKeyPlan {
+    PreviewFocused,
+    EnterPreview,
+    ListKey(WorkspaceListKeyPlan),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceInstanceScopePlan {
     CurrentDirectory,
     SavedWorkspace(usize),
@@ -1057,6 +1064,25 @@ pub const fn should_enter_preview_pane(
     pane_count: usize,
 ) -> bool {
     is_preview_pane_entry_target(key, row) && pane_count > 0
+}
+
+#[must_use]
+pub const fn workspace_list_top_level_key_plan(
+    key: KeyCode,
+    preview_focused: bool,
+    selected_row: ManagerListRow,
+    selected_preview_pane_count: Option<usize>,
+    list_scroll_focus_active: bool,
+) -> WorkspaceListTopLevelKeyPlan {
+    if preview_focused {
+        return WorkspaceListTopLevelKeyPlan::PreviewFocused;
+    }
+    if let Some(pane_count) = selected_preview_pane_count
+        && should_enter_preview_pane(key, selected_row, pane_count)
+    {
+        return WorkspaceListTopLevelKeyPlan::EnterPreview;
+    }
+    WorkspaceListTopLevelKeyPlan::ListKey(workspace_list_key_plan(key, list_scroll_focus_active))
 }
 
 #[must_use]
