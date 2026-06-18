@@ -248,6 +248,20 @@ pub fn settings_env_header_key_plan(
 }
 
 #[must_use]
+pub fn settings_env_selected_key_matches<V>(
+    config: &SettingsEnvConfig<V>,
+    rows: &[SettingsEnvRow],
+    selected: usize,
+    predicate: impl FnOnce(&V) -> bool,
+) -> bool {
+    matches!(
+        rows.get(selected),
+        Some(SettingsEnvRow::Key { scope, key })
+            if settings_env_value(config, scope, key).is_some_and(predicate)
+    )
+}
+
+#[must_use]
 pub const fn settings_trust_key_plan(key: KeyCode, is_dirty: bool) -> SettingsTrustKeyPlan {
     match key {
         KeyCode::Up | KeyCode::Char('k' | 'K') => SettingsTrustKeyPlan::MoveSelection { delta: -1 },

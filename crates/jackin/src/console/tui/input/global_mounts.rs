@@ -248,15 +248,13 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     };
     let footer_h = settings.cached_footer_h;
-    let selected_is_op_ref = {
-        let rows = settings.env_flat_rows();
-        matches!(
-            rows.get(settings.env.selected),
-            Some(SettingsEnvRow::Key { scope, key })
-                if settings_update::settings_env_value(&settings.env.pending, scope, key)
-                    .is_some_and(|v| matches!(v, jackin_core::EnvValue::OpRef(_)))
-        )
-    };
+    let rows = settings.env_flat_rows();
+    let selected_is_op_ref = settings_update::settings_env_selected_key_matches(
+        &settings.env.pending,
+        &rows,
+        settings.env.selected,
+        |value| matches!(value, jackin_core::EnvValue::OpRef(_)),
+    );
     let plan = settings_update::settings_env_key_plan(
         key.code,
         (key.modifiers - KeyModifiers::SHIFT).is_empty(),

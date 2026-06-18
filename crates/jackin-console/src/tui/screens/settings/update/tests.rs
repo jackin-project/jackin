@@ -919,6 +919,43 @@ fn settings_env_value_and_forbidden_keys_follow_scope() {
 }
 
 #[test]
+fn settings_env_selected_key_matches_checks_selected_key_value() {
+    let pending = env_config();
+    let rows = settings_env_flat_rows(&pending, &BTreeSet::from(["alpha".to_owned()]));
+    let role_b = rows
+        .iter()
+        .position(|row| {
+            matches!(
+                row,
+                SettingsEnvRow::Key {
+                    scope: SettingsEnvScope::Role(role),
+                    key,
+                } if role == "alpha" && key == "ROLE_B"
+            )
+        })
+        .unwrap();
+
+    assert!(settings_env_selected_key_matches(
+        &pending,
+        &rows,
+        role_b,
+        |value| *value == "x"
+    ));
+    assert!(!settings_env_selected_key_matches(
+        &pending,
+        &rows,
+        role_b,
+        |value| *value == "missing"
+    ));
+    assert!(!settings_env_selected_key_matches(
+        &pending,
+        &rows,
+        usize::MAX,
+        |_| true
+    ));
+}
+
+#[test]
 fn set_settings_env_value_expands_role_scope() {
     let mut pending = SettingsEnvConfig {
         env: BTreeMap::new(),
