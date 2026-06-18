@@ -33,8 +33,8 @@ use jackin_console::tui::components::error_popup::no_github_url_error_popup_stat
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::screens::editor::model::{
-    AuthEnterPlan, EditorHorizontalScrollKeyPlan, EditorMountGithubOpenPlan,
-    EditorRoleHeaderExpansionKeyPlan, RoleHeaderExpansionPlan,
+    AuthEnterPlan, EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan,
+    EditorMountGithubOpenPlan, EditorRoleHeaderExpansionKeyPlan, RoleHeaderExpansionPlan,
 };
 use jackin_console::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -186,31 +186,13 @@ pub(super) fn handle_editor_key(
                 return Ok(InputOutcome::Continue);
             }
             KeyCode::Up | KeyCode::Char('k' | 'K') => {
-                let (max_row, skipped_rows) = editor.selection_bounds(config);
-                dispatch_manager(
-                    state,
-                    ManagerMessage::MoveEditorFieldSelection {
-                        delta: -1,
-                        max_row,
-                        skipped_rows,
-                        term: term_size,
-                        footer_h: editor.cached_footer_h,
-                    },
-                );
+                let plan = editor.field_selection_key_plan(config, -1, term_size);
+                dispatch_editor_field_selection(state, plan);
                 return Ok(InputOutcome::Continue);
             }
             KeyCode::Down | KeyCode::Char('j' | 'J') => {
-                let (max_row, skipped_rows) = editor.selection_bounds(config);
-                dispatch_manager(
-                    state,
-                    ManagerMessage::MoveEditorFieldSelection {
-                        delta: 1,
-                        max_row,
-                        skipped_rows,
-                        term: term_size,
-                        footer_h: editor.cached_footer_h,
-                    },
-                );
+                let plan = editor.field_selection_key_plan(config, 1, term_size);
+                dispatch_editor_field_selection(state, plan);
                 return Ok(InputOutcome::Continue);
             }
             KeyCode::Right | KeyCode::Left => {
@@ -401,6 +383,22 @@ fn dispatch_editor_horizontal_scroll(
             },
         ),
     }
+}
+
+fn dispatch_editor_field_selection(
+    state: &mut ManagerState<'_>,
+    plan: EditorFieldSelectionKeyPlan,
+) {
+    dispatch_manager(
+        state,
+        ManagerMessage::MoveEditorFieldSelection {
+            delta: plan.delta,
+            max_row: plan.max_row,
+            skipped_rows: plan.skipped_rows,
+            term: plan.term,
+            footer_h: plan.footer_h,
+        },
+    );
 }
 
 fn dispatch_editor_role_header_expansion(

@@ -86,6 +86,15 @@ pub enum EditorHorizontalScrollKeyPlan {
     TabContent { delta: i16, content_width: usize },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditorFieldSelectionKeyPlan {
+    pub delta: isize,
+    pub max_row: usize,
+    pub skipped_rows: Vec<usize>,
+    pub term: ratatui::layout::Rect,
+    pub footer_h: u16,
+}
+
 #[derive(Debug, Clone)]
 pub enum EditorMode {
     Edit { name: String },
@@ -1002,6 +1011,23 @@ impl<
     }
 
     #[must_use]
+    pub fn field_selection_key_plan(
+        &self,
+        config: &jackin_config::AppConfig,
+        delta: isize,
+        term: ratatui::layout::Rect,
+    ) -> EditorFieldSelectionKeyPlan {
+        let (max_row, skipped_rows) = self.selection_bounds(config);
+        EditorFieldSelectionKeyPlan {
+            delta,
+            max_row,
+            skipped_rows,
+            term,
+            footer_h: self.cached_footer_h,
+        }
+    }
+
+    #[must_use]
     pub fn resolve_auth_form_target(
         &self,
         config: &jackin_config::AppConfig,
@@ -1236,9 +1262,9 @@ mod tests {
     };
 
     use super::{
-        AuthEnterPlan, AuthRow, EditorHorizontalScrollKeyPlan, EditorMountGithubOpenPlan,
-        EditorRoleHeaderExpansionKeyPlan, EditorState, EditorTab, FieldFocus,
-        RoleHeaderExpansionPlan, SecretsRow,
+        AuthEnterPlan, AuthRow, EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan,
+        EditorMountGithubOpenPlan, EditorRoleHeaderExpansionKeyPlan, EditorState, EditorTab,
+        FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
     };
 
     type TestEditor =
@@ -1649,6 +1675,47 @@ mod tests {
 
         editor.active_tab = EditorTab::Roles;
         assert_eq!(editor.selection_bounds(&config), (3, Vec::new()));
+    }
+
+    #[test]
+    fn editor_field_selection_key_plan_includes_bounds_and_footer() {
+        let workspace = WorkspaceConfig {
+            mounts: vec![
+                MountConfig {
+                    src: "/src-a".into(),
+                    dst: "/dst-a".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Shared,
+                },
+                MountConfig {
+                    src: "/src-b".into(),
+                    dst: "/dst-b".into(),
+                    readonly: false,
+                    isolation: MountIsolation::Shared,
+                },
+            ],
+            ..Default::default()
+        };
+        let mut editor = TestEditor::new_edit("alpha".into(), workspace);
+        editor.active_tab = EditorTab::Mounts;
+        editor.cached_footer_h = 3;
+        let term = ratatui::layout::Rect {
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 24,
+        };
+
+        assert_eq!(
+            editor.field_selection_key_plan(&jackin_config::AppConfig::default(), 1, term),
+            EditorFieldSelectionKeyPlan {
+                delta: 1,
+                max_row: 2,
+                skipped_rows: Vec::new(),
+                term,
+                footer_h: 3,
+            }
+        );
     }
 
     #[test]
