@@ -143,6 +143,16 @@ The reusable host widget is `<RepoFile path="crates/jackin-tui/src/components/co
 
 Why this rule exists: confirms are the operator's "are you sure?" gate. They appear at the worst moments — about to lose work, about to nuke a workspace, about to ship a destructive change. Surface-specific variants ("Yes, continue" / "No, go back" stacked vertically on one screen; "  Yes  " / "  No  " inline on the next) make the operator's eyes hunt for the right button under stress. The cost of one shared layout is small; the cost of mis-clicking a destructive confirm because the buttons moved is huge.
 
+### Exit confirmation: one wording, `Ctrl+Q` opens it, `Ctrl+C` bypasses it
+
+**Quitting jackin' shows the same "Exit jackin'?" confirmation on every surface, built from one place.** The canonical builders live in <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs">crates/jackin-tui/src/components/confirm_dialog.rs</RepoFile>: `exit_confirm_state()` (the plain prompt) and `exit_confirm_state_with_data_loss()` (the prompt plus warning notes). No surface hand-writes the wording. The host console's `quit_confirm_state()` delegates to `exit_confirm_state()`; the launch cockpit opens it as an overlay; the in-container multiplexer's `render_confirm_action` builds the data-loss variant for its Exit confirm.
+
+**`Ctrl+Q` is the universal quit chord.** It opens the exit confirmation on the console, the launch cockpit, and the capsule — regardless of screen or focus, since it is a control chord rather than a text character. The console also accepts a bare `q` off the main screen as a convenience, but `Ctrl+Q` always works. Default focus = `No`, so a reflexive Enter dismisses rather than quits.
+
+**`Ctrl+C` is not a quit confirmation — it is an immediate hard cancel** during launch: it aborts the in-progress launch at once, with no dialog, and wins even when the exit confirmation is already open. `Ctrl+Q` asks first and is reversible (No resumes); `Ctrl+C` does not ask.
+
+**The capsule's exit confirmation carries extra warning notes** because quitting there force-stops the container and reaps every agent immediately — work not persisted outside the container is lost. It therefore uses `exit_confirm_state_with_data_loss()` (prompt + notes) instead of the plain prompt; the box is sized from the shared `confirm_required_height` so the notes are never clipped. Confirming routes to the same `ExitAllSessions` teardown the command palette's Exit item already used.
+
 ### Sub-dialogs push onto a stack — Esc walks back one step
 
 **Applies to every TUI surface jackin renders — host console (`src/console/`) and the in-container multiplexer (`crates/jackin-capsule/`).** Any modal that opens *another modal* as part of its flow MUST preserve the parent so a `Esc` press returns to it, not to the underlying screen. The operator's mental model is a breadcrumb chain; repeated `Esc` presses walk that chain one step at a time until the operator reaches the original surface (workspace list, secrets tab, focused pane).

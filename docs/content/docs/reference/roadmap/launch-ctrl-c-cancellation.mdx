@@ -4,6 +4,18 @@ title: "Launch Screen Exit Keybindings (Ctrl+C / Ctrl+Q)"
 
 **Status**: Implemented
 
+## Current behaviour (latest revision)
+
+A later operator-feedback pass reinstated and unified the exit confirmation. The shipped behaviour now is:
+
+- **`Ctrl+C` — immediate hard cancel.** Aborts the in-progress launch at once, no dialog, and wins even if the exit confirmation is open. Unchanged.
+- **`Ctrl+Q` — exit confirmation.** Opens the shared "Exit jackin'?" dialog (reversible: No resumes the launch, Yes cancels). This reverses the interim "Ctrl+Q quits immediately" design below — the confirmation is back, but now built from the shared component rather than a launch-local overlay.
+- **Operator cancel is a clean exit, not an error.** Cancellation is carried as a typed `LaunchCancelled` sentinel; the binary entry point recognises it, exits `0`, and renders nothing (no `error: launch cancelled by operator`, no exit code `1`).
+- **One exit dialog everywhere.** The console, the launch cockpit, and the capsule all build the prompt from `exit_confirm_state()` / `exit_confirm_state_with_data_loss()` in <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />. `Ctrl+Q` opens it on every surface. See [TUI dialogs reference](/reference/tui/dialogs).
+- **Capsule `Ctrl+Q` shipped** (previously deferred as a follow-on): it opens the data-loss variant, warning that exiting force-stops the container before routing to `ExitAllSessions`.
+
+The cancellation-plumbing sections below remain accurate; the keybinding-model and signal-flow notes describe the superseded "Ctrl+Q quits immediately" interim and are kept for history.
+
 ## Problem
 
 Pressing `Ctrl+C` during the launch screen has no effect. While the rich TUI cockpit is active — covering image pulls, Docker builds, DinD network setup, workspace materialization, and every other pre-attach pipeline step — `Ctrl+C` is silently swallowed. The operator cannot abort a long-running launch without resorting to `kill` from another terminal window or closing the terminal tab entirely. Neither is acceptable UX for a CLI tool.
@@ -228,8 +240,18 @@ Before starting implementation, confirm `tokio_util` appears in <RepoFile path="
 - [x] Add `Ctrl+C abort · Ctrl+Q quit` to hint bars in build-log and container-info overlays
 - [x] Update [TUI chrome docs page](/reference/tui/chrome): removed incorrect status-bar hint slot description; documented correct hint-bar placement
 
+**Phase 6 — Exit confirmation reinstated + unified across surfaces (shipped):**
+- [x] Add shared `exit_confirm_state()` / `exit_confirm_state_with_data_loss()` builders to <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />; console `quit_confirm_state()` delegates to the shared builder
+- [x] Launch cockpit: `Ctrl+Q` opens the shared exit confirmation overlay (reversible); `Ctrl+C` stays immediate and wins over the open dialog
+- [x] Typed `LaunchCancelled` sentinel so operator cancel exits `0` with no `error:` line (was exit `1` + rendered error)
+- [x] Console: `Ctrl+Q` opens the exit confirm everywhere (explicit chord), alongside the existing bare-`q` convenience
+- [x] Capsule: `Ctrl+Q` (byte `0x11`) opens the exit confirm using the data-loss variant (force-stop / container-data warning); routes to `ExitAllSessions`
+- [x] Document the unified exit confirmation + `Ctrl+Q` / `Ctrl+C` contract in [TUI dialogs reference](/reference/tui/dialogs)
+
 **Validation:**
 - [x] Unit tests for `while_waiting()` in `crates/jackin-launch/src/progress/tests.rs` (separate file per crate layout rules)
+- [x] Unit tests for the `StepCounter` cancel seam + typed sentinel in `crates/jackin-runtime/src/runtime/launch/progress_helpers/tests.rs`
+- [x] Unit tests for the launch quit-confirm key routing in `crates/jackin-launch/src/tui/subscriptions/tests.rs` and capsule `Ctrl+Q` parsing in `crates/jackin-capsule/src/tui/input/tests.rs`
 - [ ] Manual smoke test: `Ctrl+C` mid-pull → TUI disappears immediately, cleanup to stderr, clean terminal restore
 - [ ] Manual smoke test: `Ctrl+Q` → same immediate exit behavior as Ctrl+C
 - [ ] Manual smoke test: `Ctrl+C` / `Ctrl+Q` during interactive dialog — both bail correctly
