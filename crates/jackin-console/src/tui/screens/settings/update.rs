@@ -429,7 +429,8 @@ pub struct SettingsEnvRolePickerCommitPlan {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingsGlobalMountsKeyPlan {
-    Save,
+    ConfirmSensitiveSave,
+    OpenSavePreview,
     ScrollHorizontal { delta: i16 },
     MoveSelection { delta: isize },
     ToggleReadonly,
@@ -478,11 +479,15 @@ pub fn settings_confirm_commit_plan(
 pub const fn settings_global_mounts_key_plan(
     key: KeyCode,
     is_dirty: bool,
+    has_sensitive_mount: bool,
     selected: usize,
     mount_count: usize,
 ) -> SettingsGlobalMountsKeyPlan {
     match key {
-        KeyCode::Char('s' | 'S') => SettingsGlobalMountsKeyPlan::Save,
+        KeyCode::Char('s' | 'S') if has_sensitive_mount => {
+            SettingsGlobalMountsKeyPlan::ConfirmSensitiveSave
+        }
+        KeyCode::Char('s' | 'S') => SettingsGlobalMountsKeyPlan::OpenSavePreview,
         KeyCode::Char('h' | 'H') => SettingsGlobalMountsKeyPlan::ScrollHorizontal { delta: -8 },
         KeyCode::Char('l' | 'L') => SettingsGlobalMountsKeyPlan::ScrollHorizontal { delta: 8 },
         KeyCode::Up | KeyCode::Char('k' | 'K') => {

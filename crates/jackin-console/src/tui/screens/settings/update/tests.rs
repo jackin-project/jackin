@@ -433,79 +433,83 @@ fn global_mount_add_text_apply_plan_updates_draft_and_routes_next_step() {
 #[test]
 fn settings_global_mounts_key_plan_routes_keys_from_facts() {
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Char('s'), false, 0, 0),
-        SettingsGlobalMountsKeyPlan::Save
+        settings_global_mounts_key_plan(KeyCode::Char('s'), false, false, 0, 0),
+        SettingsGlobalMountsKeyPlan::OpenSavePreview
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Char('h'), false, 0, 0),
+        settings_global_mounts_key_plan(KeyCode::Char('s'), false, true, 0, 0),
+        SettingsGlobalMountsKeyPlan::ConfirmSensitiveSave
+    );
+    assert_eq!(
+        settings_global_mounts_key_plan(KeyCode::Char('h'), false, false, 0, 0),
         SettingsGlobalMountsKeyPlan::ScrollHorizontal { delta: -8 }
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Char('l'), false, 0, 0),
+        settings_global_mounts_key_plan(KeyCode::Char('l'), false, false, 0, 0),
         SettingsGlobalMountsKeyPlan::ScrollHorizontal { delta: 8 }
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Up, false, 0, 0),
+        settings_global_mounts_key_plan(KeyCode::Up, false, false, 0, 0),
         SettingsGlobalMountsKeyPlan::MoveSelection { delta: -1 }
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Down, false, 0, 0),
+        settings_global_mounts_key_plan(KeyCode::Down, false, false, 0, 0),
         SettingsGlobalMountsKeyPlan::MoveSelection { delta: 1 }
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Char('r'), false, 0, 0),
+        settings_global_mounts_key_plan(KeyCode::Char('r'), false, false, 0, 0),
         SettingsGlobalMountsKeyPlan::ToggleReadonly
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Esc, true, 0, 0),
+        settings_global_mounts_key_plan(KeyCode::Esc, true, false, 0, 0),
         SettingsGlobalMountsKeyPlan::ConfirmDiscard
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Esc, false, 0, 0),
+        settings_global_mounts_key_plan(KeyCode::Esc, false, false, 0, 0),
         SettingsGlobalMountsKeyPlan::ReturnToList
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Enter, false, 2, 2),
+        settings_global_mounts_key_plan(KeyCode::Enter, false, false, 2, 2),
         SettingsGlobalMountsKeyPlan::OpenAdd
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Enter, false, 1, 2),
+        settings_global_mounts_key_plan(KeyCode::Enter, false, false, 1, 2),
         SettingsGlobalMountsKeyPlan::Noop
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Char('a'), false, 0, 0),
+        settings_global_mounts_key_plan(KeyCode::Char('a'), false, false, 0, 0),
         SettingsGlobalMountsKeyPlan::OpenAdd
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Char('d'), false, 0, 1),
+        settings_global_mounts_key_plan(KeyCode::Char('d'), false, false, 0, 1),
         SettingsGlobalMountsKeyPlan::ConfirmRemove
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Char('d'), false, 0, 0),
+        settings_global_mounts_key_plan(KeyCode::Char('d'), false, false, 0, 0),
         SettingsGlobalMountsKeyPlan::Noop
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Char('o'), false, 0, 0),
+        settings_global_mounts_key_plan(KeyCode::Char('o'), false, false, 0, 0),
         SettingsGlobalMountsKeyPlan::OpenGithub
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Char('n'), false, 0, 0),
+        settings_global_mounts_key_plan(KeyCode::Char('n'), false, false, 0, 0),
         SettingsGlobalMountsKeyPlan::OpenEdit(GlobalMountTextTarget::Rename)
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Char('1'), false, 0, 0),
+        settings_global_mounts_key_plan(KeyCode::Char('1'), false, false, 0, 0),
         SettingsGlobalMountsKeyPlan::OpenEdit(GlobalMountTextTarget::Source)
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Char('2'), false, 0, 0),
+        settings_global_mounts_key_plan(KeyCode::Char('2'), false, false, 0, 0),
         SettingsGlobalMountsKeyPlan::OpenEdit(GlobalMountTextTarget::Destination)
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Char('3'), false, 0, 0),
+        settings_global_mounts_key_plan(KeyCode::Char('3'), false, false, 0, 0),
         SettingsGlobalMountsKeyPlan::OpenEdit(GlobalMountTextTarget::Scope)
     );
     assert_eq!(
-        settings_global_mounts_key_plan(KeyCode::Char('x'), false, 0, 0),
+        settings_global_mounts_key_plan(KeyCode::Char('x'), false, false, 0, 0),
         SettingsGlobalMountsKeyPlan::Noop
     );
 }

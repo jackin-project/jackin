@@ -145,6 +145,9 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let plan = settings_update::settings_global_mounts_key_plan(
         key.code,
         settings.is_dirty(),
+        jackin_console::services::workspace::global_rows_have_sensitive_mount(
+            &settings.mounts.pending,
+        ),
         settings.mounts.selected,
         settings.mounts.pending.len(),
     );
@@ -155,17 +158,17 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     );
     let footer_h = settings.cached_footer_h;
     match plan {
-        SettingsGlobalMountsKeyPlan::Save => {
+        SettingsGlobalMountsKeyPlan::ConfirmSensitiveSave => {
             let ManagerStage::Settings(settings) = &mut state.stage else {
                 return;
             };
-            if jackin_console::services::workspace::global_rows_have_sensitive_mount(
-                &settings.mounts.pending,
-            ) {
-                settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Sensitive));
-            } else {
-                open_settings_save_preview(settings);
-            }
+            settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Sensitive));
+        }
+        SettingsGlobalMountsKeyPlan::OpenSavePreview => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return;
+            };
+            open_settings_save_preview(settings);
         }
         SettingsGlobalMountsKeyPlan::ScrollHorizontal { delta } => {
             dispatch_manager(
