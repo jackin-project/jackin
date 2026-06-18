@@ -123,7 +123,7 @@ fn render_text_input() -> (Buffer, Rect) {
 }
 
 fn render_workdir_pick() -> (Buffer, Rect) {
-    use crate::workspace::MountConfig;
+    use jackin_config::MountConfig;
     use jackin_console::tui::components::workdir_pick::{WorkdirPickState, render};
     let area = Rect::new(0, 0, 60, 12);
     let mounts = [MountConfig {
@@ -162,9 +162,9 @@ fn render_op_picker() -> (Buffer, Rect) {
 }
 
 fn render_role_picker() -> (Buffer, Rect) {
-    use crate::selector::RolePickerState;
-    use crate::selector::RoleSelector;
+    use crate::console::tui::state::RolePickerState;
     use jackin_console::tui::components::role_picker::render;
+    use jackin_core::RoleSelector;
     let area = Rect::new(0, 0, 60, 10);
     let state = RolePickerState::new(vec![
         RoleSelector::parse("chainargos/agent-smith").unwrap(),
@@ -178,7 +178,7 @@ fn render_confirm_save() -> (Buffer, Rect) {
     use jackin_console::tui::components::confirm_save::{ConfirmSaveState, render};
     use ratatui::text::Line;
     let area = Rect::new(0, 0, 70, 10);
-    let state = ConfirmSaveState::<crate::workspace::MountConfig>::new(vec![
+    let state = ConfirmSaveState::<jackin_config::MountConfig>::new(vec![
         Line::from("Create workspace: demo"),
         Line::from(""),
         Line::from("Working directory: /home/user/demo"),
@@ -188,7 +188,7 @@ fn render_confirm_save() -> (Buffer, Rect) {
 }
 
 fn render_agent_choice() -> (Buffer, Rect) {
-    use crate::agent::AgentChoiceState;
+    use crate::console::tui::state::AgentChoiceState;
     use jackin_console::tui::components::agent_choice::render;
     let area = Rect::new(0, 0, 50, 7);
     let state = AgentChoiceState::new();

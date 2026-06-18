@@ -477,7 +477,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &cwd,
             Modal::WorkdirPick {
                 state: jackin_console::tui::components::workdir_pick::WorkdirPickState::from_mounts(
-                    &[crate::workspace::MountConfig {
+                    &[jackin_config::MountConfig {
                         src: "/workspace".into(),
                         dst: "/workspace".into(),
                         readonly: false,
@@ -511,8 +511,8 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &config,
             &cwd,
             Modal::RolePicker {
-                state: crate::selector::RolePickerState::new(vec![
-                    crate::selector::RoleSelector::parse("chainargos/agent-smith")
+                state: crate::console::tui::state::RolePickerState::new(vec![
+                    jackin_core::RoleSelector::parse("chainargos/agent-smith")
                         .expect("valid role selector"),
                 ]),
             },
@@ -583,8 +583,8 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.set_tab_bar_focused(false);
     editor.modal = Some(Modal::RoleOverridePicker {
-        state: crate::selector::RolePickerState::new(vec![
-            crate::selector::RoleSelector::parse("chainargos/agent-smith")
+        state: crate::console::tui::state::RolePickerState::new(vec![
+            jackin_core::RoleSelector::parse("chainargos/agent-smith")
                 .expect("valid role selector"),
         ]),
     });
@@ -595,8 +595,8 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.set_tab_bar_focused(false);
     editor.modal = Some(Modal::AuthRolePicker {
-        state: crate::selector::RolePickerState::new(vec![
-            crate::selector::RoleSelector::parse("chainargos/agent-smith")
+        state: crate::console::tui::state::RolePickerState::new(vec![
+            jackin_core::RoleSelector::parse("chainargos/agent-smith")
                 .expect("valid role selector"),
         ]),
     });
@@ -696,8 +696,8 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &config,
             &cwd,
             GlobalMountModal::RolePicker {
-                state: crate::selector::RolePickerState::new(vec![
-                    crate::selector::RoleSelector::parse("chainargos/agent-smith")
+                state: crate::console::tui::state::RolePickerState::new(vec![
+                    jackin_core::RoleSelector::parse("chainargos/agent-smith")
                         .expect("valid role selector"),
                 ]),
             },
@@ -764,8 +764,8 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &config,
             &cwd,
             SettingsEnvModal::RolePicker {
-                state: crate::selector::RolePickerState::new(vec![
-                    crate::selector::RoleSelector::parse("chainargos/agent-smith")
+                state: crate::console::tui::state::RolePickerState::new(vec![
+                    jackin_core::RoleSelector::parse("chainargos/agent-smith")
                         .expect("valid role selector"),
                 ]),
             },

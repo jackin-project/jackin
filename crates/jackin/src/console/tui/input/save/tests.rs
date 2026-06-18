@@ -6,9 +6,9 @@ use crate::console::tui::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, SettingsState,
 };
 use crate::paths::JackinPaths;
-use crate::workspace::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
 use crossterm::event::KeyCode;
 use jackin_config::AppConfig;
+use jackin_config::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
 use tempfile::TempDir;
 
 fn ro_mount(src: &str, dst: &str) -> MountConfig {
@@ -63,7 +63,7 @@ fn save_workspace_persists_amp_workspace_and_role_modes() {
     paths.ensure_base_dirs().unwrap();
 
     let original = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/project".into(),
         mounts: vec![mount(tmp.path().to_str().unwrap(), "/workspace/project")],
         ..WorkspaceConfig::default()
@@ -75,14 +75,14 @@ fn save_workspace_persists_amp_workspace_and_role_modes() {
     std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
 
     let mut pending = original.clone();
-    pending.amp = Some(crate::config::AgentAuthConfig {
+    pending.amp = Some(jackin_config::AgentAuthConfig {
         auth_forward: jackin_config::AuthForwardMode::ApiKey,
         ..Default::default()
     });
     pending.roles.insert(
         "smith".into(),
-        crate::workspace::WorkspaceRoleOverride {
-            amp: Some(crate::config::AgentAuthConfig {
+        jackin_config::WorkspaceRoleOverride {
+            amp: Some(jackin_config::AgentAuthConfig {
                 auth_forward: jackin_config::AuthForwardMode::Ignore,
                 ..Default::default()
             }),
@@ -114,7 +114,7 @@ fn save_workspace_persists_amp_workspace_and_role_modes() {
 #[test]
 fn save_editor_opens_confirm_save_on_edit_driven_collapse() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/work/sub".into(),
         mounts: vec![mount("/work/sub", "/work/sub")],
         ..Default::default()
@@ -157,7 +157,7 @@ fn confirming_collapse_writes_collapsed_set() {
     // PendingCommit, drive commit_editor_save, and write the
     // collapsed mount set.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/work/sub".into(),
         mounts: vec![mount("/work/sub", "/work/sub")],
         ..Default::default()
@@ -194,7 +194,7 @@ fn confirming_collapse_writes_collapsed_set() {
 #[test]
 fn cancelling_confirm_save_keeps_pending_intact() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/work/sub".into(),
         mounts: vec![mount("/work/sub", "/work/sub")],
         ..Default::default()
@@ -246,7 +246,7 @@ fn readonly_mismatch_produces_error_popup_no_write() {
     // plan_edit must reject with ReadonlyMismatch. Per spec, hard
     // planner errors surface through ErrorPopup, not ConfirmSave.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/work/sub".into(),
         mounts: vec![ro_mount("/work/sub", "/work/sub")],
         ..Default::default()
@@ -289,7 +289,7 @@ fn editor_save_create_with_no_name_routes_to_error_flow() {
     // "missing workspace name" - gating prevents the operator from
     // committing a nameless workspace.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/seed".into(),
         mounts: vec![mount("/seed", "/seed")],
         ..Default::default()
@@ -329,7 +329,7 @@ fn editor_save_create_with_invalid_mount_routes_to_error_flow() {
     // edit-mode behavior covered by
     // `readonly_mismatch_produces_error_popup_no_write`.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/seed".into(),
         mounts: vec![mount("/seed", "/seed")],
         ..Default::default()
@@ -369,7 +369,7 @@ fn editor_save_create_with_invalid_mount_routes_to_error_flow() {
 #[test]
 fn pre_existing_collapse_produces_prune_error_popup() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/work".into(),
         mounts: vec![
             mount("/work", "/work"),
@@ -415,7 +415,7 @@ fn pre_existing_collapse_produces_prune_error_popup() {
 #[test]
 fn s_with_zero_changes_is_noop() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         ..Default::default()
@@ -442,7 +442,7 @@ fn s_with_zero_changes_is_noop() {
 #[test]
 fn s_with_changes_opens_confirm_save_modal() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         ..Default::default()
@@ -474,7 +474,7 @@ fn confirm_save_save_exits_editor_on_success_from_save_discard_path() {
     // `ExitIntent::Save` dispatcher). After Enter on the resulting
     // ConfirmSave modal, we should land back on ManagerStage::List.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         ..Default::default()
@@ -506,7 +506,7 @@ fn exit_on_success_selects_just_saved_workspace_on_return_to_list() {
     // on "z-second" (screen index 2 = 1 + 1), not on "a-first" or the
     // CWD row.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         ..Default::default()
@@ -515,7 +515,7 @@ fn exit_on_success_selects_just_saved_workspace_on_return_to_list() {
     config.workspaces.insert(
         "a-first".to_owned(),
         WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: "/a".into(),
             mounts: vec![mount("/a", "/a")],
             ..Default::default()
@@ -551,7 +551,7 @@ fn exit_on_success_selects_just_saved_workspace_on_return_to_list() {
 #[test]
 fn exit_on_success_save_returns_to_list() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         ..Default::default()
@@ -593,7 +593,7 @@ fn failed_post_rename_edit_leaves_editor_mode_on_original_name() {
     // against the live mount list and bails out with
     // "unknown workspace mount destination".
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         ..Default::default()
@@ -697,7 +697,7 @@ fn confirm_save_s_exits_to_list_on_success() {
     // `s` + Enter on ConfirmSave returns the operator to the list,
     // consistent with the Esc→Save path.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         ..Default::default()
@@ -729,13 +729,13 @@ fn confirm_save_save_opens_error_popup_on_duplicate_name() {
     // write hits ConfigEditor::rename_workspace's duplicate-name
     // guard and we expect an ErrorPopup.
     let ws_a = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/a".into(),
         mounts: vec![mount("/a", "/a")],
         ..Default::default()
     };
     let ws_b = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/b".into(),
         mounts: vec![mount("/b", "/b")],
         ..Default::default()
@@ -743,7 +743,7 @@ fn confirm_save_save_opens_error_popup_on_duplicate_name() {
     let (tmp, paths, _) = setup_with_workspace("alpha", ws_a.clone()).unwrap();
     // Add the second workspace on disk.
     let mut config = {
-        let mut ce = crate::config::ConfigEditor::open(&paths).unwrap();
+        let mut ce = jackin_config::ConfigEditor::open(&paths).unwrap();
         ce.create_workspace("beta", ws_b).unwrap();
         ce.save().unwrap()
     };
@@ -773,20 +773,20 @@ fn confirm_save_save_opens_error_popup_on_duplicate_name() {
 #[test]
 fn error_popup_dismiss_returns_to_editor_with_changes_intact() {
     let ws_a = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/a".into(),
         mounts: vec![mount("/a", "/a")],
         ..Default::default()
     };
     let ws_b = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/b".into(),
         mounts: vec![mount("/b", "/b")],
         ..Default::default()
     };
     let (tmp, paths, _) = setup_with_workspace("alpha", ws_a.clone()).unwrap();
     let mut config = {
-        let mut ce = crate::config::ConfigEditor::open(&paths).unwrap();
+        let mut ce = jackin_config::ConfigEditor::open(&paths).unwrap();
         ce.create_workspace("beta", ws_b).unwrap();
         ce.save().unwrap()
     };
@@ -922,7 +922,7 @@ fn create_mode_confirm_save_reflects_renamed_workspace_name() {
 #[test]
 fn edit_mode_confirm_save_shows_diff() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/old".into(),
         mounts: vec![mount("/old", "/old")],
         ..Default::default()
@@ -959,7 +959,7 @@ fn edit_mode_confirm_save_shows_keep_awake_toggle() {
     // on-disk write was already correct; this pins the modal preview
     // so a future refactor cannot silently re-omit the diff line.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/w".into(),
         mounts: vec![mount("/w", "/w")],
         keep_awake: KeepAwakeConfig { enabled: false },
@@ -1015,7 +1015,7 @@ fn setup_with_isolated_record(
     // validation, so anchor it on `dst`. The drift safeguard cares
     // about `src`, not `workdir`, so this doesn't perturb the test.
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: dst.into(),
         mounts: vec![MountConfig {
             src: original_src.into(),
@@ -1232,7 +1232,7 @@ async fn save_opens_confirm_modal_when_stopped_container_has_drifted_state() {
 #[test]
 fn confirm_save_integrates_mount_collapse_section_when_plan_has_collapses() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/work/sub".into(),
         mounts: vec![mount("/work/sub", "/work/sub")],
         ..Default::default()
@@ -1271,7 +1271,7 @@ fn confirm_save_integrates_mount_collapse_section_when_plan_has_collapses() {
 
 #[test]
 fn pre_save_diff_renders_op_ref_via_breadcrumb_not_uuid() {
-    use crate::operator_env::{EnvValue, OpRef};
+    use jackin_core::{EnvValue, OpRef};
     use ratatui::style::Style;
 
     let original = std::collections::BTreeMap::new();

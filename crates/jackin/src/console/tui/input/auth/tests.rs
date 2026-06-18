@@ -1,17 +1,18 @@
 //! Tests for `auth`.
 use super::*;
-use crate::config::{
-    AgentAuthConfig, AppConfig, AuthForwardMode, GithubAuthConfig, GithubAuthMode,
-};
 use crate::console::tui::state::AuthRow;
 use crate::console::tui::state::{
     AuthFormTarget, EditorState, FieldFocus, ManagerStage, ManagerState,
 };
-use crate::operator_env::{OpRef, OpRunner};
-use crate::workspace::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+use jackin_config::{
+    AgentAuthConfig, AppConfig, AuthForwardMode, GithubAuthConfig, GithubAuthMode,
+};
+use jackin_config::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride};
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::components::auth_panel::CredentialInput;
+use jackin_core::OpRef;
+use jackin_env::OpRunner;
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent {
@@ -1430,7 +1431,7 @@ fn github_role_override_picker_filters_already_overridden_roles() {
     let labels: Vec<String> = picker
         .roles
         .iter()
-        .map(crate::selector::RoleSelector::key)
+        .map(jackin_core::RoleSelector::key)
         .collect();
     assert!(
         labels.iter().any(|s| s == "smith"),

@@ -3,15 +3,15 @@
 //! `o`-key resolver to GitHub URLs, and the `GithubPicker` modal.
 use super::super::test_support::{key, mount};
 use super::{InputOutcome, accepts_instance_status, handle_new_session_picker};
-use crate::agent::AgentChoiceState;
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::input::handle_key;
+use crate::console::tui::state::AgentChoiceState;
 use crate::console::tui::state::{ManagerStage, ManagerState, Modal, MountScrollFocus};
 use crate::instance::{InstanceIndexEntry, InstanceStatus};
 use crate::paths::JackinPaths;
-use crate::workspace::WorkspaceConfig;
 use crossterm::event::KeyCode;
 use jackin_config::AppConfig;
+use jackin_config::WorkspaceConfig;
 use ratatui::layout::Rect;
 use tempfile::TempDir;
 
@@ -98,7 +98,7 @@ fn codex_provider_choices() -> Vec<jackin_protocol::Provider> {
 /// then commit it with Enter and return the resulting outcome.
 fn commit_new_session_picker(
     state: &mut ManagerState<'_>,
-    agent: crate::agent::Agent,
+    agent: jackin_core::Agent,
     providers: Vec<jackin_protocol::Provider>,
 ) -> InputOutcome {
     let mut picker = AgentChoiceState::with_choices(vec![agent]);
@@ -115,7 +115,7 @@ fn new_session_provider_picker_skips_when_no_choice() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let outcome = commit_new_session_picker(
         &mut state,
-        crate::agent::Agent::Codex,
+        jackin_core::Agent::Codex,
         vec![jackin_protocol::Provider::Openai],
     );
 
@@ -125,7 +125,7 @@ fn new_session_provider_picker_skips_when_no_choice() {
             assert_eq!(
                 action,
                 crate::console::ConsoleInstanceAction::NewSessionWithAgent(
-                    crate::agent::Agent::Codex,
+                    jackin_core::Agent::Codex,
                 )
             );
         }
@@ -143,14 +143,14 @@ fn new_session_provider_picker_opens_for_claude() {
     let tmp = tempfile::tempdir().unwrap();
     let mut state = ManagerState::from_config(&config, tmp.path());
     let outcome =
-        commit_new_session_picker(&mut state, crate::agent::Agent::Claude, provider_choices());
+        commit_new_session_picker(&mut state, jackin_core::Agent::Claude, provider_choices());
 
     assert!(matches!(outcome, InputOutcome::Continue));
     let Some(picker) = state.inline_provider_picker else {
         panic!("Claude with providers must open provider picker");
     };
     assert_eq!(picker.context, "jackin-demo-architect");
-    assert_eq!(picker.agent, crate::agent::Agent::Claude);
+    assert_eq!(picker.agent, jackin_core::Agent::Claude);
     assert_eq!(picker.providers().len(), 2);
     assert_eq!(picker.selected(), 0);
 }
@@ -163,7 +163,7 @@ fn new_session_provider_picker_opens_for_codex_with_multiple_providers() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     let outcome = commit_new_session_picker(
         &mut state,
-        crate::agent::Agent::Codex,
+        jackin_core::Agent::Codex,
         codex_provider_choices(),
     );
 
@@ -172,7 +172,7 @@ fn new_session_provider_picker_opens_for_codex_with_multiple_providers() {
         panic!("Codex with multiple providers must open the provider picker");
     };
     assert_eq!(picker.context, "jackin-demo-architect");
-    assert_eq!(picker.agent, crate::agent::Agent::Codex);
+    assert_eq!(picker.agent, jackin_core::Agent::Codex);
     assert_eq!(picker.providers().len(), 2);
     assert_eq!(picker.providers()[0], jackin_protocol::Provider::Openai);
     assert_eq!(picker.providers()[1], jackin_protocol::Provider::Minimax);

@@ -7,7 +7,6 @@
 use super::{
     MOUSE_HORIZONTAL_SCROLL_STEP, handle_mouse, handle_mouse_with_config, list_scroll_areas,
 };
-use crate::config::{AgentAuthConfig, AuthForwardMode};
 use crate::console::tui::effect::ManagerEffect;
 use crate::console::tui::state::{
     DEFAULT_SPLIT_PCT, EditorHoverTarget, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
@@ -15,11 +14,12 @@ use crate::console::tui::state::{
     ManagerStage, ManagerState, Modal, MountScrollFocus, SecretsScopeTag, SettingsAuthModal,
     SettingsHoverTarget, SettingsState, SettingsTab, SettingsTrustRow,
 };
-use crate::workspace::{MountConfig, WorkspaceConfig};
 use crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseButton, MouseEvent,
     MouseEventKind,
 };
+use jackin_config::{AgentAuthConfig, AuthForwardMode};
+use jackin_config::{MountConfig, WorkspaceConfig};
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
 use jackin_console::tui::screens::settings::view::global_mount_confirm_state;
@@ -321,9 +321,9 @@ fn settings_role_picker_wheel_scrolls_modal_selection_not_background() {
     let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.mounts.scroll_y = 4;
     settings.mounts.modal = Some(GlobalMountModal::RolePicker {
-        state: crate::selector::RolePickerState::new(vec![
-            crate::selector::RoleSelector::parse("chainargos/agent-brown").unwrap(),
-            crate::selector::RoleSelector::parse("scentbird/agent-jones").unwrap(),
+        state: crate::console::tui::state::RolePickerState::new(vec![
+            jackin_core::RoleSelector::parse("chainargos/agent-brown").unwrap(),
+            jackin_core::RoleSelector::parse("scentbird/agent-jones").unwrap(),
         ]),
     });
     state.stage = ManagerStage::Settings(settings);

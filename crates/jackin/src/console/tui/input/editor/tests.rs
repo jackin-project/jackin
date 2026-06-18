@@ -8,7 +8,6 @@ use super::{
     env_key_input_state, handle_editor_modal, poll_role_load, role_load_input_state,
     secret_new_key_label,
 };
-use crate::config::{AgentAuthConfig, AppConfig, AuthForwardMode};
 use crate::console::tui::input::handle_key;
 use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage,
@@ -16,8 +15,9 @@ use crate::console::tui::state::{
 };
 use crate::paths::JackinPaths;
 use crate::runtime::test_support::{first_temp_role_repo, seed_valid_role_repo};
-use crate::workspace::{MountConfig, WorkspaceConfig};
 use crossterm::event::KeyCode;
+use jackin_config::{AgentAuthConfig, AppConfig, AuthForwardMode};
+use jackin_config::{MountConfig, WorkspaceConfig};
 use jackin_console::tui::auth::AuthKind;
 use jackin_env::OpCache;
 use ratatui::layout::Rect;
@@ -850,7 +850,7 @@ async fn role_input_resolves_then_persists_namespaced_role_after_trust() {
 
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
     editor.pending.allowed_roles = vec!["agent-smith".into()];
-    let selector = crate::selector::RoleSelector::parse("chainargos/agent-brown").unwrap();
+    let selector = jackin_core::RoleSelector::parse("chainargos/agent-brown").unwrap();
     let cached_repo = crate::repo::CachedRepo::new(&paths, &selector);
     let data_dir = paths.data_dir.clone();
     let mut runner = crate::runtime::FakeRunner::default();
@@ -2007,7 +2007,7 @@ fn enter_on_op_agent_key_row_is_noop() {
     );
     ws.roles.insert(
         "smith".into(),
-        crate::workspace::WorkspaceRoleOverride {
+        jackin_config::WorkspaceRoleOverride {
             env: ag_env,
             claude: None,
             codex: None,
@@ -2295,7 +2295,7 @@ fn m_on_agent_key_unmasks_only_that_row_in_that_agent_scope() {
     ag_env.insert("API_TOKEN".into(), "role-value".into());
     ws.roles.insert(
         "smith".into(),
-        crate::workspace::WorkspaceRoleOverride {
+        jackin_config::WorkspaceRoleOverride {
             env: ag_env,
             claude: None,
             codex: None,
@@ -2364,7 +2364,7 @@ fn cursor_skips_section_spacer_on_down_arrow() {
     ag_env.insert("LOG_LEVEL".into(), "debug".into());
     ws.roles.insert(
         "agent-smith".into(),
-        crate::workspace::WorkspaceRoleOverride {
+        jackin_config::WorkspaceRoleOverride {
             env: ag_env,
             claude: None,
             codex: None,

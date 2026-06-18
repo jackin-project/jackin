@@ -1,7 +1,6 @@
 //! Tests for `global_mounts`.
 use super::super::test_support::key;
 use super::*;
-use crate::agent::Agent;
 use crate::console::tui::state::{
     ManagerStage, ManagerState, SettingsEnvModal, SettingsEnvTextTarget, SettingsState, SettingsTab,
 };
@@ -9,6 +8,7 @@ use crate::paths::JackinPaths;
 use jackin_config::{AppConfig, RoleSource};
 use jackin_console::tui::components::auth_panel::CredentialInput;
 use jackin_console::tui::components::file_browser::FileBrowserState;
+use jackin_core::Agent;
 use ratatui::layout::Rect;
 use std::collections::BTreeMap;
 
@@ -69,7 +69,7 @@ fn global_mount_save_detects_sensitive_sources() {
     let rows = vec![jackin_config::GlobalMountRow {
         scope: None,
         name: "ssh".into(),
-        mount: crate::workspace::MountConfig {
+        mount: jackin_config::MountConfig {
             src: "/home/user/.ssh".into(),
             dst: "/ssh".into(),
             readonly: true,
@@ -664,8 +664,9 @@ fn settings_auth_generate_opens_source_picker_and_arms_flag() {
 /// injected stub `OpRunner` so no real `op` binary runs.
 #[test]
 fn settings_auth_generate_op_mint_remounts_form_focus_save() {
-    use crate::operator_env::{OpRef, OpRunner};
     use jackin_console::tui::auth::{AuthKind, AuthMode};
+    use jackin_core::OpRef;
+    use jackin_env::OpRunner;
 
     struct StubRunner;
     impl OpRunner for StubRunner {
