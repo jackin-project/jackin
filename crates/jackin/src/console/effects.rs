@@ -285,6 +285,20 @@ fn execute_editor_file_browser_outcome(
     };
     match applied {
         FileBrowserOutcome::Commit(path) => {
+            // Auth source-folder picks must hold the selected agent's
+            // credential structure. Reject a wrong folder inline and keep
+            // the picker open rather than saving an unusable path.
+            if target == FileBrowserTarget::AuthFormSourceFolder
+                && let Err(reason) = crate::console::domain::validate_auth_source_folder(
+                    editor.auth_selected_kind,
+                    &path,
+                )
+            {
+                if let Some(Modal::FileBrowser { state, .. }) = editor.modal.as_mut() {
+                    state.reject_commit(reason);
+                }
+                return true;
+            }
             crate::console::tui::input::editor::apply_file_browser_to_editor(target, editor, path);
         }
         FileBrowserOutcome::Cancel => editor.pop_modal_chain(),

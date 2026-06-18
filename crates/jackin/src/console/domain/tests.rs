@@ -15,6 +15,38 @@ fn auth_kind_agent_returns_none_for_github() {
 }
 
 #[test]
+fn validate_auth_source_folder_covers_agents_and_skips_non_agents() {
+    let temp = tempfile::tempdir().unwrap();
+
+    // Non-agent kind (Github) and None: nothing to validate → Ok.
+    assert!(validate_auth_source_folder(None, temp.path()).is_ok());
+    assert!(validate_auth_source_folder(Some(AuthKind::Github), temp.path()).is_ok());
+
+    // Every sync-capable agent rejects a folder lacking its credentials.
+    for kind in [
+        AuthKind::Claude,
+        AuthKind::Codex,
+        AuthKind::Amp,
+        AuthKind::Kimi,
+        AuthKind::Opencode,
+        AuthKind::Grok,
+    ] {
+        let dir = temp.path().join(format!("{kind:?}-empty"));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(
+            validate_auth_source_folder(Some(kind), &dir).is_err(),
+            "{kind:?}: empty folder must be rejected"
+        );
+    }
+
+    // A valid Codex folder is accepted.
+    let codex = temp.path().join("codex-good");
+    std::fs::create_dir_all(&codex).unwrap();
+    std::fs::write(codex.join("auth.json"), "{\"token\":\"x\"}").unwrap();
+    assert!(validate_auth_source_folder(Some(AuthKind::Codex), &codex).is_ok());
+}
+
+#[test]
 fn auth_mode_to_auth_forward_round_trip() {
     for mode in [
         AuthForwardMode::Sync,
