@@ -60,6 +60,7 @@ async fn main() {
 /// Operator cancel (Ctrl+C / Ctrl+Q / a Cancel modal) is an intent, not an
 /// error: exit cleanly with status 0 and render nothing — the launch surface
 /// has already restored the terminal. Every other error renders and exits 1.
+#[expect(clippy::exit, reason = "binary entrypoint — exit is the correct mechanism")]
 fn exit_for_run_error(error: &anyhow::Error, debug: bool) -> ! {
     if jackin::runtime::progress::LaunchCancelled::is_cancel(error) {
         std::process::exit(0);

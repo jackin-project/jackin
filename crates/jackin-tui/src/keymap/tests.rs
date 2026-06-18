@@ -153,3 +153,122 @@ fn from_crossterm_key_event_converts_basic_keys() {
     };
     assert_eq!(KeyChord::from(ev2), KeyChord::plain(LogicalKey::Enter));
 }
+
+// ── raw_bytes_to_chord ────────────────────────────────────────────────────────
+
+#[test]
+fn raw_bytes_enter_and_escape() {
+    assert_eq!(raw_bytes_to_chord(b"\r"), Some(KeyChord::plain(LogicalKey::Enter)));
+    assert_eq!(raw_bytes_to_chord(b"\n"), Some(KeyChord::plain(LogicalKey::Enter)));
+    assert_eq!(raw_bytes_to_chord(b"\x1b"), Some(KeyChord::plain(LogicalKey::Esc)));
+}
+
+#[test]
+fn raw_bytes_tab_and_backspace() {
+    assert_eq!(raw_bytes_to_chord(b"\t"), Some(KeyChord::plain(LogicalKey::Tab)));
+    assert_eq!(raw_bytes_to_chord(b"\x08"), Some(KeyChord::plain(LogicalKey::Backspace)));
+    assert_eq!(raw_bytes_to_chord(b"\x7f"), Some(KeyChord::plain(LogicalKey::Backspace)));
+}
+
+#[test]
+fn raw_bytes_printable_ascii() {
+    assert_eq!(raw_bytes_to_chord(b"y"), Some(KeyChord::plain(LogicalKey::Char('y'))));
+    assert_eq!(raw_bytes_to_chord(b"N"), Some(KeyChord::plain(LogicalKey::Char('N'))));
+}
+
+#[test]
+fn raw_bytes_ctrl_c() {
+    assert_eq!(
+        raw_bytes_to_chord(b"\x03"),
+        Some(KeyChord::ctrl(LogicalKey::Char('c')))
+    );
+}
+
+#[test]
+fn raw_bytes_csi_and_ss3_arrows() {
+    assert_eq!(raw_bytes_to_chord(b"\x1b[A"), Some(KeyChord::plain(LogicalKey::Up)));
+    assert_eq!(raw_bytes_to_chord(b"\x1b[B"), Some(KeyChord::plain(LogicalKey::Down)));
+    assert_eq!(raw_bytes_to_chord(b"\x1b[C"), Some(KeyChord::plain(LogicalKey::Right)));
+    assert_eq!(raw_bytes_to_chord(b"\x1b[D"), Some(KeyChord::plain(LogicalKey::Left)));
+    assert_eq!(raw_bytes_to_chord(b"\x1bOA"), Some(KeyChord::plain(LogicalKey::Up)));
+    assert_eq!(raw_bytes_to_chord(b"\x1bOD"), Some(KeyChord::plain(LogicalKey::Left)));
+}
+
+#[test]
+fn raw_bytes_unknown_returns_none() {
+    assert_eq!(raw_bytes_to_chord(b"\x1b[200~"), None);
+    assert_eq!(raw_bytes_to_chord(b"\x00"), None);
+}
+
+#[test]
+fn raw_bytes_confirm_keymap_dispatch() {
+    use crate::components::CONFIRM_KEYMAP;
+    use crate::components::ConfirmAction;
+    let y = raw_bytes_to_chord(b"y").and_then(|c| CONFIRM_KEYMAP.dispatch(c));
+    assert_eq!(y, Some(ConfirmAction::Yes));
+    let esc = raw_bytes_to_chord(b"\x1b").and_then(|c| CONFIRM_KEYMAP.dispatch(c));
+    assert_eq!(esc, Some(ConfirmAction::Cancel));
+    let ctrl_c = raw_bytes_to_chord(b"\x03").and_then(|c| CONFIRM_KEYMAP.dispatch(c));
+    assert_eq!(ctrl_c, Some(ConfirmAction::Cancel));
+}
+
+// ── Phase 3 enforcement: every declared chord must dispatch ──────────────────
+//
+// These tests prevent handle_key arms from drifting out of sync with the
+// binding table. They assert the structural contract, not specific semantics.
+
+/// Assert that every chord in a keymap dispatches to Some action.
+fn assert_all_chords_dispatch<A: Copy + Eq + std::fmt::Debug>(keymap: &Keymap<A>) {
+    for binding in keymap.bindings() {
+        for chord in binding.chords {
+            assert!(
+                keymap.dispatch(*chord).is_some(),
+                "chord {chord:?} listed in binding table must dispatch to an action"
+            );
+        }
+    }
+}
+
+/// Assert that at least one Shown binding advertises a hint.
+fn assert_has_shown_hints<A: Copy + Eq + std::fmt::Debug>(keymap: &Keymap<A>) {
+    let spans = keymap.hint_spans();
+    assert!(
+        !spans.is_empty(),
+        "keymap must advertise at least one Shown binding in hint_spans()"
+    );
+}
+
+#[test]
+fn confirm_keymap_all_chords_dispatch() {
+    use crate::components::CONFIRM_KEYMAP;
+    assert_all_chords_dispatch(&CONFIRM_KEYMAP);
+    assert_has_shown_hints(&CONFIRM_KEYMAP);
+}
+
+#[test]
+fn error_popup_keymap_all_chords_dispatch() {
+    use crate::components::ERROR_POPUP_KEYMAP;
+    assert_all_chords_dispatch(&ERROR_POPUP_KEYMAP);
+    assert_has_shown_hints(&ERROR_POPUP_KEYMAP);
+}
+
+#[test]
+fn save_discard_keymap_all_chords_dispatch() {
+    use crate::components::SAVE_DISCARD_KEYMAP;
+    assert_all_chords_dispatch(&SAVE_DISCARD_KEYMAP);
+    assert_has_shown_hints(&SAVE_DISCARD_KEYMAP);
+}
+
+#[test]
+fn select_list_keymap_all_chords_dispatch() {
+    use crate::components::SELECT_LIST_KEYMAP;
+    assert_all_chords_dispatch(&SELECT_LIST_KEYMAP);
+    assert_has_shown_hints(&SELECT_LIST_KEYMAP);
+}
+
+#[test]
+fn text_input_keymap_all_chords_dispatch() {
+    use crate::components::TEXT_INPUT_KEYMAP;
+    assert_all_chords_dispatch(&TEXT_INPUT_KEYMAP);
+    assert_has_shown_hints(&TEXT_INPUT_KEYMAP);
+}

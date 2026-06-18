@@ -95,19 +95,9 @@ pub(super) fn info_dialog_hint(
 pub(super) const READ_ONLY_HINT: &[HintSpan<'static>] =
     &[HintSpan::Key("Esc"), HintSpan::Text("dismiss")];
 
-pub(super) const CONFIRM_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↵"),
-    HintSpan::Text("select"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Y"),
-    HintSpan::Text("yes"),
-    HintSpan::GroupSep,
-    HintSpan::Key("N/Esc"),
-    HintSpan::Text("no"),
-    HintSpan::GroupSep,
-    HintSpan::Key("⇥"),
-    HintSpan::Text("toggle"),
-];
+pub(super) fn confirm_hint() -> Vec<HintSpan<'static>> {
+    jackin_tui::components::confirm_hint_spans()
+}
 
 #[cfg(test)]
 mod tests;

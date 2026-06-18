@@ -57,21 +57,6 @@ impl std::fmt::Debug for ConsoleRunOptions<'_> {
     }
 }
 
-/// Footer-hint keys for the exit confirmation, matching the shared confirm
-/// key model (Y commits, N/Esc cancels, Tab toggles focus).
-const CONFIRM_HINT: &[jackin_tui::HintSpan<'static>] = &[
-    jackin_tui::HintSpan::Key("\u{21b5}"),
-    jackin_tui::HintSpan::Text("confirm"),
-    jackin_tui::HintSpan::GroupSep,
-    jackin_tui::HintSpan::Key("Y"),
-    jackin_tui::HintSpan::Text("yes"),
-    jackin_tui::HintSpan::GroupSep,
-    jackin_tui::HintSpan::Key("N/Esc"),
-    jackin_tui::HintSpan::Text("no"),
-    jackin_tui::HintSpan::GroupSep,
-    jackin_tui::HintSpan::Key("\u{21e5}"),
-    jackin_tui::HintSpan::Text("focus"),
-];
 
 /// True when the operator is on the bare workspace list (no modal, no editor).
 /// Used only in tests to verify state shape.
@@ -429,7 +414,11 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                     jackin_console::tui::view::render_modal_backdrop(frame, body);
                     let area = quit_confirm_area(body, confirm);
                     jackin_tui::components::render_confirm_dialog(frame, area, confirm);
-                    jackin_tui::components::render_hint_bar(frame, hint_row, CONFIRM_HINT);
+                    jackin_tui::components::render_hint_bar(
+                        frame,
+                        hint_row,
+                        &jackin_tui::components::confirm_hint_spans(),
+                    );
                 }
                 chrome_hover_tracker.clear();
                 if let Some(bar_area) = debug_bar_area {

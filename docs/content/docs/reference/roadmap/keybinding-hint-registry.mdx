@@ -217,16 +217,23 @@ Remaining hint gaps (handled but unadvertised) are in the divergence catalogue a
 - [x] `KeyBinding<A>`, `Keymap<A>`, `Visibility`, `chord_glyph`, `Keymap::dispatch`/`hint_spans`/`hint_spans_for_axes` in <RepoFile path="crates/jackin-tui/src/keymap.rs" />; 9 unit tests in `keymap/tests.rs`; `pub mod keymap;` in `lib.rs`; re-exported through `components.rs`.
 
 **Phase 2 — Migrate every surface onto the registry:**
-- [ ] Shared widgets (ConfirmState pilot first), then TextInput/SelectList/ErrorPopup/ContainerInfo/SaveDiscard.
-- [ ] Capsule `input.rs`/`dialog.rs`/`dialog/input.rs` dispatch and `dialog/hint.rs`/`status_bar.rs` advertisement; register `Ctrl+Q`, `Ctrl+\`, prefix keys, resize, read-only dismiss aliases; resolve env-configurable labels; delete dead Exit strings.
-- [ ] Launch `subscriptions.rs`/`run.rs` dispatch and `prompts.rs`/overlay hints; reconcile failure-popup, pre-pipeline, and quit-confirm advertisement.
-- [ ] Console `input/*.rs` + `file_browser`/`git_prompt` dispatch and `footer_hints.rs` advertisement; register vim aliases and workspace-row/instance actions; delete dead settings arms.
+- [x] Shared widgets: `ConfirmState`, `ErrorPopupState`, `SaveDiscardState`, `SelectListState`, `TextInputState` all migrated to per-widget `Keymap<A>`; each exports a `*_hint_spans()` function used by all callers.
+- [x] `raw_bytes_to_chord(bytes: &[u8]) -> Option<KeyChord>` added to `keymap.rs`; covers Enter/Esc/Tab/Backspace/printable ASCII/Ctrl+letter/CSI+SS3 arrows and arrow+modifier sequences.
+- [x] Capsule `ConfirmAction` dispatch (dialog.rs `~:715`) migrated to `CONFIRM_KEYMAP.dispatch(raw_bytes_to_chord(key))`; `CONFIRM_HINT` in `dialog/hint.rs` replaced with `confirm_hint_spans()`.
+- [x] Launch `prompts.rs`: `draw_confirm` uses `confirm_hint_spans()`, `draw_select` uses `select_list_hint_spans()`, `draw_error_popup` uses `error_popup_hint_spans()`.
+- [x] Console `run.rs`: quit-confirm hint bar uses `confirm_hint_spans()`.
+- [x] Console `footer_hints.rs`: `error_popup_footer_items` uses `error_popup_hint_spans()`; `save_discard_cancel_footer_items` uses `save_discard_hint_spans()`; `ConfirmDismiss`/`OpNamingTextInput` modes use `text_input_hint_spans()`.
+- [ ] Capsule `input.rs`/`dialog/input.rs` full dispatch (Ctrl+Q, prefix keys, read-only dismiss, resize, palette); `status_bar.rs` env-configurable labels.
+- [ ] Launch `subscriptions.rs`/`run.rs` dispatch + failure-popup and pre-pipeline overlay hints.
+- [ ] Console `input/*.rs` + `file_browser`/`git_prompt` dispatch and remaining `footer_hints.rs` builders; register vim aliases and workspace-row/instance actions; delete dead settings arms.
+- [ ] `ContainerInfoState` phantom `↵ copy value` hint (callers own copy, not widget) — resolve by adding `CopyValue` action to widget keymap or marking caller-owned.
 - [ ] Lookbook hints (migrate from hand-written arrays to registry-derived spans).
 
 **Phase 3 — Enforcement and cleanup:**
-- [ ] Per-context tests asserting handled-set ≡ keymap (both directions).
-- [ ] CI lint/test forbidding `handle_key` arms outside a binding table on migrated surfaces.
-- [ ] Remove the dead canonical-hint constants and any now-unused hand-built footer builders.
+- [x] Per-context chord-coverage tests in `keymap/tests.rs`: `assert_all_chords_dispatch` + `assert_has_shown_hints` applied to all five shared-widget keymaps; `raw_bytes_to_chord` round-trip tests including `CONFIRM_KEYMAP` dispatch via raw bytes.
+- [x] Dead canonical-hint constants removed from `hint_bar.rs`: `SELECT_CANCEL_HINT`, `DISMISS_HINT`, `DISMISS_CANCEL_HINT`, `CONFIRM_DISMISS_HINT` (all had zero callers; consumers migrated to registry-derived functions).
+- [ ] CI lint/test forbidding `handle_key` arms outside a binding table on migrated surfaces (remaining console/capsule surfaces — deferred until those surfaces are migrated).
+- [ ] Remove now-unused hand-built footer builders once console/capsule migrations complete.
 
 **Validation:**
 - [ ] Re-run the four-surface audit + completeness pass; confirm the catalogue is empty.

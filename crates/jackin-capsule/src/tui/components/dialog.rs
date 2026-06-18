@@ -73,6 +73,9 @@ impl<'a> PullRequestStatus<'a> {
 }
 
 use jackin_tui::HintSpan;
+use jackin_tui::components::{
+    CONFIRM_KEYMAP, ConfirmAction as SharedConfirmAction, raw_bytes_to_chord,
+};
 
 const PALETTE_WIDTH: u16 = 50;
 const CONTAINER_INFO_WIDTH: u16 = 86;
@@ -86,7 +89,7 @@ use input::{
 mod hint;
 pub(crate) use hint::main_view_hint;
 use hint::{
-    CONFIRM_HINT, PALETTE_HINT, PICKER_HINT, READ_ONLY_HINT, RENAME_HINT, info_dialog_hint,
+    PALETTE_HINT, PICKER_HINT, READ_ONLY_HINT, RENAME_HINT, confirm_hint, info_dialog_hint,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -707,34 +710,29 @@ impl Dialog {
                 _ => DialogAction::Redraw,
             };
         }
-        // ConfirmAction has its own dispatch — Y/N shortcuts toggle
-        // the selection or confirm directly, Enter acts on the
-        // current selection, Esc cancels. Routed before the type-to-
-        // filter branch so `y` and `n` keys do not flow into a
-        // filter buffer.
+        // ConfirmAction: dispatch through shared CONFIRM_KEYMAP so key
+        // behaviour and hint advertisement stay coupled.
         if let Self::ConfirmAction { kind, selected_yes } = self {
-            if key == b"\x1b" || key == b"\x03" || key == b"n" || key == b"N" {
-                return DialogAction::Dismiss;
-            }
-            if key == b"y" || key == b"Y" {
-                return DialogAction::ConfirmedAction(*kind);
-            }
-            if is_arrow_up(key)
-                || is_arrow_down(key)
-                || key == b"\x1b[C"
-                || key == b"\x1b[D"
-                || key == b"\t"
-            {
-                *selected_yes = !*selected_yes;
-                return DialogAction::Redraw;
-            }
-            if is_enter(key) {
-                if *selected_yes {
-                    return DialogAction::ConfirmedAction(*kind);
+            let action = raw_bytes_to_chord(key)
+                .and_then(|chord| CONFIRM_KEYMAP.dispatch(chord));
+            return match action {
+                Some(SharedConfirmAction::Yes) => DialogAction::ConfirmedAction(*kind),
+                Some(SharedConfirmAction::No | SharedConfirmAction::Cancel) => {
+                    DialogAction::Dismiss
                 }
-                return DialogAction::Dismiss;
-            }
-            return DialogAction::Redraw;
+                Some(SharedConfirmAction::ToggleFocus) => {
+                    *selected_yes = !*selected_yes;
+                    DialogAction::Redraw
+                }
+                Some(SharedConfirmAction::CommitFocused) => {
+                    if *selected_yes {
+                        DialogAction::ConfirmedAction(*kind)
+                    } else {
+                        DialogAction::Dismiss
+                    }
+                }
+                None => DialogAction::Redraw,
+            };
         }
         // From here on, only the type-to-filter list dialogs reach
         // this code path. The dismiss surface is narrower than the
@@ -1368,7 +1366,7 @@ impl Dialog {
                     READ_ONLY_HINT.to_vec()
                 }
             }
-            Self::ConfirmAction { .. } => CONFIRM_HINT.to_vec(),
+            Self::ConfirmAction { .. } => confirm_hint(),
         }
     }
 

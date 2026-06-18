@@ -1,7 +1,9 @@
 //! Shared footer hint fragments for modal pickers and confirmations.
 
 use jackin_tui::HintSpan;
-use jackin_tui::components::{ScrollAxes, scroll_hint_spans};
+use jackin_tui::components::{
+    ScrollAxes, error_popup_hint_spans, save_discard_hint_spans, scroll_hint_spans,
+};
 use ratatui::layout::Rect;
 
 use crate::tui::app::ConsoleManagerStageRoute;
@@ -968,7 +970,7 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
             items
         }
         ModalFooterMode::ConfirmDismiss | ModalFooterMode::OpNamingTextInput => {
-            jackin_tui::components::hint_bar::CONFIRM_DISMISS_HINT.to_vec()
+            jackin_tui::components::text_input_hint_spans()
         }
         ModalFooterMode::FileBrowser => Vec::new(),
         ModalFooterMode::MountDestination => mount_destination_footer_items(),
@@ -1021,21 +1023,12 @@ pub fn yes_no_footer_items() -> Vec<HintSpan<'static>> {
 
 #[must_use]
 pub fn save_discard_cancel_footer_items() -> Vec<HintSpan<'static>> {
-    vec![
-        HintSpan::Key("S"),
-        HintSpan::Text("save"),
-        HintSpan::GroupSep,
-        HintSpan::Key("D"),
-        HintSpan::Text("discard"),
-        HintSpan::GroupSep,
-        HintSpan::Key("C/Esc"),
-        HintSpan::Text("cancel"),
-    ]
+    save_discard_hint_spans()
 }
 
 #[must_use]
 pub fn error_popup_footer_items() -> Vec<HintSpan<'static>> {
-    vec![HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")]
+    error_popup_hint_spans()
 }
 
 /// Debug-info modal footer: the *available* scroll axes (per `axes`), dismiss,

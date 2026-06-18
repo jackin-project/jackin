@@ -197,6 +197,12 @@ impl<A: Copy + 'static> Keymap<A> {
         Self { bindings }
     }
 
+    /// Return all bindings in declaration order (for testing and introspection).
+    #[must_use]
+    pub fn bindings(&self) -> &[KeyBinding<A>] {
+        self.bindings
+    }
+
     /// Return the action for the first binding whose chord set contains `chord`,
     /// or `None` if no binding matches.
     #[must_use]
@@ -208,23 +214,11 @@ impl<A: Copy + 'static> Keymap<A> {
     }
 
     /// Produce [`HintSpan`] sequences for all [`Visibility::Shown`] bindings.
-    /// Adjacent `Shown` bindings are separated by [`HintSpan::Sep`].
+    /// Adjacent `Shown` bindings are separated by [`HintSpan::GroupSep`], matching
+    /// the codebase convention that distinct key actions sit in separate visual groups.
     #[must_use]
     pub fn hint_spans(&self) -> Vec<HintSpan<'static>> {
-        let mut spans: Vec<HintSpan<'static>> = Vec::new();
-        for binding in self.bindings.iter().filter(|b| b.visibility == Visibility::Shown) {
-            if !spans.is_empty() {
-                spans.push(HintSpan::Sep);
-            }
-            let glyph: &'static str = binding
-                .glyph
-                .unwrap_or_else(|| chord_glyph(binding.chords.first().copied()));
-            spans.push(HintSpan::Key(glyph));
-            if let Some(label) = binding.hint {
-                spans.push(HintSpan::Text(label));
-            }
-        }
-        spans
+        self.hint_spans_filtered(|_| true)
     }
 
     /// Like [`hint_spans`] but omits scroll-axis arrow bindings when the
@@ -232,13 +226,17 @@ impl<A: Copy + 'static> Keymap<A> {
     /// [`crate::components::scroll_hint_spans`]).
     #[must_use]
     pub fn hint_spans_for_axes(&self, axes: ScrollAxes) -> Vec<HintSpan<'static>> {
+        self.hint_spans_filtered(|b| self.axis_gate_passes(b, axes))
+    }
+
+    fn hint_spans_filtered(&self, filter: impl Fn(&KeyBinding<A>) -> bool) -> Vec<HintSpan<'static>> {
         let mut spans: Vec<HintSpan<'static>> = Vec::new();
         for binding in self.bindings.iter().filter(|b| b.visibility == Visibility::Shown) {
-            if !self.axis_gate_passes(binding, axes) {
+            if !filter(binding) {
                 continue;
             }
             if !spans.is_empty() {
-                spans.push(HintSpan::Sep);
+                spans.push(HintSpan::GroupSep);
             }
             let glyph: &'static str = binding
                 .glyph
@@ -267,6 +265,69 @@ impl<A: Copy + 'static> Keymap<A> {
             return false;
         }
         true
+    }
+}
+
+// ── Capsule raw-byte → chord ─────────────────────────────────────────────────
+
+/// Convert a raw PTY byte sequence from the capsule's input parser into a
+/// [`KeyChord`] so the capsule can dispatch through the same [`Keymap`] tables
+/// as the crossterm surfaces.
+///
+/// Covers the subset of VT100 / xterm sequences the capsule actively uses:
+/// printable ASCII, the common control bytes (`Ctrl+C`, `Ctrl+Q`, `Ctrl+\`,
+/// `Ctrl+L`, `Ctrl+H`), Enter, Esc, Tab, and CSI / SS3 cursor-key sequences in
+/// both legacy form (`\x1b[A-D`, `\x1bOA-D`) and kitty-extended form for
+/// arrow modifiers (Alt+Shift+Arrow for resize). Returns `None` for sequences
+/// outside the covered set so callers can fall back to legacy `match` arms
+/// during migration.
+#[must_use]
+pub fn raw_bytes_to_chord(bytes: &[u8]) -> Option<KeyChord> {
+    match bytes {
+        // Specific control bytes handled before the generic range below.
+        // Enter (\r or \n — 0x0d / 0x0a both in the Ctrl range)
+        [b'\r' | b'\n'] => Some(KeyChord::plain(LogicalKey::Enter)),
+        // Esc (0x1b — just above the Ctrl range)
+        [0x1b] => Some(KeyChord::plain(LogicalKey::Esc)),
+        // Tab (0x09 — inside Ctrl range; map to Tab, not Ctrl+I)
+        [0x09] => Some(KeyChord::plain(LogicalKey::Tab)),
+        // Backspace: both the Ctrl+H byte (0x08) and the DEL byte (0x7f)
+        [0x08 | 0x7f] => Some(KeyChord::plain(LogicalKey::Backspace)),
+        // Printable ASCII (0x20 .. 0x7e, single byte, no modifier)
+        [b] if (0x20..=0x7e).contains(b) => {
+            Some(KeyChord::plain(LogicalKey::Char(*b as char)))
+        }
+        // Remaining single-byte control codes: Ctrl+A (0x01) through Ctrl+Z (0x1A),
+        // minus the already-matched 0x08 (Backspace), 0x09 (Tab), 0x0a (LF), 0x0d (CR).
+        // Formula: letter = 'a' + (byte - 1).
+        [b @ 0x01..=0x1a] => {
+            let letter = (b'a' + (b - 1)) as char;
+            Some(KeyChord::ctrl(LogicalKey::Char(letter)))
+        }
+        // Delete (CSI 3~)
+        b"\x1b[3~" => Some(KeyChord::plain(LogicalKey::Delete)),
+        // CSI arrow keys (legacy xterm / VT100)
+        b"\x1b[A" => Some(KeyChord::plain(LogicalKey::Up)),
+        b"\x1b[B" => Some(KeyChord::plain(LogicalKey::Down)),
+        b"\x1b[C" => Some(KeyChord::plain(LogicalKey::Right)),
+        b"\x1b[D" => Some(KeyChord::plain(LogicalKey::Left)),
+        // SS3 arrow keys (application cursor mode, used by many terminals)
+        b"\x1bOA" => Some(KeyChord::plain(LogicalKey::Up)),
+        b"\x1bOB" => Some(KeyChord::plain(LogicalKey::Down)),
+        b"\x1bOC" => Some(KeyChord::plain(LogicalKey::Right)),
+        b"\x1bOD" => Some(KeyChord::plain(LogicalKey::Left)),
+        // Home / End variants
+        b"\x1b[H" | b"\x1b[1~" => Some(KeyChord::plain(LogicalKey::Home)),
+        b"\x1b[F" | b"\x1b[4~" => Some(KeyChord::plain(LogicalKey::End)),
+        // Page Up / Down
+        b"\x1b[5~" => Some(KeyChord::plain(LogicalKey::PageUp)),
+        b"\x1b[6~" => Some(KeyChord::plain(LogicalKey::PageDown)),
+        // CSI with modifier 4 = Alt+Shift — resize pane arrows
+        b"\x1b[1;4A" => Some(KeyChord { key: LogicalKey::Up, mods: Mods::ALT.with_shift() }),
+        b"\x1b[1;4B" => Some(KeyChord { key: LogicalKey::Down, mods: Mods::ALT.with_shift() }),
+        b"\x1b[1;4C" => Some(KeyChord { key: LogicalKey::Right, mods: Mods::ALT.with_shift() }),
+        b"\x1b[1;4D" => Some(KeyChord { key: LogicalKey::Left, mods: Mods::ALT.with_shift() }),
+        _ => None,
     }
 }
 
@@ -342,7 +403,9 @@ pub fn chord_glyph(chord: Option<KeyChord>) -> &'static str {
         LogicalKey::PageDown => "PgDn",
         LogicalKey::Backspace => "⌫",
         LogicalKey::Delete => "Del",
-        _ => "?",
+        // Other modifier combos on Char (e.g. Alt+Shift+Arrow converted as Char)
+        // are not in the common-shortcut set — callers must supply an explicit glyph.
+        LogicalKey::Char(_) => "?",
     }
 }
 

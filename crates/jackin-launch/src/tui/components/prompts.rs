@@ -1,9 +1,10 @@
 //! Launch prompt dialog rendering and geometry.
 
 use jackin_tui::components::{
-    ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_required_height,
-    confirm_width_pct, render_confirm_dialog, render_error_dialog_in, render_hint_bar,
-    render_select_list, render_text_input, required_height as error_dialog_required_height,
+    ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_hint_spans,
+    confirm_required_height, confirm_width_pct, error_popup_hint_spans, render_confirm_dialog,
+    render_error_dialog_in, render_hint_bar, render_select_list, render_text_input,
+    required_height as error_dialog_required_height, select_list_hint_spans,
     text_input_prompt_rect,
 };
 use jackin_tui::{HintSpan, centered_rect};
@@ -12,20 +13,6 @@ use ratatui::layout::Rect;
 use ratatui::text::Line;
 
 use crate::tui::components::dialog::dialog_backdrop;
-
-/// Footer-hint keys for the forced-choice launch picker.
-const PICKER_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↑/↓"),
-    HintSpan::Text("navigate"),
-    HintSpan::GroupSep,
-    HintSpan::Text("type to filter"),
-    HintSpan::GroupSep,
-    HintSpan::Key("↵"),
-    HintSpan::Text("select"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Ctrl-C"),
-    HintSpan::Text("cancel"),
-];
 
 pub fn draw_select(
     frame: &mut Frame<'_>,
@@ -41,7 +28,7 @@ pub fn draw_select(
         title,
         context,
     );
-    render_hint_bar(frame, hint_area, PICKER_HINT);
+    render_hint_bar(frame, hint_area, &select_list_hint_spans());
 }
 
 pub fn draw_text_prompt(frame: &mut Frame<'_>, input: &TextInputState<'_>, skippable: bool) {
@@ -53,13 +40,13 @@ pub fn draw_text_prompt(frame: &mut Frame<'_>, input: &TextInputState<'_>, skipp
 pub fn draw_confirm(frame: &mut Frame<'_>, state: &ConfirmState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
     render_confirm_dialog(frame, confirm_rect(box_area, state), state);
-    render_hint_bar(frame, hint_area, CONFIRM_HINT);
+    render_hint_bar(frame, hint_area, &confirm_hint_spans());
 }
 
 pub fn draw_error_popup(frame: &mut Frame<'_>, state: &ErrorPopupState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
     render_error_dialog_in(frame, error_popup_rect(box_area, state), state);
-    render_hint_bar(frame, hint_area, ERROR_POPUP_HINT);
+    render_hint_bar(frame, hint_area, &error_popup_hint_spans());
 }
 
 fn picker_rect(area: Rect, picker: &SelectListState, context: &[Line<'_>]) -> Rect {
@@ -135,21 +122,6 @@ const TEXT_PROMPT_SKIP_HINT: &[HintSpan<'static>] = &[
     HintSpan::Text("cancel"),
 ];
 
-const CONFIRM_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↵"),
-    HintSpan::Text("confirm"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Y"),
-    HintSpan::Text("yes"),
-    HintSpan::GroupSep,
-    HintSpan::Key("N/Esc"),
-    HintSpan::Text("no"),
-    HintSpan::GroupSep,
-    HintSpan::Key("⇥"),
-    HintSpan::Text("focus"),
-];
-
-const ERROR_POPUP_HINT: &[HintSpan<'static>] = &[HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")];
 
 #[cfg(test)]
 mod tests;
