@@ -294,9 +294,12 @@ fn execute_editor_file_browser_outcome(
                     &path,
                 )
             {
-                if let Some(Modal::FileBrowser { state, .. }) = editor.modal.as_mut() {
-                    state.reject_commit(reason);
-                }
+                // Standard error dialog stacked over the picker; dismissing
+                // it returns to the picker (see the ErrorPopup arm in
+                // editor input) so the operator can pick another folder.
+                editor.open_sub_modal(Modal::ErrorPopup {
+                    state: error_popup::invalid_source_folder_error_popup_state(reason),
+                });
                 return true;
             }
             crate::console::tui::input::editor::apply_file_browser_to_editor(target, editor, path);

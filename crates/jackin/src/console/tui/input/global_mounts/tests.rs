@@ -785,6 +785,14 @@ fn settings_auth_dialog_source_folder_stages_and_save_persists_global_kimi() {
     let tmp = tempfile::tempdir().unwrap();
     let source_dir = tmp.path().join("kimi-home");
     std::fs::create_dir(&source_dir).unwrap();
+    // Seed a valid Kimi credential structure so source-folder validation
+    // accepts the pick (config.toml + a credentials/ directory).
+    std::fs::write(source_dir.join("config.toml"), "x = 1\n").unwrap();
+    std::fs::create_dir(source_dir.join("credentials")).unwrap();
+    // The file browser commits the symlink-resolved path (on macOS the
+    // temp root /var is a symlink to /private/var), so compare against the
+    // canonical form.
+    let expected_dir = std::fs::canonicalize(&source_dir).unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
     paths.ensure_base_dirs().unwrap();
 
@@ -834,7 +842,7 @@ fn settings_auth_dialog_source_folder_stages_and_save_persists_global_kimi() {
         panic!("source folder commit must return to auth form");
     };
     assert_eq!(focus, &AuthFormFocus::Save);
-    assert_eq!(state.source_folder.as_deref(), Some(source_dir.as_path()));
+    assert_eq!(state.source_folder.as_deref(), Some(expected_dir.as_path()));
 
     handle_settings_auth_modal(
         &mut settings.auth,
@@ -852,7 +860,7 @@ fn settings_auth_dialog_source_folder_stages_and_save_persists_global_kimi() {
             .iter()
             .find(|row| row.kind == AuthKind::Kimi)
             .and_then(|row| row.sync_source_dir.as_deref()),
-        Some(source_dir.as_path())
+        Some(expected_dir.as_path())
     );
 
     let saved = crate::console::services::config::save_settings(
@@ -873,7 +881,7 @@ fn settings_auth_dialog_source_folder_stages_and_save_persists_global_kimi() {
     .unwrap();
     assert_eq!(
         saved.sync_source_dir_for(Agent::Kimi).as_deref(),
-        Some(source_dir.as_path())
+        Some(expected_dir.as_path())
     );
 }
 
