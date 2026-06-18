@@ -532,6 +532,16 @@ where
     }
 
     #[must_use]
+    pub const fn scroll_target(&self) -> crate::tui::update::SettingsEnvModalScrollTarget {
+        use crate::tui::update::SettingsEnvModalScrollTarget;
+        match self {
+            Self::OpPicker { .. } => SettingsEnvModalScrollTarget::OpPicker,
+            Self::RolePicker { .. } => SettingsEnvModalScrollTarget::RolePicker,
+            _ => SettingsEnvModalScrollTarget::None,
+        }
+    }
+
+    #[must_use]
     pub fn footer_items(&self) -> Vec<jackin_tui::HintSpan<'static>>
     where
         OpPickerState: ModalOpPickerFooterState,
@@ -962,6 +972,15 @@ impl<
                 GlobalMountConfirm::Discard => SettingsMountModalDebugKind::ConfirmDiscard,
             },
             Self::PreviewSave { .. } => SettingsMountModalDebugKind::PreviewSave,
+        }
+    }
+
+    #[must_use]
+    pub const fn scroll_target(&self) -> crate::tui::update::GlobalMountModalScrollTarget {
+        use crate::tui::update::GlobalMountModalScrollTarget;
+        match self {
+            Self::RolePicker { .. } => GlobalMountModalScrollTarget::RolePicker,
+            _ => GlobalMountModalScrollTarget::None,
         }
     }
 
@@ -1434,6 +1453,15 @@ where
             Self::AuthForm { state, .. } => ModalRectMode::AuthForm {
                 required_height: state.required_height(),
             },
+        }
+    }
+
+    #[must_use]
+    pub const fn scroll_target(&self) -> crate::tui::update::SettingsAuthModalScrollTarget {
+        use crate::tui::update::SettingsAuthModalScrollTarget;
+        match self {
+            Self::OpPicker { .. } => SettingsAuthModalScrollTarget::OpPicker,
+            _ => SettingsAuthModalScrollTarget::None,
         }
     }
 
@@ -2512,6 +2540,66 @@ mod tests {
         assert_eq!(
             modal.debug_kind(),
             crate::tui::debug::SettingsMountModalDebugKind::ConfirmSensitive
+        );
+    }
+
+    #[test]
+    fn settings_env_modal_reports_scroll_target() {
+        type TestModal =
+            super::SettingsEnvModal<(), (), TestOpPicker, TestRolePicker, (), TestConfirm>;
+
+        assert_eq!(
+            TestModal::OpPicker {
+                state: Box::new(TestOpPicker(false)),
+            }
+            .scroll_target(),
+            crate::tui::update::SettingsEnvModalScrollTarget::OpPicker
+        );
+        assert_eq!(
+            TestModal::RolePicker {
+                state: TestRolePicker(7),
+            }
+            .scroll_target(),
+            crate::tui::update::SettingsEnvModalScrollTarget::RolePicker
+        );
+        assert_eq!(
+            TestModal::SourcePicker { state: () }.scroll_target(),
+            crate::tui::update::SettingsEnvModalScrollTarget::None
+        );
+    }
+
+    #[test]
+    fn global_mount_modal_reports_scroll_target() {
+        type TestModal =
+            super::GlobalMountModal<(), (), (), (), TestRolePicker, TestConfirm, TestConfirmSave>;
+
+        assert_eq!(
+            TestModal::RolePicker {
+                state: TestRolePicker(7),
+            }
+            .scroll_target(),
+            crate::tui::update::GlobalMountModalScrollTarget::RolePicker
+        );
+        assert_eq!(
+            TestModal::ScopePicker { state: () }.scroll_target(),
+            crate::tui::update::GlobalMountModalScrollTarget::None
+        );
+    }
+
+    #[test]
+    fn settings_auth_modal_reports_scroll_target() {
+        type TestModal = super::SettingsAuthModal<(), (), TestOpPicker, (), (), TestAuthForm, ()>;
+
+        assert_eq!(
+            TestModal::OpPicker {
+                state: Box::new(TestOpPicker(false)),
+            }
+            .scroll_target(),
+            crate::tui::update::SettingsAuthModalScrollTarget::OpPicker
+        );
+        assert_eq!(
+            TestModal::SourcePicker { state: () }.scroll_target(),
+            crate::tui::update::SettingsAuthModalScrollTarget::None
         );
     }
 

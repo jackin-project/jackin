@@ -47,8 +47,7 @@ use jackin_console::tui::screens::workspaces::update::{
 use jackin_console::tui::update::{
     ConsoleMouseWheelPlan, GlobalMountModalScrollTarget, ListModalScrollTarget,
     SettingsAuthModalScrollTarget, SettingsEnvModalScrollTarget, SharedModalScrollTarget,
-    console_mouse_wheel_plan, global_mount_modal_scroll_target, settings_auth_modal_scroll_target,
-    settings_env_modal_scroll_target,
+    console_mouse_wheel_plan,
 };
 #[cfg(test)]
 use jackin_tui::components::scrollable_panel::max_offset as max_scroll_offset;
@@ -576,7 +575,7 @@ fn scroll_global_mount_modal_selection(
     term_size: Rect,
     delta: i16,
 ) -> bool {
-    let target = global_mount_modal_scroll_target_for_root_modal(modal);
+    let target = modal.scroll_target();
     match (target, modal) {
         (GlobalMountModalScrollTarget::RolePicker, GlobalMountModal::RolePicker { state }) => {
             let area = modal_rects::role_picker_rect_for_count(term_size, state.filtered.len());
@@ -595,7 +594,7 @@ fn scroll_settings_env_modal_selection(
     term_size: Rect,
     delta: i16,
 ) -> bool {
-    let target = settings_env_modal_scroll_target_for_root_modal(modal);
+    let target = modal.scroll_target();
     match (target, modal) {
         (
             SettingsEnvModalScrollTarget::OpPicker,
@@ -626,7 +625,7 @@ fn scroll_settings_auth_modal_selection(
     term_size: Rect,
     delta: i16,
 ) -> bool {
-    let target = settings_auth_modal_scroll_target_for_root_modal(modal);
+    let target = modal.scroll_target();
     match (target, modal) {
         (SettingsAuthModalScrollTarget::OpPicker, SettingsAuthModal::OpPicker { state }) => {
             let area = modal_rects::op_picker_rect(term_size);
@@ -637,33 +636,6 @@ fn scroll_settings_auth_modal_selection(
         (SettingsAuthModalScrollTarget::None, _) => false,
         _ => false,
     }
-}
-
-fn global_mount_modal_scroll_target_for_root_modal(
-    modal: &GlobalMountModal<'_>,
-) -> GlobalMountModalScrollTarget {
-    global_mount_modal_scroll_target(matches!(modal, GlobalMountModal::RolePicker { .. }))
-}
-
-fn settings_env_modal_scroll_target_for_root_modal(
-    modal: &crate::console::tui::state::SettingsEnvModal<'_>,
-) -> SettingsEnvModalScrollTarget {
-    settings_env_modal_scroll_target(
-        matches!(
-            modal,
-            crate::console::tui::state::SettingsEnvModal::OpPicker { .. }
-        ),
-        matches!(
-            modal,
-            crate::console::tui::state::SettingsEnvModal::RolePicker { .. }
-        ),
-    )
-}
-
-fn settings_auth_modal_scroll_target_for_root_modal(
-    modal: &SettingsAuthModal<'_>,
-) -> SettingsAuthModalScrollTarget {
-    settings_auth_modal_scroll_target(matches!(modal, SettingsAuthModal::OpPicker { .. }))
 }
 
 /// Track the list row under the pointer so the renderer can lift its
