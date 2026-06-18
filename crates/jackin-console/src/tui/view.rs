@@ -119,6 +119,11 @@ pub const fn modal_content_area(area: Rect, footer_height: u16) -> Rect {
 }
 
 #[must_use]
+pub const fn modal_backdrop_area(area: Rect, footer_height: u16) -> Rect {
+    modal_content_area(area, footer_height)
+}
+
+#[must_use]
 pub const fn modal_content_areas(
     area: Rect,
     workspace_footer_height: u16,

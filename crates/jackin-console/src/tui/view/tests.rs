@@ -19,6 +19,13 @@ fn modal_content_area_reserves_footer_height() {
 }
 
 #[test]
+fn modal_backdrop_area_reserves_footer_height() {
+    let area = Rect::new(3, 4, 80, 24);
+
+    assert_eq!(modal_backdrop_area(area, 3), Rect::new(3, 4, 80, 21));
+}
+
+#[test]
 fn modal_content_area_saturates_when_footer_exceeds_height() {
     let area = Rect::new(3, 4, 80, 2);
 

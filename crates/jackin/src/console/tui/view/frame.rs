@@ -22,8 +22,8 @@ use jackin_console::tui::screens::settings::view::{
 };
 use jackin_console::tui::view::{
     ReservedFooterHeightFacts, delete_confirm_area, effective_footer_height,
-    measured_footer_height, modal_overlay_state_from_stage_facts, modal_overlay_visible,
-    purge_confirm_area, render_footer, render_header, render_modal_backdrop,
+    measured_footer_height, modal_backdrop_area, modal_overlay_state_from_stage_facts,
+    modal_overlay_visible, purge_confirm_area, render_footer, render_header, render_modal_backdrop,
     reserved_footer_height_for_facts, settings_error_area, status_overlay_area,
     workspace_frame_areas, workspace_header_title,
 };
@@ -62,11 +62,7 @@ pub fn render(
         // The backdrop must not cover the reserved footer — hints stay visible
         // there (the footer is inviolable).
         let footer_h = reserved_footer_height(state, config, area);
-        let backdrop = Rect {
-            height: area.height.saturating_sub(footer_h),
-            ..area
-        };
-        render_modal_backdrop(frame, backdrop);
+        render_modal_backdrop(frame, modal_backdrop_area(area, footer_h));
     }
 
     // List-anchored modal lives on `ManagerState`, not on a stage
