@@ -2116,10 +2116,11 @@ model = "gpt-5"
         "initial agent must be passed as container argv"
     );
     assert!(!run_cmd.contains("/jackin/codex/config.toml"));
-    // Multi-agent role `agents = ["claude", "codex"]` launches the selected
-    // runtime immediately; sibling auth/home prewarm is deferred off the
-    // foreground path.
-    assert!(!run_cmd.contains("/home/agent/.claude"));
+    // Multi-agent role `agents = ["claude", "codex"]` provisions and mounts
+    // every supported agent's home state at `docker run`, so a later
+    // `hardline --new --agent claude` tab finds its auth without relaunching.
+    // Both mounts must be present; the initially-selected agent is Codex.
+    assert!(run_cmd.contains("/home/agent/.claude"));
     assert!(run_cmd.contains("/home/agent/.codex"));
     let container_name = launched_role_container_name(&runner);
     let codex_config = std::fs::read_to_string(
@@ -3486,28 +3487,36 @@ plugins = []
 }
 
 #[test]
-fn operator_env_key_filter_keeps_generic_keys_lazy_for_credentials() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    let selector = RoleSelector::new(None, "agent-smith");
-    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
-    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
-    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+fn credential_key_filter_resolves_every_supported_agent_credential() {
+    use jackin_core::agent::Agent;
 
-    assert!(launch_pipeline::operator_env_key_needed_for_launch(
-        &validated_repo.manifest,
-        None,
+    // Generic operator/manifest vars always resolve.
+    assert!(launch_pipeline::credential_key_needed_for_role(
+        &[Agent::Codex],
         "OPERATOR_SMOKE"
     ));
-    assert!(!launch_pipeline::operator_env_key_needed_for_launch(
-        &validated_repo.manifest,
-        None,
+    // A credential for an agent the role cannot run stays lazy: launching a
+    // Claude-only role never needs Codex's OPENAI_API_KEY.
+    assert!(!launch_pipeline::credential_key_needed_for_role(
+        &[Agent::Claude],
         "OPENAI_API_KEY"
     ));
-    assert!(launch_pipeline::operator_env_key_needed_for_launch(
-        &validated_repo.manifest,
-        Some("OPENAI_API_KEY"),
+    // A supported agent's own credential resolves even when that agent's
+    // resolved mode (e.g. Sync) would not read it — the operator declared it
+    // and an ApiKey tab for that agent must find it in the container env.
+    assert!(launch_pipeline::credential_key_needed_for_role(
+        &[Agent::Codex],
         "OPENAI_API_KEY"
+    ));
+    // Multi-agent role: every supported agent's credential resolves so any tab
+    // can authenticate, not just the initially-selected agent.
+    assert!(launch_pipeline::credential_key_needed_for_role(
+        &[Agent::Claude, Agent::Codex],
+        "OPENAI_API_KEY"
+    ));
+    assert!(launch_pipeline::credential_key_needed_for_role(
+        &[Agent::Claude, Agent::Codex],
+        "ANTHROPIC_API_KEY"
     ));
 }
 

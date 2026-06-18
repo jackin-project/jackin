@@ -431,6 +431,10 @@ impl RoleState {
     /// discovery. `prepare` keeps the full manifest-supported behavior for
     /// callers that intentionally need every slot.
     #[tracing::instrument(skip_all, fields(container = container_name, agent = agent.slug()))]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "provisions agent auth state from independent paths/manifest/auth-context inputs"
+    )]
     pub fn prepare_for_agents(
         paths: &JackinPaths,
         container_name: &str,

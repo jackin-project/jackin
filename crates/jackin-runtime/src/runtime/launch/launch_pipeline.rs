@@ -763,15 +763,19 @@ pub(crate) async fn load_role_with(
         workspace_name.as_deref().unwrap_or(""),
         &role_key,
     );
-    let required_agent_env = agent.required_env_var(auth_mode);
-    let operator_env_needed = |key: &str| {
-        operator_env_key_needed_for_launch(&validated_repo.manifest, required_agent_env, key)
-    };
+    // Resolve every credential any agent the role can run might read from the
+    // container env, plus generic operator vars. The selected agent is one of
+    // these; sibling agents share the same container env and an ApiKey/OAuth
+    // tab reads its key from that env at `docker run`, so gating a supported
+    // agent's key out would start that tab without auth. Only credentials for
+    // agents the role cannot launch are skipped.
+    let credential_agents = validated_repo.manifest.supported_agents();
+    let operator_env_needed = |key: &str| credential_key_needed_for_role(&credential_agents, key);
     let operator_env = if jackin_env::has_operator_env_matching(
         config,
         Some(&selector.key()),
         workspace_name.as_deref(),
-        &operator_env_needed,
+        operator_env_needed,
     ) {
         jackin_diagnostics::active_timing_started("credentials", "operator_env", None);
         let operator_env_result = if opts.op_runner.is_none() && opts.host_env.is_none() {
@@ -780,20 +784,13 @@ pub(crate) async fn load_role_with(
             let config_clone = config.clone();
             let selector_key = selector.key().clone();
             let workspace_key = workspace_name.as_deref().map(String::from);
-            let manifest = validated_repo.manifest.clone();
-            let required_agent_env = required_agent_env.map(str::to_owned);
+            let credential_agents = credential_agents.clone();
             tokio::task::spawn_blocking(move || {
                 jackin_env::resolve_operator_env_matching(
                     &config_clone,
                     Some(&selector_key),
                     workspace_key.as_deref(),
-                    |key| {
-                        operator_env_key_needed_for_launch(
-                            &manifest,
-                            required_agent_env.as_deref(),
-                            key,
-                        )
-                    },
+                    |key| credential_key_needed_for_role(&credential_agents, key),
                 )
             })
             .await
@@ -814,7 +811,7 @@ pub(crate) async fn load_role_with(
                 workspace_name.as_deref(),
                 runner,
                 host_env_fn,
-                &operator_env_needed,
+                operator_env_needed,
             )
         };
         match operator_env_result {
@@ -847,7 +844,7 @@ pub(crate) async fn load_role_with(
         .manifest
         .env
         .iter()
-        .filter(|(key, _)| manifest_env_key_needed_for_launch(required_agent_env, key))
+        .filter(|(key, _)| credential_key_needed_for_role(&credential_agents, key))
         .map(|(key, decl)| (key.clone(), decl.clone()))
         .collect();
     let manifest_env_skipped = manifest_env.is_empty();
@@ -1291,6 +1288,13 @@ pub(crate) async fn load_role_with(
                         &role_key_owned,
                     )
                 };
+                // Provision every supported agent's home/auth state, not just
+                // the selected one. The container's per-agent home dirs are
+                // bind-mounted once at `docker run`; a later `hardline --new
+                // --agent <sibling>` tab reads its auth from that mount, so a
+                // sibling whose state was skipped here would start unauthenticated
+                // with no way to add the mount after the container is running.
+                let provision_agents = manifest_owned.supported_agents();
                 RoleState::prepare_for_agents(
                     &paths_owned,
                     &container_name_owned,
@@ -1302,7 +1306,7 @@ pub(crate) async fn load_role_with(
                     &github_ctx_owned,
                     &paths_owned.home_dir,
                     agent,
-                    &[agent],
+                    &provision_agents,
                 )
             })
             .await
@@ -1808,24 +1812,31 @@ pub(crate) fn manifest_env_timing_detail(skipped: bool, vars: usize) -> String {
     }
 }
 
-pub(crate) fn operator_env_key_needed_for_launch(
-    _manifest: &jackin_manifest::RoleManifest,
-    required_agent_env: Option<&str>,
+/// Whether a credential env key must be resolved before launch.
+///
+/// Resolves a key when it is a generic operator/manifest variable, or when any
+/// agent the role can run could read it from the container env in one of its
+/// auth modes. The container env is set once at `docker run` and shared by
+/// every agent tab; an `ApiKey`/`OAuthToken` tab reads its key from that env,
+/// so a credential needed by *any* supported agent is resolved up front rather
+/// than gated to the initially-selected agent — otherwise switching tabs would
+/// start that agent without its key. Only credentials belonging solely to
+/// agents this role cannot launch are skipped. Used for both operator-env and
+/// manifest-env refs so the two call sites cannot drift.
+pub(crate) fn credential_key_needed_for_role(
+    supported_agents: &[jackin_core::agent::Agent],
     key: &str,
 ) -> bool {
-    if required_agent_env == Some(key) {
+    if !known_agent_credential_env(key) {
         return true;
     }
-
-    if known_agent_credential_env(key) {
-        return false;
-    }
-
-    true
-}
-
-fn manifest_env_key_needed_for_launch(required_agent_env: Option<&str>, key: &str) -> bool {
-    required_agent_env == Some(key) || !known_agent_credential_env(key)
+    supported_agents.iter().copied().any(|agent| {
+        agent
+            .supported_modes()
+            .iter()
+            .filter_map(|mode| agent.required_env_var(*mode))
+            .any(|credential_key| credential_key == key)
+    })
 }
 
 fn known_agent_credential_env(key: &str) -> bool {

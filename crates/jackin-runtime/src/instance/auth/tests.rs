@@ -150,7 +150,7 @@ plugins = []
 // ── Auth forwarding tests ───────────────────────────────────────────
 
 #[test]
-fn ignore_mode_writes_empty_json() {
+fn ignore_mode_skips_state_when_absent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     seed_host_auth(&temp);
@@ -170,12 +170,15 @@ fn ignore_mode_writes_empty_json() {
     )
     .unwrap();
 
-    assert_eq!(
-        std::fs::read_to_string(state.claude_account_json().unwrap()).unwrap(),
-        "{}"
-    );
-    assert!(!state.claude_credentials_json().unwrap().exists());
+    // Ignore mode with no prior jackin-owned state provisions nothing: it does
+    // not copy host auth and does not write an empty `{}` skeleton, so no
+    // jackin-owned state is created for the container to mount. The agent falls
+    // back to the image's credential-free default-home — the same no-auth
+    // outcome as an explicit `{}`, without an empty bind source. Stale existing
+    // jackin-owned state still enters the normal wipe path.
     assert_eq!(outcome, AuthProvisionOutcome::Skipped);
+    assert!(!state.claude_account_json().unwrap().exists());
+    assert!(!state.claude_credentials_json().unwrap().exists());
 }
 
 #[test]
@@ -917,14 +920,15 @@ fn sync_repairs_permissions_on_legacy_permissive_file() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let manifest = simple_manifest(&temp);
+    seed_host_auth(&temp);
 
-    // First run: create the file with ignore mode (gets 0600)
+    // First run: sync host auth so the jackin-owned account.json exists at 0600.
     let (state, _) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
         &manifest,
         &PrepareResolvers {
-            auth_modes: &|_| AuthForwardMode::Ignore,
+            auth_modes: &|_| AuthForwardMode::Sync,
             sync_source_dirs: &|_| None,
         },
         &crate::instance::GithubAuthContext::default(),
@@ -944,8 +948,7 @@ fn sync_repairs_permissions_on_legacy_permissive_file() {
         .permissions();
     assert_eq!(perms.mode() & 0o777, 0o644, "precondition: file is 0644");
 
-    // Sync with host auth — must tighten permissions
-    seed_host_auth(&temp);
+    // A subsequent sync must tighten permissions back to 0600.
     let (state2, _) = RoleState::prepare(
         &paths,
         "jk-agent-smith",
