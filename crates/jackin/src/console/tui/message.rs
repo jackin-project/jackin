@@ -308,15 +308,12 @@ fn set_settings_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
     settings.set_tab_bar_focused(settings_tab_bar_focus_plan(focused));
 }
 
-const fn clear_editor_auth_kind(state: &mut ManagerState<'_>) {
+fn clear_editor_auth_kind(state: &mut ManagerState<'_>) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
     };
     let plan = clear_editor_auth_kind_plan();
-    editor.auth_selected_kind = plan.selected_kind;
-    editor.active_field = FieldFocus::Row(plan.active_row);
-    editor.tab_scroll_x = plan.tab_scroll_x;
-    editor.tab_scroll_y = plan.tab_scroll_y;
+    editor.apply_auth_kind_plan(plan);
 }
 
 fn enter_editor_auth_kind(state: &mut ManagerState<'_>, kind: AuthKind) {
@@ -324,10 +321,7 @@ fn enter_editor_auth_kind(state: &mut ManagerState<'_>, kind: AuthKind) {
         return;
     };
     let plan = enter_editor_auth_kind_plan(kind);
-    editor.auth_selected_kind = plan.selected_kind;
-    editor.active_field = FieldFocus::Row(plan.active_row);
-    editor.tab_scroll_x = plan.tab_scroll_x;
-    editor.tab_scroll_y = plan.tab_scroll_y;
+    editor.apply_auth_kind_plan(plan);
 }
 
 fn enter_confirm_delete(state: &mut ManagerState<'_>, name: String) {
@@ -445,24 +439,7 @@ fn move_editor_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bo
         return;
     };
     let plan = editor_tab_move_plan(editor.active_tab, delta, focus_tab_bar);
-    editor.active_tab = plan.active_tab;
-    editor.set_tab_bar_focused(plan.tab_bar_focused);
-    editor.active_field = FieldFocus::Row(plan.active_row);
-    editor.tab_scroll_x = plan.tab_scroll_x;
-    editor.tab_scroll_y = plan.tab_scroll_y;
-    // Tab-switch returns focus to the tab bar; clear per-tab scroll focus so
-    // the previously-focused content block does not show a stale green border.
-    if focus_tab_bar {
-        editor.set_workspace_mounts_scroll_focused(false);
-        editor.set_tab_content_scroll_focused(false);
-    }
-    if plan.clear_auth_kind {
-        editor.auth_selected_kind = None;
-    }
-    if plan.clear_secret_view_state {
-        editor.unmasked_rows.clear();
-        editor.secrets_expanded.clear();
-    }
+    editor.apply_tab_move_plan(plan);
 }
 
 fn move_editor_field_selection(
@@ -486,8 +463,7 @@ fn move_editor_field_selection(
         term.height,
         footer_h,
     );
-    editor.active_field = FieldFocus::Row(plan.active_row);
-    editor.tab_scroll_y = plan.tab_scroll_y;
+    editor.apply_field_selection_plan(plan);
 }
 
 fn move_settings_tab(state: &mut ManagerState<'_>, delta: isize, focus_tab_bar: bool) {
@@ -597,9 +573,7 @@ fn scroll_editor_tab_horizontal(
     };
     let plan =
         editor_tab_horizontal_scroll_plan(editor.tab_scroll_x, delta, term_width, content_width);
-    editor.tab_scroll_x = plan.scroll_x;
-    editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
-    editor.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
+    editor.apply_tab_horizontal_scroll_plan(plan);
 }
 
 fn scroll_editor_workspace_mounts_horizontal(
@@ -617,9 +591,7 @@ fn scroll_editor_workspace_mounts_horizontal(
         term_width,
         content_width,
     );
-    editor.workspace_mounts_scroll_x = plan.scroll_x;
-    editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
-    editor.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
+    editor.apply_workspace_mounts_horizontal_scroll_plan(plan);
 }
 
 fn scroll_settings_global_mounts_horizontal(
@@ -737,17 +709,7 @@ fn select_editor_tab(state: &mut ManagerState<'_>, tab: EditorTab) {
         return;
     };
     let plan = editor_tab_select_plan(editor.active_tab, tab);
-    editor.active_tab = plan.active_tab;
-    editor.set_tab_bar_focused(plan.tab_bar_focused);
-    editor.active_field = FieldFocus::Row(plan.active_row);
-    editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
-    if plan.clear_auth_kind {
-        editor.auth_selected_kind = None;
-    }
-    if plan.clear_secret_view_state {
-        editor.unmasked_rows.clear();
-        editor.secrets_expanded.clear();
-    }
+    editor.apply_tab_select_plan(plan);
 }
 
 fn select_editor_mount_row(state: &mut ManagerState<'_>, row: usize) {
@@ -755,8 +717,7 @@ fn select_editor_mount_row(state: &mut ManagerState<'_>, row: usize) {
         return;
     };
     let plan = editor_mount_row_select_plan(row);
-    editor.active_field = FieldFocus::Row(plan.active_row);
-    editor.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
+    editor.apply_mount_row_select_plan(plan);
 }
 
 fn select_settings_tab(state: &mut ManagerState<'_>, tab: SettingsTab) {

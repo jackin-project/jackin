@@ -748,6 +748,89 @@ impl<
         self.focus_owner = owner;
     }
 
+    pub fn apply_auth_kind_plan(
+        &mut self,
+        plan: crate::tui::screens::editor::update::EditorAuthKindPlan<crate::tui::auth::AuthKind>,
+    ) {
+        self.auth_selected_kind = plan.selected_kind;
+        self.active_field = FieldFocus::Row(plan.active_row);
+        self.tab_scroll_x = plan.tab_scroll_x;
+        self.tab_scroll_y = plan.tab_scroll_y;
+    }
+
+    pub fn apply_tab_move_plan(
+        &mut self,
+        plan: crate::tui::screens::editor::update::EditorTabMovePlan,
+    ) {
+        self.active_tab = plan.active_tab;
+        self.set_tab_bar_focused(plan.tab_bar_focused);
+        self.active_field = FieldFocus::Row(plan.active_row);
+        self.tab_scroll_x = plan.tab_scroll_x;
+        self.tab_scroll_y = plan.tab_scroll_y;
+        if plan.tab_bar_focused {
+            self.set_workspace_mounts_scroll_focused(false);
+            self.set_tab_content_scroll_focused(false);
+        }
+        if plan.clear_auth_kind {
+            self.auth_selected_kind = None;
+        }
+        if plan.clear_secret_view_state {
+            self.unmasked_rows.clear();
+            self.secrets_expanded.clear();
+        }
+    }
+
+    pub fn apply_tab_select_plan(
+        &mut self,
+        plan: crate::tui::screens::editor::update::EditorTabSelectPlan,
+    ) {
+        self.active_tab = plan.active_tab;
+        self.set_tab_bar_focused(plan.tab_bar_focused);
+        self.active_field = FieldFocus::Row(plan.active_row);
+        self.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
+        if plan.clear_auth_kind {
+            self.auth_selected_kind = None;
+        }
+        if plan.clear_secret_view_state {
+            self.unmasked_rows.clear();
+            self.secrets_expanded.clear();
+        }
+    }
+
+    pub fn apply_field_selection_plan(
+        &mut self,
+        plan: crate::tui::screens::editor::update::EditorFieldSelectionPlan,
+    ) {
+        self.active_field = FieldFocus::Row(plan.active_row);
+        self.tab_scroll_y = plan.tab_scroll_y;
+    }
+
+    pub fn apply_mount_row_select_plan(
+        &mut self,
+        plan: crate::tui::screens::editor::update::EditorMountRowSelectPlan,
+    ) {
+        self.active_field = FieldFocus::Row(plan.active_row);
+        self.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
+    }
+
+    pub fn apply_tab_horizontal_scroll_plan(
+        &mut self,
+        plan: crate::tui::screens::editor::update::EditorHorizontalScrollPlan,
+    ) {
+        self.tab_scroll_x = plan.scroll_x;
+        self.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
+        self.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
+    }
+
+    pub fn apply_workspace_mounts_horizontal_scroll_plan(
+        &mut self,
+        plan: crate::tui::screens::editor::update::EditorHorizontalScrollPlan,
+    ) {
+        self.workspace_mounts_scroll_x = plan.scroll_x;
+        self.set_workspace_mounts_scroll_focused(plan.workspace_mounts_scroll_focused);
+        self.set_tab_content_scroll_focused(plan.tab_content_scroll_focused);
+    }
+
     #[must_use]
     pub const fn tab_bar_focused(&self) -> bool {
         self.focus_owner.is_tab_bar()
@@ -2038,6 +2121,82 @@ mod tests {
         (),
         (),
     >;
+
+    #[test]
+    fn editor_apply_auth_kind_plan_updates_selection_and_scroll() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor.active_field = FieldFocus::Row(9);
+        editor.tab_scroll_x = 12;
+        editor.tab_scroll_y = 4;
+
+        editor.apply_auth_kind_plan(
+            crate::tui::screens::editor::update::enter_editor_auth_kind_plan(
+                crate::tui::auth::AuthKind::Claude,
+            ),
+        );
+
+        assert_eq!(
+            editor.auth_selected_kind,
+            Some(crate::tui::auth::AuthKind::Claude)
+        );
+        assert_eq!(editor.active_field, FieldFocus::Row(0));
+        assert_eq!(editor.tab_scroll_x, 0);
+        assert_eq!(editor.tab_scroll_y, 0);
+
+        editor.apply_auth_kind_plan(
+            crate::tui::screens::editor::update::clear_editor_auth_kind_plan(),
+        );
+        assert_eq!(editor.auth_selected_kind, None);
+    }
+
+    #[test]
+    fn editor_apply_tab_move_plan_resets_departed_tab_state() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::Secrets;
+        editor
+            .unmasked_rows
+            .insert((super::SecretsScopeTag::Workspace, "API_KEY".to_owned()));
+        editor.secrets_expanded.insert("builder".to_owned());
+        editor.set_tab_content_scroll_focused(true);
+
+        editor.apply_tab_move_plan(crate::tui::screens::editor::update::editor_tab_move_plan(
+            EditorTab::Secrets,
+            1,
+            true,
+        ));
+
+        assert_eq!(editor.active_tab, EditorTab::Auth);
+        assert!(editor.tab_bar_focused());
+        assert_eq!(editor.active_field, FieldFocus::Row(0));
+        assert!(editor.unmasked_rows.is_empty());
+        assert!(editor.secrets_expanded.is_empty());
+    }
+
+    #[test]
+    fn editor_apply_selection_and_scroll_plans_update_focus() {
+        let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
+        editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Claude);
+
+        editor.apply_tab_select_plan(crate::tui::screens::editor::update::editor_tab_select_plan(
+            EditorTab::Auth,
+            EditorTab::Mounts,
+        ));
+        assert_eq!(editor.active_tab, EditorTab::Mounts);
+        assert_eq!(editor.auth_selected_kind, None);
+        assert_eq!(editor.active_field, FieldFocus::Row(0));
+
+        editor.apply_mount_row_select_plan(
+            crate::tui::screens::editor::update::editor_mount_row_select_plan(3),
+        );
+        assert_eq!(editor.active_field, FieldFocus::Row(3));
+        assert!(editor.workspace_mounts_scroll_focused());
+
+        editor.apply_tab_horizontal_scroll_plan(
+            crate::tui::screens::editor::update::editor_tab_horizontal_scroll_plan(0, 8, 20, 80),
+        );
+        assert_eq!(editor.tab_scroll_x, 8);
+        assert!(editor.tab_content_scroll_focused());
+    }
 
     #[test]
     fn editor_dirty_tracks_pending_config_and_rename() {
