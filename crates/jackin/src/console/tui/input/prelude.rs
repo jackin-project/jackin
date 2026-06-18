@@ -10,11 +10,12 @@ use crate::console::tui::state::{ManagerState, Modal};
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
 use jackin_console::tui::app::{
-    CreatePreludeFileBrowserPlan, CreatePreludeKeyPlan, CreatePreludeMountDstChoicePlan,
-    CreatePreludeTextInputDstPlan, CreatePreludeTextInputNamePlan, CreatePreludeWorkdirPickPlan,
-    create_prelude_file_browser_plan, create_prelude_key_plan,
-    create_prelude_mount_dst_choice_plan, create_prelude_text_input_dst_plan,
-    create_prelude_text_input_name_plan, create_prelude_workdir_pick_plan,
+    CreatePreludeFileBrowserPlan, CreatePreludeKeyPlan, CreatePreludeModalStep,
+    CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan, CreatePreludeTextInputNamePlan,
+    CreatePreludeWorkdirPickPlan, create_prelude_file_browser_plan, create_prelude_key_plan,
+    create_prelude_modal_step, create_prelude_mount_dst_choice_plan,
+    create_prelude_text_input_dst_plan, create_prelude_text_input_name_plan,
+    create_prelude_workdir_pick_plan,
 };
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::screens::workspaces::view::{
@@ -55,43 +56,12 @@ pub(super) fn handle_prelude_modal(
     key: KeyEvent,
     term_size: ratatui::layout::Rect,
 ) -> PreludeModalOutcome {
-    use crate::console::tui::state::{FileBrowserTarget, TextInputTarget};
+    use crate::console::tui::state::TextInputTarget;
 
-    // Determine which step we're on by inspecting the modal discriminant,
-    // then dispatch. We do this with a discriminant enum so we can end the
-    // immutable/mutable borrow on `prelude.modal` before mutating other
-    // fields on `prelude` (Rust borrow rules).
-    enum PreludeModalDis {
-        FileBrowserSrc,
-        MountDstChoice,
-        TextInputDst,
-        WorkdirPick,
-        TextInputName,
-        Other,
-    }
-    let dis = match &prelude.modal {
-        Some(Modal::FileBrowser {
-            target: FileBrowserTarget::CreateFirstMountSrc,
-            ..
-        }) => PreludeModalDis::FileBrowserSrc,
-        Some(Modal::MountDstChoice {
-            target: FileBrowserTarget::CreateFirstMountSrc,
-            ..
-        }) => PreludeModalDis::MountDstChoice,
-        Some(Modal::TextInput {
-            target: TextInputTarget::MountDst,
-            ..
-        }) => PreludeModalDis::TextInputDst,
-        Some(Modal::WorkdirPick { .. }) => PreludeModalDis::WorkdirPick,
-        Some(Modal::TextInput {
-            target: TextInputTarget::Name,
-            ..
-        }) => PreludeModalDis::TextInputName,
-        _ => PreludeModalDis::Other,
-    };
+    let dis = create_prelude_modal_step_for_root_modal(prelude.modal.as_ref());
 
     match dis {
-        PreludeModalDis::FileBrowserSrc => {
+        CreatePreludeModalStep::FileBrowserSrc => {
             // Capture the current browser cwd on Commit so step-back from
             // MountDstChoice can restore it. Read before moving the
             // outcome out of `prelude.modal`.
@@ -127,7 +97,7 @@ pub(super) fn handle_prelude_modal(
                 CreatePreludeFileBrowserPlan::Continue => {}
             }
         }
-        PreludeModalDis::MountDstChoice => {
+        CreatePreludeModalStep::MountDstChoice => {
             let outcome = if let Some(Modal::MountDstChoice { state, .. }) = &mut prelude.modal {
                 state.handle_key(key)
             } else {
@@ -164,7 +134,7 @@ pub(super) fn handle_prelude_modal(
                 CreatePreludeMountDstChoicePlan::Continue => {}
             }
         }
-        PreludeModalDis::TextInputDst => {
+        CreatePreludeModalStep::TextInputDst => {
             let outcome = if let Some(Modal::TextInput { state, .. }) = &mut prelude.modal {
                 state.handle_key(key)
             } else {
@@ -185,7 +155,7 @@ pub(super) fn handle_prelude_modal(
                 CreatePreludeTextInputDstPlan::Continue => {}
             }
         }
-        PreludeModalDis::WorkdirPick => {
+        CreatePreludeModalStep::WorkdirPick => {
             let outcome = if let Some(Modal::WorkdirPick { state }) = &mut prelude.modal {
                 state.handle_key(key)
             } else {
@@ -218,7 +188,7 @@ pub(super) fn handle_prelude_modal(
                 CreatePreludeWorkdirPickPlan::Continue => {}
             }
         }
-        PreludeModalDis::TextInputName => {
+        CreatePreludeModalStep::TextInputName => {
             let outcome = if let Some(Modal::TextInput { state, .. }) = &mut prelude.modal {
                 state.handle_key(key)
             } else {
@@ -239,9 +209,45 @@ pub(super) fn handle_prelude_modal(
                 CreatePreludeTextInputNamePlan::Continue => {}
             }
         }
-        PreludeModalDis::Other => {}
+        CreatePreludeModalStep::Other => {}
     }
     PreludeModalOutcome::Continue
+}
+
+fn create_prelude_modal_step_for_root_modal(modal: Option<&Modal<'_>>) -> CreatePreludeModalStep {
+    use crate::console::tui::state::{FileBrowserTarget, TextInputTarget};
+
+    create_prelude_modal_step(
+        matches!(
+            modal,
+            Some(Modal::FileBrowser {
+                target: FileBrowserTarget::CreateFirstMountSrc,
+                ..
+            })
+        ),
+        matches!(
+            modal,
+            Some(Modal::MountDstChoice {
+                target: FileBrowserTarget::CreateFirstMountSrc,
+                ..
+            })
+        ),
+        matches!(
+            modal,
+            Some(Modal::TextInput {
+                target: TextInputTarget::MountDst,
+                ..
+            })
+        ),
+        matches!(modal, Some(Modal::WorkdirPick { .. })),
+        matches!(
+            modal,
+            Some(Modal::TextInput {
+                target: TextInputTarget::Name,
+                ..
+            })
+        ),
+    )
 }
 
 /// Reopen the `MountDstChoice` modal seeded from the stashed mount src.

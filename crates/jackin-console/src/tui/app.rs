@@ -1330,6 +1330,39 @@ pub enum CreatePreludeKeyPlan {
     ReturnToList,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreatePreludeModalStep {
+    FileBrowserSrc,
+    MountDstChoice,
+    TextInputDst,
+    WorkdirPick,
+    TextInputName,
+    Other,
+}
+
+#[must_use]
+pub const fn create_prelude_modal_step(
+    file_browser_src: bool,
+    mount_dst_choice: bool,
+    text_input_dst: bool,
+    workdir_pick: bool,
+    text_input_name: bool,
+) -> CreatePreludeModalStep {
+    if file_browser_src {
+        CreatePreludeModalStep::FileBrowserSrc
+    } else if mount_dst_choice {
+        CreatePreludeModalStep::MountDstChoice
+    } else if text_input_dst {
+        CreatePreludeModalStep::TextInputDst
+    } else if workdir_pick {
+        CreatePreludeModalStep::WorkdirPick
+    } else if text_input_name {
+        CreatePreludeModalStep::TextInputName
+    } else {
+        CreatePreludeModalStep::Other
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CreatePreludeFileBrowserPlan<T> {
     CancelPrelude,
@@ -1643,11 +1676,11 @@ mod tests {
         ConsoleCreatePreludeState, ConsoleInputDispatchFacts, ConsoleInputDispatchPlan,
         ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleModal, ConsoleStageModalFacts,
         CreatePreludeCompletionStatus, CreatePreludeFileBrowserPlan, CreatePreludeKeyPlan,
-        CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan,
+        CreatePreludeModalStep, CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan,
         CreatePreludeTextInputNamePlan, CreatePreludeWorkdirCancelPlan,
         CreatePreludeWorkdirPickPlan, console_input_dispatch_plan,
         create_prelude_completion_status, create_prelude_file_browser_plan,
-        create_prelude_key_plan, create_prelude_mount_dst_choice_plan,
+        create_prelude_key_plan, create_prelude_modal_step, create_prelude_mount_dst_choice_plan,
         create_prelude_text_input_dst_plan, create_prelude_text_input_name_plan,
         create_prelude_workdir_cancel_plan, create_prelude_workdir_pick_plan,
     };
@@ -1943,6 +1976,34 @@ mod tests {
         assert_eq!(
             create_prelude_key_plan(crossterm::event::KeyCode::Enter),
             CreatePreludeKeyPlan::Continue
+        );
+    }
+
+    #[test]
+    fn create_prelude_modal_step_routes_modal_facts_by_precedence() {
+        assert_eq!(
+            create_prelude_modal_step(true, true, true, true, true),
+            CreatePreludeModalStep::FileBrowserSrc
+        );
+        assert_eq!(
+            create_prelude_modal_step(false, true, true, true, true),
+            CreatePreludeModalStep::MountDstChoice
+        );
+        assert_eq!(
+            create_prelude_modal_step(false, false, true, true, true),
+            CreatePreludeModalStep::TextInputDst
+        );
+        assert_eq!(
+            create_prelude_modal_step(false, false, false, true, true),
+            CreatePreludeModalStep::WorkdirPick
+        );
+        assert_eq!(
+            create_prelude_modal_step(false, false, false, false, true),
+            CreatePreludeModalStep::TextInputName
+        );
+        assert_eq!(
+            create_prelude_modal_step(false, false, false, false, false),
+            CreatePreludeModalStep::Other
         );
     }
 
