@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::model::{
     GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfig,
     SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget,
-    SettingsGeneralState, SettingsHoverTarget, SettingsTab, SettingsTrustRow, SettingsTrustState,
+    SettingsHoverTarget, SettingsTab, SettingsTrustRow, SettingsTrustState,
 };
 use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
 use crate::tui::components::scope_picker::ScopeChoice;
@@ -1090,10 +1090,6 @@ pub fn enter_settings_auth_kind_plan<K>(
     }
 }
 
-pub fn move_general_selection(state: &mut SettingsGeneralState, delta: isize) {
-    state.selected = crate::tui::focus::moved_selection(state.selected, 2, delta);
-}
-
 #[must_use]
 pub fn settings_auth_selection_plan(
     selected: usize,
@@ -1128,18 +1124,6 @@ pub fn settings_auth_selection_plan(
 #[must_use]
 pub fn settings_auth_selected_index(selected: usize, row_count: usize) -> usize {
     selected.min(row_count.saturating_sub(1))
-}
-
-pub fn toggle_general_selected(state: &mut SettingsGeneralState) {
-    match state.selected {
-        0 => {
-            state.pending_coauthor_trailer = !state.pending_coauthor_trailer;
-        }
-        1 => {
-            state.pending_dco = !state.pending_dco;
-        }
-        _ => {}
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1313,12 +1297,6 @@ pub const fn settings_global_mounts_add_row_selected(selected: usize, mount_coun
 #[must_use]
 pub fn settings_global_mounts_added_index(mount_count: usize) -> usize {
     mount_count.saturating_sub(1)
-}
-
-pub fn toggle_trust_selected(state: &mut SettingsTrustState) {
-    if let Some(row) = state.pending.get_mut(state.selected) {
-        row.trusted = !row.trusted;
-    }
 }
 
 #[must_use]

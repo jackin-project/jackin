@@ -23,11 +23,10 @@ use jackin_console::tui::screens::editor::update::{
     toggle_secret_mask as toggle_editor_secret_mask_row,
 };
 use jackin_console::tui::screens::settings::update::{
-    move_general_selection, set_role_expanded as set_settings_role_expanded,
     settings_env_selection_plan, settings_global_mounts_selection_plan,
     settings_horizontal_scroll_plan, settings_tab_bar_focus_plan, settings_tab_move_plan,
     settings_tab_select_plan, settings_trust_row_select_plan, settings_trust_selection_plan,
-    toggle_general_selected, toggle_readonly as toggle_settings_readonly, toggle_trust_selected,
+    toggle_readonly as toggle_settings_readonly,
 };
 use jackin_console::tui::screens::workspaces::update::{
     PreviewFocusPlan, WorkspaceListScrollTargetPlan, apply_workspace_list_selection_plan,
@@ -478,14 +477,14 @@ fn move_settings_general_selection(state: &mut ManagerState<'_>, delta: isize) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    move_general_selection(&mut settings.general, delta);
+    settings.general.move_selection(delta);
 }
 
 fn toggle_settings_general_selected(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    toggle_general_selected(&mut settings.general);
+    settings.general.toggle_selected();
 }
 
 fn set_editor_auth_role_expanded(state: &mut ManagerState<'_>, role: String, expanded: bool) {
@@ -535,7 +534,7 @@ fn set_settings_env_role_expanded(state: &mut ManagerState<'_>, role: String, ex
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    set_settings_role_expanded(&mut settings.env.expanded, role, expanded);
+    settings.env.set_role_expanded(role, expanded);
 }
 
 fn toggle_settings_global_mount_readonly(state: &mut ManagerState<'_>) {
@@ -551,7 +550,7 @@ fn toggle_settings_trust_selected(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    toggle_trust_selected(&mut settings.trust);
+    settings.trust.toggle_selected();
 }
 
 fn move_settings_auth_selection(state: &mut ManagerState<'_>, delta: isize) {

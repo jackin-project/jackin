@@ -821,6 +821,14 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
         self.scroll_y = plan.scroll_y;
     }
 
+    pub fn set_role_expanded(&mut self, role: String, expanded: bool) {
+        if expanded {
+            self.expanded.insert(role);
+        } else {
+            self.expanded.remove(&role);
+        }
+    }
+
     pub fn open_sub_modal(&mut self, child: Modal) {
         if let Some(parent) = self.modal.take() {
             self.modal_parents.push(parent);
@@ -1468,6 +1476,12 @@ impl SettingsTrustState {
 
     pub fn apply_horizontal_scroll(&mut self, scroll_x: u16) {
         self.scroll_x = scroll_x;
+    }
+
+    pub fn toggle_selected(&mut self) {
+        if let Some(row) = self.pending.get_mut(self.selected) {
+            row.trusted = !row.trusted;
+        }
     }
 
     pub fn mark_saved(&mut self) {
@@ -2226,6 +2240,22 @@ impl SettingsGeneralState {
     pub fn change_count(&self) -> usize {
         usize::from(self.pending_coauthor_trailer != self.original_coauthor_trailer)
             + usize::from(self.pending_dco != self.original_dco)
+    }
+
+    pub fn move_selection(&mut self, delta: isize) {
+        self.selected = crate::tui::focus::moved_selection(self.selected, 2, delta);
+    }
+
+    pub const fn toggle_selected(&mut self) {
+        match self.selected {
+            0 => {
+                self.pending_coauthor_trailer = !self.pending_coauthor_trailer;
+            }
+            1 => {
+                self.pending_dco = !self.pending_dco;
+            }
+            _ => {}
+        }
     }
 
     pub const fn mark_clean(&mut self) {
@@ -3201,6 +3231,34 @@ mod tests {
     }
 
     #[test]
+    fn settings_general_state_moves_and_toggles_selection() {
+        let mut state = SettingsGeneralState::from_values(false, false);
+
+        state.move_selection(1);
+        state.toggle_selected();
+
+        assert_eq!(state.selected, 1);
+        assert!(state.pending_dco);
+
+        state.move_selection(-1);
+        state.toggle_selected();
+
+        assert_eq!(state.selected, 0);
+        assert!(state.pending_coauthor_trailer);
+    }
+
+    #[test]
+    fn settings_env_state_updates_role_expansion() {
+        let mut state = SettingsEnvState::<EnvValue, ()>::from_pending(empty_env_config());
+
+        state.set_role_expanded(String::from("alpha"), true);
+        assert!(state.expanded.contains("alpha"));
+
+        state.set_role_expanded(String::from("alpha"), false);
+        assert!(!state.expanded.contains("alpha"));
+    }
+
+    #[test]
     fn settings_subpanels_apply_selection_plans() {
         let mut mounts = GlobalMountsState::<String, ()>::from_rows(Vec::new());
         let mut env = SettingsEnvState::<EnvValue, ()>::from_pending(empty_env_config());
@@ -3248,6 +3306,19 @@ mod tests {
         assert_eq!(trust.scroll_x, 13);
         assert_eq!(trust.selected, 3);
         assert!(content_focused);
+    }
+
+    #[test]
+    fn settings_trust_state_toggles_selected_row() {
+        let mut state = SettingsTrustState::from_rows(vec![SettingsTrustRow {
+            role: String::from("role"),
+            git: String::from("https://example.test/repo.git"),
+            trusted: false,
+        }]);
+
+        state.toggle_selected();
+
+        assert!(state.pending[0].trusted);
     }
 
     #[test]

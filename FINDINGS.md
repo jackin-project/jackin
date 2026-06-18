@@ -7,7 +7,7 @@ Target crate under review: `crates/jackin-console`
 
 ## Executive Summary
 
-`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,362 lines, versus 143 Rust files and 56,020 lines in `crates/jackin-console/src`.
+`crates/jackin/src/console` is not a small entrypoint shim today. It is the largest remaining part of the host console implementation: 80 Rust files and 34,361 lines, versus 143 Rust files and 56,069 lines in `crates/jackin-console/src`.
 
 The current repository documentation explicitly calls this split an unfinished extraction. `docs/content/docs/reference/getting-oriented/codebase-map.mdx` says the crate split is "Phase 1, not finished" and that future work should move reusable, root-independent console domain/service/effect pieces into `jackin-console` or lower-tier crates when the dependency direction stays acyclic.
 
@@ -38,12 +38,12 @@ Approximate local inventory:
 
 | Area | Files | Lines | Current role |
 |---|---:|---:|---|
-| `crates/jackin/src/console` total | 80 | 34,362 | Remaining root console implementation |
+| `crates/jackin/src/console` total | 80 | 34,361 | Remaining root console implementation |
 | `domain.rs` | 1 | 149 | Role-source logging, provider derivation, and root instance snapshot alias |
 | `services.rs` + `services/` | 9 | 861 | Side-effect adapters around config, Docker, runtime, op, token setup |
 | `effects.rs` | 1 | 1,250 | Root effect executor and background polling |
 | `terminal.rs` | 1 | 50 | Host terminal ownership adapter |
-| `tui/` | 65 | 31,616 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
+| `tui/` | 65 | 31,615 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
 
 Largest root files:
 
@@ -144,7 +144,7 @@ Active animation ticking for editor/settings/list op-picker modals now lives in 
 
 Workspace-list tree-disclosure and selection-plan application now lives in `jackin-console/src/tui/screens/workspaces/update.rs`; root manager state implements narrow mutation traits for picker clearing, list-scroll reset, selected-index assignment, and concrete tree expand/collapse storage.
 
-Settings tab move/select, global-mount/environment/trust selection, Trust row-select, and settings horizontal-scroll plan application now lives with the shared settings models in `jackin-console/src/tui/screens/settings/model.rs`; root message handling constructs crate-owned plans and delegates mutation to the owner model.
+Settings tab move/select, General selection/toggle, environment role expansion, global-mount/environment/trust selection, Trust row-select/toggle, and settings horizontal-scroll plan application now lives with the shared settings models in `jackin-console/src/tui/screens/settings/model.rs`; root message handling constructs crate-owned plans and delegates mutation to the owner model.
 
 Status-overlay, list-modal, and inline-picker dismissal plan application now lives in `jackin-console/src/tui/update.rs`; root manager state implements narrow mutation traits for concrete overlay storage, list-modal variant storage, and inline picker slots.
 
