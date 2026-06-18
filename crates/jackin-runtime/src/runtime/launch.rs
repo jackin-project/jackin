@@ -902,8 +902,9 @@ pub(super) async fn launch_role_runtime(
         ));
     }
 
-    // WP-SUDO: Inject JACKIN_SUDO=1 when sudo is granted. The capsule
-    // entrypoint writes /etc/sudoers.d/agent only when this env is set.
+    // WP-SUDO: Inject JACKIN_SUDO=1 when sudo is granted. After container start,
+    // `sudo-provision` (run as root via docker exec) reads this to decide whether
+    // to keep or remove /etc/sudoers.d/agent.
     if grants.sudo {
         env_strings.push(format!(
             "{}=1",
@@ -1030,6 +1031,29 @@ pub(super) async fn launch_role_runtime(
     } else {
         run_role.await?;
     }
+
+    // WP-SUDO: Enforce per-profile sudo grant via docker exec --user root.
+    // The construct image ships /etc/sudoers.d/agent (passwordless sudo) for
+    // `docker build` compat; sudo-provision removes it for profiles that do not
+    // grant sudo, and is a no-op when JACKIN_SUDO=1 (file already present).
+    runner
+        .run(
+            "docker",
+            &[
+                "exec",
+                "--user",
+                "root",
+                container_name,
+                "/jackin/runtime/jackin-capsule",
+                "sudo-provision",
+            ],
+            None,
+            &RunOptions {
+                quiet: !debug,
+                ..RunOptions::default()
+            },
+        )
+        .await?;
 
     // WP1: Egress allowlist enforcement — fail-closed (Decision 3).
     // Run `firewall-apply` as root inside the container after it starts.

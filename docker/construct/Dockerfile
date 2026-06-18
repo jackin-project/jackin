@@ -124,17 +124,18 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
            /var/cache/apt/* \
            /tmp/*
 
-# Create runtime user. No baked sudoers — WP-SUDO provisions sudo at runtime
-# only when JACKIN_SUDO=1 is injected by the host (compat profile and explicit
-# sudo grants). The sudo package stays installed so the runtime entrypoint can
-# write /etc/sudoers.d/agent when the grant is active.
+# Create runtime user. Bake passwordless sudo so role Dockerfiles can use
+# `sudo apt-get` during `docker build` (WP-SUDO build compat). The host revokes
+# it via `docker exec --user root jackin-capsule sudo-provision` after container
+# start for profiles that do not grant sudo.
 RUN groupadd -g "$GID" agent && \
     useradd -m -u "$UID" -g "$GID" -s /bin/zsh agent && \
-    install -d -o agent -g agent /home/agent/.claude /home/agent/.codex /home/agent/.jackin
+    install -d -o agent -g agent /home/agent/.claude /home/agent/.codex /home/agent/.jackin && \
+    printf 'agent ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/agent && \
+    chmod 0440 /etc/sudoers.d/agent
 
 # Install starship prompt as root so the installer can write to /usr/local/bin
-# without sudo. Must run before USER agent: no baked sudoers are configured
-# (WP-SUDO provisions sudo at runtime only), so the installer cannot escalate.
+# without needing to escalate privileges.
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
 # Default to a UTF-8 locale so shell prompts and CLI output render correctly,

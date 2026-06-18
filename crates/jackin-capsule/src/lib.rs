@@ -26,6 +26,7 @@ pub mod protocol;
 pub mod pull_request;
 pub mod runtime_setup;
 pub mod services;
+pub mod sudo_provision;
 pub mod session;
 pub mod socket;
 pub mod telemetry;

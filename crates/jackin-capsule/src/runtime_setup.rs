@@ -36,44 +36,10 @@ const GIT_DCO_IDENTITY_CACHE: &str = "/jackin/state/git-dco-identity";
 const GIT_DCO_IDENTITY_CACHE_ENV: &str = "JACKIN_GIT_DCO_IDENTITY_CACHE";
 
 pub fn run() -> Result<()> {
-    provision_sudo_if_granted()?;
     run_container_init_once()?;
     install_git_trailer_hook_if_requested()?;
     cache_dco_identity_if_needed();
     run_agent_setup()
-}
-
-/// WP-SUDO: write `/etc/sudoers.d/agent` when `JACKIN_SUDO=1` is set.
-///
-/// The base image no longer ships a baked sudoers entry (WP-SUDO). The host
-/// injects `JACKIN_SUDO=1` only for `compat` and explicit `sudo = true` grants.
-/// This function runs as the first setup step so later init logic (e.g. `apt`
-/// calls in oh-my-zsh plugins) can use sudo if granted.
-fn provision_sudo_if_granted() -> Result<()> {
-    if !env_is_one("JACKIN_SUDO") {
-        return Ok(());
-    }
-    const SUDOERS_PATH: &str = "/etc/sudoers.d/agent";
-    if Path::new(SUDOERS_PATH).exists() {
-        return Ok(());
-    }
-    fs::write(SUDOERS_PATH, b"agent ALL=(ALL) NOPASSWD:ALL\n")
-        .with_context(|| format!("failed to write sudo grant to {SUDOERS_PATH}"))?;
-    // Set strict permissions: sudoers.d entries must be 0440 (root-owned,
-    // group-readable) or sudo refuses to parse them.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(
-            SUDOERS_PATH,
-            fs::Permissions::from_mode(0o440),
-        )
-        .with_context(|| format!("failed to chmod {SUDOERS_PATH}"))?;
-    }
-    crate::output::stdout_line(format_args!(
-        "[entrypoint] sudo granted via JACKIN_SUDO=1"
-    ));
-    Ok(())
 }
 
 /// Write a run-once marker (`ok\n`), creating its parent directory first.

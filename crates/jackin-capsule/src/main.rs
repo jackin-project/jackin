@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use jackin_capsule::{
     client, config, daemon, firewall, output, protocol::attach::SpawnRequest, runtime_setup,
-    session::validate_agent_slug,
+    session::validate_agent_slug, sudo_provision,
 };
 use std::path::Path;
 
@@ -56,6 +56,7 @@ SUBCOMMANDS:
     snapshot                       Write a screen snapshot to stdout
     --focus <session_id>           Connect and focus the given session
     runtime-setup                  First-boot environment setup (run by entrypoint)
+    sudo-provision                 Enforce per-profile sudo grant (run as root via docker exec)
     firewall-apply                 Apply the in-container network allowlist
     prepare-commit-msg <file>      Git hook integration
 
@@ -84,6 +85,7 @@ connecting as a client.",
                 client::run_agents(format).await
             }
             Some("runtime-setup") => runtime_setup::run(),
+            Some("sudo-provision") => sudo_provision::provision(),
             Some("firewall-apply") => firewall::apply(),
             Some("prepare-commit-msg") => runtime_setup::run_prepare_commit_msg_hook(&args[2..]),
             Some("new") => {
@@ -128,7 +130,7 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, agents [--format json], runtime-setup, firewall-apply, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, agents [--format json], runtime-setup, sudo-provision, firewall-apply, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
@@ -167,7 +169,7 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
         // ignored instead of silently consumed.
         Some(
             "status" | "snapshot" | "agents" | "runtime-setup" | "prepare-commit-msg" | "--version"
-            | "firewall-apply" | "-V" | "--help" | "-h",
+            | "sudo-provision" | "firewall-apply" | "-V" | "--help" | "-h",
         ) => args.len(),
         // `jackin-capsule --focus 5` (no subcommand) or no args at
         // all — scan from index 1.
