@@ -14,9 +14,10 @@ These are agreed and drive the plan below. Do not re-litigate without flagging i
 2. **PR #528 ships the enforcement bundle, not a skeleton.** #528 does not merge until the opt-in features actually work end to end. Scope: WP0 + WP1 + WP2 + WP3 + WP4 in one PR.
 3. **Fail-closed on firewall failure.** Under `hardened`/`locked`, if `firewall-apply` cannot install the egress allowlist, the launch aborts and the container is torn down with an actionable error. The agent never runs with open egress when the operator asked for a boundary.
 4. **`standard` becomes the default eventually — not now.** The long-term goal is security-by-default (`standard`: resource limits + `no-new-privileges` on). That flip is the one change that alters default behavior, so it is deferred behind the base-image `NOPASSWD:ALL` sudo audit (WP6). Until then `compat` stays the default.
-5. **Deferred out of #528:** credential env-only posture (WP7 → owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/)), rootless DinD / Sysbox research (WP5), and the `standard` default flip (WP6). Each lands as its own follow-up; none blocks #528.
+5. **Deferred out of #528:** credential env-only posture (WP7 → owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/)), making rootless DinD a *default* + Sysbox (WP5 — the rootless *tier* itself ships selectable in WP4), and the `standard` default flip (WP6). Each lands as its own follow-up; none blocks #528.
 6. **Docs never describe unshipped behavior.** Every WP updates its own docs in the same commit, and a final claim-by-claim audit (WP-DOC) blocks merge. The user-facing guide must not present egress enforcement, the session contract, or telemetry as shipped until the code that backs them lands, must mark deferred work as deferred, and must not leak internal paths or Rust symbols (three-audience rule).
 7. **WP0 ships the full automated matrix now, two-tier.** Profiles must be proven, not spot-checked: Tier 1 mechanism probes gate every PR (fast, no creds/internet, via a local stub host); the full Tier 2 workflow matrix proves real workloads run and must pass once for #528 as the readiness artifact, then runs nightly. Optimized so the full matrix never slows the per-PR signal (image built once, parallel cells, stub host, cheapest workloads).
+8. **DinD is fully configurable — all three tiers, nothing removed.** `none` / `rootless` / `privileged` are all operator-selectable (capability-grant model). Rootless DinD is wired in #528 (WP4) so users can choose it and it gets validated, but privileged stays available and rootless is not forced as any profile's default until the WP0 matrix is green (WP5/WP6). Rootless requires cgroup v2 and fails with a clear error — never a silent fallback — on v1.
 
 ## What shipped (PR #528)
 
@@ -41,12 +42,12 @@ One line per work package. Full design, integration points, and tests are in the
 2. **WP1 — Network egress allowlist enforcement** (highest priority). The allowlist is computed then discarded — `hardened`/`locked` advertise an allowlist that does not exist and run open egress. Wire the container env + `firewall-apply` exec, fail-closed (Decision 3).
 3. **WP2 — `internal` network for `locked`.** Block egress at the Docker network layer, not only via in-container iptables.
 4. **WP3 — Launch observability.** `format_session_contract` is never called; AppArmor/cgroup probes and the per-decision telemetry lines do not exist; the Phase-1 host-socket regression test is missing.
-5. **WP4 — DinD-free auto-skip.** Stop starting the privileged sidecar for `hardened`+ roles that need no inner engine. Schema already exists.
+5. **WP4 — DinD configuration: all three tiers selectable.** Wire `none` (auto-skip), `rootless` (`docker:dind-rootless`, drop `--privileged`, needs cgroup v2), and keep `privileged`. Rootless is selectable now, not a default until WP0 proves it (WP6). Nothing removed.
 6. **WP-DOC — Documentation accuracy gate.** Cross-cutting: every WP updates its docs in the same commit; the user-facing guide currently over-claims (egress enforcement, session contract, telemetry all described as shipped but not wired) and leaks internal impl. A final claim-by-claim audit blocks merge. No page may describe a feature jackin' has not added.
 
 **Deferred to follow-up PRs** (Decision 5):
 
-7. **WP5 — Rootless DinD / Sysbox** (research; needs host-install policy ruling).
+7. **WP5 — Rootless-as-default + Sysbox** (research; the rootless *tier* ships selectable in WP4 — what's deferred is making it the `standard` default after the WP0 matrix is green, plus the Sysbox host-install policy ruling).
 8. **WP6 — `compat` → `standard` default flip + `no-new-privileges` for `standard`** (blocked on base-image `NOPASSWD:ALL` sudo audit; the only default-behavior change).
 9. **WP7 — Credential env-only posture under `hardened`/`locked`** (owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/); touches the sensitive credential path, reviewed on its own).
 
@@ -70,7 +71,7 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
                            │                 └─> WP3 (observability)
                            ├─> WP4 (DinD-free auto-skip)
                            ├─> WP6 (default flip) ── blocked on sudo audit
-                           └─> WP5 (rootless DinD / Sysbox) ── research
+                           └─> WP5 (rootless-as-default / Sysbox) ── research
                                 WP7 (credential posture) ── after WP3
 ```
 
@@ -176,17 +177,25 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 
 **Exit criteria:** `jackin load … --debug` prints a complete, accurate per-dimension contract; the host-socket test guards the hard rule.
 
-### WP4 — DinD-free auto-skip (independent)
+### WP4 — DinD configuration: all three tiers selectable (auto-skip + rootless)
 
-**Goal:** stop starting the privileged sidecar when a `hardened`+ role does not need an inner engine. Schema is already in place (`dind` grant / role `dind`).
+**Goal:** make every `DindGrant` tier (`none` / `rootless` / `privileged`) a real, operator-selectable option — the capability-grant model applied to DinD. No tier is removed: privileged DinD stays available; `none` skips the sidecar; `rootless` is newly wired. Rootless is *selectable* now, validated against the WP0 matrix, but is **not** any profile's default until that matrix is green and `standard` becomes the default (WP6). It requires cgroup v2 and must fail with a clear error (not silently) on v1 hosts.
 
-**Integration points:**
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — grant resolution already downgrades `dind` to `None` when the role declares it. Confirm the default for `hardened`/`locked` is `DindGrant::None` (it is, in `profile_base_grants`).
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — the sidecar block is already gated on `dind_enabled(grants)`; the remaining work is the explicit telemetry and verifying the no-DinD path skips cert volume + network wiring cleanly (the merge already made cert mount conditional).
+**Part A — DinD-free (`none`):** stop starting the sidecar when the resolved grant is `None`.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — grant resolution already downgrades `dind` to `None` when the role declares it; confirm `hardened`/`locked` default to `DindGrant::None` (they do, in `profile_base_grants`).
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — sidecar block is already gated on `dind_enabled(grants)`; remaining work is telemetry + verifying the no-DinD path skips cert volume / network wiring cleanly.
 
-**Tests:** unit — `hardened` with no inner-engine need starts no DinD container, mounts no certs, and reports `network_enforcement = full` (no DinD bypass). E2E — a no-DinD `hardened` launch runs an agent successfully.
+**Part B — rootless tier (`rootless`):** wire `DindGrant::Rootless` end to end.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_dind.rs" />, `run_dind_sidecar` — when the grant is `Rootless`, use the `docker:dind-rootless` image and **drop `--privileged`** (rootless runs in a user namespace); keep the existing TLS-cert wiring. When `Privileged`, keep today's `docker:dind` + `--privileged` path unchanged.
+- **cgroup-v2 requirement:** rootless DinD needs cgroup v2. Reuse the WP3 cgroup probe; if the host is v1 and the grant is `rootless`, fail the launch with a clear error naming the requirement — never silently fall back to privileged (that would defeat the operator's choice).
+- **Default unchanged:** profile base grants keep `Privileged` for `standard`/`compat`; `rootless` is reached only via an explicit `dind = "rootless"` grant (config/workspace/role) until WP6.
 
-**Telemetry:** `debug_log!("launch", "dind enabled=no reason=profile-no-inner-engine")`.
+**Tests:**
+- Unit (Part A): `hardened` with no inner-engine need starts no DinD, mounts no certs, reports `network_enforcement = full`.
+- Unit (Part B): `dind = "rootless"` selects `docker:dind-rootless` and omits `--privileged`; `privileged` keeps `docker:dind` + `--privileged`; `rootless` on a probed-v1 host fails with the named error.
+- E2E (WP0 rows): rootless DinD runs the inner-Docker workflows (`docker build`, Compose, Testcontainers) on a cgroup-v2 runner — these rows are exactly the rootless compatibility matrix that gates making it a default later.
+
+**Telemetry:** `debug_log!("launch", "dind enabled=<yes|no> mode=<privileged|rootless> reason=<…>")`.
 
 ### WP-DOC — Documentation accuracy gate (runs through #528, blocks merge)
 
@@ -203,7 +212,7 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 - **The entire `--debug` output block** (`profile_selected`, `cap_drop_all`, `no_new_privileges`, `read_only_root`, `resource_limit`, `network_mode`, `cgroup_version`, `apparmor`, compact summary) — only one summary line exists today; the rest lands in WP3. Do not document lines that are not emitted.
 - **"Full telemetry under `--debug` (… session contract)"** under shipped — session contract is never rendered until WP3.
 - **Credential telemetry note** ("`hardened`/`locked` profiles emit a telemetry note recommending `api_key`…") — that is WP7, deferred; must not read as present.
-- **Rootless DinD** (`dind = "rootless"` examples) presented as usable — it is WP5 research; mark as not-yet-available or remove the examples until it ships.
+- **Rootless DinD** (`dind = "rootless"`) — now wired and selectable (WP4 Part B), so the guide may present it as usable, but must state the cgroup-v2 requirement and that it is experimental / not a default. Do not imply it is the `standard` default (that is deferred, WP5/WP6).
 
 **Internal-impl leaks on a user-facing page** (violates the three-audience rule in the docs `AGENTS.md` — Operator/Role-Author pages must not expose Rust symbols, internal file paths, or `TODO.md`): the guide currently exposes the `docker/construct/Dockerfile` line ref, the `crates/jackin-runtime/src/runtime/docker_profile.rs` ref, `impl Default for DockerSecurityProfile`, and a `TODO.md` pointer in the "what will change" section. Replace these with operator-visible behavior ("a future release will make `standard` the default") and a single link to this roadmap item; move the implementation detail here.
 
@@ -213,10 +222,12 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 
 **Exit criteria:** a reader following only the guide cannot reach a feature that does not exist; no user-facing page names a Rust symbol, internal path, or `TODO.md`; the roadmap (this item) holds the implementation detail.
 
-### WP5 — Rootless DinD / Sysbox (research, not blocking)
+### WP5 — Rootless-as-default + Sysbox (research, not blocking)
 
-- **Rootless DinD:** prototype swapping `docker:dind` → `docker:dind-rootless` and dropping `--privileged` on cgroup v2 hosts under `standard`. Gate behind the WP0 matrix; do not default until all rows pass.
-- **Sysbox:** needs host-side runtime registration that conflicts with the "never mutate host silently" rule. Decide operator-confirmed opt-in vs hard-skip *before* any code. Document the decision in this item.
+The rootless DinD *tier* is wired and selectable in #528 (WP4 Part B). What remains here is research, deferred:
+
+- **Make rootless the `standard` default:** only after the WP0 Tier 2 compatibility matrix (Testcontainers / Compose / BuildKit on cgroup v2) is green across the supported host set, and alongside the `standard` default flip (WP6). Until then rootless stays opt-in via `dind = "rootless"`.
+- **Sysbox:** an alternative runtime that gives VM-like inner Docker without a privileged sidecar, but needs host-side runtime registration that conflicts with the "never mutate host silently" rule. Decide operator-confirmed opt-in install vs hard-skip (use only if the operator already installed Sysbox) *before* any code. Document the decision here.
 
 ### WP6 — `compat` → `standard` default flip + `no-new-privileges` for `standard` (blocked)
 
@@ -253,7 +264,7 @@ Deferred to their own follow-up PRs (Decision 5), none blocking #528:
 |---|---|---|---|
 | F1 | WP7 credential env-only posture | #528 (WP3) | owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/); isolated review of the credential path |
 | F2 | WP6 `standard` default flip + `no-new-privileges` for `standard` | sudo audit | the only default-behavior change — call out in changelog |
-| — | WP5 rootless DinD / Sysbox | research | needs host-install policy ruling first |
+| — | WP5 rootless-as-default + Sysbox | WP0 matrix green; research | rootless *tier* already in WP4; deferring only the default + Sysbox host-install ruling |
 
 No work package in #528 requires a schema bump — the config/workspace/manifest schema for every grant dimension already shipped earlier in #528's history. That is deliberate: operators can write the configs today; this bundle turns the already-parsed fields into enforced behavior, active only under an opted-in profile.
 
