@@ -29,8 +29,8 @@ use jackin_console::tui::components::file_browser::page_rows_for_modal;
 use jackin_console::tui::mount_display::settings_global_config_mounts_content_width_with_cache;
 use jackin_console::tui::screens::settings::update as settings_update;
 use jackin_console::tui::screens::settings::update::{
-    GlobalMountAddFinalizePlan, GlobalMountAddTextApplyPlan, GlobalMountTextCommitPlan,
-    SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
+    GlobalMountAddFinalizePlan, GlobalMountAddTextApplyPlan, GlobalMountScopePickerCommitPlan,
+    GlobalMountTextCommitPlan, SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
     SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
     SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan,
 };
@@ -1348,11 +1348,11 @@ fn commit_add_scope_choice(
     settings: &mut crate::console::tui::state::SettingsState<'_>,
     choice: jackin_console::tui::components::scope_picker::ScopeChoice,
 ) -> SettingsModalOutcome {
-    match choice {
-        jackin_console::tui::components::scope_picker::ScopeChoice::AllAgents => {
+    match settings_update::global_mount_scope_picker_commit_plan(choice) {
+        GlobalMountScopePickerCommitPlan::ApplyAllAgentsScope => {
             commit_text(&mut settings.mounts, &GlobalMountTextTarget::AddScope, "")
         }
-        jackin_console::tui::components::scope_picker::ScopeChoice::SpecificAgent => {
+        GlobalMountScopePickerCommitPlan::OpenRolePicker => {
             open_global_mount_role_picker(settings);
             SettingsModalOutcome::Continue
         }

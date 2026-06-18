@@ -12,6 +12,7 @@ use super::model::{
     SettingsGeneralState, SettingsTab, SettingsTrustState,
 };
 use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
+use crate::tui::components::scope_picker::ScopeChoice;
 use jackin_core::RoleSelector;
 use jackin_tui::ModalOutcome;
 use ratatui::layout::Rect;
@@ -160,6 +161,12 @@ pub enum GlobalMountAddTextApplyPlan {
     OpenAddDestination,
     Finalize,
     Noop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalMountScopePickerCommitPlan {
+    ApplyAllAgentsScope,
+    OpenRolePicker,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -354,6 +361,16 @@ pub fn global_mount_add_text_apply_plan(
             GlobalMountAddTextApplyPlan::Finalize
         }
         _ => GlobalMountAddTextApplyPlan::Noop,
+    }
+}
+
+#[must_use]
+pub const fn global_mount_scope_picker_commit_plan(
+    choice: ScopeChoice,
+) -> GlobalMountScopePickerCommitPlan {
+    match choice {
+        ScopeChoice::AllAgents => GlobalMountScopePickerCommitPlan::ApplyAllAgentsScope,
+        ScopeChoice::SpecificAgent => GlobalMountScopePickerCommitPlan::OpenRolePicker,
     }
 }
 

@@ -191,6 +191,18 @@ fn global_mount_add_text_apply_plan_updates_draft_and_routes_next_step() {
 }
 
 #[test]
+fn global_mount_scope_picker_commit_plan_routes_choices() {
+    assert_eq!(
+        global_mount_scope_picker_commit_plan(ScopeChoice::AllAgents),
+        GlobalMountScopePickerCommitPlan::ApplyAllAgentsScope
+    );
+    assert_eq!(
+        global_mount_scope_picker_commit_plan(ScopeChoice::SpecificAgent),
+        GlobalMountScopePickerCommitPlan::OpenRolePicker
+    );
+}
+
+#[test]
 fn settings_env_text_commit_plan_routes_keys_and_values() {
     let role_scope = SettingsEnvScope::Role("ops".to_owned());
     let target = SettingsEnvTextTarget::EnvKey {
