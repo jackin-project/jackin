@@ -1,5 +1,6 @@
 //! Tests for `view`.
 use super::*;
+use crate::tui::app::ConsoleManagerStageRoute;
 
 #[test]
 fn workspace_frame_areas_match_header_body_footer_contract() {
@@ -35,6 +36,36 @@ fn modal_content_areas_reserve_screen_specific_footers() {
             editor: Rect::new(3, 4, 80, 20),
             settings: Rect::new(3, 4, 80, 18),
         }
+    );
+}
+
+#[test]
+fn stage_modal_area_routes_by_visible_stage() {
+    let areas = ModalContentAreas {
+        workspace: Rect::new(0, 0, 10, 20),
+        editor: Rect::new(1, 0, 10, 18),
+        settings: Rect::new(2, 0, 10, 16),
+    };
+
+    assert_eq!(
+        stage_modal_area_for_route(ConsoleManagerStageRoute::Editor, areas),
+        Some(StageModalArea::Editor(areas.editor))
+    );
+    assert_eq!(
+        stage_modal_area_for_route(ConsoleManagerStageRoute::Settings, areas),
+        Some(StageModalArea::Settings(areas.settings))
+    );
+    assert_eq!(
+        stage_modal_area_for_route(ConsoleManagerStageRoute::CreatePrelude, areas),
+        Some(StageModalArea::Workspace(areas.workspace))
+    );
+    assert_eq!(
+        stage_modal_area_for_route(ConsoleManagerStageRoute::List, areas),
+        None
+    );
+    assert_eq!(
+        stage_modal_area_for_route(ConsoleManagerStageRoute::ConfirmDelete, areas),
+        None
     );
 }
 

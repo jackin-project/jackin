@@ -9,7 +9,8 @@ use jackin_config::AppConfig;
 use jackin_console::tui::screens::editor::view::editor_frame_areas;
 use jackin_console::tui::screens::settings::view::settings_frame_areas;
 use jackin_console::tui::view::{
-    effective_footer_height, measured_footer_height, modal_content_areas, workspace_frame_areas,
+    StageModalArea, effective_footer_height, measured_footer_height, modal_content_areas,
+    stage_modal_area_for_route, workspace_frame_areas,
 };
 
 pub fn prepare_for_render(
@@ -63,25 +64,25 @@ fn prepare_visible_modal(area: Rect, state: &mut ManagerState<'_>) {
     if let Some(modal) = &mut state.list_modal {
         prepare_modal(content_areas.workspace, modal);
     }
-    match &mut state.stage {
-        ManagerStage::Editor(editor) => {
-            if let Some(modal) = &mut editor.modal {
-                prepare_modal(content_areas.editor, modal);
+    if let Some(area) = stage_modal_area_for_route(state.stage.route(), content_areas) {
+        match (&mut state.stage, area) {
+            (ManagerStage::Editor(editor), StageModalArea::Editor(area)) => {
+                if let Some(modal) = &mut editor.modal {
+                    prepare_modal(area, modal);
+                }
             }
-        }
-        ManagerStage::CreatePrelude(prelude) => {
-            if let Some(modal) = &mut prelude.modal {
-                prepare_modal(content_areas.workspace, modal);
+            (ManagerStage::CreatePrelude(prelude), StageModalArea::Workspace(area)) => {
+                if let Some(modal) = &mut prelude.modal {
+                    prepare_modal(area, modal);
+                }
             }
-        }
-        ManagerStage::Settings(settings) => {
-            if let Some(modal) = &mut settings.mounts.modal {
-                modal.prepare_for_render(content_areas.settings);
+            (ManagerStage::Settings(settings), StageModalArea::Settings(area)) => {
+                if let Some(modal) = &mut settings.mounts.modal {
+                    modal.prepare_for_render(area);
+                }
             }
+            _ => {}
         }
-        ManagerStage::List
-        | ManagerStage::ConfirmDelete { .. }
-        | ManagerStage::ConfirmInstancePurge { .. } => {}
     }
 }
 

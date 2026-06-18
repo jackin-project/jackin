@@ -5,6 +5,8 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
 };
 
+use crate::tui::app::ConsoleManagerStageRoute;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceFrameAreas {
     pub header: Rect,
@@ -37,6 +39,13 @@ pub struct ModalContentAreas {
     pub workspace: Rect,
     pub editor: Rect,
     pub settings: Rect,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StageModalArea {
+    Workspace(Rect),
+    Editor(Rect),
+    Settings(Rect),
 }
 
 #[must_use]
@@ -100,6 +109,21 @@ pub const fn modal_content_areas(
         workspace: modal_content_area(area, workspace_footer_height),
         editor: modal_content_area(area, editor_footer_height),
         settings: modal_content_area(area, settings_footer_height),
+    }
+}
+
+#[must_use]
+pub const fn stage_modal_area_for_route(
+    route: ConsoleManagerStageRoute,
+    areas: ModalContentAreas,
+) -> Option<StageModalArea> {
+    match route {
+        ConsoleManagerStageRoute::List
+        | ConsoleManagerStageRoute::ConfirmDelete
+        | ConsoleManagerStageRoute::ConfirmInstancePurge => None,
+        ConsoleManagerStageRoute::Editor => Some(StageModalArea::Editor(areas.editor)),
+        ConsoleManagerStageRoute::Settings => Some(StageModalArea::Settings(areas.settings)),
+        ConsoleManagerStageRoute::CreatePrelude => Some(StageModalArea::Workspace(areas.workspace)),
     }
 }
 
