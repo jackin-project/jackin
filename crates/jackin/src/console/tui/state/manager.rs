@@ -7,6 +7,7 @@ use ratatui::layout::Rect;
 use crate::console::domain::InstanceRefreshSnapshot;
 use crate::console::tui::effect::ManagerEffect;
 use jackin_config::AppConfig;
+use jackin_console::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
 use jackin_console::tui::screens::workspaces::model::hovered_list_row;
 use jackin_console::tui::screens::workspaces::update::{
     collapsed_current_dir_selected_index, collapsed_workspace_selected_index,
@@ -586,50 +587,42 @@ impl ManagerState<'_> {
         &self,
         config: &AppConfig,
     ) -> Option<(MountInfoRefreshTarget, Vec<String>)> {
-        match &self.stage {
-            ManagerStage::List => {
-                let mut sources = BTreeSet::new();
-                sources.insert(self.current_dir.clone());
-                for workspace in config.workspaces.values() {
-                    sources.extend(workspace.mounts.iter().map(|mount| mount.src.clone()));
-                }
-                sources.extend(
-                    config
-                        .list_mount_rows()
-                        .into_iter()
-                        .map(|row| row.mount.src),
-                );
-                Some((
-                    MountInfoRefreshTarget::ManagerList,
-                    sources.into_iter().collect(),
-                ))
-            }
-            ManagerStage::Editor(editor) => {
-                let sources = editor
+        let facts = match &self.stage {
+            ManagerStage::List => MountInfoRefreshSourceFacts::ManagerList {
+                current_dir: self.current_dir.clone(),
+                workspace_mount_sources: config
+                    .workspaces
+                    .values()
+                    .flat_map(|workspace| workspace.mounts.iter().map(|mount| mount.src.clone()))
+                    .collect(),
+                global_mount_sources: config
+                    .list_mount_rows()
+                    .into_iter()
+                    .map(|row| row.mount.src)
+                    .collect(),
+            },
+            ManagerStage::Editor(editor) => MountInfoRefreshSourceFacts::Editor {
+                mount_sources: editor
                     .pending
                     .mounts
                     .iter()
                     .map(|mount| mount.src.clone())
-                    .collect::<BTreeSet<_>>()
-                    .into_iter()
-                    .collect::<Vec<_>>();
-                (!sources.is_empty()).then_some((MountInfoRefreshTarget::Editor, sources))
-            }
-            ManagerStage::Settings(settings) => {
-                let sources = settings
+                    .collect(),
+            },
+            ManagerStage::Settings(settings) => MountInfoRefreshSourceFacts::SettingsMounts {
+                mount_sources: settings
                     .mounts
                     .pending
                     .iter()
                     .map(|row| row.mount.src.clone())
-                    .collect::<BTreeSet<_>>()
-                    .into_iter()
-                    .collect::<Vec<_>>();
-                (!sources.is_empty()).then_some((MountInfoRefreshTarget::SettingsMounts, sources))
-            }
+                    .collect(),
+            },
             ManagerStage::CreatePrelude(_)
             | ManagerStage::ConfirmDelete { .. }
-            | ManagerStage::ConfirmInstancePurge { .. } => None,
-        }
+            | ManagerStage::ConfirmInstancePurge { .. } => MountInfoRefreshSourceFacts::Inactive,
+        };
+
+        mount_info_refresh_source_plan(facts).map(|plan| (plan.target, plan.sources))
     }
 
     /// Poll the in-flight drift check started by a save operation.
