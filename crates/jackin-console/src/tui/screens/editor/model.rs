@@ -1050,6 +1050,20 @@ impl<
             .is_some_and(|modal| modal.auth_form_can_generate_token(editing_existing_workspace))
     }
 
+    #[must_use]
+    pub fn active_auth_form_focus(
+        &self,
+    ) -> Option<crate::tui::screens::settings::model::AuthFormFocus>
+    where
+        Modal: crate::tui::auth_config::ModalAuthFormFocusInspect<
+                crate::tui::screens::settings::model::AuthFormFocus,
+            >,
+    {
+        self.modal
+            .as_ref()
+            .and_then(crate::tui::auth_config::ModalAuthFormFocusInspect::active_auth_form_focus)
+    }
+
     pub fn start_auth_token_generate<SourcePickerState>(
         &mut self,
         source_picker_state: SourcePickerState,
@@ -2301,6 +2315,42 @@ mod tests {
         (),
         (),
     >;
+    #[derive(Debug)]
+    enum TestAuthModal {
+        Auth {
+            focus: crate::tui::screens::settings::model::AuthFormFocus,
+        },
+        Other,
+    }
+
+    impl
+        crate::tui::auth_config::ModalAuthFormFocusInspect<
+            crate::tui::screens::settings::model::AuthFormFocus,
+        > for TestAuthModal
+    {
+        fn active_auth_form_focus(
+            &self,
+        ) -> Option<crate::tui::screens::settings::model::AuthFormFocus> {
+            match self {
+                Self::Auth { focus } => Some(*focus),
+                Self::Other => None,
+            }
+        }
+    }
+
+    type TestEditorWithAuthModal = EditorState<
+        WorkspaceConfig,
+        (),
+        TestAuthModal,
+        (),
+        jackin_config::EnvValue,
+        u8,
+        (),
+        (),
+        (),
+        (),
+        (),
+    >;
     type TestEditorWithMountCache = EditorState<
         WorkspaceConfig,
         crate::mount_info_cache::MountInfoCache,
@@ -2561,6 +2611,25 @@ mod tests {
         editor.dismiss_status_popup();
 
         assert!(matches!(editor.modal, Some(TestStatusModal::Other)));
+    }
+
+    #[test]
+    fn active_auth_form_focus_reads_only_auth_modal() {
+        let mut editor =
+            TestEditorWithAuthModal::new_edit("alpha".into(), WorkspaceConfig::default());
+
+        assert_eq!(editor.active_auth_form_focus(), None);
+
+        editor.modal = Some(TestAuthModal::Other);
+        assert_eq!(editor.active_auth_form_focus(), None);
+
+        editor.modal = Some(TestAuthModal::Auth {
+            focus: crate::tui::screens::settings::model::AuthFormFocus::Save,
+        });
+        assert_eq!(
+            editor.active_auth_form_focus(),
+            Some(crate::tui::screens::settings::model::AuthFormFocus::Save)
+        );
     }
 
     #[test]

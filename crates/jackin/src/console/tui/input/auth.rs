@@ -105,14 +105,9 @@ pub(super) fn handle_auth_form_key(
     key: KeyEvent,
     op_available: bool,
 ) -> bool {
-    if !matches!(editor.modal, Some(Modal::AuthForm { .. })) {
+    let Some(current_focus) = editor.active_auth_form_focus() else {
         return false;
-    }
-
-    let Some(Modal::AuthForm { focus, .. }) = editor.modal.as_ref() else {
-        unreachable!("guarded above");
     };
-    let current_focus = *focus;
 
     // Esc cancels at every focus. Drain the auth-form return stash too so
     // a stale OpPicker round-trip can't be re-applied to a future modal —

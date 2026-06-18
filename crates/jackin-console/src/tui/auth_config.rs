@@ -178,6 +178,10 @@ pub trait ModalAuthFormGenerate {
     fn auth_form_can_generate_token(&self, editing_existing_workspace: bool) -> bool;
 }
 
+pub trait ModalAuthFormFocusInspect<AuthFormFocus> {
+    fn active_auth_form_focus(&self) -> Option<AuthFormFocus>;
+}
+
 pub trait ModalAuthTokenGenerateStart<Target, SourcePickerState>: Sized {
     fn open_auth_generate_source_picker(
         modal: &mut Option<Self>,
