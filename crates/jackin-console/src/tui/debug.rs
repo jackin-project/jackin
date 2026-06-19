@@ -191,5 +191,17 @@ pub fn key_debug_name_for_input(
     }
 }
 
+pub fn console_location_debug(console_state: &crate::tui::console::ConsoleState) -> String {
+    let crate::tui::console::ConsoleStage::Manager(ms) = &console_state.stage;
+    console_location_debug_name(&ConsoleLocationDebug {
+        quit_confirm: console_state.quit_confirm_open(),
+        stage: ms.stage.debug_stage(),
+        list_modal: ms
+            .list_modal
+            .as_ref()
+            .map(ConsoleModalDebugKind::modal_debug_kind),
+    })
+}
+
 #[cfg(test)]
 mod tests;
