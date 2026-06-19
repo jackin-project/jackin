@@ -1,9 +1,10 @@
 mod quit_confirm {
     use jackin_console::tui::debug::console_location_debug;
-    use super::super::tui::prompts::{
-        AgentPickerChoices, OnPromptFailure, PromptOutcome, prompt_agent_for_launch,
-        show_role_resolution_error,
+    use jackin_console::tui::prompts::{
+        ConcreteAgentPickerChoices as AgentPickerChoices,
+        prompt_agent_for_launch, show_role_resolution_error,
     };
+    use jackin_console::tui::message::{OnPromptFailure, PromptOutcome};
     use super::super::tui::{is_on_main_screen, letter_input_state};
     use super::super::{ConsoleStage, ConsoleState, tui};
     use crate::console::tui::state::{

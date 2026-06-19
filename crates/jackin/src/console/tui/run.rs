@@ -10,11 +10,14 @@ use crate::console::terminal::{
     resume_console_terminal, suspend_console_terminal,
 };
 use jackin_console::tui::debug::console_location_debug;
-use crate::console::tui::prompts::{
-    AgentPickerChoices, LaunchPromptDispatch, LaunchPromptRequest, PromptOutcome,
+use jackin_console::tui::prompts::{
+    ConcreteLaunchPromptDispatch as LaunchPromptDispatch,
+    ConcreteLaunchPromptRequest as LaunchPromptRequest,
+    ConcreteAgentPickerChoices as AgentPickerChoices,
     committed_role_prompt, dispatch_launch_prompt, draw_role_resolution_dialog,
     launch_with_committed_agent, prompt_agent_for_launch,
 };
+use jackin_console::tui::message::PromptOutcome;
 use crate::console::{ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler};
 use jackin_console::tui::app::{clear_pending_launch_role_plan, take_pending_launch_plan};
 use jackin_console::tui::components::error_popup::{

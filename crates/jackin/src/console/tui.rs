@@ -3,7 +3,6 @@
 pub(crate) mod effect;
 pub(crate) mod input;
 pub mod message;
-pub(crate) mod prompts;
 pub mod run;
 pub mod state;
 
