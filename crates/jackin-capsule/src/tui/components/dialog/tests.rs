@@ -796,7 +796,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 limit_label: Some("100%".to_owned()),
                 remaining_percent: Some(37),
                 reset_label: Some("Resets in 1h 21m".to_owned()),
-                pace_label: Some("Lasts until reset".to_owned()),
+                pace_label: Some("10% in reserve".to_owned()),
                 status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
             },
             jackin_protocol::control::QuotaBucketView {
@@ -1018,7 +1018,7 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
     assert!(values.iter().any(|value| {
         value.starts_with("████████████····")
             && value.contains("37% left")
-            && value.contains("Lasts until reset")
+            && value.contains("10% in reserve")
             && value.contains("Resets in 1h 21m")
             && !value.contains("used / 100%")
     }));
