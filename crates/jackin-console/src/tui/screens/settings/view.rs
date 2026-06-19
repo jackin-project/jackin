@@ -1588,6 +1588,18 @@ where
     content_height_with_error_rows(height, has_error)
 }
 
+/// Concrete adapter: render the settings screen for a concrete `SettingsState`.
+pub fn render_settings_with_footer(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &crate::tui::state::SettingsState<'_>,
+    op_available: bool,
+) {
+    render_settings_screen(frame, area, state, |state, body| {
+        settings_screen_footer_for_state(state, op_available, body)
+    });
+}
+
 /// Concrete adapter: compose settings footer items for a concrete `SettingsState`.
 ///
 /// Gives modals priority over screen items, so whatever is active on-screen
