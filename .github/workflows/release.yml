@@ -95,7 +95,7 @@ jobs:
           key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-${{ hashFiles('mise.toml') }}
           restore-keys: |
             mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "rust cargo:cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -164,7 +164,7 @@ jobs:
           key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-${{ hashFiles('mise.toml') }}
           restore-keys: |
             mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "rust cosign syft"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -183,7 +183,7 @@ jobs:
 
       - name: Install cargo-zigbuild
         if: matrix.zigbuild
-        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "zig cargo:cargo-zigbuild"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -275,7 +275,7 @@ jobs:
           key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-${{ hashFiles('mise.toml') }}
           restore-keys: |
             mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "rust zig cargo:cargo-zigbuild cosign syft"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}

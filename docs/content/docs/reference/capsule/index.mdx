@@ -122,9 +122,9 @@ Current attach frames:
 | `Welcome` | daemon → client | Handshake response |
 | `Output` | daemon → client | Terminal bytes to render |
 | `SessionList` | daemon → client | Typed session inventory |
-| `Shutdown` | daemon → client | All sessions exited; client should exit |
+| `Shutdown` | daemon → client | All sessions exited; client should exit; failed final sessions include a short reason payload |
 
-The interactive attach path is long-lived. The short-lived `docker exec` client connects, sends `Hello`, then forwards operator terminal input as `Input` frames and terminal resizes as `Resize` frames. The daemon replies with `Welcome`, then streams rendered terminal output as `Output` frames. When the operator detaches, the client sends `Detach` and exits; the daemon keeps every PTY running. When the last live session ends, the daemon sends `Shutdown`, drains the final frame, exits as PID 1, and Docker reports the role container stopped.
+The interactive attach path is long-lived. The short-lived `docker exec` client connects, sends `Hello`, then forwards operator terminal input as `Input` frames and terminal resizes as `Resize` frames. The daemon replies with `Welcome`, then streams rendered terminal output as `Output` frames. When the operator detaches, the client sends `Detach` and exits; the daemon keeps every PTY running. When the last live session ends, the daemon sends `Shutdown`, drains the final frame, exits as PID 1, and Docker reports the role container stopped. Clean exits use an empty `Shutdown` payload. Failed final sessions send a short reason payload so the attach client prints the error and exits non-zero instead of returning a silent success.
 
 The attach protocol is intentionally not a general RPC surface. It is optimized for terminal traffic and has three constraints:
 

@@ -272,6 +272,10 @@ impl RunDiagnostics {
         crate::observability::emit_jsonl_event(&self.run_id, kind, message, None, None);
     }
 
+    pub fn error(&self, kind: &str, message: &str) {
+        crate::observability::emit_jsonl_error(&self.run_id, kind, message, None, None);
+    }
+
     pub fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
         // Track wall-clock stage timings for the end-of-run summary (Defect 47.5).
         let enriched_detail = match kind {

@@ -32,6 +32,24 @@ pub(super) const fn auth_kind_agent(kind: AuthKind) -> Option<Agent> {
     }
 }
 
+/// Validate a picked source folder against the agent an auth form
+/// targets. Returns `Ok(())` for non-agent auth kinds (no source folder
+/// to validate). Shared by the workspace-editor and global-settings auth
+/// source-folder pickers so both surfaces reject a wrong folder
+/// identically and for every sync-capable agent.
+pub(in crate::console) fn validate_auth_source_folder(
+    kind: Option<AuthKind>,
+    path: &std::path::Path,
+) -> Result<(), String> {
+    let Some(agent) = kind.and_then(auth_kind_agent) else {
+        return Ok(());
+    };
+    let host_home = directories::BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .unwrap_or_default();
+    jackin_runtime::instance::validate_sync_source_dir(agent, path, &host_home)
+}
+
 #[must_use]
 pub(super) fn role_override_present(kind: AuthKind, ro: &WorkspaceRoleOverride) -> bool {
     match kind {

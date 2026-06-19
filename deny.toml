@@ -74,9 +74,8 @@ exceptions = [
     { crate = "wasi@0.11.1+wasi-snapshot-preview1", allow = ["Apache-2.0 WITH LLVM-exception", "Apache-2.0", "MIT"] },
     { crate = "wasip2@1.0.3+wasi-0.2.9", allow = ["Apache-2.0 WITH LLVM-exception", "Apache-2.0", "MIT"] },
     { crate = "wasip3@0.4.0+wasi-0.3.0-rc-2026-01-06", allow = ["Apache-2.0 WITH LLVM-exception", "Apache-2.0", "MIT"] },
-    { crate = "webpki-root-certs@1.0.7", allow = ["CDLA-Permissive-2.0"] },
+    { crate = "webpki-root-certs@1.0.8", allow = ["CDLA-Permissive-2.0"] },
     { crate = "winapi-util@0.1.11", allow = ["Unlicense", "MIT"] },
-    { crate = "wit-bindgen@0.51.0", allow = ["Apache-2.0 WITH LLVM-exception", "Apache-2.0", "MIT"] },
     { crate = "wit-bindgen@0.57.1", allow = ["Apache-2.0 WITH LLVM-exception", "Apache-2.0", "MIT"] },
     { crate = "writeable@0.6.3", allow = ["Unicode-3.0"] },
     { crate = "yoke@0.8.3", allow = ["Unicode-3.0"] },
@@ -142,7 +141,6 @@ skip = [
     { crate = "thiserror@1.0.69", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "thiserror-impl@1.0.69", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "untrusted@0.7.1", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
-    { crate = "wit-bindgen@0.51.0", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
 ]
 
 [sources]

@@ -477,3 +477,65 @@ fn validate_agent_slug_rejects_slug_outside_launch_config_allowlist() {
         "not in launch config allowlist"
     );
 }
+
+// ── exit-reason classification ────────────────────────────────────────────
+// `child_exit_reason` drives whether a session exit surfaces as a Shutdown
+// reason (operator-facing error) or a clean teardown. A regression that
+// reported `Some(..)` on a clean exit would turn every normal `/exit` into a
+// spurious error dialog + container teardown notice.
+
+#[test]
+fn child_exit_reason_clean_exit_is_none() {
+    let status = portable_pty::ExitStatus::with_exit_code(0);
+    assert_eq!(child_exit_reason(Ok(&status)), None);
+}
+
+#[test]
+fn child_exit_reason_nonzero_code_reports_code() {
+    let status = portable_pty::ExitStatus::with_exit_code(137);
+    assert_eq!(
+        child_exit_reason(Ok(&status)).as_deref(),
+        Some("session process exited with code 137")
+    );
+}
+
+#[test]
+fn child_exit_reason_signal_reports_signal() {
+    let status = portable_pty::ExitStatus::with_signal("SIGKILL");
+    assert_eq!(
+        child_exit_reason(Ok(&status)).as_deref(),
+        Some("session process exited after signal SIGKILL")
+    );
+}
+
+#[test]
+fn child_exit_reason_wait_error_reports_failure() {
+    let err = std::io::Error::other("boom");
+    let reason = child_exit_reason(Err(&err)).expect("a wait error must yield a reason");
+    assert!(reason.starts_with("session process wait failed:"));
+    assert!(reason.contains("boom"));
+}
+
+// ── diagnostic tail ───────────────────────────────────────────────────────
+
+#[test]
+fn diagnostic_tail_zero_rows_is_none() {
+    let session = test_session_with_policy(OscPolicy::default());
+    assert_eq!(session.diagnostic_tail(0), None);
+}
+
+#[test]
+fn diagnostic_tail_blank_pane_is_none() {
+    let session = test_session_with_policy(OscPolicy::default());
+    assert_eq!(session.diagnostic_tail(12), None);
+}
+
+#[test]
+fn diagnostic_tail_returns_last_nonblank_rows_oldest_first() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.feed_pty(b"alpha\r\nbravo\r\ncharlie\r\n");
+    let tail = session
+        .diagnostic_tail(2)
+        .expect("rendered rows must yield a tail");
+    assert_eq!(tail, "bravo\ncharlie");
+}

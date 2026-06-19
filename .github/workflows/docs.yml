@@ -76,7 +76,7 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup mise
-        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
           working_directory: docs
           install_args: "bun node"
@@ -110,7 +110,7 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup mise
-        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
           working_directory: docs
           install_args: "bun node lychee"
@@ -202,7 +202,7 @@ jobs:
             mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-codebook-lsp-
 
       - name: Setup mise
-        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
           install_args: "rust cargo:codebook-lsp"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -275,7 +275,7 @@ jobs:
             mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-codebook-lsp-
 
       - name: Setup mise
-        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
           install_args: "rust cargo:codebook-lsp"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}

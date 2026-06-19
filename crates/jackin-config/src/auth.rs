@@ -22,13 +22,13 @@ pub struct AgentAuthConfig {
     /// Optional override for the host folder `sync` reads credentials from.
     ///
     /// `None` = inherit from the next lower layer → global → per-agent hardcoded
-    /// default.  The folder path is stored as the operator chose it; provisioning
-    /// joins it with the adapter's relative credential entry via `state_paths()`.
+    /// default.  The folder path is stored as the operator chose it; when set,
+    /// provisioning treats it as the agent's credential/config directory itself
+    /// (for example a `CODEX_HOME` or `CLAUDE_CONFIG_DIR` value), not as a
+    /// replacement home directory.
     ///
     /// **Precedence** (most-specific wins): workspace-role → workspace → global →
     /// per-agent hardcoded.  An absent value at a layer means "inherit from below."
-    ///
-    /// Optional source folder override for sync-mode credentials.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync_source_dir: Option<PathBuf>,
 }

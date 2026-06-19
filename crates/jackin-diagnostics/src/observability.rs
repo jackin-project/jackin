@@ -1292,13 +1292,50 @@ pub(crate) fn emit_jsonl_event(
     stage: Option<&str>,
     detail: Option<&str>,
 ) {
+    emit_jsonl_event_with_level(run_id, kind, message, stage, detail, JsonlEventLevel::Info);
+}
+
+pub(crate) fn emit_jsonl_error(
+    run_id: &str,
+    kind: &str,
+    message: &str,
+    stage: Option<&str>,
+    detail: Option<&str>,
+) {
+    emit_jsonl_event_with_level(run_id, kind, message, stage, detail, JsonlEventLevel::Error);
+}
+
+enum JsonlEventLevel {
+    Info,
+    Error,
+}
+
+fn emit_jsonl_event_with_level(
+    run_id: &str,
+    kind: &str,
+    message: &str,
+    stage: Option<&str>,
+    detail: Option<&str>,
+    level: JsonlEventLevel,
+) {
     let stage = stage.unwrap_or("<none>");
     let detail = detail.unwrap_or("<none>");
     // The `--debug` firehose is DEBUG-severity so external exporters filter
     // it by level; the JSONL layer ignores levels and records everything.
     // The trailing format message becomes the OTLP log body — without it,
     // exported records carry attributes but an empty body.
-    if kind == "debug" {
+    if matches!(level, JsonlEventLevel::Error) {
+        tracing::error!(
+            target: JSONL_TARGET,
+            jackin_jsonl = true,
+            run_id = run_id,
+            kind = kind,
+            diagnostics_message = message,
+            stage = stage,
+            detail = detail,
+            "{message}"
+        );
+    } else if kind == "debug" {
         tracing::debug!(
             target: JSONL_TARGET,
             jackin_jsonl = true,
