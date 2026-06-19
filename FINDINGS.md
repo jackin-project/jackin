@@ -226,6 +226,12 @@ Editor env-var deletion, empty role-override cleanup, managed Claude OAuth token
 
 Settings-save request/response shape (`SettingsSaveInput` / `save_settings`) and the concrete settings-save implementation now live in `jackin-console/src/services/config_save.rs`; root input handling supplies concrete paths and delegates the write to the shared helper. Auth input handlers (`handle_auth_form_key`, `open_auth_form_modal`, `toggle_role_expand`, and related transitions), create-workspace wizard input handlers (`handle_prelude_key`, `handle_prelude_modal`), and editor save-flow handlers (`begin_editor_save`, `commit_editor_save`, `continue_save_after_drift_check`, `continue_save_after_isolation_cleanup`, `open_save_error_popup`) now live in `jackin-console/src/tui/input/auth.rs`, `jackin-console/src/tui/input/prelude.rs`, and `jackin-console/src/tui/input/save.rs`; root files are thin re-export shells. Settings global-mount input handlers (`handle_settings_key_with_effects`, `handle_settings_auth_modal`, `after_settings_event`, `SettingsModalOutcome`, `SettingsAuthOutcome`) now live in `jackin-console/src/tui/input/global_mounts.rs`; root file is a thin shell that also exposes a 7-arg wrapper for `handle_settings_auth_modal` that injects the concrete source-folder validator via dependency injection. List-pane geometry (`compute_sidebar_layout`, `sidebar_inputs_for_workspace`, `clamp_list_scroll_for_area`, `SidebarLayout`, `SidebarScrollAreas`) now lives in `jackin-console/src/tui/layout/list.rs`; root `layout/list.rs` is a thin re-export shell. The input test coverage for auth, prelude, save, and global-mounts that previously lived under root `crates/jackin/src/console/tui/input/*/tests.rs` now lives in the matching `crates/jackin-console/src/tui/input/*/tests.rs` alongside the moved implementations.
 
+Workspace-list sidebar body rendering (`render_list_body`, `render_list_sidebar`, `render_details_pane`, `render_sidebar_body`, `render_instance_details_pane`, `render_provider_picker_sidebar`, `render_current_dir_details_pane`, `list_name_lines`, `instance_details_pane`) now lives in `jackin-console/src/tui/screens/workspaces/view/list.rs`; root `components/workspace_list.rs` is a thin re-export shell (test-only re-exports only; production code imports directly from jackin-console). Five orphaned adapter files deleted: `components/footer.rs`, `components/footer/editor.rs`, `components/footer/settings.rs`, `components/modal.rs`, `view/editor.rs`, `view/settings.rs`. Root `layout/` module deleted entirely; `prepare_for_render` now re-exported directly from jackin-console in `tui.rs`.
+
+Top-level render composition (`render()`, `reserved_footer_height()`, `has_modal_overlay()`) now lives in `jackin-console/src/tui/view.rs`; root `view/frame.rs` collapsed to a two-line shell then deleted; `view.rs` re-exports `render` directly from jackin-console.
+
+Root `crates/jackin/src/console/` now at 47 files / 14,205 LOC (down from 80 files / 34,407 LOC at original findings pass; 41% file reduction, 59% LOC reduction). `crates/jackin-console/src/` now at 174 files / 76,731 LOC (up from 143 files / 58,155 LOC). `crates/jackin/src/` overall at 133 files / 29,422 LOC.
+
 ## What Still Lives In Root Console
 
 ### Domain Rules
@@ -305,8 +311,7 @@ Recommendation:
 - root `ManagerMessage` alias and reducer,
 - input handlers,
 - mouse handlers,
-- render adapters,
-- root modal layout/render dispatch,
+- render adapters (now thin re-export shells — all render logic lives in jackin-console),
 - root run loop.
 
 Move potential:
