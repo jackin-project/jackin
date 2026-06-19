@@ -221,12 +221,11 @@ fn providers_for_launch_include_all_zai_env_layers() {
     config.env.clear();
 
     let mut workspace = WorkspaceConfig::default();
-    workspace
-        .env
-        .insert("ZAI_API_KEY".into(), EnvValue::Plain("workspace-key".into()));
-    config
-        .workspaces
-        .insert("workspace-demo".into(), workspace);
+    workspace.env.insert(
+        "ZAI_API_KEY".into(),
+        EnvValue::Plain("workspace-key".into()),
+    );
+    config.workspaces.insert("workspace-demo".into(), workspace);
     assert_eq!(
         providers_for_launch(&config, "workspace-demo", "the-architect", Agent::Claude).len(),
         2

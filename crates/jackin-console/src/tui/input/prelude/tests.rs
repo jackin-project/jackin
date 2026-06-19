@@ -16,9 +16,7 @@ use ratatui::layout::Rect;
 /// `handle_prelude_modal` leaves the prelude in, without needing to
 /// synthesise a `FileBrowser` `Commit(path)` event (no public way to do
 /// that cleanly from outside the widget).
-fn prelude_with_browser_committed(
-    src: &str,
-) -> crate::tui::state::CreatePreludeState<'static> {
+fn prelude_with_browser_committed(src: &str) -> crate::tui::state::CreatePreludeState<'static> {
     let mut prelude = crate::tui::state::CreatePreludeState::new();
     prelude.accept_mount_src(std::path::PathBuf::from(src));
     prelude.modal = Some(Modal::MountDstChoice {
@@ -94,10 +92,7 @@ fn prelude_edit_opens_textinput_preserving_chain_to_workdir_pick() {
 
     match &prelude.modal {
         Some(Modal::TextInput { target, .. }) => {
-            assert_eq!(
-                target,
-                &crate::tui::state::TextInputTarget::MountDst
-            );
+            assert_eq!(target, &crate::tui::state::TextInputTarget::MountDst);
         }
         other => panic!("expected TextInput(MountDst); got {other:?}"),
     }
@@ -219,10 +214,7 @@ fn prelude_esc_at_workdir_pick_returns_to_text_input_dst_when_edit_used() {
     handle_prelude_modal(&mut prelude, key(KeyCode::Esc));
     match &prelude.modal {
         Some(Modal::TextInput { target, .. }) => {
-            assert_eq!(
-                target,
-                &crate::tui::state::TextInputTarget::MountDst
-            );
+            assert_eq!(target, &crate::tui::state::TextInputTarget::MountDst);
         }
         other => panic!("expected TextInput(MountDst); got {other:?}"),
     }

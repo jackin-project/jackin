@@ -620,7 +620,10 @@ fn no_modal_open_returns_false_while_list_modal_open() {
     let op_cache = Rc::new(RefCell::new(jackin_env::OpCache::default()));
     let clean_manager = ManagerState::from_config(&config, cwd);
     let clean_state = ConsoleState::new(ConsoleStage::Manager(clean_manager), op_cache, false);
-    assert!(no_modal_open(&clean_state), "no modal by default — chip is active");
+    assert!(
+        no_modal_open(&clean_state),
+        "no modal by default — chip is active"
+    );
 
     let mut manager_with_modal = ManagerState::from_config(&config, cwd);
     let _unused = update_manager(
@@ -631,8 +634,12 @@ fn no_modal_open_returns_false_while_list_modal_open() {
         },
     );
     let op_cache2 = Rc::new(RefCell::new(jackin_env::OpCache::default()));
-    let state_with_modal = ConsoleState::new(ConsoleStage::Manager(manager_with_modal), op_cache2, false);
-    assert!(!no_modal_open(&state_with_modal), "list_modal open → chip and base surface must not fire");
+    let state_with_modal =
+        ConsoleState::new(ConsoleStage::Manager(manager_with_modal), op_cache2, false);
+    assert!(
+        !no_modal_open(&state_with_modal),
+        "list_modal open → chip and base surface must not fire"
+    );
 }
 
 #[test]

@@ -4,11 +4,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::InputOutcome;
-use crate::tui::message::ConsoleInstanceAction;
-use crate::tui::state::{AgentChoiceState, EditorState, ManagerEffect, ManagerState, Modal, SettingsState};
-use crate::tui::state::update::{ManagerMessage, update_manager};
-use jackin_config::AppConfig;
-use jackin_core::JackinPaths;
 use crate::tui::components::error_popup::{
     instance_unavailable_error_message, instance_unavailable_error_title, no_instance_error_title,
     no_purgeable_instance_for_workspace_message, no_recoverable_instance_selected_message,
@@ -16,6 +11,7 @@ use crate::tui::components::error_popup::{
 use crate::tui::components::github_picker::GithubOpenPlan;
 use crate::tui::components::provider_picker::ProviderPickerOutcome;
 use crate::tui::layout::list_body_area;
+use crate::tui::message::ConsoleInstanceAction;
 use crate::tui::screens::workspaces::update::{
     PreviewPaneActionPlan, SelectedInstanceActionPlan, SelectedInstancePurgeConfirmPlan,
     WorkspaceInstanceAction, WorkspaceInstanceLookupEntry, WorkspaceInstanceLookupScope,
@@ -30,6 +26,10 @@ use crate::tui::screens::workspaces::update::{
     workspace_list_settings_plan, workspace_list_top_level_key_plan,
 };
 use crate::tui::screens::workspaces::view::instance_purge_confirm_label;
+use crate::tui::state::update::{ManagerMessage, update_manager};
+use crate::tui::state::{
+    AgentChoiceState, EditorState, ManagerEffect, ManagerState, Modal, SettingsState,
+};
 use crate::tui::update::{
     DismissibleModalPlan, InlinePickerDismissal, InlinePickerPlan, InlinePickerShellPlan,
     InlineProviderFollowupPlan, ListGithubPickerPlan, ListModalKeyTarget, ListRolePickerPlan,
@@ -38,6 +38,8 @@ use crate::tui::update::{
     inline_picker_plan, inline_picker_shell_plan, inline_provider_followup_plan,
     list_github_picker_plan, list_role_picker_plan,
 };
+use jackin_config::AppConfig;
+use jackin_core::JackinPaths;
 
 type ConcreteInstanceAction = ConsoleInstanceAction<jackin_core::Agent>;
 
@@ -583,10 +585,7 @@ pub fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOu
     }
 }
 
-pub fn handle_inline_role_picker(
-    state: &mut ManagerState<'_>,
-    key: KeyEvent,
-) -> InputOutcome {
+pub fn handle_inline_role_picker(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
     let Some(picker) = state.inline_role_picker.as_mut() else {
         return InputOutcome::Continue;
     };
@@ -610,10 +609,7 @@ pub fn handle_inline_role_picker(
     }
 }
 
-pub fn handle_inline_agent_picker(
-    state: &mut ManagerState<'_>,
-    key: KeyEvent,
-) -> InputOutcome {
+pub fn handle_inline_agent_picker(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
     let Some((_, picker)) = state.inline_agent_picker.as_mut() else {
         return InputOutcome::Continue;
     };
@@ -642,10 +638,7 @@ pub fn handle_inline_agent_picker(
 /// path always supplies an empty provider list (the daemon, not host config,
 /// owns the captured env), so in practice this dispatches `NewSessionWithAgent`
 /// directly and the provider picker never opens here. Cancel/Esc dismisses.
-pub fn handle_new_session_picker(
-    state: &mut ManagerState<'_>,
-    key: KeyEvent,
-) -> InputOutcome {
+pub fn handle_new_session_picker(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
     let Some((container, picker, providers)) = state.inline_new_session_picker.as_mut() else {
         return InputOutcome::Continue;
     };
@@ -679,10 +672,7 @@ pub fn handle_new_session_picker(
 /// Handle key events while the inline provider picker is open (shown after
 /// agent selection when multiple providers are available). Enter commits;
 /// Esc cancels; Up/Down navigate.
-pub fn handle_inline_provider_picker(
-    state: &mut ManagerState<'_>,
-    key: KeyEvent,
-) -> InputOutcome {
+pub fn handle_inline_provider_picker(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
     let Some(picker) = state.inline_provider_picker.as_mut() else {
         return InputOutcome::Continue;
     };
@@ -707,10 +697,7 @@ pub fn handle_inline_provider_picker(
     }
 }
 
-pub fn handle_launch_provider_picker(
-    state: &mut ManagerState<'_>,
-    key: KeyEvent,
-) -> InputOutcome {
+pub fn handle_launch_provider_picker(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
     let Some(picker) = state.launch_provider_picker.as_mut() else {
         return InputOutcome::Continue;
     };

@@ -1,17 +1,17 @@
 //! Tests for `list`.
 //! List-stage tests: row-0 (current dir) gating, Enter routing,
 //! `o`-key resolver to GitHub URLs, and the `GithubPicker` modal.
-use crate::tui::input::test_support::{key, mount};
-use super::*;
 use super::super::InputOutcome;
+use super::*;
+use crate::tui::input::test_support::{key, mount};
+use crate::tui::message::ConsoleInstanceAction;
 use crate::tui::state::AgentChoiceState;
 use crate::tui::state::{ManagerStage, ManagerState, Modal, MountScrollFocus};
-use jackin_core::instance::{InstanceIndexEntry, InstanceStatus};
-use jackin_core::JackinPaths;
 use crossterm::event::{KeyCode, KeyEvent};
-use crate::tui::message::ConsoleInstanceAction;
 use jackin_config::AppConfig;
 use jackin_config::WorkspaceConfig;
+use jackin_core::JackinPaths;
+use jackin_core::instance::{InstanceIndexEntry, InstanceStatus};
 use ratatui::layout::Rect;
 use tempfile::TempDir;
 
@@ -33,10 +33,8 @@ fn handle_key(
         console_input_dispatch_plan,
     };
     use crate::tui::effect::ConsoleEffect;
+    use crate::tui::screens::workspaces::update::{InstancePurgeKeyPlan, instance_purge_key_plan};
     use crate::tui::state::update::{ManagerMessage, update_manager};
-    use crate::tui::screens::workspaces::update::{
-        InstancePurgeKeyPlan, instance_purge_key_plan,
-    };
 
     let stage_modal_facts = state.stage.modal_facts();
     let dispatch_plan = console_input_dispatch_plan(ConsoleInputDispatchFacts {
@@ -215,9 +213,7 @@ fn new_session_provider_picker_skips_when_no_choice() {
             assert_eq!(container, "jackin-demo-architect");
             assert_eq!(
                 action,
-                ConsoleInstanceAction::NewSessionWithAgent(
-                    jackin_core::Agent::Codex,
-                )
+                ConsoleInstanceAction::NewSessionWithAgent(jackin_core::Agent::Codex,)
             );
         }
         other => panic!("expected direct new-session dispatch; got {other:?}"),
@@ -360,7 +356,9 @@ fn right_on_current_directory_parent_expands_even_with_live_snapshot() {
     );
     assert!(matches!(
         state.row_at(1),
-        Some(crate::tui::state::ManagerListRow::CurrentDirectoryInstance(0))
+        Some(crate::tui::state::ManagerListRow::CurrentDirectoryInstance(
+            0
+        ))
     ));
 }
 
@@ -1084,9 +1082,7 @@ fn picker_commit_closes_list_modal_and_clears_state() {
     // Seed the state directly with an open GithubPicker, then commit.
     // The input layer must not open the browser. It closes the modal and
     // returns a typed URL-open outcome for the run loop.
-    use crate::{
-        github_mounts::GithubChoice, tui::components::github_picker::GithubPickerState,
-    };
+    use crate::{github_mounts::GithubChoice, tui::components::github_picker::GithubPickerState};
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
     paths.ensure_base_dirs().unwrap();
@@ -1167,9 +1163,7 @@ fn container_info_enter_copies_default_value_without_dismissing() {
 
 #[test]
 fn picker_esc_closes_without_opening_url() {
-    use crate::{
-        github_mounts::GithubChoice, tui::components::github_picker::GithubPickerState,
-    };
+    use crate::{github_mounts::GithubChoice, tui::components::github_picker::GithubPickerState};
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
     paths.ensure_base_dirs().unwrap();

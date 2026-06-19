@@ -80,26 +80,25 @@ fn manager_from_config_lists_all_workspaces() {
 fn refresh_instances_loads_rebuildable_index() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
-    let mut manifest =
-        InstanceManifest::new(NewInstanceManifest {
-            container_base: "jk-k7p9m2xq-demo-alpha",
-            workspace_name: Some("demo"),
-            workspace_label: "demo",
-            workdir: "/workspace/demo",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "alpha",
-            role_display_name: "Alpha",
-            agent_runtime: Agent::Claude,
-            role_source_git: "https://example.invalid/alpha.git",
-            role_source_ref: None,
-            image_tag: "jk_alpha",
-            docker: DockerResources {
-                role_container: "jk-k7p9m2xq-demo-alpha".into(),
-                dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
-                network: "jk-k7p9m2xq-demo-alpha-net".into(),
-                certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
-            },
-        });
+    let mut manifest = InstanceManifest::new(NewInstanceManifest {
+        container_base: "jk-k7p9m2xq-demo-alpha",
+        workspace_name: Some("demo"),
+        workspace_label: "demo",
+        workdir: "/workspace/demo",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: "alpha",
+        role_display_name: "Alpha",
+        agent_runtime: Agent::Claude,
+        role_source_git: "https://example.invalid/alpha.git",
+        role_source_ref: None,
+        image_tag: "jk_alpha",
+        docker: DockerResources {
+            role_container: "jk-k7p9m2xq-demo-alpha".into(),
+            dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+            network: "jk-k7p9m2xq-demo-alpha-net".into(),
+            certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+        },
+    });
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     manifest
         .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
@@ -111,42 +110,36 @@ fn refresh_instances_loads_rebuildable_index() {
 
     assert_eq!(state.instances.len(), 1);
     assert_eq!(state.instances[0].instance_id, "k7p9m2xq");
-    assert_eq!(
-        state.instances[0].status,
-        InstanceStatus::RestoreAvailable
-    );
+    assert_eq!(state.instances[0].status, InstanceStatus::RestoreAvailable);
 }
 
 #[test]
 fn live_running_overlay_makes_restore_available_instance_visible() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
-    let mut manifest =
-        InstanceManifest::new(NewInstanceManifest {
-            container_base: "jk-k7p9m2xq-demo-alpha",
-            workspace_name: Some("demo"),
-            workspace_label: "demo",
-            workdir: "/workspace/demo",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "alpha",
-            role_display_name: "Alpha",
-            agent_runtime: Agent::Claude,
-            role_source_git: "https://example.invalid/alpha.git",
-            role_source_ref: None,
-            image_tag: "jk_alpha",
-            docker: DockerResources {
-                role_container: "jk-k7p9m2xq-demo-alpha".into(),
-                dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
-                network: "jk-k7p9m2xq-demo-alpha-net".into(),
-                certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
-            },
-        });
+    let mut manifest = InstanceManifest::new(NewInstanceManifest {
+        container_base: "jk-k7p9m2xq-demo-alpha",
+        workspace_name: Some("demo"),
+        workspace_label: "demo",
+        workdir: "/workspace/demo",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: "alpha",
+        role_display_name: "Alpha",
+        agent_runtime: Agent::Claude,
+        role_source_git: "https://example.invalid/alpha.git",
+        role_source_ref: None,
+        image_tag: "jk_alpha",
+        docker: DockerResources {
+            role_container: "jk-k7p9m2xq-demo-alpha".into(),
+            dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+            network: "jk-k7p9m2xq-demo-alpha-net".into(),
+            certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+        },
+    });
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
 
-    let mut instances = InstanceIndex::read(&paths.data_dir)
-        .unwrap()
-        .instances;
+    let mut instances = InstanceIndex::read(&paths.data_dir).unwrap().instances;
     overlay_running_instances(
         &paths,
         &mut instances,
@@ -154,36 +147,32 @@ fn live_running_overlay_makes_restore_available_instance_visible() {
     );
 
     assert_eq!(instances.len(), 1);
-    assert_eq!(
-        instances[0].status,
-        InstanceStatus::Running
-    );
+    assert_eq!(instances[0].status, InstanceStatus::Running);
 }
 
 #[test]
 fn live_running_overlay_backfills_manifest_missing_from_index() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
-    let mut manifest =
-        InstanceManifest::new(NewInstanceManifest {
-            container_base: "jk-k7p9m2xq-demo-alpha",
-            workspace_name: Some("demo"),
-            workspace_label: "demo",
-            workdir: "/workspace/demo",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "alpha",
-            role_display_name: "Alpha",
-            agent_runtime: Agent::Claude,
-            role_source_git: "https://example.invalid/alpha.git",
-            role_source_ref: None,
-            image_tag: "jk_alpha",
-            docker: DockerResources {
-                role_container: "jk-k7p9m2xq-demo-alpha".into(),
-                dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
-                network: "jk-k7p9m2xq-demo-alpha-net".into(),
-                certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
-            },
-        });
+    let mut manifest = InstanceManifest::new(NewInstanceManifest {
+        container_base: "jk-k7p9m2xq-demo-alpha",
+        workspace_name: Some("demo"),
+        workspace_label: "demo",
+        workdir: "/workspace/demo",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: "alpha",
+        role_display_name: "Alpha",
+        agent_runtime: Agent::Claude,
+        role_source_git: "https://example.invalid/alpha.git",
+        role_source_ref: None,
+        image_tag: "jk_alpha",
+        docker: DockerResources {
+            role_container: "jk-k7p9m2xq-demo-alpha".into(),
+            dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+            network: "jk-k7p9m2xq-demo-alpha-net".into(),
+            certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+        },
+    });
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     manifest
         .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
@@ -198,10 +187,7 @@ fn live_running_overlay_backfills_manifest_missing_from_index() {
 
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0].container_base, "jk-k7p9m2xq-demo-alpha");
-    assert_eq!(
-        instances[0].status,
-        InstanceStatus::Running
-    );
+    assert_eq!(instances[0].status, InstanceStatus::Running);
 }
 
 #[test]
@@ -213,26 +199,25 @@ fn refresh_instances_throttles_within_interval() {
     // bypasses the gate.
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
-    let mut manifest =
-        InstanceManifest::new(NewInstanceManifest {
-            container_base: "jk-k7p9m2xq-demo-alpha",
-            workspace_name: Some("demo"),
-            workspace_label: "demo",
-            workdir: "/workspace/demo",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "alpha",
-            role_display_name: "Alpha",
-            agent_runtime: Agent::Claude,
-            role_source_git: "https://example.invalid/alpha.git",
-            role_source_ref: None,
-            image_tag: "jk_alpha",
-            docker: DockerResources {
-                role_container: "jk-k7p9m2xq-demo-alpha".into(),
-                dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
-                network: "jk-k7p9m2xq-demo-alpha-net".into(),
-                certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
-            },
-        });
+    let mut manifest = InstanceManifest::new(NewInstanceManifest {
+        container_base: "jk-k7p9m2xq-demo-alpha",
+        workspace_name: Some("demo"),
+        workspace_label: "demo",
+        workdir: "/workspace/demo",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: "alpha",
+        role_display_name: "Alpha",
+        agent_runtime: Agent::Claude,
+        role_source_git: "https://example.invalid/alpha.git",
+        role_source_ref: None,
+        image_tag: "jk_alpha",
+        docker: DockerResources {
+            role_container: "jk-k7p9m2xq-demo-alpha".into(),
+            dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+            network: "jk-k7p9m2xq-demo-alpha-net".into(),
+            certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+        },
+    });
     manifest.mark_status(InstanceStatus::Active);
     manifest
         .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
@@ -242,10 +227,7 @@ fn refresh_instances_throttles_within_interval() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     refresh_instances(&mut state, &paths);
     assert_eq!(state.instances.len(), 1);
-    assert_eq!(
-        state.instances[0].status,
-        InstanceStatus::Active
-    );
+    assert_eq!(state.instances[0].status, InstanceStatus::Active);
 
     // Mutate the manifest on disk; without the bypass, an
     // immediate refresh must observe the cached value.
@@ -266,10 +248,7 @@ fn refresh_instances_throttles_within_interval() {
     // Bypass the throttle — disk state is now observable.
     state.force_refresh_instances_for_test();
     refresh_instances(&mut state, &paths);
-    assert_eq!(
-        state.instances[0].status,
-        InstanceStatus::Crashed,
-    );
+    assert_eq!(state.instances[0].status, InstanceStatus::Crashed,);
 }
 
 #[test]

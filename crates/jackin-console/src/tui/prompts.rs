@@ -11,11 +11,11 @@ use crate::tui::components::error_popup::{
     role_resolution_error_message, role_resolution_error_title,
 };
 use crate::tui::console::{ConsoleOutcome, ConsoleStage, ConsoleState};
+pub use crate::tui::message::{AgentPickerChoices, LaunchPromptDispatch, LaunchPromptRequest};
 use crate::tui::message::{
     AgentPickerResolution, OnPromptFailure, PromptOutcome, agent_picker_choices_for_workspace,
     launch_agent_prompt_plan,
 };
-pub use crate::tui::message::{AgentPickerChoices, LaunchPromptDispatch, LaunchPromptRequest};
 use crate::tui::state::update::{ManagerMessage, update_manager};
 use crate::tui::update::{
     apply_status_overlay_plan, dismiss_status_overlay_plan, role_resolution_status_overlay_plan,
@@ -23,16 +23,11 @@ use crate::tui::update::{
 
 pub type ConcreteAgentPickerChoices = AgentPickerChoices<jackin_core::Agent>;
 
-pub type ConcreteLaunchPromptDispatch = LaunchPromptDispatch<
-    ConsoleOutcome,
-    ConcreteLaunchPromptRequest,
->;
+pub type ConcreteLaunchPromptDispatch =
+    LaunchPromptDispatch<ConsoleOutcome, ConcreteLaunchPromptRequest>;
 
-pub type ConcreteLaunchPromptRequest = LaunchPromptRequest<
-    RoleSelector,
-    ResolvedWorkspace,
-    LoadWorkspaceInput,
->;
+pub type ConcreteLaunchPromptRequest =
+    LaunchPromptRequest<RoleSelector, ResolvedWorkspace, LoadWorkspaceInput>;
 
 pub fn draw_role_resolution_dialog<B>(
     terminal: &mut ratatui::Terminal<B>,

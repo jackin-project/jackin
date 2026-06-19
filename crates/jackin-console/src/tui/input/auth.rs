@@ -13,18 +13,18 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use std::path::PathBuf;
 
-use crate::tui::op_picker::OpPickerState;
-use crate::tui::state::RolePickerState;
-use crate::tui::state::{
-    AuthForm, AuthFormFocus, EditorState, FileBrowserTarget, Modal, TextInputTarget,
-};
-use jackin_config::AppConfig;
 #[cfg(test)]
 use crate::tui::auth::AuthMode;
 use crate::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
     auth_source_picker_state, generated_token_source_picker_state,
 };
+use crate::tui::op_picker::OpPickerState;
+use crate::tui::state::RolePickerState;
+use crate::tui::state::{
+    AuthForm, AuthFormFocus, EditorState, FileBrowserTarget, Modal, TextInputTarget,
+};
+use jackin_config::AppConfig;
 #[cfg(test)]
 use jackin_core::EnvValue;
 use jackin_env::OpCache;
@@ -278,10 +278,7 @@ pub fn apply_plain_text_to_auth_form(editor: &mut EditorState<'_>, value: &str) 
     }
 }
 
-pub fn apply_source_folder_to_auth_form(
-    editor: &mut EditorState<'_>,
-    value: PathBuf,
-) {
+pub fn apply_source_folder_to_auth_form(editor: &mut EditorState<'_>, value: PathBuf) {
     if !crate::tui::auth_config::ModalAuthFormCredentialApply::apply_auth_source_folder(
         &mut editor.modal,
         &mut editor.modal_parents,

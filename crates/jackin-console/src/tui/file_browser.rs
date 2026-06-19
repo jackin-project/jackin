@@ -6,10 +6,8 @@
 
 use crate::tui::components::file_browser::FileBrowserOutcome;
 use crate::tui::effect::FileBrowserEffectContext;
-use crate::tui::state::{
-    CreatePreludeState, GlobalMountModal, ManagerStage, ManagerState, Modal,
-};
 use crate::tui::state::update::{ManagerMessage, update_manager};
+use crate::tui::state::{CreatePreludeState, GlobalMountModal, ManagerStage, ManagerState, Modal};
 
 pub fn execute_global_mount_file_browser_open(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
@@ -147,8 +145,7 @@ fn execute_editor_file_browser_outcome(
             // credential structure. Reject a wrong folder inline and keep
             // the picker open rather than saving an unusable path.
             if target == FileBrowserTarget::AuthFormSourceFolder
-                && let Err(reason) =
-                    auth_source_folder_validator(editor.auth_selected_kind, &path)
+                && let Err(reason) = auth_source_folder_validator(editor.auth_selected_kind, &path)
             {
                 editor.open_sub_modal(Modal::ErrorPopup {
                     state: error_popup::invalid_source_folder_error_popup_state(reason),
@@ -371,4 +368,3 @@ fn poll_global_mount_file_browser_git_url(modal: &mut GlobalMountModal<'_>) -> b
         _ => false,
     }
 }
-

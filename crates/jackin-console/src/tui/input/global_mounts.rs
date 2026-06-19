@@ -10,14 +10,6 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::tui::state::ManagerEffect;
-use crate::tui::state::update::{ManagerMessage, update_manager};
-use crate::tui::state::{
-    AuthForm, AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountModal,
-    GlobalMountTextTarget, ManagerStage, ManagerState, RolePickerState, SettingsAuthModal,
-    SettingsEnvConfirm, SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvScope,
-    SettingsEnvTextTarget, SettingsTab,
-};
 use crate::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
     auth_source_picker_state, generated_token_op_item_name, generated_token_source_picker_state,
@@ -40,13 +32,21 @@ use crate::tui::screens::settings::view::{
     global_mount_name_empty_message, global_mount_no_github_url_message,
     global_mount_scope_picker_state, global_mount_selected_edit_text_plan,
     global_mount_text_input_state, global_mount_text_target_label,
-    settings_env_delete_confirm_state,
-    settings_env_empty_key_error_message, settings_env_empty_key_text_plan,
-    settings_env_key_input_state, settings_env_new_key_after_picker_text_plan,
-    settings_env_new_key_text_plan, settings_env_plain_value_text_plan,
-    settings_env_scope_picker_state, settings_env_source_picker_state,
-    settings_env_text_input_state, settings_env_value_edit_text_plan, settings_error_popup_title,
+    settings_env_delete_confirm_state, settings_env_empty_key_error_message,
+    settings_env_empty_key_text_plan, settings_env_key_input_state,
+    settings_env_new_key_after_picker_text_plan, settings_env_new_key_text_plan,
+    settings_env_plain_value_text_plan, settings_env_scope_picker_state,
+    settings_env_source_picker_state, settings_env_text_input_state,
+    settings_env_value_edit_text_plan, settings_error_popup_title,
     settings_no_registered_roles_error_message, settings_sensitive_paths_not_confirmed_message,
+};
+use crate::tui::state::ManagerEffect;
+use crate::tui::state::update::{ManagerMessage, update_manager};
+use crate::tui::state::{
+    AuthForm, AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountModal,
+    GlobalMountTextTarget, ManagerStage, ManagerState, RolePickerState, SettingsAuthModal,
+    SettingsEnvConfirm, SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvScope,
+    SettingsEnvTextTarget, SettingsTab,
 };
 use crate::tui::update::{
     BoolConfirmModalPlan, ConfirmSaveModalPlan, FileBrowserModalPlan, InlinePickerPlan,
@@ -57,8 +57,7 @@ use crate::tui::update::{
 
 pub type SettingsModalOutcome = crate::tui::message::ConsoleSettingsModalOutcome;
 
-pub type SettingsAuthOutcome =
-    crate::tui::message::ConsoleSettingsAuthOutcome<jackin_core::OpRef>;
+pub type SettingsAuthOutcome = crate::tui::message::ConsoleSettingsAuthOutcome<jackin_core::OpRef>;
 
 #[cfg(test)]
 pub fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
@@ -128,9 +127,7 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let plan = settings_update::settings_global_mounts_key_plan(
         key.code,
         settings.is_dirty(),
-        crate::services::workspace::global_rows_have_sensitive_mount(
-            &settings.mounts.pending,
-        ),
+        crate::services::workspace::global_rows_have_sensitive_mount(&settings.mounts.pending),
         settings.mounts.selected,
         settings.mounts.pending.len(),
     );
@@ -358,8 +355,7 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     };
     let footer_h = settings.cached_footer_h;
-    let content_width =
-        crate::tui::screens::settings::update::trust_content_width(&settings.trust);
+    let content_width = crate::tui::screens::settings::update::trust_content_width(&settings.trust);
     match settings_update::settings_trust_key_plan(key.code, settings.is_dirty()) {
         SettingsTrustKeyPlan::MoveSelection { delta } => {
             dispatch_manager(
@@ -636,9 +632,9 @@ pub fn handle_settings_env_modal(
                     crate::tui::op_picker::OpPickerSelection::NewItem { .. }
                     | crate::tui::op_picker::OpPickerSelection::EditItemField { .. },
                 ) => unreachable!("settings-env OpPicker runs in Browse mode"),
-                InlinePickerPlan::Commit(
-                    crate::tui::op_picker::OpPickerSelection::Existing(op_ref),
-                ) => {
+                InlinePickerPlan::Commit(crate::tui::op_picker::OpPickerSelection::Existing(
+                    op_ref,
+                )) => {
                     let plan = settings_update::settings_env_op_picker_commit_plan(
                         env.pending_picker_target.as_ref(),
                     );
@@ -887,9 +883,9 @@ fn commit_settings_env_source_picker(
             env.clear_pending_env_key();
             env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
             env.open_sub_modal(SettingsEnvModal::OpPicker {
-                state: Box::new(
-                    crate::tui::op_picker::OpPickerState::new_with_cache(op_cache),
-                ),
+                state: Box::new(crate::tui::op_picker::OpPickerState::new_with_cache(
+                    op_cache,
+                )),
             });
         }
     }
@@ -1087,7 +1083,9 @@ fn open_settings_env_picker_modal(
     };
     settings.env.set_pending_picker_target(target);
     settings.env.modal = Some(SettingsEnvModal::OpPicker {
-        state: Box::new(crate::tui::op_picker::OpPickerState::new_with_cache(op_cache)),
+        state: Box::new(crate::tui::op_picker::OpPickerState::new_with_cache(
+            op_cache,
+        )),
     });
 }
 

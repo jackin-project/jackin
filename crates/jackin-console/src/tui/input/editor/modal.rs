@@ -1,15 +1,15 @@
 //! Editor modal leaf helpers: secret picker, token generation, and text-input commits.
 
-use crate::tui::op_picker::OpPickerState;
-use crate::tui::state::{
-    EditorState, FieldFocus, Modal, SecretsScopeTag, TextInputTarget, open_role_input_error,
-};
 use crate::tui::components::auth_panel::generated_token_op_item_name;
+use crate::tui::op_picker::OpPickerState;
 use crate::tui::screens::editor::update::{
     self as editor_update, EditorAuthGenerateScopePlan, editor_auth_generate_scope_plan,
 };
 use crate::tui::screens::editor::view::{
     secret_empty_key_label, secret_key_input_state_from_pending, secret_source_picker_state,
+};
+use crate::tui::state::{
+    EditorState, FieldFocus, Modal, SecretsScopeTag, TextInputTarget, open_role_input_error,
 };
 use crate::tui::update::{CreateOpPickerPlan, create_op_picker_plan};
 
@@ -171,8 +171,7 @@ pub fn handle_token_generate_pick(
         }
     };
 
-    editor.pending_token_generate =
-        Some(crate::tui::state::PendingTokenGenerate { scope, args });
+    editor.pending_token_generate = Some(crate::tui::state::PendingTokenGenerate { scope, args });
     editor.clear_modal_chain();
 }
 

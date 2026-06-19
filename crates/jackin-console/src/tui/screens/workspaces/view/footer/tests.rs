@@ -6,14 +6,18 @@ use std::path::PathBuf;
 use super::workspace_screen_footer_items_for_state;
 use crate::tui::app::ConsoleManagerStage;
 use crate::tui::components::file_browser::FileBrowserState;
-use crate::tui::state::{CreatePreludeState, FileBrowserTarget, GlobalMountModal, ManagerState, Modal, SettingsAuthModal, SettingsState, SettingsTab};
 use crate::tui::components::footer_hints::editor_footer_items;
 use crate::tui::screens::settings::view::settings_screen_footer_for_state;
+use crate::tui::state::{
+    CreatePreludeState, FileBrowserTarget, GlobalMountModal, ManagerState, Modal,
+    SettingsAuthModal, SettingsState, SettingsTab,
+};
 
 fn file_browser_state_at(path: PathBuf) -> FileBrowserState {
-    FileBrowserState::from_listing(
-        crate::services::file_browser::listing_at(path.clone(), path),
-    )
+    FileBrowserState::from_listing(crate::services::file_browser::listing_at(
+        path.clone(),
+        path,
+    ))
 }
 
 fn file_browser_state() -> FileBrowserState {

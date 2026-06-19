@@ -462,8 +462,9 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &cwd,
             Modal::MountDstChoice {
                 target: crate::tui::state::FileBrowserTarget::CreateFirstMountSrc,
-                state:
-                    crate::tui::components::mount_dst_choice::MountDstChoiceState::new("/workspace"),
+                state: crate::tui::components::mount_dst_choice::MountDstChoiceState::new(
+                    "/workspace",
+                ),
             },
         ),
     ));

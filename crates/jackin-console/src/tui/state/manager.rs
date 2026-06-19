@@ -15,13 +15,14 @@ use crate::tui::app::{
 use crate::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
 use crate::tui::screens::workspaces::model::hovered_list_row;
 use crate::tui::screens::workspaces::update::{
-    PreviewFocusState, PreviewPaneCursorState, WorkspaceListHoverState, WorkspaceListSelectionState,
-    WorkspaceTreeDisclosureState, collapsed_current_dir_selected_index,
-    collapsed_workspace_selected_index, initial_workspace_selected_index,
-    preview_pane_selected_index, selected_index, workspace_last_selectable_index,
-    workspace_list_current_directory_selected, workspace_list_new_workspace_selected,
-    workspace_list_saved_workspace_index, workspace_row_at, workspace_row_at_visual_index,
-    workspace_row_index, workspace_selected_row, workspace_visual_selected_index,
+    PreviewFocusState, PreviewPaneCursorState, WorkspaceListHoverState,
+    WorkspaceListSelectionState, WorkspaceTreeDisclosureState,
+    collapsed_current_dir_selected_index, collapsed_workspace_selected_index,
+    initial_workspace_selected_index, preview_pane_selected_index, selected_index,
+    workspace_last_selectable_index, workspace_list_current_directory_selected,
+    workspace_list_new_workspace_selected, workspace_list_saved_workspace_index, workspace_row_at,
+    workspace_row_at_visual_index, workspace_row_index, workspace_selected_row,
+    workspace_visual_selected_index,
 };
 use crate::tui::subscriptions::{
     InstanceRefreshThrottleState, forced_instance_refresh_generation,
@@ -539,10 +540,7 @@ impl ManagerState<'_> {
         self.mount_info_refresh_rx.is_some()
     }
 
-    pub fn begin_mount_info_refresh(
-        &mut self,
-        rx: BlockingSubscription<PendingMountInfoRefresh>,
-    ) {
+    pub fn begin_mount_info_refresh(&mut self, rx: BlockingSubscription<PendingMountInfoRefresh>) {
         self.mount_info_refresh_rx = Some(rx);
     }
 
@@ -560,10 +558,7 @@ impl ManagerState<'_> {
         Some(result)
     }
 
-    pub fn apply_mount_info_refresh(
-        &mut self,
-        result: PendingMountInfoRefresh,
-    ) -> bool {
+    pub fn apply_mount_info_refresh(&mut self, result: PendingMountInfoRefresh) -> bool {
         match result.target {
             MountInfoRefreshTarget::ManagerList => {
                 self.mount_info_cache.store_entries(result.entries);
@@ -637,7 +632,10 @@ impl ManagerState<'_> {
     /// no pending check.
     pub fn poll_pending_drift_check(
         &mut self,
-    ) -> Option<(PendingDriftCheck, anyhow::Result<jackin_core::DriftDetection>)> {
+    ) -> Option<(
+        PendingDriftCheck,
+        anyhow::Result<jackin_core::DriftDetection>,
+    )> {
         self.stage.poll_pending_drift_check()
     }
 
@@ -647,9 +645,7 @@ impl ManagerState<'_> {
         self.stage.poll_pending_isolation_cleanup()
     }
 
-    pub fn poll_pending_role_load(
-        &mut self,
-    ) -> Option<(PendingRoleLoad, anyhow::Result<()>)> {
+    pub fn poll_pending_role_load(&mut self) -> Option<(PendingRoleLoad, anyhow::Result<()>)> {
         self.stage.poll_pending_role_load()
     }
 
@@ -668,9 +664,7 @@ impl ManagerState<'_> {
         })
     }
 
-    fn drain_instance_refresh(
-        &mut self,
-    ) -> Option<Result<ManagerInstanceRefreshSnapshot, String>> {
+    fn drain_instance_refresh(&mut self) -> Option<Result<ManagerInstanceRefreshSnapshot, String>> {
         let rx = self.instances_refresh_rx.as_mut()?;
         match rx.poll_next() {
             SubscriptionPoll::Ready((generation, result)) => {
@@ -704,20 +698,13 @@ impl ManagerState<'_> {
         }
     }
 
-    pub fn open_list_error_popup(
-        &mut self,
-        title: impl Into<String>,
-        message: impl Into<String>,
-    ) {
-        self.open_error_popup_modal(
-            crate::tui::components::error_popup::error_popup_state(title, message),
-        );
+    pub fn open_list_error_popup(&mut self, title: impl Into<String>, message: impl Into<String>) {
+        self.open_error_popup_modal(crate::tui::components::error_popup::error_popup_state(
+            title, message,
+        ));
     }
 
-    pub fn apply_instance_refresh_snapshot(
-        &mut self,
-        snapshot: ManagerInstanceRefreshSnapshot,
-    ) {
+    pub fn apply_instance_refresh_snapshot(&mut self, snapshot: ManagerInstanceRefreshSnapshot) {
         self.instances = snapshot.instances;
         self.instance_sessions = snapshot.sessions;
         self.instance_session_errors = snapshot.session_errors;
@@ -747,8 +734,7 @@ impl ManagerState<'_> {
         self.preview_pane_cursor.clear();
         self.current_dir_expanded = false;
         self.preview_focused = false;
-        let message =
-            crate::tui::components::error_popup::instance_index_error_message(error);
+        let message = crate::tui::components::error_popup::instance_index_error_message(error);
         if self.instances_last_error.as_deref() != Some(&message) {
             self.open_list_error_popup(
                 crate::tui::components::error_popup::instance_index_error_title(),
@@ -982,10 +968,7 @@ impl PreviewPaneCursorState for ManagerState<'_> {
     }
 }
 
-impl
-    crate::tui::screens::workspaces::update::WorkspaceListScrollState
-    for ManagerState<'_>
-{
+impl crate::tui::screens::workspaces::update::WorkspaceListScrollState for ManagerState<'_> {
     fn list_names_scroll_x(&self) -> u16 {
         self.list_names_scroll_x
     }

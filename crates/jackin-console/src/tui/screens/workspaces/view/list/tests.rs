@@ -19,9 +19,7 @@ mod list_name_scroll {
     use super::super::render_list_body;
     use crate::tui::layout::list::clamp_list_scroll_for_area;
     use crate::tui::layout::list::list_names_content_width;
-    use crate::tui::state::{
-        ConfirmTarget, ManagerListRow, ManagerState, Modal, SecretsScopeTag,
-    };
+    use crate::tui::state::{ConfirmTarget, ManagerListRow, ManagerState, Modal, SecretsScopeTag};
     use jackin_config::AppConfig;
     use jackin_config::WorkspaceConfig;
     use jackin_tui::components::scrollable_panel::max_offset;
@@ -314,8 +312,8 @@ mod mount_table {
         MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows,
         mount_path_width, render_mount_lines,
     };
-    use jackin_config::MountConfig;
     use crate::tui::components::mount_rows::render_mount_header;
+    use jackin_config::MountConfig;
 
     /// Collapse a `Line` into a single plain string (concat of all span contents).
     fn line_text(line: &ratatui::text::Line<'_>) -> String {
@@ -596,13 +594,13 @@ mod subpanel_padding {
     //! rows starting at the same column so the first visible character of
     //! the three blocks, giving the right pane a tidy left edge.
     use super::SUBPANEL_CONTENT_INDENT;
-    use crate::tui::state::{MountInfoCache, WorkspaceSummary};
-    use jackin_config::AppConfig;
-    use jackin_config::WorkspaceConfig;
     use crate::tui::screens::workspaces::view::{
         render_config_mounts_subpanel as render_mounts_subpanel, render_config_roles_subpanel,
         render_environments_subpanel, render_general_subpanel, workspace_env_rows,
     };
+    use crate::tui::state::{MountInfoCache, WorkspaceSummary};
+    use jackin_config::AppConfig;
+    use jackin_config::WorkspaceConfig;
     use ratatui::Frame;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -1565,18 +1563,10 @@ mod subpanel_padding {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::tui::state::ManagerState::from_config(
-            &cfg,
-            std::path::Path::new("/tmp"),
-        );
+        let state =
+            crate::tui::state::ManagerState::from_config(&cfg, std::path::Path::new("/tmp"));
         term.draw(|f| {
-            super::super::render_details_pane(
-                f,
-                Rect::new(0, 0, 60, 24),
-                &summary,
-                &cfg,
-                &state,
-            );
+            super::super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
         })
         .unwrap();
 
@@ -1631,18 +1621,10 @@ mod subpanel_padding {
 
         let backend = TestBackend::new(72, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::tui::state::ManagerState::from_config(
-            &cfg,
-            std::path::Path::new("/tmp"),
-        );
+        let state =
+            crate::tui::state::ManagerState::from_config(&cfg, std::path::Path::new("/tmp"));
         term.draw(|f| {
-            super::super::render_details_pane(
-                f,
-                Rect::new(0, 0, 72, 24),
-                &summary(),
-                &cfg,
-                &state,
-            );
+            super::super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary(), &cfg, &state);
         })
         .unwrap();
 
@@ -1678,18 +1660,10 @@ mod subpanel_padding {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::tui::state::ManagerState::from_config(
-            &cfg,
-            std::path::Path::new("/tmp"),
-        );
+        let state =
+            crate::tui::state::ManagerState::from_config(&cfg, std::path::Path::new("/tmp"));
         term.draw(|f| {
-            super::super::render_details_pane(
-                f,
-                Rect::new(0, 0, 60, 24),
-                &summary,
-                &cfg,
-                &state,
-            );
+            super::super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
         })
         .unwrap();
 
@@ -1720,10 +1694,8 @@ mod subpanel_padding {
         cfg.roles
             .insert("alpha".into(), jackin_config::RoleSource::default());
 
-        let mut state = crate::tui::state::ManagerState::from_config(
-            &cfg,
-            std::path::Path::new("/tmp"),
-        );
+        let mut state =
+            crate::tui::state::ManagerState::from_config(&cfg, std::path::Path::new("/tmp"));
         state.instances = vec![
             jackin_core::instance::InstanceIndexEntry {
                 instance_id: "k7p9m2xq".into(),
@@ -1762,13 +1734,7 @@ mod subpanel_padding {
         let backend = TestBackend::new(72, 24);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            super::super::render_details_pane(
-                f,
-                Rect::new(0, 0, 72, 24),
-                &summary,
-                &cfg,
-                &state,
-            );
+            super::super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary, &cfg, &state);
         })
         .unwrap();
 
@@ -1811,18 +1777,10 @@ mod subpanel_padding {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::tui::state::ManagerState::from_config(
-            &cfg,
-            std::path::Path::new("/tmp"),
-        );
+        let state =
+            crate::tui::state::ManagerState::from_config(&cfg, std::path::Path::new("/tmp"));
         term.draw(|f| {
-            super::super::render_details_pane(
-                f,
-                Rect::new(0, 0, 60, 24),
-                &summary,
-                &cfg,
-                &state,
-            );
+            super::super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
         })
         .unwrap();
 
@@ -1880,18 +1838,10 @@ mod subpanel_padding {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::tui::state::ManagerState::from_config(
-            &cfg,
-            std::path::Path::new("/tmp"),
-        );
+        let state =
+            crate::tui::state::ManagerState::from_config(&cfg, std::path::Path::new("/tmp"));
         term.draw(|f| {
-            super::super::render_details_pane(
-                f,
-                Rect::new(0, 0, 60, 24),
-                &summary,
-                &cfg,
-                &state,
-            );
+            super::super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
         })
         .unwrap();
 

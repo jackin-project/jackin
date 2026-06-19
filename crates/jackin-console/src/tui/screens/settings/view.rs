@@ -40,8 +40,8 @@ use crate::tui::components::footer_hints::{
     settings_contextual_row_footer_items, settings_save_footer_label, settings_screen_footer_items,
     tab_bar_footer_items,
 };
-use crate::tui::input::settings_auth_can_generate_token;
 use crate::tui::components::mount_rows::MOUNT_MODE_COL_WIDTH;
+use crate::tui::input::settings_auth_can_generate_token;
 use crate::tui::mount_display::{
     MountDisplayRow, format_config_mount_rows_with_cache, mount_path_width,
 };
@@ -1612,11 +1612,16 @@ pub fn settings_screen_footer_for_state(
     body_area: Rect,
 ) -> Vec<HintSpan<'static>> {
     settings_screen_footer_items(SettingsScreenFooterFacts {
-        auth_modal_items: state.auth.modal_ref().map(|modal| {
-            modal.footer_items(settings_auth_can_generate_token(&state.auth))
-        }),
+        auth_modal_items: state
+            .auth
+            .modal_ref()
+            .map(|modal| modal.footer_items(settings_auth_can_generate_token(&state.auth))),
         env_modal_items: state.env.modal.as_ref().map(SettingsEnvModal::footer_items),
-        mounts_modal_items: state.mounts.modal.as_ref().map(GlobalMountModal::footer_items),
+        mounts_modal_items: state
+            .mounts
+            .modal
+            .as_ref()
+            .map(GlobalMountModal::footer_items),
         screen_items: settings_footer_items(state, op_available, body_area),
     })
 }

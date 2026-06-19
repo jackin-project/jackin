@@ -27,10 +27,10 @@ pub(super) mod config {
     //! Non-TUI config persistence services.
 
     use crate::paths::JackinPaths;
-    use jackin_config::WorkspaceConfig;
-    use jackin_config::{AppConfig, RoleSource};
     #[cfg(test)]
     use jackin_config::GlobalMountRow;
+    use jackin_config::WorkspaceConfig;
+    use jackin_config::{AppConfig, RoleSource};
     use jackin_console::services::config_save::{
         WorkspaceSaveDiffOp, build_workspace_edit, workspace_save_diff_plan,
     };
@@ -168,12 +168,14 @@ pub(super) mod config {
                     editor_doc.set_workspace_role_auth_forward(workspace_name, &role, agent, mode);
                 }
                 WorkspaceSaveDiffOp::WorkspaceRoleGithubAuthForward { role, mode } => {
-                    editor_doc
-                        .set_workspace_role_github_auth_forward(workspace_name, &role, mode);
+                    editor_doc.set_workspace_role_github_auth_forward(workspace_name, &role, mode);
                 }
                 WorkspaceSaveDiffOp::WorkspaceSyncSourceDir { agent, source } => {
-                    editor_doc
-                        .set_workspace_sync_source_dir(workspace_name, agent, source.as_deref());
+                    editor_doc.set_workspace_sync_source_dir(
+                        workspace_name,
+                        agent,
+                        source.as_deref(),
+                    );
                 }
                 WorkspaceSaveDiffOp::WorkspaceRoleSyncSourceDir {
                     role,
@@ -314,9 +316,7 @@ pub(super) mod instances {
     }
 
     fn live_instance_reconciliation_error_line(error: &str) -> String {
-        format!(
-            "jackin: error: live instance reconciliation skipped: docker ps failed: {error}"
-        )
+        format!("jackin: error: live instance reconciliation skipped: docker ps failed: {error}")
     }
 
     pub(crate) fn overlay_running_instances(
@@ -392,9 +392,7 @@ pub(super) mod instances {
                                 .unwrap_or_else(|| "<non-string panic payload>".to_owned());
                             (
                                 "<unknown-container>".to_owned(),
-                                Err(anyhow::anyhow!(
-                                    "snapshot worker thread panicked: {detail}"
-                                )),
+                                Err(anyhow::anyhow!("snapshot worker thread panicked: {detail}")),
                             )
                         }
                     })

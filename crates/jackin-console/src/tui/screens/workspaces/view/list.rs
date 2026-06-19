@@ -6,8 +6,6 @@ use crate::tui::layout::list::{
     SidebarInputs, SidebarLayout, compute_sidebar_layout, sidebar_inputs_for_current_dir,
     sidebar_inputs_for_workspace,
 };
-use crate::tui::state::{ManagerState, MountScrollFocus, WorkspaceSummary};
-use jackin_config::AppConfig;
 use crate::tui::screens::workspaces::view::{
     WorkspaceInstanceLivePaneFacts, WorkspaceInstanceLiveTabFacts, WorkspaceInstancePane,
     WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow, WorkspaceListDisplayRowsFacts,
@@ -24,6 +22,8 @@ use crate::tui::screens::workspaces::view::{
     workspace_list_names_render_plan, workspace_preview_pane_plan, workspace_sidebar_owns_focus,
     workspace_sidebar_plan,
 };
+use crate::tui::state::{ManagerState, MountScrollFocus, WorkspaceSummary};
+use jackin_config::AppConfig;
 
 pub fn render_list_body(
     frame: &mut Frame<'_>,
@@ -39,8 +39,7 @@ pub fn render_list_body(
     //   CurrentDirectory  → current-dir details
     //   SavedWorkspace(i) → saved-workspace details
     //   NewWorkspace      → description-of-what-a-workspace-is pane
-    let columns =
-        crate::tui::list_geometry::split_list_columns(area, state.list_split_pct);
+    let columns = crate::tui::list_geometry::split_list_columns(area, state.list_split_pct);
     let list_area = columns.names;
 
     match workspace_preview_pane_plan(state.selected_row()) {
@@ -297,7 +296,9 @@ pub fn render_current_dir_details_pane(
     state: &ManagerState<'_>,
 ) {
     let cwd_str = cwd.display().to_string();
-    let mounts = [crate::services::workspace::current_dir_mount_config(&cwd_str)];
+    let mounts = [crate::services::workspace::current_dir_mount_config(
+        &cwd_str,
+    )];
     let inputs = sidebar_inputs_for_current_dir(&cwd_str, &mounts, config, state);
     let layout = compute_sidebar_layout(area, &inputs);
     render_sidebar_body(frame, &layout, &inputs, config, state);

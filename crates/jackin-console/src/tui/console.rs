@@ -12,12 +12,8 @@ use crate::tui::app::{ConsoleApp, ConsoleAppStage};
 use crate::tui::state::ManagerState;
 
 pub type ConsoleStage = ConsoleAppStage<ManagerState<'static>>;
-pub type ConsoleState = ConsoleApp<
-    ManagerState<'static>,
-    LoadWorkspaceInput,
-    RoleSelector,
-    Rc<RefCell<OpCache>>,
->;
+pub type ConsoleState =
+    ConsoleApp<ManagerState<'static>, LoadWorkspaceInput, RoleSelector, Rc<RefCell<OpCache>>>;
 pub type ConsoleOutcome = crate::tui::message::ConsoleOutcome<
     RoleSelector,
     jackin_config::ResolvedWorkspace,

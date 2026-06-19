@@ -4,10 +4,8 @@
 //! channel. The `*_uses_injected_runner_in_async_worker` tests at
 //! the end exercise the worker path end-to-end.
 use super::*;
+use crate::tui::components::op_picker::{field_label_input_state, section_name_input_state};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
-use crate::tui::components::op_picker::{
-    field_label_input_state, section_name_input_state,
-};
 use jackin_core::FieldTarget;
 use jackin_env::{
     OpAccount, OpCache, OpField, OpItem, OpStructRunner, OpVault, resolve_op_uri_to_ref,
@@ -104,8 +102,7 @@ fn execute_pending_load_for_test(s: &mut OpPickerState) -> bool {
             .clone()
             .expect("test runner must be set before executing a load")
     });
-    let rx =
-        start_load(pending.cached, pending.request, runner);
+    let rx = start_load(pending.cached, pending.request, runner);
     s.attach_load_receiver(rx);
     true
 }
@@ -1255,11 +1252,7 @@ fn render_picker_dump(state: &OpPickerState, width: u16, height: u16) -> (String
     let backend = TestBackend::new(width, height);
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| {
-        crate::tui::components::op_picker::render_picker(
-            f,
-            Rect::new(0, 0, width, height),
-            state,
-        );
+        crate::tui::components::op_picker::render_picker(f, Rect::new(0, 0, width, height), state);
     })
     .unwrap();
     let buf = term.backend().buffer();

@@ -1,12 +1,10 @@
 //! Secrets tab helpers for the editor: value lookup, modal openers, delete/add flows.
 
-use crate::tui::state::{
-    ConfirmTarget, EditorState, Modal, SecretsEnterPlan, TextInputTarget,
-};
 use crate::tui::screens::editor::view::{
     secret_delete_confirm_state, secret_new_key_label, secret_scope_picker_state,
     secret_value_current_text, secret_value_input_state,
 };
+use crate::tui::state::{ConfirmTarget, EditorState, Modal, SecretsEnterPlan, TextInputTarget};
 
 pub(super) fn open_secrets_enter_modal(editor: &mut EditorState<'_>) {
     match editor.focused_secret_enter_plan() {

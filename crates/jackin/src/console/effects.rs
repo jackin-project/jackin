@@ -9,13 +9,13 @@ use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::tui::screens::workspaces::update::saved_workspace_selected_index;
 use jackin_tui::runtime::spawn_blocking_subscription;
 
-use jackin_console::tui::state::update::{ManagerBackgroundEvent, ManagerMessage, update_manager};
 use crate::console::tui::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
     PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad,
 };
 use jackin_console::tui::components::error_popup;
 use jackin_console::tui::components::status_popup;
+use jackin_console::tui::state::update::{ManagerBackgroundEvent, ManagerMessage, update_manager};
 
 pub(crate) fn op_cli_available() -> bool {
     jackin_console::tui::op_picker::cli_available()
@@ -104,9 +104,7 @@ pub(crate) fn execute_manager_effect(
             )
         }
         ManagerEffect::ResolveFileBrowserGitUrl(path) => {
-            jackin_console::tui::file_browser::execute_file_browser_git_url_resolution(
-                state, &path,
-            )
+            jackin_console::tui::file_browser::execute_file_browser_git_url_resolution(state, &path)
         }
         ManagerEffect::PollFileBrowserGitUrls => {
             jackin_console::tui::file_browser::poll_file_browser_git_urls(state)
@@ -178,8 +176,6 @@ pub fn execute_pending_workspace_save_commit(
     }
     Ok(true)
 }
-
-
 
 pub(crate) fn execute_remove_workspace(
     state: &mut ManagerState<'_>,
@@ -277,12 +273,7 @@ pub(crate) fn apply_role_load_completion(
                 );
                 return;
             }
-            open_role_resolution_error(
-                editor,
-                &load.raw,
-                Some(&load.source.git),
-                &e,
-            );
+            open_role_resolution_error(editor, &load.raw, Some(&load.source.git), &e);
         }
     }
 }
@@ -301,19 +292,9 @@ pub(crate) async fn apply_role_input_with_runner_for_tests(
         Ok(resolved) => resolved,
         Err(error) => {
             if let Some(git) = error.source_url.as_ref() {
-                open_role_resolution_error(
-                    editor,
-                    &error.raw,
-                    Some(git),
-                    &error.error,
-                );
+                open_role_resolution_error(editor, &error.raw, Some(git), &error.error);
             } else {
-                open_role_resolution_error(
-                    editor,
-                    &error.raw,
-                    None,
-                    &error.error,
-                );
+                open_role_resolution_error(editor, &error.raw, None, &error.error);
             }
             return;
         }
@@ -395,7 +376,9 @@ pub(crate) fn execute_token_generate(
     jackin_env::mint_token_value(paths, config, &req.scope, &req.args)
 }
 
-pub(crate) use jackin_console::tui::state::update::{apply_token_generate_result, execute_open_url};
+pub(crate) use jackin_console::tui::state::update::{
+    apply_token_generate_result, execute_open_url,
+};
 
 fn execute_role_registration_start(
     state: &mut ManagerState<'_>,

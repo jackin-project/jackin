@@ -1,11 +1,11 @@
 //! Tests for `editor` agents tab render rendering.
 //! Pins `[x]`/`[ ]` to the *effectively allowed* state — empty
 //! `allowed_roles` is the "all allowed" shorthand.
+use super::super::prepare_editor_tab_for_area;
 use super::super::render_roles_tab;
 use crate::tui::state::{EditorState, EditorTab, FieldFocus};
 use jackin_config::WorkspaceConfig;
 use jackin_config::{AppConfig, RoleSource};
-use super::super::prepare_editor_tab_for_area;
 use jackin_tui::components::scrollable_panel::viewport_width as scroll_viewport_width;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;

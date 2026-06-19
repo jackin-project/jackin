@@ -235,21 +235,35 @@ fn secrets_flat_rows_sequence_is_canonical() {
     assert_eq!(rows.len(), 11, "unexpected row count: {rows:?}");
     assert!(matches!(&rows[0], crate::tui::state::SecretsRow::WorkspaceKeyRow(k) if k == "ALPHA"));
     assert!(matches!(&rows[1], crate::tui::state::SecretsRow::WorkspaceKeyRow(k) if k == "BETA"));
-    assert!(matches!(&rows[2], crate::tui::state::SecretsRow::SectionSpacer));
+    assert!(matches!(
+        &rows[2],
+        crate::tui::state::SecretsRow::SectionSpacer
+    ));
     assert!(matches!(
         &rows[3],
         crate::tui::state::SecretsRow::WorkspaceAddSentinel
     ));
-    assert!(matches!(&rows[4], crate::tui::state::SecretsRow::SectionSpacer));
+    assert!(matches!(
+        &rows[4],
+        crate::tui::state::SecretsRow::SectionSpacer
+    ));
     assert!(
         matches!(&rows[5], crate::tui::state::SecretsRow::RoleHeader { role, expanded: true } if role == "agent-a")
     );
     assert!(
         matches!(&rows[6], crate::tui::state::SecretsRow::RoleKeyRow { role, key } if role == "agent-a" && key == "KEY")
     );
-    assert!(matches!(&rows[7], crate::tui::state::SecretsRow::SectionSpacer));
-    assert!(matches!(&rows[8], crate::tui::state::SecretsRow::RoleAddSentinel(a) if a == "agent-a"));
-    assert!(matches!(&rows[9], crate::tui::state::SecretsRow::SectionSpacer));
+    assert!(matches!(
+        &rows[7],
+        crate::tui::state::SecretsRow::SectionSpacer
+    ));
+    assert!(
+        matches!(&rows[8], crate::tui::state::SecretsRow::RoleAddSentinel(a) if a == "agent-a")
+    );
+    assert!(matches!(
+        &rows[9],
+        crate::tui::state::SecretsRow::SectionSpacer
+    ));
     assert!(
         matches!(&rows[10], crate::tui::state::SecretsRow::RoleHeader { role, expanded: false } if role == "agent-b")
     );
@@ -542,7 +556,10 @@ fn section_spacer_appears_between_workspace_and_first_agent_section() {
     let editor = EditorState::new_edit("ws".into(), ws);
     let rows = editor.secrets_flat_rows();
     assert!(
-        matches!(rows.get(3), Some(crate::tui::state::SecretsRow::SectionSpacer)),
+        matches!(
+            rows.get(3),
+            Some(crate::tui::state::SecretsRow::SectionSpacer)
+        ),
         "row 3 must be a SectionSpacer between workspace add row \
              and first role header; got {:?}",
         rows.get(3)
@@ -598,15 +615,24 @@ fn section_spacer_appears_between_consecutive_agent_sections() {
     let editor = EditorState::new_edit("ws".into(), ws);
     let rows = editor.secrets_flat_rows();
     assert!(
-        matches!(rows.get(1), Some(crate::tui::state::SecretsRow::SectionSpacer)),
+        matches!(
+            rows.get(1),
+            Some(crate::tui::state::SecretsRow::SectionSpacer)
+        ),
         "spacer expected before the first role header; rows={rows:?}"
     );
     assert!(
-        matches!(rows.get(3), Some(crate::tui::state::SecretsRow::SectionSpacer)),
+        matches!(
+            rows.get(3),
+            Some(crate::tui::state::SecretsRow::SectionSpacer)
+        ),
         "spacer expected between consecutive role sections; rows={rows:?}"
     );
     assert!(
-        !matches!(rows.last(), Some(crate::tui::state::SecretsRow::SectionSpacer)),
+        !matches!(
+            rows.last(),
+            Some(crate::tui::state::SecretsRow::SectionSpacer)
+        ),
         "no trailing spacer after the final section; rows={rows:?}"
     );
 }

@@ -5,6 +5,10 @@
 //! event loop — enough to pin the seam hit-test + drag math without a
 //! real terminal.
 use super::{handle_mouse, handle_mouse_with_config, list_scroll_areas};
+use crate::tui::auth::AuthKind;
+use crate::tui::components::save_discard::editor_exit_save_discard_state;
+use crate::tui::layout::MOUSE_HORIZONTAL_SCROLL_STEP;
+use crate::tui::screens::settings::view::global_mount_confirm_state;
 use crate::tui::state::ManagerEffect;
 use crate::tui::state::{
     DEFAULT_SPLIT_PCT, EditorHoverTarget, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
@@ -18,10 +22,6 @@ use crossterm::event::{
 };
 use jackin_config::{AgentAuthConfig, AuthForwardMode};
 use jackin_config::{MountConfig, WorkspaceConfig};
-use crate::tui::auth::AuthKind;
-use crate::tui::components::save_discard::editor_exit_save_discard_state;
-use crate::tui::layout::MOUSE_HORIZONTAL_SCROLL_STEP;
-use crate::tui::screens::settings::view::global_mount_confirm_state;
 use ratatui::layout::Rect;
 
 /// Build a `ManagerState` in the List stage at the default split,
@@ -292,9 +292,7 @@ fn editor_workdir_picker_wheel_scrolls_modal_selection_not_background() {
     editor.active_tab = EditorTab::Roles;
     editor.tab_content_height = 50;
     editor.modal = Some(Modal::WorkdirPick {
-        state: crate::tui::components::workdir_pick::WorkdirPickState::from_mounts(
-            &mounts,
-        ),
+        state: crate::tui::components::workdir_pick::WorkdirPickState::from_mounts(&mounts),
     });
     state.stage = ManagerStage::Editor(editor);
 
@@ -706,8 +704,8 @@ fn mouse_down_on_editor_tab_clears_secrets_view_when_leaving() {
 
 #[test]
 fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
-    use crate::tui::state::CreatePreludeState;
     use crate::tui::components::file_browser::FileBrowserState;
+    use crate::tui::state::CreatePreludeState;
     let mut state = list_state();
     let tmp = tempfile::tempdir().unwrap();
     let parent = tmp.path().join("parent");
@@ -716,9 +714,10 @@ fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
 
     // Build a FileBrowser at `parent`, select the repo, open git prompt,
     // and inject a URL so the URL row renders.
-    let mut fb = FileBrowserState::from_listing(
-        crate::services::file_browser::listing_at(tmp.path().to_path_buf(), parent),
-    );
+    let mut fb = FileBrowserState::from_listing(crate::services::file_browser::listing_at(
+        tmp.path().to_path_buf(),
+        parent,
+    ));
     fb.handle_key(key(KeyCode::Down));
     fb.handle_key(key(KeyCode::Enter));
     fb.pending_git_prompt = Some(repo);
@@ -767,17 +766,18 @@ fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
 
 #[test]
 fn mouse_down_outside_url_row_in_prelude_is_silent_noop() {
-    use crate::tui::state::CreatePreludeState;
     use crate::tui::components::file_browser::FileBrowserState;
+    use crate::tui::state::CreatePreludeState;
     let mut state = list_state();
     let tmp = tempfile::tempdir().unwrap();
     let parent = tmp.path().join("parent");
     let repo = parent.join("repo");
     std::fs::create_dir_all(repo.join(".git")).unwrap();
 
-    let mut fb = FileBrowserState::from_listing(
-        crate::services::file_browser::listing_at(tmp.path().to_path_buf(), parent),
-    );
+    let mut fb = FileBrowserState::from_listing(crate::services::file_browser::listing_at(
+        tmp.path().to_path_buf(),
+        parent,
+    ));
     fb.handle_key(key(KeyCode::Down));
     fb.handle_key(key(KeyCode::Enter));
     fb.pending_git_url = Some("file:///tmp/unreachable".to_owned());

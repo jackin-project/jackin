@@ -1,15 +1,15 @@
 //! Tests for `global_mounts`.
 use super::super::test_support::key;
 use super::*;
+use crate::tui::components::auth_panel::CredentialInput;
+use crate::tui::components::file_browser::FileBrowserState;
 use crate::tui::state::{
     ManagerStage, ManagerState, SettingsEnvModal, SettingsEnvRow, SettingsEnvTextTarget,
     SettingsState, SettingsTab,
 };
-use jackin_core::JackinPaths;
 use jackin_config::{AppConfig, RoleSource};
-use crate::tui::components::auth_panel::CredentialInput;
-use crate::tui::components::file_browser::FileBrowserState;
 use jackin_core::Agent;
+use jackin_core::JackinPaths;
 use ratatui::layout::Rect;
 use std::collections::BTreeMap;
 
@@ -178,9 +178,8 @@ fn global_mount_add_cancel_does_not_open_settings_error_popup() {
 fn global_mount_filebrowser_open_git_url_returns_typed_outcome() {
     let tmp = tempfile::tempdir().unwrap();
     let mut settings = SettingsState::from_config(&AppConfig::default());
-    let mut browser = FileBrowserState::from_listing(
-        crate::services::file_browser::listing_from_home().unwrap(),
-    );
+    let mut browser =
+        FileBrowserState::from_listing(crate::services::file_browser::listing_from_home().unwrap());
     browser.pending_git_prompt = Some(tmp.path().to_path_buf());
     browser.pending_git_url = Some("file:///tmp/settings-url".into());
     settings.mounts.modal = Some(GlobalMountModal::FileBrowser {
@@ -926,9 +925,7 @@ fn settings_auth_dialog_invalid_source_folder_keeps_picker_open_and_sets_error()
         )),
     });
 
-    let op_cache = std::rc::Rc::new(std::cell::RefCell::new(
-        jackin_env::OpCache::default(),
-    ));
+    let op_cache = std::rc::Rc::new(std::cell::RefCell::new(jackin_env::OpCache::default()));
     let mut pending = None;
     handle_settings_auth_modal(
         &mut settings.auth,

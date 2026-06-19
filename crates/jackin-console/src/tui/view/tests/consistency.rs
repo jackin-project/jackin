@@ -123,8 +123,8 @@ fn render_text_input() -> (Buffer, Rect) {
 }
 
 fn render_workdir_pick() -> (Buffer, Rect) {
-    use jackin_config::MountConfig;
     use crate::tui::components::workdir_pick::{WorkdirPickState, render};
+    use jackin_config::MountConfig;
     let area = Rect::new(0, 0, 60, 12);
     let mounts = [MountConfig {
         src: "/home/user/app".into(),
@@ -151,8 +151,8 @@ fn render_github_picker() -> (Buffer, Rect) {
 }
 
 fn render_op_picker() -> (Buffer, Rect) {
-    use crate::tui::op_picker::OpPickerState;
     use crate::tui::components::op_picker::render_picker;
+    use crate::tui::op_picker::OpPickerState;
     let area = Rect::new(0, 0, 70, 20);
     let state = OpPickerState::new();
     let buf = draw(area.width, area.height, |f| render_picker(f, area, &state));
@@ -160,8 +160,8 @@ fn render_op_picker() -> (Buffer, Rect) {
 }
 
 fn render_role_picker() -> (Buffer, Rect) {
-    use crate::tui::state::RolePickerState;
     use crate::tui::components::role_picker::render;
+    use crate::tui::state::RolePickerState;
     use jackin_core::RoleSelector;
     let area = Rect::new(0, 0, 60, 10);
     let state = RolePickerState::new(vec![
@@ -186,8 +186,8 @@ fn render_confirm_save() -> (Buffer, Rect) {
 }
 
 fn render_agent_choice() -> (Buffer, Rect) {
-    use crate::tui::state::AgentChoiceState;
     use crate::tui::components::agent_choice::render;
+    use crate::tui::state::AgentChoiceState;
     let area = Rect::new(0, 0, 50, 7);
     let state = AgentChoiceState::new();
     let buf = draw(area.width, area.height, |f| render(f, area, &state));

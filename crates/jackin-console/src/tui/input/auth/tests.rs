@@ -1,16 +1,14 @@
 //! Tests for `auth`.
 use super::*;
+use crate::tui::auth::AuthKind;
+use crate::tui::components::auth_panel::CredentialInput;
 use crate::tui::state::AuthRow;
-use crate::tui::state::{
-    AuthFormTarget, EditorState, FieldFocus, ManagerStage, ManagerState,
-};
+use crate::tui::state::{AuthFormTarget, EditorState, FieldFocus, ManagerStage, ManagerState};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use jackin_config::{
     AgentAuthConfig, AppConfig, AuthForwardMode, GithubAuthConfig, GithubAuthMode,
 };
 use jackin_config::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride};
-use crate::tui::auth::AuthKind;
-use crate::tui::components::auth_panel::CredentialInput;
 use jackin_core::{OpRef, env_model};
 use jackin_env::OpRunner;
 

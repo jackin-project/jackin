@@ -13,14 +13,16 @@ use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage,
     ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag, TextInputTarget,
 };
-use jackin_core::JackinPaths;
-use jackin_manifest::repo::CachedRepo;
-use jackin_runtime::runtime::test_support::{FakeRunner, first_temp_role_repo, seed_valid_role_repo};
 use crossterm::event::KeyCode;
 use jackin_config::{AgentAuthConfig, AppConfig, AuthForwardMode};
 use jackin_config::{MountConfig, WorkspaceConfig};
 use jackin_console::tui::auth::AuthKind;
+use jackin_core::JackinPaths;
 use jackin_env::OpCache;
+use jackin_manifest::repo::CachedRepo;
+use jackin_runtime::runtime::test_support::{
+    FakeRunner, first_temp_role_repo, seed_valid_role_repo,
+};
 use ratatui::layout::Rect;
 use tempfile::TempDir;
 

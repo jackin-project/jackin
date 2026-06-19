@@ -1,23 +1,23 @@
 //! Host console TUI-layer helpers.
 
 pub mod app;
-pub mod console;
-pub mod file_browser;
-pub mod launch;
-pub mod prompts;
 pub mod auth;
 pub mod auth_config;
 pub mod components;
+pub mod console;
 pub mod debug;
 pub mod effect;
+pub mod file_browser;
 pub mod focus;
 pub mod input;
+pub mod launch;
 pub mod layout;
 pub mod list_geometry;
 pub mod message;
 pub mod mount_display;
 pub mod op_breadcrumb;
 pub mod op_picker;
+pub mod prompts;
 pub mod run;
 pub mod screens;
 pub mod sidebar_layout;

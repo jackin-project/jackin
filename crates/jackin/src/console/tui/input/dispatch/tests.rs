@@ -12,9 +12,9 @@ use super::*;
 use crate::console::tui::state::{
     EditorState, FieldFocus, ManagerStage, ManagerState, SettingsState,
 };
-use jackin_core::JackinPaths;
 use crossterm::event::KeyCode;
 use jackin_config::AppConfig;
+use jackin_core::JackinPaths;
 
 /// End-to-end: start Create, rename via Enter-on-row-0, commit the
 /// save, and verify the workspace on disk has the updated name.

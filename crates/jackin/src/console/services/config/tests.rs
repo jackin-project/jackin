@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
 use super::{WorkspaceSaveInput, WorkspaceSaveMode, save_workspace};
-use jackin_core::JackinPaths;
 use jackin_config::{
     AgentAuthConfig, AppConfig, CURRENT_WORKSPACE_VERSION, MountConfig, MountIsolation,
     WorkspaceConfig, WorkspaceRoleOverride,
 };
+use jackin_core::JackinPaths;
 
 fn workspace_file_contents(paths: &JackinPaths, name: &str) -> String {
     std::fs::read_to_string(paths.workspaces_dir.join(format!("{name}.toml"))).unwrap()

@@ -2,14 +2,14 @@
 
 use ratatui::layout::Rect;
 
-use crate::tui::state::{ManagerState, WorkspaceSummary};
-use jackin_config::AppConfig;
 pub use crate::tui::sidebar_layout::{
     ConfigSidebarInputs as SidebarInputs, ConfigSidebarSelectionInputs, GlobalMountRowsSelection,
     SelectedSidebarTarget, SidebarInstanceFacts, SidebarInstanceQuery, SidebarLayout,
     SidebarScrollAreas, inline_picker_active as sidebar_inline_picker_active,
 };
+use crate::tui::state::{ManagerState, WorkspaceSummary};
 use crate::tui::update::{list_pre_render_facts_from_scroll_areas, list_pre_render_plan};
+use jackin_config::AppConfig;
 
 pub fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> usize {
     let visual_rows = state.visual_rows_vec();
@@ -48,8 +48,7 @@ pub fn clamp_list_scroll_for_area(
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
-    let columns =
-        crate::tui::list_geometry::split_list_columns(area, state.list_split_pct);
+    let columns = crate::tui::list_geometry::split_list_columns(area, state.list_split_pct);
     let sidebar_areas = selected_sidebar_scroll_areas(columns.preview, state, config, cwd);
 
     if let Some(areas) = sidebar_areas.as_ref() {
@@ -127,7 +126,9 @@ pub fn selected_sidebar_scroll_areas(
     match crate::tui::sidebar_layout::selected_sidebar_target(state.selected_row())? {
         SelectedSidebarTarget::CurrentDirectory => {
             let cwd_str = cwd.display().to_string();
-            let mounts = [crate::services::workspace::current_dir_mount_config(&cwd_str)];
+            let mounts = [crate::services::workspace::current_dir_mount_config(
+                &cwd_str,
+            )];
             let inputs = sidebar_inputs_for_current_dir(&cwd_str, &mounts, config, state);
             Some(compute_sidebar_scroll_areas(right_pane, &inputs, config))
         }
@@ -283,7 +284,8 @@ pub fn workspace_active_count(
             workdir: entry.workdir.as_str(),
             active: matches!(
                 entry.status,
-                jackin_core::instance::InstanceStatus::Active | jackin_core::instance::InstanceStatus::Running
+                jackin_core::instance::InstanceStatus::Active
+                    | jackin_core::instance::InstanceStatus::Running
             ),
         }),
         query,

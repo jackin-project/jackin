@@ -16,9 +16,8 @@ use crate::tui::components::op_picker::{
     OpPickerError, OpPickerFatalState, OpPickerLoadRequest, OpPickerLoadResult, OpPickerMode,
     OpPickerPendingLoad, OpPickerStage, VaultsLoadedPlan, accounts_loaded_plan,
     disconnected_worker_error_state, field_label_input_state, fields_loaded_plan,
-    item_name_input_state, items_loaded_plan, probe_load_error_state,
-    recoverable_load_error_state, section_name_input_state, sort_fields_by_concealed_first,
-    vaults_loaded_plan,
+    item_name_input_state, items_loaded_plan, probe_load_error_state, recoverable_load_error_state,
+    section_name_input_state, sort_fields_by_concealed_first, vaults_loaded_plan,
 };
 
 use super::state::{LoadResult, OpPickerState};
@@ -415,7 +414,8 @@ pub fn execute_load_request(
             account_id,
             vault_id,
             item_id,
-        } => OpPickerLoadResult::Fields(runner.item_get(&item_id, &vault_id, account_id.as_deref())),
+        } => {
+            OpPickerLoadResult::Fields(runner.item_get(&item_id, &vault_id, account_id.as_deref()))
+        }
     }
 }
-

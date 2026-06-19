@@ -1,8 +1,8 @@
 //! Agent tab helpers for the editor: allow/deny toggles, override picker, role picker.
 
+use crate::tui::screens::editor::view::role_load_input_state;
 use crate::tui::state::{EditorState, Modal, TextInputTarget};
 use jackin_config::AppConfig;
-use crate::tui::screens::editor::view::role_load_input_state;
 
 /// Listing rules: workspace-allowed list when non-empty, otherwise
 /// every role in `config.roles`. Roles already carrying an

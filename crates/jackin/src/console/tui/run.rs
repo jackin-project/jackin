@@ -9,15 +9,6 @@ use crate::console::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
     resume_console_terminal, suspend_console_terminal,
 };
-use jackin_console::tui::debug::console_location_debug;
-use jackin_console::tui::prompts::{
-    ConcreteLaunchPromptDispatch as LaunchPromptDispatch,
-    ConcreteLaunchPromptRequest as LaunchPromptRequest,
-    ConcreteAgentPickerChoices as AgentPickerChoices,
-    committed_role_prompt, dispatch_launch_prompt, draw_role_resolution_dialog,
-    launch_with_committed_agent, prompt_agent_for_launch,
-};
-use jackin_console::tui::message::PromptOutcome;
 use crate::console::{ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler};
 use jackin_console::tui::app::{clear_pending_launch_role_plan, take_pending_launch_plan};
 use jackin_console::tui::components::error_popup::{
@@ -26,7 +17,16 @@ use jackin_console::tui::components::error_popup::{
 use jackin_console::tui::components::status_popup::{
     instance_action_busy_message, instance_action_busy_title,
 };
+use jackin_console::tui::debug::console_location_debug;
+use jackin_console::tui::message::PromptOutcome;
 use jackin_console::tui::message::launch_prompt_should_probe_agents;
+use jackin_console::tui::prompts::{
+    ConcreteAgentPickerChoices as AgentPickerChoices,
+    ConcreteLaunchPromptDispatch as LaunchPromptDispatch,
+    ConcreteLaunchPromptRequest as LaunchPromptRequest, committed_role_prompt,
+    dispatch_launch_prompt, draw_role_resolution_dialog, launch_with_committed_agent,
+    prompt_agent_for_launch,
+};
 use jackin_console::tui::run::{
     ConsoleChromeHover, ConsoleModalMouseLayerFacts, QuitConfirmPlan, console_pointer_hand,
     debug_chip_activation_allowed, debug_chip_row, debug_run_id_label,
@@ -55,7 +55,6 @@ impl std::fmt::Debug for ConsoleRunOptions<'_> {
             .finish()
     }
 }
-
 
 async fn execute_launch_prompt<B>(
     terminal: &mut ratatui::Terminal<B>,
@@ -376,9 +375,9 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                         "key={} location={}",
                         jackin_console::tui::debug::key_debug_name_for_input(
                             key,
-                            jackin_console::tui::run::consumes_letter_input(letter_input_state_for_console(
-                                &state
-                            )),
+                            jackin_console::tui::run::consumes_letter_input(
+                                letter_input_state_for_console(&state)
+                            ),
                         ),
                         console_location_debug(&state)
                     );

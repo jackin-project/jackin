@@ -4,17 +4,11 @@
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
-use crate::tui::state::ManagerEffect;
+use crate::tui::components::file_browser::FileBrowserState;
+use crate::tui::components::modal_rects::{self, ModalRectMode};
 use crate::tui::layout::list::{
     SidebarScrollAreas, list_names_content_width, selected_sidebar_scroll_areas,
 };
-use crate::tui::state::update::{ManagerMessage, update_manager};
-use crate::tui::state::{
-    EditorTab, GlobalMountModal, ManagerListRow, ManagerStage, ManagerState, Modal,
-    MountScrollFocus, SettingsAuthModal, SettingsTab,
-};
-use crate::tui::components::file_browser::FileBrowserState;
-use crate::tui::components::modal_rects::{self, ModalRectMode};
 use crate::tui::layout::{
     LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, MIN_DRAGGABLE_WIDTH, MOUSE_VERTICAL_SCROLL_STEP,
     SCREEN_HEADER_HEIGHT, ScrollbarAxis, TAB_STRIP_HEIGHT, apply_horizontal_scroll,
@@ -26,9 +20,7 @@ use crate::tui::layout::{
 use crate::tui::mount_display::global_config_mounts_content_width as global_mounts_content_width;
 #[cfg(test)]
 use crate::tui::mount_display::workspace_config_mounts_content_width as workspace_mounts_content_width;
-use crate::tui::run::{
-    ConsoleClickStageFacts, ConsoleClickabilityFacts, console_clickable_at,
-};
+use crate::tui::run::{ConsoleClickStageFacts, ConsoleClickabilityFacts, console_clickable_at};
 use crate::tui::screens::editor::update::{
     editor_auth_row_index_at_position, editor_mount_hover_target_at_position,
     editor_mount_index_at_position, editor_scroll_focus_plan, editor_tab_at_position,
@@ -44,6 +36,12 @@ use crate::tui::screens::workspaces::update::{
     WorkspaceListMousePlan, apply_workspace_list_hover_target,
     workspace_list_clickable_at_position, workspace_list_hover_row_at_position,
     workspace_list_mouse_plan, workspace_list_scroll_focus_plan,
+};
+use crate::tui::state::ManagerEffect;
+use crate::tui::state::update::{ManagerMessage, update_manager};
+use crate::tui::state::{
+    EditorTab, GlobalMountModal, ManagerListRow, ManagerStage, ManagerState, Modal,
+    MountScrollFocus, SettingsAuthModal, SettingsTab,
 };
 use crate::tui::update::{
     ConsoleMouseWheelPlan, GlobalMountModalScrollTarget, ListModalScrollTarget,
@@ -1361,9 +1359,8 @@ fn scroll_active_panel(
                     )
                 }
                 SettingsTab::Trust => {
-                    let cw = crate::tui::screens::settings::update::trust_content_width(
-                        &settings.trust,
-                    );
+                    let cw =
+                        crate::tui::screens::settings::update::trust_content_width(&settings.trust);
                     apply_horizontal_scroll(&mut settings.trust.scroll_x, delta, content_area, cw)
                 }
                 _ => false,
@@ -1537,10 +1534,7 @@ fn list_scroll_areas(
     )
 }
 
-fn editor_scroll_area(
-    editor: &crate::tui::state::EditorState<'_>,
-    term_size: Rect,
-) -> ScrollArea {
+fn editor_scroll_area(editor: &crate::tui::state::EditorState<'_>, term_size: Rect) -> ScrollArea {
     ScrollArea {
         area: editor.content_area(term_size),
         content_width: editor.workspace_mounts_content_width(),

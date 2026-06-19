@@ -27,20 +27,22 @@ fn startup_error_opens_list_error_dialog() {
 }
 
 mod quit_confirm {
+    use crate::services::file_browser::listing_from_home;
+    use crate::tui::components::file_browser::FileBrowserState;
     use crate::tui::console::{ConsoleStage, ConsoleState, new_console_state};
     use crate::tui::debug::console_location_debug;
+    use crate::tui::debug::key_debug_name_for_input;
     use crate::tui::message::{OnPromptFailure, PromptOutcome};
     use crate::tui::prompts::{
         ConcreteAgentPickerChoices as AgentPickerChoices, prompt_agent_for_launch,
         show_role_resolution_error,
     };
-    use crate::tui::run::{consumes_letter_input, is_on_main_screen, letter_input_state_for_console};
+    use crate::tui::run::{
+        consumes_letter_input, is_on_main_screen, letter_input_state_for_console,
+    };
     use crate::tui::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
     };
-    use crate::services::file_browser::listing_from_home;
-    use crate::tui::components::file_browser::FileBrowserState;
-    use crate::tui::debug::key_debug_name_for_input;
     use jackin_config::{AppConfig, LoadWorkspaceInput, ResolvedWorkspace};
     use jackin_core::{Agent, RoleSelector};
     use jackin_tui::ModalOutcome;
@@ -65,7 +67,9 @@ mod quit_confirm {
     fn main_screen_is_list_with_no_modal() {
         let state = fresh_state();
         assert!(is_on_main_screen(&state));
-        assert!(!consumes_letter_input(letter_input_state_for_console(&state)));
+        assert!(!consumes_letter_input(letter_input_state_for_console(
+            &state
+        )));
     }
 
     #[test]
@@ -99,7 +103,9 @@ mod quit_confirm {
             state: TextInputState::new("Key", ""),
         });
         ms.stage = ManagerStage::Editor(editor);
-        assert!(consumes_letter_input(letter_input_state_for_console(&state)));
+        assert!(consumes_letter_input(letter_input_state_for_console(
+            &state
+        )));
         assert!(!is_on_main_screen(&state));
     }
 

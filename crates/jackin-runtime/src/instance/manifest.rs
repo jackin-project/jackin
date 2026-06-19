@@ -306,9 +306,7 @@ impl InstanceIndex {
             index
                 .instances
                 .retain(|entry| entry.container_base != manifest.container_base);
-            index
-                .instances
-                .push(manifest.to_index_entry());
+            index.instances.push(manifest.to_index_entry());
             Ok(())
         })
     }
@@ -415,9 +413,7 @@ impl InstanceIndex {
         match InstanceManifest::read_optional(&state_dir) {
             Ok(Some(mut manifest)) => {
                 manifest.mark_status(InstanceStatus::Purged);
-                index
-                    .instances
-                    .push(manifest.to_index_entry());
+                index.instances.push(manifest.to_index_entry());
             }
             // Manifest absent → state already torn down by
             // `purge_container_filesystem`; nothing to tombstone.
@@ -496,9 +492,7 @@ impl InstanceIndex {
             let Some(manifest) = InstanceManifest::read_optional(&entry.path())? else {
                 continue;
             };
-            index
-                .instances
-                .push(manifest.to_index_entry());
+            index.instances.push(manifest.to_index_entry());
         }
         index.sort();
         Ok(index)

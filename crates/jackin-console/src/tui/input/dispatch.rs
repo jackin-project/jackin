@@ -24,10 +24,11 @@ use crate::tui::app::{
 };
 use crate::tui::effect::{ConsoleEffect, FileBrowserEffectContext};
 use crate::tui::screens::workspaces::update::{
-    InstancePurgeKeyPlan, WorkspaceDeleteKeyPlan, instance_purge_key_plan, workspace_delete_key_plan,
+    InstancePurgeKeyPlan, WorkspaceDeleteKeyPlan, instance_purge_key_plan,
+    workspace_delete_key_plan,
 };
-use crate::tui::state::{ExitIntent, ManagerStage, ManagerState, ManagerEffect};
 use crate::tui::state::update::{ManagerMessage, update_manager};
+use crate::tui::state::{ExitIntent, ManagerEffect, ManagerStage, ManagerState};
 use crate::tui::update::{DismissibleModalPlan, dismissible_modal_plan};
 
 type ValidateAuthSourceFolder =
@@ -87,9 +88,7 @@ pub fn handle_key(
         ConsoleInputDispatchPlan::CreatePreludeModal => {}
         ConsoleInputDispatchPlan::Stage(route) => {
             let outcome = match route {
-                ConsoleManagerStageRoute::List => {
-                    handle_list_key(state, config, paths, cwd, key)
-                }
+                ConsoleManagerStageRoute::List => handle_list_key(state, config, paths, cwd, key),
                 ConsoleManagerStageRoute::Editor => {
                     handle_editor_key(state, config, paths, cwd, key)
                 }

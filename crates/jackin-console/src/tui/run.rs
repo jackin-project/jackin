@@ -506,9 +506,7 @@ pub const fn is_on_main_screen(state: &crate::tui::console::ConsoleState) -> boo
     is_main_screen_for_route(ms.stage.route(), ms.list_modal.is_some())
 }
 
-pub const fn screen_of(
-    state: &crate::tui::console::ConsoleState,
-) -> jackin_diagnostics::Screen {
+pub const fn screen_of(state: &crate::tui::console::ConsoleState) -> jackin_diagnostics::Screen {
     let crate::tui::console::ConsoleStage::Manager(ms) = &state.stage;
     diagnostics_screen_for_stage(console_screen_stage_for_route(ms.stage.route()))
 }
@@ -572,7 +570,10 @@ pub fn startup_error_modal_active_for_console(
     let crate::tui::console::ConsoleStage::Manager(ms) = &state.stage;
     startup_error_modal_active(
         startup_error_pending,
-        matches!(ms.list_modal, Some(crate::tui::state::Modal::ErrorPopup { .. })),
+        matches!(
+            ms.list_modal,
+            Some(crate::tui::state::Modal::ErrorPopup { .. })
+        ),
     )
 }
 

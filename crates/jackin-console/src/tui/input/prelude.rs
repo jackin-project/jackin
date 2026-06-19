@@ -5,10 +5,6 @@
 use crossterm::event::KeyEvent;
 
 use super::InputOutcome;
-use crate::tui::state::update::{ManagerMessage, update_manager};
-use crate::tui::state::{ManagerState, Modal};
-use jackin_core::JackinPaths;
-use jackin_config::AppConfig;
 use crate::tui::app::{
     CreatePreludeFileBrowserPlan, CreatePreludeKeyPlan, CreatePreludeModalStep,
     CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan, CreatePreludeTextInputNamePlan,
@@ -22,6 +18,10 @@ use crate::tui::screens::workspaces::view::{
     create_prelude_mount_dst_choice_state, create_prelude_workdir_pick_state,
     create_prelude_workspace_name_input_state,
 };
+use crate::tui::state::update::{ManagerMessage, update_manager};
+use crate::tui::state::{ManagerState, Modal};
+use jackin_config::AppConfig;
+use jackin_core::JackinPaths;
 pub type PreludeModalOutcome = crate::tui::message::ConsolePreludeModalOutcome;
 
 pub fn handle_prelude_key(
@@ -226,9 +226,7 @@ fn reopen_mount_dst_choice(prelude: &mut crate::tui::state::CreatePreludeState<'
     });
 }
 
-fn open_workdir_pick_from_pending_mount(
-    prelude: &mut crate::tui::state::CreatePreludeState<'_>,
-) {
+fn open_workdir_pick_from_pending_mount(prelude: &mut crate::tui::state::CreatePreludeState<'_>) {
     prelude.open_workdir_pick_from_pending_mount(|mount| Modal::WorkdirPick {
         state: create_prelude_workdir_pick_state(&[mount]),
     });

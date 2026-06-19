@@ -5,8 +5,7 @@ use super::{
     KeyEvent, ManagerMessage, ManagerStage, ManagerState, SettingsAuthKeyPlan, SettingsAuthModal,
     SettingsAuthOutcome, auth_credential_input_state, auth_form_key_plan_with_source_folder,
     auth_source_picker_state, confirm_modal, dispatch_manager, generated_token_op_item_name,
-    generated_token_source_picker_state, open_settings_save_preview,
-    settings_update,
+    generated_token_source_picker_state, open_settings_save_preview, settings_update,
 };
 use crate::tui::auth_config::settings_auth_form_can_generate_token;
 use crate::tui::components::file_browser::page_rows_for_modal;
@@ -86,9 +85,7 @@ pub(crate) fn open_settings_auth_form(
 /// generate trigger: an `AuthForm` showing the global Claude
 /// `oauth_token` slot. Settings generate is always global Claude, so —
 /// unlike the workspace editor — there is no per-target gate.
-pub fn settings_auth_can_generate_token(
-    auth: &crate::tui::state::SettingsAuthState,
-) -> bool {
+pub fn settings_auth_can_generate_token(auth: &crate::tui::state::SettingsAuthState) -> bool {
     matches!(
         auth.modal_ref(),
         Some(SettingsAuthModal::AuthForm { state, .. })
@@ -213,14 +210,13 @@ pub fn handle_settings_auth_modal(
                 match source_picker_plan(outcome) {
                     SourcePickerPlan::Plain => {
                         auth.finish_generating_token();
-                        *pending_token_generate =
-                            Some(crate::tui::state::PendingTokenGenerate {
-                                scope: jackin_env::TokenSetupScope::Global,
-                                args: jackin_env::TokenSetupArgs {
-                                    plain_text: true,
-                                    ..Default::default()
-                                },
-                            });
+                        *pending_token_generate = Some(crate::tui::state::PendingTokenGenerate {
+                            scope: jackin_env::TokenSetupScope::Global,
+                            args: jackin_env::TokenSetupArgs {
+                                plain_text: true,
+                                ..Default::default()
+                            },
+                        });
                     }
                     SourcePickerPlan::Op => {
                         // `generating_token` stays set so the Create-mode
@@ -269,9 +265,9 @@ pub fn handle_settings_auth_modal(
                 }
                 SourcePickerPlan::Op => {
                     auth.set_modal(SettingsAuthModal::OpPicker {
-                        state: Box::new(
-                            crate::tui::op_picker::OpPickerState::new_with_cache(op_cache),
-                        ),
+                        state: Box::new(crate::tui::op_picker::OpPickerState::new_with_cache(
+                            op_cache,
+                        )),
                     });
                 }
                 SourcePickerPlan::Dismiss => restore_settings_auth_form(auth),
@@ -325,9 +321,9 @@ pub fn handle_settings_auth_modal(
                     crate::tui::op_picker::OpPickerSelection::NewItem { .. }
                     | crate::tui::op_picker::OpPickerSelection::EditItemField { .. },
                 ) => unreachable!("settings-auth browse OpPicker runs in Browse mode"),
-                InlinePickerPlan::Commit(
-                    crate::tui::op_picker::OpPickerSelection::Existing(op_ref),
-                ) => {
+                InlinePickerPlan::Commit(crate::tui::op_picker::OpPickerSelection::Existing(
+                    op_ref,
+                )) => {
                     // Close the OpPicker — the auth form stays stashed on
                     // modal_parents so the _committed / _failed helpers find it.
                     auth.clear_modal();
@@ -543,9 +539,7 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
                 literal_buffer,
             });
             auth.set_error(
-                crate::tui::screens::settings::view::settings_auth_op_read_failed_message(
-                    err,
-                ),
+                crate::tui::screens::settings::view::settings_auth_op_read_failed_message(err),
             );
         }
     }

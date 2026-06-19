@@ -2,13 +2,6 @@
 //! `ConfirmSave` preview modal, and service-backed config writes.
 #![allow(clippy::items_after_test_module)]
 
-use crate::tui::effect::WorkspaceSaveWriteMode;
-use crate::tui::state::WorkspaceSaveEffect;
-use crate::tui::state::{
-    EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
-    PendingIsolationCleanup,
-};
-use jackin_config::AppConfig;
 use crate::services::config_save::{
     EditorSavePreviewError, EditorSavePreviewInput, EditorSavePreviewPlan,
     plan_editor_save_preview, pre_existing_redundant_mounts_message,
@@ -19,10 +12,17 @@ pub use crate::tui::components::save_preview::build_settings_save_lines;
 use crate::tui::components::save_preview::{
     build_workspace_save_lines as build_confirm_save_lines, collapse_removal_lines,
 };
+use crate::tui::effect::WorkspaceSaveWriteMode;
 use crate::tui::screens::editor::model::{EditorSaveModePlan, editor_save_mode_plan};
 use crate::tui::screens::editor::view::{
     isolated_state_save_confirm_state, running_isolated_state_save_block_message,
 };
+use crate::tui::state::WorkspaceSaveEffect;
+use crate::tui::state::{
+    EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
+    PendingIsolationCleanup,
+};
+use jackin_config::AppConfig;
 
 #[cfg(test)]
 pub fn append_env_map_diff_lines(
@@ -191,8 +191,7 @@ pub fn begin_editor_save(
         };
 
     let lines = build_confirm_save_lines(editor, config, &collapse_lines);
-    let mut confirm_state =
-        crate::tui::components::confirm_save::ConfirmSaveState::new(lines);
+    let mut confirm_state = crate::tui::components::confirm_save::ConfirmSaveState::new(lines);
     confirm_state.effective_removals = effective_removals;
     confirm_state.final_mounts = final_mounts;
     confirm_state.has_collapses = has_collapses;
@@ -260,12 +259,11 @@ pub fn commit_editor_save_with_runner(
         // mount over the existing on-disk set.
         let current_ws = config.workspaces.get(original_name).cloned();
         if let Some(current_ws) = current_ws {
-            let prospective_mounts =
-                crate::services::workspace::prospective_workspace_mounts(
-                    &current_ws.mounts,
-                    &editor.pending.mounts,
-                    &plan.effective_removals,
-                );
+            let prospective_mounts = crate::services::workspace::prospective_workspace_mounts(
+                &current_ws.mounts,
+                &editor.pending.mounts,
+                &plan.effective_removals,
+            );
             return Ok(Some(WorkspaceSaveEffect::StartDriftCheck {
                 original_name: original_name.clone(),
                 prospective_mounts,
@@ -285,12 +283,11 @@ pub fn commit_editor_save_with_runner(
     {
         let current_ws = config.workspaces.get(original_name).cloned();
         if let Some(current_ws) = current_ws {
-            let prospective_mounts =
-                crate::services::workspace::prospective_workspace_mounts(
-                    &current_ws.mounts,
-                    &editor.pending.mounts,
-                    &plan.effective_removals,
-                );
+            let prospective_mounts = crate::services::workspace::prospective_workspace_mounts(
+                &current_ws.mounts,
+                &editor.pending.mounts,
+                &plan.effective_removals,
+            );
             // Re-detect outside the TUI boundary to avoid a TOCTOU window
             // where state changed between the confirm modal opening and the
             // operator's Yes.
@@ -334,4 +331,3 @@ pub fn open_save_error_popup(editor: &mut EditorState<'_>, message: &str) {
         message: message.to_owned(),
     };
 }
-

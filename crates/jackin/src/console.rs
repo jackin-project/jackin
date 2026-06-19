@@ -62,14 +62,11 @@ pub mod terminal {
         jackin_console::tui::terminal::suspend_console_terminal(stdout, host_console_terminal());
     }
 
-    pub(crate) fn resume_console_terminal(
-        stdout: &mut std::io::Stdout,
-    ) -> anyhow::Result<()> {
+    pub(crate) fn resume_console_terminal(stdout: &mut std::io::Stdout) -> anyhow::Result<()> {
         jackin_console::tui::terminal::resume_console_terminal(stdout, host_console_terminal())
     }
 }
 pub mod tui;
-
 
 /// Validate a picked source folder against the agent an auth form targets.
 /// Returns `Ok(())` for non-agent auth kinds. Runtime validation stays in the

@@ -14,19 +14,10 @@ pub use modal::{
 use crossterm::event::KeyEvent;
 
 use super::InputOutcome;
-use crate::tui::state::ManagerEffect;
-use crate::tui::state::update::{ManagerMessage, update_manager};
-use crate::tui::op_picker::OpPickerState;
-use crate::tui::state::{
-    ConfirmTarget, EditorSaveFlow, EditorState, ExitIntent, FileBrowserTarget, ManagerStage,
-    ManagerState, Modal, SecretsScopeTag, TextInputTarget, open_editor_action_error,
-    open_role_input_error,
-};
-use jackin_core::JackinPaths;
-use jackin_config::AppConfig;
 use crate::tui::components::error_popup::no_github_url_error_popup_state;
 use crate::tui::components::file_browser::page_rows_for_modal;
 use crate::tui::components::save_discard::editor_exit_save_discard_state;
+use crate::tui::op_picker::OpPickerState;
 use crate::tui::screens::editor::model::{
     AuthEnterPlan, EditorAuthActionKeyPlan, EditorEnterKeyPlan, EditorEscapeKeyPlan,
     EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan,
@@ -39,6 +30,13 @@ use crate::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
     secret_new_key_label, secret_new_value_input_state,
 };
+use crate::tui::state::ManagerEffect;
+use crate::tui::state::update::{ManagerMessage, update_manager};
+use crate::tui::state::{
+    ConfirmTarget, EditorSaveFlow, EditorState, ExitIntent, FileBrowserTarget, ManagerStage,
+    ManagerState, Modal, SecretsScopeTag, TextInputTarget, open_editor_action_error,
+    open_role_input_error,
+};
 use crate::tui::update::{
     BoolConfirmModalPlan, ConfirmSaveModalPlan, DismissibleModalPlan, FileBrowserModalPlan,
     InlinePickerPlan, MountDstChoicePlan, SaveDiscardModalPlan, ScopePickerPlan, SourcePickerPlan,
@@ -46,6 +44,8 @@ use crate::tui::update::{
     file_browser_modal_plan, inline_picker_plan, mount_dst_choice_plan, save_discard_modal_plan,
     scope_picker_plan, source_picker_plan,
 };
+use jackin_config::AppConfig;
+use jackin_core::JackinPaths;
 
 // Central keymap dispatch — table-like layout makes the keymap
 // readable at a glance; extracting per-key helpers just scatters it.
@@ -862,9 +862,9 @@ pub fn handle_editor_modal(
                     crate::tui::op_picker::OpPickerSelection::NewItem { .. }
                     | crate::tui::op_picker::OpPickerSelection::EditItemField { .. },
                 ) => unreachable!("Secrets-tab OpPicker runs in Browse mode"),
-                InlinePickerPlan::Commit(
-                    crate::tui::op_picker::OpPickerSelection::Existing(op_ref),
-                ) => {
+                InlinePickerPlan::Commit(crate::tui::op_picker::OpPickerSelection::Existing(
+                    op_ref,
+                )) => {
                     // Auth-form round trip wins over the Secrets-tab
                     // dispatch: the auth form sets
                     // `pending_auth_form_return` exactly when it's the
@@ -937,11 +937,10 @@ fn apply_role_input(
         Err(e) => {
             let err_text = e.error.to_string();
             if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
-                let message =
-                    crate::tui::components::error_popup::internal_role_load_error_message(
-                        &e.raw,
-                        panic_message,
-                    );
+                let message = crate::tui::components::error_popup::internal_role_load_error_message(
+                    &e.raw,
+                    panic_message,
+                );
                 open_role_input_error(editor, &message);
                 return EditorModalOutcome::Continue;
             }
@@ -979,9 +978,7 @@ fn dispatch_editor_mount_dst_choice(
     editor: &mut EditorState<'_>,
     target: FileBrowserTarget,
     src: &str,
-    outcome: &jackin_tui::ModalOutcome<
-        crate::tui::components::mount_dst_choice::MountDstChoice,
-    >,
+    outcome: &jackin_tui::ModalOutcome<crate::tui::components::mount_dst_choice::MountDstChoice>,
 ) {
     match mount_dst_choice_plan(outcome.clone()) {
         MountDstChoicePlan::CommitSamePath => {
@@ -1045,11 +1042,18 @@ fn open_role_resolution_error(
         configured_role_load_error_message, generic_role_repository_error_message,
         repository_role_load_error_message,
     };
-    jackin_diagnostics::debug_log!("role", "showing role-load error popup for raw={raw:?}: {err:?}");
+    jackin_diagnostics::debug_log!(
+        "role",
+        "showing role-load error popup for raw={raw:?}: {err:?}"
+    );
     let message = source_url.map_or_else(
         || configured_role_load_error_message(raw),
         |source_url| {
-            repository_role_load_error_message(raw, source_url, generic_role_repository_error_message())
+            repository_role_load_error_message(
+                raw,
+                source_url,
+                generic_role_repository_error_message(),
+            )
         },
     );
     editor.open_error_popup(

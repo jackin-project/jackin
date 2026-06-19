@@ -45,7 +45,9 @@ pub use crate::tui::screens::settings::model::{
 pub use crate::tui::screens::workspaces::model::{
     ManagerHoverTarget, ManagerListRow, WorkspaceSummary,
 };
-pub use crate::tui::split::{DEFAULT_SPLIT_PCT, DragState, MAX_SPLIT_PCT, MIN_SPLIT_PCT, clamp_split};
+pub use crate::tui::split::{
+    DEFAULT_SPLIT_PCT, DragState, MAX_SPLIT_PCT, MIN_SPLIT_PCT, clamp_split,
+};
 
 // ── Concrete effect type ────────────────────────────────────────────────────
 
@@ -114,8 +116,7 @@ pub type SettingsState<'a> = crate::tui::screens::settings::model::SettingsState
     PendingTokenGenerate,
 >;
 
-pub type SettingsEnvConfig =
-    crate::tui::screens::settings::model::SettingsEnvConfig<EnvValue>;
+pub type SettingsEnvConfig = crate::tui::screens::settings::model::SettingsEnvConfig<EnvValue>;
 
 pub type PendingSaveCommit = crate::tui::screens::editor::model::PendingSaveCommit<MountConfig>;
 pub type EditorSaveFlow = crate::tui::screens::editor::model::EditorSaveFlow<PendingSaveCommit>;
@@ -123,14 +124,10 @@ pub type AuthFormTarget = crate::tui::screens::settings::model::AuthFormTarget<A
 
 pub type AuthForm = crate::tui::components::auth_panel::AuthForm<EnvValue>;
 pub type AuthRow = GenericAuthRow<AuthKind>;
-pub type SettingsAuthRow = crate::tui::screens::settings::model::SettingsAuthRow<
-    AuthKind,
-    crate::tui::auth::AuthMode,
->;
-pub type ConfirmTarget = crate::tui::screens::editor::model::ConfirmTarget<
-    jackin_config::RoleSource,
-    PendingSaveCommit,
->;
+pub type SettingsAuthRow =
+    crate::tui::screens::settings::model::SettingsAuthRow<AuthKind, crate::tui::auth::AuthMode>;
+pub type ConfirmTarget =
+    crate::tui::screens::editor::model::ConfirmTarget<jackin_config::RoleSource, PendingSaveCommit>;
 
 pub type SettingsEnvState<'a> =
     crate::tui::screens::settings::model::SettingsEnvState<EnvValue, SettingsEnvModal<'a>>;
@@ -195,16 +192,13 @@ pub type PendingMountInfoRefresh = crate::tui::message::PendingMountInfoRefresh;
 
 pub type MountInfoRefreshTarget = crate::tui::message::MountInfoRefreshTarget;
 
-pub type PendingDriftCheck = crate::tui::subscriptions::PendingDriftCheck<
-    jackin_core::DriftDetection,
-    PendingSaveCommit,
->;
+pub type PendingDriftCheck =
+    crate::tui::subscriptions::PendingDriftCheck<jackin_core::DriftDetection, PendingSaveCommit>;
 
 pub type PendingIsolationCleanup =
     crate::tui::subscriptions::PendingIsolationCleanup<PendingSaveCommit>;
 
-pub type PendingRoleLoad =
-    crate::tui::subscriptions::PendingRoleLoad<jackin_config::RoleSource>;
+pub type PendingRoleLoad = crate::tui::subscriptions::PendingRoleLoad<jackin_config::RoleSource>;
 
 pub type Modal<'a> = crate::tui::app::ConsoleModal<
     TextInputTarget,
@@ -308,8 +302,7 @@ pub struct ManagerState<'a> {
     pub(in crate::tui) instances_refresh_generation: u64,
     pub(in crate::tui) instances_refresh_rx:
         Option<BlockingSubscription<(u64, Result<ManagerInstanceRefreshSnapshot, String>)>>,
-    pub(in crate::tui) mount_info_refresh_rx:
-        Option<BlockingSubscription<PendingMountInfoRefresh>>,
+    pub(in crate::tui) mount_info_refresh_rx: Option<BlockingSubscription<PendingMountInfoRefresh>>,
     /// Dedup gate: last error string from `refresh_instances`. Without
     /// this, a persistent parse error would reopen the popup on every
     /// 20 Hz tick — operators would never be able to dismiss it.
@@ -377,11 +370,7 @@ pub fn active_instances_matching<'a>(
 }
 
 /// Add a role to a workspace editor and select its row.
-pub fn add_role_to_workspace_editor(
-    editor: &mut EditorState<'_>,
-    config: &AppConfig,
-    key: &str,
-) {
+pub fn add_role_to_workspace_editor(editor: &mut EditorState<'_>, config: &AppConfig, key: &str) {
     if let Some(idx) = crate::tui::screens::editor::update::add_role_to_workspace_editor(
         &mut editor.pending.allowed_roles,
         config.roles.keys(),
