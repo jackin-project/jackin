@@ -69,7 +69,7 @@ Specification: [`prompt.md`](prompt/).
  measurement scripts are embedded in reports as reproducible snippets.
 5. **Operator mid-run instructions** were folded in: (a) cavemem / cavekit / fff and the
  industry-standard/proven/engineer-verified buckets → `03-prior-art-and-market-scan.md`;
- (b) the request to "add this to token-optimization-research.md" was interpreted as the
+ (b) the request to "add this to token-optimization.md" was interpreted as the
  dossier (the brief forbids modifying pre-existing repo files, including the brief itself);
  (c) chat output kept in caveman-ultra; dossier files follow the brief's own writing rules
  (plain language, full sentences) as the deliverable spec.
@@ -112,7 +112,7 @@ Specification: [`prompt.md`](prompt/).
 - [x] **Every external claim has source + access date; every measurement has its method**
  (per-file Verification ledgers).
 - [x] **Every artifact landed as an incremental commit pushed to `origin` on
- `chore/token-optimization-research`** — 20+ commits over the run, no end-of-run dump; final
+ `chore/token-optimization`** — 20+ commits over the run, no end-of-run dump; final
  state pushed.
 - [x] This self-audit appended to README with each box checked honestly. Known limits, stated:
  thinking-share is n=1-environment; the 76% effort figure is Opus 4.5-only pending local
@@ -232,7 +232,7 @@ Fable-priced dollars are ~2× high for the operator's actual Opus 4.8, but ratio
 - [x] **Verdict delta with arithmetic** — dollars unchanged, metric reframed for a subscriber (`49`).
 - [x] **Cross-layer caveats captured** in `49` (cache scope, subagent caching).
 - [x] **Every external claim has a source; every measurement its method** (per-file Verification ledgers).
-- [x] **Every artifact committed and pushed to `origin` on `chore/token-optimization-research` as it
+- [x] **Every artifact committed and pushed to `origin` on `chore/token-optimization` as it
  landed** — `docs(research): …` Conventional Commits with DCO sign-off, no CI wait, no end-of-run dump.
 - [x] **Volume II self-audit appended here**, each box checked; judgment calls in the Volume II
  Assumptions section above. Honest residual gaps named in Assumption 6.
@@ -242,6 +242,8 @@ Fable-priced dollars are ~2× high for the operator's actual Opus 4.8, but ratio
 ## Volume III — tooling and external-tool comparison
 
 Adds runnable measurement scripts and a comparison of external code-search / code-intelligence tools.
+
+> **The Caveman vs Headroom vs RTK three-way comparison now has its own dedicated, diagram-driven folder:** [Caveman vs Headroom vs RTK](/research/caveman-headroom-rtk/) consolidates and deepens the material in files 53/54/56 — equal-depth design teardowns of all three, a feature has/lacks matrix, best-case-of-each, and a straight answer to whether one product can combine all three. Files 53/54/56 below remain for their broader scope and full source ledgers.
 
 - **Runnable [`tools/`](tools/)** — `count_tokens.py`, `image_tokens.py`, `session_cost.py`
   reproduce the dossier's core numbers against the live Anthropic tokenizer: real token counts, the
@@ -257,8 +259,8 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   for docs/examples/decisions/pattern recall and accept it only if it beats that planned stack by
   ≥20% tokens per solved task at equal quality.
 - **[`53-headroom-and-context-compression.md`](53-headroom-and-context-compression/)** — deep dive on
-  `chopratejas/headroom` (the input-side context-compression layer) and a deep comparison to the
-  caveman ecosystem. Headroom compresses what the model *reads* (tool outputs/logs/RAG/files, the 61%
+  `chopratejas/headroom` (the input-side context-compression layer); the cross-tool comparison to the
+  caveman ecosystem and RTK is consolidated in the dedicated [Caveman vs Headroom vs RTK](/research/caveman-headroom-rtk/) folder. Headroom compresses what the model *reads* (tool outputs/logs/RAG/files, the 61%
   cache buckets); caveman compresses what the model *writes* (prose, 17%) — orthogonal, they stack,
   neither touches thinking (20%). Headroom's **live-zone** design (stabilize the cached prefix,
   compress only the volatile tail) is the cache-safe input-compression design that refines the
@@ -283,6 +285,21 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   inferred via `count_tokens`). Caveats: PolyForm-Noncommercial license; dollar views assume API pricing,
   not a Max subscription (file 41). The JSONL-reading, no-proxy class is the safe measurement front-end of
   the validation harness.
+- **[`56-rtk-and-write-time-observation-compression.md`](56-rtk-and-write-time-observation-compression/)** —
+  deep dive on `rtk-ai/rtk` ("Rust Token Killer") — the dossier's RTK record. The **three-way** Caveman vs Headroom vs RTK
+  comparison it originally carried now lives, expanded, in the dedicated [Caveman vs Headroom vs RTK](/research/caveman-headroom-rtk/) folder (single source of truth). RTK is the deterministic, Claude-Code-native productization of the
+  cache-safe **write-time observation-compression** design point files 53 (H1) and 54 named: it compresses
+  shell-command output (tests/git/logs/builds) at the tool boundary via a PreToolUse hook — no ML, no MCP
+  rent, cache-safe by construction — but reaches only Bash calls (not native `Read`/`Grep`). The "60–90%"
+  is a per-command best case (no whole-session telemetry, no independent benchmark; 63.5k★ is PR-inflated
+  per file 54 §A), corrected to low-double-digit whole-bill, same as the caveman K1 / headroom H-K1 moves.
+  Verdict: caveman for output; RTK and headroom are **complementary input-side layers** (RTK = Bash output
+  at the tool boundary, headroom = API-layer everything-else) the community stacks — a published month-long
+  head-to-head measured RTK 1.33B + headroom 0.19B → 1.52B tokens, headroom at 96% prefix-cache-hit
+  (confirming the live-zone design); adopt in risk/reach order. RTK is the most container-adoptable of the
+  three, pilot it role-scoped with the host-write/hook-conflict guardrails. File 51's ast-grep coverage was
+  also extended into a full verdict (structural-search token economics + the skill-vs-MCP-vs-CLI
+  form-factor analysis).
 
 ### Final completion audit 
 
@@ -294,7 +311,7 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
 - [x] **Composed stacks and 10x verdict are current:** `30` carries corrected ≈2.4–2.5x aggressive math, ≈5–6.2x validated-routing ceiling, and no defensible 10x at zero quality loss.
 - [x] **Negative-cost set, graveyards, harness, and roadmap are present:** negative-cost set in `30`, claim graveyards in `00`/area files/`49`, runnable validation protocol in `31`, adoption sequence in `32`.
 - [x] **Evidence discipline holds by audit:** external claims are cited with access dates or ledgers; local measurements name their method; bounded unknowns remain explicitly labeled `INCOMPLETE`.
-- [x] **All artifacts are committed and pushed** to `origin/chore/token-optimization-research`; latest verification showed a clean worktree after pushed commits.
+- [x] **All artifacts are committed and pushed** to `origin/chore/token-optimization`; latest verification showed a clean worktree after pushed commits.
 
 ---
 
