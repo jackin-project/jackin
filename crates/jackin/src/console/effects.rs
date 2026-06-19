@@ -227,7 +227,7 @@ pub(crate) fn apply_role_load_completion(
                     key = load.key,
                     raw = load.raw
                 );
-                crate::console::tui::state::open_role_resolution_error(
+                open_role_resolution_error(
                     editor,
                     &load.raw,
                     Some(&load.source.git),
@@ -277,7 +277,7 @@ pub(crate) fn apply_role_load_completion(
                 );
                 return;
             }
-            crate::console::tui::state::open_role_resolution_error(
+            open_role_resolution_error(
                 editor,
                 &load.raw,
                 Some(&load.source.git),
@@ -301,14 +301,14 @@ pub(crate) async fn apply_role_input_with_runner_for_tests(
         Ok(resolved) => resolved,
         Err(error) => {
             if let Some(git) = error.source_url.as_ref() {
-                crate::console::tui::state::open_role_resolution_error(
+                open_role_resolution_error(
                     editor,
                     &error.raw,
                     Some(git),
                     &error.error,
                 );
             } else {
-                crate::console::tui::state::open_role_resolution_error(
+                open_role_resolution_error(
                     editor,
                     &error.raw,
                     None,
@@ -742,6 +742,72 @@ pub(crate) fn apply_background_event(
 
 /// Drained from the outer event loop every tick so picker results land without
 pub(crate) use jackin_console::tui::op_picker::poll_picker_loads;
+
+// ── Role-resolution error helpers ───────────────────────────────────────────
+//
+// These depend on `crate::runtime::RepoError` and `crate::repo` types that
+// are not accessible from `jackin-console`. All callers live in this file.
+
+pub(crate) fn open_role_resolution_error(
+    editor: &mut EditorState<'_>,
+    raw: &str,
+    source_url: Option<&String>,
+    err: &anyhow::Error,
+) {
+    use jackin_console::tui::components::error_popup::{
+        configured_role_load_error_message, repository_role_load_error_message,
+    };
+    crate::debug_log!(
+        "role",
+        "showing role-load error popup for raw={raw:?}: {err:?}"
+    );
+    let message = source_url.map_or_else(
+        || configured_role_load_error_message(raw),
+        |source_url| {
+            repository_role_load_error_message(raw, source_url, friendly_role_resolution_error(err))
+        },
+    );
+    editor.open_error_popup(error_popup::role_load_error_popup_state(message));
+}
+
+fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
+    use jackin_console::tui::components::error_popup::{
+        generic_role_repository_error_message, invalid_role_repository_message,
+        role_repository_remote_mismatch_message, role_repository_unavailable_message,
+    };
+
+    if let Some(repo_err) = err
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<crate::runtime::RepoError>())
+    {
+        return match repo_err {
+            crate::runtime::RepoError::CloneFailed(_) => {
+                role_repository_unavailable_message().into()
+            }
+            crate::runtime::RepoError::RemoteMismatch => {
+                role_repository_remote_mismatch_message().into()
+            }
+            crate::runtime::RepoError::InvalidRoleRepo(detail) => {
+                invalid_role_repository_message(humanize_invalid_role_repo(detail))
+            }
+        };
+    }
+    generic_role_repository_error_message().into()
+}
+
+fn humanize_invalid_role_repo(err: &crate::repo::RoleRepoValidationError) -> String {
+    use crate::repo::RoleRepoValidationError as V;
+    match err {
+        V::Missing(path) => {
+            let file = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map_or_else(|| path.display().to_string(), str::to_owned);
+            error_popup::missing_role_repository_file_message(file)
+        }
+        _ => err.to_string().trim_end_matches('.').to_owned(),
+    }
+}
 
 #[cfg(test)]
 mod tests {
