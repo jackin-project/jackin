@@ -226,7 +226,7 @@ pub enum InputEvent {
     FocusOut,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrefixCommand {
     NewTab,
     NextTab,
@@ -577,30 +577,9 @@ pub fn parse_key_binding(s: &str) -> Option<u8> {
 }
 
 fn prefix_binding(b: u8) -> Option<PrefixCommand> {
-    use PrefixCommand::{
-        ClearPane, Detach, JumpTab, KillPane, KillTab, MoveFocus, NewTab, NextTab, Palette,
-        PrevTab, Redraw, SplitSideBySide, SplitTopBottom, ZoomToggle,
-    };
-    Some(match b {
-        b'c' => NewTab,
-        b'n' => NextTab,
-        b'p' => PrevTab,
-        d @ b'0'..=b'9' => JumpTab((d - b'0') as usize),
-        b'"' => SplitTopBottom,
-        b'%' => SplitSideBySide,
-        b'h' => MoveFocus(ArrowDir::Left),
-        b'j' => MoveFocus(ArrowDir::Down),
-        b'k' => MoveFocus(ArrowDir::Up),
-        b'l' => MoveFocus(ArrowDir::Right),
-        b'z' => ZoomToggle,
-        b'x' => KillPane,
-        b'&' => KillTab,
-        0x0c => ClearPane,
-        b'd' => Detach,
-        b' ' | b':' => Palette,
-        b'r' => Redraw,
-        _ => return None,
-    })
+    use jackin_tui::keymap::raw_bytes_to_chord;
+    let chord = raw_bytes_to_chord(&[b])?;
+    crate::tui::keymap::PREFIX_COMMAND_KEYMAP.dispatch(chord)
 }
 
 fn parse_csi_u_key(rest: &[u8]) -> Option<(u32, Option<u32>, Option<u32>)> {

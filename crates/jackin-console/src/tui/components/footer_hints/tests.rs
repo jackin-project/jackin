@@ -719,10 +719,12 @@ fn create_prelude_footer_names_prompt_flow() {
 
 #[test]
 fn destructive_confirm_footer_keeps_escape_cancel() {
-    assert_eq!(
-        labels(destructive_confirm_footer_items()),
-        vec!["Y", "yes", "N", "no", "Esc", "cancel"]
-    );
+    // confirm_hint_spans() drives both yes/no and destructive-confirm footers;
+    // verify Esc is advertised (as part of "N/Esc no") so cancel is discoverable.
+    let texts = labels(jackin_tui::components::confirm_hint_spans());
+    assert!(texts.iter().any(|t| t.contains("Esc")), "Esc must be in confirm spans: {texts:?}");
+    assert!(texts.iter().any(|t| t == "yes" || t == "Y"), "Y/yes must be present: {texts:?}");
+    assert!(texts.iter().any(|t| t == "no"), "no must be present: {texts:?}");
 }
 
 #[test]

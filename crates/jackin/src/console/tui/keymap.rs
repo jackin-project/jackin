@@ -106,8 +106,8 @@ pub(crate) fn preview_pane_hint_spans() -> Vec<HintSpan<'static>> {
 /// Hint spans for console yes/no confirm modals.
 ///
 /// Delegates to [`jackin_tui::components::confirm_hint_spans`] so hints agree with
-/// `ConfirmState`/`CONFIRM_KEYMAP`. Previously `yes_no_footer_items` omitted `↵ confirm`.
-/// Test-only: validates that `yes_no_footer_items` produces the same spans.
+/// `ConfirmState`/`CONFIRM_KEYMAP`.
+/// Test-only: validates that confirm footer spans match what the keymap generates.
 #[cfg(test)]
 #[must_use]
 pub(crate) fn yes_no_hint_spans() -> Vec<HintSpan<'static>> {

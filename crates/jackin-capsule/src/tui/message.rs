@@ -123,7 +123,7 @@ pub fn input_event_action(event: &InputEvent, context: InputDispatchContext) -> 
         InputEvent::Data(_) => None,
         InputEvent::OpenPalette => Some(Action::OpenPalette),
         InputEvent::RequestExit => Some(Action::RequestExit),
-        InputEvent::PrefixCommand(cmd) => Some(Action::Prefix(cmd.clone())),
+        InputEvent::PrefixCommand(cmd) => Some(Action::Prefix(*cmd)),
         InputEvent::ResizePane(dir) => Some(Action::ResizePane(*dir)),
         InputEvent::FocusIn | InputEvent::FocusOut => {
             Some(Action::FocusReport(matches!(event, InputEvent::FocusIn)))

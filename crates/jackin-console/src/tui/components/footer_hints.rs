@@ -508,16 +508,6 @@ pub fn create_prelude_footer_items() -> Vec<HintSpan<'static>> {
 }
 
 #[must_use]
-/// Hint spans for destructive-action confirm dialogs (`ConfirmDelete`, `ConfirmInstancePurge`).
-///
-/// Delegates to [`jackin_tui::components::confirm_hint_spans`] — both stages
-/// dispatch through `ConfirmState::handle_key` backed by `CONFIRM_KEYMAP`,
-/// so advertised keys and handled keys now come from the same table.
-pub fn destructive_confirm_footer_items() -> Vec<HintSpan<'static>> {
-    jackin_tui::components::confirm_hint_spans()
-}
-
-#[must_use]
 pub fn editor_general_row_footer_items(row: usize, has_mounts: bool) -> Vec<HintSpan<'static>> {
     match row {
         0 => vec![HintSpan::Key("↵"), HintSpan::Text("rename")],
@@ -1007,7 +997,7 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
         ModalFooterMode::FilteredPicker { include_refresh, include_collapse } => {
             filtered_picker_footer_items(include_refresh, include_collapse)
         }
-        ModalFooterMode::YesNo => yes_no_footer_items(),
+        ModalFooterMode::YesNo => jackin_tui::components::confirm_hint_spans(),
     }
 }
 
@@ -1032,13 +1022,6 @@ pub fn confirm_save_footer_items(scroll_axes: ScrollAxes) -> Vec<HintSpan<'stati
 /// `GlobalMountModal::Confirm`, `SettingsEnvModal::Confirm`).
 ///
 /// Delegates to [`jackin_tui::components::confirm_hint_spans`] so this matches
-/// what `ConfirmState` dispatches via `CONFIRM_KEYMAP`. Previously omitted
-/// `↵ confirm`, which `ConfirmState` handles — now corrected.
-#[must_use]
-pub fn yes_no_footer_items() -> Vec<HintSpan<'static>> {
-    jackin_tui::components::confirm_hint_spans()
-}
-
 #[must_use]
 pub fn save_discard_cancel_footer_items() -> Vec<HintSpan<'static>> {
     save_discard_hint_spans()
