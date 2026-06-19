@@ -521,6 +521,10 @@ fn derived_image_snapshots_agent_home_defaults() {
     assert!(dockerfile.contains("/jackin/default-home/.codex"));
     assert!(dockerfile.contains("/jackin/default-home/.local/share/amp"));
     assert!(dockerfile.contains("/jackin/default-home/.local/share/opencode"));
+    // .grok must be snapshotted too: grok reads ~/.grok/AGENTS.md global
+    // instructions, which the per-agent home mount shadows unless reseeded.
+    assert!(dockerfile.contains("/jackin/default-home/.grok"));
+    assert!(dockerfile.contains("cp -a /home/agent/.grok/. /jackin/default-home/.grok/"));
     assert!(dockerfile.contains("cp -a /home/agent/.claude/. /jackin/default-home/.claude/"));
 }
 
