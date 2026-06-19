@@ -726,19 +726,12 @@ impl Dialog {
                 "Instance",
                 instance.instance_label.clone(),
             ),
-            jackin_tui::components::ContainerInfoRow::new("Age", instance.age_label.clone()),
+            // Started flush-left, active-agent-time flush-right on one line,
+            // matching the Instance preview header.
             jackin_tui::components::ContainerInfoRow::new(
-                "Active agent time",
-                instance
-                    .active_agent_time_label
-                    .clone()
-                    .unwrap_or_else(|| "unavailable".to_owned()),
-            ),
-            jackin_tui::components::ContainerInfoRow::new("Workspace", instance.workspace.clone()),
-            jackin_tui::components::ContainerInfoRow::new(
-                "Started",
+                "Instance timeline",
                 format!(
-                    "{} ago · active agent time {}",
+                    "Started {} ago || Active agent time {}",
                     instance.age_label,
                     instance
                         .active_agent_time_label
@@ -746,6 +739,7 @@ impl Dialog {
                         .unwrap_or_else(|| "unavailable".to_owned())
                 ),
             ),
+            jackin_tui::components::ContainerInfoRow::new("Workspace", instance.workspace.clone()),
             jackin_tui::components::ContainerInfoRow::new("Instance spend", "since start"),
             jackin_tui::components::ContainerInfoRow::new(
                 "Today",

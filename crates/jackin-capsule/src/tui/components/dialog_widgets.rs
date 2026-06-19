@@ -493,6 +493,16 @@ fn usage_lines_for_row(
                 ),
             ]));
         }
+        "Instance timeline" => {
+            let (left, right) = value.split_once(" || ").unwrap_or((value, ""));
+            lines.push(usage_header_two_column(
+                left,
+                Style::default().fg(WHITE),
+                right,
+                DIM,
+                context.width,
+            ));
+        }
         "Account availability"
         | "Account cost and tokens"
         | "Instance spend"
