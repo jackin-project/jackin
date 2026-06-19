@@ -737,3 +737,6 @@ pub fn handle_launch_provider_picker(
         ProviderPickerOutcome::Continue => InputOutcome::Continue,
     }
 }
+
+#[cfg(test)]
+mod tests;

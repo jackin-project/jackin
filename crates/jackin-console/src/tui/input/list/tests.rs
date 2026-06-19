@@ -1,19 +1,110 @@
 //! Tests for `list`.
 //! List-stage tests: row-0 (current dir) gating, Enter routing,
 //! `o`-key resolver to GitHub URLs, and the `GithubPicker` modal.
-use super::super::test_support::{key, mount};
-use super::{InputOutcome, handle_new_session_picker};
-use crate::console::tui::effect::ManagerEffect;
-use crate::console::tui::input::handle_key;
-use crate::console::tui::state::AgentChoiceState;
-use crate::console::tui::state::{ManagerStage, ManagerState, Modal, MountScrollFocus};
-use crate::instance::{InstanceIndexEntry, InstanceStatus};
-use crate::paths::JackinPaths;
-use crossterm::event::KeyCode;
+use crate::tui::input::test_support::{key, mount};
+use super::*;
+use super::super::InputOutcome;
+use crate::tui::state::AgentChoiceState;
+use crate::tui::state::{ManagerStage, ManagerState, Modal, MountScrollFocus};
+use jackin_core::instance::{InstanceIndexEntry, InstanceStatus};
+use jackin_core::JackinPaths;
+use crossterm::event::{KeyCode, KeyEvent};
+use crate::tui::message::ConsoleInstanceAction;
 use jackin_config::AppConfig;
 use jackin_config::WorkspaceConfig;
 use ratatui::layout::Rect;
 use tempfile::TempDir;
+
+type ManagerEffect = crate::tui::effect::ConsoleManagerEffect<
+    jackin_core::RoleSelector,
+    jackin_config::RoleSource,
+    jackin_core::OpRef,
+>;
+
+fn handle_key(
+    state: &mut ManagerState<'_>,
+    config: &mut jackin_config::AppConfig,
+    paths: &JackinPaths,
+    cwd: &std::path::Path,
+    key: KeyEvent,
+) -> anyhow::Result<InputOutcome> {
+    use crate::tui::app::{
+        ConsoleInputDispatchFacts, ConsoleInputDispatchPlan, ConsoleManagerStageRoute,
+        console_input_dispatch_plan,
+    };
+    use crate::tui::effect::ConsoleEffect;
+    use crate::tui::state::update::{ManagerMessage, update_manager};
+    use crate::tui::screens::workspaces::update::{
+        InstancePurgeKeyPlan, instance_purge_key_plan,
+    };
+
+    let stage_modal_facts = state.stage.modal_facts();
+    let dispatch_plan = console_input_dispatch_plan(ConsoleInputDispatchFacts {
+        list_modal_open: state.list_modal.is_some(),
+        inline_new_session_picker_open: state.inline_new_session_picker.is_some(),
+        inline_provider_picker_open: state.inline_provider_picker.is_some(),
+        launch_provider_picker_open: state.launch_provider_picker.is_some(),
+        inline_agent_picker_open: state.inline_agent_picker.is_some(),
+        inline_role_picker_open: state.inline_role_picker.is_some(),
+        editor_modal_open: stage_modal_facts.editor_modal_open,
+        settings_error_popup_open: stage_modal_facts.settings_error_popup_open,
+        settings_mounts_modal_open: stage_modal_facts.settings_mounts_modal_open,
+        settings_env_modal_open: stage_modal_facts.settings_env_modal_open,
+        settings_auth_modal_open: stage_modal_facts.settings_auth_modal_open,
+        create_prelude_modal_open: stage_modal_facts.create_prelude_modal_open,
+        stage_route: state.stage.route(),
+    });
+    match dispatch_plan {
+        ConsoleInputDispatchPlan::ListModal => return Ok(handle_list_modal(state, key)),
+        ConsoleInputDispatchPlan::InlineNewSessionPicker => {
+            return Ok(handle_new_session_picker(state, key));
+        }
+        ConsoleInputDispatchPlan::InlineProviderPicker => {
+            return Ok(handle_inline_provider_picker(state, key));
+        }
+        ConsoleInputDispatchPlan::LaunchProviderPicker => {
+            return Ok(handle_launch_provider_picker(state, key));
+        }
+        ConsoleInputDispatchPlan::InlineAgentPicker => {
+            return Ok(handle_inline_agent_picker(state, key));
+        }
+        ConsoleInputDispatchPlan::InlineRolePicker => {
+            return Ok(handle_inline_role_picker(state, key));
+        }
+        ConsoleInputDispatchPlan::Stage(ConsoleManagerStageRoute::List) => {
+            let outcome = handle_list_key(state, config, paths, cwd, key)?;
+            state.request_effect(ConsoleEffect::RequestActiveMountInfoRefresh.into());
+            return Ok(outcome);
+        }
+        ConsoleInputDispatchPlan::Stage(ConsoleManagerStageRoute::ConfirmInstancePurge) => {
+            let ManagerStage::ConfirmInstancePurge {
+                container,
+                state: confirm_state,
+                ..
+            } = &mut state.stage
+            else {
+                return Ok(InputOutcome::Continue);
+            };
+            let plan = instance_purge_key_plan(confirm_state.handle_key(key), container.clone());
+            match plan {
+                InstancePurgeKeyPlan::Purge { container } => {
+                    drop(update_manager(state, ManagerMessage::ReturnToList));
+                    return Ok(InputOutcome::InstanceAction {
+                        container,
+                        action: ConsoleInstanceAction::Purge,
+                    });
+                }
+                InstancePurgeKeyPlan::ReturnToList => {
+                    drop(update_manager(state, ManagerMessage::ReturnToList));
+                    return Ok(InputOutcome::Continue);
+                }
+                InstancePurgeKeyPlan::Continue => return Ok(InputOutcome::Continue),
+            }
+        }
+        _ => {}
+    }
+    Ok(InputOutcome::Continue)
+}
 
 /// Build a git repo under `root` with a `github.com` origin remote on
 /// `branch`. Returns the path so callers can use it as a mount src.
@@ -124,7 +215,7 @@ fn new_session_provider_picker_skips_when_no_choice() {
             assert_eq!(container, "jackin-demo-architect");
             assert_eq!(
                 action,
-                crate::console::ConsoleInstanceAction::NewSessionWithAgent(
+                ConsoleInstanceAction::NewSessionWithAgent(
                     jackin_core::Agent::Codex,
                 )
             );
@@ -198,7 +289,7 @@ fn new_session_picker_does_not_offer_host_config_providers_for_running_container
     )];
     state.expand_workspace(0);
     state.selected = state
-        .index_of_row(crate::console::tui::state::ManagerListRow::WorkspaceInstance(0, 0))
+        .index_of_row(crate::tui::state::ManagerListRow::WorkspaceInstance(0, 0))
         .expect("expanded workspace instance row exists");
 
     let outcome = handle_key(
@@ -220,8 +311,8 @@ fn new_session_picker_does_not_offer_host_config_providers_for_running_container
     );
 }
 
-fn live_snapshot() -> crate::runtime::snapshot::InstanceSnapshot {
-    crate::runtime::snapshot::InstanceSnapshot {
+fn live_snapshot() -> jackin_protocol::InstanceSnapshot {
+    jackin_protocol::InstanceSnapshot {
         tabs: vec![jackin_protocol::control::TabSnapshot {
             label: "Codex".into(),
             focused_pane: 1,
@@ -269,7 +360,7 @@ fn right_on_current_directory_parent_expands_even_with_live_snapshot() {
     );
     assert!(matches!(
         state.row_at(1),
-        Some(crate::console::tui::state::ManagerListRow::CurrentDirectoryInstance(0))
+        Some(crate::tui::state::ManagerListRow::CurrentDirectoryInstance(0))
     ));
 }
 
@@ -461,7 +552,7 @@ fn instance_shortcuts_return_selected_workspace_actions() {
     match outcome {
         InputOutcome::InstanceAction { container, action } => {
             assert_eq!(container, "jackin-demo-architect-123456");
-            assert_eq!(action, crate::console::ConsoleInstanceAction::Reconnect);
+            assert_eq!(action, ConsoleInstanceAction::Reconnect);
         }
         other => panic!("expected reconnect instance action; got {other:?}"),
     }
@@ -477,7 +568,7 @@ fn instance_shortcuts_return_selected_workspace_actions() {
     match outcome {
         InputOutcome::InstanceAction { container, action } => {
             assert_eq!(container, "jackin-demo-architect-123456");
-            assert_eq!(action, crate::console::ConsoleInstanceAction::Inspect);
+            assert_eq!(action, ConsoleInstanceAction::Inspect);
         }
         other => panic!("expected inspect instance action; got {other:?}"),
     }
@@ -515,7 +606,7 @@ fn instance_shortcuts_return_selected_workspace_actions() {
     match outcome {
         InputOutcome::InstanceAction { container, action } => {
             assert_eq!(container, "jackin-demo-architect-123456");
-            assert_eq!(action, crate::console::ConsoleInstanceAction::Purge);
+            assert_eq!(action, ConsoleInstanceAction::Purge);
         }
         other => panic!("expected purge instance action after Y; got {other:?}"),
     }
@@ -624,7 +715,7 @@ fn t_key_dispatches_stop_for_running_instance() {
     match outcome {
         InputOutcome::InstanceAction { container, action } => {
             assert_eq!(container, "jackin-demo-architect-stop");
-            assert_eq!(action, crate::console::ConsoleInstanceAction::Stop);
+            assert_eq!(action, ConsoleInstanceAction::Stop);
         }
         other => panic!("expected stop instance action; got {other:?}"),
     }
@@ -689,7 +780,7 @@ fn a_key_starts_new_session_in_running_instance() {
     match outcome {
         InputOutcome::InstanceAction { container, action } => {
             assert_eq!(container, "jackin-demo-architect-123456");
-            assert_eq!(action, crate::console::ConsoleInstanceAction::NewSession);
+            assert_eq!(action, ConsoleInstanceAction::NewSession);
         }
         other => panic!("expected NewSession action; got {other:?}"),
     }
@@ -721,7 +812,7 @@ fn x_key_opens_shell_in_running_instance() {
     match outcome {
         InputOutcome::InstanceAction { container, action } => {
             assert_eq!(container, "jackin-demo-architect-123456");
-            assert_eq!(action, crate::console::ConsoleInstanceAction::Shell);
+            assert_eq!(action, ConsoleInstanceAction::Shell);
         }
         other => panic!("expected Shell action; got {other:?}"),
     }
@@ -863,7 +954,7 @@ fn resolve_github_mounts_returns_one_per_github_repo() {
         ..WorkspaceConfig::default()
     };
 
-    let choices = jackin_console::github_mounts::resolve_for_workspace(&ws);
+    let choices = crate::github_mounts::resolve_for_workspace(&ws);
     assert_eq!(choices.len(), 2);
     // URLs track the HEAD ref per-repo.
     let urls: Vec<&str> = choices.iter().map(|c| c.url.as_str()).collect();
@@ -993,7 +1084,7 @@ fn picker_commit_closes_list_modal_and_clears_state() {
     // Seed the state directly with an open GithubPicker, then commit.
     // The input layer must not open the browser. It closes the modal and
     // returns a typed URL-open outcome for the run loop.
-    use jackin_console::{
+    use crate::{
         github_mounts::GithubChoice, tui::components::github_picker::GithubPickerState,
     };
     let tmp = tempfile::tempdir().unwrap();
@@ -1076,7 +1167,7 @@ fn container_info_enter_copies_default_value_without_dismissing() {
 
 #[test]
 fn picker_esc_closes_without_opening_url() {
-    use jackin_console::{
+    use crate::{
         github_mounts::GithubChoice, tui::components::github_picker::GithubPickerState,
     };
     let tmp = tempfile::tempdir().unwrap();

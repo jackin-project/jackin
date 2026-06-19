@@ -2347,7 +2347,6 @@ dependencies = [
  "directories",
  "fs2",
  "futures-util",
- "insta",
  "jackin-build-meta",
  "jackin-config",
  "jackin-console",
@@ -2427,6 +2426,7 @@ dependencies = [
  "anyhow",
  "crossterm",
  "directories",
+ "insta",
  "jackin-config",
  "jackin-core",
  "jackin-diagnostics",
@@ -2437,6 +2437,7 @@ dependencies = [
  "open",
  "ratatui",
  "tempfile",
+ "toml",
  "tui-widget-list",
 ]
 

@@ -1,5 +1,5 @@
 ---
-source: crates/jackin/src/console/tui/view/snapshot_tests.rs
+source: crates/jackin-console/src/tui/view/tests/snapshot/tests.rs
 assertion_line: 245
 expression: rendered
 ---

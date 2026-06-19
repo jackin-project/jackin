@@ -1,5 +1,6 @@
 //! Tests for `view`.
 mod consistency;
+mod snapshot;
 
 use super::*;
 use crate::tui::app::{ConsoleManagerStageRoute, ConsoleStageModalFacts};

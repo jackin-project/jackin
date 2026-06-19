@@ -23,7 +23,9 @@ ratatui = "0.30"
 tui-widget-list = "0.15"
 
 [dev-dependencies]
+insta = { version = "=1.48.0", features = ["filters"] }
 tempfile = "=3.27.0"
+toml = "1.1"
 
 [lints]
 workspace = true
