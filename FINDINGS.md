@@ -501,3 +501,92 @@ Use this rule for future PR review:
 > A new console feature may touch `crates/jackin/src/console` only when it needs CLI dispatch, host terminal ownership, Docker/runtime/config IO, or effect interpretation. All state, input, update, rendering, dialog, and product decision logic must go to `crates/jackin-console` or a lower shared crate.
 
 This rule gets as close as possible to "everything related to jackin' console is stored in one place" while respecting Rust crate layering and keeping the binary crate responsible for actual host-side execution.
+
+---
+
+## Test Module Layout Violations
+
+Rule added to `crates/AGENTS.md` (section "Test file rule"): `tests.rs` must never declare child modules — all tests live inline in a single `tests.rs` file beside the implementation. Existing violations below must be fixed one-by-one; do not add new submodule splits.
+
+Pattern model (scroll.rs example):
+
+```text
+crates/jackin-tui/src/scroll.rs          ← implementation
+crates/jackin-tui/src/scroll/tests.rs    ← ALL tests inline, no mod declarations
+```
+
+Counter-example (resource_metrics.rs in jackin-capsule — correct):
+
+```text
+crates/jackin-capsule/src/daemon/resource_metrics.rs          ← implementation
+crates/jackin-capsule/src/daemon/resource_metrics/tests.rs    ← 16 lines, 2 tests inline
+```
+
+### Violation inventory
+
+**1 — `crates/jackin-capsule/src/daemon/tests/`**
+
+`daemon/tests.rs` (4896 lines, has inline tests) declares `mod render_conformance;`. Fix: inline `render_conformance.rs` (702 lines) into `daemon/tests.rs`; delete the submodule file and the `tests/` subdirectory entry.
+
+**2 — `crates/jackin-capsule/src/tui/layout/tests/`**
+
+`layout/tests.rs` (5 lines — **shell only, no inline tests**) declares `mod border_at; mod rect_shrink;`. Fix: merge both (102 + 71 = 173 lines) into `layout/tests.rs`; delete subdirectory.
+
+**3 — `crates/jackin-config/src/app_config_roles/tests/`**
+
+`app_config_roles/tests.rs` (247 lines, has inline tests) declares `mod resolve_mode;`. Fix: inline `resolve_mode.rs` (384 lines); delete submodule file.
+
+**4 — `crates/jackin-console/src/tui/screens/editor/update/tests/`**
+
+`editor/update/tests.rs` (918 lines, has inline tests) declares `mod auth_flat_rows_integration;`. Fix: inline 359-line file; delete submodule file.
+
+**5 — `crates/jackin-console/src/tui/screens/editor/view/tests/`**
+
+`editor/view/tests.rs` (536 lines, has inline tests) declares 5 children: `agents_tab_render` (158), `contextual_row_items` (184), `general_tab_render` (38), `mounts_tab_render` (44), `secrets_tab_render` (900). Fix: merge all 1324 lines inline; delete subdirectory.
+
+**6 — `crates/jackin-console/src/tui/view/tests/` ⚠️ insta snapshot complexity**
+
+`tui/view/tests.rs` (464 lines, has inline tests) declares `mod consistency; mod snapshot;`. `snapshot.rs` itself declares `mod tests;` — three levels of nesting. The `snapshot/tests/` directory holds `insta` fixture files keyed on the full module path. Flattening changes the path → fixture names change → run `INSTA_UPDATE=new cargo test` to regenerate. Fix: (a) inline `consistency.rs` (296 lines); (b) inline `snapshot/tests.rs` into `view/tests.rs`; (c) move `snapshot/snapshots/` → `tests/snapshots/` and regenerate fixtures; (d) delete `tests/snapshot.rs` and `tests/snapshot/`.
+
+**7 — `crates/jackin-core/src/agent/tests/`**
+
+`agent/tests.rs` (170 lines, has inline tests) declares `mod auth_table;`. Fix: inline 116-line file; delete submodule file.
+
+**8 — `crates/jackin-diagnostics/src/observability/tests/`**
+
+`observability/tests.rs` (3 lines — **shell only**) declares `mod endpoint_rewrite;`. Fix: inline 22-line file; delete subdirectory.
+
+**9 — `crates/jackin-protocol/src/tests/`**
+
+`src/tests.rs` (4 lines — **shell only**) declares `mod provider;`. Fix: inline 205-line file; delete subdirectory.
+
+**10 — `crates/jackin-runtime/src/instance/auth/tests/`**
+
+`auth/tests.rs` (1150 lines, has inline tests) declares 4 children: `amp_auth` (327), `codex_auth` (308), `github_auth` (438), `kimi_auth` (505). Fix: merge all 1578 lines inline; delete subdirectory.
+
+**11 — `crates/jackin-term/src/grid/tests/`**
+
+`grid/tests.rs` (8 lines — **shell only**) declares 5 children: `device_query` (54), `fuzz_regression` (62), `model_correctness` (278), `row_arena` (21), `scrollback_view` (114). Fix: merge all 529 lines inline; delete subdirectory.
+
+**12 — `crates/jackin/src/app/tests/`**
+
+`app/tests.rs` (5 lines — **shell only**) declares 2 children: `auth_set` (911), `resolve_role` (61). Fix: merge 972 lines inline; delete subdirectory.
+
+### Summary table
+
+| # | Crate | Path | Shell-only? | Child files | Lines to inline |
+|---|---|---|---|---|---|
+| 1 | jackin-capsule | `daemon/tests/` | No | 1 | 702 |
+| 2 | jackin-capsule | `tui/layout/tests/` | **Yes** | 2 | 173 |
+| 3 | jackin-config | `app_config_roles/tests/` | No | 1 | 384 |
+| 4 | jackin-console | `editor/update/tests/` | No | 1 | 359 |
+| 5 | jackin-console | `editor/view/tests/` | No | 5 | 1324 |
+| 6 | jackin-console | `tui/view/tests/` | No | 2 (+snapshots) | complex |
+| 7 | jackin-core | `agent/tests/` | No | 1 | 116 |
+| 8 | jackin-diagnostics | `observability/tests/` | **Yes** | 1 | 22 |
+| 9 | jackin-protocol | `src/tests/` | **Yes** | 1 | 205 |
+| 10 | jackin-runtime | `instance/auth/tests/` | No | 4 | 1578 |
+| 11 | jackin-term | `grid/tests/` | **Yes** | 5 | 529 |
+| 12 | jackin | `app/tests/` | **Yes** | 2 | 972 |
+
+Shell-only = `tests.rs` has no inline tests, only `mod` declarations. These are highest-priority fixes: the wrapper adds indirection with zero benefit.
