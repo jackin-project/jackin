@@ -4,48 +4,44 @@ use std::rc::Rc;
 
 use ratatui::layout::Rect;
 
-use crate::console::domain::InstanceRefreshSnapshot;
-use crate::console::tui::effect::ManagerEffect;
 use jackin_config::AppConfig;
-use jackin_console::tui::app::{
-    ConsoleAnimationTick, ConsoleManagerStageState, LaunchAgentPromptManagerState,
-    LaunchProviderPickerManagerState, LaunchRolePromptManagerState,
-};
-use jackin_console::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
-use jackin_console::tui::screens::workspaces::model::hovered_list_row;
-use jackin_console::tui::screens::workspaces::update::{
-    WorkspaceListHoverState, WorkspaceListSelectionState, WorkspaceTreeDisclosureState,
-    collapsed_current_dir_selected_index, collapsed_workspace_selected_index,
-    initial_workspace_selected_index, preview_pane_selected_index, selected_index,
-    workspace_last_selectable_index, workspace_list_current_directory_selected,
-    workspace_list_new_workspace_selected, workspace_list_saved_workspace_index, workspace_row_at,
-    workspace_row_at_visual_index, workspace_row_index, workspace_selected_row,
-    workspace_visual_selected_index,
-};
-use jackin_console::tui::subscriptions::{
-    InstanceRefreshThrottleState, forced_instance_refresh_generation,
-    instance_refresh_throttle_plan,
-};
-use jackin_console::tui::update::{
-    InlineNewSessionPickerState, InlinePickerDismissalState, InlineProviderPickerState,
-    ListModalState, StatusOverlayState,
-};
-use jackin_env::OpCache;
 use jackin_tui::components::FocusOwner;
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 
+use crate::tui::app::{
+    ConsoleAnimationTick, ConsoleManagerStageState, LaunchAgentPromptManagerState,
+    LaunchProviderPickerManagerState, LaunchRolePromptManagerState,
+};
+use crate::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
+use crate::tui::screens::workspaces::model::hovered_list_row;
+use crate::tui::screens::workspaces::update::{
+    PreviewFocusState, PreviewPaneCursorState, WorkspaceListHoverState, WorkspaceListSelectionState,
+    WorkspaceTreeDisclosureState, collapsed_current_dir_selected_index,
+    collapsed_workspace_selected_index, initial_workspace_selected_index,
+    preview_pane_selected_index, selected_index, workspace_last_selectable_index,
+    workspace_list_current_directory_selected, workspace_list_new_workspace_selected,
+    workspace_list_saved_workspace_index, workspace_row_at, workspace_row_at_visual_index,
+    workspace_row_index, workspace_selected_row, workspace_visual_selected_index,
+};
+use crate::tui::subscriptions::{
+    InstanceRefreshThrottleState, forced_instance_refresh_generation,
+    instance_refresh_throttle_plan,
+};
+use crate::tui::update::{
+    InlineNewSessionPickerState, InlinePickerDismissalState, InlineProviderPickerState,
+    ListModalState, ListShellState, StatusOverlayState,
+};
+use jackin_env::OpCache;
+
 use super::{
-    DEFAULT_SPLIT_PCT, ManagerListRow, ManagerStage, ManagerState, Modal, MountInfoCache,
-    MountInfoRefreshTarget, MountScrollFocus, PendingDriftCheck, PendingIsolationCleanup,
-    PendingMountInfoRefresh, PendingRoleLoad, PendingTokenGenerate, WorkspaceSummary,
-    active_instances_matching,
+    DEFAULT_SPLIT_PCT, ManagerEffect, ManagerInstanceRefreshSnapshot, ManagerListRow, ManagerStage,
+    ManagerState, Modal, MountInfoCache, MountInfoRefreshTarget, MountScrollFocus,
+    PendingDriftCheck, PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad,
+    PendingTokenGenerate, WorkspaceSummary, active_instances_matching,
 };
 
 impl ManagerState<'_> {
-    pub(in crate::console) const fn list_scroll_x_mut(
-        &mut self,
-        focus: MountScrollFocus,
-    ) -> &mut u16 {
+    pub const fn list_scroll_x_mut(&mut self, focus: MountScrollFocus) -> &mut u16 {
         match focus {
             MountScrollFocus::Workspace => &mut self.list_mounts_scroll_x,
             MountScrollFocus::Global => &mut self.list_global_mounts_scroll_x,
@@ -54,10 +50,7 @@ impl ManagerState<'_> {
         }
     }
 
-    pub(in crate::console) const fn list_scroll_y_mut(
-        &mut self,
-        focus: MountScrollFocus,
-    ) -> &mut u16 {
+    pub const fn list_scroll_y_mut(&mut self, focus: MountScrollFocus) -> &mut u16 {
         match focus {
             MountScrollFocus::Workspace => &mut self.list_mounts_scroll_y,
             MountScrollFocus::Global => &mut self.list_global_mounts_scroll_y,
@@ -66,7 +59,7 @@ impl ManagerState<'_> {
         }
     }
 
-    pub(in crate::console) const fn reset_list_scroll(&mut self) {
+    pub const fn reset_list_scroll(&mut self) {
         self.list_mounts_scroll_x = 0;
         self.list_mounts_scroll_y = 0;
         self.list_global_mounts_scroll_x = 0;
@@ -80,11 +73,11 @@ impl ManagerState<'_> {
         self.list_names_scroll_y = 0;
     }
 
-    pub(crate) const fn list_names_focused(&self) -> bool {
+    pub const fn list_names_focused(&self) -> bool {
         self.list_focus_owner.is_tab_bar()
     }
 
-    pub(crate) fn set_list_names_focused(&mut self, focused: bool) {
+    pub fn set_list_names_focused(&mut self, focused: bool) {
         if focused {
             self.list_focus_owner = FocusOwner::TabBar;
         } else if self.list_names_focused() {
@@ -92,14 +85,14 @@ impl ManagerState<'_> {
         }
     }
 
-    pub(crate) const fn list_scroll_focus(&self) -> Option<MountScrollFocus> {
+    pub const fn list_scroll_focus(&self) -> Option<MountScrollFocus> {
         match self.list_focus_owner {
             FocusOwner::Content(focus) => Some(focus),
             FocusOwner::TabBar => None,
         }
     }
 
-    pub(crate) fn set_list_scroll_focus(&mut self, focus: Option<MountScrollFocus>) {
+    pub fn set_list_scroll_focus(&mut self, focus: Option<MountScrollFocus>) {
         self.list_focus_owner = focus.map_or(FocusOwner::TabBar, FocusOwner::Content);
     }
 
@@ -187,16 +180,16 @@ impl ManagerState<'_> {
         }
     }
 
-    pub(crate) fn request_effect(&mut self, effect: ManagerEffect) {
+    pub fn request_effect(&mut self, effect: ManagerEffect) {
         self.pending_effects.push(effect);
     }
 
-    pub(crate) fn drain_effects(&mut self) -> Vec<ManagerEffect> {
+    pub fn drain_effects(&mut self) -> Vec<ManagerEffect> {
         std::mem::take(&mut self.pending_effects)
     }
 
     #[allow(clippy::missing_const_for_fn)]
-    pub(crate) fn take_pending_token_generate(&mut self) -> Option<PendingTokenGenerate> {
+    pub fn take_pending_token_generate(&mut self) -> Option<PendingTokenGenerate> {
         self.stage.take_pending_token_generate()
     }
 
@@ -208,11 +201,11 @@ impl ManagerState<'_> {
     pub fn workspace_active_instances(
         &self,
         ws_idx: usize,
-    ) -> Vec<&crate::instance::InstanceIndexEntry> {
+    ) -> Vec<&jackin_core::instance::InstanceIndexEntry> {
         let Some(ws) = self.workspaces.get(ws_idx) else {
             return Vec::new();
         };
-        let query = crate::instance::InstanceQuery {
+        let query = jackin_core::instance::InstanceQuery {
             workspace_name: Some(ws.name.as_str()),
             workspace_label: ws.name.as_str(),
             workdir: ws.workdir.as_str(),
@@ -227,7 +220,7 @@ impl ManagerState<'_> {
         let Some(ws) = self.workspaces.get(ws_idx) else {
             return false;
         };
-        let query = crate::instance::InstanceQuery {
+        let query = jackin_core::instance::InstanceQuery {
             workspace_name: Some(ws.name.as_str()),
             workspace_label: ws.name.as_str(),
             workdir: ws.workdir.as_str(),
@@ -242,7 +235,7 @@ impl ManagerState<'_> {
     #[must_use]
     pub fn has_current_dir_active_instances(&self) -> bool {
         let current_dir = self.current_dir.as_str();
-        let query = crate::instance::InstanceQuery {
+        let query = jackin_core::instance::InstanceQuery {
             workspace_name: None,
             workspace_label: current_dir,
             workdir: current_dir,
@@ -256,9 +249,9 @@ impl ManagerState<'_> {
 
     /// Instances in the tree for the "Current directory" synthetic row.
     #[must_use]
-    pub fn current_dir_active_instances(&self) -> Vec<&crate::instance::InstanceIndexEntry> {
+    pub fn current_dir_active_instances(&self) -> Vec<&jackin_core::instance::InstanceIndexEntry> {
         let current_dir = self.current_dir.as_str();
-        let query = crate::instance::InstanceQuery {
+        let query = jackin_core::instance::InstanceQuery {
             workspace_name: None,
             workspace_label: current_dir,
             workdir: current_dir,
@@ -272,8 +265,8 @@ impl ManagerState<'_> {
     /// Instance rows appear immediately after their parent workspace row.
     fn selectable_rows_vec(&self) -> Vec<ManagerListRow> {
         let workspace_instance_counts = self.workspace_instance_counts();
-        jackin_console::tui::screens::workspaces::update::selectable_rows(
-            jackin_console::tui::screens::workspaces::update::WorkspaceRowLayout {
+        crate::tui::screens::workspaces::update::selectable_rows(
+            crate::tui::screens::workspaces::update::WorkspaceRowLayout {
                 current_dir_expanded: self.current_dir_expanded,
                 current_dir_instance_count: self.current_dir_active_instances().len(),
                 workspace_instance_counts: &workspace_instance_counts,
@@ -286,8 +279,8 @@ impl ManagerState<'_> {
     /// `None` spacer before `NewWorkspace` when saved workspaces exist.
     pub fn visual_rows_vec(&self) -> Vec<Option<ManagerListRow>> {
         let workspace_instance_counts = self.workspace_instance_counts();
-        jackin_console::tui::screens::workspaces::update::visual_rows(
-            jackin_console::tui::screens::workspaces::update::WorkspaceRowLayout {
+        crate::tui::screens::workspaces::update::visual_rows(
+            crate::tui::screens::workspaces::update::WorkspaceRowLayout {
                 current_dir_expanded: self.current_dir_expanded,
                 current_dir_instance_count: self.current_dir_active_instances().len(),
                 workspace_instance_counts: &workspace_instance_counts,
@@ -349,7 +342,7 @@ impl ManagerState<'_> {
         let selected = self.selected_row();
         let visual_rows = self.visual_rows_vec();
         workspace_visual_selected_index(&visual_rows, selected).unwrap_or_else(|| {
-            crate::debug_log!(
+            jackin_diagnostics::debug_log!(
                 "console",
                 "visual_selected: {:?} not in visual list, clamping to 0",
                 selected
@@ -387,7 +380,10 @@ impl ManagerState<'_> {
     /// Recorded sessions for `container_base`, or an empty slice when none
     /// are cached (no sessions or manifest not yet loaded).
     #[must_use]
-    pub fn sessions_for_instance(&self, container_base: &str) -> &[crate::instance::SessionRecord] {
+    pub fn sessions_for_instance(
+        &self,
+        container_base: &str,
+    ) -> &[jackin_core::instance::SessionRecord] {
         self.instance_sessions
             .get(container_base)
             .map(Vec::as_slice)
@@ -409,7 +405,7 @@ impl ManagerState<'_> {
     pub fn snapshot_for_instance(
         &self,
         container_base: &str,
-    ) -> Option<&crate::runtime::snapshot::InstanceSnapshot> {
+    ) -> Option<&jackin_protocol::InstanceSnapshot> {
         self.instance_snapshots.get(container_base)
     }
 
@@ -499,7 +495,7 @@ impl ManagerState<'_> {
         self.selected =
             collapsed_workspace_selected_index(&rows, self.selected, selected_row, ws_idx)
                 .unwrap_or_else(|| {
-                    crate::debug_log!(
+                    jackin_diagnostics::debug_log!(
                         "console",
                         "collapse_workspace: ws_idx={ws_idx} not in selectable rows, clamping to 0"
                     );
@@ -507,13 +503,13 @@ impl ManagerState<'_> {
                 });
     }
 
-    pub(crate) fn poll_instance_refresh(
+    pub fn poll_instance_refresh(
         &mut self,
-    ) -> Option<Result<InstanceRefreshSnapshot, String>> {
+    ) -> Option<Result<ManagerInstanceRefreshSnapshot, String>> {
         self.drain_instance_refresh()
     }
 
-    pub(crate) fn next_instance_refresh_generation_if_due(&mut self) -> Option<u64> {
+    pub fn next_instance_refresh_generation_if_due(&mut self) -> Option<u64> {
         let now = std::time::Instant::now();
         let plan = instance_refresh_throttle_plan(
             InstanceRefreshThrottleState {
@@ -528,30 +524,29 @@ impl ManagerState<'_> {
         plan.start_generation
     }
 
-    #[cfg(test)]
-    pub(crate) const fn instance_refresh_in_flight(&self) -> bool {
+    pub const fn instance_refresh_in_flight(&self) -> bool {
         self.instances_refresh_rx.is_some()
     }
 
-    pub(crate) fn begin_instance_refresh(
+    pub fn begin_instance_refresh(
         &mut self,
-        rx: BlockingSubscription<(u64, Result<InstanceRefreshSnapshot, String>)>,
+        rx: BlockingSubscription<(u64, Result<ManagerInstanceRefreshSnapshot, String>)>,
     ) {
         self.instances_refresh_rx = Some(rx);
     }
 
-    pub(crate) const fn mount_info_refresh_in_flight(&self) -> bool {
+    pub const fn mount_info_refresh_in_flight(&self) -> bool {
         self.mount_info_refresh_rx.is_some()
     }
 
-    pub(crate) fn begin_mount_info_refresh(
+    pub fn begin_mount_info_refresh(
         &mut self,
         rx: BlockingSubscription<PendingMountInfoRefresh>,
     ) {
         self.mount_info_refresh_rx = Some(rx);
     }
 
-    pub(crate) fn poll_mount_info_refresh(&mut self) -> Option<PendingMountInfoRefresh> {
+    pub fn poll_mount_info_refresh(&mut self) -> Option<PendingMountInfoRefresh> {
         let rx = self.mount_info_refresh_rx.as_mut()?;
         let result = match rx.poll_next() {
             SubscriptionPoll::Ready(result) => result,
@@ -565,7 +560,7 @@ impl ManagerState<'_> {
         Some(result)
     }
 
-    pub(in crate::console) fn apply_mount_info_refresh(
+    pub fn apply_mount_info_refresh(
         &mut self,
         result: PendingMountInfoRefresh,
     ) -> bool {
@@ -592,7 +587,7 @@ impl ManagerState<'_> {
         true
     }
 
-    pub(crate) fn active_mount_info_sources(
+    pub fn active_mount_info_sources(
         &self,
         config: &AppConfig,
     ) -> Option<(MountInfoRefreshTarget, Vec<String>)> {
@@ -640,28 +635,25 @@ impl ManagerState<'_> {
     /// ownership of the `PendingDriftCheck` so the caller can continue the
     /// save flow. Returns `None` when the check is still running or there is
     /// no pending check.
-    pub(crate) fn poll_pending_drift_check(
+    pub fn poll_pending_drift_check(
         &mut self,
-    ) -> Option<(
-        PendingDriftCheck,
-        anyhow::Result<crate::runtime::drift::DriftDetection>,
-    )> {
+    ) -> Option<(PendingDriftCheck, anyhow::Result<jackin_core::DriftDetection>)> {
         self.stage.poll_pending_drift_check()
     }
 
-    pub(crate) fn poll_pending_isolation_cleanup(
+    pub fn poll_pending_isolation_cleanup(
         &mut self,
     ) -> Option<(PendingIsolationCleanup, anyhow::Result<()>)> {
         self.stage.poll_pending_isolation_cleanup()
     }
 
-    pub(crate) fn poll_pending_role_load(
+    pub fn poll_pending_role_load(
         &mut self,
     ) -> Option<(PendingRoleLoad, anyhow::Result<()>)> {
         self.stage.poll_pending_role_load()
     }
 
-    pub(crate) fn poll_pending_op_commit(
+    pub fn poll_pending_op_commit(
         &mut self,
     ) -> Option<(jackin_core::OpRef, anyhow::Result<()>, bool)> {
         self.stage.poll_pending_op_commit().map(|resolution| {
@@ -670,13 +662,15 @@ impl ManagerState<'_> {
                 resolution.result,
                 matches!(
                     resolution.origin,
-                    jackin_console::tui::app::ConsolePendingOpCommitOrigin::Settings
+                    crate::tui::app::ConsolePendingOpCommitOrigin::Settings
                 ),
             )
         })
     }
 
-    fn drain_instance_refresh(&mut self) -> Option<Result<InstanceRefreshSnapshot, String>> {
+    fn drain_instance_refresh(
+        &mut self,
+    ) -> Option<Result<ManagerInstanceRefreshSnapshot, String>> {
         let rx = self.instances_refresh_rx.as_mut()?;
         match rx.poll_next() {
             SubscriptionPoll::Ready((generation, result)) => {
@@ -694,15 +688,15 @@ impl ManagerState<'_> {
             SubscriptionPoll::Closed => {
                 self.instances_refresh_rx = None;
                 let message =
-                    jackin_console::tui::subscriptions::instance_refresh_worker_disconnected_message();
+                    crate::tui::subscriptions::instance_refresh_worker_disconnected_message();
                 Some(Err(message.into()))
             }
         }
     }
 
-    pub(crate) fn apply_instance_refresh(
+    pub fn apply_instance_refresh(
         &mut self,
-        result: Result<InstanceRefreshSnapshot, String>,
+        result: Result<ManagerInstanceRefreshSnapshot, String>,
     ) {
         match result {
             Ok(snapshot) => self.apply_instance_refresh_snapshot(snapshot),
@@ -710,19 +704,19 @@ impl ManagerState<'_> {
         }
     }
 
-    pub(crate) fn open_list_error_popup(
+    pub fn open_list_error_popup(
         &mut self,
         title: impl Into<String>,
         message: impl Into<String>,
     ) {
         self.open_error_popup_modal(
-            jackin_console::tui::components::error_popup::error_popup_state(title, message),
+            crate::tui::components::error_popup::error_popup_state(title, message),
         );
     }
 
-    pub(in crate::console::tui::state) fn apply_instance_refresh_snapshot(
+    pub fn apply_instance_refresh_snapshot(
         &mut self,
-        snapshot: InstanceRefreshSnapshot,
+        snapshot: ManagerInstanceRefreshSnapshot,
     ) {
         self.instances = snapshot.instances;
         self.instance_sessions = snapshot.sessions;
@@ -739,7 +733,7 @@ impl ManagerState<'_> {
         self.selected = selected_index(self.selected, self.row_count());
     }
 
-    pub(in crate::console::tui::state) fn apply_instance_refresh_error(&mut self, error: &str) {
+    pub fn apply_instance_refresh_error(&mut self, error: &str) {
         self.instances.clear();
         self.instance_sessions.clear();
         self.instance_session_errors.clear();
@@ -754,10 +748,10 @@ impl ManagerState<'_> {
         self.current_dir_expanded = false;
         self.preview_focused = false;
         let message =
-            jackin_console::tui::components::error_popup::instance_index_error_message(error);
+            crate::tui::components::error_popup::instance_index_error_message(error);
         if self.instances_last_error.as_deref() != Some(&message) {
             self.open_list_error_popup(
-                jackin_console::tui::components::error_popup::instance_index_error_title(),
+                crate::tui::components::error_popup::instance_index_error_title(),
                 &message,
             );
             self.instances_last_error = Some(message);
@@ -777,7 +771,6 @@ impl ManagerState<'_> {
 
     /// Test helper: force the next `refresh_instances` call to hit disk
     /// regardless of the throttle interval.
-    #[cfg(test)]
     pub fn force_refresh_instances_for_test(&mut self) {
         self.instances_last_refresh = None;
         self.instances_refresh_generation =
@@ -785,7 +778,7 @@ impl ManagerState<'_> {
         self.instances_refresh_rx = None;
     }
 
-    pub(crate) fn tick_active_animation(&mut self) -> bool {
+    pub fn tick_active_animation(&mut self) -> bool {
         let mut dirty = false;
         if let Some(modal) = self.list_modal.as_mut() {
             dirty |= modal.tick_active_animation();
@@ -855,7 +848,7 @@ impl LaunchAgentPromptManagerState<jackin_core::RoleSelector, jackin_core::Agent
     fn open_launch_agent_prompt(
         &mut self,
         role: jackin_core::RoleSelector,
-        picker: jackin_console::tui::components::agent_choice::AgentChoiceState<jackin_core::Agent>,
+        picker: crate::tui::components::agent_choice::AgentChoiceState<jackin_core::Agent>,
     ) {
         self.inline_agent_picker = Some((role, picker));
     }
@@ -868,9 +861,7 @@ impl LaunchAgentPromptManagerState<jackin_core::RoleSelector, jackin_core::Agent
 impl LaunchRolePromptManagerState<jackin_core::RoleSelector> for ManagerState<'_> {
     fn open_launch_role_prompt(
         &mut self,
-        picker: jackin_console::tui::components::role_picker::RolePickerState<
-            jackin_core::RoleSelector,
-        >,
+        picker: crate::tui::components::role_picker::RolePickerState<jackin_core::RoleSelector>,
     ) {
         self.inline_role_picker = Some(picker);
     }
@@ -885,7 +876,7 @@ impl
 {
     fn open_launch_provider_picker(
         &mut self,
-        picker: jackin_console::tui::components::provider_picker::ProviderPickerState<
+        picker: crate::tui::components::provider_picker::ProviderPickerState<
             jackin_core::RoleSelector,
             jackin_core::Agent,
             jackin_protocol::Provider,
@@ -918,7 +909,7 @@ impl ListModalState for ManagerState<'_> {
 
     fn open_github_picker_modal(
         &mut self,
-        state: jackin_console::tui::components::github_picker::GithubPickerState,
+        state: crate::tui::components::github_picker::GithubPickerState,
     ) {
         self.list_modal = Some(Modal::GithubPicker { state });
     }
@@ -956,7 +947,7 @@ impl InlineNewSessionPickerState<String, jackin_core::Agent, jackin_protocol::Pr
     fn set_inline_new_session_picker(
         &mut self,
         context: String,
-        picker: jackin_console::tui::components::agent_choice::AgentChoiceState<jackin_core::Agent>,
+        picker: crate::tui::components::agent_choice::AgentChoiceState<jackin_core::Agent>,
         providers: Vec<jackin_protocol::Provider>,
     ) {
         self.inline_new_session_picker = Some((context, picker, providers));
@@ -968,12 +959,74 @@ impl InlineProviderPickerState<String, jackin_core::Agent, jackin_protocol::Prov
 {
     fn set_inline_provider_picker(
         &mut self,
-        picker: jackin_console::tui::components::provider_picker::ProviderPickerState<
+        picker: crate::tui::components::provider_picker::ProviderPickerState<
             String,
             jackin_core::Agent,
             jackin_protocol::Provider,
         >,
     ) {
         self.inline_provider_picker = Some(picker);
+    }
+}
+
+impl PreviewFocusState for ManagerState<'_> {
+    fn set_preview_focused(&mut self, focused: bool) {
+        self.preview_focused = focused;
+    }
+}
+
+impl PreviewPaneCursorState for ManagerState<'_> {
+    fn set_preview_pane_cursor(&mut self, container: &str, cursor: usize) {
+        self.preview_pane_cursor
+            .insert(container.to_owned(), cursor);
+    }
+}
+
+impl
+    crate::tui::screens::workspaces::update::WorkspaceListScrollState
+    for ManagerState<'_>
+{
+    fn list_names_scroll_x(&self) -> u16 {
+        self.list_names_scroll_x
+    }
+
+    fn set_list_names_scroll_x(&mut self, value: u16) {
+        self.list_names_scroll_x = value;
+    }
+
+    fn block_scroll_x(&self, focus: MountScrollFocus) -> u16 {
+        match focus {
+            MountScrollFocus::Workspace => self.list_mounts_scroll_x,
+            MountScrollFocus::Global => self.list_global_mounts_scroll_x,
+            MountScrollFocus::RoleGlobal => self.list_role_global_mounts_scroll_x,
+            MountScrollFocus::Roles => self.list_roles_scroll_x,
+        }
+    }
+
+    fn set_block_scroll_x(&mut self, focus: MountScrollFocus, value: u16) {
+        *self.list_scroll_x_mut(focus) = value;
+    }
+
+    fn block_scroll_y(&self, focus: MountScrollFocus) -> u16 {
+        match focus {
+            MountScrollFocus::Workspace => self.list_mounts_scroll_y,
+            MountScrollFocus::Global => self.list_global_mounts_scroll_y,
+            MountScrollFocus::RoleGlobal => self.list_role_global_mounts_scroll_y,
+            MountScrollFocus::Roles => self.list_roles_scroll_y,
+        }
+    }
+
+    fn set_block_scroll_y(&mut self, focus: MountScrollFocus, value: u16) {
+        *self.list_scroll_y_mut(focus) = value;
+    }
+}
+
+impl ListShellState for ManagerState<'_> {
+    fn set_drag_state(&mut self, drag: Option<crate::tui::split::DragState>) {
+        self.drag_state = drag;
+    }
+
+    fn set_list_split_pct(&mut self, pct: u16) {
+        self.list_split_pct = pct;
     }
 }

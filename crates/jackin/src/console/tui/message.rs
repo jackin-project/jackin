@@ -26,20 +26,20 @@ use jackin_console::tui::screens::settings::update::{
     settings_tab_select_plan, settings_trust_row_select_plan, settings_trust_selection_plan,
 };
 use jackin_console::tui::screens::workspaces::update::{
-    PreviewFocusState, PreviewPaneCursorState, WorkspaceListScrollState, apply_preview_focus_plan,
-    apply_preview_pane_cursor_plan, apply_workspace_list_horizontal_scroll_plan,
-    apply_workspace_list_selection_plan, apply_workspace_list_vertical_scroll_plan,
-    apply_workspace_tree_disclosure_plan, collapse_selected_tree_plan, enter_preview_focus_plan,
-    exit_preview_focus_plan, expand_selected_tree_plan, instance_purge_confirm_plan,
-    preview_pane_cursor_plan, workspace_delete_confirm_plan,
-    workspace_list_horizontal_scroll_target_plan, workspace_list_move_selection_plan,
-    workspace_list_select_row_plan, workspace_list_vertical_scroll_target_plan,
+    apply_preview_focus_plan, apply_preview_pane_cursor_plan,
+    apply_workspace_list_horizontal_scroll_plan, apply_workspace_list_selection_plan,
+    apply_workspace_list_vertical_scroll_plan, apply_workspace_tree_disclosure_plan,
+    collapse_selected_tree_plan, enter_preview_focus_plan, exit_preview_focus_plan,
+    expand_selected_tree_plan, instance_purge_confirm_plan, preview_pane_cursor_plan,
+    workspace_delete_confirm_plan, workspace_list_horizontal_scroll_target_plan,
+    workspace_list_move_selection_plan, workspace_list_select_row_plan,
+    workspace_list_vertical_scroll_target_plan,
 };
 use jackin_console::tui::update::{
-    InlinePickerDismissal, ListShellState, apply_drag_state_plan,
-    apply_inline_picker_dismissal_plan, apply_list_modal_plan, apply_list_split_pct_plan,
-    apply_status_overlay_plan, dismiss_list_modal_plan, dismiss_status_overlay_plan,
-    drag_state_plan, inline_picker_dismissal_plan, list_names_focus_plan, list_scroll_focus_plan,
+    InlinePickerDismissal, apply_drag_state_plan, apply_inline_picker_dismissal_plan,
+    apply_list_modal_plan, apply_list_split_pct_plan, apply_status_overlay_plan,
+    dismiss_list_modal_plan, dismiss_status_overlay_plan, drag_state_plan,
+    inline_picker_dismissal_plan, list_names_focus_plan, list_scroll_focus_plan,
     list_split_pct_plan, open_container_info_modal_plan, open_error_popup_modal_plan,
     open_github_picker_modal_plan, open_status_overlay_plan,
 };
@@ -288,64 +288,7 @@ pub(crate) fn update_manager(
     ManagerUpdate::redraw()
 }
 
-impl PreviewFocusState for ManagerState<'_> {
-    fn set_preview_focused(&mut self, focused: bool) {
-        self.preview_focused = focused;
-    }
-}
 
-impl PreviewPaneCursorState for ManagerState<'_> {
-    fn set_preview_pane_cursor(&mut self, container: &str, cursor: usize) {
-        self.preview_pane_cursor
-            .insert(container.to_owned(), cursor);
-    }
-}
-
-impl WorkspaceListScrollState for ManagerState<'_> {
-    fn list_names_scroll_x(&self) -> u16 {
-        self.list_names_scroll_x
-    }
-
-    fn set_list_names_scroll_x(&mut self, value: u16) {
-        self.list_names_scroll_x = value;
-    }
-
-    fn block_scroll_x(&self, focus: MountScrollFocus) -> u16 {
-        match focus {
-            MountScrollFocus::Workspace => self.list_mounts_scroll_x,
-            MountScrollFocus::Global => self.list_global_mounts_scroll_x,
-            MountScrollFocus::RoleGlobal => self.list_role_global_mounts_scroll_x,
-            MountScrollFocus::Roles => self.list_roles_scroll_x,
-        }
-    }
-
-    fn set_block_scroll_x(&mut self, focus: MountScrollFocus, value: u16) {
-        *self.list_scroll_x_mut(focus) = value;
-    }
-
-    fn block_scroll_y(&self, focus: MountScrollFocus) -> u16 {
-        match focus {
-            MountScrollFocus::Workspace => self.list_mounts_scroll_y,
-            MountScrollFocus::Global => self.list_global_mounts_scroll_y,
-            MountScrollFocus::RoleGlobal => self.list_role_global_mounts_scroll_y,
-            MountScrollFocus::Roles => self.list_roles_scroll_y,
-        }
-    }
-
-    fn set_block_scroll_y(&mut self, focus: MountScrollFocus, value: u16) {
-        *self.list_scroll_y_mut(focus) = value;
-    }
-}
-
-impl ListShellState for ManagerState<'_> {
-    fn set_drag_state(&mut self, drag: Option<DragState>) {
-        self.drag_state = drag;
-    }
-
-    fn set_list_split_pct(&mut self, pct: u16) {
-        self.list_split_pct = pct;
-    }
-}
 
 fn set_editor_tab_bar_focus(state: &mut ManagerState<'_>, focused: bool) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
