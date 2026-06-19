@@ -1,14 +1,9 @@
 //! Thin adapter shell — editor-stage input dispatch lives in jackin-console.
 
-pub(super) use jackin_console::tui::input::editor::{
-    EditorModalOutcome, handle_editor_key, handle_editor_modal,
-};
-#[cfg(test)]
-pub(super) use jackin_console::tui::input::editor::apply_file_browser_to_editor;
-
 #[cfg(test)]
 pub(super) use jackin_console::tui::input::editor::{
-    apply_text_input_to_pending, env_key_input_state,
+    EditorModalOutcome, apply_file_browser_to_editor, apply_text_input_to_pending,
+    env_key_input_state, handle_editor_modal,
 };
 #[cfg(test)]
 pub(super) use jackin_console::tui::screens::editor::view::{

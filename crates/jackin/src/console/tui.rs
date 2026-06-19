@@ -14,9 +14,6 @@ pub(crate) type ManagerEffect = jackin_console::tui::effect::ConsoleManagerEffec
     jackin_core::OpRef,
 >;
 
-pub(crate) type FileBrowserEffectContext =
-    jackin_console::tui::effect::FileBrowserEffectContext;
-
 pub(crate) type WorkspaceSaveEffect = jackin_console::tui::effect::WorkspaceSaveEffect<
     jackin_config::MountConfig,
     state::PendingSaveCommit,
