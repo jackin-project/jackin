@@ -38,12 +38,12 @@ Approximate local inventory:
 
 | Area | Files | Lines | Current role |
 |---|---:|---:|---|
-| `crates/jackin/src/console` total | 80 | 34,407 | Remaining root console implementation |
-| `domain.rs` | 1 | 149 | Role-source logging, provider derivation, and root instance snapshot alias |
+| `crates/jackin/src/console` total | 65 | 16,507 | Remaining root console implementation |
+| `domain.rs` | 1 | 27 | validate-auth-source-folder (calls jackin_runtime) and thin re-exports |
 | `services.rs` + `services/` | 9 | 861 | Side-effect adapters around config, Docker, runtime, op, token setup |
 | `effects.rs` | 1 | 1,250 | Root effect executor and background polling |
 | `terminal.rs` | 1 | 50 | Host terminal ownership adapter |
-| `tui/` | 65 | 31,661 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
+| `tui/` | 50 | 14,077 | Remaining TUI state, input, update, rendering adapters, run loop, tests |
 
 Largest root files:
 
@@ -174,6 +174,12 @@ Generic manager-stage footer-height fact extraction and base-surface modal-block
 
 Generic manager-stage debug fact extraction now lives in `jackin-console/src/tui/app.rs`, with modal debug-kind traits in `jackin-console/src/tui/debug.rs`; root supplies only concrete console state and list-modal debug facts.
 
+Concrete workspace-list footer adapter (`workspace_list_footer_items_for_state`) now lives in `jackin-console/src/tui/screens/workspaces/view/footer.rs`; root `components/footer.rs` is a thin re-export shell.
+
+Concrete settings-screen footer adapter (`settings_screen_footer_for_state`) now lives in `jackin-console/src/tui/screens/settings/view.rs`; root `components/footer/settings.rs` is a one-line re-export shell.
+
+Root `domain.rs` no longer owns `InstanceRefreshSnapshot`; `services/instances.rs` imports `ManagerInstanceRefreshSnapshot` from `jackin_console::tui::state` directly.
+
 Generic manager-stage assignment now lives behind `jackin-console/src/tui/app.rs`; root manager state implements the narrow stage storage hook while root-specific transitions still construct concrete stage payloads.
 
 Role-resolution status-overlay planning now lives in `jackin-console/src/tui/update.rs`; root prompt drawing applies the crate-owned overlay open/dismiss plans while retaining terminal draw ownership.
@@ -226,11 +232,10 @@ Settings-save request/response shape (`SettingsSaveInput` / `save_settings`) and
 
 `crates/jackin/src/console/domain.rs` owns:
 
-- role source candidate derivation with root debug logging,
-- role input resolution,
-- committed agent launch provider derivation,
-- provider derivation for launch,
-- instance refresh snapshot shape.
+- `validate_auth_source_folder` — calls `jackin_runtime::instance::validate_sync_source_dir`; must stay in root,
+- thin re-exports of `jackin_console::services::launch::resolve_committed_agent_launch` and `jackin_console::services::role_source::resolve_role_input_source` (test-only).
+
+Note: `InstanceRefreshSnapshot` alias removed; `services/instances.rs` uses `jackin_console::tui::state::ManagerInstanceRefreshSnapshot` directly.
 
 Move potential: medium.
 
