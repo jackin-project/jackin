@@ -131,7 +131,7 @@ impl ManagerState<'_> {
             .collect();
 
         let saved_count = workspaces.len();
-        let matching_saved = crate::app::context::find_saved_workspace_for_cwd(config, cwd)
+        let matching_saved = jackin_config::find_saved_workspace_for_cwd(config, cwd)
             .and_then(|(name, _)| workspaces.iter().position(|w| w.name == name));
         let selected = initial_workspace_selected_index(saved_count, matching_saved);
 

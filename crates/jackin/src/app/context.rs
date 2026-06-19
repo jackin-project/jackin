@@ -140,27 +140,6 @@ pub(crate) fn resolve_target_name_with_choice(
     }
 }
 
-/// Find the saved workspace whose host workdir or mounted host path best
-/// matches `cwd`. Returns `None` when no saved workspace covers the path.
-///
-/// Deepest mount-root match wins; ties go to iteration order (`BTreeMap`
-/// alphabetical by workspace name). Shared by both the non-interactive
-/// CLI resolvers (`jackin load`, `jackin hardline`) and the interactive
-/// TUI workspace preselection in `console/`.
-pub(crate) fn find_saved_workspace_for_cwd<'a>(
-    config: &'a AppConfig,
-    cwd: &Path,
-) -> Option<(&'a str, &'a WorkspaceConfig)> {
-    config
-        .workspaces
-        .iter()
-        .filter_map(|(name, ws)| {
-            crate::workspace::saved_workspace_match_depth(ws, cwd).map(|depth| (name, ws, depth))
-        })
-        .max_by_key(|(_, _, depth)| *depth)
-        .map(|(name, ws, _)| (name.as_str(), ws))
-}
-
 /// Resolve the role and workspace from the current directory context.
 ///
 /// Finds the saved workspace whose host workdir or mounted host path best
@@ -186,7 +165,7 @@ pub(crate) fn resolve_agent_from_context_with_choice(
     cwd: &Path,
     mut choose: impl FnMut(&str, Vec<String>) -> Result<usize>,
 ) -> Result<(RoleSelector, LoadWorkspaceInput)> {
-    if let Some((name, ws)) = find_saved_workspace_for_cwd(config, cwd) {
+    if let Some((name, ws)) = jackin_config::find_saved_workspace_for_cwd(config, cwd) {
         let eligible =
             jackin_console::workspace::eligible_roles_for_workspace(config.roles.keys(), ws);
 
@@ -240,7 +219,7 @@ pub(crate) async fn resolve_running_container_from_context(
     cwd: &Path,
     docker: &impl DockerApi,
 ) -> Result<String> {
-    let Some((name, ws)) = find_saved_workspace_for_cwd(config, cwd) else {
+    let Some((name, ws)) = jackin_config::find_saved_workspace_for_cwd(config, cwd) else {
         return resolve_ad_hoc_container_from_context(paths, cwd, docker).await.or_else(|err| {
             anyhow::bail!(
                 "no saved workspace matches the current directory, and no ad-hoc instance matches it: {err}\n\

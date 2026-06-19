@@ -2430,6 +2430,7 @@ dependencies = [
  "jackin-config",
  "jackin-core",
  "jackin-diagnostics",
+ "jackin-protocol",
  "jackin-tui",
  "nix 0.31.3",
  "open",
