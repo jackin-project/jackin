@@ -383,5 +383,89 @@ pub fn status_overlay_area(area: Rect) -> Rect {
     crate::tui::layout::centered_rect_fixed(area, 50, 7)
 }
 
+/// Prepare `state` for the next render pass.
+///
+/// Must be called once before `render` each frame. Computes and caches footer
+/// heights, clamps all scroll offsets to the current terminal area, and
+/// positions modals within the drawable content area.
+pub fn prepare_for_render(
+    state: &mut crate::tui::state::ManagerState<'_>,
+    config: &jackin_config::AppConfig,
+    cwd: &std::path::Path,
+    area: Rect,
+) {
+    use crate::tui::app::ConsoleManagerStage;
+    use crate::tui::components::footer_hints::editor_footer_items;
+    use crate::tui::layout::list::clamp_list_scroll_for_area;
+    use crate::tui::screens::editor::view::{editor_frame_areas, prepare_editor_for_render};
+    use crate::tui::screens::settings::view::{
+        settings_frame_areas, settings_screen_footer_for_state,
+    };
+
+    state.cached_term_size = area;
+    match console_prepare_frame_plan(state.stage.route()) {
+        ConsolePrepareFramePlan::Editor => {
+            if let ConsoleManagerStage::Editor(editor) = &mut state.stage {
+                let body =
+                    editor_frame_areas(area, effective_footer_height(editor.cached_footer_h)).body;
+                let footer = editor_footer_items(editor, config, state.op_available, body);
+                editor.cached_footer_h = measured_footer_height(&footer, area.width);
+                prepare_editor_for_render(area, editor, config);
+            }
+        }
+        ConsolePrepareFramePlan::Settings => {
+            if let ConsoleManagerStage::Settings(settings) = &mut state.stage {
+                let body =
+                    settings_frame_areas(area, effective_footer_height(settings.cached_footer_h))
+                        .body;
+                let footer = settings_screen_footer_for_state(settings, state.op_available, body);
+                settings.cached_footer_h = measured_footer_height(&footer, area.width);
+                settings.clamp_mounts_scroll_for_frame(area);
+            }
+        }
+        ConsolePrepareFramePlan::List => {
+            let areas = workspace_frame_areas(area);
+            clamp_list_scroll_for_area(areas.body, state, config, cwd);
+        }
+        ConsolePrepareFramePlan::None => {}
+    }
+    prepare_visible_modal(area, state);
+}
+
+fn prepare_visible_modal(area: Rect, state: &mut crate::tui::state::ManagerState<'_>) {
+    use crate::tui::app::ConsoleManagerStage;
+
+    let areas = visible_modal_prepare_areas_for_stage_facts(
+        area,
+        state
+            .stage
+            .footer_height_facts(workspace_frame_areas(area).footer.height),
+    );
+
+    if let Some(modal) = &mut state.list_modal {
+        modal.prepare_for_render(areas.list_modal);
+    }
+    if let Some(area) = areas.stage_modal {
+        match (&mut state.stage, area) {
+            (ConsoleManagerStage::Editor(editor), StageModalArea::Editor(area)) => {
+                if let Some(modal) = &mut editor.modal {
+                    modal.prepare_for_render(area);
+                }
+            }
+            (ConsoleManagerStage::CreatePrelude(prelude), StageModalArea::Workspace(area)) => {
+                if let Some(modal) = &mut prelude.modal {
+                    modal.prepare_for_render(area);
+                }
+            }
+            (ConsoleManagerStage::Settings(settings), StageModalArea::Settings(area)) => {
+                if let Some(modal) = &mut settings.mounts.modal {
+                    modal.prepare_for_render(area);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;
