@@ -12,7 +12,7 @@ use super::*;
 use crate::console::tui::state::{
     EditorState, FieldFocus, ManagerStage, ManagerState, SettingsState,
 };
-use crate::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use crossterm::event::KeyCode;
 use jackin_config::AppConfig;
 

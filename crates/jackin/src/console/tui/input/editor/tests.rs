@@ -13,8 +13,9 @@ use crate::console::tui::state::{
     AuthRow, ConfirmTarget, EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage,
     ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag, TextInputTarget,
 };
-use crate::paths::JackinPaths;
-use crate::runtime::test_support::{first_temp_role_repo, seed_valid_role_repo};
+use jackin_core::JackinPaths;
+use jackin_manifest::repo::CachedRepo;
+use jackin_runtime::runtime::test_support::{FakeRunner, first_temp_role_repo, seed_valid_role_repo};
 use crossterm::event::KeyCode;
 use jackin_config::{AgentAuthConfig, AppConfig, AuthForwardMode};
 use jackin_config::{MountConfig, WorkspaceConfig};
@@ -851,9 +852,9 @@ async fn role_input_resolves_then_persists_namespaced_role_after_trust() {
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
     editor.pending.allowed_roles = vec!["agent-smith".into()];
     let selector = jackin_core::RoleSelector::parse("chainargos/agent-brown").unwrap();
-    let cached_repo = crate::repo::CachedRepo::new(&paths, &selector);
+    let cached_repo = CachedRepo::new(&paths, &selector);
     let data_dir = paths.data_dir.clone();
-    let mut runner = crate::runtime::FakeRunner::default();
+    let mut runner = FakeRunner::default();
     runner.side_effects.push((
         "git clone".to_owned(),
         Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
@@ -1058,7 +1059,7 @@ async fn role_input_trust_decline_keeps_registered_role_untrusted() {
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
     editor.pending.allowed_roles = vec!["agent-smith".into()];
     let data_dir = paths.data_dir.clone();
-    let mut runner = crate::runtime::FakeRunner::default();
+    let mut runner = FakeRunner::default();
     runner.side_effects.push((
         "git clone".to_owned(),
         Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
@@ -1121,7 +1122,7 @@ async fn role_input_existing_untrusted_role_can_be_validated_and_trusted() {
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
     editor.pending.allowed_roles = vec!["agent-smith".into()];
     let data_dir = paths.data_dir.clone();
-    let mut runner = crate::runtime::FakeRunner::default();
+    let mut runner = FakeRunner::default();
     runner.side_effects.push((
         "git clone".to_owned(),
         Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
@@ -1189,7 +1190,7 @@ async fn role_input_trusted_existing_role_skips_trust_prompt() {
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
     editor.pending.allowed_roles = vec!["agent-smith".into()];
     let data_dir = paths.data_dir.clone();
-    let mut runner = crate::runtime::FakeRunner::default();
+    let mut runner = FakeRunner::default();
     runner.side_effects.push((
         "git clone".to_owned(),
         Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
@@ -1228,7 +1229,7 @@ async fn role_input_clone_failure_reports_candidate_repository_url() {
     std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
 
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
-    let mut runner = crate::runtime::FakeRunner::default();
+    let mut runner = FakeRunner::default();
     runner
         .fail_with
         .push(("git clone".into(), "repository not found".into()));
@@ -1294,7 +1295,7 @@ async fn role_input_invalid_repo_reports_role_contract_error() {
 
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
     let data_dir = paths.data_dir.clone();
-    let mut runner = crate::runtime::FakeRunner::default();
+    let mut runner = FakeRunner::default();
     runner.side_effects.push((
         "git clone".to_owned(),
         Box::new(move || {
@@ -1391,7 +1392,7 @@ async fn role_input_panic_in_registration_is_converted_to_error_popup() {
     std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
 
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
-    let mut runner = crate::runtime::FakeRunner::default();
+    let mut runner = FakeRunner::default();
     runner.side_effects.push((
         "git clone".to_owned(),
         Box::new(|| panic!("test panic while cloning role repo")),

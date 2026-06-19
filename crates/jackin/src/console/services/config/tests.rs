@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use super::{WorkspaceSaveInput, WorkspaceSaveMode, save_workspace};
-use crate::paths::JackinPaths;
+use jackin_core::JackinPaths;
 use jackin_config::{
     AgentAuthConfig, AppConfig, CURRENT_WORKSPACE_VERSION, MountConfig, MountIsolation,
     WorkspaceConfig, WorkspaceRoleOverride,

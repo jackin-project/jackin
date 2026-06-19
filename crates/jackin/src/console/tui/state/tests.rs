@@ -5,10 +5,13 @@ use crate::console::services::instances::overlay_running_instances;
 use crate::console::tui::state::SettingsState;
 use jackin_config::{CURRENT_WORKSPACE_VERSION, KeepAwakeConfig, MountConfig, WorkspaceConfig};
 use jackin_console::mount_diff::{MountDiff, classify_mount_diffs};
-use jackin_core::Agent;
+use jackin_core::{Agent, JackinPaths};
+use jackin_runtime::instance::{
+    DockerResources, InstanceIndex, InstanceManifest, InstanceStatus, NewInstanceManifest,
+};
 use std::path::PathBuf;
 
-fn refresh_instances(state: &mut ManagerState<'_>, paths: &crate::paths::JackinPaths) {
+fn refresh_instances(state: &mut ManagerState<'_>, paths: &JackinPaths) {
     const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
     let now = std::time::Instant::now();
     if let Some(last) = state.instances_last_refresh
@@ -76,9 +79,9 @@ fn manager_from_config_lists_all_workspaces() {
 #[test]
 fn refresh_instances_loads_rebuildable_index() {
     let tmp = tempfile::tempdir().unwrap();
-    let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+    let paths = JackinPaths::for_tests(tmp.path());
     let mut manifest =
-        crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+        InstanceManifest::new(NewInstanceManifest {
             container_base: "jk-k7p9m2xq-demo-alpha",
             workspace_name: Some("demo"),
             workspace_label: "demo",
@@ -90,14 +93,14 @@ fn refresh_instances_loads_rebuildable_index() {
             role_source_git: "https://example.invalid/alpha.git",
             role_source_ref: None,
             image_tag: "jk_alpha",
-            docker: crate::instance::DockerResources {
+            docker: DockerResources {
                 role_container: "jk-k7p9m2xq-demo-alpha".into(),
                 dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
                 network: "jk-k7p9m2xq-demo-alpha-net".into(),
                 certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
             },
         });
-    manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
+    manifest.mark_status(InstanceStatus::RestoreAvailable);
     manifest
         .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
         .unwrap();
@@ -110,16 +113,16 @@ fn refresh_instances_loads_rebuildable_index() {
     assert_eq!(state.instances[0].instance_id, "k7p9m2xq");
     assert_eq!(
         state.instances[0].status,
-        crate::instance::InstanceStatus::RestoreAvailable
+        InstanceStatus::RestoreAvailable
     );
 }
 
 #[test]
 fn live_running_overlay_makes_restore_available_instance_visible() {
     let tmp = tempfile::tempdir().unwrap();
-    let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+    let paths = JackinPaths::for_tests(tmp.path());
     let mut manifest =
-        crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+        InstanceManifest::new(NewInstanceManifest {
             container_base: "jk-k7p9m2xq-demo-alpha",
             workspace_name: Some("demo"),
             workspace_label: "demo",
@@ -131,17 +134,17 @@ fn live_running_overlay_makes_restore_available_instance_visible() {
             role_source_git: "https://example.invalid/alpha.git",
             role_source_ref: None,
             image_tag: "jk_alpha",
-            docker: crate::instance::DockerResources {
+            docker: DockerResources {
                 role_container: "jk-k7p9m2xq-demo-alpha".into(),
                 dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
                 network: "jk-k7p9m2xq-demo-alpha-net".into(),
                 certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
             },
         });
-    manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
-    crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+    manifest.mark_status(InstanceStatus::RestoreAvailable);
+    InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
 
-    let mut instances = crate::instance::InstanceIndex::read(&paths.data_dir)
+    let mut instances = InstanceIndex::read(&paths.data_dir)
         .unwrap()
         .instances;
     overlay_running_instances(
@@ -153,16 +156,16 @@ fn live_running_overlay_makes_restore_available_instance_visible() {
     assert_eq!(instances.len(), 1);
     assert_eq!(
         instances[0].status,
-        crate::instance::InstanceStatus::Running
+        InstanceStatus::Running
     );
 }
 
 #[test]
 fn live_running_overlay_backfills_manifest_missing_from_index() {
     let tmp = tempfile::tempdir().unwrap();
-    let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+    let paths = JackinPaths::for_tests(tmp.path());
     let mut manifest =
-        crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+        InstanceManifest::new(NewInstanceManifest {
             container_base: "jk-k7p9m2xq-demo-alpha",
             workspace_name: Some("demo"),
             workspace_label: "demo",
@@ -174,14 +177,14 @@ fn live_running_overlay_backfills_manifest_missing_from_index() {
             role_source_git: "https://example.invalid/alpha.git",
             role_source_ref: None,
             image_tag: "jk_alpha",
-            docker: crate::instance::DockerResources {
+            docker: DockerResources {
                 role_container: "jk-k7p9m2xq-demo-alpha".into(),
                 dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
                 network: "jk-k7p9m2xq-demo-alpha-net".into(),
                 certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
             },
         });
-    manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
+    manifest.mark_status(InstanceStatus::RestoreAvailable);
     manifest
         .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
         .unwrap();
@@ -197,7 +200,7 @@ fn live_running_overlay_backfills_manifest_missing_from_index() {
     assert_eq!(instances[0].container_base, "jk-k7p9m2xq-demo-alpha");
     assert_eq!(
         instances[0].status,
-        crate::instance::InstanceStatus::Running
+        InstanceStatus::Running
     );
 }
 
@@ -209,9 +212,9 @@ fn refresh_instances_throttles_within_interval() {
     // when the on-disk index changes; `force_refresh_instances_for_test`
     // bypasses the gate.
     let tmp = tempfile::tempdir().unwrap();
-    let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+    let paths = JackinPaths::for_tests(tmp.path());
     let mut manifest =
-        crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+        InstanceManifest::new(NewInstanceManifest {
             container_base: "jk-k7p9m2xq-demo-alpha",
             workspace_name: Some("demo"),
             workspace_label: "demo",
@@ -223,14 +226,14 @@ fn refresh_instances_throttles_within_interval() {
             role_source_git: "https://example.invalid/alpha.git",
             role_source_ref: None,
             image_tag: "jk_alpha",
-            docker: crate::instance::DockerResources {
+            docker: DockerResources {
                 role_container: "jk-k7p9m2xq-demo-alpha".into(),
                 dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
                 network: "jk-k7p9m2xq-demo-alpha-net".into(),
                 certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
             },
         });
-    manifest.mark_status(crate::instance::InstanceStatus::Active);
+    manifest.mark_status(InstanceStatus::Active);
     manifest
         .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
         .unwrap();
@@ -241,22 +244,22 @@ fn refresh_instances_throttles_within_interval() {
     assert_eq!(state.instances.len(), 1);
     assert_eq!(
         state.instances[0].status,
-        crate::instance::InstanceStatus::Active
+        InstanceStatus::Active
     );
 
     // Mutate the manifest on disk; without the bypass, an
     // immediate refresh must observe the cached value.
-    manifest.mark_status(crate::instance::InstanceStatus::Crashed);
+    manifest.mark_status(InstanceStatus::Crashed);
     manifest
         .write(&paths.data_dir.join("jackin-demo-alpha-k7p9m2xq"))
         .unwrap();
-    crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+    InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
 
     state.instances_last_refresh = Some(std::time::Instant::now());
     refresh_instances(&mut state, &paths);
     assert_eq!(
         state.instances[0].status,
-        crate::instance::InstanceStatus::Active,
+        InstanceStatus::Active,
         "throttle window must keep the cached snapshot",
     );
 
@@ -265,14 +268,14 @@ fn refresh_instances_throttles_within_interval() {
     refresh_instances(&mut state, &paths);
     assert_eq!(
         state.instances[0].status,
-        crate::instance::InstanceStatus::Crashed,
+        InstanceStatus::Crashed,
     );
 }
 
 #[test]
 fn refresh_instances_clears_on_index_error() {
     let tmp = tempfile::tempdir().unwrap();
-    let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+    let paths = JackinPaths::for_tests(tmp.path());
     std::fs::create_dir_all(&paths.data_dir).unwrap();
     std::fs::write(paths.data_dir.join("instances.json"), b"not json").unwrap();
     let bogus = paths.data_dir.join("jackin-bogus-k7p9m2xq");
@@ -700,7 +703,7 @@ fn manager_selected_workspace_summary_is_none_for_synthetic_rows() {
 #[test]
 fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
     let temp = tempfile::tempdir().unwrap();
-    let paths = crate::paths::JackinPaths::for_tests(temp.path());
+    let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
     std::fs::write(&paths.config_file, "").unwrap();
     let source_a = temp.path().join("cache-a");
@@ -761,7 +764,7 @@ fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
 #[test]
 fn settings_save_zai_ignore_removes_global_key() {
     let temp = tempfile::tempdir().unwrap();
-    let paths = crate::paths::JackinPaths::for_tests(temp.path());
+    let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,

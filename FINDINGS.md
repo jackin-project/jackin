@@ -340,21 +340,16 @@ The desired end state is therefore not "zero files in `crates/jackin/src/console
 
 ### Root-Owned Product Types
 
-The largest blocker is type ownership. `jackin-console` cannot depend on the binary crate, so code using these types cannot move as-is:
+**All console-scope type cleanup is complete.** Root shim paths (`crate::agent`, `crate::selector`, `crate::workspace`, `crate::config`, `crate::operator_env`, `crate::paths`, `crate::instance`, `crate::runtime::test_support`, `crate::repo`) have been removed from all four root-console test files (`tui/state/tests.rs`, `tui/input/dispatch/tests.rs`, `tui/input/editor/tests.rs`, `services/config/tests.rs`). Those files now import directly from owner crates (`jackin_core::JackinPaths`, `jackin_runtime::instance::*`, `jackin_runtime::runtime::test_support::*`, `jackin_manifest::repo::CachedRepo`). No `crate::agent`, `crate::selector`, `crate::workspace`, `crate::config`, or `crate::operator_env` paths remain in any console file (production or test).
 
-- `crate::agent::Agent` shim paths only in root-console tests; production console code now uses `jackin_core::Agent`,
-- `crate::selector::RoleSelector` shim paths only in root-console tests; production console code now uses `jackin_core::RoleSelector`,
-- `crate::workspace` shim paths for workspace schema/resolution types only in tests; production console code now uses `jackin_config` for those types and helpers,
-- `crate::config` shim paths for config model types only in tests; production console code now uses `jackin_config`,
-- `crate::operator_env` shim paths for operator-env data types only in tests; production console code now uses `jackin_core` and `jackin_env`,
-- `crate::selector::RolePickerState` and `crate::workspace::token_setup` shim paths only in tests/outside console; production console code now uses `jackin-console` and `jackin-env`,
-- `crate::instance::{InstanceIndexEntry, InstanceStatus, SessionRecord}`,
-- `crate::runtime::snapshot::InstanceSnapshot`,
-- `crate::runtime::drift::DriftDetection`,
-- `crate::paths::JackinPaths`,
-- `crate::docker::CommandRunner`.
+The remaining expected root-adapter dependencies in production console code are by design:
 
-Some of these already have lower-crate homes conceptually. For example, `jackin-core` already owns shared selector/op vocabulary, and `jackin-config` owns config. A cleanup pass should decide which root types are accidental binary-owned product types.
+- `crate::runtime::drift::DriftDetection` — used in `services.rs` to spawn the workspace drift-check worker; stays in root because it wraps runtime IO,
+- `crate::runtime::snapshot::InstanceSnapshot` — used in `services.rs` to fetch container snapshots; stays in root because it calls runtime Docker IO,
+- `crate::paths::JackinPaths` — used in `effects.rs` and `services.rs` as a path provider for runtime/filesystem IO; `jackin_core::JackinPaths` is the canonical type but the adapter functions in root naturally reference it via the root module,
+- `crate::docker::CommandRunner` — used in `services.rs` and `tui/run.rs` for Docker command execution; stays in root by design.
+
+These appear in `effects.rs`, `services.rs`, and `tui/run.rs` — the expected adapter files.
 
 ### Effect Execution Is Still Root-Owned
 
@@ -375,61 +370,33 @@ The integration tests and frame benchmark import root `ManagerState`, `handle_ke
 - updating tests to use `jackin-console` model/update APIs,
 - or keeping compatibility aliases in root during migration.
 
-## Recommended Refactor Plan
+## Recommended Refactor Plan — ALL PHASES COMPLETE
 
-### Phase 1: Document And Enforce The Boundary
+**All five phases have been completed as of 2026-06-19.** See progress notes in the "Folder Inventory" section above for the full extraction log.
 
-- Keep `crates/jackin/src/console.rs`, but rewrite its module comment to say root console is an adapter layer, not the canonical home of console logic.
-- Add a short boundary note to `crates/jackin-console/src/lib.rs` describing what belongs there.
-- Update `codebase-map.mdx` after any structural move.
+### Phase 1: Document And Enforce The Boundary ✅ DONE
 
-### Phase 2: Move Pure Root TUI Helpers First
+- `crates/jackin/src/console.rs` module comment updated to say root console is an adapter layer.
+- `crates/jackin-console/src/lib.rs` already had a good boundary note; confirmed present.
+- `codebase-map.mdx` updated to Phase 5 end state (file/LOC counts, tier-table descriptions, extraction ledger paragraph).
 
-Good candidates:
+### Phase 2: Move Pure Root TUI Helpers First ✅ DONE
 
-- modal outside-click/dismissal policies from root `run.rs`,
-- debug location label derivation that can consume generic modal/stage facts,
-- footer hint routing adapters that can become fact-based helpers,
-- view row/line construction that currently reads root structs but can be converted to explicit fact structs,
-- input planning that already delegates to `jackin-console::tui::screens::*::update`.
+All pure TUI helpers extracted — modal dismissal policies, footer hint routing, view row construction, input planning, screen rendering, settings/editor/workspace update logic. See the long extraction log in the "Folder Inventory" section.
 
-Goal: shrink root `components/`, `layout/`, `view/`, and pieces of `input/` without touching runtime behavior.
+### Phase 3: Lower Root Product Types ✅ DONE
 
-### Phase 3: Lower Root Product Types
+- Production console code uses `jackin_core::Agent`, `jackin_core::RoleSelector`, `jackin_config` workspace types, `jackin_core`/`jackin_env` operator-env types directly.
+- Root-console test files (`tui/state/tests.rs`, `tui/input/dispatch/tests.rs`, `tui/input/editor/tests.rs`, `services/config/tests.rs`) now import from owner crates (`jackin_core::JackinPaths`, `jackin_runtime::instance::*`, `jackin_runtime::runtime::test_support::*`, `jackin_manifest::repo::CachedRepo`) directly — no root shim paths remain.
+- Instance shapes in `jackin_runtime::instance`, `jackin_core`, `jackin_protocol`. `operator_env` types in `jackin_core` + `jackin_env`. All lower-crate owned.
 
-Evaluate these moves:
+### Phase 4: Move State/Message/Update Into `jackin-console` ✅ DONE
 
-- Production console code now uses `jackin_core::Agent` directly; remaining root-shim references are test-only cleanup.
-- Production console code now uses `jackin_core::RoleSelector` directly; remaining root-shim references are test-only cleanup.
-- `LoadWorkspaceInput` and `ResolvedWorkspace` are already lower-crate owned by `jackin-config`; production console code no longer depends on root shims for them.
-- Move instance preview/index public shapes needed by console into `jackin-runtime` or a lower model crate.
-- Move `operator_env` data types fully below root where possible; `jackin-env` already has pressure here.
+`ManagerState`, `ManagerStage`, `Modal`, `ManagerMessage`, all screen update/input handlers, state models, view composition, all in `jackin-console`. Root has only thin type aliases pointing into `jackin-console`.
 
-Goal: make `domain.rs` and state aliases movable without generic explosion.
+### Phase 5: Collapse Root Console To Adapter Shell ✅ DONE
 
-### Phase 4: Move State/Message/Update Into `jackin-console`
-
-After type lowering, move:
-
-- concrete `ManagerState`,
-- concrete `ManagerStage` bindings,
-- concrete `Modal` bindings,
-- `ManagerMessage` alias/reducer,
-- more input handlers that only produce effects.
-
-Root should retain only the effect interpreter and terminal/application shell.
-
-### Phase 5: Collapse Root Console To Adapter Shell
-
-Desired root shape:
-
-- `console.rs`: public binary-facing entrypoint exports.
-- `console/run.rs`: calls `jackin_console::run_console` with concrete services.
-- `console/effects.rs`: interprets effects by calling root/runtime services.
-- `console/services.rs`: thin wrappers over config/runtime/Docker/op/token APIs.
-- `console/terminal.rs`: host diagnostics terminal adapter.
-
-Everything else should be in `jackin-console`, `jackin-tui`, `jackin-runtime`, `jackin-config`, `jackin-env`, or `jackin-core`.
+Current root shape matches the desired end state: 9 files total — `console.rs` (bindings + inline terminal adapter), `effects.rs` (effect interpreter), `services.rs` (IO adapters), `tui.rs` (type aliases + inline adapters), `tui/run.rs` (event loop) plus 4 test files.
 
 ## Risk Areas
 
