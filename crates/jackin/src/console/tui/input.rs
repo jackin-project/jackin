@@ -15,9 +15,10 @@ pub use dispatch::handle_key;
 pub(crate) use mouse::{clickable_at, handle_mouse_with_config};
 
 // Re-exported for the `run_console` token-generate loop, which re-mounts
-// the settings auth form after a mint (the `global_mounts` module is
-// `pub(super)`, so the loop reaches the helpers through this seam).
-pub(in crate::console) use global_mounts::{
+// the settings auth form after a mint. Pull from jackin_console directly to
+// avoid routing through root's global_mounts thin shell (E0364 limitation
+// when re-exporting items whose canonical path passes through a private mod).
+pub(in crate::console) use jackin_console::tui::input::{
     apply_op_picker_to_settings_auth_form_committed, apply_plain_text_to_settings_auth_form,
 };
 

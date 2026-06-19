@@ -15,7 +15,7 @@ pub(crate) fn settings_footer_items(
     settings_screen_footer_items(SettingsScreenFooterFacts {
         auth_modal_items: state.auth.modal_ref().map(|modal| {
             modal.footer_items(
-                crate::console::tui::input::global_mounts::settings_auth_can_generate_token(
+                jackin_console::tui::input::settings_auth_can_generate_token(
                     &state.auth,
                 ),
             )
