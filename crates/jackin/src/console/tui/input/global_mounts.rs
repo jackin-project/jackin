@@ -40,7 +40,7 @@ use jackin_console::tui::screens::settings::view::{
     global_mount_name_empty_message, global_mount_no_github_url_message,
     global_mount_scope_picker_state, global_mount_selected_edit_text_plan,
     global_mount_text_input_state, global_mount_text_target_label,
-    settings_auth_op_read_failed_message, settings_env_delete_confirm_state,
+    settings_env_delete_confirm_state,
     settings_env_empty_key_error_message, settings_env_empty_key_text_plan,
     settings_env_key_input_state, settings_env_new_key_after_picker_text_plan,
     settings_env_new_key_text_plan, settings_env_plain_value_text_plan,
@@ -314,8 +314,7 @@ use auth::handle_auth_key;
 pub(super) use auth::handle_settings_auth_modal;
 pub(crate) use auth::settings_auth_can_generate_token;
 pub(in crate::console) use auth::{
-    apply_op_picker_settings_commit_failed, apply_op_picker_to_settings_auth_form_committed,
-    apply_plain_text_to_settings_auth_form,
+    apply_op_picker_to_settings_auth_form_committed, apply_plain_text_to_settings_auth_form,
 };
 #[cfg(test)]
 use auth::{apply_op_picker_to_settings_auth_form_with_runner, open_settings_auth_form};

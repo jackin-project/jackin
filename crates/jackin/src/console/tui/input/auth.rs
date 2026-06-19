@@ -356,23 +356,6 @@ pub(in crate::console) fn apply_op_picker_to_auth_form_committed(
     }
 }
 
-/// Called when the async 1Password read for an op picker commit fails
-/// (Touch ID rejected, network error, vault not found, etc.). Re-mounts the
-/// `ErrorPopup` over the stashed auth form so the operator sees the error;
-/// dismissing the popup restores the form via
-/// `restore_auth_form_after_op_picker_cancel`.
-///
-/// The auth form remains on `editor.modal_parents` (it was NOT popped by the
-/// async path before spawning) so the cancel/restore path can lift it back.
-pub(in crate::console) fn apply_op_picker_commit_failed(
-    editor: &mut EditorState<'_>,
-    error: &anyhow::Error,
-) {
-    editor.open_error_popup(
-        jackin_console::tui::components::error_popup::op_read_failed_error_popup_state(error),
-    );
-}
-
 /// Restore the auth-form modal unchanged after the operator cancels
 /// the `OpPicker` or the literal `TextInput`. Both side modals share
 /// the same recovery shape, so the same helper handles both.

@@ -416,3 +416,4 @@ pub fn open_role_input_error(editor: &mut EditorState<'_>, message: &str) {
 }
 
 mod manager;
+pub mod update;

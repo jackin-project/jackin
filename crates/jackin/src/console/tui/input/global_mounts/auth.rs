@@ -6,7 +6,7 @@ use super::{
     SettingsAuthOutcome, auth_credential_input_state, auth_form_key_plan_with_source_folder,
     auth_source_picker_state, confirm_modal, dispatch_manager, generated_token_op_item_name,
     generated_token_source_picker_state, open_settings_save_preview,
-    settings_auth_op_read_failed_message, settings_update,
+    settings_update,
 };
 use jackin_console::tui::auth_config::settings_auth_form_can_generate_token;
 use jackin_console::tui::components::file_browser::page_rows_for_modal;
@@ -539,7 +539,11 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
                 focus,
                 literal_buffer,
             });
-            auth.set_error(settings_auth_op_read_failed_message(err));
+            auth.set_error(
+                jackin_console::tui::screens::settings::view::settings_auth_op_read_failed_message(
+                    err,
+                ),
+            );
         }
     }
 }
@@ -577,18 +581,6 @@ pub(in crate::console) fn apply_op_picker_to_settings_auth_form_committed(
         focus: AuthFormFocus::Save,
         literal_buffer,
     });
-}
-
-/// Called when the async 1Password read for a settings auth-form op picker
-/// commit fails (Touch ID rejected, network error, vault not found, etc.).
-/// Surfaces the error through the auth error slot (same slot the synchronous path
-/// used); the auth form stays stashed on `auth.modal_parents` so
-/// `restore_settings_auth_form` can bring it back on the next user action.
-pub(in crate::console) fn apply_op_picker_settings_commit_failed(
-    auth: &mut crate::console::tui::state::SettingsAuthState,
-    error: &anyhow::Error,
-) {
-    auth.set_error(settings_auth_op_read_failed_message(error));
 }
 
 fn persist_settings_auth_form(

@@ -1021,6 +1021,71 @@ impl
     }
 }
 
+impl ManagerState<'_> {
+    pub fn apply_op_picker_op_ref_committed_for_editor(&mut self, op_ref: jackin_core::OpRef) {
+        let ManagerStage::Editor(editor) = &mut self.stage else {
+            return;
+        };
+        if !crate::tui::auth_config::ModalAuthFormOpRefApply::apply_auth_op_ref(
+            &mut editor.modal,
+            &mut editor.modal_parents,
+            crate::tui::screens::settings::model::AuthFormFocus::Save,
+            op_ref,
+        ) {
+            jackin_diagnostics::debug_log!(
+                "auth",
+                "AUTH005 apply_op_picker_op_ref_committed_for_editor: \
+                 pending_auth_form_return missing — async OpRef commit dropped"
+            );
+        }
+    }
+
+    pub fn apply_op_picker_commit_failed_for_editor(&mut self, error: &anyhow::Error) {
+        let ManagerStage::Editor(editor) = &mut self.stage else {
+            return;
+        };
+        editor.open_error_popup(
+            crate::tui::components::error_popup::op_read_failed_error_popup_state(error),
+        );
+    }
+
+    pub fn apply_op_picker_op_ref_committed_for_settings(&mut self, op_ref: jackin_core::OpRef) {
+        let ManagerStage::Settings(settings) = &mut self.stage else {
+            return;
+        };
+        let Some(super::SettingsAuthModal::AuthForm {
+            target,
+            mut state,
+            literal_buffer,
+            ..
+        }) = settings.auth.pop_parent_modal()
+        else {
+            jackin_diagnostics::debug_log!(
+                "auth",
+                "apply_op_picker_op_ref_committed_for_settings: modal_parents missing \
+                 — async OpRef commit dropped"
+            );
+            return;
+        };
+        state.set_op_ref(op_ref);
+        settings.auth.set_modal(super::SettingsAuthModal::AuthForm {
+            target,
+            state,
+            focus: crate::tui::screens::settings::model::AuthFormFocus::Save,
+            literal_buffer,
+        });
+    }
+
+    pub fn apply_op_picker_commit_failed_for_settings(&mut self, error: &anyhow::Error) {
+        let ManagerStage::Settings(settings) = &mut self.stage else {
+            return;
+        };
+        settings.auth.set_error(
+            crate::tui::screens::settings::view::settings_auth_op_read_failed_message(error),
+        );
+    }
+}
+
 impl ListShellState for ManagerState<'_> {
     fn set_drag_state(&mut self, drag: Option<crate::tui::split::DragState>) {
         self.drag_state = drag;
