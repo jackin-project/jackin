@@ -230,7 +230,9 @@ Workspace-list sidebar body rendering (`render_list_body`, `render_list_sidebar`
 
 Top-level render composition (`render()`, `reserved_footer_height()`, `has_modal_overlay()`) now lives in `jackin-console/src/tui/view.rs`; root `view/frame.rs` collapsed to a two-line shell then deleted; `view.rs` re-exports `render` directly from jackin-console.
 
-Root `crates/jackin/src/console/` now at 47 files / 14,205 LOC (down from 80 files / 34,407 LOC at original findings pass; 41% file reduction, 59% LOC reduction). `crates/jackin-console/src/` now at 174 files / 76,731 LOC (up from 143 files / 58,155 LOC). `crates/jackin/src/` overall at 133 files / 29,422 LOC.
+Root `crates/jackin/src/console/` now at 39 files / 8,100 LOC (down from 80 files / 34,407 LOC at original findings pass; 51% file reduction, 76% LOC reduction). `crates/jackin-console/src/` now at 179 files / 82,870 LOC (up from 143 files / 58,155 LOC). `crates/jackin/src/` overall at 125 files / 23,317 LOC.
+
+Recent moves: `view/tests/snapshot/tests.rs` (885 lines, 11 snapshot tests), `input/list/tests.rs` (1105 lines, 28 tests), and the addition of a test-local `handle_key` dispatch wrapper in jackin-console's list tests so they drive the full routing without depending on root. Also removed `insta` dev-dep from root (cargo shear clean). jackin-console now has 1316 tests.
 
 ## What Still Lives In Root Console
 
