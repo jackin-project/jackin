@@ -1425,5 +1425,8 @@ fn env_row_line(row: &WorkspaceEnvRow, inner_width: usize) -> Line<'static> {
 /// Concrete footer adapter for the workspace list screen.
 pub mod footer;
 
+/// Root-console workspace-list display adapters.
+pub mod list;
+
 #[cfg(test)]
 mod tests;
