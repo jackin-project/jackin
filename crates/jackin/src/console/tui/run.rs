@@ -25,13 +25,12 @@ use jackin_console::tui::components::status_popup::{
 };
 use jackin_console::tui::message::launch_prompt_should_probe_agents;
 use jackin_console::tui::run::{
-    ConsoleChromeHover, ConsoleModalMouseLayerFacts, LetterInputState, QuitConfirmPlan,
-    QuitInterceptState, TokenGenerateScopeLabel, console_pointer_hand,
-    console_screen_stage_for_route, debug_chip_activation_allowed, debug_chip_row,
-    debug_run_id_label, diagnostics_screen_for_stage, is_main_screen_for_route,
-    letter_input_state_for_route, modal_mouse_layer_plan, quit_confirm_area,
-    should_debug_log_mouse, should_open_quit_confirm, split_debug_area,
-    token_generate_status_message,
+    ConsoleChromeHover, ConsoleModalMouseLayerFacts, QuitConfirmPlan, console_pointer_hand,
+    debug_chip_activation_allowed, debug_chip_row, debug_run_id_label,
+    letter_input_state_for_console, modal_mouse_layer_plan, no_modal_open, quit_confirm_area,
+    quit_intercept_state_for_console, screen_of, should_debug_log_mouse, should_open_quit_confirm,
+    split_debug_area, startup_error_dismissed, startup_error_modal_active_for_console,
+    token_generate_scope_label_for_console, token_generate_status_message,
 };
 
 use crate::paths::JackinPaths;
@@ -54,100 +53,6 @@ impl std::fmt::Debug for ConsoleRunOptions<'_> {
     }
 }
 
-pub(crate) const fn is_on_main_screen(state: &ConsoleState) -> bool {
-    let ConsoleStage::Manager(ms) = &state.stage;
-    is_main_screen_for_route(ms.stage.route(), ms.list_modal.is_some())
-}
-
-pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_diagnostics::Screen {
-    let ConsoleStage::Manager(ms) = &state.stage;
-    diagnostics_screen_for_stage(console_screen_stage_for_route(ms.stage.route()))
-}
-
-pub(crate) const fn letter_input_state(state: &ConsoleState) -> LetterInputState {
-    use crate::console::tui::state::ManagerStage;
-    let ConsoleStage::Manager(ms) = &state.stage;
-
-    let list_modal = match &ms.list_modal {
-        Some(modal) => modal.letter_input_kind(),
-        None => None,
-    };
-    let stage_modal = match &ms.stage {
-        ManagerStage::Editor(editor) => match &editor.modal {
-            Some(modal) => modal.letter_input_kind(),
-            None => None,
-        },
-        ManagerStage::CreatePrelude(prelude) => match &prelude.modal {
-            Some(modal) => modal.letter_input_kind(),
-            None => None,
-        },
-        ManagerStage::Settings(settings) => match &settings.mounts.modal {
-            Some(modal) => modal.letter_input_kind(),
-            None => None,
-        },
-        ManagerStage::List
-        | ManagerStage::ConfirmDelete { .. }
-        | ManagerStage::ConfirmInstancePurge { .. } => None,
-    };
-
-    letter_input_state_for_route(ms.stage.route(), list_modal, stage_modal)
-}
-
-pub(crate) const fn quit_intercept_state(state: &ConsoleState) -> QuitInterceptState {
-    QuitInterceptState {
-        on_main_screen: is_on_main_screen(state),
-        consumes_letter_input: jackin_console::tui::run::consumes_letter_input(letter_input_state(
-            state,
-        )),
-    }
-}
-
-/// True iff no modal overlay is currently blocking input on the console surface.
-///
-/// Used by the mouse routing layer to enforce single-consumer precedence: when
-/// this returns `false`, chrome interactions (debug chip) and base-surface mouse
-/// handling are suppressed so only the active modal handles the event.
-pub(crate) fn no_modal_open(state: &ConsoleState) -> bool {
-    state.base_surface_unblocked()
-}
-
-pub(crate) const fn startup_error_was_dismissed(
-    state: &ConsoleState,
-    startup_error_pending: bool,
-) -> bool {
-    let ConsoleStage::Manager(ms) = &state.stage;
-    jackin_console::tui::run::startup_error_was_dismissed(
-        startup_error_pending,
-        ms.list_modal.is_some(),
-    )
-}
-
-fn startup_error_modal_active(
-    list_modal: Option<&crate::console::tui::state::Modal<'_>>,
-    startup_error_pending: bool,
-) -> bool {
-    jackin_console::tui::run::startup_error_modal_active(
-        startup_error_pending,
-        matches!(
-            list_modal,
-            Some(crate::console::tui::state::Modal::ErrorPopup { .. })
-        ),
-    )
-}
-
-fn token_generate_scope_label(
-    req: &crate::console::tui::state::PendingTokenGenerate,
-) -> TokenGenerateScopeLabel<'_> {
-    use jackin_env::TokenSetupScope;
-
-    match &req.scope {
-        TokenSetupScope::Workspace(name) => TokenGenerateScopeLabel::Workspace(name),
-        TokenSetupScope::WorkspaceRole { workspace, role } => {
-            TokenGenerateScopeLabel::WorkspaceRole { workspace, role }
-        }
-        TokenSetupScope::Global => TokenGenerateScopeLabel::Global,
-    }
-}
 
 async fn execute_launch_prompt<B>(
     terminal: &mut ratatui::Terminal<B>,
@@ -319,7 +224,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
             suspend_console_terminal(&mut out);
             println!(
                 "{}",
-                token_generate_status_message(token_generate_scope_label(&req))
+                token_generate_status_message(token_generate_scope_label_for_console(&req))
             );
             let mint = crate::console::effects::execute_token_generate(paths, &config, &req);
             drop(resume_console_terminal(&mut out));
@@ -468,7 +373,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                         "key={} location={}",
                         jackin_console::tui::debug::key_debug_name_for_input(
                             key,
-                            jackin_console::tui::run::consumes_letter_input(letter_input_state(
+                            jackin_console::tui::run::consumes_letter_input(letter_input_state_for_console(
                                 &state
                             )),
                         ),
@@ -485,7 +390,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
 
                     // Q intercept: outside main screen, pop the exit
                     // confirm. SHIFT tolerated for caps-lock parity.
-                    if should_open_quit_confirm(key, quit_intercept_state(&state)) {
+                    if should_open_quit_confirm(key, quit_intercept_state_for_console(&state)) {
                         state.open_quit_confirm();
                         continue;
                     }
@@ -495,7 +400,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                     } else {
                         crate::console::tui::InputOutcome::Continue
                     };
-                    if startup_error_was_dismissed(&state, startup_error_pending) {
+                    if startup_error_dismissed(&state, startup_error_pending) {
                         break 'main Ok(None);
                     }
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
@@ -723,8 +628,8 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                                     ms.list_modal,
                                     Some(crate::console::tui::state::Modal::ContainerInfo { .. })
                                 ),
-                                startup_error_modal_active: startup_error_modal_active(
-                                    ms.list_modal.as_ref(),
+                                startup_error_modal_active: startup_error_modal_active_for_console(
+                                    &state,
                                     startup_error_pending,
                                 ),
                             },
@@ -742,7 +647,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                     }
 
                     if modal_plan.consumed {
-                        if startup_error_was_dismissed(&state, startup_error_pending) {
+                        if startup_error_dismissed(&state, startup_error_pending) {
                             break 'main Ok(None);
                         }
                         // Modal owned this event — clear chrome hover and revert pointer.

@@ -16,5 +16,5 @@ pub use jackin_console::tui::view::{prepare_for_render, render};
 pub(crate) use message::{ManagerMessage, update_manager};
 pub use run::run_console;
 #[cfg(test)]
-pub(crate) use run::{is_on_main_screen, letter_input_state};
+pub(crate) use jackin_console::tui::run::{is_on_main_screen, letter_input_state_for_console as letter_input_state};
 pub use state::{ManagerStage, ManagerState};

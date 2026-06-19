@@ -1,7 +1,7 @@
 use crate::console::effects::{execute_manager_effect, poll_background_messages};
 use jackin_console::tui::console::{ConsoleStage, ConsoleState};
 use crate::console::tui::message::{ManagerBackgroundEvent, ManagerMessage, update_manager};
-use crate::console::tui::run::{no_modal_open, startup_error_was_dismissed};
+use jackin_console::tui::run::{no_modal_open, startup_error_dismissed as startup_error_was_dismissed};
 use crate::console::tui::state::ManagerState;
 use jackin_console::tui::effect::ConsoleEffect;
 
