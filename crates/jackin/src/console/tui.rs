@@ -41,7 +41,7 @@ pub(crate) mod input {
 
     mod dispatch {
         //! Thin root adapter: binds jackin-console's generic key dispatcher to
-        //! the root-binary validate_auth_source_folder implementation.
+        //! the root-binary `validate_auth_source_folder` implementation.
 
         use super::InputOutcome;
         use crate::console::tui::state::ManagerState;
