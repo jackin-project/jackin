@@ -4,7 +4,7 @@ use jackin_config::{
     AppConfig, LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace,
     resolve_load_workspace,
 };
-use jackin_core::RoleSelector;
+use jackin_core::{Agent, RoleSelector};
 
 #[derive(Debug, Clone)]
 pub struct WorkspaceChoice {
@@ -166,6 +166,64 @@ fn resolve_selected_workspace(
     role: &RoleSelector,
 ) -> anyhow::Result<ResolvedWorkspace> {
     resolve_load_workspace(config, role, cwd, choice.input.clone(), &[])
+}
+
+/// Resolved committed-agent launch: all inputs needed to either launch
+/// immediately or open the provider picker.
+#[derive(Debug)]
+pub struct CommittedAgentLaunch {
+    pub input: LoadWorkspaceInput,
+    pub role: RoleSelector,
+    pub workspace: ResolvedWorkspace,
+    pub providers: Vec<jackin_protocol::Provider>,
+}
+
+/// Resolve a committed (role + agent) launch into a workspace and available
+/// providers. Returns `Ok(None)` when the workspace went missing between the
+/// operator's keypress and the commit (concurrent delete).
+pub fn resolve_committed_agent_launch(
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    input: LoadWorkspaceInput,
+    role: RoleSelector,
+    agent: Agent,
+) -> anyhow::Result<Option<CommittedAgentLaunch>> {
+    let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
+        return Ok(None);
+    };
+    let workspace = resolve_selected_workspace(config, cwd, &choice, &role)?;
+    let providers = providers_for_launch(config, &choice.name, &role.key(), agent);
+    Ok(Some(CommittedAgentLaunch {
+        input,
+        role,
+        workspace,
+        providers,
+    }))
+}
+
+/// Compute the provider list available for launching `agent` in `workspace_name`
+/// under `role_selector`, consulting all env-var layers (global → role → workspace
+/// → workspace-role) via `jackin_env::lookup_operator_env_raw`.
+pub fn providers_for_launch(
+    config: &AppConfig,
+    workspace_name: &str,
+    role_selector: &str,
+    agent: Agent,
+) -> Vec<jackin_protocol::Provider> {
+    let key = |env_var: &str| operator_key_present(config, workspace_name, role_selector, env_var);
+    jackin_protocol::Provider::available_for(agent.slug(), |provider: jackin_protocol::Provider| {
+        provider.key_env_var().is_none_or(&key)
+    })
+}
+
+fn operator_key_present(
+    config: &AppConfig,
+    workspace_name: &str,
+    role_selector: &str,
+    env_var: &str,
+) -> bool {
+    jackin_env::lookup_operator_env_raw(config, Some(role_selector), Some(workspace_name), env_var)
+        .is_some()
 }
 
 #[cfg(test)]

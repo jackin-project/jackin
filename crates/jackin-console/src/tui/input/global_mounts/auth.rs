@@ -98,6 +98,8 @@ pub fn settings_auth_can_generate_token(
 
 #[expect(
     clippy::too_many_lines,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
     reason = "pending extraction — tracked in codebase-readability roadmap"
 )]
 pub fn handle_settings_auth_modal(

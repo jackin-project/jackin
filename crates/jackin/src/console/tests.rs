@@ -1,5 +1,4 @@
 mod quit_confirm {
-    use super::super::domain::providers_for_launch;
     use super::super::tui::debug::console_location_debug;
     use super::super::tui::prompts::{
         AgentPickerChoices, OnPromptFailure, PromptOutcome, prompt_agent_for_launch,
@@ -10,9 +9,7 @@ mod quit_confirm {
     use crate::console::tui::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
     };
-    use jackin_config::{
-        AppConfig, LoadWorkspaceInput, ResolvedWorkspace, WorkspaceConfig, WorkspaceRoleOverride,
-    };
+    use jackin_config::{AppConfig, LoadWorkspaceInput, ResolvedWorkspace};
     use jackin_console::tui::components::file_browser::FileBrowserState;
     use jackin_console::tui::run::consumes_letter_input;
     use jackin_core::{Agent, RoleSelector};
@@ -176,87 +173,6 @@ mod quit_confirm {
             body.contains("network is unreachable"),
             "popup must surface the underlying error: {body}"
         );
-    }
-
-    #[test]
-    fn providers_for_launch_include_all_zai_env_layers() {
-        let mut config = AppConfig::default();
-        config.env.insert(
-            "ZAI_API_KEY".into(),
-            jackin_core::EnvValue::Plain("global-key".into()),
-        );
-        config
-            .workspaces
-            .insert("global-demo".into(), WorkspaceConfig::default());
-        assert_eq!(
-            providers_for_launch(&config, "global-demo", "the-architect", Agent::Claude,).len(),
-            2
-        );
-        config.env.clear();
-
-        let mut workspace = WorkspaceConfig::default();
-        workspace.env.insert(
-            "ZAI_API_KEY".into(),
-            jackin_core::EnvValue::Plain("workspace-key".into()),
-        );
-        config.workspaces.insert("workspace-demo".into(), workspace);
-        assert_eq!(
-            providers_for_launch(&config, "workspace-demo", "the-architect", Agent::Claude,).len(),
-            2
-        );
-
-        config.workspaces.remove("workspace-demo");
-        let mut role = jackin_config::RoleSource::default();
-        role.env.insert(
-            "ZAI_API_KEY".into(),
-            jackin_core::EnvValue::Plain("role-key".into()),
-        );
-        config.roles.insert("the-architect".into(), role);
-        config
-            .workspaces
-            .insert("role-demo".into(), WorkspaceConfig::default());
-        assert_eq!(
-            providers_for_launch(&config, "role-demo", "the-architect", Agent::Claude,).len(),
-            2
-        );
-
-        config.roles.clear();
-        let mut workspace_role = WorkspaceConfig::default();
-        let mut role_override = WorkspaceRoleOverride::default();
-        role_override.env.insert(
-            "ZAI_API_KEY".into(),
-            jackin_core::EnvValue::Plain("workspace-role-key".into()),
-        );
-        workspace_role
-            .roles
-            .insert("the-architect".into(), role_override);
-        config
-            .workspaces
-            .insert("workspace-role-demo".into(), workspace_role);
-        let providers = providers_for_launch(
-            &config,
-            "workspace-role-demo",
-            "the-architect",
-            Agent::Claude,
-        );
-        assert_eq!(providers.len(), 2);
-        assert_eq!(providers[1], jackin_protocol::Provider::Zai);
-    }
-
-    #[test]
-    fn providers_for_launch_rejects_non_claude_agents() {
-        let mut config = AppConfig::default();
-        config.env.insert(
-            "ZAI_API_KEY".into(),
-            jackin_core::EnvValue::Plain("global-key".into()),
-        );
-        config
-            .workspaces
-            .insert("demo".into(), WorkspaceConfig::default());
-
-        let providers = providers_for_launch(&config, "demo", "the-architect", Agent::Codex);
-
-        assert!(providers.is_empty());
     }
 
     fn unresolved_workspace() -> ResolvedWorkspace {

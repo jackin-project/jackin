@@ -478,7 +478,6 @@ pub type EditorModalOutcome = crate::tui::message::ConsoleEditorModalOutcome<
 
 #[expect(
     clippy::too_many_lines,
-    clippy::needless_pass_by_ref_mut,
     reason = "pending per-modal split — tracked in codebase-readability roadmap"
 )]
 pub fn handle_editor_modal(

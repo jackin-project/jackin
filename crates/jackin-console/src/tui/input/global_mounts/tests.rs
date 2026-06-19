@@ -938,7 +938,7 @@ fn settings_auth_dialog_invalid_source_folder_keeps_picker_open_and_sets_error()
         true,
         op_cache,
         Rect::new(0, 0, 120, 40),
-        &|_, _| Err("missing credentials directory".to_string()),
+        &|_, _| Err("missing credentials directory".to_owned()),
     );
 
     assert!(
