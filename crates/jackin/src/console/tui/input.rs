@@ -4,7 +4,6 @@
 
 mod dispatch;
 pub(crate) mod editor;
-pub(crate) mod global_mounts;
 
 pub use dispatch::handle_key;
 pub(crate) use jackin_console::tui::input::mouse::{clickable_at, handle_mouse_with_config};

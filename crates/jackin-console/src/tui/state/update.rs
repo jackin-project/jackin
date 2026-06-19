@@ -815,6 +815,17 @@ fn report_token_generate_error(state: &mut ManagerState<'_>, error: anyhow::Erro
     }
 }
 
+/// Open a URL in the system browser; on failure route error popup to the active stage.
+pub fn execute_open_url(state: &mut ManagerState<'_>, url: &str) -> bool {
+    match crate::services::browser::open_url(url) {
+        Ok(()) => false,
+        Err(error) => {
+            report_open_url_error(state, error);
+            true
+        }
+    }
+}
+
 /// Apply a URL-open failure to manager state (opens an error popup).
 pub fn report_open_url_error(state: &mut ManagerState<'_>, error: anyhow::Error) {
     use crate::tui::components::error_popup;

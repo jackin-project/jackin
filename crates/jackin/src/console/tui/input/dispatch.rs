@@ -5,7 +5,11 @@ use std::rc::Rc;
 use crossterm::event::KeyEvent;
 
 use super::super::effect::{FileBrowserEffectContext, ManagerEffect};
-use super::{InputOutcome, editor, global_mounts};
+use super::{InputOutcome, editor};
+use jackin_console::tui::input::global_mounts::{
+    SettingsAuthOutcome, SettingsModalOutcome, after_settings_event, handle_settings_auth_modal,
+    handle_settings_confirm_modal, handle_settings_env_modal, handle_settings_key_with_effects,
+};
 use jackin_console::tui::input::list::{
     handle_inline_agent_picker, handle_inline_provider_picker, handle_inline_role_picker,
     handle_launch_provider_picker, handle_list_key, handle_list_modal, handle_new_session_picker,
@@ -89,8 +93,8 @@ pub fn handle_key(
                     editor::handle_editor_key(state, config, paths, cwd, key)
                 }
                 ConsoleManagerStageRoute::Settings => {
-                    global_mounts::handle_settings_key_with_effects(state, key);
-                    global_mounts::after_settings_event(state);
+                    handle_settings_key_with_effects(state, key);
+                    after_settings_event(state);
                     Ok(InputOutcome::Continue)
                 }
                 ConsoleManagerStageRoute::CreatePrelude => {
@@ -221,44 +225,44 @@ pub fn handle_key(
         let ManagerStage::Settings(settings) = &mut state.stage else {
             return Ok(InputOutcome::Continue);
         };
-        let modal_outcome = global_mounts::handle_settings_confirm_modal(settings, key, term_size);
+        let modal_outcome = handle_settings_confirm_modal(settings, key, term_size);
         match modal_outcome {
-            global_mounts::SettingsModalOutcome::Continue => {}
-            global_mounts::SettingsModalOutcome::SaveSettings => {
+            SettingsModalOutcome::Continue => {}
+            SettingsModalOutcome::SaveSettings => {
                 state.request_effect(ConsoleEffect::SaveSettings.into());
             }
-            global_mounts::SettingsModalOutcome::OpenGlobalMountFileBrowser => {
+            SettingsModalOutcome::OpenGlobalMountFileBrowser => {
                 state.request_effect(ManagerEffect::OpenGlobalMountFileBrowser);
             }
-            global_mounts::SettingsModalOutcome::OpenUrl(url) => {
+            SettingsModalOutcome::OpenUrl(url) => {
                 state.request_effect(ManagerEffect::OpenUrl(url));
             }
-            global_mounts::SettingsModalOutcome::ResolveFileBrowserGitUrl(path) => {
+            SettingsModalOutcome::ResolveFileBrowserGitUrl(path) => {
                 state.request_effect(ManagerEffect::ResolveFileBrowserGitUrl(path));
             }
-            global_mounts::SettingsModalOutcome::ApplyFileBrowserOutcome(outcome) => {
+            SettingsModalOutcome::ApplyFileBrowserOutcome(outcome) => {
                 state.request_effect(ManagerEffect::ApplyFileBrowserOutcome {
                     context: FileBrowserEffectContext::SettingsMounts,
                     outcome,
                 });
             }
         }
-        global_mounts::after_settings_event(state);
+        after_settings_event(state);
         return Ok(InputOutcome::Continue);
     }
     if matches!(dispatch_plan, ConsoleInputDispatchPlan::SettingsEnvModal) {
         let ManagerStage::Settings(settings) = &mut state.stage else {
             return Ok(InputOutcome::Continue);
         };
-        global_mounts::handle_settings_env_modal(&mut settings.env, key, op_cache);
-        global_mounts::after_settings_event(state);
+        handle_settings_env_modal(&mut settings.env, key, op_cache);
+        after_settings_event(state);
         return Ok(InputOutcome::Continue);
     }
     if matches!(dispatch_plan, ConsoleInputDispatchPlan::SettingsAuthModal) {
         let ManagerStage::Settings(settings) = &mut state.stage else {
             return Ok(InputOutcome::Continue);
         };
-        let auth_outcome = global_mounts::handle_settings_auth_modal(
+        let auth_outcome = handle_settings_auth_modal(
             &mut settings.auth,
             &mut settings.env,
             &mut settings.pending_token_generate,
@@ -266,14 +270,15 @@ pub fn handle_key(
             op_available,
             op_cache,
             term_size,
+            &crate::console::domain::validate_auth_source_folder,
         );
-        if let global_mounts::SettingsAuthOutcome::ValidateOpRef(op_ref) = auth_outcome {
+        if let SettingsAuthOutcome::ValidateOpRef(op_ref) = auth_outcome {
             state.request_effect(ManagerEffect::ValidateOpCommit {
                 op_ref,
                 is_settings: true,
             });
         }
-        global_mounts::after_settings_event(state);
+        after_settings_event(state);
         return Ok(InputOutcome::Continue);
     }
     if matches!(dispatch_plan, ConsoleInputDispatchPlan::CreatePreludeModal) {

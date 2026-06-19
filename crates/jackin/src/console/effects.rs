@@ -181,15 +181,6 @@ pub fn execute_pending_workspace_save_commit(
 }
 
 
-pub(crate) fn execute_open_url(state: &mut ManagerState<'_>, url: &str) -> bool {
-    match jackin_console::services::browser::open_url(url) {
-        Ok(()) => false,
-        Err(error) => {
-            report_open_url_error(state, error);
-            true
-        }
-    }
-}
 
 pub(crate) fn execute_remove_workspace(
     state: &mut ManagerState<'_>,
@@ -405,9 +396,7 @@ pub(crate) fn execute_token_generate(
     jackin_env::mint_token_value(paths, config, &req.scope, &req.args)
 }
 
-pub(crate) use jackin_console::tui::state::update::{
-    apply_token_generate_result, report_open_url_error,
-};
+pub(crate) use jackin_console::tui::state::update::{apply_token_generate_result, execute_open_url};
 
 fn execute_role_registration_start(
     state: &mut ManagerState<'_>,
