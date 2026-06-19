@@ -1331,9 +1331,11 @@ fn usage_dialog_overview_tab_renders_cross_provider_summary() {
     assert!(values.contains(&"OpenAI / Codex · alexey@example.com · Pro 20x"));
     assert!(values.contains(&"Session · 37% left · Resets in 1h 21m"));
     assert!(values.contains(&"managed CLI · authoritative"));
-    assert!(values.contains(&"alexey@example.com || Pro 20x || fresh"));
-    assert!(values.contains(&"alexey@example.com || Max || stale"));
-    assert!(values.contains(&"account unavailable ||  || unsupported"));
+    // Provider rows are one quota-focused line each (status_label), with the
+    // account identity carried by the focused header, not per row.
+    assert!(values.contains(&"fresh"));
+    assert!(values.contains(&"stale"));
+    assert!(values.contains(&"unsupported"));
     assert!(values.contains(&"Enter Provider detail   r Refresh focused   Esc Close"));
     assert!(rows_debug.contains("Codex focused"));
     assert!(rows_debug.contains("Claude"));
@@ -1361,7 +1363,6 @@ fn usage_dialog_overview_tab_renders_cross_provider_summary() {
     assert!(rendered.contains("Pro 20x"), "{rendered}");
     assert!(rendered.contains("fresh"), "{rendered}");
     assert!(rendered.contains("Claude"), "{rendered}");
-    assert!(rendered.contains("Max"), "{rendered}");
     assert!(rendered.contains("unsupported"), "{rendered}");
 }
 

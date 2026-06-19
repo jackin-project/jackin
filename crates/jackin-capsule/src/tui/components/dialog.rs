@@ -933,29 +933,22 @@ impl Dialog {
             ));
         } else {
             for tab in &view.tabs {
-                let account = tab.account_label.trim();
-                let account = if account.is_empty() {
-                    "account unavailable"
-                } else {
-                    account
-                };
-                let plan = tab.plan_label.as_deref().unwrap_or("");
+                // One quota-focused line per provider, matching the Overview
+                // preview: "<provider>  <quota summary / lifecycle>". The
+                // account identity lives in the focused header above, not on
+                // every row. status_label is the daemon-enriched
+                // "Session 37% left · Resets in 1h 21m" (or a lifecycle word).
                 rows.push(jackin_tui::components::ContainerInfoRow::new(
                     if tab.active {
                         format!("{} focused", tab.label)
                     } else {
                         tab.label.clone()
                     },
-                    format!(
-                        "{} || {} || {}",
-                        account,
-                        plan,
-                        if tab.status_label.trim().is_empty() {
-                            "status unavailable"
-                        } else {
-                            tab.status_label.trim()
-                        }
-                    ),
+                    if tab.status_label.trim().is_empty() {
+                        "status unavailable".to_owned()
+                    } else {
+                        tab.status_label.trim().to_owned()
+                    },
                 ));
             }
         }
