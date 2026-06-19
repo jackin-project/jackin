@@ -16,6 +16,7 @@ pub mod env_model;
 pub mod env_value;
 pub mod isolation;
 pub mod manifest;
+pub mod op_cache;
 pub mod op_reference;
 pub mod op_types;
 pub mod path_text;

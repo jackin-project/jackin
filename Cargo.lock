@@ -2501,7 +2501,6 @@ dependencies = [
  "chrono",
  "crossterm",
  "jackin-config",
- "jackin-console",
  "jackin-core",
  "jackin-diagnostics",
  "jackin-launch",
