@@ -1,4 +1,6 @@
 //! Tests for `view`.
+mod contextual_row_items;
+
 use super::*;
 
 fn hint_labels(items: Vec<HintSpan<'static>>) -> Vec<String> {

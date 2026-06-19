@@ -1,4 +1,6 @@
 //! Tests for `update`.
+mod auth_flat_rows_integration;
+
 use super::*;
 use jackin_config::{MountConfig, MountIsolation};
 

@@ -1,5 +1,6 @@
 //! Tests for `workspace`.
 use super::*;
+use jackin_config::{AppConfig, RoleSource, WorkspaceConfig, WorkspaceRoleOverride};
 
 struct TestWorkspace {
     allowed_roles: Vec<String>,
@@ -129,4 +130,68 @@ fn preferred_role_index_ignores_missing_roles() {
         preferred_role_index(&eligible, Some("ghost"), Some("beta")),
         None
     );
+}
+
+fn config_with_agents_for_override(names: &[&str]) -> AppConfig {
+    let mut config = AppConfig::default();
+    for name in names {
+        config.roles.insert((*name).into(), RoleSource::default());
+    }
+    config
+}
+
+fn ws_with_role_overrides(allowed: &[&str], override_agents: &[&str]) -> WorkspaceConfig {
+    let mut roles = std::collections::BTreeMap::new();
+    for a in override_agents {
+        roles.insert((*a).into(), WorkspaceRoleOverride::default());
+    }
+    WorkspaceConfig {
+        allowed_roles: allowed.iter().map(|s| (*s).into()).collect(),
+        roles,
+        ..WorkspaceConfig::default()
+    }
+}
+
+#[test]
+fn eligible_agents_returns_allowed_when_list_non_empty() {
+    let cfg = config_with_agents_for_override(&["agent-smith", "agent-brown", "agent-architect"]);
+    let ws = ws_with_role_overrides(&["agent-smith"], &[]);
+    let eligible = eligible_role_keys_for_override(cfg.roles.keys(), &ws);
+    assert_eq!(eligible, vec!["agent-smith".to_owned()]);
+}
+
+#[test]
+fn eligible_agents_returns_all_registered_when_allowed_empty() {
+    let cfg = config_with_agents_for_override(&["agent-smith", "agent-brown"]);
+    let ws = ws_with_role_overrides(&[], &[]);
+    let mut eligible = eligible_role_keys_for_override(cfg.roles.keys(), &ws);
+    eligible.sort();
+    assert_eq!(
+        eligible,
+        vec!["agent-brown".to_owned(), "agent-smith".to_owned()]
+    );
+}
+
+#[test]
+fn eligible_agents_does_not_filter_by_existing_overrides() {
+    // Operators may want to add additional keys to a role that already
+    // carries some — the picker must include every allowed role regardless
+    // of whether `pending.roles` already lists them.
+    let cfg = config_with_agents_for_override(&["agent-smith", "agent-brown"]);
+    let ws = ws_with_role_overrides(&["agent-smith", "agent-brown"], &["agent-smith"]);
+    let mut eligible = eligible_role_keys_for_override(cfg.roles.keys(), &ws);
+    eligible.sort();
+    assert_eq!(
+        eligible,
+        vec!["agent-brown".to_owned(), "agent-smith".to_owned()],
+        "agent-smith already has overrides but must still appear so the operator can add another key to it"
+    );
+}
+
+#[test]
+fn eligible_agents_returns_empty_when_no_allowed_and_no_registered() {
+    let cfg = config_with_agents_for_override(&[]);
+    let ws = ws_with_role_overrides(&[], &[]);
+    let eligible = eligible_role_keys_for_override(cfg.roles.keys(), &ws);
+    assert!(eligible.is_empty());
 }
