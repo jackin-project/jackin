@@ -11,7 +11,7 @@ use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::tui::screens::workspaces::update::saved_workspace_selected_index;
 use jackin_tui::runtime::spawn_blocking_subscription;
 
-use crate::console::tui::message::{ManagerBackgroundEvent, ManagerMessage, update_manager};
+use jackin_console::tui::state::update::{ManagerBackgroundEvent, ManagerMessage, update_manager};
 use crate::console::tui::state::{
     CreatePreludeState, EditorMode, EditorSaveFlow, EditorState, FileBrowserTarget,
     GlobalMountModal, ManagerStage, ManagerState, Modal, PendingDriftCheck,
@@ -1246,5 +1246,53 @@ fn poll_global_mount_file_browser_git_url(modal: &mut GlobalMountModal<'_>) -> b
     match modal {
         GlobalMountModal::FileBrowser { state } => state.poll_git_url_resolution(),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use jackin_config::AppConfig;
+    use jackin_console::tui::effect::ConsoleEffect;
+    use jackin_console::tui::state::update::{ManagerBackgroundEvent, ManagerMessage};
+
+    use crate::console::tui::state::ManagerState;
+
+    use super::{execute_manager_effect, poll_background_messages};
+
+    #[tokio::test]
+    async fn poll_background_messages_routes_file_browser_poll_through_message() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+
+        let events = poll_background_messages(&mut state, &mut config, &paths);
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ManagerBackgroundEvent::Message(ManagerMessage::PollFileBrowserGitUrls)
+        )));
+    }
+
+    #[tokio::test]
+    async fn execute_manager_effect_requests_instance_refresh() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ConsoleEffect::RequestInstanceRefresh.into(),
+        );
+
+        assert!(
+            state.instance_refresh_in_flight(),
+            "instance refresh effect should spawn a worker"
+        );
     }
 }

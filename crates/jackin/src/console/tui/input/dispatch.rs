@@ -14,7 +14,7 @@ use jackin_console::tui::input::prelude::{
     PreludeModalOutcome, handle_prelude_key, handle_prelude_modal,
 };
 use jackin_console::tui::input::save::begin_editor_save;
-use crate::console::tui::message::{ManagerMessage, update_manager};
+use jackin_console::tui::state::update::{ManagerMessage, update_manager};
 use crate::console::tui::state::{ExitIntent, ManagerStage, ManagerState};
 use crate::paths::JackinPaths;
 use jackin_config::AppConfig;

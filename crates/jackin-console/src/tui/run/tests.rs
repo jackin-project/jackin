@@ -603,3 +603,77 @@ fn startup_error_modal_blocks_outside_click_dismissal() {
         false, modal_rect, 12, 8
     ));
 }
+
+// ── ConsoleState accessor tests ───────────────────────────────────────────────
+
+#[test]
+fn no_modal_open_returns_false_while_list_modal_open() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use crate::tui::console::{ConsoleStage, ConsoleState};
+    use crate::tui::state::{ManagerState, update::ManagerMessage, update::update_manager};
+
+    let cwd = std::path::Path::new("/");
+    let config = jackin_config::AppConfig::default();
+
+    let op_cache = Rc::new(RefCell::new(jackin_env::OpCache::default()));
+    let clean_manager = ManagerState::from_config(&config, cwd);
+    let clean_state = ConsoleState::new(ConsoleStage::Manager(clean_manager), op_cache, false);
+    assert!(no_modal_open(&clean_state), "no modal by default — chip is active");
+
+    let mut manager_with_modal = ManagerState::from_config(&config, cwd);
+    let _unused = update_manager(
+        &mut manager_with_modal,
+        ManagerMessage::OpenListErrorPopup {
+            title: "Error".into(),
+            message: "something failed".into(),
+        },
+    );
+    let op_cache2 = Rc::new(RefCell::new(jackin_env::OpCache::default()));
+    let state_with_modal = ConsoleState::new(ConsoleStage::Manager(manager_with_modal), op_cache2, false);
+    assert!(!no_modal_open(&state_with_modal), "list_modal open → chip and base surface must not fire");
+}
+
+#[test]
+fn no_modal_open_returns_false_while_quit_confirm_open() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use crate::tui::console::{ConsoleStage, ConsoleState};
+    use crate::tui::state::ManagerState;
+
+    let cwd = std::path::Path::new("/");
+    let config = jackin_config::AppConfig::default();
+    let manager = ManagerState::from_config(&config, cwd);
+    let op_cache = Rc::new(RefCell::new(jackin_env::OpCache::default()));
+    let mut state = ConsoleState::new(ConsoleStage::Manager(manager), op_cache, false);
+
+    assert!(no_modal_open(&state), "no modal by default");
+    state.open_quit_confirm();
+    assert!(!no_modal_open(&state), "quit_confirm → chip must not fire");
+}
+
+#[test]
+fn startup_error_exit_gate_fires_after_dialog_dismissal() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use crate::tui::console::{ConsoleStage, ConsoleState};
+    use crate::tui::state::ManagerState;
+
+    let cwd = std::path::Path::new("/");
+    let config = jackin_config::AppConfig::default();
+    let mut manager = ManagerState::from_config(&config, cwd);
+    manager.open_list_error_popup("Docker daemon not reachable", "docker socket missing");
+    let op_cache = Rc::new(RefCell::new(jackin_env::OpCache::default()));
+    let mut state = ConsoleState::new(ConsoleStage::Manager(manager), op_cache, false);
+
+    assert!(!startup_error_dismissed(&state, true));
+
+    let ConsoleStage::Manager(manager) = &mut state.stage;
+    manager.list_modal = None;
+
+    assert!(startup_error_dismissed(&state, true));
+    assert!(!startup_error_dismissed(&state, false));
+}
