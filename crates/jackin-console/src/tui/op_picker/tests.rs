@@ -5,7 +5,7 @@
 //! the end exercise the worker path end-to-end.
 use super::*;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
-use jackin_console::tui::components::op_picker::{
+use crate::tui::components::op_picker::{
     field_label_input_state, section_name_input_state,
 };
 use jackin_core::FieldTarget;
@@ -105,7 +105,7 @@ fn execute_pending_load_for_test(s: &mut OpPickerState) -> bool {
             .expect("test runner must be set before executing a load")
     });
     let rx =
-        crate::console::services::op_picker::start_load(pending.cached, pending.request, runner);
+        start_load(pending.cached, pending.request, runner);
     s.attach_load_receiver(rx);
     true
 }
@@ -544,15 +544,12 @@ fn create_mode_field_refresh_stays_on_field_and_keeps_section() {
     s.fields.clear();
     s.field_refresh_in_place = true;
     // Publish the reloaded fields through the same arm the worker uses.
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    assert!(
-        tx.send(LoadResult::Fields(Ok(vec![
+    s.rx = Some(jackin_tui::runtime::ready_blocking_subscription(
+        LoadResult::Fields(Ok(vec![
             field_with_reference("user", "op://Personal/login/user"),
             field_with_reference("api", "op://Personal/login/auth/api"),
-        ])))
-        .is_ok()
-    );
-    s.rx = Some(rx);
+        ])),
+    ));
     poll_load_for_test(&mut s);
 
     assert_eq!(
@@ -1230,7 +1227,7 @@ fn picker_loading_account_state_renders_spinner_immediately() {
     let area = Rect::new(0, 0, 60, 12);
     let backend = TestBackend::new(area.width, area.height);
     let mut term = Terminal::new(backend).unwrap();
-    term.draw(|f| jackin_console::tui::components::op_picker::render_picker(f, area, &s))
+    term.draw(|f| crate::tui::components::op_picker::render_picker(f, area, &s))
         .unwrap();
     let buf = term.backend().buffer();
 
@@ -1258,7 +1255,7 @@ fn render_picker_dump(state: &OpPickerState, width: u16, height: u16) -> (String
     let backend = TestBackend::new(width, height);
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| {
-        jackin_console::tui::components::op_picker::render_picker(
+        crate::tui::components::op_picker::render_picker(
             f,
             Rect::new(0, 0, width, height),
             state,
