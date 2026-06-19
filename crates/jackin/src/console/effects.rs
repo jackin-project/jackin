@@ -1,7 +1,7 @@
 //! Workspace-manager effect executors and background polling.
 
 use crate::console::services::instances::load_instance_refresh_snapshot;
-use crate::console::tui::effect::{
+use crate::console::tui::{
     ManagerEffect, WorkspaceSaveEffect, WorkspaceSaveWriteInput, WorkspaceSaveWriteMode,
 };
 use jackin_console::tui::op_picker::OpPickerState;

@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crossterm::event::KeyEvent;
 
-use super::super::effect::{FileBrowserEffectContext, ManagerEffect};
+use super::super::{FileBrowserEffectContext, ManagerEffect};
 use super::{InputOutcome, editor};
 use jackin_console::tui::input::global_mounts::{
     SettingsAuthOutcome, SettingsModalOutcome, after_settings_event, handle_settings_auth_modal,
