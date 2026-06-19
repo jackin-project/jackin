@@ -409,5 +409,47 @@ pub fn chord_glyph(chord: Option<KeyChord>) -> &'static str {
     }
 }
 
+// ── Scroll hint keymap ───────────────────────────────────────────────────────
+
+/// Axis discriminant for [`SCROLL_HINT_KEYMAP`].
+///
+/// The action type is never used for dispatch; `SCROLL_HINT_KEYMAP` exists
+/// solely to produce axis-gated [`HintSpan`] sequences via
+/// [`Keymap::hint_spans_for_axes`], eliminating the duplicate gating logic
+/// that previously lived in `scroll_hint_spans`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollAxis {
+    Vertical,
+    Horizontal,
+}
+
+/// Hint-only keymap for the two scroll axes.
+///
+/// Each binding carries a pre-composed combined glyph (`"↑↓/j/k"`,
+/// `"←→/h/l"`). The chords drive axis-gating in
+/// [`Keymap::axis_gate_passes`]: a binding whose chords are all `Up`/`Down`
+/// is suppressed when `axes.vertical` is false; one whose chords are all
+/// `Left`/`Right` is suppressed when `axes.horizontal` is false.
+///
+/// Use via [`Keymap::hint_spans_for_axes`]. Never call
+/// [`Keymap::dispatch`] on this keymap — both Up and Down map to
+/// `ScrollAxis::Vertical`, so the return value has no directional meaning.
+pub static SCROLL_HINT_KEYMAP: Keymap<ScrollAxis> = Keymap::new(&[
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Up), KeyChord::plain(LogicalKey::Down)],
+        action: ScrollAxis::Vertical,
+        hint: Some("scroll"),
+        visibility: Visibility::Shown,
+        glyph: Some("↑↓/j/k"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Left), KeyChord::plain(LogicalKey::Right)],
+        action: ScrollAxis::Horizontal,
+        hint: Some("scroll"),
+        visibility: Visibility::Shown,
+        glyph: Some("←→/h/l"),
+    },
+]);
+
 #[cfg(test)]
 mod tests;

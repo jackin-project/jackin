@@ -178,7 +178,7 @@ The registry must collapse these per-widget divergences. `ConfirmState::handle_k
 
 - [x] All five shared widgets migrated onto per-widget keymaps: `ConfirmState`, `TextInputState`, `SelectListState`, `ErrorPopupState`, `SaveDiscardState` (Phase 2). `ContainerInfoState` copy phantom deferred (see Phase 2 task).
 - [x] Dead canonical-hint constants removed from `hint_bar.rs`: `SELECT_CANCEL_HINT`, `DISMISS_HINT`, `DISMISS_CANCEL_HINT`, `CONFIRM_DISMISS_HINT` (Phase 3).
-- [ ] Fold `scroll_hint_spans` / `handle_key_for_axes` (`dialog_layout.rs`) into the registry's axis-gated hint path rather than duplicating the gating.
+- [x] Fold `scroll_hint_spans` into the registry's axis-gated hint path: `SCROLL_HINT_KEYMAP: Keymap<ScrollAxis>` added to `keymap.rs` with two `Shown` bindings — `[Up, Down]` → glyph `"↑↓/j/k"` and `[Left, Right]` → glyph `"←→/h/l"`. `scroll_hint_spans` now delegates to `SCROLL_HINT_KEYMAP.hint_spans_for_axes(axes)`. The axis-gating logic (`axis_gate_passes`) is now the single implementation for both scroll hints and all other axis-gated keymaps; the standalone gating `match (axes.vertical, axes.horizontal)` in `scroll_hint_spans` is removed. Output changed: both-axes case now produces two separate key spans (`"↑↓/j/k"`, `"←→/h/l"`) instead of the old combined `"↑↓/j/k · ←→/h/l"` single span; one test updated. `handle_key_for_axes` dispatch side unchanged (operates directly on `ScrollState`; no semantic benefit from routing through `Keymap::dispatch`).
 
 ### Lookbook (dev tool, low priority)
 

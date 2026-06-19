@@ -40,7 +40,7 @@ fn scroll_hint_spans_reflect_available_axes_only() {
             vertical: true,
             horizontal: true
         }),
-        vec!["↑↓/j/k · ←→/h/l"]
+        vec!["↑↓/j/k", "←→/h/l"]
     );
     assert_eq!(
         keys(ScrollAxes {
