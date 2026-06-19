@@ -440,5 +440,113 @@ fn role_sync_source_dir_for(role: Option<&WorkspaceRoleOverride>, agent: Agent) 
     role.and_then(|r| r.sync_source_dir_for(agent))
 }
 
+/// Input bundle for a settings-screen save operation.
+#[derive(Debug)]
+pub struct SettingsSaveInput<'a> {
+    pub mounts_original: &'a [jackin_config::GlobalMountRow],
+    pub mounts_pending: &'a [jackin_config::GlobalMountRow],
+    pub env_original: &'a crate::tui::state::SettingsEnvConfig,
+    pub env_pending: &'a crate::tui::state::SettingsEnvConfig,
+    pub auth_pending: &'a [crate::tui::state::SettingsAuthRow],
+    pub original_github_env: &'a BTreeMap<String, EnvValue>,
+    pub github_env: &'a BTreeMap<String, EnvValue>,
+    pub trust_pending: &'a [SettingsTrustRow],
+    pub git_coauthor_trailer: bool,
+    pub git_dco: bool,
+}
+
+/// Save all settings tabs and return the reloaded config model.
+#[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
+pub fn save_settings(
+    paths: &jackin_core::JackinPaths,
+    input: SettingsSaveInput<'_>,
+) -> anyhow::Result<AppConfig> {
+    AppConfig::validate_global_mount_rows(input.mounts_pending)?;
+    validate_settings_env(input.env_pending, input.trust_pending)?;
+    let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
+
+    for row in input.mounts_original {
+        editor_doc.remove_mount(&row.name, row.scope.as_deref());
+    }
+    for row in input.mounts_pending {
+        editor_doc.add_mount(&row.name, row.mount.clone(), row.scope.as_deref());
+    }
+
+    for key in input.env_original.env.keys() {
+        editor_doc.remove_env_var(&EnvScope::Global, key);
+    }
+    for (role, env) in &input.env_original.roles {
+        for key in env.keys() {
+            editor_doc.remove_env_var(&EnvScope::Role(role.clone()), key);
+        }
+    }
+    for (key, value) in &input.env_pending.env {
+        editor_doc.set_env_var(&EnvScope::Global, key, value.clone())?;
+    }
+    for (role, env) in &input.env_pending.roles {
+        for (key, value) in env {
+            editor_doc.set_env_var(&EnvScope::Role(role.clone()), key, value.clone())?;
+        }
+    }
+
+    for row in input.auth_pending {
+        match row.kind {
+            crate::tui::auth::AuthKind::Claude
+            | crate::tui::auth::AuthKind::Codex
+            | crate::tui::auth::AuthKind::Amp
+            | crate::tui::auth::AuthKind::Kimi
+            | crate::tui::auth::AuthKind::Opencode
+            | crate::tui::auth::AuthKind::Grok => {
+                let Some(agent) = crate::tui::auth_config::auth_kind_agent(row.kind) else {
+                    continue;
+                };
+                if !row.kind.supported_modes().contains(&row.mode) {
+                    anyhow::bail!(
+                        "auth mode {} is not supported for {}",
+                        row.mode.as_str(),
+                        row.kind.label()
+                    );
+                }
+                let Some(mode) = crate::tui::auth_config::auth_mode_to_auth_forward(row.mode)
+                else {
+                    anyhow::bail!(
+                        "auth mode {} is not supported for {}",
+                        row.mode.as_str(),
+                        row.kind.label()
+                    );
+                };
+                editor_doc.set_global_auth_forward(agent, mode);
+                editor_doc.set_global_sync_source_dir(agent, row.sync_source_dir.as_deref());
+            }
+            crate::tui::auth::AuthKind::Github => {
+                let Some(mode) = crate::tui::auth_config::auth_mode_to_github(row.mode) else {
+                    anyhow::bail!(
+                        "auth mode {} is not supported for {}",
+                        row.mode.as_str(),
+                        row.kind.label()
+                    );
+                };
+                editor_doc.set_global_github_auth_forward(mode);
+            }
+            crate::tui::auth::AuthKind::Zai | crate::tui::auth::AuthKind::Minimax => {}
+        }
+    }
+    for key in input.original_github_env.keys() {
+        editor_doc.remove_global_github_env_var(key);
+    }
+    for (key, value) in input.github_env {
+        editor_doc.set_global_github_env_var(key, value.clone())?;
+    }
+
+    for row in input.trust_pending {
+        editor_doc.set_agent_trust(&row.role, row.trusted);
+    }
+
+    editor_doc.set_git_coauthor_trailer(input.git_coauthor_trailer);
+    editor_doc.set_git_dco(input.git_dco);
+
+    editor_doc.save()
+}
+
 #[cfg(test)]
 mod tests;

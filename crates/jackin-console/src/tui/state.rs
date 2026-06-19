@@ -56,6 +56,14 @@ pub type ManagerEffect = crate::tui::effect::ConsoleManagerEffect<
     jackin_core::OpRef,
 >;
 
+/// Concrete workspace-save effect parameterized with lower-crate types.
+pub type WorkspaceSaveEffect = crate::tui::effect::WorkspaceSaveEffect<
+    MountConfig,
+    PendingSaveCommit,
+    jackin_core::IsolationRecord,
+    WorkspaceConfig,
+>;
+
 // ── Concrete refresh snapshot type ──────────────────────────────────────────
 
 /// Concrete instance-refresh snapshot parameterized with lower-crate types.
