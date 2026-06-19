@@ -230,9 +230,9 @@ Workspace-list sidebar body rendering (`render_list_body`, `render_list_sidebar`
 
 Top-level render composition (`render()`, `reserved_footer_height()`, `has_modal_overlay()`) now lives in `jackin-console/src/tui/view.rs`; root `view/frame.rs` collapsed to a two-line shell then deleted; `view.rs` re-exports `render` directly from jackin-console.
 
-Root `crates/jackin/src/console/` now at 39 files / 8,100 LOC (down from 80 files / 34,407 LOC at original findings pass; 51% file reduction, 76% LOC reduction). `crates/jackin-console/src/` now at 179 files / 82,870 LOC (up from 143 files / 58,155 LOC). `crates/jackin/src/` overall at 125 files / 23,317 LOC.
+Root `crates/jackin/src/console/` now at 26 files / 7,586 LOC (down from 80 files / 34,407 LOC at original findings pass; 68% file reduction, 78% LOC reduction). `crates/jackin-console/src/` now at 182 files / 83,326 LOC (up from 143 files / 58,155 LOC).
 
-Recent moves: `view/tests/snapshot/tests.rs` (885 lines, 11 snapshot tests), `input/list/tests.rs` (1105 lines, 28 tests), and the addition of a test-local `handle_key` dispatch wrapper in jackin-console's list tests so they drive the full routing without depending on root. Also removed `insta` dev-dep from root (cargo shear clean). jackin-console now has 1316 tests.
+Recent moves (this session): `tui/console.rs` (ConsoleState/ConsoleStage type aliases + constructors), `tui/launch.rs` (dispatch_launch_for_workspace), `tui/debug.rs` (console_location_debug), `tui/prompts.rs` (draw_role_resolution_dialog, prompt_agent_for_launch, dispatch_launch_prompt, committed_role_prompt, launch_with_committed_agent), ConsoleOutcome type alias, 8 run.rs state-accessor helpers (is_on_main_screen, screen_of, letter_input_state_for_console, quit_intercept_state_for_console, no_modal_open, startup_error_dismissed, startup_error_modal_active_for_console, token_generate_scope_label_for_console). Deleted 5 thin-shell root files: tui/app.rs, tui/debug.rs, tui/launch.rs, tui/view.rs, tui/app/tests.rs. jackin-console now has 1976 tests total (root + console).
 
 ## What Still Lives In Root Console
 
