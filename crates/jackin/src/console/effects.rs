@@ -4,7 +4,6 @@ use crate::console::services::instances::load_instance_refresh_snapshot;
 use crate::console::tui::{
     ManagerEffect, WorkspaceSaveEffect, WorkspaceSaveWriteInput, WorkspaceSaveWriteMode,
 };
-use jackin_console::tui::op_picker::OpPickerState;
 use jackin_config::AppConfig;
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::tui::screens::workspaces::update::saved_workspace_selected_index;
@@ -742,53 +741,7 @@ pub(crate) fn apply_background_event(
 }
 
 /// Drained from the outer event loop every tick so picker results land without
-/// keystroke pumping. This executor starts non-TUI load services for pending
-/// picker requests, then routes completed subscriptions back into picker state.
-pub(crate) fn poll_picker_loads(state: &mut ManagerState<'_>) -> bool {
-    let mut dirty = false;
-    if let Some(Modal::OpPicker { state }) = state.list_modal.as_mut() {
-        dirty |= poll_op_picker_load(state);
-    }
-    if let ManagerStage::Editor(editor) = &mut state.stage
-        && let Some(Modal::OpPicker { state }) = editor.modal.as_mut()
-    {
-        dirty |= poll_op_picker_load(state);
-    }
-    if let ManagerStage::Settings(settings) = &mut state.stage
-        && let Some(crate::console::tui::state::SettingsEnvModal::OpPicker { state }) =
-            settings.env.modal.as_mut()
-    {
-        dirty |= poll_op_picker_load(state);
-    }
-    if let ManagerStage::Settings(settings) = &mut state.stage
-        && let Some(crate::console::tui::state::SettingsAuthModal::OpPicker { state }) =
-            settings.auth.modal_mut()
-    {
-        dirty |= poll_op_picker_load(state);
-    }
-    dirty
-}
-
-fn poll_op_picker_load(state: &mut OpPickerState) -> bool {
-    let mut dirty = execute_op_picker_pending_load(state);
-    dirty |= state.poll_load();
-    dirty |= execute_op_picker_pending_load(state);
-    dirty
-}
-
-fn execute_op_picker_pending_load(state: &mut OpPickerState) -> bool {
-    let Some(pending) = state.take_pending_load() else {
-        return false;
-    };
-    let rx = crate::console::services::op_picker::start_load(
-        pending.cached,
-        pending.request,
-        jackin_env::default_op_struct_runner(),
-    );
-    state.attach_load_receiver(rx);
-    true
-}
-
+pub(crate) use jackin_console::tui::op_picker::poll_picker_loads;
 
 #[cfg(test)]
 mod tests {

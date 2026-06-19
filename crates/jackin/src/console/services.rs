@@ -25,9 +25,6 @@ pub(super) mod agents {
 }
 pub(super) mod config;
 pub(super) mod instances;
-pub(super) mod op_picker {
-    pub(crate) use jackin_console::tui::op_picker::start_load;
-}
 pub(super) mod role_load {
     use futures_util::FutureExt as _;
     use jackin_tui::runtime::BlockingSubscription;

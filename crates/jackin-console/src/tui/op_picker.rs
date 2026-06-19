@@ -86,6 +86,54 @@ pub fn invalidate_cache_for_ref(
     cache.invalidate_fields(account, &parts.vault, &parts.item);
 }
 
+/// Poll all active op-picker loads across every active manager stage and list
+/// modal. Starts pending loads and routes completed ones into picker state.
+///
+/// Returns `true` if any picker state changed (caller should redraw).
+pub fn poll_picker_loads(state: &mut crate::tui::state::ManagerState<'_>) -> bool {
+    use crate::tui::state::{ManagerStage, Modal, SettingsAuthModal, SettingsEnvModal};
+    let mut dirty = false;
+    if let Some(Modal::OpPicker { state }) = state.list_modal.as_mut() {
+        dirty |= poll_op_picker_load(state);
+    }
+    if let ManagerStage::Editor(editor) = &mut state.stage
+        && let Some(Modal::OpPicker { state }) = editor.modal.as_mut()
+    {
+        dirty |= poll_op_picker_load(state);
+    }
+    if let ManagerStage::Settings(settings) = &mut state.stage
+        && let Some(SettingsEnvModal::OpPicker { state }) = settings.env.modal.as_mut()
+    {
+        dirty |= poll_op_picker_load(state);
+    }
+    if let ManagerStage::Settings(settings) = &mut state.stage
+        && let Some(SettingsAuthModal::OpPicker { state }) = settings.auth.modal_mut()
+    {
+        dirty |= poll_op_picker_load(state);
+    }
+    dirty
+}
+
+fn poll_op_picker_load(state: &mut OpPickerState) -> bool {
+    let mut dirty = execute_op_picker_pending_load(state);
+    dirty |= state.poll_load();
+    dirty |= execute_op_picker_pending_load(state);
+    dirty
+}
+
+fn execute_op_picker_pending_load(state: &mut OpPickerState) -> bool {
+    let Some(pending) = state.take_pending_load() else {
+        return false;
+    };
+    let rx = start_load(
+        pending.cached,
+        pending.request,
+        jackin_env::default_op_struct_runner(),
+    );
+    state.attach_load_receiver(rx);
+    true
+}
+
 // Re-exported into test scope via `use super::*` from tests.rs.
 #[cfg(test)]
 use crate::tui::components::op_picker::{
