@@ -18,6 +18,12 @@ pub type ConsoleState = ConsoleApp<
     RoleSelector,
     Rc<RefCell<OpCache>>,
 >;
+pub type ConsoleOutcome = crate::tui::message::ConsoleOutcome<
+    RoleSelector,
+    jackin_config::ResolvedWorkspace,
+    jackin_core::Agent,
+    jackin_protocol::Provider,
+>;
 
 pub fn new_console_state(
     config: &AppConfig,

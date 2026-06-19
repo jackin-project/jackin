@@ -3,6 +3,7 @@
 pub mod app;
 pub mod console;
 pub mod launch;
+pub mod prompts;
 pub mod auth;
 pub mod auth_config;
 pub mod components;
