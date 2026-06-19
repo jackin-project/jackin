@@ -230,7 +230,9 @@ Workspace-list sidebar body rendering (`render_list_body`, `render_list_sidebar`
 
 Top-level render composition (`render()`, `reserved_footer_height()`, `has_modal_overlay()`) now lives in `jackin-console/src/tui/view.rs`; root `view/frame.rs` collapsed to a two-line shell then deleted; `view.rs` re-exports `render` directly from jackin-console.
 
-Root `crates/jackin/src/console/` now at 26 files / 7,586 LOC (down from 80 files / 34,407 LOC at original findings pass; 68% file reduction, 78% LOC reduction). `crates/jackin-console/src/` now at 182 files / 83,326 LOC (up from 143 files / 58,155 LOC).
+Root `crates/jackin/src/console/` now at 22 files / 7,023 LOC (down from 80 files / 34,407 LOC at original findings pass; 73% file reduction, 80% LOC reduction). `crates/jackin-console/src/` now at 183 files / 83,903 LOC (up from 143 files / 58,155 LOC).
+
+Moves since last count: `tui/message.rs` and `message/tests.rs` deleted (120 LOC redistributed), `invalidate_cache_for_ref` moved to jackin-console op_picker, `apply_token_generate_result` + `report_open_url_error` + `execute_op_commit_validation` moved to jackin-console state/update.rs, all file-browser effect executors (~280 LOC) moved to new `jackin-console/src/tui/file_browser.rs`, services/op_picker.rs collapsed into inline module in services.rs (22 files → 22 files).
 
 Recent moves (this session): `tui/console.rs` (ConsoleState/ConsoleStage type aliases + constructors), `tui/launch.rs` (dispatch_launch_for_workspace), `tui/debug.rs` (console_location_debug), `tui/prompts.rs` (draw_role_resolution_dialog, prompt_agent_for_launch, dispatch_launch_prompt, committed_role_prompt, launch_with_committed_agent), ConsoleOutcome type alias, 8 run.rs state-accessor helpers (is_on_main_screen, screen_of, letter_input_state_for_console, quit_intercept_state_for_console, no_modal_open, startup_error_dismissed, startup_error_modal_active_for_console, token_generate_scope_label_for_console). Deleted 5 thin-shell root files: tui/app.rs, tui/debug.rs, tui/launch.rs, tui/view.rs, tui/app/tests.rs. jackin-console now has 1976 tests total (root + console).
 
