@@ -675,6 +675,9 @@ impl Drop for TerminalGuard {
     }
 }
 
+#[cfg(test)]
+mod keymap_smoke;
+
 fn write_svgs(out_dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     for path in write_story_svgs(&out_dir)? {
         let mut stdout = io::stdout().lock();

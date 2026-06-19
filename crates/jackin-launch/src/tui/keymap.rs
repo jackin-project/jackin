@@ -153,6 +153,9 @@ pub enum ContainerInfoAction {
     Close,
 }
 
+#[cfg(test)]
+mod tests;
+
 pub static CONTAINER_INFO_KEYMAP: Keymap<ContainerInfoAction> = Keymap::new(&[
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::Enter)],
