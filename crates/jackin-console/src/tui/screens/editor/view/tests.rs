@@ -1,5 +1,22 @@
 //! Tests for `view`.
+mod agents_tab_render;
+mod contextual_row_items;
+mod general_tab_render;
+mod mounts_tab_render;
+mod secrets_tab_render;
+
 use super::*;
+
+fn hint_labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
+    items
+        .into_iter()
+        .filter_map(|span| match span {
+            HintSpan::Key(value) | HintSpan::Text(value) => Some(value.to_owned()),
+            HintSpan::Dyn(value) => Some(value),
+            HintSpan::Sep | HintSpan::GroupSep => None,
+        })
+        .collect()
+}
 
 #[test]
 fn general_lines_highlight_selected_row() {
@@ -13,6 +30,31 @@ fn general_lines_highlight_selected_row() {
     );
     assert_eq!(lines[2].spans[1].content.as_ref(), "enabled (macOS only)");
     assert_eq!(lines[3].spans[1].content.as_ref(), "disabled");
+}
+
+#[test]
+fn editor_contextual_footer_items_detect_op_refs() {
+    type TestEditor = WorkspaceEditorState<(), (), jackin_core::EnvValue, (), (), (), (), (), ()>;
+    let mut state = TestEditor::new_edit("ws".into(), jackin_config::WorkspaceConfig::default());
+    state.active_tab = EditorTab::Secrets;
+    state.pending.env.insert(
+        "TOKEN".to_owned(),
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+            op: "op://vault/item/field".to_owned(),
+            path: "Vault/Item/Field".to_owned(),
+            account: None,
+        }),
+    );
+
+    let labels = hint_labels(editor_contextual_footer_items(
+        &state,
+        &jackin_config::AppConfig::default(),
+        true,
+        Rect::new(0, 0, 80, 10),
+    ));
+
+    assert!(labels.iter().any(|label| label == "re-pick from 1Password"));
+    assert!(!labels.iter().any(|label| label == "mask/unmask"));
 }
 
 #[test]
@@ -290,17 +332,17 @@ fn role_lines_render_status_rows_roles_and_sentinel() {
 #[test]
 fn secret_lines_render_workspace_and_role_rows() {
     let rows = vec![
-        super::super::model::SecretsRow::WorkspaceKeyRow("TOKEN".to_owned()),
-        super::super::model::SecretsRow::WorkspaceAddSentinel,
-        super::super::model::SecretsRow::RoleHeader {
+        SecretsRow::WorkspaceKeyRow("TOKEN".to_owned()),
+        SecretsRow::WorkspaceAddSentinel,
+        SecretsRow::RoleHeader {
             role: "alpha".to_owned(),
             expanded: true,
         },
-        super::super::model::SecretsRow::RoleKeyRow {
+        SecretsRow::RoleKeyRow {
             role: "alpha".to_owned(),
             key: "ROLE_TOKEN".to_owned(),
         },
-        super::super::model::SecretsRow::RoleAddSentinel("alpha".to_owned()),
+        SecretsRow::RoleAddSentinel("alpha".to_owned()),
     ];
 
     let lines = secret_lines(

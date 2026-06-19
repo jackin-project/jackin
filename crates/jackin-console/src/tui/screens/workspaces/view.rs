@@ -10,6 +10,7 @@ use ratatui::{
 
 use crate::tui::components::editor_rows::action_row_style;
 use crate::tui::mount_display::MountDisplayRow;
+use crate::tui::screens::workspaces::model::ManagerListRow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Disclosure {
@@ -57,6 +58,114 @@ pub struct WorkspaceListDisplayRow {
     pub hovered: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceListDisplayRowFacts {
+    pub row: ManagerListRow,
+    pub selected: bool,
+    pub hovered: bool,
+    pub current_dir_expanded: bool,
+    pub current_dir_has_instances: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceListDisplayRowsFacts<'a> {
+    pub visual_rows: &'a [Option<ManagerListRow>],
+    pub visual_selected: usize,
+    pub hovered_row: Option<ManagerListRow>,
+    pub current_dir_expanded: bool,
+    pub current_dir_has_instances: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspacePreviewPanePlan {
+    CurrentDirectory,
+    NewWorkspace,
+    SavedWorkspace(usize),
+    Instance {
+        workspace_idx: Option<usize>,
+        instance_idx: usize,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceSidebarPlan {
+    InlineProviderPicker,
+    LaunchProviderPicker,
+    InlineNewSessionPicker,
+    InlineAgentPicker,
+    InlineRolePicker,
+    ListNames,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceSidebarFacts {
+    pub inline_provider_picker_open: bool,
+    pub launch_provider_picker_open: bool,
+    pub inline_new_session_picker_open: bool,
+    pub inline_agent_picker_open: bool,
+    pub inline_role_picker_open: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceListNamesRenderFacts {
+    pub area: Rect,
+    pub selected_index: usize,
+    pub row_count: usize,
+    pub scroll_y: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceListNamesRenderPlan {
+    pub viewport_width: usize,
+    pub follow_scroll_y: u16,
+}
+
+#[must_use]
+pub const fn workspace_preview_pane_plan(row: ManagerListRow) -> WorkspacePreviewPanePlan {
+    match row {
+        ManagerListRow::CurrentDirectory => WorkspacePreviewPanePlan::CurrentDirectory,
+        ManagerListRow::NewWorkspace => WorkspacePreviewPanePlan::NewWorkspace,
+        ManagerListRow::SavedWorkspace(idx) => WorkspacePreviewPanePlan::SavedWorkspace(idx),
+        ManagerListRow::CurrentDirectoryInstance(instance_idx) => {
+            WorkspacePreviewPanePlan::Instance {
+                workspace_idx: None,
+                instance_idx,
+            }
+        }
+        ManagerListRow::WorkspaceInstance(workspace_idx, instance_idx) => {
+            WorkspacePreviewPanePlan::Instance {
+                workspace_idx: Some(workspace_idx),
+                instance_idx,
+            }
+        }
+    }
+}
+
+#[must_use]
+pub const fn workspace_sidebar_plan(facts: WorkspaceSidebarFacts) -> WorkspaceSidebarPlan {
+    if facts.inline_provider_picker_open {
+        return WorkspaceSidebarPlan::InlineProviderPicker;
+    }
+    if facts.launch_provider_picker_open {
+        return WorkspaceSidebarPlan::LaunchProviderPicker;
+    }
+    if facts.inline_new_session_picker_open {
+        return WorkspaceSidebarPlan::InlineNewSessionPicker;
+    }
+    if facts.inline_agent_picker_open {
+        return WorkspaceSidebarPlan::InlineAgentPicker;
+    }
+    if facts.inline_role_picker_open {
+        return WorkspaceSidebarPlan::InlineRolePicker;
+    }
+    WorkspaceSidebarPlan::ListNames
+}
+
+#[must_use]
+pub const fn workspace_sidebar_owns_focus(list_names_focused: bool, list_modal_open: bool) -> bool {
+    list_names_focused && !list_modal_open
+}
+
 #[must_use]
 pub fn current_directory_display_row(
     expanded: bool,
@@ -89,6 +198,102 @@ pub fn new_workspace_display_row(selected: bool, hovered: bool) -> WorkspaceList
 #[must_use]
 pub fn workspace_instance_list_label(instance_id: &str, role_key: &str) -> String {
     format!("{instance_id}  {role_key}")
+}
+
+#[must_use]
+pub fn workspace_instance_display_row(
+    instance_id: &str,
+    role_key: &str,
+    selected: bool,
+    hovered: bool,
+) -> WorkspaceListDisplayRow {
+    WorkspaceListDisplayRow {
+        label: workspace_instance_list_label(instance_id, role_key),
+        tone: WorkspaceListRowTone::Instance,
+        expanded: false,
+        has_instances: false,
+        selected,
+        hovered,
+    }
+}
+
+#[must_use]
+pub fn workspace_list_display_row_for_row(
+    facts: WorkspaceListDisplayRowFacts,
+    current_dir_instance: impl FnOnce(usize) -> Option<(String, String)>,
+    saved_workspace: impl FnOnce(usize) -> Option<(String, bool, bool)>,
+    workspace_instance: impl FnOnce(usize, usize) -> Option<(String, String)>,
+) -> Option<WorkspaceListDisplayRow> {
+    match facts.row {
+        ManagerListRow::CurrentDirectory => Some(current_directory_display_row(
+            facts.current_dir_expanded,
+            facts.current_dir_has_instances,
+            facts.selected,
+            facts.hovered,
+        )),
+        ManagerListRow::CurrentDirectoryInstance(inst_idx) => {
+            current_dir_instance(inst_idx).map(|(instance_id, role_key)| {
+                workspace_instance_display_row(
+                    &instance_id,
+                    &role_key,
+                    facts.selected,
+                    facts.hovered,
+                )
+            })
+        }
+        ManagerListRow::SavedWorkspace(idx) => {
+            saved_workspace(idx).map(|(name, expanded, has_instances)| WorkspaceListDisplayRow {
+                label: name,
+                tone: WorkspaceListRowTone::Workspace,
+                expanded,
+                has_instances,
+                selected: facts.selected,
+                hovered: facts.hovered,
+            })
+        }
+        ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => workspace_instance(ws_idx, inst_idx)
+            .map(|(instance_id, role_key)| {
+                workspace_instance_display_row(
+                    &instance_id,
+                    &role_key,
+                    facts.selected,
+                    facts.hovered,
+                )
+            }),
+        ManagerListRow::NewWorkspace => {
+            Some(new_workspace_display_row(facts.selected, facts.hovered))
+        }
+    }
+}
+
+#[must_use]
+pub fn workspace_list_display_rows(
+    facts: WorkspaceListDisplayRowsFacts<'_>,
+    mut current_dir_instance: impl FnMut(usize) -> Option<(String, String)>,
+    mut saved_workspace: impl FnMut(usize) -> Option<(String, bool, bool)>,
+    mut workspace_instance: impl FnMut(usize, usize) -> Option<(String, String)>,
+) -> Vec<Option<WorkspaceListDisplayRow>> {
+    facts
+        .visual_rows
+        .iter()
+        .enumerate()
+        .map(|(idx, visual_row)| {
+            visual_row.as_ref().and_then(|row| {
+                workspace_list_display_row_for_row(
+                    WorkspaceListDisplayRowFacts {
+                        row: *row,
+                        selected: idx == facts.visual_selected,
+                        hovered: facts.hovered_row == Some(*row),
+                        current_dir_expanded: facts.current_dir_expanded,
+                        current_dir_has_instances: facts.current_dir_has_instances,
+                    },
+                    &mut current_dir_instance,
+                    &mut saved_workspace,
+                    &mut workspace_instance,
+                )
+            })
+        })
+        .collect()
 }
 
 #[must_use]
@@ -202,6 +407,22 @@ pub fn list_name_lines(
     }
 
     (lines, content_w)
+}
+
+#[must_use]
+pub fn workspace_list_names_render_plan(
+    facts: WorkspaceListNamesRenderFacts,
+) -> WorkspaceListNamesRenderPlan {
+    let viewport_h = usize::from(facts.area.height.saturating_sub(2));
+    WorkspaceListNamesRenderPlan {
+        viewport_width: jackin_tui::components::scrollable_panel::viewport_width(facts.area),
+        follow_scroll_y: jackin_tui::components::scrollable_panel::cursor_follow_offset(
+            facts.selected_index,
+            facts.row_count,
+            viewport_h,
+            facts.scroll_y,
+        ),
+    }
 }
 
 pub fn render_list_names_block(
@@ -579,6 +800,61 @@ pub fn render_picker_sidebar(
     list.render(frame.buffer_mut(), inner);
 }
 
+pub fn render_provider_picker_sidebar(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    container_id: Option<&str>,
+    labels: Vec<String>,
+    selected: usize,
+    focused: bool,
+) {
+    let title = provider_picker_title(container_id);
+    render_picker_sidebar(frame, area, &title, labels, Some(selected), focused);
+}
+
+pub fn render_role_picker_sidebar<R: crate::tui::components::role_picker::RoleChoice>(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    workspace_name: &str,
+    picker: &crate::tui::components::role_picker::RolePickerState<R>,
+    focused: bool,
+) {
+    let title = picker_sidebar_title(workspace_name);
+    let labels = picker
+        .filtered
+        .iter()
+        .map(crate::tui::components::role_picker::RoleChoice::key)
+        .collect();
+    render_picker_sidebar(
+        frame,
+        area,
+        &title,
+        labels,
+        picker.list_state.selected,
+        focused,
+    );
+}
+
+pub fn render_agent_picker_sidebar<A: crate::tui::components::agent_choice::AgentChoice>(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    role_name: &str,
+    picker: &crate::tui::components::agent_choice::AgentChoiceState<A>,
+    focused: bool,
+) {
+    let title = picker_sidebar_title(role_name);
+    let labels = picker
+        .choices
+        .iter()
+        .map(|agent| crate::tui::components::agent_choice::agent_picker_label(*agent).to_owned())
+        .collect();
+    let selected = picker
+        .choices
+        .iter()
+        .position(|agent| *agent == picker.focused);
+    render_picker_sidebar(frame, area, &title, labels, selected, focused);
+}
+
 pub fn render_general_subpanel(frame: &mut Frame<'_>, area: Rect, workdir_display: &str) {
     let block = jackin_tui::components::Panel::new()
         .title(" General ")
@@ -603,6 +879,32 @@ pub struct WorkspaceEnvRow {
     pub name: String,
     pub scope: Option<String>,
     pub is_op: bool,
+}
+
+#[must_use]
+pub fn workspace_env_rows(
+    ws_config: Option<&jackin_config::WorkspaceConfig>,
+) -> Vec<WorkspaceEnvRow> {
+    let mut rows = Vec::new();
+    if let Some(ws) = ws_config {
+        for (key, value) in &ws.env {
+            rows.push(WorkspaceEnvRow {
+                name: key.clone(),
+                scope: None,
+                is_op: matches!(value, jackin_config::EnvValue::OpRef(_)),
+            });
+        }
+        for (role, overrides) in &ws.roles {
+            for (key, value) in &overrides.env {
+                rows.push(WorkspaceEnvRow {
+                    name: key.clone(),
+                    scope: Some(role.clone()),
+                    is_op: matches!(value, jackin_config::EnvValue::OpRef(_)),
+                });
+            }
+        }
+    }
+    rows
 }
 
 pub fn render_environments_subpanel(
@@ -657,6 +959,19 @@ pub fn render_mounts_subpanel(
     );
 }
 
+pub fn render_config_mounts_subpanel(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    mounts: &[jackin_config::MountConfig],
+    cache: &crate::mount_info_cache::MountInfoCache,
+    scroll_x: u16,
+    scroll_y: u16,
+    focused: bool,
+) {
+    let rows = crate::tui::mount_display::format_config_mount_rows_with_cache(mounts, cache);
+    render_mounts_subpanel(frame, area, &rows, scroll_x, scroll_y, focused);
+}
+
 pub fn render_global_mounts_subpanel(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -674,6 +989,32 @@ pub fn render_global_mounts_subpanel(
         scroll_y,
         focused,
         Some(title),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn render_global_mount_rows_section(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &str,
+    rows: &[&jackin_config::GlobalMountRow],
+    cache: &crate::mount_info_cache::MountInfoCache,
+    scroll_x: u16,
+    scroll_y: u16,
+    focused: bool,
+) {
+    let mounts: Vec<jackin_config::MountConfig> =
+        rows.iter().map(|row| row.mount.clone()).collect();
+    let display_rows =
+        crate::tui::mount_display::format_config_mount_rows_with_cache(&mounts, cache);
+    render_global_mounts_subpanel(
+        frame,
+        area,
+        title,
+        &display_rows,
+        scroll_x,
+        scroll_y,
+        focused,
     );
 }
 
@@ -749,6 +1090,46 @@ pub fn render_roles_subpanel(
     );
 }
 
+pub fn render_config_roles_subpanel(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    ws_config: Option<&jackin_config::WorkspaceConfig>,
+    config: &jackin_config::AppConfig,
+    scroll_x: u16,
+    scroll_y: u16,
+    focused: bool,
+) {
+    let allowed = ws_config.map_or(&[][..], |w| w.allowed_roles.as_slice());
+    let all_allowed = ws_config.is_none_or(crate::workspace::allows_all_agents);
+    let default = ws_config.and_then(|w| w.default_role.as_deref());
+
+    let agent_names: Vec<&str> = if all_allowed {
+        config.roles.keys().map(String::as_str).collect()
+    } else {
+        allowed.iter().map(String::as_str).collect()
+    };
+    let rows = agent_names
+        .into_iter()
+        .map(|role| WorkspaceRoleRow {
+            name: role.to_owned(),
+            exists: config.roles.contains_key(role),
+            is_default: Some(role) == default,
+            scoped_mount_count: role_scoped_mount_count(config, role),
+        })
+        .collect();
+    render_roles_subpanel(frame, area, default, rows, scroll_x, scroll_y, focused);
+}
+
+fn role_scoped_mount_count(config: &jackin_config::AppConfig, role: &str) -> usize {
+    jackin_core::RoleSelector::parse(role).map_or(0, |selector| {
+        config
+            .resolve_mount_rows(&selector)
+            .into_iter()
+            .filter(|row| row.scope.is_some())
+            .count()
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceInstancePane {
     pub instance_id: String,
@@ -790,6 +1171,79 @@ pub struct WorkspaceInstanceTabPane {
 pub struct WorkspaceInstanceSessionRow {
     pub name: String,
     pub agent_runtime: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceInstanceLiveTabFacts {
+    pub label: String,
+    pub focused_pane: u64,
+    pub panes: Vec<WorkspaceInstanceLivePaneFacts>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceInstanceLivePaneFacts {
+    pub session_id: u64,
+    pub label: String,
+    pub agent: Option<String>,
+    pub state_label: String,
+}
+
+#[must_use]
+pub fn workspace_instance_pane(
+    instance_id: String,
+    focused: bool,
+    content: WorkspaceInstancePaneContent,
+) -> WorkspaceInstancePane {
+    WorkspaceInstancePane {
+        instance_id,
+        focused,
+        content,
+    }
+}
+
+#[must_use]
+pub fn workspace_instance_live_content(
+    active_tab: usize,
+    selected_pane: Option<u64>,
+    tabs: impl IntoIterator<Item = WorkspaceInstanceLiveTabFacts>,
+) -> WorkspaceInstancePaneContent {
+    WorkspaceInstancePaneContent::Live {
+        tabs: tabs
+            .into_iter()
+            .enumerate()
+            .map(|(tab_idx, tab)| WorkspaceInstanceTab {
+                index: tab_idx,
+                label: tab.label,
+                active: tab_idx == active_tab,
+                panes: tab
+                    .panes
+                    .into_iter()
+                    .map(|pane| WorkspaceInstanceTabPane {
+                        label: pane.label,
+                        agent_label: workspace_instance_pane_agent_label(pane.agent.as_deref()),
+                        state_label: pane.state_label,
+                        focused: pane.session_id == tab.focused_pane,
+                        selected: selected_pane == Some(pane.session_id),
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
+#[must_use]
+pub fn workspace_instance_session_content(
+    session_load_error: bool,
+    sessions: impl IntoIterator<Item = WorkspaceInstanceSessionRow>,
+) -> WorkspaceInstancePaneContent {
+    let rows: Vec<_> = sessions.into_iter().collect();
+    if rows.is_empty() {
+        WorkspaceInstancePaneContent::Empty {
+            message: instance_sessions_empty_message(session_load_error).to_owned(),
+        }
+    } else {
+        WorkspaceInstancePaneContent::Sessions { rows }
+    }
 }
 
 pub fn render_instance_details_pane(
@@ -967,6 +1421,12 @@ fn env_row_line(row: &WorkspaceEnvRow, inner_width: usize) -> Line<'static> {
 
     Line::from(spans)
 }
+
+/// Concrete footer adapter for the workspace list screen.
+pub mod footer;
+
+/// Root-console workspace-list display adapters.
+pub mod list;
 
 #[cfg(test)]
 mod tests;

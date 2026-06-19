@@ -2,9 +2,16 @@
 
 use jackin_tui::HintSpan;
 use jackin_tui::components::{ScrollAxes, scroll_hint_spans};
+use ratatui::layout::Rect;
 
+use crate::tui::app::ConsoleManagerStageRoute;
+use crate::tui::components::auth_panel;
+use crate::tui::components::confirm_save;
+use crate::tui::components::file_browser::FileBrowserState;
+use crate::tui::components::op_picker::OpPickerRenderState;
 use crate::tui::components::op_picker::OpPickerStage;
 use crate::tui::screens::settings::model::AuthFormFocus;
+use crate::tui::screens::workspaces::model::ManagerListRow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceListFooterMode {
@@ -41,6 +48,229 @@ pub struct WorkspaceListFooterFacts {
     pub show_collapse: bool,
     pub workspace_scroll_axes: ScrollAxes,
     pub show_open_in_github: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceListFooterInputFacts {
+    pub selected_row: ManagerListRow,
+    pub inline_agent_picker: bool,
+    pub inline_role_picker: bool,
+    pub preview_focused: bool,
+    pub selected_instance_has_snapshot: bool,
+    pub show_expand: bool,
+    pub show_collapse: bool,
+    pub workspace_scroll_axes: ScrollAxes,
+    pub show_open_in_github: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceListFooterRowFacts {
+    pub selected_instance: bool,
+    pub selected_saved_workspace: bool,
+    pub selected_new_workspace: bool,
+}
+
+#[must_use]
+pub const fn workspace_list_footer_row_facts(row: ManagerListRow) -> WorkspaceListFooterRowFacts {
+    match row {
+        ManagerListRow::WorkspaceInstance(_, _) | ManagerListRow::CurrentDirectoryInstance(_) => {
+            WorkspaceListFooterRowFacts {
+                selected_instance: true,
+                selected_saved_workspace: false,
+                selected_new_workspace: false,
+            }
+        }
+        ManagerListRow::SavedWorkspace(_) => WorkspaceListFooterRowFacts {
+            selected_instance: false,
+            selected_saved_workspace: true,
+            selected_new_workspace: false,
+        },
+        ManagerListRow::NewWorkspace => WorkspaceListFooterRowFacts {
+            selected_instance: false,
+            selected_saved_workspace: false,
+            selected_new_workspace: true,
+        },
+        ManagerListRow::CurrentDirectory => WorkspaceListFooterRowFacts {
+            selected_instance: false,
+            selected_saved_workspace: false,
+            selected_new_workspace: false,
+        },
+    }
+}
+
+#[must_use]
+pub const fn workspace_list_open_github_visible(
+    row: ManagerListRow,
+    selected_workspace_has_github_mounts: bool,
+) -> bool {
+    matches!(row, ManagerListRow::SavedWorkspace(_)) && selected_workspace_has_github_mounts
+}
+
+#[must_use]
+pub const fn workspace_list_footer_facts(
+    facts: WorkspaceListFooterInputFacts,
+) -> WorkspaceListFooterFacts {
+    let row_facts = workspace_list_footer_row_facts(facts.selected_row);
+    WorkspaceListFooterFacts {
+        inline_agent_picker: facts.inline_agent_picker,
+        inline_role_picker: facts.inline_role_picker,
+        selected_instance: row_facts.selected_instance,
+        preview_focused: facts.preview_focused,
+        selected_instance_has_snapshot: facts.selected_instance_has_snapshot,
+        selected_saved_workspace: row_facts.selected_saved_workspace,
+        selected_new_workspace: row_facts.selected_new_workspace,
+        show_expand: facts.show_expand,
+        show_collapse: facts.show_collapse,
+        workspace_scroll_axes: facts.workspace_scroll_axes,
+        show_open_in_github: facts.show_open_in_github,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkspaceFooterScrollFacts {
+    pub inline_agent_picker: bool,
+    pub inline_role_picker: bool,
+    pub inline_picker_scroll_axes: ScrollAxes,
+    pub focused_block_scroll_axes: Option<ScrollAxes>,
+    pub list_names_focused: bool,
+    pub list_names_scroll_axes: ScrollAxes,
+    pub show_expand: bool,
+    pub show_collapse: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WorkspaceInlinePickerContentFacts {
+    pub agent_picker_count: Option<usize>,
+    pub role_picker_count: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkspaceScreenFooterFacts {
+    List {
+        list_items: Vec<HintSpan<'static>>,
+        modal_items: Option<Vec<HintSpan<'static>>>,
+    },
+    CreatePrelude {
+        modal_items: Option<Vec<HintSpan<'static>>>,
+    },
+    DestructiveConfirm,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceScreenFooterPlan {
+    List,
+    CreatePrelude,
+    DestructiveConfirm,
+    ScreenOwned,
+}
+
+#[must_use]
+pub const fn workspace_screen_footer_plan(
+    route: ConsoleManagerStageRoute,
+) -> WorkspaceScreenFooterPlan {
+    match route {
+        ConsoleManagerStageRoute::List => WorkspaceScreenFooterPlan::List,
+        ConsoleManagerStageRoute::CreatePrelude => WorkspaceScreenFooterPlan::CreatePrelude,
+        ConsoleManagerStageRoute::ConfirmDelete
+        | ConsoleManagerStageRoute::ConfirmInstancePurge => {
+            WorkspaceScreenFooterPlan::DestructiveConfirm
+        }
+        ConsoleManagerStageRoute::Editor | ConsoleManagerStageRoute::Settings => {
+            WorkspaceScreenFooterPlan::ScreenOwned
+        }
+    }
+}
+
+#[must_use]
+pub fn workspace_screen_footer_items(facts: WorkspaceScreenFooterFacts) -> Vec<HintSpan<'static>> {
+    match facts {
+        WorkspaceScreenFooterFacts::List {
+            list_items,
+            modal_items,
+        } => modal_items.unwrap_or(list_items),
+        WorkspaceScreenFooterFacts::CreatePrelude { modal_items } => {
+            modal_items.unwrap_or_else(create_prelude_footer_items)
+        }
+        WorkspaceScreenFooterFacts::DestructiveConfirm => destructive_confirm_footer_items(),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorScreenFooterFacts {
+    Modal {
+        items: Vec<HintSpan<'static>>,
+    },
+    TabBar {
+        save_label: &'static str,
+        enter_content: bool,
+        dirty_change_count: Option<usize>,
+    },
+    Content {
+        save_label: &'static str,
+        row_items: Vec<HintSpan<'static>>,
+        dirty_change_count: Option<usize>,
+    },
+}
+
+#[must_use]
+pub fn editor_screen_footer_items(facts: EditorScreenFooterFacts) -> Vec<HintSpan<'static>> {
+    match facts {
+        EditorScreenFooterFacts::Modal { items } => items,
+        EditorScreenFooterFacts::TabBar {
+            save_label,
+            enter_content,
+            dirty_change_count,
+        } => tab_bar_footer_items(save_label, enter_content, dirty_change_count),
+        EditorScreenFooterFacts::Content {
+            save_label,
+            row_items,
+            dirty_change_count,
+        } => content_footer_items(save_label, row_items, dirty_change_count),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsScreenFooterFacts {
+    pub auth_modal_items: Option<Vec<HintSpan<'static>>>,
+    pub env_modal_items: Option<Vec<HintSpan<'static>>>,
+    pub mounts_modal_items: Option<Vec<HintSpan<'static>>>,
+    pub screen_items: Vec<HintSpan<'static>>,
+}
+
+#[must_use]
+pub fn settings_screen_footer_items(facts: SettingsScreenFooterFacts) -> Vec<HintSpan<'static>> {
+    if let Some(items) = facts.auth_modal_items {
+        return items;
+    }
+    if let Some(items) = facts.env_modal_items {
+        return items;
+    }
+    if let Some(items) = facts.mounts_modal_items {
+        return items;
+    }
+    facts.screen_items
+}
+
+#[must_use]
+pub fn workspace_footer_scroll_axes(facts: WorkspaceFooterScrollFacts) -> ScrollAxes {
+    if facts.inline_agent_picker || facts.inline_role_picker {
+        return facts.inline_picker_scroll_axes;
+    }
+    if let Some(axes) = facts.focused_block_scroll_axes {
+        return axes;
+    }
+    if facts.list_names_focused && !facts.show_expand && !facts.show_collapse {
+        return facts.list_names_scroll_axes;
+    }
+    ScrollAxes::none()
+}
+
+#[must_use]
+pub fn workspace_inline_picker_content_height(facts: WorkspaceInlinePickerContentFacts) -> usize {
+    facts
+        .agent_picker_count
+        .or(facts.role_picker_count)
+        .unwrap_or(0)
 }
 
 #[must_use]
@@ -192,6 +422,23 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
 }
 
 #[must_use]
+pub fn selected_instance_snapshot_available(
+    selected: ManagerListRow,
+    workspace_has_snapshot: impl FnOnce(usize, usize) -> bool,
+    current_dir_has_snapshot: impl FnOnce(usize) -> bool,
+) -> bool {
+    match selected {
+        ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => {
+            workspace_has_snapshot(ws_idx, inst_idx)
+        }
+        ManagerListRow::CurrentDirectoryInstance(inst_idx) => current_dir_has_snapshot(inst_idx),
+        ManagerListRow::CurrentDirectory
+        | ManagerListRow::SavedWorkspace(_)
+        | ManagerListRow::NewWorkspace => false,
+    }
+}
+
+#[must_use]
 pub const fn editor_save_footer_label() -> &'static str {
     "save workspace"
 }
@@ -209,6 +456,38 @@ pub const fn pick_list_select_footer_label() -> &'static str {
 #[must_use]
 pub const fn pick_list_confirm_footer_label() -> &'static str {
     "confirm"
+}
+
+#[must_use]
+pub fn editor_footer_items(
+    state: &crate::tui::state::EditorState<'_>,
+    config: &jackin_config::AppConfig,
+    op_available: bool,
+    body_area: Rect,
+) -> Vec<HintSpan<'static>> {
+    if let Some(modal) = &state.modal {
+        return editor_screen_footer_items(EditorScreenFooterFacts::Modal {
+            items: modal.footer_items(state.auth_form_can_generate_token()),
+        });
+    }
+    if state.tab_bar_focused() {
+        return editor_screen_footer_items(EditorScreenFooterFacts::TabBar {
+            save_label: editor_save_footer_label(),
+            enter_content: state.active_tab != crate::tui::state::EditorTab::General,
+            dirty_change_count: state.is_dirty().then(|| state.change_count()),
+        });
+    }
+    let row_items = crate::tui::screens::editor::view::editor_contextual_footer_items(
+        state,
+        config,
+        op_available,
+        body_area,
+    );
+    editor_screen_footer_items(EditorScreenFooterFacts::Content {
+        save_label: editor_save_footer_label(),
+        row_items,
+        dirty_change_count: state.is_dirty().then(|| state.change_count()),
+    })
 }
 
 #[must_use]
@@ -589,6 +868,74 @@ pub enum ModalFooterMode {
     YesNo,
 }
 
+pub trait ModalFileBrowserFooterState {
+    fn footer_items(&self) -> Vec<HintSpan<'static>>;
+}
+
+impl ModalFileBrowserFooterState for FileBrowserState {
+    fn footer_items(&self) -> Vec<HintSpan<'static>> {
+        Self::footer_items(self)
+    }
+}
+
+pub trait ModalAuthFormFooterState<Focus> {
+    fn footer_mode(&self, focus: Focus, can_generate_token: bool) -> ModalFooterMode;
+}
+
+impl<V: auth_panel::AuthCredential> ModalAuthFormFooterState<AuthFormFocus>
+    for auth_panel::AuthForm<V>
+{
+    fn footer_mode(&self, focus: AuthFormFocus, can_generate_token: bool) -> ModalFooterMode {
+        ModalFooterMode::AuthForm {
+            focus,
+            shows_source_folder: self.shows_source_folder(),
+            shows_credential_block: self.shows_credential_block(),
+            can_generate_token,
+        }
+    }
+}
+
+pub trait ModalConfirmSaveFooterState {
+    fn footer_mode(&self) -> ModalFooterMode;
+}
+
+impl<M: Clone> ModalConfirmSaveFooterState for confirm_save::ConfirmSaveState<M> {
+    fn footer_mode(&self) -> ModalFooterMode {
+        ModalFooterMode::ConfirmSave {
+            scroll_axes: self.scroll_axes(),
+        }
+    }
+}
+
+pub trait ModalContainerInfoFooterState {
+    fn content_width(&self) -> usize;
+    fn content_height(&self) -> usize;
+}
+
+impl ModalContainerInfoFooterState for jackin_tui::components::ContainerInfoState {
+    fn content_width(&self) -> usize {
+        Self::content_width(self)
+    }
+
+    fn content_height(&self) -> usize {
+        Self::content_height(self)
+    }
+}
+
+pub trait ModalOpPickerFooterState {
+    fn footer_mode(&self, include_refresh: bool) -> ModalFooterMode;
+}
+
+impl<T: OpPickerRenderState> ModalOpPickerFooterState for T {
+    fn footer_mode(&self, include_refresh: bool) -> ModalFooterMode {
+        op_picker_modal_footer_mode(
+            self.stage(),
+            self.naming_stage_input().is_some(),
+            include_refresh,
+        )
+    }
+}
+
 #[must_use]
 pub const fn op_picker_modal_footer_mode(
     stage: OpPickerStage,
@@ -712,6 +1059,17 @@ pub fn container_info_footer_items(axes: ScrollAxes) -> Vec<HintSpan<'static>> {
         HintSpan::Text("copy value"),
     ]);
     items
+}
+
+#[must_use]
+pub fn container_info_footer_items_for_dialog(
+    content_width: usize,
+    content_height: usize,
+    dialog_rect: Rect,
+) -> Vec<HintSpan<'static>> {
+    let axes =
+        jackin_tui::components::dialog_scroll_axes(content_width, content_height, dialog_rect);
+    container_info_footer_items(axes)
 }
 
 #[must_use]

@@ -10,6 +10,7 @@ use tui_widget_list::ListState;
 use super::git_prompt::GitPromptFocus;
 use super::listing::{FolderEntry, FolderListing};
 use crate::tui::components::list_helpers::{cycle_select, list_state_for_count, selected_choice};
+use crate::tui::layout::point_in_rect;
 
 #[derive(Debug)]
 pub struct FileBrowserState {
@@ -124,6 +125,20 @@ impl FileBrowserState {
             self.entries.len(),
             delta,
         )
+    }
+
+    pub fn scroll_selection_at(
+        &mut self,
+        area: ratatui::layout::Rect,
+        column: u16,
+        row: u16,
+        delta: i16,
+    ) -> bool {
+        if self.pending_git_prompt.is_some() || !point_in_rect(column, row, area) {
+            return false;
+        }
+        let _changed = self.scroll_selection(delta);
+        true
     }
 
     pub fn page_selection(&mut self, rows: u16, direction: i16) -> bool {

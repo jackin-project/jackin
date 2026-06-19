@@ -1,6 +1,8 @@
 //! Tests for `agent` — tests.
 use super::*;
 
+mod auth_table;
+
 #[test]
 fn slug_round_trip() {
     for &h in Agent::ALL {

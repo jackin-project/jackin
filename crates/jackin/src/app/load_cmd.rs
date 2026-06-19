@@ -155,27 +155,37 @@ pub(super) async fn handle_console(
 
     let connect_docker = || BollardDockerClient::connect();
 
-    let mut console_entry = if let Ok(docker) = connect_docker() {
-        let claim = play_construct_intro_if_needed(&paths, &docker).await;
-        Some((docker, claim))
-    } else {
-        None
+    let (mut console_entry, startup_error) = match connect_docker() {
+        Ok(docker) => {
+            let claim = play_construct_intro_if_needed(&paths, &docker).await;
+            (Some((docker, claim)), None)
+        }
+        Err(error) => (None, Some(docker_startup_error(&error))),
     };
+    let startup_error_exit = startup_error
+        .as_ref()
+        .map(|(_, message)| anyhow::anyhow!(message.clone()));
 
     let op_available = console::effects::op_cli_available();
     let Some(outcome) = console::run_console(
         config,
         &paths,
         &cwd,
-        op_available,
+        console::tui::run::ConsoleRunOptions {
+            op_available,
+            startup_error,
+            parent_session: Some(&screen),
+        },
         &mut in_place,
         &mut runner,
-        Some(&screen),
     )
     .await?
     else {
         if let Some((docker, claim)) = &console_entry {
             runtime::release_entry_if_idle(&paths, docker, claim).await;
+        }
+        if let Some(error) = startup_error_exit {
+            return Err(error);
         }
         return Ok(());
     };
@@ -312,6 +322,30 @@ pub(super) async fn handle_console(
     // `screen` drops here, after any exit outro, restoring the
     // terminal exactly once.
     result
+}
+
+fn docker_startup_error(error: &anyhow::Error) -> (String, String) {
+    let detail = error_chain_message(error);
+    (
+        "Docker daemon not reachable".to_owned(),
+        format!(
+            "jackin could not connect to the Docker daemon.\n\nError:\n{detail}\n\nStart Docker or switch to a reachable Docker context, then run jackin again."
+        ),
+    )
+}
+
+fn error_chain_message(error: &anyhow::Error) -> String {
+    let message = error
+        .chain()
+        .map(ToString::to_string)
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\nCaused by: ");
+    if message.is_empty() {
+        "unknown Docker connection error".to_owned()
+    } else {
+        message
+    }
 }
 
 pub(super) async fn handle_hardline(
@@ -570,3 +604,6 @@ pub(super) async fn handle_exile(
     runtime::reconcile_keep_awake(paths, &docker, &mut runner).await;
     result
 }
+
+#[cfg(test)]
+mod tests;

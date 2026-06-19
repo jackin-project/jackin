@@ -4,6 +4,8 @@ use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 use tempfile::tempdir;
 
+mod resolve_mode;
+
 #[test]
 fn bootstrap_writes_builtin_agent_entries() {
     let temp = tempdir().unwrap();

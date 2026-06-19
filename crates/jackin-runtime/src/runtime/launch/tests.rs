@@ -5189,9 +5189,12 @@ async fn verify_credential_ignore_returns_ok_regardless() {
 #[tokio::test]
 async fn verify_credential_api_key_present_ok() {
     use jackin_config::AuthForwardMode;
-    use jackin_core::agent::Agent;
+    use jackin_core::{agent::Agent, env_model};
     let mut merged = std::collections::BTreeMap::new();
-    merged.insert("ANTHROPIC_API_KEY".into(), "sk-ant-xxx".into());
+    merged.insert(
+        env_model::ANTHROPIC_API_KEY_ENV_NAME.into(),
+        "sk-ant-xxx".into(),
+    );
     let layers: Vec<(String, EnvLayerState)> = vec![];
     let r = verify_credential_env_present(
         Agent::Claude,
@@ -5208,9 +5211,9 @@ async fn verify_credential_api_key_present_ok() {
 #[tokio::test]
 async fn verify_credential_api_key_missing_returns_structured_error() {
     use jackin_config::AuthForwardMode;
-    use jackin_core::agent::Agent;
+    use jackin_core::{agent::Agent, env_model};
     let mut merged = std::collections::BTreeMap::new();
-    merged.insert("ANTHROPIC_API_KEY".into(), String::new());
+    merged.insert(env_model::ANTHROPIC_API_KEY_ENV_NAME.into(), String::new());
     let layers = vec![
         ("[env]".into(), EnvLayerState::Unset),
         ("[roles.smith.env]".into(), EnvLayerState::Unset),
@@ -5249,7 +5252,7 @@ async fn verify_credential_api_key_missing_returns_structured_error() {
             mode_resolution,
             ..
         } => {
-            assert_eq!(env_var, "ANTHROPIC_API_KEY");
+            assert_eq!(env_var, env_model::ANTHROPIC_API_KEY_ENV_NAME);
             assert_eq!(agent, Agent::Claude);
             assert_eq!(mode, AuthForwardMode::ApiKey);
             assert_eq!(workspace, "proj");
@@ -5486,11 +5489,11 @@ async fn sync_source_resolution_uses_workspace_role_scope_per_agent() {
 #[tokio::test]
 async fn build_env_layer_states_classifies_present_vs_absent() {
     use jackin_config::{WorkspaceConfig, WorkspaceRoleOverride};
-    use jackin_core::{EnvValue, OpRef};
+    use jackin_core::{EnvValue, OpRef, env_model};
 
     let mut ro = WorkspaceRoleOverride::default();
     ro.env.insert(
-        "ANTHROPIC_API_KEY".into(),
+        env_model::ANTHROPIC_API_KEY_ENV_NAME.into(),
         EnvValue::OpRef(OpRef {
             op: "op://uuid/test/field".into(),
             path: "Test/api/key".into(),
@@ -5502,7 +5505,8 @@ async fn build_env_layer_states_classifies_present_vs_absent() {
     let mut cfg = AppConfig::default();
     cfg.workspaces.insert("proj".into(), ws);
 
-    let layers = build_env_layer_states(&cfg, "proj", "smith", "ANTHROPIC_API_KEY");
+    let layers =
+        build_env_layer_states(&cfg, "proj", "smith", env_model::ANTHROPIC_API_KEY_ENV_NAME);
     assert_eq!(layers.len(), 4);
     assert_eq!(layers[0].0, "[env]");
     assert_eq!(layers[0].1, EnvLayerState::Unset);
@@ -5516,19 +5520,20 @@ async fn build_env_layer_states_classifies_present_vs_absent() {
 
 #[tokio::test]
 async fn build_env_layer_states_classifies_literal_at_global() {
-    use jackin_core::EnvValue;
+    use jackin_core::{EnvValue, env_model};
 
     let mut env = std::collections::BTreeMap::new();
     env.insert(
-        "ANTHROPIC_API_KEY".into(),
-        EnvValue::Plain("$ANTHROPIC_API_KEY".into()),
+        env_model::ANTHROPIC_API_KEY_ENV_NAME.into(),
+        EnvValue::Plain(format!("${}", env_model::ANTHROPIC_API_KEY_ENV_NAME)),
     );
     let cfg = AppConfig {
         env,
         ..AppConfig::default()
     };
 
-    let layers = build_env_layer_states(&cfg, "proj", "smith", "ANTHROPIC_API_KEY");
+    let layers =
+        build_env_layer_states(&cfg, "proj", "smith", env_model::ANTHROPIC_API_KEY_ENV_NAME);
     assert_eq!(layers[0].1, EnvLayerState::ResolvedLiteral);
     assert_eq!(layers[1].1, EnvLayerState::Unset);
     assert_eq!(layers[2].1, EnvLayerState::Unset);
@@ -5673,10 +5678,12 @@ async fn inspect_attach_outcome_unknown_status_returns_still_running() {
 
 #[tokio::test]
 async fn auth_credential_missing_displays_layer_trace() {
+    use jackin_core::env_model;
+
     let err = LaunchError::AuthCredentialMissing {
         agent: jackin_core::agent::Agent::Claude,
         mode: jackin_config::AuthForwardMode::ApiKey,
-        env_var: "ANTHROPIC_API_KEY",
+        env_var: env_model::ANTHROPIC_API_KEY_ENV_NAME,
         workspace: "proj".into(),
         role: "smith".into(),
         mode_resolution: vec![
@@ -5702,7 +5709,10 @@ async fn auth_credential_missing_displays_layer_trace() {
     };
     let s = err.to_string();
     assert!(s.contains("auth_forward is 'api_key'"), "got: {s}");
-    assert!(s.contains("ANTHROPIC_API_KEY"), "got: {s}");
+    assert!(
+        s.contains(env_model::ANTHROPIC_API_KEY_ENV_NAME),
+        "got: {s}"
+    );
     assert!(
         s.contains("workspace × role × claude    -> api_key"),
         "got: {s}"

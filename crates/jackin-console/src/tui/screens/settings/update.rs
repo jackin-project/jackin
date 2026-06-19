@@ -7,11 +7,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::model::{
-    GlobalMountConfirm, SettingsEnvConfig, SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope,
-    SettingsGeneralState, SettingsTab, SettingsTrustState,
+    GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfig,
+    SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget,
+    SettingsHoverTarget, SettingsTab, SettingsTrustRow, SettingsTrustState,
 };
 use crate::tui::auth::{AuthKind, AuthMode, auth_mode_requires_credential};
+use crate::tui::components::scope_picker::ScopeChoice;
+use crossterm::event::KeyCode;
+use jackin_core::{EnvValue, RoleSelector};
 use jackin_tui::ModalOutcome;
+use ratatui::layout::Rect;
 
 #[must_use]
 pub const fn previous_settings_tab(tab: SettingsTab) -> SettingsTab {
@@ -41,6 +46,78 @@ pub struct SettingsTabMovePlan {
     pub tab_bar_focused: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsShellKeyPlan {
+    MoveTab { delta: isize, focus_tab_bar: bool },
+    FocusContent,
+    FocusTabBar { clear_auth_kind: bool },
+    Continue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsTopLevelKeyPlan {
+    MoveTab { delta: isize, focus_tab_bar: bool },
+    FocusContent,
+    FocusTabBar { clear_auth_kind: bool },
+    SetEnvRoleExpanded { role: String, expanded: bool },
+    Consume,
+    Delegate(SettingsTab),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsGeneralKeyPlan {
+    MoveSelection { delta: isize },
+    ToggleSelected,
+    ConfirmDiscard,
+    ReturnToList,
+    Save,
+    Noop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsEnvKeyPlan {
+    MoveSelection { delta: isize },
+    ConfirmDiscard,
+    ReturnToList,
+    OpenAdd,
+    Save,
+    ConfirmDelete,
+    ToggleMask,
+    OpenPicker,
+    OpenEnterModal,
+    Noop,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsEnvHeaderKeyPlan {
+    SetExpanded { role: String, expanded: bool },
+    Consume,
+    Continue,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsTrustKeyPlan {
+    MoveSelection { delta: isize },
+    ScrollHorizontal { delta: i16 },
+    ToggleSelected,
+    ConfirmDiscard,
+    ReturnToList,
+    Save,
+    Noop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsAuthKeyPlan {
+    ClearKind,
+    MoveSelection { delta: isize },
+    EnterKind,
+    ConfirmDiscard,
+    ReturnToList,
+    OpenForm,
+    Save,
+    Noop,
+}
+
 #[must_use]
 pub const fn settings_tab_move_plan(
     active_tab: SettingsTab,
@@ -68,6 +145,301 @@ pub const fn settings_tab_select_plan(selected_tab: SettingsTab) -> SettingsTabM
 #[must_use]
 pub const fn settings_tab_bar_focus_plan(focused: bool) -> bool {
     focused
+}
+
+#[must_use]
+pub fn settings_tab_hover_plan(row: u16, col: u16) -> Option<usize> {
+    let labels: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.label()).collect();
+    crate::tui::layout::tab_hover_index_at_position(row, col, &labels)
+}
+
+#[must_use]
+pub fn settings_tab_hover_target_plan(
+    mounts_modal_open: bool,
+    env_modal_open: bool,
+    row: u16,
+    col: u16,
+) -> Option<SettingsHoverTarget> {
+    (!mounts_modal_open && !env_modal_open)
+        .then(|| settings_tab_hover_plan(row, col).map(SettingsHoverTarget::Tab))
+        .flatten()
+}
+
+#[must_use]
+pub const fn settings_shell_key_plan(
+    key: KeyCode,
+    tab_bar_focused: bool,
+    auth_kind_selected: bool,
+) -> SettingsShellKeyPlan {
+    if tab_bar_focused {
+        match key {
+            KeyCode::Left | KeyCode::BackTab => {
+                return SettingsShellKeyPlan::MoveTab {
+                    delta: -1,
+                    focus_tab_bar: true,
+                };
+            }
+            KeyCode::Right => {
+                return SettingsShellKeyPlan::MoveTab {
+                    delta: 1,
+                    focus_tab_bar: true,
+                };
+            }
+            KeyCode::Tab | KeyCode::Down | KeyCode::Char('j' | 'J') => {
+                return SettingsShellKeyPlan::FocusContent;
+            }
+            _ => {}
+        }
+    }
+
+    match key {
+        KeyCode::Tab => SettingsShellKeyPlan::MoveTab {
+            delta: 1,
+            focus_tab_bar: true,
+        },
+        KeyCode::BackTab => SettingsShellKeyPlan::FocusTabBar {
+            clear_auth_kind: false,
+        },
+        KeyCode::Esc if !tab_bar_focused => SettingsShellKeyPlan::FocusTabBar {
+            clear_auth_kind: auth_kind_selected,
+        },
+        _ => SettingsShellKeyPlan::Continue,
+    }
+}
+
+#[must_use]
+pub const fn settings_general_key_plan(key: KeyCode, is_dirty: bool) -> SettingsGeneralKeyPlan {
+    match key {
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+            SettingsGeneralKeyPlan::MoveSelection { delta: -1 }
+        }
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            SettingsGeneralKeyPlan::MoveSelection { delta: 1 }
+        }
+        KeyCode::Char(' ') => SettingsGeneralKeyPlan::ToggleSelected,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') if is_dirty => {
+            SettingsGeneralKeyPlan::ConfirmDiscard
+        }
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsGeneralKeyPlan::ReturnToList,
+        KeyCode::Char('s' | 'S') => SettingsGeneralKeyPlan::Save,
+        _ => SettingsGeneralKeyPlan::Noop,
+    }
+}
+
+#[must_use]
+pub const fn settings_env_key_plan(
+    key: KeyCode,
+    plain_modifier: bool,
+    is_dirty: bool,
+    op_available: bool,
+    selected_is_op_ref: bool,
+) -> SettingsEnvKeyPlan {
+    match key {
+        KeyCode::Up | KeyCode::Char('k' | 'K') => SettingsEnvKeyPlan::MoveSelection { delta: -1 },
+        KeyCode::Down | KeyCode::Char('j' | 'J') => SettingsEnvKeyPlan::MoveSelection { delta: 1 },
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') if is_dirty => SettingsEnvKeyPlan::ConfirmDiscard,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsEnvKeyPlan::ReturnToList,
+        KeyCode::Char('a' | 'A') => SettingsEnvKeyPlan::OpenAdd,
+        KeyCode::Char('s' | 'S') => SettingsEnvKeyPlan::Save,
+        KeyCode::Char('d' | 'D') if plain_modifier => SettingsEnvKeyPlan::ConfirmDelete,
+        KeyCode::Char('m' | 'M') if plain_modifier => SettingsEnvKeyPlan::ToggleMask,
+        KeyCode::Char('p' | 'P') if plain_modifier && op_available => {
+            SettingsEnvKeyPlan::OpenPicker
+        }
+        KeyCode::Enter if selected_is_op_ref && op_available => SettingsEnvKeyPlan::OpenPicker,
+        KeyCode::Enter => SettingsEnvKeyPlan::OpenEnterModal,
+        _ => SettingsEnvKeyPlan::Noop,
+    }
+}
+
+#[must_use]
+pub const fn settings_auth_key_plan(
+    key: KeyCode,
+    is_dirty: bool,
+    has_selected_kind: bool,
+    selected_detail_row_is_focusable: bool,
+) -> SettingsAuthKeyPlan {
+    match key {
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') if has_selected_kind => {
+            SettingsAuthKeyPlan::ClearKind
+        }
+        KeyCode::Up | KeyCode::Char('k' | 'K') => SettingsAuthKeyPlan::MoveSelection { delta: -1 },
+        KeyCode::Down | KeyCode::Char('j' | 'J') => SettingsAuthKeyPlan::MoveSelection { delta: 1 },
+        KeyCode::Enter if !has_selected_kind => SettingsAuthKeyPlan::EnterKind,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') if is_dirty => SettingsAuthKeyPlan::ConfirmDiscard,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsAuthKeyPlan::ReturnToList,
+        KeyCode::Enter if selected_detail_row_is_focusable => SettingsAuthKeyPlan::OpenForm,
+        KeyCode::Char('s' | 'S') => SettingsAuthKeyPlan::Save,
+        _ => SettingsAuthKeyPlan::Noop,
+    }
+}
+
+#[must_use]
+pub fn settings_env_header_key_plan(
+    key: KeyCode,
+    active_tab: SettingsTab,
+    selected_row: Option<&SettingsEnvRow>,
+) -> SettingsEnvHeaderKeyPlan {
+    if active_tab != SettingsTab::Environments {
+        return SettingsEnvHeaderKeyPlan::Continue;
+    }
+
+    match key {
+        KeyCode::Right => match selected_row {
+            Some(SettingsEnvRow::RoleHeader {
+                role,
+                expanded: false,
+            }) => SettingsEnvHeaderKeyPlan::SetExpanded {
+                role: role.clone(),
+                expanded: true,
+            },
+            _ => SettingsEnvHeaderKeyPlan::Consume,
+        },
+        KeyCode::Left => match selected_row {
+            Some(SettingsEnvRow::RoleHeader {
+                role,
+                expanded: true,
+            }) => SettingsEnvHeaderKeyPlan::SetExpanded {
+                role: role.clone(),
+                expanded: false,
+            },
+            _ => SettingsEnvHeaderKeyPlan::Consume,
+        },
+        _ => SettingsEnvHeaderKeyPlan::Continue,
+    }
+}
+
+#[must_use]
+pub fn settings_env_selected_header_key_plan<V>(
+    key: KeyCode,
+    active_tab: SettingsTab,
+    pending: &SettingsEnvConfig<V>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+) -> SettingsEnvHeaderKeyPlan {
+    let rows = settings_env_flat_rows(pending, expanded_roles);
+    settings_env_header_key_plan(key, active_tab, rows.get(selected))
+}
+
+#[must_use]
+pub fn settings_top_level_key_plan<V>(
+    key: KeyCode,
+    active_tab: SettingsTab,
+    tab_bar_focused: bool,
+    auth_kind_selected: bool,
+    env_pending: &SettingsEnvConfig<V>,
+    env_expanded_roles: &BTreeSet<String>,
+    env_selected: usize,
+) -> SettingsTopLevelKeyPlan {
+    match settings_shell_key_plan(key, tab_bar_focused, auth_kind_selected) {
+        SettingsShellKeyPlan::MoveTab {
+            delta,
+            focus_tab_bar,
+        } => {
+            return SettingsTopLevelKeyPlan::MoveTab {
+                delta,
+                focus_tab_bar,
+            };
+        }
+        SettingsShellKeyPlan::FocusContent => {
+            return SettingsTopLevelKeyPlan::FocusContent;
+        }
+        SettingsShellKeyPlan::FocusTabBar { clear_auth_kind } => {
+            return SettingsTopLevelKeyPlan::FocusTabBar { clear_auth_kind };
+        }
+        SettingsShellKeyPlan::Continue => {}
+    }
+
+    match settings_env_selected_header_key_plan(
+        key,
+        active_tab,
+        env_pending,
+        env_expanded_roles,
+        env_selected,
+    ) {
+        SettingsEnvHeaderKeyPlan::SetExpanded { role, expanded } => {
+            SettingsTopLevelKeyPlan::SetEnvRoleExpanded { role, expanded }
+        }
+        SettingsEnvHeaderKeyPlan::Consume => SettingsTopLevelKeyPlan::Consume,
+        SettingsEnvHeaderKeyPlan::Continue => SettingsTopLevelKeyPlan::Delegate(active_tab),
+    }
+}
+
+#[must_use]
+pub fn settings_env_selected_key_matches<V>(
+    config: &SettingsEnvConfig<V>,
+    rows: &[SettingsEnvRow],
+    selected: usize,
+    predicate: impl FnOnce(&V) -> bool,
+) -> bool {
+    matches!(
+        rows.get(selected),
+        Some(SettingsEnvRow::Key { scope, key })
+            if settings_env_value(config, scope, key).is_some_and(predicate)
+    )
+}
+
+#[must_use]
+pub fn settings_env_selected_key_is_op_ref(
+    config: &SettingsEnvConfig<EnvValue>,
+    rows: &[SettingsEnvRow],
+    selected: usize,
+) -> bool {
+    settings_env_selected_key_matches(config, rows, selected, |value| {
+        matches!(value, EnvValue::OpRef(_))
+    })
+}
+
+#[must_use]
+pub fn settings_env_selected_is_op_ref(
+    config: &SettingsEnvConfig<EnvValue>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+) -> bool {
+    let rows = settings_env_flat_rows(config, expanded_roles);
+    settings_env_selected_key_is_op_ref(config, &rows, selected)
+}
+
+#[must_use]
+pub fn settings_env_delete_key_for_row(row: Option<&SettingsEnvRow>) -> Option<&str> {
+    match row {
+        Some(SettingsEnvRow::Key { key, .. }) => Some(key.as_str()),
+        _ => None,
+    }
+}
+
+#[must_use]
+pub fn settings_env_selected_delete_key<V>(
+    pending: &SettingsEnvConfig<V>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+) -> Option<String> {
+    let rows = settings_env_flat_rows(pending, expanded_roles);
+    settings_env_delete_key_for_row(rows.get(selected)).map(str::to_owned)
+}
+
+#[must_use]
+pub const fn settings_trust_key_plan(key: KeyCode, is_dirty: bool) -> SettingsTrustKeyPlan {
+    match key {
+        KeyCode::Up | KeyCode::Char('k' | 'K') => SettingsTrustKeyPlan::MoveSelection { delta: -1 },
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            SettingsTrustKeyPlan::MoveSelection { delta: 1 }
+        }
+        KeyCode::Char('h' | 'H') => SettingsTrustKeyPlan::ScrollHorizontal { delta: -8 },
+        KeyCode::Char('l' | 'L') => SettingsTrustKeyPlan::ScrollHorizontal { delta: 8 },
+        KeyCode::Char(' ') => SettingsTrustKeyPlan::ToggleSelected,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') if is_dirty => SettingsTrustKeyPlan::ConfirmDiscard,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsTrustKeyPlan::ReturnToList,
+        KeyCode::Char('s' | 'S') => SettingsTrustKeyPlan::Save,
+        _ => SettingsTrustKeyPlan::Noop,
+    }
+}
+
+#[must_use]
+pub fn settings_tab_at_position(row: u16, col: u16) -> Option<SettingsTab> {
+    let labels: Vec<&str> = SettingsTab::ALL.iter().map(|tab| tab.label()).collect();
+    let idx = crate::tui::layout::tab_cell_at_position(row, col, &labels)?;
+    SettingsTab::ALL.get(idx).copied()
 }
 
 #[must_use]
@@ -108,6 +480,177 @@ pub enum SettingsConfirmPlan {
     Cancel { abort_sensitive: bool },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsConfirmCommitPlan {
+    Remove {
+        remove_index: usize,
+        selected: usize,
+    },
+    Save,
+    OpenSavePreview,
+    DiscardAll,
+    Noop,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GlobalMountTextCommitPlan {
+    AddScope(Option<String>),
+    AddName(String),
+    AddSource(String),
+    AddDestination(String),
+    SetSource(String),
+    SetDestination(String),
+    SetScope(Option<String>),
+    Rename(String),
+    EmptyName,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalMountEditTextApplyPlan {
+    MissingRow,
+    EmptyName,
+    Applied,
+    Noop,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RolePickerOpenPlan {
+    NoRoles,
+    Open(Vec<RoleSelector>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GlobalMountGithubOpenPlan {
+    NoSelection,
+    NoGithubUrl,
+    Open(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GlobalMountAddFinalizePlan {
+    EmptyDestination(GlobalMountDraft),
+    Add {
+        row: jackin_config::GlobalMountRow,
+        selected: usize,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GlobalMountAddFinalizeApplyPlan {
+    MissingDraft,
+    EmptyDestination,
+    Add {
+        row: jackin_config::GlobalMountRow,
+        selected: usize,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalMountRolePickerCommitPlan {
+    MissingDraft,
+    OpenFileBrowser,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalMountAddTextApplyPlan {
+    MissingDraft,
+    OpenFileBrowser,
+    OpenAddSource,
+    OpenAddDestination,
+    Finalize,
+    Noop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalMountScopePickerCommitPlan {
+    ApplyAllAgentsScope,
+    OpenRolePicker,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsEnvTextCommitPlan {
+    EmptyKey {
+        scope: SettingsEnvScope,
+    },
+    SetPendingPickerValue {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+    OpenSourcePicker {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+    SetPlainValue {
+        scope: SettingsEnvScope,
+        key: String,
+        value: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsEnvSourcePickerSelection {
+    Plain,
+    Op,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsEnvSourcePickerCommitPlan {
+    MissingPendingKey,
+    OpenPlainText {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+    OpenOpPicker {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsEnvOpPickerCommitPlan {
+    MissingTarget,
+    SetExisting {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+    StashForNewKey {
+        scope: SettingsEnvScope,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsEnvScopePickerSelection {
+    AllAgents,
+    SpecificAgent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsEnvScopePickerCommitPlan {
+    OpenGlobalKeyInput { scope: SettingsEnvScope },
+    OpenRolePicker,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsEnvRolePickerCommitPlan {
+    pub scope: SettingsEnvScope,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsGlobalMountsKeyPlan {
+    ConfirmSensitiveSave,
+    OpenSavePreview,
+    ScrollHorizontal { delta: i16 },
+    MoveSelection { delta: isize },
+    ToggleReadonly,
+    ConfirmDiscard,
+    ReturnToList,
+    OpenAdd,
+    ConfirmRemove,
+    OpenGithub,
+    OpenEdit(GlobalMountTextTarget),
+    Noop,
+}
+
 #[must_use]
 pub const fn settings_confirm_plan(
     action: GlobalMountConfirm,
@@ -119,6 +662,404 @@ pub const fn settings_confirm_plan(
             abort_sensitive: matches!(action, GlobalMountConfirm::Sensitive),
         },
         ModalOutcome::Continue => SettingsConfirmPlan::Continue,
+    }
+}
+
+#[must_use]
+pub fn settings_confirm_commit_plan(
+    action: GlobalMountConfirm,
+    selected: usize,
+    mount_count: usize,
+) -> SettingsConfirmCommitPlan {
+    match action {
+        GlobalMountConfirm::Remove if selected < mount_count => SettingsConfirmCommitPlan::Remove {
+            remove_index: selected,
+            selected: settings_global_mounts_selected_index(selected, mount_count - 1),
+        },
+        GlobalMountConfirm::Remove => SettingsConfirmCommitPlan::Noop,
+        GlobalMountConfirm::Save => SettingsConfirmCommitPlan::Save,
+        GlobalMountConfirm::Sensitive => SettingsConfirmCommitPlan::OpenSavePreview,
+        GlobalMountConfirm::Discard => SettingsConfirmCommitPlan::DiscardAll,
+    }
+}
+
+#[must_use]
+pub const fn settings_global_mounts_key_plan(
+    key: KeyCode,
+    is_dirty: bool,
+    has_sensitive_mount: bool,
+    selected: usize,
+    mount_count: usize,
+) -> SettingsGlobalMountsKeyPlan {
+    match key {
+        KeyCode::Char('s' | 'S') if has_sensitive_mount => {
+            SettingsGlobalMountsKeyPlan::ConfirmSensitiveSave
+        }
+        KeyCode::Char('s' | 'S') => SettingsGlobalMountsKeyPlan::OpenSavePreview,
+        KeyCode::Char('h' | 'H') => SettingsGlobalMountsKeyPlan::ScrollHorizontal { delta: -8 },
+        KeyCode::Char('l' | 'L') => SettingsGlobalMountsKeyPlan::ScrollHorizontal { delta: 8 },
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+            SettingsGlobalMountsKeyPlan::MoveSelection { delta: -1 }
+        }
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            SettingsGlobalMountsKeyPlan::MoveSelection { delta: 1 }
+        }
+        KeyCode::Char('r' | 'R') => SettingsGlobalMountsKeyPlan::ToggleReadonly,
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') if is_dirty => {
+            SettingsGlobalMountsKeyPlan::ConfirmDiscard
+        }
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => SettingsGlobalMountsKeyPlan::ReturnToList,
+        KeyCode::Enter if settings_global_mounts_add_row_selected(selected, mount_count) => {
+            SettingsGlobalMountsKeyPlan::OpenAdd
+        }
+        KeyCode::Char('a' | 'A') => SettingsGlobalMountsKeyPlan::OpenAdd,
+        KeyCode::Char('d' | 'D') if mount_count > 0 => SettingsGlobalMountsKeyPlan::ConfirmRemove,
+        KeyCode::Char('o' | 'O') => SettingsGlobalMountsKeyPlan::OpenGithub,
+        KeyCode::Char('n' | 'N') => {
+            SettingsGlobalMountsKeyPlan::OpenEdit(GlobalMountTextTarget::Rename)
+        }
+        KeyCode::Char('1') => SettingsGlobalMountsKeyPlan::OpenEdit(GlobalMountTextTarget::Source),
+        KeyCode::Char('2') => {
+            SettingsGlobalMountsKeyPlan::OpenEdit(GlobalMountTextTarget::Destination)
+        }
+        KeyCode::Char('3') => SettingsGlobalMountsKeyPlan::OpenEdit(GlobalMountTextTarget::Scope),
+        _ => SettingsGlobalMountsKeyPlan::Noop,
+    }
+}
+
+#[must_use]
+pub fn global_mount_text_commit_plan(
+    target: &GlobalMountTextTarget,
+    value: &str,
+) -> GlobalMountTextCommitPlan {
+    let trimmed = value.trim();
+    match target {
+        GlobalMountTextTarget::AddScope => GlobalMountTextCommitPlan::AddScope(
+            crate::services::workspace::global_mount_scope_value(trimmed),
+        ),
+        GlobalMountTextTarget::AddName if trimmed.is_empty() => {
+            GlobalMountTextCommitPlan::EmptyName
+        }
+        GlobalMountTextTarget::AddName => GlobalMountTextCommitPlan::AddName(trimmed.to_owned()),
+        GlobalMountTextTarget::AddSource => {
+            GlobalMountTextCommitPlan::AddSource(jackin_config::resolve_path(trimmed))
+        }
+        GlobalMountTextTarget::AddDestination => {
+            GlobalMountTextCommitPlan::AddDestination(trimmed.to_owned())
+        }
+        GlobalMountTextTarget::Source => {
+            GlobalMountTextCommitPlan::SetSource(jackin_config::resolve_path(trimmed))
+        }
+        GlobalMountTextTarget::Destination => {
+            GlobalMountTextCommitPlan::SetDestination(trimmed.to_owned())
+        }
+        GlobalMountTextTarget::Scope => GlobalMountTextCommitPlan::SetScope(
+            crate::services::workspace::global_mount_scope_value(trimmed),
+        ),
+        GlobalMountTextTarget::Rename if trimmed.is_empty() => GlobalMountTextCommitPlan::EmptyName,
+        GlobalMountTextTarget::Rename => GlobalMountTextCommitPlan::Rename(trimmed.to_owned()),
+    }
+}
+
+#[must_use]
+pub fn global_mount_add_finalize_plan(
+    pending: &[jackin_config::GlobalMountRow],
+    mut draft: GlobalMountDraft,
+) -> GlobalMountAddFinalizePlan {
+    if draft.dst.trim().is_empty() {
+        return GlobalMountAddFinalizePlan::EmptyDestination(draft);
+    }
+    draft.name = crate::services::workspace::unique_global_mount_name(
+        pending,
+        draft.scope.as_deref(),
+        &draft.dst,
+    );
+    let selected = settings_global_mounts_added_index(pending.len() + 1);
+    GlobalMountAddFinalizePlan::Add {
+        row: jackin_config::GlobalMountRow {
+            scope: draft.scope,
+            name: draft.name,
+            mount: crate::services::workspace::shared_mount_config(draft.src, draft.dst, false),
+        },
+        selected,
+    }
+}
+
+pub fn global_mount_add_finalize_apply_plan(
+    pending: &[jackin_config::GlobalMountRow],
+    draft: &mut Option<GlobalMountDraft>,
+) -> GlobalMountAddFinalizeApplyPlan {
+    let Some(taken) = draft.take() else {
+        return GlobalMountAddFinalizeApplyPlan::MissingDraft;
+    };
+    match global_mount_add_finalize_plan(pending, taken) {
+        GlobalMountAddFinalizePlan::EmptyDestination(taken) => {
+            *draft = Some(taken);
+            GlobalMountAddFinalizeApplyPlan::EmptyDestination
+        }
+        GlobalMountAddFinalizePlan::Add { row, selected } => {
+            GlobalMountAddFinalizeApplyPlan::Add { row, selected }
+        }
+    }
+}
+
+pub fn set_global_mount_add_draft_destination(
+    draft: &mut Option<GlobalMountDraft>,
+    dst: impl Into<String>,
+) -> bool {
+    let Some(draft) = draft.as_mut() else {
+        return false;
+    };
+    draft.dst = dst.into();
+    true
+}
+
+pub fn global_mount_add_text_apply_plan(
+    draft: &mut Option<GlobalMountDraft>,
+    plan: GlobalMountTextCommitPlan,
+) -> GlobalMountAddTextApplyPlan {
+    match plan {
+        GlobalMountTextCommitPlan::AddScope(scope) => {
+            let Some(draft) = draft.as_mut() else {
+                return GlobalMountAddTextApplyPlan::MissingDraft;
+            };
+            draft.scope = scope;
+            GlobalMountAddTextApplyPlan::OpenFileBrowser
+        }
+        GlobalMountTextCommitPlan::AddName(name) => {
+            let Some(draft) = draft.as_mut() else {
+                return GlobalMountAddTextApplyPlan::MissingDraft;
+            };
+            draft.name = name;
+            GlobalMountAddTextApplyPlan::OpenAddSource
+        }
+        GlobalMountTextCommitPlan::AddSource(src) => {
+            let Some(draft) = draft.as_mut() else {
+                return GlobalMountAddTextApplyPlan::MissingDraft;
+            };
+            draft.src = src;
+            GlobalMountAddTextApplyPlan::OpenAddDestination
+        }
+        GlobalMountTextCommitPlan::AddDestination(dst) => {
+            let Some(draft) = draft.as_mut() else {
+                return GlobalMountAddTextApplyPlan::MissingDraft;
+            };
+            draft.dst = dst;
+            GlobalMountAddTextApplyPlan::Finalize
+        }
+        _ => GlobalMountAddTextApplyPlan::Noop,
+    }
+}
+
+pub fn global_mount_edit_text_apply_plan(
+    rows: &mut [jackin_config::GlobalMountRow],
+    selected: usize,
+    plan: GlobalMountTextCommitPlan,
+) -> GlobalMountEditTextApplyPlan {
+    match plan {
+        GlobalMountTextCommitPlan::SetSource(value) => {
+            let Some(row) = rows.get_mut(selected) else {
+                return GlobalMountEditTextApplyPlan::MissingRow;
+            };
+            row.mount.src = value;
+            GlobalMountEditTextApplyPlan::Applied
+        }
+        GlobalMountTextCommitPlan::SetDestination(value) => {
+            let Some(row) = rows.get_mut(selected) else {
+                return GlobalMountEditTextApplyPlan::MissingRow;
+            };
+            row.mount.dst = value;
+            GlobalMountEditTextApplyPlan::Applied
+        }
+        GlobalMountTextCommitPlan::SetScope(scope) => {
+            let Some(row) = rows.get_mut(selected) else {
+                return GlobalMountEditTextApplyPlan::MissingRow;
+            };
+            row.scope = scope;
+            GlobalMountEditTextApplyPlan::Applied
+        }
+        GlobalMountTextCommitPlan::Rename(value) => {
+            let Some(row) = rows.get_mut(selected) else {
+                return GlobalMountEditTextApplyPlan::MissingRow;
+            };
+            row.name = value;
+            GlobalMountEditTextApplyPlan::Applied
+        }
+        GlobalMountTextCommitPlan::EmptyName => GlobalMountEditTextApplyPlan::EmptyName,
+        GlobalMountTextCommitPlan::AddScope(_)
+        | GlobalMountTextCommitPlan::AddName(_)
+        | GlobalMountTextCommitPlan::AddSource(_)
+        | GlobalMountTextCommitPlan::AddDestination(_) => GlobalMountEditTextApplyPlan::Noop,
+    }
+}
+
+#[must_use]
+pub const fn global_mount_scope_picker_commit_plan(
+    choice: ScopeChoice,
+) -> GlobalMountScopePickerCommitPlan {
+    match choice {
+        ScopeChoice::AllAgents => GlobalMountScopePickerCommitPlan::ApplyAllAgentsScope,
+        ScopeChoice::SpecificAgent => GlobalMountScopePickerCommitPlan::OpenRolePicker,
+    }
+}
+
+#[must_use]
+pub fn global_mount_role_picker_roles(rows: &[SettingsTrustRow]) -> Vec<RoleSelector> {
+    rows.iter()
+        .filter_map(|row| RoleSelector::parse(&row.role).ok())
+        .collect()
+}
+
+#[must_use]
+pub fn global_mount_role_picker_open_plan(rows: &[SettingsTrustRow]) -> RolePickerOpenPlan {
+    role_picker_open_plan(global_mount_role_picker_roles(rows))
+}
+
+pub fn global_mount_role_picker_commit_plan(
+    draft: &mut Option<GlobalMountDraft>,
+    role: &RoleSelector,
+) -> GlobalMountRolePickerCommitPlan {
+    let Some(draft) = draft.as_mut() else {
+        return GlobalMountRolePickerCommitPlan::MissingDraft;
+    };
+    draft.scope = Some(role.key());
+    GlobalMountRolePickerCommitPlan::OpenFileBrowser
+}
+
+#[must_use]
+pub fn global_mount_github_open_plan(
+    rows: &[jackin_config::GlobalMountRow],
+    selected: usize,
+    cache: &crate::mount_info_cache::MountInfoCache,
+) -> GlobalMountGithubOpenPlan {
+    let Some(row) = rows.get(selected) else {
+        return GlobalMountGithubOpenPlan::NoSelection;
+    };
+    match cache.github_web_url(&row.mount.src) {
+        Some(web_url) => GlobalMountGithubOpenPlan::Open(web_url),
+        None => GlobalMountGithubOpenPlan::NoGithubUrl,
+    }
+}
+
+#[must_use]
+pub fn settings_env_text_commit_plan(
+    target: &SettingsEnvTextTarget,
+    value: &str,
+    has_pending_picker_value: bool,
+) -> SettingsEnvTextCommitPlan {
+    match target {
+        SettingsEnvTextTarget::EnvKey { scope } => {
+            let key = value.trim();
+            if key.is_empty() {
+                return SettingsEnvTextCommitPlan::EmptyKey {
+                    scope: scope.clone(),
+                };
+            }
+            if has_pending_picker_value {
+                SettingsEnvTextCommitPlan::SetPendingPickerValue {
+                    scope: scope.clone(),
+                    key: key.to_owned(),
+                }
+            } else {
+                SettingsEnvTextCommitPlan::OpenSourcePicker {
+                    scope: scope.clone(),
+                    key: key.to_owned(),
+                }
+            }
+        }
+        SettingsEnvTextTarget::EnvValue { scope, key } => {
+            SettingsEnvTextCommitPlan::SetPlainValue {
+                scope: scope.clone(),
+                key: key.clone(),
+                value: value.to_owned(),
+            }
+        }
+    }
+}
+
+#[must_use]
+pub fn settings_env_source_picker_commit_plan(
+    selection: SettingsEnvSourcePickerSelection,
+    pending_env_key: Option<&(SettingsEnvScope, String)>,
+) -> SettingsEnvSourcePickerCommitPlan {
+    let Some((scope, key)) = pending_env_key else {
+        return SettingsEnvSourcePickerCommitPlan::MissingPendingKey;
+    };
+    match selection {
+        SettingsEnvSourcePickerSelection::Plain => {
+            SettingsEnvSourcePickerCommitPlan::OpenPlainText {
+                scope: scope.clone(),
+                key: key.clone(),
+            }
+        }
+        SettingsEnvSourcePickerSelection::Op => SettingsEnvSourcePickerCommitPlan::OpenOpPicker {
+            scope: scope.clone(),
+            key: key.clone(),
+        },
+    }
+}
+
+#[must_use]
+pub fn settings_env_op_picker_commit_plan(
+    pending_picker_target: Option<&(SettingsEnvScope, Option<String>)>,
+) -> SettingsEnvOpPickerCommitPlan {
+    match pending_picker_target {
+        Some((scope, Some(key))) => SettingsEnvOpPickerCommitPlan::SetExisting {
+            scope: scope.clone(),
+            key: key.clone(),
+        },
+        Some((scope, None)) => SettingsEnvOpPickerCommitPlan::StashForNewKey {
+            scope: scope.clone(),
+        },
+        None => SettingsEnvOpPickerCommitPlan::MissingTarget,
+    }
+}
+
+#[must_use]
+pub const fn settings_env_scope_picker_commit_plan(
+    selection: SettingsEnvScopePickerSelection,
+) -> SettingsEnvScopePickerCommitPlan {
+    match selection {
+        SettingsEnvScopePickerSelection::AllAgents => {
+            SettingsEnvScopePickerCommitPlan::OpenGlobalKeyInput {
+                scope: SettingsEnvScope::Global,
+            }
+        }
+        SettingsEnvScopePickerSelection::SpecificAgent => {
+            SettingsEnvScopePickerCommitPlan::OpenRolePicker
+        }
+    }
+}
+
+#[must_use]
+pub fn settings_env_role_picker_commit_plan(
+    role: &RoleSelector,
+) -> SettingsEnvRolePickerCommitPlan {
+    SettingsEnvRolePickerCommitPlan {
+        scope: SettingsEnvScope::Role(role.key()),
+    }
+}
+
+#[must_use]
+pub fn settings_env_role_picker_roles<V>(pending: &SettingsEnvConfig<V>) -> Vec<RoleSelector> {
+    pending
+        .roles
+        .keys()
+        .filter_map(|role| RoleSelector::parse(role).ok())
+        .collect()
+}
+
+#[must_use]
+pub fn settings_env_role_picker_open_plan<V>(pending: &SettingsEnvConfig<V>) -> RolePickerOpenPlan {
+    role_picker_open_plan(settings_env_role_picker_roles(pending))
+}
+
+#[must_use]
+pub fn role_picker_open_plan(roles: Vec<RoleSelector>) -> RolePickerOpenPlan {
+    if roles.is_empty() {
+        RolePickerOpenPlan::NoRoles
+    } else {
+        RolePickerOpenPlan::Open(roles)
     }
 }
 
@@ -147,10 +1088,6 @@ pub fn enter_settings_auth_kind_plan<K>(
         }),
         None => None,
     }
-}
-
-pub fn move_general_selection(state: &mut SettingsGeneralState, delta: isize) {
-    state.selected = crate::tui::focus::moved_selection(state.selected, 2, delta);
 }
 
 #[must_use]
@@ -184,16 +1121,9 @@ pub fn settings_auth_selection_plan(
     focusable[next]
 }
 
-pub fn toggle_general_selected(state: &mut SettingsGeneralState) {
-    match state.selected {
-        0 => {
-            state.pending_coauthor_trailer = !state.pending_coauthor_trailer;
-        }
-        1 => {
-            state.pending_dco = !state.pending_dco;
-        }
-        _ => {}
-    }
+#[must_use]
+pub fn settings_auth_selected_index(selected: usize, row_count: usize) -> usize {
+    selected.min(row_count.saturating_sub(1))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -246,6 +1176,16 @@ pub const fn settings_scroll_focus_plan(
         auth: matches!(active_tab, SettingsTab::Auth) && in_content,
         trust: matches!(active_tab, SettingsTab::Trust) && in_content,
     }
+}
+
+#[must_use]
+pub const fn settings_modal_open(
+    error_popup_open: bool,
+    mounts_modal_open: bool,
+    env_modal_open: bool,
+    auth_modal_open: bool,
+) -> bool {
+    error_popup_open || mounts_modal_open || env_modal_open || auth_modal_open
 }
 
 #[must_use]
@@ -344,10 +1284,65 @@ pub fn settings_global_mounts_selection_plan(
     }
 }
 
-pub fn toggle_trust_selected(state: &mut SettingsTrustState) {
-    if let Some(row) = state.pending.get_mut(state.selected) {
-        row.trusted = !row.trusted;
+#[must_use]
+pub fn settings_global_mounts_selected_index(selected: usize, mount_count: usize) -> usize {
+    selected.min(mount_count)
+}
+
+#[must_use]
+pub const fn settings_global_mounts_add_row_selected(selected: usize, mount_count: usize) -> bool {
+    selected == mount_count
+}
+
+#[must_use]
+pub fn settings_global_mounts_added_index(mount_count: usize) -> usize {
+    mount_count.saturating_sub(1)
+}
+
+#[must_use]
+pub fn settings_trust_row_at_position(
+    area: Rect,
+    col: u16,
+    row: u16,
+    scroll_y: u16,
+    row_count: usize,
+) -> Option<usize> {
+    if !crate::tui::layout::point_in_rect(col, row, area) {
+        return None;
     }
+    let line = usize::from(row.saturating_sub(area.y + 1)) + usize::from(scroll_y);
+    let row = line.checked_sub(1)?;
+    (row < row_count).then_some(row)
+}
+
+#[must_use]
+pub fn settings_trust_hover_target_at_position(
+    active_tab: SettingsTab,
+    mounts_modal_open: bool,
+    area: Rect,
+    col: u16,
+    row: u16,
+    scroll_y: u16,
+    row_count: usize,
+) -> Option<SettingsHoverTarget> {
+    if active_tab != SettingsTab::Trust || mounts_modal_open {
+        return None;
+    }
+    settings_trust_row_at_position(area, col, row, scroll_y, row_count)
+        .map(SettingsHoverTarget::TrustRow)
+}
+
+#[must_use]
+pub fn settings_trust_clickable_at_position(
+    active_tab: SettingsTab,
+    modal_open: bool,
+    content_area: Rect,
+    col: u16,
+    row: u16,
+) -> bool {
+    active_tab == SettingsTab::Trust
+        && !modal_open
+        && crate::tui::layout::point_in_rect(col, row, content_area)
 }
 
 #[must_use]
@@ -367,10 +1362,6 @@ pub fn set_role_expanded(expanded_roles: &mut BTreeSet<String>, role: String, ex
     } else {
         expanded_roles.remove(&role);
     }
-}
-
-pub fn toggle_readonly(readonly: &mut bool) {
-    *readonly = !*readonly;
 }
 
 #[must_use]
@@ -496,6 +1487,28 @@ pub fn toggle_settings_env_mask_for_row<V>(
     true
 }
 
+pub fn toggle_selected_settings_env_mask<V>(
+    unmasked_rows: &mut BTreeSet<(SettingsEnvScope, String)>,
+    pending: &SettingsEnvConfig<V>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+    is_maskable: impl FnOnce(&V) -> bool,
+) -> bool {
+    let rows = settings_env_flat_rows(pending, expanded_roles);
+    toggle_settings_env_mask_for_row(unmasked_rows, pending, rows.get(selected), is_maskable)
+}
+
+pub fn toggle_selected_settings_env_maskable_value(
+    unmasked_rows: &mut BTreeSet<(SettingsEnvScope, String)>,
+    pending: &SettingsEnvConfig<EnvValue>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+) -> bool {
+    toggle_selected_settings_env_mask(unmasked_rows, pending, expanded_roles, selected, |value| {
+        !matches!(value, EnvValue::OpRef(_))
+    })
+}
+
 pub fn remove_settings_env_row<V>(
     pending: &mut SettingsEnvConfig<V>,
     expanded_roles: &BTreeSet<String>,
@@ -520,6 +1533,15 @@ pub fn remove_settings_env_row<V>(
     true
 }
 
+pub fn remove_selected_settings_env_row<V>(
+    pending: &mut SettingsEnvConfig<V>,
+    expanded_roles: &BTreeSet<String>,
+    selected: &mut usize,
+) -> bool {
+    let rows = settings_env_flat_rows(pending, expanded_roles);
+    remove_settings_env_row(pending, expanded_roles, selected, rows.get(*selected))
+}
+
 #[must_use]
 pub fn settings_env_add_target_for_row(row: Option<&SettingsEnvRow>) -> Option<SettingsEnvScope> {
     match row? {
@@ -539,6 +1561,16 @@ pub fn settings_env_add_target_for_row(row: Option<&SettingsEnvRow>) -> Option<S
 }
 
 #[must_use]
+pub fn settings_env_selected_add_target<V>(
+    pending: &SettingsEnvConfig<V>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+) -> Option<SettingsEnvScope> {
+    let rows = settings_env_flat_rows(pending, expanded_roles);
+    settings_env_add_target_for_row(rows.get(selected))
+}
+
+#[must_use]
 pub fn settings_env_picker_target_for_row(
     row: Option<&SettingsEnvRow>,
 ) -> Option<(SettingsEnvScope, Option<String>)> {
@@ -548,6 +1580,16 @@ pub fn settings_env_picker_target_for_row(
         SettingsEnvRow::RoleAddSentinel(role) => Some((SettingsEnvScope::Role(role.clone()), None)),
         SettingsEnvRow::RoleHeader { .. } | SettingsEnvRow::SectionSpacer => None,
     }
+}
+
+#[must_use]
+pub fn settings_env_selected_picker_target<V>(
+    pending: &SettingsEnvConfig<V>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+) -> Option<(SettingsEnvScope, Option<String>)> {
+    let rows = settings_env_flat_rows(pending, expanded_roles);
+    settings_env_picker_target_for_row(rows.get(selected))
 }
 
 #[must_use]
@@ -580,6 +1622,18 @@ pub fn settings_env_enter_plan_for_row<V>(
             SettingsEnvEnterPlan::Noop
         }
     }
+}
+
+#[must_use]
+pub fn settings_env_selected_enter_plan(
+    pending: &SettingsEnvConfig<EnvValue>,
+    expanded_roles: &BTreeSet<String>,
+    selected: usize,
+) -> SettingsEnvEnterPlan {
+    let rows = settings_env_flat_rows(pending, expanded_roles);
+    settings_env_enter_plan_for_row(pending, rows.get(selected), |value| {
+        !value.is_some_and(|v| matches!(v, EnvValue::OpRef(_)))
+    })
 }
 
 #[must_use]

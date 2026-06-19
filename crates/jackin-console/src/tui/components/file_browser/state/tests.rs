@@ -1,6 +1,7 @@
 //! Tests for `state`.
 use super::*;
 use crate::services::file_browser::EXCLUDED;
+use ratatui::layout::Rect;
 use tempfile::tempdir;
 
 fn make_state_at(path: PathBuf) -> FileBrowserState {
@@ -108,6 +109,30 @@ fn wheel_selection_scroll_clamps_without_wrapping() {
     assert_eq!(state.list_state.selected, Some(2));
     assert!(state.scroll_selection(-5));
     assert_eq!(state.list_state.selected, Some(0));
+}
+
+#[test]
+fn wheel_selection_scroll_at_area_ignores_prompt_and_outside_pointer() {
+    let tmp = tempdir().unwrap();
+    for name in ["a", "b", "c"] {
+        std::fs::create_dir(tmp.path().join(name)).unwrap();
+    }
+    let area = Rect {
+        x: 2,
+        y: 3,
+        width: 10,
+        height: 4,
+    };
+    let mut state = make_state_at(tmp.path().to_path_buf());
+
+    assert!(!state.scroll_selection_at(area, 1, 3, 1));
+    assert_eq!(state.list_state.selected, Some(0));
+    assert!(state.scroll_selection_at(area, 2, 3, 1));
+    assert_eq!(state.list_state.selected, Some(1));
+
+    state.pending_git_prompt = Some(tmp.path().join("a"));
+    assert!(!state.scroll_selection_at(area, 2, 3, 1));
+    assert_eq!(state.list_state.selected, Some(1));
 }
 
 // ── Git-repo detection ────────────────────────────────────────────

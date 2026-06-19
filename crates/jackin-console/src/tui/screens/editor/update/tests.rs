@@ -1,5 +1,8 @@
 //! Tests for `update`.
+mod auth_flat_rows_integration;
+
 use super::*;
+use jackin_config::{MountConfig, MountIsolation};
 
 #[test]
 fn editor_tab_move_plan_resets_local_view_state() {
@@ -55,6 +58,105 @@ fn editor_tab_bar_focus_plan_returns_requested_focus() {
 }
 
 #[test]
+fn editor_tab_at_position_maps_tab_strip_cells() {
+    assert_eq!(
+        editor_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
+        Some(EditorTab::General)
+    );
+    assert_eq!(
+        editor_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT, 11),
+        Some(EditorTab::Mounts)
+    );
+    assert_eq!(
+        editor_tab_at_position(crate::tui::layout::SCREEN_HEADER_HEIGHT - 1, 1),
+        None
+    );
+}
+
+#[test]
+fn editor_tab_hover_plan_maps_strip() {
+    assert_eq!(
+        editor_tab_hover_plan(crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
+        Some(0)
+    );
+    assert_eq!(
+        editor_tab_hover_plan(crate::tui::layout::SCREEN_HEADER_HEIGHT, 11),
+        Some(1)
+    );
+    assert_eq!(
+        editor_tab_hover_plan(crate::tui::layout::SCREEN_HEADER_HEIGHT - 1, 1),
+        None
+    );
+}
+
+#[test]
+fn editor_tab_hover_target_plan_maps_strip_when_no_modal() {
+    assert_eq!(
+        editor_tab_hover_target_plan(false, crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
+        Some(EditorHoverTarget::Tab(0))
+    );
+    assert_eq!(
+        editor_tab_hover_target_plan(true, crate::tui::layout::SCREEN_HEADER_HEIGHT, 1),
+        None
+    );
+}
+
+#[test]
+fn editor_mount_hover_target_at_position_maps_mount_rows() {
+    let mounts = vec![
+        MountConfig {
+            src: "/src".into(),
+            dst: "/dst".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        },
+        MountConfig {
+            src: "/src2".into(),
+            dst: "/dst2".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        },
+    ];
+    let area = ratatui::layout::Rect::new(0, 4, 80, 8);
+    assert_eq!(
+        editor_mount_index_at_position(EditorTab::Mounts, false, area, 1, 6, 0, &mounts),
+        Some(0)
+    );
+    assert_eq!(
+        editor_mount_hover_target_at_position(EditorTab::Mounts, false, area, 1, 6, 0, &mounts),
+        Some(EditorHoverTarget::MountRow(0))
+    );
+    assert_eq!(
+        editor_mount_hover_target_at_position(EditorTab::General, false, area, 1, 6, 0, &mounts),
+        None
+    );
+    assert_eq!(
+        editor_mount_hover_target_at_position(EditorTab::Mounts, true, area, 1, 6, 0, &mounts),
+        None
+    );
+}
+
+#[test]
+fn editor_general_field_modal_plan_routes_editable_rows() {
+    assert_eq!(
+        editor_general_field_modal_plan(EditorTab::General, 0, false),
+        EditorGeneralFieldModalPlan::RenameWorkspace
+    );
+    assert_eq!(
+        editor_general_field_modal_plan(EditorTab::General, 1, true),
+        EditorGeneralFieldModalPlan::PickWorkdir
+    );
+    assert_eq!(
+        editor_general_field_modal_plan(EditorTab::General, 1, false),
+        EditorGeneralFieldModalPlan::None
+    );
+    assert_eq!(
+        editor_general_field_modal_plan(EditorTab::Mounts, 0, true),
+        EditorGeneralFieldModalPlan::None
+    );
+}
+
+#[test]
 fn editor_auth_kind_entry_plan_selects_kind_and_resets_view_state() {
     assert_eq!(
         enter_editor_auth_kind_plan(TestAuthKind::Claude),
@@ -88,6 +190,78 @@ fn editor_field_selection_plan_skips_rows_and_updates_scroll() {
 }
 
 #[test]
+fn skipped_row_helpers_mark_inert_editor_rows() {
+    let secrets = [
+        SecretsRow::WorkspaceAddSentinel,
+        SecretsRow::SectionSpacer,
+        SecretsRow::RoleHeader {
+            role: "alpha".to_owned(),
+            expanded: false,
+        },
+    ];
+    assert_eq!(secrets_skipped_rows(&secrets), vec![1]);
+    assert_eq!(editor_secrets_selection_bounds(&secrets), (2, vec![1]));
+
+    let auth = [
+        AuthRow::WorkspaceMode {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::WorkspaceSource {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::Spacer,
+    ];
+    assert_eq!(auth_skipped_rows(&auth), vec![1, 2]);
+}
+
+#[test]
+fn editor_selection_bounds_routes_tab_specific_rows() {
+    let secrets = [
+        SecretsRow::WorkspaceAddSentinel,
+        SecretsRow::SectionSpacer,
+        SecretsRow::RoleHeader {
+            role: "alpha".to_owned(),
+            expanded: false,
+        },
+    ];
+    let auth = [
+        AuthRow::WorkspaceMode {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::WorkspaceSource {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::Spacer,
+    ];
+
+    assert_eq!(
+        editor_selection_bounds(EditorTab::Secrets, 9, 8, &secrets, &auth),
+        (2, vec![1])
+    );
+    assert_eq!(
+        editor_selection_bounds(EditorTab::Auth, 9, 8, &secrets, &auth),
+        (2, vec![1, 2])
+    );
+    assert_eq!(
+        editor_selection_bounds(EditorTab::Mounts, 9, 8, &secrets, &auth),
+        (9, Vec::new())
+    );
+}
+
+#[test]
+fn editor_max_row_for_tab_uses_tab_specific_counts() {
+    assert_eq!(editor_max_row_for_tab(EditorTab::General, 9, 8, 7, 6), 3);
+    assert_eq!(editor_max_row_for_tab(EditorTab::Mounts, 9, 8, 7, 6), 9);
+    assert_eq!(editor_max_row_for_tab(EditorTab::Roles, 9, 8, 7, 6), 8);
+    assert_eq!(editor_max_row_for_tab(EditorTab::Secrets, 9, 8, 7, 6), 6);
+    assert_eq!(editor_max_row_for_tab(EditorTab::Auth, 9, 8, 7, 6), 5);
+    assert!(editor_mount_add_row_selected(9, 9));
+    assert!(!editor_mount_add_row_selected(8, 9));
+    assert!(editor_role_add_row_selected(8, 8));
+    assert!(!editor_role_add_row_selected(7, 8));
+}
+
+#[test]
 fn editor_mount_row_select_plan_focuses_workspace_mounts() {
     assert_eq!(
         editor_mount_row_select_plan(4),
@@ -95,6 +269,51 @@ fn editor_mount_row_select_plan_focuses_workspace_mounts() {
             active_row: 4,
             workspace_mounts_scroll_focused: true,
         }
+    );
+}
+
+#[test]
+fn editor_auth_generate_scope_plan_routes_edit_mode_targets() {
+    let mode = EditorMode::Edit {
+        name: "workspace".to_owned(),
+    };
+
+    assert_eq!(
+        editor_auth_generate_scope_plan(
+            &mode,
+            &AuthFormTarget::Workspace {
+                kind: TestAuthKind::Claude,
+            },
+        ),
+        Some(EditorAuthGenerateScopePlan::Workspace(
+            "workspace".to_owned()
+        ))
+    );
+    assert_eq!(
+        editor_auth_generate_scope_plan(
+            &mode,
+            &AuthFormTarget::WorkspaceRole {
+                role: "role-a".to_owned(),
+                kind: TestAuthKind::Claude,
+            },
+        ),
+        Some(EditorAuthGenerateScopePlan::WorkspaceRole {
+            workspace: "workspace".to_owned(),
+            role: "role-a".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn editor_auth_generate_scope_plan_rejects_create_mode() {
+    assert_eq!(
+        editor_auth_generate_scope_plan(
+            &EditorMode::Create,
+            &AuthFormTarget::Workspace {
+                kind: TestAuthKind::Claude,
+            },
+        ),
+        None
     );
 }
 
@@ -315,6 +534,62 @@ fn secret_enter_plan_handles_values_and_headers() {
 }
 
 #[test]
+fn cycle_mount_isolation_at_rotates_selected_mount_only() {
+    let mut mounts = vec![
+        MountConfig {
+            src: "/a".into(),
+            dst: "/a".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        },
+        MountConfig {
+            src: "/b".into(),
+            dst: "/b".into(),
+            readonly: false,
+            isolation: MountIsolation::Worktree,
+        },
+    ];
+
+    cycle_mount_isolation_at(&mut mounts, 0);
+    assert_eq!(mounts[0].isolation, MountIsolation::Worktree);
+    assert_eq!(mounts[1].isolation, MountIsolation::Worktree);
+
+    cycle_mount_isolation_at(&mut mounts, 0);
+    assert_eq!(mounts[0].isolation, MountIsolation::Clone);
+
+    cycle_mount_isolation_at(&mut mounts, 0);
+    assert_eq!(mounts[0].isolation, MountIsolation::Shared);
+
+    cycle_mount_isolation_at(&mut mounts, 99);
+    assert_eq!(mounts[0].isolation, MountIsolation::Shared);
+}
+
+#[test]
+fn editor_mount_index_at_visual_row_maps_header_rows_and_add_sentinel() {
+    let mounts = vec![
+        MountConfig {
+            src: "/a".into(),
+            dst: "/a".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        },
+        MountConfig {
+            src: "/host/b".into(),
+            dst: "/work/b".into(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        },
+    ];
+
+    assert_eq!(editor_mount_index_at_visual_row(&mounts, 0), None);
+    assert_eq!(editor_mount_index_at_visual_row(&mounts, 1), Some(0));
+    assert_eq!(editor_mount_index_at_visual_row(&mounts, 2), Some(1));
+    assert_eq!(editor_mount_index_at_visual_row(&mounts, 3), Some(1));
+    assert_eq!(editor_mount_index_at_visual_row(&mounts, 4), None);
+    assert_eq!(editor_mount_index_at_visual_row(&mounts, 5), Some(2));
+}
+
+#[test]
 fn toggle_allowed_role_demotes_all_and_clears_default() {
     let role_names = vec!["alpha".to_owned(), "beta".to_owned()];
     let mut allowed_roles = Vec::new();
@@ -335,6 +610,37 @@ fn toggle_allowed_role_collapses_full_roster_to_all() {
     toggle_allowed_role_at(&mut allowed_roles, &mut default_role, &role_names, 1);
 
     assert!(allowed_roles.is_empty());
+}
+
+#[test]
+fn add_role_to_workspace_editor_adds_missing_role_only_in_filtered_mode() {
+    let role_names = ["alpha".to_owned(), "beta".to_owned()];
+    let mut all_allowed = Vec::new();
+
+    assert_eq!(
+        add_role_to_workspace_editor(&mut all_allowed, role_names.iter(), "beta"),
+        Some(1)
+    );
+    assert!(all_allowed.is_empty());
+
+    let mut filtered = vec!["alpha".to_owned()];
+    assert_eq!(
+        add_role_to_workspace_editor(&mut filtered, role_names.iter(), "beta"),
+        Some(1)
+    );
+    assert_eq!(filtered, vec!["alpha".to_owned(), "beta".to_owned()]);
+}
+
+#[test]
+fn add_role_to_workspace_editor_returns_none_for_unknown_role() {
+    let role_names = ["alpha".to_owned()];
+    let mut filtered = vec!["alpha".to_owned()];
+
+    assert_eq!(
+        add_role_to_workspace_editor(&mut filtered, role_names.iter(), "ghost"),
+        None
+    );
+    assert_eq!(filtered, vec!["alpha".to_owned(), "ghost".to_owned()]);
 }
 
 #[test]
@@ -517,4 +823,96 @@ fn auth_row_focusability_marks_preview_rows_inert() {
         },
     ];
     assert!(inert.iter().all(|row| !auth_row_is_focusable(row)));
+}
+
+#[test]
+fn auth_focusable_index_at_visual_row_returns_only_focusable_rows() {
+    let rows = [
+        AuthRow::WorkspaceMode {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::WorkspaceSource {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::RoleHeader {
+            role: "alpha".to_owned(),
+            expanded: false,
+        },
+    ];
+
+    assert_eq!(auth_focusable_index_at_visual_row(&rows, 0), Some(0));
+    assert_eq!(auth_focusable_index_at_visual_row(&rows, 1), None);
+    assert_eq!(auth_focusable_index_at_visual_row(&rows, 2), Some(2));
+    assert_eq!(auth_focusable_index_at_visual_row(&rows, 3), None);
+}
+
+#[test]
+fn editor_auth_row_index_at_position_maps_focusable_rows() {
+    let rows = [
+        AuthRow::WorkspaceMode {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::WorkspaceSource {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::RoleHeader {
+            role: "alpha".to_owned(),
+            expanded: false,
+        },
+    ];
+    let area = ratatui::layout::Rect::new(0, 4, 80, 8);
+
+    assert_eq!(
+        editor_auth_row_index_at_position(EditorTab::Auth, false, area, 1, 5, 0, &rows),
+        Some(0)
+    );
+    assert_eq!(
+        editor_auth_row_index_at_position(EditorTab::Auth, false, area, 1, 6, 0, &rows),
+        None
+    );
+    assert_eq!(
+        editor_auth_row_index_at_position(EditorTab::Auth, false, area, 1, 7, 0, &rows),
+        Some(2)
+    );
+    assert_eq!(
+        editor_auth_row_index_at_position(EditorTab::General, false, area, 1, 5, 0, &rows),
+        None
+    );
+    assert_eq!(
+        editor_auth_row_index_at_position(EditorTab::Auth, true, area, 1, 5, 0, &rows),
+        None
+    );
+}
+
+#[test]
+fn resolve_auth_form_target_maps_only_mode_rows() {
+    let rows = [
+        AuthRow::WorkspaceMode {
+            kind: TestAuthKind::Claude,
+        },
+        AuthRow::RoleMode {
+            role: "alpha".to_owned(),
+            kind: TestAuthKind::Github,
+        },
+        AuthRow::WorkspaceSource {
+            kind: TestAuthKind::Claude,
+        },
+    ];
+
+    assert!(matches!(
+        resolve_auth_form_target(&rows, 0),
+        Some(AuthFormTarget::Workspace {
+            kind: TestAuthKind::Claude
+        })
+    ));
+    assert!(matches!(
+        resolve_auth_form_target(&rows, 1),
+        Some(
+            AuthFormTarget::WorkspaceRole {
+                role,
+                kind: TestAuthKind::Github
+            }
+        ) if role == "alpha"
+    ));
+    assert_eq!(resolve_auth_form_target(&rows, 2), None);
 }

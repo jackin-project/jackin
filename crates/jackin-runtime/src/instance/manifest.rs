@@ -12,84 +12,16 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
+// Pure index/session data types now live in `jackin-core` so that
+// `jackin-console` can use them without depending on `jackin-runtime`.
+pub use jackin_core::instance::{
+    InstanceIndexEntry, InstanceQuery, InstanceStatus, SessionRecord, SessionStatus,
+};
+
 pub const INSTANCE_MANIFEST_VERSION: u32 = 1;
 pub const INSTANCE_INDEX_VERSION: u32 = 1;
 const INSTANCE_INDEX_FILE: &str = "instances.json";
 const INSTANCE_INDEX_LOCK_FILE: &str = "instances.json.lock";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum InstanceStatus {
-    Active,
-    Running,
-    CleanExited,
-    Crashed,
-    PreservedDirty,
-    PreservedUnpushed,
-    RestoreAvailable,
-    Superseded,
-    Purged,
-    FailedSetup,
-}
-
-impl InstanceStatus {
-    /// Snake-case label matching the serde representation.
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Active => "active",
-            Self::Running => "running",
-            Self::CleanExited => "clean_exited",
-            Self::Crashed => "crashed",
-            Self::PreservedDirty => "preserved_dirty",
-            Self::PreservedUnpushed => "preserved_unpushed",
-            Self::RestoreAvailable => "restore_available",
-            Self::Superseded => "superseded",
-            Self::Purged => "purged",
-            Self::FailedSetup => "failed_setup",
-        }
-    }
-
-    /// Compact UI label for dense table rows where horizontal space is
-    /// scarce. Lives on the type so adding a variant forces the renderer
-    /// to update; a parallel free-function mapping silently drifts.
-    #[must_use]
-    pub const fn short_label(self) -> &'static str {
-        match self {
-            Self::Active => "active",
-            Self::Running => "running",
-            Self::CleanExited => "clean",
-            Self::Crashed => "crashed",
-            Self::PreservedDirty => "dirty",
-            Self::PreservedUnpushed => "unpushed",
-            Self::RestoreAvailable => "restore",
-            Self::Superseded => "superseded",
-            Self::Purged => "purged",
-            Self::FailedSetup => "failed",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SessionStatus {
-    Running,
-    Exited,
-    ContainerMissing,
-    Unknown,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SessionRecord {
-    pub session_id: String,
-    pub name: String,
-    pub agent_runtime: String,
-    pub tmux_name: String,
-    pub created_at: String,
-    pub status: SessionStatus,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_attached_at: Option<String>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DockerResources {
@@ -140,19 +72,6 @@ pub struct InstanceManifest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InstanceIndexEntry {
-    pub instance_id: String,
-    pub container_base: String,
-    pub workspace_name: Option<String>,
-    pub workspace_label: String,
-    pub workdir: String,
-    pub role_key: String,
-    pub agent_runtime: String,
-    pub status: InstanceStatus,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceIndex {
     pub version: u32,
     pub instances: Vec<InstanceIndexEntry>,
@@ -172,15 +91,6 @@ pub struct NewInstanceManifest<'a> {
     pub role_source_ref: Option<&'a str>,
     pub image_tag: &'a str,
     pub docker: DockerResources,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct InstanceQuery<'a> {
-    pub workspace_name: Option<&'a str>,
-    pub workspace_label: &'a str,
-    pub workdir: &'a str,
-    pub role_key: Option<&'a str>,
-    pub agent_runtime: Option<Agent>,
 }
 
 impl InstanceManifest {
@@ -210,6 +120,22 @@ impl InstanceManifest {
             last_attach_outcome: None,
             docker: input.docker,
             sessions: Vec::new(),
+        }
+    }
+
+    /// Project this manifest to the lightweight index entry stored in
+    /// `instances.json`. The inverse of reading a full manifest from disk.
+    pub fn to_index_entry(&self) -> InstanceIndexEntry {
+        InstanceIndexEntry {
+            instance_id: self.instance_id.clone(),
+            container_base: self.container_base.clone(),
+            workspace_name: self.workspace_name.clone(),
+            workspace_label: self.workspace_label.clone(),
+            workdir: self.workdir.clone(),
+            role_key: self.role_key.clone(),
+            agent_runtime: self.agent_runtime.clone(),
+            status: self.status,
+            updated_at: self.updated_at.clone(),
         }
     }
 
@@ -339,34 +265,6 @@ pub fn host_path_fingerprint(path: &str) -> String {
     format!("sha256:{}", crate::instance::naming::hex_lower(&digest))
 }
 
-impl InstanceIndexEntry {
-    pub fn from_manifest(manifest: &InstanceManifest) -> Self {
-        Self {
-            instance_id: manifest.instance_id.clone(),
-            container_base: manifest.container_base.clone(),
-            workspace_name: manifest.workspace_name.clone(),
-            workspace_label: manifest.workspace_label.clone(),
-            workdir: manifest.workdir.clone(),
-            role_key: manifest.role_key.clone(),
-            agent_runtime: manifest.agent_runtime.clone(),
-            status: manifest.status,
-            updated_at: manifest.updated_at.clone(),
-        }
-    }
-
-    pub fn matches(&self, query: InstanceQuery<'_>) -> bool {
-        self.workspace_name.as_deref() == query.workspace_name
-            && self.workspace_label == query.workspace_label
-            && self.workdir == query.workdir
-            && query
-                .role_key
-                .is_none_or(|role_key| self.role_key == role_key)
-            && query
-                .agent_runtime
-                .is_none_or(|agent| self.agent_runtime == agent.slug())
-    }
-}
-
 impl InstanceIndex {
     pub fn read_or_rebuild(data_dir: &Path) -> anyhow::Result<Self> {
         if let Some(index) = Self::read_optional(data_dir)? {
@@ -408,9 +306,7 @@ impl InstanceIndex {
             index
                 .instances
                 .retain(|entry| entry.container_base != manifest.container_base);
-            index
-                .instances
-                .push(InstanceIndexEntry::from_manifest(manifest));
+            index.instances.push(manifest.to_index_entry());
             Ok(())
         })
     }
@@ -517,9 +413,7 @@ impl InstanceIndex {
         match InstanceManifest::read_optional(&state_dir) {
             Ok(Some(mut manifest)) => {
                 manifest.mark_status(InstanceStatus::Purged);
-                index
-                    .instances
-                    .push(InstanceIndexEntry::from_manifest(&manifest));
+                index.instances.push(manifest.to_index_entry());
             }
             // Manifest absent → state already torn down by
             // `purge_container_filesystem`; nothing to tombstone.
@@ -564,7 +458,7 @@ impl InstanceIndex {
             else {
                 continue;
             };
-            if InstanceIndexEntry::from_manifest(&manifest).matches(query) {
+            if manifest.to_index_entry().matches(query) {
                 manifests.push(manifest);
             }
         }
@@ -598,9 +492,7 @@ impl InstanceIndex {
             let Some(manifest) = InstanceManifest::read_optional(&entry.path())? else {
                 continue;
             };
-            index
-                .instances
-                .push(InstanceIndexEntry::from_manifest(&manifest));
+            index.instances.push(manifest.to_index_entry());
         }
         index.sort();
         Ok(index)

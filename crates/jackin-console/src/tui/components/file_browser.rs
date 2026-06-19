@@ -34,3 +34,28 @@ pub use input::FileBrowserOutcome;
 pub use listing::{FolderEntry, FolderListing};
 pub use render::{listing_rect, render};
 pub use state::FileBrowserState;
+
+#[must_use]
+pub fn page_rows_for_modal(term_size: ratatui::layout::Rect, state: &FileBrowserState) -> u16 {
+    let modal_area = crate::tui::components::modal_rects::modal_rect_for_mode(
+        term_size,
+        crate::tui::components::modal_rects::ModalRectMode::FileBrowser,
+    );
+    let listing_area = listing_rect(modal_area, state.rejected_reason.is_some());
+    u16::try_from(jackin_tui::components::viewport_height(listing_area)).unwrap_or(u16::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn page_rows_for_modal_uses_listing_viewport_height() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = FileBrowserState::from_listing(crate::services::file_browser::listing_at(
+            tmp.path().to_path_buf(),
+            tmp.path().to_path_buf(),
+        ));
+        assert!(page_rows_for_modal(ratatui::layout::Rect::new(0, 0, 80, 24), &state) > 0);
+    }
+}

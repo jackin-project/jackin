@@ -1,5 +1,7 @@
 //! Tests for `footer_hints`.
 use super::*;
+use crate::tui::app::ConsoleManagerStageRoute;
+use ratatui::layout::Rect;
 
 fn labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
     items
@@ -76,6 +78,98 @@ fn workspace_list_footer_facts_prioritize_inline_pickers() {
 }
 
 #[test]
+fn workspace_list_footer_facts_derive_row_flags_from_input() {
+    assert_eq!(
+        workspace_list_footer_facts(WorkspaceListFooterInputFacts {
+            selected_row: ManagerListRow::SavedWorkspace(4),
+            inline_agent_picker: false,
+            inline_role_picker: true,
+            preview_focused: true,
+            selected_instance_has_snapshot: true,
+            show_expand: false,
+            show_collapse: true,
+            workspace_scroll_axes: ScrollAxes {
+                vertical: true,
+                horizontal: false,
+            },
+            show_open_in_github: true,
+        }),
+        WorkspaceListFooterFacts {
+            inline_agent_picker: false,
+            inline_role_picker: true,
+            selected_instance: false,
+            preview_focused: true,
+            selected_instance_has_snapshot: true,
+            selected_saved_workspace: true,
+            selected_new_workspace: false,
+            show_expand: false,
+            show_collapse: true,
+            workspace_scroll_axes: ScrollAxes {
+                vertical: true,
+                horizontal: false,
+            },
+            show_open_in_github: true,
+        }
+    );
+}
+
+#[test]
+fn workspace_list_footer_row_facts_route_row_kinds() {
+    assert_eq!(
+        workspace_list_footer_row_facts(ManagerListRow::WorkspaceInstance(1, 2)),
+        WorkspaceListFooterRowFacts {
+            selected_instance: true,
+            selected_saved_workspace: false,
+            selected_new_workspace: false,
+        }
+    );
+    assert_eq!(
+        workspace_list_footer_row_facts(ManagerListRow::CurrentDirectoryInstance(0)),
+        WorkspaceListFooterRowFacts {
+            selected_instance: true,
+            selected_saved_workspace: false,
+            selected_new_workspace: false,
+        }
+    );
+    assert_eq!(
+        workspace_list_footer_row_facts(ManagerListRow::SavedWorkspace(3)),
+        WorkspaceListFooterRowFacts {
+            selected_instance: false,
+            selected_saved_workspace: true,
+            selected_new_workspace: false,
+        }
+    );
+    assert_eq!(
+        workspace_list_footer_row_facts(ManagerListRow::NewWorkspace),
+        WorkspaceListFooterRowFacts {
+            selected_instance: false,
+            selected_saved_workspace: false,
+            selected_new_workspace: true,
+        }
+    );
+}
+
+#[test]
+fn workspace_list_open_github_visible_requires_saved_workspace_with_mounts() {
+    assert!(workspace_list_open_github_visible(
+        ManagerListRow::SavedWorkspace(0),
+        true
+    ));
+    assert!(!workspace_list_open_github_visible(
+        ManagerListRow::SavedWorkspace(0),
+        false
+    ));
+    assert!(!workspace_list_open_github_visible(
+        ManagerListRow::CurrentDirectory,
+        true
+    ));
+    assert!(!workspace_list_open_github_visible(
+        ManagerListRow::NewWorkspace,
+        true
+    ));
+}
+
+#[test]
 fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
     assert_eq!(
         workspace_list_footer_mode_for_facts(WorkspaceListFooterFacts {
@@ -117,6 +211,246 @@ fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
             show_open_in_github: false,
         }
     );
+}
+
+#[test]
+fn workspace_footer_scroll_axes_prioritize_inline_then_focus_then_names() {
+    let inline_axes = ScrollAxes {
+        vertical: true,
+        horizontal: false,
+    };
+    let focus_axes = ScrollAxes {
+        vertical: false,
+        horizontal: true,
+    };
+
+    assert_eq!(
+        workspace_footer_scroll_axes(WorkspaceFooterScrollFacts {
+            inline_agent_picker: true,
+            inline_role_picker: false,
+            inline_picker_scroll_axes: inline_axes,
+            focused_block_scroll_axes: Some(focus_axes),
+            list_names_focused: true,
+            list_names_scroll_axes: ScrollAxes::none(),
+            show_expand: false,
+            show_collapse: false,
+        }),
+        inline_axes
+    );
+    assert_eq!(
+        workspace_footer_scroll_axes(WorkspaceFooterScrollFacts {
+            inline_agent_picker: false,
+            inline_role_picker: false,
+            inline_picker_scroll_axes: ScrollAxes::none(),
+            focused_block_scroll_axes: Some(focus_axes),
+            list_names_focused: true,
+            list_names_scroll_axes: inline_axes,
+            show_expand: false,
+            show_collapse: false,
+        }),
+        focus_axes
+    );
+    assert_eq!(
+        workspace_footer_scroll_axes(WorkspaceFooterScrollFacts {
+            inline_agent_picker: false,
+            inline_role_picker: false,
+            inline_picker_scroll_axes: ScrollAxes::none(),
+            focused_block_scroll_axes: None,
+            list_names_focused: true,
+            list_names_scroll_axes: inline_axes,
+            show_expand: true,
+            show_collapse: false,
+        }),
+        ScrollAxes::none()
+    );
+}
+
+#[test]
+fn workspace_inline_picker_content_height_prefers_agent_picker() {
+    assert_eq!(
+        workspace_inline_picker_content_height(WorkspaceInlinePickerContentFacts {
+            agent_picker_count: Some(3),
+            role_picker_count: Some(9),
+        }),
+        3
+    );
+    assert_eq!(
+        workspace_inline_picker_content_height(WorkspaceInlinePickerContentFacts {
+            agent_picker_count: None,
+            role_picker_count: Some(9),
+        }),
+        9
+    );
+    assert_eq!(
+        workspace_inline_picker_content_height(WorkspaceInlinePickerContentFacts::default()),
+        0
+    );
+}
+
+#[test]
+fn workspace_screen_footer_prefers_modal_items() {
+    let modal = vec![HintSpan::Key("Esc"), HintSpan::Text("dismiss")];
+    let list = vec![HintSpan::Key("Q"), HintSpan::Text("quit")];
+
+    assert_eq!(
+        labels(workspace_screen_footer_items(
+            WorkspaceScreenFooterFacts::List {
+                list_items: list,
+                modal_items: Some(modal),
+            }
+        )),
+        vec!["Esc", "dismiss"]
+    );
+}
+
+#[test]
+fn workspace_screen_footer_plan_routes_workspace_screens() {
+    assert_eq!(
+        workspace_screen_footer_plan(ConsoleManagerStageRoute::List),
+        WorkspaceScreenFooterPlan::List
+    );
+    assert_eq!(
+        workspace_screen_footer_plan(ConsoleManagerStageRoute::CreatePrelude),
+        WorkspaceScreenFooterPlan::CreatePrelude
+    );
+    assert_eq!(
+        workspace_screen_footer_plan(ConsoleManagerStageRoute::ConfirmDelete),
+        WorkspaceScreenFooterPlan::DestructiveConfirm
+    );
+    assert_eq!(
+        workspace_screen_footer_plan(ConsoleManagerStageRoute::ConfirmInstancePurge),
+        WorkspaceScreenFooterPlan::DestructiveConfirm
+    );
+    assert_eq!(
+        workspace_screen_footer_plan(ConsoleManagerStageRoute::Editor),
+        WorkspaceScreenFooterPlan::ScreenOwned
+    );
+    assert_eq!(
+        workspace_screen_footer_plan(ConsoleManagerStageRoute::Settings),
+        WorkspaceScreenFooterPlan::ScreenOwned
+    );
+}
+
+#[test]
+fn workspace_screen_footer_routes_prelude_and_destructive_confirm() {
+    assert_eq!(
+        labels(workspace_screen_footer_items(
+            WorkspaceScreenFooterFacts::CreatePrelude { modal_items: None },
+        )),
+        vec!["Create workspace — follow the prompts", "Esc", "cancel"]
+    );
+    assert_eq!(
+        labels(workspace_screen_footer_items(
+            WorkspaceScreenFooterFacts::DestructiveConfirm,
+        )),
+        vec!["Y", "yes", "N", "no", "Esc", "cancel"]
+    );
+}
+
+#[test]
+fn editor_screen_footer_routes_modal_tabbar_and_content() {
+    assert_eq!(
+        labels(editor_screen_footer_items(EditorScreenFooterFacts::Modal {
+            items: vec![HintSpan::Key("Esc"), HintSpan::Text("dismiss")],
+        })),
+        vec!["Esc", "dismiss"]
+    );
+    assert_eq!(
+        labels(editor_screen_footer_items(
+            EditorScreenFooterFacts::TabBar {
+                save_label: "save workspace",
+                enter_content: true,
+                dirty_change_count: Some(2),
+            }
+        )),
+        vec![
+            "\u{2190}\u{2192}",
+            "switch tab",
+            "\u{21e5}/\u{2193}",
+            "enter content",
+            "S",
+            "save workspace",
+            "(2 changes)",
+            "Esc",
+            "discard",
+        ]
+    );
+    assert_eq!(
+        labels(editor_screen_footer_items(
+            EditorScreenFooterFacts::Content {
+                save_label: "save workspace",
+                row_items: vec![HintSpan::Key("↵"), HintSpan::Text("rename")],
+                dirty_change_count: None,
+            }
+        )),
+        vec![
+            "\u{2191}\u{2193}",
+            "navigate",
+            "↵",
+            "rename",
+            "\u{21e7}",
+            "tab bar",
+            "S",
+            "save workspace",
+            "Esc",
+            "back",
+        ]
+    );
+}
+
+#[test]
+fn settings_screen_footer_prioritizes_modal_scopes() {
+    let facts = SettingsScreenFooterFacts {
+        auth_modal_items: Some(vec![HintSpan::Key("A"), HintSpan::Text("auth")]),
+        env_modal_items: Some(vec![HintSpan::Key("E"), HintSpan::Text("env")]),
+        mounts_modal_items: Some(vec![HintSpan::Key("M"), HintSpan::Text("mount")]),
+        screen_items: vec![HintSpan::Key("S"), HintSpan::Text("screen")],
+    };
+    assert_eq!(
+        labels(settings_screen_footer_items(facts)),
+        vec!["A", "auth"]
+    );
+
+    let facts = SettingsScreenFooterFacts {
+        auth_modal_items: None,
+        env_modal_items: Some(vec![HintSpan::Key("E"), HintSpan::Text("env")]),
+        mounts_modal_items: Some(vec![HintSpan::Key("M"), HintSpan::Text("mount")]),
+        screen_items: vec![HintSpan::Key("S"), HintSpan::Text("screen")],
+    };
+    assert_eq!(
+        labels(settings_screen_footer_items(facts)),
+        vec!["E", "env"]
+    );
+
+    let facts = SettingsScreenFooterFacts {
+        auth_modal_items: None,
+        env_modal_items: None,
+        mounts_modal_items: None,
+        screen_items: vec![HintSpan::Key("S"), HintSpan::Text("screen")],
+    };
+    assert_eq!(
+        labels(settings_screen_footer_items(facts)),
+        vec!["S", "screen"]
+    );
+}
+
+#[test]
+fn selected_instance_snapshot_routes_by_row_kind() {
+    assert!(selected_instance_snapshot_available(
+        ManagerListRow::WorkspaceInstance(2, 3),
+        |ws, inst| ws == 2 && inst == 3,
+        |_| false,
+    ));
+    assert!(selected_instance_snapshot_available(
+        ManagerListRow::CurrentDirectoryInstance(4),
+        |_, _| false,
+        |inst| inst == 4,
+    ));
+    assert!(!selected_instance_snapshot_available(
+        ManagerListRow::SavedWorkspace(1),
+        |_, _| true,
+        |_| true,
+    ));
 }
 
 #[test]
@@ -349,6 +683,27 @@ fn op_picker_modal_footer_mode_routes_naming_section_and_filtered_stages() {
         ModalFooterMode::FilteredPicker {
             include_refresh: true
         }
+    );
+}
+
+#[test]
+fn container_info_footer_derives_scroll_axes_from_dialog_rect() {
+    assert_eq!(
+        labels(container_info_footer_items_for_dialog(
+            120,
+            3,
+            Rect::new(0, 0, 40, 10),
+        )),
+        vec![
+            "←→",
+            "scroll",
+            "↵",
+            "copy value",
+            "Esc",
+            "dismiss",
+            "click",
+            "copy value"
+        ]
     );
 }
 

@@ -29,6 +29,11 @@ fn claude_keychain_service_name_matches_claude_scheme() {
     );
 }
 
+mod amp_auth;
+mod codex_auth;
+mod github_auth;
+mod kimi_auth;
+
 const TEST_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"test","refreshToken":"test"}}"#;
 
 // ── Source-folder validation ────────────────────────────────────────

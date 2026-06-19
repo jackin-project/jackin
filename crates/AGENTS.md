@@ -12,7 +12,7 @@ Modules with child files use a self-named module root:
 # correct
 crates/jackin-foo/src/bar.rs        ← module root
 crates/jackin-foo/src/bar/baz.rs    ← child module
-crates/jackin-foo/src/bar/tests.rs  ← test module
+crates/jackin-foo/src/bar/tests.rs  ← test module (all tests inline, no child modules)
 ```
 
 Not:
@@ -26,6 +26,27 @@ crates/jackin-foo/src/bar/baz.rs
 `lib.rs` and `main.rs` are the allowed crate-root exceptions.
 
 `clippy::mod_module_files = "deny"` is enabled in workspace `[lints.clippy]` and CI-enforced. Any PR introducing a new `mod.rs` fails.
+
+### Test file rule (hard rule)
+
+**All tests for a module live in a single `tests.rs` file. `tests.rs` must never declare child modules.**
+
+Correct — every test function is inline in `bar/tests.rs`:
+
+```text
+crates/jackin-foo/src/bar.rs          ← implementation
+crates/jackin-foo/src/bar/tests.rs    ← ALL tests here, nothing else
+```
+
+Wrong — `tests.rs` is a thin shell that splits tests across sub-files:
+
+```text
+crates/jackin-foo/src/bar/tests.rs            ← declares mod a; mod b;  (do not do this)
+crates/jackin-foo/src/bar/tests/a.rs          ← test split-out (do not create)
+crates/jackin-foo/src/bar/tests/b.rs          ← test split-out (do not create)
+```
+
+Splitting tests into sub-modules adds navigation friction and breaks the "one file = one test surface" contract. If a `tests.rs` is getting large, that is a signal the module under test is doing too many things — not a signal to split the test file. Existing violations are tracked in `findings.md` (section "Test Module Layout Violations") and must be fixed before adding new submodule splits.
 
 ### Rationale
 

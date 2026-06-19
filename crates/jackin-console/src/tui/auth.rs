@@ -76,15 +76,23 @@ impl AuthKind {
     #[must_use]
     pub const fn required_env_var(self, mode: AuthMode) -> Option<&'static str> {
         match (self, mode) {
-            (Self::Claude, AuthMode::ApiKey) => Some("ANTHROPIC_API_KEY"),
-            (Self::Claude, AuthMode::OAuthToken) => Some("CLAUDE_CODE_OAUTH_TOKEN"),
-            (Self::Codex, AuthMode::ApiKey) => Some("OPENAI_API_KEY"),
-            (Self::Amp, AuthMode::ApiKey) => Some("AMP_API_KEY"),
+            (Self::Claude, AuthMode::ApiKey) => {
+                Some(jackin_core::env_model::ANTHROPIC_API_KEY_ENV_NAME)
+            }
+            (Self::Claude, AuthMode::OAuthToken) => {
+                Some(jackin_core::env_model::CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME)
+            }
+            (Self::Codex, AuthMode::ApiKey) => {
+                Some(jackin_core::env_model::OPENAI_API_KEY_ENV_NAME)
+            }
+            (Self::Amp, AuthMode::ApiKey) => Some(jackin_core::env_model::AMP_API_KEY_ENV_NAME),
             (Self::Kimi, AuthMode::ApiKey) => {
                 Some(jackin_core::env_model::KIMI_CODE_API_KEY_ENV_NAME)
             }
-            (Self::Opencode, AuthMode::ApiKey) => Some("OPENCODE_API_KEY"),
-            (Self::Grok, AuthMode::ApiKey) => Some("XAI_API_KEY"),
+            (Self::Opencode, AuthMode::ApiKey) => {
+                Some(jackin_core::env_model::OPENCODE_API_KEY_ENV_NAME)
+            }
+            (Self::Grok, AuthMode::ApiKey) => Some(jackin_core::env_model::XAI_API_KEY_ENV_NAME),
             (Self::Github, AuthMode::Token) => Some(jackin_core::env_model::GH_TOKEN_ENV_NAME),
             (Self::Zai, AuthMode::ApiKey) => Some(jackin_core::env_model::ZAI_API_KEY_ENV_NAME),
             (Self::Minimax, AuthMode::ApiKey) => {
