@@ -1,7 +1,6 @@
 //! Transitional root-console TUI facades.
 
 pub mod app;
-pub(crate) mod components;
 pub(crate) mod debug;
 pub(crate) mod effect;
 pub(crate) mod input;

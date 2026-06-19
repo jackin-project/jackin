@@ -416,3 +416,6 @@ pub fn render_sidebar_body(
         );
     }
 }
+
+#[cfg(test)]
+mod tests;

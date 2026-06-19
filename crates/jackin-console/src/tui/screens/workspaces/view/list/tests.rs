@@ -1,12 +1,12 @@
 //! Tests for `list`.
 
-pub(super) use jackin_console::tui::components::mount_rows::render_mount_lines;
-pub(super) use jackin_console::tui::components::mount_rows::{
+pub(super) use crate::tui::components::mount_rows::render_mount_lines;
+pub(super) use crate::tui::components::mount_rows::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH,
 };
-pub(super) use jackin_console::tui::mount_display::MountDisplayRow;
-pub(super) use jackin_console::tui::mount_display::format_config_mount_rows as format_mount_rows;
-pub(super) use jackin_console::tui::mount_display::mount_path_width;
+pub(super) use crate::tui::mount_display::MountDisplayRow;
+pub(super) use crate::tui::mount_display::format_config_mount_rows as format_mount_rows;
+pub(super) use crate::tui::mount_display::mount_path_width;
 
 /// Number of leading spaces every content row in the General / Mounts /
 /// Environments / Roles sub-panels is prefixed with, so the first visible
@@ -17,9 +17,9 @@ const SUBPANEL_CONTENT_INDENT: usize = 2;
 
 mod list_name_scroll {
     use super::super::render_list_body;
-    use jackin_console::tui::layout::list::clamp_list_scroll_for_area;
-    use jackin_console::tui::layout::list::list_names_content_width;
-    use crate::console::tui::state::{
+    use crate::tui::layout::list::clamp_list_scroll_for_area;
+    use crate::tui::layout::list::list_names_content_width;
+    use crate::tui::state::{
         ConfirmTarget, ManagerListRow, ManagerState, Modal, SecretsScopeTag,
     };
     use jackin_config::AppConfig;
@@ -146,7 +146,7 @@ mod list_name_scroll {
         let tmp = tempfile::tempdir().unwrap();
         let mut state = ManagerState::from_config(&config, tmp.path());
         state.selected = 0;
-        state.hover_target = Some(crate::console::tui::state::ManagerHoverTarget::ListRow(
+        state.hover_target = Some(crate::tui::state::ManagerHoverTarget::ListRow(
             ManagerListRow::SavedWorkspace(0),
         ));
         state.list_names_scroll_x = 8;
@@ -172,7 +172,7 @@ mod list_name_scroll {
         let config = config_with_sidebar_names_that_fit_wide_pane();
         let tmp = tempfile::tempdir().unwrap();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        state.hover_target = Some(crate::console::tui::state::ManagerHoverTarget::ListRow(
+        state.hover_target = Some(crate::tui::state::ManagerHoverTarget::ListRow(
             ManagerListRow::SavedWorkspace(0),
         ));
 
@@ -315,7 +315,7 @@ mod mount_table {
         mount_path_width, render_mount_lines,
     };
     use jackin_config::MountConfig;
-    use jackin_console::tui::components::mount_rows::render_mount_header;
+    use crate::tui::components::mount_rows::render_mount_header;
 
     /// Collapse a `Line` into a single plain string (concat of all span contents).
     fn line_text(line: &ratatui::text::Line<'_>) -> String {
@@ -534,13 +534,13 @@ mod mount_block_height {
     }
 
     fn mount_block_height(mounts: &[MountConfig]) -> u16 {
-        jackin_console::tui::sidebar_layout::mount_block_height(
+        crate::tui::sidebar_layout::mount_block_height(
             mounts.iter().map(|mount| mount.src == mount.dst),
         )
     }
 
     fn global_mounts_content_height(mounts: &[MountConfig]) -> usize {
-        jackin_console::tui::sidebar_layout::global_mounts_content_height(
+        crate::tui::sidebar_layout::global_mounts_content_height(
             mounts.iter().map(|mount| mount.src == mount.dst),
         )
     }
@@ -596,10 +596,10 @@ mod subpanel_padding {
     //! rows starting at the same column so the first visible character of
     //! the three blocks, giving the right pane a tidy left edge.
     use super::SUBPANEL_CONTENT_INDENT;
-    use crate::console::tui::state::{MountInfoCache, WorkspaceSummary};
+    use crate::tui::state::{MountInfoCache, WorkspaceSummary};
     use jackin_config::AppConfig;
     use jackin_config::WorkspaceConfig;
-    use jackin_console::tui::screens::workspaces::view::{
+    use crate::tui::screens::workspaces::view::{
         render_config_mounts_subpanel as render_mounts_subpanel, render_config_roles_subpanel,
         render_environments_subpanel, render_general_subpanel, workspace_env_rows,
     };
@@ -1565,12 +1565,12 @@ mod subpanel_padding {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::console::tui::state::ManagerState::from_config(
+        let state = crate::tui::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            crate::console::tui::components::workspace_list::render_details_pane(
+            super::super::render_details_pane(
                 f,
                 Rect::new(0, 0, 60, 24),
                 &summary,
@@ -1631,12 +1631,12 @@ mod subpanel_padding {
 
         let backend = TestBackend::new(72, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::console::tui::state::ManagerState::from_config(
+        let state = crate::tui::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            crate::console::tui::components::workspace_list::render_details_pane(
+            super::super::render_details_pane(
                 f,
                 Rect::new(0, 0, 72, 24),
                 &summary(),
@@ -1678,12 +1678,12 @@ mod subpanel_padding {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::console::tui::state::ManagerState::from_config(
+        let state = crate::tui::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            crate::console::tui::components::workspace_list::render_details_pane(
+            super::super::render_details_pane(
                 f,
                 Rect::new(0, 0, 60, 24),
                 &summary,
@@ -1720,12 +1720,12 @@ mod subpanel_padding {
         cfg.roles
             .insert("alpha".into(), jackin_config::RoleSource::default());
 
-        let mut state = crate::console::tui::state::ManagerState::from_config(
+        let mut state = crate::tui::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         state.instances = vec![
-            crate::instance::InstanceIndexEntry {
+            jackin_core::instance::InstanceIndexEntry {
                 instance_id: "k7p9m2xq".into(),
                 container_base: "jackin-demo-alpha-k7p9m2xq".into(),
                 workspace_name: Some("demo".into()),
@@ -1733,10 +1733,10 @@ mod subpanel_padding {
                 workdir: "/workspace/demo".into(),
                 role_key: "alpha".into(),
                 agent_runtime: "claude".into(),
-                status: crate::instance::InstanceStatus::Active,
+                status: jackin_core::instance::InstanceStatus::Active,
                 updated_at: "2026-05-11T00:00:00Z".into(),
             },
-            crate::instance::InstanceIndexEntry {
+            jackin_core::instance::InstanceIndexEntry {
                 instance_id: "done0001".into(),
                 container_base: "jackin-demo-alpha-done0001".into(),
                 workspace_name: Some("demo".into()),
@@ -1744,7 +1744,7 @@ mod subpanel_padding {
                 workdir: "/workspace/demo".into(),
                 role_key: "alpha".into(),
                 agent_runtime: "claude".into(),
-                status: crate::instance::InstanceStatus::CleanExited,
+                status: jackin_core::instance::InstanceStatus::CleanExited,
                 updated_at: "2026-05-11T00:00:00Z".into(),
             },
         ];
@@ -1762,7 +1762,7 @@ mod subpanel_padding {
         let backend = TestBackend::new(72, 24);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            crate::console::tui::components::workspace_list::render_details_pane(
+            super::super::render_details_pane(
                 f,
                 Rect::new(0, 0, 72, 24),
                 &summary,
@@ -1811,12 +1811,12 @@ mod subpanel_padding {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::console::tui::state::ManagerState::from_config(
+        let state = crate::tui::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            crate::console::tui::components::workspace_list::render_details_pane(
+            super::super::render_details_pane(
                 f,
                 Rect::new(0, 0, 60, 24),
                 &summary,
@@ -1880,12 +1880,12 @@ mod subpanel_padding {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::console::tui::state::ManagerState::from_config(
+        let state = crate::tui::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            crate::console::tui::components::workspace_list::render_details_pane(
+            super::super::render_details_pane(
                 f,
                 Rect::new(0, 0, 60, 24),
                 &summary,
