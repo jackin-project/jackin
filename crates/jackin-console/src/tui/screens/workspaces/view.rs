@@ -1422,5 +1422,8 @@ fn env_row_line(row: &WorkspaceEnvRow, inner_width: usize) -> Line<'static> {
     Line::from(spans)
 }
 
+/// Concrete footer adapter for the workspace list screen.
+pub mod footer;
+
 #[cfg(test)]
 mod tests;

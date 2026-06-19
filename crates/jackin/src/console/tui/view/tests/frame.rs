@@ -1,6 +1,5 @@
-use crate::console::tui::layout::list::{
-    clamp_list_scroll_for_area, selected_sidebar_scroll_areas,
-};
+use crate::console::tui::layout::list::clamp_list_scroll_for_area;
+use jackin_console::tui::layout::list::selected_sidebar_scroll_areas;
 use crate::console::tui::state::ManagerState;
 use jackin_config::AppConfig;
 use jackin_config::MountIsolation;

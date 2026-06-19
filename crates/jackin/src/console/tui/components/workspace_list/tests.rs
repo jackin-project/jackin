@@ -17,7 +17,8 @@ const SUBPANEL_CONTENT_INDENT: usize = 2;
 
 mod list_name_scroll {
     use super::super::render_list_body;
-    use crate::console::tui::layout::list::{clamp_list_scroll_for_area, list_names_content_width};
+    use crate::console::tui::layout::list::clamp_list_scroll_for_area;
+    use jackin_console::tui::layout::list::list_names_content_width;
     use crate::console::tui::state::{
         ConfirmTarget, ManagerListRow, ManagerState, Modal, SecretsScopeTag,
     };

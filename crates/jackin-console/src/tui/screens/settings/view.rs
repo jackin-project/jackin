@@ -36,9 +36,11 @@ use crate::tui::components::editor_rows::{
     render_secret_key_line, render_tab_strip,
 };
 use crate::tui::components::footer_hints::{
-    SettingsContextFooterMode, content_footer_items, settings_contextual_row_footer_items,
-    settings_save_footer_label, tab_bar_footer_items,
+    SettingsContextFooterMode, SettingsScreenFooterFacts, content_footer_items,
+    settings_contextual_row_footer_items, settings_save_footer_label, settings_screen_footer_items,
+    tab_bar_footer_items,
 };
+use crate::tui::input::settings_auth_can_generate_token;
 use crate::tui::components::mount_rows::MOUNT_MODE_COL_WIDTH;
 use crate::tui::mount_display::{
     MountDisplayRow, format_config_mount_rows_with_cache, mount_path_width,
@@ -1584,6 +1586,27 @@ where
             .map_or(0, |row| 1 + detail_row_count(kind, &row.mode)),
     };
     content_height_with_error_rows(height, has_error)
+}
+
+/// Concrete adapter: compose settings footer items for a concrete `SettingsState`.
+///
+/// Gives modals priority over screen items, so whatever is active on-screen
+/// gets the footer real-estate. The generic `settings_footer_items` handles
+/// per-screen hint routing; this function layers modal items on top.
+#[must_use]
+pub fn settings_screen_footer_for_state(
+    state: &crate::tui::state::SettingsState<'_>,
+    op_available: bool,
+    body_area: Rect,
+) -> Vec<HintSpan<'static>> {
+    settings_screen_footer_items(SettingsScreenFooterFacts {
+        auth_modal_items: state.auth.modal_ref().map(|modal| {
+            modal.footer_items(settings_auth_can_generate_token(&state.auth))
+        }),
+        env_modal_items: state.env.modal.as_ref().map(SettingsEnvModal::footer_items),
+        mounts_modal_items: state.mounts.modal.as_ref().map(GlobalMountModal::footer_items),
+        screen_items: settings_footer_items(state, op_available, body_area),
+    })
 }
 
 #[cfg(test)]
