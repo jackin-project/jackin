@@ -731,3 +731,6 @@ fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta: i16)
     let plan = workspace_list_vertical_scroll_target_plan(state.list_scroll_focus());
     apply_workspace_list_vertical_scroll_plan(state, plan, delta);
 }
+
+#[cfg(test)]
+mod tests;
