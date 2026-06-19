@@ -21,13 +21,6 @@ pub(in crate::console) fn validate_auth_source_folder(
     jackin_runtime::instance::validate_sync_source_dir(agent, path, &host_home)
 }
 
-pub(crate) type InstanceRefreshSnapshot =
-    jackin_console::tui::subscriptions::InstanceRefreshSnapshot<
-        crate::instance::InstanceIndexEntry,
-        crate::instance::SessionRecord,
-        crate::runtime::snapshot::InstanceSnapshot,
-    >;
-
 #[cfg(test)]
 pub(crate) use jackin_console::services::role_source::resolve_role_input_source;
 

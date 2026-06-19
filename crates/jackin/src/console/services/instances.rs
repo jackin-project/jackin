@@ -2,12 +2,12 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::console::domain::InstanceRefreshSnapshot;
 use anyhow::Context;
+use jackin_console::tui::state::ManagerInstanceRefreshSnapshot;
 
 pub(crate) fn load_instance_refresh_snapshot(
     paths: &crate::paths::JackinPaths,
-) -> Result<InstanceRefreshSnapshot, String> {
+) -> Result<ManagerInstanceRefreshSnapshot, String> {
     let index = crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir)
         .map_err(|error| error.to_string())?;
     let mut instances = index.instances;
@@ -55,7 +55,7 @@ pub(crate) fn load_instance_refresh_snapshot(
         }
     }
 
-    Ok(InstanceRefreshSnapshot {
+    Ok(ManagerInstanceRefreshSnapshot {
         instances,
         sessions,
         session_errors,
