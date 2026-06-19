@@ -104,7 +104,7 @@ pub(super) fn dispatch_launch_prompt(
     input: LoadWorkspaceInput,
 ) -> anyhow::Result<LaunchPromptDispatch> {
     let Some((role, workspace, agent)) =
-        crate::console::tui::launch::dispatch_launch_for_workspace(
+        jackin_console::tui::launch::dispatch_launch_for_workspace(
             state,
             config,
             cwd,

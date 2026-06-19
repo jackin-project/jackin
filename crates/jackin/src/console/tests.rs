@@ -1,5 +1,5 @@
 mod quit_confirm {
-    use super::super::tui::debug::console_location_debug;
+    use jackin_console::tui::debug::console_location_debug;
     use super::super::tui::prompts::{
         AgentPickerChoices, OnPromptFailure, PromptOutcome, prompt_agent_for_launch,
         show_role_resolution_error,

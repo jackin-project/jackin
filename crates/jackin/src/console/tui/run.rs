@@ -9,7 +9,7 @@ use crate::console::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
     resume_console_terminal, suspend_console_terminal,
 };
-use crate::console::tui::debug::console_location_debug;
+use jackin_console::tui::debug::console_location_debug;
 use crate::console::tui::prompts::{
     AgentPickerChoices, LaunchPromptDispatch, LaunchPromptRequest, PromptOutcome,
     committed_role_prompt, dispatch_launch_prompt, draw_role_resolution_dialog,
@@ -243,7 +243,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     use futures_util::{FutureExt as _, StreamExt as _};
 
     let startup_error_pending = options.startup_error.is_some();
-    let mut state = crate::console::tui::app::new_console_state_with_startup_error(
+    let mut state = jackin_console::tui::console::new_console_state_with_startup_error(
         &config,
         cwd,
         options.op_available,
