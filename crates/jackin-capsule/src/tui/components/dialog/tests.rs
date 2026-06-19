@@ -832,16 +832,18 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
         tabs: vec![
             jackin_protocol::control::UsageProviderTab {
                 label: "Codex".to_owned(),
-                status_label: "fresh".to_owned(),
+                status_label: "Session 37% left · Resets in 1h 21m".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
                 plan_label: Some("Pro 20x".to_owned()),
+                source_label: Some("fresh · provider".to_owned()),
                 active: true,
             },
             jackin_protocol::control::UsageProviderTab {
                 label: "Claude".to_owned(),
-                status_label: "stale".to_owned(),
+                status_label: "16% left · Resets in 46m".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
                 plan_label: Some("Max".to_owned()),
+                source_label: Some("stale · local estimate".to_owned()),
                 active: false,
             },
             jackin_protocol::control::UsageProviderTab {
@@ -849,6 +851,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 status_label: "unsupported".to_owned(),
                 account_label: "account unavailable".to_owned(),
                 plan_label: None,
+                source_label: None,
                 active: false,
             },
         ],
@@ -1331,10 +1334,10 @@ fn usage_dialog_overview_tab_renders_cross_provider_summary() {
     assert!(values.contains(&"OpenAI / Codex · alexey@example.com · Pro 20x"));
     assert!(values.contains(&"Session · 37% left · Resets in 1h 21m"));
     assert!(values.contains(&"managed CLI · authoritative"));
-    // Provider rows are one quota-focused line each (status_label), with the
-    // account identity carried by the focused header, not per row.
-    assert!(values.contains(&"fresh"));
-    assert!(values.contains(&"stale"));
+    // Provider rows are one quota-focused line each: the quota summary plus a
+    // freshness · source tag, with account identity carried by the header.
+    assert!(values.contains(&"Session 37% left · Resets in 1h 21m · fresh · provider"));
+    assert!(values.contains(&"16% left · Resets in 46m · stale · local estimate"));
     assert!(values.contains(&"unsupported"));
     assert!(values.contains(&"Enter Provider detail   r Refresh focused   Esc Close"));
     assert!(rows_debug.contains("Codex focused"));

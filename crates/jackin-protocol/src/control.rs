@@ -234,6 +234,9 @@ pub struct UsageProviderTab {
     pub status_label: String,
     pub account_label: String,
     pub plan_label: Option<String>,
+    /// Freshness + source tag for the Overview row, e.g. "fresh · provider"
+    /// or "stale · local estimate". `None` until the daemon enriches the tab.
+    pub source_label: Option<String>,
     pub active: bool,
 }
 

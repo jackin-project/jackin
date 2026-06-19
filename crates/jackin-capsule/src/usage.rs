@@ -1328,6 +1328,7 @@ fn provider_tabs(active: UsageSurface) -> Vec<UsageProviderTab> {
         status_label: if surface == active { "focused" } else { "" }.to_owned(),
         account_label: "account unavailable".to_owned(),
         plan_label: None,
+        source_label: None,
         active: surface == active,
     })
     .collect()
@@ -1338,11 +1339,13 @@ fn enrich_provider_tabs(view: &mut FocusedUsageView, snapshots: &HashMap<String,
     let active_account = compact_account_identity(&view.account.account_label).to_owned();
     let active_plan = view.account.plan_label.clone();
     let active_status = usage_tab_status_label(view);
+    let active_source = usage_tab_source_label(view);
     for tab in &mut view.tabs {
         if tab.active || provider_matches_usage_label(&tab.label, &active_label) {
             tab.account_label = active_account.clone();
             tab.plan_label = active_plan.clone();
             tab.status_label = active_status.clone();
+            tab.source_label = Some(active_source.clone());
             continue;
         }
         let Some(cached) = snapshots
@@ -1355,12 +1358,36 @@ fn enrich_provider_tabs(view: &mut FocusedUsageView, snapshots: &HashMap<String,
             tab.account_label = "account unavailable".to_owned();
             tab.plan_label = None;
             tab.status_label = "not cached".to_owned();
+            tab.source_label = None;
             continue;
         };
         tab.account_label = compact_account_identity(&cached.view.account.account_label).to_owned();
         tab.plan_label = cached.view.account.plan_label.clone();
         tab.status_label = usage_tab_status_label(&cached.view);
+        tab.source_label = Some(usage_tab_source_label(&cached.view));
     }
+}
+
+/// Freshness + source tag for the Overview row, e.g. "fresh · provider" or
+/// "stale · local estimate", matching the CodexBar-style status column.
+fn usage_tab_source_label(view: &FocusedUsageView) -> String {
+    let freshness = match view.status {
+        UsageSnapshotStatus::Fresh => "fresh",
+        UsageSnapshotStatus::Stale => "stale",
+        UsageSnapshotStatus::NeedsLogin => "needs login",
+        UsageSnapshotStatus::NeedsSecret => "needs secret",
+        UsageSnapshotStatus::Unsupported => "unsupported",
+        UsageSnapshotStatus::Unavailable => "unavailable",
+        UsageSnapshotStatus::Error => "error",
+    };
+    let source = match view.source {
+        UsageSource::ProviderApi => "provider",
+        UsageSource::Cli => "managed CLI",
+        UsageSource::LocalLogs => "local estimate",
+        UsageSource::Cache => "cache",
+        UsageSource::None => "no source",
+    };
+    format!("{freshness} · {source}")
 }
 
 fn usage_tab_status_label(view: &FocusedUsageView) -> String {

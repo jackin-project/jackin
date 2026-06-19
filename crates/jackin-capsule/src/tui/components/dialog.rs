@@ -917,17 +917,24 @@ impl Dialog {
                 // account identity lives in the focused header above, not on
                 // every row. status_label is the daemon-enriched
                 // "Session 37% left · Resets in 1h 21m" (or a lifecycle word).
+                let quota = if tab.status_label.trim().is_empty() {
+                    "status unavailable"
+                } else {
+                    tab.status_label.trim()
+                };
+                let value = match tab.source_label.as_deref() {
+                    Some(source) if !source.trim().is_empty() => {
+                        format!("{quota} · {}", source.trim())
+                    }
+                    _ => quota.to_owned(),
+                };
                 rows.push(jackin_tui::components::ContainerInfoRow::new(
                     if tab.active {
                         format!("{} focused", tab.label)
                     } else {
                         tab.label.clone()
                     },
-                    if tab.status_label.trim().is_empty() {
-                        "status unavailable".to_owned()
-                    } else {
-                        tab.status_label.trim().to_owned()
-                    },
+                    value,
                 ));
             }
         }
