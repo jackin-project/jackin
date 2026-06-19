@@ -9,8 +9,10 @@
 
 pub mod control;
 pub mod provider_adapter;
+pub mod snapshot;
 
 pub use provider_adapter::ProviderAdapter;
+pub use snapshot::InstanceSnapshot;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

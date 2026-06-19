@@ -147,7 +147,7 @@ pub(crate) fn overlay_running_instances(
         if !known.insert(container.clone()) {
             continue;
         }
-        let mut entry = crate::instance::InstanceIndexEntry::from_manifest(&manifest);
+        let mut entry = manifest.to_index_entry();
         entry.status = crate::instance::InstanceStatus::Running;
         instances.push(entry);
     }

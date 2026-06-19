@@ -14,6 +14,7 @@ pub mod constants;
 pub mod docker;
 pub mod env_model;
 pub mod env_value;
+pub mod instance;
 pub mod isolation;
 pub mod manifest;
 pub mod op_cache;
