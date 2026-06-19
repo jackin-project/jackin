@@ -6,7 +6,6 @@ pub(crate) mod effect;
 pub(crate) mod input;
 pub mod launch;
 pub mod message;
-pub(crate) mod op_picker;
 pub(crate) mod prompts;
 pub mod run;
 pub mod state;

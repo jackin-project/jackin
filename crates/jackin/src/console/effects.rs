@@ -5,7 +5,7 @@ use crate::console::tui::effect::{
     FileBrowserEffectContext, ManagerEffect, WorkspaceSaveEffect, WorkspaceSaveWriteInput,
     WorkspaceSaveWriteMode,
 };
-use crate::console::tui::op_picker::OpPickerState;
+use jackin_console::tui::op_picker::OpPickerState;
 use jackin_config::AppConfig;
 use jackin_console::tui::effect::ConsoleEffect;
 use jackin_console::tui::screens::workspaces::update::saved_workspace_selected_index;
@@ -697,7 +697,7 @@ pub(crate) fn execute_token_generate(
     config: &AppConfig,
     req: &crate::console::tui::state::PendingTokenGenerate,
 ) -> anyhow::Result<jackin_core::EnvValue> {
-    crate::console::services::token_setup::mint_token_value(paths, config, &req.scope, &req.args)
+    jackin_env::mint_token_value(paths, config, &req.scope, &req.args)
 }
 
 pub(crate) fn apply_token_generate_result(
