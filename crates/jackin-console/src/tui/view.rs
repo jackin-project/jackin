@@ -383,6 +383,75 @@ pub fn status_overlay_area(area: Rect) -> Rect {
     crate::tui::layout::centered_rect_fixed(area, 50, 7)
 }
 
+/// Render the active modal overlay for the current console state.
+///
+/// Dispatches to the appropriate component renderer based on the `Modal` variant.
+/// The modal area has already been computed by `prepare_for_render` and stored
+/// on the modal via `modal.prepare_for_render`.
+pub fn render_modal(frame: &mut Frame<'_>, modal: &crate::tui::state::Modal<'_>) {
+    use crate::tui::state::Modal;
+
+    let area = frame.area();
+    let modal_area = modal.rect(area);
+    match modal {
+        Modal::TextInput { state, .. } => {
+            jackin_tui::components::render_text_input(frame, modal_area, state);
+        }
+        Modal::FileBrowser { state, .. } => {
+            crate::tui::components::file_browser::render(frame, modal_area, state);
+        }
+        Modal::WorkdirPick { state } => {
+            crate::tui::components::workdir_pick::render(frame, modal_area, state);
+        }
+        Modal::Confirm { state, .. } => {
+            jackin_tui::components::render_confirm_dialog(frame, modal_area, state);
+        }
+        Modal::SaveDiscardCancel { state } => {
+            jackin_tui::components::render_save_discard_dialog(frame, modal_area, state);
+        }
+        Modal::MountDstChoice { state, .. } => {
+            crate::tui::components::mount_dst_choice::render(frame, modal_area, state);
+        }
+        Modal::GithubPicker { state } => {
+            crate::tui::components::github_picker::render(frame, modal_area, state);
+        }
+        Modal::ConfirmSave { state } => {
+            crate::tui::components::confirm_save::render(frame, modal_area, state);
+        }
+        Modal::ErrorPopup { state } => {
+            jackin_tui::components::render_error_dialog(frame, modal_area, state);
+        }
+        Modal::ContainerInfo { state } => {
+            jackin_tui::components::render_container_info(frame, modal_area, state);
+        }
+        Modal::StatusPopup { state } => {
+            jackin_tui::components::render_status_popup(frame, modal_area, state);
+        }
+        Modal::OpPicker { state } => {
+            crate::tui::components::op_picker::render_picker(frame, modal_area, state.as_ref());
+        }
+        Modal::RolePicker { state }
+        | Modal::RoleOverridePicker { state }
+        | Modal::AuthRolePicker { state } => {
+            crate::tui::components::role_picker::render(frame, modal_area, state);
+        }
+        Modal::SourcePicker { state, .. } | Modal::AuthSourcePicker { state } => {
+            crate::tui::components::source_picker::render(frame, modal_area, state);
+        }
+        Modal::ScopePicker { state } => {
+            crate::tui::components::scope_picker::render(frame, modal_area, state);
+        }
+        Modal::AuthForm { state, focus, .. } => {
+            crate::tui::components::auth_panel::render_form(
+                frame,
+                modal_area,
+                state.as_ref(),
+                *focus,
+            );
+        }
+    }
+}
+
 /// Prepare `state` for the next render pass.
 ///
 /// Must be called once before `render` each frame. Computes and caches footer
