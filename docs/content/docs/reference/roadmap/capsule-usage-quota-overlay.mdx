@@ -61,6 +61,41 @@ Each step names the change and the exact verification that proves it on-host. St
 9. **Verify across two workspaces / accounts.** Start one jackin' instance in the jackin workspace and one in the sandbird workspace (its own John Docker agent role), and confirm each instance's overlay shows the correct synchronized account, plan, and live quota for the focused agent without cross-instance leakage. *Verify:* both overlays render correct provider identity and quota; the `Instance` tab in each shows only its own samples.
 10. **Honest degradation for expired/forwarded tokens.** *Verify:* with an intentionally expired token, the tab shows `needs login` / `stale` with the last-known buckets where available, never a fabricated percentage, and never writes host credentials.
 
+## CodexBar Parity And Non-Regression Principle
+
+CodexBar is the reference jackin' borrows this feature's data extraction and information architecture from. That makes a non-regression rule explicit and binding for this item:
+
+**jackin' must never present this information at lower quality than CodexBar does for any dimension it also covers. For every dimension below, jackin' targets parity-or-better: the same or richer detail, the same or higher data quality and provenance honesty, the same or better caching and refresh behaviour, and the same or better performance. A change that would make any covered dimension worse than CodexBar is a regression and must not ship without an explicitly recorded, operator-approved reason (for example, the deliberate read-only host-safety tradeoff below).** Where jackin' cannot match a CodexBar capability safely, it must say so honestly in the UI rather than degrade silently or fake data.
+
+The deliberate exceptions, where jackin' is intentionally less capable than CodexBar in exchange for a stronger guarantee, are explicit and limited:
+
+- jackin' never writes host credentials, so it does not run CodexBar's token-refresh-and-rewrite flow; an expired forwarded token degrades to an honest `needs login` / `stale` state instead of being silently refreshed.
+- jackin' never imports browser cookies, scrapes dashboards, reads the Keychain to repair accounts, or launches hidden provider CLIs in the background. Capsule is read-only and daemon-fed.
+
+Every other dimension must be parity-or-better.
+
+### Dimension-By-Dimension Comparison
+
+Comparison of CodexBar (`github.com/steipete/CodexBar`) against the jackin' Capsule usage overlay. "Current" is the shipped state as of the 2026-06-19 host run; "Target" is the parity-or-better bar this item commits to.
+
+| Dimension | CodexBar | jackin' current | jackin' target (parity-or-better) |
+|---|---|---|---|
+| Surface | macOS menu-bar popover, one focused account at a time | In-terminal multiplexer overlay, daemon-fed, focused-pane aware, keyboard-first, low-color safe | Parity for account view; better — adds in-terminal, focused-pane, and multi-instance context CodexBar has no equivalent for |
+| Provider coverage | Codex, Claude, Amp, OpenCode, and a few more | Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, MiniMax, OpenCode | Better — broader provider matrix; must not drop any provider CodexBar covers |
+| Credential sources | OAuth cache, `~/.claude/.credentials.json`, Keychain `Claude Code-credentials`, `~/.codex/auth.json` | Codex `~/.codex/auth.json` works; Claude reads wrong file (defect) | Parity — read the same sources (including container `.credentials.json` and host Keychain) so synchronized logins authenticate |
+| Usage endpoints / fields | `api.anthropic.com/api/oauth/usage`, `chatgpt.com/backend-api/wham/usage`, app-server RPC | Same endpoints and field maps; Claude bucket set partial | Parity — same endpoints, full bucket coverage including `Opus` |
+| Token refresh | Refreshes and rewrites auth files (8-day) | None, by design (read-only) | Intentionally less; honest `needs login` / `stale` degradation instead — recorded exception |
+| Caching | Per-app in-memory fetch with throttle | Daemon `UsageCache` (5-min TTL), last-known-good on stale, atomic `accounts.json` bridge, Turso `telemetry.db` | Better — persistent structured cache and stale-preservation beyond CodexBar's in-memory model |
+| Spend / history | Local provider-log spend scans, history bars, top model | Same plus exact/estimated/unpriced provenance separation and instance-scoped runtime-stream sampling | Better — stronger provenance honesty and runtime attribution; must keep the labels honest |
+| Instance accounting | None (account-scoped only) | `Instance` tab: since-start spend, per-codename and per-provider/account rows scoped to the instance id | Better — a view CodexBar does not provide; must not contaminate account tabs with instance numbers |
+| Pace / reserve labels | `On pace` / `N% in reserve` / `N% in deficit` from utilization-vs-elapsed delta | Pace labels present in bucket shape | Parity — same formula and thresholds |
+| Performance | Native Swift, periodic fetch | Rust daemon, incremental log scan keyed by path/mtime/size/offset, launch cooldowns, hard request timeouts, renderer never polls providers | Parity-or-better — bounded refresh and incremental scans; renderer must stay non-blocking |
+| Status / dashboard actions | Status badges, Buy Credits, Add Account, Usage Dashboard links (clickable, host-capable) | Read-only or disabled parity rows; explicit `unsupported` where unsafe | Honest parity — show the rows read-only/disabled with a clear reason rather than fake actionable controls |
+| Security posture | Reads Keychain, refreshes tokens, may scrape web/cookies | No host writes, no cookie import, no hidden CLIs, no account repair | Better — strictly safer; this is the guarantee that justifies the refresh exception |
+| Display fidelity | Polished native meters and cards | Behind: scaffold rows and doubled labels (defect) | Parity — must match the previews in this item across all three width bands |
+
+The two rows currently below parity — credential source (Claude) and display fidelity — are exactly the defects the remediation plan above closes. Once those steps pass on-host verification, every covered dimension is parity-or-better, and the deliberate exceptions remain the only places jackin' is intentionally less capable than CodexBar.
+
 ## Problem
 
 jackin' can launch several expensive agent sessions in parallel, but the
