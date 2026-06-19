@@ -223,7 +223,7 @@ Remaining hint gaps (handled but unadvertised) are in the divergence catalogue a
 - [x] Launch `prompts.rs`: `draw_confirm` uses `confirm_hint_spans()`, `draw_select` uses `select_list_hint_spans()`, `draw_error_popup` uses `error_popup_hint_spans()`.
 - [x] Console `run.rs`: quit-confirm hint bar uses `confirm_hint_spans()`.
 - [x] Console `footer_hints.rs`: `error_popup_footer_items` uses `error_popup_hint_spans()`; `save_discard_cancel_footer_items` uses `save_discard_hint_spans()`; `ConfirmDismiss`/`OpNamingTextInput` modes use `text_input_hint_spans()`.
-- Capsule `dialog/input.rs`: `Ctrl+Q` added to `is_dismiss_key`, `is_filter_dismiss_key`, `rename_tab_handle_key`, and `CONFIRM_KEYMAP`'s Cancel binding. All dialog surfaces now exit on Ctrl+Q.
+- [x] Capsule `dialog/input.rs`: `Ctrl+Q` added to `is_dismiss_key`, `is_filter_dismiss_key`, `rename_tab_handle_key`, and `CONFIRM_KEYMAP`'s Cancel binding (`confirm_dialog.rs`). All capsule dialog surfaces now exit on Ctrl+Q.
 - [ ] Capsule `input.rs` main dispatch (prefix keys, palette toggle); `status_bar.rs` env-configurable labels — deferred to Phase 3 registry migration.
 - [ ] Launch `subscriptions.rs`/`run.rs` dispatch + failure-popup and pre-pipeline overlay hints.
 - [ ] Console `input/*.rs` + `file_browser`/`git_prompt` dispatch and remaining `footer_hints.rs` builders; register vim aliases and workspace-row/instance actions; delete dead settings arms.
