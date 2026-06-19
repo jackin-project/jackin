@@ -2367,5 +2367,22 @@ pub fn secret_key_input_state_from_pending<'a, R, V>(
     )
 }
 
+/// Concrete adapter: render the editor screen with the standard footer.
+///
+/// Equivalent to the generic `render_editor_screen` but binds the concrete
+/// `EditorState<'_>` and `editor_footer_items` so callers do not need to
+/// construct the footer closure themselves.
+pub fn render_editor_with_footer(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &crate::tui::state::EditorState<'_>,
+    config: &jackin_config::AppConfig,
+    op_available: bool,
+) {
+    render_editor_screen(frame, area, state, config, |state, config, body| {
+        crate::tui::components::footer_hints::editor_footer_items(state, config, op_available, body)
+    });
+}
+
 #[cfg(test)]
 mod tests;

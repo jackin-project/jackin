@@ -1,5 +1,9 @@
 //! Tests for `view`.
+mod agents_tab_render;
 mod contextual_row_items;
+mod general_tab_render;
+mod mounts_tab_render;
+mod secrets_tab_render;
 
 use super::*;
 
