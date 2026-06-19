@@ -5,7 +5,15 @@ use std::rc::Rc;
 use crossterm::event::KeyEvent;
 
 use super::super::effect::{FileBrowserEffectContext, ManagerEffect};
-use super::{InputOutcome, editor, global_mounts, list, prelude, save};
+use super::{InputOutcome, editor, global_mounts};
+use jackin_console::tui::input::list::{
+    handle_inline_agent_picker, handle_inline_provider_picker, handle_inline_role_picker,
+    handle_launch_provider_picker, handle_list_key, handle_list_modal, handle_new_session_picker,
+};
+use jackin_console::tui::input::prelude::{
+    PreludeModalOutcome, handle_prelude_key, handle_prelude_modal,
+};
+use jackin_console::tui::input::save::begin_editor_save;
 use crate::console::tui::message::{ManagerMessage, update_manager};
 use crate::console::tui::state::{ExitIntent, ManagerStage, ManagerState};
 use crate::paths::JackinPaths;
@@ -50,21 +58,21 @@ pub fn handle_key(
     });
 
     match dispatch_plan {
-        ConsoleInputDispatchPlan::ListModal => return Ok(list::handle_list_modal(state, key)),
+        ConsoleInputDispatchPlan::ListModal => return Ok(handle_list_modal(state, key)),
         ConsoleInputDispatchPlan::InlineNewSessionPicker => {
-            return Ok(list::handle_new_session_picker(state, key));
+            return Ok(handle_new_session_picker(state, key));
         }
         ConsoleInputDispatchPlan::InlineProviderPicker => {
-            return Ok(list::handle_inline_provider_picker(state, key));
+            return Ok(handle_inline_provider_picker(state, key));
         }
         ConsoleInputDispatchPlan::LaunchProviderPicker => {
-            return Ok(list::handle_launch_provider_picker(state, key));
+            return Ok(handle_launch_provider_picker(state, key));
         }
         ConsoleInputDispatchPlan::InlineAgentPicker => {
-            return Ok(list::handle_inline_agent_picker(state, key));
+            return Ok(handle_inline_agent_picker(state, key));
         }
         ConsoleInputDispatchPlan::InlineRolePicker => {
-            return Ok(list::handle_inline_role_picker(state, key));
+            return Ok(handle_inline_role_picker(state, key));
         }
         ConsoleInputDispatchPlan::EditorModal => {}
         ConsoleInputDispatchPlan::SettingsErrorPopup => {}
@@ -75,7 +83,7 @@ pub fn handle_key(
         ConsoleInputDispatchPlan::Stage(route) => {
             let outcome = match route {
                 ConsoleManagerStageRoute::List => {
-                    list::handle_list_key(state, config, paths, cwd, key)
+                    handle_list_key(state, config, paths, cwd, key)
                 }
                 ConsoleManagerStageRoute::Editor => {
                     editor::handle_editor_key(state, config, paths, cwd, key)
@@ -86,7 +94,7 @@ pub fn handle_key(
                     Ok(InputOutcome::Continue)
                 }
                 ConsoleManagerStageRoute::CreatePrelude => {
-                    Ok(prelude::handle_prelude_key(state, config, paths, cwd, key))
+                    Ok(handle_prelude_key(state, config, paths, cwd, key))
                 }
                 ConsoleManagerStageRoute::ConfirmDelete => {
                     Ok(handle_confirm_delete_key(state, cwd, key))
@@ -175,7 +183,7 @@ pub fn handle_key(
                     if let ManagerStage::Editor(e) = &mut state.stage {
                         e.exit_after_save = None;
                     }
-                    save::begin_editor_save(state, config, true)?;
+                    begin_editor_save(state, config, true)?;
                 }
                 ExitIntent::Discard => {
                     let _unused = update_manager(
@@ -270,25 +278,25 @@ pub fn handle_key(
     }
     if matches!(dispatch_plan, ConsoleInputDispatchPlan::CreatePreludeModal) {
         let outcome = if let ManagerStage::CreatePrelude(p) = &mut state.stage {
-            prelude::handle_prelude_modal(p, key, term_size)
+            handle_prelude_modal(p, key, term_size)
         } else {
-            prelude::PreludeModalOutcome::Continue
+            PreludeModalOutcome::Continue
         };
         match outcome {
-            prelude::PreludeModalOutcome::Continue => {}
-            prelude::PreludeModalOutcome::OpenUrl(url) => {
+            PreludeModalOutcome::Continue => {}
+            PreludeModalOutcome::OpenUrl(url) => {
                 state.request_effect(ManagerEffect::OpenUrl(url));
                 return Ok(InputOutcome::Continue);
             }
-            prelude::PreludeModalOutcome::ReopenFileBrowserAtLastCwd => {
+            PreludeModalOutcome::ReopenFileBrowserAtLastCwd => {
                 state.request_effect(ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd);
                 return Ok(InputOutcome::Continue);
             }
-            prelude::PreludeModalOutcome::ResolveFileBrowserGitUrl(path) => {
+            PreludeModalOutcome::ResolveFileBrowserGitUrl(path) => {
                 state.request_effect(ManagerEffect::ResolveFileBrowserGitUrl(path));
                 return Ok(InputOutcome::Continue);
             }
-            prelude::PreludeModalOutcome::ApplyFileBrowserOutcome {
+            PreludeModalOutcome::ApplyFileBrowserOutcome {
                 outcome,
                 browser_cwd,
             } => {

@@ -167,7 +167,7 @@ pub fn execute_pending_workspace_save_commit(
     };
 
     if let Some(effect) =
-        crate::console::tui::input::save::commit_editor_save(state, config, plan, exit_on_success)?
+        jackin_console::tui::input::save::commit_editor_save(state, config, plan, exit_on_success)?
     {
         execute_workspace_save_effect(state, config, paths, cwd, effect);
     }
@@ -718,12 +718,12 @@ fn apply_generated_token(state: &mut ManagerState<'_>, env_value: jackin_core::E
     match &mut state.stage {
         ManagerStage::Editor(editor) => match env_value {
             jackin_core::EnvValue::OpRef(op_ref) => {
-                crate::console::tui::input::auth::apply_op_picker_to_auth_form_committed(
+                jackin_console::tui::input::auth::apply_op_picker_to_auth_form_committed(
                     editor, op_ref,
                 );
             }
             jackin_core::EnvValue::Plain(value) => {
-                crate::console::tui::input::auth::apply_plain_text_to_auth_form(editor, &value);
+                jackin_console::tui::input::auth::apply_plain_text_to_auth_form(editor, &value);
             }
         },
         ManagerStage::Settings(settings) => match env_value {
@@ -866,7 +866,7 @@ pub(crate) fn execute_workspace_save_effect(
                 let (_tx, rx) = tokio::sync::oneshot::channel();
                 let check = PendingDriftCheck::new(rx, original_name, plan, exit_on_success);
                 if let Ok(Some(effect)) =
-                    crate::console::tui::input::save::continue_save_after_drift_check(
+                    jackin_console::tui::input::save::continue_save_after_drift_check(
                         state,
                         config,
                         check,
@@ -1005,7 +1005,7 @@ pub(crate) fn execute_workspace_save_write(
         }
         Err(e) => {
             if let ManagerStage::Editor(editor) = &mut state.stage {
-                crate::console::tui::input::save::open_save_error_popup(editor, &e.to_string());
+                jackin_console::tui::input::save::open_save_error_popup(editor, &e.to_string());
             }
         }
     }
@@ -1132,7 +1132,7 @@ pub(crate) fn apply_background_event(
         }
         ManagerBackgroundEvent::DriftCheckFinished { check, detection } => {
             if let Ok(Some(effect)) =
-                crate::console::tui::input::save::continue_save_after_drift_check(
+                jackin_console::tui::input::save::continue_save_after_drift_check(
                     state, config, check, detection,
                 )
             {
@@ -1142,7 +1142,7 @@ pub(crate) fn apply_background_event(
         }
         ManagerBackgroundEvent::IsolationCleanupFinished { cleanup, result } => {
             if let Ok(Some(effect)) =
-                crate::console::tui::input::save::continue_save_after_isolation_cleanup(
+                jackin_console::tui::input::save::continue_save_after_isolation_cleanup(
                     state, config, cleanup, result,
                 )
             {
