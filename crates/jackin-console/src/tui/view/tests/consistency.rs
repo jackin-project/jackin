@@ -107,7 +107,7 @@ fn render_confirm() -> (Buffer, Rect) {
 }
 
 fn render_mount_dst() -> (Buffer, Rect) {
-    use jackin_console::tui::components::mount_dst_choice::{MountDstChoiceState, render};
+    use crate::tui::components::mount_dst_choice::{MountDstChoiceState, render};
     let area = Rect::new(0, 0, 80, 8);
     let state = MountDstChoiceState::new("/home/user/app");
     let buf = draw(area.width, area.height, |f| render(f, area, &state));
@@ -124,7 +124,7 @@ fn render_text_input() -> (Buffer, Rect) {
 
 fn render_workdir_pick() -> (Buffer, Rect) {
     use jackin_config::MountConfig;
-    use jackin_console::tui::components::workdir_pick::{WorkdirPickState, render};
+    use crate::tui::components::workdir_pick::{WorkdirPickState, render};
     let area = Rect::new(0, 0, 60, 12);
     let mounts = [MountConfig {
         src: "/home/user/app".into(),
@@ -138,10 +138,8 @@ fn render_workdir_pick() -> (Buffer, Rect) {
 }
 
 fn render_github_picker() -> (Buffer, Rect) {
-    use jackin_console::{
-        github_mounts::GithubChoice,
-        tui::components::github_picker::{GithubPickerState, render},
-    };
+    use crate::github_mounts::GithubChoice;
+    use crate::tui::components::github_picker::{GithubPickerState, render};
     let area = Rect::new(0, 0, 60, 10);
     let state = GithubPickerState::new(vec![GithubChoice {
         src: "/home/user/app".into(),
@@ -153,8 +151,8 @@ fn render_github_picker() -> (Buffer, Rect) {
 }
 
 fn render_op_picker() -> (Buffer, Rect) {
-    use crate::console::tui::op_picker::OpPickerState;
-    use jackin_console::tui::components::op_picker::render_picker;
+    use crate::tui::op_picker::OpPickerState;
+    use crate::tui::components::op_picker::render_picker;
     let area = Rect::new(0, 0, 70, 20);
     let state = OpPickerState::new();
     let buf = draw(area.width, area.height, |f| render_picker(f, area, &state));
@@ -162,8 +160,8 @@ fn render_op_picker() -> (Buffer, Rect) {
 }
 
 fn render_role_picker() -> (Buffer, Rect) {
-    use crate::console::tui::state::RolePickerState;
-    use jackin_console::tui::components::role_picker::render;
+    use crate::tui::state::RolePickerState;
+    use crate::tui::components::role_picker::render;
     use jackin_core::RoleSelector;
     let area = Rect::new(0, 0, 60, 10);
     let state = RolePickerState::new(vec![
@@ -175,7 +173,7 @@ fn render_role_picker() -> (Buffer, Rect) {
 }
 
 fn render_confirm_save() -> (Buffer, Rect) {
-    use jackin_console::tui::components::confirm_save::{ConfirmSaveState, render};
+    use crate::tui::components::confirm_save::{ConfirmSaveState, render};
     use ratatui::text::Line;
     let area = Rect::new(0, 0, 70, 10);
     let state = ConfirmSaveState::<jackin_config::MountConfig>::new(vec![
@@ -188,8 +186,8 @@ fn render_confirm_save() -> (Buffer, Rect) {
 }
 
 fn render_agent_choice() -> (Buffer, Rect) {
-    use crate::console::tui::state::AgentChoiceState;
-    use jackin_console::tui::components::agent_choice::render;
+    use crate::tui::state::AgentChoiceState;
+    use crate::tui::components::agent_choice::render;
     let area = Rect::new(0, 0, 50, 7);
     let state = AgentChoiceState::new();
     let buf = draw(area.width, area.height, |f| render(f, area, &state));
