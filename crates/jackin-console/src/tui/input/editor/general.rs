@@ -1,10 +1,10 @@
 //! General tab helpers for the editor: field modal opener.
 
-use crate::console::tui::state::{EditorState, FieldFocus, Modal, TextInputTarget};
-use jackin_console::tui::screens::editor::update::{
+use crate::tui::state::{EditorState, FieldFocus, Modal, TextInputTarget};
+use crate::tui::screens::editor::update::{
     EditorGeneralFieldModalPlan, editor_general_field_modal_plan,
 };
-use jackin_console::tui::screens::editor::view::{
+use crate::tui::screens::editor::view::{
     editor_name_input_state, editor_name_value, editor_workdir_pick_state,
 };
 

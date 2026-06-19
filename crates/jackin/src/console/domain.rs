@@ -1,6 +1,6 @@
 //! Pure console product rules.
 
-use jackin_config::{AppConfig, RoleSource};
+use jackin_config::AppConfig;
 use jackin_console::tui::auth::AuthKind;
 use jackin_console::tui::auth_config::auth_kind_agent;
 use jackin_core::RoleSelector;
@@ -30,66 +30,8 @@ pub(crate) type InstanceRefreshSnapshot =
         crate::runtime::snapshot::InstanceSnapshot,
     >;
 
-/// Resolve the role source the console should load for an operator-entered selector.
-pub(crate) struct ResolvedRoleInput {
-    pub(crate) raw: String,
-    pub(crate) key: String,
-    pub(crate) selector: RoleSelector,
-    pub(crate) source: RoleSource,
-}
-
-pub(crate) struct RoleInputResolutionError {
-    pub(crate) raw: String,
-    pub(crate) source_url: Option<String>,
-    pub(crate) error: anyhow::Error,
-}
-
-pub(crate) fn resolve_role_input_source(
-    config: &AppConfig,
-    value: &str,
-) -> Result<ResolvedRoleInput, RoleInputResolutionError> {
-    let raw = value.trim();
-    crate::debug_log!("role", "resolving role loader input: raw={raw:?}");
-    let selector = RoleSelector::parse(raw).map_err(|e| {
-        crate::debug_log!("role", "role selector parse failed for {raw:?}: {e}");
-        RoleInputResolutionError {
-            raw: raw.to_owned(),
-            source_url: None,
-            error: anyhow::Error::new(e),
-        }
-    })?;
-    crate::debug_log!("role", "parsed role selector: {selector}");
-
-    let key = selector.key();
-    let source = jackin_console::services::role_source::candidate_role_source(config, &selector)
-        .map_err(|error| {
-            crate::debug_log!(
-                "role",
-                "role loader failed for key={key:?} raw={raw:?}: {error:?}"
-            );
-            let source_url =
-                jackin_console::services::role_source::candidate_role_source(config, &selector)
-                    .ok()
-                    .map(|source| source.git);
-            RoleInputResolutionError {
-                raw: raw.to_owned(),
-                source_url,
-                error,
-            }
-        })?;
-    crate::debug_log!(
-        "role",
-        "resolved candidate role source: key={key:?} git={git:?} trusted={trusted}",
-        git = source.git.as_str(),
-        trusted = source.trusted
-    );
-    Ok(ResolvedRoleInput {
-        raw: raw.to_owned(),
-        key,
-        selector,
-        source,
-    })
-}
+#[cfg(test)]
+pub(crate) use jackin_console::services::role_source::resolve_role_input_source;
 
 pub(crate) struct CommittedAgentLaunch {
     pub(crate) input: jackin_config::LoadWorkspaceInput,

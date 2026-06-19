@@ -1,15 +1,15 @@
 //! Agent tab helpers for the editor: allow/deny toggles, override picker, role picker.
 
-use crate::console::tui::state::{EditorState, Modal, TextInputTarget};
+use crate::tui::state::{EditorState, Modal, TextInputTarget};
 use jackin_config::AppConfig;
-use jackin_console::tui::screens::editor::view::role_load_input_state;
+use crate::tui::screens::editor::view::role_load_input_state;
 
 /// Listing rules: workspace-allowed list when non-empty, otherwise
 /// every role in `config.roles`. Roles already carrying an
 /// override are NOT filtered out — operator may want to add more
 /// keys.
 pub(super) fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
-    use crate::console::tui::state::RolePickerState;
+    use crate::tui::state::RolePickerState;
     let eligible = editor.eligible_role_override_selectors(config.roles.keys());
     if eligible.is_empty() {
         return;
@@ -26,7 +26,7 @@ pub(super) fn open_role_input(editor: &mut EditorState<'_>, config: &AppConfig) 
         .filter(|(_, source)| source.trusted)
         .map(|(key, _)| key.clone())
         .collect();
-    crate::debug_log!(
+    jackin_diagnostics::debug_log!(
         "role",
         "opening role loader input; {trusted_roles_count} trusted role(s) are blocked by the duplicate guard",
         trusted_roles_count = trusted_roles.len()

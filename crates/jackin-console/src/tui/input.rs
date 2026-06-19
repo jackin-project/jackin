@@ -2,8 +2,10 @@
 //! and two-phase save flow.
 
 pub mod auth;
+pub mod editor;
 pub mod global_mounts;
 pub mod list;
+pub mod mouse;
 pub mod prelude;
 pub mod save;
 

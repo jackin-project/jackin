@@ -1,22 +1,22 @@
 //! Editor modal leaf helpers: secret picker, token generation, and text-input commits.
 
-use crate::console::tui::op_picker::OpPickerState;
-use crate::console::tui::state::{
+use crate::tui::op_picker::OpPickerState;
+use crate::tui::state::{
     EditorState, FieldFocus, Modal, SecretsScopeTag, TextInputTarget, open_role_input_error,
 };
-use jackin_console::tui::components::auth_panel::generated_token_op_item_name;
-use jackin_console::tui::screens::editor::update::{
+use crate::tui::components::auth_panel::generated_token_op_item_name;
+use crate::tui::screens::editor::update::{
     self as editor_update, EditorAuthGenerateScopePlan, editor_auth_generate_scope_plan,
 };
-use jackin_console::tui::screens::editor::view::{
+use crate::tui::screens::editor::view::{
     secret_empty_key_label, secret_key_input_state_from_pending, secret_source_picker_state,
 };
-use jackin_console::tui::update::{CreateOpPickerPlan, create_op_picker_plan};
+use crate::tui::update::{CreateOpPickerPlan, create_op_picker_plan};
 
 /// `pending_picker_target` records `(scope, Some(key))` for key rows
 /// (commit replaces value) or `(scope, None)` for sentinels (commit
 /// stashes path, opens `EnvKey` modal). Headers / spacers are no-ops.
-pub(in crate::console::tui::input) fn open_secrets_picker_modal(
+pub fn open_secrets_picker_modal(
     editor: &mut EditorState<'_>,
     op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
 ) {
@@ -38,7 +38,7 @@ pub(in crate::console::tui::input) fn open_secrets_picker_modal(
 /// in Edit mode (Create mode has no workspace to wire yet).
 fn generate_scope_for_target(
     editor: &EditorState<'_>,
-    target: &crate::console::tui::state::AuthFormTarget,
+    target: &crate::tui::state::AuthFormTarget,
 ) -> Option<jackin_env::TokenSetupScope> {
     use jackin_env::TokenSetupScope;
     editor_auth_generate_scope_plan(&editor.mode, target).map(|plan| match plan {
@@ -54,7 +54,7 @@ fn generate_scope_for_target(
 /// staged into the stashed auth form (via the re-mount the loop runs on
 /// completion) and persisted only when the operator Saves — the form
 /// stash in `pending_auth_form_return` survives `clear_modal_chain`.
-pub(in crate::console::tui::input) fn start_plain_token_generate(editor: &mut EditorState<'_>) {
+pub fn start_plain_token_generate(editor: &mut EditorState<'_>) {
     let Some(target) = editor.generating_token_target.take() else {
         super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
         return;
@@ -63,7 +63,7 @@ pub(in crate::console::tui::input) fn start_plain_token_generate(editor: &mut Ed
         super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
         return;
     };
-    editor.pending_token_generate = Some(crate::console::tui::state::PendingTokenGenerate {
+    editor.pending_token_generate = Some(crate::tui::state::PendingTokenGenerate {
         scope,
         args: jackin_env::TokenSetupArgs {
             plain_text: true,
@@ -76,11 +76,11 @@ pub(in crate::console::tui::input) fn start_plain_token_generate(editor: &mut Ed
 /// 1Password generate branch from the source picker: re-arm the target
 /// and mount the Create-mode `OpPicker` so the operator chooses where the
 /// freshly minted token lands (this is the pre-source-picker behaviour).
-pub(in crate::console::tui::input) fn open_create_op_picker_for_generate(
+pub fn open_create_op_picker_for_generate(
     editor: &mut EditorState<'_>,
     op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
 ) {
-    let crate::console::tui::state::EditorMode::Edit { name } = &editor.mode else {
+    let crate::tui::state::EditorMode::Edit { name } = &editor.mode else {
         editor.generating_token_target = None;
         super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
         return;
@@ -103,12 +103,12 @@ pub(in crate::console::tui::input) fn open_create_op_picker_for_generate(
 /// (or stray `Existing`) just closes the chain. On `Continue` the picker
 /// is still drilling, so `target` is re-armed and the modal stays open.
 /// The workspace name comes from `editor.mode` Edit.
-pub(in crate::console::tui::input) fn handle_token_generate_pick(
+pub fn handle_token_generate_pick(
     editor: &mut EditorState<'_>,
-    target: crate::console::tui::state::AuthFormTarget,
-    outcome: jackin_tui::ModalOutcome<crate::console::tui::op_picker::OpPickerSelection>,
+    target: crate::tui::state::AuthFormTarget,
+    outcome: jackin_tui::ModalOutcome<crate::tui::op_picker::OpPickerSelection>,
 ) {
-    use crate::console::tui::op_picker::OpPickerSelection;
+    use crate::tui::op_picker::OpPickerSelection;
     use jackin_env::{EditExistingTarget, TokenSetupArgs};
 
     let Some(scope) = generate_scope_for_target(editor, &target) else {
@@ -172,14 +172,14 @@ pub(in crate::console::tui::input) fn handle_token_generate_pick(
     };
 
     editor.pending_token_generate =
-        Some(crate::console::tui::state::PendingTokenGenerate { scope, args });
+        Some(crate::tui::state::PendingTokenGenerate { scope, args });
     editor.clear_modal_chain();
 }
 
 /// Centralises `EnvKey` construction so every opener (Enter on
 /// sentinel, A on row, P-on-sentinel fast-path, empty-key re-open)
 /// stays consistent.
-pub(in crate::console::tui::input) fn env_key_input_state<'a>(
+pub fn env_key_input_state<'a>(
     editor: &EditorState<'_>,
     scope: &SecretsScopeTag,
     label: impl Into<String>,
@@ -214,7 +214,7 @@ fn set_pending_env_value(
 }
 
 /// Write an `OpRef` (picker commit result) into the pending env map.
-pub(in crate::console::tui::input) fn set_pending_env_op_ref(
+pub fn set_pending_env_op_ref(
     editor: &mut EditorState<'_>,
     scope: &SecretsScopeTag,
     key: &str,
@@ -246,7 +246,7 @@ fn set_pending_env_value_typed(
     );
 }
 
-pub(in crate::console::tui::input) fn apply_text_input_to_pending(
+pub fn apply_text_input_to_pending(
     target: &TextInputTarget,
     editor: &mut EditorState<'_>,
     value: &str,
@@ -263,10 +263,10 @@ pub(in crate::console::tui::input) fn apply_text_input_to_pending(
             editor.commit_last_mount_dst_input(value);
         }
         TextInputTarget::Role => {
-            crate::debug_log!("role", "role loader input committed: raw={value:?}");
+            jackin_diagnostics::debug_log!("role", "role loader input committed: raw={value:?}");
             open_role_input_error(
                 editor,
-                jackin_console::tui::components::error_popup::role_input_misroute_error_message(),
+                crate::tui::components::error_popup::role_input_misroute_error_message(),
             );
         }
         TextInputTarget::EnvKey { scope } => {

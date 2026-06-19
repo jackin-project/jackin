@@ -21,7 +21,9 @@
 //! Behavioral invariants documented in the Developer Reference → Behavioral
 //! Specs section of the docs site.
 
-pub(crate) use jackin_console::tui::op_picker::{OpPickerSelection, OpPickerState};
+pub(crate) use jackin_console::tui::op_picker::OpPickerState;
+#[cfg(test)]
+pub(crate) use jackin_console::tui::op_picker::OpPickerSelection;
 
 // Used by tests.rs via `use super::*`.
 #[cfg(test)]

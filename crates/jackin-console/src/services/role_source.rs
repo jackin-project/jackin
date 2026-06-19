@@ -29,5 +29,65 @@ pub fn candidate_role_source(
     }
 }
 
+#[derive(Debug)]
+pub struct ResolvedRoleInput {
+    pub raw: String,
+    pub key: String,
+    pub selector: RoleSelector,
+    pub source: RoleSource,
+}
+
+#[derive(Debug)]
+pub struct RoleInputResolutionError {
+    pub raw: String,
+    pub source_url: Option<String>,
+    pub error: anyhow::Error,
+}
+
+pub fn resolve_role_input_source(
+    config: &AppConfig,
+    value: &str,
+) -> Result<ResolvedRoleInput, RoleInputResolutionError> {
+    let raw = value.trim();
+    jackin_diagnostics::debug_log!("role", "resolving role loader input: raw={raw:?}");
+    let selector = RoleSelector::parse(raw).map_err(|e| {
+        jackin_diagnostics::debug_log!("role", "role selector parse failed for {raw:?}: {e}");
+        RoleInputResolutionError {
+            raw: raw.to_owned(),
+            source_url: None,
+            error: anyhow::Error::new(e),
+        }
+    })?;
+    jackin_diagnostics::debug_log!("role", "parsed role selector: {selector}");
+
+    let key = selector.key();
+    let source = candidate_role_source(config, &selector).map_err(|error| {
+        jackin_diagnostics::debug_log!(
+            "role",
+            "role loader failed for key={key:?} raw={raw:?}: {error:?}"
+        );
+        let source_url = candidate_role_source(config, &selector)
+            .ok()
+            .map(|source| source.git);
+        RoleInputResolutionError {
+            raw: raw.to_owned(),
+            source_url,
+            error,
+        }
+    })?;
+    jackin_diagnostics::debug_log!(
+        "role",
+        "resolved candidate role source: key={key:?} git={git:?} trusted={trusted}",
+        git = source.git.as_str(),
+        trusted = source.trusted
+    );
+    Ok(ResolvedRoleInput {
+        raw: raw.to_owned(),
+        key,
+        selector,
+        source,
+    })
+}
+
 #[cfg(test)]
 mod tests;

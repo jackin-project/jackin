@@ -459,6 +459,38 @@ pub const fn pick_list_confirm_footer_label() -> &'static str {
 }
 
 #[must_use]
+pub fn editor_footer_items(
+    state: &crate::tui::state::EditorState<'_>,
+    config: &jackin_config::AppConfig,
+    op_available: bool,
+    body_area: Rect,
+) -> Vec<HintSpan<'static>> {
+    if let Some(modal) = &state.modal {
+        return editor_screen_footer_items(EditorScreenFooterFacts::Modal {
+            items: modal.footer_items(state.auth_form_can_generate_token()),
+        });
+    }
+    if state.tab_bar_focused() {
+        return editor_screen_footer_items(EditorScreenFooterFacts::TabBar {
+            save_label: editor_save_footer_label(),
+            enter_content: state.active_tab != crate::tui::state::EditorTab::General,
+            dirty_change_count: state.is_dirty().then(|| state.change_count()),
+        });
+    }
+    let row_items = crate::tui::screens::editor::view::editor_contextual_footer_items(
+        state,
+        config,
+        op_available,
+        body_area,
+    );
+    editor_screen_footer_items(EditorScreenFooterFacts::Content {
+        save_label: editor_save_footer_label(),
+        row_items,
+        dirty_change_count: state.is_dirty().then(|| state.change_count()),
+    })
+}
+
+#[must_use]
 pub fn create_prelude_footer_items() -> Vec<HintSpan<'static>> {
     vec![
         HintSpan::Dyn("Create workspace — follow the prompts".to_owned()),

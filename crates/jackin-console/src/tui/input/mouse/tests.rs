@@ -5,8 +5,8 @@
 //! event loop — enough to pin the seam hit-test + drag math without a
 //! real terminal.
 use super::{handle_mouse, handle_mouse_with_config, list_scroll_areas};
-use crate::console::tui::effect::ManagerEffect;
-use crate::console::tui::state::{
+use crate::tui::state::ManagerEffect;
+use crate::tui::state::{
     DEFAULT_SPLIT_PCT, EditorHoverTarget, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
     GlobalMountModal, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerHoverTarget, ManagerListRow,
     ManagerStage, ManagerState, Modal, MountScrollFocus, SecretsScopeTag, SettingsAuthModal,
@@ -18,10 +18,10 @@ use crossterm::event::{
 };
 use jackin_config::{AgentAuthConfig, AuthForwardMode};
 use jackin_config::{MountConfig, WorkspaceConfig};
-use jackin_console::tui::auth::AuthKind;
-use jackin_console::tui::components::save_discard::editor_exit_save_discard_state;
-use jackin_console::tui::layout::MOUSE_HORIZONTAL_SCROLL_STEP;
-use jackin_console::tui::screens::settings::view::global_mount_confirm_state;
+use crate::tui::auth::AuthKind;
+use crate::tui::components::save_discard::editor_exit_save_discard_state;
+use crate::tui::layout::MOUSE_HORIZONTAL_SCROLL_STEP;
+use crate::tui::screens::settings::view::global_mount_confirm_state;
 use ratatui::layout::Rect;
 
 /// Build a `ManagerState` in the List stage at the default split,
@@ -35,12 +35,12 @@ fn list_state() -> ManagerState<'static> {
 fn file_browser_with_dirs(
     root: &std::path::Path,
     count: usize,
-) -> jackin_console::tui::components::file_browser::FileBrowserState {
+) -> crate::tui::components::file_browser::FileBrowserState {
     for i in 0..count {
         std::fs::create_dir_all(root.join(format!("dir-{i}"))).unwrap();
     }
-    jackin_console::tui::components::file_browser::FileBrowserState::from_listing(
-        jackin_console::services::file_browser::listing_at(root.to_path_buf(), root.to_path_buf()),
+    crate::tui::components::file_browser::FileBrowserState::from_listing(
+        crate::services::file_browser::listing_at(root.to_path_buf(), root.to_path_buf()),
     )
 }
 
@@ -227,10 +227,10 @@ fn drag_ignored_when_list_modal_open() {
         ..Default::default()
     };
     // Ensure the helper signature compiles (guards against future refactors).
-    drop(jackin_console::github_mounts::resolve_for_workspace(&ws));
+    drop(crate::github_mounts::resolve_for_workspace(&ws));
     state.list_modal = Some(Modal::GithubPicker {
-        state: jackin_console::tui::components::github_picker::GithubPickerState::new(vec![
-            jackin_console::github_mounts::GithubChoice {
+        state: crate::tui::components::github_picker::GithubPickerState::new(vec![
+            crate::github_mounts::GithubChoice {
                 src: "/w".into(),
                 branch: "main".into(),
                 url: "https://github.com/o/r".into(),
@@ -253,13 +253,13 @@ fn drag_ignored_when_list_modal_open() {
 fn list_github_picker_wheel_scrolls_modal_selection() {
     let mut state = list_state();
     state.list_modal = Some(Modal::GithubPicker {
-        state: jackin_console::tui::components::github_picker::GithubPickerState::new(vec![
-            jackin_console::github_mounts::GithubChoice {
+        state: crate::tui::components::github_picker::GithubPickerState::new(vec![
+            crate::github_mounts::GithubChoice {
                 src: "/one".into(),
                 branch: "main".into(),
                 url: "https://github.com/o/one".into(),
             },
-            jackin_console::github_mounts::GithubChoice {
+            crate::github_mounts::GithubChoice {
                 src: "/two".into(),
                 branch: "main".into(),
                 url: "https://github.com/o/two".into(),
@@ -292,7 +292,7 @@ fn editor_workdir_picker_wheel_scrolls_modal_selection_not_background() {
     editor.active_tab = EditorTab::Roles;
     editor.tab_content_height = 50;
     editor.modal = Some(Modal::WorkdirPick {
-        state: jackin_console::tui::components::workdir_pick::WorkdirPickState::from_mounts(
+        state: crate::tui::components::workdir_pick::WorkdirPickState::from_mounts(
             &mounts,
         ),
     });
@@ -320,7 +320,7 @@ fn settings_role_picker_wheel_scrolls_modal_selection_not_background() {
     let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.mounts.scroll_y = 4;
     settings.mounts.modal = Some(GlobalMountModal::RolePicker {
-        state: crate::console::tui::state::RolePickerState::new(vec![
+        state: crate::tui::state::RolePickerState::new(vec![
             jackin_core::RoleSelector::parse("chainargos/agent-brown").unwrap(),
             jackin_core::RoleSelector::parse("scentbird/agent-jones").unwrap(),
         ]),
@@ -610,7 +610,7 @@ fn click_on_editor_auth_preview_row_does_not_focus_or_activate() {
         .position(|row| {
             matches!(
                 row,
-                crate::console::tui::state::AuthRow::WorkspaceSourceFolder {
+                crate::tui::state::AuthRow::WorkspaceSourceFolder {
                     kind: AuthKind::Claude
                 }
             )
@@ -706,8 +706,8 @@ fn mouse_down_on_editor_tab_clears_secrets_view_when_leaving() {
 
 #[test]
 fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
-    use crate::console::tui::state::CreatePreludeState;
-    use jackin_console::tui::components::file_browser::FileBrowserState;
+    use crate::tui::state::CreatePreludeState;
+    use crate::tui::components::file_browser::FileBrowserState;
     let mut state = list_state();
     let tmp = tempfile::tempdir().unwrap();
     let parent = tmp.path().join("parent");
@@ -717,7 +717,7 @@ fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
     // Build a FileBrowser at `parent`, select the repo, open git prompt,
     // and inject a URL so the URL row renders.
     let mut fb = FileBrowserState::from_listing(
-        jackin_console::services::file_browser::listing_at(tmp.path().to_path_buf(), parent),
+        crate::services::file_browser::listing_at(tmp.path().to_path_buf(), parent),
     );
     fb.handle_key(key(KeyCode::Down));
     fb.handle_key(key(KeyCode::Enter));
@@ -726,7 +726,7 @@ fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
 
     let prelude = CreatePreludeState {
         modal: Some(Modal::FileBrowser {
-            target: crate::console::tui::state::FileBrowserTarget::CreateFirstMountSrc,
+            target: crate::tui::state::FileBrowserTarget::CreateFirstMountSrc,
             state: fb,
         }),
         ..CreatePreludeState::default()
@@ -767,8 +767,8 @@ fn mouse_down_on_url_row_in_prelude_with_url_does_not_drag() {
 
 #[test]
 fn mouse_down_outside_url_row_in_prelude_is_silent_noop() {
-    use crate::console::tui::state::CreatePreludeState;
-    use jackin_console::tui::components::file_browser::FileBrowserState;
+    use crate::tui::state::CreatePreludeState;
+    use crate::tui::components::file_browser::FileBrowserState;
     let mut state = list_state();
     let tmp = tempfile::tempdir().unwrap();
     let parent = tmp.path().join("parent");
@@ -776,7 +776,7 @@ fn mouse_down_outside_url_row_in_prelude_is_silent_noop() {
     std::fs::create_dir_all(repo.join(".git")).unwrap();
 
     let mut fb = FileBrowserState::from_listing(
-        jackin_console::services::file_browser::listing_at(tmp.path().to_path_buf(), parent),
+        crate::services::file_browser::listing_at(tmp.path().to_path_buf(), parent),
     );
     fb.handle_key(key(KeyCode::Down));
     fb.handle_key(key(KeyCode::Enter));
@@ -784,7 +784,7 @@ fn mouse_down_outside_url_row_in_prelude_is_silent_noop() {
 
     let prelude = CreatePreludeState {
         modal: Some(Modal::FileBrowser {
-            target: crate::console::tui::state::FileBrowserTarget::CreateFirstMountSrc,
+            target: crate::tui::state::FileBrowserTarget::CreateFirstMountSrc,
             state: fb,
         }),
         ..CreatePreludeState::default()
@@ -1460,7 +1460,7 @@ fn editor_file_browser_wheel_scrolls_modal_selection_not_background() {
     editor.active_tab = EditorTab::Roles;
     editor.tab_content_height = 50;
     editor.modal = Some(Modal::FileBrowser {
-        target: crate::console::tui::state::FileBrowserTarget::EditAddMountSrc,
+        target: crate::tui::state::FileBrowserTarget::EditAddMountSrc,
         state: fb,
     });
     state.stage = ManagerStage::Editor(editor);
@@ -1492,7 +1492,7 @@ fn editor_file_browser_smoke_hints_pagedown_and_wheel_share_modal_context() {
     editor.active_tab = EditorTab::Roles;
     editor.tab_content_height = 50;
     editor.modal = Some(Modal::FileBrowser {
-        target: crate::console::tui::state::FileBrowserTarget::EditAddMountSrc,
+        target: crate::tui::state::FileBrowserTarget::EditAddMountSrc,
         state: fb,
     });
     state.stage = ManagerStage::Editor(editor);
@@ -1502,7 +1502,7 @@ fn editor_file_browser_smoke_hints_pagedown_and_wheel_share_modal_context() {
     };
     let hints = format!(
         "{:?}",
-        crate::console::tui::components::footer::editor::editor_footer_items(
+        crate::tui::components::footer_hints::editor_footer_items(
             editor,
             &config,
             false,
@@ -1542,14 +1542,14 @@ fn editor_file_browser_smoke_hints_pagedown_and_wheel_share_modal_context() {
 
 #[test]
 fn create_prelude_file_browser_wheel_scrolls_modal_selection() {
-    use crate::console::tui::state::CreatePreludeState;
+    use crate::tui::state::CreatePreludeState;
 
     let mut state = list_state();
     let tmp = tempfile::tempdir().unwrap();
     let fb = file_browser_with_dirs(tmp.path(), 8);
     state.stage = ManagerStage::CreatePrelude(CreatePreludeState {
         modal: Some(Modal::FileBrowser {
-            target: crate::console::tui::state::FileBrowserTarget::CreateFirstMountSrc,
+            target: crate::tui::state::FileBrowserTarget::CreateFirstMountSrc,
             state: fb,
         }),
         ..CreatePreludeState::default()
@@ -1637,7 +1637,7 @@ fn file_browser_wheel_at_edge_is_consumed_before_background_scroll() {
     editor.active_tab = EditorTab::Roles;
     editor.tab_content_height = 50;
     editor.modal = Some(Modal::FileBrowser {
-        target: crate::console::tui::state::FileBrowserTarget::EditAddMountSrc,
+        target: crate::tui::state::FileBrowserTarget::EditAddMountSrc,
         state: fb,
     });
     state.stage = ManagerStage::Editor(editor);

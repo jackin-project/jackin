@@ -1,9 +1,9 @@
 //! Secrets tab helpers for the editor: value lookup, modal openers, delete/add flows.
 
-use crate::console::tui::state::{
+use crate::tui::state::{
     ConfirmTarget, EditorState, Modal, SecretsEnterPlan, TextInputTarget,
 };
-use jackin_console::tui::screens::editor::view::{
+use crate::tui::screens::editor::view::{
     secret_delete_confirm_state, secret_new_key_label, secret_scope_picker_state,
     secret_value_current_text, secret_value_input_state,
 };
