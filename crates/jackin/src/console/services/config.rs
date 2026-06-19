@@ -1,19 +1,16 @@
 //! Non-TUI config persistence services.
 
-use std::collections::BTreeMap;
-
-use crate::console::tui::state::{SettingsAuthRow, SettingsEnvConfig, SettingsTrustRow};
 use crate::paths::JackinPaths;
 use jackin_config::WorkspaceConfig;
-use jackin_config::{AppConfig, EnvScope, GlobalMountRow, RoleSource};
+use jackin_config::{AppConfig, RoleSource};
+#[cfg(test)]
+use jackin_config::GlobalMountRow;
 use jackin_console::services::config_save::{
-    WorkspaceSaveDiffOp, build_workspace_edit, validate_settings_env, workspace_save_diff_plan,
+    WorkspaceSaveDiffOp, build_workspace_edit, workspace_save_diff_plan,
 };
-use jackin_console::tui::auth::AuthKind;
-use jackin_console::tui::auth_config::{
-    auth_kind_agent, auth_mode_to_auth_forward, auth_mode_to_github,
-};
-use jackin_core::EnvValue;
+
+// Delegate settings-save to jackin-console; root callers keep the same path.
+pub(crate) use jackin_console::services::config_save::{SettingsSaveInput, save_settings};
 
 #[cfg(test)]
 mod tests;
@@ -58,113 +55,6 @@ pub(crate) fn save_global_mounts(
     for row in pending {
         editor_doc.add_mount(&row.name, row.mount.clone(), row.scope.as_deref());
     }
-    editor_doc.save()
-}
-
-pub(crate) struct SettingsSaveInput<'a> {
-    pub mounts_original: &'a [GlobalMountRow],
-    pub mounts_pending: &'a [GlobalMountRow],
-    pub env_original: &'a SettingsEnvConfig,
-    pub env_pending: &'a SettingsEnvConfig,
-    pub auth_pending: &'a [SettingsAuthRow],
-    pub original_github_env: &'a BTreeMap<String, EnvValue>,
-    pub github_env: &'a BTreeMap<String, EnvValue>,
-    pub trust_pending: &'a [SettingsTrustRow],
-    pub git_coauthor_trailer: bool,
-    pub git_dco: bool,
-}
-
-/// Save all settings tabs and return the reloaded config model.
-#[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
-pub(crate) fn save_settings(
-    paths: &JackinPaths,
-    input: SettingsSaveInput<'_>,
-) -> anyhow::Result<AppConfig> {
-    AppConfig::validate_global_mount_rows(input.mounts_pending)?;
-    validate_settings_env(input.env_pending, input.trust_pending)?;
-    let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
-
-    for row in input.mounts_original {
-        editor_doc.remove_mount(&row.name, row.scope.as_deref());
-    }
-    for row in input.mounts_pending {
-        editor_doc.add_mount(&row.name, row.mount.clone(), row.scope.as_deref());
-    }
-
-    for key in input.env_original.env.keys() {
-        editor_doc.remove_env_var(&EnvScope::Global, key);
-    }
-    for (role, env) in &input.env_original.roles {
-        for key in env.keys() {
-            editor_doc.remove_env_var(&EnvScope::Role(role.clone()), key);
-        }
-    }
-    for (key, value) in &input.env_pending.env {
-        editor_doc.set_env_var(&EnvScope::Global, key, value.clone())?;
-    }
-    for (role, env) in &input.env_pending.roles {
-        for (key, value) in env {
-            editor_doc.set_env_var(&EnvScope::Role(role.clone()), key, value.clone())?;
-        }
-    }
-
-    for row in input.auth_pending {
-        match row.kind {
-            AuthKind::Claude
-            | AuthKind::Codex
-            | AuthKind::Amp
-            | AuthKind::Kimi
-            | AuthKind::Opencode
-            | AuthKind::Grok => {
-                let Some(agent) = auth_kind_agent(row.kind) else {
-                    continue;
-                };
-                if !row.kind.supported_modes().contains(&row.mode) {
-                    anyhow::bail!(
-                        "auth mode {} is not supported for {}",
-                        row.mode.as_str(),
-                        row.kind.label()
-                    );
-                }
-                let Some(mode) = auth_mode_to_auth_forward(row.mode) else {
-                    anyhow::bail!(
-                        "auth mode {} is not supported for {}",
-                        row.mode.as_str(),
-                        row.kind.label()
-                    );
-                };
-                editor_doc.set_global_auth_forward(agent, mode);
-                editor_doc.set_global_sync_source_dir(agent, row.sync_source_dir.as_deref());
-            }
-            AuthKind::Github => {
-                let Some(mode) = auth_mode_to_github(row.mode) else {
-                    anyhow::bail!(
-                        "auth mode {} is not supported for {}",
-                        row.mode.as_str(),
-                        row.kind.label()
-                    );
-                };
-                editor_doc.set_global_github_auth_forward(mode);
-            }
-            // Provider-credential kinds are env-only; the credential lives in the
-            // env_vars block and is written via the env commit path above.
-            AuthKind::Zai | AuthKind::Minimax => {}
-        }
-    }
-    for key in input.original_github_env.keys() {
-        editor_doc.remove_global_github_env_var(key);
-    }
-    for (key, value) in input.github_env {
-        editor_doc.set_global_github_env_var(key, value.clone())?;
-    }
-
-    for row in input.trust_pending {
-        editor_doc.set_agent_trust(&row.role, row.trusted);
-    }
-
-    editor_doc.set_git_coauthor_trailer(input.git_coauthor_trailer);
-    editor_doc.set_git_dco(input.git_dco);
-
     editor_doc.save()
 }
 

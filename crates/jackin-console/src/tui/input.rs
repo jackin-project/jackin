@@ -3,6 +3,7 @@
 
 pub mod auth;
 pub mod global_mounts;
+pub mod list;
 pub mod prelude;
 pub mod save;
 
