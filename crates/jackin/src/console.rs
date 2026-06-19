@@ -26,8 +26,6 @@ mod services;
 pub mod terminal;
 pub mod tui;
 
-#[cfg(test)]
-mod tests;
 
 /// Validate a picked source folder against the agent an auth form targets.
 /// Returns `Ok(())` for non-agent auth kinds. Runtime validation stays in the

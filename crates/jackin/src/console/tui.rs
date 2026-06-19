@@ -37,6 +37,4 @@ pub use jackin_console::tui::launch::dispatch_launch_for_workspace;
 pub use jackin_console::tui::view::{prepare_for_render, render};
 pub(crate) use jackin_console::tui::state::update::{ManagerMessage, update_manager};
 pub use run::run_console;
-#[cfg(test)]
-pub(crate) use jackin_console::tui::run::{is_on_main_screen, letter_input_state_for_console as letter_input_state};
 pub use state::{ManagerStage, ManagerState};

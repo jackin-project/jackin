@@ -1,18 +1,47 @@
-mod quit_confirm {
-    use jackin_console::tui::debug::console_location_debug;
-    use jackin_console::tui::prompts::{
-        ConcreteAgentPickerChoices as AgentPickerChoices,
-        prompt_agent_for_launch, show_role_resolution_error,
+//! Tests for console-level state helpers and prompt flows.
+use super::*;
+use crate::tui::state::Modal;
+use jackin_config::AppConfig;
+
+#[test]
+fn startup_error_opens_list_error_dialog() {
+    let config = AppConfig::default();
+    let cwd = std::path::Path::new("/");
+    let state = new_console_state_with_startup_error(
+        &config,
+        cwd,
+        false,
+        Some((
+            "Docker daemon not reachable".into(),
+            "failed to connect to Docker daemon".into(),
+        )),
+    )
+    .expect("console state");
+
+    let ConsoleStage::Manager(manager) = state.stage;
+    let Some(Modal::ErrorPopup { state: popup }) = manager.list_modal else {
+        panic!("startup Docker failure should open ErrorDialog");
     };
-    use jackin_console::tui::message::{OnPromptFailure, PromptOutcome};
-    use super::super::tui::{is_on_main_screen, letter_input_state};
-    use super::super::{ConsoleStage, ConsoleState, tui};
-    use crate::console::tui::state::{
+    assert_eq!(popup.title, "Docker daemon not reachable");
+    assert_eq!(popup.message, "failed to connect to Docker daemon");
+}
+
+mod quit_confirm {
+    use crate::tui::console::{ConsoleStage, ConsoleState, new_console_state};
+    use crate::tui::debug::console_location_debug;
+    use crate::tui::message::{OnPromptFailure, PromptOutcome};
+    use crate::tui::prompts::{
+        ConcreteAgentPickerChoices as AgentPickerChoices, prompt_agent_for_launch,
+        show_role_resolution_error,
+    };
+    use crate::tui::run::{consumes_letter_input, is_on_main_screen, letter_input_state_for_console};
+    use crate::tui::state::{
         EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
     };
+    use crate::services::file_browser::listing_from_home;
+    use crate::tui::components::file_browser::FileBrowserState;
+    use crate::tui::debug::key_debug_name_for_input;
     use jackin_config::{AppConfig, LoadWorkspaceInput, ResolvedWorkspace};
-    use jackin_console::tui::components::file_browser::FileBrowserState;
-    use jackin_console::tui::run::consumes_letter_input;
     use jackin_core::{Agent, RoleSelector};
     use jackin_tui::ModalOutcome;
     use jackin_tui::components::{ConfirmState, TextInputState};
@@ -20,7 +49,7 @@ mod quit_confirm {
     fn fresh_state() -> ConsoleState {
         let cwd = std::env::temp_dir();
         let config = AppConfig::default();
-        tui::new_console_state(&config, &cwd).unwrap()
+        new_console_state(&config, &cwd).unwrap()
     }
 
     fn key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent {
@@ -36,7 +65,7 @@ mod quit_confirm {
     fn main_screen_is_list_with_no_modal() {
         let state = fresh_state();
         assert!(is_on_main_screen(&state));
-        assert!(!consumes_letter_input(letter_input_state(&state)));
+        assert!(!consumes_letter_input(letter_input_state_for_console(&state)));
     }
 
     #[test]
@@ -53,9 +82,7 @@ mod quit_confirm {
         let ConsoleStage::Manager(ms) = &mut state.stage;
         ms.list_modal = Some(Modal::FileBrowser {
             target: FileBrowserTarget::CreateFirstMountSrc,
-            state: FileBrowserState::from_listing(
-                jackin_console::services::file_browser::listing_from_home().unwrap(),
-            ),
+            state: FileBrowserState::from_listing(listing_from_home().unwrap()),
         });
         assert!(!is_on_main_screen(&state));
     }
@@ -72,7 +99,7 @@ mod quit_confirm {
             state: TextInputState::new("Key", ""),
         });
         ms.stage = ManagerStage::Editor(editor);
-        assert!(consumes_letter_input(letter_input_state(&state)));
+        assert!(consumes_letter_input(letter_input_state_for_console(&state)));
         assert!(!is_on_main_screen(&state));
     }
 
@@ -91,16 +118,16 @@ mod quit_confirm {
         ms.stage = ManagerStage::Editor(editor);
 
         assert_eq!(
-            jackin_console::tui::debug::key_debug_name_for_input(
+            key_debug_name_for_input(
                 key(crossterm::event::KeyCode::Char('s')),
-                consumes_letter_input(letter_input_state(&state)),
+                consumes_letter_input(letter_input_state_for_console(&state)),
             ),
             "Char(<redacted>)"
         );
         assert_eq!(
-            jackin_console::tui::debug::key_debug_name_for_input(
+            key_debug_name_for_input(
                 key(crossterm::event::KeyCode::Enter),
-                consumes_letter_input(letter_input_state(&state)),
+                consumes_letter_input(letter_input_state_for_console(&state)),
             ),
             "Enter"
         );
@@ -190,7 +217,7 @@ mod quit_confirm {
     fn run_prompt_for_unknown_role(on_failure: OnPromptFailure) -> (ConsoleState, PromptOutcome) {
         let cwd = std::env::temp_dir();
         let config = AppConfig::default();
-        let mut state = tui::new_console_state(&config, &cwd).unwrap();
+        let mut state = new_console_state(&config, &cwd).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
         let workspace = unresolved_workspace();
         let input = LoadWorkspaceInput::CurrentDir;
@@ -209,7 +236,7 @@ mod quit_confirm {
     fn prompt_agent_for_launch_skips_resolution_when_workspace_default_agent_set() {
         let cwd = std::env::temp_dir();
         let config = AppConfig::default();
-        let mut state = tui::new_console_state(&config, &cwd).unwrap();
+        let mut state = new_console_state(&config, &cwd).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
         let mut workspace = unresolved_workspace();
         workspace.default_agent = Some(Agent::Codex);
@@ -262,67 +289,6 @@ mod quit_confirm {
         assert!(
             matches!(ms.list_modal, Some(Modal::ErrorPopup { .. })),
             "Failed outcome must surface the error popup regardless of restore policy"
-        );
-    }
-}
-
-mod op_cache_invalidation {
-    use crate::console::services::op_picker::invalidate_cache_for_ref;
-    use jackin_core::OpRef;
-    use jackin_env::OpCache;
-    use jackin_env::{OpField, OpItem};
-    use std::cell::RefCell;
-    use std::rc::Rc;
-
-    #[test]
-    fn invalidate_op_cache_for_ref_drops_items_and_fields() {
-        let cache = Rc::new(RefCell::new(OpCache::default()));
-        let account = Some("ACCT");
-        cache.borrow_mut().put_items(
-            account,
-            "v1",
-            vec![OpItem {
-                id: "i1".into(),
-                name: "Claude".into(),
-                subtitle: String::new(),
-            }],
-        );
-        cache.borrow_mut().put_fields(
-            account,
-            "v1",
-            "i1",
-            vec![OpField {
-                id: "f1".into(),
-                label: "token".into(),
-                field_type: "CONCEALED".into(),
-                concealed: true,
-                reference: String::new(),
-            }],
-        );
-
-        invalidate_cache_for_ref(
-            &cache,
-            &OpRef {
-                op: "op://v1/i1/f1".into(),
-                path: "Work/Claude/token".into(),
-                account: Some("ACCT".into()),
-            },
-        );
-
-        assert!(cache.borrow().get_items(account, "v1").is_none());
-        assert!(cache.borrow().get_fields(account, "v1", "i1").is_none());
-    }
-
-    #[test]
-    fn invalidate_op_cache_for_ref_ignores_unparseable_ref() {
-        let cache = Rc::new(RefCell::new(OpCache::default()));
-        invalidate_cache_for_ref(
-            &cache,
-            &OpRef {
-                op: "not-a-ref".into(),
-                path: String::new(),
-                account: None,
-            },
         );
     }
 }

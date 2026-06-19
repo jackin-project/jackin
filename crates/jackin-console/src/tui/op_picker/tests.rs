@@ -2017,3 +2017,63 @@ fn parity_3seg_input_with_sectioned_field_cli_matches_picker() {
     assert_eq!(cli_ref.op, picker_ref.op, "op URI must match");
     assert_eq!(cli_ref.path, picker_ref.path, "display path must match");
 }
+
+mod cache_invalidation {
+    use super::super::invalidate_cache_for_ref;
+    use jackin_core::OpRef;
+    use jackin_env::{OpCache, OpField, OpItem};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[test]
+    fn invalidate_cache_for_ref_drops_items_and_fields() {
+        let cache = Rc::new(RefCell::new(OpCache::default()));
+        let account = Some("ACCT");
+        cache.borrow_mut().put_items(
+            account,
+            "v1",
+            vec![OpItem {
+                id: "i1".into(),
+                name: "Claude".into(),
+                subtitle: String::new(),
+            }],
+        );
+        cache.borrow_mut().put_fields(
+            account,
+            "v1",
+            "i1",
+            vec![OpField {
+                id: "f1".into(),
+                label: "token".into(),
+                field_type: "CONCEALED".into(),
+                concealed: true,
+                reference: String::new(),
+            }],
+        );
+
+        invalidate_cache_for_ref(
+            &cache,
+            &OpRef {
+                op: "op://v1/i1/f1".into(),
+                path: "Work/Claude/token".into(),
+                account: Some("ACCT".into()),
+            },
+        );
+
+        assert!(cache.borrow().get_items(account, "v1").is_none());
+        assert!(cache.borrow().get_fields(account, "v1", "i1").is_none());
+    }
+
+    #[test]
+    fn invalidate_cache_for_ref_ignores_unparseable_ref() {
+        let cache = Rc::new(RefCell::new(OpCache::default()));
+        invalidate_cache_for_ref(
+            &cache,
+            &OpRef {
+                op: "not-a-ref".into(),
+                path: String::new(),
+                account: None,
+            },
+        );
+    }
+}
