@@ -873,7 +873,16 @@ fn usage_quota_bucket_compact_lines(label: &str, value: &str, lines: &mut Vec<Li
     let detail = if details.is_empty() {
         "status unavailable".to_owned()
     } else {
-        details.join(" · ")
+        // Narrow layout keeps only remaining + reset (e.g. "37% left · Resets
+        // in 1h 21m"); pace and other tokens drop out to fit the width.
+        let remaining = details.first().cloned();
+        let reset = details.iter().find(|part| part.contains("Resets")).cloned();
+        let kept = remaining.into_iter().chain(reset).collect::<Vec<_>>();
+        if kept.is_empty() {
+            details.join(" · ")
+        } else {
+            kept.join(" · ")
+        }
     };
     lines.push(Line::from(vec![
         Span::raw("  "),
