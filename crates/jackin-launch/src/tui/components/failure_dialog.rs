@@ -420,7 +420,7 @@ const FAILURE_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("Ctrl-C"),
     HintSpan::Text("abort"),
     HintSpan::Sep,
-    HintSpan::Key("Ctrl+Q"),
+    HintSpan::Key("Ctrl-Q"),
     HintSpan::Text("quit"),
 ];
 

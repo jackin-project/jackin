@@ -71,7 +71,7 @@ pub fn render_launch_container_info(
         HintSpan::Key("Ctrl-C"),
         HintSpan::Text("abort"),
         HintSpan::GroupSep,
-        HintSpan::Key("Ctrl+Q"),
+        HintSpan::Key("Ctrl-Q"),
         HintSpan::Text("quit"),
     ]);
     render_hint_bar(frame, chrome.hint, &hint_spans);

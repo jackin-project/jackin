@@ -347,11 +347,11 @@ pub fn chord_glyph(chord: Option<KeyChord>) -> &'static str {
     let Some(chord) = chord else { return "" };
     match chord.key {
         LogicalKey::Char(c) if chord.mods.contains(Mods::CTRL) => match c.to_ascii_lowercase() {
-            'q' => "Ctrl+Q",
+            'q' => "Ctrl-Q",
             'c' => "Ctrl-C",
-            'l' => "Ctrl+L",
-            'h' => "Ctrl+H",
-            _ => "Ctrl+?",
+            'l' => "Ctrl-L",
+            'h' => "Ctrl-H",
+            _ => "Ctrl-?",
         },
         LogicalKey::Char(c) if chord.mods.is_empty() || chord.mods == Mods::SHIFT => {
             match c.to_ascii_uppercase() {

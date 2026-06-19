@@ -109,7 +109,7 @@ fn hint_spans_for_axes_includes_arrows_when_vertical_available() {
 
 #[test]
 fn chord_glyph_reproduces_existing_glyphs() {
-    assert_eq!(chord_glyph(Some(KeyChord::ctrl(LogicalKey::Char('q')))), "Ctrl+Q");
+    assert_eq!(chord_glyph(Some(KeyChord::ctrl(LogicalKey::Char('q')))), "Ctrl-Q");
     assert_eq!(chord_glyph(Some(KeyChord::ctrl(LogicalKey::Char('c')))), "Ctrl-C");
     assert_eq!(chord_glyph(Some(KeyChord::plain(LogicalKey::Enter))), "\u{21b5}");
     assert_eq!(chord_glyph(Some(KeyChord::plain(LogicalKey::Esc))), "Esc");

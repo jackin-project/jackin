@@ -179,7 +179,7 @@ fn build_log_hint(vertical: bool) -> Vec<HintSpan<'static>> {
         HintSpan::Key("Ctrl-C"),
         HintSpan::Text("abort"),
         HintSpan::GroupSep,
-        HintSpan::Key("Ctrl+Q"),
+        HintSpan::Key("Ctrl-Q"),
         HintSpan::Text("quit"),
     ]);
     spans

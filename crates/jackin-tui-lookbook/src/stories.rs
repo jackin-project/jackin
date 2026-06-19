@@ -535,7 +535,7 @@ const COCKPIT_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("Ctrl-C"),
     HintSpan::Text("abort"),
     HintSpan::GroupSep,
-    HintSpan::Key("Ctrl+Q"),
+    HintSpan::Key("Ctrl-Q"),
     HintSpan::Text("quit"),
 ];
 

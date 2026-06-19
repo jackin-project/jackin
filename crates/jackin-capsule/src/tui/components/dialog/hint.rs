@@ -18,7 +18,7 @@ pub(crate) fn main_view_hint(
         spans.push(HintSpan::Key("Ctrl+\\"));
         spans.push(HintSpan::Text("menu"));
         spans.push(HintSpan::GroupSep);
-        spans.push(HintSpan::Key("Ctrl+Q"));
+        spans.push(HintSpan::Key("Ctrl-Q"));
         spans.push(HintSpan::Text("quit"));
         spans
     } else {
@@ -32,7 +32,7 @@ pub(crate) fn main_view_hint(
         spans.push(HintSpan::Key("click"));
         spans.push(HintSpan::Text("focus pane"));
         spans.push(HintSpan::GroupSep);
-        spans.push(HintSpan::Key("Ctrl+Q"));
+        spans.push(HintSpan::Key("Ctrl-Q"));
         spans.push(HintSpan::Text("quit"));
         spans
     }

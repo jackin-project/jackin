@@ -42,7 +42,7 @@ fn workspace_list_footer_role_picker_includes_quit() {
             "type to filter",
             "↑↓/j/k",
             "scroll",
-            "Ctrl+Q",
+            "Ctrl-Q",
             "quit",
         ]
     );
@@ -483,7 +483,7 @@ fn workspace_list_footer_saved_workspace_shows_row_actions() {
             "expand",
             "O",
             "open in GitHub",
-            "Ctrl+Q",
+            "Ctrl-Q",
             "quit",
         ]
     );
@@ -514,7 +514,7 @@ fn workspace_list_footer_workspace_row_shows_scroll_axes() {
             "new",
             "S",
             "settings",
-            "Ctrl+Q",
+            "Ctrl-Q",
             "quit",
         ]
     );

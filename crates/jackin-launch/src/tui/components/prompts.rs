@@ -107,7 +107,7 @@ const TEXT_PROMPT_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↵"),
     HintSpan::Text("save"),
     HintSpan::GroupSep,
-    HintSpan::Key("Ctrl-C/Ctrl+Q/Esc"),
+    HintSpan::Key("Ctrl-C/Ctrl-Q/Esc"),
     HintSpan::Text("cancel"),
 ];
 
@@ -118,7 +118,7 @@ const TEXT_PROMPT_SKIP_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("empty"),
     HintSpan::Text("skip"),
     HintSpan::GroupSep,
-    HintSpan::Key("Ctrl-C/Ctrl+Q/Esc"),
+    HintSpan::Key("Ctrl-C/Ctrl-Q/Esc"),
     HintSpan::Text("cancel"),
 ];
 

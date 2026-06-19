@@ -1,6 +1,6 @@
 ---
-source: crates/jackin-console/src/tui/view/tests/snapshot/tests.rs
-assertion_line: 245
+source: crates/jackin/src/console/tui/view/snapshot_tests.rs
+assertion_line: 242
 expression: rendered
 ---
  jackin'  · settings                                                                      
