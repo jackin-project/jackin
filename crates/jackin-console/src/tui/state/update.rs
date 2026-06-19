@@ -39,8 +39,9 @@ use crate::tui::update::{
 
 use super::{
     EditorState, EditorTab, FieldFocus, ManagerEffect, ManagerInstanceRefreshSnapshot,
-    ManagerStage, ManagerState, MountScrollFocus, PendingDriftCheck, PendingIsolationCleanup,
-    PendingMountInfoRefresh, PendingRoleLoad, SecretsScopeTag, SettingsState, SettingsTab,
+    ManagerStage, ManagerState, Modal, MountScrollFocus, PendingDriftCheck,
+    PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad, SecretsScopeTag,
+    SettingsState, SettingsTab,
 };
 
 // ── Concrete type aliases ──────────────────────────────────────────────────
@@ -730,6 +731,100 @@ fn scroll_list_horizontal(state: &mut ManagerState<'_>, delta: i16) {
 fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta: i16) {
     let plan = workspace_list_vertical_scroll_target_plan(state.list_scroll_focus());
     apply_workspace_list_vertical_scroll_plan(state, plan, delta);
+}
+
+/// Apply an async token-generate result (success or failure) to manager state.
+pub fn apply_token_generate_result(
+    state: &mut ManagerState<'_>,
+    result: anyhow::Result<jackin_core::EnvValue>,
+) {
+    match result {
+        Ok(env_value) => apply_generated_token(state, env_value),
+        Err(error) => report_token_generate_error(state, error),
+    }
+}
+
+fn apply_generated_token(state: &mut ManagerState<'_>, env_value: jackin_core::EnvValue) {
+    if let jackin_core::EnvValue::OpRef(op_ref) = &env_value {
+        crate::tui::op_picker::invalidate_cache_for_ref(&state.op_cache, op_ref);
+    }
+
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => match env_value {
+            jackin_core::EnvValue::OpRef(op_ref) => {
+                crate::tui::input::auth::apply_op_picker_to_auth_form_committed(editor, op_ref);
+            }
+            jackin_core::EnvValue::Plain(value) => {
+                crate::tui::input::auth::apply_plain_text_to_auth_form(editor, &value);
+            }
+        },
+        ManagerStage::Settings(settings) => match env_value {
+            jackin_core::EnvValue::OpRef(op_ref) => {
+                crate::tui::input::apply_op_picker_to_settings_auth_form_committed(
+                    &mut settings.auth,
+                    op_ref,
+                );
+            }
+            jackin_core::EnvValue::Plain(value) => {
+                crate::tui::input::apply_plain_text_to_settings_auth_form(
+                    &mut settings.auth,
+                    &value,
+                );
+            }
+        },
+        _ => {}
+    }
+}
+
+fn report_token_generate_error(state: &mut ManagerState<'_>, error: anyhow::Error) {
+    use crate::tui::components::error_popup;
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => {
+            editor.modal = Some(Modal::ErrorPopup {
+                state: error_popup::token_generation_failed_error_popup_state(error),
+            });
+        }
+        ManagerStage::Settings(_) => {
+            let _unused = update_manager(
+                state,
+                ManagerMessage::OpenSettingsErrorPopup {
+                    title: error_popup::token_generation_failed_error_title().into(),
+                    message: error.to_string(),
+                },
+            );
+        }
+        _ => {}
+    }
+}
+
+/// Apply a URL-open failure to manager state (opens an error popup).
+pub fn report_open_url_error(state: &mut ManagerState<'_>, error: anyhow::Error) {
+    use crate::tui::components::error_popup;
+    match &mut state.stage {
+        ManagerStage::Editor(editor) => {
+            editor.modal = Some(Modal::ErrorPopup {
+                state: error_popup::failed_to_open_url_error_popup_state(error),
+            });
+        }
+        ManagerStage::Settings(_) => {
+            let _unused = update_manager(
+                state,
+                ManagerMessage::OpenSettingsErrorPopup {
+                    title: error_popup::failed_to_open_url_error_title().into(),
+                    message: error.to_string(),
+                },
+            );
+        }
+        _ => {
+            let _unused = update_manager(
+                state,
+                ManagerMessage::OpenListErrorPopup {
+                    title: error_popup::failed_to_open_url_error_title().into(),
+                    message: error.to_string(),
+                },
+            );
+        }
+    }
 }
 
 #[cfg(test)]

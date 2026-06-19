@@ -9,10 +9,6 @@ pub(crate) mod global_mounts;
 pub use dispatch::handle_key;
 pub(crate) use jackin_console::tui::input::mouse::{clickable_at, handle_mouse_with_config};
 
-pub(in crate::console) use jackin_console::tui::input::{
-    apply_op_picker_to_settings_auth_form_committed, apply_plain_text_to_settings_auth_form,
-};
-
 pub type InputOutcome = jackin_console::tui::message::ConsoleInputOutcome<
     jackin_core::RoleSelector,
     jackin_core::Agent,
