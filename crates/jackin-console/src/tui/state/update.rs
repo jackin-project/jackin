@@ -733,6 +733,24 @@ fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta: i16)
     apply_workspace_list_vertical_scroll_plan(state, plan, delta);
 }
 
+/// Wire up an OP reference commit-validation subscription into manager state.
+pub fn execute_op_commit_validation(
+    state: &mut ManagerState<'_>,
+    op_ref: jackin_core::OpRef,
+    is_settings: bool,
+) {
+    let rx = crate::tui::op_picker::start_ref_validation(op_ref.clone());
+    if is_settings {
+        if let ManagerStage::Settings(settings) = &mut state.stage {
+            settings
+                .auth
+                .set_pending_op_commit(super::PendingOpCommit::new(op_ref, rx));
+        }
+    } else if let ManagerStage::Editor(editor) = &mut state.stage {
+        editor.pending_op_commit = Some(super::PendingOpCommit::new(op_ref, rx));
+    }
+}
+
 /// Apply an async token-generate result (success or failure) to manager state.
 pub fn apply_token_generate_result(
     state: &mut ManagerState<'_>,

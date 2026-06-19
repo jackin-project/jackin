@@ -735,25 +735,7 @@ fn execute_role_registration_start(
     }
 }
 
-fn execute_op_commit_validation(
-    state: &mut ManagerState<'_>,
-    op_ref: jackin_core::OpRef,
-    is_settings: bool,
-) {
-    let rx = jackin_console::tui::op_picker::start_ref_validation(op_ref.clone());
-    if is_settings {
-        if let ManagerStage::Settings(settings) = &mut state.stage {
-            settings
-                .auth
-                .set_pending_op_commit(crate::console::tui::state::PendingOpCommit::new(
-                    op_ref, rx,
-                ));
-        }
-    } else if let ManagerStage::Editor(editor) = &mut state.stage {
-        editor.pending_op_commit =
-            Some(crate::console::tui::state::PendingOpCommit::new(op_ref, rx));
-    }
-}
+use jackin_console::tui::state::update::execute_op_commit_validation;
 
 pub(crate) fn execute_workspace_save_effect(
     state: &mut ManagerState<'_>,
