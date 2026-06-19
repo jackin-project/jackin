@@ -21,7 +21,6 @@
 // than peppering individual sites.
 #![allow(irrefutable_let_patterns)]
 
-mod domain;
 pub mod effects;
 mod services;
 pub mod terminal;
@@ -29,6 +28,26 @@ pub mod tui;
 
 #[cfg(test)]
 mod tests;
+
+/// Validate a picked source folder against the agent an auth form targets.
+/// Returns `Ok(())` for non-agent auth kinds. Runtime validation stays in the
+/// binary adapter because `jackin-console` cannot depend on runtime.
+pub(super) fn validate_auth_source_folder(
+    kind: Option<jackin_console::tui::auth::AuthKind>,
+    path: &std::path::Path,
+) -> Result<(), String> {
+    use jackin_console::tui::auth_config::auth_kind_agent;
+    let Some(agent) = kind.and_then(auth_kind_agent) else {
+        return Ok(());
+    };
+    let host_home = directories::BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .unwrap_or_default();
+    jackin_runtime::instance::validate_sync_source_dir(agent, path, &host_home)
+}
+
+#[cfg(test)]
+pub(crate) use jackin_console::services::role_source::resolve_role_input_source;
 
 pub use jackin_console::services::launch::{WorkspaceChoice, build_workspace_choice};
 pub use terminal::TerminalSession;

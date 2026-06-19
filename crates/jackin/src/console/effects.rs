@@ -101,7 +101,7 @@ pub(crate) fn execute_manager_effect(
                 state,
                 context,
                 outcome,
-                &crate::console::domain::validate_auth_source_folder,
+                &crate::console::validate_auth_source_folder,
             )
         }
         ManagerEffect::ResolveFileBrowserGitUrl(path) => {
@@ -298,7 +298,7 @@ pub(crate) async fn apply_role_input_with_runner_for_tests(
 ) {
     let raw = value.trim();
     crate::debug_log!("role", "resolving role loader input: raw={raw:?}");
-    let resolved = match crate::console::domain::resolve_role_input_source(config, raw) {
+    let resolved = match crate::console::resolve_role_input_source(config, raw) {
         Ok(resolved) => resolved,
         Err(error) => {
             if let Some(git) = error.source_url.as_ref() {

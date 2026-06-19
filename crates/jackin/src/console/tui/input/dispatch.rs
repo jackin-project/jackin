@@ -270,7 +270,7 @@ pub fn handle_key(
             op_available,
             op_cache,
             term_size,
-            &crate::console::domain::validate_auth_source_folder,
+            &crate::console::validate_auth_source_folder,
         );
         if let SettingsAuthOutcome::ValidateOpRef(op_ref) = auth_outcome {
             state.request_effect(ManagerEffect::ValidateOpCommit {
