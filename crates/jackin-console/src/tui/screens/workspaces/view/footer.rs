@@ -1,16 +1,19 @@
-//! Concrete footer adapter for the workspace list screen.
+//! Concrete footer adapters for workspace-style screens.
 //!
 //! Reads `ManagerState` fields and assembles the facts structs needed by
 //! `footer_hints` so callers do not have to build them by hand.
 use jackin_config::AppConfig;
 use jackin_tui::{HintSpan, components::ScrollAxes};
+use ratatui::layout::Rect;
 
+use crate::tui::app::ConsoleManagerStage;
 use crate::tui::components::footer_hints::{
     WorkspaceFooterScrollFacts, WorkspaceInlinePickerContentFacts, WorkspaceListFooterInputFacts,
-    selected_instance_snapshot_available, workspace_footer_scroll_axes,
-    workspace_inline_picker_content_height, workspace_list_footer_facts,
-    workspace_list_footer_items, workspace_list_footer_mode_for_facts,
-    workspace_list_open_github_visible,
+    WorkspaceScreenFooterFacts, WorkspaceScreenFooterPlan, selected_instance_snapshot_available,
+    workspace_footer_scroll_axes, workspace_inline_picker_content_height,
+    workspace_list_footer_facts, workspace_list_footer_items, workspace_list_footer_mode_for_facts,
+    workspace_list_open_github_visible, workspace_screen_footer_items,
+    workspace_screen_footer_plan,
 };
 use crate::tui::layout;
 use crate::tui::layout::list::{list_names_content_width, selected_sidebar_scroll_areas};
@@ -159,4 +162,49 @@ fn selected_instance_has_snapshot(state: &ManagerState<'_>, selected: ManagerLis
                 .is_some_and(|entry| state.instance_snapshots.contains_key(&entry.container_base))
         },
     )
+}
+
+#[cfg(test)]
+mod tests;
+
+/// Build the workspace-screen footer hints for any workspace-style screen
+/// (list, create-prelude, destructive confirm) from a concrete `ManagerState`.
+///
+/// Delegates footer item assembly to `workspace_screen_footer_items`. The
+/// `area` is passed through to modal footer adapters so scroll-sensitive
+/// modals can measure their available height.
+#[must_use]
+pub fn workspace_screen_footer_items_for_state(
+    state: &ManagerState<'_>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    area: Rect,
+) -> Vec<HintSpan<'static>> {
+    let facts = match workspace_screen_footer_plan(state.stage.route()) {
+        WorkspaceScreenFooterPlan::List => WorkspaceScreenFooterFacts::List {
+            list_items: workspace_list_footer_items_for_state(state, config, cwd),
+            modal_items: state
+                .list_modal
+                .as_ref()
+                .map(|modal| modal.footer_items_for_area(false, area)),
+        },
+        WorkspaceScreenFooterPlan::CreatePrelude => {
+            let ConsoleManagerStage::CreatePrelude(prelude) = &state.stage else {
+                unreachable!("CreatePrelude route must have CreatePrelude state")
+            };
+            WorkspaceScreenFooterFacts::CreatePrelude {
+                modal_items: prelude
+                    .modal
+                    .as_ref()
+                    .map(|modal| modal.footer_items(false)),
+            }
+        }
+        WorkspaceScreenFooterPlan::DestructiveConfirm => {
+            WorkspaceScreenFooterFacts::DestructiveConfirm
+        }
+        WorkspaceScreenFooterPlan::ScreenOwned => {
+            unreachable!("Editor and Settings have their own render paths")
+        }
+    };
+    workspace_screen_footer_items(facts)
 }

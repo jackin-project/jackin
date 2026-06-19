@@ -7,15 +7,11 @@ use ratatui::{Frame, layout::Rect};
 
 use crate::console::tui::components::footer::editor::editor_footer_items;
 use crate::console::tui::components::footer::settings::settings_footer_items;
-use crate::console::tui::components::footer::workspace_list_footer_items_for_state;
 use crate::console::tui::components::modal::render_modal;
 use crate::console::tui::components::workspace_list::render_list_body;
 use crate::console::tui::state::{ManagerStage, ManagerState};
 use jackin_config::AppConfig;
-use jackin_console::tui::components::footer_hints::{
-    WorkspaceScreenFooterFacts, WorkspaceScreenFooterPlan, workspace_screen_footer_items,
-    workspace_screen_footer_plan,
-};
+use jackin_console::tui::screens::workspaces::view::footer::workspace_screen_footer_items_for_state;
 use jackin_console::tui::screens::editor::view::editor_frame_areas;
 use jackin_console::tui::screens::settings::view::{
     SettingsModalRenderPlan, render_global_mount_modal, render_settings_auth_modal,
@@ -30,8 +26,6 @@ use jackin_console::tui::view::{
     reserved_footer_height_for_facts, settings_error_area, status_overlay_area,
     workspace_frame_areas, workspace_header_title,
 };
-use jackin_tui::HintSpan;
-
 use super::{editor, settings};
 
 pub fn render(
@@ -66,7 +60,7 @@ pub fn render(
             render_footer(
                 frame,
                 areas.footer,
-                &workspace_footer_items(state, config, cwd, area),
+                &workspace_screen_footer_items_for_state(state, config, cwd, area),
             );
         }
     }
@@ -170,46 +164,6 @@ pub fn render(
     }
 }
 
-/// Footer hints for the workspace-style screens (list / create-prelude /
-/// destructive-confirm). An open modal owns the footer: its keys replace the
-/// screen keys in the reserved footer rows (hints always live in the fixed
-/// footer). The exhaustive `modal_footer_items` matcher means a new modal
-/// variant cannot ship without a hint — it won't compile.
-fn workspace_footer_items(
-    state: &ManagerState<'_>,
-    config: &AppConfig,
-    cwd: &std::path::Path,
-    area: Rect,
-) -> Vec<HintSpan<'static>> {
-    let facts = match workspace_screen_footer_plan(state.stage.route()) {
-        WorkspaceScreenFooterPlan::List => WorkspaceScreenFooterFacts::List {
-            list_items: workspace_list_footer_items_for_state(state, config, cwd),
-            modal_items: state
-                .list_modal
-                .as_ref()
-                .map(|modal| modal.footer_items_for_area(false, area)),
-        },
-        WorkspaceScreenFooterPlan::CreatePrelude => {
-            let ManagerStage::CreatePrelude(prelude) = &state.stage else {
-                unreachable!("CreatePrelude route must have CreatePrelude state")
-            };
-            WorkspaceScreenFooterFacts::CreatePrelude {
-                modal_items: prelude
-                    .modal
-                    .as_ref()
-                    .map(|modal| modal.footer_items(false)),
-            }
-        }
-        WorkspaceScreenFooterPlan::DestructiveConfirm => {
-            WorkspaceScreenFooterFacts::DestructiveConfirm
-        }
-        WorkspaceScreenFooterPlan::ScreenOwned => {
-            unreachable!("Editor and Settings have their own render paths")
-        }
-    };
-    workspace_screen_footer_items(facts)
-}
-
 /// Rows the current screen reserves for its footer — excluded from the modal
 /// backdrop so the hints stay visible. Editor/settings size theirs to the hint
 /// content; the workspace footer is fixed.
@@ -254,6 +208,3 @@ fn has_modal_overlay(state: &ManagerState<'_>) -> bool {
         state.stage.modal_facts(),
     ))
 }
-
-#[cfg(test)]
-mod tests;

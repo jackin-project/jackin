@@ -1,27 +1,23 @@
-use std::path::PathBuf;
-
-use jackin_console::tui::components::file_browser::FileBrowserState;
+use jackin_config::{AppConfig, WorkspaceConfig};
 use jackin_tui::HintSpan;
 use ratatui::layout::Rect;
-use tempfile::tempdir;
+use std::path::PathBuf;
 
-use super::*;
-use crate::console::tui::state::{
-    CreatePreludeState, EditorState, FileBrowserTarget, GlobalMountModal, ManagerStage, Modal,
-    SettingsAuthModal, SettingsState, SettingsTab,
-};
-use jackin_config::AppConfig;
-use jackin_config::WorkspaceConfig;
+use super::workspace_screen_footer_items_for_state;
+use crate::tui::app::ConsoleManagerStage;
+use crate::tui::components::file_browser::FileBrowserState;
+use crate::tui::state::{CreatePreludeState, FileBrowserTarget, GlobalMountModal, ManagerState, Modal, SettingsAuthModal, SettingsState, SettingsTab};
+use crate::tui::components::footer_hints::editor_footer_items;
+use crate::tui::screens::settings::view::settings_screen_footer_for_state;
 
 fn file_browser_state_at(path: PathBuf) -> FileBrowserState {
-    FileBrowserState::from_listing(jackin_console::services::file_browser::listing_at(
-        path.clone(),
-        path,
-    ))
+    FileBrowserState::from_listing(
+        crate::services::file_browser::listing_at(path.clone(), path),
+    )
 }
 
 fn file_browser_state() -> FileBrowserState {
-    let dir = tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
     file_browser_state_at(dir.keep())
 }
 
@@ -63,7 +59,7 @@ fn list_file_browser_hints_reach_reserved_footer() {
         state: file_browser_state(),
     });
 
-    assert_file_browser_hints(workspace_footer_items(
+    assert_file_browser_hints(workspace_screen_footer_items_for_state(
         &state,
         &config,
         &cwd,
@@ -81,9 +77,9 @@ fn create_prelude_file_browser_hints_reach_reserved_footer() {
         target: FileBrowserTarget::CreateFirstMountSrc,
         state: file_browser_state(),
     });
-    state.stage = ManagerStage::CreatePrelude(prelude);
+    state.stage = ConsoleManagerStage::CreatePrelude(prelude);
 
-    assert_file_browser_hints(workspace_footer_items(
+    assert_file_browser_hints(workspace_screen_footer_items_for_state(
         &state,
         &config,
         &cwd,
@@ -94,7 +90,10 @@ fn create_prelude_file_browser_hints_reach_reserved_footer() {
 #[test]
 fn editor_file_browser_hints_reach_footer() {
     let config = AppConfig::default();
-    let mut editor = EditorState::new_edit("workspace".to_owned(), WorkspaceConfig::default());
+    let mut editor = crate::tui::state::EditorState::new_edit(
+        "workspace".to_owned(),
+        WorkspaceConfig::default(),
+    );
     editor.modal = Some(Modal::FileBrowser {
         target: FileBrowserTarget::EditAddMountSrc,
         state: file_browser_state(),
@@ -117,7 +116,7 @@ fn settings_mounts_file_browser_hints_reach_footer() {
         state: Box::new(file_browser_state()),
     });
 
-    assert_file_browser_hints(settings_footer_items(
+    assert_file_browser_hints(settings_screen_footer_for_state(
         &settings,
         false,
         Rect::new(0, 0, 120, 40),
@@ -133,7 +132,7 @@ fn settings_auth_file_browser_hints_reach_footer() {
         state: file_browser_state(),
     });
 
-    assert_file_browser_hints(settings_footer_items(
+    assert_file_browser_hints(settings_screen_footer_for_state(
         &settings,
         false,
         Rect::new(0, 0, 120, 40),
