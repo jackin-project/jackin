@@ -796,30 +796,9 @@ impl Dialog {
                 "Captured",
                 Self::usage_instance_capture_label(instance),
             ),
-            jackin_tui::components::ContainerInfoRow::new(
-                "Token split",
-                format!(
-                    "input {} · output {} · cache read {} · cache write {}",
-                    Self::usage_compact_count(instance.total.token_input),
-                    Self::usage_compact_count(instance.total.token_output),
-                    Self::usage_compact_count(instance.total.token_cache_read),
-                    Self::usage_compact_count(instance.total.token_cache_write)
-                ),
-            ),
-            jackin_tui::components::ContainerInfoRow::new(
-                "Provenance",
-                format!(
-                    "{} exact · {} estimated · {} unpriced · top model {}",
-                    instance.total.exact_cost_sample_count,
-                    instance.total.estimated_cost_sample_count,
-                    instance.total.unpriced_sample_count,
-                    instance
-                        .total
-                        .top_model
-                        .clone()
-                        .unwrap_or_else(|| "unavailable".to_owned())
-                ),
-            ),
+            // The Instance preview ends the spend block at the capture line; the
+            // exact/estimated/unpriced counts and top model are already in the
+            // "Cost rows" grid, so no separate Token-split or Provenance row.
         ]);
         rows.push(jackin_tui::components::ContainerInfoRow::new(
             "By agent codename",
