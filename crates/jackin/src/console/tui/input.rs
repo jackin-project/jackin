@@ -20,11 +20,7 @@ pub type InputOutcome = jackin_console::tui::message::ConsoleInputOutcome<
     jackin_protocol::Provider,
 >;
 
-/// Cross-submodule helpers for the input/* test modules. Lifted out of
-/// the per-submodule test blocks because `key()` and `mount()` show up in
-/// virtually every test file; keeping a single canonical definition
-/// avoids the previous problem where each submodule grew its own
-/// near-identical copy.
+/// Cross-submodule helpers for the input/* test modules.
 #[cfg(test)]
 pub(super) mod test_support {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
