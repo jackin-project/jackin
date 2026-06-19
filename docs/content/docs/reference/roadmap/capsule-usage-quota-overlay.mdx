@@ -70,6 +70,24 @@ Each step names the change and the exact verification that proves it on-host. St
 9. **Verify across two workspaces / accounts.** Start one jackin' instance in the jackin workspace and one in the sandbird workspace (its own John Docker agent role), and confirm each instance's overlay shows the correct synchronized account, plan, and live quota for the focused agent without cross-instance leakage. *Verify:* both overlays render correct provider identity and quota; the `Instance` tab in each shows only its own samples.
 10. **Honest degradation for expired/forwarded tokens.** *Verify:* with an intentionally expired token, the tab shows `needs login` / `stale` with the last-known buckets where available, never a fabricated percentage, and never writes host credentials.
 
+### Remediation Progress
+
+Landed and unit/snapshot-verified (`cargo test -p jackin-capsule` green, 592 tests):
+
+- Step 1 — Claude OAuth now reads `<config>/.credentials.json` first, then `~/.claude/.credentials.json`, then the legacy `~/.claude.json`. The runtime already forwards the host Keychain (default and per-config-dir) into that container path, so both the jackin' and Scentbird workspaces resolve the correct per-account token.
+- Step 2 — the Claude OAuth usage call sends `User-Agent: claude-code/2.1.0` (the value that returned 200 on-host).
+- Step 5 — the doubled labels and scaffold rows are gone: the provider-detail cost grid uses bare fallbacks, and the standalone `Today cost` / `30d cost` / `30d tokens` / `Latest tokens` rows are removed.
+- Step 6 (render) — quota meters show only `N% left · pace · Resets in …` (no stray `used / 100%`); the `Account cost and tokens` two-column grid, history sparkline, `Top model`, and bare provenance line match the previews; the account header right-aligns account/plan to the panel width.
+- Step 7 — pace labels use the CodexBar formula exactly: `On pace` within 2 points, else `N% in reserve` / `N% in deficit`.
+- Step 8 (partial) — Overview renders one quota-focused line per provider; Instance drops the rows the preview omits (`Token split`, duplicate provenance). The `Source` footer now reads `<source> · <confidence> · <freshness> · <updated>`.
+
+Still open after this pass:
+
+- Live in-container end-to-end render verification (start instances in the jackin' and Scentbird workspaces, open the overlay, diff against the previews across all three width bands). Adapter extraction is proven by direct on-host probes; the in-container daemon render still needs a live capture.
+- Enterprise Claude accounts: the Scentbird token returned 401 from the consumer OAuth usage endpoint — confirm whether enterprise/`default_claude_zero` plans expose usage at all, else keep the honest `stale` / `needs login` state (Step 10).
+- Overview per-provider source/freshness tag (`fresh · provider`) and the Instance `Started … / Active agent time …` single right-aligned line need per-tab fields on `UsageProviderTab` (protocol addition) and width-threaded two-column instance rows.
+- Narrow `<64`-column list layout: compact bucket (`N% left · resets`), compact `account · plan` / `source · updated` header, and `Usage: <provider>` panel title.
+
 ## CodexBar Parity And Non-Regression Principle
 
 CodexBar is the reference jackin' borrows this feature's data extraction and information architecture from. That makes a non-regression rule explicit and binding for this item:
