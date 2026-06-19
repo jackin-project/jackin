@@ -167,7 +167,9 @@ pub(super) fn launch_with_committed_agent(
         return Ok(None);
     };
     let Some(resolved) =
-        crate::console::domain::resolve_committed_agent_launch(config, cwd, input, role, agent)?
+        jackin_console::services::launch::resolve_committed_agent_launch(
+            config, cwd, input, role, agent,
+        )?
     else {
         return Ok(None);
     };

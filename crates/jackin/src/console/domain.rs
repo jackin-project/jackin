@@ -24,4 +24,3 @@ pub(in crate::console) fn validate_auth_source_folder(
 #[cfg(test)]
 pub(crate) use jackin_console::services::role_source::resolve_role_input_source;
 
-pub(crate) use jackin_console::services::launch::resolve_committed_agent_launch;
