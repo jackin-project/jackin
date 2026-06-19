@@ -587,18 +587,21 @@ impl Dialog {
             "Account cost and tokens",
             Self::usage_account_cost_line(spend),
         ));
+        // Two grid rows under the "Account cost and tokens" header, matching
+        // the roadmap preview: `Today <v>   30d cost <v>` then
+        // `30d tokens <v>   Latest tokens <v>`. Fallback values are bare
+        // ("unavailable") because `usage_metric_pair` derives the column
+        // label by splitting off the last token; embedding the label in the
+        // value would double it (e.g. "Today today unavailable").
         rows.push(jackin_tui::components::ContainerInfoRow::new(
             "Cost row",
             format!(
                 "Today {} · 30d cost {}",
-                spend
-                    .today_cost_label
-                    .as_deref()
-                    .unwrap_or("today unavailable"),
+                spend.today_cost_label.as_deref().unwrap_or("unavailable"),
                 spend
                     .thirty_day_cost_label
                     .as_deref()
-                    .unwrap_or("30d cost unavailable")
+                    .unwrap_or("unavailable")
             ),
         ));
         rows.push(jackin_tui::components::ContainerInfoRow::new(
@@ -608,37 +611,13 @@ impl Dialog {
                 spend
                     .thirty_day_tokens_label
                     .as_deref()
-                    .unwrap_or("30d tokens unavailable"),
+                    .unwrap_or("unavailable"),
                 spend
                     .latest_tokens_label
                     .as_deref()
-                    .unwrap_or("latest tokens unavailable")
+                    .unwrap_or("unavailable")
             ),
         ));
-        if let Some(cost) = &spend.today_cost_label {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "Today cost",
-                cost.clone(),
-            ));
-        }
-        if let Some(cost) = &spend.thirty_day_cost_label {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "30d cost",
-                cost.clone(),
-            ));
-        }
-        if let Some(tokens) = &spend.thirty_day_tokens_label {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "30d tokens",
-                tokens.clone(),
-            ));
-        }
-        if let Some(tokens) = &spend.latest_tokens_label {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "Latest tokens",
-                tokens.clone(),
-            ));
-        }
         if let Some(model) = &spend.top_model {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 "Top model",
@@ -1023,22 +1002,19 @@ impl Dialog {
     }
 
     fn usage_account_cost_line(spend: &jackin_protocol::control::WorkspaceSpendView) -> String {
-        let today = spend
-            .today_cost_label
-            .as_deref()
-            .unwrap_or("today unavailable");
+        let today = spend.today_cost_label.as_deref().unwrap_or("unavailable");
         let thirty_day = spend
             .thirty_day_cost_label
             .as_deref()
-            .unwrap_or("30d cost unavailable");
+            .unwrap_or("unavailable");
         let tokens = spend
             .thirty_day_tokens_label
             .as_deref()
-            .unwrap_or("30d tokens unavailable");
+            .unwrap_or("unavailable");
         let latest = spend
             .latest_tokens_label
             .as_deref()
-            .unwrap_or("latest tokens unavailable");
+            .unwrap_or("unavailable");
         format!("Today {today} · 30d {thirty_day} · 30d tokens {tokens} · latest {latest}")
     }
 

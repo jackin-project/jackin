@@ -446,7 +446,14 @@ fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurface {
 fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
     let config =
         std::env::var("CLAUDE_CONFIG_DIR").map_or_else(|_| home_path(".claude"), PathBuf::from);
-    let oauth = load_claude_oauth_credentials(&home_path(".claude.json"));
+    // Claude Code stores the OAuth token in `<config>/.credentials.json`
+    // (the file the runtime forwards from the host Keychain or a
+    // workspace-pinned config dir). The legacy `~/.claude.json` only
+    // carries `oauthAccount` metadata, never the access token, so it is a
+    // last-resort read. Matches CodexBar's credential source order.
+    let oauth = load_claude_oauth_credentials(&config.join(".credentials.json"))
+        .or_else(|| load_claude_oauth_credentials(&home_path(".claude/.credentials.json")))
+        .or_else(|| load_claude_oauth_credentials(&home_path(".claude.json")));
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .ok()
         .filter(|v| !v.is_empty());
@@ -1537,7 +1544,9 @@ fn fetch_claude_oauth_usage(access_token: &str) -> Result<ClaudeOAuthUsageRespon
         .header(reqwest::header::ACCEPT, "application/json")
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .header("anthropic-beta", "oauth-2025-04-20")
-        .header(reqwest::header::USER_AGENT, "jackin-capsule/usage")
+        // The OAuth usage endpoint is gated to the Claude Code client UA;
+        // a generic UA is rejected. Verified on-host: claude-code/2.1.0 -> 200.
+        .header(reqwest::header::USER_AGENT, "claude-code/2.1.0")
         .send()
         .map_err(|err| format!("Claude OAuth usage request failed: {err}"))?;
     let status = response.status();

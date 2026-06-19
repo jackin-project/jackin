@@ -1024,8 +1024,10 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
     }));
     assert!(values.contains(&"ACP billing unavailable · unsupported"));
     assert!(values.contains(&"Overview  Instance  [Codex]  Claude  Amp"));
-    assert!(values.contains(&"$339.22"));
-    assert!(values.contains(&"$1,040.82"));
+    // Cost/token data renders through the two-column grid rows, not as
+    // standalone scaffold rows.
+    assert!(values.contains(&"Today $339.22 · 30d cost $1,040.82"));
+    assert!(values.contains(&"30d tokens 1.4B · Latest tokens 470M"));
     assert!(values.contains(&"▃█▅"));
     assert!(values.contains(&"managed CLI · authoritative"));
     assert!(values.contains(&"Estimated from local Codex logs"));
