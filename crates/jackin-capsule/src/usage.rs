@@ -3181,26 +3181,19 @@ fn quota_pace_label(
         return None;
     }
     let time_left_percent = reset_in as f64 / window_seconds as f64 * 100.0;
+    // CodexBar pace model: compare remaining quota against the fraction of the
+    // window still left. `delta > 0` means more quota than time remains (ahead
+    // of pace = reserve); `delta < 0` means burning faster than the clock
+    // (behind = deficit); within 2 points is "On pace". The reset countdown is
+    // carried separately in the bucket's reset label, so the pace token stays a
+    // bare phrase exactly as the previews show.
     let delta = remaining_percent - time_left_percent;
-    if delta >= 0.0 {
-        Some(format!(
-            "{}% in reserve · Lasts until reset",
-            delta.round() as i64
-        ))
+    if delta.abs() <= 2.0 {
+        Some("On pace".to_owned())
+    } else if delta > 0.0 {
+        Some(format!("{}% in reserve", delta.round() as i64))
     } else {
-        let deficit = (-delta).round() as i64;
-        let used_percent = (100.0 - remaining_percent).max(0.0);
-        let elapsed = window_seconds.saturating_sub(reset_in).max(1);
-        let runs_out = if used_percent <= 0.0 {
-            None
-        } else {
-            Some((remaining_percent / used_percent * elapsed as f64).round() as i64)
-        };
-        let runout = runs_out.map_or_else(
-            || "Runs out before reset".to_owned(),
-            |seconds| format!("Runs out in {}", compact_duration_label(seconds.max(0))),
-        );
-        Some(format!("{deficit}% in deficit · {runout}"))
+        Some(format!("{}% in deficit", (-delta).round() as i64))
     }
 }
 
@@ -5418,7 +5411,7 @@ mod tests {
         assert_eq!(buckets[0].remaining_percent, Some(37));
         assert_eq!(
             buckets[0].pace_label.as_deref(),
-            Some("15% in reserve · Lasts until reset")
+            Some("15% in reserve")
         );
         assert_eq!(buckets[1].label, "Weekly");
         assert_eq!(buckets[1].remaining_percent, Some(10));
@@ -5588,11 +5581,20 @@ mod tests {
     }
 
     #[test]
-    fn quota_pace_label_reports_deficit_and_runout() {
-        let pace = quota_pace_label(Some(60), Some(900), Some(1_000), 0).expect("pace label");
+    fn quota_pace_label_uses_codexbar_reserve_deficit_onpace() {
+        // Behind pace (burning faster than the clock): 60% quota left with 90%
+        // of the window still remaining -> 30 points of deficit.
+        let deficit = quota_pace_label(Some(60), Some(900), Some(1_000), 0).expect("pace label");
+        assert_eq!(deficit, "30% in deficit");
 
-        assert!(pace.contains("30% in deficit"), "{pace}");
-        assert!(pace.contains("Runs out in"), "{pace}");
+        // Ahead of pace (quota outlasting the clock): 90% left, 60% of window
+        // remaining -> 30 points in reserve.
+        let reserve = quota_pace_label(Some(90), Some(600), Some(1_000), 0).expect("pace label");
+        assert_eq!(reserve, "30% in reserve");
+
+        // Within 2 points of the clock -> On pace.
+        let on_pace = quota_pace_label(Some(50), Some(500), Some(1_000), 0).expect("pace label");
+        assert_eq!(on_pace, "On pace");
     }
 
     #[test]
@@ -5693,7 +5695,7 @@ mod tests {
         assert_eq!(buckets[0].remaining_percent, Some(75));
         assert_eq!(
             buckets[0].pace_label.as_deref(),
-            Some("53% in reserve · Lasts until reset")
+            Some("53% in reserve")
         );
         assert_eq!(buckets[1].label, "Token quota");
         assert_eq!(buckets[1].remaining_percent, Some(10));

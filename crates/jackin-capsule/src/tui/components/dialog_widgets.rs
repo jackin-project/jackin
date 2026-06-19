@@ -394,19 +394,22 @@ pub(crate) fn usage_info_content_size(
 }
 
 fn usage_info_lines(state: &jackin_tui::components::ContainerInfoState) -> Vec<Line<'static>> {
-    usage_info_lines_impl(state, false)
+    // Width 0 disables right-alignment so content-size/height measurement
+    // reflects the intrinsic line width, not a padded-to-panel width.
+    usage_info_lines_impl(state, false, 0)
 }
 
 fn usage_info_lines_for_width(
     state: &jackin_tui::components::ContainerInfoState,
     width: u16,
 ) -> Vec<Line<'static>> {
-    usage_info_lines_impl(state, width < 64)
+    usage_info_lines_impl(state, width < 64, width)
 }
 
 fn usage_info_lines_impl(
     state: &jackin_tui::components::ContainerInfoState,
     list_layout: bool,
+    width: u16,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::with_capacity(state.rows().len().saturating_mul(2).saturating_add(1));
     let context = UsageLineContext {
@@ -415,6 +418,7 @@ fn usage_info_lines_impl(
         plan: usage_row_value(state, "Plan"),
         latest_tokens: usage_row_value(state, "Latest tokens"),
         list_layout,
+        width: width as usize,
     };
     let show_tabs = !list_layout || state.title() == "Usage: Overview";
     lines.push(Line::from(""));
@@ -437,6 +441,8 @@ struct UsageLineContext<'a> {
     plan: Option<&'a str>,
     latest_tokens: Option<&'a str>,
     list_layout: bool,
+    /// Panel inner width for right-aligned header fields; 0 disables alignment.
+    width: usize,
 }
 
 fn usage_row_value<'a>(
@@ -469,7 +475,14 @@ fn usage_lines_for_row(
             Span::styled(value.to_owned(), BOLD_GREEN),
         ])),
         "Header" => {
-            usage_header_lines(value, context.updated, context.account, context.plan, lines);
+            usage_header_lines(
+                value,
+                context.updated,
+                context.account,
+                context.plan,
+                context.width,
+                lines,
+            );
         }
         "Focused agent" | "Focused account" | "Instance" => {
             lines.push(Line::from(vec![
@@ -762,34 +775,59 @@ fn usage_header_lines(
     updated: Option<&str>,
     account: Option<&str>,
     plan: Option<&str>,
+    width: usize,
     lines: &mut Vec<Line<'static>>,
 ) {
-    lines.push(Line::from(vec![
-        Span::raw("  "),
-        Span::styled(
-            value.to_owned(),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("   ", DIM),
-        Span::styled(
-            account.unwrap_or("account unavailable").to_owned(),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ),
-    ]));
+    // Line 1: provider flush-left, account flush-right (preview layout).
+    let account = account.unwrap_or("account unavailable");
+    lines.push(usage_header_two_column(
+        value,
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        account,
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        width,
+    ));
 
-    let mut details = Vec::new();
-    if let Some(updated) = updated.filter(|value| !value.trim().is_empty()) {
-        details.push(updated.to_owned());
+    // Line 2: "Updated …" flush-left, plan flush-right.
+    let updated = updated.map(str::trim).filter(|value| !value.is_empty());
+    let plan = plan.map(str::trim).filter(|value| !value.is_empty());
+    if updated.is_some() || plan.is_some() {
+        lines.push(usage_header_two_column(
+            updated.unwrap_or(""),
+            DIM,
+            plan.unwrap_or(""),
+            DIM,
+            width,
+        ));
     }
-    if let Some(plan) = plan.filter(|value| !value.trim().is_empty()) {
-        details.push(plan.to_owned());
+}
+
+/// Build a header line with `left` flush-left and `right` flush-right to
+/// `width`. Falls back to a fixed three-space gap when `width` is 0 (the
+/// measurement path) or too narrow to right-align without overlap.
+fn usage_header_two_column(
+    left: &str,
+    left_style: Style,
+    right: &str,
+    right_style: Style,
+    width: usize,
+) -> Line<'static> {
+    const INDENT: usize = 2;
+    let left_cols = jackin_tui::display_cols(left);
+    let right_cols = jackin_tui::display_cols(right);
+    let gap = width
+        .checked_sub(INDENT + left_cols + right_cols)
+        .filter(|gap| *gap >= 1)
+        .unwrap_or(3);
+    let mut spans = vec![
+        Span::raw("  "),
+        Span::styled(left.to_owned(), left_style),
+    ];
+    if !right.is_empty() {
+        spans.push(Span::raw(" ".repeat(gap)));
+        spans.push(Span::styled(right.to_owned(), right_style));
     }
-    if !details.is_empty() {
-        lines.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled(details.join("   "), DIM),
-        ]));
-    }
+    Line::from(spans)
 }
 
 fn usage_quota_bucket_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {

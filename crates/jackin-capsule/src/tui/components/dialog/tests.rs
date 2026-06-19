@@ -1029,7 +1029,7 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
     assert!(values.contains(&"Today $339.22 · 30d cost $1,040.82"));
     assert!(values.contains(&"30d tokens 1.4B · Latest tokens 470M"));
     assert!(values.contains(&"▃█▅"));
-    assert!(values.contains(&"managed CLI · authoritative"));
+    assert!(values.contains(&"managed CLI · authoritative · fresh · Updated just now"));
     assert!(values.contains(&"Estimated from local Codex logs"));
     assert!(values.contains(&"2 buckets"));
     assert!(

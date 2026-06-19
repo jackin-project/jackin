@@ -630,9 +630,16 @@ impl Dialog {
                 Self::usage_history_bars(&spend.history),
             ));
         }
+        // Source footer matches the preview shape:
+        // "<source> · <confidence> · <freshness> · <updated>".
         rows.push(jackin_tui::components::ContainerInfoRow::new(
             "Source",
-            Self::usage_source_label(view.source, view.confidence),
+            format!(
+                "{} · {} · {}",
+                Self::usage_source_label(view.source, view.confidence),
+                Self::usage_status_label(view.status),
+                view.updated_label,
+            ),
         ));
         rows.push(jackin_tui::components::ContainerInfoRow::new(
             "Provenance",
