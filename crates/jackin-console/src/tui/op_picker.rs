@@ -8,6 +8,20 @@ pub mod state;
 pub use load::{execute_load_request, start_load};
 pub use state::{LoadResult, OpPickerState};
 
+pub fn cli_available() -> bool {
+    use jackin_env::OpRunner as _;
+    jackin_env::OpCli::new_probe().probe().is_ok()
+}
+
+pub fn start_ref_validation(
+    op_ref: jackin_core::OpRef,
+) -> jackin_tui::runtime::BlockingSubscription<anyhow::Result<()>> {
+    use jackin_env::OpRunner as _;
+    let runner = jackin_env::OpCli::new().with_account(op_ref.account.clone());
+    let op = op_ref.op;
+    jackin_tui::runtime::spawn_blocking_subscription(move || runner.read(&op).map(|_| ()))
+}
+
 /// Concrete selection type for the picker: all five type parameters are bound
 /// to `jackin-core` types already available in this crate.
 pub type OpPickerSelection = crate::tui::components::op_picker::OpPickerSelection<

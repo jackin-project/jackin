@@ -22,7 +22,7 @@ use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::status_popup;
 
 pub(crate) fn op_cli_available() -> bool {
-    crate::console::services::op::cli_available()
+    jackin_console::tui::op_picker::cli_available()
 }
 
 pub(crate) fn execute_manager_effect(
@@ -828,7 +828,7 @@ fn execute_op_commit_validation(
     op_ref: jackin_core::OpRef,
     is_settings: bool,
 ) {
-    let rx = crate::console::services::op::start_ref_validation(op_ref.clone());
+    let rx = jackin_console::tui::op_picker::start_ref_validation(op_ref.clone());
     if is_settings {
         if let ManagerStage::Settings(settings) = &mut state.stage {
             settings
