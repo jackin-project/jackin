@@ -92,5 +92,6 @@ pub use text_input::{
 };
 pub use toast::{Toast, render_toast, toast_rect};
 pub use super::keymap::{
-    KeyBinding, KeyChord, Keymap, LogicalKey, Mods, Visibility, chord_glyph, raw_bytes_to_chord,
+    KeyBinding, KeyChord, Keymap, LogicalKey, Mods, ScrollHintAxis, Visibility, chord_glyph,
+    raw_bytes_to_chord, SCROLL_HINT_KEYMAP,
 };

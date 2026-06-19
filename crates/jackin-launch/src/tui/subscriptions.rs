@@ -6,6 +6,7 @@ use std::time::Duration;
 use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
+use jackin_tui::components::KeyChord;
 use jackin_tui::ModalOutcome;
 use jackin_tui::components::{ScrollAxes, StatusFooterHover};
 use ratatui::layout::Rect;
@@ -420,8 +421,9 @@ pub fn handle_cockpit_input(
             // answered. Unlike Ctrl+C this is reversible — No resumes launch.
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
-                    && k.code == KeyCode::Char('q')
-                    && k.modifiers.contains(KeyModifiers::CONTROL) =>
+                    && crate::tui::keymap::COCKPIT_KEYMAP
+                        .dispatch(KeyChord::from(k))
+                        .is_some() =>
             {
                 v.quit_confirm = Some(jackin_tui::components::exit_confirm_state());
                 return CockpitOutcome::Continue;
@@ -530,59 +532,72 @@ pub fn handle_cockpit_input(
             }
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
-                    && v.container_info_open
-                    && matches!(k.code, KeyCode::Enter) =>
+                    && v.container_info_open =>
             {
-                let state = launch_container_info_state(
-                    &v,
-                    ctx.run_id,
-                    ctx.run_log_path,
-                    ctx.terminal.is_debug_mode(),
-                    ctx.jackin_version,
-                );
-                if let Some((copy_row, payload)) = state.keyboard_copy_payload()
-                    && ctx.terminal.copy_to_clipboard(&payload)
-                {
-                    let _dirty =
-                        update_launch_view(&mut v, LaunchMessage::ContainerInfoCopied(copy_row));
+                use crate::tui::keymap::{CONTAINER_INFO_KEYMAP, ContainerInfoAction};
+                match CONTAINER_INFO_KEYMAP.dispatch(KeyChord::from(k)) {
+                    Some(ContainerInfoAction::CopyValue) => {
+                        let state = launch_container_info_state(
+                            &v,
+                            ctx.run_id,
+                            ctx.run_log_path,
+                            ctx.terminal.is_debug_mode(),
+                            ctx.jackin_version,
+                        );
+                        if let Some((copy_row, payload)) = state.keyboard_copy_payload()
+                            && ctx.terminal.copy_to_clipboard(&payload)
+                        {
+                            let _dirty = update_launch_view(
+                                &mut v,
+                                LaunchMessage::ContainerInfoCopied(copy_row),
+                            );
+                        }
+                    }
+                    Some(ContainerInfoAction::Close) => {
+                        let _dirty =
+                            update_launch_view(&mut v, LaunchMessage::ContainerInfoClosed);
+                        terminal.set_pointer_shape(false);
+                    }
+                    None => {}
                 }
             }
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
-                    && v.container_info_open
-                    && k.code == KeyCode::Esc =>
-            {
-                let _dirty = update_launch_view(&mut v, LaunchMessage::ContainerInfoClosed);
-                terminal.set_pointer_shape(false);
-            }
-            Event::Key(k)
-                if k.kind == KeyEventKind::Press
                     && v.failure.is_some()
-                    && matches!(k.code, KeyCode::Enter | KeyCode::Esc) =>
+                    && crate::tui::keymap::FAILURE_KEYMAP
+                        .dispatch(KeyChord::from(k))
+                        .is_some() =>
             {
                 // Failure popup is modal over the cockpit; Enter/Esc acknowledges
                 // it so the awaiting `stage_failed` returns.
                 let _dirty = update_launch_view(&mut v, LaunchMessage::FailureAcknowledged);
                 terminal.set_pointer_shape(false);
             }
-            Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => match k.code {
-                KeyCode::Esc => {
-                    let _dirty = update_launch_view(&mut v, LaunchMessage::BuildLogClosed);
+            Event::Key(k)
+                if k.kind == KeyEventKind::Press
+                    && v.build_log_open =>
+            {
+                use crate::tui::keymap::{BUILD_LOG_KEYMAP, BuildLogAction};
+                let vertical = build_log_scroll_axes(&v, area).vertical;
+                match BUILD_LOG_KEYMAP.dispatch(KeyChord::from(k)) {
+                    Some(BuildLogAction::Close) => {
+                        let _dirty = update_launch_view(&mut v, LaunchMessage::BuildLogClosed);
+                    }
+                    Some(BuildLogAction::ScrollUp) if vertical => {
+                        update_build_log_scroll(&mut v, area, 1);
+                    }
+                    Some(BuildLogAction::ScrollDown) if vertical => {
+                        update_build_log_scroll(&mut v, area, -1);
+                    }
+                    Some(BuildLogAction::PageUp) if vertical => {
+                        update_build_log_scroll(&mut v, area, BUILD_LOG_PAGE_STEP as isize);
+                    }
+                    Some(BuildLogAction::PageDown) if vertical => {
+                        update_build_log_scroll(&mut v, area, -(BUILD_LOG_PAGE_STEP as isize));
+                    }
+                    _ => {}
                 }
-                KeyCode::Up if build_log_scroll_axes(&v, area).vertical => {
-                    update_build_log_scroll(&mut v, area, 1);
-                }
-                KeyCode::Down if build_log_scroll_axes(&v, area).vertical => {
-                    update_build_log_scroll(&mut v, area, -1);
-                }
-                KeyCode::PageUp if build_log_scroll_axes(&v, area).vertical => {
-                    update_build_log_scroll(&mut v, area, BUILD_LOG_PAGE_STEP as isize);
-                }
-                KeyCode::PageDown if build_log_scroll_axes(&v, area).vertical => {
-                    update_build_log_scroll(&mut v, area, -(BUILD_LOG_PAGE_STEP as isize));
-                }
-                _ => {}
-            },
+            }
             _ => {}
         }
     }

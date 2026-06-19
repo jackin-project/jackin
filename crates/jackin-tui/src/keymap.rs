@@ -418,7 +418,7 @@ pub fn chord_glyph(chord: Option<KeyChord>) -> &'static str {
 /// [`Keymap::hint_spans_for_axes`], eliminating the duplicate gating logic
 /// that previously lived in `scroll_hint_spans`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScrollAxis {
+pub enum ScrollHintAxis {
     Vertical,
     Horizontal,
 }
@@ -433,18 +433,18 @@ pub enum ScrollAxis {
 ///
 /// Use via [`Keymap::hint_spans_for_axes`]. Never call
 /// [`Keymap::dispatch`] on this keymap — both Up and Down map to
-/// `ScrollAxis::Vertical`, so the return value has no directional meaning.
-pub static SCROLL_HINT_KEYMAP: Keymap<ScrollAxis> = Keymap::new(&[
+/// `ScrollHintAxis::Vertical`, so the return value has no directional meaning.
+pub static SCROLL_HINT_KEYMAP: Keymap<ScrollHintAxis> = Keymap::new(&[
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::Up), KeyChord::plain(LogicalKey::Down)],
-        action: ScrollAxis::Vertical,
+        action: ScrollHintAxis::Vertical,
         hint: Some("scroll"),
         visibility: Visibility::Shown,
         glyph: Some("↑↓/j/k"),
     },
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::Left), KeyChord::plain(LogicalKey::Right)],
-        action: ScrollAxis::Horizontal,
+        action: ScrollHintAxis::Horizontal,
         hint: Some("scroll"),
         visibility: Visibility::Shown,
         glyph: Some("←→/h/l"),

@@ -2,9 +2,8 @@
 
 use jackin_tui::HintSpan;
 use jackin_tui::components::{
-    ScrollAxes, bottom_chrome_areas, is_scrollable, render_hint_bar, render_scrollable_block,
-    scroll_hint_spans, scrollbar_offset_for_track_position, vertical_scrollbar_area,
-    viewport_height, viewport_width,
+    bottom_chrome_areas, is_scrollable, render_hint_bar, render_scrollable_block,
+    scrollbar_offset_for_track_position, vertical_scrollbar_area, viewport_height, viewport_width,
 };
 use jackin_tui::theme::DIALOG_SURFACE;
 use ratatui::Frame;
@@ -154,35 +153,12 @@ pub fn build_log_scrollbar_top_offset_for_row_cached(
     )))
 }
 
-/// Footer-hint keys for the build-log overlay. The scroll + page keys appear
-/// only when the wrapped output overflows the viewport (`vertical`) — when the
-/// log fits, the overlay shows just "Esc close" rather than advertising a
-/// scroll the operator cannot perform. The body is vertical-only (long lines
-/// wrap), so there is never a horizontal-scroll hint.
+/// Footer-hint keys for the build-log overlay.
+///
+/// Delegates to [`crate::tui::keymap::build_log_hint_spans`] so hints and
+/// dispatch stay coupled in the same module.
 fn build_log_hint(vertical: bool) -> Vec<HintSpan<'static>> {
-    let mut spans = scroll_hint_spans(ScrollAxes {
-        vertical,
-        horizontal: false,
-    });
-    if vertical {
-        spans.extend([
-            HintSpan::GroupSep,
-            HintSpan::Key("PgUp/PgDn"),
-            HintSpan::Text("page"),
-            HintSpan::GroupSep,
-        ]);
-    }
-    spans.extend([
-        HintSpan::Key("Esc"),
-        HintSpan::Text("close"),
-        HintSpan::GroupSep,
-        HintSpan::Key("Ctrl-C"),
-        HintSpan::Text("abort"),
-        HintSpan::GroupSep,
-        HintSpan::Key("Ctrl-Q"),
-        HintSpan::Text("quit"),
-    ]);
-    spans
+    crate::tui::keymap::build_log_hint_spans(vertical)
 }
 
 /// Full-screen opaque overlay over the live docker-build output, scrollable.
