@@ -369,10 +369,28 @@ fn render_usage_info(
     area: Rect,
     state: &jackin_tui::components::ContainerInfoState,
 ) {
-    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(state.title()));
+    let title = usage_panel_title(state, area.width);
+    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(title.as_str()));
     let lines = usage_info_lines_for_width(state, inner.width);
     let mut scroll = state.scroll.clone();
     jackin_tui::components::render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
+}
+
+/// Panel title. In the narrow list layout the provider-detail panel reads
+/// `Usage: <provider>` (matching the narrow preview); the wide layout and the
+/// Overview/Instance panels keep their own titles.
+fn usage_panel_title(state: &jackin_tui::components::ContainerInfoState, width: u16) -> String {
+    let base = state.title();
+    if width >= 68 || base != "Usage" {
+        return base.to_owned();
+    }
+    if let Some(header) = usage_row_value(state, "Header") {
+        let short = header.rsplit(" / ").next().unwrap_or(header).trim();
+        if !short.is_empty() {
+            return format!("Usage: {short}");
+        }
+    }
+    base.to_owned()
 }
 
 pub(crate) fn usage_info_required_height(
@@ -745,6 +763,9 @@ fn usage_instance_agent_lines(label: &str, value: &str, lines: &mut Vec<Line<'st
     let cost = parts[8];
     let top_model = parts[9];
     let lifecycle = parts[10];
+    // Three lines (identity / lineage / spend): merging identity and lineage
+    // overflows the panel at narrow-to-medium widths and clips the trailing
+    // activity, so the lineage keeps its own line to stay lossless.
     lines.push(Line::from(vec![
         Span::raw("  "),
         Span::styled(
