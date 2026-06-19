@@ -238,100 +238,30 @@ Recent moves (prior sessions): `tui/console.rs` (ConsoleState/ConsoleStage type 
 
 ## What Still Lives In Root Console
 
-### Domain Rules
+**Phase 5 end state reached.** Root console is now a thin adapter shell with 5 substantive files:
 
-`crates/jackin/src/console/domain.rs` owns:
+### `console.rs` — binding module + terminal adapter
 
-- `validate_auth_source_folder` — calls `jackin_runtime::instance::validate_sync_source_dir`; must stay in root,
-- thin re-exports of `jackin_console::services::launch::resolve_committed_agent_launch` and `jackin_console::services::role_source::resolve_role_input_source` (test-only).
+- `validate_auth_source_folder` — must stay in root; calls `jackin_runtime::instance::validate_sync_source_dir`.
+- Inline `terminal` module — binds `jackin-console`'s generic terminal lifecycle to root debug-buffering globals (`begin_debug_buffering`, `end_debug_buffering`, `set_host_screen_owned`, `host_screen_owned`). Stays in root because it wires to root's `crate::tui::*` debug-buffering state.
+- Root type aliases (`ConsoleInstanceAction`, `ConsoleOutcome`).
+- Test-only re-exports of role source/launch helpers.
 
-Note: `InstanceRefreshSnapshot` alias removed; `services/instances.rs` uses `jackin_console::tui::state::ManagerInstanceRefreshSnapshot` directly.
+### `effects.rs` — effect interpreter
 
-Move potential: medium.
+858 LOC. Executes typed `ManagerEffect` values, polls background work, delegates to root services. Root integration by design — owns calls into root services and runtime paths. All role-error popup helpers now live here too (depend on `crate::runtime::RepoError`). Will shrink further as effect request shapes and pure planning continue migrating to `jackin-console`.
 
-Blockers:
+### `services.rs` — IO adapters (all inline)
 
-- uses `jackin_core::Agent` directly in production console code,
-- uses `jackin_console::services` helpers for role/source and launch selection rules,
-- uses `jackin_config::{AppConfig, LoadWorkspaceInput, ResolvedWorkspace, RoleSource, resolve_load_workspace}` directly in production console code,
-- uses `jackin_core::RoleSelector` directly in production console code,
-- uses `crate::instance` and `crate::runtime::snapshot`.
+534 LOC. All service inline modules now consolidated here: agents, config, instances, role_load, workspace_save. All require `JackinPaths`, `CommandRunner`, `ShellRunner`, or runtime modules. Config-save request/response shapes already delegate to `jackin-console`; remaining workspace-save planning could move further with small interfaces.
 
-Recommendation:
+### `tui.rs` — type aliases + inline adapters
 
-- Keep provider derivation in root until the operator-env query can be injected or moved without creating a `jackin-console` -> `jackin-env` dependency cycle.
-- `InstanceRefreshSnapshot` likely belongs in `jackin-console` only if instance index/session/snapshot types also move lower.
+160 LOC. Root-console concrete type aliases (ManagerEffect, WorkspaceSaveEffect, etc.), inline input/dispatch/editor/state adapter modules, re-exports. All thin wrappers or re-exports; no product logic.
 
-### Services
+### `tui/run.rs` — event loop
 
-`crates/jackin/src/console/services/` owns root side effects:
-
-- `agents.rs`: resolves supported agents through runtime.
-- `config.rs`: persists workspaces/settings/role sources through root config editor.
-- `instances.rs`: reads/rebuilds instance index, runs `docker ps`, overlays running instances, fetches daemon snapshots.
-- `op.rs`: probes and validates `op`.
-- `op_picker.rs`: starts op metadata loads and invalidates root op cache.
-- `role_load.rs`: registers role repos through runtime.
-- `token_setup.rs`: mints Claude OAuth token values.
-- `workspace_save.rs`: starts drift detection and isolation cleanup workers.
-
-Move potential: mixed.
-
-Likely should stay in the binary adapter for now:
-
-- Docker-backed instance reconciliation,
-- runtime role registration,
-- workspace drift detection,
-- isolation cleanup,
-- token minting,
-- anything that needs `JackinPaths`, `CommandRunner`, `ShellRunner`, or runtime modules.
-
-Likely movable with small interfaces:
-
-- config-save request/response shapes,
-- op-picker load request/result adapters once op data types fully live below root,
-- some workspace save planning helpers that do not execute IO.
-
-### Effects
-
-`crates/jackin/src/console/effects.rs` executes typed `ManagerEffect` values and polls background work.
-
-Move potential: low as a whole, high in pieces.
-
-This file is root integration by design. It owns calls into root services and runtime paths. It should probably shrink over time, but not move wholesale. The reusable parts are effect vocabulary and pure planning, and much of that already lives in `jackin-console/src/tui/effect.rs`, `update.rs`, and `subscriptions.rs`.
-
-Recommendation:
-
-- Keep the executor in root.
-- Continue moving effect request shapes and pure follow-up planning into `jackin-console`.
-- Make `effects.rs` look like a thin interpreter: `ManagerEffect -> service call -> ManagerMessage`.
-
-### TUI State, Message, Input, View
-
-`crates/jackin/src/console/tui` is the main remaining duplication risk. It contains:
-
-- root aliases binding generic `jackin-console` app/modal/stage types to root types,
-- concrete `ManagerState`,
-- root `ManagerMessage` alias and reducer,
-- input handlers,
-- mouse handlers,
-- render adapters (now thin re-export shells — all render logic lives in jackin-console),
-- root run loop.
-
-Move potential:
-
-- High for pure geometry/focus/row/update/view helpers that only need fact structs.
-- Medium for state/update/input if more root-owned types become generic parameters.
-- Low for terminal event loop and launch/attach handoff until effect execution is inverted behind a trait.
-
-Current blockers:
-
-- direct use of config/workspace data types from lower crates; these no longer block extraction by themselves,
-- direct use of `RoleSelector`, `Agent`, provider types,
-- direct use of `InstanceIndexEntry`, `InstanceStatus`, `SessionRecord`, `InstanceSnapshot`,
-- direct use of lower-crate `EnvValue`, `OpRef`, `OpCache`, and op runner types,
-- direct use of `JackinPaths`, `CommandRunner`, `runtime::RepoError`, drift types,
-- integration tests and benchmarks import `jackin::console::tui::{ManagerState, render, handle_key}`.
+758 LOC. Terminal event loop, startup handling, prompt handoff, effect draining. Must stay in root due to direct terminal ownership, Docker/runtime calls, and launch/attach handoff.
 
 ## Console-Related Code Outside Both Console Locations
 
