@@ -76,6 +76,97 @@ pub const fn settings_mount_modal_debug_name(kind: SettingsMountModalDebugKind) 
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConsoleLocationDebug {
+    pub quit_confirm: bool,
+    pub stage: ConsoleStageDebug,
+    pub list_modal: Option<ModalDebugKind>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConsoleStageDebug {
+    List,
+    Editor {
+        mode: String,
+        tab: String,
+        field: String,
+        modal: Option<ModalDebugKind>,
+    },
+    CreatePrelude {
+        step: String,
+        modal: Option<ModalDebugKind>,
+    },
+    ConfirmDelete,
+    ConfirmInstancePurge,
+    Settings {
+        tab: String,
+        selected: usize,
+        modal: Option<SettingsMountModalDebugKind>,
+    },
+}
+
+pub trait ConsoleModalDebugKind {
+    fn modal_debug_kind(&self) -> ModalDebugKind;
+}
+
+pub trait ConsoleSettingsMountModalDebugKind {
+    fn settings_mount_modal_debug_kind(&self) -> SettingsMountModalDebugKind;
+}
+
+pub trait ConsoleEditorDebugFacts {
+    fn editor_stage_debug(&self) -> ConsoleStageDebug;
+}
+
+pub trait ConsoleCreatePreludeDebugFacts {
+    fn create_prelude_stage_debug(&self) -> ConsoleStageDebug;
+}
+
+pub trait ConsoleSettingsDebugFacts {
+    fn settings_stage_debug(&self) -> ConsoleStageDebug;
+}
+
+#[must_use]
+pub fn console_location_debug_name(location: &ConsoleLocationDebug) -> String {
+    if location.quit_confirm {
+        return "quit-confirm".to_owned();
+    }
+
+    let mut name = match &location.stage {
+        ConsoleStageDebug::List => "list".to_owned(),
+        ConsoleStageDebug::Editor {
+            mode,
+            tab,
+            field,
+            modal,
+        } => format!(
+            "editor mode={mode} tab={tab} field={field} modal={}",
+            modal.map_or("none", modal_debug_name)
+        ),
+        ConsoleStageDebug::CreatePrelude { step, modal } => {
+            format!(
+                "create-prelude step={step} modal={}",
+                modal.map_or("none", modal_debug_name)
+            )
+        }
+        ConsoleStageDebug::ConfirmDelete => "confirm-delete".to_owned(),
+        ConsoleStageDebug::ConfirmInstancePurge => "confirm-instance-purge".to_owned(),
+        ConsoleStageDebug::Settings {
+            tab,
+            selected,
+            modal,
+        } => format!(
+            "settings tab={tab} selected={selected} modal={}",
+            modal.map_or("none", settings_mount_modal_debug_name)
+        ),
+    };
+
+    if let Some(modal) = location.list_modal {
+        name.push_str(" list_modal=");
+        name.push_str(modal_debug_name(modal));
+    }
+    name
+}
+
 /// Render a key event for debug logs. Redacts literal text input when the
 /// focused widget owns character entry.
 pub fn key_debug_name_for_input(
@@ -98,6 +189,18 @@ pub fn key_debug_name_for_input(
     } else {
         format!("{:?}+{code}", key.modifiers)
     }
+}
+
+pub fn console_location_debug(console_state: &crate::tui::console::ConsoleState) -> String {
+    let crate::tui::console::ConsoleStage::Manager(ms) = &console_state.stage;
+    console_location_debug_name(&ConsoleLocationDebug {
+        quit_confirm: console_state.quit_confirm_open(),
+        stage: ms.stage.debug_stage(),
+        list_modal: ms
+            .list_modal
+            .as_ref()
+            .map(ConsoleModalDebugKind::modal_debug_kind),
+    })
 }
 
 #[cfg(test)]

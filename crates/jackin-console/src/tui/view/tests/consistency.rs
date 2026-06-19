@@ -1,0 +1,296 @@
+//! Cross-widget visual-consistency pins.
+//!
+//! Every modal renders with the same chrome: `PHOSPHOR_GREEN` border
+//! (RGB 0/255/65) — dialogs and modal pickers are always the active/focused
+//! container when visible. A title wrapped in leading + trailing spaces so
+//! `┌ Title ─...` renders with breathing room. These tests pin that
+//! contract so a future drift doesn't silently degrade the look.
+
+use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
+
+use jackin_tui::theme::{PHOSPHOR_GREEN, WHITE};
+
+/// Render a closure into a fresh `TestBackend` and return the resulting
+/// buffer. Size is chosen to comfortably fit every modal under test.
+fn draw<F: FnOnce(&mut ratatui::Frame<'_>)>(width: u16, height: u16, render: F) -> Buffer {
+    let backend = TestBackend::new(width, height);
+    let mut term = Terminal::new(backend).unwrap();
+    term.draw(|f| render(f)).unwrap();
+    term.backend().buffer().clone()
+}
+
+/// Return the title glyphs rendered on the top border row (y = 0).
+/// The border itself is ` ─ ` glyphs; the title is the contiguous run
+/// of printable non-border characters. Confirms the title has leading
+/// + trailing space padding.
+fn top_border_title(buf: &Buffer) -> String {
+    let mut out = String::new();
+    let mut in_title = false;
+    for x in 0..buf.area.width {
+        let sym = buf[(x, 0)].symbol();
+        let is_border = matches!(sym, "┌" | "┐" | "─" | "│");
+        if is_border {
+            if in_title {
+                break;
+            }
+            continue;
+        }
+        // First non-border, non-empty cell starts the title.
+        if !in_title && !sym.is_empty() {
+            in_title = true;
+        }
+        if in_title {
+            out.push_str(sym);
+        }
+    }
+    out
+}
+
+/// Assert every cell on the top and bottom border rows uses
+/// `PHOSPHOR_GREEN` as its foreground colour (title cells are exempt —
+/// they're WHITE+BOLD). Modals are always the active/focused container
+/// when visible, so they always use the active border colour.
+fn assert_border_is_phosphor_green(buf: &Buffer, area: Rect, widget: &str) {
+    // Top border, skipping the title span.
+    for x in area.x..area.x + area.width {
+        let cell = &buf[(x, area.y)];
+        if cell.symbol().is_empty() {
+            continue;
+        }
+        let is_title_cell = cell.fg == WHITE;
+        if is_title_cell {
+            continue;
+        }
+        assert_eq!(
+            cell.fg, PHOSPHOR_GREEN,
+            "{widget}: top-border cell at ({x},{}) fg={:?}, expected PHOSPHOR_GREEN",
+            area.y, cell.fg,
+        );
+    }
+    // Bottom border — should be all PHOSPHOR_GREEN.
+    let by = area.y + area.height - 1;
+    for x in area.x..area.x + area.width {
+        let cell = &buf[(x, by)];
+        if cell.symbol().is_empty() {
+            continue;
+        }
+        assert_eq!(
+            cell.fg, PHOSPHOR_GREEN,
+            "{widget}: bottom-border cell at ({x},{by}) fg={:?}, expected PHOSPHOR_GREEN",
+            cell.fg,
+        );
+    }
+}
+
+// Note: the former `assert_hint_row_present` helper and
+// `all_modal_hint_rows_use_canonical_styles` test were removed when hint
+// lines moved out of widget interiors into the main footer. Widgets no
+// longer render an internal hint row; the footer is the single source of
+// truth for available key hints.
+
+/// Build and render the `SaveDiscardCancel` modal into a full-area
+/// buffer. Returns (buffer, area).
+fn render_save_discard() -> (Buffer, Rect) {
+    use jackin_tui::components::{SaveDiscardState, render_save_discard_dialog as render};
+    let area = Rect::new(0, 0, 70, 7);
+    let state = SaveDiscardState::new("Save changes?");
+    let buf = draw(area.width, area.height, |f| render(f, area, &state));
+    (buf, area)
+}
+
+fn render_confirm() -> (Buffer, Rect) {
+    use jackin_tui::components::{ConfirmState, render_confirm_dialog as render};
+    let area = Rect::new(0, 0, 60, 7);
+    let state = ConfirmState::new("Delete workspace?");
+    let buf = draw(area.width, area.height, |f| render(f, area, &state));
+    (buf, area)
+}
+
+fn render_mount_dst() -> (Buffer, Rect) {
+    use crate::tui::components::mount_dst_choice::{MountDstChoiceState, render};
+    let area = Rect::new(0, 0, 80, 8);
+    let state = MountDstChoiceState::new("/home/user/app");
+    let buf = draw(area.width, area.height, |f| render(f, area, &state));
+    (buf, area)
+}
+
+fn render_text_input() -> (Buffer, Rect) {
+    use jackin_tui::components::{TextInputState, render_text_input as render};
+    let area = Rect::new(0, 0, 60, 6);
+    let state = TextInputState::new("Name this workspace", "demo");
+    let buf = draw(area.width, area.height, |f| render(f, area, &state));
+    (buf, area)
+}
+
+fn render_workdir_pick() -> (Buffer, Rect) {
+    use crate::tui::components::workdir_pick::{WorkdirPickState, render};
+    use jackin_config::MountConfig;
+    let area = Rect::new(0, 0, 60, 12);
+    let mounts = [MountConfig {
+        src: "/home/user/app".into(),
+        dst: "/home/user/app".into(),
+        readonly: false,
+        isolation: jackin_config::MountIsolation::Shared,
+    }];
+    let state = WorkdirPickState::from_mounts(&mounts);
+    let buf = draw(area.width, area.height, |f| render(f, area, &state));
+    (buf, area)
+}
+
+fn render_github_picker() -> (Buffer, Rect) {
+    use crate::github_mounts::GithubChoice;
+    use crate::tui::components::github_picker::{GithubPickerState, render};
+    let area = Rect::new(0, 0, 60, 10);
+    let state = GithubPickerState::new(vec![GithubChoice {
+        src: "/home/user/app".into(),
+        branch: "main".into(),
+        url: "https://github.com/example/app/tree/main".into(),
+    }]);
+    let buf = draw(area.width, area.height, |f| render(f, area, &state));
+    (buf, area)
+}
+
+fn render_op_picker() -> (Buffer, Rect) {
+    use crate::tui::components::op_picker::render_picker;
+    use crate::tui::op_picker::OpPickerState;
+    let area = Rect::new(0, 0, 70, 20);
+    let state = OpPickerState::new();
+    let buf = draw(area.width, area.height, |f| render_picker(f, area, &state));
+    (buf, area)
+}
+
+fn render_role_picker() -> (Buffer, Rect) {
+    use crate::tui::components::role_picker::render;
+    use crate::tui::state::RolePickerState;
+    use jackin_core::RoleSelector;
+    let area = Rect::new(0, 0, 60, 10);
+    let state = RolePickerState::new(vec![
+        RoleSelector::parse("chainargos/agent-smith").unwrap(),
+        RoleSelector::parse("chainargos/agent-brown").unwrap(),
+    ]);
+    let buf = draw(area.width, area.height, |f| render(f, area, &state));
+    (buf, area)
+}
+
+fn render_confirm_save() -> (Buffer, Rect) {
+    use crate::tui::components::confirm_save::{ConfirmSaveState, render};
+    use ratatui::text::Line;
+    let area = Rect::new(0, 0, 70, 10);
+    let state = ConfirmSaveState::<jackin_config::MountConfig>::new(vec![
+        Line::from("Create workspace: demo"),
+        Line::from(""),
+        Line::from("Working directory: /home/user/demo"),
+    ]);
+    let buf = draw(area.width, area.height, |f| render(f, area, &state));
+    (buf, area)
+}
+
+fn render_agent_choice() -> (Buffer, Rect) {
+    use crate::tui::components::agent_choice::render;
+    use crate::tui::state::AgentChoiceState;
+    let area = Rect::new(0, 0, 50, 7);
+    let state = AgentChoiceState::new();
+    let buf = draw(area.width, area.height, |f| render(f, area, &state));
+    (buf, area)
+}
+
+fn row_text(buf: &Buffer, y: u16) -> String {
+    (buf.area.x..buf.area.x + buf.area.width)
+        .map(|x| buf[(x, y)].symbol().to_owned())
+        .collect()
+}
+
+fn button_row_y(buf: &Buffer, labels: &[&str]) -> u16 {
+    (buf.area.y..buf.area.y + buf.area.height)
+        .find(|y| {
+            let row = row_text(buf, *y);
+            labels.iter().all(|label| row.contains(label))
+        })
+        .expect("button row should be visible")
+}
+
+/// Every choice/list modal's title must start AND end with a space so
+/// `┌ Title ...` renders with breathing room around the label.
+#[test]
+fn all_modal_block_titles_have_padding() {
+    for (name, (buf, _area)) in [
+        ("SaveDiscardCancel", render_save_discard()),
+        ("Confirm", render_confirm()),
+        ("MountDstChoice", render_mount_dst()),
+        ("OpPicker", render_op_picker()),
+        ("TextInput", render_text_input()),
+        ("WorkdirPick", render_workdir_pick()),
+        ("GithubPicker", render_github_picker()),
+        ("AgentPicker", render_role_picker()),
+        ("ConfirmSave", render_confirm_save()),
+        ("AgentChoice", render_agent_choice()),
+    ] {
+        let title = top_border_title(&buf);
+        assert!(
+            title.starts_with(' '),
+            "{name} title {title:?} must start with a leading space"
+        );
+        assert!(
+            title.ends_with(' '),
+            "{name} title {title:?} must end with a trailing space"
+        );
+    }
+}
+
+/// Every modal's top and bottom border runs in `PHOSPHOR_GREEN` —
+/// dialogs and modal pickers are always the active/focused container.
+#[test]
+fn all_modal_borders_are_phosphor_green() {
+    for (name, (buf, area)) in [
+        ("SaveDiscardCancel", render_save_discard()),
+        ("Confirm", render_confirm()),
+        ("MountDstChoice", render_mount_dst()),
+        ("OpPicker", render_op_picker()),
+        ("TextInput", render_text_input()),
+        ("WorkdirPick", render_workdir_pick()),
+        ("GithubPicker", render_github_picker()),
+        ("AgentPicker", render_role_picker()),
+        ("ConfirmSave", render_confirm_save()),
+        ("AgentChoice", render_agent_choice()),
+    ] {
+        assert_border_is_phosphor_green(&buf, area, name);
+    }
+}
+
+/// Every dialog with action buttons renders exactly one empty row above
+/// that button row.
+#[test]
+fn dialog_button_rows_have_one_blank_row_above() {
+    for (name, (buf, _area), labels) in [
+        (
+            "SaveDiscardCancel",
+            render_save_discard(),
+            &["Save", "Discard", "Cancel"][..],
+        ),
+        ("Confirm", render_confirm(), &["Yes", "No"][..]),
+        (
+            "MountDstChoice",
+            render_mount_dst(),
+            &["Mount at same path", "Edit destination", "Cancel"][..],
+        ),
+        (
+            "ConfirmSave",
+            render_confirm_save(),
+            &["Save", "Cancel"][..],
+        ),
+    ] {
+        let button_y = button_row_y(&buf, labels);
+        assert!(
+            button_y > buf.area.y,
+            "{name} button row cannot be first row"
+        );
+        let before = row_text(&buf, button_y - 1);
+        let before_inner = before.trim_matches(['│', ' ']);
+        assert!(
+            before_inner.is_empty(),
+            "{name} must have one blank row above buttons; got {before:?}",
+        );
+    }
+}
+
+// `all_modal_hint_rows_use_canonical_styles` test removed — hints moved to footer.

@@ -33,6 +33,10 @@ use serde::Deserialize;
 
 use jackin_core::paths::JackinPaths;
 
+// `InstanceSnapshot` lives in `jackin-protocol` so the console can use it
+// without depending on `jackin-runtime`.
+pub use jackin_protocol::InstanceSnapshot;
+
 /// Cap on the JSON reply read from the daemon. Must be ≥ the daemon's
 /// frame cap so legitimate Status / Snapshot replies fit; oversized
 /// replies are rejected to bound host memory.
@@ -45,12 +49,6 @@ const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
 /// cadence, so a short timeout here keeps a dead container from
 /// stalling the UI.
 const SOCKET_TIMEOUT: Duration = Duration::from_secs(2);
-
-#[derive(Debug, Clone)]
-pub struct InstanceSnapshot {
-    pub tabs: Vec<TabSnapshot>,
-    pub active_tab: u32,
-}
 
 #[derive(Deserialize)]
 struct SnapshotPayload {

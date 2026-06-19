@@ -21,6 +21,22 @@ fn choice(src: &str, branch: &str, url: &str) -> GithubChoice {
 }
 
 #[test]
+fn github_open_plan_routes_by_choice_count() {
+    assert!(matches!(github_open_plan(vec![]), GithubOpenPlan::Continue));
+    assert!(matches!(
+        github_open_plan(vec![choice("/a", "main", "https://github.com/o/a")]),
+        GithubOpenPlan::OpenUrl(url) if url == "https://github.com/o/a"
+    ));
+    assert!(matches!(
+        github_open_plan(vec![
+            choice("/a", "main", "https://github.com/o/a"),
+            choice("/b", "main", "https://github.com/o/b"),
+        ]),
+        GithubOpenPlan::Pick(state) if state.choices.len() == 2
+    ));
+}
+
+#[test]
 fn new_selects_first_choice_when_non_empty() {
     let s = GithubPickerState::new(vec![
         choice("/a", "main", "https://github.com/o/a/tree/main"),

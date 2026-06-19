@@ -2347,7 +2347,6 @@ dependencies = [
  "directories",
  "fs2",
  "futures-util",
- "insta",
  "jackin-build-meta",
  "jackin-config",
  "jackin-console",
@@ -2360,7 +2359,6 @@ dependencies = [
  "jackin-protocol",
  "jackin-runtime",
  "jackin-tui",
- "open",
  "owo-colors",
  "predicates",
  "ratatui",
@@ -2428,14 +2426,18 @@ dependencies = [
  "anyhow",
  "crossterm",
  "directories",
+ "insta",
  "jackin-config",
  "jackin-core",
  "jackin-diagnostics",
+ "jackin-env",
+ "jackin-protocol",
  "jackin-tui",
  "nix 0.31.3",
  "open",
  "ratatui",
  "tempfile",
+ "toml",
  "tui-widget-list",
 ]
 
@@ -2502,7 +2504,6 @@ dependencies = [
  "chrono",
  "crossterm",
  "jackin-config",
- "jackin-console",
  "jackin-core",
  "jackin-diagnostics",
  "jackin-launch",
@@ -2582,6 +2583,7 @@ dependencies = [
 name = "jackin-protocol"
 version = "0.6.0-dev"
 dependencies = [
+ "jackin-core",
  "serde",
  "serde_json",
 ]

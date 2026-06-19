@@ -370,6 +370,4 @@ fn render_auth_show(config: &AppConfig) -> String {
 }
 
 #[cfg(test)]
-mod auth_set_tests;
-#[cfg(test)]
-mod resolve_role_tests;
+mod tests;

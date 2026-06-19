@@ -12,6 +12,7 @@ use std::str::FromStr;
 
 use crate::auth::AuthForwardMode;
 use crate::constants::CLAUDE_OAUTH_TOKEN_ENV;
+use crate::env_model;
 
 /// The set of AI agents jackin' can provision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -170,13 +171,13 @@ RUN set -euxo pipefail && \\
     pub const fn required_env_var(self, mode: AuthForwardMode) -> Option<&'static str> {
         use AuthForwardMode as M;
         match (self, mode) {
-            (Self::Claude, M::ApiKey) => Some("ANTHROPIC_API_KEY"),
+            (Self::Claude, M::ApiKey) => Some(env_model::ANTHROPIC_API_KEY_ENV_NAME),
             (Self::Claude, M::OAuthToken) => Some(CLAUDE_OAUTH_TOKEN_ENV),
-            (Self::Codex, M::ApiKey) => Some("OPENAI_API_KEY"),
-            (Self::Amp, M::ApiKey) => Some("AMP_API_KEY"),
-            (Self::Kimi, M::ApiKey) => Some("KIMI_API_KEY"),
-            (Self::Opencode, M::ApiKey) => Some("OPENCODE_API_KEY"),
-            (Self::Grok, M::ApiKey) => Some("XAI_API_KEY"),
+            (Self::Codex, M::ApiKey) => Some(env_model::OPENAI_API_KEY_ENV_NAME),
+            (Self::Amp, M::ApiKey) => Some(env_model::AMP_API_KEY_ENV_NAME),
+            (Self::Kimi, M::ApiKey) => Some(env_model::KIMI_API_KEY_ENV_NAME),
+            (Self::Opencode, M::ApiKey) => Some(env_model::OPENCODE_API_KEY_ENV_NAME),
+            (Self::Grok, M::ApiKey) => Some(env_model::XAI_API_KEY_ENV_NAME),
             (Self::Claude, M::Sync | M::Ignore)
             | (
                 Self::Codex | Self::Amp | Self::Kimi | Self::Opencode | Self::Grok,
@@ -249,7 +250,5 @@ impl FromStr for Agent {
 pub mod adapters;
 pub mod runtime;
 
-#[cfg(test)]
-mod auth_table_tests;
 #[cfg(test)]
 mod tests;
