@@ -320,19 +320,21 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
         WorkspaceListFooterMode::RolePicker { scroll_axes } => {
             workspace_picker_footer_items(scroll_axes, true)
         }
-        WorkspaceListFooterMode::PreviewPane => vec![
-            HintSpan::Key("\u{2191}\u{2193}"),
-            HintSpan::Text("navigate panes"),
-            HintSpan::Sep,
-            HintSpan::Key("↵"),
-            HintSpan::Text("attach focused pane"),
-            HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
-            HintSpan::Text("back"),
-            HintSpan::GroupSep,
-            HintSpan::Key("Ctrl-Q"),
-            HintSpan::Text("quit"),
-        ],
+        WorkspaceListFooterMode::PreviewPane => {
+            // Reproduces the Shown bindings from jackin::console::tui::keymap::PREVIEW_PANE_KEYMAP.
+            // BackTab is a HiddenAlias (exits preview but symmetric to Tab entry; not shown).
+            // Ctrl-Q is Internal (handled upstream by should_open_quit_confirm; not shown here).
+            vec![
+                HintSpan::Key("↑↓"),
+                HintSpan::Text("navigate panes"),
+                HintSpan::Sep,
+                HintSpan::Key("↵"),
+                HintSpan::Text("attach focused pane"),
+                HintSpan::GroupSep,
+                HintSpan::Key("Esc/←"),
+                HintSpan::Text("back"),
+            ]
+        }
         WorkspaceListFooterMode::InstanceRow { has_snapshot } => {
             let mut items = vec![
                 HintSpan::Key("\u{2191}\u{2193}"),
@@ -506,17 +508,13 @@ pub fn create_prelude_footer_items() -> Vec<HintSpan<'static>> {
 }
 
 #[must_use]
+/// Hint spans for destructive-action confirm dialogs (`ConfirmDelete`, `ConfirmInstancePurge`).
+///
+/// Delegates to [`jackin_tui::components::confirm_hint_spans`] — both stages
+/// dispatch through `ConfirmState::handle_key` backed by `CONFIRM_KEYMAP`,
+/// so advertised keys and handled keys now come from the same table.
 pub fn destructive_confirm_footer_items() -> Vec<HintSpan<'static>> {
-    vec![
-        HintSpan::Key("Y"),
-        HintSpan::Text("yes"),
-        HintSpan::Sep,
-        HintSpan::Key("N"),
-        HintSpan::Text("no"),
-        HintSpan::GroupSep,
-        HintSpan::Key("Esc"),
-        HintSpan::Text("cancel"),
-    ]
+    jackin_tui::components::confirm_hint_spans()
 }
 
 #[must_use]
@@ -1030,15 +1028,15 @@ pub fn confirm_save_footer_items(scroll_axes: ScrollAxes) -> Vec<HintSpan<'stati
     items
 }
 
+/// Hint spans for inline yes/no confirm modals (`Modal::Confirm`,
+/// `GlobalMountModal::Confirm`, `SettingsEnvModal::Confirm`).
+///
+/// Delegates to [`jackin_tui::components::confirm_hint_spans`] so this matches
+/// what `ConfirmState` dispatches via `CONFIRM_KEYMAP`. Previously omitted
+/// `↵ confirm`, which `ConfirmState` handles — now corrected.
 #[must_use]
 pub fn yes_no_footer_items() -> Vec<HintSpan<'static>> {
-    vec![
-        HintSpan::Key("Y"),
-        HintSpan::Text("yes"),
-        HintSpan::GroupSep,
-        HintSpan::Key("N/Esc"),
-        HintSpan::Text("no"),
-    ]
+    jackin_tui::components::confirm_hint_spans()
 }
 
 #[must_use]

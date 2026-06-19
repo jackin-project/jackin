@@ -226,19 +226,19 @@ Remaining hint gaps (handled but unadvertised) are in the divergence catalogue a
 - [x] Capsule `dialog/input.rs`: `Ctrl+Q` added to `is_dismiss_key`, `is_filter_dismiss_key`, `rename_tab_handle_key`, and `CONFIRM_KEYMAP`'s Cancel binding (`confirm_dialog.rs`). All capsule dialog surfaces now exit on Ctrl+Q.
 - [ ] Capsule `input.rs` main dispatch (prefix keys, palette toggle); `status_bar.rs` env-configurable labels — deferred to Phase 3 registry migration.
 - [x] Launch dispatch migrated to keymaps: `crates/jackin-launch/src/tui/keymap.rs` created with `COCKPIT_KEYMAP` (Ctrl+Q → OpenQuitConfirm), `BUILD_LOG_KEYMAP` (Esc/Up/Down/j/k/PgUp/PgDn), `FAILURE_KEYMAP` (↵/Esc → Dismiss), `CONTAINER_INFO_KEYMAP` (↵ CopyValue / Esc Close). `subscriptions.rs` dispatch arms replaced with `Keymap::dispatch(KeyChord::from(k))` for all four states. `build_log_dialog.rs` `build_log_hint` delegates to `keymap::build_log_hint_spans`. `COCKPIT_HINT` and `FAILURE_HINT` already correct; build log hint generated from keymap module.
-- [ ] Console `input/*.rs` + `file_browser`/`git_prompt` dispatch and remaining `footer_hints.rs` builders; register vim aliases and workspace-row/instance actions; delete dead settings arms.
+- [x] Console `input/*.rs` + `file_browser`/`git_prompt` dispatch and remaining `footer_hints.rs` builders; register vim aliases and workspace-row/instance actions; delete dead settings arms. Preview-pane focus mode (`handle_preview_focused_key`) migrated to `PREVIEW_PANE_KEYMAP.dispatch(KeyChord::from(key))` with vim aliases `j/k` as `HiddenAlias`; `destructive_confirm_footer_items` and `yes_no_footer_items` now delegate to `confirm_hint_spans()`; `file_browser`/`git_prompt` hints (catalogue H) and dead settings arms (catalogue C) were addressed in Phase 0; workspace-row/instance actions (catalogue E) addressed in Phase 0. Remaining `input/editor.rs`, `input/global_mounts.rs`, and inline-picker dispatch deferred to Phase 3 alongside capsule (item 227).
 - `ContainerInfoState` `↵ copy value` hint is correctly implemented: `b"\r" | b"\n"` in `dialog.rs ~:687` calls `keyboard_copy_payload()` → `CopyToClipboard`. Not phantom; no change needed.
 - [ ] Lookbook hints: `SIDEBAR_HINT` and `PREVIEW_FOCUS_HINT` remain hand-written — lookbook navigation is unique (not a standard component), so registry derivation would require new keymaps with no operator-visible benefit. Deferred; acceptable since lookbook is internal tooling.
 
 **Phase 3 — Enforcement and cleanup:**
 - [x] Per-context chord-coverage tests in `keymap/tests.rs`: `assert_all_chords_dispatch` + `assert_has_shown_hints` applied to all five shared-widget keymaps; `raw_bytes_to_chord` round-trip tests including `CONFIRM_KEYMAP` dispatch via raw bytes.
 - [x] Dead canonical-hint constants removed from `hint_bar.rs`: `SELECT_CANCEL_HINT`, `DISMISS_HINT`, `DISMISS_CANCEL_HINT`, `CONFIRM_DISMISS_HINT` (all had zero callers; consumers migrated to registry-derived functions).
-- [ ] CI lint/test forbidding `handle_key` arms outside a binding table on migrated surfaces (remaining console/capsule surfaces — deferred until those surfaces are migrated).
-- [ ] Remove now-unused hand-built footer builders once console/capsule migrations complete.
+- [ ] CI lint/test forbidding `handle_key` arms outside a binding table on migrated surfaces (remaining console editor/settings and capsule main dispatch — deferred until item 227 and remaining console input migration are done).
+- [ ] Remove now-unused hand-built footer builders once console editor/settings and capsule main dispatch migrations complete. `yes_no_footer_items` and `destructive_confirm_footer_items` now delegate to the registry but still have callers; they become thin aliases removable only after callers are updated to call registry functions directly.
 
 **Validation:**
-- [ ] Re-run the four-surface audit + completeness pass; confirm the catalogue is empty.
-- [ ] Manual smoke per surface: every advertised key works; no unadvertised key changes app state in a way the operator was not told about.
+- [x] Re-run the four-surface audit + completeness pass. Findings: (a) Console PreviewPane `BackTab`/`←` handled but only `Esc` shown — fixed: `PREVIEW_PANE_KEYMAP` now has `glyph: "Esc/←"` and `BackTab` as `HiddenAlias`; footer updated to `Esc/←`. (b) Lookbook `PREVIEW_FOCUS_HINT` does not show `BackTab` (handled alongside Esc/Tab) and `SIDEBAR_HINT` does not show `j/k` — both deferred per item 231 (lookbook is internal tooling). No other divergences found outside already-known deferred items.
+- [ ] Manual smoke per surface: every advertised key works; no unadvertised key changes app state in a way the operator was not told about. Requires live TUI run; cannot be automated.
 
 ## Related Files
 
