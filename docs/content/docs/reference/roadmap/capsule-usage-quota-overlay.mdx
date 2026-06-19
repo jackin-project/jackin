@@ -79,14 +79,17 @@ Landed and unit/snapshot-verified (`cargo test -p jackin-capsule` green, 592 tes
 - Step 5 — the doubled labels and scaffold rows are gone: the provider-detail cost grid uses bare fallbacks, and the standalone `Today cost` / `30d cost` / `30d tokens` / `Latest tokens` rows are removed.
 - Step 6 (render) — quota meters show only `N% left · pace · Resets in …` (no stray `used / 100%`); the `Account cost and tokens` two-column grid, history sparkline, `Top model`, and bare provenance line match the previews; the account header right-aligns account/plan to the panel width.
 - Step 7 — pace labels use the CodexBar formula exactly: `On pace` within 2 points, else `N% in reserve` / `N% in deficit`.
-- Step 8 (partial) — Overview renders one quota-focused line per provider; Instance drops the rows the preview omits (`Token split`, duplicate provenance). The `Source` footer now reads `<source> · <confidence> · <freshness> · <updated>`.
+- Step 8 — Overview renders one quota-focused line per provider with a per-tab freshness · source tag (`Session 37% left · Resets in 1h 21m · fresh · provider`), backed by a new `source_label` field on `UsageProviderTab`. Instance renders the `Started … / Active agent time …` header on one right-aligned line, keeps the four-pair spend grid, and drops the rows the preview omits (`Token split`, duplicate provenance). The `Source` footer now reads `<source> · <confidence> · <freshness> · <updated>`.
+- Narrow `<64`-column list layout: each quota bucket renders `<label>  N% left · Resets in …` (pace dropped to fit).
+
+All four previews (Codex detail, Claude detail, Overview, Instance) were rendered from the snapshot path and diffed against the mockups in this item; the section set, ordering, right-aligned header/timeline, meters, two-column grids, sparkline, provenance, and Source/Status footer match.
 
 Still open after this pass:
 
-- Live in-container end-to-end render verification (start instances in the jackin' and Scentbird workspaces, open the overlay, diff against the previews across all three width bands). Adapter extraction is proven by direct on-host probes; the in-container daemon render still needs a live capture.
+- Live in-container end-to-end render verification (start instances in the jackin' and Scentbird workspaces, open the overlay, diff against the previews). Adapter extraction is proven by direct on-host probes and the render is verified through the Ratatui snapshot path; the in-container daemon render against a rebuilt capsule image still needs a live capture.
 - Enterprise Claude accounts: the Scentbird token returned 401 from the consumer OAuth usage endpoint — confirm whether enterprise/`default_claude_zero` plans expose usage at all, else keep the honest `stale` / `needs login` state (Step 10).
-- Overview per-provider source/freshness tag (`fresh · provider`) and the Instance `Started … / Active agent time …` single right-aligned line need per-tab fields on `UsageProviderTab` (protocol addition) and width-threaded two-column instance rows.
-- Narrow `<64`-column list layout: compact bucket (`N% left · resets`), compact `account · plan` / `source · updated` header, and `Usage: <provider>` panel title.
+- Narrow-layout polish: `Usage: <provider>` panel title and the compact `account · plan` / `source · updated` header need a width-aware title path (kept out of the wide view, which shows the bare `Usage` title per the previews).
+- Cosmetic: the `By agent codename` block renders three lines vs the preview's two, and the second cost-grid column starts after a variable-width first metric rather than a fixed column. The account-action rows (`Cost`, `Subscription Utilization`, `Buy Credits`, `Add Account`, `Usage Dashboard`, `Status Page`) are retained per the "Required account-tab fields" list above even though the compressed previews omit them.
 
 ## CodexBar Parity And Non-Regression Principle
 
