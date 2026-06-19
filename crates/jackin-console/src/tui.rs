@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod console;
+pub mod file_browser;
 pub mod launch;
 pub mod prompts;
 pub mod auth;

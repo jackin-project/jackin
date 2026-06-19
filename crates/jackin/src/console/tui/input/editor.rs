@@ -3,7 +3,8 @@
 pub(super) use jackin_console::tui::input::editor::{
     EditorModalOutcome, handle_editor_key, handle_editor_modal,
 };
-pub(in crate::console) use jackin_console::tui::input::editor::apply_file_browser_to_editor;
+#[cfg(test)]
+pub(super) use jackin_console::tui::input::editor::apply_file_browser_to_editor;
 
 #[cfg(test)]
 pub(super) use jackin_console::tui::input::editor::{
