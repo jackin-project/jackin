@@ -1,18 +1,15 @@
 //! Binary adapter for the jackin' interactive console (`jackin console`).
 //!
-//! Entry point is `run_console`. Long-term console product behavior belongs in
-//! `jackin-console`; this root module should only bind that surface to the
-//! binary crate's concrete config, Docker, runtime, terminal, and CLI services.
-//! The remaining root module tree is transitional and split into:
+//! Phase 5 adapter-shell end state. Entry point is `run_console`. All
+//! console product state, update, view, input planning, and business rules
+//! live in `jackin-console` or lower crates. This module only binds that
+//! surface to the binary crate's concrete config, Docker, runtime, terminal,
+//! and CLI services.
 //!
-//! * `domain` — root-bound data transforms that still use binary-owned types.
-//! * `tui` — transitional state/input/render adapters over `jackin-console`.
-//! * `services` — root IO adapters (config, Docker, runtime, op, tokens).
-//! * `effects` — interpreter for non-TUI work requested by the event loop.
-//!
-//! New console state, input, update, rendering, dialog, and product-decision
-//! logic should move to `jackin-console` or a lower shared crate unless it
-//! needs root-only IO or command/runtime integration.
+//! * `terminal` — inline host-terminal adapter (debug-buffering globals).
+//! * `tui` — inline type aliases + thin input/state adapters; `tui/run.rs` owns the event loop.
+//! * `services` — root IO adapters (config, instances, role load, workspace save).
+//! * `effects` — interpreter for typed `ManagerEffect` values.
 
 // `ConsoleStage` collapsed to a single variant in PR #171's Modal::RolePicker
 // cleanup. The module is kept as-is (with `if let ConsoleStage::Manager(_)`
