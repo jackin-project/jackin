@@ -3,10 +3,30 @@
 use jackin_tui::HintSpan;
 
 /// Return the appropriate hint spans for the main view (no dialog open).
+///
+/// When `prefix_awaiting` is true the operator has pressed the prefix key and
+/// a compact cheat-sheet of the most-used prefix commands replaces the normal
+/// navigation hints so discovery is possible without a manual.
 pub(crate) fn main_view_hint(
     scrollback_active: bool,
     axes: jackin_tui::components::ScrollAxes,
+    prefix_awaiting: bool,
 ) -> Vec<HintSpan<'static>> {
+    if prefix_awaiting {
+        return vec![
+            HintSpan::Key("space/:"),
+            HintSpan::Text("palette"),
+            HintSpan::GroupSep,
+            HintSpan::Key("h/j/k/l"),
+            HintSpan::Text("split/nav"),
+            HintSpan::GroupSep,
+            HintSpan::Key("n/c"),
+            HintSpan::Text("new/close"),
+            HintSpan::GroupSep,
+            HintSpan::Key("Ctrl-Q"),
+            HintSpan::Text("quit"),
+        ];
+    }
     if scrollback_active {
         let mut spans = jackin_tui::components::scroll_hint_spans(axes);
         if !spans.is_empty() {

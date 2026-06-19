@@ -202,6 +202,10 @@ pub(crate) struct BottomChromeWidget<'a> {
     pub(crate) scrollback_active: bool,
     pub(crate) scroll_axes: jackin_tui::scroll::ScrollAxes,
     pub(crate) debug_run_id: Option<&'a str>,
+    /// When the operator has pressed the prefix key and the multiplexer is
+    /// awaiting a command chord, the hint bar switches to a prefix-command
+    /// cheat-sheet instead of the normal navigation hints.
+    pub(crate) prefix_awaiting: bool,
 }
 
 impl Widget for BottomChromeWidget<'_> {
@@ -237,6 +241,7 @@ impl Widget for BottomChromeWidget<'_> {
         let spans = crate::tui::components::dialog::main_view_hint(
             self.scrollback_active,
             self.scroll_axes,
+            self.prefix_awaiting,
         );
         render_hint_spans_row(buf, area, &spans);
     }
