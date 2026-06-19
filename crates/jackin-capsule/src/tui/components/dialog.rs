@@ -1166,23 +1166,14 @@ impl Dialog {
                 Self::usage_meter(remaining)
             ));
         }
-        let usage = if let Some(used) = &bucket.used_label {
-            Some(if let Some(limit) = &bucket.limit_label {
-                format!("{used} / {limit}")
-            } else {
-                used.clone()
-            })
-        } else {
-            bucket.limit_label.clone()
-        };
+        // Normal buckets show only `N% left · pace · Resets in …` on the
+        // stats line (the roadmap previews never put a used/limit token there;
+        // only `Extra usage`, handled above, shows a cap).
         if let Some(pace) = &bucket.pace_label {
             parts.push(pace.clone());
         }
         if let Some(reset) = &bucket.reset_label {
             parts.push(reset.clone());
-        }
-        if let Some(usage) = usage {
-            parts.push(usage);
         }
         if parts.is_empty() || bucket.status != jackin_protocol::control::UsageSnapshotStatus::Fresh
         {

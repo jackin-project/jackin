@@ -517,7 +517,15 @@ fn usage_lines_for_row(
             Span::styled("Top model: ", DIM),
             Span::styled(value.to_owned(), Style::default().fg(WHITE)),
         ])),
-        "Captured" | "Provenance" | "Source" | "Refresh" => {
+        // Provenance renders as a bare sentence (no "Provenance:" prefix) to
+        // match the previews, e.g. "Estimated from local Codex logs …".
+        "Provenance" | "Captured" => {
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(value.to_owned(), DIM),
+            ]));
+        }
+        "Source" | "Refresh" => {
             lines.push(Line::from(vec![
                 Span::raw("  "),
                 Span::styled(format!("{label}: "), DIM),

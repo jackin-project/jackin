@@ -1020,7 +1020,7 @@ fn usage_dialog_rows_render_meters_spend_and_source() {
             && value.contains("37% left")
             && value.contains("Lasts until reset")
             && value.contains("Resets in 1h 21m")
-            && value.contains("63% used / 100%")
+            && !value.contains("used / 100%")
     }));
     assert!(values.contains(&"ACP billing unavailable · unsupported"));
     assert!(values.contains(&"Overview  Instance  [Codex]  Claude  Amp"));
