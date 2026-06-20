@@ -272,6 +272,7 @@ impl<Agent> ConsoleInstanceAction<Agent> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConsoleOutcome<RoleSelector, Workspace, Agent, Provider> {
     Launch(RoleSelector, Workspace, Option<Agent>),
+    PrewarmNamed(String),
     InstanceAction {
         container: String,
         action: ConsoleInstanceAction<Agent>,

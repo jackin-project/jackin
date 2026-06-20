@@ -1750,7 +1750,7 @@ pub(super) async fn build_agent_image(
     runner: &mut impl CommandRunner,
     repo_lock: std::fs::File,
     known_head_sha: Option<&str>,
-    progress: Option<&mut LaunchProgress>,
+    mut progress: Option<&mut LaunchProgress>,
 ) -> anyhow::Result<String> {
     let use_prebuilt = build_base_image_override.is_some();
     let base_image_override = build_base_image_override;

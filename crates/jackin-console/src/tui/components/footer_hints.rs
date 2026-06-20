@@ -419,7 +419,11 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
                 ]);
             }
             if show_prewarm {
-                items.extend([HintSpan::Key("W"), HintSpan::Text("prewarm"), HintSpan::Sep]);
+                items.extend([
+                    HintSpan::Key(g(WorkspaceListAction::Prewarm)),
+                    HintSpan::Text("prewarm"),
+                    HintSpan::Sep,
+                ]);
             }
             items.extend([HintSpan::Key("N"), HintSpan::Text("new")]);
             if is_saved {

@@ -717,7 +717,7 @@ pub(crate) async fn load_role_with(
         );
         progress.stage_done(crate::runtime::progress::LaunchStage::Construct, "online");
     }
-    steps.next("Preparing derived image").await;
+    steps.next("Preparing derived image").await?;
     let mut repo_lock = Some(repo_lock);
     let image_decision = crate::runtime::image::decide_agent_image(
         paths,
@@ -997,7 +997,7 @@ pub(crate) async fn load_role_with(
                     build_source,
                     reason.as_str(),
                 );
-                steps.next("Preparing runtime binaries").await;
+                steps.next("Preparing runtime binaries").await?;
                 let runtime_binaries = if let Some(progress) = steps.progress_mut() {
                     crate::runtime::image::prepare_runtime_binaries_for_agents(
                         paths,
@@ -1015,7 +1015,7 @@ pub(crate) async fn load_role_with(
                     )
                     .await?
                 };
-                steps.next("Preparing derived image").await;
+                steps.next("Preparing derived image").await?;
                 let repo_lock = repo_lock
                     .take()
                     .ok_or_else(|| anyhow::anyhow!("repo lock already consumed"))?;
@@ -1253,7 +1253,7 @@ pub(crate) async fn load_role_with(
             }
         };
         let mut sidecar = std::pin::pin!(sidecar);
-        let mut early_sidecar_result = None;
+        let early_sidecar_result: Option<anyhow::Result<()>> = None;
 
         // Per-supported-agent mode resolution — each agent in
         // `manifest.supported_agents()` honors its own configured
