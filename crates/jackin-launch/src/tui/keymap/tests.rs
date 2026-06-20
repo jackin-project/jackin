@@ -8,11 +8,30 @@ use super::{
 // ── COCKPIT ──────────────────────────────────────────────────────────────────
 
 #[test]
-fn cockpit_ctrl_q_dispatches() {
+fn cockpit_global_keys_dispatch() {
     assert_eq!(
         COCKPIT_KEYMAP.dispatch(KeyChord::ctrl(LogicalKey::Char('q'))),
         Some(CockpitAction::OpenQuitConfirm)
     );
+    // Ctrl+C is intercepted before dispatch, but is registered so its hint
+    // derives from the same table as Ctrl+Q.
+    assert_eq!(
+        COCKPIT_KEYMAP.dispatch(KeyChord::ctrl(LogicalKey::Char('c'))),
+        Some(CockpitAction::HardExit)
+    );
+}
+
+#[test]
+fn cockpit_global_hint_spans_advertise_both_keys() {
+    let text: String = super::cockpit_global_hint_spans()
+        .iter()
+        .filter_map(|s| match s {
+            jackin_tui::HintSpan::Key(k) | jackin_tui::HintSpan::Text(k) => Some(*k),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert_eq!(text, "Ctrl-C abort Ctrl-Q quit", "{text}");
 }
 
 #[test]
@@ -21,7 +40,6 @@ fn cockpit_non_registered_keys_return_none() {
         KeyChord::plain(LogicalKey::Char('q')),
         KeyChord::plain(LogicalKey::Esc),
         KeyChord::plain(LogicalKey::Enter),
-        KeyChord::ctrl(LogicalKey::Char('c')),
     ] {
         assert_eq!(
             COCKPIT_KEYMAP.dispatch(chord),

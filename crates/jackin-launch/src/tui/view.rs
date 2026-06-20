@@ -1,6 +1,5 @@
 //! Launch cockpit top-level frame composition.
 
-use jackin_tui::HintSpan;
 use jackin_tui::components::{BOTTOM_CHROME_ROWS, bottom_chrome_areas, render_hint_bar};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -20,13 +19,6 @@ use crate::tui::components::progress_rail::render_progress;
 use crate::tui::components::prompts::draw_confirm;
 use crate::tui::components::rain::{RainState, render_rain};
 
-const COCKPIT_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Ctrl-C"),
-    HintSpan::Text("abort"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Ctrl-Q"),
-    HintSpan::Text("quit"),
-];
 
 #[allow(clippy::too_many_arguments)]
 pub fn render_launch_frame(
@@ -82,7 +74,7 @@ pub fn render_launch_frame(
 
     render_cockpit_header(frame, rows[0], view, frozen);
     render_body(frame, rows[1], view, frozen, rain);
-    render_hint_bar(frame, chrome.hint, COCKPIT_HINT);
+    render_hint_bar(frame, chrome.hint, &crate::tui::keymap::cockpit_global_hint_spans());
     render_footer(frame, chrome.footer, view, run_id, debug_mode);
 
     if let Some(failure) = &view.failure {

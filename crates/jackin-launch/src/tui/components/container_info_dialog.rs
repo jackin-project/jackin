@@ -66,14 +66,8 @@ pub fn render_launch_container_info(
     render_container_info(frame, rect, &state);
     let axes = dialog_scroll_axes(state.content_width(), state.content_height(), rect);
     let mut hint_spans = debug_info_hint_spans(axes);
-    hint_spans.extend([
-        HintSpan::GroupSep,
-        HintSpan::Key("Ctrl-C"),
-        HintSpan::Text("abort"),
-        HintSpan::GroupSep,
-        HintSpan::Key("Ctrl-Q"),
-        HintSpan::Text("quit"),
-    ]);
+    hint_spans.push(HintSpan::GroupSep);
+    hint_spans.extend(crate::tui::keymap::cockpit_global_hint_spans());
     render_hint_bar(frame, chrome.hint, &hint_spans);
     frame.render_widget(Clear, chrome.spacer);
     render_footer(frame, chrome.footer, view, run_id, debug_mode);

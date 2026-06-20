@@ -418,9 +418,8 @@ pub fn handle_cockpit_input(
             // answered. Unlike Ctrl+C this is reversible — No resumes launch.
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
-                    && crate::tui::keymap::COCKPIT_KEYMAP
-                        .dispatch(KeyChord::from(k))
-                        .is_some() =>
+                    && crate::tui::keymap::COCKPIT_KEYMAP.dispatch(KeyChord::from(k))
+                        == Some(crate::tui::keymap::CockpitAction::OpenQuitConfirm) =>
             {
                 v.quit_confirm = Some(jackin_tui::components::exit_confirm_state());
                 return CockpitOutcome::Continue;

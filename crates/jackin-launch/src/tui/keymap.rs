@@ -9,21 +9,43 @@ use jackin_tui::components::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibilit
 
 // ── Cockpit main ─────────────────────────────────────────────────────────────
 
-/// Top-level cockpit actions (no dialog open). Ctrl+C hard-exit is handled
-/// separately before dispatch because it must win even while a dialog is open.
+/// Top-level cockpit actions (no dialog open).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CockpitAction {
+    /// Ctrl+C: hard cancel. Intercepted before dispatch (it must win even while
+    /// a dialog is open); the binding exists so its hint derives from this table.
+    HardExit,
     /// Open the "Exit jackin'?" quit confirmation (graceful cancel + cleanup).
     OpenQuitConfirm,
 }
 
-pub static COCKPIT_KEYMAP: Keymap<CockpitAction> = Keymap::new(&[KeyBinding {
-    chords: &[KeyChord::ctrl(LogicalKey::Char('q'))],
-    action: CockpitAction::OpenQuitConfirm,
-    hint: None,
-    visibility: Visibility::Internal,
-    glyph: None,
-}]);
+/// The two global cockpit keys, advertised on every cockpit surface. Both are
+/// `Shown` so [`cockpit_global_hint_spans`] is the single source for the
+/// `Ctrl-C abort · Ctrl-Q quit` group every dialog appends.
+pub static COCKPIT_KEYMAP: Keymap<CockpitAction> = Keymap::new(&[
+    KeyBinding {
+        chords: &[KeyChord::ctrl(LogicalKey::Char('c'))],
+        action: CockpitAction::HardExit,
+        hint: Some("abort"),
+        visibility: Visibility::Shown,
+        glyph: Some("Ctrl-C"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::ctrl(LogicalKey::Char('q'))],
+        action: CockpitAction::OpenQuitConfirm,
+        hint: Some("quit"),
+        visibility: Visibility::Shown,
+        glyph: Some("Ctrl-Q"),
+    },
+]);
+
+/// The `Ctrl-C abort · Ctrl-Q quit` global-key hint group, derived from
+/// [`COCKPIT_KEYMAP`]. Every cockpit surface (main, failure popup, build log,
+/// container info) appends this instead of hand-writing the two key spans.
+#[must_use]
+pub fn cockpit_global_hint_spans() -> Vec<HintSpan<'static>> {
+    COCKPIT_KEYMAP.hint_spans()
+}
 
 // ── Build log overlay ─────────────────────────────────────────────────────────
 
@@ -104,23 +126,13 @@ pub fn build_log_hint_spans(vertical: bool) -> Vec<HintSpan<'static>> {
         horizontal: false,
     });
     if vertical {
-        spans.extend([
-            HintSpan::GroupSep,
-            HintSpan::Key("PgUp/PgDn"),
-            HintSpan::Text("page"),
-            HintSpan::GroupSep,
-        ]);
+        spans.push(HintSpan::GroupSep);
+        BUILD_LOG_KEYMAP.push_spans_for(BuildLogAction::PageUp, &mut spans);
+        spans.push(HintSpan::GroupSep);
     }
-    spans.extend([
-        HintSpan::Key("Esc"),
-        HintSpan::Text("close"),
-        HintSpan::GroupSep,
-        HintSpan::Key("Ctrl-C"),
-        HintSpan::Text("abort"),
-        HintSpan::GroupSep,
-        HintSpan::Key("Ctrl-Q"),
-        HintSpan::Text("quit"),
-    ]);
+    BUILD_LOG_KEYMAP.push_spans_for(BuildLogAction::Close, &mut spans);
+    spans.push(HintSpan::GroupSep);
+    spans.extend(cockpit_global_hint_spans());
     spans
 }
 
