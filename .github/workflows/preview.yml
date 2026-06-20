@@ -374,6 +374,9 @@ jobs:
             cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-capsule-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
             cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-capsule-release-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-capsule-release-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-
             cargo-target-${{ runner.os }}-${{ runner.arch }}-capsule-release-${{ hashFiles('Cargo.lock') }}-
             cargo-target-${{ runner.os }}-${{ runner.arch }}-capsule-release-
       - name: Build
