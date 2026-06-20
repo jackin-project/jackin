@@ -1,12 +1,12 @@
 # AGENTS.md
 
-Primary branch: `main`. Rules shared with humans live in topic files. Agent-only rules marked `(agent)`.
+Primary branch: `main`.
 
 > **CLAUDE.md = symlink to AGENTS.md beside it** — recreate: `ln -s AGENTS.md CLAUDE.md`. See [RULES.md](RULES.md).
 
 ## Hard rules (always-on)
 
-- **Stay on active branch** (agent). Never commit to `main`; propose branch, get operator confirmation. One PR per session = one branch. → [CONTRIBUTING.md](CONTRIBUTING.md)
+- **Stay on active branch.** Never commit to `main`; propose branch, get operator confirmation. One PR per session = one branch. → [CONTRIBUTING.md](CONTRIBUTING.md)
 - **No silent host writes.** No dotfiles, `.git`, `~/.config/gh`, `~/.gitconfig`, host remotes — without explicit opt-in surfaced in launch summary. Reads OK. → [HOST_AND_CONTAINER.md](HOST_AND_CONTAINER.md)
 - **Container paths under `/jackin/` only.** No FHS roots (`/run`, `/var`, `/opt`, `/etc`, `/tmp/jackin*`). → [HOST_AND_CONTAINER.md](HOST_AND_CONTAINER.md)
 - **Brand: `jackin'`** in prose (lowercase, trailing apostrophe). Code/paths/commands/env vars: no apostrophe. → [RULES.md](RULES.md)
@@ -17,7 +17,7 @@ Primary branch: `main`. Rules shared with humans live in topic files. Agent-only
 
 @CONTRIBUTING.md
 
-### Stay on active branch (agent)
+### Stay on active branch
 
 **Never create new branch when existing feature branch or open PR is in scope.**
 
@@ -26,7 +26,7 @@ Primary branch: `main`. Rules shared with humans live in topic files. Agent-only
 - Work feels like different branch: ask first. Default: stay on active branch.
 - Never push to remote branch other than what local tracks. Local `pr-435` vs remote `fix/foo` → `git push origin HEAD:<remote-branch>`. Don't create extra remote branches.
 
-### Force pushes (agent)
+### Force pushes
 
 Never `git push --force` / `--force-with-lease` without explicit operator approval for that branch/PR in current conversation.
 
@@ -34,7 +34,7 @@ Normal pushes (new commits): no approval needed. History rewrites (amend DCO, re
 
 `git fetch -f` OK — updates local remote-tracking refs only, not remote branch.
 
-### Push after every commit (agent)
+### Push after every commit
 
 Push immediately after every `git commit`. No local-only commits.
 
