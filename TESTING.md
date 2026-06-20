@@ -1,6 +1,6 @@
 # Testing
 
-This project uses [cargo-nextest](https://nexte.st) as its test runner.
+Uses [cargo-nextest](https://nexte.st) as test runner.
 
 Install:
 
@@ -14,13 +14,13 @@ Run all tests:
 cargo nextest run
 ```
 
-Run a specific test:
+Run specific test:
 
 ```sh
 cargo nextest run -E 'test(test_name)'
 ```
 
-Run tests for a specific module:
+Run tests for specific module:
 
 ```sh
 cargo nextest run -E 'test(/module::tests/)'
@@ -32,46 +32,46 @@ Run Docker-backed smoke tests:
 cargo nextest run --all-features
 ```
 
-Do **not** use `cargo test` — always use `cargo nextest run`.
+Never use `cargo test` — always `cargo nextest run`.
 
 ## Recording capsule render-conformance fixtures
 
-The capsule's echo-back render-conformance harness (`crates/jackin-capsule/src/daemon/render_conformance_tests.rs`) replays PTY byte streams through the multiplexer and asserts emitted frames reproduce the pane model on a virtual client terminal. Synthetic streams live in the harness; real-agent fixtures are recorded from a `--debug` run:
+Capsule echo-back harness (`crates/jackin-capsule/src/daemon/render_conformance_tests.rs`) replays PTY byte streams through multiplexer, asserts emitted frames reproduce pane model on virtual client terminal. Synthetic streams in harness; real-agent fixtures recorded from `--debug` run:
 
-1. Run a session with `--debug` (e.g. `cargo run --bin jackin -- console --debug`) and exercise the agent. Note the run id the CLI prints.
-2. Extract one session's PTY stream from the run log into a binary fixture:
+1. Run session with `--debug` (e.g. `cargo run --bin jackin -- console --debug`), exercise agent. Note run id CLI prints.
+2. Extract one session's PTY stream from run log into binary fixture:
 
    ```sh
    cargo xtask pty-fixture ~/.jackin/data/diagnostics/runs/<run-id>.jsonl <session-label> \
      crates/jackin-capsule/tests/fixtures/pty/<agent>-<scenario>.bin
    ```
 
-   Session label is the pane label shown in the capsule tab (e.g. `Codex`). Extractor also accepts a raw in-container `multiplexer.log`.
-3. Reference the fixture from a harness scenario with `include_bytes!`.
+   Session label = pane label in capsule tab (e.g. `Codex`). Extractor also accepts raw in-container `multiplexer.log`.
+3. Reference fixture from harness scenario with `include_bytes!`.
 
 ## Walking the operator through local validation (agent rule)
 
-When walking the operator through manual validation of a jackin' feature (smoke testing a PR, reproducing a bug, executing a PR test plan), every `jackin <subcommand>` invocation in the recipe MUST include `--debug`. That includes `cargo run --bin jackin -- <subcommand> --debug` while iterating from a checkout.
+Every `jackin <subcommand>` invocation in manual validation MUST include `--debug`. Includes `cargo run --bin jackin -- <subcommand> --debug` from checkout.
 
-`--debug` captures every external command the CLI issues (`docker`, `git`, `id`, etc.) with output, plus `[jackin debug ...]` instrumentation, into the diagnostics run file (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`). The CLI prints a run id the operator can share. Makes the run triage-able: when something misbehaves, operator shares the run id and the agent reads the structured JSONL at `~/.jackin/data/diagnostics/runs/<run-id>.jsonl` to localize the issue without guessing. Ask for the run id, not a pasted terminal scrollback.
+`--debug` captures every external command (`docker`, `git`, `id`, etc.) with output plus `[jackin debug ...]` instrumentation into `~/.jackin/data/diagnostics/runs/<run-id>.jsonl`. CLI prints run id. When something misbehaves, ask for run id — agent reads JSONL to localize issue, not a pasted terminal scrollback.
 
-For user smoke tests, suggest `jackin console` first, and prefer the `the-architect` role over `agent-smith` when a role choice is needed. From a checkout, the usual operator-facing smoke command is:
+Smoke tests: suggest `jackin console` first, prefer `the-architect` role over `agent-smith`. Standard smoke command:
 
 ```bash
 cargo run --bin jackin -- console --debug
 ```
 
-Use `jackin load` only when the PR specifically needs the load CLI path. Then prefer:
+Use `jackin load` only when PR specifically needs that CLI path:
 
 ```bash
 cargo run --bin jackin -- load the-architect . --debug
 ```
 
-Do not add `--no-intro` to debug smoke commands. Debug mode already suppresses the intro, so `--debug --no-intro` is redundant noise.
+No `--no-intro` on debug smoke — debug mode already suppresses intro; `--debug --no-intro` = redundant.
 
-If the operator reports unexpected behavior from a clean (non-debug) run, the FIRST follow-up is to ask them to rerun with `--debug` and share the run id printed at start (agent then reads the run's JSONL file) before proposing fixes.
+Unexpected behavior from clean (non-debug) run → first ask operator to rerun with `--debug`, share run id; agent reads JSONL before proposing fixes.
 
 Does not apply to:
 
-- Inspection commands the operator runs (`pgrep`, `pmset`, `cat`, `ls`) — not `jackin` invocations.
+- Inspection commands operator runs (`pgrep`, `pmset`, `cat`, `ls`) — not `jackin` invocations.
 - Production recommendations or scripted automation (debug output too noisy).
