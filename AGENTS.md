@@ -1,50 +1,50 @@
 # AGENTS.md
 
-Canonical entry point for AI agents in this repo. Primary branch `main`. Slim index: each rule stated in one or two lines, linked to topic file holding full rule, examples, rationale. **Read linked file before acting in that area** — one-liner tells you rule exists, not that you can skip detail.
+Primary branch: `main`. Rules shared with humans live in topic files. Agent-only rules marked `(agent)`. Subdirectory `AGENTS.md` files auto-load when you work there — never link to them directly.
 
-Rules applying equally to humans live in topic files. Agent-only rules marked `(agent)`; largest agent-only clusters in [`BRANCHING.md`](BRANCHING.md), [`PULL_REQUESTS.md`](PULL_REQUESTS.md), and `AGENTS.md` under `.github/` (auto-loaded when working there).
+> **CLAUDE.md = symlink to the AGENTS.md beside it** — recreate: `ln -s AGENTS.md CLAUDE.md`. Never copy, never `@import`. See [RULES.md](RULES.md).
 
-> **`AGENTS.md` and `CLAUDE.md` auto-load — never link to them.** Each `CLAUDE.md` is a symlink to the `AGENTS.md` beside it (never a copy, never an `@import`); recreate one with `ln -s AGENTS.md CLAUDE.md`. Harness loads root `AGENTS.md` always and a subdirectory's `AGENTS.md` whenever you work in that subtree, so no file ever links to an `AGENTS.md` or `CLAUDE.md` — reference rule by topic or name governing directory in plain text. See [`RULES.md`](RULES.md).
+## Hard rules (always-on)
 
-## Always-on hard rules
+- **Stay on active branch** (agent). Never commit to `main`; propose branch, get operator confirmation. One PR per session = one branch. → [COMMITS.md](COMMITS.md)
+- **No silent host writes.** No dotfiles, `.git`, `~/.config/gh`, `~/.gitconfig`, host remotes — without explicit opt-in surfaced in launch summary. Reads OK. → [HOST_AND_CONTAINER.md](HOST_AND_CONTAINER.md)
+- **Container paths under `/jackin/` only.** No FHS roots (`/run`, `/var`, `/opt`, `/etc`, `/tmp/jackin*`). → [HOST_AND_CONTAINER.md](HOST_AND_CONTAINER.md)
+- **Brand: `jackin'`** in prose (lowercase, trailing apostrophe). Code/paths/commands/env vars: no apostrophe. → [RULES.md](RULES.md)
+- **Every commit: sign with `-s`, push immediately. Preserve all trailers when amending.** → [COMMITS.md](COMMITS.md)
+- **Pre-release: breaking changes OK, no migration shims.** Exception: `config.toml`, per-workspace files, `jackin.role.toml` versioned; schema changes ship 5 artifacts under one version bump per PR. → [PRERELEASE.md](PRERELEASE.md)
 
-These bind every session. Full rule and examples in linked file.
+## Commits & Branching
 
-- **Stay on the active branch** (agent). Never commit to `main`; propose a branch, get operator confirmation first. One open PR per session means one branch. → [`BRANCHING.md`](BRANCHING.md)
-- **Never mutate the host machine silently.** No host-side writes — dotfiles, repo `.git`, `~/.config/gh`, `~/.gitconfig`, host remotes, user repos — without explicit opt-in surfaced in launch summary. Reads fine. → [`HOST_AND_CONTAINER.md`](HOST_AND_CONTAINER.md)
-- **Everything jackin' owns in a container lives under `/jackin/`.** No FHS roots (`/run`, `/var`, `/opt`, `/etc`, `/tmp/jackin*`). → [`HOST_AND_CONTAINER.md`](HOST_AND_CONTAINER.md)
-- **Brand is `jackin'`** in prose — lowercase, trailing apostrophe. No-apostrophe spelling only for code identifiers, paths, commands, env vars. → [`RULES.md`](RULES.md)
-- **Push every commit immediately** after creating it; never leave commits local-only. → [`COMMITS.md`](COMMITS.md)
-- **Pre-release: breaking changes OK — no migration shims.** Exception: `config.toml`, per-workspace files, and `jackin.role.toml` versioned; schema changes ship five artifacts under one version bump per PR. → [`PRERELEASE.md`](PRERELEASE.md)
+@COMMITS.md
 
 ## Engineering
 
-Cross-cutting code-craft rules, all in [`ENGINEERING.md`](ENGINEERING.md):
+[ENGINEERING.md](ENGINEERING.md):
 
-- **Prefer maintained crates** over hand-rolled parsers / serializers / format handlers / crypto.
-- **Reuse before writing (DRY).** Extend or parameterise existing code; symmetric variants share one body.
-- **Two-tier telemetry.** `clog!` compact and always-on; `cdebug!` firehose gated on `JACKIN_DEBUG=1`.
-- **Comments explain non-obvious WHY,** never narrate WHAT.
+- Prefer maintained crates over hand-rolled parsers / serializers / format handlers / crypto.
+- Reuse before writing (DRY). Extend or parameterise; symmetric variants share one body.
+- Two-tier telemetry: `clog!` compact always-on; `cdebug!` firehose gated on `JACKIN_DEBUG=1`.
+- Comments: non-obvious WHY only — never narrate WHAT.
 
-Rust workspace specifics (module layout, lints, supply-chain hygiene) load from `AGENTS.md` under `crates/` when you work there.
+Rust workspace specifics → `AGENTS.md` under `crates/` (auto-loads).
 
-## Pull requests, review, and docs gates
+## PRs, review, docs gates
 
-Read [`PULL_REQUESTS.md`](PULL_REQUESTS.md) before opening, iterating on, or merging a PR. Home for PR body shape, Verify-locally policy, solo-maintainer review model, and two pre-merge gates applying to **every** PR (even code-only ones):
+Read [PULL_REQUESTS.md](PULL_REQUESTS.md) before opening/iterating/merging. Pre-merge gates on **every** PR:
 
-- **Roadmap freshness** — move a roadmap item's status when a change ships, advances, or defers it.
-- **Documentation as the source of truth** — update both user-facing and contributor-facing docs surfaces in same PR. Audience split is permanent, detailed by `AGENTS.md` under `docs/`.
+- **Roadmap freshness** — update roadmap item status when change ships/advances/defers.
+- **Docs as source of truth** — update user-facing + contributor-facing docs in same PR.
 
-Agent-only PR extras (merge authorization, base branch, force-push, CI-green-before-merge, squash format) live in `AGENTS.md` under `.github/`, auto-loading when you work there.
+Agent PR extras (base branch, force-push, CI-green, squash format) → `.github/AGENTS.md` (auto-loads).
 
-## Testing and validation
+## Testing
 
-- Test runner, capsule render-conformance fixtures, operator `--debug` validation rule → [`TESTING.md`](TESTING.md).
-- `jackin-capsule` smoke-test mandate → `AGENTS.md` under `.github/` (auto-loaded there).
+- Runner, render-conformance fixtures, `--debug` validation → [TESTING.md](TESTING.md).
+- `jackin-capsule` smoke-test mandate → `.github/AGENTS.md`.
 
 ## TUI
 
-Read [TUI Design](docs/content/docs/reference/tui/index.mdx) section before any TUI change. Label, keybinding, list-modal rules in [`RULES.md`](RULES.md). Terminal-rendering code must live in a designated TUI directory:
+Read [TUI Design](docs/content/docs/reference/tui/index.mdx) before any TUI change. Label/keybinding/modal rules → [RULES.md](RULES.md).
 
 | Surface | Directory |
 |---|---|
@@ -53,23 +53,19 @@ Read [TUI Design](docs/content/docs/reference/tui/index.mdx) section before any 
 | Host console | `src/console/tui/` |
 | Lookbook | `crates/jackin-tui-lookbook/src/` |
 
-Any cross-cutting TUI behaviour (focusability, navigation, color, modal sizing, hints) must be written into matching page under `docs/content/docs/reference/tui/` in same PR that adds it.
+Cross-cutting TUI behaviour (focusability, navigation, color, modal sizing, hints) → matching page under `docs/content/docs/reference/tui/` in same PR.
 
 ## Topic file index
 
-Shared (humans and agents):
+- [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) — codebase, docs site, Docker assets, CI map.
+- [COMMITS.md](COMMITS.md) — branching, Conventional Commits, DCO, push-after-commit, merge-readiness, license, contributing.
+- [PULL_REQUESTS.md](PULL_REQUESTS.md) — PR flow, body shape, review, roadmap & docs gates, solo-maintainer model.
+- [TESTING.md](TESTING.md) — test runner, fixtures, `--debug` validation.
+- [ENGINEERING.md](ENGINEERING.md) — libraries, DRY, telemetry, comments.
+- [HOST_AND_CONTAINER.md](HOST_AND_CONTAINER.md) — host-write ban, `/jackin/` container layout.
+- [PRERELEASE.md](PRERELEASE.md) — breaking-change policy, schema versioning, changelog hold.
+- [RULES.md](RULES.md) — doc-location convention, symlink rule, brand spelling, TUI labels/keybindings/modals.
+- [DEPRECATED.md](DEPRECATED.md) — deprecated APIs, CLIs, config values.
+- [TODO.md](TODO.md) — follow-ups, per-PR stale-docs checklist, `TODO(<topic>)` convention.
 
-- [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md) — navigational map of codebase, docs site, Docker assets, CI.
-- [`BRANCHING.md`](BRANCHING.md) — branch naming, feature-branch policy, rebase rule, force-push policy.
-- [`COMMITS.md`](COMMITS.md) — Conventional Commits, DCO sign-off, push-after-commit, merge-readiness checks.
-- [`PULL_REQUESTS.md`](PULL_REQUESTS.md) — PR flow, body shape, review, roadmap & docs gates, solo-maintainer model.
-- [`TESTING.md`](TESTING.md) — test runner, fixtures, operator `--debug` validation.
-- [`ENGINEERING.md`](ENGINEERING.md) — libraries, DRY, telemetry, comments.
-- [`HOST_AND_CONTAINER.md`](HOST_AND_CONTAINER.md) — host-write ban, `/jackin/` container layout.
-- [`PRERELEASE.md`](PRERELEASE.md) — breaking-change policy, schema versioning, changelog hold.
-- [`RULES.md`](RULES.md) — doc-location convention, symlink rule, brand spelling, deprecations, TUI labels/keybindings/modals.
-- [`DEPRECATED.md`](DEPRECATED.md) — ledger of deprecated APIs, CLIs, config values.
-- [`TODO.md`](TODO.md) — small follow-ups, per-PR stale-docs checklist, code `TODO(<topic>)` convention.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution flow, DCO v1.1 text, license terms.
-
-Several subdirectories carry their own `AGENTS.md` with rules scoped to that subtree — `.github/` (agent-only PR extras, GitHub Actions authoring), `docs/` (docs-site stack, TypeScript rule, three-audience split, roadmap audits), `crates/` (Rust module layout, lints, supply-chain hygiene), `crates/jackin-tui-lookbook/` (lookbook public-API-only rule), `docker/construct/` (prefer official package-manager installs). Not linked here on purpose: harness loads each one automatically when you work in its directory, in addition to this file.
+Subdirectory AGENTS.md scope: `.github/` (agent PR extras, Actions authoring), `docs/` (site stack, TS rule, audience split, roadmap audits), `crates/` (Rust layout, lints, supply chain), `crates/jackin-tui-lookbook/` (public-API-only), `docker/construct/` (pkg-manager installs). Auto-load when you work there.
