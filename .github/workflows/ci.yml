@@ -254,16 +254,16 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-all-features-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-all-features-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-all-features-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-all-features-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-all-features-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-check-all-features-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-debug-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-debug-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-debug-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-debug-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-debug-
       - run: cargo check --workspace --all-targets --all-features --locked
       - name: Show sccache stats
         if: always() && steps.sccache.outcome == 'success'
@@ -321,16 +321,16 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-clippy-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-clippy-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-clippy-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-clippy-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-clippy-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-clippy-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-clippy-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-clippy-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-clippy-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-debug-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-debug-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-debug-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-debug-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-debug-
       - run: rustup component add clippy
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - name: Show sccache stats
@@ -436,16 +436,16 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-default-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-default-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-default-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-default-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-default-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-default-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-default-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-check-default-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-check-default-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-debug-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-debug-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-debug-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-debug-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-debug-
       # Verify the default-features compile path. Clippy above runs with
       # --all-features, so without this step the default build is otherwise
       # untouched in CI. The `e2e` feature is purely additive (empty `e2e
@@ -556,17 +556,16 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-nextest-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-nextest-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-nextest-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-nextest-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-nextest-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-nextest-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-nextest-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-nextest-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-nextest-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-debug-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-debug-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-debug-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-debug-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-debug-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-debug-
       - name: Download construct image for E2E
         if: needs.changes.outputs.construct_image == 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -944,16 +943,13 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-build-validator-${{ matrix.target }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-build-validator-${{ matrix.target }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-release-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-release-
       - name: Build validator (${{ matrix.target }})
         run: cargo zigbuild --release --locked --bin jackin-role --target ${{ matrix.target }}.2.17
       - name: Show sccache stats

@@ -241,13 +241,13 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-release-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-release-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-preview-release-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-preview-release-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-release-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-release-
       - name: Cache macOS SDK
         if: contains(matrix.target, 'apple')
         id: sdk-cache
@@ -369,13 +369,16 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-capsule-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-capsule-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-capsule-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-capsule-release-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-preview-capsule-release-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-preview-capsule-release-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-preview-capsule-release-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-capsule-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-capsule-release-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-capsule-release-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-capsule-release-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-capsule-release-
       - name: Build
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
