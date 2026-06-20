@@ -1008,11 +1008,19 @@ pub(crate) async fn load_role_with(
                     reason.as_str(),
                 );
                 steps.next("Preparing runtime binaries").await?;
+                // Prepare every agent the role supports, not just the selected
+                // one: the running container hosts a multiplexer where the
+                // operator can open a new tab for ANY supported agent, and that
+                // tab execs the agent CLI inside this same container. Baking
+                // only the selected agent makes sibling tabs crash on a missing
+                // binary. The selected agent still drives the version label and
+                // the foreground session; the others must simply be present.
+                let image_agents = validated_repo.manifest.supported_agents();
                 let runtime_binaries = if let Some(progress) = steps.progress_mut() {
                     crate::runtime::image::prepare_runtime_binaries_for_agents(
                         paths,
                         &validated_repo,
-                        &[agent],
+                        &image_agents,
                         Some(progress),
                     )
                     .await?
@@ -1020,7 +1028,7 @@ pub(crate) async fn load_role_with(
                     crate::runtime::image::prepare_runtime_binaries_for_agents(
                         paths,
                         &validated_repo,
-                        &[agent],
+                        &image_agents,
                         None,
                     )
                     .await?

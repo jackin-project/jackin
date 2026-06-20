@@ -1784,7 +1784,12 @@ pub(super) async fn build_agent_image(
     // creating an immutable snapshot.  After this point the shared cached
     // repo can be safely modified by a parallel load.
     jackin_diagnostics::active_timing_started("derived image", "create_build_context", None);
-    let agents_to_install = [agent];
+    // Install every supported agent into the image, not just the selected one.
+    // The container runs a multiplexer; a new tab can launch any supported
+    // agent, exec'ing its CLI inside this same container. A selected-agent-only
+    // image makes those sibling tabs crash with a missing binary. The selected
+    // agent still drives the recipe's selected-install/version label.
+    let agents_to_install = validated_repo.manifest.supported_agents();
     let build_result = create_derived_build_context_for_agents(
         &cached_repo.repo_dir,
         validated_repo,
