@@ -104,6 +104,7 @@ fn workspace_list_footer_facts_derive_row_flags_from_input() {
             selected_instance_has_snapshot: true,
             selected_saved_workspace: true,
             selected_new_workspace: false,
+            show_prewarm: true,
             show_expand: false,
             show_collapse: true,
             workspace_scroll_axes: ScrollAxes {

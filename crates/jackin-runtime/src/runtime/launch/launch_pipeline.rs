@@ -1253,7 +1253,7 @@ pub(crate) async fn load_role_with(
             }
         };
         let mut sidecar = std::pin::pin!(sidecar);
-        let early_sidecar_result: Option<anyhow::Result<()>> = None;
+        let mut early_sidecar_result: Option<anyhow::Result<()>> = None;
 
         // Per-supported-agent mode resolution — each agent in
         // `manifest.supported_agents()` honors its own configured

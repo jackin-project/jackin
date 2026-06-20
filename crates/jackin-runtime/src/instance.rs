@@ -555,16 +555,9 @@ impl RoleState {
 
             let mut auth_provisions = Vec::with_capacity(handles.len());
             for (agent, handle) in handles {
-                auth_provisions.push(
-                    handle
-                        .join()
-                        .map_err(|_| {
-                            anyhow::anyhow!(
-                                "{} auth provisioning task panicked",
-                                agent.slug()
-                            )
-                        })??,
-                );
+                auth_provisions.push(handle.join().map_err(|_| {
+                    anyhow::anyhow!("{} auth provisioning task panicked", agent.slug())
+                })??);
             }
 
             anyhow::Ok((gh_provision_outcome, auth_provisions))
@@ -910,10 +903,7 @@ impl RoleState {
         ) {
             let bin_dir = grok_home_dir.join("bin");
             std::fs::create_dir_all(&bin_dir).with_context(|| {
-                format!(
-                    "failed to create grok bin dir at {}",
-                    bin_dir.display()
-                )
+                format!("failed to create grok bin dir at {}", bin_dir.display())
             })?;
             let dst = bin_dir.join("grok");
             match std::fs::copy(&src, &dst) {
@@ -928,42 +918,42 @@ impl RoleState {
                     );
                 }
                 Ok(_) => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt as _;
-                    if let Err(e) =
-                        std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o755))
+                    #[cfg(unix)]
                     {
-                        jackin_diagnostics::emit_compact_line(
-                            "grok",
-                            &format!(
-                                "warning: could not make grok binary executable at {}: {e}; \
+                        use std::os::unix::fs::PermissionsExt as _;
+                        if let Err(e) =
+                            std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o755))
+                        {
+                            jackin_diagnostics::emit_compact_line(
+                                "grok",
+                                &format!(
+                                    "warning: could not make grok binary executable at {}: {e}; \
                                  grok may fail to start in container",
-                                dst.display()
-                            ),
-                        );
-                    }
-                    let agent_link = bin_dir.join("agent");
-                    if let Err(e) = std::os::unix::fs::symlink("grok", &agent_link)
-                        && e.kind() != std::io::ErrorKind::AlreadyExists
-                    {
-                        jackin_diagnostics::emit_compact_line(
-                            "grok",
-                            &format!(
-                                "warning: could not create grok agent symlink at {}: {e}; \
+                                    dst.display()
+                                ),
+                            );
+                        }
+                        let agent_link = bin_dir.join("agent");
+                        if let Err(e) = std::os::unix::fs::symlink("grok", &agent_link)
+                            && e.kind() != std::io::ErrorKind::AlreadyExists
+                        {
+                            jackin_diagnostics::emit_compact_line(
+                                "grok",
+                                &format!(
+                                    "warning: could not create grok agent symlink at {}: {e}; \
                                  tools invoking `agent` may fail in container",
-                                agent_link.display()
-                            ),
-                        );
+                                    agent_link.display()
+                                ),
+                            );
+                        }
                     }
-                }
-                #[cfg(not(unix))]
-                {
-                    // On non-Unix (e.g. Windows host), the prepared dir is only used as
-                    // mount source for Linux container; copy the binary under both names
-                    // so both `grok` and `agent` resolve without symlinks.
-                    let _ = std::fs::copy(&dst, bin_dir.join("agent"));
-                }
+                    #[cfg(not(unix))]
+                    {
+                        // On non-Unix (e.g. Windows host), the prepared dir is only used as
+                        // mount source for Linux container; copy the binary under both names
+                        // so both `grok` and `agent` resolve without symlinks.
+                        let _ = std::fs::copy(&dst, bin_dir.join("agent"));
+                    }
                 }
             }
         }

@@ -129,6 +129,9 @@ pub const fn workspace_list_footer_facts(
         selected_instance_has_snapshot: facts.selected_instance_has_snapshot,
         selected_saved_workspace: row_facts.selected_saved_workspace,
         selected_new_workspace: row_facts.selected_new_workspace,
+        // Surface the `W` prewarm hint exactly when a saved workspace is
+        // selected — the only row for which `W` dispatches PrewarmNamed.
+        show_prewarm: row_facts.selected_saved_workspace,
         show_expand: facts.show_expand,
         show_collapse: facts.show_collapse,
         workspace_scroll_axes: facts.workspace_scroll_axes,

@@ -116,8 +116,6 @@ USER agent
 ARG JACKIN_CACHE_BUST=0
 COPY --link --chown=agent:agent --chmod=0755 .jackin-runtime/agent-binaries/grok /home/agent/.grok/bin/grok
 COPY --link --chown=agent:agent --chmod=0755 .jackin-runtime/agent-binaries/grok /home/agent/.grok/bin/agent
-COPY --link --chown=agent:agent --chmod=0755 .jackin-runtime/agent-binaries/grok /home/agent/.local/bin/grok
-COPY --link --chown=agent:agent --chmod=0755 .jackin-runtime/agent-binaries/grok /home/agent/.local/bin/agent
 ENV PATH=\"/home/agent/.grok/bin:/home/agent/.local/bin:${PATH}\"
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
