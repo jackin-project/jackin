@@ -358,7 +358,7 @@ pub fn render_failure_popup(
     );
     // The popup draws no hint of its own; keys live in the shared hint row and
     // the status footer row remains visible beneath it.
-    render_hint_bar(frame, chrome.hint, FAILURE_HINT);
+    render_hint_bar(frame, chrome.hint, &failure_hint_spans());
 }
 
 #[must_use]
@@ -409,14 +409,21 @@ pub fn failure_popup_hyperlink_overlay(
     out
 }
 
-/// Footer-hint keys for the launch failure popup (dismiss only).
-const FAILURE_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("click"),
-    HintSpan::Text("copy value"),
-    HintSpan::GroupSep,
-    HintSpan::Key("↵/Esc"),
-    HintSpan::Text("dismiss"),
-];
+/// Footer-hint keys for the launch failure popup. The dismiss group derives
+/// from `FAILURE_KEYMAP` (the dispatch table); the global keys derive from
+/// `cockpit_global_hint_spans`. Only the mouse "click copy value" affordance is
+/// authored here since it is not a key.
+fn failure_hint_spans() -> Vec<HintSpan<'static>> {
+    let mut spans = vec![
+        HintSpan::Key("click"),
+        HintSpan::Text("copy value"),
+        HintSpan::GroupSep,
+    ];
+    spans.extend(crate::tui::keymap::FAILURE_KEYMAP.hint_spans());
+    spans.push(HintSpan::GroupSep);
+    spans.extend(crate::tui::keymap::cockpit_global_hint_spans());
+    spans
+}
 
 #[cfg(test)]
 mod tests;

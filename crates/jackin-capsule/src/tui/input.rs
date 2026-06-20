@@ -213,6 +213,10 @@ pub enum InputEvent {
     /// `PrefixCommand::Palette`, which fires only after the prefix
     /// gesture; the daemon collapses both into the same dialog open.
     OpenPalette,
+    /// `Ctrl+Q` (byte `0x11`) → open the "Exit jackin'?" confirmation. The
+    /// quit chord is consistent with every other jackin' surface; the dialog
+    /// warns that exiting force-stops the container before it does so.
+    RequestExit,
     /// Resize the focused pane in `dir` by one step. Emitted by
     /// `Alt+Shift+Arrow` so the operator can drag a split without
     /// reaching for the mouse. Steps are ratio-based (~5%) so the
@@ -222,7 +226,7 @@ pub enum InputEvent {
     FocusOut,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrefixCommand {
     NewTab,
     NextTab,
@@ -344,6 +348,13 @@ impl InputParser {
                         // `JACKIN_PALETTE_KEY=none`.
                         flush(&mut data, &mut events);
                         events.push(InputEvent::OpenPalette);
+                    } else if b == CTRL_Q {
+                        // Ctrl+Q → exit confirmation. Same quit chord as the
+                        // console and launch cockpit. Requires the client tty
+                        // to keep `0x11` out of XON/XOFF flow control (raw mode
+                        // clears IXON), otherwise the byte never reaches here.
+                        flush(&mut data, &mut events);
+                        events.push(InputEvent::RequestExit);
                     } else if Some(b) == self.prefix {
                         flush(&mut data, &mut events);
                         self.state = State::PrefixAwait;
@@ -518,6 +529,9 @@ impl InputParser {
 const PASTE_START: &[u8] = b"\x1b[200~";
 const PASTE_END: &[u8] = b"\x1b[201~";
 
+/// `Ctrl+Q` control byte (DC1). The quit-confirmation chord.
+const CTRL_Q: u8 = 0x11;
+
 fn flush(data: &mut Vec<u8>, events: &mut Vec<InputEvent>) {
     if !data.is_empty() {
         events.push(InputEvent::Data(std::mem::take(data)));
@@ -563,30 +577,9 @@ pub fn parse_key_binding(s: &str) -> Option<u8> {
 }
 
 fn prefix_binding(b: u8) -> Option<PrefixCommand> {
-    use PrefixCommand::{
-        ClearPane, Detach, JumpTab, KillPane, KillTab, MoveFocus, NewTab, NextTab, Palette,
-        PrevTab, Redraw, SplitSideBySide, SplitTopBottom, ZoomToggle,
-    };
-    Some(match b {
-        b'c' => NewTab,
-        b'n' => NextTab,
-        b'p' => PrevTab,
-        d @ b'0'..=b'9' => JumpTab((d - b'0') as usize),
-        b'"' => SplitTopBottom,
-        b'%' => SplitSideBySide,
-        b'h' => MoveFocus(ArrowDir::Left),
-        b'j' => MoveFocus(ArrowDir::Down),
-        b'k' => MoveFocus(ArrowDir::Up),
-        b'l' => MoveFocus(ArrowDir::Right),
-        b'z' => ZoomToggle,
-        b'x' => KillPane,
-        b'&' => KillTab,
-        0x0c => ClearPane,
-        b'd' => Detach,
-        b' ' | b':' => Palette,
-        b'r' => Redraw,
-        _ => return None,
-    })
+    use jackin_tui::keymap::raw_bytes_to_chord;
+    let chord = raw_bytes_to_chord(&[b])?;
+    crate::tui::keymap::PREFIX_COMMAND_KEYMAP.dispatch(chord)
 }
 
 fn parse_csi_u_key(rest: &[u8]) -> Option<(u32, Option<u32>, Option<u32>)> {

@@ -17,6 +17,7 @@ fn main_view_hint_omits_scroll_when_focused_pane_fits() {
     let hint = labels(&main_view_hint(
         false,
         jackin_tui::components::ScrollAxes::default(),
+        false,
     ));
     assert!(hint.contains("Ctrl+\\ menu"));
     assert!(hint.contains("click focus pane"));
@@ -34,10 +35,12 @@ fn main_view_hint_advertises_only_visible_scroll_axis() {
             vertical: true,
             horizontal: false,
         },
+        false,
     ));
-    assert!(hint.contains("↑↓ scroll"));
+    assert!(hint.contains("↑↓/j/k scroll"));
+    assert!(hint.contains("click focus pane"));
     assert!(
-        !hint.contains("←→"),
+        !hint.contains("←→/h/l scroll"),
         "vertical-only pane must not advertise horizontal scroll: {hint}"
     );
 }
@@ -47,11 +50,64 @@ fn scrollback_hint_omits_scroll_when_no_axis_is_visible() {
     let hint = labels(&main_view_hint(
         true,
         jackin_tui::components::ScrollAxes::default(),
+        false,
     ));
     assert!(hint.contains("Esc exit scrollback"));
     assert!(hint.contains("Ctrl+\\ menu"));
     assert!(
         !hint.contains("↑↓ scroll"),
         "scrollback exit hint must not advertise scroll without a visible axis: {hint}"
+    );
+}
+
+#[test]
+fn prefix_awaiting_shows_cheat_sheet_not_nav_hints() {
+    let hint = labels(&main_view_hint(
+        false,
+        jackin_tui::components::ScrollAxes::default(),
+        true,
+    ));
+    assert!(
+        hint.contains("space/: palette"),
+        "must advertise palette: {hint}"
+    );
+    assert!(
+        hint.contains("n/c new/close"),
+        "must show new/close commands: {hint}"
+    );
+    assert!(
+        !hint.contains("click"),
+        "prefix hint must not show mouse nav: {hint}"
+    );
+    assert!(
+        !hint.contains("Ctrl+\\"),
+        "prefix hint must not show menu toggle: {hint}"
+    );
+}
+
+#[test]
+fn main_view_hint_includes_resize_pane_group() {
+    let hint = labels(&main_view_hint(
+        false,
+        jackin_tui::components::ScrollAxes::default(),
+        false,
+    ));
+    assert!(
+        hint.contains("Alt+Shift+↑↓←→ resize pane"),
+        "live main view must advertise pane resize gesture: {hint}"
+    );
+}
+
+#[test]
+fn scrollback_hint_does_not_include_resize_pane() {
+    // Resize is a live-view gesture; scrollback mode replaces the normal hint row.
+    let hint = labels(&main_view_hint(
+        true,
+        jackin_tui::components::ScrollAxes::default(),
+        false,
+    ));
+    assert!(
+        !hint.contains("resize pane"),
+        "scrollback hint must not advertise pane resize: {hint}"
     );
 }

@@ -303,53 +303,54 @@ pub const fn workspace_list_enter_plan(row: ManagerListRow) -> WorkspaceListEnte
 }
 
 #[must_use]
-pub const fn workspace_list_key_plan(
-    key: KeyCode,
-    list_scroll_focused: bool,
-) -> WorkspaceListKeyPlan {
-    match key {
-        KeyCode::Esc | KeyCode::Char('q' | 'Q') => WorkspaceListKeyPlan::Exit,
-        KeyCode::Left => WorkspaceListKeyPlan::HorizontalTreeOrScroll { delta: -8 },
-        KeyCode::Right => WorkspaceListKeyPlan::HorizontalTreeOrScroll { delta: 8 },
-        KeyCode::Char('h' | 'H') => WorkspaceListKeyPlan::ScrollHorizontal { delta: -8 },
-        KeyCode::Char('l' | 'L') => WorkspaceListKeyPlan::ScrollHorizontal { delta: 8 },
-        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+pub fn workspace_list_key_plan(key: KeyCode, list_scroll_focused: bool) -> WorkspaceListKeyPlan {
+    use crate::tui::keymap::{WORKSPACE_LIST_KEYMAP, WorkspaceListAction as A};
+    use jackin_tui::components::KeyChord;
+
+    let Some(action) = WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::from(key)) else {
+        return WorkspaceListKeyPlan::Continue;
+    };
+    match action {
+        A::Exit => WorkspaceListKeyPlan::Exit,
+        A::TreeLeft => WorkspaceListKeyPlan::HorizontalTreeOrScroll { delta: -8 },
+        A::TreeRight => WorkspaceListKeyPlan::HorizontalTreeOrScroll { delta: 8 },
+        A::ScrollLeft => WorkspaceListKeyPlan::ScrollHorizontal { delta: -8 },
+        A::ScrollRight => WorkspaceListKeyPlan::ScrollHorizontal { delta: 8 },
+        A::NavigateUp => {
             if list_scroll_focused {
                 WorkspaceListKeyPlan::ScrollFocusedVertical { delta: -3 }
             } else {
                 WorkspaceListKeyPlan::MoveSelection { delta: -1 }
             }
         }
-        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+        A::NavigateDown => {
             if list_scroll_focused {
                 WorkspaceListKeyPlan::ScrollFocusedVertical { delta: 3 }
             } else {
                 WorkspaceListKeyPlan::MoveSelection { delta: 1 }
             }
         }
-        KeyCode::Enter => WorkspaceListKeyPlan::Enter,
-        KeyCode::Char('e' | 'E') => WorkspaceListKeyPlan::Edit,
-        KeyCode::Char('n' | 'N') => WorkspaceListKeyPlan::NewSession,
-        KeyCode::Char('d' | 'D') => WorkspaceListKeyPlan::Delete,
-        KeyCode::Char('o' | 'O') => WorkspaceListKeyPlan::OpenGithub,
-        KeyCode::Char('r' | 'R') => {
+        A::Enter => WorkspaceListKeyPlan::Enter,
+        A::Edit => WorkspaceListKeyPlan::Edit,
+        A::NewSession => WorkspaceListKeyPlan::NewSession,
+        A::Delete => WorkspaceListKeyPlan::Delete,
+        A::OpenGithub => WorkspaceListKeyPlan::OpenGithub,
+        A::InstanceReconnect => {
             WorkspaceListKeyPlan::InstanceAction(WorkspaceInstanceAction::Reconnect)
         }
-        KeyCode::Char('a' | 'A') => {
+        A::InstanceNewSession => {
             WorkspaceListKeyPlan::InstanceAction(WorkspaceInstanceAction::NewSession)
         }
-        KeyCode::Char('x' | 'X') => {
-            WorkspaceListKeyPlan::InstanceAction(WorkspaceInstanceAction::Shell)
-        }
-        KeyCode::Char('i' | 'I') => {
+        A::InstanceShell => WorkspaceListKeyPlan::InstanceAction(WorkspaceInstanceAction::Shell),
+        A::InstanceInspect => {
             WorkspaceListKeyPlan::InstanceAction(WorkspaceInstanceAction::Inspect)
         }
-        KeyCode::Char('p' | 'P') => WorkspaceListKeyPlan::ConfirmPurge,
-        KeyCode::Char('t' | 'T') => {
-            WorkspaceListKeyPlan::InstanceAction(WorkspaceInstanceAction::Stop)
-        }
-        KeyCode::Char('s' | 'S') => WorkspaceListKeyPlan::Settings,
-        _ => WorkspaceListKeyPlan::Continue,
+        A::InstanceStop => WorkspaceListKeyPlan::InstanceAction(WorkspaceInstanceAction::Stop),
+        A::ConfirmPurge => WorkspaceListKeyPlan::ConfirmPurge,
+        A::Settings => WorkspaceListKeyPlan::Settings,
+        // Tab/preview entry is resolved upstream in `workspace_list_top_level_key_plan`;
+        // Ctrl-Q never reaches here (intercepted by `should_open_quit_confirm`).
+        A::EnterPreview | A::Quit => WorkspaceListKeyPlan::Continue,
     }
 }
 
@@ -1201,7 +1202,7 @@ pub const fn should_enter_preview_pane(
 }
 
 #[must_use]
-pub const fn workspace_list_top_level_key_plan(
+pub fn workspace_list_top_level_key_plan(
     key: KeyCode,
     preview_focused: bool,
     selected_row: ManagerListRow,
@@ -1232,16 +1233,19 @@ pub const fn exit_preview_focus_plan() -> PreviewFocusPlan {
 /// Preview-pane navigation mode: Esc / Left / `BackTab` exits, Up/Down
 /// move inside the snapshot, and Enter reconnects to the selected pane.
 #[must_use]
-pub const fn preview_pane_key_plan(key: KeyCode, pane_count: usize) -> PreviewPaneKeyPlan {
+pub fn preview_pane_key_plan(key: KeyCode, pane_count: usize) -> PreviewPaneKeyPlan {
+    use crate::tui::keymap::{PREVIEW_PANE_KEYMAP, PreviewPaneAction as A};
+    use jackin_tui::components::KeyChord;
+
     if pane_count == 0 {
         return PreviewPaneKeyPlan::ExitPreview;
     }
-    match key {
-        KeyCode::Esc | KeyCode::BackTab | KeyCode::Left => PreviewPaneKeyPlan::ExitPreview,
-        KeyCode::Up | KeyCode::Char('k' | 'K') => PreviewPaneKeyPlan::Move { delta: -1 },
-        KeyCode::Down | KeyCode::Char('j' | 'J') => PreviewPaneKeyPlan::Move { delta: 1 },
-        KeyCode::Enter => PreviewPaneKeyPlan::ReconnectSelected,
-        _ => PreviewPaneKeyPlan::Continue,
+    match PREVIEW_PANE_KEYMAP.dispatch(KeyChord::from(key)) {
+        Some(A::Back) => PreviewPaneKeyPlan::ExitPreview,
+        Some(A::NavigateUp) => PreviewPaneKeyPlan::Move { delta: -1 },
+        Some(A::NavigateDown) => PreviewPaneKeyPlan::Move { delta: 1 },
+        Some(A::Attach) => PreviewPaneKeyPlan::ReconnectSelected,
+        None => PreviewPaneKeyPlan::Continue,
     }
 }
 

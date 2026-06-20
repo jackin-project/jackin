@@ -658,7 +658,7 @@ fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
 
     let first = compose_after(&mut mux, FullRedrawReason::FirstAttach);
     assert!(
-        contains(&first, b"focus pane"),
+        contains(&first, b"resize pane"),
         "first full frame must assert raw bottom chrome: {:?}",
         String::from_utf8_lossy(&first)
     );
@@ -668,7 +668,7 @@ fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
     // byte cache exists to go stale.
     let unchanged = compose_after(&mut mux, status_change_redraw_reason());
     assert!(
-        contains(&unchanged, b"focus pane"),
+        contains(&unchanged, b"resize pane"),
         "chrome cells must ride every composed frame: {:?}",
         String::from_utf8_lossy(&unchanged)
     );

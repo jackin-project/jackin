@@ -446,7 +446,7 @@ pub(super) async fn launch_role_runtime(
     .await?;
 
     // Step 4: Mount volumes and launch
-    steps.next("Launching role").await;
+    steps.next("Launching role").await?;
     steps.done();
 
     if steps.progress.is_none() {
@@ -750,30 +750,37 @@ pub(super) async fn launch_role_runtime(
     // for every other future scheduled on it.
     let socket_dir_for_mkdir = socket_dir.clone();
     let capsule_config_contents_for_write = capsule_config_contents.clone();
-    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        std::fs::create_dir_all(&socket_dir_for_mkdir)?;
-        std::fs::write(
-            socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
-            capsule_config_contents_for_write,
-        )?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(
-                &socket_dir_for_mkdir,
-                std::fs::Permissions::from_mode(0o700),
-            )?;
-        }
-        Ok(())
-    })
-    .await
-    .context("socket dir mkdir worker join")?
-    .with_context(|| {
-        format!(
-            "creating host-side socket dir {} for container {container_name}",
-            socket_dir.display(),
-        )
-    })?;
+    let socket_dir_for_ctx = socket_dir.clone();
+    let container_name_for_ctx = (*container_name).to_owned();
+    // `run_blocking` keeps the syscalls off the executor (NFS-slow hosts park
+    // the worker driving the docker-run RPC) *and* races the join against the
+    // cancel token, so a Ctrl+C here can't wait out a stalled filesystem.
+    steps
+        .run_blocking(move || -> anyhow::Result<()> {
+            (|| -> std::io::Result<()> {
+                std::fs::create_dir_all(&socket_dir_for_mkdir)?;
+                std::fs::write(
+                    socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
+                    capsule_config_contents_for_write,
+                )?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::set_permissions(
+                        &socket_dir_for_mkdir,
+                        std::fs::Permissions::from_mode(0o700),
+                    )?;
+                }
+                Ok(())
+            })()
+            .with_context(|| {
+                format!(
+                    "creating host-side socket dir {} for container {container_name_for_ctx}",
+                    socket_dir_for_ctx.display(),
+                )
+            })
+        })
+        .await?;
     // `Display` is lossy on non-UTF-8 paths — docker would silently mount a
     // different host dir than the one we just created. Bail rather than
     // smuggle U+FFFD into a `-v` argument.
@@ -795,11 +802,7 @@ pub(super) async fn launch_role_runtime(
     // `JACKIN_AGENT` is set later when spawning an actual agent PTY.
     run_args.push(agent.slug());
     let run_role = runner.run("docker", &run_args, None, &docker_run_opts);
-    if let Some(progress) = steps.progress_mut() {
-        progress.while_waiting(run_role).await?;
-    } else {
-        run_role.await?;
-    }
+    steps.while_waiting(run_role).await?;
 
     // Reconcile keep_awake AFTER the role container is running but
     // BEFORE the foreground session blocks. This is the only window in

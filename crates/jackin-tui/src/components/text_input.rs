@@ -9,9 +9,101 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 
-use crate::ModalOutcome;
 use crate::centered_rect;
+use crate::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Mods, Visibility};
 use crate::theme::{DANGER_RED, INPUT_BG_DIM, PHOSPHOR_GREEN, WHITE};
+use crate::{HintSpan, ModalOutcome};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextInputAction {
+    Commit,
+    Cancel,
+    Backspace,
+    DeleteForward,
+    CursorLeft,
+    CursorRight,
+    CursorStart,
+    CursorEnd,
+}
+
+const TEXT_INPUT_BINDINGS: &[KeyBinding<TextInputAction>] = &[
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        action: TextInputAction::Commit,
+        hint: Some("save"),
+        visibility: Visibility::Shown,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Esc)],
+        action: TextInputAction::Cancel,
+        hint: Some("cancel"),
+        visibility: Visibility::Shown,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Backspace)],
+        action: TextInputAction::Backspace,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Delete)],
+        action: TextInputAction::DeleteForward,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Left)],
+        action: TextInputAction::CursorLeft,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Right)],
+        action: TextInputAction::CursorRight,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Home)],
+        action: TextInputAction::CursorStart,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::End)],
+        action: TextInputAction::CursorEnd,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        // Ctrl+M is Enter in some terminals — explicitly eat it to avoid
+        // triggering char insertion via the catch-all branch.
+        chords: &[KeyChord {
+            key: LogicalKey::Char('m'),
+            mods: Mods::CTRL,
+        }],
+        action: TextInputAction::Commit,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+];
+
+pub static TEXT_INPUT_KEYMAP: Keymap<TextInputAction> = Keymap::new(TEXT_INPUT_BINDINGS);
+
+/// Hint spans for a text input: `↵ save   Esc cancel`.
+#[must_use]
+pub fn text_input_hint_spans() -> Vec<HintSpan<'static>> {
+    TEXT_INPUT_KEYMAP.hint_spans()
+}
 
 /// Cross-surface single-line text-input model. Holds the buffer,
 /// cursor position (in bytes), an optional max length, and an
@@ -245,47 +337,50 @@ impl TextInputState<'_> {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<String> {
-        match key.code {
-            KeyCode::Enter => {
-                if !self.is_valid() {
-                    return ModalOutcome::Continue;
+        let chord = KeyChord::from(key);
+        if let Some(action) = TEXT_INPUT_KEYMAP.dispatch(chord) {
+            return match action {
+                TextInputAction::Commit => {
+                    if self.is_valid() {
+                        ModalOutcome::Commit(self.value())
+                    } else {
+                        ModalOutcome::Continue
+                    }
                 }
-                ModalOutcome::Commit(self.value())
-            }
-            KeyCode::Esc => ModalOutcome::Cancel,
-            KeyCode::Backspace => {
-                self.field.backspace();
-                ModalOutcome::Continue
-            }
-            KeyCode::Delete => {
-                self.field.delete_char();
-                ModalOutcome::Continue
-            }
-            KeyCode::Left => {
-                self.field.move_cursor_left();
-                ModalOutcome::Continue
-            }
-            KeyCode::Right => {
-                self.field.move_cursor_right();
-                ModalOutcome::Continue
-            }
-            KeyCode::Home => {
-                self.field.move_cursor_to_start();
-                ModalOutcome::Continue
-            }
-            KeyCode::End => {
-                self.field.move_cursor_to_end();
-                ModalOutcome::Continue
-            }
-            KeyCode::Char('m') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                ModalOutcome::Continue
-            }
-            KeyCode::Char(ch) => {
-                self.field.insert_char(ch);
-                ModalOutcome::Continue
-            }
-            _ => ModalOutcome::Continue,
+                TextInputAction::Cancel => ModalOutcome::Cancel,
+                TextInputAction::Backspace => {
+                    self.field.backspace();
+                    ModalOutcome::Continue
+                }
+                TextInputAction::DeleteForward => {
+                    self.field.delete_char();
+                    ModalOutcome::Continue
+                }
+                TextInputAction::CursorLeft => {
+                    self.field.move_cursor_left();
+                    ModalOutcome::Continue
+                }
+                TextInputAction::CursorRight => {
+                    self.field.move_cursor_right();
+                    ModalOutcome::Continue
+                }
+                TextInputAction::CursorStart => {
+                    self.field.move_cursor_to_start();
+                    ModalOutcome::Continue
+                }
+                TextInputAction::CursorEnd => {
+                    self.field.move_cursor_to_end();
+                    ModalOutcome::Continue
+                }
+            };
         }
+        // Printable chars not bound above flow into the text buffer.
+        if let KeyCode::Char(ch) = key.code
+            && !key.modifiers.contains(KeyModifiers::CONTROL)
+        {
+            self.field.insert_char(ch);
+        }
+        ModalOutcome::Continue
     }
 }
 

@@ -46,6 +46,7 @@ ignore_patterns = [
 
 words = [
   "andrewpatterson",
+  "lossily",
   "caching's",
   "candido",
   "cavecrew",
@@ -137,6 +138,7 @@ words = [
   "backgrounded",
   "backgrounding",
   "benchmarked",
+  "b'r",
   "bidi",
   "bijective",
   "bindgen",
@@ -399,6 +401,8 @@ words = [
   "joseluisq",
   "kdrag",
   "keyless",
+  "keymap's",
+  "keymaps",
   "keypath",
   "keypress",
   "kib",
@@ -782,6 +786,7 @@ words = [
   "unparseable",
   "unpushed",
   "unrecognised",
+  "unregisterable",
   "unrepresentable",
   "unreviewed",
   "Unsectioned",

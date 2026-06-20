@@ -1,7 +1,15 @@
 //! Shared footer hint fragments for modal pickers and confirmations.
 
+use crate::tui::keymap::{
+    AUTH_EDIT_SOURCE_KEYMAP, AUTH_MANAGE_KEYMAP, EDITOR_GENERAL_RENAME_KEYMAP,
+    EDITOR_GENERAL_TOGGLE_KEYMAP, EDITOR_GENERAL_WORKDIR_KEYMAP, EDITOR_ROLE_NEW_KEYMAP,
+    PREVIEW_PANE_KEYMAP, PreviewPaneAction, SETTINGS_GENERAL_TOGGLE_KEYMAP,
+    SETTINGS_TRUST_TOGGLE_KEYMAP, WORKSPACE_LIST_KEYMAP, WorkspaceListAction,
+};
 use jackin_tui::HintSpan;
-use jackin_tui::components::{ScrollAxes, scroll_hint_spans};
+use jackin_tui::components::{
+    ScrollAxes, error_popup_hint_spans, save_discard_hint_spans, scroll_hint_spans,
+};
 use ratatui::layout::Rect;
 
 use crate::tui::app::ConsoleManagerStageRoute;
@@ -313,54 +321,64 @@ pub fn workspace_list_footer_mode_for_facts(
 pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpan<'static>> {
     match mode {
         WorkspaceListFooterMode::AgentPicker { scroll_axes } => {
-            workspace_picker_footer_items(scroll_axes, false)
+            workspace_picker_footer_items(scroll_axes, true)
         }
         WorkspaceListFooterMode::RolePicker { scroll_axes } => {
             workspace_picker_footer_items(scroll_axes, true)
         }
-        WorkspaceListFooterMode::PreviewPane => vec![
-            HintSpan::Key("\u{2191}\u{2193}"),
-            HintSpan::Text("navigate panes"),
-            HintSpan::Sep,
-            HintSpan::Key("↵"),
-            HintSpan::Text("attach focused pane"),
-            HintSpan::GroupSep,
-            HintSpan::Key("Esc"),
-            HintSpan::Text("back"),
-            HintSpan::GroupSep,
-            HintSpan::Key("Q"),
-            HintSpan::Text("quit"),
-        ],
-        WorkspaceListFooterMode::InstanceRow { has_snapshot } => {
-            let mut items = vec![
-                HintSpan::Key("\u{2191}\u{2193}"),
+        WorkspaceListFooterMode::PreviewPane => {
+            // Glyphs derive from PREVIEW_PANE_KEYMAP — the same table that drives
+            // `preview_pane_key_plan` dispatch — so advertised keys cannot drift
+            // from handled keys. BackTab (HiddenAlias) and the upstream Ctrl-Q
+            // are intentionally not advertised.
+            let g = |a| PREVIEW_PANE_KEYMAP.glyph_for(a);
+            vec![
+                HintSpan::Key(g(PreviewPaneAction::NavigateUp)),
+                HintSpan::Text("navigate panes"),
                 HintSpan::Sep,
-                HintSpan::Key("↵"),
+                HintSpan::Key(g(PreviewPaneAction::Attach)),
+                HintSpan::Text("attach focused pane"),
+                HintSpan::GroupSep,
+                HintSpan::Key(g(PreviewPaneAction::Back)),
+                HintSpan::Text("back"),
+            ]
+        }
+        WorkspaceListFooterMode::InstanceRow { has_snapshot } => {
+            // Glyphs derive from WORKSPACE_LIST_KEYMAP (the dispatch table);
+            // labels are instance-row-specific and supplied here.
+            let g = |a| WORKSPACE_LIST_KEYMAP.glyph_for(a);
+            let mut items = vec![
+                HintSpan::Key(g(WorkspaceListAction::NavigateUp)),
+                HintSpan::Sep,
+                HintSpan::Key(g(WorkspaceListAction::Enter)),
                 HintSpan::Text("reconnect"),
                 HintSpan::Sep,
-                HintSpan::Key("N"),
+                HintSpan::Key(g(WorkspaceListAction::NewSession)),
                 HintSpan::Text("new session"),
                 HintSpan::Sep,
-                HintSpan::Key("X"),
+                HintSpan::Key(g(WorkspaceListAction::InstanceShell)),
                 HintSpan::Text("shell"),
                 HintSpan::Sep,
-                HintSpan::Key("T"),
+                HintSpan::Key(g(WorkspaceListAction::InstanceStop)),
                 HintSpan::Text("stop"),
                 HintSpan::Sep,
-                HintSpan::Key("P"),
+                HintSpan::Key(g(WorkspaceListAction::ConfirmPurge)),
                 HintSpan::Text("purge"),
+                HintSpan::Sep,
+                HintSpan::Key(g(WorkspaceListAction::InstanceInspect)),
+                HintSpan::Text("info"),
             ];
             if has_snapshot {
                 items.push(HintSpan::Sep);
-                items.push(HintSpan::Key("⇥"));
+                items.push(HintSpan::Key(g(WorkspaceListAction::EnterPreview)));
                 items.push(HintSpan::Text("into preview"));
             }
             items.extend([
                 HintSpan::GroupSep,
-                HintSpan::Key("\u{2190}"),
+                HintSpan::Key(g(WorkspaceListAction::TreeLeft)),
                 HintSpan::Text("back"),
                 HintSpan::GroupSep,
-                HintSpan::Key("Q"),
+                HintSpan::Key(g(WorkspaceListAction::Quit)),
                 HintSpan::Text("quit"),
             ]);
             items
@@ -373,48 +391,62 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
             show_collapse,
             show_open_in_github,
         } => {
+            // Glyphs derive from WORKSPACE_LIST_KEYMAP (the dispatch table);
+            // labels and conditional composition are workspace-row-specific.
+            let g = |a| WORKSPACE_LIST_KEYMAP.glyph_for(a);
             let mut items = Vec::new();
             if scroll_axes.any() {
                 items.extend(scroll_hint_spans(scroll_axes));
                 items.push(HintSpan::GroupSep);
             } else {
-                items.push(HintSpan::Key("\u{2191}\u{2193}"));
+                items.push(HintSpan::Key(g(WorkspaceListAction::NavigateUp)));
                 items.push(HintSpan::Sep);
             }
             items.extend([
-                HintSpan::Key("↵"),
+                HintSpan::Key(g(WorkspaceListAction::Enter)),
                 HintSpan::Text(enter_label),
                 HintSpan::GroupSep,
             ]);
             if is_saved {
-                items.extend([HintSpan::Key("E"), HintSpan::Text("edit"), HintSpan::Sep]);
+                items.extend([
+                    HintSpan::Key(g(WorkspaceListAction::Edit)),
+                    HintSpan::Text("edit"),
+                    HintSpan::Sep,
+                ]);
             }
-            items.extend([HintSpan::Key("N"), HintSpan::Text("new")]);
+            items.extend([
+                HintSpan::Key(g(WorkspaceListAction::NewSession)),
+                HintSpan::Text("new"),
+            ]);
             if is_saved {
-                items.extend([HintSpan::Sep, HintSpan::Key("D"), HintSpan::Text("delete")]);
+                items.extend([
+                    HintSpan::Sep,
+                    HintSpan::Key(g(WorkspaceListAction::Delete)),
+                    HintSpan::Text("delete"),
+                ]);
             }
             items.extend([
                 HintSpan::Sep,
-                HintSpan::Key("S"),
+                HintSpan::Key(g(WorkspaceListAction::Settings)),
                 HintSpan::Text("settings"),
             ]);
             if show_expand {
                 items.push(HintSpan::Sep);
-                items.push(HintSpan::Key("\u{2192}"));
+                items.push(HintSpan::Key(g(WorkspaceListAction::TreeRight)));
                 items.push(HintSpan::Text("expand"));
             }
             if show_collapse {
                 items.push(HintSpan::Sep);
-                items.push(HintSpan::Key("\u{2190}"));
+                items.push(HintSpan::Key(g(WorkspaceListAction::TreeLeft)));
                 items.push(HintSpan::Text("collapse"));
             }
             if show_open_in_github {
                 items.push(HintSpan::Sep);
-                items.push(HintSpan::Key("O"));
+                items.push(HintSpan::Key(g(WorkspaceListAction::OpenGithub)));
                 items.push(HintSpan::Text("open in GitHub"));
             }
             items.push(HintSpan::GroupSep);
-            items.push(HintSpan::Key("Q"));
+            items.push(HintSpan::Key(g(WorkspaceListAction::Quit)));
             items.push(HintSpan::Text("quit"));
             items
         }
@@ -491,6 +523,11 @@ pub fn editor_footer_items(
 }
 
 #[must_use]
+pub fn destructive_confirm_footer_items() -> Vec<HintSpan<'static>> {
+    jackin_tui::components::confirm_hint_spans()
+}
+
+#[must_use]
 pub fn create_prelude_footer_items() -> Vec<HintSpan<'static>> {
     vec![
         HintSpan::Dyn("Create workspace — follow the prompts".to_owned()),
@@ -501,25 +538,11 @@ pub fn create_prelude_footer_items() -> Vec<HintSpan<'static>> {
 }
 
 #[must_use]
-pub fn destructive_confirm_footer_items() -> Vec<HintSpan<'static>> {
-    vec![
-        HintSpan::Key("Y"),
-        HintSpan::Text("yes"),
-        HintSpan::Sep,
-        HintSpan::Key("N"),
-        HintSpan::Text("no"),
-        HintSpan::GroupSep,
-        HintSpan::Key("Esc"),
-        HintSpan::Text("cancel"),
-    ]
-}
-
-#[must_use]
 pub fn editor_general_row_footer_items(row: usize, has_mounts: bool) -> Vec<HintSpan<'static>> {
     match row {
-        0 => vec![HintSpan::Key("↵"), HintSpan::Text("rename")],
-        1 if has_mounts => vec![HintSpan::Key("↵"), HintSpan::Text("pick working directory")],
-        2 | 3 => vec![HintSpan::Key("␣"), HintSpan::Text("toggle")],
+        0 => EDITOR_GENERAL_RENAME_KEYMAP.hint_spans(),
+        1 if has_mounts => EDITOR_GENERAL_WORKDIR_KEYMAP.hint_spans(),
+        2 | 3 => EDITOR_GENERAL_TOGGLE_KEYMAP.hint_spans(),
         _ => Vec::new(),
     }
 }
@@ -538,7 +561,7 @@ pub fn editor_role_row_footer_items(is_existing_role: bool) -> Vec<HintSpan<'sta
             HintSpan::Text("load role"),
         ]
     } else {
-        vec![HintSpan::Key("↵/A"), HintSpan::Text("load role")]
+        EDITOR_ROLE_NEW_KEYMAP.hint_spans()
     }
 }
 
@@ -614,8 +637,14 @@ pub enum AuthRowFooterMode {
 #[must_use]
 pub fn auth_row_footer_items(mode: AuthRowFooterMode) -> Vec<HintSpan<'static>> {
     match mode {
-        AuthRowFooterMode::ManageAuth => vec![HintSpan::Key("↵"), HintSpan::Text("manage auth")],
-        AuthRowFooterMode::EditMode => vec![HintSpan::Key("↵"), HintSpan::Text("edit mode")],
+        AuthRowFooterMode::ManageAuth => AUTH_MANAGE_KEYMAP.hint_spans(),
+        AuthRowFooterMode::EditMode => vec![
+            HintSpan::Key("↵"),
+            HintSpan::Text("edit mode"),
+            HintSpan::Sep,
+            HintSpan::Key("D"),
+            HintSpan::Text("reset"),
+        ],
         AuthRowFooterMode::RoleHeader => vec![
             HintSpan::Key("↵"),
             HintSpan::Text("expand"),
@@ -626,7 +655,7 @@ pub fn auth_row_footer_items(mode: AuthRowFooterMode) -> Vec<HintSpan<'static>> 
             HintSpan::Key("D"),
             HintSpan::Text("reset"),
         ],
-        AuthRowFooterMode::EditSource => vec![HintSpan::Key("↵"), HintSpan::Text("edit source")],
+        AuthRowFooterMode::EditSource => AUTH_EDIT_SOURCE_KEYMAP.hint_spans(),
         AuthRowFooterMode::Empty => Vec::new(),
     }
 }
@@ -634,7 +663,7 @@ pub fn auth_row_footer_items(mode: AuthRowFooterMode) -> Vec<HintSpan<'static>> 
 #[must_use]
 pub fn settings_general_row_footer_items() -> Vec<HintSpan<'static>> {
     // `content_footer_items` already prepends ↑↓ navigate; only add the tab-specific action.
-    vec![HintSpan::Key("␣"), HintSpan::Text("toggle")]
+    SETTINGS_GENERAL_TOGGLE_KEYMAP.hint_spans()
 }
 
 #[must_use]
@@ -643,7 +672,7 @@ pub fn settings_trust_row_footer_items(
     scroll_axes: ScrollAxes,
 ) -> Vec<HintSpan<'static>> {
     if has_roles {
-        let mut items = vec![HintSpan::Key("␣"), HintSpan::Text("trust/untrust")];
+        let mut items = SETTINGS_TRUST_TOGGLE_KEYMAP.hint_spans();
         let scroll_items = scroll_hint_spans(scroll_axes);
         if !scroll_items.is_empty() {
             items.push(HintSpan::Sep);
@@ -735,6 +764,8 @@ fn workspace_picker_footer_items(
         HintSpan::GroupSep,
         HintSpan::Key("Esc"),
         HintSpan::Text("return to workspaces"),
+        HintSpan::GroupSep,
+        HintSpan::Text("type to filter"),
     ];
     let scroll_items = scroll_hint_spans(scroll_axes);
     if !scroll_items.is_empty() {
@@ -743,7 +774,7 @@ fn workspace_picker_footer_items(
     }
     if include_quit {
         items.push(HintSpan::GroupSep);
-        items.push(HintSpan::Key("Q"));
+        items.push(HintSpan::Key("Ctrl-Q"));
         items.push(HintSpan::Text("quit"));
     }
     items
@@ -798,7 +829,10 @@ pub fn pick_list_footer_items(commit_label: &'static str) -> Vec<HintSpan<'stati
 }
 
 #[must_use]
-pub fn filtered_picker_footer_items(include_refresh: bool) -> Vec<HintSpan<'static>> {
+pub fn filtered_picker_footer_items(
+    include_refresh: bool,
+    include_collapse: bool,
+) -> Vec<HintSpan<'static>> {
     let mut items = vec![
         HintSpan::Key("\u{2191}\u{2193}"),
         HintSpan::Text("navigate"),
@@ -811,6 +845,13 @@ pub fn filtered_picker_footer_items(include_refresh: bool) -> Vec<HintSpan<'stat
             HintSpan::GroupSep,
             HintSpan::Key("R"),
             HintSpan::Text("refresh"),
+        ]);
+    }
+    if include_collapse {
+        items.extend([
+            HintSpan::GroupSep,
+            HintSpan::Key("\u{2190}/\u{2192}"),
+            HintSpan::Text("collapse/expand section"),
         ]);
     }
     items.extend([
@@ -864,6 +905,7 @@ pub enum ModalFooterMode {
     OpSection,
     FilteredPicker {
         include_refresh: bool,
+        include_collapse: bool,
     },
     YesNo,
 }
@@ -947,7 +989,14 @@ pub const fn op_picker_modal_footer_mode(
     }
     match stage {
         OpPickerStage::Section => ModalFooterMode::OpSection,
-        _ => ModalFooterMode::FilteredPicker { include_refresh },
+        OpPickerStage::Field => ModalFooterMode::FilteredPicker {
+            include_refresh,
+            include_collapse: true,
+        },
+        _ => ModalFooterMode::FilteredPicker {
+            include_refresh,
+            include_collapse: false,
+        },
     }
 }
 
@@ -968,7 +1017,7 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
             items
         }
         ModalFooterMode::ConfirmDismiss | ModalFooterMode::OpNamingTextInput => {
-            jackin_tui::components::hint_bar::CONFIRM_DISMISS_HINT.to_vec()
+            jackin_tui::components::text_input_hint_spans()
         }
         ModalFooterMode::FileBrowser => Vec::new(),
         ModalFooterMode::MountDestination => mount_destination_footer_items(),
@@ -984,10 +1033,11 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
         ModalFooterMode::ContainerInfo => container_info_footer_items(ScrollAxes::none()),
         ModalFooterMode::StatusPopup => status_popup_footer_items(),
         ModalFooterMode::OpSection => op_section_footer_items(),
-        ModalFooterMode::FilteredPicker { include_refresh } => {
-            filtered_picker_footer_items(include_refresh)
-        }
-        ModalFooterMode::YesNo => yes_no_footer_items(),
+        ModalFooterMode::FilteredPicker {
+            include_refresh,
+            include_collapse,
+        } => filtered_picker_footer_items(include_refresh, include_collapse),
+        ModalFooterMode::YesNo => jackin_tui::components::confirm_hint_spans(),
     }
 }
 
@@ -1008,34 +1058,18 @@ pub fn confirm_save_footer_items(scroll_axes: ScrollAxes) -> Vec<HintSpan<'stati
     items
 }
 
-#[must_use]
-pub fn yes_no_footer_items() -> Vec<HintSpan<'static>> {
-    vec![
-        HintSpan::Key("Y"),
-        HintSpan::Text("yes"),
-        HintSpan::GroupSep,
-        HintSpan::Key("N/Esc"),
-        HintSpan::Text("no"),
-    ]
-}
-
+/// Hint spans for inline yes/no confirm modals (`Modal::Confirm`,
+/// `GlobalMountModal::Confirm`, `SettingsEnvModal::Confirm`).
+///
+/// Delegates to [`jackin_tui::components::confirm_hint_spans`] so this matches
 #[must_use]
 pub fn save_discard_cancel_footer_items() -> Vec<HintSpan<'static>> {
-    vec![
-        HintSpan::Key("S"),
-        HintSpan::Text("save"),
-        HintSpan::GroupSep,
-        HintSpan::Key("D"),
-        HintSpan::Text("discard"),
-        HintSpan::GroupSep,
-        HintSpan::Key("C/Esc"),
-        HintSpan::Text("cancel"),
-    ]
+    save_discard_hint_spans()
 }
 
 #[must_use]
 pub fn error_popup_footer_items() -> Vec<HintSpan<'static>> {
-    vec![HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")]
+    error_popup_hint_spans()
 }
 
 /// Debug-info modal footer: the *available* scroll axes (per `axes`), dismiss,
@@ -1359,6 +1393,9 @@ fn append_save_and_escape(
         } else {
             "back"
         }),
+        HintSpan::Sep,
+        HintSpan::Key("Ctrl-Q"),
+        HintSpan::Text("quit"),
     ]);
 }
 

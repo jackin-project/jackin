@@ -284,6 +284,8 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             scrollback_active: view.scrollback_active,
             scroll_axes: view.main_scroll_axes,
             debug_run_id: view.debug_run_id,
+            prefix_awaiting: view.prefix_mode
+                == crate::tui::components::status_bar::PrefixMode::Awaiting,
         },
         frame.area(),
     );

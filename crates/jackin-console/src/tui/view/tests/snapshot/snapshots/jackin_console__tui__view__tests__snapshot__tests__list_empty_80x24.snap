@@ -25,4 +25,4 @@ expression: rendered
 │                      │                                                        
 └──────────────────────┘                                                        
                                                                                 
-                   ↑↓ · ↵ launch   N new · S settings   Q quit
+                ↑↓ · ↵ launch   N new · S settings   Ctrl-Q quit

@@ -52,16 +52,16 @@ impl FileBrowserState {
             super::git_prompt::git_prompt_footer_items(self.pending_git_url.is_some())
         } else {
             vec![
-                HintSpan::Key("\u{2191}\u{2193}"),
+                HintSpan::Key("\u{2191}\u{2193}/j/k"),
                 HintSpan::Text("navigate"),
                 HintSpan::GroupSep,
                 HintSpan::Key("PgUp/PgDn"),
                 HintSpan::Text("page"),
                 HintSpan::GroupSep,
-                HintSpan::Key("↵"),
+                HintSpan::Key("↵/l"),
                 HintSpan::Text("open"),
                 HintSpan::GroupSep,
-                HintSpan::Key("H/\u{2190}"),
+                HintSpan::Key("H/h/\u{2190}"),
                 HintSpan::Text("up"),
                 HintSpan::GroupSep,
                 HintSpan::Key("S"),

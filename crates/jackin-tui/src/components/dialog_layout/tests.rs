@@ -40,21 +40,21 @@ fn scroll_hint_spans_reflect_available_axes_only() {
             vertical: true,
             horizontal: true
         }),
-        vec!["↑↓←→"]
+        vec!["↑↓/j/k", "←→/h/l"]
     );
     assert_eq!(
         keys(ScrollAxes {
             vertical: true,
             horizontal: false
         }),
-        vec!["↑↓"]
+        vec!["↑↓/j/k"]
     );
     assert_eq!(
         keys(ScrollAxes {
             vertical: false,
             horizontal: true
         }),
-        vec!["←→"]
+        vec!["←→/h/l"]
     );
     assert!(
         scroll_hint_spans(ScrollAxes::none()).is_empty(),
