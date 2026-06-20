@@ -2,25 +2,25 @@
 
 ## License
 
-Apache 2.0. Contributions license under same terms (Section 5).
+Apache 2.0. Contributions license same terms (Section 5).
 
 ## DCO
 
-All contributions signed off under [DCO v1.1](https://developercertificate.org/). Enforced by [DCO2 GitHub App](https://github.com/cncf/dco2) — unsigned commit blocks PR.
+All contributions sign off under [DCO v1.1](https://developercertificate.org/). Enforced by [DCO2 GitHub App](https://github.com/cncf/dco2) — unsigned commit blocks PR.
 
-Employer contributions: confirm authorization before submitting. Use personal email in commit author + sign-off.
+Employer contributions: confirm authorization before submit. Use personal email in commit author + sign-off.
 
 ## How to Submit
 
-1. Fork. Create feature branch from `main`.
-2. Make changes. Sign every commit: `git commit -s`.
-3. Open PR describing problem solved. Ensure CI passes.
+1. Fork. Branch feature off `main`.
+2. Change. Sign every commit: `git commit -s`.
+3. Open PR describing problem solved. CI must pass.
 
 ## Branching
 
-Never commit to `main`. All work on dedicated branch.
+Never commit to `main`. All work on own branch.
 
-Names: `feature/`, `fix/`, `refactor/`, or `chore/` prefix + short lowercase hyphen-separated description.
+Names: `feature/`, `fix/`, `refactor/`, or `chore/` prefix + short lowercase hyphen description.
 
 ### Sync with main: rebase only, never merge
 
@@ -30,7 +30,7 @@ git rebase origin/main
 git push --force-with-lease origin <branch>   # requires operator approval
 ```
 
-Never `git merge main`. Merge commits drag bot/renovate commits into PR diff → breaks DCO + squash-merge. Rebase keeps history clean, DCO scoped to author's own commits.
+Never `git merge main`. Merge commits drag bot/renovate commits into PR diff → break DCO + squash-merge. Rebase keep history clean, DCO scoped to author own commits.
 
 ## Commit Format
 
@@ -59,7 +59,7 @@ git commit -s -m "feat(scope): description"
 git commit --amend -s --no-edit   # forgot -s → force-push after (operator approval required)
 ```
 
-DCO fail on PR: fix before anything else.
+DCO fail on PR: fix first, before anything else.
 
 ## Merge-Readiness Check
 

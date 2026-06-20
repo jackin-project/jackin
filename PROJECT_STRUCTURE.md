@@ -1,12 +1,12 @@
 # Project Structure
 
-Quick nav for AI agents and human contributors. **Canonical detailed module map lives in docs** ([`reference/codebase-map`](https://jackin.tailrocks.com/reference/codebase-map/), served from `docs/content/docs/reference/codebase-map.mdx`). This file is short pointer agents land on first; covers **multi-repo ecosystem** and per-PR **code ↔ docs contract**, sends you to docs for rest.
+Quick nav for AI agents and human contributors. **Canonical detailed module map lives in docs** ([`reference/codebase-map`](https://jackin.tailrocks.com/reference/codebase-map/), served from `docs/content/docs/reference/codebase-map.mdx`). This file short pointer agents land on first; covers **multi-repo ecosystem** and per-PR **code ↔ docs contract**, sends you to docs for rest.
 
 ## What this file is for
 
 - **Ecosystem table** below — which repo owns what.
-- **Code ↔ docs cross-reference** at bottom — which docs page to touch when a source area changes.
-- Short **map of root files** an agent might need fast.
+- **Code ↔ docs cross-reference** at bottom — which docs page to touch when source area changes.
+- Short **map of root files** agent might need fast.
 
 Deeper questions — module layout, what each `src/` subdir owns, where to start changing runtime/console/config model — go to docs:
 
@@ -19,11 +19,11 @@ Deeper questions — module layout, what each `src/` subdir owns, where to start
 | "How are role repositories structured?" | [Role Repositories](https://jackin.tailrocks.com/guides/role-repos/) |
 | "What is on the roadmap?" | [Roadmap](https://jackin.tailrocks.com/reference/roadmap/) |
 
-Docs are single source of truth for *narrative* internals. This file stays terse on purpose — prose belongs on a docs page; here we point at it.
+Docs = single source of truth for *narrative* internals. This file stays terse on purpose — prose belongs on docs page; here we point at it.
 
 ## Ecosystem repositories
 
-jackin' is split across multiple GitHub repos. This repo owns CLI; siblings own roles, construct image source, Homebrew tap, docs site (docs live inside this repo today — see roadmap item [Move documentation to a separate repository](https://jackin.tailrocks.com/reference/roadmap/docs-separate-repository/)).
+jackin' split across multiple GitHub repos. This repo owns CLI; siblings own roles, construct image source, Homebrew tap, docs site (docs live inside this repo today — see roadmap item [Move documentation to a separate repository](https://jackin.tailrocks.com/reference/roadmap/docs-separate-repository/)).
 
 | Repository | Owns |
 |---|---|
@@ -79,7 +79,7 @@ Fumadocs site on TanStack Start and Vite. **Lives alongside source today** — u
 Sidebar split by **three audiences**:
 
 - **Operator** (Getting Started, Operator Guide, Commands) — uses jackin' as product through CLI/TUI. Pages describe behaviour through CLI/TUI flows — no TOML schemas, no on-disk paths, no Rust internals.
-- **Role author** (Role Authoring) — *also user-facing*, but for users building own role repos (`backend-engineer`, `docs-writer`, `security-reviewer`, …). Explain how to create a role from scratch, manifest schema, what tools ship in `construct`. No knowledge of jackin' implementation required.
+- **Role author** (Role Authoring) — *also user-facing*, but for users building own role repos (`backend-engineer`, `docs-writer`, `security-reviewer`, …). Explain how to create role from scratch, manifest schema, what tools ship in `construct`. No knowledge of jackin' implementation required.
 - **Contributor** (Behind jackin' — Internals) — works on jackin' itself. Architecture, Configuration File schema, Codebase Map, Roadmap. On-disk layouts, internal mechanisms, Rust-level detail live here.
 
 Slugs stable across audience split — parenthesized content group directories keep audience organization out of URLs.
@@ -109,7 +109,7 @@ For runtime behavior, see [The Construct Image](https://jackin.tailrocks.com/dev
 
 ## Code ↔ docs cross-reference
 
-Changing behaviour: update both sides in same PR. This table is **per-PR contract** every agent consults before opening a PR for listed area:
+Changing behaviour: update both sides in same PR. This table = **per-PR contract** every agent consults before opening PR for listed area:
 
 | Code change in | Update docs in |
 |---|---|
@@ -130,4 +130,4 @@ Changing behaviour: update both sides in same PR. This table is **per-PR contrac
 
 ## Keeping the docs fresh
 
-Codebase Map and cross-reference table above are the two places structural changes show up first. If your PR adds a new module directory, splits a file into a subdir, introduces a new cross-cutting helper, or renames a public surface — **update `docs/.../reference/codebase-map.mdx` and (if relevant) cross-reference table above in same PR**. See `TODO.md` for stale-docs check every structural PR runs.
+Codebase Map and cross-reference table above = two places structural changes show up first. If your PR adds new module directory, splits file into subdir, introduces new cross-cutting helper, or renames public surface — **update `docs/.../reference/codebase-map.mdx` and (if relevant) cross-reference table above in same PR**. See `TODO.md` for stale-docs check every structural PR runs.

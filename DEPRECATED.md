@@ -1,21 +1,21 @@
 # Deprecated
 
-Tracker for deprecated APIs, CLIs, config values, and usage patterns still supported for backwards compatibility but should **eventually be removed**. Periodically review and prune entries whose removal is safe.
+Tracker for deprecated APIs, CLIs, config values, usage patterns still supported for backwards compat but should **eventually be removed**. Periodically review, prune entries whose removal safe.
 
-When you deprecate something, add it here in the **same commit** that introduces the deprecation. See [RULES.md](RULES.md#deprecations) for the rule.
+Deprecate something? Add here in **same commit** that introduces deprecation. See [RULES.md](RULES.md#deprecations) for rule.
 
-While jackin is pre-release (see [PRERELEASE.md](PRERELEASE.md)), schema and CLI changes are made as breaking changes rather than deprecations, so this file is typically empty.
+While jackin pre-release (see [PRERELEASE.md](PRERELEASE.md)), schema and CLI changes made as breaking changes, not deprecations, so this file usually empty.
 
 ## How to read this file
 
-Each entry includes:
+Each entry has:
 
-- **Item** — what is deprecated (CLI verb, type, function, config field, value, behavior).
+- **Item** — what deprecated (CLI verb, type, function, config field, value, behavior).
 - **Type** — `cli` / `api` / `config` / `behavior`.
-- **Deprecated since** — date or version the deprecation landed.
+- **Deprecated since** — date or version deprecation landed.
 - **Replacement** — what to use instead.
-- **Remove when** — trigger or target for removal (a date, version, or condition like "after CI no longer sees the warning for two consecutive releases").
-- **Where** — source files / docs implementing the deprecation, so removal is straightforward.
+- **Remove when** — trigger or target for removal (date, version, or condition like "after CI no longer sees warning for two consecutive releases").
+- **Where** — source files / docs implementing deprecation, so removal straightforward.
 
 ## Active deprecations
 
@@ -23,6 +23,6 @@ _None._
 
 ## How to add an entry
 
-When you deprecate something, append a new section to **Active deprecations** above. Use the same field structure. If the deprecation ships behind a CLI warning, link the warning's source location.
+Deprecate something? Append new section to **Active deprecations** above. Use same field structure. If deprecation ships behind CLI warning, link warning's source location.
 
-Removing an entry is the opposite of adding it: in the commit removing the deprecated code/config, also delete the entry from this file (or move it to a brief "Removed in <release>" appendix if you want a historical record).
+Removing entry = opposite of adding: in commit removing deprecated code/config, also delete entry from this file (or move to brief "Removed in <release>" appendix if want historical record).

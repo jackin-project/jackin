@@ -1,57 +1,59 @@
+Inline-code multisets actually match across the flagged region — meaning the validator broke on inline-code **context** (prose around the code paths got compressed). The flagged fragments span from the lychee "Done when" line through the end (Roadmap + Stale-docs). Per the fix protocol, I'll restore that tail to exact original content. Everything above (which validated clean) stays compressed.
+
 # TODO
 
 Two kinds of work:
 
-- **[Follow-ups](#follow-ups)** — small items to verify or address periodically. External deps waiting on upstream fixes; internal consistency/polish too small for a roadmap doc.
-- **[Stale-docs check](#stale-docs-check-every-pr)** — per-PR checklist keeping structure-sensitive docs in sync with code.
+- **[Follow-ups](#follow-ups)** — small items, verify or address periodically. External deps waiting on upstream fixes; internal polish too small for roadmap doc.
+- **[Stale-docs check](#stale-docs-check-every-pr)** — per-PR checklist, keep structure-sensitive docs in sync with code.
 
 Bigger feature work and design proposals live in [docs roadmap](#roadmap) — separate place, see below.
 
 ## Follow-ups
 
-Small, concrete, verifiable items. Each entry is a heading with stable anchor so code-level `TODO(<topic>)` markers link back. Walk this list periodically (monthly cadence; on demand otherwise), update **Last verified**, act when **Done when** satisfied.
+Small, concrete, verifiable items. Each entry = heading with stable anchor so code-level `TODO(<topic>)` markers link back. Walk list periodically (monthly; on demand otherwise), update **Last verified**, act when **Done when** satisfied.
 
 ### Code-level TODO marker convention
 
-When code (or config) has a follow-up tracked here, leave a marker in source at the spot:
+When code (or config) has follow-up tracked here, leave marker in source at spot:
 
 ```text
 // TODO(<topic>): one-line summary — see TODO.md "Follow-ups" → "<heading>"
 ```
 
-`<topic>` is the same kebab-case slug used as heading anchor below, so single grep finds both ends:
+`<topic>` = same kebab-case slug used as heading anchor below, so single grep finds both ends:
 
 ```sh
 grep -rn 'TODO(<topic>)' .
 ```
 
-Markers without a TODO.md entry allowed for transient in-flight work, but anything outliving a single PR should have a tracked entry so it doesn't rot. When item resolves, remove both the entry and matching `TODO(<topic>)` markers in same PR.
+Markers without TODO.md entry OK for transient in-flight work, but anything outliving single PR should have tracked entry so no rot. Item resolves → remove entry and matching `TODO(<topic>)` markers in same PR.
 
 ### External dependencies
 
 #### `shellfirm-aarch64-linux-binary` — switch to prebuilt download once upstream ships aarch64-linux artifact
 
-- **What:** in [`docker/construct/Dockerfile`](docker/construct/Dockerfile), drop the `cargo install shellfirm` step (and the multi-stage `rust:1.96.0-trixie` `security-tools` builder it lives in) for downloading a prebuilt `shellfirm-vX.Y.Z-aarch64-linux.tar.xz` artifact, mirroring the tirith install pattern.
-- **Why:** construct image is built multi-arch (`linux/amd64` + `linux/arm64`). shellfirm currently only ships `x86_64-linux` (and macOS/Windows) prebuilt, so arm64 variant compiles shellfirm and full dependency graph from source on every layer-cache miss, dominating arm64 build time. tirith already moved to prebuilt download since its upstream publishes both Linux arches; shellfirm is last blocker preventing removing the rust toolchain stage from construct image entirely.
-- **Tracking:** <https://github.com/kaplanelad/shellfirm/issues/179> — upstream issue requesting the existing-but-commented-out `aarch64-linux` matrix entry in [`release.yml`](https://github.com/kaplanelad/shellfirm/blob/main/.github/workflows/release.yml) be re-enabled.
+- **What:** in [`docker/construct/Dockerfile`](docker/construct/Dockerfile), drop `cargo install shellfirm` step (and multi-stage `rust:1.96.0-trixie` `security-tools` builder it lives in), download prebuilt `shellfirm-vX.Y.Z-aarch64-linux.tar.xz` artifact instead, mirror tirith install pattern.
+- **Why:** construct image built multi-arch (`linux/amd64` + `linux/arm64`). shellfirm currently ships only `x86_64-linux` (plus macOS/Windows) prebuilt, so arm64 variant compiles shellfirm + full dep graph from source on every layer-cache miss, dominating arm64 build time. tirith already moved to prebuilt download since its upstream publishes both Linux arches; shellfirm last blocker preventing full removal of rust toolchain stage from construct image.
+- **Tracking:** <https://github.com/kaplanelad/shellfirm/issues/179> — upstream issue requesting existing-but-commented-out `aarch64-linux` matrix entry in [`release.yml`](https://github.com/kaplanelad/shellfirm/blob/main/.github/workflows/release.yml) be re-enabled.
 - **Last verified:** 2026-05-04 — checked v0.3.5 through v0.3.9 release assets; only `x86_64-linux.tar.xz` ships for Linux. Filed upstream issue #179 same day.
-- **Done when:** a shellfirm release at or after the fix publishes `shellfirm-v<ver>-aarch64-linux.tar.xz` (or equivalently named) alongside the existing x86_64 tarball. Replace cargo install step with TARGETARCH-aware curl + `tar -xJ` block (mirroring tirith pattern), drop `security-tools` stage and `FROM rust:...` line, remove `COPY --from=security-tools` for shellfirm, remove `TODO(shellfirm-aarch64-linux-binary)` marker in Dockerfile.
+- **Done when:** shellfirm release at or after fix publishes `shellfirm-v<ver>-aarch64-linux.tar.xz` (or equivalent name) alongside existing x86_64 tarball. Replace cargo install step with TARGETARCH-aware curl + `tar -xJ` block (mirror tirith pattern), drop `security-tools` stage and `FROM rust:...` line, remove `COPY --from=security-tools` for shellfirm, remove `TODO(shellfirm-aarch64-linux-binary)` marker in Dockerfile.
 
 ### Internal cleanups
 
 #### `lychee-no-files-warn` — investigate "No files found for this input source" in deploy link check
 
-- **What:** deploy job's `Check deployed docs links` step in [`.github/workflows/docs.yml`](.github/workflows/docs.yml) emits a one-line `[WARN] [Full Github Actions output]: No files found for this input source` from the lychee binary, then continues and reports `Total 4703 / Successful 4703 / Errors 0`. Identify which of the 46 sitemap input URLs triggers the warn and either fix the cause or filter the warn so signal is clean.
-- **Why:** warn means at least one of the 46 deployed pages fed via `--files-from lychee/deployed-pages.txt` resolved to zero extractable links. Tolerated now because rest of run is green, but if a future regression causes 5 inputs to silently skip we wouldn't notice — warn count is the only tell. Clean run gives a real signal every deployed page was actually scanned.
+- **What:** deploy job's `Check deployed docs links` step in [`.github/workflows/docs.yml`](.github/workflows/docs.yml) emits one-line `[WARN] [Full Github Actions output]: No files found for this input source` from lychee binary, then continues and reports `Total 4703 / Successful 4703 / Errors 0`. Identify which of 46 sitemap input URLs triggers warn; fix cause or filter warn so signal clean.
+- **Why:** warn means at least one of 46 deployed pages fed via `--files-from lychee/deployed-pages.txt` resolved to zero extractable links. Tolerated now since rest of run green, but if future regression makes 5 inputs silently skip, no notice — warn count only tell. Clean run = real signal every deployed page actually scanned.
 - **Tracking:**
   - First observed in [run 24940918362](https://github.com/jackin-project/jackin/actions/runs/24940918362) on `main` after [`34bb396`](https://github.com/jackin-project/jackin/commit/34bb396) ([#176](https://github.com/jackin-project/jackin/pull/176) merge).
-  - Warn string emitted by lychee binary (`strings lychee | grep "No files found"` confirms in v0.24.1), not the lychee-action wrapper.
-  - lychee source — search the literal string in <https://github.com/lycheeverse/lychee> to find the emitter and exact condition.
+  - Warn string emitted by lychee binary (`strings lychee | grep "No files found"` confirms in v0.24.1), not lychee-action wrapper.
+  - lychee source — search literal string in <https://github.com/lycheeverse/lychee> to find emitter and exact condition.
 - **Last verified:** 2026-04-25 — present on every `main` push since #176 merged.
 - **Hypotheses to check (in order):**
-  1. **Redirected page returns non-HTML.** Same run reports 9 redirects. One redirected URL might land on a page lychee can't extract from (e.g., raw text, unusual content-type).
-  2. **Sitemap entry yielding zero anchors.** Some Starlight pages — landing-style or auto-generated — render with no `<a href>` in body. Identify by running `curl <url> | grep -c '<a href' ` for each of the 46 URLs and finding the zero.
-  3. **Spurious empty argument.** If the shell `run:` command produces an extra empty token on arg expansion, lychee treats it as an empty input source and warns.
+  1. **Redirected page returns non-HTML.** Same run reports 9 redirects. One redirected URL might land on page lychee can't extract from (e.g., raw text, unusual content-type).
+  2. **Sitemap entry yielding zero anchors.** Some Starlight pages — landing-style or auto-generated — render with no `<a href>` in body. Identify by running `curl <url> | grep -c '<a href' ` for each of 46 URLs, find the zero.
+  3. **Spurious empty argument.** If shell `run:` command produces extra empty token on arg expansion, lychee treats as empty input source and warns.
 - **How to reproduce:**
   ```sh
   curl -fsSL https://jackin.tailrocks.com/sitemap-0.xml \

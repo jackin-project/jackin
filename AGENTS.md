@@ -6,11 +6,11 @@ Primary branch: `main`.
 
 ## Hard rules (always-on)
 
-- **Stay on active branch.** Never commit to `main`; propose branch, get operator confirmation. One PR per session = one branch. → [CONTRIBUTING.md](CONTRIBUTING.md)
+- **Stay on active branch.** Never commit `main`; propose branch, get operator confirm. One PR per session = one branch. → [CONTRIBUTING.md](CONTRIBUTING.md)
 - **No silent host writes.** No dotfiles, `.git`, `~/.config/gh`, `~/.gitconfig`, host remotes — without explicit opt-in surfaced in launch summary. Reads OK. → [HOST_AND_CONTAINER.md](HOST_AND_CONTAINER.md)
 - **Container paths under `/jackin/` only.** No FHS roots (`/run`, `/var`, `/opt`, `/etc`, `/tmp/jackin*`). → [HOST_AND_CONTAINER.md](HOST_AND_CONTAINER.md)
 - **Brand: `jackin'`** in prose (lowercase, trailing apostrophe). Code/paths/commands/env vars: no apostrophe. → [RULES.md](RULES.md)
-- **Every commit: sign with `-s`, push immediately.** → [CONTRIBUTING.md](CONTRIBUTING.md)
+- **Every commit: sign `-s`, push immediately.** → [CONTRIBUTING.md](CONTRIBUTING.md)
 - **Pre-release: breaking changes OK, no migration shims.** Exception: `config.toml`, per-workspace files, `jackin.role.toml` versioned; schema changes ship 5 artifacts under one version bump per PR. → [PRERELEASE.md](PRERELEASE.md)
 
 ## Commits & Branching
@@ -19,12 +19,12 @@ Primary branch: `main`.
 
 ### Stay on active branch
 
-**Never create new branch when existing feature branch or open PR is in scope.**
+**Never create new branch when existing feature branch or open PR in scope.**
 
-- Session start: `git branch --show-current` + `gh pr list --head <branch>`. Open PR → all work on that branch.
-- On `main`: propose `<prefix/name>`, ask: "This is on `main`. I suggest `<branch>`. Should I create it?" Wait for confirmation.
+- Session start: `git branch --show-current` + `gh pr list --head <branch>`. Open PR → all work that branch.
+- On `main`: propose `<prefix/name>`, ask: "This is on `main`. I suggest `<branch>`. Should I create it?" Wait for confirm.
 - Work feels like different branch: ask first. Default: stay on active branch.
-- Never push to remote branch other than what local tracks. Local `pr-435` vs remote `fix/foo` → `git push origin HEAD:<remote-branch>`. Don't create extra remote branches.
+- Never push to remote branch other than what local tracks. Local `pr-435` vs remote `fix/foo` → `git push origin HEAD:<remote-branch>`. No extra remote branches.
 
 ### Force pushes
 
@@ -61,7 +61,7 @@ Rust workspace specifics → `AGENTS.md` under `crates/`.
 Read [PULL_REQUESTS.md](PULL_REQUESTS.md) before opening/iterating/merging. Pre-merge gates on **every** PR:
 
 - **Roadmap freshness** — update roadmap item status when change ships/advances/defers.
-- **Docs as source of truth** — update user-facing + contributor-facing docs in same PR.
+- **Docs as source of truth** — update user-facing + contributor-facing docs same PR.
 
 Agent PR extras (base branch, force-push, CI-green, squash format) → `.github/AGENTS.md`.
 
@@ -81,7 +81,7 @@ Read [TUI Design](docs/content/docs/reference/tui/index.mdx) before any TUI chan
 | Host console | `src/console/tui/` |
 | Lookbook | `crates/jackin-tui-lookbook/src/` |
 
-Cross-cutting TUI behaviour (focusability, navigation, color, modal sizing, hints) → matching page under `docs/content/docs/reference/tui/` in same PR.
+Cross-cutting TUI behaviour (focusability, navigation, color, modal sizing, hints) → matching page under `docs/content/docs/reference/tui/` same PR.
 
 ## Topic file index
 
