@@ -60,8 +60,9 @@ exclude = [
   # Medium serves this public stack write-up to browsers but returns HTTP 403 to
   # lychee from GitHub Actions.
   "https://paul-hackenberger\\.medium\\.com/the-ultimate-token-saving-stack-rtk-caveman-and-tokensave-163badadd9ec",
-  # graemerocher/multicode is a private repository; blob links are remapped to
-  # the GitHub Contents API which returns 403 from GitHub Actions.
+  # graemerocher/multicode has many blob links (≥48) that remap to GitHub
+  # Contents API calls; the volume triggers GitHub's secondary rate limit
+  # (403) even with the api.github.com host throttle below.
   "https://api\\.github\\.com/repos/graemerocher/multicode/",
   # qdrant.tech returns connection failures from the GitHub Actions network.
   "https://qdrant\\.tech/",
@@ -88,5 +89,11 @@ include_mail = true
 scheme = ["https", "http", "file", "mailto"]
 
 [hosts."github.com"]
+concurrency = 4
+request_interval = "500ms"
+
+# blob→API remaps hit api.github.com; mirror the same throttle so the
+# GitHub secondary rate limit is not triggered by the default concurrency=32.
+[hosts."api.github.com"]
 concurrency = 4
 request_interval = "500ms"
