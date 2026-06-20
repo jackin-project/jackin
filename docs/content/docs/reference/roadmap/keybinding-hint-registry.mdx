@@ -378,7 +378,7 @@ KeyBinding {
 After items A–D land, audit every hint builder for remaining bare `HintSpan::Key(…)` literals without keymap backing. Primary targets:
 
 - <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" /> — all public hint builder functions; confirm none remain without derivation or `// UNREGISTERABLE` annotation
-- <RepoFile path="crates/jackin-launch/src/tui/" /> — confirm all hint builders still call keymap-derived spans (currently correct; verify no regression was introduced)
+- <RepoFile path="crates/jackin-launch/src/tui/components/prompts.rs" /> — confirm all hint builders still call keymap-derived spans (currently correct; verify no regression was introduced)
 - <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" /> — confirm all hint builders still call keymap-derived spans (currently correct; verify no regression was introduced)
 
 **Acceptance criteria.**
