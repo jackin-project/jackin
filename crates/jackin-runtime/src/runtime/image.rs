@@ -1996,22 +1996,25 @@ pub(super) async fn build_agent_image(
     // `build_result` and only `?`-propagate after calling `end()`.
     jackin_launch::build_log::begin();
     jackin_diagnostics::active_timing_started("derived image", "docker_build", None);
-    let build_result = runner
-        .run(
-            "docker",
-            &build_args,
-            None,
-            &RunOptions {
-                capture_stderr: true,
-                capture_stdout: true,
-                null_stdin: true,
-                stream_captured_output: should_stream_build_output(debug),
-                tee_to_build_log: true,
-                extra_env: docker_build_env(github_token.is_some()),
-                ..RunOptions::default()
-            },
-        )
-        .await;
+    let build_options = RunOptions {
+        capture_stderr: true,
+        capture_stdout: true,
+        null_stdin: true,
+        stream_captured_output: should_stream_build_output(debug),
+        tee_to_build_log: true,
+        extra_env: docker_build_env(github_token.is_some()),
+        ..RunOptions::default()
+    };
+    let build_future = runner.run("docker", &build_args, None, &build_options);
+    // The Docker build is the slowest foreground step, so its await must race
+    // the launch cancel token — otherwise Ctrl+C / Exit during the build is
+    // ignored until docker finishes (the operator sees the modal hang). With a
+    // rich surface, `while_waiting` returns `Err(LaunchCancelled)` the instant
+    // the token fires; headless launches just await.
+    let build_result = match progress.as_deref() {
+        Some(p) => p.while_waiting(build_future).await,
+        None => build_future.await,
+    };
     jackin_launch::build_log::end();
     jackin_diagnostics::active_timing_done(
         "derived image",
