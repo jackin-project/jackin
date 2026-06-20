@@ -208,5 +208,138 @@ pub(crate) static PREFIX_COMMAND_KEYMAP: Keymap<PrefixCommand> = Keymap::new(&[
     },
 ]);
 
+// ── Dialog: filterable list ───────────────────────────────────────────────────
+
+/// Actions for the type-to-filter list dialogs (command palette, agent picker,
+/// close-target picker, split-direction picker, provider picker).
+///
+/// Printable `Char` input is intentionally absent from the table — it builds the
+/// filter and is handled by the dispatch site's `printable_filter_char`
+/// fallthrough (the `None` arm), exactly like the editor's `CheckImmediate`
+/// wildcard. The differing hint *labels* ("select" vs "launch") and the
+/// presence/absence of the "type filter" text live at the hint-builder call
+/// site; only the key glyphs derive from this table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FilterListAction {
+    NavigateUp,
+    NavigateDown,
+    Confirm,
+    FilterBackspace,
+    Dismiss,
+}
+
+pub(crate) static FILTER_LIST_KEYMAP: Keymap<FilterListAction> = Keymap::new(&[
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Up)],
+        action: FilterListAction::NavigateUp,
+        hint: Some("navigate"),
+        visibility: Visibility::Shown,
+        glyph: Some("↑↓"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Down)],
+        action: FilterListAction::NavigateDown,
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        action: FilterListAction::Confirm,
+        hint: Some("select"),
+        visibility: Visibility::Shown,
+        glyph: Some("↵"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Backspace)],
+        action: FilterListAction::FilterBackspace,
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Esc),
+            KeyChord::ctrl(LogicalKey::Char('c')),
+            KeyChord::ctrl(LogicalKey::Char('q')),
+        ],
+        action: FilterListAction::Dismiss,
+        hint: Some("cancel"),
+        visibility: Visibility::Shown,
+        glyph: Some("Ctrl-C/Esc"),
+    },
+]);
+
+// ── Dialog: rename tab ────────────────────────────────────────────────────────
+
+/// Actions for the rename-tab text-input dialog.
+///
+/// Printable `Char` input is absent — it falls through (the `None` arm) to
+/// `TextField` insertion. Backspace is `Internal`: it edits the field rather
+/// than being advertised.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RenameAction {
+    Save,
+    FieldBackspace,
+    Dismiss,
+}
+
+pub(crate) static RENAME_KEYMAP: Keymap<RenameAction> = Keymap::new(&[
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        action: RenameAction::Save,
+        hint: Some("save"),
+        visibility: Visibility::Shown,
+        glyph: Some("↵"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Backspace)],
+        action: RenameAction::FieldBackspace,
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Esc),
+            KeyChord::ctrl(LogicalKey::Char('c')),
+            KeyChord::ctrl(LogicalKey::Char('q')),
+        ],
+        action: RenameAction::Dismiss,
+        hint: Some("cancel"),
+        visibility: Visibility::Shown,
+        glyph: Some("Ctrl-C/Esc"),
+    },
+]);
+
+// ── Dialog: read-only dismiss ─────────────────────────────────────────────────
+
+/// Single dismiss action for the read-only info dialogs (`ContainerInfo`,
+/// `GitHubContext`).
+///
+/// The accept-set mirrors the historical `is_dismiss_key`: Esc, `q`/`Q`,
+/// Ctrl+C, Ctrl+Q, and Backspace (DEL `0x7f` / Ctrl+H `0x08`, both mapped to
+/// `LogicalKey::Backspace`). The advertised glyph stays `"q/Esc"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReadOnlyDismissAction {
+    Dismiss,
+}
+
+pub(crate) static READ_ONLY_DISMISS_KEYMAP: Keymap<ReadOnlyDismissAction> =
+    Keymap::new(&[KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Esc),
+            KeyChord::plain(LogicalKey::Char('q')),
+            KeyChord::plain(LogicalKey::Char('Q')),
+            KeyChord::ctrl(LogicalKey::Char('c')),
+            KeyChord::ctrl(LogicalKey::Char('q')),
+            KeyChord::plain(LogicalKey::Backspace),
+        ],
+        action: ReadOnlyDismissAction::Dismiss,
+        hint: Some("dismiss"),
+        visibility: Visibility::Shown,
+        glyph: Some("q/Esc"),
+    }]);
+
 #[cfg(test)]
 mod tests;

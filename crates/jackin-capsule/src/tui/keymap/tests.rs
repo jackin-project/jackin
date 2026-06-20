@@ -1,4 +1,7 @@
-use super::PREFIX_COMMAND_KEYMAP;
+use super::{
+    FILTER_LIST_KEYMAP, FilterListAction, PREFIX_COMMAND_KEYMAP, READ_ONLY_DISMISS_KEYMAP,
+    RENAME_KEYMAP, ReadOnlyDismissAction, RenameAction,
+};
 use crate::tui::input::{ArrowDir, PrefixCommand};
 use jackin_tui::components::{KeyChord, LogicalKey};
 use jackin_tui::keymap::raw_bytes_to_chord;
@@ -60,4 +63,97 @@ fn prefix_keymap_has_shown_hints_for_primary_commands() {
     assert!(keys.contains(&"l"), "must show l: {keys:?}");
     assert!(keys.contains(&"c"), "must show c: {keys:?}");
     assert!(keys.contains(&"x"), "must show x: {keys:?}");
+}
+
+#[test]
+fn filter_list_keymap_dispatches_every_advertised_chord() {
+    let cases: &[(&[u8], FilterListAction)] = &[
+        (b"\x1b[A", FilterListAction::NavigateUp),
+        (b"\x1bOA", FilterListAction::NavigateUp),
+        (b"\x1b[B", FilterListAction::NavigateDown),
+        (b"\x1bOB", FilterListAction::NavigateDown),
+        (b"\r", FilterListAction::Confirm),
+        (b"\n", FilterListAction::Confirm),
+        (b"\x7f", FilterListAction::FilterBackspace),
+        (b"\x08", FilterListAction::FilterBackspace),
+        (b"\x1b", FilterListAction::Dismiss),
+        (b"\x03", FilterListAction::Dismiss),
+        (b"\x11", FilterListAction::Dismiss),
+    ];
+    for (raw, expected) in cases {
+        let chord = raw_bytes_to_chord(raw).unwrap_or_else(|| panic!("no chord for {raw:?}"));
+        assert_eq!(
+            FILTER_LIST_KEYMAP.dispatch(chord),
+            Some(*expected),
+            "wrong action for {raw:?}"
+        );
+    }
+    // Printable input is not in the table — it falls through to the
+    // caller's filter-building path.
+    for raw in [&b"q"[..], b"a", b" ", b":"] {
+        let chord = raw_bytes_to_chord(raw).unwrap_or_else(|| panic!("no chord for {raw:?}"));
+        assert_eq!(
+            FILTER_LIST_KEYMAP.dispatch(chord),
+            None,
+            "printable {raw:?} must not dispatch"
+        );
+    }
+}
+
+#[test]
+fn rename_keymap_dispatches_every_advertised_chord() {
+    let cases: &[(&[u8], RenameAction)] = &[
+        (b"\r", RenameAction::Save),
+        (b"\n", RenameAction::Save),
+        (b"\x7f", RenameAction::FieldBackspace),
+        (b"\x08", RenameAction::FieldBackspace),
+        (b"\x1b", RenameAction::Dismiss),
+        (b"\x03", RenameAction::Dismiss),
+        (b"\x11", RenameAction::Dismiss),
+    ];
+    for (raw, expected) in cases {
+        let chord = raw_bytes_to_chord(raw).unwrap_or_else(|| panic!("no chord for {raw:?}"));
+        assert_eq!(
+            RENAME_KEYMAP.dispatch(chord),
+            Some(*expected),
+            "wrong action for {raw:?}"
+        );
+    }
+    for raw in [&b"a"[..], b"q", b" "] {
+        let chord = raw_bytes_to_chord(raw).unwrap_or_else(|| panic!("no chord for {raw:?}"));
+        assert_eq!(
+            RENAME_KEYMAP.dispatch(chord),
+            None,
+            "printable {raw:?} must not dispatch"
+        );
+    }
+}
+
+#[test]
+fn read_only_dismiss_keymap_accepts_historical_dismiss_set() {
+    for raw in [
+        &b"\x1b"[..], // Esc
+        b"q",
+        b"Q",
+        b"\x03", // Ctrl+C
+        b"\x11", // Ctrl+Q
+        b"\x7f", // Backspace (DEL)
+        b"\x08", // Ctrl+H / older Backspace
+    ] {
+        let chord = raw_bytes_to_chord(raw).unwrap_or_else(|| panic!("no chord for {raw:?}"));
+        assert_eq!(
+            READ_ONLY_DISMISS_KEYMAP.dispatch(chord),
+            Some(ReadOnlyDismissAction::Dismiss),
+            "{raw:?} must dismiss read-only dialog"
+        );
+    }
+    // Non-dismiss keys must not resolve.
+    for raw in [&b"a"[..], b"\r", b"\x1b[A"] {
+        let chord = raw_bytes_to_chord(raw).unwrap_or_else(|| panic!("no chord for {raw:?}"));
+        assert_eq!(
+            READ_ONLY_DISMISS_KEYMAP.dispatch(chord),
+            None,
+            "{raw:?} must not dismiss read-only dialog"
+        );
+    }
 }

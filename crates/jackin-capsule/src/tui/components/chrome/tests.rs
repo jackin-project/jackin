@@ -172,10 +172,14 @@ fn truncate_spans_all_fit() {
 #[test]
 fn truncate_spans_first_group_too_wide_returns_empty() {
     // A single span wider than max_cols → nothing rendered.
-    let spans: &[jackin_tui::HintSpan<'_>] =
-        &[jackin_tui::HintSpan::Key("a very long key that exceeds the narrow terminal")];
+    let spans: &[jackin_tui::HintSpan<'_>] = &[jackin_tui::HintSpan::Key(
+        "a very long key that exceeds the narrow terminal",
+    )];
     let result = truncate_spans_to_cols(spans, 5);
-    assert!(result.is_empty(), "first-group overflow must return empty slice");
+    assert!(
+        result.is_empty(),
+        "first-group overflow must return empty slice"
+    );
 }
 
 #[test]
@@ -195,7 +199,11 @@ fn truncate_spans_keeps_fitting_groups_drops_overflowing() {
     let two_groups = jackin_tui::hint_row_cols(&spans[..5]); // A short GroupSep B short
     let result = truncate_spans_to_cols(spans, two_groups + 2);
     // Should keep groups 1+2 (spans[0..5]); trailing GroupSep is stripped.
-    assert!(result.len() <= 5, "overflow group must be dropped: got {} spans", result.len());
+    assert!(
+        result.len() <= 5,
+        "overflow group must be dropped: got {} spans",
+        result.len()
+    );
     assert!(
         !matches!(result.last(), Some(jackin_tui::HintSpan::GroupSep)),
         "trailing GroupSep must be stripped"

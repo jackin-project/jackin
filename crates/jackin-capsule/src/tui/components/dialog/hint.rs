@@ -2,6 +2,10 @@
 
 use jackin_tui::HintSpan;
 
+use crate::tui::keymap::{
+    FILTER_LIST_KEYMAP, FilterListAction, READ_ONLY_DISMISS_KEYMAP, RENAME_KEYMAP, RenameAction,
+};
+
 /// Return the appropriate hint spans for the main view (no dialog open).
 ///
 /// When `prefix_awaiting` is true the operator has pressed the prefix key and
@@ -61,53 +65,50 @@ pub(crate) fn main_view_hint(
     }
 }
 
-pub(super) const PALETTE_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↑↓"),
-    HintSpan::Text("navigate"),
-    HintSpan::GroupSep,
-    HintSpan::Text("type filter"),
-    HintSpan::GroupSep,
-    HintSpan::Key("↵"),
-    HintSpan::Text("select"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Ctrl-C/Esc"),
-    HintSpan::Text("cancel"),
-];
+/// Shared footer for the filterable list dialogs. Every key glyph derives from
+/// [`FILTER_LIST_KEYMAP`]; the call site supplies the contextual confirm label
+/// (`"select"` vs `"launch"`) and whether the "type filter" group appears
+/// (`ProviderPicker` has no filter input). Navigate keeps the keymap's own
+/// `"navigate"` label; cancel keeps its `"cancel"` label.
+fn filter_list_hint(confirm_label: &'static str, type_filter: bool) -> Vec<HintSpan<'static>> {
+    let mut spans = Vec::with_capacity(10);
+    FILTER_LIST_KEYMAP.push_spans_for(FilterListAction::NavigateUp, &mut spans);
+    if type_filter {
+        spans.push(HintSpan::GroupSep);
+        spans.push(HintSpan::Text("type filter"));
+    }
+    spans.push(HintSpan::GroupSep);
+    spans.push(HintSpan::Key(
+        FILTER_LIST_KEYMAP.glyph_for(FilterListAction::Confirm),
+    ));
+    spans.push(HintSpan::Text(confirm_label));
+    spans.push(HintSpan::GroupSep);
+    FILTER_LIST_KEYMAP.push_spans_for(FilterListAction::Dismiss, &mut spans);
+    spans
+}
 
-pub(super) const PICKER_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↑↓"),
-    HintSpan::Text("navigate"),
-    HintSpan::GroupSep,
-    HintSpan::Text("type filter"),
-    HintSpan::GroupSep,
-    HintSpan::Key("↵"),
-    HintSpan::Text("launch"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Ctrl-C/Esc"),
-    HintSpan::Text("cancel"),
-];
+pub(super) fn palette_hint() -> Vec<HintSpan<'static>> {
+    filter_list_hint("select", true)
+}
 
-/// Provider picker has no filter input — dedicated hint without "type filter".
-pub(super) const PROVIDER_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↑↓"),
-    HintSpan::Text("navigate"),
-    HintSpan::GroupSep,
-    HintSpan::Key("↵"),
-    HintSpan::Text("select"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Ctrl-C/Esc"),
-    HintSpan::Text("cancel"),
-];
+pub(super) fn picker_hint() -> Vec<HintSpan<'static>> {
+    filter_list_hint("launch", true)
+}
 
-pub(super) const RENAME_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↵"),
-    HintSpan::Text("save"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Ctrl-C/Esc"),
-    HintSpan::Text("cancel"),
-    HintSpan::GroupSep,
-    HintSpan::Text("empty = auto name"),
-];
+/// Provider picker has no filter input — hint without the "type filter" group.
+pub(super) fn provider_hint() -> Vec<HintSpan<'static>> {
+    filter_list_hint("select", false)
+}
+
+pub(super) fn rename_hint() -> Vec<HintSpan<'static>> {
+    let mut spans = Vec::with_capacity(7);
+    RENAME_KEYMAP.push_spans_for(RenameAction::Save, &mut spans);
+    spans.push(HintSpan::GroupSep);
+    RENAME_KEYMAP.push_spans_for(RenameAction::Dismiss, &mut spans);
+    spans.push(HintSpan::GroupSep);
+    spans.push(HintSpan::Text("empty = auto name"));
+    spans
+}
 
 /// Read-only info-dialog hint: copy key, the *available* scroll axes (per
 /// `axes`, omitted when the body fits), then dismiss — built from the shared
@@ -130,8 +131,9 @@ pub(super) fn info_dialog_hint(
     spans
 }
 
-pub(super) const READ_ONLY_HINT: &[HintSpan<'static>] =
-    &[HintSpan::Key("q/Esc"), HintSpan::Text("dismiss")];
+pub(super) fn read_only_hint() -> Vec<HintSpan<'static>> {
+    READ_ONLY_DISMISS_KEYMAP.hint_spans()
+}
 
 pub(super) fn confirm_hint() -> Vec<HintSpan<'static>> {
     jackin_tui::components::confirm_hint_spans()
