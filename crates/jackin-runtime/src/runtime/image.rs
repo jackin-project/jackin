@@ -547,7 +547,11 @@ fn build_image_recipe_with_construct_image(
         selected_agent: agent.slug().to_owned(),
         selected_agent_install: agent_install_recipe(agent, &selected_install),
         cache_bust: cache_bust.to_owned(),
-        capsule_version: env!("CARGO_PKG_VERSION").to_owned(),
+        // Key on the same SHA-suffixed JACKIN_VERSION the capsule binary is
+        // selected by (capsule_binary::REQUIRED_VERSION), not CARGO_PKG_VERSION:
+        // two non-tag builds share a cargo version but ship different capsule
+        // binaries, so CARGO_PKG_VERSION would reuse a stale capsule on dev builds.
+        capsule_version: capsule_binary::REQUIRED_VERSION.to_owned(),
         hooks_hash: hooks_hash(&cached_repo.repo_dir, validated_repo)?,
         claude_plugin_recipe_hash: claude_plugin_recipe_hash(validated_repo)?,
         host_identity_strategy: HOST_IDENTITY_STRATEGY,
