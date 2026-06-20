@@ -984,8 +984,14 @@ pub(super) async fn launch_role_runtime(
         "pre_attach_exit_check",
         Some(container_name),
     );
-    if let Some(err) =
-        diagnose_premature_exit(docker, runner, container_name, ExitPhase::PreAttach).await
+    if let Some(err) = diagnose_premature_exit(
+        docker,
+        runner,
+        container_name,
+        ExitPhase::PreAttach,
+        Some(&capsule_log_str),
+    )
+    .await
     {
         jackin_diagnostics::active_timing_done("capsule", "pre_attach_exit_check", Some("exited"));
         return Err(err);
@@ -1109,9 +1115,10 @@ async fn diagnose_premature_exit(
     runner: &mut impl CommandRunner,
     container_name: &str,
     phase: ExitPhase,
+    capsule_log_path: Option<&str>,
 ) -> Option<anyhow::Error> {
     let state = docker.inspect_container_state(container_name).await;
-    diagnose_with_state(runner, container_name, &state, phase, None).await
+    diagnose_with_state(runner, container_name, &state, phase, capsule_log_path).await
 }
 
 /// Same diagnostic logic as `diagnose_premature_exit` but with the
@@ -1183,18 +1190,26 @@ async fn diagnose_with_state(
                 ExitPhase::PreAttach => "exited before attach",
                 ExitPhase::PostAttach => "exited during session",
             };
-            let body = logs.as_deref().map_or_else(
-                || {
-                    format!(
-                        "container {container_name} {phase_label} ({reason}) and produced no log output"
-                    )
-                },
-                |text| {
-                    format!(
-                        "container {container_name} {phase_label} ({reason}); last 40 log lines:\n{text}"
-                    )
-                },
-            );
+            let body = if let Some(text) = logs.as_deref() {
+                format!(
+                    "container {container_name} {phase_label} ({reason}); last 40 log lines:\n{text}"
+                )
+            } else if let Some(mux_tail) = capsule_log_path
+                .map(Path::new)
+                .and_then(|path| read_text_tail(path, 40).ok().flatten())
+            {
+                // `docker logs` is empty when the capsule daemon routes its
+                // diagnostics to multiplexer.log rather than stderr. Surface
+                // that file's tail so a pre-attach daemon crash is reported
+                // with its real error instead of an opaque "no log output".
+                format!(
+                    "container {container_name} {phase_label} ({reason}); docker logs empty — last 40 multiplexer.log lines:\n{mux_tail}"
+                )
+            } else {
+                format!(
+                    "container {container_name} {phase_label} ({reason}) and produced no log output"
+                )
+            };
             // Emit a structured container exit event with the crash evidence so
             // the run JSONL is self-contained (Defect 41).
             if let Some(run) = jackin_diagnostics::active_run() {
