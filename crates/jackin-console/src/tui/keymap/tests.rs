@@ -1,14 +1,13 @@
 use super::{
     EDITOR_CONTENT_KEYMAP, EDITOR_GENERAL_RENAME_KEYMAP, EDITOR_GENERAL_TOGGLE_KEYMAP,
     EDITOR_GENERAL_WORKDIR_KEYMAP, EDITOR_GLOBAL_KEYMAP, EDITOR_ROLE_NEW_KEYMAP,
-    EDITOR_TAB_BAR_KEYMAP, INLINE_PICKER_SHELL_KEYMAP, PREVIEW_PANE_KEYMAP,
+    EDITOR_TAB_BAR_KEYMAP, EditorContentAction, EditorGlobalAction, EditorTabBarAction,
+    INLINE_PICKER_SHELL_KEYMAP, InlinePickerShellAction, PREVIEW_PANE_KEYMAP, PreviewPaneAction,
     SETTINGS_CONTENT_SHELL_KEYMAP, SETTINGS_ENV_TAB_KEYMAP, SETTINGS_GENERAL_TAB_KEYMAP,
     SETTINGS_GENERAL_TOGGLE_KEYMAP, SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP, SETTINGS_TAB_BAR_KEYMAP,
-    SETTINGS_TRUST_TAB_KEYMAP, SETTINGS_TRUST_TOGGLE_KEYMAP, WORKSPACE_LIST_KEYMAP,
-    EditorContentAction, EditorGlobalAction, EditorTabBarAction, InlinePickerShellAction,
-    PreviewPaneAction, SettingsContentShellAction, SettingsEnvTabAction, SettingsGeneralTabAction,
-    SettingsGlobalMountsTabAction, SettingsTabBarAction, SettingsTrustTabAction,
-    WorkspaceListAction,
+    SETTINGS_TRUST_TAB_KEYMAP, SETTINGS_TRUST_TOGGLE_KEYMAP, SettingsContentShellAction,
+    SettingsEnvTabAction, SettingsGeneralTabAction, SettingsGlobalMountsTabAction,
+    SettingsTabBarAction, SettingsTrustTabAction, WORKSPACE_LIST_KEYMAP, WorkspaceListAction,
 };
 use jackin_tui::components::{KeyChord, LogicalKey};
 
@@ -17,7 +16,10 @@ use jackin_tui::components::{KeyChord, LogicalKey};
 #[test]
 fn workspace_list_keymap_nav_and_vim_aliases() {
     use WorkspaceListAction::*;
-    assert_eq!(WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Up)), Some(NavigateUp));
+    assert_eq!(
+        WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Up)),
+        Some(NavigateUp)
+    );
     assert_eq!(
         WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Down)),
         Some(NavigateDown)
@@ -109,7 +111,10 @@ fn workspace_list_keymap_glyphs_match_footer_literals() {
 #[test]
 fn preview_pane_keymap_dispatch_and_aliases() {
     use PreviewPaneAction::*;
-    assert_eq!(PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Up)), Some(NavigateUp));
+    assert_eq!(
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Up)),
+        Some(NavigateUp)
+    );
     assert_eq!(
         PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Down)),
         Some(NavigateDown)
@@ -122,10 +127,22 @@ fn preview_pane_keymap_dispatch_and_aliases() {
         PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('j'))),
         Some(NavigateDown)
     );
-    assert_eq!(PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Enter)), Some(Attach));
-    assert_eq!(PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Esc)), Some(Back));
-    assert_eq!(PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Left)), Some(Back));
-    assert_eq!(PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::BackTab)), Some(Back));
+    assert_eq!(
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Enter)),
+        Some(Attach)
+    );
+    assert_eq!(
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Esc)),
+        Some(Back)
+    );
+    assert_eq!(
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Left)),
+        Some(Back)
+    );
+    assert_eq!(
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::BackTab)),
+        Some(Back)
+    );
 }
 
 #[test]
@@ -629,7 +646,10 @@ fn editor_general_rename_hint() {
         .collect::<Vec<_>>()
         .join(" ");
     assert!(text.contains("↵"), "rename keymap must advertise ↵: {text}");
-    assert!(text.contains("rename"), "rename keymap must say rename: {text}");
+    assert!(
+        text.contains("rename"),
+        "rename keymap must say rename: {text}"
+    );
 }
 
 #[test]
@@ -643,7 +663,10 @@ fn editor_general_workdir_hint() {
         })
         .collect::<Vec<_>>()
         .join(" ");
-    assert!(text.contains("working directory"), "workdir keymap must say working directory: {text}");
+    assert!(
+        text.contains("working directory"),
+        "workdir keymap must say working directory: {text}"
+    );
 }
 
 #[test]
@@ -657,7 +680,10 @@ fn editor_general_toggle_hint() {
         })
         .collect::<Vec<_>>()
         .join(" ");
-    assert!(text.contains("toggle"), "toggle keymap must say toggle: {text}");
+    assert!(
+        text.contains("toggle"),
+        "toggle keymap must say toggle: {text}"
+    );
 }
 
 #[test]
@@ -671,8 +697,14 @@ fn editor_role_new_hint() {
         })
         .collect::<Vec<_>>()
         .join(" ");
-    assert!(text.contains("↵/A"), "role new keymap must advertise ↵/A: {text}");
-    assert!(text.contains("load role"), "role new keymap must say load role: {text}");
+    assert!(
+        text.contains("↵/A"),
+        "role new keymap must advertise ↵/A: {text}"
+    );
+    assert!(
+        text.contains("load role"),
+        "role new keymap must say load role: {text}"
+    );
 }
 
 #[test]
@@ -686,7 +718,10 @@ fn settings_general_toggle_hint() {
         })
         .collect::<Vec<_>>()
         .join(" ");
-    assert!(text.contains("toggle"), "settings general toggle keymap: {text}");
+    assert!(
+        text.contains("toggle"),
+        "settings general toggle keymap: {text}"
+    );
 }
 
 #[test]

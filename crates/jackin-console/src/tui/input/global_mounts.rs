@@ -16,14 +16,14 @@ use crate::tui::components::auth_panel::{
     auth_source_picker_state, generated_token_op_item_name, generated_token_source_picker_state,
 };
 use crate::tui::components::file_browser::page_rows_for_modal;
-use crate::tui::mount_display::settings_global_config_mounts_content_width_with_cache;
-use crate::tui::screens::settings::update as settings_update;
 use crate::tui::keymap::{
     SETTINGS_CONTENT_SHELL_KEYMAP, SETTINGS_ENV_TAB_KEYMAP, SETTINGS_GENERAL_TAB_KEYMAP,
     SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP, SETTINGS_TAB_BAR_KEYMAP, SETTINGS_TRUST_TAB_KEYMAP,
     SettingsContentShellAction, SettingsEnvTabAction, SettingsGeneralTabAction,
     SettingsGlobalMountsTabAction, SettingsTabBarAction, SettingsTrustTabAction,
 };
+use crate::tui::mount_display::settings_global_config_mounts_content_width_with_cache;
+use crate::tui::screens::settings::update as settings_update;
 use crate::tui::screens::settings::update::{
     GlobalMountAddFinalizeApplyPlan, GlobalMountAddTextApplyPlan, GlobalMountEditTextApplyPlan,
     GlobalMountGithubOpenPlan, GlobalMountRolePickerCommitPlan, GlobalMountScopePickerCommitPlan,
@@ -86,14 +86,20 @@ pub fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key: KeyEv
             Some(SettingsTabBarAction::PrevTab) => {
                 dispatch_manager(
                     state,
-                    ManagerMessage::MoveSettingsTab { delta: -1, focus_tab_bar: true },
+                    ManagerMessage::MoveSettingsTab {
+                        delta: -1,
+                        focus_tab_bar: true,
+                    },
                 );
                 return;
             }
             Some(SettingsTabBarAction::NextTab) => {
                 dispatch_manager(
                     state,
-                    ManagerMessage::MoveSettingsTab { delta: 1, focus_tab_bar: true },
+                    ManagerMessage::MoveSettingsTab {
+                        delta: 1,
+                        focus_tab_bar: true,
+                    },
                 );
                 return;
             }
@@ -109,7 +115,10 @@ pub fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key: KeyEv
             Some(SettingsContentShellAction::NextTab) => {
                 dispatch_manager(
                     state,
-                    ManagerMessage::MoveSettingsTab { delta: 1, focus_tab_bar: true },
+                    ManagerMessage::MoveSettingsTab {
+                        delta: 1,
+                        focus_tab_bar: true,
+                    },
                 );
                 return;
             }
@@ -328,13 +337,21 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         Some(SettingsEnvTabAction::MoveUp) => {
             dispatch_manager(
                 state,
-                ManagerMessage::MoveSettingsEnvSelection { delta: -1, term: term_size, footer_h },
+                ManagerMessage::MoveSettingsEnvSelection {
+                    delta: -1,
+                    term: term_size,
+                    footer_h,
+                },
             );
         }
         Some(SettingsEnvTabAction::MoveDown) => {
             dispatch_manager(
                 state,
-                ManagerMessage::MoveSettingsEnvSelection { delta: 1, term: term_size, footer_h },
+                ManagerMessage::MoveSettingsEnvSelection {
+                    delta: 1,
+                    term: term_size,
+                    footer_h,
+                },
             );
         }
         Some(SettingsEnvTabAction::Add) => {
@@ -460,25 +477,41 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         Some(SettingsTrustTabAction::MoveUp) => {
             dispatch_manager(
                 state,
-                ManagerMessage::MoveSettingsTrustSelection { delta: -1, term: term_size, footer_h },
+                ManagerMessage::MoveSettingsTrustSelection {
+                    delta: -1,
+                    term: term_size,
+                    footer_h,
+                },
             );
         }
         Some(SettingsTrustTabAction::MoveDown) => {
             dispatch_manager(
                 state,
-                ManagerMessage::MoveSettingsTrustSelection { delta: 1, term: term_size, footer_h },
+                ManagerMessage::MoveSettingsTrustSelection {
+                    delta: 1,
+                    term: term_size,
+                    footer_h,
+                },
             );
         }
         Some(SettingsTrustTabAction::ScrollLeft) => {
             dispatch_manager(
                 state,
-                ManagerMessage::ScrollSettingsTrustHorizontal { delta: -8, term_width, content_width },
+                ManagerMessage::ScrollSettingsTrustHorizontal {
+                    delta: -8,
+                    term_width,
+                    content_width,
+                },
             );
         }
         Some(SettingsTrustTabAction::ScrollRight) => {
             dispatch_manager(
                 state,
-                ManagerMessage::ScrollSettingsTrustHorizontal { delta: 8, term_width, content_width },
+                ManagerMessage::ScrollSettingsTrustHorizontal {
+                    delta: 8,
+                    term_width,
+                    content_width,
+                },
             );
         }
         Some(SettingsTrustTabAction::Toggle) => {

@@ -303,10 +303,7 @@ pub const fn workspace_list_enter_plan(row: ManagerListRow) -> WorkspaceListEnte
 }
 
 #[must_use]
-pub fn workspace_list_key_plan(
-    key: KeyCode,
-    list_scroll_focused: bool,
-) -> WorkspaceListKeyPlan {
+pub fn workspace_list_key_plan(key: KeyCode, list_scroll_focused: bool) -> WorkspaceListKeyPlan {
     use crate::tui::keymap::{WORKSPACE_LIST_KEYMAP, WorkspaceListAction as A};
     use jackin_tui::components::KeyChord;
 

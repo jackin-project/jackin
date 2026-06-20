@@ -97,8 +97,12 @@ fn dispatch_editor_top_level(key: KeyEvent, tab_bar_focused: bool) -> EditorTopL
     match EDITOR_CONTENT_KEYMAP.dispatch(chord) {
         Some(EditorContentAction::MoveUp) => EditorTopLevelKeyPlan::MoveField { delta: -1 },
         Some(EditorContentAction::MoveDown) => EditorTopLevelKeyPlan::MoveField { delta: 1 },
-        Some(EditorContentAction::ScrollLeft) => EditorTopLevelKeyPlan::ScrollHorizontal { delta: -8 },
-        Some(EditorContentAction::ScrollRight) => EditorTopLevelKeyPlan::ScrollHorizontal { delta: 8 },
+        Some(EditorContentAction::ScrollLeft) => {
+            EditorTopLevelKeyPlan::ScrollHorizontal { delta: -8 }
+        }
+        Some(EditorContentAction::ScrollRight) => {
+            EditorTopLevelKeyPlan::ScrollHorizontal { delta: 8 }
+        }
         Some(EditorContentAction::CollapseHeader) => {
             EditorTopLevelKeyPlan::SetRoleHeaderExpanded { expanded: false }
         }
@@ -146,9 +150,7 @@ pub fn handle_editor_key(
     let term_size = state.cached_term_size;
 
     let top_level_plan = match &state.stage {
-        ManagerStage::Editor(editor) => {
-            dispatch_editor_top_level(key, editor.tab_bar_focused())
-        }
+        ManagerStage::Editor(editor) => dispatch_editor_top_level(key, editor.tab_bar_focused()),
         _ => EditorTopLevelKeyPlan::ContinueToTabActions,
     };
     match top_level_plan {

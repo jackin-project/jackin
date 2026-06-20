@@ -19,7 +19,6 @@ use crate::tui::components::progress_rail::render_progress;
 use crate::tui::components::prompts::draw_confirm;
 use crate::tui::components::rain::{RainState, render_rain};
 
-
 #[allow(clippy::too_many_arguments)]
 pub fn render_launch_frame(
     frame: &mut Frame<'_>,
@@ -74,7 +73,11 @@ pub fn render_launch_frame(
 
     render_cockpit_header(frame, rows[0], view, frozen);
     render_body(frame, rows[1], view, frozen, rain);
-    render_hint_bar(frame, chrome.hint, &crate::tui::keymap::cockpit_global_hint_spans());
+    render_hint_bar(
+        frame,
+        chrome.hint,
+        &crate::tui::keymap::cockpit_global_hint_spans(),
+    );
     render_footer(frame, chrome.footer, view, run_id, debug_mode);
 
     if let Some(failure) = &view.failure {

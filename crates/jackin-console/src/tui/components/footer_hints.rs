@@ -1,14 +1,14 @@
 //! Shared footer hint fragments for modal pickers and confirmations.
 
-use jackin_tui::HintSpan;
-use jackin_tui::components::{
-    ScrollAxes, error_popup_hint_spans, save_discard_hint_spans, scroll_hint_spans,
-};
 use crate::tui::keymap::{
     AUTH_EDIT_SOURCE_KEYMAP, AUTH_MANAGE_KEYMAP, EDITOR_GENERAL_RENAME_KEYMAP,
     EDITOR_GENERAL_TOGGLE_KEYMAP, EDITOR_GENERAL_WORKDIR_KEYMAP, EDITOR_ROLE_NEW_KEYMAP,
     PREVIEW_PANE_KEYMAP, PreviewPaneAction, SETTINGS_GENERAL_TOGGLE_KEYMAP,
     SETTINGS_TRUST_TOGGLE_KEYMAP, WORKSPACE_LIST_KEYMAP, WorkspaceListAction,
+};
+use jackin_tui::HintSpan;
+use jackin_tui::components::{
+    ScrollAxes, error_popup_hint_spans, save_discard_hint_spans, scroll_hint_spans,
 };
 use ratatui::layout::Rect;
 
@@ -414,7 +414,10 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
                     HintSpan::Sep,
                 ]);
             }
-            items.extend([HintSpan::Key(g(WorkspaceListAction::NewSession)), HintSpan::Text("new")]);
+            items.extend([
+                HintSpan::Key(g(WorkspaceListAction::NewSession)),
+                HintSpan::Text("new"),
+            ]);
             if is_saved {
                 items.extend([
                     HintSpan::Sep,
