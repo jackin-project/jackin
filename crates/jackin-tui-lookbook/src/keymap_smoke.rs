@@ -1,6 +1,6 @@
 use jackin_tui::components::{KeyChord, LogicalKey};
 
-use crate::{PreviewAction, SidebarAction, PREVIEW_KEYMAP, SIDEBAR_KEYMAP};
+use crate::{PREVIEW_KEYMAP, PreviewAction, SIDEBAR_KEYMAP, SidebarAction};
 
 // ── SIDEBAR ───────────────────────────────────────────────────────────────────
 
@@ -96,7 +96,10 @@ fn sidebar_hints_advertise_navigate_and_quit() {
     assert!(text.contains("quit"), "must advertise quit: {text}");
     assert!(text.contains("Home"), "must advertise Home: {text}");
     // HiddenAlias — j/k must NOT appear in hint bar
-    assert!(!text.contains(" j ") && !text.contains("j/k"), "j/k alias must not appear in hint: {text}");
+    assert!(
+        !text.contains(" j ") && !text.contains("j/k"),
+        "j/k alias must not appear in hint: {text}"
+    );
 }
 
 // ── PREVIEW ───────────────────────────────────────────────────────────────────
@@ -187,8 +190,14 @@ fn preview_hints_advertise_back_and_interact() {
     assert!(text.contains("Esc"), "must advertise Esc back: {text}");
     assert!(text.contains("back to list"), "must label back: {text}");
     assert!(text.contains("↑↓"), "must advertise arrow interact: {text}");
-    assert!(text.contains("J/K"), "must advertise J/K move preview: {text}");
+    assert!(
+        text.contains("J/K"),
+        "must advertise J/K move preview: {text}"
+    );
     assert!(text.contains("PgUp/PgDn"), "must advertise page: {text}");
     // BackTab is HiddenAlias — must NOT appear in hint bar separately
-    assert!(!text.contains("BackTab"), "BackTab alias must not appear in hint: {text}");
+    assert!(
+        !text.contains("BackTab"),
+        "BackTab alias must not appear in hint: {text}"
+    );
 }

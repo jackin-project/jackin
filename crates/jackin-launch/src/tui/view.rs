@@ -15,9 +15,9 @@ use crate::tui::components::failure_dialog::{
     failure_popup_hyperlink_overlay, render_failure_popup,
 };
 use crate::tui::components::footer::render_footer;
-use crate::tui::components::prompts::draw_confirm;
 use crate::tui::components::header::render_cockpit_header;
 use crate::tui::components::progress_rail::render_progress;
+use crate::tui::components::prompts::draw_confirm;
 use crate::tui::components::rain::{RainState, render_rain};
 
 const COCKPIT_HINT: &[HintSpan<'static>] = &[

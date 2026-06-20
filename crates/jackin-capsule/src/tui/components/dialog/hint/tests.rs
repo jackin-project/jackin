@@ -67,8 +67,20 @@ fn prefix_awaiting_shows_cheat_sheet_not_nav_hints() {
         jackin_tui::components::ScrollAxes::default(),
         true,
     ));
-    assert!(hint.contains("space/: palette"), "must advertise palette: {hint}");
-    assert!(hint.contains("n/c new/close"), "must show new/close commands: {hint}");
-    assert!(!hint.contains("click"), "prefix hint must not show mouse nav: {hint}");
-    assert!(!hint.contains("Ctrl+\\"), "prefix hint must not show menu toggle: {hint}");
+    assert!(
+        hint.contains("space/: palette"),
+        "must advertise palette: {hint}"
+    );
+    assert!(
+        hint.contains("n/c new/close"),
+        "must show new/close commands: {hint}"
+    );
+    assert!(
+        !hint.contains("click"),
+        "prefix hint must not show mouse nav: {hint}"
+    );
+    assert!(
+        !hint.contains("Ctrl+\\"),
+        "prefix hint must not show menu toggle: {hint}"
+    );
 }

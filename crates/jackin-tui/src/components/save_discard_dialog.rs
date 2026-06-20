@@ -39,21 +39,30 @@ const SAVE_DISCARD_BINDINGS: &[KeyBinding<SaveDiscardAction>] = &[
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('s')), KeyChord::plain(LogicalKey::Char('S'))],
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('s')),
+            KeyChord::plain(LogicalKey::Char('S')),
+        ],
         action: SaveDiscardAction::Save,
         hint: Some("save"),
         visibility: Visibility::Shown,
         glyph: Some("S"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('d')), KeyChord::plain(LogicalKey::Char('D'))],
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('d')),
+            KeyChord::plain(LogicalKey::Char('D')),
+        ],
         action: SaveDiscardAction::Discard,
         hint: Some("discard"),
         visibility: Visibility::Shown,
         glyph: Some("D"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('c')), KeyChord::plain(LogicalKey::Char('C'))],
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('c')),
+            KeyChord::plain(LogicalKey::Char('C')),
+        ],
         action: SaveDiscardAction::Cancel,
         hint: None,
         visibility: Visibility::HiddenAlias,

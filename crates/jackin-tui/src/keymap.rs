@@ -85,25 +85,37 @@ impl KeyChord {
     /// Chord with no modifiers.
     #[must_use]
     pub const fn plain(key: LogicalKey) -> Self {
-        Self { key, mods: Mods::NONE }
+        Self {
+            key,
+            mods: Mods::NONE,
+        }
     }
 
     /// Chord with Ctrl held.
     #[must_use]
     pub const fn ctrl(key: LogicalKey) -> Self {
-        Self { key, mods: Mods::CTRL }
+        Self {
+            key,
+            mods: Mods::CTRL,
+        }
     }
 
     /// Chord with Alt held.
     #[must_use]
     pub const fn alt(key: LogicalKey) -> Self {
-        Self { key, mods: Mods::ALT }
+        Self {
+            key,
+            mods: Mods::ALT,
+        }
     }
 
     /// Chord with Shift held (typically only meaningful for non-Char keys).
     #[must_use]
     pub const fn shift(key: LogicalKey) -> Self {
-        Self { key, mods: Mods::SHIFT }
+        Self {
+            key,
+            mods: Mods::SHIFT,
+        }
     }
 }
 
@@ -229,9 +241,16 @@ impl<A: Copy + 'static> Keymap<A> {
         self.hint_spans_filtered(|b| self.axis_gate_passes(b, axes))
     }
 
-    fn hint_spans_filtered(&self, filter: impl Fn(&KeyBinding<A>) -> bool) -> Vec<HintSpan<'static>> {
+    fn hint_spans_filtered(
+        &self,
+        filter: impl Fn(&KeyBinding<A>) -> bool,
+    ) -> Vec<HintSpan<'static>> {
         let mut spans: Vec<HintSpan<'static>> = Vec::new();
-        for binding in self.bindings.iter().filter(|b| b.visibility == Visibility::Shown) {
+        for binding in self
+            .bindings
+            .iter()
+            .filter(|b| b.visibility == Visibility::Shown)
+        {
             if !filter(binding) {
                 continue;
             }
@@ -251,9 +270,10 @@ impl<A: Copy + 'static> Keymap<A> {
 
     fn axis_gate_passes(&self, binding: &KeyBinding<A>, axes: ScrollAxes) -> bool {
         let all_vertical = !binding.chords.is_empty()
-            && binding.chords.iter().all(|c| {
-                matches!(c.key, LogicalKey::Up | LogicalKey::Down) && c.mods.is_empty()
-            });
+            && binding
+                .chords
+                .iter()
+                .all(|c| matches!(c.key, LogicalKey::Up | LogicalKey::Down) && c.mods.is_empty());
         let all_horizontal = !binding.chords.is_empty()
             && binding.chords.iter().all(|c| {
                 matches!(c.key, LogicalKey::Left | LogicalKey::Right) && c.mods.is_empty()
@@ -294,9 +314,7 @@ pub fn raw_bytes_to_chord(bytes: &[u8]) -> Option<KeyChord> {
         // Backspace: both the Ctrl+H byte (0x08) and the DEL byte (0x7f)
         [0x08 | 0x7f] => Some(KeyChord::plain(LogicalKey::Backspace)),
         // Printable ASCII (0x20 .. 0x7e, single byte, no modifier)
-        [b] if (0x20..=0x7e).contains(b) => {
-            Some(KeyChord::plain(LogicalKey::Char(*b as char)))
-        }
+        [b] if (0x20..=0x7e).contains(b) => Some(KeyChord::plain(LogicalKey::Char(*b as char))),
         // Remaining single-byte control codes: Ctrl+A (0x01) through Ctrl+Z (0x1A),
         // minus the already-matched 0x08 (Backspace), 0x09 (Tab), 0x0a (LF), 0x0d (CR).
         // Formula: letter = 'a' + (byte - 1).
@@ -323,10 +341,22 @@ pub fn raw_bytes_to_chord(bytes: &[u8]) -> Option<KeyChord> {
         b"\x1b[5~" => Some(KeyChord::plain(LogicalKey::PageUp)),
         b"\x1b[6~" => Some(KeyChord::plain(LogicalKey::PageDown)),
         // CSI with modifier 4 = Alt+Shift — resize pane arrows
-        b"\x1b[1;4A" => Some(KeyChord { key: LogicalKey::Up, mods: Mods::ALT.with_shift() }),
-        b"\x1b[1;4B" => Some(KeyChord { key: LogicalKey::Down, mods: Mods::ALT.with_shift() }),
-        b"\x1b[1;4C" => Some(KeyChord { key: LogicalKey::Right, mods: Mods::ALT.with_shift() }),
-        b"\x1b[1;4D" => Some(KeyChord { key: LogicalKey::Left, mods: Mods::ALT.with_shift() }),
+        b"\x1b[1;4A" => Some(KeyChord {
+            key: LogicalKey::Up,
+            mods: Mods::ALT.with_shift(),
+        }),
+        b"\x1b[1;4B" => Some(KeyChord {
+            key: LogicalKey::Down,
+            mods: Mods::ALT.with_shift(),
+        }),
+        b"\x1b[1;4C" => Some(KeyChord {
+            key: LogicalKey::Right,
+            mods: Mods::ALT.with_shift(),
+        }),
+        b"\x1b[1;4D" => Some(KeyChord {
+            key: LogicalKey::Left,
+            mods: Mods::ALT.with_shift(),
+        }),
         _ => None,
     }
 }
@@ -391,12 +421,12 @@ pub fn chord_glyph(chord: Option<KeyChord>) -> &'static str {
         }
         LogicalKey::Enter => "\u{21b5}", // ↵
         LogicalKey::Esc => "Esc",
-        LogicalKey::Tab => "\u{21e5}",  // ⇥
+        LogicalKey::Tab => "\u{21e5}",     // ⇥
         LogicalKey::BackTab => "\u{21e4}", // ⇤
-        LogicalKey::Up => "\u{2191}",   // ↑
-        LogicalKey::Down => "\u{2193}", // ↓
-        LogicalKey::Left => "\u{2190}", // ←
-        LogicalKey::Right => "\u{2192}", // →
+        LogicalKey::Up => "\u{2191}",      // ↑
+        LogicalKey::Down => "\u{2193}",    // ↓
+        LogicalKey::Left => "\u{2190}",    // ←
+        LogicalKey::Right => "\u{2192}",   // →
         LogicalKey::Home => "Home",
         LogicalKey::End => "End",
         LogicalKey::PageUp => "PgUp",
@@ -436,14 +466,20 @@ pub enum ScrollHintAxis {
 /// `ScrollHintAxis::Vertical`, so the return value has no directional meaning.
 pub static SCROLL_HINT_KEYMAP: Keymap<ScrollHintAxis> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Up), KeyChord::plain(LogicalKey::Down)],
+        chords: &[
+            KeyChord::plain(LogicalKey::Up),
+            KeyChord::plain(LogicalKey::Down),
+        ],
         action: ScrollHintAxis::Vertical,
         hint: Some("scroll"),
         visibility: Visibility::Shown,
         glyph: Some("↑↓/j/k"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Left), KeyChord::plain(LogicalKey::Right)],
+        chords: &[
+            KeyChord::plain(LogicalKey::Left),
+            KeyChord::plain(LogicalKey::Right),
+        ],
         action: ScrollHintAxis::Horizontal,
         hint: Some("scroll"),
         visibility: Visibility::Shown,

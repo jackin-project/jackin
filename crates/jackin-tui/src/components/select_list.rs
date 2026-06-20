@@ -7,13 +7,13 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, HighlightSpacing, ListItem, Paragraph, Widget};
 
-use crate::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
-use crate::{HintSpan, ModalOutcome};
 use crate::components::FilterInput;
 use crate::components::panel::{Panel, PanelFocus};
 use crate::components::scrollable_panel::ScrollableList;
+use crate::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
 use crate::scroll::{cursor_follow_offset, full_cell_thumb, is_scrollable};
 use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN};
+use crate::{HintSpan, ModalOutcome};
 
 const SELECT_LIST_HORIZONTAL_SCROLL_STEP: u16 = 4;
 

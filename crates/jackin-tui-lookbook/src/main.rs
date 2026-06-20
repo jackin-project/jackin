@@ -25,11 +25,11 @@ use crossterm::{
 use interactors::StoryInteraction;
 use jackin_tui::{
     components::{
+        KeyBinding, KeyChord, Keymap, LogicalKey, Visibility,
         hint_bar::render_hint_bar,
         panel::{Panel, PanelFocus, panel_body_area},
         render_brand_header,
         scrollable_panel::max_offset,
-        KeyBinding, KeyChord, Keymap, LogicalKey, Visibility,
     },
     scroll::{self, ScrollSpan},
     theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, PREVIEW_CARD},
@@ -72,21 +72,30 @@ enum PreviewAction {
 
 static SIDEBAR_KEYMAP: Keymap<SidebarAction> = Keymap::new(&[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Down), KeyChord::plain(LogicalKey::Up)],
+        chords: &[
+            KeyChord::plain(LogicalKey::Down),
+            KeyChord::plain(LogicalKey::Up),
+        ],
         action: SidebarAction::Navigate,
         hint: Some("navigate"),
         visibility: Visibility::Shown,
         glyph: Some("↑↓"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('j')), KeyChord::plain(LogicalKey::Char('k'))],
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('j')),
+            KeyChord::plain(LogicalKey::Char('k')),
+        ],
         action: SidebarAction::Navigate,
         hint: None,
         visibility: Visibility::HiddenAlias,
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Home), KeyChord::plain(LogicalKey::End)],
+        chords: &[
+            KeyChord::plain(LogicalKey::Home),
+            KeyChord::plain(LogicalKey::End),
+        ],
         action: SidebarAction::GoToEdge,
         hint: Some("first/last"),
         visibility: Visibility::Shown,
@@ -100,7 +109,10 @@ static SIDEBAR_KEYMAP: Keymap<SidebarAction> = Keymap::new(&[
         glyph: Some("⇥"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('q')), KeyChord::plain(LogicalKey::Esc)],
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('q')),
+            KeyChord::plain(LogicalKey::Esc),
+        ],
         action: SidebarAction::Quit,
         hint: Some("quit"),
         visibility: Visibility::Shown,
@@ -533,7 +545,10 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                 let chord = KeyChord::from(key);
                 match focus {
                     Focus::Preview => {
-                        match PREVIEW_KEYMAP.dispatch(chord).unwrap_or(PreviewAction::Forward) {
+                        match PREVIEW_KEYMAP
+                            .dispatch(chord)
+                            .unwrap_or(PreviewAction::Forward)
+                        {
                             PreviewAction::BackToList => {
                                 focus = Focus::Sidebar;
                             }
@@ -584,8 +599,7 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                                 focus = Focus::Preview;
                             }
                             Some(SidebarAction::Navigate) => {
-                                let down =
-                                    matches!(chord.key, Down) || chord.key == Char('j');
+                                let down = matches!(chord.key, Down) || chord.key == Char('j');
                                 let next = if down {
                                     (selected + 1).min(stories.len().saturating_sub(1))
                                 } else {

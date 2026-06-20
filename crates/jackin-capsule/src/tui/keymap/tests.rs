@@ -25,7 +25,8 @@ fn prefix_keymap_covers_all_prefix_binding_keys() {
     ];
     for (raw, expected) in cases {
         let chord = raw_bytes_to_chord(raw).unwrap_or_else(|| panic!("no chord for {raw:?}"));
-        let action = PREFIX_COMMAND_KEYMAP.dispatch(chord)
+        let action = PREFIX_COMMAND_KEYMAP
+            .dispatch(chord)
             .unwrap_or_else(|| panic!("keymap did not dispatch {raw:?} (chord {chord:?})"));
         assert_eq!(action, *expected, "wrong action for {raw:?}");
     }
@@ -45,10 +46,13 @@ fn prefix_keymap_covers_ctrl_l() {
 #[test]
 fn prefix_keymap_has_shown_hints_for_primary_commands() {
     let spans = PREFIX_COMMAND_KEYMAP.hint_spans();
-    let keys: Vec<&str> = spans.iter().filter_map(|s| match s {
-        jackin_tui::HintSpan::Key(k) => Some(*k),
-        _ => None,
-    }).collect();
+    let keys: Vec<&str> = spans
+        .iter()
+        .filter_map(|s| match s {
+            jackin_tui::HintSpan::Key(k) => Some(*k),
+            _ => None,
+        })
+        .collect();
     // Primary navigation commands must be advertised
     assert!(keys.contains(&"h"), "must show h: {keys:?}");
     assert!(keys.contains(&"j"), "must show j: {keys:?}");

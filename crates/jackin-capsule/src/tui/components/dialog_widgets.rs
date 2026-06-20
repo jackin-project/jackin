@@ -89,8 +89,7 @@ impl Dialog {
             Dialog::ConfirmAction { kind, selected_yes } => {
                 // Exit always renders the shared data-loss state (exit_confirm_state_with_data_loss);
                 // title/message are unused for Exit so we pass empty strings to avoid dead formatting.
-                let data_loss =
-                    matches!(kind, crate::tui::components::dialog::ConfirmKind::Exit);
+                let data_loss = matches!(kind, crate::tui::components::dialog::ConfirmKind::Exit);
                 DialogRatatuiSnapshot::ConfirmAction {
                     title: if data_loss {
                         String::new()

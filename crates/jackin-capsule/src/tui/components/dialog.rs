@@ -714,8 +714,7 @@ impl Dialog {
         // ConfirmAction: dispatch through shared CONFIRM_KEYMAP so key
         // behaviour and hint advertisement stay coupled.
         if let Self::ConfirmAction { kind, selected_yes } = self {
-            let action = raw_bytes_to_chord(key)
-                .and_then(|chord| CONFIRM_KEYMAP.dispatch(chord));
+            let action = raw_bytes_to_chord(key).and_then(|chord| CONFIRM_KEYMAP.dispatch(chord));
             return match action {
                 Some(SharedConfirmAction::Yes) => DialogAction::ConfirmedAction(*kind),
                 Some(SharedConfirmAction::No | SharedConfirmAction::Cancel) => {
@@ -1279,10 +1278,13 @@ impl Dialog {
                 .max(PALETTE_WIDTH),
             // Exit data-loss confirm has two warning notes wider than PALETTE_WIDTH.
             // Use the shared Details width percentage (70%) so the notes don't truncate.
-            Self::ConfirmAction { kind: ConfirmKind::Exit, .. } => (term_cols
-                .saturating_mul(70)
-                / 100)
-                .clamp(PALETTE_WIDTH, term_cols.saturating_sub(4).max(PALETTE_WIDTH)),
+            Self::ConfirmAction {
+                kind: ConfirmKind::Exit,
+                ..
+            } => (term_cols.saturating_mul(70) / 100).clamp(
+                PALETTE_WIDTH,
+                term_cols.saturating_sub(4).max(PALETTE_WIDTH),
+            ),
             _ => PALETTE_WIDTH,
         };
         // Filterable dialogs reserve 2 extra rows: one for the filter

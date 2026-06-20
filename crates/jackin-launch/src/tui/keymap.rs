@@ -98,7 +98,7 @@ pub static BUILD_LOG_KEYMAP: Keymap<BuildLogAction> = Keymap::new(&[
 /// Build the hint spans for the build-log overlay, gating scroll/page on whether
 /// the content overflows vertically (matching `build_log_scroll_axes`).
 pub fn build_log_hint_spans(vertical: bool) -> Vec<HintSpan<'static>> {
-    use jackin_tui::components::{ScrollAxes, SCROLL_HINT_KEYMAP as SCROLL_KEYMAP};
+    use jackin_tui::components::{SCROLL_HINT_KEYMAP as SCROLL_KEYMAP, ScrollAxes};
     let mut spans = SCROLL_KEYMAP.hint_spans_for_axes(ScrollAxes {
         vertical,
         horizontal: false,

@@ -498,6 +498,11 @@ pub fn editor_footer_items(
 }
 
 #[must_use]
+pub fn destructive_confirm_footer_items() -> Vec<HintSpan<'static>> {
+    jackin_tui::components::confirm_hint_spans()
+}
+
+#[must_use]
 pub fn create_prelude_footer_items() -> Vec<HintSpan<'static>> {
     vec![
         HintSpan::Dyn("Create workspace — follow the prompts".to_owned()),
@@ -799,7 +804,10 @@ pub fn pick_list_footer_items(commit_label: &'static str) -> Vec<HintSpan<'stati
 }
 
 #[must_use]
-pub fn filtered_picker_footer_items(include_refresh: bool, include_collapse: bool) -> Vec<HintSpan<'static>> {
+pub fn filtered_picker_footer_items(
+    include_refresh: bool,
+    include_collapse: bool,
+) -> Vec<HintSpan<'static>> {
     let mut items = vec![
         HintSpan::Key("\u{2191}\u{2193}"),
         HintSpan::Text("navigate"),
@@ -956,8 +964,14 @@ pub const fn op_picker_modal_footer_mode(
     }
     match stage {
         OpPickerStage::Section => ModalFooterMode::OpSection,
-        OpPickerStage::Field => ModalFooterMode::FilteredPicker { include_refresh, include_collapse: true },
-        _ => ModalFooterMode::FilteredPicker { include_refresh, include_collapse: false },
+        OpPickerStage::Field => ModalFooterMode::FilteredPicker {
+            include_refresh,
+            include_collapse: true,
+        },
+        _ => ModalFooterMode::FilteredPicker {
+            include_refresh,
+            include_collapse: false,
+        },
     }
 }
 
@@ -994,9 +1008,10 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
         ModalFooterMode::ContainerInfo => container_info_footer_items(ScrollAxes::none()),
         ModalFooterMode::StatusPopup => status_popup_footer_items(),
         ModalFooterMode::OpSection => op_section_footer_items(),
-        ModalFooterMode::FilteredPicker { include_refresh, include_collapse } => {
-            filtered_picker_footer_items(include_refresh, include_collapse)
-        }
+        ModalFooterMode::FilteredPicker {
+            include_refresh,
+            include_collapse,
+        } => filtered_picker_footer_items(include_refresh, include_collapse),
         ModalFooterMode::YesNo => jackin_tui::components::confirm_hint_spans(),
     }
 }

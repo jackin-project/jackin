@@ -15,25 +15,37 @@ fn key(code: KeyCode) -> KeyEvent {
 #[test]
 fn enter_dismisses() {
     let state = ErrorPopupState::new("Save failed", "workspace already exists");
-    assert!(matches!(state.handle_key(key(KeyCode::Enter)), ModalOutcome::Cancel));
+    assert!(matches!(
+        state.handle_key(key(KeyCode::Enter)),
+        ModalOutcome::Cancel
+    ));
 }
 
 #[test]
 fn esc_dismisses() {
     let state = ErrorPopupState::new("Save failed", "workspace already exists");
-    assert!(matches!(state.handle_key(key(KeyCode::Esc)), ModalOutcome::Cancel));
+    assert!(matches!(
+        state.handle_key(key(KeyCode::Esc)),
+        ModalOutcome::Cancel
+    ));
 }
 
 #[test]
 fn o_dismisses() {
     let state = ErrorPopupState::new("Save failed", "workspace already exists");
-    assert!(matches!(state.handle_key(key(KeyCode::Char('o'))), ModalOutcome::Cancel));
+    assert!(matches!(
+        state.handle_key(key(KeyCode::Char('o'))),
+        ModalOutcome::Cancel
+    ));
 }
 
 #[test]
 fn unhandled_key_continues() {
     let state = ErrorPopupState::new("Save failed", "workspace already exists");
-    assert!(matches!(state.handle_key(key(KeyCode::Char('x'))), ModalOutcome::Continue));
+    assert!(matches!(
+        state.handle_key(key(KeyCode::Char('x'))),
+        ModalOutcome::Continue
+    ));
 }
 
 #[test]

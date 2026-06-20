@@ -122,6 +122,5 @@ const TEXT_PROMPT_SKIP_HINT: &[HintSpan<'static>] = &[
     HintSpan::Text("cancel"),
 ];
 
-
 #[cfg(test)]
 mod tests;

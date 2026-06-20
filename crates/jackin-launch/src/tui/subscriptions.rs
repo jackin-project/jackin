@@ -6,8 +6,8 @@ use std::time::Duration;
 use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
-use jackin_tui::components::KeyChord;
 use jackin_tui::ModalOutcome;
+use jackin_tui::components::KeyChord;
 use jackin_tui::components::{ScrollAxes, StatusFooterHover};
 use ratatui::layout::Rect;
 use tokio_util::sync::CancellationToken;
@@ -65,10 +65,7 @@ fn is_ctrl_c(ev: &Event) -> bool {
 /// Route a key into the open quit confirmation, mutating `view.quit_confirm`.
 /// Pure (no terminal / cancel-token side effects) so the policy is unit-tested
 /// without driving a real event loop.
-fn apply_quit_confirm_key(
-    view: &mut LaunchView,
-    key: event::KeyEvent,
-) -> QuitConfirmOutcome {
+fn apply_quit_confirm_key(view: &mut LaunchView, key: event::KeyEvent) -> QuitConfirmOutcome {
     let Some(confirm) = view.quit_confirm.as_mut() else {
         return QuitConfirmOutcome::Pending;
     };
@@ -530,10 +527,7 @@ pub fn handle_cockpit_input(
                 );
                 clamp_container_info_scroll(&mut v, ctx);
             }
-            Event::Key(k)
-                if k.kind == KeyEventKind::Press
-                    && v.container_info_open =>
-            {
+            Event::Key(k) if k.kind == KeyEventKind::Press && v.container_info_open => {
                 use crate::tui::keymap::{CONTAINER_INFO_KEYMAP, ContainerInfoAction};
                 match CONTAINER_INFO_KEYMAP.dispatch(KeyChord::from(k)) {
                     Some(ContainerInfoAction::CopyValue) => {
@@ -554,8 +548,7 @@ pub fn handle_cockpit_input(
                         }
                     }
                     Some(ContainerInfoAction::Close) => {
-                        let _dirty =
-                            update_launch_view(&mut v, LaunchMessage::ContainerInfoClosed);
+                        let _dirty = update_launch_view(&mut v, LaunchMessage::ContainerInfoClosed);
                         terminal.set_pointer_shape(false);
                     }
                     None => {}
@@ -573,10 +566,7 @@ pub fn handle_cockpit_input(
                 let _dirty = update_launch_view(&mut v, LaunchMessage::FailureAcknowledged);
                 terminal.set_pointer_shape(false);
             }
-            Event::Key(k)
-                if k.kind == KeyEventKind::Press
-                    && v.build_log_open =>
-            {
+            Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => {
                 use crate::tui::keymap::{BUILD_LOG_KEYMAP, BuildLogAction};
                 let vertical = build_log_scroll_axes(&v, area).vertical;
                 match BUILD_LOG_KEYMAP.dispatch(KeyChord::from(k)) {

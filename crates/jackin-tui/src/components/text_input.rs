@@ -9,10 +9,10 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 
-use crate::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Mods, Visibility};
-use crate::{HintSpan, ModalOutcome};
 use crate::centered_rect;
+use crate::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Mods, Visibility};
 use crate::theme::{DANGER_RED, INPUT_BG_DIM, PHOSPHOR_GREEN, WHITE};
+use crate::{HintSpan, ModalOutcome};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextInputAction {
@@ -86,7 +86,10 @@ const TEXT_INPUT_BINDINGS: &[KeyBinding<TextInputAction>] = &[
     KeyBinding {
         // Ctrl+M is Enter in some terminals — explicitly eat it to avoid
         // triggering char insertion via the catch-all branch.
-        chords: &[KeyChord { key: LogicalKey::Char('m'), mods: Mods::CTRL }],
+        chords: &[KeyChord {
+            key: LogicalKey::Char('m'),
+            mods: Mods::CTRL,
+        }],
         action: TextInputAction::Commit,
         hint: None,
         visibility: Visibility::HiddenAlias,
@@ -338,7 +341,11 @@ impl TextInputState<'_> {
         if let Some(action) = TEXT_INPUT_KEYMAP.dispatch(chord) {
             return match action {
                 TextInputAction::Commit => {
-                    if self.is_valid() { ModalOutcome::Commit(self.value()) } else { ModalOutcome::Continue }
+                    if self.is_valid() {
+                        ModalOutcome::Commit(self.value())
+                    } else {
+                        ModalOutcome::Continue
+                    }
                 }
                 TextInputAction::Cancel => ModalOutcome::Cancel,
                 TextInputAction::Backspace => {

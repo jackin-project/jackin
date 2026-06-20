@@ -46,14 +46,20 @@ const CONFIRM_BINDINGS: &[KeyBinding<ConfirmAction>] = &[
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('y')), KeyChord::plain(LogicalKey::Char('Y'))],
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('y')),
+            KeyChord::plain(LogicalKey::Char('Y')),
+        ],
         action: ConfirmAction::Yes,
         hint: Some("yes"),
         visibility: Visibility::Shown,
         glyph: Some("Y"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('n')), KeyChord::plain(LogicalKey::Char('N'))],
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('n')),
+            KeyChord::plain(LogicalKey::Char('N')),
+        ],
         action: ConfirmAction::No,
         hint: Some("no"),
         visibility: Visibility::Shown,
@@ -73,7 +79,10 @@ const CONFIRM_BINDINGS: &[KeyBinding<ConfirmAction>] = &[
         glyph: None,
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Tab), KeyChord::plain(LogicalKey::BackTab)],
+        chords: &[
+            KeyChord::plain(LogicalKey::Tab),
+            KeyChord::plain(LogicalKey::BackTab),
+        ],
         action: ConfirmAction::ToggleFocus,
         hint: Some("focus"),
         visibility: Visibility::Shown,

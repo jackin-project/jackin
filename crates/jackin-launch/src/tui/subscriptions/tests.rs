@@ -185,7 +185,10 @@ fn is_ctrl_c_only_matches_ctrl_c() {
 #[test]
 fn quit_confirm_yes_confirms_and_closes() {
     let mut view = quit_confirm_view();
-    let out = apply_quit_confirm_key(&mut view, KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
+    let out = apply_quit_confirm_key(
+        &mut view,
+        KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE),
+    );
     assert_eq!(out, QuitConfirmOutcome::Confirmed);
     assert!(view.quit_confirm.is_none(), "confirm closes on Yes");
 }

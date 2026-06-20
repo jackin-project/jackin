@@ -344,7 +344,7 @@ fn workspace_screen_footer_routes_prelude_and_destructive_confirm() {
         labels(workspace_screen_footer_items(
             WorkspaceScreenFooterFacts::DestructiveConfirm,
         )),
-        vec!["Y", "yes", "N", "no", "Esc", "cancel"]
+        vec!["↵", "confirm", "Y", "yes", "N/Esc", "no", "⇥", "focus"]
     );
 }
 
@@ -374,6 +374,8 @@ fn editor_screen_footer_routes_modal_tabbar_and_content() {
             "(2 changes)",
             "Esc",
             "discard",
+            "Ctrl-Q",
+            "quit",
         ]
     );
     assert_eq!(
@@ -395,6 +397,8 @@ fn editor_screen_footer_routes_modal_tabbar_and_content() {
             "save workspace",
             "Esc",
             "back",
+            "Ctrl-Q",
+            "quit",
         ]
     );
 }
@@ -697,7 +701,7 @@ fn container_info_footer_derives_scroll_axes_from_dialog_rect() {
             Rect::new(0, 0, 40, 10),
         )),
         vec![
-            "←→",
+            "←→/h/l",
             "scroll",
             "↵",
             "copy value",
@@ -722,9 +726,18 @@ fn destructive_confirm_footer_keeps_escape_cancel() {
     // confirm_hint_spans() drives both yes/no and destructive-confirm footers;
     // verify Esc is advertised (as part of "N/Esc no") so cancel is discoverable.
     let texts = labels(jackin_tui::components::confirm_hint_spans());
-    assert!(texts.iter().any(|t| t.contains("Esc")), "Esc must be in confirm spans: {texts:?}");
-    assert!(texts.iter().any(|t| t == "yes" || t == "Y"), "Y/yes must be present: {texts:?}");
-    assert!(texts.iter().any(|t| t == "no"), "no must be present: {texts:?}");
+    assert!(
+        texts.iter().any(|t| t.contains("Esc")),
+        "Esc must be in confirm spans: {texts:?}"
+    );
+    assert!(
+        texts.iter().any(|t| t == "yes" || t == "Y"),
+        "Y/yes must be present: {texts:?}"
+    );
+    assert!(
+        texts.iter().any(|t| t == "no"),
+        "no must be present: {texts:?}"
+    );
 }
 
 #[test]

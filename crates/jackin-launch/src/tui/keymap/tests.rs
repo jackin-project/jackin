@@ -1,8 +1,8 @@
 use jackin_tui::components::{KeyChord, LogicalKey};
 
 use super::{
-    BUILD_LOG_KEYMAP, COCKPIT_KEYMAP, CONTAINER_INFO_KEYMAP, FAILURE_KEYMAP, BuildLogAction,
-    CockpitAction, ContainerInfoAction, FailureAction,
+    BUILD_LOG_KEYMAP, BuildLogAction, COCKPIT_KEYMAP, CONTAINER_INFO_KEYMAP, CockpitAction,
+    ContainerInfoAction, FAILURE_KEYMAP, FailureAction,
 };
 
 // ── COCKPIT ──────────────────────────────────────────────────────────────────
@@ -130,7 +130,10 @@ fn failure_hints_advertise_dismiss() {
         .collect::<Vec<_>>()
         .join(" ");
     assert!(text.contains("dismiss"), "must advertise dismiss: {text}");
-    assert!(text.contains("↵") || text.contains("Esc"), "must show key: {text}");
+    assert!(
+        text.contains("↵") || text.contains("Esc"),
+        "must show key: {text}"
+    );
 }
 
 // ── CONTAINER INFO ────────────────────────────────────────────────────────────

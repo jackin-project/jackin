@@ -20,14 +20,20 @@ pub enum ErrorPopupAction {
 
 const ERROR_POPUP_BINDINGS: &[KeyBinding<ErrorPopupAction>] = &[
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Enter), KeyChord::plain(LogicalKey::Esc)],
+        chords: &[
+            KeyChord::plain(LogicalKey::Enter),
+            KeyChord::plain(LogicalKey::Esc),
+        ],
         action: ErrorPopupAction::Dismiss,
         hint: Some("dismiss"),
         visibility: Visibility::Shown,
         glyph: Some("↵/Esc"),
     },
     KeyBinding {
-        chords: &[KeyChord::plain(LogicalKey::Char('o')), KeyChord::plain(LogicalKey::Char('O'))],
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('o')),
+            KeyChord::plain(LogicalKey::Char('O')),
+        ],
         action: ErrorPopupAction::Dismiss,
         hint: None,
         visibility: Visibility::HiddenAlias,

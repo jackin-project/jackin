@@ -84,10 +84,7 @@ impl StepCounter {
     /// filesystem work — can never park the pipeline past a Ctrl+C. On cancel
     /// the join future is dropped and the cancel `Err` unwinds cleanup; the
     /// orphaned worker drains in the background (the OS process owns it).
-    pub(in crate::runtime::launch) async fn run_blocking<T, F>(
-        &self,
-        f: F,
-    ) -> anyhow::Result<T>
+    pub(in crate::runtime::launch) async fn run_blocking<T, F>(&self, f: F) -> anyhow::Result<T>
     where
         F: FnOnce() -> anyhow::Result<T> + Send + 'static,
         T: Send + 'static,
