@@ -8,22 +8,7 @@ Apache 2.0. Contributions license under same terms (Section 5).
 
 All contributions signed off under [DCO v1.1](https://developercertificate.org/). Enforced by [DCO2 GitHub App](https://github.com/cncf/dco2) — unsigned commit blocks PR.
 
-Full DCO v1.1 text:
-
-> Developer Certificate of Origin
-> Version 1.1
->
-> By making a contribution to this project, I certify that:
->
-> (a) The contribution was created in whole or in part by me and I have the right to submit it under the open source license indicated in the file; or
->
-> (b) The contribution is based upon previous work that, to the best of my knowledge, is covered under an appropriate open source license and I have the right under that license to submit that work with modifications, whether created in whole or in part by me, under the same open source license (unless I am permitted to submit under a different license), as indicated in the file; or
->
-> (c) The contribution was provided directly to me by some other person who certified (a), (b) or (c) and I have not modified it.
->
-> (d) I understand and agree that this project and the contribution are public and that a record of the contribution (including all personal information I submit with it, including my sign-off) is maintained indefinitely and may be redistributed consistent with this project or the open source license(s) involved.
-
-Employer contributions: if employer has rights to inventions, confirm authorization before submitting. Use personal email in commit author + sign-off. Non-trivial contributions: maintainers may ask confirm work outside employment agreement.
+Employer contributions: confirm authorization before submitting. Use personal email in commit author + sign-off.
 
 ## How to Submit
 
@@ -45,7 +30,6 @@ Names: `feature/`, `fix/`, `refactor/`, or `chore/` prefix + short lowercase hyp
 - On `main`: propose `<prefix/name>`, ask: "This is on `main`. I suggest `<branch>`. Should I create it?" Wait for confirmation.
 - Work feels like different branch: ask first. Default: stay on active branch.
 - Never push to remote branch other than what local tracks. Local `pr-435` vs remote `fix/foo` → `git push origin HEAD:<remote-branch>`. Don't create extra remote branches.
-- Wrong remote branch created: `git push origin --delete <wrong-branch>` immediately.
 
 ### Sync with main: rebase only, never merge
 
