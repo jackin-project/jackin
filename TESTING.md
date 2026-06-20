@@ -75,18 +75,3 @@ Does not apply to:
 
 - Inspection commands the operator runs (`pgrep`, `pmset`, `cat`, `ls`) — not `jackin` invocations.
 - Production recommendations or scripted automation (debug output too noisy).
-
-Do not list `git diff --check` as PR verification. Not a meaningful acceptance check for jackin' PRs; prefer targeted commands exercising the changed behavior plus CI.
-
-## Merge-readiness Verification
-
-Do not run formatting, clippy, and the full test suite before every commit by default. Run the full verification suite when a PR is ready to merge, or earlier only when the operator explicitly asks. CI runs both the default feature set and all enabled features so feature-gated tests do not silently drift:
-
-```sh
-cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo nextest run
-cargo nextest run --all-features
-```
-
-All commands must pass with zero warnings and zero failures. If formatting fails, run `cargo fmt` to fix it.
