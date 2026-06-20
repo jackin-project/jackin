@@ -1,16 +1,16 @@
 ---
-title: "07 — Per-technique records, source ledger, and unverified-claims register"
+title: "08 — Per-technique records, source ledger, and unverified-claims register"
 ---
 
-# 07 — Per-technique records, source ledger, and unverified-claims register
+# 08 — Per-technique records, source ledger, and unverified-claims register
 
-This page makes the hub self-contained as the single source of truth: it carries the **formal per-technique records** for all three tools (the structured schema the dossier uses), the **full consolidated source ledger** (every citation, with access dates), and an explicit **unverified-claims register** — the place where vague, vendor-only, or unreplicated numbers are *kept* (not deleted) and clearly marked "not proven," per the research mandate that no previously gathered information is lost. Nothing here references out for the underlying detail; the dossier chapters ([10](/research/token-optimization/10-style-and-language-compression/), [03](/research/token-optimization/03-prior-art-and-market-scan/), [53](/research/token-optimization/53-headroom-and-context-compression/), [54](/research/token-optimization/54-context-compression-literature-and-market/), [56](/research/token-optimization/56-rtk-and-write-time-observation-compression/)) now reference *this* hub.
+This page makes the hub self-contained as the single source of truth: it carries the **formal per-technique records** for all four tools (the structured schema the dossier uses), the **full consolidated source ledger** (every citation, with access dates), and an explicit **unverified-claims register** — the place where vague, vendor-only, or unreplicated numbers are *kept* (not deleted) and clearly marked "not proven," per the research mandate that no previously gathered information is lost. Nothing here references out for the underlying detail; the dossier chapters ([10](/research/token-optimization/10-style-and-language-compression/), [03](/research/token-optimization/03-prior-art-and-market-scan/), [53](/research/token-optimization/53-headroom-and-context-compression/), [54](/research/token-optimization/54-context-compression-literature-and-market/), [56](/research/token-optimization/56-rtk-and-write-time-observation-compression/)) now reference *this* hub.
 
 Evidence tiers used throughout: **T1** shipped + locally reproduced · **T2** peer-reviewed · **T3** community-replicated · **T4** single-source vendor self-report, no replication. "Not proven" = T3-weak or T4 retained for completeness but not independently confirmed.
 
 ## Per-technique records
 
-These use the dossier's record schema (Layer / Mechanism / Expected savings / Evidence tier / Quality risk / Availability / Effort / Composability / Validation protocol). They are reproduced here so the hub holds the full structured detail, not just the prose teardowns in [01](/research/caveman-headroom-rtk/01-caveman-design/)–[03](/research/caveman-headroom-rtk/03-rtk-design/).
+These use the dossier's record schema (Layer / Mechanism / Expected savings / Evidence tier / Quality risk / Availability / Effort / Composability / Validation protocol). They are reproduced here so the hub holds the full structured detail, not just the prose teardowns in [01](/research/token-optimization-tools/01-caveman-design/)–[04](/research/token-optimization-tools/04-leanctx-design/).
 
 ### C1 — Register-ladder output compression (caveman)
 
@@ -83,6 +83,18 @@ These use the dossier's record schema (Layer / Mechanism / Expected savings / Ev
 - **Composability:** stacks with caveman (different token class) and with code-intelligence outlines (different mechanism); diminishing returns (not anti-synergy) stacking headroom on the same Bash bytes; hook-registration anti-synergy with caveman's hooks (both write agent config).
 - **Validation protocol:** 20 Bash-heavy tasks (test/build/git/log), native vs RTK-hook; from JSONL require (a) `cache_read` continuity preserved, (b) tool-result tokens down, (c) task success unchanged, (d) no rise in command re-runs, (e) net tokens-per-solved-task down ≥20%.
 
+### L1 — Integrated context runtime (lean-ctx)
+
+- **Coverage-delta:** new — the first *superset* data point in the hub. Spans R1's write-time-shell-compression class *and* headroom's H1 broad-input class *and* the persistent-code-graph lever the dossier's [code-intelligence chapter](/research/token-optimization/51-code-intelligence-tools/) tracks (which the three-way said none of caveman/headroom/RTK had), plus a verification layer (signed savings ledger, Context Proof) with no prior analog.
+- **Layer:** input + cache + retrieval + memory + verification (everything except output).
+- **Mechanism:** one long-lived Rust runtime that intercepts at three points — a shell hook (56 pattern modules, write-time), MCP `ctx_read` (10 modes: tree-sitter signatures/map/entropy/lines, content-addressed ~13-tok handle re-reads), and an opt-in proxy (frozen-region prose rewrite). Below the read it maintains a persistent property graph (imports/calls/exports/type_ref), a BM25 index, and an opt-in dense-embedding index fused by RRF. A Context Field Theory layer scores each item by Φ (relevance + surprise + graph + history bandit − cost − redundancy) and a knapsack compiler selects views under budget pressure. Savings are bounce-netted and written to a tamper-evident SHA-256 ledger.
+- **Expected savings:** on code-read-heavy work, large (`map`/`signatures` 96–99% per code read, reproduced); on prose/config-heavy work, small (&lt;10%). Whole-bill bounded identically to R1/H1: `(compressible-read share of the 61%) × compression% × (write + 0.1×read)` — **NOT** the "up to 99%" per-read/cache-handle headline (ESTIMATE).
+- **Evidence tier:** **T1 for the mechanism** (built from source and benchmarked this round: read modes, shell compression, BM25/graph search, bounce-netting all reproduce); **T4 for the product percentages** (self-measured on a GPT tokenizer, per-read/per-session best cases, no independent third-party benchmark, youngest project). **Product numbers not proven externally.**
+- **Quality risk:** **NEUTRAL** on deterministic modes (signatures at 95.9% self-rated quality); **RISKY on `map`** (97.8% compression at only **77%** quality — drops structure; mitigated by the bounce tracker auto-upgrading modes); **RISKY in proxy mode** (lossy prose rewrite, headroom's risk); embeddings/proxy are opt-in so the default core avoids the ML risk.
+- **Availability:** `CLAUDE-CODE-TODAY` (MCP + shell hook). **Effort:** minutes to install; the real cost is the footprint (64.7 MB binary, daemon, dashboard, SQLite stores) and reconciling host writes across up to 34 agent targets with the host-write ban.
+- **Composability:** stacks with caveman (output, different class); **anti-synergy with RTK** (two shell-rewrite paths over the same Bash bytes — run one); diminishing returns stacking headroom's proxy on lean-ctx's proxy; its code graph occupies the "prevent reads" layer a standalone code-intelligence MCP otherwise would.
+- **Validation protocol:** 20 tasks split code-read-heavy vs prose/config-heavy, native vs lean-ctx (MCP + hook, no proxy); from JSONL require `cache_read` continuity preserved, tool-result tokens down, **bounce/re-read rate not worse** (cross-check against lean-ctx's own `adjusted_total_saved`), task success unchanged, net tokens-per-solved-task down ≥20% after the 77-tool schema rent. Run a second arm at `map` mode to price the 77%-quality risk against `signatures`.
+
 ## Unverified-claims register (kept, marked "not proven")
 
 Per the mandate to preserve every previously gathered number even when it cannot be confirmed, these claims are retained here rather than deleted. Each is a real datapoint from the prior research; each is flagged with why it is not proven. None should be propagated as fact.
@@ -107,6 +119,13 @@ Per the mandate to preserve every previously gathered number even when it cannot
 | RTK Cloud — "Free for open-source, Teams from $15/dev/month" team analytics | rtk-ai.app (2026-06-20) | announced/waitlist, not shipped; **roadmap** | the only one of the three with a stated monetization path |
 | third-party RTK↔MCP bridge (mcpmarket.com) | search snippet | could not fetch (429); not in the official repo | **not proven**; official RTK is hook + CLI only |
 | RTK version: site/footer `v0.42.4` vs README verification text `rtk 0.28.2` | rtk-ai.app + repo | doc drift on a 212-release cadence | trust the higher/site number; treat docs as lagging |
+| lean-ctx "up to 99% / 60–90% fewer tokens" | lean-ctx README/crate desc | per-read on code / cache-handle; prose/config compress &lt;10%; GPT tokenizer; no independent benchmark | locally reproduced on code reads (96–99%); whole-bill correction applies |
+| lean-ctx "86% on a 30-min session" | `BENCHMARKS.md` | code-read-heavy mix, `o200k_base`, not a measured whole-session distribution | per-session best case (RTK-"80%-session" category) |
+| lean-ctx "single binary, no runtime dependencies" | README | the release binary is **64.7 MB** and runs a daemon + dashboard + SQLite stores | one binary, but a heavyweight runtime — not RTK-class minimalism |
+| lean-ctx "cl100k within ~3% of Claude's tokenizer" | `core/tokens.rs` | cl100k/o200k are GPT tokenizers, not Claude BPE; 3% is more optimistic than the dossier's Fable/Opus finding | treat percentages as directional |
+| lean-ctx "200+ releases" vs 30 `git tag` (default page) | README + `gh api` | tag pagination / release vs tag distinction unresolved | **not confirmed**; created 2026-03, fast cadence is plausible |
+| lean-ctx Lean 4 proof crate covers load-bearing invariants | `lean/` dir | proofs present but their coverage/significance not audited | **not proven**; the *direction* (formal verification) is novel regardless |
+| lean-ctx Pro $9/mo · Team $18/seat/mo; "local free forever (CI-enforced)" | leanctx.com/pricing | shipped pricing page; "CI-enforced invariant" is a vendor claim | open-core, cleaner than RTK Cloud (never gates local) — but "forever" only time tests |
 | caveman brevity "+26 points accuracy" (arXiv 2604.00025) | repo-cited paper | verified to exist, but solo/unreviewed, +26.3pp on a cherry-picked 7.7% subset, no Claude, no code | **do not propagate**; defensible brevity-helps-accuracy evidence is Chain-of-Draft (+4.1pp at −92% output, Claude 3.5 Sonnet) |
 | SWE-Pruner arXiv 2601.16746; structural-graph 2603.27277 | file 54 ledger | arXiv IDs could not be independently confirmed | treat IDs as tentative; the GitHub repos are real |
 
@@ -124,9 +143,11 @@ Captured here so the hub loses none of the prior research's specifics.
 
 **Caveman-family and memory-competitor adoption (point-in-time; all PR-inflated in this niche — rank by evidence, not stars).** caveman 74,446★ (2026-06-18; was 72,759★ on 2026-06-15); cavemem 521★; cavekit 1,014★; fff 8,351★. The cross-session-memory competitor `thedotmack/claude-mem` (81,976★ — larger than caveman) is what cavemem and headroom's memory layer compete against; none publishes injection-cost-vs-re-exploration-saved net accounting. Headroom grew 28,199★ (2026-06-15) → 33,359★ (2026-06-18). Broader-market compressors (`microsoft/LLMLingua`, CompactPrompt, Mem0, and the code-domain literature — SWE-Pruner 70.6%→72.0%, the Perplexity Paradox's 86.1%-NameError finding, etc.) are catalogued in the dossier's [03](/research/token-optimization/03-prior-art-and-market-scan/) and [54](/research/token-optimization/54-context-compression-literature-and-market/) chapters, which this hub references rather than duplicates.
 
-## Full source ledger (all three tools)
+**lean-ctx architecture specifics (source-audited + locally built, `v3.8.9`, 2026-06-20).** One Rust binary (~1,200 source files) that is shell hook + MCP server (77 tools, 5 unified) + HTTP/team server + daemon + proxy + dashboard. 10 read modes; 56 shell-pattern modules; tree-sitter for 18 languages. Compression core deterministic (`core/compressor.rs` entropy/attention/TF-IDF, `core/signatures.rs`, `core/patterns/`); embeddings opt-in (`core/dense_backend.rs` feature-gated, `Local`/`qdrant` backends, `core/embeddings/download.rs`); proxy prose rewrite opt-in (`proxy/prose.rs`) and cache-safe-by-design (`proxy/cache_safety.rs` — frozen-region `[cached_prefix_len, boundary)`, measured ratio). Code intelligence: `core/property_graph/` (imports/calls/exports/type_ref, weighted BFS), `core/bm25_index.rs`, `core/hybrid_search.rs` (RRF), LSP via `lsp/` (rust-analyzer/typescript-language-server/pylsp/gopls). Memory: `core/session.rs` (CCP), `core/knowledge.rs`, episodic/procedural/prospective, `core/context_os/` (SQLite-WAL bus, A2A HMAC transport). Verification: `core/evidence_ledger.rs`, `core/context_proof.rs`, 20 versioned contracts, a Lean 4 crate (`lean/`). Tokenizer `core/tokens.rs` (o200k/cl100k, GPT not Claude BPE). Bounce-netting `core/bounce_tracker.rs` → `adjusted_total_saved()`. Local build measured **64.7 MB** release binary; `cargo test --lib tokens` 48/48 pass.
 
-Consolidated from the dossier chapters; vendor numbers are self-reported unless marked. Adoption stats and live numbers re-pulled 2026-06-18; headroom/market literature swept 2026-06-15.
+## Full source ledger (all four tools)
+
+Consolidated from the dossier chapters; vendor numbers are self-reported unless marked. Adoption stats and live numbers re-pulled 2026-06-18 (lean-ctx 2026-06-20); headroom/market literature swept 2026-06-15.
 
 ### Caveman
 
@@ -158,6 +179,14 @@ Consolidated from the dossier chapters; vendor numbers are self-reported unless 
 - Issue tracker cautions (#582 hook raised cost 18% in a config; #886 bypassed permission prompts): github.com/rtk-ai/rtk/issues.
 - Adoption (2026-06-18): 63,608★ / 146 watchers / 3,913 forks / 1,254 issues / Apache-2.0 / created 2026-01-22 / `v0.42.4` (`gh api repos/rtk-ai/rtk`).
 
+### lean-ctx
+
+- Repository + README ("Context intelligence layer"; "60–90% fewer tokens, cached 99%"; 77 MCP tools; 10 read modes; 56/95+ shell patterns; CCP memory; property graph; hybrid RRF search; LSP refactor; multi-agent Context OS; signed savings ledger; "no telemetry by default"; 30+ agents): `github.com/yvgude/lean-ctx` `README.md`, crate description (`rust/Cargo.toml`).
+- Internals (the three interception points; deterministic core vs opt-in embeddings/proxy; CFT Φ-function + knapsack compiler + context handles; bounce-netting; cache-safe proxy frozen-region; multi-tokenizer o200k/cl100k = GPT not Claude BPE): `ARCHITECTURE.md` (1,192 lines, 5 mermaid diagrams), `LEANCTX_FEATURE_CATALOG.md` (SSOT), direct source read of `v3.8.9` (modules enumerated in "Additional preserved detail" above).
+- Benchmark (vendor `lean-ctx benchmark report`, `o200k_base`, competitor numbers are *published figures* not re-measured — self-favorable, same category as RTK's own counter): `BENCHMARKS.md` (map 97.7% / signatures 97.0% / session 86.4% on the lean-ctx repo). **Locally reproduced this round** (`cargo build --release` → 64.7 MB binary; `benchmark report .` → code 96–99%, prose/config 0.8–30%, map quality 77%; `cargo test --lib tokens` 48/48 pass).
+- Pricing/commercial (Free local Apache-2.0 "forever", Pro $9/mo cloud sync, Team $18/seat/mo; "Free is a CI-enforced invariant"): leanctx.com/pricing, leanctx.com/compare.
+- Adoption (2026-06-20): 2,800★ / 19 watchers / 278 forks / 13 open issues / Apache-2.0 / created 2026-03-23 / `v3.8.9` (`gh api repos/yvgude/lean-ctx`). README claims "2,600+ stars / 200+ releases" — roughly consistent with the live pull (least-inflated of the four).
+
 ### Cross-tool, stack, and literature
 
 - Published RTK-vs-headroom head-to-head (one month production TS/Next.js, self-measured via each tool's counter: RTK 1,327,700,000 tok / headroom 189,014,601 tok at 96% prefix-cache-hit / combined 1,516,714,601; ~200–500-tok passthrough overhead): andrewpatterson.dev/posts/token-savings-rtk-headroom.
@@ -168,4 +197,4 @@ Consolidated from the dossier chapters; vendor numbers are self-reported unless 
 
 ---
 
-This page, with the rest of the hub, is the complete record. The dossier chapters retain their broader-topic context and point here for the three-tool detail. Back to the [overview](/research/caveman-headroom-rtk/).
+This page, with the rest of the hub, is the complete record. The dossier chapters retain their broader-topic context and point here for the per-tool detail. Back to the [overview](/research/token-optimization-tools/).
