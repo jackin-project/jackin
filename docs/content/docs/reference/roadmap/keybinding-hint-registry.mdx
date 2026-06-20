@@ -1,273 +1,564 @@
 ---
-title: "Unify keybindings and hint bars (one keymap registry)"
+title: "Keymap registry and hint-bar consistency"
 ---
 
-**Status**: Implemented in V1
+**Status**: Partially implemented
 
-> **Post-V1 unification pass.** A follow-up sweep closed the remaining places where the registry pattern was applied inconsistently, so every surface now uses the *same* approach — one `Keymap<A>` per context feeding **both** `Keymap::dispatch()` and the hint glyphs:
->
-> - **Console** — the workspace-list and preview-pane dispatch (`workspace_list_key_plan` / `preview_pane_key_plan`) now resolve through `WORKSPACE_LIST_KEYMAP` / `PREVIEW_PANE_KEYMAP` in <RepoFile path="crates/jackin-console/src/tui/keymap.rs" />; the workspace-row / instance-row / preview-pane footers derive their key glyphs from those tables via `Keymap::glyph_for`. The duplicate `#[cfg(test)]` mirror keymap that previously lived in the `jackin` binary crate's console module — which lossily omitted the instance-row keys — was deleted, and the dead `editor_top_level_key_plan` `match` encoding (superseded by keymap dispatch) was removed.
-> - **Launch** — `COCKPIT_HINT` / `FAILURE_HINT` constants and the hand-written `Ctrl-C abort · Ctrl-Q quit` global-key group repeated across the cockpit, failure popup, build-log, and container-info footers were replaced by `cockpit_global_hint_spans()` (derived from `COCKPIT_KEYMAP`, which now carries both global keys) plus per-surface derivation from `FAILURE_KEYMAP` / `BUILD_LOG_KEYMAP`.
-> - **Capsule** — the filterable list dialogs, rename-tab, and read-only info dialogs were migrated off hand-written raw-byte helpers onto `FILTER_LIST_KEYMAP` / `RENAME_KEYMAP` / `READ_ONLY_DISMISS_KEYMAP`; both dispatch (`Keymap::dispatch(raw_bytes_to_chord(..))`) and the footer hints derive from those tables.
-> - **Shared primitives** — `impl From<KeyCode> for KeyChord` and `Keymap::glyph_for` / `push_spans_for` were added to <RepoFile path="crates/jackin-tui/src/keymap.rs" /> so context-composed footers (which show different keys per row/state) build their glyphs from the dispatch table instead of hand-written strings.
->
-> Principled exceptions that intentionally remain hand-written: the capsule's outer `InputParser` Idle-state dispatch (palette/prefix bytes are runtime-configurable and cannot live in a static table), terminal escape-sequence parsing, and the curated `main_view_hint` prefix cheat-sheet (a compact combined-glyph summary, not a 1:1 advertisement of `PREFIX_COMMAND_KEYMAP`).
+The core `Keymap<A>` registry shipped in full across the console, launch, and shared widget layer (original keybinding-hint-registry Phases 0–3), and launch Ctrl+C / Ctrl+Q cancellation shipped across all seven phases. Four Capsule hint/dispatch gaps and twelve test module layout violations remain open and are captured as a concrete, checkbox-driven implementation plan below.
 
-This item is written as a hand-off plan: an engineer (or a Sonnet-class agent) should be able to execute it mechanically without re-discovering anything. Every divergence is listed with its file and the prescribed resolution. Line numbers are accurate as of the audit (branch `feature/launch-ctrl-c-cancellation`, 2026-06-19) and should be re-confirmed by reading each file before editing, since earlier phases shift later lines.
+## What shipped
 
-## Problem
+### Keymap registry (Phases 0–3)
 
-Across every jackin' TUI surface, the keys a screen *handles* and the keys its hint bar *advertises* are maintained as two independent lists. Nothing binds them together, so they drift. The result is a class of bug where a key does something the operator was never told about — or a hint names a key that does nothing, or names one key while a different key fires.
+`Keymap<A>` in <RepoFile path="crates/jackin-tui/src/keymap.rs" /> is the single source of truth for keybinding dispatch and hint advertisement. `Keymap::dispatch(chord)` and `Keymap::hint_spans()` both read from the same `bindings: &'static [KeyBinding<A>]` table, making divergence architecturally impossible for `Shown` and `HiddenAlias` bindings. The full migration covered: all five shared-widget keymaps (`ConfirmState`, `TextInputState`, `SelectListState`, `ErrorPopupState`, `SaveDiscardState`); the capsule `PREFIX_COMMAND_KEYMAP` and dialog keymaps (`CONFIRM_KEYMAP`, `FILTER_LIST_KEYMAP`, `RENAME_KEYMAP`, `READ_ONLY_DISMISS_KEYMAP`); the console keymaps (`WORKSPACE_LIST_KEYMAP`, `PREVIEW_PANE_KEYMAP`, all editor/settings tab keymaps, and all row-level `Keymap<()>` display keymaps) in <RepoFile path="crates/jackin-console/src/tui/keymap.rs" />; and the launch keymaps (`COCKPIT_KEYMAP`, `BUILD_LOG_KEYMAP`, `FAILURE_KEYMAP`, `CONTAINER_INFO_KEYMAP`) in <RepoFile path="crates/jackin-launch/src/tui/keymap.rs" />. The lookbook migrated to `SIDEBAR_KEYMAP` and `PREVIEW_KEYMAP`. Dead hint constants (`SELECT_CANCEL_HINT`, `DISMISS_HINT`, `DISMISS_CANCEL_HINT`, `CONFIRM_DISMISS_HINT`) were removed. All 43 operational screens have a rendered hint bar. Dispatch-layer tests cover every keymap. `raw_bytes_to_chord` in <RepoFile path="crates/jackin-tui/src/keymap.rs" /> bridges the capsule's PTY byte stream to `KeyChord`. Hint-row graceful truncation (`truncate_spans_to_cols`) shipped for narrow terminals in <RepoFile path="crates/jackin-capsule/src/tui/components/chrome.rs" />.
 
-The reported instance: on the console workspaces screen the hint bar reads `↑↓ · ↵ launch   N new · S settings   Ctrl+Q quit`, yet pressing bare `Q` (or `q`, or `Esc`) exits jackin' immediately with **no confirmation** — a path that is both unadvertised and more destructive than the advertised `Ctrl+Q`, which only opens a confirm dialog. The handler was `KeyCode::Esc | KeyCode::Char('q' | 'Q') => Ok(InputOutcome::ExitJackin)` in `input/list.rs` (removed in Phase 0 C; dispatch now lives in the `WORKSPACE_LIST_KEYMAP` table in <RepoFile path="crates/jackin-console/src/tui/keymap.rs" />), while `should_open_quit_confirm()` in <RepoFile path="crates/jackin-console/src/tui/run.rs" /> deliberately does not fire for bare `q` on the main list (because `is_on_main_screen` returns true there), so bare `q`/`Esc` bypass even the confirm that `Ctrl+Q` would open.
+### Launch exit keybindings (Phases 1–7)
 
-An audit of all surfaces (host console, launch cockpit, capsule, shared `jackin-tui`, plus the lookbook) found the same divergence pattern everywhere — dozens of live instances catalogued below.
+`Ctrl+C` fires an immediate hard cancel through a `CancellationToken` in <RepoFile path="crates/jackin-launch/src/progress.rs" />, `while_waiting()` `tokio::select!`, and `RichRenderer::restore_terminal()` called inside the render task before any pipeline future resumes — guaranteeing terminal restoration before cleanup output. `Ctrl+Q` opens the shared `exit_confirm_state()` dialog from <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" /> on all three surfaces (console, launch cockpit, capsule). `Ctrl+C` wins over an open dialog. A `LaunchCancelled` sentinel exits `0` with no error line. `kill_on_drop(true)` on `ShellRunner` children ensures `docker build` is killed on cancel so cleanup never blocks behind a still-running build process. All pipeline stages that can block for more than a second go through `while_waiting()`. The TUI chrome design — hint bar, not status bar — is documented in [TUI chrome reference](/reference/tui/chrome).
 
-## Why It Matters
+## What remains (open work)
 
-Keybindings are a contract with the operator, and the hint bar is the only place that contract is published. When a key is handled but not advertised, the operator cannot discover it and can trigger it by accident (a reflexive `q` quits the whole app). When a hint advertises a key the widget does not handle, the operator presses it and nothing happens, eroding trust the way an inert `Ctrl+C` does. A correct architecture makes these states unrepresentable; today it permits all of them, and the count of live divergences is the evidence that manual discipline does not hold.
+This section is the implementation plan. Each item names the exact file and location to change, the exact fix required, and the acceptance criterion. Items A–D are one PR. Item E is a separate, larger PR. Items G.1–G.12 may be batched across multiple PRs.
 
-## Design
+**Universal enforcement rule (applies to all surfaces, all future PRs):**
 
-### Root-cause analysis
+> Every hint bar must be constructed by calling `.hint_spans()` or `.glyph_for()` on the `Keymap<A>` that owns dispatch for that surface. No `HintSpan::Key(…)` literal may appear in a hint builder unless it represents a genuinely unregisterable input (CSI multi-byte sequence, mouse event, or dynamic runtime value). Every such literal must carry a `// UNREGISTERABLE(<reason>)` comment naming the specific reason. Any `HintSpan::Key(…)` without a keymap entry and without an `// UNREGISTERABLE` comment is a merge blocker.
 
-There is **no single source of truth binding a key → action → hint label.** Dispatch and advertisement are two disjoint code paths that share facts only by hand.
+### A — Capsule: Ctrl+Q must dispatch through `CAPSULE_GLOBAL_KEYMAP`
 
-- `HintSpan::Key(&str)` in <RepoFile path="crates/jackin-tui/src/geometry.rs" /> is free-text presentation. The string `"Ctrl+Q"` has no connection to any `KeyCode`; the hint renderer only measures and styles strings.
-- Every component's `handle_key` is a standalone `match key.code` with no reference to any hint list: `ConfirmState::handle_key` in <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />, `TextInputState::handle_key` in <RepoFile path="crates/jackin-tui/src/components/text_input.rs" />, `SelectListState::handle_key` in <RepoFile path="crates/jackin-tui/src/components/select_list.rs" />, plus every per-surface dispatcher in <RepoFile path="crates/jackin-console/src/tui/keymap.rs" />, <RepoFile path="crates/jackin-launch/src/tui/subscriptions.rs" />, and <RepoFile path="crates/jackin-capsule/src/tui/input.rs" />.
-- Hints are hand-written constants/builders in different files (often different crates) from the handler: <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" />, <RepoFile path="crates/jackin-launch/src/tui/components/prompts.rs" />, <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" />.
+**Why it is wrong today.** <RepoFile path="crates/jackin-capsule/src/tui/input.rs" /> line 351 dispatches Ctrl+Q as a raw byte comparison (`else if b == CTRL_Q { events.push(InputEvent::RequestExit); }`) where `CTRL_Q: u8 = 0x11` is defined at line 533. This bypasses the `Keymap<A>` registry entirely. Three locations in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" /> (lines 30, 45, 62) hardcode `HintSpan::Key("Ctrl-Q")` manually instead of deriving the span from the keymap. If the key ever changes or the binding is updated, both dispatch and every hint must be updated by hand — the guarantee the registry provides does not apply here.
 
-No test asserts that a handler's key set matches its hint; the only hint tests check column-width math. So a key can be handled without a hint, a hint can name a key no handler acts on, and a hint can name a different key than the one handled.
+**Files to change.**
 
-The pattern is already proven achievable in this codebase — just not applied to keys. Mouse geometry is unified: `StatusBarPlan` in <RepoFile path="crates/jackin-capsule/src/tui/components/status_bar.rs" /> is the single source for both paint and hit-test of clickable regions, and `box_rect` in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> is shared between render and click hit-testing. Scroll is near-unified: `ScrollAxes` feeds both `scroll_hint_spans(axes)` (advertise) and `handle_key_for_axes` (dispatch) in <RepoFile path="crates/jackin-tui/src/components/dialog_layout.rs" />, so advertised arrows and accepted arrows agree on availability. Keys have no analogue, and that absence is the enabling structure.
+- <RepoFile path="crates/jackin-capsule/src/tui/keymap.rs" /> — add `GlobalCapsuleAction` enum and `CAPSULE_GLOBAL_KEYMAP` static
+- <RepoFile path="crates/jackin-capsule/src/tui/input.rs" /> — remove `const CTRL_Q: u8 = 0x11` and the raw `else if b == CTRL_Q` arm; add dispatch through `CAPSULE_GLOBAL_KEYMAP`
+- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" /> — remove the three `HintSpan::Key("Ctrl-Q")` literals; in every hint builder function, append `CAPSULE_GLOBAL_KEYMAP.hint_spans()`
 
-### The fix: one binding table per context, feeding both render and dispatch
-
-Replace "free-text hint + independent match" with a binding entry that couples everything currently split. The hint bar renders the `Shown` entries — it can no longer advertise a key with no binding nor omit a `Shown` one. The dispatcher matches the incoming key against the table's chords and returns the action — a key absent from the table is, by construction, not handled, so no hidden behaviour is possible. Aliases are explicit rows (`HiddenAlias`), so `h/j/k/l` and lowercase `y`/`n` keep working but are registered, not silently bolted onto a match arm. `HintSpan::Key` stops being an author-supplied string and is derived from the binding's chord, so labels and handlers cannot disagree.
-
-### Registry API spec (concrete)
-
-A new module `crates/jackin-tui/src/keymap.rs` (self-named, per the crate's no-`mod.rs` rule), declared `pub mod keymap;` in <RepoFile path="crates/jackin-tui/src/lib.rs" /> and re-exported through <RepoFile path="crates/jackin-tui/src/components.rs" />. Tests in `keymap/tests.rs`. It builds on existing `HintSpan` (geometry.rs), `ModalOutcome` (lib.rs), and `ScrollAxes` (scroll.rs) — none replaced; the registry sits beside them and *produces* `HintSpan`, *consumes* `ScrollAxes` for axis-gated visibility.
-
-**Neutral logical key** — both `crossterm::event::KeyEvent` (host/launch) and the capsule's raw-byte parser must construct and match the same type:
+**Exact code for `keymap.rs`.**
 
 ```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum LogicalKey {
-    Char(char),
-    Enter, Esc, Tab, BackTab,
-    Up, Down, Left, Right,
-    Home, End, PageUp, PageDown,
-    Backspace, Delete,
+pub enum GlobalCapsuleAction {
+    RequestExit,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct Mods { /* CTRL | ALT | SHIFT bit flags (u8 mask) */ }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct KeyChord { pub key: LogicalKey, pub mods: Mods }
+pub static CAPSULE_GLOBAL_KEYMAP: Keymap<GlobalCapsuleAction> = Keymap::new(&[
+    KeyBinding {
+        chords:     &[KeyChord::ctrl(LogicalKey::Char('q'))],
+        action:     GlobalCapsuleAction::RequestExit,
+        hint:       Some("quit"),
+        visibility: Visibility::Shown,
+        glyph:      None,  // auto-derives "Ctrl-Q"
+    },
+]);
 ```
 
-**Binding + map:**
+**Exact change for `input.rs`.**
+
+Remove line 533: `const CTRL_Q: u8 = 0x11;`
+
+Remove the arm at line 351 (exact text): `else if b == CTRL_Q { events.push(InputEvent::RequestExit); }`
+
+Before the first `if Some(b) == self.prefix_key` check or equivalent outer dispatch, insert:
 
 ```rust
-pub enum Visibility { Shown, HiddenAlias, Internal }
-
-pub struct KeyBinding<A> {
-    pub chords: &'static [KeyChord], // first chord drives the hint glyph; rest are aliases
-    pub action: A,
-    pub hint: Option<&'static str>,  // label after the glyph ("confirm", "cancel", …); None for Internal
-    pub visibility: Visibility,
-}
-
-pub struct Keymap<A: 'static> { bindings: &'static [KeyBinding<A>] }
-
-impl<A: Copy + 'static> Keymap<A> {
-    pub fn dispatch(&self, chord: KeyChord) -> Option<&A>;      // first binding whose chords contain chord
-    pub fn hint_spans(&self) -> Vec<HintSpan<'static>>;          // Shown bindings → Key+Text spans, GroupSep-joined
-    pub fn hint_spans_for_axes(&self, axes: ScrollAxes) -> Vec<HintSpan<'static>>; // fold in scroll_hint_spans gating
+if let Some(action) = CAPSULE_GLOBAL_KEYMAP.dispatch(KeyChord::from_byte(b)) {
+    match action {
+        GlobalCapsuleAction::RequestExit => events.push(InputEvent::RequestExit),
+    }
+    return events;
 }
 ```
 
-`A` is a per-widget action enum mapped back to `ModalOutcome<T>` by the widget's thin dispatch shim, so the `ModalOutcome` contract is untouched. Case-folding (`y`/`Y`, `o`/`O`) uses the explicit-alias model: list both `Char('y')` and `Char('Y')` as chords so the `HiddenAlias` visibility stays representable.
+**Exact change for `hint.rs`.**
 
-**Glyph derivation** — `chord_glyph` must reproduce the exact glyphs already in use so output is byte-identical to today: `Ctrl+Q`; `↑↓` (`\u{2191}\u{2193}`); `↑↓←→`; `←→`; `↵` (`\u{21b5}`); `Esc`; `Y`; `⇥` (`\u{21e5}`). Grouped glyphs (`↑↓`, `↵/Esc`) map from a small binding-level lookup, not a single chord.
+1. Remove `HintSpan::Key("Ctrl-Q")` at line 30 (prefix-awaiting branch), line 45 (scrollback branch), and line 62 (normal-mode branch), along with any adjacent `HintSpan::Text("quit")` and `HintSpan::GroupSep` that were manually paired with them.
+2. In every public hint builder function in the file (`main_view_hint`, `scroll_hint_spans` wrappers, any others), before `return spans;`, add: `spans.extend(CAPSULE_GLOBAL_KEYMAP.hint_spans());`
 
-**Per-surface adaptation (incremental — no event-loop rewrite):** crossterm surfaces add `impl From<KeyEvent> for KeyChord`; a widget's `handle_key` body becomes `match keymap.dispatch(key.into()) { Some(a) => self.apply(a), None => /* text Char insert fallthrough */ }`. The capsule adds a byte→`KeyChord` parser; `handle_raw_key_for_axes` stays as a migration fallback. Migrate one widget at a time; `ConfirmState` is the pilot (worst divergence). Delete the hand-built footer functions only once every consumer reads `keymap.hint_spans()`.
+**Acceptance criteria.**
 
-**Enforcement (so the class cannot return):**
+- [ ] `CAPSULE_GLOBAL_KEYMAP` exists in `keymap.rs` with one `Shown` binding for `Ctrl+Q → RequestExit`.
+- [ ] `const CTRL_Q` and the raw else-if arm are deleted from `input.rs`.
+- [ ] Dispatch goes through `CAPSULE_GLOBAL_KEYMAP.dispatch(KeyChord::from_byte(b))`.
+- [ ] No `HintSpan::Key("Ctrl-Q")` literal exists anywhere in `hint.rs`.
+- [ ] Every hint builder in `hint.rs` calls `CAPSULE_GLOBAL_KEYMAP.hint_spans()` to produce the Ctrl-Q span.
+- [ ] `cargo test -p jackin-capsule` passes.
+- [ ] Unit test in `crates/jackin-capsule/src/tui/keymap/tests.rs` asserts `CAPSULE_GLOBAL_KEYMAP.dispatch(KeyChord::from_byte(0x11))` returns `Some(GlobalCapsuleAction::RequestExit)`.
 
-1. The binding table makes dispatch and hint the *same data* — divergence becomes unrepresentable for `Shown`/`HiddenAlias` bindings.
-2. Per-context test: drive the real `handle_key` with every chord over the full `LogicalKey × Mods` space; any chord the handler *consumes* (not `ModalOutcome::Continue` and no focus change) must resolve via `keymap.dispatch(chord).is_some()`, and vice-versa. This is exactly the test that catches the ContainerInfo `↵ copy value` phantom (Enter is advertised but `handle_scroll_key` falls through).
-3. CI lint/test forbidding `handle_key` match arms outside a binding table on migrated surfaces. The repo already proves this is enforceable for modals: `modal_footer_items` is an exhaustive `match` (compile-enforced) in the console footer code.
+---
 
-## Divergence catalogue and executable checklist
+### B — Capsule: prefix cheat sheet must derive from `PREFIX_COMMAND_KEYMAP`
 
-Verdicts: **HIDDEN-KEY** (handled, not advertised) · **PHANTOM-HINT** (advertised, not handled) · **LABEL-MISMATCH** · **DEAD-ARM/DEAD-STRING** (unreachable) · **STALE-COMMENT**. The dominant class is HIDDEN-KEY.
+**Why it is wrong today.** <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" /> lines 19–32 return a hardcoded `vec![…]` when `prefix_awaiting == true`. This hand-written list contains semantic errors: `"n/c"` / `"new/close"` is wrong — `'n'` is `NextTab` (not "new"), `'x'` is `KillPane` ("close") but `'x'` does not appear in the hardcoded hints at all; `'c'` is `NewTab` (correctly "new tab", not "close"). Additionally `HintSpan::Key("Ctrl-Q")` is hardcoded here (covered by item A). The hand-written list must be deleted and replaced by keymap-derived output. Also, `PREFIX_COMMAND_KEYMAP` in <RepoFile path="crates/jackin-capsule/src/tui/keymap.rs" /> needs its `visibility` and `glyph` fields corrected so `.hint_spans()` produces the correct grouped output.
 
-### Console — host manager (`jackin-console` + `jackin/src/console`)
+**Files to change.**
 
-Quit-policy spine: <RepoFile path="crates/jackin/src/console/tui/run.rs" /> calls `should_open_quit_confirm` before any stage handler; that predicate (in <RepoFile path="crates/jackin-console/src/tui/run.rs" />) opens the confirm on `Ctrl+Q` always, or bare `q`/`Q` only when `!on_main_screen && !consumes_letter_input`. `is_on_main_screen` is true on the workspace list, which is why bare `q` there falls through to the silent-exit arm.
+- <RepoFile path="crates/jackin-capsule/src/tui/keymap.rs" /> — update existing `PREFIX_COMMAND_KEYMAP` entries with correct `Visibility`, `glyph`, and `hint` values as specified below
+- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" /> — replace the hardcoded prefix branch (lines 19–32) with keymap-derived spans
 
-**A. Main-list silent quit / policy (highest priority).**
-- [x] `input/list.rs` `Esc | Char('q'|'Q') => ExitJackin` arm: already removed (was cleaned by Phase 0 C). `Esc` is a no-op (`Continue`) on the main list; `q/Q` has no arm → falls through to `Continue`. No silent exit.
-- [x] `jackin-console` `run.rs` `should_open_quit_confirm`: bare `q/Q` opens quit-confirm on all screens *except* the main workspace list (`on_main_screen` gate). On main list, `q/Q` is silently ignored (no silent exit, no confirm). Policy: main-list `q` is a no-op; `Ctrl+Q` opens confirm everywhere. This is acceptable for now; a future pass can also open confirm on main-list bare `q` if desired.
+**Required `PREFIX_COMMAND_KEYMAP` entries (verify existing entries and update as needed).**
 
-**B. Inline picker `exit_on_q` symmetry.**
-- [x] `input/list.rs` (`~:594` role picker passes `inline_picker_shell_plan(key, true)`; `~:621` agent picker passes `false`): unified to `false` for both — `q` filters, quit relies on `Ctrl+Q`.
-- [x] `footer_hints.rs` (`~:86`, `AgentPicker` mode): changed to `include_quit=true` — `Ctrl+Q quit` now shown (parity with role picker).
-- [x] `footer_hints.rs` `workspace_picker_footer_items`: added `type to filter` span.
+The grouped `h/j/k/l` display uses one `Shown` entry with `glyph: Some("h/j/k/l")` and three `HiddenAlias` entries for `j`, `k`, `l`:
 
-**C. Dead settings arms (delete the `q`/`Q` leg; keep `Esc`).**
-- [x] `input/global_mounts.rs` lines `~:272`, `~:349`, `~:434`, `~:517` — `| KeyCode::Char('q' | 'Q')` removed from all four arms.
-- [x] `input/global_mounts/auth.rs` `~:19` and `~:49` — `| KeyCode::Char('q' | 'Q')` removed from both arms.
-- [x] `input/global_mounts/auth.rs` `~:61` — empty no-op arm `Char('d' | 'D') => {}` deleted.
+```rust
+// h — primary focus nav (grouped glyph covers all four directions)
+KeyBinding {
+    chords:     &[KeyChord::plain(LogicalKey::Char('h'))],
+    action:     PrefixCommand::MoveFocus(ArrowDir::Left),
+    hint:       Some("nav"),
+    visibility: Visibility::Shown,
+    glyph:      Some("h/j/k/l"),
+},
+// j, k, l — aliases, dispatch but do not produce hint spans
+KeyBinding {
+    chords:     &[KeyChord::plain(LogicalKey::Char('j'))],
+    action:     PrefixCommand::MoveFocus(ArrowDir::Down),
+    hint:       None,
+    visibility: Visibility::HiddenAlias,
+    glyph:      None,
+},
+KeyBinding {
+    chords:     &[KeyChord::plain(LogicalKey::Char('k'))],
+    action:     PrefixCommand::MoveFocus(ArrowDir::Up),
+    hint:       None,
+    visibility: Visibility::HiddenAlias,
+    glyph:      None,
+},
+KeyBinding {
+    chords:     &[KeyChord::plain(LogicalKey::Char('l'))],
+    action:     PrefixCommand::MoveFocus(ArrowDir::Right),
+    hint:       None,
+    visibility: Visibility::HiddenAlias,
+    glyph:      None,
+},
+// n — NextTab (label is "next tab", NOT "new")
+KeyBinding {
+    chords:     &[KeyChord::plain(LogicalKey::Char('n'))],
+    action:     PrefixCommand::NextTab,
+    hint:       Some("next tab"),
+    visibility: Visibility::Shown,
+    glyph:      None,
+},
+// c — NewTab
+KeyBinding {
+    chords:     &[KeyChord::plain(LogicalKey::Char('c'))],
+    action:     PrefixCommand::NewTab,
+    hint:       Some("new tab"),
+    visibility: Visibility::Shown,
+    glyph:      None,
+},
+// x — KillPane (was missing from the hand-written hints entirely; must be Shown)
+KeyBinding {
+    chords:     &[KeyChord::plain(LogicalKey::Char('x'))],
+    action:     PrefixCommand::KillPane,
+    hint:       Some("close"),
+    visibility: Visibility::Shown,
+    glyph:      None,
+},
+// space and : — OpenPalette, Internal (dispatches but never shown; palette hint comes from item C)
+KeyBinding {
+    chords:     &[KeyChord::plain(LogicalKey::Char(' ')),
+                  KeyChord::plain(LogicalKey::Char(':'))],
+    action:     PrefixCommand::OpenPalette,
+    hint:       None,
+    visibility: Visibility::Internal,
+    glyph:      None,
+},
+// z — ZoomToggle
+KeyBinding {
+    chords:     &[KeyChord::plain(LogicalKey::Char('z'))],
+    action:     PrefixCommand::ZoomToggle,
+    hint:       Some("zoom"),
+    visibility: Visibility::Shown,
+    glyph:      None,
+},
+// p — PrevTab
+KeyBinding {
+    chords:     &[KeyChord::plain(LogicalKey::Char('p'))],
+    action:     PrefixCommand::PrevTab,
+    hint:       Some("prev tab"),
+    visibility: Visibility::Shown,
+    glyph:      None,
+},
+// " — SplitTopBottom, % — SplitSideBySide
+KeyBinding {
+    chords:     &[KeyChord::plain(LogicalKey::Char('"'))],
+    action:     PrefixCommand::SplitTopBottom,
+    hint:       Some("split ↕"),
+    visibility: Visibility::Shown,
+    glyph:      None,
+},
+KeyBinding {
+    chords:     &[KeyChord::plain(LogicalKey::Char('%'))],
+    action:     PrefixCommand::SplitSideBySide,
+    hint:       Some("split ↔"),
+    visibility: Visibility::Shown,
+    glyph:      None,
+},
+// 0–9 — JumpTab digits, all Internal (dispatch but never shown in hint bar)
+```
 
-**D. Vim `h/j/k/l` aliases — register as `HiddenAlias`.** All sites already handle these keys inline (no UX gap, just a registry-coupling gap). Sites for reference: `input/list.rs` (`~:84/89/94/103`); `screens/workspaces/update.rs` preview pane (`~:311/312/313`) plus `→` as alias of `⇥` into preview (`~:277`); `input/editor.rs` (`~:126/146/164/178/192/203/214/228`); `input/global_mounts.rs` (`~:97/214/225/236/247/319/330/408/415/461/472/483/494`) and `auth.rs` (`~:23/30`); inline pickers in `update.rs` (`~:147/148`) and `agent_choice.rs` (`~:51/58`). `agent_choice.rs` UX gap fixed: `handle_key` now accepts `j|J` (down) and `k|K` (up) — tests added. `WORKSPACE_LIST_KEYMAP` and `PREVIEW_PANE_KEYMAP` live in <RepoFile path="crates/jackin-console/src/tui/keymap.rs" /> and drive the **real** `workspace_list_key_plan` / `preview_pane_key_plan` dispatch (resolving `Keymap::dispatch(KeyChord::from(keycode))`, with list-scroll/row context applied at the resolver) — not a separate mirror table. All four vim nav aliases are registered as `HiddenAlias`; the workspace-row / instance-row / preview-pane footers derive their key glyphs from this same table via `Keymap::glyph_for`, so an advertised key cannot drift from the dispatched key. All remaining surfaces (`input/editor.rs`, `input/global_mounts.rs`, settings surfaces, inline picker shell) migrated to `Keymap::dispatch()` via the same module (item 229); vim aliases registered as `HiddenAlias` in `EDITOR_TAB_BAR_KEYMAP`, `EDITOR_CONTENT_KEYMAP`, `SETTINGS_TAB_BAR_KEYMAP`, `SETTINGS_CONTENT_SHELL_KEYMAP`, `SETTINGS_GENERAL_TAB_KEYMAP`, `SETTINGS_ENV_TAB_KEYMAP`, `SETTINGS_TRUST_TAB_KEYMAP`, `SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP`, and `INLINE_PICKER_SHELL_KEYMAP`. All aliases dispatch correctly; coverage verified in `keymap/tests.rs`.
+**Exact replacement for prefix branch in `hint.rs`.**
 
-**E. Instance-row hidden actions.**
-- [x] `input/list.rs` `~:212` `i/I` Inspect: added `I info` to `InstanceRow` footer items in `footer_hints.rs` — now discoverable.
-- [x] `input/list.rs` `~:197-222` `r/a/x/i/p/t` on a workspace row with no instances: `instance_action_outcome` now silently returns `Continue` when `has_any_instance_for_selection` is false — eliminates unadvertised error popups. Popup is still shown when an instance exists but is in the wrong state (action rejected for that status).
-- `r/R` and `a/A` as aliases for Enter/N: left as-is (redundant but not harmful; keeping them unadvertised is acceptable until full keymap migration).
+Delete the entire `if prefix_awaiting { … return vec![…]; }` block (lines 19–32) and replace it with:
 
-**F. Editor Auth `D reset` coverage.**
-- [x] `footer_hints.rs` `~:339` (`AuthRowFooterMode::EditMode`): added `D reset` — WorkspaceMode/RoleMode rows now advertise the `d/D` handled in `auth.rs`.
+```rust
+if prefix_awaiting {
+    let mut spans = PREFIX_COMMAND_KEYMAP.hint_spans();        // all Shown prefix keys
+    spans.push(HintSpan::GroupSep);
+    spans.push(HintSpan::Dyn(format_key_glyph(palette_key))); // dynamic palette key glyph
+    spans.push(HintSpan::Text("palette"));
+    spans.extend(CAPSULE_GLOBAL_KEYMAP.hint_spans());          // Ctrl-Q quit
+    return spans;
+}
+```
 
-**G. OpPicker refresh label + Field collapse hints.**
-- [x] `op_picker/input.rs` `~:62/118/200/357`: changed `Char('r')` → `Char('r' | 'R')` so the advertised `R refresh` matches the handler.
-- [x] `op_picker/input.rs` `~:394/406`: `←/→ collapse/expand section` added to Field-stage footer — `ModalFooterMode::FilteredPicker` gained `include_collapse: bool`; `op_picker_modal_footer_mode` sets `true` for `OpPickerStage::Field`.
+Note: `format_key_glyph` is defined as part of item C. `palette_key: u8` must be added to `main_view_hint`'s signature (also item C). Items B and C must ship in the same PR.
 
-**H. File browser + git prompt (found by completeness pass).**
-- [x] <RepoFile path="crates/jackin-console/src/tui/components/file_browser/state.rs" /> (`~:54-70`): hint updated to `↑↓/j/k navigate`, `↵/l open`, `H/h/← up` — vim aliases now advertised.
-- [x] <RepoFile path="crates/jackin-console/src/tui/components/file_browser/git_prompt.rs" /> (`~:222-240`): `git_prompt_footer_items` extended with `⇥/→ next · ⇤/← prev · ↵ select` group — focus-nav and commit keys now advertised.
+**Acceptance criteria.**
 
-**I. Optional discoverability.**
-- [x] Editor/create/settings footers: `append_save_and_escape` now appends `· Ctrl+Q quit` after the `Esc back/discard` span — `Ctrl+Q` is advertised on every surface it intercepts.
+- [ ] `PREFIX_COMMAND_KEYMAP` has `'h'` as `Shown` with `glyph: Some("h/j/k/l")`.
+- [ ] `'j'`, `'k'`, `'l'` are `HiddenAlias` in `PREFIX_COMMAND_KEYMAP`.
+- [ ] `'x'` (`KillPane`) is `Shown` with `hint: Some("close")`.
+- [ ] `'n'` has `hint: Some("next tab")` (not "new").
+- [ ] The hardcoded `vec![…]` block in `hint.rs` prefix branch is deleted.
+- [ ] The replacement calls `PREFIX_COMMAND_KEYMAP.hint_spans()` and `CAPSULE_GLOBAL_KEYMAP.hint_spans()`.
+- [ ] `cargo test -p jackin-capsule` passes.
+- [ ] Existing test `prefix_awaiting_shows_cheat_sheet_not_nav_hints` (if present) passes; if it asserts hardcoded span content, update it to assert keymap-derived content.
 
-### Launch cockpit (`jackin-launch`)
+---
 
-Global facts: `Ctrl+C` (HardExit) and `Ctrl+Q` (open quit-confirm) are evaluated in `handle_cockpit_input` before modal routing; the pre-pipeline prompt loops use `read_pressed_key` in <RepoFile path="crates/jackin-launch/src/tui/run.rs" /> which treats both `Ctrl+C` and `Ctrl+Q` as cancel.
+### C — Capsule: palette key hint must use `format_key_glyph`
 
-**Comment fixes (no behaviour change):**
-- [x] `subscriptions.rs` (`~:409`): reworded to "Yes confirmed: graceful cancel".
-- [x] `build_log_dialog.rs` (`~:189`) and `subscriptions.rs` (`~:279`): comments updated to `Esc closes`.
+**Why it is wrong today.** <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" /> lines 42 and 49 hardcode `HintSpan::Key("Ctrl+\\")` as the palette key hint. When `JACKIN_PALETTE_KEY` env var overrides the default byte (`0x1C`), the dispatched key changes but the hint remains `"Ctrl+\\"` — a live LABEL-MISMATCH for any operator using a custom palette key. The resolved palette byte is already available in the input parser (`self.palette_key: Option<u8>`) but is not passed to the hint builder.
 
-**Hint reconciliations:**
-- [x] `failure_dialog.rs` `FAILURE_HINT`: added `Ctrl-C abort · Ctrl+Q quit` group.
-- [x] `prompts.rs` `CONFIRM_HINT`: replaced with `confirm_hint_spans()` (Phase 2).
-- [x] `prompts.rs` `ERROR_POPUP_HINT`: replaced with `error_popup_hint_spans()` (Phase 2).
-- [x] `prompts.rs` `TEXT_PROMPT_HINT` / `TEXT_PROMPT_SKIP_HINT`: cancel group updated to `Ctrl-C/Ctrl+Q/Esc cancel`.
-- [x] `prompts.rs` `PICKER_HINT`: eliminated — `draw_select` now calls `select_list_hint_spans()` (Phase 2). Ctrl+Q and Esc visibility handled at caller level.
-- [x] Cockpit quit-confirm: `draw_confirm` renders `confirm_hint_spans()` via hint bar (Phase 2).
-- [x] Container-info overlay: `debug_info_hint_spans` includes `↵ copy value` and `Esc dismiss`; Ctrl-C/Ctrl+Q appended by caller. Vim scroll aliases now shown: `scroll_hint_spans` updated to `↑↓/j/k` / `←→/h/l` / `↑↓/j/k · ←→/h/l` — applies across all dialogs using the shared scroll hint.
-- [x] Glyph normalisation: `chord_glyph` in `keymap.rs` changed to use hyphen for all Ctrl combos (`Ctrl-Q`, `Ctrl-L`, `Ctrl-H`, `Ctrl-?`); all `HintSpan::Key("Ctrl+Q")` occurrences across four crates updated to `"Ctrl-Q"`; tests and 6 insta snapshots regenerated. `Ctrl-C` (already hyphen) was already canonical.
+**Files to change.**
 
-### Capsule (`jackin-capsule`)
+- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" /> — add `format_key_glyph(byte: u8) -> String`; update `main_view_hint` signature to accept `palette_key: u8`; replace both hardcoded `HintSpan::Key("Ctrl+\\")` occurrences with `HintSpan::Dyn(format_key_glyph(palette_key))`
+- All call sites of `main_view_hint` (find with `grep -r "main_view_hint" crates/jackin-capsule/`) — pass `self.palette_key.unwrap_or(0x1C)` as the new `palette_key` argument
 
-The capsule decodes raw PTY bytes into `InputEvent` rather than `crossterm::KeyEvent`. The byte-level chords are exact below.
+**Exact code to add in `hint.rs`.**
 
-- [x] `dialog/hint.rs` `main_view_hint`: added `Ctrl+Q quit` to both main and scrollback branches.
-- [x] `dialog/hint.rs` `main_view_hint`: `Alt+Shift+↑↓←→ resize pane` group added. Hint-row graceful truncation implemented in `chrome.rs` `render_hint_spans_row` via `truncate_spans_to_cols` helper — splits at `GroupSep` boundaries and greedily accumulates groups that fit in the available column budget, strips trailing `GroupSep`, never shows a partial key+text pair. On narrow terminals the rightmost groups (click, Ctrl-Q) are truncated first; the resize group itself is always present unless the terminal is narrower than its display width. Tests added: `truncate_spans_empty_returns_empty`, `truncate_spans_all_fit`, `truncate_spans_first_group_too_wide_returns_empty`, `truncate_spans_keeps_fitting_groups_drops_overflowing` (chrome), `main_view_hint_includes_resize_pane_group`, `scrollback_hint_does_not_include_resize_pane` (hint dialog). `daemon::tests::bottom_chrome_rides_the_cell_buffer_on_every_frame` updated to assert `resize pane` (always present in the 78-col test terminal) rather than `focus pane` (truncated on that width).
-- [x] Prefix keymap discoverability: when `prefix_mode == PrefixMode::Awaiting`, `BottomChromeWidget` now passes `prefix_awaiting: true` to `main_view_hint`, which replaces the normal nav hint bar with a compact cheat-sheet: `space/: palette · h/j/k/l split/nav · n/c new/close · Ctrl-Q quit`. The full prefix set (`c n p 0-9 " % h j k l z x & Ctrl+L d space :`) remains extended discovery; the four most-common commands are now visible the instant the prefix key is pressed. Test `prefix_awaiting_shows_cheat_sheet_not_nav_hints` added in `dialog/hint.rs`.
-- `input.rs` `~:602`: `b'r' => Redraw` produces `FullRedrawReason::ExplicitRedraw` via `prefix_full_redraw_reason` (which IS a real action — forces terminal refresh); `prefix_command_action` returns `None` meaning no daemon side-effect, which is correct. Not dead; no change needed.
-- [x] `dialog.rs` ConfirmAction: migrated to `CONFIRM_KEYMAP.dispatch(raw_bytes_to_chord(key))` (Phase 2). `↵ confirm` (CommitFocused), `Y yes`, `N/Esc no`, `⇥ focus` all shown. `Ctrl+C` and arrow/`Tab` toggle are `HiddenAlias`.
-- [x] `dialog.rs` SS3 arrows: `raw_bytes_to_chord` decodes both CSI `\x1b[C`/`\x1b[D` and SS3 `\x1bOC`/`\x1bOD` as `LogicalKey::Right`/`Left` — ToggleFocus fires on both terminal modes.
-- [x] `dialog.rs` `~:254` and `~:264`: `to_ratatui_snapshot` now passes empty strings for Exit (avoids formatting dead code); title/message arms in `ConfirmKind` kept for non-Exit variants which still need them. Exit width fix: box_rect arm for ConfirmKind::Exit uses 70% of terminal width so warning notes don't truncate.
-- [x] Read-only info dialogs: `READ_ONLY_HINT` updated to `q/Esc dismiss` matching actual `is_dismiss_key` accept set.
-- [x] `Ctrl+C` dismiss policy: decided to advertise. `PALETTE_HINT`, `PICKER_HINT`, `PROVIDER_HINT`, `RENAME_HINT` cancel glyph updated from `Esc` to `Ctrl-C/Esc`; `CONFIRM_HINT` already has `N/Esc no` with Ctrl+C as `HiddenAlias` (acceptable: confirm maps Ctrl+C → Cancel, same as Esc).
-- [x] ProviderPicker phantom: added dedicated `PROVIDER_HINT` = `↑↓ navigate · ↵ select · Esc cancel`; wired in `dialog.rs hint_spans()`.
-- [x] Status-bar dead fields: `prefix_label` and `palette_label` on `StatusBar` were never read — `button_text_for` hardcodes "☰Menu" / "prefix…" unconditionally. Both fields removed. The underlying drift (env-configurable key vs. hardcoded label) is an open UX issue but requires `input_bindings.rs` to expose its resolved bytes, deferred to a future pass.
-- Policy decision: `Ctrl+\` (`0x1C`) closes any open dialog via `palette_toggle_route` → `CloseDialog`. This is a deliberate global undiscoverable chord — advertising it in every dialog's hint bar would add 17 display chars and trigger overflow at 80 cols for dialogs that already show scroll axes. Accepted as a power-user global; no hint change.
+```rust
+fn format_key_glyph(byte: u8) -> String {
+    match byte {
+        0x01..=0x1A => format!("Ctrl-{}", (b'@' + byte) as char),
+        0x1C         => "Ctrl-\\".to_owned(),
+        _            => format!("0x{byte:02X}"),
+    }
+}
+```
 
-**Neutral-key requirements (for `LogicalKey`/`KeyChord`):** the capsule parser must produce, and the registry represent: `Char` (printable UTF-8); `Enter` (`\r`/`\n` collapsed); `Esc` (bare `\x1b` + CSI-u `CSI 27…u`); `Backspace` (`\x7f`/`\x08`); `Tab` (`\t`); `Ctrl(letter)` (`0x01-0x1A`, incl. `Ctrl+C`=`\x03`, `Ctrl+Q`=`0x11`, `Ctrl+L`=`0x0c`, `Ctrl+H`=`0x08`); `Ctrl(symbol)` (`0x1C-0x1F`, `Ctrl+\`=`0x1C`); `Arrow{Up,Down,Left,Right}` unifying legacy CSI `\x1b[A-D`, SS3 `\x1bOA-D`, and kitty `\x1b[1;<mod>[:<event>]<final>`; `Arrow+Mods` (Alt/Shift, e.g. Alt+Shift=mod 4 for resize) with an event kind (Press/Repeat/Release) so Release is dropped uniformly; `FocusIn`/`FocusOut` (`\x1b[I`/`\x1b[O`); bracketed-paste boundaries as a paste mode (not chords); mouse events (separate from chords); and a "suppress/no-op" outcome for normalized specials (Shift+Enter modifyOtherKeys, kitty key-release).
+**Updated `main_view_hint` signature.**
 
-### Shared `jackin-tui` widgets
+```rust
+pub fn main_view_hint(
+    prefix_awaiting: bool,
+    palette_key: u8,     // pass self.palette_key.unwrap_or(0x1C) from InputParser
+    axes: ScrollAxes,
+) -> Vec<HintSpan<'static>> {
+    // …
+}
+```
 
-The registry must collapse these per-widget divergences. `ConfirmState::handle_key` (<RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" />, `~:108-127`) handles `y Y n N Tab BackTab ← → h l Enter Esc`; no single hint advertises that set — the console `ConfirmDismiss` mode shows `↵ confirm · Esc cancel` (hides y/Y/n/N) while the `YesNo` mode shows `Y yes · N/Esc no` (hides Enter and the focus keys). `TextInputState` (`text_input.rs ~:247-289`) handles editing keys (Backspace/Delete/Left/Right/Home/End) + a deliberate `Ctrl+m` swallow, none advertised (register `Internal`). `SelectListState` (`select_list.rs ~:104-147`) handles `Left/Right/Home` horizontal scroll + `Backspace` filter-edit unadvertised, and the two console footer modes for it disagree on whether `↵`/`Esc` are shown. `ErrorPopupState` (`error_dialog.rs ~:33-38`) handles `o`/`O` dismiss unadvertised (register `HiddenAlias` — it matches the rendered "OK" button). `ContainerInfoState` (`container_info.rs ~:213-244`) handles `q`/`Q` dismiss + vim scroll unadvertised, and advertises `↵ copy value` it does **not** handle (the caller copies) — the canonical PHANTOM-HINT; resolve by moving copy into the widget keymap as a `CopyValue` action or marking the binding caller-owned.
+Replace both occurrences of `HintSpan::Key("Ctrl+\\")` (one in the scrollback branch ~line 42, one in the normal-mode branch ~line 49) with:
 
-- [x] All five shared widgets migrated onto per-widget keymaps: `ConfirmState`, `TextInputState`, `SelectListState`, `ErrorPopupState`, `SaveDiscardState` (Phase 2). `ContainerInfoState` copy phantom deferred (see Phase 2 task).
-- [x] Dead canonical-hint constants removed from `hint_bar.rs`: `SELECT_CANCEL_HINT`, `DISMISS_HINT`, `DISMISS_CANCEL_HINT`, `CONFIRM_DISMISS_HINT` (Phase 3).
-- [x] Fold `scroll_hint_spans` into the registry's axis-gated hint path: `SCROLL_HINT_KEYMAP: Keymap<ScrollAxis>` added to `keymap.rs` with two `Shown` bindings — `[Up, Down]` → glyph `"↑↓/j/k"` and `[Left, Right]` → glyph `"←→/h/l"`. `scroll_hint_spans` now delegates to `SCROLL_HINT_KEYMAP.hint_spans_for_axes(axes)`. The axis-gating logic (`axis_gate_passes`) is now the single implementation for both scroll hints and all other axis-gated keymaps; the standalone gating `match (axes.vertical, axes.horizontal)` in `scroll_hint_spans` is removed. Output changed: both-axes case now produces two separate key spans (`"↑↓/j/k"`, `"←→/h/l"`) instead of the old combined `"↑↓/j/k · ←→/h/l"` single span; one test updated. `handle_key_for_axes` dispatch side unchanged (operates directly on `ScrollState`; no semantic benefit from routing through `Keymap::dispatch`).
+```rust
+HintSpan::Dyn(format_key_glyph(palette_key))
+```
 
-### Lookbook (dev tool, low priority)
+Note: `HintSpan::Dyn(String)` variant must exist in <RepoFile path="crates/jackin-tui/src/geometry.rs" />. If it does not, add it before this item lands.
 
-- [x] <RepoFile path="crates/jackin-tui-lookbook/src/main.rs" /> `SIDEBAR_HINT` and `PREVIEW_FOCUS_HINT`: updated to include `Home/End first/last` (sidebar) and `PgUp/PgDn page` (preview) in Phase 0. Further registry migration deferred (lookbook is internal tooling).
+**Acceptance criteria.**
 
-## Mandatory hint bar on every operational screen
+- [ ] `format_key_glyph` function exists in `hint.rs`.
+- [ ] `main_view_hint` accepts `palette_key: u8`.
+- [ ] No `HintSpan::Key("Ctrl+\\")` literal exists anywhere in `hint.rs`.
+- [ ] Both palette-key spans use `HintSpan::Dyn(format_key_glyph(palette_key))`.
+- [ ] All call sites pass the resolved `palette_key` byte (not a hardcoded constant).
+- [ ] `cargo test -p jackin-capsule` passes.
+- [ ] Unit test: `format_key_glyph(0x1C)` returns `"Ctrl-\\"` and `format_key_glyph(0x05)` returns `"Ctrl-E"`.
 
-An additional requirement was added after the audit: every operational TUI screen must carry a visible hint bar. Intro and outro animations are the only exceptions. Screens where an operator makes a selection, confirms an action, or navigates a list must always advertise the available keys — the hint bar is the only discovery surface.
+---
 
-An audit of all four surfaces (console, launch cockpit, capsule, lookbook) confirmed no screen was completely missing a hint bar call. The gaps found were incomplete hints — keys handled but not advertised in an existing hint bar. Six sites were fixed in this branch:
+### D — UNREGISTERABLE annotations for CSI resize sequence (same PR as A–C)
 
-| Surface | File | Fix |
-|---|---|---|
-| Launch | `prompts.rs CONFIRM_HINT` | Added `↵ confirm` |
-| Console | `run.rs CONFIRM_HINT` | Added `↵ confirm` |
-| Capsule | `dialog/hint.rs CONFIRM_HINT` | Added `↵ select` and `⇥ toggle`; normalised `N/Esc no` |
-| Capsule | `dialog/hint.rs main_view_hint` | Added `Ctrl+Q quit` to the non-scrollback branch |
-| Lookbook | `main.rs SIDEBAR_HINT` | Added `Home/End first/last` |
-| Lookbook | `main.rs PREVIEW_FOCUS_HINT` | Added `PgUp/PgDn page` |
+**Why it is needed.** <RepoFile path="crates/jackin-capsule/src/tui/input.rs" /> line 741 decodes the `Alt+Shift+Arrow` multi-byte CSI sequence directly, bypassing the keymap registry. <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" /> line 56 advertises `HintSpan::Key("Alt+Shift+↑↓←→")` with no keymap entry and no annotation. After items A–C land, these are the only two remaining bare `HintSpan::Key` literals without keymap backing; they must carry explicit `// UNREGISTERABLE` annotations so future reviewers know they are intentional escape hatches and not regressions.
 
-Remaining hint gaps (handled but unadvertised) are in the divergence catalogue above and are addressed as part of Phase 2.
+**Files to change.**
 
-## Tasks
+- <RepoFile path="crates/jackin-capsule/src/tui/input.rs" /> — add `// UNREGISTERABLE(CSI)` comment at the Alt+Shift+Arrow decode site (line 741)
+- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" /> — add `// UNREGISTERABLE(CSI)` comment immediately above the `HintSpan::Key("Alt+Shift+↑↓←→")` literal (line 56)
 
-**Phase 0 — Stop the dangerous divergence + visible truncation (correctness, independent of the refactor):**
-- [x] Console main-list silent quit (catalogue A): `q/Q` arm removed from all Esc arms in `global_mounts.rs` and `auth.rs`; main list has no `q/Q` arm → silent no-op. Policy: bare `q` on main list is no-op; `Ctrl+Q` opens confirm everywhere.
-- [x] Console inline-picker `exit_on_q` symmetry (catalogue B): both role-picker and agent-picker now pass `exit_on_q=false`; `Ctrl+Q` is the sole quit path from inline pickers.
-- [x] Launch stale comments: `subscriptions.rs` "Ctrl+Q confirmed" → "Yes confirmed"; `build_log_dialog.rs` and `subscriptions.rs` "`q` closes" → "`Esc` closes".
-- [x] Capsule exit-confirm box-width truncation: `dialog.rs box_rect` — `ConfirmKind::Exit` now uses 70% terminal width instead of hardcoded `PALETTE_WIDTH`.
-- [x] Mandatory hint bar audit: confirmed all screens have hint bars; fixed six missing-key gaps (see table above).
-- [x] Launch hint reconciliations (catalogue launch section): FAILURE_HINT, TEXT_PROMPT_HINT/SKIP, PICKER_HINT; scroll_hint_spans updated with vim aliases.
-- [x] Capsule hint reconciliations (catalogue capsule section): main_view_hint Ctrl+Q both branches, READ_ONLY_HINT q/Esc, PROVIDER_HINT dedicated constant, Exit dead-string cleanup.
+**Exact comments to add.**
 
-**Phase 1 — Registry foundation (`jackin-tui`):**
-- [x] `LogicalKey` / `Mods` / `KeyChord` neutral key types; `From<crossterm::event::KeyEvent> for KeyChord` for crossterm surfaces; byte→`KeyChord` parser left for capsule migration (Phase 2).
-- [x] `KeyBinding<A>`, `Keymap<A>`, `Visibility`, `chord_glyph`, `Keymap::dispatch`/`hint_spans`/`hint_spans_for_axes` in <RepoFile path="crates/jackin-tui/src/keymap.rs" />; 9 unit tests in `keymap/tests.rs`; `pub mod keymap;` in `lib.rs`; re-exported through `components.rs`.
+In `input.rs` at or just above line 741:
 
-**Phase 2 — Migrate every surface onto the registry:**
-- [x] Shared widgets: `ConfirmState`, `ErrorPopupState`, `SaveDiscardState`, `SelectListState`, `TextInputState` all migrated to per-widget `Keymap<A>`; each exports a `*_hint_spans()` function used by all callers.
-- [x] `raw_bytes_to_chord(bytes: &[u8]) -> Option<KeyChord>` added to `keymap.rs`; covers Enter/Esc/Tab/Backspace/printable ASCII/Ctrl+letter/CSI+SS3 arrows and arrow+modifier sequences.
-- [x] Capsule `ConfirmAction` dispatch (dialog.rs `~:715`) migrated to `CONFIRM_KEYMAP.dispatch(raw_bytes_to_chord(key))`; `CONFIRM_HINT` in `dialog/hint.rs` replaced with `confirm_hint_spans()`.
-- [x] Launch `prompts.rs`: `draw_confirm` uses `confirm_hint_spans()`, `draw_select` uses `select_list_hint_spans()`, `draw_error_popup` uses `error_popup_hint_spans()`.
-- [x] Console `run.rs`: quit-confirm hint bar uses `confirm_hint_spans()`.
-- [x] Console `footer_hints.rs`: `error_popup_footer_items` uses `error_popup_hint_spans()`; `save_discard_cancel_footer_items` uses `save_discard_hint_spans()`; `ConfirmDismiss`/`OpNamingTextInput` modes use `text_input_hint_spans()`.
-- [x] Capsule `dialog/input.rs`: `Ctrl+Q` added to `is_dismiss_key`, `is_filter_dismiss_key`, `rename_tab_handle_key`, and `CONFIRM_KEYMAP`'s Cancel binding (`confirm_dialog.rs`). All capsule dialog surfaces now exit on Ctrl+Q.
-- [x] Capsule `input.rs` prefix command dispatch + `status_bar.rs` env-configurable labels: (a) `PrefixCommand` derive extended with `Copy` (both `JumpTab(usize)` and `MoveFocus(ArrowDir)` are Copy); (b) `PREFIX_COMMAND_KEYMAP: Keymap<PrefixCommand>` created in `crates/jackin-capsule/src/tui/keymap.rs` — authoritative binding table for all 17 prefix commands including 10 `JumpTab` digits (all `Internal`) and vim nav aliases; (c) `prefix_binding(b: u8)` in `input.rs` simplified to delegate to `PREFIX_COMMAND_KEYMAP.dispatch(raw_bytes_to_chord(&[b]))`; (d) `palette_key_glyph()` helper added to `services/input_bindings.rs` — formats configured palette byte as `C-\`, `C-e`, etc.; (e) `StatusBar` gains `palette_key_glyph: Option<String>` field, `button_text_for` uses it to render e.g. `" C-\ Menu "` instead of the hardcoded `" ☰Menu "` when palette is enabled; (f) `daemon.rs` sets `status_bar.palette_key_glyph` from resolved `input_bindings.palette_key` at startup. The outer `InputParser::process` Idle-state byte comparisons (`palette_key` and `prefix`) remain runtime-configured and cannot be in a static `Keymap` — those are env-var bytes resolved at startup; full static migration would require runtime-configurable keymap entries (not yet supported). Capsule outer dispatch is left as-is.
-- [x] Launch dispatch migrated to keymaps: `crates/jackin-launch/src/tui/keymap.rs` created with `COCKPIT_KEYMAP` (Ctrl+Q → OpenQuitConfirm), `BUILD_LOG_KEYMAP` (Esc/Up/Down/j/k/PgUp/PgDn), `FAILURE_KEYMAP` (↵/Esc → Dismiss), `CONTAINER_INFO_KEYMAP` (↵ CopyValue / Esc Close). `subscriptions.rs` dispatch arms replaced with `Keymap::dispatch(KeyChord::from(k))` for all four states. `build_log_dialog.rs` `build_log_hint` delegates to `keymap::build_log_hint_spans`. `COCKPIT_HINT` and `FAILURE_HINT` already correct; build log hint generated from keymap module.
-- [x] Console `input/*.rs` + `file_browser`/`git_prompt` dispatch and remaining `footer_hints.rs` builders; register vim aliases and workspace-row/instance actions; delete dead settings arms. Preview-pane focus mode (`handle_preview_focused_key`) migrated to `PREVIEW_PANE_KEYMAP.dispatch(KeyChord::from(key))` with vim aliases `j/k` as `HiddenAlias`; `destructive_confirm_footer_items` and `yes_no_footer_items` now delegate to `confirm_hint_spans()`; `file_browser`/`git_prompt` hints (catalogue H) and dead settings arms (catalogue C) were addressed in Phase 0; workspace-row/instance actions (catalogue E) addressed in Phase 0. `input/editor.rs` dispatch migrated to `dispatch_editor_top_level` using `EDITOR_GLOBAL_KEYMAP`, `EDITOR_TAB_BAR_KEYMAP`, `EDITOR_CONTENT_KEYMAP`; `input/global_mounts.rs` all four tab handlers migrated to per-tab keymaps via `SETTINGS_TAB_BAR_KEYMAP`, `SETTINGS_CONTENT_SHELL_KEYMAP`, `SETTINGS_GENERAL_TAB_KEYMAP`, `SETTINGS_ENV_TAB_KEYMAP`, `SETTINGS_TRUST_TAB_KEYMAP`, `SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP`; inline-picker `update.rs` `inline_picker_shell_plan` migrated to `INLINE_PICKER_SHELL_KEYMAP`. All keymaps defined in <RepoFile path="crates/jackin-console/src/tui/keymap.rs" /> with full vim-alias coverage and dispatch tests in `keymap/tests.rs`.
-- `ContainerInfoState` `↵ copy value` hint is correctly implemented: `b"\r" | b"\n"` in `dialog.rs ~:687` calls `keyboard_copy_payload()` → `CopyToClipboard`. Not phantom; no change needed.
-- [x] Lookbook hints migrated to `Keymap<A>`: `SIDEBAR_HINT` and `PREVIEW_FOCUS_HINT` static constants removed; replaced with `SIDEBAR_KEYMAP: Keymap<SidebarAction>` and `PREVIEW_KEYMAP: Keymap<PreviewAction>` in `crates/jackin-tui-lookbook/src/main.rs`. Dispatch now goes through `SIDEBAR_KEYMAP.dispatch(KeyChord::from(key))` / `PREVIEW_KEYMAP.dispatch(chord)`. Hint bar calls `keymap.hint_spans()` per frame. Previously missing aliases (`j/k` sidebar navigation, `BackTab` preview back-to-list) are now registered as `HiddenAlias` bindings — gap between item 240's finding and hint bar is closed. `KeyCode` import removed from `main.rs` (no longer needed for lookbook navigation).
+```rust
+// UNREGISTERABLE(CSI): Alt+Shift+Arrow is a multi-byte CSI escape sequence.
+// Keymap<u8> operates on single bytes and cannot represent multi-byte chords.
+// When KeyChord gains a Csi(CsiKey) variant (see roadmap item
+// "Keymap registry and hint-bar consistency", item E), this arm moves into a keymap.
+```
 
-**Phase 3 — Enforcement and cleanup:**
-- [x] Per-context chord-coverage tests in `keymap/tests.rs`: `assert_all_chords_dispatch` + `assert_has_shown_hints` applied to all five shared-widget keymaps; `raw_bytes_to_chord` round-trip tests including `CONFIRM_KEYMAP` dispatch via raw bytes.
-- [x] Dead canonical-hint constants removed from `hint_bar.rs`: `SELECT_CANCEL_HINT`, `DISMISS_HINT`, `DISMISS_CANCEL_HINT`, `CONFIRM_DISMISS_HINT` (all had zero callers; consumers migrated to registry-derived functions).
-- [x] CI enforcement on migrated surfaces: parity tests cover all migrated surfaces — `PREFIX_COMMAND_KEYMAP` tests verify every byte that `prefix_binding` previously handled now dispatches through the keymap; `PREVIEW_PANE_KEYMAP` and `WORKSPACE_LIST_KEYMAP` tests in <RepoFile path="crates/jackin-console/src/tui/keymap.rs" /> (`keymap/tests.rs`) cover all navigation chords including vim aliases and assert each footer glyph matches the dispatch table; shared-widget keymaps covered by `keymap/tests.rs` (item 234). The test-level guard is the practical enforcement: every migrated surface has a chord-coverage test, ensuring new chords require a binding table entry. A formal `clippy::disallowed_methods` or grep CI check is deferred. Single-source consolidation: the earlier `#[cfg(test)]` mirror table in the `jackin` binary crate's console module — which duplicated (and lossily omitted) the real dispatch — was **deleted**. The real `workspace_list_key_plan` / `preview_pane_key_plan` resolvers now dispatch through the `jackin-console` keymaps directly, so there is exactly one source of truth per surface; the dead `editor_top_level_key_plan` `match` encoding was likewise removed (the editor dispatches through `EDITOR_GLOBAL`/`EDITOR_TAB_BAR`/`EDITOR_CONTENT`).
-- [x] Remove now-unused hand-built footer builders: `yes_no_footer_items` and `destructive_confirm_footer_items` (both were thin wrappers over `confirm_hint_spans()`) deleted from `jackin-console/src/tui/components/footer_hints.rs`; their only callers (`ModalFooterMode::YesNo` arm in `footer_hints.rs` and `ManagerStage::ConfirmDelete | ConfirmInstancePurge` arm in `frame.rs`) now call `jackin_tui::components::confirm_hint_spans()` directly; `destructive_confirm_footer_items` import removed from `frame.rs`. Editor/settings row-level footer builders migrated to `Keymap<()>` display-only keymaps: `editor_general_row_footer_items` → `EDITOR_GENERAL_RENAME_KEYMAP` / `EDITOR_GENERAL_WORKDIR_KEYMAP` / `EDITOR_GENERAL_TOGGLE_KEYMAP`; `editor_role_row_footer_items` → `EDITOR_ROLE_NEW_KEYMAP` (new-role case); `auth_row_footer_items` → `AUTH_MANAGE_KEYMAP` / `AUTH_EDIT_SOURCE_KEYMAP`; `settings_general_row_footer_items` → `SETTINGS_GENERAL_TOGGLE_KEYMAP`; `settings_trust_row_footer_items` → `SETTINGS_TRUST_TOGGLE_KEYMAP`. Row-level keymaps use `Keymap<()>` (action type `()`) and are never dispatched — `hint_spans()` only. All defined in <RepoFile path="crates/jackin-console/src/tui/keymap.rs" /> alongside the dispatch keymaps.
+In `hint.rs` immediately above the `HintSpan::Key("Alt+Shift+↑↓←→")` line:
 
-**Validation:**
-- [x] Re-run the four-surface audit + completeness pass. Findings: (a) Console PreviewPane `BackTab`/`←` handled but only `Esc` shown — fixed: `PREVIEW_PANE_KEYMAP` now has `glyph: "Esc/←"` and `BackTab` as `HiddenAlias`; footer updated to `Esc/←`. (b) Lookbook `PREVIEW_FOCUS_HINT` does not show `BackTab` and `SIDEBAR_HINT` does not show `j/k` — resolved via item 231 migration: both aliases now registered as `HiddenAlias` in their respective `Keymap<A>`. No other divergences found.
-- [x] Mandatory hint bar audit — all 43 screens audited, 0 missing: every operational screen in jackin-capsule (13 screens: main mux view, prefix-awaiting mode, scrollback mode, exit confirm, rename tab, container info, palette dialog, read-only notice, and all other dialogs), jackin-console (19 screens: workspace list, preview-pane focus, editor, settings, confirm-delete/purge, create-prelude, yes/no modal, error popup, save/discard, agent/role/op picker, file browser, git prompt, container info modal, debug info dialog, and all other modals), and jackin-launch (11 screens: cockpit, build log, failure dialog, container info, quit confirm, pre-pipeline prompts, text prompt, picker, and all other overlays) has a rendered hint bar. The only intentional exceptions are the intro/outro transitions (not operational screens — no user interaction expected). Requirement: no operational screen may ever ship without a hint bar; use `render_hint_bar` + keymap-derived spans on any new screen.
-- [x] Dispatch-layer smoke tests for every surface keymap: `crates/jackin-launch/src/tui/keymap/tests.rs` (18 tests — `COCKPIT_KEYMAP`, `BUILD_LOG_KEYMAP`, `FAILURE_KEYMAP`, `CONTAINER_INFO_KEYMAP`: every advertised chord dispatches to the expected action, canonical non-registered chords return `None`, hint spans contain expected labels); `crates/jackin-tui-lookbook/src/keymap_smoke.rs` (15 tests — `SIDEBAR_KEYMAP` and `PREVIEW_KEYMAP`: all advertised chords dispatch, `HiddenAlias` entries dispatch but are absent from `hint_spans()`, non-registered chords return `None`, hint span content verified). Combined with the existing per-surface tests for `PREFIX_COMMAND_KEYMAP`, `PREVIEW_PANE_KEYMAP`, and all five shared-widget keymaps, every keymap in the registry now has automated dispatch coverage. The invariant "advertised key dispatches, non-advertised key returns None" is CI-enforced. The visual rendering layer (does the rendered TUI actually change state after the action fires?) requires a live session; that remains a pre-release acceptance step for the maintainer, not a CI gate — and is explicitly out-of-scope for automated testing since the dispatch-layer guarantee already eliminates the class of bugs where a key is advertised but silently ignored.
+```rust
+// UNREGISTERABLE(CSI): corresponds to the Alt+Shift+Arrow decode in input.rs.
+// Hand-written pending KeyChord::Csi extension tracked in item E of the same roadmap item.
+```
 
-## Related Files
+**Acceptance criteria.**
 
-- <RepoFile path="crates/jackin-tui/src/geometry.rs" /> — `HintSpan`, the free-text hint vocabulary
-- <RepoFile path="crates/jackin-tui/src/components/hint_bar.rs" /> — hint-bar render + the dead canonical-hint constants
-- <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" /> — `ConfirmState::handle_key` (shared hidden-key set)
-- <RepoFile path="crates/jackin-tui/src/components/text_input.rs" /> — `TextInputState::handle_key`
-- <RepoFile path="crates/jackin-tui/src/components/select_list.rs" /> — `SelectListState::handle_key`
-- <RepoFile path="crates/jackin-tui/src/components/error_dialog.rs" /> — `ErrorPopupState::handle_key`
-- <RepoFile path="crates/jackin-tui/src/components/container_info.rs" /> — `ContainerInfoState` (the `↵ copy value` phantom hint)
-- <RepoFile path="crates/jackin-tui/src/components/save_discard_dialog.rs" /> — `SaveDiscardState::handle_key`
-- <RepoFile path="crates/jackin-tui/src/components/dialog_layout.rs" /> — `scroll_hint_spans` / `handle_key_for_axes` (the existing single-source precedent for scroll)
-- <RepoFile path="crates/jackin-console/src/tui/keymap.rs" /> — console keymap registry: the single source for every host-console surface (workspace list, preview pane, editor, settings tabs, inline picker), driving both `Keymap::dispatch()` and footer glyphs
-- <RepoFile path="crates/jackin-console/src/tui/run.rs" /> — `should_open_quit_confirm`, the quit policy
-- <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" /> — console hint vocabulary
-- <RepoFile path="crates/jackin-launch/src/tui/subscriptions.rs" /> — launch cockpit dispatch
-- <RepoFile path="crates/jackin-launch/src/tui/run.rs" /> — `read_pressed_key`, pre-pipeline prompt loops
-- <RepoFile path="crates/jackin-launch/src/tui/components/prompts.rs" /> — launch hint constants
-- <RepoFile path="crates/jackin-capsule/src/tui/input.rs" /> — capsule byte parser, `Ctrl+Q`/prefix chords
-- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> — `ConfirmAction`, `box_rect` width, dead Exit strings
-- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" /> — capsule hint vocabulary
-- <RepoFile path="crates/jackin-capsule/src/services/input_bindings.rs" /> — env-configurable prefix/palette keys
+- [ ] `// UNREGISTERABLE(CSI)` comment exists in `input.rs` at the CSI Alt+Shift+Arrow decode.
+- [ ] `// UNREGISTERABLE(CSI)` comment exists in `hint.rs` immediately above `HintSpan::Key("Alt+Shift+↑↓←→")`.
+- [ ] No other `HintSpan::Key(…)` literal exists in `hint.rs` without either a corresponding keymap derivation or an `// UNREGISTERABLE(…)` annotation.
+- [ ] `cargo test -p jackin-capsule` passes.
+
+---
+
+### E — KeyChord CSI sum-type extension (separate PR)
+
+**Why it is needed.** `Keymap<u8>` cannot represent the multi-byte CSI sequences the Capsule input parser decodes (e.g., `Alt+Shift+Arrow` for pane resize). Adding `KeyChord::Csi(CsiKey)` as a sum-type variant allows the resize binding to be registered in the keymap and removes the last `UNREGISTERABLE(CSI)` escape hatch.
+
+**Files to change.**
+
+- <RepoFile path="crates/jackin-tui/src/keymap.rs" /> — extend `KeyChord` to a sum type; add `CsiKey` enum; update `dispatch`, `hint_spans`, and `raw_bytes_to_chord` to handle the new variant
+- <RepoFile path="crates/jackin-capsule/src/tui/keymap.rs" /> — add `ResizePane` action variant and register the four `KeyChord::Csi(…)` bindings
+- <RepoFile path="crates/jackin-capsule/src/tui/input.rs" /> — update the CSI Alt+Shift+Arrow decode to produce `KeyChord::Csi(CsiKey::AltShift{Dir})` and remove the `UNREGISTERABLE` comment
+- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" /> — remove `HintSpan::Key("Alt+Shift+↑↓←→")` and its `UNREGISTERABLE` comment; derive from keymap instead
+
+**Exact `KeyChord` extension.**
+
+```rust
+pub enum KeyChord {
+    Byte(u8),           // single PTY byte (capsule)
+    Csi(CsiKey),        // multi-byte CSI escape (capsule resize, etc.)
+    Event(KeyEvent),    // crossterm KeyEvent (console, launch)
+}
+
+pub enum CsiKey {
+    AltShiftUp,
+    AltShiftDown,
+    AltShiftLeft,
+    AltShiftRight,
+}
+```
+
+**Registration example.**
+
+```rust
+KeyBinding {
+    chords: &[
+        KeyChord::Csi(CsiKey::AltShiftUp),
+        KeyChord::Csi(CsiKey::AltShiftDown),
+        KeyChord::Csi(CsiKey::AltShiftLeft),
+        KeyChord::Csi(CsiKey::AltShiftRight),
+    ],
+    action:     NormalAction::ResizePane,
+    hint:       Some("resize pane"),
+    visibility: Visibility::Shown,
+    glyph:      Some("Alt+Shift+↑↓←→"),
+},
+```
+
+**Acceptance criteria.**
+
+- [ ] `KeyChord` is a sum type with `Byte`, `Csi`, and `Event` variants.
+- [ ] `CsiKey::AltShift{Up,Down,Left,Right}` variants exist.
+- [ ] `raw_bytes_to_chord` decodes the four CSI sequences to `KeyChord::Csi(CsiKey::AltShift*)`.
+- [ ] Resize pane is registered in the capsule keymap with `Visibility::Shown` and `glyph: Some("Alt+Shift+↑↓←→")`.
+- [ ] No `UNREGISTERABLE(CSI)` comment remains in `input.rs` or `hint.rs` for this binding.
+- [ ] `cargo test --workspace` passes.
+- [ ] Unit test: `raw_bytes_to_chord(b"\x1b[1;4A")` returns `Some(KeyChord::Csi(CsiKey::AltShiftUp))`.
+
+---
+
+### F — Enforcement audit after items A–D
+
+After items A–D land, audit every hint builder for remaining bare `HintSpan::Key(…)` literals without keymap backing. Primary targets:
+
+- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" /> — all public hint builder functions; confirm none remain without derivation or `// UNREGISTERABLE` annotation
+- <RepoFile path="crates/jackin-launch/src/tui/" /> — confirm all hint builders still call keymap-derived spans (currently correct; verify no regression was introduced)
+- <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" /> — confirm all hint builders still call keymap-derived spans (currently correct; verify no regression was introduced)
+
+**Acceptance criteria.**
+
+- [ ] `grep -r 'HintSpan::Key' crates/jackin-capsule/src/tui/components/dialog/hint.rs` returns only lines with an `// UNREGISTERABLE` comment on the preceding line.
+- [ ] `grep -r 'HintSpan::Key' crates/jackin-console/ crates/jackin-launch/` returns only lines derivable from keymap calls or explicitly annotated.
+
+---
+
+### G — Test module layout violations (12 items)
+
+**Rule (from <RepoFile path="crates/AGENTS.md" />).** `tests.rs` must never declare child modules. All tests for a module live inline in a single `tests.rs` beside the implementation. Existing violations block all new submodule splits.
+
+**How to fix each item.** Read the violating `tests.rs`. For each `mod <name>;` declaration it contains, open `tests/<name>.rs`, copy its full content, and append it to `tests.rs` below the existing tests (removing the `mod` declaration). Delete the child file. If `tests/` is now empty, delete it. Run `cargo test -p <crate>` to verify after each fix.
+
+Shell-only violations (marked **SHELL**) are zero-risk: `tests.rs` has no inline tests, so the entire file is replaced by the merged child content.
+
+---
+
+**G.1 — `crates/jackin-capsule` › `src/daemon/tests/`**
+
+Violating file: <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs" /> (4896 lines, has inline tests) declares `mod render_conformance;`.
+
+- [ ] Read `crates/jackin-capsule/src/daemon/tests/render_conformance.rs` (702 lines)
+- [ ] Append its full content to the end of `daemon/tests.rs`
+- [ ] Remove the `mod render_conformance;` declaration from `daemon/tests.rs`
+- [ ] Delete `crates/jackin-capsule/src/daemon/tests/render_conformance.rs`
+- [ ] Delete the now-empty `crates/jackin-capsule/src/daemon/tests/` directory
+- [ ] `cargo test -p jackin-capsule` passes
+
+---
+
+**G.2 — `crates/jackin-capsule` › `src/tui/layout/tests/` (SHELL)**
+
+Violating file: `crates/jackin-capsule/src/tui/layout/tests.rs` (5 lines, no inline tests) declares `mod border_at; mod rect_shrink;`.
+
+- [ ] Read `crates/jackin-capsule/src/tui/layout/tests/border_at.rs` (102 lines)
+- [ ] Read `crates/jackin-capsule/src/tui/layout/tests/rect_shrink.rs` (71 lines)
+- [ ] Replace the entire content of `layout/tests.rs` with the merged content of both files (173 lines, no `mod` declarations)
+- [ ] Delete `tests/border_at.rs` and `tests/rect_shrink.rs`
+- [ ] Delete the now-empty `tests/` subdirectory
+- [ ] `cargo test -p jackin-capsule` passes
+
+---
+
+**G.3 — `crates/jackin-config` › `src/app_config_roles/tests/`**
+
+Violating file: `crates/jackin-config/src/app_config_roles/tests.rs` (247 lines, has inline tests) declares `mod resolve_mode;`.
+
+- [ ] Read `crates/jackin-config/src/app_config_roles/tests/resolve_mode.rs` (384 lines)
+- [ ] Append its full content to `app_config_roles/tests.rs`
+- [ ] Remove the `mod resolve_mode;` declaration from `tests.rs`
+- [ ] Delete `tests/resolve_mode.rs` and the now-empty `tests/` subdirectory
+- [ ] `cargo test -p jackin-config` passes
+
+---
+
+**G.4 — `crates/jackin-console` › `src/tui/screens/editor/update/tests/`**
+
+Violating file: `crates/jackin-console/src/tui/screens/editor/update/tests.rs` (918 lines, has inline tests) declares `mod auth_flat_rows_integration;`.
+
+- [ ] Read `crates/jackin-console/src/tui/screens/editor/update/tests/auth_flat_rows_integration.rs` (359 lines)
+- [ ] Append its full content to `update/tests.rs`
+- [ ] Remove the `mod auth_flat_rows_integration;` declaration
+- [ ] Delete the child file and now-empty subdirectory
+- [ ] `cargo test -p jackin-console` passes
+
+---
+
+**G.5 — `crates/jackin-console` › `src/tui/screens/editor/view/tests/`**
+
+Violating file: `crates/jackin-console/src/tui/screens/editor/view/tests.rs` (536 lines, has inline tests) declares 5 children: `agents_tab_render` (158 lines), `contextual_row_items` (184 lines), `general_tab_render` (38 lines), `mounts_tab_render` (44 lines), `secrets_tab_render` (900 lines).
+
+- [ ] Read all 5 child files from `tests/`
+- [ ] Append all 5 files (1324 lines total) to `view/tests.rs` in the order listed above
+- [ ] Remove all 5 `mod` declarations from `view/tests.rs`
+- [ ] Delete all 5 child files and the now-empty `tests/` subdirectory
+- [ ] `cargo test -p jackin-console` passes
+
+---
+
+**G.6 — `crates/jackin-console` › `src/tui/view/tests/` (snapshot complexity)**
+
+Violating file: `crates/jackin-console/src/tui/view/tests.rs` (464 lines, has inline tests) declares `mod consistency; mod snapshot;`. `snapshot.rs` itself declares `mod tests;` — three levels of nesting. Snapshot fixture names encode the module path; flattening changes their names, so regeneration is required.
+
+Fix steps (order matters):
+
+- [ ] Read `crates/jackin-console/src/tui/view/tests/consistency.rs` (296 lines)
+- [ ] Append its content to `view/tests.rs`; remove `mod consistency;` declaration; delete `tests/consistency.rs`
+- [ ] Read `crates/jackin-console/src/tui/view/tests/snapshot.rs` (this file declares `mod tests;`)
+- [ ] Read `crates/jackin-console/src/tui/view/tests/snapshot/tests.rs` (actual test functions)
+- [ ] Append the content of `snapshot/tests.rs` to `view/tests.rs`; remove `mod snapshot;` declaration from `view/tests.rs`
+- [ ] Move `tests/snapshot/snapshots/` directory to `tests/snapshots/` so insta resolves fixtures relative to the flat `tests.rs`
+- [ ] Run `INSTA_UPDATE=new cargo test -p jackin-console` to regenerate snapshot fixture names
+- [ ] Review regenerated snapshots to confirm content is unchanged (only file names differ due to path flattening)
+- [ ] Delete `tests/snapshot.rs` and `tests/snapshot/` directory
+- [ ] `cargo test -p jackin-console` passes with all snapshots accepted
+
+---
+
+**G.7 — `crates/jackin-core` › `src/agent/tests/`**
+
+Violating file: `crates/jackin-core/src/agent/tests.rs` (170 lines, has inline tests) declares `mod auth_table;`.
+
+- [ ] Read `crates/jackin-core/src/agent/tests/auth_table.rs` (116 lines)
+- [ ] Append its content to `agent/tests.rs`
+- [ ] Remove the `mod auth_table;` declaration
+- [ ] Delete `tests/auth_table.rs` and the now-empty `tests/` subdirectory
+- [ ] `cargo test -p jackin-core` passes
+
+---
+
+**G.8 — `crates/jackin-diagnostics` › `src/observability/tests/` (SHELL)**
+
+Violating file: `crates/jackin-diagnostics/src/observability/tests.rs` (3 lines, no inline tests) declares `mod endpoint_rewrite;`.
+
+- [ ] Read `crates/jackin-diagnostics/src/observability/tests/endpoint_rewrite.rs` (22 lines)
+- [ ] Replace the full content of `observability/tests.rs` with the 22-line child content (no `mod` declarations)
+- [ ] Delete `tests/endpoint_rewrite.rs` and `tests/` subdirectory
+- [ ] `cargo test -p jackin-diagnostics` passes
+
+---
+
+**G.9 — `crates/jackin-protocol` › `src/tests/` (SHELL)**
+
+Violating file: `crates/jackin-protocol/src/tests.rs` (4 lines, no inline tests) declares `mod provider;`.
+
+- [ ] Read `crates/jackin-protocol/src/tests/provider.rs` (205 lines)
+- [ ] Replace the full content of `src/tests.rs` with the 205-line child content (no `mod` declarations)
+- [ ] Delete `tests/provider.rs` and `tests/` subdirectory
+- [ ] `cargo test -p jackin-protocol` passes
+
+---
+
+**G.10 — `crates/jackin-runtime` › `src/instance/auth/tests/`**
+
+Violating file: `crates/jackin-runtime/src/instance/auth/tests.rs` (1150 lines, has inline tests) declares 4 children: `amp_auth` (327 lines), `codex_auth` (308 lines), `github_auth` (438 lines), `kimi_auth` (505 lines).
+
+- [ ] Read all 4 child files from `tests/`
+- [ ] Append all 4 files (1578 lines total) to `auth/tests.rs` in the order listed above
+- [ ] Remove all 4 `mod` declarations from `tests.rs`
+- [ ] Delete all 4 child files and the now-empty `tests/` subdirectory
+- [ ] `cargo test -p jackin-runtime` passes
+
+---
+
+**G.11 — `crates/jackin-term` › `src/grid/tests/` (SHELL)**
+
+Violating file: `crates/jackin-term/src/grid/tests.rs` (8 lines, no inline tests) declares 5 children: `device_query` (54 lines), `fuzz_regression` (62 lines), `model_correctness` (278 lines), `row_arena` (21 lines), `scrollback_view` (114 lines).
+
+- [ ] Read all 5 child files from `tests/`
+- [ ] Replace the full content of `grid/tests.rs` with the merged content of all 5 files (529 lines, no `mod` declarations)
+- [ ] Delete all 5 child files and the now-empty `tests/` subdirectory
+- [ ] `cargo test -p jackin-term` passes
+
+---
+
+**G.12 — `crates/jackin` › `src/app/tests/` (SHELL)**
+
+Violating file: `crates/jackin/src/app/tests.rs` (5 lines, no inline tests) declares 2 children: `auth_set` (911 lines), `resolve_role` (61 lines).
+
+- [ ] Read `crates/jackin/src/app/tests/auth_set.rs` (911 lines)
+- [ ] Read `crates/jackin/src/app/tests/resolve_role.rs` (61 lines)
+- [ ] Replace the full content of `app/tests.rs` with the merged content of both files (972 lines, no `mod` declarations)
+- [ ] Delete both child files and the now-empty `tests/` subdirectory
+- [ ] `cargo test -p jackin` passes
+
+---
+
+## Related files
+
+- <RepoFile path="crates/jackin-tui/src/keymap.rs" /> — `Keymap<A>`, `KeyBinding`, `KeyChord`, `Visibility`, `raw_bytes_to_chord`
+- <RepoFile path="crates/jackin-tui/src/geometry.rs" /> — `HintSpan` definition; `HintSpan::Dyn(String)` variant needed for item C
+- <RepoFile path="crates/jackin-capsule/src/tui/keymap.rs" /> — capsule keymaps; `CAPSULE_GLOBAL_KEYMAP` to be added here (item A)
+- <RepoFile path="crates/jackin-capsule/src/tui/input.rs" /> — byte parser, palette key dispatch, CSI decode, Ctrl+Q raw arm (items A, C, D)
+- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" /> — all Capsule hint builders; primary target for items A–D
+- <RepoFile path="crates/jackin-capsule/src/tui/components/chrome.rs" /> — `truncate_spans_to_cols`, hint-row rendering
+- <RepoFile path="crates/jackin-capsule/src/services/input_bindings.rs" /> — env-configurable prefix/palette key resolution
+- <RepoFile path="crates/jackin-console/src/tui/keymap.rs" /> — all console surface keymaps (currently correct; verify stays correct in item F)
+- <RepoFile path="crates/jackin-console/src/tui/components/footer_hints.rs" /> — console hint vocabulary (currently correct; verify stays correct in item F)
+- <RepoFile path="crates/jackin-launch/src/tui/keymap.rs" /> — launch surface keymaps (currently correct; verify stays correct in item F)
+- <RepoFile path="crates/jackin-launch/src/progress.rs" /> — `LaunchProgress`, `while_waiting()`, `CancellationToken`
+- <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" /> — shared `exit_confirm_state()`, `ConfirmState`
