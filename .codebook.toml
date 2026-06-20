@@ -46,6 +46,7 @@ ignore_patterns = [
 
 words = [
   "andrewpatterson",
+  "lossily",
   "caching's",
   "candido",
   "cavecrew",
