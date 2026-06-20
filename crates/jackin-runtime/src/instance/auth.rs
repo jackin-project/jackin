@@ -981,12 +981,29 @@ fn provision_single_file_credential(
                 AuthProvisionOutcome::HostMissing
             }
             Ok(content) => {
-                write_private_file(target, &content).with_context(|| {
-                    format!(
-                        "failed to write {agent_name} role-state {label} at {}",
-                        target.display()
-                    )
-                })?;
+                // No-churn guard: skip the atomic write when the role-state
+                // file already holds identical content. `write_private_file`
+                // replaces the inode (temp + rename); on macOS that
+                // invalidates a live single-file bind mount into the running
+                // container. The background sibling-auth prewarm
+                // (`prewarm_auth_for_agents`, spawned during launch) re-runs
+                // this for already-foreground-provisioned agents, so an
+                // unconditional rename races `docker create` and silently
+                // breaks the foreground container's auth mounts — leaving the
+                // sibling agent unauthenticated. Mirrors the GitHub
+                // provisioner's no-churn guard.
+                let unchanged =
+                    std::fs::read_to_string(target).is_ok_and(|existing| existing == content);
+                if unchanged {
+                    repair_permissions(target);
+                } else {
+                    write_private_file(target, &content).with_context(|| {
+                        format!(
+                            "failed to write {agent_name} role-state {label} at {}",
+                            target.display()
+                        )
+                    })?;
+                }
                 AuthProvisionOutcome::Synced
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {

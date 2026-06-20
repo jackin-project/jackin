@@ -31,6 +31,42 @@ fn sync_copies_host_auth_json_when_present() {
     assert_eq!(std::fs::read_to_string(&auth_json).unwrap(), expected);
 }
 
+/// Re-syncing identical host content must NOT rewrite the role-state
+/// file. `write_private_file` replaces the inode (temp + rename); on
+/// macOS that invalidates a live single-file bind mount into the running
+/// container, which is exactly how the background sibling-auth prewarm
+/// silently broke Codex/amp/grok/opencode auth (the file became
+/// unreadable inside the container, so runtime-setup skipped the copy
+/// and the agent started unauthenticated). Pin the no-churn guard by
+/// asserting the inode is stable across an unchanged re-sync.
+#[cfg(unix)]
+#[test]
+fn sync_does_not_rewrite_inode_when_content_unchanged() {
+    use std::os::unix::fs::MetadataExt as _;
+
+    let temp = tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let (host_home, _) = stage_host_auth_json(&temp, "stable.test");
+
+    let (outcome1, _) =
+        RoleState::provision_codex_auth(&auth_json, AuthForwardMode::Sync, &host_home).unwrap();
+    assert_eq!(outcome1, AuthProvisionOutcome::Synced);
+    let ino_before = std::fs::metadata(&auth_json).unwrap().ino();
+
+    // Second identical sync (mirrors the background prewarm re-provisioning
+    // the same file the foreground launch already bind-mounted).
+    let (outcome2, mounted) =
+        RoleState::provision_codex_auth(&auth_json, AuthForwardMode::Sync, &host_home).unwrap();
+    assert_eq!(outcome2, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(auth_json.as_path()));
+    let ino_after = std::fs::metadata(&auth_json).unwrap().ino();
+
+    assert_eq!(
+        ino_before, ino_after,
+        "unchanged re-sync must not replace the inode (would stale a live bind mount)"
+    );
+}
+
 #[test]
 fn sync_source_dir_copies_direct_auth_json() {
     let temp = tempdir().unwrap();
