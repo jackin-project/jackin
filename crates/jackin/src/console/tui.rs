@@ -106,6 +106,8 @@ pub(crate) mod input {
     }
 }
 pub mod run;
+#[cfg(test)]
+mod keymap;
 pub mod state {
     //! Manager state machine for the jackin' console TUI.
     //!
