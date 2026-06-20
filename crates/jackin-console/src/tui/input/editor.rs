@@ -71,26 +71,24 @@ fn dispatch_editor_top_level(key: KeyEvent, tab_bar_focused: bool) -> EditorTopL
     // the tab bar has focus. Other keys (Enter, h/H/l/L, Up/k/K, etc.) fall through to
     // the content keymap even when the tab bar is focused — matching the original
     // `editor_top_level_key_plan` behavior where these guards were not exhaustive.
-    if tab_bar_focused {
-        if let Some(action) = EDITOR_TAB_BAR_KEYMAP.dispatch(chord) {
-            return match action {
-                EditorTabBarAction::PrevTab => {
-                    EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::MoveTab {
-                        delta: -1,
-                        focus_tab_bar: true,
-                    })
-                }
-                EditorTabBarAction::NextTab => {
-                    EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::MoveTab {
-                        delta: 1,
-                        focus_tab_bar: true,
-                    })
-                }
-                EditorTabBarAction::FocusContent => {
-                    EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::FocusContent)
-                }
-            };
-        }
+    if tab_bar_focused && let Some(action) = EDITOR_TAB_BAR_KEYMAP.dispatch(chord) {
+        return match action {
+            EditorTabBarAction::PrevTab => {
+                EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::MoveTab {
+                    delta: -1,
+                    focus_tab_bar: true,
+                })
+            }
+            EditorTabBarAction::NextTab => {
+                EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::MoveTab {
+                    delta: 1,
+                    focus_tab_bar: true,
+                })
+            }
+            EditorTabBarAction::FocusContent => {
+                EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::FocusContent)
+            }
+        };
     }
 
     // Content-mode (and tab-bar fall-through): Char(_) wildcard falls through.

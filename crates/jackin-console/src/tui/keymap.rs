@@ -253,7 +253,7 @@ pub(crate) static SETTINGS_TAB_BAR_KEYMAP: Keymap<SettingsTabBarAction> = Keymap
 pub(crate) enum SettingsContentShellAction {
     /// Tab → next tab (focus stays on tab bar after move).
     NextTab,
-    /// BackTab → return focus to tab bar, no auth-kind clear.
+    /// `BackTab` → return focus to tab bar, no auth-kind clear.
     FocusTabBar,
     /// Esc → return focus to tab bar; caller clears auth kind if one is selected.
     FocusTabBarOrClearAuth,
@@ -292,7 +292,7 @@ pub(crate) enum SettingsGeneralTabAction {
     MoveDown,
     Toggle,
     Save,
-    /// Caller resolves: if dirty → ConfirmDiscard, else ReturnToList.
+    /// Caller resolves: if dirty → `ConfirmDiscard`, else `ReturnToList`.
     Back,
 }
 
@@ -373,11 +373,11 @@ pub(crate) enum SettingsEnvTabAction {
     Delete,
     /// m/M — only fires when plain modifier; caller checks context.
     ToggleMask,
-    /// p/P — caller checks plain modifier + op_available.
+    /// p/P — caller checks plain modifier + `op_available`.
     OpenPicker,
-    /// Enter — caller routes: if selected_is_op_ref && op_available → OpenPicker, else OpenEnterModal.
+    /// Enter — caller routes: if `selected_is_op_ref` && `op_available` → `OpenPicker`, else `OpenEnterModal`.
     Enter,
-    /// Caller resolves: if dirty → ConfirmDiscard, else ReturnToList.
+    /// Caller resolves: if dirty → `ConfirmDiscard`, else `ReturnToList`.
     Back,
 }
 
@@ -496,7 +496,7 @@ pub(crate) enum SettingsTrustTabAction {
     ScrollRight,
     Toggle,
     Save,
-    /// Caller resolves: if dirty → ConfirmDiscard, else ReturnToList.
+    /// Caller resolves: if dirty → `ConfirmDiscard`, else `ReturnToList`.
     Back,
 }
 
@@ -593,21 +593,21 @@ pub(crate) enum SettingsGlobalMountsTabAction {
     MoveDown,
     ScrollLeft,
     ScrollRight,
-    /// s/S — caller checks has_sensitive_mount to route ConfirmSensitiveSave vs OpenSavePreview.
+    /// s/S — caller checks `has_sensitive_mount` to route `ConfirmSensitiveSave` vs `OpenSavePreview`.
     Save,
     ToggleReadonly,
     /// a/A — always Add; Enter on the add-row also → Add, checked by caller.
     Add,
-    /// d/D — caller checks mount_count > 0.
+    /// d/D — caller checks `mount_count` > 0.
     Delete,
     OpenGithub,
     EditRename,
     EditSource,
     EditDest,
     EditScope,
-    /// Enter — fires when Enter pressed; caller routes to Add (if add_row_selected) else Noop.
+    /// Enter — fires when Enter pressed; caller routes to Add (if `add_row_selected`) else `Noop`.
     Enter,
-    /// Caller resolves: if dirty → ConfirmDiscard, else ReturnToList.
+    /// Caller resolves: if dirty → `ConfirmDiscard`, else `ReturnToList`.
     Back,
 }
 
