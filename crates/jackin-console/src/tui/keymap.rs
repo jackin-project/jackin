@@ -892,5 +892,341 @@ pub(crate) static AUTH_EDIT_SOURCE_KEYMAP: Keymap<()> = Keymap::new(&[KeyBinding
     glyph: Some("↵"),
 }]);
 
+// ── Workspace list ────────────────────────────────────────────────────────────
+
+/// Actions resolvable from a key on the workspace-list screen.
+///
+/// The keymap resolves a key to one of these; `workspace_list_key_plan` then
+/// folds in runtime context the table cannot carry (list-scroll focus, the
+/// selected row's type) to produce the final `WorkspaceListKeyPlan`. Footer
+/// builders pull each advertised key's glyph from this same table via
+/// [`jackin_tui::components::Keymap::glyph_for`], so an advertised key cannot
+/// drift from the dispatched key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WorkspaceListAction {
+    NavigateUp,
+    NavigateDown,
+    TreeLeft,
+    TreeRight,
+    ScrollLeft,
+    ScrollRight,
+    Enter,
+    Edit,
+    NewSession,
+    Delete,
+    OpenGithub,
+    Settings,
+    InstanceReconnect,
+    InstanceNewSession,
+    InstanceShell,
+    InstanceInspect,
+    InstanceStop,
+    ConfirmPurge,
+    EnterPreview,
+    Exit,
+    Quit,
+}
+
+/// Authoritative keymap for the workspace list: single source for both
+/// `workspace_list_key_plan` dispatch and the workspace-row / instance-row
+/// footer glyphs in `components/footer_hints.rs`.
+///
+/// Hint labels are intentionally absent from most rows here because the same
+/// glyph carries different labels per context (`↵` = "launch" on a workspace
+/// row, "reconnect" on an instance row; `N` = "new" vs "new session"). Footers
+/// supply the contextual label and take only the glyph from this table.
+pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::new(&[
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Up)],
+        action: WorkspaceListAction::NavigateUp,
+        hint: None,
+        visibility: Visibility::Shown,
+        glyph: Some("↑↓"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Down)],
+        action: WorkspaceListAction::NavigateDown,
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('k')),
+            KeyChord::plain(LogicalKey::Char('K')),
+        ],
+        action: WorkspaceListAction::NavigateUp,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('j')),
+            KeyChord::plain(LogicalKey::Char('J')),
+        ],
+        action: WorkspaceListAction::NavigateDown,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Left)],
+        action: WorkspaceListAction::TreeLeft,
+        hint: None,
+        visibility: Visibility::Shown,
+        glyph: Some("←"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('h')),
+            KeyChord::plain(LogicalKey::Char('H')),
+        ],
+        action: WorkspaceListAction::ScrollLeft,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Right)],
+        action: WorkspaceListAction::TreeRight,
+        hint: None,
+        visibility: Visibility::Shown,
+        glyph: Some("→"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('l')),
+            KeyChord::plain(LogicalKey::Char('L')),
+        ],
+        action: WorkspaceListAction::ScrollRight,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        action: WorkspaceListAction::Enter,
+        hint: None,
+        visibility: Visibility::Shown,
+        glyph: Some("↵"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('e')),
+            KeyChord::plain(LogicalKey::Char('E')),
+        ],
+        action: WorkspaceListAction::Edit,
+        hint: Some("edit"),
+        visibility: Visibility::Shown,
+        glyph: Some("E"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('n')),
+            KeyChord::plain(LogicalKey::Char('N')),
+        ],
+        action: WorkspaceListAction::NewSession,
+        hint: None,
+        visibility: Visibility::Shown,
+        glyph: Some("N"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('d')),
+            KeyChord::plain(LogicalKey::Char('D')),
+        ],
+        action: WorkspaceListAction::Delete,
+        hint: Some("delete"),
+        visibility: Visibility::Shown,
+        glyph: Some("D"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('o')),
+            KeyChord::plain(LogicalKey::Char('O')),
+        ],
+        action: WorkspaceListAction::OpenGithub,
+        hint: Some("open in GitHub"),
+        visibility: Visibility::Shown,
+        glyph: Some("O"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('s')),
+            KeyChord::plain(LogicalKey::Char('S')),
+        ],
+        action: WorkspaceListAction::Settings,
+        hint: Some("settings"),
+        visibility: Visibility::Shown,
+        glyph: Some("S"),
+    },
+    // Instance-row actions. Advertised contextually (instance-row footer only),
+    // so they carry no `hint` here and are HiddenAlias for the base hint bar.
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('r')),
+            KeyChord::plain(LogicalKey::Char('R')),
+        ],
+        action: WorkspaceListAction::InstanceReconnect,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: Some("R"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('a')),
+            KeyChord::plain(LogicalKey::Char('A')),
+        ],
+        action: WorkspaceListAction::InstanceNewSession,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: Some("A"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('x')),
+            KeyChord::plain(LogicalKey::Char('X')),
+        ],
+        action: WorkspaceListAction::InstanceShell,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: Some("X"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('i')),
+            KeyChord::plain(LogicalKey::Char('I')),
+        ],
+        action: WorkspaceListAction::InstanceInspect,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: Some("I"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('t')),
+            KeyChord::plain(LogicalKey::Char('T')),
+        ],
+        action: WorkspaceListAction::InstanceStop,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: Some("T"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('p')),
+            KeyChord::plain(LogicalKey::Char('P')),
+        ],
+        action: WorkspaceListAction::ConfirmPurge,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: Some("P"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Tab)],
+        action: WorkspaceListAction::EnterPreview,
+        hint: Some("into preview"),
+        visibility: Visibility::Shown,
+        glyph: Some("⇥"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Esc),
+            KeyChord::plain(LogicalKey::Char('q')),
+            KeyChord::plain(LogicalKey::Char('Q')),
+        ],
+        action: WorkspaceListAction::Exit,
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    // Ctrl-Q is intercepted upstream by `should_open_quit_confirm`; it never
+    // reaches the list resolver (which dispatches modifier-free chords). The
+    // binding exists only so the footer can derive the `Ctrl-Q` glyph.
+    KeyBinding {
+        chords: &[KeyChord::ctrl(LogicalKey::Char('q'))],
+        action: WorkspaceListAction::Quit,
+        hint: Some("quit"),
+        visibility: Visibility::Internal,
+        glyph: Some("Ctrl-Q"),
+    },
+]);
+
+// ── Preview pane (workspace list → preview focus) ─────────────────────────────
+
+/// Actions in the workspace-list preview-pane focus mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PreviewPaneAction {
+    NavigateUp,
+    NavigateDown,
+    Attach,
+    Back,
+}
+
+/// Authoritative keymap for preview-pane focus: drives both
+/// `preview_pane_key_plan` dispatch and the `PreviewPane` footer (which is
+/// `PREVIEW_PANE_KEYMAP.hint_spans()` verbatim — no context branches).
+pub(crate) static PREVIEW_PANE_KEYMAP: Keymap<PreviewPaneAction> = Keymap::new(&[
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Up)],
+        action: PreviewPaneAction::NavigateUp,
+        hint: Some("navigate panes"),
+        visibility: Visibility::Shown,
+        glyph: Some("↑↓"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Down)],
+        action: PreviewPaneAction::NavigateDown,
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('k')),
+            KeyChord::plain(LogicalKey::Char('K')),
+        ],
+        action: PreviewPaneAction::NavigateUp,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('j')),
+            KeyChord::plain(LogicalKey::Char('J')),
+        ],
+        action: PreviewPaneAction::NavigateDown,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        action: PreviewPaneAction::Attach,
+        hint: Some("attach focused pane"),
+        visibility: Visibility::Shown,
+        glyph: Some("↵"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Esc),
+            KeyChord::plain(LogicalKey::Left),
+        ],
+        action: PreviewPaneAction::Back,
+        hint: Some("back"),
+        visibility: Visibility::Shown,
+        glyph: Some("Esc/←"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::BackTab)],
+        action: PreviewPaneAction::Back,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+]);
+
 #[cfg(test)]
 mod tests;

@@ -162,6 +162,40 @@ impl From<crossterm::event::KeyEvent> for KeyChord {
     }
 }
 
+/// Convert a bare crossterm `KeyCode` into a [`KeyChord`] with no modifiers.
+///
+/// Surfaces whose dispatch resolvers operate on `KeyCode` (no modifier
+/// context, because the modified chords like `Ctrl+Q` are intercepted
+/// upstream) build chords through this conversion, keeping their keymap
+/// dispatch identical in spirit to the `KeyEvent`-based surfaces.
+impl From<crossterm::event::KeyCode> for KeyChord {
+    fn from(code: crossterm::event::KeyCode) -> Self {
+        use crossterm::event::KeyCode;
+        let key = match code {
+            KeyCode::Char(c) => LogicalKey::Char(c),
+            KeyCode::Enter => LogicalKey::Enter,
+            KeyCode::Esc => LogicalKey::Esc,
+            KeyCode::Tab => LogicalKey::Tab,
+            KeyCode::BackTab => LogicalKey::BackTab,
+            KeyCode::Up => LogicalKey::Up,
+            KeyCode::Down => LogicalKey::Down,
+            KeyCode::Left => LogicalKey::Left,
+            KeyCode::Right => LogicalKey::Right,
+            KeyCode::Home => LogicalKey::Home,
+            KeyCode::End => LogicalKey::End,
+            KeyCode::PageUp => LogicalKey::PageUp,
+            KeyCode::PageDown => LogicalKey::PageDown,
+            KeyCode::Backspace => LogicalKey::Backspace,
+            KeyCode::Delete => LogicalKey::Delete,
+            _ => LogicalKey::Char('\0'),
+        };
+        Self {
+            key,
+            mods: Mods::NONE,
+        }
+    }
+}
+
 // ── Binding model ────────────────────────────────────────────────────────────
 
 /// Whether a binding is visible in the hint bar.
@@ -285,6 +319,42 @@ impl<A: Copy + 'static> Keymap<A> {
             return false;
         }
         true
+    }
+}
+
+impl<A: Copy + PartialEq + 'static> Keymap<A> {
+    /// Return the first binding whose action equals `action`, or `None`.
+    #[must_use]
+    pub fn binding_for(&self, action: A) -> Option<&KeyBinding<A>> {
+        self.bindings.iter().find(|b| b.action == action)
+    }
+
+    /// The hint glyph for `action`, derived from its binding the same way
+    /// [`hint_spans`](Keymap::hint_spans) derives it. Returns `""` if the
+    /// action is unbound. Lets context-composed footers pull a key's glyph
+    /// from the same table that drives dispatch, so the two cannot drift.
+    #[must_use]
+    pub fn glyph_for(&self, action: A) -> &'static str {
+        self.binding_for(action).map_or("", |b| {
+            b.glyph
+                .unwrap_or_else(|| chord_glyph(b.chords.first().copied()))
+        })
+    }
+
+    /// Push the `Key` (and optional `Text`) spans for `action` onto `out`,
+    /// derived from the binding. No separators are added — the caller owns
+    /// layout. Does nothing if the action is unbound. The single primitive
+    /// for building context-dependent footers from a keymap.
+    pub fn push_spans_for(&self, action: A, out: &mut Vec<HintSpan<'static>>) {
+        if let Some(binding) = self.binding_for(action) {
+            let glyph = binding
+                .glyph
+                .unwrap_or_else(|| chord_glyph(binding.chords.first().copied()));
+            out.push(HintSpan::Key(glyph));
+            if let Some(label) = binding.hint {
+                out.push(HintSpan::Text(label));
+            }
+        }
     }
 }
 

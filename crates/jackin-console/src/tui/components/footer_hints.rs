@@ -7,7 +7,8 @@ use jackin_tui::components::{
 use crate::tui::keymap::{
     AUTH_EDIT_SOURCE_KEYMAP, AUTH_MANAGE_KEYMAP, EDITOR_GENERAL_RENAME_KEYMAP,
     EDITOR_GENERAL_TOGGLE_KEYMAP, EDITOR_GENERAL_WORKDIR_KEYMAP, EDITOR_ROLE_NEW_KEYMAP,
-    SETTINGS_GENERAL_TOGGLE_KEYMAP, SETTINGS_TRUST_TOGGLE_KEYMAP,
+    PREVIEW_PANE_KEYMAP, PreviewPaneAction, SETTINGS_GENERAL_TOGGLE_KEYMAP,
+    SETTINGS_TRUST_TOGGLE_KEYMAP, WORKSPACE_LIST_KEYMAP, WorkspaceListAction,
 };
 use ratatui::layout::Rect;
 
@@ -326,53 +327,58 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
             workspace_picker_footer_items(scroll_axes, true)
         }
         WorkspaceListFooterMode::PreviewPane => {
-            // Reproduces the Shown bindings from jackin::console::tui::keymap::PREVIEW_PANE_KEYMAP.
-            // BackTab is a HiddenAlias (exits preview but symmetric to Tab entry; not shown).
-            // Ctrl-Q is Internal (handled upstream by should_open_quit_confirm; not shown here).
+            // Glyphs derive from PREVIEW_PANE_KEYMAP — the same table that drives
+            // `preview_pane_key_plan` dispatch — so advertised keys cannot drift
+            // from handled keys. BackTab (HiddenAlias) and the upstream Ctrl-Q
+            // are intentionally not advertised.
+            let g = |a| PREVIEW_PANE_KEYMAP.glyph_for(a);
             vec![
-                HintSpan::Key("↑↓"),
+                HintSpan::Key(g(PreviewPaneAction::NavigateUp)),
                 HintSpan::Text("navigate panes"),
                 HintSpan::Sep,
-                HintSpan::Key("↵"),
+                HintSpan::Key(g(PreviewPaneAction::Attach)),
                 HintSpan::Text("attach focused pane"),
                 HintSpan::GroupSep,
-                HintSpan::Key("Esc/←"),
+                HintSpan::Key(g(PreviewPaneAction::Back)),
                 HintSpan::Text("back"),
             ]
         }
         WorkspaceListFooterMode::InstanceRow { has_snapshot } => {
+            // Glyphs derive from WORKSPACE_LIST_KEYMAP (the dispatch table);
+            // labels are instance-row-specific and supplied here.
+            let g = |a| WORKSPACE_LIST_KEYMAP.glyph_for(a);
             let mut items = vec![
-                HintSpan::Key("\u{2191}\u{2193}"),
+                HintSpan::Key(g(WorkspaceListAction::NavigateUp)),
                 HintSpan::Sep,
-                HintSpan::Key("↵"),
+                HintSpan::Key(g(WorkspaceListAction::Enter)),
                 HintSpan::Text("reconnect"),
                 HintSpan::Sep,
-                HintSpan::Key("N"),
+                HintSpan::Key(g(WorkspaceListAction::NewSession)),
                 HintSpan::Text("new session"),
                 HintSpan::Sep,
-                HintSpan::Key("X"),
+                HintSpan::Key(g(WorkspaceListAction::InstanceShell)),
                 HintSpan::Text("shell"),
                 HintSpan::Sep,
-                HintSpan::Key("T"),
+                HintSpan::Key(g(WorkspaceListAction::InstanceStop)),
                 HintSpan::Text("stop"),
                 HintSpan::Sep,
-                HintSpan::Key("P"),
+                HintSpan::Key(g(WorkspaceListAction::ConfirmPurge)),
                 HintSpan::Text("purge"),
                 HintSpan::Sep,
-                HintSpan::Key("I"),
+                HintSpan::Key(g(WorkspaceListAction::InstanceInspect)),
                 HintSpan::Text("info"),
             ];
             if has_snapshot {
                 items.push(HintSpan::Sep);
-                items.push(HintSpan::Key("⇥"));
+                items.push(HintSpan::Key(g(WorkspaceListAction::EnterPreview)));
                 items.push(HintSpan::Text("into preview"));
             }
             items.extend([
                 HintSpan::GroupSep,
-                HintSpan::Key("\u{2190}"),
+                HintSpan::Key(g(WorkspaceListAction::TreeLeft)),
                 HintSpan::Text("back"),
                 HintSpan::GroupSep,
-                HintSpan::Key("Ctrl-Q"),
+                HintSpan::Key(g(WorkspaceListAction::Quit)),
                 HintSpan::Text("quit"),
             ]);
             items
@@ -385,48 +391,59 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
             show_collapse,
             show_open_in_github,
         } => {
+            // Glyphs derive from WORKSPACE_LIST_KEYMAP (the dispatch table);
+            // labels and conditional composition are workspace-row-specific.
+            let g = |a| WORKSPACE_LIST_KEYMAP.glyph_for(a);
             let mut items = Vec::new();
             if scroll_axes.any() {
                 items.extend(scroll_hint_spans(scroll_axes));
                 items.push(HintSpan::GroupSep);
             } else {
-                items.push(HintSpan::Key("\u{2191}\u{2193}"));
+                items.push(HintSpan::Key(g(WorkspaceListAction::NavigateUp)));
                 items.push(HintSpan::Sep);
             }
             items.extend([
-                HintSpan::Key("↵"),
+                HintSpan::Key(g(WorkspaceListAction::Enter)),
                 HintSpan::Text(enter_label),
                 HintSpan::GroupSep,
             ]);
             if is_saved {
-                items.extend([HintSpan::Key("E"), HintSpan::Text("edit"), HintSpan::Sep]);
+                items.extend([
+                    HintSpan::Key(g(WorkspaceListAction::Edit)),
+                    HintSpan::Text("edit"),
+                    HintSpan::Sep,
+                ]);
             }
-            items.extend([HintSpan::Key("N"), HintSpan::Text("new")]);
+            items.extend([HintSpan::Key(g(WorkspaceListAction::NewSession)), HintSpan::Text("new")]);
             if is_saved {
-                items.extend([HintSpan::Sep, HintSpan::Key("D"), HintSpan::Text("delete")]);
+                items.extend([
+                    HintSpan::Sep,
+                    HintSpan::Key(g(WorkspaceListAction::Delete)),
+                    HintSpan::Text("delete"),
+                ]);
             }
             items.extend([
                 HintSpan::Sep,
-                HintSpan::Key("S"),
+                HintSpan::Key(g(WorkspaceListAction::Settings)),
                 HintSpan::Text("settings"),
             ]);
             if show_expand {
                 items.push(HintSpan::Sep);
-                items.push(HintSpan::Key("\u{2192}"));
+                items.push(HintSpan::Key(g(WorkspaceListAction::TreeRight)));
                 items.push(HintSpan::Text("expand"));
             }
             if show_collapse {
                 items.push(HintSpan::Sep);
-                items.push(HintSpan::Key("\u{2190}"));
+                items.push(HintSpan::Key(g(WorkspaceListAction::TreeLeft)));
                 items.push(HintSpan::Text("collapse"));
             }
             if show_open_in_github {
                 items.push(HintSpan::Sep);
-                items.push(HintSpan::Key("O"));
+                items.push(HintSpan::Key(g(WorkspaceListAction::OpenGithub)));
                 items.push(HintSpan::Text("open in GitHub"));
             }
             items.push(HintSpan::GroupSep);
-            items.push(HintSpan::Key("Ctrl-Q"));
+            items.push(HintSpan::Key(g(WorkspaceListAction::Quit)));
             items.push(HintSpan::Text("quit"));
             items
         }

@@ -1,15 +1,149 @@
 use super::{
     EDITOR_CONTENT_KEYMAP, EDITOR_GENERAL_RENAME_KEYMAP, EDITOR_GENERAL_TOGGLE_KEYMAP,
     EDITOR_GENERAL_WORKDIR_KEYMAP, EDITOR_GLOBAL_KEYMAP, EDITOR_ROLE_NEW_KEYMAP,
-    EDITOR_TAB_BAR_KEYMAP, INLINE_PICKER_SHELL_KEYMAP, SETTINGS_CONTENT_SHELL_KEYMAP,
-    SETTINGS_ENV_TAB_KEYMAP, SETTINGS_GENERAL_TAB_KEYMAP, SETTINGS_GENERAL_TOGGLE_KEYMAP,
-    SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP, SETTINGS_TAB_BAR_KEYMAP, SETTINGS_TRUST_TAB_KEYMAP,
-    SETTINGS_TRUST_TOGGLE_KEYMAP, EditorContentAction, EditorGlobalAction, EditorTabBarAction,
-    InlinePickerShellAction, SettingsContentShellAction, SettingsEnvTabAction,
-    SettingsGeneralTabAction, SettingsGlobalMountsTabAction, SettingsTabBarAction,
-    SettingsTrustTabAction,
+    EDITOR_TAB_BAR_KEYMAP, INLINE_PICKER_SHELL_KEYMAP, PREVIEW_PANE_KEYMAP,
+    SETTINGS_CONTENT_SHELL_KEYMAP, SETTINGS_ENV_TAB_KEYMAP, SETTINGS_GENERAL_TAB_KEYMAP,
+    SETTINGS_GENERAL_TOGGLE_KEYMAP, SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP, SETTINGS_TAB_BAR_KEYMAP,
+    SETTINGS_TRUST_TAB_KEYMAP, SETTINGS_TRUST_TOGGLE_KEYMAP, WORKSPACE_LIST_KEYMAP,
+    EditorContentAction, EditorGlobalAction, EditorTabBarAction, InlinePickerShellAction,
+    PreviewPaneAction, SettingsContentShellAction, SettingsEnvTabAction, SettingsGeneralTabAction,
+    SettingsGlobalMountsTabAction, SettingsTabBarAction, SettingsTrustTabAction,
+    WorkspaceListAction,
 };
 use jackin_tui::components::{KeyChord, LogicalKey};
+
+// ── Workspace list ────────────────────────────────────────────────────────────
+
+#[test]
+fn workspace_list_keymap_nav_and_vim_aliases() {
+    use WorkspaceListAction::*;
+    assert_eq!(WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Up)), Some(NavigateUp));
+    assert_eq!(
+        WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Down)),
+        Some(NavigateDown)
+    );
+    for ch in ['k', 'K'] {
+        assert_eq!(
+            WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            Some(NavigateUp),
+            "vim '{ch}' must move up"
+        );
+    }
+    for ch in ['j', 'J'] {
+        assert_eq!(
+            WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            Some(NavigateDown),
+            "vim '{ch}' must move down"
+        );
+    }
+    for ch in ['h', 'H'] {
+        assert_eq!(
+            WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            Some(ScrollLeft),
+        );
+    }
+    for ch in ['l', 'L'] {
+        assert_eq!(
+            WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char(ch))),
+            Some(ScrollRight),
+        );
+    }
+}
+
+#[test]
+fn workspace_list_keymap_action_and_instance_keys() {
+    use WorkspaceListAction::*;
+    let cases: &[(LogicalKey, WorkspaceListAction)] = &[
+        (LogicalKey::Left, TreeLeft),
+        (LogicalKey::Right, TreeRight),
+        (LogicalKey::Enter, Enter),
+        (LogicalKey::Char('e'), Edit),
+        (LogicalKey::Char('n'), NewSession),
+        (LogicalKey::Char('d'), Delete),
+        (LogicalKey::Char('o'), OpenGithub),
+        (LogicalKey::Char('s'), Settings),
+        (LogicalKey::Char('r'), InstanceReconnect),
+        (LogicalKey::Char('a'), InstanceNewSession),
+        (LogicalKey::Char('x'), InstanceShell),
+        (LogicalKey::Char('i'), InstanceInspect),
+        (LogicalKey::Char('t'), InstanceStop),
+        (LogicalKey::Char('p'), ConfirmPurge),
+        (LogicalKey::Tab, EnterPreview),
+        (LogicalKey::Esc, Exit),
+        (LogicalKey::Char('q'), Exit),
+        (LogicalKey::Char('Q'), Exit),
+    ];
+    for (key, expected) in cases {
+        assert_eq!(
+            WORKSPACE_LIST_KEYMAP.dispatch(KeyChord::plain(*key)),
+            Some(*expected),
+            "key {key:?} must map to {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn workspace_list_keymap_glyphs_match_footer_literals() {
+    // Footer builders pull glyphs from this table; assert the glyphs are the
+    // exact strings the footers expect, so dispatch and advertisement agree.
+    use WorkspaceListAction::*;
+    assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(NavigateUp), "↑↓");
+    assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(Enter), "↵");
+    assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(Edit), "E");
+    assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(NewSession), "N");
+    assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(Delete), "D");
+    assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(Settings), "S");
+    assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(OpenGithub), "O");
+    assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(InstanceShell), "X");
+    assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(InstanceStop), "T");
+    assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(InstanceInspect), "I");
+    assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(ConfirmPurge), "P");
+    assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(EnterPreview), "⇥");
+    assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(TreeLeft), "←");
+    assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(TreeRight), "→");
+    assert_eq!(WORKSPACE_LIST_KEYMAP.glyph_for(Quit), "Ctrl-Q");
+}
+
+// ── Preview pane ──────────────────────────────────────────────────────────────
+
+#[test]
+fn preview_pane_keymap_dispatch_and_aliases() {
+    use PreviewPaneAction::*;
+    assert_eq!(PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Up)), Some(NavigateUp));
+    assert_eq!(
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Down)),
+        Some(NavigateDown)
+    );
+    assert_eq!(
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('k'))),
+        Some(NavigateUp)
+    );
+    assert_eq!(
+        PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Char('j'))),
+        Some(NavigateDown)
+    );
+    assert_eq!(PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Enter)), Some(Attach));
+    assert_eq!(PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Esc)), Some(Back));
+    assert_eq!(PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::Left)), Some(Back));
+    assert_eq!(PREVIEW_PANE_KEYMAP.dispatch(KeyChord::plain(LogicalKey::BackTab)), Some(Back));
+}
+
+#[test]
+fn preview_pane_hint_spans_advertise_shown_keys_only() {
+    let text: String = PREVIEW_PANE_KEYMAP
+        .hint_spans()
+        .iter()
+        .filter_map(|s| match s {
+            jackin_tui::HintSpan::Key(k) | jackin_tui::HintSpan::Text(k) => Some(*k),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(text.contains("↑↓"), "{text}");
+    assert!(text.contains("navigate panes"), "{text}");
+    assert!(text.contains("↵"), "{text}");
+    assert!(text.contains("Esc/←"), "{text}");
+}
 
 // ── Editor global ─────────────────────────────────────────────────────────────
 
