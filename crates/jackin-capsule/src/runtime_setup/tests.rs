@@ -2,7 +2,7 @@
 use super::*;
 use std::fs;
 use std::sync::{
-    Arc,
+    Arc, Barrier,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -45,23 +45,23 @@ fn agent_auth_marker_records_one_bootstrap_per_agent() {
 
 #[test]
 fn runtime_setup_runs_agent_setup_while_container_init_is_foreground() {
-    let agent_started = Arc::new(AtomicBool::new(false));
-    let agent_started_for_thread = Arc::clone(&agent_started);
+    // A two-party Barrier proves the foreground and agent-setup closures run
+    // concurrently without a flaky bounded spin: foreground cannot pass the
+    // barrier until the spawned agent thread also reaches it, so the test only
+    // completes if both run at once. A bounded `yield_now` loop instead raced
+    // the scheduler and spuriously failed on a busy/low-core CI runner.
+    let barrier = Arc::new(Barrier::new(2));
+    let barrier_for_thread = Arc::clone(&barrier);
 
     run_runtime_setup_concurrently(
         move || {
-            for _ in 0..100 {
-                if agent_started.load(Ordering::SeqCst) {
-                    return Ok(());
-                }
-                std::thread::yield_now();
-            }
-            anyhow::bail!("agent setup did not start while container init was running")
+            barrier.wait();
+            Ok(())
         },
         || Ok(()),
         || {},
         move || {
-            agent_started_for_thread.store(true, Ordering::SeqCst);
+            barrier_for_thread.wait();
             Ok(())
         },
     )
