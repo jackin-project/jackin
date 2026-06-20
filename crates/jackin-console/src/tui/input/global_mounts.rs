@@ -9,6 +9,7 @@
 //! save commit path (`console/tui/input/save.rs`).
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use jackin_tui::components::KeyChord;
 
 use crate::tui::components::auth_panel::{
     AuthFormKeyPlan, auth_credential_input_state, auth_form_key_plan_with_source_folder,
@@ -17,14 +18,19 @@ use crate::tui::components::auth_panel::{
 use crate::tui::components::file_browser::page_rows_for_modal;
 use crate::tui::mount_display::settings_global_config_mounts_content_width_with_cache;
 use crate::tui::screens::settings::update as settings_update;
+use crate::tui::keymap::{
+    SETTINGS_CONTENT_SHELL_KEYMAP, SETTINGS_ENV_TAB_KEYMAP, SETTINGS_GENERAL_TAB_KEYMAP,
+    SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP, SETTINGS_TAB_BAR_KEYMAP, SETTINGS_TRUST_TAB_KEYMAP,
+    SettingsContentShellAction, SettingsEnvTabAction, SettingsGeneralTabAction,
+    SettingsGlobalMountsTabAction, SettingsTabBarAction, SettingsTrustTabAction,
+};
 use crate::tui::screens::settings::update::{
     GlobalMountAddFinalizeApplyPlan, GlobalMountAddTextApplyPlan, GlobalMountEditTextApplyPlan,
     GlobalMountGithubOpenPlan, GlobalMountRolePickerCommitPlan, GlobalMountScopePickerCommitPlan,
-    GlobalMountTextCommitPlan, RolePickerOpenPlan, SettingsAuthKeyPlan, SettingsEnvKeyPlan,
+    GlobalMountTextCommitPlan, RolePickerOpenPlan, SettingsAuthKeyPlan, SettingsEnvHeaderKeyPlan,
     SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
     SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
-    SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan, SettingsGeneralKeyPlan,
-    SettingsGlobalMountsKeyPlan, SettingsTopLevelKeyPlan, SettingsTrustKeyPlan,
+    SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan,
 };
 use crate::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -69,50 +75,88 @@ pub fn handle_settings_key_with_effects(state: &mut ManagerState<'_>, key: KeyEv
         return;
     };
 
-    match settings_update::settings_top_level_key_plan(
+    let chord = KeyChord::from(key);
+    let tab_bar_focused = settings.tab_bar_focused();
+    let auth_kind_selected = settings.auth.has_selected_kind();
+    let active_tab = settings.active_tab;
+
+    // Shell: tab-bar navigation takes priority over per-tab dispatch.
+    if tab_bar_focused {
+        match SETTINGS_TAB_BAR_KEYMAP.dispatch(chord) {
+            Some(SettingsTabBarAction::PrevTab) => {
+                dispatch_manager(
+                    state,
+                    ManagerMessage::MoveSettingsTab { delta: -1, focus_tab_bar: true },
+                );
+                return;
+            }
+            Some(SettingsTabBarAction::NextTab) => {
+                dispatch_manager(
+                    state,
+                    ManagerMessage::MoveSettingsTab { delta: 1, focus_tab_bar: true },
+                );
+                return;
+            }
+            Some(SettingsTabBarAction::FocusContent) => {
+                dispatch_manager(state, ManagerMessage::FocusSettingsContent);
+                return;
+            }
+            None => {}
+        }
+    } else {
+        // Content mode: shell intercepts Tab, BackTab, Esc before per-tab.
+        match SETTINGS_CONTENT_SHELL_KEYMAP.dispatch(chord) {
+            Some(SettingsContentShellAction::NextTab) => {
+                dispatch_manager(
+                    state,
+                    ManagerMessage::MoveSettingsTab { delta: 1, focus_tab_bar: true },
+                );
+                return;
+            }
+            Some(SettingsContentShellAction::FocusTabBar) => {
+                dispatch_manager(state, ManagerMessage::FocusSettingsTabBar);
+                return;
+            }
+            Some(SettingsContentShellAction::FocusTabBarOrClearAuth) => {
+                if auth_kind_selected {
+                    dispatch_manager(state, ManagerMessage::ClearSettingsAuthKind);
+                }
+                dispatch_manager(state, ManagerMessage::FocusSettingsTabBar);
+                return;
+            }
+            None => {}
+        }
+    }
+
+    // Env role header: Left/Right expand/collapse a role row in the env tab.
+    let ManagerStage::Settings(settings) = &state.stage else {
+        return;
+    };
+    match settings_update::settings_env_selected_header_key_plan(
         key.code,
-        settings.active_tab,
-        settings.tab_bar_focused(),
-        settings.auth.has_selected_kind(),
+        active_tab,
         &settings.env.pending,
         &settings.env.expanded,
         settings.env.selected,
     ) {
-        SettingsTopLevelKeyPlan::MoveTab {
-            delta,
-            focus_tab_bar,
-        } => {
-            dispatch_manager(
-                state,
-                ManagerMessage::MoveSettingsTab {
-                    delta,
-                    focus_tab_bar,
-                },
-            );
-        }
-        SettingsTopLevelKeyPlan::FocusContent => {
-            dispatch_manager(state, ManagerMessage::FocusSettingsContent);
-        }
-        SettingsTopLevelKeyPlan::FocusTabBar { clear_auth_kind } => {
-            if clear_auth_kind {
-                dispatch_manager(state, ManagerMessage::ClearSettingsAuthKind);
-            }
-            dispatch_manager(state, ManagerMessage::FocusSettingsTabBar);
-        }
-        SettingsTopLevelKeyPlan::SetEnvRoleExpanded { role, expanded } => {
+        SettingsEnvHeaderKeyPlan::SetExpanded { role, expanded } => {
             dispatch_manager(
                 state,
                 ManagerMessage::SetSettingsEnvRoleExpanded { role, expanded },
             );
+            return;
         }
-        SettingsTopLevelKeyPlan::Consume => {}
-        SettingsTopLevelKeyPlan::Delegate(tab) => match tab {
-            SettingsTab::General => handle_general_key(state, key),
-            SettingsTab::Mounts => handle_global_mounts_key(state, key),
-            SettingsTab::Environments => handle_env_key(state, key),
-            SettingsTab::Auth => handle_auth_key(state, key),
-            SettingsTab::Trust => handle_trust_key(state, key),
-        },
+        SettingsEnvHeaderKeyPlan::Consume => return,
+        SettingsEnvHeaderKeyPlan::Continue => {}
+    }
+
+    // Per-tab dispatch.
+    match active_tab {
+        SettingsTab::General => handle_general_key(state, key),
+        SettingsTab::Mounts => handle_global_mounts_key(state, key),
+        SettingsTab::Environments => handle_env_key(state, key),
+        SettingsTab::Auth => handle_auth_key(state, key),
+        SettingsTab::Trust => handle_trust_key(state, key),
     }
 }
 
@@ -124,77 +168,103 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &state.stage else {
         return;
     };
-    let plan = settings_update::settings_global_mounts_key_plan(
-        key.code,
-        settings.is_dirty(),
-        crate::services::workspace::global_rows_have_sensitive_mount(&settings.mounts.pending),
-        settings.mounts.selected,
-        settings.mounts.pending.len(),
-    );
+    let is_dirty = settings.is_dirty();
+    let has_sensitive_mount =
+        crate::services::workspace::global_rows_have_sensitive_mount(&settings.mounts.pending);
+    let selected = settings.mounts.selected;
+    let mount_count = settings.mounts.pending.len();
     let term_width = state.cached_term_size.width;
     let content_width = settings_global_config_mounts_content_width_with_cache(
         &settings.mounts.pending,
         &settings.mounts.mount_info_cache,
     );
     let footer_h = settings.cached_footer_h;
-    match plan {
-        SettingsGlobalMountsKeyPlan::ConfirmSensitiveSave => {
+    let chord = KeyChord::from(key);
+    match SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.dispatch(chord) {
+        Some(SettingsGlobalMountsTabAction::Save) => {
             let ManagerStage::Settings(settings) = &mut state.stage else {
                 return;
             };
-            settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Sensitive));
+            if has_sensitive_mount {
+                settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Sensitive));
+            } else {
+                open_settings_save_preview(settings);
+            }
         }
-        SettingsGlobalMountsKeyPlan::OpenSavePreview => {
-            let ManagerStage::Settings(settings) = &mut state.stage else {
-                return;
-            };
-            open_settings_save_preview(settings);
-        }
-        SettingsGlobalMountsKeyPlan::ScrollHorizontal { delta } => {
+        Some(SettingsGlobalMountsTabAction::ScrollLeft) => {
             dispatch_manager(
                 state,
                 ManagerMessage::ScrollSettingsGlobalMountsHorizontal {
-                    delta,
+                    delta: -8,
                     term_width,
                     content_width,
                 },
             );
         }
-        SettingsGlobalMountsKeyPlan::MoveSelection { delta } => {
+        Some(SettingsGlobalMountsTabAction::ScrollRight) => {
+            dispatch_manager(
+                state,
+                ManagerMessage::ScrollSettingsGlobalMountsHorizontal {
+                    delta: 8,
+                    term_width,
+                    content_width,
+                },
+            );
+        }
+        Some(SettingsGlobalMountsTabAction::MoveUp) => {
             dispatch_manager(
                 state,
                 ManagerMessage::MoveSettingsGlobalMountsSelection {
-                    delta,
+                    delta: -1,
                     term: state.cached_term_size,
                     footer_h,
                 },
             );
         }
-        SettingsGlobalMountsKeyPlan::ToggleReadonly => {
+        Some(SettingsGlobalMountsTabAction::MoveDown) => {
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsGlobalMountsSelection {
+                    delta: 1,
+                    term: state.cached_term_size,
+                    footer_h,
+                },
+            );
+        }
+        Some(SettingsGlobalMountsTabAction::ToggleReadonly) => {
             dispatch_manager(state, ManagerMessage::ToggleSettingsGlobalMountReadonly);
         }
-        SettingsGlobalMountsKeyPlan::ConfirmDiscard => {
-            let ManagerStage::Settings(settings) = &mut state.stage else {
-                return;
-            };
-            settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
+        Some(SettingsGlobalMountsTabAction::Back) => {
+            if is_dirty {
+                let ManagerStage::Settings(settings) = &mut state.stage else {
+                    return;
+                };
+                settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
+            } else {
+                dispatch_manager(state, ManagerMessage::ReturnToList);
+            }
         }
-        SettingsGlobalMountsKeyPlan::ReturnToList => {
-            dispatch_manager(state, ManagerMessage::ReturnToList);
-        }
-        SettingsGlobalMountsKeyPlan::OpenAdd => {
+        Some(SettingsGlobalMountsTabAction::Add) => {
             let ManagerStage::Settings(settings) = &mut state.stage else {
                 return;
             };
             open_global_mount_scope_picker(&mut settings.mounts);
         }
-        SettingsGlobalMountsKeyPlan::ConfirmRemove => {
+        Some(SettingsGlobalMountsTabAction::Enter) => {
+            if settings_update::settings_global_mounts_add_row_selected(selected, mount_count) {
+                let ManagerStage::Settings(settings) = &mut state.stage else {
+                    return;
+                };
+                open_global_mount_scope_picker(&mut settings.mounts);
+            }
+        }
+        Some(SettingsGlobalMountsTabAction::Delete) if mount_count > 0 => {
             let ManagerStage::Settings(settings) = &mut state.stage else {
                 return;
             };
             settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Remove));
         }
-        SettingsGlobalMountsKeyPlan::OpenGithub => {
+        Some(SettingsGlobalMountsTabAction::OpenGithub) => {
             let plan = {
                 let ManagerStage::Settings(settings) = &mut state.stage else {
                     return;
@@ -221,8 +291,20 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 }
             }
         }
-        SettingsGlobalMountsKeyPlan::OpenEdit(target) => open_edit_text(state, target),
-        SettingsGlobalMountsKeyPlan::Noop => {}
+        Some(SettingsGlobalMountsTabAction::EditRename) => {
+            open_edit_text(state, GlobalMountTextTarget::Rename);
+        }
+        Some(SettingsGlobalMountsTabAction::EditSource) => {
+            open_edit_text(state, GlobalMountTextTarget::Source);
+        }
+        Some(SettingsGlobalMountsTabAction::EditDest) => {
+            open_edit_text(state, GlobalMountTextTarget::Destination);
+        }
+        Some(SettingsGlobalMountsTabAction::EditScope) => {
+            open_edit_text(state, GlobalMountTextTarget::Scope);
+        }
+        // Context check failed (Delete with mount_count == 0) or no binding.
+        Some(_) | None => {}
     }
 }
 
@@ -234,75 +316,82 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     };
     let footer_h = settings.cached_footer_h;
+    let is_dirty = settings.is_dirty();
+    let plain_modifier = (key.modifiers - KeyModifiers::SHIFT).is_empty();
     let selected_is_op_ref = settings_update::settings_env_selected_is_op_ref(
         &settings.env.pending,
         &settings.env.expanded,
         settings.env.selected,
     );
-    let plan = settings_update::settings_env_key_plan(
-        key.code,
-        (key.modifiers - KeyModifiers::SHIFT).is_empty(),
-        settings.is_dirty(),
-        op_available,
-        selected_is_op_ref,
-    );
-    match plan {
-        SettingsEnvKeyPlan::MoveSelection { delta } => {
+    let chord = KeyChord::from(key);
+    match SETTINGS_ENV_TAB_KEYMAP.dispatch(chord) {
+        Some(SettingsEnvTabAction::MoveUp) => {
             dispatch_manager(
                 state,
-                ManagerMessage::MoveSettingsEnvSelection {
-                    delta,
-                    term: term_size,
-                    footer_h,
-                },
+                ManagerMessage::MoveSettingsEnvSelection { delta: -1, term: term_size, footer_h },
             );
         }
-        SettingsEnvKeyPlan::ConfirmDiscard => {
-            let ManagerStage::Settings(settings) = &mut state.stage else {
-                return;
-            };
-            settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
+        Some(SettingsEnvTabAction::MoveDown) => {
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsEnvSelection { delta: 1, term: term_size, footer_h },
+            );
         }
-        SettingsEnvKeyPlan::ReturnToList => {
-            dispatch_manager(state, ManagerMessage::ReturnToList);
-        }
-        SettingsEnvKeyPlan::OpenAdd => {
+        Some(SettingsEnvTabAction::Add) => {
             let ManagerStage::Settings(settings) = &mut state.stage else {
                 return;
             };
             open_settings_env_add_modal(settings);
         }
-        SettingsEnvKeyPlan::Save => {
+        Some(SettingsEnvTabAction::Save) => {
             let ManagerStage::Settings(settings) = &mut state.stage else {
                 return;
             };
             open_settings_save_preview(settings);
         }
-        SettingsEnvKeyPlan::ConfirmDelete => {
+        Some(SettingsEnvTabAction::Delete) if plain_modifier => {
             let ManagerStage::Settings(settings) = &mut state.stage else {
                 return;
             };
             open_settings_env_delete_confirm(settings);
         }
-        SettingsEnvKeyPlan::ToggleMask => {
+        Some(SettingsEnvTabAction::ToggleMask) if plain_modifier => {
             let ManagerStage::Settings(settings) = &mut state.stage else {
                 return;
             };
             toggle_settings_env_mask(settings);
         }
-        SettingsEnvKeyPlan::OpenPicker => {
+        Some(SettingsEnvTabAction::OpenPicker) if plain_modifier && op_available => {
             let ManagerStage::Settings(settings) = &mut state.stage else {
                 return;
             };
             open_settings_env_picker_modal(settings, op_cache);
         }
-        SettingsEnvKeyPlan::OpenEnterModal => {
-            let ManagerStage::Settings(settings) = &mut state.stage else {
-                return;
-            };
-            open_settings_env_enter_modal(settings);
+        Some(SettingsEnvTabAction::Enter) => {
+            if selected_is_op_ref && op_available {
+                let ManagerStage::Settings(settings) = &mut state.stage else {
+                    return;
+                };
+                open_settings_env_picker_modal(settings, op_cache);
+            } else {
+                let ManagerStage::Settings(settings) = &mut state.stage else {
+                    return;
+                };
+                open_settings_env_enter_modal(settings);
+            }
         }
-        SettingsEnvKeyPlan::Noop => {}
+        Some(SettingsEnvTabAction::Back) => {
+            if is_dirty {
+                let ManagerStage::Settings(settings) = &mut state.stage else {
+                    return;
+                };
+                settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
+            } else {
+                dispatch_manager(state, ManagerMessage::ReturnToList);
+            }
+        }
+        // Context check failed (Delete/ToggleMask/OpenPicker without plain_modifier) or no binding.
+        Some(_) | None => {}
     }
 }
 
@@ -319,32 +408,41 @@ fn handle_general_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     let ManagerStage::Settings(settings) = &state.stage else {
         return;
     };
-    match settings_update::settings_general_key_plan(key.code, settings.is_dirty()) {
-        SettingsGeneralKeyPlan::MoveSelection { delta } => {
+    let is_dirty = settings.is_dirty();
+    let chord = KeyChord::from(key);
+    match SETTINGS_GENERAL_TAB_KEYMAP.dispatch(chord) {
+        Some(SettingsGeneralTabAction::MoveUp) => {
             dispatch_manager(
                 state,
-                ManagerMessage::MoveSettingsGeneralSelection { delta },
+                ManagerMessage::MoveSettingsGeneralSelection { delta: -1 },
             );
         }
-        SettingsGeneralKeyPlan::ToggleSelected => {
+        Some(SettingsGeneralTabAction::MoveDown) => {
+            dispatch_manager(
+                state,
+                ManagerMessage::MoveSettingsGeneralSelection { delta: 1 },
+            );
+        }
+        Some(SettingsGeneralTabAction::Toggle) => {
             dispatch_manager(state, ManagerMessage::ToggleSettingsGeneralSelected);
         }
-        SettingsGeneralKeyPlan::ConfirmDiscard => {
-            let ManagerStage::Settings(settings) = &mut state.stage else {
-                return;
-            };
-            settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
-        }
-        SettingsGeneralKeyPlan::ReturnToList => {
-            dispatch_manager(state, ManagerMessage::ReturnToList);
-        }
-        SettingsGeneralKeyPlan::Save => {
+        Some(SettingsGeneralTabAction::Save) => {
             let ManagerStage::Settings(settings) = &mut state.stage else {
                 return;
             };
             open_settings_save_preview(settings);
         }
-        SettingsGeneralKeyPlan::Noop => {}
+        Some(SettingsGeneralTabAction::Back) => {
+            if is_dirty {
+                let ManagerStage::Settings(settings) = &mut state.stage else {
+                    return;
+                };
+                settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
+            } else {
+                dispatch_manager(state, ManagerMessage::ReturnToList);
+            }
+        }
+        None => {}
     }
 }
 
@@ -355,47 +453,54 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         return;
     };
     let footer_h = settings.cached_footer_h;
-    let content_width = crate::tui::screens::settings::update::trust_content_width(&settings.trust);
-    match settings_update::settings_trust_key_plan(key.code, settings.is_dirty()) {
-        SettingsTrustKeyPlan::MoveSelection { delta } => {
+    let is_dirty = settings.is_dirty();
+    let content_width = settings_update::trust_content_width(&settings.trust);
+    let chord = KeyChord::from(key);
+    match SETTINGS_TRUST_TAB_KEYMAP.dispatch(chord) {
+        Some(SettingsTrustTabAction::MoveUp) => {
             dispatch_manager(
                 state,
-                ManagerMessage::MoveSettingsTrustSelection {
-                    delta,
-                    term: term_size,
-                    footer_h,
-                },
+                ManagerMessage::MoveSettingsTrustSelection { delta: -1, term: term_size, footer_h },
             );
         }
-        SettingsTrustKeyPlan::ScrollHorizontal { delta } => {
+        Some(SettingsTrustTabAction::MoveDown) => {
             dispatch_manager(
                 state,
-                ManagerMessage::ScrollSettingsTrustHorizontal {
-                    delta,
-                    term_width,
-                    content_width,
-                },
+                ManagerMessage::MoveSettingsTrustSelection { delta: 1, term: term_size, footer_h },
             );
         }
-        SettingsTrustKeyPlan::ToggleSelected => {
+        Some(SettingsTrustTabAction::ScrollLeft) => {
+            dispatch_manager(
+                state,
+                ManagerMessage::ScrollSettingsTrustHorizontal { delta: -8, term_width, content_width },
+            );
+        }
+        Some(SettingsTrustTabAction::ScrollRight) => {
+            dispatch_manager(
+                state,
+                ManagerMessage::ScrollSettingsTrustHorizontal { delta: 8, term_width, content_width },
+            );
+        }
+        Some(SettingsTrustTabAction::Toggle) => {
             dispatch_manager(state, ManagerMessage::ToggleSettingsTrustSelected);
         }
-        SettingsTrustKeyPlan::ConfirmDiscard => {
-            let ManagerStage::Settings(settings) = &mut state.stage else {
-                return;
-            };
-            settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
-        }
-        SettingsTrustKeyPlan::ReturnToList => {
-            dispatch_manager(state, ManagerMessage::ReturnToList);
-        }
-        SettingsTrustKeyPlan::Save => {
+        Some(SettingsTrustTabAction::Save) => {
             let ManagerStage::Settings(settings) = &mut state.stage else {
                 return;
             };
             open_settings_save_preview(settings);
         }
-        SettingsTrustKeyPlan::Noop => {}
+        Some(SettingsTrustTabAction::Back) => {
+            if is_dirty {
+                let ManagerStage::Settings(settings) = &mut state.stage else {
+                    return;
+                };
+                settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
+            } else {
+                dispatch_manager(state, ManagerMessage::ReturnToList);
+            }
+        }
+        None => {}
     }
 }
 

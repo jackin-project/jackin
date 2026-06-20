@@ -1,6 +1,6 @@
 //! Top-level console TUI update helpers.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
+use crossterm::event::{KeyEvent, KeyModifiers, MouseEventKind};
 
 use crate::tui::components::{
     agent_choice::{AgentChoice, AgentChoiceState},
@@ -555,12 +555,14 @@ pub fn inline_provider_followup_plan<C, A, P>(
 }
 
 #[must_use]
-pub fn inline_picker_shell_plan(key: KeyEvent, exit_on_q: bool) -> InlinePickerShellPlan {
-    match key.code {
-        KeyCode::Left | KeyCode::Char('h' | 'H') => InlinePickerShellPlan::ScrollHorizontal(-8),
-        KeyCode::Right | KeyCode::Char('l' | 'L') => InlinePickerShellPlan::ScrollHorizontal(8),
-        KeyCode::Char('q' | 'Q') if exit_on_q => InlinePickerShellPlan::Exit,
-        _ => InlinePickerShellPlan::Delegate,
+pub fn inline_picker_shell_plan(key: KeyEvent, _exit_on_q: bool) -> InlinePickerShellPlan {
+    use crate::tui::keymap::{INLINE_PICKER_SHELL_KEYMAP, InlinePickerShellAction};
+    use jackin_tui::components::KeyChord;
+    let chord = KeyChord::from(key);
+    match INLINE_PICKER_SHELL_KEYMAP.dispatch(chord) {
+        Some(InlinePickerShellAction::ScrollLeft) => InlinePickerShellPlan::ScrollHorizontal(-8),
+        Some(InlinePickerShellAction::ScrollRight) => InlinePickerShellPlan::ScrollHorizontal(8),
+        None => InlinePickerShellPlan::Delegate,
     }
 }
 

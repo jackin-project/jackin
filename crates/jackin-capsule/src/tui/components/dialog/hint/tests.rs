@@ -84,3 +84,30 @@ fn prefix_awaiting_shows_cheat_sheet_not_nav_hints() {
         "prefix hint must not show menu toggle: {hint}"
     );
 }
+
+#[test]
+fn main_view_hint_includes_resize_pane_group() {
+    let hint = labels(&main_view_hint(
+        false,
+        jackin_tui::components::ScrollAxes::default(),
+        false,
+    ));
+    assert!(
+        hint.contains("Alt+Shift+↑↓←→ resize pane"),
+        "live main view must advertise pane resize gesture: {hint}"
+    );
+}
+
+#[test]
+fn scrollback_hint_does_not_include_resize_pane() {
+    // Resize is a live-view gesture; scrollback mode replaces the normal hint row.
+    let hint = labels(&main_view_hint(
+        true,
+        jackin_tui::components::ScrollAxes::default(),
+        false,
+    ));
+    assert!(
+        !hint.contains("resize pane"),
+        "scrollback hint must not advertise pane resize: {hint}"
+    );
+}

@@ -49,6 +49,9 @@ pub(crate) fn main_view_hint(
             spans.extend(scroll);
         }
         spans.push(HintSpan::GroupSep);
+        spans.push(HintSpan::Key("Alt+Shift+↑↓←→"));
+        spans.push(HintSpan::Text("resize pane"));
+        spans.push(HintSpan::GroupSep);
         spans.push(HintSpan::Key("click"));
         spans.push(HintSpan::Text("focus pane"));
         spans.push(HintSpan::GroupSep);

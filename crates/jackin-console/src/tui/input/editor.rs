@@ -24,7 +24,7 @@ use crate::tui::screens::editor::model::{
     EditorMountActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
     EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorSaveKeyPlan,
     EditorSecretsActionKeyPlan, EditorTabActionKeyPlan, EditorTopLevelKeyPlan,
-    RoleHeaderExpansionPlan, editor_top_level_key_plan,
+    RoleHeaderExpansionPlan,
 };
 use crate::tui::screens::editor::view::{
     mount_destination_input_state, mount_dst_choice_state, secret_new_key_after_picker_label,
@@ -46,6 +46,83 @@ use crate::tui::update::{
 };
 use jackin_config::AppConfig;
 use jackin_core::JackinPaths;
+use jackin_tui::components::KeyChord;
+
+use crate::tui::keymap::{
+    EDITOR_CONTENT_KEYMAP, EDITOR_GLOBAL_KEYMAP, EDITOR_TAB_BAR_KEYMAP, EditorContentAction,
+    EditorGlobalAction, EditorTabBarAction,
+};
+
+fn dispatch_editor_top_level(key: KeyEvent, tab_bar_focused: bool) -> EditorTopLevelKeyPlan {
+    use crossterm::event::KeyCode;
+
+    let chord = KeyChord::from(key);
+
+    if let Some(action) = EDITOR_GLOBAL_KEYMAP.dispatch(chord) {
+        return match action {
+            EditorGlobalAction::Save => EditorTopLevelKeyPlan::Save,
+            EditorGlobalAction::Escape => EditorTopLevelKeyPlan::Escape,
+        };
+    }
+
+    // Tab-bar navigation keys (Left/BackTab, Right, Tab/Down/j/J) are intercepted when
+    // the tab bar has focus. Other keys (Enter, h/H/l/L, Up/k/K, etc.) fall through to
+    // the content keymap even when the tab bar is focused — matching the original
+    // `editor_top_level_key_plan` behavior where these guards were not exhaustive.
+    if tab_bar_focused {
+        if let Some(action) = EDITOR_TAB_BAR_KEYMAP.dispatch(chord) {
+            return match action {
+                EditorTabBarAction::PrevTab => {
+                    EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::MoveTab {
+                        delta: -1,
+                        focus_tab_bar: true,
+                    })
+                }
+                EditorTabBarAction::NextTab => {
+                    EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::MoveTab {
+                        delta: 1,
+                        focus_tab_bar: true,
+                    })
+                }
+                EditorTabBarAction::FocusContent => {
+                    EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::FocusContent)
+                }
+            };
+        }
+    }
+
+    // Content-mode (and tab-bar fall-through): Char(_) wildcard falls through.
+    match EDITOR_CONTENT_KEYMAP.dispatch(chord) {
+        Some(EditorContentAction::MoveUp) => EditorTopLevelKeyPlan::MoveField { delta: -1 },
+        Some(EditorContentAction::MoveDown) => EditorTopLevelKeyPlan::MoveField { delta: 1 },
+        Some(EditorContentAction::ScrollLeft) => EditorTopLevelKeyPlan::ScrollHorizontal { delta: -8 },
+        Some(EditorContentAction::ScrollRight) => EditorTopLevelKeyPlan::ScrollHorizontal { delta: 8 },
+        Some(EditorContentAction::CollapseHeader) => {
+            EditorTopLevelKeyPlan::SetRoleHeaderExpanded { expanded: false }
+        }
+        Some(EditorContentAction::ExpandHeader) => {
+            EditorTopLevelKeyPlan::SetRoleHeaderExpanded { expanded: true }
+        }
+        Some(EditorContentAction::NextTab) => {
+            EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::MoveTab {
+                delta: 1,
+                focus_tab_bar: true,
+            })
+        }
+        Some(EditorContentAction::FocusTabBar) => {
+            EditorTopLevelKeyPlan::Navigation(EditorNavigationKeyPlan::FocusTabBar)
+        }
+        Some(EditorContentAction::CheckImmediate) => EditorTopLevelKeyPlan::CheckImmediateAction,
+        None => {
+            // Char(_) wildcard: any printable character triggers immediate-action check.
+            if matches!(key.code, KeyCode::Char(_)) {
+                EditorTopLevelKeyPlan::CheckImmediateAction
+            } else {
+                EditorTopLevelKeyPlan::ContinueToTabActions
+            }
+        }
+    }
+}
 
 // Central keymap dispatch — table-like layout makes the keymap
 // readable at a glance; extracting per-key helpers just scatters it.
@@ -68,7 +145,7 @@ pub fn handle_editor_key(
 
     let top_level_plan = match &state.stage {
         ManagerStage::Editor(editor) => {
-            editor_top_level_key_plan(key.code, editor.tab_bar_focused())
+            dispatch_editor_top_level(key, editor.tab_bar_focused())
         }
         _ => EditorTopLevelKeyPlan::ContinueToTabActions,
     };

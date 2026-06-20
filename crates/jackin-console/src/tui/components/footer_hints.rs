@@ -4,6 +4,11 @@ use jackin_tui::HintSpan;
 use jackin_tui::components::{
     ScrollAxes, error_popup_hint_spans, save_discard_hint_spans, scroll_hint_spans,
 };
+use crate::tui::keymap::{
+    AUTH_EDIT_SOURCE_KEYMAP, AUTH_MANAGE_KEYMAP, EDITOR_GENERAL_RENAME_KEYMAP,
+    EDITOR_GENERAL_TOGGLE_KEYMAP, EDITOR_GENERAL_WORKDIR_KEYMAP, EDITOR_ROLE_NEW_KEYMAP,
+    SETTINGS_GENERAL_TOGGLE_KEYMAP, SETTINGS_TRUST_TOGGLE_KEYMAP,
+};
 use ratatui::layout::Rect;
 
 use crate::tui::app::ConsoleManagerStageRoute;
@@ -515,9 +520,9 @@ pub fn create_prelude_footer_items() -> Vec<HintSpan<'static>> {
 #[must_use]
 pub fn editor_general_row_footer_items(row: usize, has_mounts: bool) -> Vec<HintSpan<'static>> {
     match row {
-        0 => vec![HintSpan::Key("↵"), HintSpan::Text("rename")],
-        1 if has_mounts => vec![HintSpan::Key("↵"), HintSpan::Text("pick working directory")],
-        2 | 3 => vec![HintSpan::Key("␣"), HintSpan::Text("toggle")],
+        0 => EDITOR_GENERAL_RENAME_KEYMAP.hint_spans(),
+        1 if has_mounts => EDITOR_GENERAL_WORKDIR_KEYMAP.hint_spans(),
+        2 | 3 => EDITOR_GENERAL_TOGGLE_KEYMAP.hint_spans(),
         _ => Vec::new(),
     }
 }
@@ -536,7 +541,7 @@ pub fn editor_role_row_footer_items(is_existing_role: bool) -> Vec<HintSpan<'sta
             HintSpan::Text("load role"),
         ]
     } else {
-        vec![HintSpan::Key("↵/A"), HintSpan::Text("load role")]
+        EDITOR_ROLE_NEW_KEYMAP.hint_spans()
     }
 }
 
@@ -612,7 +617,7 @@ pub enum AuthRowFooterMode {
 #[must_use]
 pub fn auth_row_footer_items(mode: AuthRowFooterMode) -> Vec<HintSpan<'static>> {
     match mode {
-        AuthRowFooterMode::ManageAuth => vec![HintSpan::Key("↵"), HintSpan::Text("manage auth")],
+        AuthRowFooterMode::ManageAuth => AUTH_MANAGE_KEYMAP.hint_spans(),
         AuthRowFooterMode::EditMode => vec![
             HintSpan::Key("↵"),
             HintSpan::Text("edit mode"),
@@ -630,7 +635,7 @@ pub fn auth_row_footer_items(mode: AuthRowFooterMode) -> Vec<HintSpan<'static>> 
             HintSpan::Key("D"),
             HintSpan::Text("reset"),
         ],
-        AuthRowFooterMode::EditSource => vec![HintSpan::Key("↵"), HintSpan::Text("edit source")],
+        AuthRowFooterMode::EditSource => AUTH_EDIT_SOURCE_KEYMAP.hint_spans(),
         AuthRowFooterMode::Empty => Vec::new(),
     }
 }
@@ -638,7 +643,7 @@ pub fn auth_row_footer_items(mode: AuthRowFooterMode) -> Vec<HintSpan<'static>> 
 #[must_use]
 pub fn settings_general_row_footer_items() -> Vec<HintSpan<'static>> {
     // `content_footer_items` already prepends ↑↓ navigate; only add the tab-specific action.
-    vec![HintSpan::Key("␣"), HintSpan::Text("toggle")]
+    SETTINGS_GENERAL_TOGGLE_KEYMAP.hint_spans()
 }
 
 #[must_use]
@@ -647,7 +652,7 @@ pub fn settings_trust_row_footer_items(
     scroll_axes: ScrollAxes,
 ) -> Vec<HintSpan<'static>> {
     if has_roles {
-        let mut items = vec![HintSpan::Key("␣"), HintSpan::Text("trust/untrust")];
+        let mut items = SETTINGS_TRUST_TOGGLE_KEYMAP.hint_spans();
         let scroll_items = scroll_hint_spans(scroll_axes);
         if !scroll_items.is_empty() {
             items.push(HintSpan::Sep);
