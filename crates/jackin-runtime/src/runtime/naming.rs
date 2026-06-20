@@ -75,10 +75,6 @@ pub(super) const LABEL_IMAGE_RECIPE_HASH: &str = "jackin.image_recipe_hash";
 /// changes invalidate old labels with a clear reason.
 pub(super) const LABEL_IMAGE_RECIPE_VERSION: &str = "jackin.image_recipe_version";
 
-/// Human-readable image label recording the selected agent baked into the
-/// recipe used for warm-path reuse decisions.
-pub(super) const LABEL_IMAGE_SELECTED_AGENT: &str = "jackin.selected_agent";
-
 /// Diagnostic image label recording the selected agent version when the host
 /// downloaded a known release before building the derived image. This is not a
 /// reuse authority because checking latest release metadata would put network
@@ -112,43 +108,28 @@ pub fn matching_family(selector: &RoleSelector, names: &[String]) -> Vec<String>
         .collect()
 }
 
+/// Derived image tag for a role.
+///
+/// The tag is agent-independent: the derived image installs every supported
+/// agent (the container runs a multiplexer where any tab can launch any agent),
+/// so its content does not depend on which agent was selected at launch. One
+/// image per role (per branch) is reused across all agents — selecting a
+/// different initial agent no longer forks a redundant, byte-identical image or
+/// forces a rebuild. The selected agent survives only as non-identity runtime
+/// metadata (the version probe), never in the tag or recipe.
 pub(super) fn image_name(selector: &RoleSelector) -> String {
     format!("{IMAGE_PREFIX}{}", runtime_slug(selector))
-}
-
-/// Derived image tag for one selected runtime recipe.
-///
-/// The selected agent is part of the image recipe, so the tag must include it
-/// too. Otherwise a Codex build overwrites the warm Claude image for the same
-/// role and turns the next Claude launch into an avoidable rebuild.
-pub(super) fn image_name_for_agent(
-    selector: &RoleSelector,
-    agent: jackin_core::agent::Agent,
-) -> String {
-    format!("{}_{}", image_name(selector), agent.slug())
 }
 
 /// Image tag for a branch-specific local build. Branch slashes become dashes
 /// so the tag is a valid Docker name and does not overwrite the stable image
 /// (e.g. `jk_the-architect_feat-my-pr`). All structural separators in image
 /// names are `_`. Role names and branch slugs contain only `[a-z0-9-]`, so
-/// `_` marks every boundary.
+/// `_` marks every boundary. Agent-independent for the same reason as
+/// [`image_name`].
 pub(super) fn image_name_for_branch(selector: &RoleSelector, branch: &str) -> String {
     let slug = branch.replace('/', "-").to_ascii_lowercase();
     format!("{IMAGE_PREFIX}{}_{slug}", runtime_slug(selector))
-}
-
-/// Branch-specific derived image tag for one selected runtime recipe.
-pub(super) fn image_name_for_branch_agent(
-    selector: &RoleSelector,
-    branch: &str,
-    agent: jackin_core::agent::Agent,
-) -> String {
-    format!(
-        "{}_{}",
-        image_name_for_branch(selector, branch),
-        agent.slug()
-    )
 }
 
 /// Docker volume name for the TLS client certificates shared between the

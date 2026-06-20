@@ -32,8 +32,8 @@ use std::path::PathBuf;
 
 use super::naming::{
     LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, LABEL_IMAGE_RECIPE_HASH,
-    LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, LABEL_IMAGE_SELECTED_AGENT,
-    LABEL_IMAGE_SELECTED_AGENT_VERSION, image_name_for_agent, image_name_for_branch_agent,
+    LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, LABEL_IMAGE_SELECTED_AGENT_VERSION,
+    image_name, image_name_for_branch,
 };
 use super::progress::{LaunchProgress, LaunchStage};
 #[cfg(not(test))]
@@ -44,7 +44,6 @@ const LABEL_IMAGE_RECIPE_ROLE_SOURCE_REF: &str = "jackin.recipe.role_source_ref"
 const LABEL_IMAGE_RECIPE_BASE_IMAGE: &str = "jackin.recipe.base_image";
 const LABEL_IMAGE_RECIPE_GENERATED_RUNTIME: &str = "jackin.recipe.generated_runtime_hash";
 const LABEL_IMAGE_RECIPE_SUPPORTED_AGENTS: &str = "jackin.recipe.supported_agents";
-const LABEL_IMAGE_RECIPE_SELECTED_AGENT_INSTALL: &str = "jackin.recipe.selected_agent_install";
 const LABEL_IMAGE_RECIPE_CACHE_BUST: &str = "jackin.recipe.cache_bust";
 const LABEL_IMAGE_RECIPE_CAPSULE_VERSION: &str = "jackin.recipe.capsule_version";
 const LABEL_IMAGE_RECIPE_HOOKS: &str = "jackin.recipe.hooks_hash";
@@ -66,8 +65,6 @@ pub(super) enum ImageInvalidationReason {
     ConstructImageChanged,
     GeneratedRuntimeChanged,
     SupportedAgentsChanged,
-    SelectedAgentChanged,
-    SelectedAgentInstallChanged,
     CacheBustChanged,
     CapsuleVersionChanged,
     HooksHashChanged,
@@ -92,8 +89,6 @@ impl ImageInvalidationReason {
             Self::ConstructImageChanged => "construct_image_changed",
             Self::GeneratedRuntimeChanged => "generated_runtime_changed",
             Self::SupportedAgentsChanged => "supported_agents_changed",
-            Self::SelectedAgentChanged => "selected_agent_changed",
-            Self::SelectedAgentInstallChanged => "selected_agent_install_changed",
             Self::CacheBustChanged => "cache_bust_changed",
             Self::CapsuleVersionChanged => "capsule_version_changed",
             Self::HooksHashChanged => "hooks_hash_changed",
@@ -136,8 +131,6 @@ struct ImageRecipe {
     construct_image: String,
     generated_runtime_hash: String,
     supported_agents: Vec<String>,
-    selected_agent: String,
-    selected_agent_install: String,
     cache_bust: String,
     capsule_version: String,
     hooks_hash: String,
@@ -259,20 +252,19 @@ pub async fn prewarm_role_images(
 }
 
 #[expect(clippy::too_many_arguments)]
-pub(super) async fn decide_agent_image(
+pub(super) async fn decide_role_image(
     paths: &JackinPaths,
     selector: &RoleSelector,
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    agent: Agent,
     rebuild: bool,
     branch_override: Option<&str>,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<ImageDecision> {
     let image = branch_override.map_or_else(
-        || image_name_for_agent(selector, agent),
-        |branch| image_name_for_branch_agent(selector, branch, agent),
+        || image_name(selector),
+        |branch| image_name_for_branch(selector, branch),
     );
     let mut base_image_override = decision_base_image_override(validated_repo, branch_override);
     if rebuild {
@@ -367,7 +359,6 @@ pub(super) async fn decide_agent_image(
     let mut expected_recipes = expected_image_recipes(
         cached_repo,
         validated_repo,
-        agent,
         head_sha.as_deref(),
         branch_override,
         base_image_override,
@@ -378,7 +369,6 @@ pub(super) async fn decide_agent_image(
         expected_recipes.extend(expected_image_recipes(
             cached_repo,
             validated_repo,
-            agent,
             head_sha.as_deref(),
             branch_override,
             None,
@@ -422,7 +412,7 @@ pub(super) async fn decide_agent_image(
         }
     };
 
-    match classify_image_labels(&labels, &expected_recipes, agent) {
+    match classify_image_labels(&labels, &expected_recipes) {
         None => {
             let selected_agent_version = labels.get(LABEL_IMAGE_SELECTED_AGENT_VERSION).cloned();
             if let Some(reason) = refresh_reason {
@@ -492,48 +482,35 @@ fn decision_base_image_override<'a>(
     }
 }
 
-#[expect(clippy::too_many_arguments)]
-fn build_image_recipe_for_install(
+fn build_image_recipe(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    agent: Agent,
     head_sha: Option<&str>,
     branch_override: Option<&str>,
     base_image_override: Option<&str>,
     cache_bust: &str,
-    selected_install: AgentInstall<String>,
 ) -> anyhow::Result<ImageRecipe> {
     build_image_recipe_with_construct_image(
         cached_repo,
         validated_repo,
-        agent,
         head_sha,
         branch_override,
         base_image_override,
         cache_bust,
         jackin_manifest::repo_contract::construct_image(),
-        selected_install,
     )
 }
 
-#[expect(clippy::too_many_arguments)]
 fn build_image_recipe_with_construct_image(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    agent: Agent,
     head_sha: Option<&str>,
     branch_override: Option<&str>,
     base_image_override: Option<&str>,
     cache_bust: &str,
     construct_image: String,
-    selected_install: AgentInstall<String>,
 ) -> anyhow::Result<ImageRecipe> {
-    let runtime_dockerfile = render_runtime_dockerfile(
-        validated_repo,
-        base_image_override,
-        &[agent],
-        &selected_install,
-    )?;
+    let runtime_dockerfile = render_runtime_dockerfile(validated_repo, base_image_override)?;
     let supported_agents = canonical_supported_agent_slugs(&validated_repo.manifest);
 
     Ok(ImageRecipe {
@@ -544,8 +521,6 @@ fn build_image_recipe_with_construct_image(
         construct_image,
         generated_runtime_hash: hash_str(&runtime_dockerfile),
         supported_agents,
-        selected_agent: agent.slug().to_owned(),
-        selected_agent_install: agent_install_recipe(agent, &selected_install),
         cache_bust: cache_bust.to_owned(),
         // Key on the same SHA-suffixed JACKIN_VERSION the capsule binary is
         // selected by (capsule_binary::REQUIRED_VERSION), not CARGO_PKG_VERSION:
@@ -558,25 +533,30 @@ fn build_image_recipe_with_construct_image(
     })
 }
 
+/// Render the canonical derived Dockerfile used for the image recipe hash.
+///
+/// Agent-independent by construction: every supported agent is installed from
+/// its prefetched binary, so the hash depends only on the role's supported set
+/// (plus base image, hooks, plugins, capsule version), never on which agent was
+/// selected at launch. The real build may fall back to a script install for an
+/// agent whose binary failed to prefetch, but that produces a functionally
+/// equivalent image for the same agent set, so it is labelled with — and reused
+/// against — this same canonical recipe rather than forking a new image.
 fn render_runtime_dockerfile(
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     base_image_override: Option<&str>,
-    agents_to_install: &[Agent],
-    selected_install: &AgentInstall<String>,
 ) -> anyhow::Result<String> {
     let base_dockerfile = if let Some(image) = base_image_override {
         format!("FROM {image}\n")
     } else {
         validated_repo.dockerfile.dockerfile_contents.clone()
     };
-    let mut agent_installs = derived_agent_install_recipe(validated_repo);
-    for agent in agents_to_install {
-        agent_installs.insert(*agent, selected_install.clone());
-    }
+    let agent_installs = derived_agent_install_recipe(validated_repo);
+    let agents_to_install = validated_repo.manifest.supported_agents();
     Ok(render_derived_dockerfile(
         &base_dockerfile,
         validated_repo.manifest.hooks.as_ref(),
-        agents_to_install,
+        &agents_to_install,
         validated_repo.manifest.claude.as_ref(),
         Some(".jackin-runtime/jackin-capsule"),
         &agent_installs,
@@ -612,81 +592,52 @@ fn canonical_supported_agent_slugs(manifest: &jackin_core::manifest::RoleManifes
     agents
 }
 
-fn agent_install_recipe(agent: Agent, selected_install: &AgentInstall<String>) -> String {
-    match selected_install {
-        AgentInstall::Prefetched(path) => hash_str(&agent.install_block(path)),
-        AgentInstall::ScriptFallback => hash_str(&agent.runtime().fallback_install_block()),
-    }
-}
-
-fn selected_install_uses_cache_bust(agent: Agent, selected_install: &AgentInstall<String>) -> bool {
-    match selected_install {
-        AgentInstall::ScriptFallback => true,
-        AgentInstall::Prefetched(_) => matches!(agent, Agent::Claude | Agent::Grok),
-    }
+/// The derived image carries a non-reproducible install step (Claude / Grok run
+/// a network installer at build time) when either agent is in the supported set,
+/// so the recipe folds in the stored cache-bust token to force a rebuild when
+/// that token advances. Other supported sets install purely from prefetched
+/// binaries and need no cache bust.
+fn supported_set_uses_cache_bust(manifest: &jackin_core::manifest::RoleManifest) -> bool {
+    manifest
+        .supported_agents()
+        .iter()
+        .any(|agent| matches!(agent, Agent::Claude | Agent::Grok))
 }
 
 fn cache_bust_recipe_value(
     paths: &JackinPaths,
     image: &str,
-    selected_install: &AgentInstall<String>,
-    agent: Agent,
+    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
 ) -> String {
-    if selected_install_uses_cache_bust(agent, selected_install) {
+    if supported_set_uses_cache_bust(&validated_repo.manifest) {
         version_check::stored_cache_bust(paths, image).unwrap_or_else(|| "0".to_owned())
     } else {
         "unused".to_owned()
     }
 }
 
-fn selected_agent_install_for_recipe(
-    runtime_binaries: &PreparedRuntimeBinaries,
-    agent: Agent,
-) -> AgentInstall<String> {
-    match runtime_binaries.agent_installs.get(&agent) {
-        Some(AgentInstall::ScriptFallback) => AgentInstall::ScriptFallback,
-        Some(AgentInstall::Prefetched(_)) | None => {
-            AgentInstall::Prefetched(format!(".jackin-runtime/agent-binaries/{}", agent.slug()))
-        }
-    }
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "computes the full set of expected image recipes from independent repo/agent/override inputs"
-)]
 fn expected_image_recipes(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    agent: Agent,
     head_sha: Option<&str>,
     branch_override: Option<&str>,
     base_image_override: Option<&str>,
     paths: &JackinPaths,
     image: &str,
 ) -> anyhow::Result<Vec<ExpectedImageRecipe>> {
-    let mut recipes = Vec::new();
-    for selected_install in [
-        AgentInstall::Prefetched(format!(".jackin-runtime/agent-binaries/{}", agent.slug())),
-        AgentInstall::ScriptFallback,
-    ] {
-        let cache_bust = cache_bust_recipe_value(paths, image, &selected_install, agent);
-        let recipe = build_image_recipe_for_install(
-            cached_repo,
-            validated_repo,
-            agent,
-            head_sha,
-            branch_override,
-            base_image_override,
-            &cache_bust,
-            selected_install,
-        )?;
-        recipes.push(ExpectedImageRecipe {
-            hash: recipe.hash()?,
-            recipe,
-        });
-    }
-    Ok(recipes)
+    let cache_bust = cache_bust_recipe_value(paths, image, validated_repo);
+    let recipe = build_image_recipe(
+        cached_repo,
+        validated_repo,
+        head_sha,
+        branch_override,
+        base_image_override,
+        &cache_bust,
+    )?;
+    Ok(vec![ExpectedImageRecipe {
+        hash: recipe.hash()?,
+        recipe,
+    }])
 }
 
 fn hooks_hash(
@@ -720,7 +671,6 @@ fn claude_plugin_recipe_hash(
 fn classify_image_labels(
     labels: &HashMap<String, String>,
     expected_recipes: &[ExpectedImageRecipe],
-    agent: Agent,
 ) -> Option<ImageInvalidationReason> {
     match labels.get(LABEL_IMAGE_RECIPE_VERSION).map(String::as_str) {
         Some(IMAGE_RECIPE_VERSION) => {}
@@ -730,12 +680,6 @@ fn classify_image_labels(
     let Some(stored_hash) = labels.get(LABEL_IMAGE_RECIPE_HASH) else {
         return Some(ImageInvalidationReason::MissingRecipeLabel);
     };
-    let Some(stored_agent) = labels.get(LABEL_IMAGE_SELECTED_AGENT) else {
-        return Some(ImageInvalidationReason::MissingRecipeLabel);
-    };
-    if stored_agent != agent.slug() {
-        return Some(ImageInvalidationReason::SelectedAgentChanged);
-    }
 
     for expected in expected_recipes {
         if &expected.hash == stored_hash {
@@ -878,16 +822,6 @@ fn recipe_diagnostic_labels(
             ImageInvalidationReason::SupportedAgentsChanged,
         ),
         (
-            LABEL_IMAGE_SELECTED_AGENT,
-            recipe.selected_agent.clone(),
-            ImageInvalidationReason::SelectedAgentChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_SELECTED_AGENT_INSTALL,
-            recipe.selected_agent_install.clone(),
-            ImageInvalidationReason::SelectedAgentInstallChanged,
-        ),
-        (
             LABEL_IMAGE_RECIPE_CACHE_BUST,
             recipe.cache_bust.clone(),
             ImageInvalidationReason::CacheBustChanged,
@@ -945,22 +879,23 @@ pub(crate) fn image_recipe_label_map_for_test(
 fn image_recipe_label_map_for_install_test(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    agent: Agent,
+    _agent: Agent,
     head_sha: Option<&str>,
     branch_override: Option<&str>,
     base_image_override: Option<&str>,
     cache_bust: &str,
-    selected_install: AgentInstall<String>,
+    // The derived image is agent-independent; the selected agent / install
+    // method no longer affect the recipe. Params retained so existing tests
+    // keep compiling without churn.
+    _selected_install: AgentInstall<String>,
 ) -> HashMap<String, String> {
-    let recipe = build_image_recipe_for_install(
+    let recipe = build_image_recipe(
         cached_repo,
         validated_repo,
-        agent,
         head_sha,
         branch_override,
         base_image_override,
         cache_bust,
-        selected_install,
     )
     .expect("test image recipe should build");
     let recipe_hash = recipe.hash().expect("test image recipe should hash");
@@ -977,21 +912,19 @@ fn image_recipe_label_map_for_install_test(
 fn expected_image_recipe_for_test(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    agent: Agent,
+    _agent: Agent,
     head_sha: Option<&str>,
     branch_override: Option<&str>,
     base_image_override: Option<&str>,
     cache_bust: &str,
 ) -> ExpectedImageRecipe {
-    let recipe = build_image_recipe_for_install(
+    let recipe = build_image_recipe(
         cached_repo,
         validated_repo,
-        agent,
         head_sha,
         branch_override,
         base_image_override,
         cache_bust,
-        AgentInstall::Prefetched(format!(".jackin-runtime/agent-binaries/{}", agent.slug())),
     )
     .expect("test image recipe should build");
     let hash = recipe.hash().expect("test image recipe should hash");
@@ -1475,12 +1408,11 @@ async fn prewarm_agent_image_from_validated_repo(
     repo_lock: std::fs::File,
     debug: bool,
 ) -> anyhow::Result<RoleImagePrewarmRow> {
-    let decision = decide_agent_image(
+    let decision = decide_role_image(
         paths,
         selector,
         cached_repo,
         validated_repo,
-        agent,
         false,
         branch_override,
         docker,
@@ -1774,8 +1706,8 @@ pub(super) async fn build_agent_image(
     let head_sha = role_git_sha_for_recipe(cached_repo, known_head_sha, runner).await;
 
     let local_image_name = branch_override.map_or_else(
-        || image_name_for_agent(selector, agent),
-        |b| image_name_for_branch_agent(selector, b, agent),
+        || image_name(selector),
+        |b| image_name_for_branch(selector, b),
     );
 
     let rebuild = rebuild || build_reason == ImageInvalidationReason::PublishedImageStale;
@@ -1869,8 +1801,7 @@ pub(super) async fn build_agent_image(
     };
     let rebuild = rebuild || construct_mismatch;
 
-    let selected_install = selected_agent_install_for_recipe(&runtime_binaries, agent);
-    let cache_bust_value = if !selected_install_uses_cache_bust(agent, &selected_install) {
+    let cache_bust_value = if !supported_set_uses_cache_bust(&validated_repo.manifest) {
         "unused".to_owned()
     } else if rebuild {
         // System clock before UNIX_EPOCH is essentially impossible, but if it
@@ -1889,15 +1820,13 @@ pub(super) async fn build_agent_image(
     };
     let dockerfile_path = build.dockerfile_path.display().to_string();
     let context_dir = build.context_dir.display().to_string();
-    let recipe = build_image_recipe_for_install(
+    let recipe = build_image_recipe(
         cached_repo,
         validated_repo,
-        agent,
         head_sha.as_deref(),
         branch_override,
         base_image_override,
         &cache_bust_value,
-        selected_install.clone(),
     )?;
     let recipe_hash = recipe.hash()?;
     let mut recipe_labels = recipe_labels(&recipe, &recipe_hash);
@@ -1928,7 +1857,7 @@ pub(super) async fn build_agent_image(
     }
 
     let cache_bust = format!("JACKIN_CACHE_BUST={cache_bust_value}");
-    if selected_install_uses_cache_bust(agent, &selected_install) {
+    if supported_set_uses_cache_bust(&validated_repo.manifest) {
         build_args.extend(["--build-arg", &cache_bust]);
     }
     if dockerfile_requests_role_git_sha_arg(&build.dockerfile_path) {

@@ -37,19 +37,15 @@ fn image_name_for_branch_substitutes_slashes_and_keeps_prefix() {
 }
 
 #[test]
-fn image_name_for_agent_scopes_selected_runtime_recipe() {
+fn image_name_is_agent_independent() {
+    // The derived image installs every supported agent, so its tag is keyed on
+    // the role (and branch), never the selected agent — one image is reused
+    // across all agents instead of forking a redundant per-agent copy.
     let flat = RoleSelector::new(None, "the-architect");
+    assert_eq!(image_name(&flat), "jk_the-architect");
     assert_eq!(
-        image_name_for_agent(&flat, jackin_core::agent::Agent::Claude),
-        "jk_the-architect_claude"
-    );
-    assert_eq!(
-        image_name_for_agent(&flat, jackin_core::agent::Agent::Codex),
-        "jk_the-architect_codex"
-    );
-    assert_eq!(
-        image_name_for_branch_agent(&flat, "feat/scope", jackin_core::agent::Agent::Kimi),
-        "jk_the-architect_feat-scope_kimi"
+        image_name_for_branch(&flat, "feat/scope"),
+        "jk_the-architect_feat-scope"
     );
 }
 

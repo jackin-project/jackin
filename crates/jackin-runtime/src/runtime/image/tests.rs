@@ -37,10 +37,6 @@ fn make_docker(labels: HashMap<String, String>) -> FakeDockerClient {
     docker
 }
 
-fn default_agent_binary_path(agent: Agent) -> String {
-    format!(".jackin-runtime/agent-binaries/{}", agent.slug())
-}
-
 #[test]
 fn build_output_streams_for_compact_non_debug_runs() {
     let _guard = rich_surface_test_guard();
@@ -811,28 +807,29 @@ fn image_recipe_accepts_script_fallback_install_recipe() {
     let expected = expected_image_recipes(
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         Some("abc123"),
         None,
         None,
         &paths,
-        &image_name_for_agent(&selector, Agent::Claude),
+        &image_name(&selector),
     )
     .unwrap();
 
-    assert_eq!(
-        classify_image_labels(&labels, &expected, Agent::Claude),
-        None
-    );
+    assert_eq!(classify_image_labels(&labels, &expected), None);
 }
 
 #[test]
-fn image_recipe_distinguishes_prefetched_and_fallback_installs() {
+fn image_recipe_is_agent_independent() {
+    // The recipe (and thus the image identity) keys on the supported-agent set,
+    // never the selected agent — so the same role yields one recipe hash
+    // regardless of which agent is launched. Selecting a different initial agent
+    // must reuse the warm image instead of forking a redundant one.
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
     let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
-    let prefetched = build_image_recipe_for_install(
+
+    let labels_claude = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
         Agent::Claude,
@@ -840,30 +837,21 @@ fn image_recipe_distinguishes_prefetched_and_fallback_installs() {
         None,
         None,
         "0",
-        AgentInstall::Prefetched(default_agent_binary_path(Agent::Claude)),
-    )
-    .unwrap();
-    let fallback = build_image_recipe_for_install(
+    );
+    let expected_codex = expected_image_recipes(
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         Some("abc123"),
         None,
         None,
-        "0",
-        AgentInstall::ScriptFallback,
+        &paths,
+        &image_name(&selector),
     )
     .unwrap();
 
-    assert_ne!(prefetched.hash().unwrap(), fallback.hash().unwrap());
-    assert_ne!(
-        prefetched.selected_agent_install,
-        fallback.selected_agent_install
-    );
-    assert_ne!(
-        prefetched.generated_runtime_hash,
-        fallback.generated_runtime_hash
-    );
+    // Labels written while launching Claude satisfy the recipe expected when
+    // launching Codex — one image, reused across agents.
+    assert_eq!(classify_image_labels(&labels_claude, &expected_codex), None);
 }
 
 #[test]
@@ -885,7 +873,7 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
 
     let labels = HashMap::new();
     assert_eq!(
-        classify_image_labels(&labels, &[expected], Agent::Claude),
+        classify_image_labels(&labels, &[expected]),
         Some(ImageInvalidationReason::MissingRecipeLabel)
     );
 
@@ -900,7 +888,7 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
         "0",
     );
     assert_eq!(
-        classify_image_labels(&labels, &[expected], Agent::Claude),
+        classify_image_labels(&labels, &[expected]),
         Some(ImageInvalidationReason::RecipeVersionChanged)
     );
 
@@ -924,7 +912,7 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
         "0",
     );
     assert_eq!(
-        classify_image_labels(&labels, &[expected], Agent::Claude),
+        classify_image_labels(&labels, &[expected]),
         Some(ImageInvalidationReason::RecipeHashChanged)
     );
 
@@ -943,32 +931,8 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
         "0",
     );
     assert_eq!(
-        classify_image_labels(&labels, &[expected], Agent::Claude),
+        classify_image_labels(&labels, &[expected]),
         Some(ImageInvalidationReason::RecipeVersionChanged)
-    );
-
-    let mut labels = image_recipe_label_map_for_test(
-        &cached_repo,
-        &validated_repo,
-        Agent::Claude,
-        Some("abc123"),
-        None,
-        None,
-        "0",
-    );
-    labels.insert(LABEL_IMAGE_SELECTED_AGENT.to_owned(), "codex".to_owned());
-    let expected = expected_image_recipe_for_test(
-        &cached_repo,
-        &validated_repo,
-        Agent::Claude,
-        Some("abc123"),
-        None,
-        None,
-        "0",
-    );
-    assert_eq!(
-        classify_image_labels(&labels, &[expected], Agent::Claude),
-        Some(ImageInvalidationReason::SelectedAgentChanged)
     );
 
     let mut labels = image_recipe_label_map_for_test(
@@ -994,7 +958,7 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
         "0",
     );
     assert_eq!(
-        classify_image_labels(&labels, &[expected], Agent::Claude),
+        classify_image_labels(&labels, &[expected]),
         Some(ImageInvalidationReason::BaseImageChanged)
     );
 
@@ -1021,7 +985,7 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
         "0",
     );
     assert_eq!(
-        classify_image_labels(&labels, &[expected], Agent::Claude),
+        classify_image_labels(&labels, &[expected]),
         Some(ImageInvalidationReason::ConstructImageChanged)
     );
 
@@ -1041,10 +1005,6 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
         (
             LABEL_IMAGE_RECIPE_SUPPORTED_AGENTS,
             ImageInvalidationReason::SupportedAgentsChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_SELECTED_AGENT_INSTALL,
-            ImageInvalidationReason::SelectedAgentInstallChanged,
         ),
         (
             LABEL_IMAGE_RECIPE_CACHE_BUST,
@@ -1087,7 +1047,7 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
             "0",
         );
         assert_eq!(
-            classify_image_labels(&labels, &[expected], Agent::Claude),
+            classify_image_labels(&labels, &[expected]),
             Some(reason),
             "{label} mismatch should report the precise invalidation reason"
         );
@@ -1121,19 +1081,18 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name_for_agent(&selector, Agent::Claude)]);
+        .push_back(vec![image_name(&selector)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
         .push_back(labels);
     let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
 
-    let decision = decide_agent_image(
+    let decision = decide_role_image(
         &paths,
         &selector,
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         false,
         None,
         &docker,
@@ -1145,7 +1104,7 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
     assert_eq!(
         decision,
         ImageDecision::Reuse {
-            image: image_name_for_agent(&selector, Agent::Claude),
+            image: image_name(&selector),
             selected_agent_version: Some("2.1.91".to_owned()),
         }
     );
@@ -1215,7 +1174,7 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
     ];
 
     for (name, labels, expected_reason) in cases {
-        let image = image_name_for_agent(&selector, Agent::Claude);
+        let image = image_name(&selector);
         let docker = FakeDockerClient::default();
         docker
             .list_image_tags_queue
@@ -1227,12 +1186,11 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
             .push_back(labels.clone());
         let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
 
-        let decision = decide_agent_image(
+        let decision = decide_role_image(
             &paths,
             &selector,
             &cached_repo,
             &validated_repo,
-            Agent::Claude,
             false,
             None,
             &docker,
@@ -1289,12 +1247,11 @@ async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_l
     let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
 
-    let decision = decide_agent_image(
+    let decision = decide_role_image(
         &paths,
         &selector,
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         false,
         None,
         &docker,
@@ -1353,12 +1310,11 @@ plugins = []
     let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
 
-    let decision = decide_agent_image(
+    let decision = decide_role_image(
         &paths,
         &selector,
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         false,
         None,
         &docker,
@@ -1411,12 +1367,11 @@ plugins = []
         )]));
     let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
 
-    let decision = decide_agent_image(
+    let decision = decide_role_image(
         &paths,
         &selector,
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         false,
         None,
         &docker,
@@ -1473,7 +1428,7 @@ plugins = []
         None,
         "0",
     );
-    let image = image_name_for_agent(&selector, Agent::Claude);
+    let image = image_name(&selector);
     let docker = FakeDockerClient::default();
     docker
         .list_image_tags_queue
@@ -1492,12 +1447,11 @@ plugins = []
         .push_back(labels);
     let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
 
-    let decision = decide_agent_image(
+    let decision = decide_role_image(
         &paths,
         &selector,
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         false,
         None,
         &docker,
@@ -1535,7 +1489,7 @@ async fn prewarm_reuse_emits_prewarm_launch_plan_and_skips_build() {
     let cached_repo = CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = image_name_for_agent(&selector, Agent::Claude);
+    let image = image_name(&selector);
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -1615,7 +1569,7 @@ plugins = []
     )
     .unwrap();
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = image_name_for_agent(&selector, Agent::Claude);
+    let image = image_name(&selector);
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -1744,19 +1698,18 @@ preflight = "hooks/preflight.sh"
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name_for_agent(&selector, Agent::Claude)]);
+        .push_back(vec![image_name(&selector)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
         .push_back(labels);
     let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
 
-    let decision = decide_agent_image(
+    let decision = decide_role_image(
         &paths,
         &selector,
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         false,
         None,
         &docker,
@@ -1781,7 +1734,7 @@ async fn branch_override_uses_branch_tag_and_recipe_ref() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
     let branch = "feat/instant-launch";
-    let image = image_name_for_branch_agent(&selector, branch, Agent::Claude);
+    let image = image_name_for_branch(&selector, branch);
     let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
@@ -1803,12 +1756,11 @@ async fn branch_override_uses_branch_tag_and_recipe_ref() {
         .push_back(labels);
     let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
 
-    let decision = decide_agent_image(
+    let decision = decide_role_image(
         &paths,
         &selector,
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         false,
         Some(branch),
         &docker,
@@ -1848,7 +1800,7 @@ async fn decide_agent_image_rebuilds_when_construct_image_label_has_changed() {
         LABEL_IMAGE_CONSTRUCT.to_owned(),
         "projectjackin/custom-construct:latest".to_owned(),
     );
-    let image = image_name_for_agent(&selector, Agent::Claude);
+    let image = image_name(&selector);
     let docker = FakeDockerClient::default();
     docker
         .list_image_tags_queue
@@ -1860,12 +1812,11 @@ async fn decide_agent_image_rebuilds_when_construct_image_label_has_changed() {
         .push_back(labels);
     let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
 
-    let decision = decide_agent_image(
+    let decision = decide_role_image(
         &paths,
         &selector,
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         false,
         None,
         &docker,
@@ -1911,19 +1862,18 @@ async fn decide_agent_image_rebuilds_when_role_git_sha_has_changed() {
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name_for_agent(&selector, Agent::Claude)]);
+        .push_back(vec![image_name(&selector)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
         .push_back(labels);
     let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
 
-    let decision = decide_agent_image(
+    let decision = decide_role_image(
         &paths,
         &selector,
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         false,
         None,
         &docker,
@@ -1957,7 +1907,7 @@ async fn decide_agent_image_rebuilds_when_role_source_ref_has_changed() {
         None,
         "0",
     );
-    let image = image_name_for_branch_agent(&selector, "feature/instant-launch", Agent::Claude);
+    let image = image_name_for_branch(&selector, "feature/instant-launch");
     let docker = FakeDockerClient::default();
     docker
         .list_image_tags_queue
@@ -1969,12 +1919,11 @@ async fn decide_agent_image_rebuilds_when_role_source_ref_has_changed() {
         .push_back(labels);
     let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
 
-    let decision = decide_agent_image(
+    let decision = decide_role_image(
         &paths,
         &selector,
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         false,
         Some("feature/instant-launch"),
         &docker,
@@ -2012,19 +1961,18 @@ async fn decide_agent_image_reuses_when_only_host_uid_has_changed() {
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name_for_agent(&selector, Agent::Claude)]);
+        .push_back(vec![image_name(&selector)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
         .push_back(labels);
     let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
 
-    let decision = decide_agent_image(
+    let decision = decide_role_image(
         &paths,
         &selector,
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         false,
         None,
         &docker,
@@ -2036,7 +1984,7 @@ async fn decide_agent_image_reuses_when_only_host_uid_has_changed() {
     assert_eq!(
         decision,
         ImageDecision::Reuse {
-            image: image_name_for_agent(&selector, Agent::Claude),
+            image: image_name(&selector),
             selected_agent_version: None,
         }
     );
@@ -2066,19 +2014,18 @@ async fn decide_agent_image_rebuilds_when_host_identity_strategy_has_changed() {
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name_for_agent(&selector, Agent::Claude)]);
+        .push_back(vec![image_name(&selector)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
         .push_back(labels);
     let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
 
-    let decision = decide_agent_image(
+    let decision = decide_role_image(
         &paths,
         &selector,
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         false,
         None,
         &docker,
@@ -2105,25 +2052,21 @@ fn custom_construct_identity_changes_recipe_hash() {
     let canonical = build_image_recipe_with_construct_image(
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         Some("abc123"),
         None,
         None,
         "0",
         jackin_manifest::repo_contract::CONSTRUCT_IMAGE.to_owned(),
-        AgentInstall::Prefetched(default_agent_binary_path(Agent::Claude)),
     )
     .unwrap();
     let custom = build_image_recipe_with_construct_image(
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         Some("abc123"),
         None,
         None,
         "0",
         "localhost/projectjackin-construct:test".to_owned(),
-        AgentInstall::Prefetched(default_agent_binary_path(Agent::Claude)),
     )
     .unwrap();
 
@@ -2160,19 +2103,18 @@ async fn decide_agent_image_rebuild_reason_is_emitted_in_diagnostics() {
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name_for_agent(&selector, Agent::Claude)]);
+        .push_back(vec![image_name(&selector)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
         .push_back(labels);
     let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
 
-    let decision = decide_agent_image(
+    let decision = decide_role_image(
         &paths,
         &selector,
         &cached_repo,
         &validated_repo,
-        Agent::Claude,
         false,
         None,
         &docker,

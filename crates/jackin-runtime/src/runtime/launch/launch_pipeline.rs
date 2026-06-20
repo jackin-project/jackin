@@ -20,7 +20,7 @@ use crate::runtime::attach::{
     AgentSessionInventory, ContainerState, hardline_agent, inspect_agent_sessions,
     start_or_hardline_agent, start_or_reconnect_capsule_client,
 };
-use crate::runtime::naming::{image_name_for_agent, image_name_for_branch_agent};
+use crate::runtime::naming::{image_name, image_name_for_branch};
 use crate::runtime::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
 // Boxed future required: load_role calls itself recursively via
@@ -696,8 +696,8 @@ pub(crate) async fn load_role_with(
     };
 
     let image_tag = opts.role_branch.as_deref().map_or_else(
-        || image_name_for_agent(selector, agent),
-        |b| image_name_for_branch_agent(selector, b, agent),
+        || image_name(selector),
+        |b| image_name_for_branch(selector, b),
     );
     if let Some(progress) = steps.progress_mut() {
         progress.update_identity(crate::runtime::progress::LaunchIdentity {
@@ -729,12 +729,11 @@ pub(crate) async fn load_role_with(
     }
     steps.next("Preparing derived image").await?;
     let mut repo_lock = Some(repo_lock);
-    let image_decision = crate::runtime::image::decide_agent_image(
+    let image_decision = crate::runtime::image::decide_role_image(
         paths,
         selector,
         &cached_repo,
         &validated_repo,
-        agent,
         rebuild,
         opts.role_branch.as_deref(),
         docker,
