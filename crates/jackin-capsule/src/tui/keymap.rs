@@ -1,0 +1,345 @@
+//! Capsule keymaps — static binding tables for capsule TUI key dispatch.
+//!
+//! The capsule's outer input parser (`input.rs`) handles the palette key
+//! and prefix key as raw bytes from the PTY (dynamically configured via
+//! `JACKIN_PALETTE_KEY` / `JACKIN_PREFIX` env vars). Those dynamic chords
+//! cannot live in a static `Keymap`. What IS static is the set of commands
+//! that follow the prefix key — those are registered here.
+
+use jackin_tui::components::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
+
+use crate::tui::input::{ArrowDir, PrefixCommand};
+
+/// Static binding table for prefix-mode commands.
+///
+/// After the prefix key is consumed, the next keystroke is looked up here.
+/// This table drives both `prefix_binding` dispatch and the prefix cheat-sheet
+/// in `main_view_hint` (shown when `prefix_awaiting == true`).
+///
+/// Palette toggle (`space`/`:`) is included as `Internal` — it's redundant
+/// when already in prefix mode (operator can always dismiss and open palette),
+/// but listed for dispatch completeness.
+pub(crate) static PREFIX_COMMAND_KEYMAP: Keymap<PrefixCommand> = Keymap::new(&[
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('c'))],
+        action: PrefixCommand::NewTab,
+        hint: Some("new"),
+        visibility: Visibility::Shown,
+        glyph: Some("c"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('n'))],
+        action: PrefixCommand::NextTab,
+        hint: Some("next tab"),
+        visibility: Visibility::Shown,
+        glyph: Some("n"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('x'))],
+        action: PrefixCommand::KillPane,
+        hint: Some("close"),
+        visibility: Visibility::Shown,
+        glyph: Some("x"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('h'))],
+        action: PrefixCommand::MoveFocus(ArrowDir::Left),
+        hint: Some("focus left"),
+        visibility: Visibility::Shown,
+        glyph: Some("h"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('j'))],
+        action: PrefixCommand::MoveFocus(ArrowDir::Down),
+        hint: Some("focus down"),
+        visibility: Visibility::Shown,
+        glyph: Some("j"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('k'))],
+        action: PrefixCommand::MoveFocus(ArrowDir::Up),
+        hint: Some("focus up"),
+        visibility: Visibility::Shown,
+        glyph: Some("k"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('l'))],
+        action: PrefixCommand::MoveFocus(ArrowDir::Right),
+        hint: Some("focus right"),
+        visibility: Visibility::Shown,
+        glyph: Some("l"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('"'))],
+        action: PrefixCommand::SplitTopBottom,
+        hint: Some("split top/bottom"),
+        visibility: Visibility::Shown,
+        glyph: Some("\""),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('%'))],
+        action: PrefixCommand::SplitSideBySide,
+        hint: Some("split left/right"),
+        visibility: Visibility::Shown,
+        glyph: Some("%"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('z'))],
+        action: PrefixCommand::ZoomToggle,
+        hint: Some("zoom"),
+        visibility: Visibility::Shown,
+        glyph: Some("z"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('p'))],
+        action: PrefixCommand::PrevTab,
+        hint: Some("prev tab"),
+        visibility: Visibility::Shown,
+        glyph: Some("p"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('&'))],
+        action: PrefixCommand::KillTab,
+        hint: Some("kill tab"),
+        visibility: Visibility::Shown,
+        glyph: Some("&"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::ctrl(LogicalKey::Char('l'))],
+        action: PrefixCommand::ClearPane,
+        hint: Some("clear"),
+        visibility: Visibility::Shown,
+        glyph: Some("Ctrl-L"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('d'))],
+        action: PrefixCommand::Detach,
+        hint: Some("detach"),
+        visibility: Visibility::Shown,
+        glyph: Some("d"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char(' ')),
+            KeyChord::plain(LogicalKey::Char(':')),
+        ],
+        action: PrefixCommand::Palette,
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('r'))],
+        action: PrefixCommand::Redraw,
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    // JumpTab 0-9 — register as Internal since full list is not hint-bar-friendly
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('0'))],
+        action: PrefixCommand::JumpTab(0),
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('1'))],
+        action: PrefixCommand::JumpTab(1),
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('2'))],
+        action: PrefixCommand::JumpTab(2),
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('3'))],
+        action: PrefixCommand::JumpTab(3),
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('4'))],
+        action: PrefixCommand::JumpTab(4),
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('5'))],
+        action: PrefixCommand::JumpTab(5),
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('6'))],
+        action: PrefixCommand::JumpTab(6),
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('7'))],
+        action: PrefixCommand::JumpTab(7),
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('8'))],
+        action: PrefixCommand::JumpTab(8),
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('9'))],
+        action: PrefixCommand::JumpTab(9),
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+]);
+
+// ── Dialog: filterable list ───────────────────────────────────────────────────
+
+/// Actions for the type-to-filter list dialogs (command palette, agent picker,
+/// close-target picker, split-direction picker, provider picker).
+///
+/// Printable `Char` input is intentionally absent from the table — it builds the
+/// filter and is handled by the dispatch site's `printable_filter_char`
+/// fallthrough (the `None` arm), exactly like the editor's `CheckImmediate`
+/// wildcard. The differing hint *labels* ("select" vs "launch") and the
+/// presence/absence of the "type filter" text live at the hint-builder call
+/// site; only the key glyphs derive from this table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FilterListAction {
+    NavigateUp,
+    NavigateDown,
+    Confirm,
+    FilterBackspace,
+    Dismiss,
+}
+
+pub(crate) static FILTER_LIST_KEYMAP: Keymap<FilterListAction> = Keymap::new(&[
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Up)],
+        action: FilterListAction::NavigateUp,
+        hint: Some("navigate"),
+        visibility: Visibility::Shown,
+        glyph: Some("↑↓"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Down)],
+        action: FilterListAction::NavigateDown,
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        action: FilterListAction::Confirm,
+        hint: Some("select"),
+        visibility: Visibility::Shown,
+        glyph: Some("↵"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Backspace)],
+        action: FilterListAction::FilterBackspace,
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Esc),
+            KeyChord::ctrl(LogicalKey::Char('c')),
+            KeyChord::ctrl(LogicalKey::Char('q')),
+        ],
+        action: FilterListAction::Dismiss,
+        hint: Some("cancel"),
+        visibility: Visibility::Shown,
+        glyph: Some("Ctrl-C/Esc"),
+    },
+]);
+
+// ── Dialog: rename tab ────────────────────────────────────────────────────────
+
+/// Actions for the rename-tab text-input dialog.
+///
+/// Printable `Char` input is absent — it falls through (the `None` arm) to
+/// `TextField` insertion. Backspace is `Internal`: it edits the field rather
+/// than being advertised.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RenameAction {
+    Save,
+    FieldBackspace,
+    Dismiss,
+}
+
+pub(crate) static RENAME_KEYMAP: Keymap<RenameAction> = Keymap::new(&[
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        action: RenameAction::Save,
+        hint: Some("save"),
+        visibility: Visibility::Shown,
+        glyph: Some("↵"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Backspace)],
+        action: RenameAction::FieldBackspace,
+        hint: None,
+        visibility: Visibility::Internal,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Esc),
+            KeyChord::ctrl(LogicalKey::Char('c')),
+            KeyChord::ctrl(LogicalKey::Char('q')),
+        ],
+        action: RenameAction::Dismiss,
+        hint: Some("cancel"),
+        visibility: Visibility::Shown,
+        glyph: Some("Ctrl-C/Esc"),
+    },
+]);
+
+// ── Dialog: read-only dismiss ─────────────────────────────────────────────────
+
+/// Single dismiss action for the read-only info dialogs (`ContainerInfo`,
+/// `GitHubContext`).
+///
+/// The accept-set mirrors the historical `is_dismiss_key`: Esc, `q`/`Q`,
+/// Ctrl+C, Ctrl+Q, and Backspace (DEL `0x7f` / Ctrl+H `0x08`, both mapped to
+/// `LogicalKey::Backspace`). The advertised glyph stays `"q/Esc"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReadOnlyDismissAction {
+    Dismiss,
+}
+
+pub(crate) static READ_ONLY_DISMISS_KEYMAP: Keymap<ReadOnlyDismissAction> =
+    Keymap::new(&[KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Esc),
+            KeyChord::plain(LogicalKey::Char('q')),
+            KeyChord::plain(LogicalKey::Char('Q')),
+            KeyChord::ctrl(LogicalKey::Char('c')),
+            KeyChord::ctrl(LogicalKey::Char('q')),
+            KeyChord::plain(LogicalKey::Backspace),
+        ],
+        action: ReadOnlyDismissAction::Dismiss,
+        hint: Some("dismiss"),
+        visibility: Visibility::Shown,
+        glyph: Some("q/Esc"),
+    }]);
+
+#[cfg(test)]
+mod tests;

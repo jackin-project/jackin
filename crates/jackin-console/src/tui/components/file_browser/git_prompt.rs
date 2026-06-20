@@ -232,7 +232,16 @@ pub(super) fn git_prompt_footer_items(has_url: bool) -> Vec<jackin_tui::HintSpan
         spans.extend([HintSpan::Sep, HintSpan::Key("O"), HintSpan::Text("open")]);
     }
     spans.extend([
+        HintSpan::GroupSep,
+        HintSpan::Key("\u{21e5}/\u{2192}"),
+        HintSpan::Text("next"),
         HintSpan::Sep,
+        HintSpan::Key("\u{21e4}/\u{2190}"),
+        HintSpan::Text("prev"),
+        HintSpan::Sep,
+        HintSpan::Key("\u{21b5}"),
+        HintSpan::Text("select"),
+        HintSpan::GroupSep,
         HintSpan::Key("C/Esc"),
         HintSpan::Text("cancel"),
     ]);

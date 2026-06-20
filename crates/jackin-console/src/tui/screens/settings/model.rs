@@ -696,6 +696,7 @@ where
             Self::OpPicker { state } => footer_items_for_mode(state.footer_mode(false)),
             Self::RolePicker { .. } => footer_items_for_mode(ModalFooterMode::FilteredPicker {
                 include_refresh: false,
+                include_collapse: false,
             }),
             Self::Confirm { .. } => footer_items_for_mode(ModalFooterMode::YesNo),
         }
@@ -1206,6 +1207,7 @@ impl<
             Self::ScopePicker { .. } => footer_items_for_mode(ModalFooterMode::SegmentedChoice),
             Self::RolePicker { .. } => footer_items_for_mode(ModalFooterMode::FilteredPicker {
                 include_refresh: false,
+                include_collapse: false,
             }),
             Self::Confirm { .. } => footer_items_for_mode(ModalFooterMode::YesNo),
             Self::PreviewSave { state } => footer_items_for_mode(state.footer_mode()),
@@ -2456,7 +2458,10 @@ mod tests {
 
     impl ModalOpPickerFooterState for TestOpPicker {
         fn footer_mode(&self, include_refresh: bool) -> ModalFooterMode {
-            ModalFooterMode::FilteredPicker { include_refresh }
+            ModalFooterMode::FilteredPicker {
+                include_refresh,
+                include_collapse: false,
+            }
         }
     }
 

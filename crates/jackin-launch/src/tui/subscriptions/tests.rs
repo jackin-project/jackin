@@ -1,6 +1,16 @@
-use super::*;
-use crossterm::event::{KeyModifiers, MouseEventKind};
 use std::sync::Mutex;
+
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
+use ratatui::layout::Rect;
+
+use super::{
+    BUILD_LOG_SCROLL_STEP, CockpitContext, QuitConfirmOutcome, apply_quit_confirm_key,
+    handle_cockpit_mouse_down, is_ctrl_c, update_build_log_mouse_scroll,
+};
+use crate::LaunchHostTerminal;
+use crate::tui::components::container_info_dialog::{
+    launch_container_info_rect, launch_container_info_state,
+};
 
 struct RecordingTerminal {
     copied: Mutex<Vec<String>>,
@@ -146,4 +156,66 @@ fn container_info_click_copies_real_run_id_and_log_path() {
         terminal.copied(),
         vec![run_id.to_owned(), run_log_path.to_owned()]
     );
+}
+
+fn quit_confirm_view() -> crate::LaunchView {
+    let mut view = crate::initial_view();
+    view.quit_confirm = Some(jackin_tui::components::exit_confirm_state());
+    view
+}
+
+#[test]
+fn is_ctrl_c_only_matches_ctrl_c() {
+    assert!(is_ctrl_c(&Event::Key(KeyEvent::new(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL
+    ))));
+    // Ctrl+Q is not a hard cancel — it must not match.
+    assert!(!is_ctrl_c(&Event::Key(KeyEvent::new(
+        KeyCode::Char('q'),
+        KeyModifiers::CONTROL
+    ))));
+    // Plain 'c' (no modifier) is just input.
+    assert!(!is_ctrl_c(&Event::Key(KeyEvent::new(
+        KeyCode::Char('c'),
+        KeyModifiers::NONE
+    ))));
+}
+
+#[test]
+fn quit_confirm_yes_confirms_and_closes() {
+    let mut view = quit_confirm_view();
+    let out = apply_quit_confirm_key(
+        &mut view,
+        KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE),
+    );
+    assert_eq!(out, QuitConfirmOutcome::Confirmed);
+    assert!(view.quit_confirm.is_none(), "confirm closes on Yes");
+}
+
+#[test]
+fn quit_confirm_esc_dismisses_and_closes() {
+    let mut view = quit_confirm_view();
+    let out = apply_quit_confirm_key(&mut view, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert_eq!(out, QuitConfirmOutcome::Dismissed);
+    assert!(view.quit_confirm.is_none(), "Esc dismisses");
+}
+
+#[test]
+fn quit_confirm_enter_defaults_to_no() {
+    // Default focus is No, so a bare Enter dismisses rather than quits.
+    let mut view = quit_confirm_view();
+    let out = apply_quit_confirm_key(&mut view, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_eq!(out, QuitConfirmOutcome::Dismissed);
+}
+
+#[test]
+fn quit_confirm_focus_toggle_keeps_dialog_open() {
+    let mut view = quit_confirm_view();
+    let out = apply_quit_confirm_key(&mut view, KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert_eq!(out, QuitConfirmOutcome::Pending);
+    assert!(view.quit_confirm.is_some(), "Tab only toggles focus");
+    // After toggling to Yes, Enter now confirms.
+    let out = apply_quit_confirm_key(&mut view, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_eq!(out, QuitConfirmOutcome::Confirmed);
 }

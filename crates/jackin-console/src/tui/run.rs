@@ -183,7 +183,13 @@ const fn modal_kind_consumes_letter_input(kind: Option<LetterInputModalKind>) ->
     )
 }
 
-/// Whether the bare `q`/`Q` key should open the global exit confirmation.
+/// Whether a key should open the global exit confirmation.
+///
+/// Two triggers, matching every other jackin' surface:
+/// * `Ctrl+Q` — the explicit quit chord. Always opens, regardless of screen or
+///   focus: it is not a text character, so it never collides with typing.
+/// * bare `q`/`Q` — a convenience trigger, but only off the main screen and
+///   when no field is consuming letter input (otherwise it is just text).
 ///
 /// The root console maps its stage/modal state into [`QuitInterceptState`].
 /// Keeping the key policy here prevents the event loop from owning a parallel
@@ -195,15 +201,19 @@ pub fn should_open_quit_confirm(
 ) -> bool {
     use crossterm::event::{KeyCode, KeyModifiers};
 
-    matches!(key.code, KeyCode::Char('q' | 'Q'))
-        && (key.modifiers - KeyModifiers::SHIFT).is_empty()
+    if !matches!(key.code, KeyCode::Char('q' | 'Q')) {
+        return false;
+    }
+    let is_ctrl_q = key.modifiers.contains(KeyModifiers::CONTROL);
+    let is_bare_q = (key.modifiers - KeyModifiers::SHIFT).is_empty()
         && !state.on_main_screen
-        && !state.consumes_letter_input
+        && !state.consumes_letter_input;
+    is_ctrl_q || is_bare_q
 }
 
 #[must_use]
 pub fn quit_confirm_state() -> jackin_tui::components::ConfirmState {
-    jackin_tui::components::ConfirmState::new("Exit jackin'?")
+    jackin_tui::components::exit_confirm_state()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

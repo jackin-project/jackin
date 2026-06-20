@@ -192,28 +192,39 @@ pub(crate) async fn load_role_with(
 
     if workspace.git_pull_on_entry {
         let sources = super::git_pull_sources(workspace);
-        if let Some(progress) = steps.progress_mut() {
-            if sources.is_empty() {
+        // `quiet` suppresses per-repo stdout in the headless path; the rich
+        // surface renders pull state through the Workspace stage instead.
+        let quiet = steps.progress_mut().is_none();
+        if sources.is_empty() {
+            if let Some(progress) = steps.progress_mut() {
                 progress.stage_skipped(
                     crate::runtime::progress::LaunchStage::Workspace,
                     "no mounted git repositories",
                 );
-            } else {
+            }
+        } else {
+            if let Some(progress) = steps.progress_mut() {
                 progress.stage_started(
                     crate::runtime::progress::LaunchStage::Workspace,
                     format!("polling {} workspace repositories", sources.len()),
                 );
-                let debug = opts.debug;
-                let git_program = std::path::PathBuf::from("git");
-                let pull = tokio::task::spawn_blocking(move || {
-                    super::pull_git_sources_with_git(sources, debug, &git_program, false)
-                });
-                let results = progress
-                    .while_waiting(async move {
-                        pull.await
-                            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))
-                    })
-                    .await?;
+            }
+            // Run the blocking git pulls on the blocking pool, raced against
+            // the cancel token so Ctrl+C during a slow fetch aborts promptly
+            // rather than parking the executor on the join.
+            let debug = opts.debug;
+            let git_program = std::path::PathBuf::from("git");
+            let results = steps
+                .run_blocking(move || {
+                    anyhow::Ok(super::pull_git_sources_with_git(
+                        sources,
+                        debug,
+                        &git_program,
+                        quiet,
+                    ))
+                })
+                .await?;
+            if let Some(progress) = steps.progress_mut() {
                 let (ok, failed) = super::record_git_pull_results(&results);
                 let detail = if failed == 0 {
                     format!("{ok} repositories current")
@@ -221,18 +232,9 @@ pub(crate) async fn load_role_with(
                     format!("{ok} repositories current; {failed} failed")
                 };
                 progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, detail);
+            } else {
+                super::print_git_pull_results(&results);
             }
-        } else if !sources.is_empty() {
-            // Run the blocking git pulls on a blocking-pool thread so the
-            // single-threaded executor is never parked on the join.
-            let debug = opts.debug;
-            let git_program = std::path::PathBuf::from("git");
-            let results = tokio::task::spawn_blocking(move || {
-                super::pull_git_sources_with_git(sources, debug, &git_program, true)
-            })
-            .await
-            .map_err(|error| anyhow::anyhow!("joining git pull worker: {error}"))?;
-            super::print_git_pull_results(&results);
         }
     }
 
@@ -243,7 +245,7 @@ pub(crate) async fn load_role_with(
     )?;
 
     // Step 1: Resolve role identity (clone or update repo)
-    steps.next("Resolving role identity").await;
+    steps.next("Resolving role identity").await?;
 
     let mut confirm_repo_removal = || {
         if let Some(progress) = steps.progress_mut() {
@@ -478,15 +480,20 @@ pub(crate) async fn load_role_with(
         let config_clone = config.clone();
         let selector_key = selector.key().clone();
         let workspace_key = workspace_name.as_deref().map(String::from);
-        tokio::task::spawn_blocking(move || {
-            jackin_env::resolve_operator_env(
-                &config_clone,
-                Some(&selector_key),
-                workspace_key.as_deref(),
-            )
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("env resolver panicked: {e}"))??
+        // `run_blocking` races the 1Password lookup against the cancel token.
+        // A slow `op` call can park for tens of seconds; a bare join would let
+        // Ctrl+C restore the terminal yet leave the pipeline blocked until
+        // `op` returns, so the cancel only surfaced afterward (looked like a
+        // freeze). See `StepCounter::run_blocking`.
+        steps
+            .run_blocking(move || {
+                anyhow::Ok(jackin_env::resolve_operator_env(
+                    &config_clone,
+                    Some(&selector_key),
+                    workspace_key.as_deref(),
+                )?)
+            })
+            .await?
     } else {
         let default_runner = jackin_env::OpCli::new();
         let runner: &dyn jackin_env::OpRunner =
@@ -560,7 +567,13 @@ pub(crate) async fn load_role_with(
         let rebuild = opts.rebuild;
         let agent_update = !rebuild && {
             let img = image_name(selector);
-            let needs_update = version_check::needs_agent_update(paths, &img, agent).await;
+            // Network probe for the latest agent release — race it against the
+            // cancel token so Ctrl+C while checking for updates aborts promptly.
+            let needs_update = steps
+                .while_waiting(async {
+                    anyhow::Ok(version_check::needs_agent_update(paths, &img, agent).await)
+                })
+                .await?;
             if needs_update {
                 let name = agent.slug();
                 if let Some(progress) = steps.progress_mut() {
@@ -579,13 +592,13 @@ pub(crate) async fn load_role_with(
             );
             progress.stage_done(crate::runtime::progress::LaunchStage::Construct, "online");
         }
-        steps.next("Preparing runtime binaries").await;
+        steps.next("Preparing runtime binaries").await?;
         let runtime_binaries = if let Some(progress) = steps.progress_mut() {
             crate::runtime::image::prepare_runtime_binaries(paths, &validated_repo, Some(progress)).await?
         } else {
             crate::runtime::image::prepare_runtime_binaries(paths, &validated_repo, None).await?
         };
-        steps.next("Preparing derived image").await;
+        steps.next("Preparing derived image").await?;
         let image = if let Some(progress) = steps.progress_mut() {
             crate::runtime::image::build_agent_image(
                 paths,
@@ -763,39 +776,44 @@ pub(crate) async fn load_role_with(
             let workspace_name_owned = workspace_name_str.to_owned();
             let role_key_owned = role_key.clone();
             let github_ctx_owned = github_ctx.clone();
-            tokio::task::spawn_blocking(move || {
-                let resolve_mode = |a: jackin_core::agent::Agent| {
-                    jackin_config::resolve_mode(
-                        &config_owned,
-                        a,
-                        &workspace_name_owned,
-                        &role_key_owned,
-                    )
-                };
-                // Phase B.2: resolve the operator's sync-source-dir override for each agent.
-                let resolve_sync_src = |a: jackin_core::agent::Agent| {
-                    jackin_config::resolve_sync_source_dir(
-                        &config_owned,
-                        a,
-                        &workspace_name_owned,
-                        &role_key_owned,
-                    )
-                };
-                RoleState::prepare(
-                    &paths_owned,
-                    &container_name_owned,
-                    &manifest_owned,
-                    &PrepareResolvers {
-                        auth_modes: &resolve_mode,
-                        sync_source_dirs: &resolve_sync_src,
-                    },
-                    &github_ctx_owned,
-                    &paths_owned.home_dir,
-                    agent,
-                )
-            })
-            .await
-            .map_err(|e| anyhow::anyhow!("RoleState::prepare task panicked: {e}"))??
+            // Auth prep shells out to `gh`, the macOS keychain (`security`),
+            // and filesystem copies — any of which can stall. `run_blocking`
+            // races the join against the cancel token so Ctrl+C during auth
+            // aborts promptly instead of waiting out the blocking worker (same
+            // rationale as the credentials stage above).
+            steps
+                .run_blocking(move || {
+                    let resolve_mode = |a: jackin_core::agent::Agent| {
+                        jackin_config::resolve_mode(
+                            &config_owned,
+                            a,
+                            &workspace_name_owned,
+                            &role_key_owned,
+                        )
+                    };
+                    // Phase B.2: resolve the operator's sync-source-dir override for each agent.
+                    let resolve_sync_src = |a: jackin_core::agent::Agent| {
+                        jackin_config::resolve_sync_source_dir(
+                            &config_owned,
+                            a,
+                            &workspace_name_owned,
+                            &role_key_owned,
+                        )
+                    };
+                    anyhow::Ok(RoleState::prepare(
+                        &paths_owned,
+                        &container_name_owned,
+                        &manifest_owned,
+                        &PrepareResolvers {
+                            auth_modes: &resolve_mode,
+                            sync_source_dirs: &resolve_sync_src,
+                        },
+                        &github_ctx_owned,
+                        &paths_owned.home_dir,
+                        agent,
+                    )?)
+                })
+                .await?
         };
         seed_codex_project_trust(&state, workspace)?;
 
@@ -877,17 +895,13 @@ pub(crate) async fn load_role_with(
             &materialize_preflight,
             runner,
         );
-        let materialized = if let Some(progress) = steps.progress_mut() {
-            progress.while_waiting(materialize).await?
-        } else {
-            materialize.await?
-        };
+        let materialized = steps.while_waiting(materialize).await?;
         if let Some(progress) = steps.progress_mut() {
             progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, "materialized");
         }
 
         // Step 3: Create network and start Docker-in-Docker
-        steps.next("Starting Docker-in-Docker").await;
+        steps.next("Starting Docker-in-Docker").await?;
 
         let launch_config = super::capsule_config(
             selector,

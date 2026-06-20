@@ -30,8 +30,8 @@ use jackin_console::tui::prompts::{
 use jackin_console::tui::run::{
     ConsoleChromeHover, ConsoleModalMouseLayerFacts, QuitConfirmPlan, console_pointer_hand,
     debug_chip_activation_allowed, debug_chip_row, debug_run_id_label,
-    letter_input_state_for_console, modal_mouse_layer_plan, no_modal_open, quit_confirm_area,
-    quit_intercept_state_for_console, screen_of, should_debug_log_mouse, should_open_quit_confirm,
+    letter_input_state_for_console, modal_mouse_layer_plan, quit_confirm_area,
+    quit_intercept_state_for_console, should_debug_log_mouse, should_open_quit_confirm,
     split_debug_area, startup_error_dismissed, startup_error_modal_active_for_console,
     token_generate_scope_label_for_console, token_generate_status_message,
 };
@@ -54,6 +54,38 @@ impl std::fmt::Debug for ConsoleRunOptions<'_> {
             .field("parent_session_present", &self.parent_session.is_some())
             .finish()
     }
+}
+
+/// Which telemetry screen the visible manager stage maps to. Confirm dialogs
+/// overlay the list, so they stay on `List`; the create *prelude* and the
+/// field editor are distinct screens (the create flow shows as `create` then
+/// `editor`).
+pub(crate) const fn screen_of(state: &ConsoleState) -> jackin_diagnostics::Screen {
+    use crate::console::tui::state::ManagerStage;
+    use jackin_diagnostics::Screen;
+
+    let ConsoleStage::Manager(ms) = &state.stage;
+    match ms.stage {
+        ManagerStage::List
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => Screen::List,
+        ManagerStage::Editor(_) => Screen::Editor,
+        ManagerStage::Settings(_) => Screen::Settings,
+        ManagerStage::CreatePrelude(_) => Screen::Create,
+    }
+}
+
+/// True iff no modal overlay is currently blocking input on the console surface.
+///
+/// Used by the mouse routing layer to enforce single-consumer precedence: when
+/// this returns `false`, chrome interactions (debug chip) and base-surface mouse
+/// handling are suppressed so only the active modal handles the event.
+pub(crate) const fn no_modal_open(state: &ConsoleState) -> bool {
+    use crate::console::tui::state::ManagerStage;
+    let ConsoleStage::Manager(ms) = &state.stage;
+    state.quit_confirm.is_none()
+        && ms.list_modal.is_none()
+        && !matches!(&ms.stage, ManagerStage::Editor(e) if e.modal.is_some())
 }
 
 async fn execute_launch_prompt<B>(
@@ -146,7 +178,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
-    use crossterm::event::{Event, KeyCode, KeyEventKind};
+    use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
     use futures_util::{FutureExt as _, StreamExt as _};
 
     let startup_error_pending = options.startup_error.is_some();
@@ -285,12 +317,30 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
             terminal.draw(|frame| {
                 crate::console::tui::render(frame, main_area, ms, &config, cwd);
                 if let Some(confirm) = confirm_state {
-                    // Paint a full-screen opaque backdrop over the entire surface —
-                    // including any already-open modal — so only the exit dialog is
-                    // visible. This is the modal-supersede pattern per the backdrop rule.
-                    jackin_console::tui::view::render_modal_backdrop(frame, main_area);
-                    let area = quit_confirm_area(main_area, confirm);
+                    // Reserve the body's bottom row for the confirm hint bar and
+                    // center the dialog above it. The backdrop dims only the
+                    // body; the status bar (debug chip) renders below in
+                    // `debug_bar_area`, so the bottom chrome reads: dialog
+                    // backdrop, hint row, blank spacer, status bar — the same
+                    // ordering every jackin' surface uses.
+                    let hint_row = ratatui::layout::Rect {
+                        x: main_area.x,
+                        y: main_area.bottom().saturating_sub(1),
+                        width: main_area.width,
+                        height: 1,
+                    };
+                    let body = ratatui::layout::Rect {
+                        height: main_area.height.saturating_sub(1),
+                        ..main_area
+                    };
+                    jackin_console::tui::view::render_modal_backdrop(frame, body);
+                    let area = quit_confirm_area(body, confirm);
                     jackin_tui::components::render_confirm_dialog(frame, area, confirm);
+                    jackin_tui::components::render_hint_bar(
+                        frame,
+                        hint_row,
+                        &jackin_tui::components::confirm_hint_spans(),
+                    );
                 }
                 chrome_hover_tracker.clear();
                 if let Some(bar_area) = debug_bar_area {
@@ -381,6 +431,15 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                         ),
                         console_location_debug(&state)
                     );
+                    // Ctrl+C: immediate quit — hard exit on any screen, no
+                    // confirmation, and it wins even when the exit confirm is
+                    // already open. Mirrors the launch cockpit's Ctrl+C.
+                    if matches!(key.code, KeyCode::Char('c'))
+                        && key.modifiers.contains(KeyModifiers::CONTROL)
+                    {
+                        break 'main Ok(None);
+                    }
+
                     if let Some(plan) = state.handle_quit_confirm_key(key) {
                         match plan {
                             QuitConfirmPlan::Exit => break 'main Ok(None),
@@ -390,8 +449,9 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                         continue;
                     }
 
-                    // Q intercept: outside main screen, pop the exit
-                    // confirm. SHIFT tolerated for caps-lock parity.
+                    // Quit-confirm intercept: Ctrl+Q on any screen, or bare
+                    // `q`/`Q` off the main screen (SHIFT tolerated for
+                    // caps-lock parity). Checked before stage input.
                     if should_open_quit_confirm(key, quit_intercept_state_for_console(&state)) {
                         state.open_quit_confirm();
                         continue;

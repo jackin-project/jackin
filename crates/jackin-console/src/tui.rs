@@ -10,6 +10,7 @@ pub mod effect;
 pub mod file_browser;
 pub mod focus;
 pub mod input;
+pub(crate) mod keymap;
 pub mod launch;
 pub mod layout;
 pub mod list_geometry;

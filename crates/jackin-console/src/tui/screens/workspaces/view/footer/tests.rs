@@ -39,7 +39,7 @@ fn labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
 fn assert_file_browser_hints(items: Vec<HintSpan<'static>>) {
     let labels = labels(items);
     for expected in [
-        "\u{2191}\u{2193}",
+        "\u{2191}\u{2193}/j/k",
         "navigate",
         "PgUp/PgDn",
         "page",

@@ -202,6 +202,10 @@ pub(crate) struct BottomChromeWidget<'a> {
     pub(crate) scrollback_active: bool,
     pub(crate) scroll_axes: jackin_tui::scroll::ScrollAxes,
     pub(crate) debug_run_id: Option<&'a str>,
+    /// When the operator has pressed the prefix key and the multiplexer is
+    /// awaiting a command chord, the hint bar switches to a prefix-command
+    /// cheat-sheet instead of the normal navigation hints.
+    pub(crate) prefix_awaiting: bool,
 }
 
 impl Widget for BottomChromeWidget<'_> {
@@ -237,6 +241,7 @@ impl Widget for BottomChromeWidget<'_> {
         let spans = crate::tui::components::dialog::main_view_hint(
             self.scrollback_active,
             self.scroll_axes,
+            self.prefix_awaiting,
         );
         render_hint_spans_row(buf, area, &spans);
     }
@@ -346,15 +351,58 @@ fn chunk_style(hovered: bool, idle_fg: Color, always_bold: bool) -> Style {
     style
 }
 
+/// Returns the largest prefix of `spans` whose column width fits inside `max_cols`,
+/// always truncating at a `GroupSep` boundary to avoid splitting a key+text pair.
+/// Returns an empty slice if even the first group overflows.
+fn truncate_spans_to_cols<'a>(
+    spans: &'a [jackin_tui::HintSpan<'_>],
+    max_cols: usize,
+) -> &'a [jackin_tui::HintSpan<'a>] {
+    // Split into groups at GroupSep boundaries; accumulate greedily.
+    let mut last_fit_end = 0usize;
+    let mut running_cols = 0usize;
+
+    let mut i = 0;
+    while i < spans.len() {
+        // Measure from i to next GroupSep (exclusive) — one logical group.
+        let group_end = spans[i..]
+            .iter()
+            .position(|s| matches!(s, jackin_tui::HintSpan::GroupSep))
+            .map_or(spans.len(), |rel| i + rel + 1); // include the GroupSep itself
+
+        let group_cols = jackin_tui::hint_row_cols(&spans[i..group_end]);
+        let candidate = running_cols.saturating_add(group_cols);
+        if candidate > max_cols {
+            break;
+        }
+        running_cols = candidate;
+        last_fit_end = group_end;
+        i = group_end;
+    }
+
+    // Strip trailing GroupSep if present so the last group doesn't end with whitespace.
+    let mut end = last_fit_end;
+    while end > 0 && matches!(spans[end - 1], jackin_tui::HintSpan::GroupSep) {
+        end -= 1;
+    }
+    &spans[..end]
+}
+
 /// Centered hint spans on the row above the separator pad — the widget port
 /// of `render_hint_row`, same column math so centring is identical.
+/// Gracefully truncates at group boundaries when the full row is too wide.
 fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::HintSpan<'_>]) {
     use crate::tui::components::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
-    let total = jackin_tui::hint_row_cols(spans);
-    let padded_total = total.saturating_add(4);
-    if padded_total > usize::from(area.width) || area.height < BRANCH_CONTEXT_BAR_ROWS + 2 {
+    if area.height < BRANCH_CONTEXT_BAR_ROWS + 2 {
         return;
     }
+    let available = usize::from(area.width).saturating_sub(4); // 2 col padding each side
+    let visible = truncate_spans_to_cols(spans, available);
+    if visible.is_empty() {
+        return;
+    }
+    let total = jackin_tui::hint_row_cols(visible);
+    let padded_total = total.saturating_add(4);
     let row_y = area.height - (BRANCH_CONTEXT_BAR_ROWS + 2);
     let start_col = ((usize::from(area.width)).saturating_sub(padded_total) / 2) as u16;
     let key_style = Style::default()
@@ -364,7 +412,7 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::Hint
     let dyn_style = Style::default().fg(color(jackin_tui::PHOSPHOR_DIM));
     let sep_style = Style::default().fg(color(jackin_tui::PHOSPHOR_DARK));
     let mut x = area.x + start_col + 2;
-    for span in spans {
+    for span in visible {
         let (text, style): (String, Style) = match span {
             jackin_tui::HintSpan::Key(k) => ((*k).to_owned(), key_style),
             jackin_tui::HintSpan::Text(t) => (format!(" {t}"), text_style),

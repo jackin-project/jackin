@@ -2269,6 +2269,7 @@ impl<
             | Self::AuthRolePicker { .. } => {
                 footer_items_for_mode(ModalFooterMode::FilteredPicker {
                     include_refresh: false,
+                    include_collapse: false,
                 })
             }
             Self::Confirm { .. } => footer_items_for_mode(ModalFooterMode::YesNo),
@@ -4063,7 +4064,10 @@ mod tests {
 
     impl ModalOpPickerFooterState for TestOpPicker {
         fn footer_mode(&self, include_refresh: bool) -> ModalFooterMode {
-            ModalFooterMode::FilteredPicker { include_refresh }
+            ModalFooterMode::FilteredPicker {
+                include_refresh,
+                include_collapse: false,
+            }
         }
     }
 

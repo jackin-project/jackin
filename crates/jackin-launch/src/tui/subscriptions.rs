@@ -6,8 +6,11 @@ use std::time::Duration;
 use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
+use jackin_tui::ModalOutcome;
+use jackin_tui::components::KeyChord;
 use jackin_tui::components::{ScrollAxes, StatusFooterHover};
 use ratatui::layout::Rect;
+use tokio_util::sync::CancellationToken;
 
 use crate::tui::components::build_log_dialog::{
     build_log_scrollbar_top_offset_for_row_cached, refresh_build_log_layout,
@@ -24,6 +27,60 @@ const BUILD_LOG_SCROLL_STEP: usize = 3;
 const BUILD_LOG_PAGE_STEP: usize = 10;
 
 pub type SharedView = Arc<Mutex<LaunchView>>;
+
+/// What the render task should do after draining cockpit input this tick.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CockpitOutcome {
+    /// Keep rendering; cancellation (if any) flows through the cancel token.
+    Continue,
+    /// Ctrl+C: stop the process immediately. The render task restores the
+    /// terminal and exits without running cleanup — no graceful teardown, no
+    /// waiting on in-flight blocking work. Stale docker resources are left for
+    /// the next launch's `gc_orphaned_resources` to sweep.
+    HardExit,
+}
+
+/// Result of feeding a key to the open quit confirmation.
+#[derive(Debug, PartialEq, Eq)]
+enum QuitConfirmOutcome {
+    /// Operator chose Yes — caller must cancel the launch.
+    Confirmed,
+    /// Operator chose No / Esc — dialog dismissed, launch resumes.
+    Dismissed,
+    /// Focus toggled or key ignored — dialog stays open.
+    Pending,
+}
+
+/// `true` for a Ctrl+C key press. Hard cancel — wins over any open dialog.
+fn is_ctrl_c(ev: &Event) -> bool {
+    matches!(
+        ev,
+        Event::Key(k)
+            if k.kind == KeyEventKind::Press
+                && k.code == KeyCode::Char('c')
+                && k.modifiers.contains(KeyModifiers::CONTROL)
+    )
+}
+
+/// Route a key into the open quit confirmation, mutating `view.quit_confirm`.
+/// Pure (no terminal / cancel-token side effects) so the policy is unit-tested
+/// without driving a real event loop.
+fn apply_quit_confirm_key(view: &mut LaunchView, key: event::KeyEvent) -> QuitConfirmOutcome {
+    let Some(confirm) = view.quit_confirm.as_mut() else {
+        return QuitConfirmOutcome::Pending;
+    };
+    match confirm.handle_key(key) {
+        ModalOutcome::Commit(true) => {
+            view.quit_confirm = None;
+            QuitConfirmOutcome::Confirmed
+        }
+        ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
+            view.quit_confirm = None;
+            QuitConfirmOutcome::Dismissed
+        }
+        ModalOutcome::Continue => QuitConfirmOutcome::Pending,
+    }
+}
 
 #[derive(Clone, Copy)]
 struct CockpitContext<'a> {
@@ -217,7 +274,7 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             update_build_log_scroll_from_top_offset(v, ctx.area, top_offset);
         }
         // Plain body clicks are swallowed while the build log owns the overlay.
-        // Close stays keyboard-only (`Esc`/`q`); scrollbar hits remain interactive.
+        // Close stays keyboard-only (`Esc`); scrollbar hits remain interactive.
     } else if hit_footer_container_chip(
         v,
         ctx.run_id,
@@ -316,7 +373,8 @@ pub fn handle_cockpit_input(
     run_log_path: &str,
     terminal: &dyn LaunchHostTerminal,
     jackin_version: &'static str,
-) {
+    cancel_token: &CancellationToken,
+) -> CockpitOutcome {
     let area = current_terminal_area();
     let ctx = CockpitContext {
         area,
@@ -327,12 +385,45 @@ pub fn handle_cockpit_input(
     };
     while event::poll(Duration::ZERO).unwrap_or(false) {
         let Ok(ev) = event::read() else {
-            return;
+            return CockpitOutcome::Continue;
         };
         let Ok(mut v) = view.lock() else {
-            return;
+            return CockpitOutcome::Continue;
         };
+        // Ctrl+C: immediate hard stop. The render task restores the terminal
+        // and exits at once — no cleanup, no waiting on in-flight work. Checked
+        // before the quit-confirm modal so it wins even while that dialog is
+        // open. (Ctrl+Q, below, is the graceful, cleanup-running alternative.)
+        if is_ctrl_c(&ev) {
+            return CockpitOutcome::HardExit;
+        }
+        // While the quit confirmation is open it owns all input: route keys to
+        // it (Yes → graceful cancel, No/Esc → dismiss) and swallow the rest.
+        if v.quit_confirm.is_some() {
+            if let Event::Key(k) = ev
+                && k.kind == KeyEventKind::Press
+                && apply_quit_confirm_key(&mut v, k) == QuitConfirmOutcome::Confirmed
+            {
+                // Yes confirmed: graceful cancel. The pipeline unwinds via
+                // `Err` and runs `LoadCleanup` (removes the half-built
+                // container, network, volume) before exiting.
+                cancel_token.cancel();
+                return CockpitOutcome::Continue;
+            }
+            continue;
+        }
         match ev {
+            // Ctrl+Q: ask before quitting. Opens the shared "Exit jackin'?"
+            // confirmation; the dialog (drawn next tick) owns input until
+            // answered. Unlike Ctrl+C this is reversible — No resumes launch.
+            Event::Key(k)
+                if k.kind == KeyEventKind::Press
+                    && crate::tui::keymap::COCKPIT_KEYMAP.dispatch(KeyChord::from(k))
+                        == Some(crate::tui::keymap::CockpitAction::OpenQuitConfirm) =>
+            {
+                v.quit_confirm = Some(jackin_tui::components::exit_confirm_state());
+                return CockpitOutcome::Continue;
+            }
             Event::Mouse(m) => {
                 // Durable telemetry: capture exactly what the terminal delivers
                 // for a dialog mouse event so a `--debug` run reveals whether a
@@ -435,64 +526,71 @@ pub fn handle_cockpit_input(
                 );
                 clamp_container_info_scroll(&mut v, ctx);
             }
-            Event::Key(k)
-                if k.kind == KeyEventKind::Press
-                    && v.container_info_open
-                    && matches!(k.code, KeyCode::Enter) =>
-            {
-                let state = launch_container_info_state(
-                    &v,
-                    ctx.run_id,
-                    ctx.run_log_path,
-                    ctx.terminal.is_debug_mode(),
-                    ctx.jackin_version,
-                );
-                if let Some((copy_row, payload)) = state.keyboard_copy_payload()
-                    && ctx.terminal.copy_to_clipboard(&payload)
-                {
-                    let _dirty =
-                        update_launch_view(&mut v, LaunchMessage::ContainerInfoCopied(copy_row));
+            Event::Key(k) if k.kind == KeyEventKind::Press && v.container_info_open => {
+                use crate::tui::keymap::{CONTAINER_INFO_KEYMAP, ContainerInfoAction};
+                match CONTAINER_INFO_KEYMAP.dispatch(KeyChord::from(k)) {
+                    Some(ContainerInfoAction::CopyValue) => {
+                        let state = launch_container_info_state(
+                            &v,
+                            ctx.run_id,
+                            ctx.run_log_path,
+                            ctx.terminal.is_debug_mode(),
+                            ctx.jackin_version,
+                        );
+                        if let Some((copy_row, payload)) = state.keyboard_copy_payload()
+                            && ctx.terminal.copy_to_clipboard(&payload)
+                        {
+                            let _dirty = update_launch_view(
+                                &mut v,
+                                LaunchMessage::ContainerInfoCopied(copy_row),
+                            );
+                        }
+                    }
+                    Some(ContainerInfoAction::Close) => {
+                        let _dirty = update_launch_view(&mut v, LaunchMessage::ContainerInfoClosed);
+                        terminal.set_pointer_shape(false);
+                    }
+                    None => {}
                 }
             }
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
-                    && v.container_info_open
-                    && matches!(k.code, KeyCode::Esc | KeyCode::Char('q')) =>
-            {
-                let _dirty = update_launch_view(&mut v, LaunchMessage::ContainerInfoClosed);
-                terminal.set_pointer_shape(false);
-            }
-            Event::Key(k)
-                if k.kind == KeyEventKind::Press
                     && v.failure.is_some()
-                    && matches!(k.code, KeyCode::Enter | KeyCode::Esc) =>
+                    && crate::tui::keymap::FAILURE_KEYMAP
+                        .dispatch(KeyChord::from(k))
+                        .is_some() =>
             {
                 // Failure popup is modal over the cockpit; Enter/Esc acknowledges
                 // it so the awaiting `stage_failed` returns.
                 let _dirty = update_launch_view(&mut v, LaunchMessage::FailureAcknowledged);
                 terminal.set_pointer_shape(false);
             }
-            Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => match k.code {
-                KeyCode::Esc | KeyCode::Char('q') => {
-                    let _dirty = update_launch_view(&mut v, LaunchMessage::BuildLogClosed);
+            Event::Key(k) if k.kind == KeyEventKind::Press && v.build_log_open => {
+                use crate::tui::keymap::{BUILD_LOG_KEYMAP, BuildLogAction};
+                let vertical = build_log_scroll_axes(&v, area).vertical;
+                match BUILD_LOG_KEYMAP.dispatch(KeyChord::from(k)) {
+                    Some(BuildLogAction::Close) => {
+                        let _dirty = update_launch_view(&mut v, LaunchMessage::BuildLogClosed);
+                    }
+                    Some(BuildLogAction::ScrollUp) if vertical => {
+                        update_build_log_scroll(&mut v, area, 1);
+                    }
+                    Some(BuildLogAction::ScrollDown) if vertical => {
+                        update_build_log_scroll(&mut v, area, -1);
+                    }
+                    Some(BuildLogAction::PageUp) if vertical => {
+                        update_build_log_scroll(&mut v, area, BUILD_LOG_PAGE_STEP as isize);
+                    }
+                    Some(BuildLogAction::PageDown) if vertical => {
+                        update_build_log_scroll(&mut v, area, -(BUILD_LOG_PAGE_STEP as isize));
+                    }
+                    _ => {}
                 }
-                KeyCode::Up if build_log_scroll_axes(&v, area).vertical => {
-                    update_build_log_scroll(&mut v, area, 1);
-                }
-                KeyCode::Down if build_log_scroll_axes(&v, area).vertical => {
-                    update_build_log_scroll(&mut v, area, -1);
-                }
-                KeyCode::PageUp if build_log_scroll_axes(&v, area).vertical => {
-                    update_build_log_scroll(&mut v, area, BUILD_LOG_PAGE_STEP as isize);
-                }
-                KeyCode::PageDown if build_log_scroll_axes(&v, area).vertical => {
-                    update_build_log_scroll(&mut v, area, -(BUILD_LOG_PAGE_STEP as isize));
-                }
-                _ => {}
-            },
+            }
             _ => {}
         }
     }
+    CockpitOutcome::Continue
 }
 
 #[cfg(test)]

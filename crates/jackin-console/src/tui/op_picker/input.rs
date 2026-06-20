@@ -59,7 +59,7 @@ impl OpPickerState {
     fn handle_account_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match key.code {
             KeyCode::Esc => ModalOutcome::Cancel,
-            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('r' | 'R') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Re-fires the probe so add/remove of signed-in
                 // accounts mid-session is picked up without restart.
                 let plan = account_stage_refresh_plan();
@@ -115,7 +115,7 @@ impl OpPickerState {
 
     fn handle_vault_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match key.code {
-            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('r' | 'R') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let account_id = self.selected_account_id();
                 let plan = vault_stage_refresh_plan();
                 self.op_cache
@@ -197,7 +197,7 @@ impl OpPickerState {
 
     fn handle_item_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match key.code {
-            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('r' | 'R') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let account_id = self.selected_account_id();
                 let vault_id = self.selected_vault_id_or_default();
                 self.op_cache
@@ -354,7 +354,7 @@ impl OpPickerState {
     )]
     fn handle_field_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match key.code {
-            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('r' | 'R') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let account_id = self.selected_account_id();
                 let vault_id = self.selected_vault_id_or_default();
                 let item_id = self.selected_item_id_or_default();

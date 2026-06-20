@@ -594,25 +594,30 @@ fn inline_provider_picker_plan_application_opens_picker() {
 }
 
 #[test]
-fn inline_picker_shell_plan_routes_scroll_exit_and_delegate() {
+fn inline_picker_shell_plan_routes_scroll_and_delegate() {
     assert_eq!(
-        inline_picker_shell_plan(key(KeyCode::Left), true),
+        inline_picker_shell_plan(key(KeyCode::Left), false),
         InlinePickerShellPlan::ScrollHorizontal(-8)
     );
     assert_eq!(
-        inline_picker_shell_plan(key(KeyCode::Char('l')), true),
+        inline_picker_shell_plan(key(KeyCode::Right), false),
         InlinePickerShellPlan::ScrollHorizontal(8)
     );
     assert_eq!(
-        inline_picker_shell_plan(key(KeyCode::Char('q')), true),
-        InlinePickerShellPlan::Exit
+        inline_picker_shell_plan(key(KeyCode::Char('h')), false),
+        InlinePickerShellPlan::ScrollHorizontal(-8)
     );
+    assert_eq!(
+        inline_picker_shell_plan(key(KeyCode::Char('l')), false),
+        InlinePickerShellPlan::ScrollHorizontal(8)
+    );
+    // q/Q always delegates — exit_on_q is always false in production callers.
     assert_eq!(
         inline_picker_shell_plan(key(KeyCode::Char('q')), false),
         InlinePickerShellPlan::Delegate
     );
     assert_eq!(
-        inline_picker_shell_plan(key(KeyCode::Enter), true),
+        inline_picker_shell_plan(key(KeyCode::Enter), false),
         InlinePickerShellPlan::Delegate
     );
 }
