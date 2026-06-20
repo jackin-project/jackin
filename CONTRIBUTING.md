@@ -78,16 +78,6 @@ git commit --amend -s --no-edit   # forgot -s → force-push after (operator app
 
 DCO fail on PR: fix before anything else.
 
-## Trailer Preservation (agent)
-
-Amending or rebasing: **always keep all existing trailers** (`Co-Authored-By:`, prior `Signed-off-by:`). Append new `Signed-off-by:` after — never remove any trailer.
-
-```
-# Correct order:
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
-Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
-```
-
 ## Push After Every Commit (agent)
 
 Push immediately after every `git commit`. No local-only commits.
