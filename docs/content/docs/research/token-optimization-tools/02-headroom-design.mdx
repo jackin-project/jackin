@@ -4,7 +4,7 @@ title: "02 — Headroom: design teardown"
 
 # 02 — Headroom: design teardown
 
-Headroom is the **broad input-side** member of the trio, and the only one of the three that is a genuine runtime system rather than a prompt or a single filter binary. Where caveman is a markdown rule and RTK is a deterministic command filter, headroom is a Rust compression core with a content router, a fleet of typed compressors, a trained ML model, a reversible store, and a provider-aware proxy. That engineering depth is the reason it can reach token sources the other two cannot — and the reason it carries costs the other two do not.
+Headroom is the **broad input-side** member of the original trio, and — until [lean-ctx](/research/token-optimization-tools/04-leanctx-design/) joined this comparison — the only one that is a genuine runtime system rather than a prompt or a single filter binary. Where caveman is a markdown rule and RTK is a deterministic command filter, headroom is a Rust compression core with a content router, a fleet of typed compressors, a trained ML model, a reversible store, and a provider-aware proxy. That engineering depth is the reason it can reach token sources the other two cannot — and the reason it carries costs the other two do not.
 
 | Field | Value |
 |---|---|
@@ -13,7 +13,7 @@ Headroom is the **broad input-side** member of the trio, and the only one of the
 | Languages | Python 78% (API/integrations), Rust 17.3% (`headroom-core`, `headroom-proxy` — the hot path), TypeScript 2.5% |
 | Companion model | `chopratejas/kompress-base` on HuggingFace — a transformer trained on agentic traces, auto-downloaded |
 | Latest seen | `v0.26.0` (~190 PyPI releases — fast cadence) |
-| Adoption (2026-06-18) | 33,359★ / 111 watchers — PR-inflated; see [evidence](/research/caveman-headroom-rtk/06-evidence-and-claims/) |
+| Adoption (2026-06-18) | 33,359★ / 111 watchers — PR-inflated; see [evidence](/research/token-optimization-tools/07-evidence-and-claims/) |
 | License | Apache-2.0 |
 | Bucket hit | Tool outputs / logs / RAG / files / history (the 61% cache lines) |
 | Cache interaction | **Safe** in MCP/library mode; **risk** in whole-prompt proxy mode |
@@ -175,4 +175,4 @@ Headroom's evidence tier is **T1 for the mechanisms** (the underlying log/outlin
 
 ---
 
-Next: [03 — RTK design](/research/caveman-headroom-rtk/03-rtk-design/), the deterministic mirror of this pipeline — same kinds of transform, no ML, one binary.
+Next: [03 — RTK design](/research/token-optimization-tools/03-rtk-design/), the deterministic mirror of this pipeline — same kinds of transform, no ML, one binary.

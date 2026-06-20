@@ -243,7 +243,7 @@ Fable-priced dollars are ~2× high for the operator's actual Opus 4.8, but ratio
 
 Adds runnable measurement scripts and a comparison of external code-search / code-intelligence tools.
 
-> **The Caveman vs Headroom vs RTK three-way comparison now has its own dedicated, diagram-driven folder:** [Caveman vs Headroom vs RTK](/research/caveman-headroom-rtk/) consolidates and deepens the material in files 53/54/56 — equal-depth design teardowns of all three, a feature has/lacks matrix, best-case-of-each, and a straight answer to whether one product can combine all three. Files 53/54/56 below remain for their broader scope and full source ledgers.
+> **The token-optimization-tools comparison now has its own dedicated, diagram-driven folder:** [token-optimization tools](/research/token-optimization-tools/) consolidates and deepens the material in files 53/54/56 — equal-depth design teardowns of caveman, headroom, RTK, **and lean-ctx** (the integrated context runtime added in a later round), a feature has/lacks matrix, best-case-of-each, and a straight answer to whether one product can combine them all. Files 53/54/56 below remain for their broader scope and full source ledgers.
 
 - **Runnable [`tools/`](tools/)** — `count_tokens.py`, `image_tokens.py`, `session_cost.py`
   reproduce the dossier's core numbers against the live Anthropic tokenizer: real token counts, the
@@ -260,7 +260,7 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   ≥20% tokens per solved task at equal quality.
 - **[`53-headroom-and-context-compression.md`](53-headroom-and-context-compression/)** — deep dive on
   `chopratejas/headroom` (the input-side context-compression layer); the cross-tool comparison to the
-  caveman ecosystem and RTK is consolidated in the dedicated [Caveman vs Headroom vs RTK](/research/caveman-headroom-rtk/) folder. Headroom compresses what the model *reads* (tool outputs/logs/RAG/files, the 61%
+  caveman ecosystem and RTK is consolidated in the dedicated [token-optimization tools](/research/token-optimization-tools/) folder. Headroom compresses what the model *reads* (tool outputs/logs/RAG/files, the 61%
   cache buckets); caveman compresses what the model *writes* (prose, 17%) — orthogonal, they stack,
   neither touches thinking (20%). Headroom's **live-zone** design (stabilize the cached prefix,
   compress only the volatile tail) is the cache-safe input-compression design that refines the
@@ -286,8 +286,8 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   not a Max subscription (file 41). The JSONL-reading, no-proxy class is the safe measurement front-end of
   the validation harness.
 - **[`56-rtk-and-write-time-observation-compression.md`](56-rtk-and-write-time-observation-compression/)** —
-  deep dive on `rtk-ai/rtk` ("Rust Token Killer") — the dossier's RTK record. The **three-way** Caveman vs Headroom vs RTK
-  comparison it originally carried now lives, expanded, in the dedicated [Caveman vs Headroom vs RTK](/research/caveman-headroom-rtk/) folder (single source of truth). RTK is the deterministic, Claude-Code-native productization of the
+  deep dive on `rtk-ai/rtk` ("Rust Token Killer") — the dossier's RTK record. The cross-tool
+  comparison it originally carried now lives, expanded to four tools (adds **lean-ctx**), in the dedicated [token-optimization tools](/research/token-optimization-tools/) folder (single source of truth). RTK is the deterministic, Claude-Code-native productization of the
   cache-safe **write-time observation-compression** design point files 53 (H1) and 54 named: it compresses
   shell-command output (tests/git/logs/builds) at the tool boundary via a PreToolUse hook — no ML, no MCP
   rent, cache-safe by construction — but reaches only Bash calls (not native `Read`/`Grep`). The "60–90%"
