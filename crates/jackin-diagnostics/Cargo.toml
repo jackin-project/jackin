@@ -44,7 +44,7 @@ serde_json = "1.0"
 rand = "0.10"
 anyhow = "1.0"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 crossterm = "0.29"
 # OTLP export (optional — only compiled in with `--features otlp`)
 opentelemetry = { version = "0.32", optional = true }
