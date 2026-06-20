@@ -131,8 +131,16 @@ impl Multiplexer {
         // composed cell differ, so the diff repaints the full frame in place.
         // Until the extra writers are deleted (PR 3 of the capsule rendering
         // plan), the previous buffer cannot be trusted as the client model.
+        //
+        // ratatui-core ≥ 0.1.2 calls `previous.cell_width()` during the diff,
+        // which triggers a debug_assert on 1-byte ASCII control characters.
+        // Use a private-use BMP scalar (U+E001, 3 bytes in UTF-8) instead of
+        // U+0001: `cell_width` skips the 1-byte fast-path for multi-byte
+        // symbols and calls `unicode_width` directly, avoiding the assert.
+        // U+E001 is never produced by any widget, so the diff still sees every
+        // cell as changed and re-emits the full frame.
         for cell in &mut self.ratatui_terminal.current_buffer_mut().content {
-            cell.set_symbol("\u{1}");
+            cell.set_symbol("\u{E001}");
         }
         self.ratatui_terminal.swap_buffers();
 
