@@ -27,7 +27,7 @@ The other three each bet on *one* interception point. lean-ctx's bet is that the
 
    model's decoder ───────────────►  (nothing — no output register; caveman's slot)
 
-   Bash tool boundary ────────────►  SHELL HOOK   (56 pattern modules — RTK's slot)
+   Bash tool boundary ────────────►  SHELL HOOK   (81 pattern modules, 46 hook-wired — RTK's slot)
 
    MCP / native-read boundary ────►  ctx_read 10 modes + ~13-tok cached handles
                                       (write-time, cache-safe — headroom-MCP's slot)
@@ -43,7 +43,7 @@ The other three each bet on *one* interception point. lean-ctx's bet is that the
                                       Context OS · signed savings ledger · Context Proof
 ```
 
-Read off this one fact: lean-ctx is not a fourth point on the determinism gradient — it **spans** it. Its default compression core (tree-sitter AST, Shannon-entropy filtering, TF-IDF codebook, 56 handcrafted shell-pattern modules, BM25 lexical search) is **fully deterministic, no model** — RTK's risk profile, headroom's breadth. Its optional layers (dense embeddings, the proxy's prose rewrite) re-import headroom's ML and proxy risks, but only when you turn them on.
+Read off this one fact: lean-ctx is not a fourth point on the determinism gradient — it **spans** it. Its default compression core (tree-sitter AST, Shannon-entropy filtering, TF-IDF codebook, 81 handcrafted shell-pattern modules (46 wired into the shell hook), BM25 lexical search) is **fully deterministic, no model** — RTK's risk profile, headroom's breadth. Its optional layers (dense embeddings, the proxy's prose rewrite) re-import headroom's ML and proxy risks, but only when you turn them on.
 
 ## What it productizes from each of the other three
 
@@ -51,7 +51,7 @@ The most useful way to see lean-ctx is as a re-implementation of the other three
 
 | lean-ctx subsystem | What it does | The prior tool it mirrors | Difference |
 |---|---|---|---|
-| **Shell hook** (`core/patterns/`, 56 modules) | Compress git/cargo/npm/docker/kubectl/… output at the Bash boundary | **RTK** | Same write-time, cache-safe-by-construction interception; fewer command families than RTK's 100+, but versioned and tree-sitter-backed |
+| **Shell hook** (`core/patterns/`, 81 modules; 46 hook-wired) | Compress git/cargo/npm/docker/kubectl/… output at the Bash boundary | **RTK** | Same write-time, cache-safe-by-construction interception; narrower hook reach than RTK's ~96 command surfaces, but versioned and structurally parsed |
 | **`ctx_read` 10 modes + handle cache** | `full`/`map`/`signatures`/`diff`/`entropy`/`lines:N-M`/… ; re-reads return a ~13-tok stub | **headroom-MCP** + RTK code filter | Cache-safe write-time compression on native reads; adds content-addressed re-read caching neither RTK nor headroom ships |
 | **Proxy** (`proxy/anthropic.rs`, `prose.rs`, `cache_safety.rs`) | Rewrite prose + prune history on the API wire | **headroom proxy** | Same live-zone idea (only rewrites the frozen window `[cached_prefix_len, boundary)`), instrumented with a measurable cache-safety ratio; same lossy-prose risk |
 | **Archive + `ctx_expand`** | Large outputs stored, retrievable by FTS5 search | **headroom CCR** (`headroom_retrieve`) | Reversible compression — the lossy-but-recoverable pattern, with cross-archive full-text search added |

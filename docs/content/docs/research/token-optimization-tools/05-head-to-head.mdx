@@ -22,7 +22,7 @@ The framing to keep in mind throughout: **three of the four are points on one pi
 | Hits the 5×-priced output class | ✓ | ◐ | ✗ | ✗ |
 | **Deterministic** (no ML in the loop) | ✓ (it is a prompt) | ✗ (`kompress-base`) | ✓ | ✓ **by default** (ML opt-in) |
 | **Reversible / recoverable** compression | ✗ (re-ask) | ✓ (CCR `headroom_retrieve`) | ◐ (tee on failure only) | ✓ (archive + `ctx_expand`) |
-| Language-aware code outlining (per-read) | ✗ (passes code verbatim) | ✓ | ✓ (8 languages) | ✓ (tree-sitter, 18 languages) |
+| Language-aware code outlining (per-read) | ✗ (passes code verbatim) | ✓ (tree-sitter, 8 langs) | ✓ (regex, 10 langs) | ✓ (tree-sitter, 21 langs) |
 | **Persistent queryable symbol index / code graph** | ✗ | ✗ | ✗ | ✓ **— unique** (property graph + BM25 + RRF) |
 | LSP refactoring (rename/references/definition) | ✗ | ✗ | ✗ | ✓ **— unique** |
 | Cross-agent shared memory | ◐ (cavemem, single-agent, lossy) | ✓ (dedup, reversible) | ✗ | ✓ (CCP + Context OS) |
@@ -52,7 +52,7 @@ Read the matrix as one output tool, two input specialists, and one input runtime
 |---|---|---|---|---|
 | Interception point | Model's own decoder (a prompt rule) | API request (proxy) or observation (MCP/lib) | Bash tool boundary (PreToolUse hook) | **All of them**: shell hook + MCP read + proxy |
 | Engine type | **Markdown instruction** (no code path) | Router + typed compressors + ML model | 12 deterministic Rust filters keyed on the command | Tree-sitter AST + entropy/TF-IDF + 56 patterns + BM25/graph; CFT Φ-scoring |
-| Parser / structural | none | per-type (AST outline, JSON, log) | per-command + a `filter.rs` code filter (8 langs) | tree-sitter (18 langs) + persistent property graph + call graph |
+| Parser / structural | none | per-type (AST outline, JSON, log) | per-command + a `filter.rs` regex code filter (10 langs) | tree-sitter (21 langs) + persistent property graph + call graph |
 | ML in the loop | **No** | **Yes** (`kompress-base`, auto-downloaded) | **No** | **No by default**; opt-in embeddings + proxy prose |
 | Persistent state | none (hooks only track tokens) | CCR store + cross-agent memory + `learn` | SQLite history (`rtk gain`) | CCP session + knowledge graph + property graph + BM25 + archive |
 | Token counter | tiktoken `o200k_base` (eval only) | own counter, no stated tokenizer | ~4 chars/token heuristic | tiktoken `o200k_base` / `cl100k_base` (GPT, not Claude BPE) |

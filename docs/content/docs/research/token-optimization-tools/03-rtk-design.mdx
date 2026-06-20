@@ -92,7 +92,7 @@ It also sniffs the package manager before running JS/TS tools (`pnpm-lock.yaml` 
 
 ### The code filter — RTK is code-aware (a correction worth flagging)
 
-An early reading of RTK held that its `read`/`cat` filter was "line-trimming, not AST-aware." That is **wrong**, and the correction matters for the head-to-head: `src/core/filter.rs` ships a **language-aware code filter** with three levels across Rust/Python/JS/TS/Go/C/C++/Java:
+An early reading of RTK held that its `read`/`cat` filter was "line-trimming, not AST-aware." That is **half wrong**: `src/core/filter.rs` ships a **language-aware code filter** with three levels across **10 languages** (Rust/Python/JS/TS/Go/C/C++/Java/Ruby/Shell, `filter.rs:59-78`) — but it is *not* a parser. It is hand-written **regex signature-matching plus brace counting** (`filter.rs:233-300`), which is more fragile than the tree-sitter parsers headroom and lean-ctx use (braces inside strings/comments, multi-line signatures, and Python indentation all break it silently); the [implementation deep-dive](/research/token-optimization-tools/12-implementation-comparison/) compares the three at source. The three levels:
 
 - `None` (0%) — pass through.
 - `Minimal` (20–40%) — strip comments.
@@ -150,7 +150,7 @@ So RTK bites hard on test/build/git/log/`gh` output the agent genuinely runs thr
 | Zero MCP schema rent | **Yes** |
 | Single self-contained binary, zero deps | **Yes** (~4.1 MB) |
 | CI-safe (exit codes preserved, fail-safe fallback) | **Yes** |
-| Language-aware code filter (8 languages) | **Yes** (per-read, not a persistent index) |
+| Language-aware code filter (10 languages, regex-based) | **Yes** (per-read, not a persistent index) |
 | 100+ command formats out of the box | **Yes** — the turnkey advantage over a hand-written filter |
 | Reaches native `Read`/`Grep`/`Glob` | **No — Bash only**; the reach ceiling |
 | Reaches RAG / history / files not via shell | **No** |
