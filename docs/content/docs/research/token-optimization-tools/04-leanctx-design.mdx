@@ -109,7 +109,7 @@ Two ideas here have no analog in the other three:
 
 ### Context Field Theory — the scoring layer
 
-lean-ctx's intellectual core is **CFT**: each context item gets a potential `Φ(i,t) = wR·R + wS·S + wG·G + wH·H − wC·C − wD·D` (task relevance via heat-diffusion/PageRank, predictive surprise, graph proximity, a Thompson-Sampling history bandit, token cost, Jaccard/MinHash redundancy). A greedy-knapsack compiler selects items by `Φ/token`, applies phase-transition view downgrades (full→signatures→map→handle) under budget pressure, and emits sparse handles (5–30 tokens) that expand on demand. This is the "adaptive compression with Thompson Sampling bandits" of the crate description, and it is the most academically ambitious design in the group — though, like everything else here, unbenchmarked against an independent agentic-success baseline.
+lean-ctx's intellectual core is **CFT**: each context item gets a potential `Φ(i,t) = wR*R + wS*S + wG*G + wH*H − wC*C − wD*D` (task relevance via heat-diffusion/PageRank, predictive surprise, graph proximity, a Thompson-Sampling history bandit, token cost, Jaccard/MinHash redundancy). A greedy-knapsack compiler selects items by `Φ/token`, applies phase-transition view downgrades (full→signatures→map→handle) under budget pressure, and emits sparse handles (5–30 tokens) that expand on demand. This is the "adaptive compression with Thompson Sampling bandits" of the crate description, and it is the most academically ambitious design in the group — though, like everything else here, unbenchmarked against an independent agentic-success baseline.
 
 ## What lean-ctx has, and what it lacks
 
