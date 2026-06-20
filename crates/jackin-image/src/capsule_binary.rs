@@ -72,6 +72,16 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
         return Ok(path);
     }
 
+    resolve_cached_or_fetch(paths).await
+}
+
+/// Resolve the binary from cache (repairing a stale executable bit),
+/// packaged Homebrew tree, or download — everything *after* the
+/// `JACKIN_CAPSULE_BIN` override. Split out so tests can exercise the
+/// cache-repair path without unsetting the process-global env var
+/// (`unsafe` env mutation is forbidden workspace-wide, and CI exports
+/// `JACKIN_CAPSULE_BIN` for the whole nextest run).
+async fn resolve_cached_or_fetch(paths: &JackinPaths) -> Result<PathBuf> {
     let arch = container_arch();
     let cached = cached_binary_path(&paths.cache_dir, REQUIRED_VERSION, arch);
 

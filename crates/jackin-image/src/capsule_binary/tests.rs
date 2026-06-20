@@ -65,7 +65,10 @@ async fn ensure_available_repairs_non_executable_cached_capsule_binary() {
     let diagnostics = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
     let _guard = diagnostics.activate();
 
-    let binary = ensure_available(&paths)
+    // Call the post-override resolver directly: CI exports JACKIN_CAPSULE_BIN
+    // for the whole nextest run, which would otherwise short-circuit
+    // `ensure_available` before the cache-repair path under test.
+    let binary = resolve_cached_or_fetch(&paths)
         .await
         .expect("cached capsule binary mode should be repaired without download");
 
