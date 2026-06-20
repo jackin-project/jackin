@@ -60,6 +60,11 @@ exclude = [
   # Medium serves this public stack write-up to browsers but returns HTTP 403 to
   # lychee from GitHub Actions.
   "https://paul-hackenberger\\.medium\\.com/the-ultimate-token-saving-stack-rtk-caveman-and-tokensave-163badadd9ec",
+  # graemerocher/multicode is a private repository; blob links are remapped to
+  # the GitHub Contents API which returns 403 from GitHub Actions.
+  "https://api\\.github\\.com/repos/graemerocher/multicode/",
+  # qdrant.tech returns connection failures from the GitHub Actions network.
+  "https://qdrant\\.tech/",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]
