@@ -218,8 +218,18 @@ pub(crate) async fn load_role_with(
     let role_key = selector.key();
     let selected_agent_before_role = opts.agent.or(workspace.default_agent);
     let mut early_restore_agent = None;
+    // `--rebuild` is an explicit "force a fresh image" request, so it must not
+    // take the attach/start/recreate fast paths — those short-circuit before
+    // `decide_agent_image` and would silently skip the rebuild. Falling through
+    // routes the launch to the normal pipeline, where `decide_agent_image`
+    // returns `ExplicitRebuild` and the build always runs. Container-name
+    // collisions are handled downstream by `claim_container_name`: a running
+    // session is left intact (a fresh, rebuilt instance is created alongside
+    // it), while a stopped/crashed/missing container is reclaimed and recreated
+    // from the rebuilt image.
     let early_restore_container = if opts.restore_container_base.is_none()
         && opts.role_branch.is_none()
+        && !opts.rebuild
     {
         if let Some(agent) = selected_agent_before_role {
             match super::resolve_current_restore_candidate_timed(
