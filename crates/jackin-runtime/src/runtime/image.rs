@@ -44,7 +44,7 @@ use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 // short role SHA, `jackin.manifest.version`, per-agent `jackin.agent.*.version`
 // labels, and the dropped opaque `jackin.recipe.*` component labels. Old (v2)
 // images fail this gate and rebuild once.
-const IMAGE_RECIPE_VERSION: &str = "v3";
+const IMAGE_RECIPE_VERSION: &str = "v4";
 /// jackin-capsule version baked into the derived image.
 const LABEL_IMAGE_CAPSULE_VERSION: &str = "jackin.capsule.version";
 /// `jackin.role.toml` schema version (`version = "v1alpha4"`).
@@ -52,7 +52,6 @@ const LABEL_IMAGE_MANIFEST_VERSION: &str = "jackin.manifest.version";
 /// Prefix for per-agent baked-binary version labels: `jackin.agent.<slug>.version`.
 /// Records the version of each agent binary jackin downloaded/cached locally and
 /// baked into the image. Diagnostic — not part of the recipe hash.
-const LABEL_IMAGE_AGENT_VERSION_PREFIX: &str = "jackin.agent.";
 const HOST_IDENTITY_STRATEGY: &str = "construct-agent-user-v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,7 +124,6 @@ struct ImageRecipe {
     cache_bust: String,
     capsule_version: String,
     hooks_hash: String,
-    claude_plugin_recipe_hash: String,
     host_identity_strategy: &'static str,
 }
 
@@ -534,7 +532,6 @@ fn build_image_recipe_with_construct_image(
         // binaries, so CARGO_PKG_VERSION would reuse a stale capsule on dev builds.
         capsule_version: capsule_binary::REQUIRED_VERSION.to_owned(),
         hooks_hash: hooks_hash(&cached_repo.repo_dir, validated_repo)?,
-        claude_plugin_recipe_hash: claude_plugin_recipe_hash(validated_repo)?,
         host_identity_strategy: HOST_IDENTITY_STRATEGY,
     })
 }
@@ -557,35 +554,13 @@ fn render_runtime_dockerfile(
     } else {
         validated_repo.dockerfile.dockerfile_contents.clone()
     };
-    let agent_installs = derived_agent_install_recipe(validated_repo);
     let agents_to_install = validated_repo.manifest.supported_agents();
     Ok(render_derived_dockerfile(
         &base_dockerfile,
         validated_repo.manifest.hooks.as_ref(),
         &agents_to_install,
-        validated_repo.manifest.claude.as_ref(),
         Some(".jackin-runtime/jackin-capsule"),
-        &agent_installs,
     ))
-}
-
-fn derived_agent_install_recipe(
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-) -> BTreeMap<Agent, AgentInstall<String>> {
-    validated_repo
-        .manifest
-        .supported_agents()
-        .into_iter()
-        .map(|agent| {
-            (
-                agent,
-                AgentInstall::Prefetched(format!(
-                    ".jackin-runtime/agent-binaries/{}",
-                    agent.slug()
-                )),
-            )
-        })
-        .collect()
 }
 
 fn canonical_supported_agent_slugs(manifest: &jackin_core::manifest::RoleManifest) -> Vec<String> {
@@ -664,13 +639,6 @@ fn hooks_hash(
         }
     }
     let bytes = serde_json::to_vec(&entries)?;
-    Ok(sha256_hex(&bytes))
-}
-
-fn claude_plugin_recipe_hash(
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-) -> anyhow::Result<String> {
-    let bytes = serde_json::to_vec(&validated_repo.manifest.claude)?;
     Ok(sha256_hex(&bytes))
 }
 
@@ -776,23 +744,6 @@ fn recipe_labels(recipe: &ImageRecipe, recipe_hash: &str) -> Vec<String> {
             .map(|(key, value, _)| format!("{key}={value}")),
     );
     labels
-}
-
-/// Per-agent baked-binary version labels: one `jackin.agent.<slug>.version=<v>`
-/// for each agent whose binary jackin prefetched (downloaded + cached locally)
-/// and baked into the image. Diagnostic — records exactly which version of each
-/// agent the image carries; not part of the recipe hash.
-fn agent_version_labels(runtime_binaries: &PreparedRuntimeBinaries) -> Vec<String> {
-    runtime_binaries
-        .prefetched_agent_versions
-        .iter()
-        .map(|(agent, version)| {
-            format!(
-                "{LABEL_IMAGE_AGENT_VERSION_PREFIX}{}.version={version}",
-                agent.slug()
-            )
-        })
-        .collect()
 }
 
 fn recipe_diagnostic_labels(
@@ -1960,8 +1911,7 @@ pub(super) async fn build_agent_image(
         &cache_bust_value,
     )?;
     let recipe_hash = recipe.hash()?;
-    let mut recipe_labels = recipe_labels(&recipe, &recipe_hash);
-    recipe_labels.extend(agent_version_labels(&runtime_binaries));
+    let recipe_labels = recipe_labels(&recipe, &recipe_hash);
 
     let mut build_args: Vec<&str> = vec!["build"];
 

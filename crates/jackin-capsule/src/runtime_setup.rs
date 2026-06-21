@@ -334,7 +334,54 @@ fn setup_claude(copy_auth: bool) -> Result<()> {
             &["mcp", "add", "shellfirm", "--", "shellfirm", "mcp"],
         );
     }
+    setup_claude_plugins();
     Ok(())
+}
+
+/// Install the Claude plugin marketplaces and plugins declared by the role
+/// manifest, once per home.
+///
+/// Plugin setup moved here from the image build: the `claude` binary is now
+/// bind-mounted read-only at `docker run` (not baked into the derived image), so
+/// there is no longer a build step to run `claude plugin install`. Idempotent via
+/// a marker so re-launches and sibling tabs do not re-run it.
+fn setup_claude_plugins() {
+    let Some(config) = crate::config::load_optional() else {
+        return;
+    };
+    if config.claude_marketplaces.is_empty() && config.claude_plugins.is_empty() {
+        return;
+    }
+    let marker = Path::new("/home/agent/.claude/.jackin-plugins.done");
+    if marker.exists() {
+        return;
+    }
+    // The official marketplace backs the common plugins; tolerate it already
+    // being registered.
+    run_optional_command(
+        "claude",
+        &[
+            "plugin",
+            "marketplace",
+            "add",
+            "anthropics/claude-plugins-official",
+        ],
+    );
+    for marketplace in &config.claude_marketplaces {
+        let mut args = vec!["plugin", "marketplace", "add", marketplace.source.as_str()];
+        if !marketplace.sparse.is_empty() {
+            args.push("--sparse");
+            for path in &marketplace.sparse {
+                args.push(path.as_str());
+            }
+        }
+        run_optional_command("claude", &args);
+    }
+    for plugin in &config.claude_plugins {
+        run_optional_command("claude", &["plugin", "install", plugin.as_str()]);
+    }
+    fs::create_dir_all("/home/agent/.claude").ok();
+    fs::write(marker, []).ok();
 }
 
 fn setup_codex(copy_auth: bool) -> Result<()> {

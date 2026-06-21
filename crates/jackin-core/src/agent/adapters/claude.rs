@@ -40,6 +40,10 @@ RUN --mount=type=cache,id=jackin-agent-prefetch-claude,target=/home/agent/.cache
         )
     }
 
+    fn container_binary_path(&self) -> &'static str {
+        "/home/agent/.local/bin/claude"
+    }
+
     fn fallback_install_block(&self) -> String {
         render_fallback_install_block(
             "/home/agent/.local/bin",

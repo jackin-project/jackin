@@ -688,6 +688,19 @@ fn test_stub_path(paths: &JackinPaths, agent: Agent) -> PathBuf {
         .join(agent.slug())
 }
 
+/// Host path to the agent's executable for run-time bind-mounting onto the
+/// container's PATH. Returns the test stub when one is installed (so tests don't
+/// need real downloads), otherwise the newest cached real binary. `None` when no
+/// binary is available for the agent. Used by the launch path to mount agent
+/// binaries read-only instead of baking them into the derived image.
+pub fn runtime_mount_binary_path(paths: &JackinPaths, agent: Agent) -> Option<PathBuf> {
+    let stub = test_stub_path(paths, agent);
+    if is_executable_file(&stub) {
+        return Some(stub);
+    }
+    newest_cached_executable_release(paths, agent).map(|(_, _, path)| path)
+}
+
 pub fn install_test_stub(paths: &JackinPaths, agent: Agent) -> Result<()> {
     let stub = test_stub_path(paths, agent);
     if let Some(parent) = stub.parent() {

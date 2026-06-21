@@ -77,6 +77,12 @@ pub trait AgentRuntime: Send + Sync + 'static + private::Sealed {
     /// pre-fetched binary at `source` (relative path inside the image).
     fn install_block(&self, source: &str) -> String;
 
+    /// Absolute in-container path where this agent's CLI binary lives on `PATH`.
+    /// The host's prefetched binary is bind-mounted read-only here at `docker run`
+    /// instead of being baked into the image, so an agent version bump no longer
+    /// rebuilds the derived image.
+    fn container_binary_path(&self) -> &'static str;
+
     /// Dockerfile `RUN` block that installs this agent's CLI from the official
     /// upstream installer. Used only when host-side binary prefetch fails.
     fn fallback_install_block(&self) -> String;

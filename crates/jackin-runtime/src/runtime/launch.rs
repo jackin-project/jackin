@@ -185,6 +185,25 @@ use progress_helpers::{
 /// foreground launch path provisions all manifest-supported agents so sibling
 /// tabs opened via `hardline --new --agent <other>` find their homes
 /// bind-mounted from the start.
+/// Read-only bind-mount specs (`host:container:ro`) for every agent CLI binary
+/// cached on the host. The agent binaries are mounted at `docker run` instead of
+/// baked into the derived image, so an agent version bump no longer rebuilds the
+/// image — the newest cached binary is mounted onto the PATH location the image's
+/// `ENV PATH` already covers. Agents with no cached binary are skipped.
+fn agent_binary_mount_specs(paths: &JackinPaths) -> Vec<String> {
+    jackin_core::Agent::ALL
+        .iter()
+        .filter_map(|&agent| {
+            let host_path = jackin_image::agent_binary::runtime_mount_binary_path(paths, agent)?;
+            let host = host_path.to_str()?;
+            Some(format!(
+                "{host}:{}:ro",
+                agent.runtime().container_binary_path()
+            ))
+        })
+        .collect()
+}
+
 fn agent_mounts(state: &RoleState) -> Vec<String> {
     let mut mounts = vec![format!(
         "{}:/jackin/state",
@@ -525,6 +544,20 @@ pub(super) fn capsule_config(
             provider_models.insert(agent.slug().to_owned(), inner);
         }
     }
+    let (claude_marketplaces, claude_plugins) = manifest.claude.as_ref().map_or_else(
+        || (Vec::new(), Vec::new()),
+        |claude| {
+            let marketplaces = claude
+                .marketplaces
+                .iter()
+                .map(|m| jackin_protocol::ClaudeMarketplace {
+                    source: m.source.clone(),
+                    sparse: m.sparse.clone(),
+                })
+                .collect();
+            (marketplaces, claude.plugins.clone())
+        },
+    );
     jackin_protocol::CapsuleConfig {
         role: selector.key(),
         workdir: workdir.to_owned(),
@@ -532,6 +565,8 @@ pub(super) fn capsule_config(
         models,
         provider_models,
         initial_provider,
+        claude_marketplaces,
+        claude_plugins,
     }
 }
 
@@ -620,6 +655,7 @@ pub(super) async fn launch_role_runtime(
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let agent_specific_mounts = agent_mounts(state);
+    let agent_binary_mounts = agent_binary_mount_specs(paths);
     let gh_config_mount = github_config_mount(state);
     let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
 
@@ -976,6 +1012,12 @@ pub(super) async fn launch_role_runtime(
     })?;
     let socket_mount = format!("{socket_dir_str}:/jackin/run");
     run_args.extend_from_slice(&["-v", &socket_mount]);
+    // Mount each cached agent CLI binary read-only onto its PATH location. The
+    // binaries are not baked into the image (see `render_derived_dockerfile`), so
+    // an agent version bump is picked up here without an image rebuild.
+    for mount in &agent_binary_mounts {
+        run_args.extend_from_slice(&["-v", mount]);
+    }
     // Mount the host-UID passwd line where libnss-extrausers reads it.
     let extrausers_mount = extrausers_line.as_ref().and_then(|_| {
         extrausers_passwd

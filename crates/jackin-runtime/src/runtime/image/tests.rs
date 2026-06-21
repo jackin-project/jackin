@@ -3,7 +3,6 @@ use super::*;
 use crate::runtime::test_support::{FakeDockerClient, FakeRunner, TEST_DOCKERFILE_FROM};
 use jackin_core::agent::Agent;
 use std::collections::{BTreeMap, HashMap};
-use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
 
 static RICH_SURFACE_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -205,31 +204,6 @@ fn dockerfile_role_sha_detection_only_requests_declared_arg() {
     assert!(dockerfile_body_requests_role_git_sha_arg(
         "FROM projectjackin/construct:0.1-trixie\nARG\tROLE_GIT_SHA\n"
     ));
-}
-
-#[test]
-fn agent_version_labels_emit_one_per_prefetched_agent() {
-    let runtime_binaries = PreparedRuntimeBinaries {
-        agent_installs: BTreeMap::from([
-            (
-                Agent::Claude,
-                AgentInstall::Prefetched(PathBuf::from("/tmp/claude")),
-            ),
-            (Agent::Kimi, AgentInstall::ScriptFallback),
-        ]),
-        prefetched_agent_versions: BTreeMap::from([
-            (Agent::Claude, "2.1.91".to_owned()),
-            (Agent::Grok, "0.2.59".to_owned()),
-        ]),
-        jackin_capsule_src: "/tmp/jackin-capsule".to_owned(),
-    };
-
-    // One `jackin.agent.<slug>.version` label per prefetched agent; an agent with
-    // no prefetched version (Kimi here) gets none.
-    let labels = agent_version_labels(&runtime_binaries);
-    assert!(labels.contains(&"jackin.agent.claude.version=2.1.91".to_owned()));
-    assert!(labels.contains(&"jackin.agent.grok.version=0.2.59".to_owned()));
-    assert_eq!(labels.len(), 2);
 }
 
 #[tokio::test]

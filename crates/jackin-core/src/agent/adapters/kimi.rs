@@ -33,6 +33,10 @@ ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${{PATH}}\"
         )
     }
 
+    fn container_binary_path(&self) -> &'static str {
+        "/home/agent/.kimi-code/bin/kimi"
+    }
+
     fn fallback_install_block(&self) -> String {
         render_fallback_install_block(
             "/home/agent/.kimi-code/bin:/home/agent/.local/bin",

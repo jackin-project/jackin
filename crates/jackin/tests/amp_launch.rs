@@ -24,12 +24,11 @@ fn recorded_role_container_name(run_cmd: &str) -> &str {
         .expect("role docker run should include --name")
 }
 
-fn assert_cached_amp_install_block(dockerfile: &str) {
-    assert_eq!(
-        dockerfile
-            .matches(&Agent::Amp.install_block(".jackin-runtime/agent-binaries/amp"))
-            .count(),
-        1
+fn assert_amp_not_baked(dockerfile: &str) {
+    // Agent binaries are mounted read-only at run time, not baked into the image.
+    assert!(
+        !dockerfile.contains("agent-binaries"),
+        "amp binary must not be baked into the derived image; got: {dockerfile}"
     );
 }
 
@@ -84,7 +83,7 @@ agents = ["amp"]
     )
     .unwrap();
     let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
-    assert_cached_amp_install_block(&dockerfile);
+    assert_amp_not_baked(&dockerfile);
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let workspace = ResolvedWorkspace {
@@ -129,6 +128,10 @@ agents = ["amp"]
     assert!(
         run_cmd.ends_with(" amp"),
         "initial agent must be passed as container argv; got: {run_cmd}"
+    );
+    assert!(
+        run_cmd.contains(":/home/agent/.amp/bin/amp:ro"),
+        "amp binary must be bind-mounted read-only at run time; got: {run_cmd}"
     );
     assert!(!run_cmd.contains("-e JACKIN_ROLE="), "{run_cmd}");
     assert!(run_cmd.contains("-e AMP_API_KEY=test-amp-key"), "{run_cmd}");

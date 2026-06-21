@@ -40,8 +40,9 @@ fn hash(&self) -> Result<String> {
 | `cache_bust` | forced-rebuild value (`--rebuild`) |
 | `capsule_version` | jackin-capsule version baked in |
 | `hooks_hash` | SHA-256 of role hook files |
-| `claude_plugin_recipe_hash` | SHA-256 of Claude plugin/marketplace config |
 | `host_identity_strategy` | UID/identity strategy |
+
+Agent CLI binaries are **not** an `ImageRecipe` input: they are bind-mounted read-only at `docker run` (the newest cached host binary onto the PATH location the overlay's `ENV PATH` covers), not baked into the image. So an agent version bump is picked up on the next launch without an image rebuild, and there is no per-agent version label. Claude plugins likewise install at container start (capsule runtime-setup), not at build time — so `claude_plugin_recipe_hash` is gone from the recipe.
 
 At launch jackin recomputes the expected recipe from current inputs, hashes it, and compares to the stored label. **Match → reuse** (skip `docker build`, runtime-binary prep, token lookup, and the version probe). **Mismatch → rebuild.**
 
@@ -49,7 +50,7 @@ Because every recipe field is folded into this hash, a change to any of them inv
 
 ## Schema gate: `jackin.image.recipe.version`
 
-A short constant (currently `v3`) checked **before** the hash. The hash is only comparable if both sides used the same recipe schema; if a jackin upgrade changes the `ImageRecipe` shape or label set, the version is bumped so old images fail the gate (`RecipeVersionChanged`) and rebuild rather than mis-comparing hashes. Bumping it invalidates all prior images at once.
+A short constant (currently `v4`) checked **before** the hash. The hash is only comparable if both sides used the same recipe schema; if a jackin upgrade changes the `ImageRecipe` shape or label set, the version is bumped so old images fail the gate (`RecipeVersionChanged`) and rebuild rather than mis-comparing hashes. Bumping it invalidates all prior images at once.
 
 ## Identity & version labels (local derived image)
 
@@ -61,9 +62,8 @@ Stamped and, where noted, checked for a precise invalidation reason:
 | `jackin.manifest.version` | `jackin.role.toml` schema version | `ManifestVersionChanged` |
 | `jackin.construct.image` | construct image used (custom vs official) | `ConstructImageChanged` |
 | `jackin.capsule.version` | jackin-capsule version baked in | `CapsuleVersionChanged` |
-| `jackin.agent.<slug>.version` | version of each agent binary jackin downloaded/cached locally and baked in — one per prefetched agent (`jackin.agent.claude.version`, `jackin.agent.grok.version`, …) | — (diagnostic; not in the recipe hash) |
 
-The `jackin.agent.<slug>.version` labels record exactly which version of each agent the image carries, tied to the locally-downloaded binary. They are diagnostic — the agent *set* and install recipe already drive rebuilds through the recipe hash.
+There are no per-agent version labels: agent binaries are mounted at run time, not baked, so the image carries no agent version to record (see the recipe-table note above).
 
 ## Published-contract labels
 
@@ -101,4 +101,4 @@ On the next launch the local base is **reused** when `jk_<role>__base:<sha>` alr
 
 ## Dropped labels
 
-The following opaque `jackin.recipe.*` component labels were removed: `role_source_ref`, `base_image`, `generated_runtime_hash`, `supported_agents`, `cache_bust`, `hooks_hash`, `claude_plugin_hash`, `host_identity_strategy`, plus the single `jackin.selected_agent_version`. Their values still live inside `ImageRecipe`, so they still invalidate the image via `jackin.image.recipe.hash` — a mismatch simply surfaces as the generic `RecipeHashChanged` reason instead of a component-specific one. The per-agent `jackin.agent.<slug>.version` labels replace `jackin.selected_agent_version`, which was meaningless once images install every supported agent.
+The following opaque `jackin.recipe.*` component labels were removed: `role_source_ref`, `base_image`, `generated_runtime_hash`, `supported_agents`, `cache_bust`, `hooks_hash`, `host_identity_strategy`. Their values still live inside `ImageRecipe`, so they still invalidate the image via `jackin.image.recipe.hash` — a mismatch simply surfaces as the generic `RecipeHashChanged` reason instead of a component-specific one. The per-agent `jackin.agent.<slug>.version` labels and the single `jackin.selected_agent_version` were dropped entirely: agent binaries are mounted at run time, not baked, so the image records no agent version. `claude_plugin_hash` is also gone — Claude plugins install at container start, not in the image.

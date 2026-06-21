@@ -11,7 +11,6 @@
 use jackin_core::Agent;
 use jackin_core::manifest::HooksConfig;
 use jackin_manifest::ValidatedRoleRepo;
-use sha2::{Digest as _, Sha256};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -176,43 +175,19 @@ pub fn render_derived_dockerfile(
     base_dockerfile: &str,
     hooks: Option<&HooksConfig>,
     supported: &[Agent],
-    claude_config: Option<&jackin_core::manifest::ClaudeConfig>,
     jackin_capsule_bin: Option<&str>,
-    agent_installs: &BTreeMap<Agent, AgentInstall<String>>,
 ) -> String {
     let hook_section = render_hook_section(hooks);
     let default_home_commands = render_default_home_commands(supported);
     let hook_final_commands = (!hook_section.final_commands.is_empty())
         .then(|| format!("{} \\\n    && ", hook_section.final_commands.trim_end()));
 
-    // Concatenate per-agent install blocks in a stable order (Claude
-    // first when present, Codex second, Amp third, Kimi fourth,
-    // OpenCode fifth). Installers that run networked setup keep their own
-    // `ARG JACKIN_CACHE_BUST=0`; direct-copy prefetched installs rely on
-    // BuildKit COPY content hashes and avoid cache-bust-only RUN layers.
-    // Stable ordering keeps diffs reviewable.
-    let mut install_blocks = String::new();
-    let mut sorted: Vec<Agent> = supported.to_vec();
-    // Stable ordering (Agent derives Ord in declaration order: Claude, Codex, Amp, Kimi, Opencode)
-    // so cache-bust diffs are reviewable. No explicit sort_by_key needed.
-    sorted.sort();
-    for h in sorted {
-        let install = agent_installs.get(&h);
-        if matches!(install, Some(AgentInstall::ScriptFallback)) {
-            install_blocks.push_str(&h.runtime().fallback_install_block());
-        } else {
-            // Prefetched entry, or no entry for this supported agent (the
-            // conventional binary path under the build context).
-            let source = match install {
-                Some(AgentInstall::Prefetched(path)) => path.clone(),
-                _ => format!(".jackin-runtime/agent-binaries/{}", h.slug()),
-            };
-            install_blocks.push_str(&h.runtime().install_block(&source));
-        }
-        if h == Agent::Claude {
-            install_blocks.push_str(&render_claude_plugin_install_block(claude_config));
-        }
-    }
+    // Agent CLI binaries are NOT baked into the image — the host's prefetched
+    // binaries are bind-mounted read-only at `docker run` (see
+    // `agent_binary_mounts`), so an agent version bump no longer rebuilds the
+    // derived image. The overlay only stages jackin's own runtime assets; the
+    // ENV PATH below covers every agent's bin dir so the mounted binaries
+    // resolve. Claude plugin setup moves to capsule runtime-setup.
 
     // jackin-capsule binary (pre-downloaded by host, placed in .jackin-runtime/).
     let jackin_capsule_section = jackin_capsule_bin.map_or_else(String::new, |src| {
@@ -244,8 +219,7 @@ pub fn render_derived_dockerfile(
 # syntax=docker/dockerfile:1.7
 {base_dockerfile}
 USER root
-{install_blocks}{hook_copy_section}USER root
-COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
+{hook_copy_section}COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 COPY --link --chown=agent:agent --chmod=0644 {zsh_title_shim_path} /jackin/runtime/zsh-title-shim
 {jackin_capsule_section}RUN {hook_final_commands}{default_home_commands} \\
     && {shell_title_and_runtime_dir_commands}# Normalize /home/agent AND the /jackin/default-home seed to group 0 with
@@ -258,8 +232,10 @@ COPY --link --chown=agent:agent --chmod=0644 {zsh_title_shim_path} /jackin/runti
 # pattern. Must be the last layer touching these trees so files added above are
 # covered.
 RUN chgrp -R 0 /home/agent /jackin/default-home && chmod -R g=u /home/agent /jackin/default-home
-# Make jackin-capsule available as a plain shell command from any session.
-ENV PATH=\"/jackin/runtime:${{PATH}}\"
+# jackin-capsule plus every agent bin dir on PATH. The agent CLI binaries are
+# bind-mounted read-only at `docker run` (not baked), so this fixed PATH lets the
+# mounted binaries resolve without the image depending on which agents are baked.
+ENV PATH=\"/jackin/runtime:/home/agent/.local/bin:/home/agent/.amp/bin:/home/agent/.kimi-code/bin:/home/agent/.opencode/bin:/home/agent/.grok/bin:${{PATH}}\"
 USER agent
 ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]
 ",
@@ -267,68 +243,6 @@ ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]
         hook_final_commands = hook_final_commands.unwrap_or_default(),
         zsh_title_shim_path = ZSH_TITLE_SHIM_PATH,
     )
-}
-
-fn render_claude_plugin_install_block(
-    claude_config: Option<&jackin_core::manifest::ClaudeConfig>,
-) -> String {
-    let Some(config) = claude_config else {
-        return String::new();
-    };
-    if config.marketplaces.is_empty() && config.plugins.is_empty() {
-        return String::new();
-    }
-
-    let mut commands =
-        vec!["claude plugin marketplace add anthropics/claude-plugins-official || true".to_owned()];
-
-    for marketplace in &config.marketplaces {
-        let mut command = String::from("claude plugin marketplace add ");
-        command.push_str(&shell_quote(&marketplace.source));
-        if !marketplace.sparse.is_empty() {
-            command.push_str(" --sparse");
-            for path in &marketplace.sparse {
-                command.push(' ');
-                command.push_str(&shell_quote(path));
-            }
-        }
-        commands.push(command);
-    }
-
-    for plugin in &config.plugins {
-        commands.push(format!("claude plugin install {}", shell_quote(plugin)));
-    }
-    let recipe_key = sha256_hex(commands.join("\n").as_bytes());
-
-    format!(
-        "\
-# Install Claude plugins declared by jackin.role.toml at image-build time.
-RUN --mount=type=cache,id=jackin-claude-plugin-bundle-{recipe_key},target=/jackin/cache/claude-plugin-bundle,uid=1000,gid=1000,sharing=locked \\
-    --mount=type=cache,id=jackin-claude-plugin-home,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\
-    set -eux; \\
-    bundle=/jackin/cache/claude-plugin-bundle/{recipe_key}; \\
-    if [ -f \"$bundle/.jackin-plugin-bundle.done\" ]; then \\
-        install -d /home/agent/.claude; \\
-        cp -a \"$bundle/.claude/.\" /home/agent/.claude/; \\
-    else \\
-        {}; \\
-        rm -rf \"$bundle\"; \\
-        install -d \"$bundle/.claude\"; \\
-        cp -a /home/agent/.claude/. \"$bundle/.claude/\" 2>/dev/null || true; \\
-        touch \"$bundle/.jackin-plugin-bundle.done\"; \\
-    fi
-",
-        commands.join("; \\\n    ")
-    )
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
-    let digest = Sha256::digest(bytes);
-    digest.iter().fold(String::new(), |mut acc, byte| {
-        let _ = write!(acc, "{byte:02x}");
-        acc
-    })
 }
 
 /// Single-quote `value` for safe inclusion in a `/bin/sh -c` string. Embedded
@@ -468,7 +382,9 @@ pub fn create_derived_build_context_for_agents(
         None
     };
 
-    let agent_ctx_installs = copy_agent_binaries(&runtime_dir, agent_installs, agents_to_install)?;
+    // Agent binaries are no longer staged into the build context — they are
+    // bind-mounted read-only at `docker run`. `agent_installs` is unused here.
+    let _ = (&agent_installs, &runtime_dir);
 
     let hooks = validated.manifest.hooks.as_ref();
 
@@ -520,9 +436,7 @@ pub fn create_derived_build_context_for_agents(
             &base_dockerfile,
             hooks,
             agents_to_install,
-            validated.manifest.claude.as_ref(),
             jackin_capsule_ctx_path.as_deref(),
-            &agent_ctx_installs,
         ),
     )?;
     ensure_runtime_assets_are_included(&context_dir, hooks)?;
@@ -624,38 +538,6 @@ fn copy_declared_hook_files(
         })?;
     }
     Ok(())
-}
-
-fn copy_agent_binaries(
-    runtime_dir: &Path,
-    installs: &BTreeMap<Agent, AgentInstall<PathBuf>>,
-    agents_to_stage: &[Agent],
-) -> anyhow::Result<BTreeMap<Agent, AgentInstall<String>>> {
-    let mut dst_dir = None;
-    let mut staged = BTreeMap::new();
-    for (agent, install) in installs {
-        if !agents_to_stage.contains(agent) {
-            continue;
-        }
-        let ctx_install = match install {
-            AgentInstall::Prefetched(host_path) => {
-                let dst_dir = dst_dir.get_or_insert_with(|| runtime_dir.join("agent-binaries"));
-                std::fs::create_dir_all(dst_dir.as_path())?;
-                let dst = dst_dir.join(agent.slug());
-                std::fs::copy(host_path, &dst).map_err(|e| {
-                    anyhow::anyhow!(
-                        "failed to copy {} binary into build context from {}: {e}",
-                        agent.slug(),
-                        host_path.display()
-                    )
-                })?;
-                AgentInstall::Prefetched(format!(".jackin-runtime/agent-binaries/{}", agent.slug()))
-            }
-            AgentInstall::ScriptFallback => AgentInstall::ScriptFallback,
-        };
-        staged.insert(*agent, ctx_install);
-    }
-    Ok(staged)
 }
 
 fn ensure_runtime_assets_are_included(

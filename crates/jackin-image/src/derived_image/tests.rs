@@ -5,40 +5,6 @@ use std::collections::BTreeMap;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 use tempfile::tempdir;
-
-fn default_agent_binary_path(agent: Agent) -> String {
-    format!(".jackin-runtime/agent-binaries/{}", agent.slug())
-}
-
-fn extract_agent_install_block(dockerfile: &str, agent: Agent) -> &str {
-    let source = default_agent_binary_path(agent);
-    let copy = format!("COPY --link --chown=agent:agent --chmod=0755 {source}");
-    let copy_pos = dockerfile
-        .find(&copy)
-        .unwrap_or_else(|| panic!("missing COPY line for {}", agent.slug()));
-    let start = dockerfile[..copy_pos]
-        .rfind("USER agent\n")
-        .unwrap_or_else(|| panic!("missing USER agent before {}", agent.slug()));
-    let rest = &dockerfile[start..];
-    let candidates = [
-        rest[1..].find("\nUSER agent\nCOPY ").map(|pos| pos + 1),
-        rest[1..].find("\nUSER agent\nENV ").map(|pos| pos + 1),
-        rest[1..]
-            .find("\nUSER agent\nARG JACKIN_CACHE_BUST=0\n")
-            .map(|pos| pos + 1),
-        rest.find("\n# Install Claude plugins"),
-        rest.find("\nUSER root\nRUN install -d /jackin/runtime/hooks"),
-        rest.find("\nUSER root\nRUN install -d -o agent -g agent /jackin/default-home"),
-        rest.find("\nUSER root\nCOPY --link --chmod=0755 .jackin-runtime/entrypoint.sh"),
-    ];
-    let end = candidates
-        .into_iter()
-        .flatten()
-        .min()
-        .map_or(rest.len(), |pos| pos + 1);
-    &rest[..end]
-}
-
 #[test]
 fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
     let dockerfile = render_derived_dockerfile(
@@ -46,43 +12,21 @@ fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
         None,
         &[Agent::Claude],
         None,
-        None,
-        &BTreeMap::new(),
     );
 
-    assert_eq!(
-        extract_agent_install_block(&dockerfile, Agent::Claude),
-        Agent::Claude.install_block(&default_agent_binary_path(Agent::Claude))
-    );
+    // Agent binaries are mounted read-only at run time, not baked — the overlay
+    // carries no agent COPY/install and no plugin block.
+    assert!(!dockerfile.contains("agent-binaries"));
+    assert!(!dockerfile.contains("claude plugin"));
     assert!(!dockerfile.contains("WORKDIR"));
     assert!(dockerfile.contains(
         "COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh"
     ));
-    assert!(!dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
-    assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));
-}
-
-#[test]
-fn renders_derived_dockerfile_installs_claude_as_agent_user() {
-    let dockerfile = render_derived_dockerfile(
-        "FROM projectjackin/construct:0.1-trixie\n",
-        None,
-        &[Agent::Claude],
-        None,
-        None,
-        &BTreeMap::new(),
-    );
-
-    assert!(dockerfile.contains("USER agent\n"));
-    assert!(dockerfile.contains("ARG JACKIN_CACHE_BUST=0"));
-    assert_eq!(
-        extract_agent_install_block(&dockerfile, Agent::Claude),
-        Agent::Claude.install_block(&default_agent_binary_path(Agent::Claude))
-    );
+    // A fixed PATH covers every agent's bin dir so the mounted binaries resolve.
     assert!(dockerfile.contains(
-        "COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh"
+        "ENV PATH=\"/jackin/runtime:/home/agent/.local/bin:/home/agent/.amp/bin:/home/agent/.kimi-code/bin:/home/agent/.opencode/bin:/home/agent/.grok/bin:${PATH}\""
     ));
-    assert!(!dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
+    assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));
 }
 
 #[test]
@@ -91,9 +35,7 @@ fn renders_runtime_finalization_in_one_layer() {
         "FROM projectjackin/construct:0.1-trixie\n",
         None,
         &[Agent::Claude],
-        None,
         Some(".jackin-runtime/jackin-capsule"),
-        &BTreeMap::new(),
     );
 
     assert!(dockerfile.contains(
@@ -148,8 +90,6 @@ fn renders_derived_dockerfile_keeps_construct_agent_identity() {
         None,
         &[Agent::Claude],
         None,
-        None,
-        &BTreeMap::new(),
     );
 
     assert!(!dockerfile.contains("ARG JACKIN_HOST_UID"));
@@ -185,8 +125,6 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
         }),
         &[Agent::Claude],
         None,
-        None,
-        &BTreeMap::new(),
     );
 
     assert!(dockerfile.contains(
@@ -252,8 +190,6 @@ fn renders_derived_dockerfile_without_runtime_hooks() {
         None,
         &[Agent::Claude],
         None,
-        None,
-        &BTreeMap::new(),
     );
 
     assert!(!dockerfile.contains("setup-once.sh"));
@@ -262,141 +198,6 @@ fn renders_derived_dockerfile_without_runtime_hooks() {
     assert!(!dockerfile.contains("/jackin/runtime/hooks"));
     assert!(!dockerfile.contains("/jackin/state/hooks"));
     assert!(!dockerfile.contains("/home/agent/.zshenv"));
-}
-
-#[test]
-fn renders_dockerfile_with_codex_install_when_supported() {
-    let dockerfile = render_derived_dockerfile(
-        "FROM projectjackin/construct:0.1-trixie\n",
-        None,
-        &[Agent::Amp, Agent::Claude, Agent::Codex],
-        None,
-        None,
-        &BTreeMap::new(),
-    );
-
-    assert_eq!(
-        extract_agent_install_block(&dockerfile, Agent::Claude),
-        Agent::Claude.install_block(&default_agent_binary_path(Agent::Claude))
-    );
-    assert_eq!(
-        extract_agent_install_block(&dockerfile, Agent::Codex),
-        Agent::Codex.install_block(&default_agent_binary_path(Agent::Codex))
-    );
-    assert_eq!(
-        extract_agent_install_block(&dockerfile, Agent::Amp),
-        Agent::Amp.install_block(&default_agent_binary_path(Agent::Amp))
-    );
-    // Stable ordering for deterministic Dockerfile output.
-    let claude_pos = dockerfile
-        .find(&default_agent_binary_path(Agent::Claude))
-        .unwrap();
-    let codex_pos = dockerfile
-        .find(&default_agent_binary_path(Agent::Codex))
-        .unwrap();
-    let amp_pos = dockerfile
-        .find(&default_agent_binary_path(Agent::Amp))
-        .unwrap();
-    assert!(claude_pos < codex_pos);
-    assert!(codex_pos < amp_pos);
-}
-
-#[test]
-fn renders_amp_install_as_agent_user() {
-    let dockerfile = render_derived_dockerfile(
-        "FROM projectjackin/construct:0.1-trixie\n",
-        None,
-        &[Agent::Amp],
-        None,
-        None,
-        &BTreeMap::new(),
-    );
-
-    assert_eq!(
-        extract_agent_install_block(&dockerfile, Agent::Amp),
-        Agent::Amp.install_block(&default_agent_binary_path(Agent::Amp))
-    );
-}
-
-#[test]
-fn renders_script_fallback_when_agent_binary_prefetch_failed() {
-    let dockerfile = render_derived_dockerfile(
-        "FROM projectjackin/construct:0.1-trixie\n",
-        None,
-        &[Agent::Kimi],
-        None,
-        None,
-        &BTreeMap::from([(Agent::Kimi, AgentInstall::ScriptFallback)]),
-    );
-
-    assert!(dockerfile.contains("curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash"));
-    assert!(dockerfile.contains("kimi --version"));
-    assert!(dockerfile.contains("ENV XDG_CACHE_HOME=\"/home/agent/.cache\""));
-    assert!(dockerfile.contains(
-        "RUN --mount=type=cache,id=jackin-agent-fallback-kimi,target=/home/agent/.cache"
-    ));
-    assert!(!dockerfile.contains("COPY --chown=agent:agent .jackin-runtime/agent-binaries/kimi"));
-}
-
-#[test]
-fn renders_mixed_prefetched_and_script_fallback_installs() {
-    // One agent prefetched, one fell back to its installer — the realistic
-    // multi-agent shape the per-agent AgentInstall enum must render in one image.
-    let claude_source = default_agent_binary_path(Agent::Claude);
-    let dockerfile = render_derived_dockerfile(
-        "FROM projectjackin/construct:0.1-trixie\n",
-        None,
-        &[Agent::Claude, Agent::Kimi],
-        None,
-        None,
-        &BTreeMap::from([
-            (
-                Agent::Claude,
-                AgentInstall::Prefetched(claude_source.clone()),
-            ),
-            (Agent::Kimi, AgentInstall::ScriptFallback),
-        ]),
-    );
-
-    // Claude renders its prefetched COPY install block verbatim.
-    assert!(dockerfile.contains(&Agent::Claude.install_block(&claude_source)));
-    assert!(dockerfile.contains(
-        "RUN --mount=type=cache,id=jackin-agent-fallback-kimi,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\\n    set -euxo pipefail"
-    ));
-    // Kimi renders the upstream installer block with no prefetched COPY.
-    assert!(dockerfile.contains(Agent::Kimi.fallback_install_command()));
-    assert!(dockerfile.contains("kimi --version"));
-    assert!(!dockerfile.contains("COPY --chown=agent:agent .jackin-runtime/agent-binaries/kimi"));
-}
-
-#[test]
-fn copy_agent_binaries_stages_prefetched_and_preserves_fallback() {
-    let tmp = tempdir().unwrap();
-    let runtime_dir = tmp.path().join(".jackin-runtime");
-    std::fs::create_dir_all(&runtime_dir).unwrap();
-    let host_bin = tmp.path().join("claude-host");
-    std::fs::write(&host_bin, b"binary").unwrap();
-
-    let installs = BTreeMap::from([
-        (Agent::Claude, AgentInstall::Prefetched(host_bin.clone())),
-        (Agent::Kimi, AgentInstall::ScriptFallback),
-    ]);
-    let staged =
-        copy_agent_binaries(&runtime_dir, &installs, &[Agent::Claude, Agent::Kimi]).unwrap();
-
-    // Prefetched host path is rewritten to the context-relative path and the
-    // binary is actually copied in; ScriptFallback passes through untouched.
-    assert_eq!(
-        staged.get(&Agent::Claude),
-        Some(&AgentInstall::Prefetched(
-            ".jackin-runtime/agent-binaries/claude".to_owned()
-        ))
-    );
-    assert_eq!(
-        staged.get(&Agent::Kimi),
-        Some(&AgentInstall::ScriptFallback)
-    );
-    assert!(runtime_dir.join("agent-binaries/claude").is_file());
 }
 
 #[test]
@@ -523,31 +324,12 @@ fn dockerignore_agent_binary_allowlist_requires_staged_binary_dir() {
 }
 
 #[test]
-fn renders_codex_install_as_agent_without_extracting_directly_to_bin() {
-    let dockerfile = render_derived_dockerfile(
-        "FROM projectjackin/construct:0.1-trixie\n",
-        None,
-        &[Agent::Codex],
-        None,
-        None,
-        &BTreeMap::new(),
-    );
-
-    assert_eq!(
-        extract_agent_install_block(&dockerfile, Agent::Codex),
-        Agent::Codex.install_block(&default_agent_binary_path(Agent::Codex))
-    );
-}
-
-#[test]
 fn renders_codex_only_dockerfile_final_user_is_agent() {
     let dockerfile = render_derived_dockerfile(
         "FROM projectjackin/construct:0.1-trixie\n",
         None,
         &[Agent::Codex],
         None,
-        None,
-        &BTreeMap::new(),
     );
     let last_user = dockerfile
         .lines()
@@ -557,31 +339,12 @@ fn renders_codex_only_dockerfile_final_user_is_agent() {
 }
 
 #[test]
-fn renders_codex_only_dockerfile_without_claude_install() {
-    let dockerfile = render_derived_dockerfile(
-        "FROM projectjackin/construct:0.1-trixie\n",
-        None,
-        &[Agent::Codex],
-        None,
-        None,
-        &BTreeMap::new(),
-    );
-
-    assert_eq!(
-        extract_agent_install_block(&dockerfile, Agent::Codex),
-        Agent::Codex.install_block(&default_agent_binary_path(Agent::Codex))
-    );
-}
-
-#[test]
 fn renders_dockerfile_targets_agent_user_not_claude() {
     let dockerfile = render_derived_dockerfile(
         "FROM projectjackin/construct:0.1-trixie\n",
         None,
         &[Agent::Claude],
         None,
-        None,
-        &BTreeMap::new(),
     );
 
     assert!(dockerfile.contains("/home/agent"));
@@ -600,8 +363,6 @@ fn renders_dockerfile_does_not_set_jackin_agent_env() {
         None,
         &[Agent::Claude, Agent::Codex],
         None,
-        None,
-        &BTreeMap::new(),
     );
 
     assert!(!dockerfile.contains("ENV JACKIN_AGENT"));
@@ -738,8 +499,6 @@ fn derived_image_snapshots_agent_home_defaults() {
             Agent::Grok,
         ],
         None,
-        None,
-        &BTreeMap::new(),
     );
 
     assert!(dockerfile.contains("/jackin/default-home/.claude"));
@@ -765,8 +524,6 @@ fn derived_image_snapshots_only_selected_agent_home_defaults() {
         None,
         &[Agent::Claude],
         None,
-        None,
-        &BTreeMap::new(),
     );
 
     assert!(dockerfile.contains("/jackin/default-home/.claude"));
@@ -782,114 +539,6 @@ fn derived_image_snapshots_only_selected_agent_home_defaults() {
             "selected Claude image should not snapshot sibling home {path}: {dockerfile}"
         );
     }
-}
-
-#[test]
-fn renders_claude_plugin_installs_after_claude_cli() {
-    let config = jackin_core::manifest::ClaudeConfig {
-        model: None,
-        marketplaces: vec![jackin_core::manifest::ClaudeMarketplaceConfig {
-            source: "obra/superpowers-marketplace".to_owned(),
-            sparse: vec!["plugins".to_owned(), ".claude-plugin".to_owned()],
-        }],
-        plugins: vec![
-            "superpowers@superpowers-marketplace".to_owned(),
-            "quote'plugin@market".to_owned(),
-        ],
-        providers: std::collections::BTreeMap::new(),
-    };
-    let dockerfile = render_derived_dockerfile(
-        "FROM projectjackin/construct:0.1-trixie\n",
-        None,
-        &[Agent::Claude],
-        Some(&config),
-        None,
-        &BTreeMap::new(),
-    );
-
-    let block_pos = dockerfile
-        .find(&Agent::Claude.install_block(&default_agent_binary_path(Agent::Claude)))
-        .unwrap();
-    let official_pos = dockerfile
-        .find("claude plugin marketplace add anthropics/claude-plugins-official || true")
-        .unwrap();
-    let custom_pos = dockerfile
-            .find("claude plugin marketplace add 'obra/superpowers-marketplace' --sparse 'plugins' '.claude-plugin'")
-            .unwrap();
-    let plugin_pos = dockerfile
-        .find("claude plugin install 'superpowers@superpowers-marketplace'")
-        .unwrap();
-
-    assert!(block_pos < official_pos);
-    assert!(official_pos < custom_pos);
-    assert!(custom_pos < plugin_pos);
-    assert!(dockerfile.contains("claude plugin install 'quote'\"'\"'plugin@market'"));
-    assert!(dockerfile.contains("RUN --mount=type=cache,id=jackin-claude-plugin-bundle-"));
-    assert_eq!(
-        dockerfile
-            .matches("id=jackin-claude-plugin-bundle-")
-            .count(),
-        1,
-        "Claude marketplace/plugin prep should use one recipe-keyed bundle cache: {dockerfile}"
-    );
-    assert!(
-        dockerfile.contains(
-            "--mount=type=cache,id=jackin-claude-plugin-home,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked"
-        )
-    );
-    assert!(dockerfile.contains("if [ -f \"$bundle/.jackin-plugin-bundle.done\" ]; then"));
-    assert!(dockerfile.contains("install -d /home/agent/.claude"));
-    assert!(dockerfile.contains("install -d \"$bundle/.claude\""));
-    assert!(dockerfile.contains("cp -a \"$bundle/.claude/.\" /home/agent/.claude/"));
-    assert!(dockerfile.contains("cp -a /home/agent/.claude/. \"$bundle/.claude/\""));
-    assert!(!dockerfile.contains("mkdir -p /home/agent/.claude"));
-    assert!(!dockerfile.contains("mkdir -p \"$bundle/.claude\""));
-    assert_eq!(
-        dockerfile.matches("RUN --mount=type=cache").count(),
-        2,
-        "Claude image should have one cached prefetched install layer and one cached plugin layer: {dockerfile}"
-    );
-    assert_eq!(
-        dockerfile.matches("RUN claude plugin ").count(),
-        0,
-        "Claude plugin prep should not emit one RUN per command: {dockerfile}"
-    );
-}
-
-#[test]
-fn claude_plugin_bundle_cache_key_changes_with_recipe() {
-    let mut config = jackin_core::manifest::ClaudeConfig {
-        model: None,
-        marketplaces: vec![],
-        plugins: vec!["code-review@claude-plugins-official".to_owned()],
-        providers: std::collections::BTreeMap::new(),
-    };
-    let first = render_derived_dockerfile(
-        "FROM projectjackin/construct:0.1-trixie\n",
-        None,
-        &[Agent::Claude],
-        Some(&config),
-        None,
-        &BTreeMap::new(),
-    );
-    config.plugins = vec!["security-review@claude-plugins-official".to_owned()];
-    let second = render_derived_dockerfile(
-        "FROM projectjackin/construct:0.1-trixie\n",
-        None,
-        &[Agent::Claude],
-        Some(&config),
-        None,
-        &BTreeMap::new(),
-    );
-
-    let first_key = extract_block(&first, "id=jackin-claude-plugin-bundle-", ",target=");
-    let second_key = extract_block(&second, "id=jackin-claude-plugin-bundle-", ",target=");
-    assert_eq!(first_key.len(), 64);
-    assert_eq!(second_key.len(), 64);
-    assert_ne!(
-        first_key, second_key,
-        "plugin bundle cache must invalidate on recipe changes"
-    );
 }
 
 #[test]
@@ -1007,8 +656,6 @@ fn renders_derived_dockerfile_with_only_source_hook() {
         }),
         &[Agent::Claude],
         None,
-        None,
-        &BTreeMap::new(),
     );
 
     assert!(dockerfile.contains(
@@ -1047,8 +694,6 @@ fn source_hook_zshenv_shim_is_not_rendered_for_non_source_hooks() {
         }),
         &[Agent::Claude],
         None,
-        None,
-        &BTreeMap::new(),
     );
 
     assert!(dockerfile.contains("/jackin/runtime/hooks/setup-once.sh"));
@@ -1157,73 +802,6 @@ plugins = []
             .is_file()
     );
     assert!(build.dockerfile_path.is_file());
-}
-
-#[test]
-fn creates_selected_agent_context_without_sibling_agent_installs() {
-    let repo = tempdir().unwrap();
-    let claude_bin = repo.path().join("claude-host");
-    let kimi_bin = repo.path().join("kimi-host");
-    std::fs::write(&claude_bin, b"claude").unwrap();
-    std::fs::write(&kimi_bin, b"kimi").unwrap();
-    std::fs::write(
-        repo.path().join("Dockerfile"),
-        "FROM projectjackin/construct:0.1-trixie\n",
-    )
-    .unwrap();
-    std::fs::write(
-        repo.path().join("jackin.role.toml"),
-        r#"version = "v1alpha5"
-dockerfile = "Dockerfile"
-agents = ["claude", "kimi"]
-
-[claude]
-plugins = []
-
-[kimi]
-"#,
-    )
-    .unwrap();
-
-    let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
-    let build = create_derived_build_context_for_agents(
-        repo.path(),
-        &validated,
-        None,
-        None,
-        &BTreeMap::from([
-            (Agent::Claude, AgentInstall::Prefetched(claude_bin)),
-            (Agent::Kimi, AgentInstall::Prefetched(kimi_bin)),
-        ]),
-        &[Agent::Claude],
-    )
-    .unwrap();
-    let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
-
-    assert!(
-        dockerfile
-            .contains(&Agent::Claude.install_block(&default_agent_binary_path(Agent::Claude)))
-    );
-    assert!(!dockerfile.contains(&default_agent_binary_path(Agent::Kimi)));
-    assert!(!dockerfile.contains("kimi --version"));
-    assert!(
-        build
-            .context_dir
-            .join(".jackin-runtime/agent-binaries/claude")
-            .is_file()
-    );
-    assert!(
-        !build
-            .context_dir
-            .join(".jackin-runtime/agent-binaries/kimi")
-            .exists(),
-        "selected Claude context should not stage sibling Kimi binary"
-    );
-    assert!(dockerfile.contains("/jackin/default-home/.claude"));
-    assert!(
-        !dockerfile.contains("/jackin/default-home/.kimi-code"),
-        "selected Claude context should not bake sibling Kimi default-home state: {dockerfile}"
-    );
 }
 
 #[test]
