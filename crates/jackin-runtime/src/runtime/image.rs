@@ -1742,19 +1742,29 @@ async fn ensure_local_role_base(
     }
     args.extend(["-t", &base_name, "-f", &dockerfile_path, &context_dir]);
 
+    // Surface the role-base build on the live build screen exactly like the
+    // derived build: a stage header plus the captured output teed into the
+    // build-log panel the cockpit shows on demand.
+    let mut progress = progress;
+    if let Some(p) = progress.as_deref_mut() {
+        p.stage_progress(LaunchStage::DerivedImage, "Building role base image");
+    }
+    jackin_launch::build_log::begin();
     let build_options = RunOptions {
         capture_stderr: true,
         capture_stdout: true,
         null_stdin: true,
         stream_captured_output: should_stream_build_output(debug),
+        tee_to_build_log: true,
         extra_env: docker_build_env(github_token.is_some()),
         ..RunOptions::default()
     };
     let build_future = runner.run("docker", &args, None, &build_options);
-    let build_result = match progress {
+    let build_result = match progress.as_deref() {
         Some(p) => p.while_waiting(build_future).await,
         None => build_future.await,
     };
+    jackin_launch::build_log::end();
     jackin_diagnostics::active_timing_done(
         "derived image",
         "build_role_base",
@@ -1764,6 +1774,7 @@ async fn ensure_local_role_base(
             Some("error")
         },
     );
+    emit_docker_build_step_diagnostics();
     build_result?;
     Ok(base_name)
 }
