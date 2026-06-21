@@ -94,13 +94,27 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
         // Parent dir 0o700 so only the owner can list/connect. The
         // socket file itself gets 0o600 after bind, but on a system
         // where the parent dir is world-x an attacker can still
-        // enumerate the path. Lock both. A chmod failure here is a
-        // security regression: refuse to bind rather than continue
-        // with a wider-than-intended attack surface. Operators on
-        // exotic filesystems (NFS without owner perms) get an
-        // actionable error instead of silent downgrade.
-        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
-            .with_context(|| format!("locking socket parent {} to 0o700", parent.display()))?;
+        // enumerate the path. Lock both where possible.
+        //
+        // EACCES is tolerated: the host bind-mounts this dir owned by
+        // the host user (UID ≠ container UID 1000 since usermod was
+        // removed), so the capsule cannot chmod it. The 0o777 host
+        // mode lets the container write into it; the socket file's
+        // 0o600 still enforces owner-only connections.
+        match std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                crate::clog!(
+                    "socket: {}: cannot lock to 0o700 (not owner); relying on socket-file 0o600",
+                    parent.display()
+                );
+            }
+            Err(e) => {
+                return Err(e).with_context(|| {
+                    format!("locking socket parent {} to 0o700", parent.display())
+                });
+            }
+        }
     }
 
     let listener = UnixListener::bind(path)?;
@@ -108,8 +122,8 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
     // process that shares the agent uid (and any process running as a
     // different uid if the umask is generous) can connect and inject
     // `ClientFrame::Input` straight into the focused PTY. The attach
-    // channel has no authentication beyond file-mode. Same hard-error
-    // policy as the parent dir above.
+    // channel has no authentication beyond file-mode. Hard error: the
+    // capsule always owns the socket file it just created.
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
         .with_context(|| format!("locking socket {} to 0o600", path.display()))?;
     let (tx, rx) = mpsc::unbounded_channel();
