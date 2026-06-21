@@ -75,12 +75,6 @@ pub(super) const LABEL_IMAGE_RECIPE_HASH: &str = "jackin.image.recipe.hash";
 /// changes invalidate old labels with a clear reason.
 pub(super) const LABEL_IMAGE_RECIPE_VERSION: &str = "jackin.image.recipe.version";
 
-/// Diagnostic image label recording the selected agent version when the host
-/// downloaded a known release before building the derived image. This is not a
-/// reuse authority because checking latest release metadata would put network
-/// freshness back on the warm foreground path.
-pub(super) const LABEL_IMAGE_SELECTED_AGENT_VERSION: &str = "jackin.selected_agent_version";
-
 /// Format a human-friendly role name from a container name and its display label.
 ///
 /// Examples:

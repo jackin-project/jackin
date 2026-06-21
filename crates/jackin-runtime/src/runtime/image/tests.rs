@@ -208,7 +208,7 @@ fn dockerfile_role_sha_detection_only_requests_declared_arg() {
 }
 
 #[test]
-fn selected_agent_version_label_uses_prefetched_metadata_only() {
+fn agent_version_labels_emit_one_per_prefetched_agent() {
     let runtime_binaries = PreparedRuntimeBinaries {
         agent_installs: BTreeMap::from([
             (
@@ -217,18 +217,19 @@ fn selected_agent_version_label_uses_prefetched_metadata_only() {
             ),
             (Agent::Kimi, AgentInstall::ScriptFallback),
         ]),
-        prefetched_agent_versions: BTreeMap::from([(Agent::Claude, "2.1.91".to_owned())]),
+        prefetched_agent_versions: BTreeMap::from([
+            (Agent::Claude, "2.1.91".to_owned()),
+            (Agent::Grok, "0.2.59".to_owned()),
+        ]),
         jackin_capsule_src: "/tmp/jackin-capsule".to_owned(),
     };
 
-    assert_eq!(
-        selected_agent_version_label(&runtime_binaries, Agent::Claude),
-        Some("jackin.selected_agent_version=2.1.91".to_owned())
-    );
-    assert_eq!(
-        selected_agent_version_label(&runtime_binaries, Agent::Kimi),
-        None
-    );
+    // One `jackin.agent.<slug>.version` label per prefetched agent; an agent with
+    // no prefetched version (Kimi here) gets none.
+    let labels = agent_version_labels(&runtime_binaries);
+    assert!(labels.contains(&"jackin.agent.claude.version=2.1.91".to_owned()));
+    assert!(labels.contains(&"jackin.agent.grok.version=0.2.59".to_owned()));
+    assert_eq!(labels.len(), 2);
 }
 
 #[tokio::test]
@@ -777,11 +778,6 @@ plugins = []
     );
 
     assert_eq!(
-        claude_first_labels.get(LABEL_IMAGE_RECIPE_SUPPORTED_AGENTS),
-        kimi_first_labels.get(LABEL_IMAGE_RECIPE_SUPPORTED_AGENTS),
-        "same supported-agent set must not invalidate solely because manifest order changed"
-    );
-    assert_eq!(
         claude_first_labels.get(LABEL_IMAGE_RECIPE_HASH),
         kimi_first_labels.get(LABEL_IMAGE_RECIPE_HASH),
         "recipe hash should be stable for same supported-agent set"
@@ -945,33 +941,6 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
         "0",
     );
     labels.insert(
-        LABEL_IMAGE_RECIPE_BASE_IMAGE.to_owned(),
-        "projectjackin/old:latest".to_owned(),
-    );
-    let expected = expected_image_recipe_for_test(
-        &cached_repo,
-        &validated_repo,
-        Agent::Claude,
-        Some("abc123"),
-        None,
-        None,
-        "0",
-    );
-    assert_eq!(
-        classify_image_labels(&labels, &[expected]),
-        Some(ImageInvalidationReason::BaseImageChanged)
-    );
-
-    let mut labels = image_recipe_label_map_for_test(
-        &cached_repo,
-        &validated_repo,
-        Agent::Claude,
-        Some("abc123"),
-        None,
-        None,
-        "0",
-    );
-    labels.insert(
         LABEL_IMAGE_CONSTRUCT.to_owned(),
         "projectjackin/old-construct:latest".to_owned(),
     );
@@ -989,42 +958,21 @@ fn image_label_classifier_reports_precise_invalidation_reasons() {
         Some(ImageInvalidationReason::ConstructImageChanged)
     );
 
+    // Only the minimal kept labels report a precise, component-specific reason.
+    // Every other recipe input now invalidates via the master recipe hash
+    // (RecipeHashChanged) — see `recipe_diagnostic_labels`.
     for (label, reason) in [
         (
             LABEL_IMAGE_ROLE_GIT_SHA,
             ImageInvalidationReason::RoleGitShaChanged,
         ),
         (
-            LABEL_IMAGE_RECIPE_ROLE_SOURCE_REF,
-            ImageInvalidationReason::RoleSourceRefChanged,
+            LABEL_IMAGE_MANIFEST_VERSION,
+            ImageInvalidationReason::ManifestVersionChanged,
         ),
         (
-            LABEL_IMAGE_RECIPE_GENERATED_RUNTIME,
-            ImageInvalidationReason::GeneratedRuntimeChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_SUPPORTED_AGENTS,
-            ImageInvalidationReason::SupportedAgentsChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_CACHE_BUST,
-            ImageInvalidationReason::CacheBustChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_CAPSULE_VERSION,
+            LABEL_IMAGE_CAPSULE_VERSION,
             ImageInvalidationReason::CapsuleVersionChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_HOOKS,
-            ImageInvalidationReason::HooksHashChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_CLAUDE_PLUGIN,
-            ImageInvalidationReason::ClaudePluginRecipeChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_HOST_IDENTITY_STRATEGY,
-            ImageInvalidationReason::HostIdentityStrategyChanged,
         ),
     ] {
         let mut labels = image_recipe_label_map_for_test(
@@ -1072,11 +1020,6 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
         None,
         "0",
     );
-    let mut labels = labels;
-    labels.insert(
-        LABEL_IMAGE_SELECTED_AGENT_VERSION.to_owned(),
-        "2.1.91".to_owned(),
-    );
     let docker = FakeDockerClient::default();
     docker
         .list_image_tags_queue
@@ -1105,7 +1048,6 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
         decision,
         ImageDecision::Reuse {
             image: image_name(&selector, Some("abc123")),
-            selected_agent_version: Some("2.1.91".to_owned()),
         }
     );
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
@@ -1114,8 +1056,7 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
             && diagnostics.contains("reusing derived image")
             && diagnostics.contains("recipe_hash_match")
             && diagnostics.contains("prepare_runtime_binaries")
-            && diagnostics.contains("selected_agent_version_probe")
-            && diagnostics.contains("2.1.91"),
+            && diagnostics.contains("selected_agent_version_probe"),
         "reuse decision must be visible in diagnostics: {diagnostics}"
     );
 }
@@ -1471,7 +1412,6 @@ plugins = []
         decision,
         ImageDecision::RefreshInBackground {
             image,
-            selected_agent_version: None,
             reason: ImageInvalidationReason::PublishedImageStale,
         }
     );
@@ -1728,7 +1668,7 @@ preflight = "hooks/preflight.sh"
     assert_eq!(
         decision,
         ImageDecision::BuildFromWorkspace {
-            reason: ImageInvalidationReason::HooksHashChanged,
+            reason: ImageInvalidationReason::RecipeHashChanged,
             role_git_sha: Some("abc123".to_owned()),
         }
     );
@@ -1778,13 +1718,7 @@ async fn branch_override_uses_branch_tag_and_recipe_ref() {
     .await
     .unwrap();
 
-    assert_eq!(
-        decision,
-        ImageDecision::Reuse {
-            image,
-            selected_agent_version: None,
-        }
-    );
+    assert_eq!(decision, ImageDecision::Reuse { image });
 }
 
 #[tokio::test]
@@ -1944,7 +1878,7 @@ async fn decide_agent_image_rebuilds_when_role_source_ref_has_changed() {
     assert_eq!(
         decision,
         ImageDecision::BuildFromWorkspace {
-            reason: ImageInvalidationReason::RoleSourceRefChanged,
+            reason: ImageInvalidationReason::RecipeHashChanged,
             role_git_sha: Some("abc123".to_owned()),
         }
     );
@@ -1994,60 +1928,6 @@ async fn decide_agent_image_reuses_when_only_host_uid_has_changed() {
         decision,
         ImageDecision::Reuse {
             image: image_name(&selector, Some("abc123")),
-            selected_agent_version: None,
-        }
-    );
-}
-
-#[tokio::test]
-async fn decide_agent_image_rebuilds_when_host_identity_strategy_has_changed() {
-    let _guard = rich_surface_test_guard();
-    let temp = tempfile::tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    let selector = RoleSelector::new(None, "agent-smith");
-    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
-    let mut labels = image_recipe_label_map_for_test(
-        &cached_repo,
-        &validated_repo,
-        Agent::Claude,
-        Some("abc123"),
-        None,
-        None,
-        "0",
-    );
-    labels.insert(
-        LABEL_IMAGE_RECIPE_HOST_IDENTITY_STRATEGY.to_owned(),
-        "uid-gid-remap".to_owned(),
-    );
-    let docker = FakeDockerClient::default();
-    docker
-        .list_image_tags_queue
-        .borrow_mut()
-        .push_back(vec![image_name(&selector, None)]);
-    docker
-        .inspect_image_labels_queue
-        .borrow_mut()
-        .push_back(labels);
-    let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
-
-    let decision = decide_role_image(
-        &paths,
-        &selector,
-        &cached_repo,
-        &validated_repo,
-        false,
-        None,
-        &docker,
-        &mut runner,
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(
-        decision,
-        ImageDecision::BuildFromWorkspace {
-            reason: ImageInvalidationReason::HostIdentityStrategyChanged,
-            role_git_sha: Some("abc123".to_owned()),
         }
     );
 }
@@ -2104,9 +1984,12 @@ async fn decide_agent_image_rebuild_reason_is_emitted_in_diagnostics() {
         None,
         "0",
     );
+    // Tamper the master recipe hash to force a mismatch. Component inputs
+    // (hooks, plugins, etc.) no longer carry their own labels — they invalidate
+    // through this hash, surfacing as the generic `recipe_hash_changed` reason.
     labels.insert(
-        LABEL_IMAGE_RECIPE_HOOKS.to_owned(),
-        "this-is-a-stale-hook-hash".to_owned(),
+        LABEL_IMAGE_RECIPE_HASH.to_owned(),
+        "this-is-a-stale-recipe-hash".to_owned(),
     );
     let docker = FakeDockerClient::default();
     docker
@@ -2134,17 +2017,17 @@ async fn decide_agent_image_rebuild_reason_is_emitted_in_diagnostics() {
 
     match decision {
         ImageDecision::BuildFromWorkspace {
-            reason: ImageInvalidationReason::HooksHashChanged,
+            reason: ImageInvalidationReason::RecipeHashChanged,
             role_git_sha: Some(sha),
         } => {
             assert_eq!(sha, "abc123");
         }
-        _ => panic!("expected hook-hash mismatch to trigger HooksHashChanged"),
+        _ => panic!("expected recipe-hash mismatch to trigger RecipeHashChanged"),
     }
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         diagnostics.contains("\"kind\":\"image_cache_miss\"")
-            && diagnostics.contains("hooks_hash_changed"),
+            && diagnostics.contains("recipe_hash_changed"),
         "rebuild decision should be explained in diagnostics: {diagnostics}"
     );
 }

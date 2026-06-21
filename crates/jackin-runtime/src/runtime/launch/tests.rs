@@ -2795,7 +2795,9 @@ plugins = []
     assert!(!build_call.contains("--build-arg JACKIN_HOST_UID="));
     assert!(!build_call.contains("--build-arg JACKIN_HOST_GID="));
     assert!(!build_call.contains("--build-arg ROLE_GIT_SHA="));
-    assert!(build_call.contains("--label jackin.recipe.host.identity.strategy="));
+    // The host-identity strategy is now folded into the master recipe hash
+    // (no standalone label); its presence proves the recipe was stamped.
+    assert!(build_call.contains("--label jackin.image.recipe.hash="));
     let recorded = runner.recorded.join("\n");
     assert!(
         !recorded.contains("gh auth token"),
@@ -2877,16 +2879,18 @@ plugins = []
         "workspace mode without --rebuild must not pass --pull"
     );
     assert!(
-        build_cmd.contains("--label jackin.image.recipe.version=v2"),
+        build_cmd.contains("--label jackin.image.recipe.version=v3"),
         "workspace build must stamp recipe version label; got: {build_cmd}"
     );
     assert!(
         build_cmd.contains("--label jackin.image.recipe.hash="),
         "workspace build must stamp recipe hash label; got: {build_cmd}"
     );
+    // Agent-independence is now captured inside the recipe hash (the
+    // supported-agent set is a recipe input) rather than a standalone label.
     assert!(
-        build_cmd.contains("--label jackin.recipe.supported.agents="),
-        "workspace build must stamp the agent-independent supported-agents label; got: {build_cmd}"
+        build_cmd.contains("--label jackin.manifest.version="),
+        "workspace build must stamp the manifest version label; got: {build_cmd}"
     );
 }
 

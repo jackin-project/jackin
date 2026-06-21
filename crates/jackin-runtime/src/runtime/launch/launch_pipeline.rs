@@ -948,15 +948,12 @@ pub(crate) async fn load_role_with(
                 | crate::runtime::image::ImageDecision::RefreshInBackground { .. }
             ) => {
                 let (image, materialization_reason) = match decision {
-                    crate::runtime::image::ImageDecision::Reuse {
-                        image,
-                        selected_agent_version: _,
-                    } => (image, "recipe_hash_match"),
-                    crate::runtime::image::ImageDecision::RefreshInBackground {
-                        image,
-                        selected_agent_version: _,
-                        reason,
-                    } => (image, reason.as_str()),
+                    crate::runtime::image::ImageDecision::Reuse { image } => {
+                        (image, "recipe_hash_match")
+                    }
+                    crate::runtime::image::ImageDecision::RefreshInBackground { image, reason } => {
+                        (image, reason.as_str())
+                    }
                     _ => unreachable!(),
                 };
                 super::emit_image_materialization_plan(

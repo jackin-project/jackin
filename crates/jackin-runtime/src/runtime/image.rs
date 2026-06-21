@@ -32,23 +32,26 @@ use std::path::PathBuf;
 
 use super::naming::{
     LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, LABEL_IMAGE_RECIPE_HASH,
-    LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, LABEL_IMAGE_SELECTED_AGENT_VERSION,
-    image_name, image_name_for_branch,
+    LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, image_name, image_name_for_branch,
+    short_git_sha,
 };
 use super::progress::{LaunchProgress, LaunchStage};
 #[cfg(not(test))]
 use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
-const IMAGE_RECIPE_VERSION: &str = "v2";
-const LABEL_IMAGE_RECIPE_ROLE_SOURCE_REF: &str = "jackin.recipe.role.source.ref";
-const LABEL_IMAGE_RECIPE_BASE_IMAGE: &str = "jackin.recipe.base.image";
-const LABEL_IMAGE_RECIPE_GENERATED_RUNTIME: &str = "jackin.recipe.generated.runtime.hash";
-const LABEL_IMAGE_RECIPE_SUPPORTED_AGENTS: &str = "jackin.recipe.supported.agents";
-const LABEL_IMAGE_RECIPE_CACHE_BUST: &str = "jackin.recipe.cache.bust";
-const LABEL_IMAGE_RECIPE_CAPSULE_VERSION: &str = "jackin.recipe.capsule.version";
-const LABEL_IMAGE_RECIPE_HOOKS: &str = "jackin.recipe.hooks.hash";
-const LABEL_IMAGE_RECIPE_CLAUDE_PLUGIN: &str = "jackin.recipe.claude.plugin.hash";
-const LABEL_IMAGE_RECIPE_HOST_IDENTITY_STRATEGY: &str = "jackin.recipe.host.identity.strategy";
+// Recipe schema version. Bumped v2 -> v3 with the label overhaul: dotted keys,
+// short role SHA, `jackin.manifest.version`, per-agent `jackin.agent.*.version`
+// labels, and the dropped opaque `jackin.recipe.*` component labels. Old (v2)
+// images fail this gate and rebuild once.
+const IMAGE_RECIPE_VERSION: &str = "v3";
+/// jackin-capsule version baked into the derived image.
+const LABEL_IMAGE_CAPSULE_VERSION: &str = "jackin.capsule.version";
+/// `jackin.role.toml` schema version (`version = "v1alpha4"`).
+const LABEL_IMAGE_MANIFEST_VERSION: &str = "jackin.manifest.version";
+/// Prefix for per-agent baked-binary version labels: `jackin.agent.<slug>.version`.
+/// Records the version of each agent binary jackin downloaded/cached locally and
+/// baked into the image. Diagnostic — not part of the recipe hash.
+const LABEL_IMAGE_AGENT_VERSION_PREFIX: &str = "jackin.agent.";
 const HOST_IDENTITY_STRATEGY: &str = "construct-agent-user-v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,16 +63,9 @@ pub(super) enum ImageInvalidationReason {
     RecipeVersionChanged,
     RecipeHashChanged,
     RoleGitShaChanged,
-    RoleSourceRefChanged,
-    BaseImageChanged,
+    ManifestVersionChanged,
     ConstructImageChanged,
-    GeneratedRuntimeChanged,
-    SupportedAgentsChanged,
-    CacheBustChanged,
     CapsuleVersionChanged,
-    HooksHashChanged,
-    ClaudePluginRecipeChanged,
-    HostIdentityStrategyChanged,
     PublishedImageStale,
     InspectFailed,
 }
@@ -84,16 +80,9 @@ impl ImageInvalidationReason {
             Self::RecipeVersionChanged => "recipe_version_changed",
             Self::RecipeHashChanged => "recipe_hash_changed",
             Self::RoleGitShaChanged => "role_git_sha_changed",
-            Self::RoleSourceRefChanged => "role_source_ref_changed",
-            Self::BaseImageChanged => "base_image_changed",
+            Self::ManifestVersionChanged => "manifest_version_changed",
             Self::ConstructImageChanged => "construct_image_changed",
-            Self::GeneratedRuntimeChanged => "generated_runtime_changed",
-            Self::SupportedAgentsChanged => "supported_agents_changed",
-            Self::CacheBustChanged => "cache_bust_changed",
             Self::CapsuleVersionChanged => "capsule_version_changed",
-            Self::HooksHashChanged => "hooks_hash_changed",
-            Self::ClaudePluginRecipeChanged => "claude_plugin_recipe_changed",
-            Self::HostIdentityStrategyChanged => "host_identity_strategy_changed",
             Self::PublishedImageStale => "published_image_stale",
             Self::InspectFailed => "inspect_failed",
         }
@@ -104,11 +93,9 @@ impl ImageInvalidationReason {
 pub(super) enum ImageDecision {
     Reuse {
         image: String,
-        selected_agent_version: Option<String>,
     },
     RefreshInBackground {
         image: String,
-        selected_agent_version: Option<String>,
         reason: ImageInvalidationReason,
     },
     BuildFromPublished {
@@ -125,6 +112,9 @@ pub(super) enum ImageDecision {
 #[derive(Debug, Clone, Serialize)]
 struct ImageRecipe {
     version: &'static str,
+    /// `jackin.role.toml` schema version (e.g. `v1alpha4`). A manifest-schema
+    /// bump changes what jackin generates, so it is a recipe input.
+    manifest_version: String,
     role_git_sha: String,
     role_source_ref: Option<String>,
     base_image: Option<String>,
@@ -434,29 +424,21 @@ pub(super) async fn decide_role_image(
 
     match classify_image_labels(&labels, &expected_recipes) {
         None => {
-            let selected_agent_version = labels.get(LABEL_IMAGE_SELECTED_AGENT_VERSION).cloned();
             if let Some(reason) = refresh_reason {
                 jackin_diagnostics::debug_log!(
                     "image",
                     "reusing derived image {image}; foreground recipe matches, background refresh needed: {}",
                     reason.as_str()
                 );
-                emit_image_refresh_background(&image, selected_agent_version.as_deref(), reason);
-                Ok(ImageDecision::RefreshInBackground {
-                    selected_agent_version,
-                    image,
-                    reason,
-                })
+                emit_image_refresh_background(&image, reason);
+                Ok(ImageDecision::RefreshInBackground { image, reason })
             } else {
                 jackin_diagnostics::debug_log!(
                     "image",
                     "reusing derived image {image}; recipe hash matches one current recipe"
                 );
-                emit_image_reuse(&image, selected_agent_version.as_deref());
-                Ok(ImageDecision::Reuse {
-                    selected_agent_version,
-                    image,
-                })
+                emit_image_reuse(&image);
+                Ok(ImageDecision::Reuse { image })
             }
         }
         Some(reason) => {
@@ -535,7 +517,10 @@ fn build_image_recipe_with_construct_image(
 
     Ok(ImageRecipe {
         version: IMAGE_RECIPE_VERSION,
-        role_git_sha: head_sha.unwrap_or("unknown").to_owned(),
+        manifest_version: validated_repo.manifest.version.clone(),
+        // Short (7-char) role-repo commit SHA — matches the image tag and the
+        // `jackin.role.git.sha` label form.
+        role_git_sha: head_sha.map_or("unknown", short_git_sha).to_owned(),
         role_source_ref: branch_override.map(ToOwned::to_owned),
         base_image: base_image_override.map(ToOwned::to_owned),
         construct_image,
@@ -745,7 +730,7 @@ fn emit_image_decision(image: &str, reason: ImageInvalidationReason) {
     }
 }
 
-fn emit_image_reuse(image: &str, selected_agent_version: Option<&str>) {
+fn emit_image_reuse(image: &str) {
     if let Some(run) = jackin_diagnostics::active_run() {
         let detail = serde_json::json!({
             "reason": "recipe_hash_match",
@@ -756,7 +741,6 @@ fn emit_image_reuse(image: &str, selected_agent_version: Option<&str>) {
                 "docker_build",
                 "selected_agent_version_probe"
             ],
-            "selected_agent_version": selected_agent_version,
         })
         .to_string();
         run.stage(
@@ -768,12 +752,8 @@ fn emit_image_reuse(image: &str, selected_agent_version: Option<&str>) {
     }
 }
 
-fn emit_image_refresh_background(
-    image: &str,
-    selected_agent_version: Option<&str>,
-    reason: ImageInvalidationReason,
-) {
-    emit_image_reuse(image, selected_agent_version);
+fn emit_image_refresh_background(image: &str, reason: ImageInvalidationReason) {
+    emit_image_reuse(image);
     if let Some(run) = jackin_diagnostics::active_run() {
         run.stage(
             "image_refresh_background",
@@ -797,19 +777,33 @@ fn recipe_labels(recipe: &ImageRecipe, recipe_hash: &str) -> Vec<String> {
     labels
 }
 
-fn selected_agent_version_label(
-    runtime_binaries: &PreparedRuntimeBinaries,
-    agent: Agent,
-) -> Option<String> {
+/// Per-agent baked-binary version labels: one `jackin.agent.<slug>.version=<v>`
+/// for each agent whose binary jackin prefetched (downloaded + cached locally)
+/// and baked into the image. Diagnostic — records exactly which version of each
+/// agent the image carries; not part of the recipe hash.
+fn agent_version_labels(runtime_binaries: &PreparedRuntimeBinaries) -> Vec<String> {
     runtime_binaries
         .prefetched_agent_versions
-        .get(&agent)
-        .map(|version| format!("{LABEL_IMAGE_SELECTED_AGENT_VERSION}={version}"))
+        .iter()
+        .map(|(agent, version)| {
+            format!(
+                "{LABEL_IMAGE_AGENT_VERSION_PREFIX}{}.version={version}",
+                agent.slug()
+            )
+        })
+        .collect()
 }
 
 fn recipe_diagnostic_labels(
     recipe: &ImageRecipe,
 ) -> Vec<(&'static str, String, ImageInvalidationReason)> {
+    // Minimal, human-meaningful label set. Every other recipe input
+    // (role_source_ref, base_image, generated_runtime_hash, supported_agents,
+    // cache_bust, hooks_hash, claude_plugin_recipe_hash, host_identity_strategy)
+    // still lives inside `ImageRecipe` and so still invalidates the image via
+    // the master `jackin.image.recipe.hash` — it just no longer gets its own
+    // opaque diagnostic label. A mismatch on those surfaces as the generic
+    // `RecipeHashChanged` reason rather than a component-specific one.
     vec![
         (
             LABEL_IMAGE_ROLE_GIT_SHA,
@@ -817,14 +811,9 @@ fn recipe_diagnostic_labels(
             ImageInvalidationReason::RoleGitShaChanged,
         ),
         (
-            LABEL_IMAGE_RECIPE_ROLE_SOURCE_REF,
-            recipe.role_source_ref.clone().unwrap_or_default(),
-            ImageInvalidationReason::RoleSourceRefChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_BASE_IMAGE,
-            recipe.base_image.clone().unwrap_or_default(),
-            ImageInvalidationReason::BaseImageChanged,
+            LABEL_IMAGE_MANIFEST_VERSION,
+            recipe.manifest_version.clone(),
+            ImageInvalidationReason::ManifestVersionChanged,
         ),
         (
             LABEL_IMAGE_CONSTRUCT,
@@ -832,39 +821,9 @@ fn recipe_diagnostic_labels(
             ImageInvalidationReason::ConstructImageChanged,
         ),
         (
-            LABEL_IMAGE_RECIPE_GENERATED_RUNTIME,
-            recipe.generated_runtime_hash.clone(),
-            ImageInvalidationReason::GeneratedRuntimeChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_SUPPORTED_AGENTS,
-            hash_str(&recipe.supported_agents.join(",")),
-            ImageInvalidationReason::SupportedAgentsChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_CACHE_BUST,
-            recipe.cache_bust.clone(),
-            ImageInvalidationReason::CacheBustChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_CAPSULE_VERSION,
+            LABEL_IMAGE_CAPSULE_VERSION,
             recipe.capsule_version.clone(),
             ImageInvalidationReason::CapsuleVersionChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_HOOKS,
-            recipe.hooks_hash.clone(),
-            ImageInvalidationReason::HooksHashChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_CLAUDE_PLUGIN,
-            recipe.claude_plugin_recipe_hash.clone(),
-            ImageInvalidationReason::ClaudePluginRecipeChanged,
-        ),
-        (
-            LABEL_IMAGE_RECIPE_HOST_IDENTITY_STRATEGY,
-            recipe.host_identity_strategy.to_owned(),
-            ImageInvalidationReason::HostIdentityStrategyChanged,
         ),
     ]
 }
@@ -1850,9 +1809,7 @@ pub(super) async fn build_agent_image(
     )?;
     let recipe_hash = recipe.hash()?;
     let mut recipe_labels = recipe_labels(&recipe, &recipe_hash);
-    if let Some(label) = selected_agent_version_label(&runtime_binaries, agent) {
-        recipe_labels.push(label);
-    }
+    recipe_labels.extend(agent_version_labels(&runtime_binaries));
 
     let mut build_args: Vec<&str> = vec!["build"];
 
