@@ -872,11 +872,14 @@ pub(super) async fn launch_role_runtime(
     run_args.extend_from_slice(&["--label", &image_label]);
     // Host-side bind-mount of the daemon's socket directory. Pre-create
     // host-side so Docker does not materialise the target itself as
-    // root:root 0755. Set 0o777 so the container's `agent` user (UID
-    // 1000, now fixed since usermod was removed) can create files inside
-    // it even though the host user owns the dir. The socket file itself
-    // gets 0o600 from inside the capsule. The same directory carries
-    // Capsule's normalized launch config.
+    // root:root 0755. Set 0o1777 (sticky world-writable, same as /tmp)
+    // so the container's `agent` user (UID 1000, fixed without usermod)
+    // can create jackin.sock even though the host user (UID 1001 on CI)
+    // owns the dir. The sticky bit prevents UID 1000 from deleting
+    // host-owned files (agent.toml). The preferred fix — chown to UID
+    // 1000 — requires root; 0o1777 is the non-root equivalent. The
+    // socket file itself gets 0o600 from inside the capsule. The same
+    // directory carries Capsule's normalized launch config.
     let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
     let capsule_config_contents = toml::to_string(capsule_config)
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
@@ -902,7 +905,7 @@ pub(super) async fn launch_role_runtime(
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(
                 &socket_dir_for_mkdir,
-                std::fs::Permissions::from_mode(0o777),
+                std::fs::Permissions::from_mode(0o1777),
             )?;
         }
         Ok(())

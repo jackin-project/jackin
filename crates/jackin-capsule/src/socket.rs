@@ -96,17 +96,36 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
         // where the parent dir is world-x an attacker can still
         // enumerate the path. Lock both where possible.
         //
-        // EACCES is tolerated: the host bind-mounts this dir owned by
-        // the host user (UID ≠ container UID 1000 since usermod was
-        // removed), so the capsule cannot chmod it. The 0o777 host
-        // mode lets the container write into it; the socket file's
-        // 0o600 still enforces owner-only connections.
+        // EACCES is tolerated when the host owns the dir (UID mismatch
+        // after usermod removal). In that case the host must have set
+        // the sticky bit (0o1777) so other UIDs cannot delete each
+        // other's files inside it. Refuse to bind if the parent is
+        // world/group-writable without sticky — that allows any local
+        // user to replace agent.toml or jackin.sock.
         match std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                let mode = std::fs::symlink_metadata(parent)
+                    .with_context(|| {
+                        format!("stat socket parent {}", parent.display())
+                    })?
+                    .permissions()
+                    .mode();
+                let sticky = mode & 0o1000 != 0;
+                let world_or_group_writable = mode & 0o022 != 0;
+                if world_or_group_writable && !sticky {
+                    anyhow::bail!(
+                        "socket parent {} is writable by others without sticky bit \
+                         (mode {:#o}); refusing to bind — potential file-replacement \
+                         attack; set sticky bit (chmod +t) or use 0o700",
+                        parent.display(),
+                        mode & 0o7777,
+                    );
+                }
                 crate::clog!(
-                    "socket: {}: cannot lock to 0o700 (not owner); relying on socket-file 0o600",
-                    parent.display()
+                    "socket: {}: not owner (mode {:#o}); relying on sticky + socket-file 0o600",
+                    parent.display(),
+                    mode & 0o7777,
                 );
             }
             Err(e) => {
