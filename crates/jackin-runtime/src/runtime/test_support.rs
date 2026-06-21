@@ -201,6 +201,10 @@ pub mod fake_docker {
     pub struct FakeDockerClient {
         pub recorded: std::cell::RefCell<Vec<String>>,
         pub inspect_queue: std::cell::RefCell<std::collections::VecDeque<ContainerState>>,
+        /// Per-container-name inspect overrides, checked before `inspect_queue`.
+        /// Lets a test pin one container's state by name regardless of how many
+        /// other (queue-order-dependent) inspects run first.
+        pub inspect_state_by_name: std::cell::RefCell<HashMap<String, ContainerState>>,
         pub list_containers_queue:
             std::cell::RefCell<std::collections::VecDeque<Vec<ContainerRow>>>,
         pub list_networks_queue: std::cell::RefCell<std::collections::VecDeque<Vec<NetworkRow>>>,
@@ -221,6 +225,7 @@ pub mod fake_docker {
             Self {
                 recorded: std::cell::RefCell::new(Vec::new()),
                 inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
+                inspect_state_by_name: std::cell::RefCell::new(HashMap::new()),
                 list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
                 list_networks_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
                 list_image_tags_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
@@ -338,6 +343,9 @@ pub mod fake_docker {
                     return ContainerState::NotFound;
                 }
                 return ContainerState::InspectUnavailable(msg);
+            }
+            if let Some(state) = self.inspect_state_by_name.borrow().get(name) {
+                return state.clone();
             }
             self.pop_inspect()
         }

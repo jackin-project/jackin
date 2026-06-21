@@ -3765,6 +3765,132 @@ async fn load_agent_skips_unused_github_env_resolution() {
 }
 
 #[tokio::test]
+async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
+    // Regression for the adopted-prewarm-DinD leak: `adopt_prewarmed_dind_sidecar`
+    // takes over a *running* prewarmed DinD container/network/volume and deletes
+    // its on-disk state, so nothing re-adopts it. A fallible preflight after
+    // adoption (here Token-mode GitHub auth with no resolvable token) must tear
+    // those resources down rather than orphan a live privileged container.
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    // Token mode with an empty env => GH_TOKEN resolves to None =>
+    // `verify_github_token_present` fails, after adoption.
+    config.github = Some(jackin_config::GithubAuthConfig {
+        auth_forward: jackin_config::GithubAuthMode::Token,
+        env: std::collections::BTreeMap::new(),
+    });
+
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+
+    // Seed a kept, running prewarmed DinD so the launch adopts it.
+    let prewarm_dind = "jk-prewarm-b4-dind";
+    let prewarm_net = "jk-prewarm-b4-net";
+    let prewarm_certs = "jk-prewarm-b4-certs";
+    write_prewarmed_dind_state(
+        &paths,
+        &DindSidecarPrewarm {
+            dind: prewarm_dind.to_owned(),
+            network: prewarm_net.to_owned(),
+            certs_volume: prewarm_certs.to_owned(),
+            ready_ms: 12,
+            kept: true,
+        },
+    )
+    .unwrap();
+
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    // Image-reuse path (no build needed to reach adoption).
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    // Adoption: pin the prewarmed dind to Running by name (the restore/claim
+    // inspects that run first hit the default NotFound), and give its network
+    // the prewarm labels so adoption accepts it.
+    docker
+        .inspect_state_by_name
+        .borrow_mut()
+        .insert(prewarm_dind.to_owned(), ContainerState::Running);
+    let mut network_labels = HashMap::new();
+    network_labels.insert("jackin.kind".to_owned(), "prewarm-dind".to_owned());
+    network_labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
+    docker.inspect_network_queue.borrow_mut().push_back(Some(
+        jackin_docker::docker_client::NetworkRow {
+            name: prewarm_net.to_owned(),
+            labels: network_labels,
+        },
+    ));
+    docker
+        .exec_capture_queue
+        .borrow_mut()
+        .push_back(String::new());
+    docker
+        .exec_capture_queue
+        .borrow_mut()
+        .push_back(String::new());
+
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        agent: Some(agent),
+        ..LoadOptions::default()
+    };
+
+    let result = load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "missing Token-mode GitHub token must fail the launch"
+    );
+    let recorded = docker.recorded.borrow();
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == &format!("docker rm -f {prewarm_dind}")),
+        "adopted prewarm DinD must be torn down on post-adoption failure; recorded: {recorded:?}"
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == &format!("docker network rm {prewarm_net}")),
+        "adopted prewarm network must be torn down; recorded: {recorded:?}"
+    );
+}
+
+#[tokio::test]
 async fn load_agent_attaches_running_current_instance_before_credentials_and_build() {
     struct FailingOpRunner;
 

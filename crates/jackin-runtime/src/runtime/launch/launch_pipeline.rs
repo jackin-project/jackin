@@ -1104,6 +1104,26 @@ pub(crate) async fn load_role_with(
         let network = resources.network.clone();
         let dind = resources.dind_container.clone();
         let certs_volume = resources.certs_volume.clone();
+        // Arm cleanup immediately after adoption, before any fallible step.
+        // When a prewarmed DinD sidecar was adopted, its container, network,
+        // and certs volume are already *running* and the on-disk prewarm state
+        // was deleted (`adopt_prewarmed_dind_sidecar` calls
+        // `remove_prewarmed_dind_state`), so nothing re-adopts them. Any early
+        // `?`/`return Err` between here and the start of the launch proper
+        // (status write, credential preflights, GitHub-token preflight — a
+        // missing token is a routine operator error) would otherwise orphan a
+        // live privileged container with no record. `LoadCleanup::run` is
+        // best-effort: removing the not-yet-created role container is a no-op.
+        // For a fresh (non-adopted) launch the sidecar is not started until
+        // after this point, so there is nothing to leak in the gap.
+        let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
+        let mut cleanup = super::LoadCleanup::new(
+            container_name.clone(),
+            dind.clone(),
+            certs_volume.clone(),
+            network.clone(),
+            socket_dir,
+        );
         let host_workdir_fingerprint = super::manifest_host_workdir_fingerprint(workspace);
         let new_manifest = InstanceManifest::new(NewInstanceManifest {
             container_base: &container_name,
@@ -1129,23 +1149,31 @@ pub(crate) async fn load_role_with(
         // "manifest unreadable" (must surface — the operator either
         // repairs the file or purges the recorded state).
         let mut instance_manifest = if restoring {
-            InstanceManifest::read_optional(&container_state)
-                .with_context(|| {
-                    format!(
-                        "restoring container `{container_name}`: existing manifest is unreadable; \
-                         repair or remove the file, or run `jackin eject {container_name} --purge` to discard the recorded identity"
-                    )
-                })?
-                .unwrap_or(new_manifest)
+            match InstanceManifest::read_optional(&container_state).with_context(|| {
+                format!(
+                    "restoring container `{container_name}`: existing manifest is unreadable; \
+                     repair or remove the file, or run `jackin eject {container_name} --purge` to discard the recorded identity"
+                )
+            }) {
+                Ok(Some(existing)) => existing,
+                Ok(None) => new_manifest,
+                Err(error) => {
+                    cleanup.run(docker).await;
+                    return Err(error);
+                }
+            }
         } else {
             new_manifest
         };
-        super::write_instance_status(
+        if let Err(error) = super::write_instance_status(
             paths,
             &container_state,
             &mut instance_manifest,
             InstanceStatus::Active,
-        )?;
+        ) {
+            cleanup.run(docker).await;
+            return Err(error);
+        }
 
         // Modes that inject a credential require the well-known env
         // var to resolve to a non-empty value; fail fast with an
@@ -1165,7 +1193,7 @@ pub(crate) async fn load_role_with(
             .map_or_else(Vec::new, |env_var| {
                 super::build_env_layer_states(config, workspace_name_str, &role_key, env_var)
             });
-        verify_credential_env_present(
+        if let Err(error) = verify_credential_env_present(
             agent,
             auth_mode,
             &operator_env,
@@ -1173,7 +1201,10 @@ pub(crate) async fn load_role_with(
             &env_layers,
             workspace_name_str,
             &role_key,
-        )?;
+        ) {
+            cleanup.run(docker).await;
+            return Err(error.into());
+        }
 
         // Resolve the GitHub-auth axis. Layered like the per-agent
         // resolver but with no agent dimension — `.config/gh/` is
@@ -1221,6 +1252,7 @@ pub(crate) async fn load_role_with(
             }
             Err(error) => {
                 jackin_diagnostics::active_timing_done("credentials", "github_env", Some("error"));
+                cleanup.run(docker).await;
                 return Err(error);
             }
         };
@@ -1233,21 +1265,15 @@ pub(crate) async fn load_role_with(
 
         // Token-mode pre-flight: GH_TOKEN must resolve to a non-empty
         // value before we spend time starting DinD.
-        verify_github_token_present(
+        if let Err(error) = verify_github_token_present(
             github_mode,
             github_ctx.token.as_deref(),
             workspace_name_str,
             role_key.as_str(),
-        )?;
-
-        let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
-        let mut cleanup = super::LoadCleanup::new(
-            container_name.clone(),
-            dind.clone(),
-            certs_volume.clone(),
-            network.clone(),
-            socket_dir,
-        );
+        ) {
+            cleanup.run(docker).await;
+            return Err(error);
+        }
 
         // Token/env preflights are complete, so the per-instance sidecar can
         // start while role-state auth is prepared. This preserves fail-fast
@@ -1344,12 +1370,25 @@ pub(crate) async fn load_role_with(
             .map_err(|e| anyhow::anyhow!("RoleState::prepare task panicked: {e}"))?
         };
         let mut role_state_future = std::pin::pin!(role_state_future);
-        let role_state_result = tokio::select! {
-            result = &mut sidecar => {
-                early_sidecar_result = Some(result);
-                (&mut role_state_future).await
+        // Race the overlapped sidecar/auth prep against the cancel token, like
+        // every other long-running launch step (cf. `docker build`). Without
+        // this, Ctrl+C is ignored for the tens of seconds the blocking auth
+        // prep spends in `gh` / the macOS keychain. On cancel, `while_waiting`
+        // returns `LaunchCancelled`, which flows into the `Err` arm below and
+        // runs `cleanup` — tearing down any already-started sidecar.
+        let select_role_state = async {
+            tokio::select! {
+                result = &mut sidecar => {
+                    early_sidecar_result = Some(result);
+                    (&mut role_state_future).await
+                }
+                result = &mut role_state_future => result,
             }
-            result = &mut role_state_future => result,
+        };
+        let role_state_result = if let Some(progress) = steps.progress_mut() {
+            progress.while_waiting(select_role_state).await
+        } else {
+            select_role_state.await
         };
         let (state, _auth_outcome) = match role_state_result {
             Ok(prepared) => {
@@ -1370,7 +1409,13 @@ pub(crate) async fn load_role_with(
                 return Err(error);
             }
         };
-        seed_codex_project_trust(&state, workspace)?;
+        // The sidecar (adopted or freshly started above) is now running, so a
+        // bare `?` here would leak the container/network/volume. Route trust
+        // seeding through cleanup like the role-state and sidecar arms.
+        if let Err(error) = seed_codex_project_trust(&state, workspace) {
+            cleanup.run(docker).await;
+            return Err(error);
+        }
 
         if agent != jackin_core::agent::Agent::Codex {
             let _expiry_days = workspace_name
@@ -1477,6 +1522,10 @@ pub(crate) async fn load_role_with(
                 (&mut sidecar).await
             }
         };
+        // TODO(launch-worktree-leak-on-sidecar-fail): `join!` runs
+        // materialization to completion even if the sidecar already failed, so
+        // a worktree-isolated mount can leave a staged worktree that
+        // `LoadCleanup` does not unstage. See TODO.md "Follow-ups".
         let (sidecar_result, materialize_result) = tokio::join!(sidecar_wait, materialize_wait);
         drop(sidecar);
         if let Some(progress) = steps.progress_mut() {
