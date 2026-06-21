@@ -871,6 +871,16 @@ trusted = true
 }
 
 const fn role_dockerfile() -> &'static str {
+    // The private 0600 .claude backup, owned by the image's baked agent
+    // (UID 1000), propagates into /jackin/default-home/.claude/backups via the
+    // derived default-home snapshot. runtime-setup copies default-home into the
+    // agent's home on first launch; when the container runs as an arbitrary
+    // host UID (docker run --user <host-uid>:0) that file is only readable if
+    // the derived image normalized /jackin/default-home to group 0. This
+    // reproduces the regression where only /home/agent was normalized, so the
+    // arbitrary UID could not read the seed backup and the capsule failed to
+    // attach. Keep the file private (0600) so the test fails closed if the
+    // normalization is dropped.
     r"FROM projectjackin/construct:0.1-trixie
 USER root
 RUN apt-get update && \
@@ -880,6 +890,9 @@ RUN apt-get update && \
            /var/cache/apt/* \
            /tmp/*
 USER agent
+RUN install -d -m 0700 /home/agent/.claude/backups && \
+    printf 'seed' > /home/agent/.claude/backups/.claude.json.backup.e2e && \
+    chmod 0600 /home/agent/.claude/backups/.claude.json.backup.e2e
 "
 }
 
