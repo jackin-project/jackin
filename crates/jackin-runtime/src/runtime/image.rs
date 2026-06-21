@@ -24,7 +24,8 @@ use jackin_docker::docker_client::BollardDockerClient;
 use jackin_docker::docker_client::DockerApi;
 use jackin_image::capsule_binary;
 use jackin_image::derived_image::{
-    AgentInstall, create_derived_build_context_for_agents, render_derived_dockerfile,
+    AgentInstall, create_derived_build_context_for_agents, create_role_base_build_context,
+    render_derived_dockerfile,
 };
 use jackin_image::version_check;
 use jackin_manifest::repo::CachedRepo;
@@ -33,7 +34,7 @@ use std::path::PathBuf;
 use super::naming::{
     LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, LABEL_IMAGE_RECIPE_HASH,
     LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, image_name, image_name_for_branch,
-    short_git_sha,
+    role_base_image_name, short_git_sha,
 };
 use super::progress::{LaunchProgress, LaunchStage};
 #[cfg(not(test))]
@@ -1647,6 +1648,129 @@ fn agent_binary_prepare_summary(
     )
 }
 
+/// Resolve the role's **base** image into a local `jk_<role>__base:<sha>` image
+/// that the derived overlay is built `FROM`.
+///
+/// - `published_base = Some(img)` (the decision found a fresh published image):
+///   pull it and restamp it as the local base (`FROM <img>` + base labels).
+/// - `published_base = None`: build the role Dockerfile locally (construct `FROM`
+///   overridden by `JACKIN_CONSTRUCT_IMAGE` when set), no overlay.
+///
+/// Reused when `jk_<role>__base:<sha>` already exists and its `construct.image`
+/// label matches the current construct — so the heavy role layers are built once
+/// per (role commit, construct) and overlay rebuilds don't touch them.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "threads the same inputs as the build path"
+)]
+async fn ensure_local_role_base(
+    selector: &RoleSelector,
+    branch_override: Option<&str>,
+    head_sha: Option<&str>,
+    cached_repo: &CachedRepo,
+    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
+    published_base: Option<&str>,
+    rebuild: bool,
+    debug: bool,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    progress: Option<&mut LaunchProgress>,
+) -> anyhow::Result<String> {
+    // Fresh published image: derive the overlay directly `FROM` it — no local base
+    // is built or restamped. The decision already verified it is fresh; the derived
+    // build below `--pull`s it.
+    if let Some(published) = published_base {
+        return Ok(published.to_owned());
+    }
+
+    // Published image unusable (missing/outdated) or a custom construct is in play:
+    // build the role base locally so the derived overlay has a `FROM` target.
+    let construct = jackin_manifest::repo_contract::construct_image();
+    let base_name = role_base_image_name(selector, branch_override, head_sha);
+
+    if !rebuild
+        && docker
+            .list_image_tags(&base_name)
+            .await
+            .is_ok_and(|tags| !tags.is_empty())
+        && docker
+            .inspect_image_labels(&base_name)
+            .await
+            .is_ok_and(|labels| {
+                labels.get(LABEL_IMAGE_CONSTRUCT).map(String::as_str) == Some(construct.as_str())
+            })
+    {
+        jackin_diagnostics::debug_log!("image", "reusing local role base {base_name}");
+        return Ok(base_name);
+    }
+
+    jackin_diagnostics::active_timing_started("derived image", "build_role_base", Some(&base_name));
+    let build = create_role_base_build_context(&cached_repo.repo_dir, validated_repo)?;
+    let dockerfile_path = build.dockerfile_path.display().to_string();
+    let context_dir = build.context_dir.display().to_string();
+    let role_sha_label = format!(
+        "{LABEL_IMAGE_ROLE_GIT_SHA}={}",
+        head_sha.map_or("unknown", short_git_sha)
+    );
+    let construct_label = format!("{LABEL_IMAGE_CONSTRUCT}={construct}");
+    let build_arg_role_git_sha = format!("ROLE_GIT_SHA={}", head_sha.unwrap_or("unknown"));
+
+    let mut args: Vec<&str> = vec!["build"];
+    // A workspace rebuild refreshes the construct base; a plain base build rides
+    // the local layer cache.
+    if rebuild {
+        args.push("--pull");
+    }
+    args.extend(["--label", &role_sha_label, "--label", &construct_label]);
+    if dockerfile_requests_role_git_sha_arg(&build.dockerfile_path) {
+        args.extend(["--build-arg", &build_arg_role_git_sha]);
+    }
+
+    let needs_token = dockerfile_requests_github_token_secret(&build.dockerfile_path);
+    let github_token = if needs_token {
+        resolve_github_token(runner).await
+    } else {
+        None
+    };
+    let secret_file: Option<tempfile::NamedTempFile> = github_token.as_ref().and_then(|token| {
+        let mut f = tempfile::NamedTempFile::new().ok()?;
+        std::io::Write::write_all(&mut f, token.as_bytes()).ok()?;
+        Some(f)
+    });
+    let secret_arg = secret_file
+        .as_ref()
+        .map(|f| format!("id=github_token,src={}", f.path().display()));
+    if let Some(ref s) = secret_arg {
+        args.extend(["--secret", s.as_str()]);
+    }
+    args.extend(["-t", &base_name, "-f", &dockerfile_path, &context_dir]);
+
+    let build_options = RunOptions {
+        capture_stderr: true,
+        capture_stdout: true,
+        null_stdin: true,
+        stream_captured_output: should_stream_build_output(debug),
+        extra_env: docker_build_env(github_token.is_some()),
+        ..RunOptions::default()
+    };
+    let build_future = runner.run("docker", &args, None, &build_options);
+    let build_result = match progress {
+        Some(p) => p.while_waiting(build_future).await,
+        None => build_future.await,
+    };
+    jackin_diagnostics::active_timing_done(
+        "derived image",
+        "build_role_base",
+        if build_result.is_ok() {
+            Some("built")
+        } else {
+            Some("error")
+        },
+    );
+    build_result?;
+    Ok(base_name)
+}
+
 /// Build the Docker image for the role. Returns the image name.
 #[expect(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(super) async fn build_agent_image(
@@ -1668,7 +1792,6 @@ pub(super) async fn build_agent_image(
     mut progress: Option<&mut LaunchProgress>,
 ) -> anyhow::Result<String> {
     let use_prebuilt = build_base_image_override.is_some();
-    let base_image_override = build_base_image_override;
     let build_source_reason = if use_prebuilt {
         "published_image_fresh"
     } else if branch_override.is_some() {
@@ -1690,6 +1813,27 @@ pub(super) async fn build_agent_image(
     );
 
     let rebuild = rebuild || build_reason == ImageInvalidationReason::PublishedImageStale;
+
+    // Resolve the role base into a local `jk_<role>__base:<sha>` image — pulled +
+    // restamped from the published image when the decision found it fresh
+    // (`build_base_image_override`), or built from the role Dockerfile otherwise —
+    // then derive the overlay `FROM` it. The derived build below always uses a
+    // local base, so it never inlines the role Dockerfile and never `--pull`s.
+    let local_base = ensure_local_role_base(
+        selector,
+        branch_override,
+        head_sha.as_deref(),
+        cached_repo,
+        validated_repo,
+        build_base_image_override,
+        rebuild,
+        debug,
+        docker,
+        runner,
+        progress.as_deref_mut(),
+    )
+    .await?;
+    let base_image_override = Some(local_base.as_str());
 
     // create_derived_build_context copies the repo into a temp directory,
     // creating an immutable snapshot.  After this point the shared cached
@@ -1827,7 +1971,10 @@ pub(super) async fn build_agent_image(
     // Workspace mode without rebuild (no published_image): omit --pull so
     // Docker's layer cache is respected across invocations. The base image is
     // not re-evaluated and heavy apt / toolchain layers stay cached.
-    let pull_base_image = use_prebuilt || rebuild;
+    // `--pull` only when the overlay's base is the remote published image (the
+    // fresh-published path derives `FROM` it directly). When the base is the
+    // locally-built `jk_<role>__base`, pulling would fail on the local-only tag.
+    let pull_base_image = build_base_image_override.is_some();
     emit_image_build_source(base_image_override, build_source_reason, pull_base_image);
     if pull_base_image {
         build_args.push("--pull");

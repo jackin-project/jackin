@@ -5,12 +5,12 @@ description: The Docker image labels jackin stamps on derived role images, what 
 
 This page documents the label schema jackin stamps on **local derived role images** and how the **recipe hash** that decides warm reuse is computed. It is the source of truth for contributors; keep it in sync with <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> and <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs" />.
 
-Two different images carry labels:
+The derived image is always a thin jackin overlay (capsule, agents, normalization) on top of a **role base**. The base comes from one of two places, and jackin only builds a local base when it has to:
 
-- **Published role base image** (built by role CI / `jackin-role-action`) — carries only the two contract labels in [Published-contract labels](#published-contract-labels).
-- **Local derived image** (built by jackin: `FROM <published base or construct> + the jackin overlay`) — carries the full set below.
+- **Fresh published image available** → the overlay is derived **`FROM` the published image directly** (`docker.io/.../jackin-the-architect:latest`). No local base is built or restamped. The published image carries only the two contract labels in [Published-contract labels](#published-contract-labels).
+- **Published image missing/outdated, or a custom construct is in play** → jackin builds a **local role base** `jk_<role>__base:<sha>` (the role Dockerfile, construct `FROM` overridden by `JACKIN_CONSTRUCT_IMAGE` when set, no overlay), then derives the overlay `FROM` it. The local base carries `jackin.role.git.sha` + `jackin.construct.image` so it is reused across overlay rebuilds when the role commit and construct match (see [Local role base](#local-role-base)).
 
-All keys use dotted namespacing (`jackin.<group>.<name>`). The role-commit SHA is stored in its short, 7-character form (e.g. `4f38b4f`), matching the image tag.
+The **local derived image** `jk_<role>:<sha>` carries the full label set below. Building the local base only when needed means the heavy role layers are built once per (role commit, construct), and an overlay rebuild (capsule/agent update) never touches them. All keys use dotted namespacing (`jackin.<group>.<name>`). The role-commit SHA is stored in its short, 7-character form (e.g. `4f38b4f`), matching the image tag.
 
 ## The reuse authority: `jackin.image.recipe.hash`
 
@@ -72,7 +72,18 @@ Every published role image must carry exactly these two (written by role CI — 
 | `jackin.role.git.sha` | short role-repo commit SHA the image was built from |
 | `jackin.construct.version` | construct version tag from the role Dockerfile `FROM` line |
 
-jackin pulls the published base and verifies `jackin.role.git.sha` against the role checkout's HEAD (plus the construct version) to decide whether to reuse the published base or rebuild from the workspace Dockerfile. `jackin.manifest.version` will join this contract once `jackin-role-action` is updated to stamp it.
+jackin pulls the published base and verifies `jackin.role.git.sha` against the role checkout's HEAD (plus the construct version) to decide whether to derive the overlay directly `FROM` the published image, or fall back to building a local role base. `jackin.manifest.version` will join this contract once `jackin-role-action` is updated to stamp it.
+
+## Local role base
+
+When the published image can't be used (missing, outdated relative to the role checkout, or a custom construct is set via `JACKIN_CONSTRUCT_IMAGE`), jackin builds the role base locally as `jk_<role>__base:<sha>` — the role's own Dockerfile (construct `FROM` overridden when a custom construct is set), **no** jackin overlay — and stamps two labels on it:
+
+| Label | Meaning |
+|---|---|
+| `jackin.role.git.sha` | short role-repo commit SHA |
+| `jackin.construct.image` | the construct the base was built on (custom vs official) |
+
+On the next launch the local base is **reused** when `jk_<role>__base:<sha>` already exists and its `jackin.construct.image` matches the current construct — the role commit is the tag, the construct label distinguishes a custom-construct base from an official one. So the heavy role layers are built once per (role commit, construct); the overlay derives `FROM` the base.
 
 ## Container / network labels (GC & filtering, not image recipe)
 

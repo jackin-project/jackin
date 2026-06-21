@@ -133,8 +133,13 @@ pub(super) fn short_git_sha(sha: &str) -> &str {
 /// construct labels still decide reuse-vs-rebuild *within* a tag; the SHA only
 /// changes the name. When the SHA is unavailable (a role checkout with no
 /// commits) the bare name is returned and Docker defaults it to `:latest`.
+///
+/// Only a real git commit SHA (all hex) is used as the tag — a non-hex value
+/// could not be produced by `git rev-parse` and would yield an invalid Docker
+/// reference, so it falls back to the bare name. This also keeps the name a
+/// valid `FROM` target when it is used as the role base image.
 fn tag_with_sha(name: String, role_git_sha: Option<&str>) -> String {
-    match role_git_sha.filter(|sha| !sha.is_empty()) {
+    match role_git_sha.filter(|sha| !sha.is_empty() && sha.bytes().all(|b| b.is_ascii_hexdigit())) {
         Some(sha) => format!("{name}:{}", short_git_sha(sha)),
         None => name,
     }
@@ -156,6 +161,29 @@ pub(super) fn image_name_for_branch(
         format!("{IMAGE_PREFIX}{}_{slug}", runtime_slug(selector)),
         role_git_sha,
     )
+}
+
+/// Local **base** image name for a role: the role content (architect layers)
+/// either pulled from the published image and restamped, or rebuilt locally,
+/// before the jackin overlay is derived on top. `__base` marks the boundary so
+/// it never collides with the derived image name (which uses single `_`). The
+/// derived image is `FROM` this base.
+///
+/// Examples: `jk_the-architect__base:4f38b4f`, `jk_chainargos_agent-brown__base:4f38b4f`,
+/// branch: `jk_the-architect_feat-x__base:4f38b4f`.
+pub(super) fn role_base_image_name(
+    selector: &RoleSelector,
+    branch: Option<&str>,
+    role_git_sha: Option<&str>,
+) -> String {
+    let repo = match branch {
+        Some(b) => {
+            let slug = b.replace('/', "-").to_ascii_lowercase();
+            format!("{IMAGE_PREFIX}{}_{slug}__base", runtime_slug(selector))
+        }
+        None => format!("{IMAGE_PREFIX}{}__base", runtime_slug(selector)),
+    };
+    tag_with_sha(repo, role_git_sha)
 }
 
 /// Docker volume name for the TLS client certificates shared between the

@@ -2144,7 +2144,7 @@ model = "gpt-5"
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker build "))
+        .find(|call| call.contains("docker build ") && call.contains("DerivedDockerfile"))
         .unwrap();
     // No published_image and no --rebuild → workspace mode without --pull
     assert!(!build_cmd.contains("--pull"));
@@ -2790,7 +2790,11 @@ plugins = []
     let build_call = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker build ") && call.contains("-t jk_agent-smith"))
+        .find(|call| {
+            call.contains("docker build ")
+                && call.contains("DerivedDockerfile")
+                && call.contains("-t jk_agent-smith")
+        })
         .unwrap();
     assert!(!build_call.contains("--build-arg JACKIN_HOST_UID="));
     assert!(!build_call.contains("--build-arg JACKIN_HOST_GID="));
@@ -2809,7 +2813,7 @@ plugins = []
     let build_run_index = runner
         .run_recorded
         .iter()
-        .position(|call| call.contains("docker build "))
+        .position(|call| call.contains("docker build ") && call.contains("DerivedDockerfile"))
         .unwrap();
     let build_opts = &runner.run_options[build_run_index];
     assert!(build_opts.capture_stdout);
@@ -2826,6 +2830,86 @@ plugins = []
             .extra_env
             .contains(&("DOCKER_BUILDKIT".to_owned(), "1".to_owned())),
         "BuildKit secret mode should stay off when no GitHub token secret is requested"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_builds_local_role_base_then_derives_overlay_from_it() {
+    // The workspace build is two-stage: first a role *base* image
+    // (jk_<role>__base, the role Dockerfile, no overlay), then the derived image
+    // (FROM that base + jackin overlay). The base carries the role-sha + construct
+    // labels so it can be reused across overlay rebuilds.
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&repo_dir),
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    // Stage 1: the role base build.
+    let base_build = runner
+        .recorded
+        .iter()
+        .find(|c| c.contains("docker build ") && c.contains("BaseDockerfile"))
+        .expect("workspace build must first build the role base image");
+    assert!(
+        base_build.contains("-t jk_agent-smith__base"),
+        "base build must tag jk_<role>__base; got: {base_build}"
+    );
+    assert!(
+        base_build.contains("--label jackin.construct.image=")
+            && base_build.contains("--label jackin.role.git.sha="),
+        "base build must stamp construct + role-sha labels for reuse; got: {base_build}"
+    );
+    assert!(
+        !base_build.contains("DerivedDockerfile"),
+        "base build must not include the jackin overlay; got: {base_build}"
+    );
+
+    // Stage 2: the derived overlay build, FROM the local base (not the construct).
+    let derived_build = runner
+        .recorded
+        .iter()
+        .find(|c| c.contains("docker build ") && c.contains("DerivedDockerfile"))
+        .expect("workspace build must derive the overlay after the base");
+    assert!(
+        !derived_build.contains("--pull"),
+        "derived build is FROM a local base and must never --pull; got: {derived_build}"
+    );
+    assert!(
+        derived_build.contains("--label jackin.image.recipe.hash="),
+        "derived build stamps the recipe labels; got: {derived_build}"
     );
 }
 
@@ -2872,7 +2956,7 @@ plugins = []
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker build "))
+        .find(|call| call.contains("docker build ") && call.contains("DerivedDockerfile"))
         .unwrap();
     assert!(
         !build_cmd.contains("--pull"),
@@ -3241,7 +3325,7 @@ async fn stale_agent_version_cache_does_not_force_foreground_update_probe() {
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker build "))
+        .find(|call| call.contains("docker build ") && call.contains("DerivedDockerfile"))
         .expect("stale role SHA must trigger a derived image rebuild");
     assert!(
         build_cmd.contains("--build-arg JACKIN_CACHE_BUST=stored-bust"),
