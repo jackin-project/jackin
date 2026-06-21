@@ -160,7 +160,9 @@ fn renders_derived_dockerfile_keeps_construct_agent_identity() {
     // Home is normalized to group 0 / group==owner perms (OpenShift
     // arbitrary-UID pattern) so the container can run as the host UID in
     // group 0 with no per-launch chown. Must be the final /home/agent layer.
-    assert!(dockerfile.contains("chgrp -R 0 /home/agent && chmod -R g=u /home/agent"));
+    assert!(dockerfile.contains(
+        "chgrp -R 0 /home/agent /jackin/default-home && chmod -R g=u /home/agent /jackin/default-home"
+    ));
     let normalize_at = dockerfile
         .find("chgrp -R 0 /home/agent")
         .expect("home normalization present");
