@@ -586,7 +586,7 @@ pub(super) async fn launch_role_runtime(
     }
 
     let class_label = format!("jackin.class={}", selector.key());
-    let display_label = format!("jackin.display_name={agent_display_name}");
+    let display_label = format!("jackin.display.name={agent_display_name}");
     let docker_host = format!("DOCKER_HOST=tcp://{dind}:2376");
     let dind_hostname = format!(
         "{}={dind}",

@@ -27,24 +27,24 @@ pub(super) const LABEL_PREWARM: &str = "jackin.prewarm=true";
 /// Applied to role containers whose workspace opted into the
 /// keep-awake reconciler. Read by `runtime::caffeinate::reconcile`
 /// to decide whether to keep `caffeinate` running.
-pub(super) const LABEL_KEEP_AWAKE: &str = "jackin.keep_awake=true";
+pub(super) const LABEL_KEEP_AWAKE: &str = "jackin.keep.awake=true";
 
 /// Image label key recording which construct image was used to build a
 /// derived image. Checked at load time: a mismatch between this label and
 /// `JACKIN_CONSTRUCT_IMAGE` (or the canonical default) forces a rebuild so a
 /// derived image built against a local construct is never reused by a standard
 /// jackin invocation (and vice versa).
-pub(super) const LABEL_IMAGE_CONSTRUCT: &str = "jackin.construct_image";
+pub(super) const LABEL_IMAGE_CONSTRUCT: &str = "jackin.construct.image";
 
 /// Image label key recording the construct version tag baked into a published
 /// role image. Role CI calls `jackin-role construct-version` to obtain the tag,
 /// passes it as `--build-arg CONSTRUCT_VERSION=<ver>` to `docker build`, and
-/// the Dockerfile's `LABEL jackin.construct_version=${CONSTRUCT_VERSION}`
+/// the Dockerfile's `LABEL jackin.construct.version=${CONSTRUCT_VERSION}`
 /// instruction writes the image label (see jackin-role-action). Checked at
 /// launch time: a mismatch against the Dockerfile's pinned version means the
 /// published image pre-dates a Renovate bump; jackin falls back to workspace
 /// mode so the role's workspace Dockerfile — carrying the new pin — is used.
-pub(super) const LABEL_IMAGE_CONSTRUCT_VERSION: &str = "jackin.construct_version";
+pub(super) const LABEL_IMAGE_CONSTRUCT_VERSION: &str = "jackin.construct.version";
 
 /// Container label key storing the role container name. Applied to `DinD`
 /// sidecars and managed networks so GC can map them back to their role.
@@ -57,23 +57,23 @@ pub(super) const LABEL_IMAGE_KEY: &str = "jackin.image";
 /// Image label key recording the git commit SHA of the role repo from which a
 /// published image was built. Role CI passes `--build-arg ROLE_GIT_SHA=<sha>`
 /// (set to `${{ github.sha }}`) so the Dockerfile's
-/// `LABEL jackin.role_git_sha=${ROLE_GIT_SHA}` bakes it in. Checked at launch
+/// `LABEL jackin.role.git.sha=${ROLE_GIT_SHA}` bakes it in. Checked at launch
 /// time before the construct-version check: if the label matches the HEAD of
 /// the cached role repo the image is current and the workspace rebuild is
 /// skipped. Falls through to the construct-version check when this label is
 /// absent (images predating this feature).
-pub(super) const LABEL_IMAGE_ROLE_GIT_SHA: &str = "jackin.role_git_sha";
+pub(super) const LABEL_IMAGE_ROLE_GIT_SHA: &str = "jackin.role.git.sha";
 
 /// Image label key recording the complete launch-time recipe hash for the
 /// derived image. This is the fast-path authority: when the local image's hash
 /// matches the current recipe, launch can reuse it without invoking
 /// `docker build`.
-pub(super) const LABEL_IMAGE_RECIPE_HASH: &str = "jackin.image_recipe_hash";
+pub(super) const LABEL_IMAGE_RECIPE_HASH: &str = "jackin.image.recipe.hash";
 
 /// Human-readable image label recording why the image recipe has the current
 /// shape. The hash is authoritative; this version lets future recipe schema
 /// changes invalidate old labels with a clear reason.
-pub(super) const LABEL_IMAGE_RECIPE_VERSION: &str = "jackin.image_recipe_version";
+pub(super) const LABEL_IMAGE_RECIPE_VERSION: &str = "jackin.image.recipe.version";
 
 /// Diagnostic image label recording the selected agent version when the host
 /// downloaded a known release before building the derived image. This is not a

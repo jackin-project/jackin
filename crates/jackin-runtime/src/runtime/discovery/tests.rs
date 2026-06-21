@@ -25,7 +25,7 @@ async fn list_managed_agent_names_excludes_dind_sidecars() {
 #[tokio::test]
 async fn list_running_agent_display_names_formats_correctly() {
     let mut labels = HashMap::new();
-    labels.insert("jackin.display_name".to_owned(), "Agent Smith".to_owned());
+    labels.insert("jackin.display.name".to_owned(), "Agent Smith".to_owned());
     let docker = FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
             ContainerRow {

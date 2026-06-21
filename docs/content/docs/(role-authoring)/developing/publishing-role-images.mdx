@@ -13,8 +13,8 @@ Every published role image must carry two OCI labels that jackin reads at launch
 
 | Label | Value | Purpose |
 |---|---|---|
-| `jackin.construct_version` | The version tag from the `FROM` line (e.g. `0.2`) | Staleness detection — jackin warns when the published image was built from an older construct than the one currently resolved for a new build |
-| `jackin.role_git_sha` | The git commit SHA of the role repo at build time | Version display and staleness tracking |
+| `jackin.construct.version` | The version tag from the `FROM` line (e.g. `0.2`) | Staleness detection — jackin warns when the published image was built from an older construct than the one currently resolved for a new build |
+| `jackin.role.git.sha` | The git commit SHA of the role repo at build time | Version display and staleness tracking |
 
 <Aside type="caution">
 If either label is missing or set to `unknown`, jackin' treats the image as built without version tracking. Staleness warnings are suppressed — jackin' cannot detect that the published image is behind. The image still loads and runs, but the operator loses visibility into whether they are running a stale agent.
@@ -54,7 +54,7 @@ Replace `<SHA>` with the pinned commit SHA from the [jackin-role-action releases
 
 **What the workflow does automatically:**
 - Runs `jackin-role validate` and `jackin-role construct-version` to extract the construct version from your `FROM` line.
-- Applies `jackin.construct_version` and `jackin.role_git_sha` as OCI labels at build time via `docker/build-push-action`'s `labels:` input — no `ARG` or `LABEL` declarations needed in your Dockerfile.
+- Applies `jackin.construct.version` and `jackin.role.git.sha` as OCI labels at build time via `docker/build-push-action`'s `labels:` input — no `ARG` or `LABEL` declarations needed in your Dockerfile.
 - Builds separate image manifests for `linux/amd64` and `linux/arm64`.
 - Assembles and pushes a multi-platform manifest list.
 - Signs the image with Sigstore cosign.
@@ -102,8 +102,8 @@ If your role repo is not on GitHub, or if you use a different CI/CD system (GitL
 
    ```sh
    docker build \
-     --label "jackin.construct_version=${CONSTRUCT_VERSION}" \
-     --label "jackin.role_git_sha=${ROLE_GIT_SHA}" \
+     --label "jackin.construct.version=${CONSTRUCT_VERSION}" \
+     --label "jackin.role.git.sha=${ROLE_GIT_SHA}" \
      -t your-registry/your-role:latest \
      .
    ```
@@ -118,7 +118,7 @@ If your role repo is not on GitHub, or if you use a different CI/CD system (GitL
 Using `--label` at build time (or the `labels:` input in `docker/build-push-action`) bypasses this: the label is applied to the final image manifest without touching the Dockerfile instruction stream. Your expensive tool-installation `RUN` layers remain cached across commits.
 
 <Aside type="tip">
-If you are migrating from an older role repo that has `ARG CONSTRUCT_VERSION`/`LABEL jackin.construct_version` and `ARG ROLE_GIT_SHA`/`LABEL jackin.role_git_sha` in the Dockerfile, remove those declarations and switch to `--label` flags at build time. The `FROM` line is still how jackin reads the construct version — it does not need to be re-declared as an `ARG`.
+If you are migrating from an older role repo that has `ARG CONSTRUCT_VERSION`/`LABEL jackin.construct.version` and `ARG ROLE_GIT_SHA`/`LABEL jackin.role.git.sha` in the Dockerfile, remove those declarations and switch to `--label` flags at build time. The `FROM` line is still how jackin reads the construct version — it does not need to be re-declared as an `ARG`.
 </Aside>
 
 ### Example: GitLab CI
@@ -135,8 +135,8 @@ build-and-push:
     - docker login -u "${REGISTRY_USERNAME}" -p "${REGISTRY_PASSWORD}"
     - >
       docker build
-      --label "jackin.construct_version=${CONSTRUCT_VERSION}"
-      --label "jackin.role_git_sha=${ROLE_GIT_SHA}"
+      --label "jackin.construct.version=${CONSTRUCT_VERSION}"
+      --label "jackin.role.git.sha=${ROLE_GIT_SHA}"
       -t "${REGISTRY_IMAGE}:latest"
       .
     - docker push "${REGISTRY_IMAGE}:latest"

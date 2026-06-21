@@ -40,15 +40,15 @@ use super::progress::{LaunchProgress, LaunchStage};
 use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
 const IMAGE_RECIPE_VERSION: &str = "v2";
-const LABEL_IMAGE_RECIPE_ROLE_SOURCE_REF: &str = "jackin.recipe.role_source_ref";
-const LABEL_IMAGE_RECIPE_BASE_IMAGE: &str = "jackin.recipe.base_image";
-const LABEL_IMAGE_RECIPE_GENERATED_RUNTIME: &str = "jackin.recipe.generated_runtime_hash";
-const LABEL_IMAGE_RECIPE_SUPPORTED_AGENTS: &str = "jackin.recipe.supported_agents";
-const LABEL_IMAGE_RECIPE_CACHE_BUST: &str = "jackin.recipe.cache_bust";
-const LABEL_IMAGE_RECIPE_CAPSULE_VERSION: &str = "jackin.recipe.capsule_version";
-const LABEL_IMAGE_RECIPE_HOOKS: &str = "jackin.recipe.hooks_hash";
-const LABEL_IMAGE_RECIPE_CLAUDE_PLUGIN: &str = "jackin.recipe.claude_plugin_hash";
-const LABEL_IMAGE_RECIPE_HOST_IDENTITY_STRATEGY: &str = "jackin.recipe.host_identity_strategy";
+const LABEL_IMAGE_RECIPE_ROLE_SOURCE_REF: &str = "jackin.recipe.role.source.ref";
+const LABEL_IMAGE_RECIPE_BASE_IMAGE: &str = "jackin.recipe.base.image";
+const LABEL_IMAGE_RECIPE_GENERATED_RUNTIME: &str = "jackin.recipe.generated.runtime.hash";
+const LABEL_IMAGE_RECIPE_SUPPORTED_AGENTS: &str = "jackin.recipe.supported.agents";
+const LABEL_IMAGE_RECIPE_CACHE_BUST: &str = "jackin.recipe.cache.bust";
+const LABEL_IMAGE_RECIPE_CAPSULE_VERSION: &str = "jackin.recipe.capsule.version";
+const LABEL_IMAGE_RECIPE_HOOKS: &str = "jackin.recipe.hooks.hash";
+const LABEL_IMAGE_RECIPE_CLAUDE_PLUGIN: &str = "jackin.recipe.claude.plugin.hash";
+const LABEL_IMAGE_RECIPE_HOST_IDENTITY_STRATEGY: &str = "jackin.recipe.host.identity.strategy";
 const HOST_IDENTITY_STRATEGY: &str = "construct-agent-user-v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2301,11 +2301,11 @@ fn compact_image_warning_line(message: &str) -> String {
 /// current role repo state.
 ///
 /// Checks in order:
-/// 1. `jackin.role_git_sha` label: if present and matches `head_sha`, the
+/// 1. `jackin.role.git.sha` label: if present and matches `head_sha`, the
 ///    image was built from the exact same commit — fresh, no rebuild needed.
 ///    If present and different, the image is stale.
 /// 2. Fallback for images predating role-git-sha tracking:
-///    `jackin.construct_version` label must match `dockerfile_version`.
+///    `jackin.construct.version` label must match `dockerfile_version`.
 ///    Absent label is treated as fresh (backward compatibility).
 ///
 /// If `docker pull` fails the image may not exist locally at all. Treating a

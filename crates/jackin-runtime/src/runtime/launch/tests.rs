@@ -2157,7 +2157,7 @@ model = "gpt-5"
         "supported set includes a cache-bust agent (claude); got: {build_cmd}"
     );
     assert!(
-        !build_cmd.contains("--label jackin.recipe.cache_bust=unused"),
+        !build_cmd.contains("--label jackin.recipe.cache.bust=unused"),
         "supported set with claude must record an active cache bust; got: {build_cmd}"
     );
 
@@ -2795,7 +2795,7 @@ plugins = []
     assert!(!build_call.contains("--build-arg JACKIN_HOST_UID="));
     assert!(!build_call.contains("--build-arg JACKIN_HOST_GID="));
     assert!(!build_call.contains("--build-arg ROLE_GIT_SHA="));
-    assert!(build_call.contains("--label jackin.recipe.host_identity_strategy="));
+    assert!(build_call.contains("--label jackin.recipe.host.identity.strategy="));
     let recorded = runner.recorded.join("\n");
     assert!(
         !recorded.contains("gh auth token"),
@@ -2877,15 +2877,15 @@ plugins = []
         "workspace mode without --rebuild must not pass --pull"
     );
     assert!(
-        build_cmd.contains("--label jackin.image_recipe_version=v2"),
+        build_cmd.contains("--label jackin.image.recipe.version=v2"),
         "workspace build must stamp recipe version label; got: {build_cmd}"
     );
     assert!(
-        build_cmd.contains("--label jackin.image_recipe_hash="),
+        build_cmd.contains("--label jackin.image.recipe.hash="),
         "workspace build must stamp recipe hash label; got: {build_cmd}"
     );
     assert!(
-        build_cmd.contains("--label jackin.recipe.supported_agents="),
+        build_cmd.contains("--label jackin.recipe.supported.agents="),
         "workspace build must stamp the agent-independent supported-agents label; got: {build_cmd}"
     );
 }
@@ -4460,14 +4460,14 @@ plugins = []
     );
     // Derived image must carry the construct image label.
     assert!(
-        build_cmd.contains("jackin.construct_image=projectjackin/construct:trixie"),
+        build_cmd.contains("jackin.construct.image=projectjackin/construct:trixie"),
         "build must label the construct image used; got: {build_cmd}"
     );
 }
 
 #[tokio::test]
 async fn load_agent_uses_prebuilt_when_construct_version_matches() {
-    // When the published image's jackin.construct_version label matches the
+    // When the published image's jackin.construct.version label matches the
     // Dockerfile's pinned tag, the pre-built image is used (no staleness).
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -4522,7 +4522,7 @@ plugins = []
 
 #[tokio::test]
 async fn load_agent_falls_back_to_workspace_when_construct_version_stale() {
-    // When the published image's jackin.construct_version label differs from
+    // When the published image's jackin.construct.version label differs from
     // the Dockerfile's pinned tag, jackin falls back to workspace mode.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -4592,7 +4592,7 @@ plugins = []
 #[tokio::test]
 async fn load_agent_uses_prebuilt_when_construct_version_label_absent() {
     // Backward-compatibility guarantee: published images built before the
-    // jackin.construct_version label was introduced have no label. jackin
+    // jackin.construct.version label was introduced have no label. jackin
     // must treat the absent label as "not stale" so those images keep
     // working without forcing a full workspace rebuild on every launch.
     let temp = tempdir().unwrap();
@@ -5244,7 +5244,7 @@ plugins = []
         .iter()
         .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
         .unwrap();
-    assert!(run_cmd.contains("jackin.display_name=Agent Smith"));
+    assert!(run_cmd.contains("jackin.display.name=Agent Smith"));
 }
 
 #[tokio::test]
@@ -5304,7 +5304,7 @@ plugins = []
         .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
         .unwrap();
     assert!(
-        run_cmd.contains("--label jackin.keep_awake=true"),
+        run_cmd.contains("--label jackin.keep.awake=true"),
         "role container with keep_awake_enabled must carry the keep_awake label, \
              so runtime::caffeinate::reconcile can detect it via docker ps --filter; \
              actual run command: {run_cmd}"
@@ -5367,7 +5367,7 @@ plugins = []
         .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
         .unwrap();
     assert!(
-        !run_cmd.contains("jackin.keep_awake"),
+        !run_cmd.contains("jackin.keep.awake"),
         "role container without keep_awake_enabled must not carry the label, \
              else the reconciler would hold caffeinate for opted-out workspaces; \
              actual run command: {run_cmd}"

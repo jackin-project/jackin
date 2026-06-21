@@ -1639,7 +1639,7 @@ plugins = []
         "explicit/background prewarm should rebuild refresh decisions; recorded:\n{recorded}"
     );
     assert!(
-        recorded.contains("--label jackin.image_recipe_hash="),
+        recorded.contains("--label jackin.image.recipe.hash="),
         "refreshed image must keep stable recipe labels; recorded:\n{recorded}"
     );
     let docker_recorded = docker.recorded.borrow();
