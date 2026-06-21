@@ -174,6 +174,17 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
     let workspace_dir = temp.path().join("workspace");
     std::fs::create_dir_all(&config_dir).unwrap();
     std::fs::create_dir_all(&workspace_dir).unwrap();
+    // Agent runs as UID 1000 (fixed, no longer remapped by usermod). The test
+    // runner on CI is typically a different UID (e.g. 1001). Make the
+    // workspace dir world-writable so the codex stub can write its report.
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(
+            &workspace_dir,
+            std::fs::Permissions::from_mode(0o777),
+        )
+        .unwrap();
+    }
 
     seed_sentinel_role_repo(&role_source);
     write_sentinel_config(&config_dir.join("config.toml"), &role_source);
