@@ -63,6 +63,13 @@ Markers without TODO.md entry OK for transient in-flight work, but anything outl
   Verbose output names the input source triggering the warn.
 - **Done when:** either (a) warn no longer emitted on a clean main run, or (b) it is, but cause is documented as benign (e.g., one Starlight page renders without anchors by design) and warn is suppressed/filtered so it doesn't mask future genuine warnings. Case (a): remove this entry; case (b): replace with a one-line note in `docs.yml`.
 
+#### `launch-worktree-leak-on-sidecar-fail` — unstage the staged worktree when sidecar startup fails
+
+- **What:** in [`launch_pipeline.rs`](crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs), the `tokio::join!(sidecar_wait, materialize_wait)` runs workspace materialization to completion even when the DinD sidecar has already failed. On the sidecar-failure path the launch marks the instance `FailedSetup` and runs `LoadCleanup` (container/dind/volume/network/socket dir) but does **not** unstage the host-side `git worktree` that `materialize_workspace` may have just added, so a worktree-isolated mount leaves a staged worktree behind.
+- **Why:** before this PR materialization ran *after* sidecar success (serial), so a sidecar failure never staged a worktree. The overlap optimization made the failure path stage one. Severity is low: the staged worktree is tied to the recorded `FailedSetup` instance and is reaped when the operator ejects/purges it (`cleanup::eject_role` / `purge_container_filesystem`), so it is deferred cleanup rather than a true orphan. The proper fix (track the materialized worktree and unstage it in `LoadCleanup`, or short-circuit materialization when the sidecar has already errored) needs the materialize-cleanup model, so it is deferred rather than rushed into the launch hot path.
+- **Last verified:** 2026-06-21 — present on `chore/launch-speed-roadmap`; B4/S1 cleanup fixes landed without it.
+- **Done when:** a sidecar-startup failure on a worktree-isolated workspace leaves no staged `git worktree` behind (either `LoadCleanup` unstages it, or materialization is not run once the sidecar future has resolved to `Err`), covered by a regression test. Remove this entry and the `TODO(launch-worktree-leak-on-sidecar-fail)` marker.
+
 ## Roadmap
 
 Roadmap items — open work and resolved design docs — live in docs site, not this repo. See:
