@@ -892,7 +892,7 @@ fn seed_claude_installer_stub(home: &Path) {
 }
 
 fn seed_all_agent_stubs(home: &Path) {
-    for slug in ["claude", "amp", "kimi", "opencode"] {
+    for slug in ["claude", "amp", "kimi", "opencode", "grok"] {
         seed_agent_stub(home, slug, &agent_installer(slug, ""));
     }
     seed_agent_stub(
