@@ -4196,6 +4196,93 @@ plugins = []
 }
 
 #[tokio::test]
+async fn load_agent_rebuild_does_not_attach_running_current_instance() {
+    // Regression for the `--rebuild` fast-path bypass: the early restore gate
+    // is guarded by `!opts.rebuild`, but a forced rebuild then falls through to
+    // the *second* restore resolution. Without the matching guard there,
+    // `resolve_restore_candidate` returns `AttachCurrentRole` for a running
+    // current-role container and `return`s into it — silently skipping the
+    // build the operator asked for. A running current-role container is seeded
+    // here (inspect queue returns `Running`) so that if the guard regresses the
+    // launch attaches and records no `docker build`, failing this test.
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    config.workspaces.insert(
+        "workspace".to_owned(),
+        jackin_config::WorkspaceConfig {
+            workdir: "/workspace".to_owned(),
+            default_agent: Some(jackin_core::agent::Agent::Claude),
+            ..jackin_config::WorkspaceConfig::default()
+        },
+    );
+    let selector = RoleSelector::new(None, "agent-smith");
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    // Index a running current-role container that the resolver would attach to.
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let mut manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Claude,
+    );
+    manifest.mark_status(InstanceStatus::Running);
+    write_indexed_manifest(&paths, &manifest);
+
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Running,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
+    let mut workspace = repo_workspace(&repo_dir);
+    workspace.label = "workspace".to_owned();
+    workspace.default_agent = Some(jackin_core::agent::Agent::Claude);
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions {
+            rebuild: true,
+            ..LoadOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        recorded.contains("docker build "),
+        "--rebuild must build even when a running current-role container exists \
+         (must not take the attach/start fast path); recorded:\n{recorded}"
+    );
+}
+
+#[tokio::test]
 async fn load_agent_passes_pull_flag_with_published_image() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());

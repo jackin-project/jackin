@@ -528,6 +528,16 @@ pub(crate) async fn load_role_with(
         early_restore_container
     } else if let Some(container) = opts.restore_container_base.as_ref() {
         Some(container.clone())
+    } else if opts.rebuild {
+        // `--rebuild` skips the early gate above (it is `&& !opts.rebuild`), so
+        // a forced rebuild actually falls through to *this* resolution. Without
+        // the same guard here, `resolve_restore_candidate` would still return
+        // `AttachCurrentRole`/`StartCurrentRole` and `return` straight into the
+        // existing container — silently skipping the build the operator asked
+        // for. Leave `restore_container` `None` so the normal pipeline runs
+        // `decide_agent_image` -> `ExplicitRebuild` and always rebuilds;
+        // `claim_container_name` reconciles any name collision downstream.
+        None
     } else {
         match super::resolve_restore_candidate(
             paths,
