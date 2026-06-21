@@ -463,10 +463,7 @@ impl RoleState {
         {
             use std::os::unix::fs::PermissionsExt as _;
             std::fs::create_dir_all(&jackin_state_dir)?;
-            std::fs::set_permissions(
-                &jackin_state_dir,
-                std::fs::Permissions::from_mode(0o1777),
-            )?;
+            std::fs::set_permissions(&jackin_state_dir, std::fs::Permissions::from_mode(0o1777))?;
         }
 
         let supported = manifest.supported_agents();
@@ -634,10 +631,7 @@ impl RoleState {
         {
             use std::os::unix::fs::PermissionsExt as _;
             std::fs::create_dir_all(&jackin_state_dir)?;
-            std::fs::set_permissions(
-                &jackin_state_dir,
-                std::fs::Permissions::from_mode(0o1777),
-            )?;
+            std::fs::set_permissions(&jackin_state_dir, std::fs::Permissions::from_mode(0o1777))?;
         }
 
         let supported = manifest.supported_agents();

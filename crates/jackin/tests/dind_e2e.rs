@@ -179,11 +179,7 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
     // workspace dir world-writable so the codex stub can write its report.
     {
         use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(
-            &workspace_dir,
-            std::fs::Permissions::from_mode(0o777),
-        )
-        .unwrap();
+        std::fs::set_permissions(&workspace_dir, std::fs::Permissions::from_mode(0o777)).unwrap();
     }
 
     seed_sentinel_role_repo(&role_source);
