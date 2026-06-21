@@ -814,6 +814,7 @@ words = [
   "upserts",
   "Urxvt",
   "userinfo",
+  "usermod",
   "userns",
   "userservice",
   "utime",
