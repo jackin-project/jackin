@@ -14,10 +14,14 @@ Every published role image must carry two OCI labels that jackin reads at launch
 | Label | Value | Purpose |
 |---|---|---|
 | `jackin.construct.version` | The version tag from the `FROM` line (e.g. `0.2`) | Staleness detection — jackin warns when the published image was built from an older construct than the one currently resolved for a new build |
-| `jackin.role.git.sha` | The git commit SHA of the role repo at build time | Version display and staleness tracking |
+| `jackin.role.git.sha` | The short (7-char) git commit SHA of the role repo at build time | Version display and staleness tracking — compared against the role checkout's HEAD |
 
 <Aside type="caution">
 If either label is missing or set to `unknown`, jackin' treats the image as built without version tracking. Staleness warnings are suppressed — jackin' cannot detect that the published image is behind. The image still loads and runs, but the operator loses visibility into whether they are running a stale agent.
+</Aside>
+
+<Aside type="note">
+Keys use dotted namespacing (`jackin.construct.version`, `jackin.role.git.sha`). A `jackin.manifest.version` label (the `jackin.role.toml` schema version) is being added to this contract — `jackin-role` is gaining a `manifest-version` subcommand to extract it for the workflow. Until your role re-publishes with the updated `jackin-role-action`, jackin falls back to a local workspace rebuild for that role (correct, just not the fast published path). See [Image Labels & Recipe Hash](/reference/runtime/image-labels/) for the full label schema jackin verifies.
 </Aside>
 
 ## Using the provided workflow (recommended)

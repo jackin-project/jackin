@@ -1,0 +1,91 @@
+---
+title: Image Labels & Recipe Hash
+description: The Docker image labels jackin stamps on derived role images, what each means, and how the recipe hash that drives warm reuse is calculated
+---
+
+This page documents the label schema jackin stamps on **local derived role images** and how the **recipe hash** that decides warm reuse is computed. It is the source of truth for contributors; keep it in sync with <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> and <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs" />.
+
+Two different images carry labels:
+
+- **Published role base image** (built by role CI / `jackin-role-action`) — carries only the two contract labels in [Published-contract labels](#published-contract-labels).
+- **Local derived image** (built by jackin: `FROM <published base or construct> + the jackin overlay`) — carries the full set below.
+
+All keys use dotted namespacing (`jackin.<group>.<name>`). The role-commit SHA is stored in its short, 7-character form (e.g. `4f38b4f`), matching the image tag.
+
+## The reuse authority: `jackin.image.recipe.hash`
+
+`jackin.image.recipe.hash` is the single value that decides reuse-vs-rebuild. It is the SHA-256 of the JSON-serialized `ImageRecipe` struct:
+
+```rust
+fn hash(&self) -> Result<String> {
+    let bytes = serde_json::to_vec(self)?; // serialize the whole ImageRecipe
+    Ok(sha256_hex(&bytes))                  // → 64-char hex
+}
+```
+
+`ImageRecipe` contains every input that changes derived-image content:
+
+| Recipe field | Captures |
+|---|---|
+| `version` | recipe schema version (the `jackin.image.recipe.version` gate) |
+| `manifest_version` | `jackin.role.toml` schema version (e.g. `v1alpha4`) |
+| `role_git_sha` | short role-repo commit SHA |
+| `role_source_ref` | branch/ref |
+| `base_image` | published-base override, if any |
+| `construct_image` | which construct (custom vs official) |
+| `generated_runtime_hash` | SHA-256 of the generated derived Dockerfile (the overlay shape) |
+| `supported_agents` | the supported-agent set (sorted → canonical, so reorder ≠ rebuild) |
+| `cache_bust` | forced-rebuild value (`--rebuild`) |
+| `capsule_version` | jackin-capsule version baked in |
+| `hooks_hash` | SHA-256 of role hook files |
+| `claude_plugin_recipe_hash` | SHA-256 of Claude plugin/marketplace config |
+| `host_identity_strategy` | UID/identity strategy |
+
+At launch jackin recomputes the expected recipe from current inputs, hashes it, and compares to the stored label. **Match → reuse** (skip `docker build`, runtime-binary prep, token lookup, and the version probe). **Mismatch → rebuild.**
+
+Because every recipe field is folded into this hash, a change to any of them invalidates the image even when the field has no standalone label of its own (see [Dropped labels](#dropped-labels)).
+
+## Schema gate: `jackin.image.recipe.version`
+
+A short constant (currently `v3`) checked **before** the hash. The hash is only comparable if both sides used the same recipe schema; if a jackin upgrade changes the `ImageRecipe` shape or label set, the version is bumped so old images fail the gate (`RecipeVersionChanged`) and rebuild rather than mis-comparing hashes. Bumping it invalidates all prior images at once.
+
+## Identity & version labels (local derived image)
+
+Stamped and, where noted, checked for a precise invalidation reason:
+
+| Label | Meaning | Precise reason on mismatch |
+|---|---|---|
+| `jackin.role.git.sha` | short role-repo commit SHA | `RoleGitShaChanged` |
+| `jackin.manifest.version` | `jackin.role.toml` schema version | `ManifestVersionChanged` |
+| `jackin.construct.image` | construct image used (custom vs official) | `ConstructImageChanged` |
+| `jackin.capsule.version` | jackin-capsule version baked in | `CapsuleVersionChanged` |
+| `jackin.agent.<slug>.version` | version of each agent binary jackin downloaded/cached locally and baked in — one per prefetched agent (`jackin.agent.claude.version`, `jackin.agent.grok.version`, …) | — (diagnostic; not in the recipe hash) |
+
+The `jackin.agent.<slug>.version` labels record exactly which version of each agent the image carries, tied to the locally-downloaded binary. They are diagnostic — the agent *set* and install recipe already drive rebuilds through the recipe hash.
+
+## Published-contract labels
+
+Every published role image must carry exactly these two (written by role CI — see [Publishing Role Images](/developing/publishing-role-images/)):
+
+| Label | Meaning |
+|---|---|
+| `jackin.role.git.sha` | short role-repo commit SHA the image was built from |
+| `jackin.construct.version` | construct version tag from the role Dockerfile `FROM` line |
+
+jackin pulls the published base and verifies `jackin.role.git.sha` against the role checkout's HEAD (plus the construct version) to decide whether to reuse the published base or rebuild from the workspace Dockerfile. `jackin.manifest.version` will join this contract once `jackin-role-action` is updated to stamp it.
+
+## Container / network labels (GC & filtering, not image recipe)
+
+| Label | Purpose |
+|---|---|
+| `jackin.managed=true` | marks every jackin-managed container/network/volume; GC filter |
+| `jackin.kind=role\|dind\|prewarm-dind` | resource type |
+| `jackin.role` | role key on sidecars/networks → GC maps them back to the role |
+| `jackin.image` | derived image name on the role container → image GC skips in-use images |
+| `jackin.prewarm=true` | prewarmed (unattached) resource |
+| `jackin.keep.awake=true` | workspace opted into the caffeinate reconciler |
+| `jackin.display.name` | human role name on the container, read by discovery |
+
+## Dropped labels
+
+The following opaque `jackin.recipe.*` component labels were removed: `role_source_ref`, `base_image`, `generated_runtime_hash`, `supported_agents`, `cache_bust`, `hooks_hash`, `claude_plugin_hash`, `host_identity_strategy`, plus the single `jackin.selected_agent_version`. Their values still live inside `ImageRecipe`, so they still invalidate the image via `jackin.image.recipe.hash` — a mismatch simply surfaces as the generic `RecipeHashChanged` reason instead of a component-specific one. The per-agent `jackin.agent.<slug>.version` labels replace `jackin.selected_agent_version`, which was meaningless once images install every supported agent.
