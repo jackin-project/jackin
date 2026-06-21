@@ -705,9 +705,13 @@ pub(crate) async fn load_role_with(
         claim_container_name(paths, workspace_name.as_deref(), selector, docker).await?
     };
 
+    // Preliminary panel name only. The authoritative, commit-tagged image name
+    // (`jk_<role>:<sha>`) is resolved in the image decision below, which is the
+    // single place that runs the role-SHA git capture — the launch path does not
+    // pay for an extra `git rev-parse` just to render the panel up front.
     let image_tag = opts.role_branch.as_deref().map_or_else(
-        || image_name(selector),
-        |b| image_name_for_branch(selector, b),
+        || image_name(selector, None),
+        |b| image_name_for_branch(selector, b, None),
     );
     if let Some(progress) = steps.progress_mut() {
         progress.update_identity(crate::runtime::progress::LaunchIdentity {

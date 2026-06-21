@@ -2900,7 +2900,7 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name(&selector, Some("abc123"));
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -2998,7 +2998,7 @@ plugins = []
     )
     .unwrap();
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name(&selector, Some("abc123"));
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -3112,7 +3112,7 @@ async fn valid_image_decision_runs_before_operator_env_resolution() {
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name(&selector, Some("abc123"));
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -3180,7 +3180,7 @@ async fn stale_agent_version_cache_does_not_force_foreground_update_probe() {
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name(&selector, Some("abc123"));
     jackin_image::version_check::store_cache_bust(&paths, &image, "stored-bust");
     jackin_image::version_check::store_version(&paths, agent, &image, "1.0.0");
     let latest = jackin_image::agent_binary::AgentRelease {
@@ -3255,7 +3255,7 @@ async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name(&selector, None);
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -3350,7 +3350,7 @@ async fn load_agent_skips_operator_env_resolution_when_no_env_layers_apply() {
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name(&selector, None);
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -3424,7 +3424,7 @@ async fn load_agent_skips_non_required_operator_credential_refs() {
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name(&selector, None);
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -3492,7 +3492,7 @@ plugins = []
     )
     .unwrap();
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name(&selector, None);
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -3627,7 +3627,7 @@ async fn load_agent_skips_github_env_resolution_when_github_auth_ignored() {
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name(&selector, None);
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -3706,7 +3706,7 @@ async fn load_agent_skips_unused_github_env_resolution() {
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name(&selector, None);
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -3787,7 +3787,7 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name(&selector, None);
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -4208,7 +4208,7 @@ async fn load_agent_recreates_missing_current_instance_from_valid_image_without_
     let mut manifest = workspace_manifest(container_name, "agent-smith", "Agent Smith", agent);
     manifest.mark_status(InstanceStatus::Running);
     write_indexed_manifest(&paths, &manifest);
-    let image = crate::runtime::naming::image_name(&selector);
+    let image = crate::runtime::naming::image_name(&selector, None);
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,

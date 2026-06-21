@@ -262,16 +262,22 @@ pub(super) async fn decide_role_image(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<ImageDecision> {
+    // Resolve the role-repo HEAD SHA up front: it is both the image *tag* (so
+    // each role commit gets its own immutable image instead of overwriting a
+    // mutable `:latest`) and an input to the published-image staleness checks
+    // below. The recipe-hash / construct labels still decide reuse-vs-rebuild
+    // within a tag — only the name carries the SHA.
+    let head_sha = role_git_sha_for_recipe(cached_repo, None, runner).await;
     let image = branch_override.map_or_else(
-        || image_name(selector),
-        |branch| image_name_for_branch(selector, branch),
+        || image_name(selector, head_sha.as_deref()),
+        |branch| image_name_for_branch(selector, branch, head_sha.as_deref()),
     );
     let mut base_image_override = decision_base_image_override(validated_repo, branch_override);
     if rebuild {
         emit_image_decision(&image, ImageInvalidationReason::ExplicitRebuild);
         return Ok(ImageDecision::BuildFromWorkspace {
             reason: ImageInvalidationReason::ExplicitRebuild,
-            role_git_sha: None,
+            role_git_sha: head_sha,
         });
     }
 
@@ -315,7 +321,6 @@ pub(super) async fn decide_role_image(
         }
     };
     if tags.is_empty() {
-        let mut head_sha = None;
         let mut reason = ImageInvalidationReason::LocalImageMissing;
         if let Some(published) = base_image_override {
             let freshness = published_image_freshness(
@@ -329,7 +334,6 @@ pub(super) async fn decide_role_image(
                 PublishedImageFreshness::Fresh => false,
                 PublishedImageFreshness::Stale => true,
                 PublishedImageFreshness::NeedsRoleSha(stored_sha) => {
-                    head_sha = role_git_sha_for_recipe(cached_repo, None, runner).await;
                     head_sha.as_deref() != Some(stored_sha.as_str())
                 }
             };
@@ -346,7 +350,6 @@ pub(super) async fn decide_role_image(
         return Ok(build_decision(reason, head_sha, base_image_override));
     }
 
-    let head_sha = role_git_sha_for_recipe(cached_repo, None, runner).await;
     let mut refresh_reason = None;
     if let Some(published) = base_image_override
         && published_image_is_stale(
@@ -1723,8 +1726,8 @@ pub(super) async fn build_agent_image(
     let head_sha = role_git_sha_for_recipe(cached_repo, known_head_sha, runner).await;
 
     let local_image_name = branch_override.map_or_else(
-        || image_name(selector),
-        |b| image_name_for_branch(selector, b),
+        || image_name(selector, head_sha.as_deref()),
+        |b| image_name_for_branch(selector, b, head_sha.as_deref()),
     );
 
     let rebuild = rebuild || build_reason == ImageInvalidationReason::PublishedImageStale;
@@ -1996,7 +1999,7 @@ async fn git_head_sha(dir: &std::path::Path, runner: &mut impl CommandRunner) ->
         .filter(|s| !s.is_empty())
 }
 
-async fn role_git_sha_for_recipe(
+pub(super) async fn role_git_sha_for_recipe(
     cached_repo: &CachedRepo,
     known_head_sha: Option<&str>,
     runner: &mut impl CommandRunner,

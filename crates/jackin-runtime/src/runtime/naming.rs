@@ -117,8 +117,33 @@ pub fn matching_family(selector: &RoleSelector, names: &[String]) -> Vec<String>
 /// different initial agent no longer forks a redundant, byte-identical image or
 /// forces a rebuild. The selected agent survives only as non-identity runtime
 /// metadata (the version probe), never in the tag or recipe.
-pub(super) fn image_name(selector: &RoleSelector) -> String {
-    format!("{IMAGE_PREFIX}{}", runtime_slug(selector))
+pub(super) fn image_name(selector: &RoleSelector, role_git_sha: Option<&str>) -> String {
+    tag_with_sha(
+        format!("{IMAGE_PREFIX}{}", runtime_slug(selector)),
+        role_git_sha,
+    )
+}
+
+/// Number of leading hex chars of the role-repo commit SHA used in the image
+/// tag. Matches the short SHA GitHub renders (e.g. `4f38b4f`).
+const SHORT_GIT_SHA_LEN: usize = 7;
+
+/// Shorten a role-repo commit SHA to its display form for an image tag.
+pub(super) fn short_git_sha(sha: &str) -> &str {
+    &sha[..sha.len().min(SHORT_GIT_SHA_LEN)]
+}
+
+/// Append `:<short-sha>` to a derived-image repository name so each role-repo
+/// commit gets its own immutable tag (`jk_the-architect:4f38b4f`) instead of a
+/// mutable `:latest` that silently overwrites prior builds. The recipe-hash /
+/// construct labels still decide reuse-vs-rebuild *within* a tag; the SHA only
+/// changes the name. When the SHA is unavailable (a role checkout with no
+/// commits) the bare name is returned and Docker defaults it to `:latest`.
+fn tag_with_sha(name: String, role_git_sha: Option<&str>) -> String {
+    match role_git_sha.filter(|sha| !sha.is_empty()) {
+        Some(sha) => format!("{name}:{}", short_git_sha(sha)),
+        None => name,
+    }
 }
 
 /// Image tag for a branch-specific local build. Branch slashes become dashes
@@ -127,9 +152,16 @@ pub(super) fn image_name(selector: &RoleSelector) -> String {
 /// names are `_`. Role names and branch slugs contain only `[a-z0-9-]`, so
 /// `_` marks every boundary. Agent-independent for the same reason as
 /// [`image_name`].
-pub(super) fn image_name_for_branch(selector: &RoleSelector, branch: &str) -> String {
+pub(super) fn image_name_for_branch(
+    selector: &RoleSelector,
+    branch: &str,
+    role_git_sha: Option<&str>,
+) -> String {
     let slug = branch.replace('/', "-").to_ascii_lowercase();
-    format!("{IMAGE_PREFIX}{}_{slug}", runtime_slug(selector))
+    tag_with_sha(
+        format!("{IMAGE_PREFIX}{}_{slug}", runtime_slug(selector)),
+        role_git_sha,
+    )
 }
 
 /// Docker volume name for the TLS client certificates shared between the

@@ -811,7 +811,7 @@ fn image_recipe_accepts_script_fallback_install_recipe() {
         None,
         None,
         &paths,
-        &image_name(&selector),
+        &image_name(&selector, None),
     )
     .unwrap();
 
@@ -845,7 +845,7 @@ fn image_recipe_is_agent_independent() {
         None,
         None,
         &paths,
-        &image_name(&selector),
+        &image_name(&selector, None),
     )
     .unwrap();
 
@@ -1081,7 +1081,7 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name(&selector)]);
+        .push_back(vec![image_name(&selector, Some("abc123"))]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
@@ -1104,7 +1104,7 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
     assert_eq!(
         decision,
         ImageDecision::Reuse {
-            image: image_name(&selector),
+            image: image_name(&selector, Some("abc123")),
             selected_agent_version: Some("2.1.91".to_owned()),
         }
     );
@@ -1174,7 +1174,7 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
     ];
 
     for (name, labels, expected_reason) in cases {
-        let image = image_name(&selector);
+        let image = image_name(&selector, None);
         let docker = FakeDockerClient::default();
         docker
             .list_image_tags_queue
@@ -1275,9 +1275,13 @@ async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_l
             .any(|call| call.contains("docker inspect image:")),
         "missing local tag must not consume inspect-label state"
     );
+    // The role-repo HEAD SHA is now resolved up front because it is the image
+    // tag (`jk_<role>:<sha>`) the lookup keys on. On the missing-image path that
+    // single git capture is the only command that runs — no label inspection.
     assert!(
-        runner.recorded.is_empty(),
-        "missing local image should not even run git SHA capture"
+        runner.recorded.iter().all(|c| c.contains("rev-parse HEAD")),
+        "missing-image path should run only the role-SHA git capture; got: {:?}",
+        runner.recorded
     );
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
@@ -1331,9 +1335,12 @@ plugins = []
             base_image: "docker.io/myorg/my-role:latest".to_owned(),
         }
     );
+    // HEAD SHA is resolved up front (it is the image tag); the only command on
+    // the missing-image path is that git capture.
     assert!(
-        runner.recorded.is_empty(),
-        "missing local image should not run git SHA capture"
+        runner.recorded.iter().all(|c| c.contains("rev-parse HEAD")),
+        "missing-image path should run only the role-SHA git capture; got: {:?}",
+        runner.recorded
     );
 }
 
@@ -1428,7 +1435,7 @@ plugins = []
         None,
         "0",
     );
-    let image = image_name(&selector);
+    let image = image_name(&selector, Some("abc123"));
     let docker = FakeDockerClient::default();
     docker
         .list_image_tags_queue
@@ -1489,7 +1496,7 @@ async fn prewarm_reuse_emits_prewarm_launch_plan_and_skips_build() {
     let cached_repo = CachedRepo::new(&paths, &selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = image_name(&selector);
+    let image = image_name(&selector, Some("abc123"));
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -1569,7 +1576,7 @@ plugins = []
     )
     .unwrap();
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
-    let image = image_name(&selector);
+    let image = image_name(&selector, Some("abc123"));
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -1698,7 +1705,7 @@ preflight = "hooks/preflight.sh"
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name(&selector)]);
+        .push_back(vec![image_name(&selector, None)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
@@ -1734,7 +1741,9 @@ async fn branch_override_uses_branch_tag_and_recipe_ref() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
     let branch = "feat/instant-launch";
-    let image = image_name_for_branch(&selector, branch);
+    // The runner returns HEAD SHA `abc123`, so the reuse lookup keys on the
+    // commit-tagged branch image (`jk_agent-smith_feat-instant-launch:abc123`).
+    let image = image_name_for_branch(&selector, branch, Some("abc123"));
     let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
@@ -1800,7 +1809,7 @@ async fn decide_agent_image_rebuilds_when_construct_image_label_has_changed() {
         LABEL_IMAGE_CONSTRUCT.to_owned(),
         "projectjackin/custom-construct:latest".to_owned(),
     );
-    let image = image_name(&selector);
+    let image = image_name(&selector, None);
     let docker = FakeDockerClient::default();
     docker
         .list_image_tags_queue
@@ -1862,7 +1871,7 @@ async fn decide_agent_image_rebuilds_when_role_git_sha_has_changed() {
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name(&selector)]);
+        .push_back(vec![image_name(&selector, None)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
@@ -1907,7 +1916,7 @@ async fn decide_agent_image_rebuilds_when_role_source_ref_has_changed() {
         None,
         "0",
     );
-    let image = image_name_for_branch(&selector, "feature/instant-launch");
+    let image = image_name_for_branch(&selector, "feature/instant-launch", None);
     let docker = FakeDockerClient::default();
     docker
         .list_image_tags_queue
@@ -1961,7 +1970,7 @@ async fn decide_agent_image_reuses_when_only_host_uid_has_changed() {
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name(&selector)]);
+        .push_back(vec![image_name(&selector, Some("abc123"))]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
@@ -1984,7 +1993,7 @@ async fn decide_agent_image_reuses_when_only_host_uid_has_changed() {
     assert_eq!(
         decision,
         ImageDecision::Reuse {
-            image: image_name(&selector),
+            image: image_name(&selector, Some("abc123")),
             selected_agent_version: None,
         }
     );
@@ -2014,7 +2023,7 @@ async fn decide_agent_image_rebuilds_when_host_identity_strategy_has_changed() {
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name(&selector)]);
+        .push_back(vec![image_name(&selector, None)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
@@ -2103,7 +2112,7 @@ async fn decide_agent_image_rebuild_reason_is_emitted_in_diagnostics() {
     docker
         .list_image_tags_queue
         .borrow_mut()
-        .push_back(vec![image_name(&selector)]);
+        .push_back(vec![image_name(&selector, None)]);
     docker
         .inspect_image_labels_queue
         .borrow_mut()
