@@ -1,7 +1,6 @@
 //! Tests for `derived_image`.
 use super::*;
 use jackin_core::Agent;
-use std::collections::BTreeMap;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 use tempfile::tempdir;
@@ -225,7 +224,6 @@ agents = ["kimi"]
         &validated,
         None,
         None,
-        &BTreeMap::from([(Agent::Kimi, AgentInstall::ScriptFallback)]),
         &[Agent::Kimi],
     )
     .unwrap();
@@ -740,8 +738,7 @@ source = "hooks/source.sh"
     .unwrap();
 
     let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
-    let build = create_derived_build_context(repo.path(), &validated, None, None, &BTreeMap::new())
-        .unwrap();
+    let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
     let dockerignore = std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
 
     assert!(dockerignore.contains("!hooks/source.sh"));
@@ -784,8 +781,7 @@ plugins = []
     .unwrap();
 
     let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
-    let build = create_derived_build_context(repo.path(), &validated, None, None, &BTreeMap::new())
-        .unwrap();
+    let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
 
     assert!(build.context_dir.join("Dockerfile").is_file());
     assert!(!build.context_dir.join(".git").exists());
@@ -831,8 +827,7 @@ plugins = []
     .unwrap();
 
     let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
-    let build = create_derived_build_context(repo.path(), &validated, None, None, &BTreeMap::new())
-        .unwrap();
+    let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
     let dockerignore = std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
 
     assert!(dockerignore.contains("!.jackin-runtime/"));
@@ -865,7 +860,6 @@ plugins = []
         &validated,
         Some("docker.io/myorg/my-role:latest"),
         None,
-        &BTreeMap::new(),
     )
     .unwrap();
 
@@ -903,7 +897,6 @@ plugins = []
         &validated,
         Some("docker.io/myorg/my-role:latest"),
         None,
-        &BTreeMap::new(),
     )
     .unwrap();
 
@@ -950,7 +943,6 @@ source = "hooks/source.sh"
         &validated,
         Some("docker.io/myorg/my-role:latest"),
         None,
-        &BTreeMap::new(),
     )
     .unwrap();
     let dockerignore = std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
@@ -1019,7 +1011,7 @@ plugins = []
     .unwrap();
 
     let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
-    let error = create_derived_build_context(repo.path(), &validated, None, None, &BTreeMap::new())
+    let error = create_derived_build_context(repo.path(), &validated, None, None)
         .expect_err("symlinks should be rejected");
 
     assert!(error.to_string().contains("symlink"));

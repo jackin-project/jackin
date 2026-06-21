@@ -352,8 +352,13 @@ fn setup_claude_plugins() {
     if config.claude_marketplaces.is_empty() && config.claude_plugins.is_empty() {
         return;
     }
+    // Re-run when the declared plugin set changes. The marker records the exact
+    // marketplaces+plugins it was written for (the old image build keyed its
+    // bundle cache on a hash of the same commands); a bare exists() check would
+    // shadow a `jackin.role.toml` plugin edit forever.
+    let fingerprint = claude_plugin_fingerprint(&config);
     let marker = Path::new("/home/agent/.claude/.jackin-plugins.done");
-    if marker.exists() {
+    if fs::read_to_string(marker).ok().as_deref() == Some(fingerprint.as_str()) {
         return;
     }
     // The official marketplace backs the common plugins; tolerate it already
@@ -381,7 +386,28 @@ fn setup_claude_plugins() {
         run_optional_command("claude", &["plugin", "install", plugin.as_str()]);
     }
     fs::create_dir_all("/home/agent/.claude").ok();
-    fs::write(marker, []).ok();
+    fs::write(marker, &fingerprint).ok();
+}
+
+/// Stable fingerprint of the declared Claude marketplaces + plugins, stored as
+/// the install marker's contents so a changed plugin set re-triggers install.
+fn claude_plugin_fingerprint(config: &jackin_protocol::CapsuleConfig) -> String {
+    let mut out = String::new();
+    for marketplace in &config.claude_marketplaces {
+        out.push_str("m:");
+        out.push_str(&marketplace.source);
+        for path in &marketplace.sparse {
+            out.push(' ');
+            out.push_str(path);
+        }
+        out.push('\n');
+    }
+    for plugin in &config.claude_plugins {
+        out.push_str("p:");
+        out.push_str(plugin);
+        out.push('\n');
+    }
+    out
 }
 
 fn setup_codex(copy_auth: bool) -> Result<()> {

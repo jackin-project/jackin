@@ -1809,7 +1809,6 @@ pub(super) async fn build_agent_image(
         validated_repo,
         base_image_override,
         Some(&runtime_binaries.jackin_capsule_src),
-        &runtime_binaries.agent_installs,
         &agents_to_install,
     );
     let build = match build_result {
@@ -1917,26 +1916,11 @@ pub(super) async fn build_agent_image(
 
     // --pull semantics:
     //
-    // Pre-built mode: pass --pull so Docker always checks the registry for an
-    // updated published image. A pull with an unchanged digest is a fast
-    // no-op, so this adds negligible overhead while ensuring the local daemon
-    // picks up any newly pushed workspace image.
-    //
-    // Workspace mode with rebuild=true (explicit --rebuild or staleness-driven
-    // fallback): pass --pull to refresh the upstream construct base before
-    // rebuilding from the workspace Dockerfile.
-    //
-    // Workspace mode without rebuild (no published_image): omit --pull so
-    // Docker's layer cache is respected across invocations. The base image is
-    // not re-evaluated and heavy apt / toolchain layers stay cached.
     // The overlay always builds `FROM` the local `jk_<role>__base:<sha>` (restamped
     // from the published image or built locally by ensure_local_role_base), so the
-    // derived build must never `--pull` — that would fail on the local-only tag.
-    let pull_base_image = false;
-    emit_image_build_source(base_image_override, build_source_reason, pull_base_image);
-    if pull_base_image {
-        build_args.push("--pull");
-    }
+    // derived build never `--pull`s — that would fail on the local-only base tag.
+    // (The pull-vs-cache decision for the base itself lives in ensure_local_role_base.)
+    emit_image_build_source(base_image_override, build_source_reason, false);
 
     let cache_bust = format!("JACKIN_CACHE_BUST={cache_bust_value}");
     if supported_set_uses_cache_bust(&validated_repo.manifest) {

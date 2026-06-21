@@ -32,8 +32,8 @@ ENV PATH=\"/home/agent/.opencode/bin:${{PATH}}\"
         )
     }
 
-    fn container_binary_path(&self) -> &'static str {
-        "/home/agent/.opencode/bin/opencode"
+    fn container_binary_paths(&self) -> &'static [&'static str] {
+        &["/home/agent/.opencode/bin/opencode"]
     }
 
     fn fallback_install_block(&self) -> String {

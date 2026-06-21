@@ -37,8 +37,8 @@ RUN set -euxo pipefail && \\
         )
     }
 
-    fn container_binary_path(&self) -> &'static str {
-        "/home/agent/.grok/bin/grok"
+    fn container_binary_paths(&self) -> &'static [&'static str] {
+        &["/home/agent/.grok/bin/grok", "/home/agent/.grok/bin/agent"]
     }
 
     fn fallback_install_block(&self) -> String {

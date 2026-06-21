@@ -12,6 +12,37 @@ fn container_init_marker_is_container_local() {
 }
 
 #[test]
+fn claude_plugin_fingerprint_changes_with_config() {
+    let base = jackin_protocol::CapsuleConfig {
+        claude_plugins: vec!["code-review@official".to_owned()],
+        ..Default::default()
+    };
+    // Same config → same fingerprint (marker matches → install skipped).
+    assert_eq!(
+        claude_plugin_fingerprint(&base),
+        claude_plugin_fingerprint(&base)
+    );
+    // Adding a plugin changes the fingerprint, so a stale marker no longer
+    // matches and install re-runs — the regression this guards against.
+    let mut changed = base.clone();
+    changed.claude_plugins.push("security@official".to_owned());
+    assert_ne!(
+        claude_plugin_fingerprint(&base),
+        claude_plugin_fingerprint(&changed)
+    );
+    // A new marketplace also re-triggers.
+    let mut with_market = base.clone();
+    with_market.claude_marketplaces = vec![jackin_protocol::ClaudeMarketplace {
+        source: "org/market".to_owned(),
+        sparse: vec![],
+    }];
+    assert_ne!(
+        claude_plugin_fingerprint(&base),
+        claude_plugin_fingerprint(&with_market)
+    );
+}
+
+#[test]
 fn agent_auth_marker_is_agent_scoped() {
     assert_eq!(AGENT_AUTH_MARKER_DIR, "/jackin/state/agent-auth");
     for agent in ["claude", "codex", "amp", "kimi", "opencode", "grok"] {

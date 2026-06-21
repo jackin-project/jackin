@@ -14,7 +14,6 @@ use jackin::paths::JackinPaths;
 use jackin::runtime::{LoadOptions, load_role};
 use jackin::selector::RoleSelector;
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
-use std::collections::BTreeMap;
 use std::path::Path;
 use tempfile::tempdir;
 
@@ -127,14 +126,9 @@ model = "gpt-5"
     )
     .unwrap();
     let validated = jackin::repo::validate_role_repo(&repo_dir).unwrap();
-    let build = jackin::derived_image::create_derived_build_context(
-        &repo_dir,
-        &validated,
-        None,
-        None,
-        &BTreeMap::new(),
-    )
-    .unwrap();
+    let build =
+        jackin::derived_image::create_derived_build_context(&repo_dir, &validated, None, None)
+            .unwrap();
     let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
     assert_cached_agent_install_blocks(&dockerfile);
 

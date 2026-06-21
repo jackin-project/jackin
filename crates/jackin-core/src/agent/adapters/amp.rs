@@ -32,8 +32,8 @@ ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${{PATH}}\"
         )
     }
 
-    fn container_binary_path(&self) -> &'static str {
-        "/home/agent/.amp/bin/amp"
+    fn container_binary_paths(&self) -> &'static [&'static str] {
+        &["/home/agent/.amp/bin/amp"]
     }
 
     fn fallback_install_block(&self) -> String {

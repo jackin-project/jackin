@@ -11,7 +11,6 @@
 use jackin_core::Agent;
 use jackin_core::manifest::HooksConfig;
 use jackin_manifest::ValidatedRoleRepo;
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
@@ -188,6 +187,22 @@ pub fn render_derived_dockerfile(
     // derived image. The overlay only stages jackin's own runtime assets; the
     // ENV PATH below covers every agent's bin dir so the mounted binaries
     // resolve. Claude plugin setup moves to capsule runtime-setup.
+    //
+    // PATH bin dirs are derived from each agent's `container_binary_paths()` (the
+    // same values the run-time mount targets), so the adapter is the single
+    // source of truth — adding an agent or moving its binary can't drift the PATH
+    // out of sync with the mount.
+    let mut agent_bin_dirs: Vec<&str> = Vec::new();
+    for agent in Agent::ALL {
+        for path in agent.runtime().container_binary_paths() {
+            if let Some((dir, _)) = path.rsplit_once('/')
+                && !agent_bin_dirs.contains(&dir)
+            {
+                agent_bin_dirs.push(dir);
+            }
+        }
+    }
+    let agent_path_segment = agent_bin_dirs.join(":");
 
     // jackin-capsule binary (pre-downloaded by host, placed in .jackin-runtime/).
     let jackin_capsule_section = jackin_capsule_bin.map_or_else(String::new, |src| {
@@ -235,7 +250,7 @@ RUN chgrp -R 0 /home/agent /jackin/default-home && chmod -R g=u /home/agent /jac
 # jackin-capsule plus every agent bin dir on PATH. The agent CLI binaries are
 # bind-mounted read-only at `docker run` (not baked), so this fixed PATH lets the
 # mounted binaries resolve without the image depending on which agents are baked.
-ENV PATH=\"/jackin/runtime:/home/agent/.local/bin:/home/agent/.amp/bin:/home/agent/.kimi-code/bin:/home/agent/.opencode/bin:/home/agent/.grok/bin:${{PATH}}\"
+ENV PATH=\"/jackin/runtime:{agent_path_segment}:${{PATH}}\"
 USER agent
 ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]
 ",
@@ -322,7 +337,6 @@ pub fn create_derived_build_context(
     // When Some, the binary is copied into the build context and baked into
     // the derived image at /jackin/runtime/jackin-capsule.
     jackin_capsule_host_path: Option<&str>,
-    agent_installs: &BTreeMap<Agent, AgentInstall<PathBuf>>,
 ) -> anyhow::Result<DerivedBuildContext> {
     let supported = validated.manifest.supported_agents();
     create_derived_build_context_for_agents(
@@ -330,7 +344,6 @@ pub fn create_derived_build_context(
         validated,
         base_image_override,
         jackin_capsule_host_path,
-        agent_installs,
         &supported,
     )
 }
@@ -345,7 +358,6 @@ pub fn create_derived_build_context_for_agents(
     // When Some, the binary is copied into the build context and baked into
     // the derived image at /jackin/runtime/jackin-capsule.
     jackin_capsule_host_path: Option<&str>,
-    agent_installs: &BTreeMap<Agent, AgentInstall<PathBuf>>,
     agents_to_install: &[Agent],
 ) -> anyhow::Result<DerivedBuildContext> {
     let temp_dir = tempfile::tempdir()?;
@@ -383,9 +395,7 @@ pub fn create_derived_build_context_for_agents(
     };
 
     // Agent binaries are no longer staged into the build context — they are
-    // bind-mounted read-only at `docker run`. `agent_installs` is unused here.
-    let _ = (&agent_installs, &runtime_dir);
-
+    // bind-mounted read-only at `docker run`.
     let hooks = validated.manifest.hooks.as_ref();
 
     // Validation policy by ingress channel — intentionally asymmetric:
