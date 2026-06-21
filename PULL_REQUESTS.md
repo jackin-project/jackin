@@ -1,6 +1,6 @@
 # PULL_REQUESTS.md
 
-Canonical guide: how PRs created, iterated, reviewed, merged. Applies AI agents + humans.
+Canonical guide: how PRs created, iterated, reviewed, merged. Applies to AI agents + humans.
 
 Read before opening, updating, merging PR.
 
@@ -172,7 +172,7 @@ jackin' has exactly one human contributor — operator. No second reviewer avail
 
 - Branch protection on `main` does **not** require approving review (`required_approving_review_count = 0` in `jackin-github-terraform`). Don't propose raising it without concrete plan for how second human reviews every PR.
 - "Get second pair of eyes" not available pre-merge. Pre-merge confidence comes from CI, path-aware aggregator status checks, strict up-to-date branch policy, agent following rules in this file — not human reviewer operator does not have.
-- Multi-agent review (running `code-reviewer` / `comment-analyzer` / `silent-failure-hunter` / etc. in parallel before requesting merge) substitute for missing second human. Treat those passes as load-bearing, not optional polish.
+- Multi-agent review (running `code-reviewer` / `comment-analyzer` / `silent-failure-hunter` / etc. in parallel before requesting merge) substitutes for missing second human. Treat those passes as load-bearing, not optional polish.
 - For irreversible or high-blast-radius changes, prefer asking operator to confirm once more over assuming green CI sufficient. Pausing 30 seconds cheaper than bad merge absent second reviewer would have caught.
 
 Practices designed for multi-developer teams (CODEOWNERS, mandatory second-human review, pair programming conventions, team-oriented workflow tooling) should not be proposed without concrete plan for how second human participates. This rule retires when project gains additional human reviewers.

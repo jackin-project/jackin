@@ -44,7 +44,7 @@ Markers without TODO.md entry OK for transient in-flight work, but anything outl
 #### `lychee-no-files-warn` — investigate "No files found for this input source" in deploy link check
 
 - **What:** deploy job's `Check deployed docs links` step in [`.github/workflows/docs.yml`](.github/workflows/docs.yml) emits one-line `[WARN] [Full Github Actions output]: No files found for this input source` from lychee binary, then continues and reports `Total 4703 / Successful 4703 / Errors 0`. Identify which of 46 sitemap input URLs triggers warn; fix cause or filter warn so signal clean.
-- **Why:** warn means at least one of 46 deployed pages fed via `--files-from lychee/deployed-pages.txt` resolved to zero extractable links. Tolerated now since rest of run green, but if future regression makes 5 inputs silently skip, no notice — warn count only tell. Clean run = real signal every deployed page actually scanned.
+- **Why:** warn means at least one of 46 deployed pages fed via `--files-from lychee/deployed-pages.txt` resolved to zero extractable links. Tolerated now since rest of run green, but if future regression makes 5 inputs silently skip, no notice — warn count only tells. Clean run = real signal every deployed page actually scanned.
 - **Tracking:**
   - First observed in [run 24940918362](https://github.com/jackin-project/jackin/actions/runs/24940918362) on `main` after [`34bb396`](https://github.com/jackin-project/jackin/commit/34bb396) ([#176](https://github.com/jackin-project/jackin/pull/176) merge).
   - Warn string emitted by lychee binary (`strings lychee | grep "No files found"` confirms in v0.24.1), not lychee-action wrapper.

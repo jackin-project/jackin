@@ -2,13 +2,13 @@
 
 ## License
 
-Apache 2.0. Contributions license same terms (Section 5).
+Apache 2.0. Contributions licensed under same terms (Section 5).
 
 ## DCO
 
-All contributions sign off under [DCO v1.1](https://developercertificate.org/). Enforced by [DCO2 GitHub App](https://github.com/cncf/dco2) — unsigned commit blocks PR.
+All contributions signed off under [DCO v1.1](https://developercertificate.org/). Enforced by [DCO2 GitHub App](https://github.com/cncf/dco2) — unsigned commit blocks PR.
 
-Employer contributions: confirm authorization before submit. Use personal email in commit author + sign-off.
+Employer contributions: confirm authorization before submitting. Use personal email in commit author + sign-off.
 
 ## How to Submit
 
@@ -30,7 +30,7 @@ git rebase origin/main
 git push --force-with-lease origin <branch>   # requires operator approval
 ```
 
-Never `git merge main`. Merge commits drag bot/renovate commits into PR diff → break DCO + squash-merge. Rebase keep history clean, DCO scoped to author own commits.
+Never `git merge main`. Merge commits drag bot/renovate commits into PR diff → break DCO + squash-merge. Rebase keeps history clean, DCO scoped to author's own commits.
 
 ## Commit Format
 

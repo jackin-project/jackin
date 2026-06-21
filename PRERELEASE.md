@@ -4,7 +4,7 @@ jackin' no released version — proof-of-concept. Rules here consequence of that
 
 ## Breaking changes are expected and acceptable
 
-Schema change (on-disk state layout, CLI flags, role/agent shapes outside three versioned files below): no migration code, no compat shims, no fallback parsers for old field names, no "tolerant ignore + warn" handlers, no deprecation warnings. New shape only shape; let stale data fail with standard parser error.
+Schema change (on-disk state layout, CLI flags, role/agent shapes outside three versioned files below): no migration code, no compat shims, no fallback parsers for old field names, no "tolerant ignore + warn" handlers, no deprecation warnings. New shape only; let stale data fail with standard parser error.
 
 No memorializing old shapes in code comments ("formerly named X", "old location was Y") or docs outside changelog. Git history = record; code describes only current shape.
 

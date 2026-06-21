@@ -1,6 +1,6 @@
 # Project Structure
 
-Quick nav for AI agents and human contributors. **Canonical detailed module map lives in docs** ([`reference/codebase-map`](https://jackin.tailrocks.com/reference/codebase-map/), served from `docs/content/docs/reference/codebase-map.mdx`). This file short pointer agents land on first; covers **multi-repo ecosystem** and per-PR **code ↔ docs contract**, sends you to docs for rest.
+Quick nav for AI agents and human contributors. **Canonical detailed module map lives in docs** ([`reference/codebase-map`](https://jackin.tailrocks.com/reference/codebase-map/), served from `docs/content/docs/reference/codebase-map.mdx`). This file is the short pointer agents land on first; covers **multi-repo ecosystem** and per-PR **code ↔ docs contract**, sends you to docs for rest.
 
 ## What this file is for
 
