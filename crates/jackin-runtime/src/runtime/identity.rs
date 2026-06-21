@@ -21,6 +21,19 @@ use jackin_core::CommandRunner;
 /// image-baked home regardless of which UID it runs as. A matching
 /// `agent` passwd entry for the host UID is supplied at runtime via
 /// `libnss-extrausers` so `getpwuid`/`$HOME` resolve correctly.
+///
+/// Security tradeoff (the agent is untrusted code): primary group 0 makes the
+/// in-container process a member of the `root` group, so it can read/write any
+/// path in the image that is group-`root` and group-readable/writable. This is
+/// acceptable only because the in-container privilege boundary is the container
+/// itself, not the `agent` user — the agent is already free to run arbitrary
+/// code as its own UID, and the construct image ships no group-0-writable path
+/// that grants escalation *out* of the container (no setuid-root binary is
+/// left group-0-writable, and the docker socket is never mounted into a role
+/// container). The host side is protected separately: every bind-mount source
+/// is owned by this UID, so group 0 grants nothing beyond what owner already
+/// does. If the construct image ever gains a group-0-writable sensitive path,
+/// revisit this with a supplementary group instead of primary GID 0.
 #[cfg(unix)]
 pub(crate) fn host_run_as_user() -> Option<String> {
     Some(format!("{}:0", nix::unistd::geteuid().as_raw()))
