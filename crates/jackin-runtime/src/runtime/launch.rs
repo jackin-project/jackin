@@ -190,23 +190,33 @@ use progress_helpers::{
 /// baked into the derived image, so an agent version bump no longer rebuilds the
 /// image — the newest cached binary is mounted onto the PATH location the image's
 /// `ENV PATH` already covers. Agents with no cached binary are skipped.
-fn agent_binary_mount_specs(paths: &JackinPaths, supported: &[String]) -> Vec<String> {
-    jackin_core::Agent::ALL
-        .iter()
-        .filter(|agent| supported.iter().any(|slug| slug == agent.slug()))
-        .filter_map(|&agent| {
-            let host_path = jackin_image::agent_binary::runtime_mount_binary_path(paths, agent)?;
-            let host = host_path.to_str()?.to_owned();
-            Some((agent, host))
-        })
-        .flat_map(|(agent, host)| {
-            agent
-                .runtime()
-                .container_binary_paths()
-                .iter()
-                .map(move |path| format!("{host}:{path}:ro"))
-        })
-        .collect()
+async fn agent_binary_mount_specs(paths: &JackinPaths, supported: &[String]) -> Vec<String> {
+    // Resolve straight from the authoritative supported-slug list (`FromStr`
+    // surfaces a junk slug as a skip, vs. scanning every `Agent::ALL` and string
+    // comparing). The per-agent cache lookup is blocking filesystem IO, so run the
+    // whole resolution off the async reactor.
+    let paths = paths.clone();
+    let agents: Vec<jackin_core::Agent> = supported.iter().filter_map(|s| s.parse().ok()).collect();
+    tokio::task::spawn_blocking(move || {
+        agents
+            .into_iter()
+            .filter_map(|agent| {
+                let host = jackin_image::agent_binary::runtime_mount_binary_path(&paths, agent)?
+                    .to_str()?
+                    .to_owned();
+                Some((agent, host))
+            })
+            .flat_map(|(agent, host)| {
+                agent
+                    .runtime()
+                    .container_binary_paths()
+                    .iter()
+                    .map(move |path| format!("{host}:{path}:ro"))
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 fn agent_mounts(state: &RoleState) -> Vec<String> {
@@ -660,7 +670,7 @@ pub(super) async fn launch_role_runtime(
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let agent_specific_mounts = agent_mounts(state);
-    let agent_binary_mounts = agent_binary_mount_specs(paths, &capsule_config.agents);
+    let agent_binary_mounts = agent_binary_mount_specs(paths, &capsule_config.agents).await;
     let gh_config_mount = github_config_mount(state);
     let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
 
