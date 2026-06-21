@@ -46,6 +46,18 @@ ignore_patterns = [
 
 words = [
   "andrewpatterson",
+  "chgrp",
+  "extrausers",
+  "gecos",
+  "getgrgid",
+  "getpwnam",
+  "getpwuid",
+  "groupmod",
+  "libnss",
+  "linuxserver",
+  "nsswitch",
+  "OpenShift",
+  "setpriv",
   "lossily",
   "caching's",
   "candido",
