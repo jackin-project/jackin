@@ -70,11 +70,11 @@ jobs:
           path: |
             target
             crates/jackin-term/fuzz/target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-hygiene-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-hygiene-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-hygiene-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-hygiene-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-hygiene-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-hygiene-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-hygiene-${{ hashFiles('Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-hygiene-
       - run: cargo deny check advisories
       - run: cargo hack check --workspace --feature-powerset --all-targets --locked
       - name: Long jackin-term fuzz run
