@@ -534,33 +534,50 @@ pub fn create_derived_build_context_for_agents(
     })
 }
 
-/// Build context for the **locally-built role base** image — the role's own
-/// Dockerfile (construct `FROM` overridden by `JACKIN_CONSTRUCT_IMAGE` when set),
-/// with no jackin overlay. The derived image is built `FROM` this base. Used only
-/// when the published image cannot be used directly (missing/outdated, or a custom
-/// construct is in play); a fresh published image is derived `FROM` directly. The
-/// context is the role repo so the role's `COPY` instructions resolve.
+/// Build context for the local role **base** image `jk_<role>__base:<sha>`, which
+/// the derived image is built `FROM`. The base is always materialized locally so
+/// the overlay never depends on the mutable published `:latest` tag:
+///
+/// - `published_base = Some(img)`: the Dockerfile is just `FROM <img>` — pull the
+///   published image and restamp it under the immutable local base name. Empty
+///   context.
+/// - `published_base = None`: the Dockerfile is the role's own Dockerfile (construct
+///   `FROM` overridden by `JACKIN_CONSTRUCT_IMAGE` when set), no jackin overlay.
+///   Context is the role repo so the role's `COPY` instructions resolve.
 pub fn create_role_base_build_context(
     repo_dir: &Path,
     validated: &ValidatedRoleRepo,
+    published_base: Option<&str>,
 ) -> anyhow::Result<DerivedBuildContext> {
     let temp_dir = tempfile::tempdir()?;
     let context_dir = temp_dir.path().join("context");
-    copy_dir_all(repo_dir, &context_dir)?;
-    let override_image = std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_default();
-    let override_trimmed = override_image.trim();
-    let base_dockerfile = if override_trimmed.is_empty() {
-        validated.dockerfile.dockerfile_contents.clone()
-    } else if looks_like_valid_image_ref(override_trimmed) {
-        apply_construct_image_override(&validated.dockerfile.dockerfile_contents, override_trimmed)
-    } else {
-        jackin_diagnostics::emit_compact_line(
-            "warning",
-            &format!(
-                "[jackin] ignoring invalid JACKIN_CONSTRUCT_IMAGE={override_image:?}; using role's pinned base image"
-            ),
+    let base_dockerfile = if let Some(image) = published_base {
+        anyhow::ensure!(
+            looks_like_valid_image_ref(image),
+            "published base {image:?} is not a valid Docker image reference; refusing to interpolate into Dockerfile FROM line",
         );
-        validated.dockerfile.dockerfile_contents.clone()
+        std::fs::create_dir_all(&context_dir)?;
+        format!("# syntax=docker/dockerfile:1.7\nFROM {image}\n")
+    } else {
+        copy_dir_all(repo_dir, &context_dir)?;
+        let override_image = std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_default();
+        let override_trimmed = override_image.trim();
+        if override_trimmed.is_empty() {
+            validated.dockerfile.dockerfile_contents.clone()
+        } else if looks_like_valid_image_ref(override_trimmed) {
+            apply_construct_image_override(
+                &validated.dockerfile.dockerfile_contents,
+                override_trimmed,
+            )
+        } else {
+            jackin_diagnostics::emit_compact_line(
+                "warning",
+                &format!(
+                    "[jackin] ignoring invalid JACKIN_CONSTRUCT_IMAGE={override_image:?}; using role's pinned base image"
+                ),
+            );
+            validated.dockerfile.dockerfile_contents.clone()
+        }
     };
     let runtime_dir = context_dir.join(".jackin-runtime");
     std::fs::create_dir_all(&runtime_dir)?;

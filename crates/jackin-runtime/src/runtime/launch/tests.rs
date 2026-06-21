@@ -2834,6 +2834,70 @@ plugins = []
 }
 
 #[tokio::test]
+async fn load_agent_restamps_fresh_published_image_into_local_base() {
+    // A fresh published image is pulled and restamped into the local
+    // jk_<role>__base (a `FROM <published>` build), then the overlay derives FROM
+    // that local base — the overlay never depends on the mutable published tag.
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role:latest"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&repo_dir),
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    // The base build restamps the published image (pulled) into jk_<role>__base.
+    let base_build = runner
+        .recorded
+        .iter()
+        .find(|c| c.contains("docker build ") && c.contains("BaseDockerfile"))
+        .expect("fresh published image must be restamped into a local base");
+    assert!(
+        base_build.contains("-t jk_agent-smith__base") && base_build.contains("--pull"),
+        "base restamp must tag jk_<role>__base and pull the published image; got: {base_build}"
+    );
+    // The overlay derives FROM that local base, not the published image.
+    assert!(
+        runner
+            .recorded
+            .iter()
+            .any(|c| c.contains("docker build ") && c.contains("DerivedDockerfile")),
+        "overlay must derive FROM the local base"
+    );
+}
+
+#[tokio::test]
 async fn load_agent_builds_local_role_base_then_derives_overlay_from_it() {
     // The workspace build is two-stage: first a role *base* image
     // (jk_<role>__base, the role Dockerfile, no overlay), then the derived image

@@ -1676,15 +1676,11 @@ async fn ensure_local_role_base(
     runner: &mut impl CommandRunner,
     progress: Option<&mut LaunchProgress>,
 ) -> anyhow::Result<String> {
-    // Fresh published image: derive the overlay directly `FROM` it — no local base
-    // is built or restamped. The decision already verified it is fresh; the derived
-    // build below `--pull`s it.
-    if let Some(published) = published_base {
-        return Ok(published.to_owned());
-    }
-
-    // Published image unusable (missing/outdated) or a custom construct is in play:
-    // build the role base locally so the derived overlay has a `FROM` target.
+    // The base is always materialized locally as `jk_<role>__base:<sha>` so the
+    // derived overlay never depends on the mutable published `:latest` tag:
+    //   - published fresh -> pull it and restamp it under the local base name;
+    //   - otherwise        -> build the role Dockerfile locally.
+    // Reused when the local base tag already exists and its construct matches.
     let construct = jackin_manifest::repo_contract::construct_image();
     let base_name = role_base_image_name(selector, branch_override, head_sha);
 
@@ -1705,7 +1701,8 @@ async fn ensure_local_role_base(
     }
 
     jackin_diagnostics::active_timing_started("derived image", "build_role_base", Some(&base_name));
-    let build = create_role_base_build_context(&cached_repo.repo_dir, validated_repo)?;
+    let build =
+        create_role_base_build_context(&cached_repo.repo_dir, validated_repo, published_base)?;
     let dockerfile_path = build.dockerfile_path.display().to_string();
     let context_dir = build.context_dir.display().to_string();
     let role_sha_label = format!(
@@ -1716,9 +1713,9 @@ async fn ensure_local_role_base(
     let build_arg_role_git_sha = format!("ROLE_GIT_SHA={}", head_sha.unwrap_or("unknown"));
 
     let mut args: Vec<&str> = vec!["build"];
-    // A workspace rebuild refreshes the construct base; a plain base build rides
-    // the local layer cache.
-    if rebuild {
+    // Restamping a published image pulls it; a workspace rebuild refreshes the
+    // construct base. A plain workspace base build rides the local layer cache.
+    if published_base.is_some() || rebuild {
         args.push("--pull");
     }
     args.extend(["--label", &role_sha_label, "--label", &construct_label]);
@@ -1971,10 +1968,10 @@ pub(super) async fn build_agent_image(
     // Workspace mode without rebuild (no published_image): omit --pull so
     // Docker's layer cache is respected across invocations. The base image is
     // not re-evaluated and heavy apt / toolchain layers stay cached.
-    // `--pull` only when the overlay's base is the remote published image (the
-    // fresh-published path derives `FROM` it directly). When the base is the
-    // locally-built `jk_<role>__base`, pulling would fail on the local-only tag.
-    let pull_base_image = build_base_image_override.is_some();
+    // The overlay always builds `FROM` the local `jk_<role>__base:<sha>` (restamped
+    // from the published image or built locally by ensure_local_role_base), so the
+    // derived build must never `--pull` — that would fail on the local-only tag.
+    let pull_base_image = false;
     emit_image_build_source(base_image_override, build_source_reason, pull_base_image);
     if pull_base_image {
         build_args.push("--pull");
