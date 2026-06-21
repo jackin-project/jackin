@@ -669,6 +669,17 @@ pub(super) async fn launch_role_runtime(
         run_args.extend_from_slice(&["--label", LABEL_KEEP_AWAKE]);
     }
 
+    // Run the container as the host operator's UID (group 0). The image is
+    // UID-agnostic (built once, shared); matching the host UID at runtime is
+    // what makes every host-owned bind-mount transparently read/write for the
+    // `agent` user — see `identity::host_run_as_user`. `HOME` is set
+    // explicitly so shells and the agent CLIs resolve the bind-mounted home
+    // even before any passwd lookup.
+    let run_as_user = crate::runtime::identity::host_run_as_user();
+    if let Some(ref user) = run_as_user {
+        run_args.extend_from_slice(&["--user", user.as_str(), "-e", "HOME=/home/agent"]);
+    }
+
     run_args.extend_from_slice(&[
         // JACKIN_* runtime metadata is injected by jackin, not declared in role manifests.
         "-e",
@@ -872,23 +883,32 @@ pub(super) async fn launch_role_runtime(
     run_args.extend_from_slice(&["--label", &image_label]);
     // Host-side bind-mount of the daemon's socket directory. Pre-create
     // host-side so Docker does not materialise the target itself as
-    // root:root 0755. Set 0o1777 (sticky world-writable, same as /tmp)
-    // so the container's `agent` user (UID 1000, fixed without usermod)
-    // can create jackin.sock even though the host user (UID 1001 on CI)
-    // owns the dir. The sticky bit prevents UID 1000 from deleting
-    // host-owned files (agent.toml). The preferred fix — chown to UID
-    // 1000 — requires root; 0o1777 is the non-root equivalent. The
-    // socket file itself gets 0o600 from inside the capsule. The same
-    // directory carries Capsule's normalized launch config.
+    // root:root 0755. The dir is owned by the host operator (this process)
+    // and the container runs as that same UID (`--user`), so the `agent`
+    // user creates jackin.sock with no special directory mode. The socket
+    // file itself gets 0o600 from inside the capsule. The same directory
+    // carries Capsule's normalized launch config.
     let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
     let capsule_config_contents = toml::to_string(capsule_config)
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
+    // Runtime passwd entry for the host UID so `getpwuid`/`$HOME` resolve to
+    // the `agent` user inside the container even though the image only bakes
+    // UID 1000. Consumed via `libnss-extrausers` (see docker/construct). One
+    // shared file, content depends only on the host UID; written atomically
+    // (per-container temp + rename) so a concurrent launch can't read a torn
+    // file at mount time.
+    let extrausers_passwd = paths.jackin_home.join("extrausers").join("passwd");
+    let extrausers_line = crate::runtime::identity::host_uid()
+        .map(|uid| format!("agent:x:{uid}:0:agent:/home/agent:/bin/zsh\n"));
+    let extrausers_tmp = extrausers_passwd.with_file_name(format!("passwd.{container_name}.tmp"));
     // Run the filesystem syscalls on the blocking pool — the tokio
     // runtime is built without the `fs` feature here, and blocking on
     // a slow / NFS host parks the worker driving the docker-run RPC
     // for every other future scheduled on it.
     let socket_dir_for_mkdir = socket_dir.clone();
     let capsule_config_contents_for_write = capsule_config_contents.clone();
+    let extrausers_passwd_for_write = extrausers_passwd.clone();
+    let extrausers_line_for_write = extrausers_line.clone();
     jackin_diagnostics::active_timing_started(
         "capsule",
         "prepare_socket_dir",
@@ -900,13 +920,12 @@ pub(super) async fn launch_role_runtime(
             socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
             capsule_config_contents_for_write,
         )?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(
-                &socket_dir_for_mkdir,
-                std::fs::Permissions::from_mode(0o1777),
-            )?;
+        if let Some(line) = extrausers_line_for_write {
+            if let Some(parent) = extrausers_passwd_for_write.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&extrausers_tmp, line)?;
+            std::fs::rename(&extrausers_tmp, &extrausers_passwd_for_write)?;
         }
         Ok(())
     })
@@ -941,6 +960,15 @@ pub(super) async fn launch_role_runtime(
     })?;
     let socket_mount = format!("{socket_dir_str}:/jackin/run");
     run_args.extend_from_slice(&["-v", &socket_mount]);
+    // Mount the host-UID passwd line where libnss-extrausers reads it.
+    let extrausers_mount = extrausers_line.as_ref().and_then(|_| {
+        extrausers_passwd
+            .to_str()
+            .map(|p| format!("{p}:/var/lib/extrausers/passwd:ro"))
+    });
+    if let Some(ref mount) = extrausers_mount {
+        run_args.extend_from_slice(&["-v", mount]);
+    }
     jackin_diagnostics::debug_log!(
         "launch",
         "prepared host socket dir {socket_dir_str} (0o700) and Capsule config for bind-mount at /jackin/run",

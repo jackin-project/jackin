@@ -248,7 +248,13 @@ USER root
 COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 COPY --link --chown=agent:agent --chmod=0644 {zsh_title_shim_path} /jackin/runtime/zsh-title-shim
 {jackin_capsule_section}RUN {hook_final_commands}{default_home_commands} \\
-    && {shell_title_and_runtime_dir_commands}# Make jackin-capsule available as a plain shell command from any session.
+    && {shell_title_and_runtime_dir_commands}# Normalize /home/agent to group 0 with group==owner permissions so the home
+# is fully usable when the container runs as an arbitrary host UID in group 0
+# (`docker run --user <host-uid>:0`). The image is UID-agnostic (built once,
+# shared); this is the OpenShift arbitrary-UID pattern. Must be the last layer
+# touching /home/agent so files added above are covered.
+RUN chgrp -R 0 /home/agent && chmod -R g=u /home/agent
+# Make jackin-capsule available as a plain shell command from any session.
 ENV PATH=\"/jackin/runtime:${{PATH}}\"
 USER agent
 ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]

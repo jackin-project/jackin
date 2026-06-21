@@ -2610,6 +2610,7 @@ dependencies = [
  "jackin-manifest",
  "jackin-protocol",
  "jackin-tui",
+ "nix 0.31.3",
  "owo-colors",
  "rand 0.10.1",
  "ratatui",

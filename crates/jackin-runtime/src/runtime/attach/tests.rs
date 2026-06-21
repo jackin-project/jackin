@@ -12,6 +12,22 @@ fn test_paths() -> (TempDir, JackinPaths) {
     (dir, paths)
 }
 
+#[test]
+fn insert_run_as_user_places_flag_immediately_after_exec() {
+    let user = Some("1001:0".to_owned());
+    let mut args = vec!["exec", "-it", "ctr", "cmd"];
+    insert_run_as_user(&mut args, user.as_deref());
+    assert_eq!(args, vec!["exec", "--user", "1001:0", "-it", "ctr", "cmd"]);
+}
+
+#[test]
+fn insert_run_as_user_is_noop_when_absent() {
+    let user: Option<String> = None;
+    let mut args = vec!["exec", "-it", "ctr"];
+    insert_run_as_user(&mut args, user.as_deref());
+    assert_eq!(args, vec!["exec", "-it", "ctr"]);
+}
+
 #[tokio::test]
 async fn wait_for_capsule_daemon_polls_socket_status_command() {
     let (_tmp, paths) = test_paths();
@@ -76,7 +92,8 @@ async fn start_or_reconnect_uses_capsule_client_not_start_attach() {
     );
     assert!(
         runner.recorded.iter().any(|call| {
-            call.contains("docker exec -it")
+            call.contains("docker exec")
+                && call.contains("-it")
                 && call.contains("jk-agent-smith")
                 && call.contains("/jackin/runtime/jackin-capsule")
         }),

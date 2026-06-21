@@ -91,47 +91,13 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
-        // Parent dir 0o700 so only the owner can list/connect. The
-        // socket file itself gets 0o600 after bind, but on a system
-        // where the parent dir is world-x an attacker can still
-        // enumerate the path. Lock both where possible.
-        //
-        // EACCES is tolerated when the host owns the dir (UID mismatch
-        // after usermod removal). In that case the host must have set
-        // the sticky bit (0o1777) so other UIDs cannot delete each
-        // other's files inside it. Refuse to bind if the parent is
-        // world/group-writable without sticky — that allows any local
-        // user to replace agent.toml or jackin.sock.
-        match std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                let mode = std::fs::symlink_metadata(parent)
-                    .with_context(|| format!("stat socket parent {}", parent.display()))?
-                    .permissions()
-                    .mode();
-                let sticky = mode & 0o1000 != 0;
-                let world_or_group_writable = mode & 0o022 != 0;
-                if world_or_group_writable && !sticky {
-                    anyhow::bail!(
-                        "socket parent {} is writable by others without sticky bit \
-                         (mode {:#o}); refusing to bind — potential file-replacement \
-                         attack; set sticky bit (chmod +t) or use 0o700",
-                        parent.display(),
-                        mode & 0o7777,
-                    );
-                }
-                crate::clog!(
-                    "socket: {}: not owner (mode {:#o}); relying on sticky + socket-file 0o600",
-                    parent.display(),
-                    mode & 0o7777,
-                );
-            }
-            Err(e) => {
-                return Err(e).with_context(|| {
-                    format!("locking socket parent {} to 0o700", parent.display())
-                });
-            }
-        }
+        // Parent dir 0o700 so only the owner can list/connect. The socket
+        // file itself gets 0o600 after bind, but on a system where the
+        // parent dir is world-x an attacker can still enumerate the path.
+        // Lock both. The dir is host-owned and the capsule runs as that
+        // same UID (`--user` on docker run), so the owner can set this.
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("locking socket parent {} to 0o700", parent.display()))?;
     }
 
     let listener = UnixListener::bind(path)?;

@@ -230,6 +230,18 @@ fn host_alt_screen_exec_flag() -> Option<&'static str> {
     jackin_diagnostics::host_screen_owned().then_some("-e=JACKIN_HOST_ALT_SCREEN=1")
 }
 
+/// Insert `--user <host-uid>:0` right after `exec` so a `docker exec` shell
+/// runs as the same host UID the container was launched with (`--user` on
+/// `docker run`). Without it the exec would default to the image's baked
+/// `agent` user (UID 1000) and hit the same bind-mount ownership mismatch the
+/// run-time UID mapping exists to remove. No-op on non-unix hosts.
+fn insert_run_as_user<'a>(args: &mut Vec<&'a str>, run_as_user: Option<&'a str>) {
+    if let Some(user) = run_as_user {
+        args.insert(1, user);
+        args.insert(1, "--user");
+    }
+}
+
 pub(super) async fn reconnect_or_create_session_with_focus(
     paths: &JackinPaths,
     container_name: &str,
@@ -240,6 +252,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
     set_role_terminal_title(paths, container_name);
     wait_for_capsule_daemon(container_name, docker).await?;
     let focus_arg = focus_session.map(|id| id.to_string());
+    let run_as_user = crate::runtime::identity::host_run_as_user();
     let mut args: Vec<&str> = vec![
         "exec",
         "-it",
@@ -249,6 +262,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
     if let Some(flag) = host_alt_screen_exec_flag() {
         args.insert(1, flag);
     }
+    insert_run_as_user(&mut args, run_as_user.as_deref());
     if let Some(ref id) = focus_arg {
         args.push("--focus");
         args.push(id);
@@ -403,6 +417,7 @@ pub async fn spawn_shell_session(
 
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
+    let run_as_user = crate::runtime::identity::host_run_as_user();
     let mut args: Vec<&str> = vec![
         "exec",
         "-it",
@@ -410,6 +425,7 @@ pub async fn spawn_shell_session(
         "/jackin/runtime/jackin-capsule",
         "new",
     ];
+    insert_run_as_user(&mut args, run_as_user.as_deref());
     if let Some(flag) = host_alt_screen_exec_flag() {
         args.insert(1, flag);
     }
@@ -480,7 +496,9 @@ pub async fn spawn_agent_session(
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
 
+    let run_as_user = crate::runtime::identity::host_run_as_user();
     let mut exec_args = vec!["exec", "--workdir", workdir, "-it"];
+    insert_run_as_user(&mut exec_args, run_as_user.as_deref());
     let coauthor_env_flag;
     let dco_env_flag;
     if let Some(ref env) = coauthor_env {

@@ -455,16 +455,10 @@ impl RoleState {
         let jackin_state_dir = root.join("state");
 
         std::fs::create_dir_all(&home_dir)?;
-        // 0o1777: sticky world-writable so the container's `agent` user (UID
-        // 1000, fixed without usermod) can write state files even though the
-        // host user (UID 1001 on CI) owns the dir. Sticky bit prevents UID
-        // 1000 from deleting host-owned files; host can still remove the
-        // whole dir via remove_dir_all because it owns the directory entry.
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            std::fs::create_dir_all(&jackin_state_dir)?;
-            std::fs::set_permissions(&jackin_state_dir, std::fs::Permissions::from_mode(0o1777))?;
-        }
+        // Owned by the host operator; the container runs as that same UID
+        // (`--user` on docker run), so `agent` can write state files here
+        // with no special directory mode.
+        std::fs::create_dir_all(&jackin_state_dir)?;
 
         let supported = manifest.supported_agents();
         let supported_auth: Vec<_> = provision_agents
@@ -628,11 +622,7 @@ impl RoleState {
         let jackin_state_dir = root.join("state");
 
         std::fs::create_dir_all(&home_dir)?;
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            std::fs::create_dir_all(&jackin_state_dir)?;
-            std::fs::set_permissions(&jackin_state_dir, std::fs::Permissions::from_mode(0o1777))?;
-        }
+        std::fs::create_dir_all(&jackin_state_dir)?;
 
         let supported = manifest.supported_agents();
         let supported_auth: Vec<_> = agents

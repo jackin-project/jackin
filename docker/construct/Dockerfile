@@ -51,6 +51,7 @@ RUN apt-get update && \
     git \
     git-lfs \
     jq \
+    libnss-extrausers \
     openssh-client \
     procps \
     ripgrep \
@@ -63,6 +64,18 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* \
            /var/cache/apt/* \
            /tmp/*
+
+# Resolve the `agent` user by its runtime host UID. The image bakes `agent` at
+# UID 1000, but containers run as the host operator's UID (`docker run --user`)
+# so host-owned bind-mounts are transparently writable. libnss-extrausers reads
+# an extra passwd file (bind-mounted at runtime) so `getpwuid(host_uid)` still
+# resolves to `agent` with HOME=/home/agent — keeping shells, git, and the
+# Node-based agent CLIs (which call getpwuid) happy. See
+# /reference/roadmap/construct-user-creation/.
+RUN sed -ri 's/^(passwd:.*)$/\1 extrausers/' /etc/nsswitch.conf && \
+    install -d -m 0755 /var/lib/extrausers && \
+    : > /var/lib/extrausers/passwd && \
+    : > /var/lib/extrausers/group
 
 # Configure git-lfs
 RUN git lfs install

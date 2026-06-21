@@ -1,9 +1,47 @@
-//! Capture host git user.name/email for in-container git defaults.
+//! Capture host git user.name/email for in-container git defaults, and the
+//! host operator's UID for the runtime `docker run --user` mapping.
 //!
 //! All reads are best-effort: missing git config or id failures produce empty
 //! strings rather than hard errors.
 
 use jackin_core::CommandRunner;
+
+/// `--user` value that runs the in-container process as the host operator's
+/// UID with primary group 0 (`<uid>:0`).
+///
+/// The host operator is this jackin process's own effective UID — it creates
+/// every bind-mount source under `~/.jackin`, so matching it makes host-owned
+/// mounts transparently readable/writable inside the container with no chown
+/// and no UID baked into the (shareable) image. Returns `None` on non-unix
+/// hosts, where no mapping applies.
+///
+/// Group 0 (not the host GID) is deliberate: the image's `/home/agent` tree is
+/// normalized to group 0 with group==owner permissions at build time (the
+/// `OpenShift` arbitrary-UID pattern), so a process in group 0 can use the
+/// image-baked home regardless of which UID it runs as. A matching
+/// `agent` passwd entry for the host UID is supplied at runtime via
+/// `libnss-extrausers` so `getpwuid`/`$HOME` resolve correctly.
+#[cfg(unix)]
+pub(crate) fn host_run_as_user() -> Option<String> {
+    Some(format!("{}:0", nix::unistd::geteuid().as_raw()))
+}
+
+#[cfg(not(unix))]
+pub(crate) fn host_run_as_user() -> Option<String> {
+    None
+}
+
+/// The host operator's effective UID, used to build the runtime
+/// `libnss-extrausers` passwd line. `None` on non-unix hosts.
+#[cfg(unix)]
+pub(crate) fn host_uid() -> Option<u32> {
+    Some(nix::unistd::geteuid().as_raw())
+}
+
+#[cfg(not(unix))]
+pub(crate) fn host_uid() -> Option<u32> {
+    None
+}
 
 pub(super) struct GitIdentity {
     pub(super) user_name: String,
@@ -95,6 +133,18 @@ mod tests {
         ) -> anyhow::Result<String> {
             self.capture(program, args, cwd).await
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn host_run_as_user_targets_host_uid_group_zero() {
+        let user = host_run_as_user().expect("unix host has a run-as user");
+        assert!(user.ends_with(":0"), "expected group 0, got {user}");
+        let uid: u32 = user
+            .strip_suffix(":0")
+            .and_then(|u| u.parse().ok())
+            .expect("uid prefix parses");
+        assert_eq!(uid, host_uid().expect("unix host has a uid"));
     }
 
     #[tokio::test]
