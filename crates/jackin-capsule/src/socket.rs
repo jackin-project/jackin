@@ -106,9 +106,7 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
                 let mode = std::fs::symlink_metadata(parent)
-                    .with_context(|| {
-                        format!("stat socket parent {}", parent.display())
-                    })?
+                    .with_context(|| format!("stat socket parent {}", parent.display()))?
                     .permissions()
                     .mode();
                 let sticky = mode & 0o1000 != 0;
