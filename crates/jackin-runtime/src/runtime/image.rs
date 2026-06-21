@@ -293,6 +293,15 @@ pub(super) async fn decide_role_image(
     let tags = match tag_result {
         Ok(tags) => tags,
         Err(error) => {
+            // Always-on, not just `debug_log!`: a failing tag lookup forces a
+            // full rebuild, and a persistently degraded Docker daemon turns
+            // that into a silent rebuild storm whose only symptom (without
+            // JACKIN_DEBUG=1) is every launch being slow. Surface the cause.
+            tracing::warn!(
+                %image,
+                error = format!("{error:#}"),
+                "could not list local image tags; falling back to a full rebuild (Docker daemon may be unhealthy)"
+            );
             jackin_diagnostics::debug_log!(
                 "image",
                 "could not list local image tags for {image}; rebuilding: {error:#}"
@@ -399,6 +408,14 @@ pub(super) async fn decide_role_image(
     let labels = match label_result {
         Ok(labels) => labels,
         Err(error) => {
+            // Always-on (see the tag-lookup fallback above): label inspection
+            // failing forces a rebuild despite the image existing, so a flaky
+            // daemon silently rebuilds on every launch. Make the cause visible.
+            tracing::warn!(
+                %image,
+                error = format!("{error:#}"),
+                "local image exists but label inspection failed; falling back to a full rebuild (Docker daemon may be unhealthy)"
+            );
             jackin_diagnostics::debug_log!(
                 "image",
                 "local image {image} exists but label inspection failed; rebuilding: {error:#}"
