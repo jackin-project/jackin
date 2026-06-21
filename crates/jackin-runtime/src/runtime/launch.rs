@@ -896,7 +896,9 @@ pub(super) async fn launch_role_runtime(
     // UID 1000. Consumed via `libnss-extrausers` (see docker/construct). One
     // shared file, content depends only on the host UID; written atomically
     // (per-container temp + rename) so a concurrent launch can't read a torn
-    // file at mount time.
+    // file at mount time, and only when the bytes actually change (see the
+    // no-churn guard below) so the rename can't swap the inode out from under
+    // a live `:ro` bind mount in an already-running container.
     let extrausers_passwd = paths.jackin_home.join("extrausers").join("passwd");
     let extrausers_line = crate::runtime::identity::host_uid()
         .map(|uid| format!("agent:x:{uid}:0:agent:/home/agent:/bin/zsh\n"));
@@ -924,8 +926,22 @@ pub(super) async fn launch_role_runtime(
             if let Some(parent) = extrausers_passwd_for_write.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            std::fs::write(&extrausers_tmp, line)?;
-            std::fs::rename(&extrausers_tmp, &extrausers_passwd_for_write)?;
+            // No-churn guard: this shared passwd file is bind-mounted `:ro`
+            // into every running container. Its content depends only on the
+            // host UID, so a concurrent launch produces identical bytes — but
+            // the temp+rename below replaces the inode, which on macOS
+            // invalidates the live single-file bind mount in containers that
+            // are already running, breaking `getpwuid`/`$HOME` for the agent.
+            // Skip the rename when the bytes already match. Byte compare (not
+            // `read_to_string`) so a transient non-UTF-8 read can't silently
+            // fall through to the inode-swapping rewrite. Mirrors the auth
+            // provisioner's no-churn guard (see `instance::auth`).
+            let unchanged = std::fs::read(&extrausers_passwd_for_write)
+                .is_ok_and(|existing| existing == line.as_bytes());
+            if !unchanged {
+                std::fs::write(&extrausers_tmp, &line)?;
+                std::fs::rename(&extrausers_tmp, &extrausers_passwd_for_write)?;
+            }
         }
         Ok(())
     })
@@ -971,7 +987,7 @@ pub(super) async fn launch_role_runtime(
     }
     jackin_diagnostics::debug_log!(
         "launch",
-        "prepared host socket dir {socket_dir_str} (0o700) and Capsule config for bind-mount at /jackin/run",
+        "prepared host socket dir {socket_dir_str} (owned by host UID, default umask) and Capsule config for bind-mount at /jackin/run",
     );
     run_args.push(image);
     // Pass the initial agent as the container command argument. The
