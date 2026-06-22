@@ -1,0 +1,88 @@
+name: Build signed release archive
+description: |
+  Build one cargo-zigbuild release archive, write its SHA256, sign/SBOM/attest
+  it, and upload the archive artifact. Preview and tagged release workflows use
+  this action so the archive build contract stays identical.
+inputs:
+  package:
+    description: "Archive package to build: jackin or jackin-capsule."
+    required: true
+  target:
+    description: Rust target triple used for packaging path and artifact names.
+    required: true
+  zigbuild-target:
+    description: cargo-zigbuild target, optionally with glibc suffix.
+    required: true
+  version:
+    description: Version override passed to the build.
+    required: true
+  archive-basename:
+    description: Archive basename without .tar.gz.
+    required: true
+  artifact-name:
+    description: Uploaded artifact name.
+    required: true
+  timings-artifact-name:
+    description: Uploaded cargo timings artifact name.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Build and package archive
+      id: package
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+        TARGET: ${{ inputs.target }}
+        ZIGBUILD_TARGET: ${{ inputs.zigbuild-target }}
+        JACKIN_VERSION_OVERRIDE: ${{ inputs.version }}
+        ARCHIVE_BASENAME: ${{ inputs.archive-basename }}
+      run: |
+        set -euo pipefail
+
+        archive="${ARCHIVE_BASENAME}.tar.gz"
+        case "$PACKAGE" in
+          jackin)
+            cargo zigbuild --timings --release --locked --target "$ZIGBUILD_TARGET"
+            tar -czf "$archive" \
+              -C "target/${TARGET}/release" \
+              jackin jackin-role
+            ;;
+          jackin-capsule)
+            cargo zigbuild --timings --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
+            tar -czf "$archive" \
+              -C "target/${TARGET}/release" \
+              jackin-capsule
+            ;;
+          *)
+            echo "::error::unsupported release archive package: ${PACKAGE}"
+            exit 1
+            ;;
+        esac
+
+        sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
+        echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+    - name: Upload cargo timings
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ inputs.timings-artifact-name }}
+        path: target/cargo-timings/*.html
+        if-no-files-found: ignore
+        retention-days: 7
+
+    - name: Sign, SBOM, and attest archive
+      uses: ./.github/actions/sign-and-attest-archive
+      with:
+        archive: ${{ steps.package.outputs.archive }}
+
+    - name: Upload archive artifact
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          ${{ steps.package.outputs.archive }}
+          ${{ steps.package.outputs.archive }}.sha256
+          ${{ steps.package.outputs.archive }}.bundle
+          ${{ steps.package.outputs.archive }}.sbom.json

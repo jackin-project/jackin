@@ -81,7 +81,6 @@ jobs:
       id-token: write
       attestations: write
     env:
-      VERSION: ${{ needs.check-version.outputs.version }}
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
@@ -128,40 +127,16 @@ jobs:
         run: |
           echo "SDKROOT=/tmp/macos-sdk/MacOSX26.1.sdk" >> "$GITHUB_ENV"
           echo "MACOSX_DEPLOYMENT_TARGET=12.0" >> "$GITHUB_ENV"
-      - name: Build
-        env:
-          JACKIN_VERSION_OVERRIDE: ${{ needs.check-version.outputs.version }}
-          ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
-        run: cargo zigbuild --timings --release --locked --target "$ZIGBUILD_TARGET"
-      - name: Upload cargo timings
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Build signed archive
+        uses: ./.github/actions/build-release-archive
         with:
-          name: cargo-timings-release-jackin-${{ matrix.target }}
-          path: target/cargo-timings/*.html
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Package
-        run: |
-          archive="jackin-${VERSION}-${{ matrix.target }}.tar.gz"
-          tar -czf "$archive" -C "target/${{ matrix.target }}/release" jackin jackin-role
-          sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
-          echo "archive=$archive" >> "$GITHUB_ENV"
-
-      - name: Sign, SBOM, and attest archive
-        uses: ./.github/actions/sign-and-attest-archive
-        with:
-          archive: ${{ env.archive }}
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: jackin-${{ matrix.target }}
-          path: |
-            jackin-*.tar.gz
-            jackin-*.tar.gz.sha256
-            jackin-*.tar.gz.bundle
-            jackin-*.tar.gz.sbom.json
+          package: jackin
+          target: ${{ matrix.target }}
+          zigbuild-target: ${{ matrix.zigbuild_target }}
+          version: ${{ needs.check-version.outputs.version }}
+          archive-basename: jackin-${{ needs.check-version.outputs.version }}-${{ matrix.target }}
+          artifact-name: jackin-${{ matrix.target }}
+          timings-artifact-name: cargo-timings-release-jackin-${{ matrix.target }}
 
   build-jackin-capsule:
     needs: check-version
@@ -207,44 +182,16 @@ jobs:
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
       - run: rustup target add ${{ matrix.target }}
-      - name: Build
-        env:
-          JACKIN_VERSION_OVERRIDE: ${{ needs.check-version.outputs.version }}
-          ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
-        run: cargo zigbuild --timings --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
-      - name: Upload cargo timings
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Build signed capsule archive
+        uses: ./.github/actions/build-release-archive
         with:
-          name: cargo-timings-release-capsule-${{ matrix.target }}
-          path: target/cargo-timings/*.html
-          if-no-files-found: ignore
-          retention-days: 7
-      - name: Package
-        env:
-          TARGET: ${{ matrix.target }}
-          VERSION: ${{ needs.check-version.outputs.version }}
-        run: |
-          archive="jackin-capsule-${VERSION}-${TARGET}.tar.gz"
-          tar -czf "$archive" \
-            -C "target/${TARGET}/release" \
-            jackin-capsule
-          sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
-          echo "archive=$archive" >> "$GITHUB_ENV"
-
-      - name: Sign, SBOM, and attest archive
-        uses: ./.github/actions/sign-and-attest-archive
-        with:
-          archive: ${{ env.archive }}
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: jackin-capsule-${{ matrix.target }}
-          path: |
-            jackin-capsule-*.tar.gz
-            jackin-capsule-*.tar.gz.sha256
-            jackin-capsule-*.tar.gz.bundle
-            jackin-capsule-*.tar.gz.sbom.json
+          package: jackin-capsule
+          target: ${{ matrix.target }}
+          zigbuild-target: ${{ matrix.zigbuild_target }}
+          version: ${{ needs.check-version.outputs.version }}
+          archive-basename: jackin-capsule-${{ needs.check-version.outputs.version }}-${{ matrix.target }}
+          artifact-name: jackin-capsule-${{ matrix.target }}
+          timings-artifact-name: cargo-timings-release-capsule-${{ matrix.target }}
 
   release:
     needs: [check-version, test, build, build-jackin-capsule]

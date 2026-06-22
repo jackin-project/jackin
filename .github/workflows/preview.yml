@@ -296,19 +296,16 @@ jobs:
           # Pin deployment target so the binary runs on macOS 12+ even
           # though we build with the latest SDK.
           echo "MACOSX_DEPLOYMENT_TARGET=12.0" >> "$GITHUB_ENV"
-      - name: Build
-        env:
-          ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
-          JACKIN_VERSION_OVERRIDE: ${{ needs.source-changed.outputs.version }}
-        run: cargo zigbuild --timings --release --locked --target "$ZIGBUILD_TARGET"
-      - name: Upload cargo timings
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Build signed archive
+        uses: ./.github/actions/build-release-archive
         with:
-          name: cargo-timings-preview-jackin-${{ matrix.target }}
-          path: target/cargo-timings/*.html
-          if-no-files-found: ignore
-          retention-days: 7
+          package: jackin
+          target: ${{ matrix.target }}
+          zigbuild-target: ${{ matrix.zigbuild_target }}
+          version: ${{ needs.source-changed.outputs.version }}
+          archive-basename: jackin-${{ matrix.target }}
+          artifact-name: jackin-${{ matrix.target }}
+          timings-artifact-name: cargo-timings-preview-jackin-${{ matrix.target }}
       - name: Write sccache stats
         if: always()
         run: |
@@ -328,31 +325,6 @@ jobs:
           path: sccache-stats-preview-jackin-${{ matrix.target }}.txt
           if-no-files-found: ignore
           retention-days: 7
-      - name: Package
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          archive="jackin-${TARGET}.tar.gz"
-          tar -czf "$archive" \
-            -C "target/${TARGET}/release" \
-            jackin jackin-role
-          sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
-          echo "archive=$archive" >> "$GITHUB_ENV"
-
-      - name: Sign, SBOM, and attest archive
-        uses: ./.github/actions/sign-and-attest-archive
-        with:
-          archive: ${{ env.archive }}
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: jackin-${{ matrix.target }}
-          path: |
-            jackin-${{ matrix.target }}.tar.gz
-            jackin-${{ matrix.target }}.tar.gz.sha256
-            jackin-${{ matrix.target }}.tar.gz.bundle
-            jackin-${{ matrix.target }}.tar.gz.sbom.json
-
 
   build-jackin-capsule:
     needs: source-changed
@@ -413,19 +385,16 @@ jobs:
           script: |
             core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-      - name: Build
-        env:
-          ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
-          JACKIN_VERSION_OVERRIDE: ${{ needs.source-changed.outputs.version }}
-        run: cargo zigbuild --timings --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
-      - name: Upload cargo timings
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Build signed capsule archive
+        uses: ./.github/actions/build-release-archive
         with:
-          name: cargo-timings-preview-capsule-${{ matrix.target }}
-          path: target/cargo-timings/*.html
-          if-no-files-found: ignore
-          retention-days: 7
+          package: jackin-capsule
+          target: ${{ matrix.target }}
+          zigbuild-target: ${{ matrix.zigbuild_target }}
+          version: ${{ needs.source-changed.outputs.version }}
+          archive-basename: jackin-capsule-${{ matrix.target }}
+          artifact-name: jackin-capsule-${{ matrix.target }}
+          timings-artifact-name: cargo-timings-preview-capsule-${{ matrix.target }}
       - name: Write sccache stats
         if: always()
         run: |
@@ -445,33 +414,6 @@ jobs:
           path: sccache-stats-preview-capsule-${{ matrix.target }}.txt
           if-no-files-found: ignore
           retention-days: 7
-      - name: Publish binary as release asset
-        env:
-          ARCH: ${{ matrix.arch }}
-          TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          archive="jackin-capsule-${TARGET}.tar.gz"
-          tar -czf "$archive" \
-            -C "target/${TARGET}/release" \
-            jackin-capsule
-          sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
-          echo "archive=$archive" >> "$GITHUB_ENV"
-
-      - name: Sign, SBOM, and attest archive
-        uses: ./.github/actions/sign-and-attest-archive
-        with:
-          archive: ${{ env.archive }}
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: jackin-capsule-${{ matrix.target }}
-          path: |
-            jackin-capsule-${{ matrix.target }}.tar.gz
-            jackin-capsule-${{ matrix.target }}.tar.gz.sha256
-            jackin-capsule-${{ matrix.target }}.tar.gz.bundle
-            jackin-capsule-${{ matrix.target }}.tar.gz.sbom.json
-
   publish-preview:
     needs: [source-changed, build-preview, build-jackin-capsule]
     if: needs.source-changed.outputs.source == 'true'
