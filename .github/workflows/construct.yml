@@ -151,6 +151,18 @@ jobs:
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
+      - name: Prefetch Cargo dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          attempt=1
+          until cargo fetch --locked; do
+            if [ "$attempt" -ge 3 ]; then
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+            attempt="$((attempt + 1))"
+          done
       - name: Install Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
         with:
@@ -242,6 +254,18 @@ jobs:
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
+      - name: Prefetch Cargo dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          attempt=1
+          until cargo fetch --locked; do
+            if [ "$attempt" -ge 3 ]; then
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+            attempt="$((attempt + 1))"
+          done
       - name: Log in to Docker Hub
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
@@ -312,6 +336,18 @@ jobs:
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
+      - name: Prefetch Cargo dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          attempt=1
+          until cargo fetch --locked; do
+            if [ "$attempt" -ge 3 ]; then
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+            attempt="$((attempt + 1))"
+          done
       - name: Verify docker buildx CLI resolves under workflow env
         # `docker buildx ls` reads BUILDX_BUILDER (and the rest of
         # buildx's env-driven config) and fails fast on a missing

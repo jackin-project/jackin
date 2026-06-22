@@ -538,6 +538,7 @@ jobs:
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
+      - run: rustup target add x86_64-unknown-linux-musl
       - name: Fuzz jackin-term parser path
         run: |
           cd crates/jackin-term

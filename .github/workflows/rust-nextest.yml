@@ -85,11 +85,11 @@ jobs:
           if [ "${{ inputs.all-features }}" = "true" ]; then
             args+=(--all-features)
           fi
-          cargo nextest run --timings=html "${args[@]}"
+          cargo nextest run --timings "${args[@]}"
 
           if [ "${{ inputs.all-features }}" = "true" ]; then
             cargo nextest run \
-              --timings=html \
+              --timings \
               -p jackin \
               --features e2e \
               --profile docker-e2e \

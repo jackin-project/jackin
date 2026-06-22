@@ -46,6 +46,7 @@ jobs:
           # reruns skip recompiling unchanged dependencies.
       - run: cargo deny check advisories
       - run: cargo hack check --workspace --feature-powerset --all-targets --locked
+      - run: rustup target add x86_64-unknown-linux-musl
       - name: Long jackin-term fuzz run
         run: |
           cd crates/jackin-term
