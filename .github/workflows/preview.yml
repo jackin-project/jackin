@@ -307,8 +307,9 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: archive-jackin-${{ matrix.target.target }}
+          shared-key: release-archive-jackin-${{ matrix.target.target }}-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
@@ -402,8 +403,9 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: archive-capsule-${{ matrix.target.target }}
+          shared-key: release-archive-capsule-${{ matrix.target.target }}-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so

@@ -101,18 +101,19 @@ jobs:
           if [ "${{ inputs.all-features }}" = "true" ]; then
             args+=(--all-features)
           fi
-          cargo nextest run --timings "${args[@]}"
+          cargo nextest run --timings --offline "${args[@]}"
 
           if [ "${{ inputs.docker-e2e }}" = "true" ]; then
             cargo nextest run \
               --timings \
+              --offline \
               -p jackin \
               --features e2e \
               --profile docker-e2e \
               --no-run \
               --color=always \
               --locked
-            cargo build -p jackin-capsule --bin jackin-capsule --locked
+            cargo build -p jackin-capsule --bin jackin-capsule --locked --offline
           fi
       - name: Upload cargo timings
         if: always()
@@ -173,6 +174,10 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_NET_RETRY: "10"
       CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
+      SCCACHE_GHA_CACHE_TO: sccache-nextest-prepare-${{ inputs.cache-shared-key }}-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}
+      SCCACHE_GHA_CACHE_FROM: sccache-nextest-prepare-${{ inputs.cache-shared-key }}-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
@@ -188,7 +193,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust cargo-nextest"
+          install_args: "rust cargo-nextest sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -200,19 +205,17 @@ jobs:
           # PR/branch/release reads the default branch's warm cache via fallback.
           # The prepare job owns saving this workspace cache; package jobs only
           # restore it so the matrix cannot create 19 isolated target caches.
+      - name: Export sccache GitHub cache runtime
+        if: matrix.config.lane == 'GitHub'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
       - name: Run package tests
         shell: bash
         run: |
           set -euo pipefail
-
-          attempt=1
-          until cargo fetch --locked; do
-            if [ "$attempt" -ge 3 ]; then
-              exit 1
-            fi
-            sleep "$((attempt * 10))"
-            attempt="$((attempt + 1))"
-          done
 
           case "${{ matrix.group }}" in
             jackin|jackin-capsule|jackin-runtime|jackin-tui)
@@ -233,7 +236,7 @@ jobs:
               ;;
           esac
 
-          args+=(--no-tests=pass --color=always --locked)
+          args+=(--no-tests=pass --color=always --locked --offline)
           if [ "${{ inputs.all-features }}" = "true" ]; then
             args+=(--all-features)
           fi
@@ -253,6 +256,10 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_NET_RETRY: "10"
       CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
+      SCCACHE_GHA_CACHE_TO: sccache-nextest-prepare-${{ inputs.cache-shared-key }}-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}
+      SCCACHE_GHA_CACHE_FROM: sccache-nextest-prepare-${{ inputs.cache-shared-key }}-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
@@ -268,7 +275,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust cargo-nextest"
+          install_args: "rust cargo-nextest sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
@@ -278,6 +285,13 @@ jobs:
           save-if: "false"
           # The prepare job owns this cache. Docker E2E restores the prepared
           # workspace so it can start after prepare without rebuilding the graph.
+      - name: Export sccache GitHub cache runtime
+        if: matrix.config.lane == 'GitHub'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
       - name: Download construct image for E2E
         if: inputs.construct-image-changed
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -300,14 +314,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          attempt=1
-          until cargo fetch --locked; do
-            if [ "$attempt" -ge 3 ]; then
-              exit 1
-            fi
-            sleep "$((attempt * 10))"
-            attempt="$((attempt + 1))"
-          done
-
-          cargo nextest run -p jackin --features e2e --profile docker-e2e --color=always --locked
+          cargo nextest run -p jackin --features e2e --profile docker-e2e --color=always --locked --offline

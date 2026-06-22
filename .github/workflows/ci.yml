@@ -298,8 +298,9 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}
+          shared-key: ci-default-dev-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
@@ -338,8 +339,9 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}
+          shared-key: ci-default-dev-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
@@ -384,8 +386,9 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}
+          shared-key: ci-all-features-dev-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
@@ -461,8 +464,9 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}
+          shared-key: ci-policy-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
@@ -506,8 +510,9 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}
+          shared-key: ci-default-dev-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
@@ -588,8 +593,9 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
-          shared-key: construct-e2e-image-${{ matrix.config.lane }}
+          shared-key: construct-e2e-image-${{ matrix.config.lane }}-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
       - name: Set up Docker Buildx for E2E cache
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
         with:
@@ -619,7 +625,7 @@ jobs:
     with:
       runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
       all-features: true
-      cache-shared-key: nextest-all-features-workspace-v1
+      cache-shared-key: ci-all-features-dev-workspace-v2
       construct-image-changed: ${{ needs.changes.outputs.construct_image == 'true' }}
       docker-e2e: ${{ needs.changes.outputs.docker_e2e == 'true' }}
     secrets: inherit
@@ -655,8 +661,9 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}
+          shared-key: ci-fuzz-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
@@ -701,8 +708,9 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}
+          shared-key: ci-all-features-dev-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
@@ -749,8 +757,9 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}
+          shared-key: ci-msrv-default-dev-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
@@ -805,8 +814,9 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}
+          shared-key: ci-policy-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
