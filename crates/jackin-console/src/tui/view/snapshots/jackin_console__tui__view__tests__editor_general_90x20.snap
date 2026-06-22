@@ -1,6 +1,6 @@
 ---
-source: crates/jackin-console/src/tui/view/tests/snapshot/tests.rs
-assertion_line: 258
+source: crates/jackin-console/src/tui/view/tests.rs
+assertion_line: 1005
 expression: rendered
 ---
  jackin'  · edit workspace · my-workspace                                                 

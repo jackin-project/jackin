@@ -415,6 +415,7 @@ pub fn failure_popup_hyperlink_overlay(
 /// authored here since it is not a key.
 fn failure_hint_spans() -> Vec<HintSpan<'static>> {
     let mut spans = vec![
+        // UNREGISTERABLE(mouse): mouse click cannot be expressed as a KeyChord.
         HintSpan::Key("click"),
         HintSpan::Text("copy value"),
         HintSpan::GroupSep,

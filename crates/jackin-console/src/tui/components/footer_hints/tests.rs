@@ -396,7 +396,7 @@ fn editor_screen_footer_routes_modal_tabbar_and_content() {
             "navigate",
             "↵",
             "rename",
-            "\u{21e7}",
+            "\u{21e4}",
             "tab bar",
             "S",
             "save workspace",

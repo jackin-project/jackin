@@ -206,6 +206,10 @@ pub(crate) struct BottomChromeWidget<'a> {
     /// awaiting a command chord, the hint bar switches to a prefix-command
     /// cheat-sheet instead of the normal navigation hints.
     pub(crate) prefix_awaiting: bool,
+    /// Resolved palette-key byte (`InputParser::palette_key().unwrap_or(0x1C)`).
+    /// Passed to the hint builder so the palette-key glyph matches the
+    /// operator's `JACKIN_PALETTE_KEY` configuration.
+    pub(crate) palette_key: u8,
 }
 
 impl Widget for BottomChromeWidget<'_> {
@@ -240,6 +244,7 @@ impl Widget for BottomChromeWidget<'_> {
         }
         let spans = crate::tui::components::dialog::main_view_hint(
             self.scrollback_active,
+            self.palette_key,
             self.scroll_axes,
             self.prefix_awaiting,
         );

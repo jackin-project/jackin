@@ -1,5 +1,5 @@
 ---
-source: crates/jackin-console/src/tui/view/tests/snapshot/tests.rs
+source: crates/jackin-console/src/tui/view/tests.rs
 expression: rendered
 ---
  jackin'  · workspaces                                                                                        

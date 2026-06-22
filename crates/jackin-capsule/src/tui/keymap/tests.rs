@@ -1,6 +1,7 @@
 use super::{
-    FILTER_LIST_KEYMAP, FilterListAction, PREFIX_COMMAND_KEYMAP, READ_ONLY_DISMISS_KEYMAP,
-    RENAME_KEYMAP, ReadOnlyDismissAction, RenameAction,
+    CAPSULE_GLOBAL_KEYMAP, FILTER_LIST_KEYMAP, FilterListAction, GlobalCapsuleAction,
+    PREFIX_COMMAND_KEYMAP, READ_ONLY_DISMISS_KEYMAP, RENAME_KEYMAP, ReadOnlyDismissAction,
+    RenameAction,
 };
 use crate::tui::input::{ArrowDir, PrefixCommand};
 use jackin_tui::components::{KeyChord, LogicalKey};
@@ -56,13 +57,67 @@ fn prefix_keymap_has_shown_hints_for_primary_commands() {
             _ => None,
         })
         .collect();
-    // Primary navigation commands must be advertised
-    assert!(keys.contains(&"h"), "must show h: {keys:?}");
-    assert!(keys.contains(&"j"), "must show j: {keys:?}");
-    assert!(keys.contains(&"k"), "must show k: {keys:?}");
-    assert!(keys.contains(&"l"), "must show l: {keys:?}");
-    assert!(keys.contains(&"c"), "must show c: {keys:?}");
-    assert!(keys.contains(&"x"), "must show x: {keys:?}");
+    // h advertises all four directions with a grouped glyph; j/k/l are HiddenAlias.
+    assert!(
+        keys.contains(&"h/j/k/l"),
+        "must show grouped nav glyph: {keys:?}"
+    );
+    assert!(
+        !keys.contains(&"h"),
+        "h must not appear as solo glyph (grouped with j/k/l): {keys:?}"
+    );
+    assert!(
+        !keys.contains(&"j"),
+        "j is HiddenAlias and must not appear in hints: {keys:?}"
+    );
+    assert!(
+        !keys.contains(&"k"),
+        "k is HiddenAlias and must not appear in hints: {keys:?}"
+    );
+    assert!(
+        !keys.contains(&"l"),
+        "l is HiddenAlias and must not appear in hints: {keys:?}"
+    );
+    // chord_glyph derives uppercase from Char('c') / Char('x') when glyph: None
+    assert!(keys.contains(&"C"), "must show C (new tab): {keys:?}");
+    assert!(
+        keys.contains(&"X"),
+        "must show X (close/kill pane): {keys:?}"
+    );
+}
+
+#[test]
+fn capsule_global_keymap_dispatches_ctrl_q() {
+    // Acceptance criterion for roadmap item A.
+    let chord = raw_bytes_to_chord(&[0x11]).expect("0x11 → Ctrl-Q chord");
+    assert_eq!(chord, KeyChord::ctrl(LogicalKey::Char('q')));
+    assert_eq!(
+        CAPSULE_GLOBAL_KEYMAP.dispatch(chord),
+        Some(GlobalCapsuleAction::RequestExit),
+        "Ctrl-Q must dispatch to RequestExit via CAPSULE_GLOBAL_KEYMAP"
+    );
+}
+
+#[test]
+fn capsule_global_keymap_hint_spans_include_ctrl_q_quit() {
+    let spans = CAPSULE_GLOBAL_KEYMAP.hint_spans();
+    let combined: String = spans
+        .iter()
+        .filter_map(|s| match s {
+            jackin_tui::HintSpan::Key(k) => Some(*k),
+            jackin_tui::HintSpan::Text(t) => Some(*t),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        combined.contains("Ctrl-Q"),
+        "global keymap hint must advertise Ctrl-Q: {combined}"
+    );
+    assert!(
+        combined.contains("quit"),
+        "global keymap hint must advertise quit label: {combined}"
+    );
 }
 
 #[test]

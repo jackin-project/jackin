@@ -16,11 +16,13 @@ fn labels(spans: &[HintSpan<'_>]) -> String {
 fn main_view_hint_omits_scroll_when_focused_pane_fits() {
     let hint = labels(&main_view_hint(
         false,
+        0x1C,
         jackin_tui::components::ScrollAxes::default(),
         false,
     ));
-    assert!(hint.contains("Ctrl+\\ menu"));
-    assert!(hint.contains("click focus pane"));
+    // palette key renders with Ctrl- prefix (format_key_glyph(0x1C) = "Ctrl-\")
+    assert!(hint.contains("Ctrl-\\ menu"), "hint: {hint}");
+    assert!(hint.contains("click focus pane"), "hint: {hint}");
     assert!(
         !hint.contains("scroll"),
         "fit-content main view must not advertise scroll: {hint}"
@@ -31,14 +33,15 @@ fn main_view_hint_omits_scroll_when_focused_pane_fits() {
 fn main_view_hint_advertises_only_visible_scroll_axis() {
     let hint = labels(&main_view_hint(
         false,
+        0x1C,
         jackin_tui::components::ScrollAxes {
             vertical: true,
             horizontal: false,
         },
         false,
     ));
-    assert!(hint.contains("↑↓/j/k scroll"));
-    assert!(hint.contains("click focus pane"));
+    assert!(hint.contains("↑↓/j/k scroll"), "hint: {hint}");
+    assert!(hint.contains("click focus pane"), "hint: {hint}");
     assert!(
         !hint.contains("←→/h/l scroll"),
         "vertical-only pane must not advertise horizontal scroll: {hint}"
@@ -49,11 +52,12 @@ fn main_view_hint_advertises_only_visible_scroll_axis() {
 fn scrollback_hint_omits_scroll_when_no_axis_is_visible() {
     let hint = labels(&main_view_hint(
         true,
+        0x1C,
         jackin_tui::components::ScrollAxes::default(),
         false,
     ));
-    assert!(hint.contains("Esc exit scrollback"));
-    assert!(hint.contains("Ctrl+\\ menu"));
+    assert!(hint.contains("Esc exit scrollback"), "hint: {hint}");
+    assert!(hint.contains("Ctrl-\\ menu"), "hint: {hint}");
     assert!(
         !hint.contains("↑↓ scroll"),
         "scrollback exit hint must not advertise scroll without a visible axis: {hint}"
@@ -64,24 +68,22 @@ fn scrollback_hint_omits_scroll_when_no_axis_is_visible() {
 fn prefix_awaiting_shows_cheat_sheet_not_nav_hints() {
     let hint = labels(&main_view_hint(
         false,
+        0x1C,
         jackin_tui::components::ScrollAxes::default(),
         true,
     ));
+    // Palette key glyph is format_key_glyph(0x1C) = "Ctrl-\"
     assert!(
-        hint.contains("space/: palette"),
+        hint.contains("Ctrl-\\ palette"),
         "must advertise palette: {hint}"
     );
-    assert!(
-        hint.contains("n/c new/close"),
-        "must show new/close commands: {hint}"
-    );
+    // Keymap-derived prefix hints include nav group
+    assert!(hint.contains("h/j/k/l nav"), "must show nav group: {hint}");
+    // Ctrl-Q derives from CAPSULE_GLOBAL_KEYMAP
+    assert!(hint.contains("Ctrl-Q quit"), "must show quit: {hint}");
     assert!(
         !hint.contains("click"),
         "prefix hint must not show mouse nav: {hint}"
-    );
-    assert!(
-        !hint.contains("Ctrl+\\"),
-        "prefix hint must not show menu toggle: {hint}"
     );
 }
 
@@ -89,6 +91,7 @@ fn prefix_awaiting_shows_cheat_sheet_not_nav_hints() {
 fn main_view_hint_includes_resize_pane_group() {
     let hint = labels(&main_view_hint(
         false,
+        0x1C,
         jackin_tui::components::ScrollAxes::default(),
         false,
     ));
@@ -103,6 +106,7 @@ fn scrollback_hint_does_not_include_resize_pane() {
     // Resize is a live-view gesture; scrollback mode replaces the normal hint row.
     let hint = labels(&main_view_hint(
         true,
+        0x1C,
         jackin_tui::components::ScrollAxes::default(),
         false,
     ));
@@ -110,4 +114,35 @@ fn scrollback_hint_does_not_include_resize_pane() {
         !hint.contains("resize pane"),
         "scrollback hint must not advertise pane resize: {hint}"
     );
+}
+
+#[test]
+fn custom_palette_key_glyph_appears_in_hint() {
+    // Ctrl+E = 0x05 → format_key_glyph(0x05) = "Ctrl-E"
+    let hint = labels(&main_view_hint(
+        false,
+        0x05,
+        jackin_tui::components::ScrollAxes::default(),
+        false,
+    ));
+    assert!(
+        hint.contains("Ctrl-E menu"),
+        "custom palette key must appear with Ctrl- prefix: {hint}"
+    );
+    assert!(
+        !hint.contains("Ctrl-\\ menu"),
+        "default glyph must not appear when key is overridden: {hint}"
+    );
+}
+
+#[test]
+fn format_key_glyph_ctrl_backslash() {
+    // Acceptance criterion from roadmap item C
+    assert_eq!(format_key_glyph(0x1C), "Ctrl-\\");
+}
+
+#[test]
+fn format_key_glyph_ctrl_e() {
+    // Acceptance criterion from roadmap item C
+    assert_eq!(format_key_glyph(0x05), "Ctrl-E");
 }

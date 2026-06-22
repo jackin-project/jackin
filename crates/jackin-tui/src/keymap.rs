@@ -117,6 +117,15 @@ impl KeyChord {
             mods: Mods::SHIFT,
         }
     }
+
+    /// Chord with Alt+Shift held (used for pane-resize CSI sequences).
+    #[must_use]
+    pub const fn alt_shift(key: LogicalKey) -> Self {
+        Self {
+            key,
+            mods: Mods(Mods::ALT.0 | Mods::SHIFT.0),
+        }
+    }
 }
 
 /// Convert a crossterm `KeyEvent` into a platform-neutral [`KeyChord`].
@@ -411,22 +420,10 @@ pub fn raw_bytes_to_chord(bytes: &[u8]) -> Option<KeyChord> {
         b"\x1b[5~" => Some(KeyChord::plain(LogicalKey::PageUp)),
         b"\x1b[6~" => Some(KeyChord::plain(LogicalKey::PageDown)),
         // CSI with modifier 4 = Alt+Shift — resize pane arrows
-        b"\x1b[1;4A" => Some(KeyChord {
-            key: LogicalKey::Up,
-            mods: Mods::ALT.with_shift(),
-        }),
-        b"\x1b[1;4B" => Some(KeyChord {
-            key: LogicalKey::Down,
-            mods: Mods::ALT.with_shift(),
-        }),
-        b"\x1b[1;4C" => Some(KeyChord {
-            key: LogicalKey::Right,
-            mods: Mods::ALT.with_shift(),
-        }),
-        b"\x1b[1;4D" => Some(KeyChord {
-            key: LogicalKey::Left,
-            mods: Mods::ALT.with_shift(),
-        }),
+        b"\x1b[1;4A" => Some(KeyChord::alt_shift(LogicalKey::Up)),
+        b"\x1b[1;4B" => Some(KeyChord::alt_shift(LogicalKey::Down)),
+        b"\x1b[1;4C" => Some(KeyChord::alt_shift(LogicalKey::Right)),
+        b"\x1b[1;4D" => Some(KeyChord::alt_shift(LogicalKey::Left)),
         _ => None,
     }
 }

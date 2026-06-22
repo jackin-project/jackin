@@ -448,6 +448,10 @@ fn story_filter_input_populated(frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn story_hint_bar_manager_footer(frame: &mut Frame<'_>, area: Rect) {
+    // UNREGISTERABLE(lookbook-fixture): static gallery sample illustrating the
+    // hint-bar widget's layout. The lookbook crate has no dispatch surface and
+    // no `Keymap<A>` to derive these glyphs from — every entry is demo content,
+    // not an advertised real keybinding.
     let spans = [
         HintSpan::Key("↑↓"),
         HintSpan::Text("select"),
@@ -531,6 +535,10 @@ fn story_status_footer_launch_progress(frame: &mut Frame<'_>, area: Rect) {
     );
 }
 
+// UNREGISTERABLE(lookbook-fixture): static gallery sample mirroring the launch
+// cockpit's hint bar. The real cockpit derives these from COCKPIT_KEYMAP, but
+// the lookbook crate depends only on jackin-tui and cannot reference the launch
+// keymap — so this preview hardcodes the same glyphs as demo content.
 const COCKPIT_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("Ctrl-C"),
     HintSpan::Text("abort"),
