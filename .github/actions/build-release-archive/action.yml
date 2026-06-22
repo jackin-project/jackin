@@ -45,6 +45,7 @@ runs:
         ZIGBUILD_TARGET: ${{ inputs.zigbuild-target }}
         JACKIN_VERSION_OVERRIDE: ${{ inputs.version }}
         ARCHIVE_BASENAME: ${{ inputs.archive-basename }}
+        SOURCE_DATE_EPOCH: "0"
       run: |
         set -euo pipefail
 
@@ -52,15 +53,27 @@ runs:
         case "$PACKAGE" in
           jackin)
             cargo zigbuild --timings --release --locked --target "$ZIGBUILD_TARGET"
-            tar -czf "$archive" \
+            tar --sort=name \
+              --mtime="@${SOURCE_DATE_EPOCH}" \
+              --owner=0 \
+              --group=0 \
+              --numeric-owner \
+              -cf - \
               -C "target/${TARGET}/release" \
-              jackin jackin-role
+              jackin jackin-role |
+              gzip -n > "$archive"
             ;;
           jackin-capsule)
             cargo zigbuild --timings --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
-            tar -czf "$archive" \
+            tar --sort=name \
+              --mtime="@${SOURCE_DATE_EPOCH}" \
+              --owner=0 \
+              --group=0 \
+              --numeric-owner \
+              -cf - \
               -C "target/${TARGET}/release" \
-              jackin-capsule
+              jackin-capsule |
+              gzip -n > "$archive"
             ;;
           *)
             echo "::error::unsupported release archive package: ${PACKAGE}"
