@@ -61,6 +61,7 @@ fn chrome_frame(
                     debug_run_id,
                     dialog_hint_spans: None,
                     spawn_failure,
+                    palette_key: 0x1C,
                 },
             );
         })
@@ -184,6 +185,7 @@ fn debug_dialog_keeps_status_bar_visible() {
                     debug_run_id: None,
                     dialog_hint_spans: None,
                     spawn_failure: None,
+                    palette_key: 0x1C,
                 },
             );
         })
@@ -251,6 +253,7 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
                     debug_run_id: None,
                     dialog_hint_spans: None,
                     spawn_failure: None,
+                    palette_key: 0x1C,
                 },
             );
         })

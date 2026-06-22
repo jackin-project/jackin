@@ -52,21 +52,27 @@ impl FileBrowserState {
             super::git_prompt::git_prompt_footer_items(self.pending_git_url.is_some())
         } else {
             vec![
+                // UNREGISTERABLE(multi-key-display-group): ↑↓/j/k combines arrow keys and vim aliases.
                 HintSpan::Key("\u{2191}\u{2193}/j/k"),
                 HintSpan::Text("navigate"),
                 HintSpan::GroupSep,
+                // UNREGISTERABLE(multi-key-display-group): PgUp/PgDn combined display.
                 HintSpan::Key("PgUp/PgDn"),
                 HintSpan::Text("page"),
                 HintSpan::GroupSep,
+                // UNREGISTERABLE(multi-key-display-group): ↵/l combines Enter and vim right.
                 HintSpan::Key("↵/l"),
                 HintSpan::Text("open"),
                 HintSpan::GroupSep,
+                // UNREGISTERABLE(multi-key-display-group): H/h/← combines three up-directory bindings.
                 HintSpan::Key("H/h/\u{2190}"),
                 HintSpan::Text("up"),
                 HintSpan::GroupSep,
+                // UNREGISTERABLE(file-browser-no-keymap): S selects inline; no FILE_BROWSER_KEYMAP registered.
                 HintSpan::Key("S"),
                 HintSpan::Text("select"),
                 HintSpan::GroupSep,
+                // UNREGISTERABLE(file-browser-no-keymap): Esc handled inline.
                 HintSpan::Key("Esc"),
                 HintSpan::Text("up/cancel"),
             ]
