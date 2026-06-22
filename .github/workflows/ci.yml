@@ -622,7 +622,7 @@ jobs:
       - run: cargo audit
 
   build-validator:
-    needs: [changes, check-all-features]
+    needs: [changes, check-all-features, matrix-setup]
     # Run on push-to-main when Rust inputs change, and on any
     # workflow_dispatch so a maintainer can re-build the validator
     # artifacts on demand without waiting for a Rust-touching push.
@@ -631,18 +631,20 @@ jobs:
        github.ref == 'refs/heads/main' &&
        needs.changes.outputs.rust == 'true') ||
       github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
-    name: cargo build validator
+    name: cargo build validator (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        target:
+          - triple: x86_64-unknown-linux-gnu
             zigbuild: true
-          - target: aarch64-unknown-linux-gnu
+          - triple: aarch64-unknown-linux-gnu
             zigbuild: true
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -666,31 +668,31 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "${{ matrix.zigbuild && 'rust zig cargo:cargo-zigbuild' || 'rust' }}"
+          install_args: "${{ matrix.target.zigbuild && 'rust zig cargo:cargo-zigbuild' || 'rust' }}"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}-${{ matrix.target }}
+          shared-key: ${{ github.job }}-${{ matrix.target.triple }}
           cache-all-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
-      - run: rustup target add ${{ matrix.target }}
-      - name: Build validator (${{ matrix.target }})
-        run: cargo zigbuild --release --locked --bin jackin-role --target ${{ matrix.target }}.2.17
+      - run: rustup target add ${{ matrix.target.triple }}
+      - name: Build validator (${{ matrix.target.triple }})
+        run: cargo zigbuild --release --locked --bin jackin-role --target ${{ matrix.target.triple }}.2.17
       - name: Package validator
         run: |
-          archive="jackin-role-${{ matrix.target }}.tar.gz"
-          tar -czf "$archive" -C "target/${{ matrix.target }}/release" jackin-role
+          archive="jackin-role-${{ matrix.target.triple }}.tar.gz"
+          tar -czf "$archive" -C "target/${{ matrix.target.triple }}/release" jackin-role
           sha256sum "$archive" > "$archive.sha256"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: jackin-role-${{ matrix.target }}
+          name: jackin-role-${{ matrix.target.triple }}-${{ matrix.config.lane }}
           path: |
-            jackin-role-${{ matrix.target }}.tar.gz
-            jackin-role-${{ matrix.target }}.tar.gz.sha256
+            jackin-role-${{ matrix.target.triple }}.tar.gz
+            jackin-role-${{ matrix.target.triple }}.tar.gz.sha256
           retention-days: 7
 
   # Single stable check name for branch-protection required-status,
