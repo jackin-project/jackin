@@ -114,6 +114,8 @@ jobs:
       # without this, an unrelated tool's install (e.g. a flaky rustup
       # component download for cargo-zigbuild) reds the construct build.
       MISE_TASK_RUN_AUTO_INSTALL: "false"
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -164,18 +166,18 @@ jobs:
             sleep "$((attempt * 10))"
             attempt="$((attempt + 1))"
           done
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+
       - name: Install Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
         with:
           name: ${{ env.BUILDX_BUILDER }}
           driver: docker-container
-
-      - name: Log in to Docker Hub
-        if: needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Bootstrap buildx
         run: mise run construct-init-buildx
