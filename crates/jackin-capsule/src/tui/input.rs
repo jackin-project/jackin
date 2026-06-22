@@ -740,19 +740,15 @@ fn classify_csi(seq: &[u8]) -> Option<Option<InputEvent>> {
             return Some(None);
         }
 
-        // UNREGISTERABLE(CSI): Alt+Shift+Arrow is a multi-byte CSI escape sequence.
-        // Keymap<A> operates on single bytes and cannot represent multi-byte chords.
-        // When KeyChord gains a Csi(CsiKey) variant (see roadmap item
-        // "Keymap registry and hint-bar consistency", item E), this arm moves into a keymap.
         if modifier == 4 {
-            let dir = match final_byte {
-                b'A' => ArrowDir::Up,
-                b'B' => ArrowDir::Down,
-                b'C' => ArrowDir::Right,
-                b'D' => ArrowDir::Left,
+            let action = match final_byte {
+                b'A' => crate::tui::keymap::ResizePaneAction::Up,
+                b'B' => crate::tui::keymap::ResizePaneAction::Down,
+                b'C' => crate::tui::keymap::ResizePaneAction::Right,
+                b'D' => crate::tui::keymap::ResizePaneAction::Left,
                 _ => unreachable!("kitty arrow parser only calls resize mapping for arrow bytes"),
             };
-            return Some(Some(InputEvent::ResizePane(dir)));
+            return Some(Some(action.to_input_event()));
         }
 
         // No modifier and an event tag was present (kitty form) →

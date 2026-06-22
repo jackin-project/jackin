@@ -4,7 +4,8 @@ use jackin_tui::HintSpan;
 
 use crate::tui::keymap::{
     CAPSULE_GLOBAL_KEYMAP, FILTER_LIST_KEYMAP, FilterListAction, PREFIX_COMMAND_KEYMAP,
-    READ_ONLY_DISMISS_KEYMAP, RENAME_KEYMAP, ReadOnlyDismissAction, RenameAction,
+    READ_ONLY_DISMISS_KEYMAP, RENAME_KEYMAP, RESIZE_PANE_KEYMAP, ReadOnlyDismissAction,
+    RenameAction,
 };
 
 /// Derive a display glyph for a raw palette-key byte.
@@ -70,10 +71,7 @@ pub(crate) fn main_view_hint(
             spans.extend(scroll);
         }
         spans.push(HintSpan::GroupSep);
-        // UNREGISTERABLE(CSI): corresponds to the Alt+Shift+Arrow decode in input.rs.
-        // Hand-written pending KeyChord::Csi extension tracked in item E of the same roadmap item.
-        spans.push(HintSpan::Key("Alt+Shift+↑↓←→"));
-        spans.push(HintSpan::Text("resize pane"));
+        spans.extend(RESIZE_PANE_KEYMAP.hint_spans());
         spans.push(HintSpan::GroupSep);
         // UNREGISTERABLE(mouse): mouse click cannot be expressed as a KeyChord.
         spans.push(HintSpan::Key("click"));

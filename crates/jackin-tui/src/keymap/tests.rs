@@ -312,6 +312,26 @@ fn raw_bytes_unknown_returns_none() {
 }
 
 #[test]
+fn raw_bytes_csi_alt_shift_arrows() {
+    assert_eq!(
+        raw_bytes_to_chord(b"\x1b[1;4A"),
+        Some(KeyChord::alt_shift(LogicalKey::Up))
+    );
+    assert_eq!(
+        raw_bytes_to_chord(b"\x1b[1;4B"),
+        Some(KeyChord::alt_shift(LogicalKey::Down))
+    );
+    assert_eq!(
+        raw_bytes_to_chord(b"\x1b[1;4C"),
+        Some(KeyChord::alt_shift(LogicalKey::Right))
+    );
+    assert_eq!(
+        raw_bytes_to_chord(b"\x1b[1;4D"),
+        Some(KeyChord::alt_shift(LogicalKey::Left))
+    );
+}
+
+#[test]
 fn raw_bytes_confirm_keymap_dispatch() {
     use crate::components::CONFIRM_KEYMAP;
     use crate::components::ConfirmAction;

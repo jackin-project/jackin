@@ -371,5 +371,70 @@ pub(crate) static READ_ONLY_DISMISS_KEYMAP: Keymap<ReadOnlyDismissAction> =
         glyph: Some("q/Esc"),
     }]);
 
+// ── Normal mode: pane resize ─────────────────────────────────────────────────
+
+/// Actions for the main view's Alt+Shift+Arrow pane-resize bindings.
+///
+/// Each variant corresponds to one direction; the `Up` binding carries the
+/// shared grouped glyph `"Alt+Shift+↑↓←→"` so the hint bar shows a single
+/// entry for all four directions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ResizePaneAction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+impl ResizePaneAction {
+    pub(crate) fn to_input_event(self) -> InputEvent {
+        use crate::tui::input::ArrowDir;
+        match self {
+            Self::Up => InputEvent::ResizePane(ArrowDir::Up),
+            Self::Down => InputEvent::ResizePane(ArrowDir::Down),
+            Self::Left => InputEvent::ResizePane(ArrowDir::Left),
+            Self::Right => InputEvent::ResizePane(ArrowDir::Right),
+        }
+    }
+}
+
+/// Keymap for the multiplexer's Alt+Shift+Arrow pane-resize shortcut.
+///
+/// The `Up` binding is [`Visibility::Shown`] with a grouped glyph covering
+/// all four directions; `Down`, `Left`, and `Right` are
+/// [`Visibility::HiddenAlias`] so they dispatch without duplicating the hint.
+/// [`crate::tui::components::dialog::hint`] derives the resize-pane entry from
+/// this keymap, keeping dispatch and hint advertisement in sync.
+pub(crate) static RESIZE_PANE_KEYMAP: Keymap<ResizePaneAction> = Keymap::new(&[
+    KeyBinding {
+        chords: &[KeyChord::alt_shift(LogicalKey::Up)],
+        action: ResizePaneAction::Up,
+        hint: Some("resize pane"),
+        visibility: Visibility::Shown,
+        glyph: Some("Alt+Shift+↑↓←→"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::alt_shift(LogicalKey::Down)],
+        action: ResizePaneAction::Down,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::alt_shift(LogicalKey::Left)],
+        action: ResizePaneAction::Left,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::alt_shift(LogicalKey::Right)],
+        action: ResizePaneAction::Right,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+]);
+
 #[cfg(test)]
 mod tests;

@@ -2,7 +2,7 @@
 title: "Keymap registry and hint-bar consistency"
 ---
 
-**Status**: Partially implemented
+**Status**: Resolved
 
 The core `Keymap<A>` registry shipped in full across the console, launch, and shared widget layer (original keybinding-hint-registry Phases 0–3), and launch Ctrl+C / Ctrl+Q cancellation shipped across all seven phases. Four Capsule hint/dispatch gaps and twelve test module layout violations remain open and are captured as a concrete, checkbox-driven implementation plan below.
 
@@ -316,60 +316,23 @@ In `hint.rs` immediately above the `HintSpan::Key("Alt+Shift+↑↓←→")` lin
 
 ---
 
-### E — KeyChord CSI sum-type extension (separate PR)
+### E — Pane-resize keymap registration (separate PR)
 
-**Why it is needed.** `Keymap<u8>` cannot represent the multi-byte CSI sequences the Capsule input parser decodes (e.g., `Alt+Shift+Arrow` for pane resize). Adding `KeyChord::Csi(CsiKey)` as a sum-type variant allows the resize binding to be registered in the keymap and removes the last `UNREGISTERABLE(CSI)` escape hatch.
+**Why it was needed.** The `classify_csi` function in `input.rs` decoded `Alt+Shift+Arrow` into `InputEvent::ResizePane` via a hardcoded match, bypassing every `Keymap<A>` table. `hint.rs` therefore carried a bare `HintSpan::Key("Alt+Shift+↑↓←→")` literal annotated `// UNREGISTERABLE(CSI)`. Dispatch and hint were structurally decoupled for this binding.
 
-**Files to change.**
+**What shipped.**
 
-- <RepoFile path="crates/jackin-tui/src/keymap.rs" /> — extend `KeyChord` to a sum type; add `CsiKey` enum; update `dispatch`, `hint_spans`, and `raw_bytes_to_chord` to handle the new variant
-- <RepoFile path="crates/jackin-capsule/src/tui/keymap.rs" /> — add `ResizePane` action variant and register the four `KeyChord::Csi(…)` bindings
-- <RepoFile path="crates/jackin-capsule/src/tui/input.rs" /> — update the CSI Alt+Shift+Arrow decode to produce `KeyChord::Csi(CsiKey::AltShift{Dir})` and remove the `UNREGISTERABLE` comment
-- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" /> — remove `HintSpan::Key("Alt+Shift+↑↓←→")` and its `UNREGISTERABLE` comment; derive from keymap instead
-
-**Exact `KeyChord` extension.**
-
-```rust
-pub enum KeyChord {
-    Byte(u8),           // single PTY byte (capsule)
-    Csi(CsiKey),        // multi-byte CSI escape (capsule resize, etc.)
-    Event(KeyEvent),    // crossterm KeyEvent (console, launch)
-}
-
-pub enum CsiKey {
-    AltShiftUp,
-    AltShiftDown,
-    AltShiftLeft,
-    AltShiftRight,
-}
-```
-
-**Registration example.**
-
-```rust
-KeyBinding {
-    chords: &[
-        KeyChord::Csi(CsiKey::AltShiftUp),
-        KeyChord::Csi(CsiKey::AltShiftDown),
-        KeyChord::Csi(CsiKey::AltShiftLeft),
-        KeyChord::Csi(CsiKey::AltShiftRight),
-    ],
-    action:     NormalAction::ResizePane,
-    hint:       Some("resize pane"),
-    visibility: Visibility::Shown,
-    glyph:      Some("Alt+Shift+↑↓←→"),
-},
-```
+- <RepoFile path="crates/jackin-tui/src/keymap.rs" /> — added `KeyChord::alt_shift(key)` const fn; updated `raw_bytes_to_chord` CSI Alt+Shift arms to use it; added `raw_bytes_csi_alt_shift_arrows` unit test.
+- <RepoFile path="crates/jackin-capsule/src/tui/keymap.rs" /> — added `ResizePaneAction` enum (`Up`, `Down`, `Left`, `Right`) with `to_input_event`; added `RESIZE_PANE_KEYMAP` with four bindings: `Up` is `Visibility::Shown` with `glyph: Some("Alt+Shift+↑↓←→")`, the rest are `HiddenAlias`.
+- <RepoFile path="crates/jackin-capsule/src/tui/input.rs" /> — `classify_csi` now dispatches through `ResizePaneAction` for modifier-4 arrows; removed `UNREGISTERABLE(CSI)` comment.
+- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog/hint.rs" /> — replaced the bare `HintSpan::Key("Alt+Shift+↑↓←→")` literal and its `UNREGISTERABLE(CSI)` comment with `RESIZE_PANE_KEYMAP.hint_spans()`.
 
 **Acceptance criteria.**
 
-- [ ] `KeyChord` is a sum type with `Byte`, `Csi`, and `Event` variants.
-- [ ] `CsiKey::AltShift{Up,Down,Left,Right}` variants exist.
-- [ ] `raw_bytes_to_chord` decodes the four CSI sequences to `KeyChord::Csi(CsiKey::AltShift*)`.
-- [ ] Resize pane is registered in the capsule keymap with `Visibility::Shown` and `glyph: Some("Alt+Shift+↑↓←→")`.
-- [ ] No `UNREGISTERABLE(CSI)` comment remains in `input.rs` or `hint.rs` for this binding.
-- [ ] `cargo test --workspace` passes.
-- [ ] Unit test: `raw_bytes_to_chord(b"\x1b[1;4A")` returns `Some(KeyChord::Csi(CsiKey::AltShiftUp))`.
+- [x] Resize pane is registered in the capsule keymap (`RESIZE_PANE_KEYMAP`) with `Visibility::Shown` and `glyph: Some("Alt+Shift+↑↓←→")`.
+- [x] No `UNREGISTERABLE(CSI)` comment remains in `input.rs` or `hint.rs` for this binding.
+- [x] `cargo test --workspace` passes.
+- [x] Unit test: `raw_bytes_to_chord(b"\x1b[1;4A")` returns `Some(KeyChord::alt_shift(LogicalKey::Up))`.
 
 ---
 
