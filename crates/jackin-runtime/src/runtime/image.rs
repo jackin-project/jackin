@@ -1707,7 +1707,7 @@ async fn ensure_local_role_base(
         null_stdin: true,
         stream_captured_output: should_stream_build_output(debug),
         tee_to_build_log: true,
-        extra_env: docker_build_env(github_token.is_some()),
+        extra_env: docker_build_env(),
         ..RunOptions::default()
     };
     let build_future = runner.run("docker", &args, None, &build_options);
@@ -2010,7 +2010,7 @@ pub(super) async fn build_agent_image(
         null_stdin: true,
         stream_captured_output: should_stream_build_output(debug),
         tee_to_build_log: true,
-        extra_env: docker_build_env(github_token.is_some()),
+        extra_env: docker_build_env(),
         ..RunOptions::default()
     };
     let build_future = runner.run("docker", &build_args, None, &build_options);
@@ -2078,12 +2078,16 @@ fn should_stream_build_output(debug: bool) -> bool {
     !debug && !jackin_diagnostics::rich_terminal_owned()
 }
 
-fn docker_build_env(has_github_token: bool) -> Vec<(String, String)> {
-    let mut env = vec![("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned())];
-    if has_github_token {
-        env.push(("DOCKER_BUILDKIT".to_owned(), "1".to_owned()));
-    }
-    env
+fn docker_build_env() -> Vec<(String, String)> {
+    // BuildKit is required, not optional: the generated Dockerfiles use
+    // `COPY --link --chmod=` and `--mount=type=secret`, all BuildKit-only.
+    // Gating it on a github token left token-less builds on the legacy
+    // builder, which rejects `--chmod` ("the --chmod option requires
+    // BuildKit") and fails the derived-image build.
+    vec![
+        ("DOCKER_BUILDKIT".to_owned(), "1".to_owned()),
+        ("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned()),
+    ]
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
