@@ -50,8 +50,7 @@ pub(crate) fn main_view_hint(
         if !spans.is_empty() {
             spans.push(HintSpan::GroupSep);
         }
-        // UNREGISTERABLE(scrollback-modal): Esc handled by InputParser scrollback
-        // state check in input.rs, not a static Keymap — no scrollback keymap exists yet.
+        // UNREGISTERABLE(scrollback-modal): Esc handled by InputParser scrollback state check; no scrollback keymap exists.
         spans.push(HintSpan::Key("Esc"));
         spans.push(HintSpan::Text("exit scrollback"));
         spans.push(HintSpan::GroupSep);
@@ -136,8 +135,7 @@ pub(super) fn info_dialog_hint(
     copy_label: &'static str,
     axes: jackin_tui::components::ScrollAxes,
 ) -> Vec<HintSpan<'static>> {
-    // UNREGISTERABLE(info-dialog-copy): Enter selects the active copy target;
-    // handled inline by ContainerInfo/GitHubContext — no InfoDialog keymap registered.
+    // UNREGISTERABLE(info-dialog-copy): Enter selects the active copy target inline; no InfoDialog keymap registered.
     let mut spans = vec![HintSpan::Key("↵"), HintSpan::Text(copy_label)];
     let scroll = jackin_tui::components::scroll_hint_spans(axes);
     if !scroll.is_empty() {

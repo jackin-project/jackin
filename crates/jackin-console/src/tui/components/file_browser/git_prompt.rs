@@ -221,15 +221,17 @@ pub(super) fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
 /// `M mount · P pick · C/Esc cancel`.
 pub(super) fn git_prompt_footer_items(has_url: bool) -> Vec<jackin_tui::HintSpan<'static>> {
     use jackin_tui::HintSpan;
-    // UNREGISTERABLE(git-prompt-no-keymap): M/P/O handled inline; no GIT_PROMPT_KEYMAP registered.
     let mut spans = vec![
+        // UNREGISTERABLE(git-prompt-no-keymap): M handled inline; no GIT_PROMPT_KEYMAP registered.
         HintSpan::Key("M"),
         HintSpan::Text("mount"),
         HintSpan::Sep,
+        // UNREGISTERABLE(git-prompt-no-keymap): P handled inline; no GIT_PROMPT_KEYMAP registered.
         HintSpan::Key("P"),
         HintSpan::Text("pick"),
     ];
     if has_url {
+        // UNREGISTERABLE(git-prompt-no-keymap): O handled inline; no GIT_PROMPT_KEYMAP registered.
         spans.extend([HintSpan::Sep, HintSpan::Key("O"), HintSpan::Text("open")]);
     }
     spans.extend([

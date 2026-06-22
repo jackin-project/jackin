@@ -1418,10 +1418,11 @@ pub fn auth_form_footer_items(
             HintSpan::Text("button row"),
         ],
         AuthFormFocus::CredentialSource => vec![
-            // UNREGISTERABLE(auth-form-no-keymap): Enter handled inline.
+            // UNREGISTERABLE(auth-form-no-keymap): Enter confirms the field inline.
             HintSpan::Key("↵"),
             HintSpan::Text("set"),
             HintSpan::Sep,
+            // UNREGISTERABLE(auth-form-no-keymap): ↑↓ navigates credential source list inline.
             HintSpan::Key("\u{2191}"),
             HintSpan::Text("navigate"),
             HintSpan::GroupSep,
