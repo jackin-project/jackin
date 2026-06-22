@@ -30,6 +30,7 @@ env:
 jobs:
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     outputs:
       construct: ${{ steps.dispatch.outputs.construct || steps.filter.outputs.construct }}
       construct_image: ${{ steps.dispatch.outputs.construct_image || steps.filter.outputs.construct_image }}
@@ -98,6 +99,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.construct == 'true'
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     permissions:
       contents: read
     env:
@@ -202,6 +204,7 @@ jobs:
     if: needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
     needs: [changes, build]
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       contents: read
     env:
@@ -272,6 +275,7 @@ jobs:
     if: needs.changes.outputs.construct == 'true' && needs.changes.outputs.is_publish != 'true'
     needs: [changes, build]
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       contents: read
     env:
@@ -338,6 +342,7 @@ jobs:
     if: always()
     needs: [changes, build, publish-manifest, publish-manifest-rehearsal]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/aggregate-needs

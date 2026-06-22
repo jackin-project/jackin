@@ -28,6 +28,7 @@ jobs:
   matrix-setup:
     name: Select runner lane
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     outputs:
       configs: ${{ steps.set.outputs.configs }}
     steps:
@@ -46,6 +47,7 @@ jobs:
 
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     outputs:
       rust: ${{ steps.dispatch.outputs.rust || steps.filter.outputs.rust }}
       construct: ${{ steps.dispatch.outputs.construct || steps.filter.outputs.construct }}
@@ -110,6 +112,7 @@ jobs:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     name: actionlint (${{ matrix.config.lane }})
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -129,6 +132,7 @@ jobs:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     name: cargo fmt (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
@@ -168,6 +172,7 @@ jobs:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     name: schema-check (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
@@ -208,6 +213,7 @@ jobs:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     name: cargo check all features (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
@@ -246,6 +252,7 @@ jobs:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     name: cargo clippy (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
@@ -285,6 +292,7 @@ jobs:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     name: cargo dependency policy (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
@@ -331,6 +339,7 @@ jobs:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     name: cargo check default (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
@@ -365,6 +374,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.construct_image == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     name: construct E2E image
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -415,6 +425,7 @@ jobs:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     name: cargo fuzz (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
@@ -467,6 +478,7 @@ jobs:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     name: cargo bench build (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
@@ -511,6 +523,7 @@ jobs:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     name: cargo msrv check (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
@@ -558,6 +571,7 @@ jobs:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     name: cargo audit (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
@@ -618,6 +632,7 @@ jobs:
        needs.changes.outputs.rust == 'true') ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     name: cargo build validator
     env:
       CARGO_INCREMENTAL: "0"
@@ -699,6 +714,7 @@ jobs:
       - msrv
       - build-validator
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/aggregate-needs

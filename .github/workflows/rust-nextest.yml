@@ -34,6 +34,7 @@ jobs:
       matrix:
         config: ${{ fromJSON(inputs.runner-configs-json) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     name: cargo nextest prepare (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
@@ -117,6 +118,7 @@ jobs:
           - jackin-tui
           - small-crates
     runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     name: cargo nextest ${{ matrix.group }} (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
@@ -203,6 +205,7 @@ jobs:
       matrix:
         config: ${{ fromJSON(inputs.runner-configs-json) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     name: Docker E2E smoke (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"

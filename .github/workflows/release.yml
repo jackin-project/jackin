@@ -21,6 +21,7 @@ concurrency:
 jobs:
   check-version:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -75,6 +76,7 @@ jobs:
             os: ubuntu-latest
             zigbuild: true
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     permissions:
       contents: read
       id-token: write
@@ -167,6 +169,7 @@ jobs:
   build-jackin-capsule:
     needs: [check-version, test]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: read
       id-token: write
@@ -248,6 +251,7 @@ jobs:
   release:
     needs: [check-version, build, build-jackin-capsule]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: write
       id-token: write
@@ -322,6 +326,7 @@ jobs:
     if: needs.release.result == 'success'
     needs: [check-version, release]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
