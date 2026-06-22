@@ -356,10 +356,6 @@ jobs:
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
-      SCCACHE_GHA_CACHE_TO: sccache-ci-dev-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ github.run_id }}-${{ github.run_attempt }}
-      SCCACHE_GHA_CACHE_FROM: sccache-ci-dev-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
@@ -375,7 +371,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust sccache"
+          install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -388,13 +384,6 @@ jobs:
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
-      - name: Export sccache GitHub cache runtime
-        if: matrix.config.lane == 'GitHub'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
       - run: rustup component add clippy
       - run: cargo clippy --timings --workspace --all-targets --all-features --locked -- -D warnings
       - name: Upload cargo timings
@@ -403,29 +392,6 @@ jobs:
         with:
           name: cargo-timings-clippy-${{ matrix.config.lane }}
           path: target/cargo-timings/*.html
-          if-no-files-found: ignore
-          retention-days: 7
-      - name: Write sccache stats
-        if: always()
-        run: |
-          if ! command -v sccache >/dev/null 2>&1; then
-            echo "sccache not installed; skipping stats"
-            exit 0
-          fi
-          stats_file="sccache-stats-ci-clippy-${{ matrix.config.lane }}.txt"
-          sccache --show-stats | tee "$stats_file"
-          {
-            echo "### sccache ci clippy (${{ matrix.config.lane }})"
-            echo '```text'
-            cat "$stats_file"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload sccache stats
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: sccache-stats-ci-clippy-${{ matrix.config.lane }}
-          path: sccache-stats-ci-clippy-${{ matrix.config.lane }}.txt
           if-no-files-found: ignore
           retention-days: 7
   dependency-policy:
@@ -485,8 +451,9 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
-      SCCACHE_GHA_CACHE_TO: sccache-ci-dev-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+      SCCACHE_GHA_CACHE_TO: sccache-ci-dev-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-check-default-${{ github.run_id }}-${{ github.run_attempt }}
       SCCACHE_GHA_CACHE_FROM: sccache-ci-dev-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

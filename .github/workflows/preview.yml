@@ -271,8 +271,9 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
-      SCCACHE_GHA_CACHE_TO: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+      SCCACHE_GHA_CACHE_TO: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.target }}-preview-jackin-${{ github.run_id }}-${{ github.run_attempt }}
       SCCACHE_GHA_CACHE_FROM: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.target }}-
     strategy:
       matrix:
@@ -371,8 +372,9 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
-      SCCACHE_GHA_CACHE_TO: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+      SCCACHE_GHA_CACHE_TO: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.target }}-preview-capsule-${{ github.run_id }}-${{ github.run_attempt }}
       SCCACHE_GHA_CACHE_FROM: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.target }}-
     strategy:
       matrix:

@@ -46,8 +46,9 @@ jobs:
       CARGO_NET_RETRY: "10"
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
-      SCCACHE_GHA_CACHE_TO: sccache-ci-dev-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+      SCCACHE_GHA_CACHE_TO: sccache-ci-dev-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-nextest-prepare-${{ github.run_id }}-${{ github.run_attempt }}
       SCCACHE_GHA_CACHE_FROM: sccache-ci-dev-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -159,9 +160,11 @@ jobs:
       CARGO_NET_RETRY: "10"
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
-      SCCACHE_GHA_CACHE_TO: sccache-ci-dev-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+      SCCACHE_GHA_CACHE_TO: sccache-ci-dev-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-nextest-${{ matrix.group }}-${{ github.run_id }}-${{ github.run_attempt }}
       SCCACHE_GHA_CACHE_FROM: sccache-ci-dev-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-
+      SCCACHE_GHA_RW_MODE: READ_ONLY
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
@@ -243,9 +246,11 @@ jobs:
       CARGO_NET_RETRY: "10"
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
-      SCCACHE_GHA_CACHE_TO: sccache-ci-dev-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+      SCCACHE_GHA_CACHE_TO: sccache-ci-dev-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-docker-e2e-${{ github.run_id }}-${{ github.run_attempt }}
       SCCACHE_GHA_CACHE_FROM: sccache-ci-dev-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-
+      SCCACHE_GHA_RW_MODE: READ_ONLY
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain

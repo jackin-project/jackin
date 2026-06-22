@@ -127,8 +127,9 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
-      SCCACHE_GHA_CACHE_TO: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.triple }}-${{ github.run_id }}-${{ github.run_attempt }}
+      SCCACHE_GHA_CACHE_TO: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.triple }}-release-jackin-${{ github.run_id }}-${{ github.run_attempt }}
       SCCACHE_GHA_CACHE_FROM: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.triple }}-
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -210,8 +211,9 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
-      SCCACHE_GHA_CACHE_TO: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.triple }}-${{ github.run_id }}-${{ github.run_attempt }}
+      SCCACHE_GHA_CACHE_TO: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.triple }}-release-capsule-${{ github.run_id }}-${{ github.run_attempt }}
       SCCACHE_GHA_CACHE_FROM: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.triple }}-
     strategy:
       fail-fast: false
