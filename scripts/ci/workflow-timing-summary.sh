@@ -181,6 +181,34 @@ print_target_metrics() {
   esac
 }
 
+print_step_category_totals() {
+  printf '\n### Step category totals\n\n'
+  printf '| Category | Total | Steps |\n| --- | --- | --- |\n'
+
+  awk -F '\t' '
+    function category(step) {
+      if (step ~ /Cache|cache|rust-cache|Restore|Save/) return "cache"
+      if (step ~ /jdx\/mise-action|mise|rustup|Set up job/) return "tool setup"
+      if (step ~ /upload-artifact|download-artifact|Upload|Download/) return "artifacts"
+      if (step ~ /Docker|Buildx|construct image|docker /) return "docker"
+      if (step ~ /cargo |Cargo |nextest|clippy|fmt|audit|deny|shear|fuzz|bench|schema/) return "cargo"
+      return "other"
+    }
+    {
+      cat = category($3)
+      seconds[cat] += $1
+      count[cat] += 1
+    }
+    END {
+      for (cat in seconds) {
+        printf "%d\t%s\t%d\n", seconds[cat], cat, count[cat]
+      }
+    }
+  ' "$steps_file" | sort -rn | while IFS=$'\t' read -r seconds category count; do
+    printf '| %s | %s | %s |\n' "$category" "$(duration "$seconds")" "$count"
+  done
+}
+
 {
   printf '## %s timing\n\n' "$workflow_label"
   if [ "$run_start" -gt 0 ] && [ "$run_end" -gt "$run_start" ]; then
@@ -206,6 +234,8 @@ print_target_metrics() {
     printf '| %s | %s | %s | %s |\n' \
       "$(duration "$seconds")" "$job" "$step" "$conclusion"
   done
+
+  print_step_category_totals
 
   if [ -s "$cache_file" ]; then
     printf '\n### Notes\n\n'
