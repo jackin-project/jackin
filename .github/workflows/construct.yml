@@ -143,7 +143,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust"
+          install_args: ${{ runner.arch == 'X64' && 'rust shellfirm' || 'rust' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -260,7 +260,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust"
+          install_args: ${{ runner.arch == 'X64' && 'rust shellfirm' || 'rust' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -343,7 +343,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust"
+          install_args: ${{ runner.arch == 'X64' && 'rust shellfirm' || 'rust' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1

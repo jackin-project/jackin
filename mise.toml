@@ -19,6 +19,7 @@ cargo-shear = "github:Boshen/cargo-shear"
 cargo-zigbuild = "github:rust-cross/cargo-zigbuild"
 codebook-lsp = "github:blopker/codebook"
 sccache = "github:mozilla/sccache"
+shellfirm = "github:kaplanelad/shellfirm"
 
 [tools.cargo-audit]
 version = "cargo-audit/v0.22.2"
@@ -64,6 +65,11 @@ rename_exe = "codebook-lsp"
 version = "0.16.0"
 matching = "sccache"
 rename_exe = "sccache"
+
+[tools.shellfirm]
+version = "v0.3.10"
+matching = "shellfirm"
+rename_exe = "shellfirm"
 
 [settings]
 idiomatic_version_file_enable_tools = ["rust"]

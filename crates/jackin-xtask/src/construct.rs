@@ -6,7 +6,7 @@
 //! invoke it.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -326,6 +326,14 @@ fn ensure_shellfirm_prebuilt(cfg: &Config, expected_platform: &str) -> Result<()
         return Ok(());
     }
 
+    if let Some(path) = find_in_path("shellfirm")
+        && shellfirm_binary_matches(&path, &cfg.shellfirm_version)
+            .with_context(|| format!("checking {}", path.display()))?
+    {
+        copy_shellfirm_prebuilt(&path, &cfg.shellfirm_version)?;
+        return Ok(());
+    }
+
     let root = format!("target/construct-shellfirm-{}", cfg.shellfirm_version);
     drop(fs::remove_dir_all(&root));
     run_checked(cargo([
@@ -338,6 +346,10 @@ fn ensure_shellfirm_prebuilt(cfg: &Config, expected_platform: &str) -> Result<()
         &root,
     ]))?;
     let source = Path::new(&root).join("bin/shellfirm");
+    copy_shellfirm_prebuilt(&source, &cfg.shellfirm_version)
+}
+
+fn copy_shellfirm_prebuilt(source: &Path, version: &str) -> Result<()> {
     fs::create_dir_all(
         Path::new(SHELLFIRM_PREBUILT)
             .parent()
@@ -347,11 +359,8 @@ fn ensure_shellfirm_prebuilt(cfg: &Config, expected_platform: &str) -> Result<()
     fs::copy(&source, SHELLFIRM_PREBUILT)
         .with_context(|| format!("copying {} to {SHELLFIRM_PREBUILT}", source.display()))?;
     set_executable(SHELLFIRM_PREBUILT)?;
-    if !prebuilt_shellfirm_matches(&cfg.shellfirm_version)? {
-        bail!(
-            "prebuilt shellfirm does not report version {}",
-            cfg.shellfirm_version
-        );
+    if !prebuilt_shellfirm_matches(version)? {
+        bail!("prebuilt shellfirm does not report version {version}");
     }
     Ok(())
 }
@@ -361,18 +370,31 @@ fn prebuilt_shellfirm_matches(version: &str) -> Result<bool> {
     if !path.exists() {
         return Ok(false);
     }
+    shellfirm_binary_matches(path, version)
+}
+
+fn shellfirm_binary_matches(path: &Path, version: &str) -> Result<bool> {
     #[expect(
         clippy::disallowed_methods,
         reason = "build helper: synchronous version probe before Docker build"
     )]
-    let Ok(output) = Command::new(path).arg("--version").output() else {
-        return Ok(false);
-    };
+    let output = Command::new(path)
+        .arg("--version")
+        .output()
+        .with_context(|| format!("running {} --version", path.display()))?;
     if !output.status.success() {
         return Ok(false);
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     Ok(stdout.split_whitespace().any(|part| part == version))
+}
+
+fn find_in_path(program: &str) -> Option<PathBuf> {
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|path| path.join(program))
+            .find(|path| path.is_file())
+    })
 }
 
 #[cfg(unix)]
