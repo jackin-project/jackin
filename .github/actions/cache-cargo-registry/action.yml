@@ -14,9 +14,8 @@ runs:
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: |
-          ~/.cargo/registry/index
-          ~/.cargo/registry/cache
+          ~/.cargo/registry
           ~/.cargo/git/db
-        key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+        key: cargo-registry-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
         restore-keys: |
-          cargo-registry-${{ runner.os }}-${{ runner.arch }}-
+          cargo-registry-v2-${{ runner.os }}-${{ runner.arch }}-
