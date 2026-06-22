@@ -270,6 +270,9 @@ jobs:
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
     strategy:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
@@ -299,7 +302,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: ${{ matrix.config.lane == 'Velnor' && 'rust zig cargo-zigbuild cosign syft sccache' || 'rust zig cargo-zigbuild cosign syft' }}
+          install_args: "rust zig cargo-zigbuild cosign syft sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -308,17 +311,12 @@ jobs:
           shared-key: release-archive-jackin-${{ matrix.target.target }}-workspace-v2
           cache-all-crates: "true"
           cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
       - run: rustup target add ${{ matrix.target.target }}
-      - name: Enable local sccache
-        if: matrix.config.lane == 'Velnor'
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "SCCACHE_BASEDIRS=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - name: Cache macOS SDK
         if: contains(matrix.target.target, 'apple')
         id: sdk-cache
@@ -365,6 +363,9 @@ jobs:
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
     strategy:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
@@ -392,7 +393,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: ${{ matrix.config.lane == 'Velnor' && 'rust zig cargo-zigbuild cosign syft sccache' || 'rust zig cargo-zigbuild cosign syft' }}
+          install_args: "rust zig cargo-zigbuild cosign syft sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -401,17 +402,12 @@ jobs:
           shared-key: release-archive-capsule-${{ matrix.target.target }}-workspace-v2
           cache-all-crates: "true"
           cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
       - run: rustup target add ${{ matrix.target.target }}
-      - name: Enable local sccache
-        if: matrix.config.lane == 'Velnor'
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "SCCACHE_BASEDIRS=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - name: Build signed capsule archive
         uses: ./.github/actions/build-release-archive
         with:

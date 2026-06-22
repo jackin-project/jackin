@@ -152,6 +152,9 @@ jobs:
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
     strategy:
       fail-fast: false
       matrix:
@@ -180,7 +183,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: ${{ matrix.config.lane == 'Velnor' && 'rust zig cargo-zigbuild cosign syft sccache' || 'rust zig cargo-zigbuild cosign syft' }}
+          install_args: "rust zig cargo-zigbuild cosign syft sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -189,16 +192,11 @@ jobs:
           shared-key: jackin-dev-${{ matrix.target.target }}-workspace-v2
           cache-all-crates: "true"
           cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           # Match release/preview archive builds: one target-scoped workspace
           # cache, shared across branches through GitHub's default-branch
           # fallback, plus the lockfile-bound Cargo registry cache above.
       - run: rustup target add ${{ matrix.target.target }}
-      - name: Enable local sccache
-        if: matrix.config.lane == 'Velnor'
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "SCCACHE_BASEDIRS=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - name: Cache macOS SDK
         if: contains(matrix.target.target, 'apple')
         id: sdk-cache
