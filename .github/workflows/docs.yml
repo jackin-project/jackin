@@ -9,6 +9,7 @@ on:
     - cron: '17 4 * * *'
 
 permissions:
+  actions: read
   contents: read
 
 env:
@@ -371,3 +372,18 @@ jobs:
         with:
           needs-json: ${{ toJSON(needs) }}
           workflow-label: docs
+
+  timing-summary:
+    if: always()
+    needs: [docs-required, check-deployed]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Write workflow timing summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/workflow-timing-summary.sh Docs
