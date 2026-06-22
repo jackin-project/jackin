@@ -195,3 +195,36 @@ fn fixed_prefix_scroll_segments_keep_combining_mark_with_base() {
 
     assert!(rendered.contains(&"e\u{301}"));
 }
+
+#[test]
+fn help_banner_is_deterministic_bounded_phosphor() {
+    fn visible_cols(line: &str) -> usize {
+        let mut n = 0;
+        let mut chars = line.chars();
+        while let Some(ch) = chars.next() {
+            if ch == '\x1b' {
+                for c in chars.by_ref() {
+                    if c == 'm' {
+                        break;
+                    }
+                }
+            } else {
+                n += 1;
+            }
+        }
+        n
+    }
+
+    let a = ansi::help_banner();
+    // Cached + deterministic: same pointer, identical bytes on every call.
+    assert!(std::ptr::eq(a, ansi::help_banner()));
+    // Phosphor rain present (not a blank field).
+    assert!(a.contains("\x1b[38;2;0;255;65m") || a.contains("\x1b[38;2;0;140;30m"));
+    // Bounded so it never wraps a terminal at the documented minimum width.
+    for line in a.lines() {
+        assert!(
+            visible_cols(line) < ansi::HELP_BANNER_MIN_COLS as usize,
+            "help banner line exceeds min width: {line:?}"
+        );
+    }
+}

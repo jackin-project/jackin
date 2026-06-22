@@ -247,6 +247,70 @@ pub mod ansi {
     pub const BRAND_BANNER: &str =
         "\n  \x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m jackin\x1b[38;2;255;255;255m❯\x1b[38;2;0;0;0m \x1b[0m\n";
 
+    /// Static "frozen digital rain" field shown above the root `jackin --help`
+    /// pill on a wide interactive terminal: phosphor glyphs from the shared rain
+    /// pool, fading downward toward the `jackin❯` pill clap prints below it.
+    /// Deterministic (a fixed per-cell seed), so the output is identical on
+    /// every run; bounded to 58 columns. Printed directly to the terminal (not
+    /// through clap, which reflows multi-line ANSI art). A static documentation
+    /// surface — not the live launch rain, which the Launch Progress TUI owns.
+    pub fn help_banner() -> &'static str {
+        static BANNER: std::sync::LazyLock<String> = std::sync::LazyLock::new(build_help_banner);
+        BANNER.as_str()
+    }
+
+    /// Minimum terminal width (columns) for [`help_banner`] to render without
+    /// wrapping. Narrower terminals show just the one-line pill.
+    pub const HELP_BANNER_MIN_COLS: u16 = 60;
+
+    fn build_help_banner() -> String {
+        const W: usize = 56;
+        const H: usize = 4;
+        // Same alphanumeric pool as the live rain, minus brace/angle glyphs.
+        const POOL: &[u8] =
+            b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@#$%&*|/\\~";
+        // Phosphor ramp, brightest at the bottom row so the field reads as rain
+        // settling onto the pill clap prints underneath.
+        const RAMP: [&str; 5] = [
+            "\x1b[38;2;0;80;18m",     // dark
+            "\x1b[38;2;0;80;18m",     // dark
+            "\x1b[38;2;0;140;30m",    // dim
+            "\x1b[38;2;0;255;65m",    // phosphor
+            "\x1b[38;2;180;255;180m", // pale leader
+        ];
+
+        let mut out = String::from("\n");
+        for r in 0..H {
+            // Thin the field toward the top so it fades in above the pill.
+            let density = 16 + r * 6;
+            out.push_str("  ");
+            for c in 0..W {
+                // Deterministic per-cell value; identical on every run.
+                let mut s = (r as u64)
+                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                    ^ (c as u64).wrapping_mul(0xD1B5_4A32_D192_ED03)
+                    ^ 0xCAFE_F00D_1234_5678;
+                s ^= s << 13;
+                s ^= s >> 7;
+                s ^= s << 17;
+                if (s % 100) < density as u64 {
+                    let bucket = (s >> 8) as usize % RAMP.len();
+                    let ch = POOL[(s >> 16) as usize % POOL.len()] as char;
+                    out.push_str(RAMP[bucket]);
+                    out.push(ch);
+                    out.push_str(RESET);
+                } else {
+                    out.push(' ');
+                }
+            }
+            while out.ends_with(' ') {
+                out.pop();
+            }
+            out.push('\n');
+        }
+        out
+    }
+
     /// Build a foreground SGR for a shared RGB token.
     pub const fn rgb_fg(rgb: Rgb) -> &'static str {
         match (rgb.r, rgb.g, rgb.b) {

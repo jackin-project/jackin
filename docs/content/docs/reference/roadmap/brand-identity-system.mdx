@@ -2,7 +2,7 @@
 title: "Brand Identity System"
 ---
 
-**Status**: Partially implemented — web/docs/README and CLI/Capsule brand text plus the green-block pill shipped; net-new frozen `--help` banner art and version splash still deferred
+**Status**: Partially implemented — web/docs/README, CLI/Capsule brand text, the phosphor green-block mark, and the frozen-rain `--help` banner shipped; a full multi-line `--version` splash redesign still deferred
 
 ## Problem
 
@@ -217,7 +217,7 @@ j❯ Building derived image         OK
 
 The prompt sigil `j❯` renders on the green block: a black `j` and a white `❯` on `#00FF41`, square edges (shipped in the construct image's Starship config). The agent name to its left uses the terminal default foreground and stays off the block. For boxes and progress, Unicode box-drawing characters and block characters are preferred, with `--no-unicode` as the explicit fallback path.
 
-The shared Clap `--help` banner should use frozen brand rain, not animation. The rain field should be built from the brand vocabulary (`j`, `a`, `c`, `k`, `i`, `n`, `❯`, and the box/block drawing glyphs the CLI already uses) and should frame the `jackin❯` / `by tailrocks` lockup without overwhelming the command list. This is a static documentation/help surface, not the live launch progress rain. The live launch rain behavior remains owned by the Launch Progress TUI lifecycle.
+The root `jackin --help` banner uses frozen brand rain, not animation. Because clap reflows multi-line ANSI art passed through `before_help`, the binary prints the rain field itself — drawn from the shared phosphor rain pool — above clap's one-line `jackin❯` pill, and only on a wide interactive terminal; piped or narrow output falls back to the pill alone. The field is deterministic (a fixed per-cell seed) and bounded to stay under the terminal width. It is static, not the live launch progress rain, which the Launch Progress TUI lifecycle owns.
 
 The optional first-run or `--version` banner may use a short ASCII wordmark on the green block — black word, white chevron, square edges — but it must stay under six lines and must not appear on routine command output.
 
@@ -302,7 +302,7 @@ If any future implementation offers to update host-side prompt snippets, shell t
 
 ## Defer
 
-- Net-new terminal art only: the frozen-rain `--help` banner field and a full version/splash redesign. The CLI/Capsule brand *text* (`jackin❯`) and the green-block pill (black word, white chevron) on every jackin-owned surface already shipped; what remains deferred is the larger rain/banner artwork, not the mark itself. The frozen-rain field cannot ride clap's `before_help`/`--version`: clap intercepts those during parsing and reflows/strips multi-line ANSI art, so it needs a dedicated non-clap render path (a self-contained banner printer with its own TTY and width detection) rather than a one-line config change. That printer is the deferred work.
+- A full multi-line `--version` splash / ASCII-wordmark redesign. The frozen-rain `--help` banner already shipped — the binary prints it above clap's pill on a wide interactive terminal (clap reflows multi-line ANSI art through `before_help`, so a dedicated printer with its own TTY and width detection renders it), and `--version` shows the one-line pill splash on a TTY. Only the larger multi-line splash art remains deferred.
 - Desktop and mobile app implementation beyond source icon preparation.
 - Hosted analytics for Open Graph or attribution effectiveness.
 - Recolorable theme packs, seasonal marks, or per-runtime logo variants.

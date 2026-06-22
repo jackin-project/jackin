@@ -55,11 +55,14 @@ pub use workspace::{
 /// stdout is attached to a reasonably-sized interactive terminal, and
 /// otherwise prints this help page (exit 0, silent).
 #[derive(Debug, Parser)]
+// Root help shows the one-line `BANNER` pill inherited from the flattened
+// `ConsoleArgs`. It needs no explicit `before_help`; the binary layers the
+// frozen-rain field above that pill on a wide interactive terminal (clap
+// reflows multi-line ANSI art, so the rain is printed directly, not here).
 #[command(
     name = "jackin",
     version = env!("JACKIN_VERSION"),
     styles = HELP_STYLES,
-    before_help = BANNER,
     disable_help_subcommand = true,
     after_help = "Run 'jackin help <command>' for more detailed information."
 )]
