@@ -356,7 +356,7 @@ fn copy_shellfirm_prebuilt(source: &Path, version: &str) -> Result<()> {
             .context("shellfirm prebuilt path has no parent")?,
     )
     .context("creating shellfirm prebuilt directory")?;
-    fs::copy(&source, SHELLFIRM_PREBUILT)
+    fs::copy(source, SHELLFIRM_PREBUILT)
         .with_context(|| format!("copying {} to {SHELLFIRM_PREBUILT}", source.display()))?;
     set_executable(SHELLFIRM_PREBUILT)?;
     if !prebuilt_shellfirm_matches(version)? {
