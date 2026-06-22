@@ -25,6 +25,8 @@ The commit merged a large instant-launch change set: workflow rewrites, Rust run
 
 Within `CI`, the fastest checks already return early: `changes` 5s, `actionlint` 13s, `fmt` 24s, `schema-check` 33s. The slow path is structural. `docker-e2e` depends on the reusable `test` workflow as a whole, so it starts only after every package test job completes, even though it could run in parallel with most package tests once the required Rust binaries and construct image are available.
 
+The inherited CI matrix split item also called out the real Docker boundary directly: <RepoFile path="crates/jackin/tests/dind_e2e.rs">crates/jackin/tests/dind_e2e.rs</RepoFile> is now 1323 LOC and exercises real `docker run`, PTY, runtime launch, and `jackin-capsule` handoff behavior. That should stay a named `docker-e2e` failure surface instead of being buried inside a general package-test lane.
+
 ## Current Speedups Already Present
 
 - Path filters in <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile>, <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile>, <RepoFile path=".github/workflows/construct.yml">.github/workflows/construct.yml</RepoFile>, and <RepoFile path=".github/workflows/preview.yml">.github/workflows/preview.yml</RepoFile> prevent unrelated workflows from doing full work.
@@ -40,6 +42,8 @@ Within `CI`, the fastest checks already return early: `changes` 5s, `actionlint`
 ### Critical-path sequencing beats more matrix fan-out
 
 The prior "split the monolithic check job" work is partly implemented now: fmt, schema, check, clippy, dependency policy, audit, nextest prepare/package tests, Docker E2E, fuzz, bench build, MSRV, and validator builds are separate jobs. The remaining opportunity is dependency shape. `docker-e2e` waits for all package tests because the caller sees the reusable `test` workflow as one dependency. Splitting `nextest prepare` into a first-class job or giving Docker E2E its own early compile path would let Docker E2E run roughly four minutes earlier on this run without removing any test.
+
+The remaining matrix work should preserve the original attribution goal as well as speed: lint/check, deterministic package tests, integration-heavy runtime tests, Docker E2E, capsule, MSRV, validator, dependency policy, and audit should stay distinguishable in GitHub checks even if the implementation moves to nextest archives, partitions, or shared build artifacts.
 
 ### Main-to-preview is serialized too late
 
@@ -88,7 +92,8 @@ Cargo's profile docs say incremental compilation stores reusable state in `targe
 2. If GitHub Actions cannot expose the inner prepare job cleanly, benchmark a separate Docker E2E compile lane that duplicates a little compilation in exchange for starting four minutes earlier; keep aggregate coverage unchanged.
 3. Replace the 19-package nextest matrix with a benchmarked `cargo nextest archive` plus `--partition` design if it reduces per-job cache restore overhead without making failure attribution worse. The nextest archive docs explicitly support building once and partitioning execution across machines.
 4. Preserve the current package matrix if the archive/partition experiment is slower or produces weaker diagnostics; the current shape is already good for attribution.
-5. Keep `docker-e2e` required when Rust or Docker E2E inputs change, but path-gate construct-image rebuilds as tightly as possible so source-only Rust PRs use the published construct image.
+5. Keep `jackin-capsule` visible as its own package/lane when capsule code changes. If the package matrix is replaced by partitions, keep a dedicated capsule partition or named report entry so capsule regressions remain obvious.
+6. Carry the old path-filter intent forward for Docker E2E: `docker/**`, Docker runtime assets, launch/runtime code, capsule handoff code, and <RepoFile path="crates/jackin/tests/dind_e2e.rs">crates/jackin/tests/dind_e2e.rs</RepoFile> are the inputs that must trigger the real Docker lane. Unrelated Rust package changes should still receive deterministic tests quickly, but should not force construct-image rebuilds.
 
 ### Phase 3 -- Host Rust compiler cache experiment
 
@@ -163,6 +168,8 @@ Cargo's profile docs say incremental compilation stores reusable state in `targe
 - <RepoFile path=".github/workflows/release.yml">.github/workflows/release.yml</RepoFile>
 - <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile>
 - <RepoFile path=".config/nextest.toml">.config/nextest.toml</RepoFile>
+- <RepoFile path="crates/jackin/tests/dind_e2e.rs">crates/jackin/tests/dind_e2e.rs</RepoFile>
+- <RepoFile path="crates/jackin-capsule/Cargo.toml">crates/jackin-capsule/Cargo.toml</RepoFile>
 
 ## Cross-references
 
