@@ -60,9 +60,12 @@ jobs:
         with:
           shared-key: ${{ inputs.cache-shared-key }}
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
           # One workspace-level nextest cache per runner lane. The package
           # matrix restores this exact cache read-only; per-package cache keys
-          # fragment the workspace graph and force cold downloads/builds.
+          # fragment the workspace graph and force cold downloads/builds. This
+          # cache intentionally keeps workspace artifacts because they are the
+          # prepared output consumed by the per-crate fan-out.
       - name: Build nextest binaries
         shell: bash
         run: |
@@ -152,6 +155,7 @@ jobs:
         with:
           shared-key: ${{ inputs.cache-shared-key }}
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
           save-if: "false"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback.
