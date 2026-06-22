@@ -382,11 +382,11 @@ fn synced_hosts_yml_has_0600_permissions() {
     assert_eq!(mode, 0o600, "synced hosts.yml must be 0o600, got {mode:o}");
 }
 
-/// Sync mode does not consume the operator-supplied `Token`-mode
-/// token. Strengthened from a bare `is_none()` to also assert the
-/// outcome doesn't carry the supplied value via any other path.
+/// Sync mode consumes an operator-supplied `GH_TOKEN` before consulting the
+/// host `gh` CLI or `hosts.yml`, so configured credentials do not trigger
+/// extra host credential work.
 #[test]
-fn sync_does_not_consume_supplied_token() {
+fn sync_consumes_supplied_token_before_host_lookup() {
     let temp = tempdir().unwrap();
     let host_home = temp.path().join("empty_host_home");
     let hosts_yml = temp.path().join("role-state-hosts.yml");
@@ -398,9 +398,17 @@ fn sync_does_not_consume_supplied_token() {
     )
     .unwrap();
 
-    assert_eq!(outcome.kind(), GithubProvisionKind::HostMissing);
-    assert!(outcome.token().is_none());
-    assert_ne!(outcome.token(), Some("operator_supplied"));
+    assert_eq!(outcome.kind(), GithubProvisionKind::Synced);
+    assert_eq!(outcome.token(), Some("operator_supplied"));
+    assert_eq!(
+        outcome,
+        GithubProvisionOutcome::Synced {
+            token: "operator_supplied".to_owned(),
+            source: GithubTokenSource::ConfiguredEnv,
+        }
+    );
+    let hosts = std::fs::read_to_string(hosts_yml).unwrap();
+    assert!(hosts.contains("oauth_token: operator_supplied"));
 }
 
 /// Manual `Debug` impl on `GithubAuthContext` must redact the

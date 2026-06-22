@@ -23,7 +23,7 @@ use crate::tui::screens::workspaces::update::{
     workspace_instance_empty_message, workspace_list_delete_plan, workspace_list_edit_plan,
     workspace_list_enter_plan, workspace_list_github_open_plan, workspace_list_horizontal_plan,
     workspace_list_new_session_open_plan, workspace_list_new_session_plan,
-    workspace_list_settings_plan, workspace_list_top_level_key_plan,
+    workspace_list_prewarm_plan, workspace_list_settings_plan, workspace_list_top_level_key_plan,
 };
 use crate::tui::screens::workspaces::view::instance_purge_confirm_label;
 use crate::tui::state::update::{ManagerMessage, update_manager};
@@ -162,6 +162,11 @@ pub fn handle_list_key(
             dispatch_workspace_list_delete(state, workspace_list_delete_plan(state.selected_row()));
             Ok(InputOutcome::Continue)
         }
+        WorkspaceListKeyPlan::Prewarm => Ok(workspace_list_prewarm_plan(state.selected_row())
+            .and_then(|i| state.workspaces.get(i))
+            .map_or(InputOutcome::Continue, |summary| {
+                InputOutcome::PrewarmNamed(summary.name.clone())
+            })),
         WorkspaceListKeyPlan::OpenGithub => Ok(handle_list_open_in_github(state, config)),
         WorkspaceListKeyPlan::InstanceAction(action) => {
             let (action, message) = console_instance_action_and_empty_message(action);

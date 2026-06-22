@@ -916,6 +916,7 @@ pub(crate) enum WorkspaceListAction {
     Delete,
     OpenGithub,
     Settings,
+    Prewarm,
     InstanceReconnect,
     InstanceNewSession,
     InstanceShell,
@@ -1040,6 +1041,16 @@ pub(crate) static WORKSPACE_LIST_KEYMAP: Keymap<WorkspaceListAction> = Keymap::n
         hint: Some("delete"),
         visibility: Visibility::Shown,
         glyph: Some("D"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('w')),
+            KeyChord::plain(LogicalKey::Char('W')),
+        ],
+        action: WorkspaceListAction::Prewarm,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: Some("W"),
     },
     KeyBinding {
         chords: &[

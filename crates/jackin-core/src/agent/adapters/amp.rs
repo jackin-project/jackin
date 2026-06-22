@@ -26,18 +26,14 @@ impl AgentRuntime for AmpRuntime {
         format!(
             "\
 USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.amp/bin
-COPY --chown=agent:agent {source} /home/agent/.amp/bin/amp
+COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.amp/bin/amp
 ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${{PATH}}\"
-RUN set -euxo pipefail && \\
-    : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 \"${{HOME}}/.amp/bin/amp\" && \\
-    mkdir -p \"${{HOME}}/.local/bin\" && \\
-    ln -sf \"${{HOME}}/.amp/bin/amp\" \"${{HOME}}/.local/bin/amp\" && \\
-    amp --version
 "
         )
+    }
+
+    fn container_binary_paths(&self) -> &'static [&'static str] {
+        &["/home/agent/.amp/bin/amp"]
     }
 
     fn fallback_install_block(&self) -> String {

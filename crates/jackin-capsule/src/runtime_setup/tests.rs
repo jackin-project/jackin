@@ -1,10 +1,45 @@
 //! Tests for `runtime_setup`.
 use super::*;
 use std::fs;
+use std::sync::{
+    Arc, Barrier,
+    atomic::{AtomicBool, Ordering},
+};
 
 #[test]
 fn container_init_marker_is_container_local() {
     assert_eq!(CONTAINER_INIT_MARKER, "/jackin/state/container-init.done");
+}
+
+#[test]
+fn claude_plugin_fingerprint_changes_with_config() {
+    let base = jackin_protocol::CapsuleConfig {
+        claude_plugins: vec!["code-review@official".to_owned()],
+        ..Default::default()
+    };
+    // Same config → same fingerprint (marker matches → install skipped).
+    assert_eq!(
+        claude_plugin_fingerprint(&base),
+        claude_plugin_fingerprint(&base)
+    );
+    // Adding a plugin changes the fingerprint, so a stale marker no longer
+    // matches and install re-runs — the regression this guards against.
+    let mut changed = base.clone();
+    changed.claude_plugins.push("security@official".to_owned());
+    assert_ne!(
+        claude_plugin_fingerprint(&base),
+        claude_plugin_fingerprint(&changed)
+    );
+    // A new marketplace also re-triggers.
+    let mut with_market = base.clone();
+    with_market.claude_marketplaces = vec![jackin_protocol::ClaudeMarketplace {
+        source: "org/market".to_owned(),
+        sparse: vec![],
+    }];
+    assert_ne!(
+        claude_plugin_fingerprint(&base),
+        claude_plugin_fingerprint(&with_market)
+    );
 }
 
 #[test]
@@ -37,6 +72,50 @@ fn agent_auth_marker_records_one_bootstrap_per_agent() {
 
     mark_agent_auth_initialized(&codex_marker, "codex").expect("mark codex initialized");
     assert!(codex_marker.exists(), "codex auth should be initialized");
+}
+
+#[test]
+fn runtime_setup_runs_agent_setup_while_container_init_is_foreground() {
+    // A two-party Barrier proves the foreground and agent-setup closures run
+    // concurrently without a flaky bounded spin: foreground cannot pass the
+    // barrier until the spawned agent thread also reaches it, so the test only
+    // completes if both run at once. A bounded `yield_now` loop instead raced
+    // the scheduler and spuriously failed on a busy/low-core CI runner.
+    let barrier = Arc::new(Barrier::new(2));
+    let barrier_for_thread = Arc::clone(&barrier);
+
+    run_runtime_setup_concurrently(
+        move || {
+            barrier.wait();
+            Ok(())
+        },
+        || Ok(()),
+        || {},
+        move || {
+            barrier_for_thread.wait();
+            Ok(())
+        },
+    )
+    .expect("runtime setup should complete");
+}
+
+#[test]
+fn runtime_setup_surfaces_agent_setup_failure_after_foreground_work() {
+    let foreground_finished = Arc::new(AtomicBool::new(false));
+    let foreground_finished_for_check = Arc::clone(&foreground_finished);
+
+    let err = run_runtime_setup_concurrently(
+        || Ok(()),
+        || Ok(()),
+        move || {
+            foreground_finished.store(true, Ordering::SeqCst);
+        },
+        || anyhow::bail!("agent boom"),
+    )
+    .unwrap_err();
+
+    assert!(foreground_finished_for_check.load(Ordering::SeqCst));
+    assert!(err.to_string().contains("agent boom"));
 }
 
 #[test]

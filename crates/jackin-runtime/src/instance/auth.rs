@@ -207,30 +207,45 @@ impl RoleState {
                 let token = github.token.clone().unwrap_or_default();
                 Ok(GithubProvisionOutcome::TokenMode { token })
             }
-            GithubAuthMode::Sync => match read_host_gh_token(host_home)? {
-                HostGhResolution::Resolved(resolved) => {
-                    let content = render_hosts_yml(&resolved.token, resolved.user.as_deref());
-                    // Skip the write when content matches what's already
-                    // on disk — avoids touching mtime + atomic-rename on
-                    // every launch when nothing changed. Mirrors the
-                    // codex provisioner's no-churn guard.
-                    let needs_write = !std::fs::read_to_string(hosts_yml)
-                        .is_ok_and(|existing| existing == content);
-                    if needs_write {
-                        write_private_file(hosts_yml, &content)?;
-                    } else {
-                        repair_permissions(hosts_yml);
-                    }
-                    Ok(GithubProvisionOutcome::Synced {
-                        token: resolved.token,
-                        source: resolved.source,
+            GithubAuthMode::Sync => {
+                let resolved = if let Some(token) = github
+                    .token
+                    .as_ref()
+                    .filter(|token| !token.trim().is_empty())
+                {
+                    HostGhResolution::Resolved(HostGhAuth {
+                        token: token.clone(),
+                        user: None,
+                        source: GithubTokenSource::ConfiguredEnv,
                     })
+                } else {
+                    read_host_gh_token(host_home)?
+                };
+                match resolved {
+                    HostGhResolution::Resolved(resolved) => {
+                        let content = render_hosts_yml(&resolved.token, resolved.user.as_deref());
+                        // Skip the write when content matches what's already
+                        // on disk — avoids touching mtime + atomic-rename on
+                        // every launch when nothing changed. Mirrors the
+                        // codex provisioner's no-churn guard.
+                        let needs_write = !std::fs::read_to_string(hosts_yml)
+                            .is_ok_and(|existing| existing == content);
+                        if needs_write {
+                            write_private_file(hosts_yml, &content)?;
+                        } else {
+                            repair_permissions(hosts_yml);
+                        }
+                        Ok(GithubProvisionOutcome::Synced {
+                            token: resolved.token,
+                            source: resolved.source,
+                        })
+                    }
+                    HostGhResolution::Missing(reason) => {
+                        repair_permissions(hosts_yml);
+                        Ok(GithubProvisionOutcome::HostMissing { reason })
+                    }
                 }
-                HostGhResolution::Missing(reason) => {
-                    repair_permissions(hosts_yml);
-                    Ok(GithubProvisionOutcome::HostMissing { reason })
-                }
-            },
+            }
         }
     }
 }
@@ -966,12 +981,29 @@ fn provision_single_file_credential(
                 AuthProvisionOutcome::HostMissing
             }
             Ok(content) => {
-                write_private_file(target, &content).with_context(|| {
-                    format!(
-                        "failed to write {agent_name} role-state {label} at {}",
-                        target.display()
-                    )
-                })?;
+                // No-churn guard: skip the atomic write when the role-state
+                // file already holds identical content. `write_private_file`
+                // replaces the inode (temp + rename); on macOS that
+                // invalidates a live single-file bind mount into the running
+                // container. The background sibling-auth prewarm
+                // (`prewarm_auth_for_agents`, spawned during launch) re-runs
+                // this for already-foreground-provisioned agents, so an
+                // unconditional rename races `docker create` and silently
+                // breaks the foreground container's auth mounts — leaving the
+                // sibling agent unauthenticated. Mirrors the GitHub
+                // provisioner's no-churn guard.
+                let unchanged =
+                    std::fs::read_to_string(target).is_ok_and(|existing| existing == content);
+                if unchanged {
+                    repair_permissions(target);
+                } else {
+                    write_private_file(target, &content).with_context(|| {
+                        format!(
+                            "failed to write {agent_name} role-state {label} at {}",
+                            target.display()
+                        )
+                    })?;
+                }
                 AuthProvisionOutcome::Synced
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {

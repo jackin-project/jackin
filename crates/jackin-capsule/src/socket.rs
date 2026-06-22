@@ -91,14 +91,11 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
-        // Parent dir 0o700 so only the owner can list/connect. The
-        // socket file itself gets 0o600 after bind, but on a system
-        // where the parent dir is world-x an attacker can still
-        // enumerate the path. Lock both. A chmod failure here is a
-        // security regression: refuse to bind rather than continue
-        // with a wider-than-intended attack surface. Operators on
-        // exotic filesystems (NFS without owner perms) get an
-        // actionable error instead of silent downgrade.
+        // Parent dir 0o700 so only the owner can list/connect. The socket
+        // file itself gets 0o600 after bind, but on a system where the
+        // parent dir is world-x an attacker can still enumerate the path.
+        // Lock both. The dir is host-owned and the capsule runs as that
+        // same UID (`--user` on docker run), so the owner can set this.
         std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
             .with_context(|| format!("locking socket parent {} to 0o700", parent.display()))?;
     }
@@ -108,8 +105,8 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
     // process that shares the agent uid (and any process running as a
     // different uid if the umask is generous) can connect and inject
     // `ClientFrame::Input` straight into the focused PTY. The attach
-    // channel has no authentication beyond file-mode. Same hard-error
-    // policy as the parent dir above.
+    // channel has no authentication beyond file-mode. Hard error: the
+    // capsule always owns the socket file it just created.
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
         .with_context(|| format!("locking socket {} to 0o600", path.display()))?;
     let (tx, rx) = mpsc::unbounded_channel();

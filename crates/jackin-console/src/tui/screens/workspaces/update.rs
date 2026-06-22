@@ -209,6 +209,7 @@ pub enum WorkspaceListKeyPlan {
     NewSession,
     Delete,
     OpenGithub,
+    Prewarm,
     InstanceAction(WorkspaceInstanceAction),
     ConfirmPurge,
     Settings,
@@ -291,6 +292,17 @@ pub enum WorkspaceListSettingsPlan {
 }
 
 #[must_use]
+pub const fn workspace_list_prewarm_plan(row: ManagerListRow) -> Option<usize> {
+    match row {
+        ManagerListRow::SavedWorkspace(idx) => Some(idx),
+        ManagerListRow::CurrentDirectory
+        | ManagerListRow::NewWorkspace
+        | ManagerListRow::WorkspaceInstance(_, _)
+        | ManagerListRow::CurrentDirectoryInstance(_) => None,
+    }
+}
+
+#[must_use]
 pub const fn workspace_list_enter_plan(row: ManagerListRow) -> WorkspaceListEnterPlan {
     match row {
         ManagerListRow::CurrentDirectory => WorkspaceListEnterPlan::LaunchCurrentDir,
@@ -348,6 +360,7 @@ pub fn workspace_list_key_plan(key: KeyCode, list_scroll_focused: bool) -> Works
         A::InstanceStop => WorkspaceListKeyPlan::InstanceAction(WorkspaceInstanceAction::Stop),
         A::ConfirmPurge => WorkspaceListKeyPlan::ConfirmPurge,
         A::Settings => WorkspaceListKeyPlan::Settings,
+        A::Prewarm => WorkspaceListKeyPlan::Prewarm,
         // Tab/preview entry is resolved upstream in `workspace_list_top_level_key_plan`;
         // Ctrl-Q never reaches here (intercepted by `should_open_quit_confirm`).
         A::EnterPreview | A::Quit => WorkspaceListKeyPlan::Continue,

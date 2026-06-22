@@ -1,7 +1,7 @@
 //! Keep-awake reconciler for the macOS `caffeinate` power assertion.
 //!
 //! Workspaces opt in via `[workspaces.<name>.keep_awake] enabled = true`.
-//! When any container with the `jackin.keep_awake=true` label is
+//! When any container with the `jackin.keep.awake=true` label is
 //! running, jackin keeps a single detached `caffeinate -imsu` alive
 //! so the host stays awake; when the last such container stops, the
 //! assertion is released. The motivating use case is
@@ -16,7 +16,7 @@
 //!
 //! 1. Acquire an exclusive lock on `<data_dir>/caffeinate.lock` so two
 //!    parallel jackin invocations don't both spawn / both kill.
-//! 2. Count role containers labelled `jackin.keep_awake=true`.
+//! 2. Count role containers labelled `jackin.keep.awake=true`.
 //! 3. Read `<data_dir>/caffeinate.pid`; treat the recorded PID as
 //!    "running" only when `ps -p <pid> -o comm=` reports `caffeinate`.
 //!    Matching on the process basename (not just PID liveness via
@@ -201,13 +201,13 @@ fn remove_pid_file_if_present(path: &Path) -> anyhow::Result<()> {
     }
 }
 
-/// Count role containers carrying the `jackin.keep_awake=true` label.
+/// Count role containers carrying the `jackin.keep.awake=true` label.
 /// Stopped containers are excluded — only an actually-running role
 /// justifies holding the assertion.
 ///
 /// The `jackin.managed=true` co-filter scopes the count to containers
 /// owned by a jackin install (multiple label filters AND together in
-/// bollard). Without it, a container labelled `jackin.keep_awake=true`
+/// bollard). Without it, a container labelled `jackin.keep.awake=true`
 /// from a stale or external source — for example, an old jackin install
 /// whose state was uninstalled but whose containers were left running —
 /// would pin our caffeinate indefinitely with no way to discover why.
