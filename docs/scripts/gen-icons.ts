@@ -15,7 +15,7 @@ const jbMono = readFileSync(join(root, 'node_modules', '@fontsource', 'jetbrains
 
 // The mark is always a phosphor-green block with black letters and a white
 // chevron. Square corners only — terminals cannot round, so neither do we.
-const BLOCK = '#5cf07a'
+const BLOCK = '#00ff41'
 const INK = '#0a0a0a'
 const CHEVRON = '#ffffff'
 

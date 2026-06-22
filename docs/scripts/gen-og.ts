@@ -18,7 +18,7 @@ const MUTED = '#9ca8a1'
 const ACCENT = '#5cf07a'
 // The wordmark is always a phosphor-green block: black letters, white chevron,
 // square corners. ACCENT stays for non-logo UI highlights on the dark card.
-const BLOCK = '#5cf07a'
+const BLOCK = '#00ff41'
 const INK = '#0a0a0a'
 const CHEVRON = '#ffffff'
 const RAIN_COLS = 80

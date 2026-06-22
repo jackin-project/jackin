@@ -104,7 +104,7 @@ The first implementation chose a three-part system after sketching the terminal,
 
 | Direction | Sketch result | Decision |
 |---|---|---|
-| Prompt sigil | `j❯` stayed legible at prompt size and favicon size on the `#5CF07A` block, with a black `j` and a white chevron, square corners. | Chosen for prompt, favicon, app/PWA icons, and monogram surfaces. |
+| Prompt sigil | `j❯` stayed legible at prompt size and favicon size on the `#00FF41` block, with a black `j` and a white chevron, square corners. | Chosen for prompt, favicon, app/PWA icons, and monogram surfaces. |
 | Wordmark-first lockup | `jackin❯` over `by tailrocks` on the green block taught the name clearly in docs chrome, README, and social cards without inventing a second symbol. | Chosen for docs, landing hero, README hero, and Open Graph artwork. |
 | Rain-cut wordmark | A frozen field built from `j`, `a`, `c`, `k`, `i`, `n`, `❯`, and box/block glyphs gave large static surfaces enough texture without animating the mark. | Chosen for README and social image atmosphere. |
 
@@ -121,10 +121,10 @@ The live animated digital rain on the website and landing page is intentionally 
 - The chevron is `❯` (`U+276F`, HEAVY RIGHT-POINTING ANGLE QUOTATION MARK ORNAMENT). Use it everywhere the surface can render Unicode: website, docs, README, terminal output, help text, screenshots, SVG/PNG assets, favicons, app icons, package metadata, and social cards.
 - The ASCII fallback `>` is an exception for constrained environments only: plaintext systems that cannot render `❯`, terminals with broken glyph coverage, legacy metadata fields, package registries that reject Unicode, search snippets, or copy channels where Unicode loss is proven. When fallback is required, use only `j>` or `jackin>`. Never use fallback just because it is easier to type in source.
 - Never substitute another fancy chevron, arrow, bracket, prompt glyph, apostrophe, capitalization, or decorated spelling.
-- The mark always sits inside a solid phosphor-green block (`#5CF07A`): the `jackin` word or `j` letter is **black** (`#0A0A0A`), the `❯` chevron is **white** (`#FFFFFF`), and the block fills behind the whole mark on every surface and in both light and dark page themes. If the mark is drawn without the green block, with a green chevron, or with the word and chevron the same color, the logo is wrong.
-- Rendered documentation should treat `jackin❯` and `j❯` as brand marks where the renderer supports styling: the green `#5CF07A` block with black letters and a white chevron, monospace font, and copyable text. Markdown-only or code-block contexts may use plain unstyled `jackin❯`, but HTML/MDX components, docs headers, README banners, command output examples with ANSI captures, and generated assets should preserve the block treatment.
+- The mark always sits inside a solid phosphor-green block (`#00FF41`): the `jackin` word or `j` letter is **black** (`#0A0A0A`), the `❯` chevron is **white** (`#FFFFFF`), and the block fills behind the whole mark on every surface and in both light and dark page themes. If the mark is drawn without the green block, with a green chevron, or with the word and chevron the same color, the logo is wrong.
+- Rendered documentation should treat `jackin❯` and `j❯` as brand marks where the renderer supports styling: the green `#00FF41` block with black letters and a white chevron, monospace font, and copyable text. Markdown-only or code-block contexts may use plain unstyled `jackin❯`, but HTML/MDX components, docs headers, README banners, command output examples with ANSI captures, and generated assets should preserve the block treatment.
 - Icon/favicons use only the short form (`j❯` or `j>` fallback) on the same green block. Do not squeeze the full wordmark into icon surfaces.
-- Wordmark/logotype surfaces use the full form (`jackin❯` or `jackin>` fallback) on the green block. There is one colorway, not separate light/dark variants: black letters and a white chevron on `#5CF07A` in every context.
+- Wordmark/logotype surfaces use the full form (`jackin❯` or `jackin>` fallback) on the green block. There is one colorway, not separate light/dark variants: black letters and a white chevron on `#00FF41` in every context.
 - The proposed rebrand retires the trailing-apostrophe wordmark. The implementation PR must update the agent-only spelling rule in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> at the same time it updates public docs and assets, so the repository does not mix old and new brand rules indefinitely.
 - Rich-text prose should use `jackin❯` when referring to the product or project by name. Plaintext-only environments may use `jackin>`. Compact logo surfaces may use `j❯`, and compact plaintext fallback surfaces may use `j>`. Literal commands, binaries, crates, packages, environment variables, config keys, file paths, labels, selectors, URLs, and code identifiers stay `jackin` only where the reader must type or match the literal identifier.
 - The wordmark and monogram use one monospace font and one weight across all official surfaces. Do not split the `j` and `❯` into different fonts or weights.
@@ -136,7 +136,7 @@ Every candidate mark must pass these tests before implementation:
 
 - **Terminal fidelity:** render legibly in a monospace terminal as plain text, with and without ANSI color.
 - **Fallback restraint:** prove each `>` fallback is needed by the target surface; otherwise use `❯`.
-- **Color recognition:** every rendered logo/documentation treatment that supports styling must show the mark on the `#5CF07A` block with black letters and a white chevron, not merely spell the mark as text.
+- **Color recognition:** every rendered logo/documentation treatment that supports styling must show the mark on the `#00FF41` block with black letters and a white chevron, not merely spell the mark as text.
 - **Website parity:** the website mark must be recognizably the same shape as the terminal prompt mark, not a separate illustration that only shares a name.
 - **Small-size survival:** the mark must remain identifiable at 16x16 favicon size and 22-24px nav size.
 - **Large-size confidence:** the mark must not feel empty or accidental at README/OG/hero scale.
@@ -148,14 +148,15 @@ Every candidate mark must pass these tests before implementation:
 
 | Token | Hex | Use |
 |---|---:|---|
-| Logo block green | `#5CF07A` | The solid block every mark sits on; also the canonical phosphor green |
+| Logo block green | `#00FF41` | The phosphor block every mark sits on — the canonical jackin green, identical to the digital rain and the CLI's terminal accents |
 | Logo ink (black) | `#0A0A0A` | The `jackin` word / `j` letter on the block |
 | Logo chevron (white) | `#FFFFFF` | The `❯` chevron on the block |
+| Chevron accent | `#5CF07A` | Brighter green for non-logo UI accents only (links, focus, sidebar pills, TOC); never the logo block |
 | Muted accent | `#1D9E75` | Optional UI-layer accent when pure phosphor is too loud; never part of the mark |
 | Dark canvas | `#0A0A0A` | Default page/app background the block floats on |
 | Cream optional | `#F4F1E8` | Sticker/print-only retro-manual surface (the block stays green on it) |
 
-The mark has one colorway, not several: a `#5CF07A` block, `#0A0A0A` letters, a `#FFFFFF` chevron, square corners. It renders identically on dark canvases, light docs, cream stickers, and inside terminals — the block carries the brand color so the surrounding surface never has to.
+The mark has one colorway, not several: a `#00FF41` block, `#0A0A0A` letters, a `#FFFFFF` chevron, square corners. The logo uses the real jackin green — the same `#00FF41` phosphor as the rain and terminal — not the brighter `#5CF07A`, which is a non-logo UI accent only. The block renders identically on dark canvases, light docs, cream stickers, and inside terminals — the block carries the brand color so the surrounding surface never has to.
 
 The mark is always placed on the green block. Earlier drafts forbade green-field logos and required a green chevron; that is reversed — the block is now mandatory and the chevron is white. Green may still appear elsewhere in the UI (digital rain, accents, CTAs); only the mark owns the black-letters-on-green plus white-chevron relationship.
 
@@ -214,7 +215,7 @@ j❯ Building derived image         OK
 ✓  Agent loaded. You're inside.
 ```
 
-The prompt sigil `j❯` renders on the green block: a black `j` and a white `❯` on `#5CF07A`, square edges (shipped in the construct image's Starship config). The agent name to its left uses the terminal default foreground and stays off the block. For boxes and progress, Unicode box-drawing characters and block characters are preferred, with `--no-unicode` as the explicit fallback path.
+The prompt sigil `j❯` renders on the green block: a black `j` and a white `❯` on `#00FF41`, square edges (shipped in the construct image's Starship config). The agent name to its left uses the terminal default foreground and stays off the block. For boxes and progress, Unicode box-drawing characters and block characters are preferred, with `--no-unicode` as the explicit fallback path.
 
 The shared Clap `--help` banner should use frozen brand rain, not animation. The rain field should be built from the brand vocabulary (`j`, `a`, `c`, `k`, `i`, `n`, `❯`, and the box/block drawing glyphs the CLI already uses) and should frame the `jackin❯` / `by tailrocks` lockup without overwhelming the command list. This is a static documentation/help surface, not the live launch progress rain. The live launch rain behavior remains owned by the Launch Progress TUI lifecycle.
 
@@ -224,7 +225,7 @@ The optional first-run or `--version` banner may use a short ASCII wordmark on t
 
 Website and docs work should replace the old apostrophe wordmark with the proposed wordmark and tokenized brand colors in one coordinated PR. The current docs title override in <RepoFile path="docs/src/components/chrome/SiteTitle.tsx">docs/src/components/chrome/SiteTitle.tsx</RepoFile> and theme tokens in <RepoFile path="docs/src/styles/docs-theme.css">docs/src/styles/docs-theme.css</RepoFile> are likely first-touch files.
 
-Docs should make the brand visually recognizable without sacrificing copyability. Where MDX/HTML is available, `jackin❯` should render as one inline brand component with white or black `jackin` text, chosen by background contrast, and a `#5CF07A` chevron; the copied text should still be `jackin❯`. In plain Markdown/code contexts, write `jackin❯` directly and reserve `jackin>` only for documented fallback surfaces.
+Docs should make the brand visually recognizable without sacrificing copyability. Where MDX/HTML is available, `jackin❯` should render as one inline brand component on the `#00FF41` block — black `jackin` text, white `❯` chevron, square corners; the copied text should still be `jackin❯`. In plain Markdown/code contexts, write `jackin❯` directly and reserve `jackin>` only for documented fallback surfaces.
 
 Hero target:
 
@@ -286,7 +287,7 @@ If any future implementation offers to update host-side prompt snippets, shell t
 - One canonical source describes the mark, colors, type, spacing, terminal use, web use, app/package use, and copy rules.
 - Logo artwork consistently includes the `by tailrocks` byline under `jackin❯`; ordinary prose and typed commands do not.
 - Every brand/prose/logo occurrence uses exactly one of `j❯`, `j>`, `jackin❯`, or `jackin>`, except literal code/command identifiers that must remain `jackin`.
-- Every logo surface renders the mark on the `#5CF07A` block with a black word and a white chevron; only surrounding UI accents may use muted green variants.
+- Every logo surface renders the mark on the `#00FF41` block with a black word and a white chevron; only surrounding UI accents may use muted green variants.
 - Favicon and app-icon assets use the short form only, never the full wordmark.
 - Public docs, README, docs chrome, landing page, favicons, Open Graph assets, and CLI-visible surfaces agree on the same wordmark and monogram.
 - At least three candidate directions have been sketched across terminal, website, README hero, and favicon constraints before the final mark is chosen.
@@ -310,7 +311,7 @@ If any future implementation offers to update host-side prompt snippets, shell t
 
 ## Open Questions
 
-- Should `#5CF07A` fully replace the current docs bright green, or should the old value remain only as a compatibility UI token until the redesign lands?
+- Resolved: the logo block uses the canonical phosphor `#00FF41` (the same green as the rain and terminal); the brighter `#5CF07A` stays as the non-logo UI accent (links, focus, sidebar). The two greens are intentionally distinct — the mark uses the real jackin green, accents use the brighter one.
 - Should the docs site self-host JetBrains Mono as the mark font if it is not already loaded everywhere the mark appears?
 - Where should the post-implementation brand spec live: README, a dedicated docs reference page, or a generated brand-kit page?
 - Should the CLI output prefix be applied to every jackin-owned status line, or only to lifecycle/status lines where subsystem identity matters?

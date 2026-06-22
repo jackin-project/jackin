@@ -35,13 +35,14 @@ Use the byline on logos, banners, cards, README artwork, social cards, splash su
 
 | Token | Hex | Use |
 |---|---:|---|
-| Logo block green | `#5CF07A` | The solid block every mark sits on |
+| Logo block green | `#00FF41` | The phosphor block every mark sits on — the same green as the digital rain and the CLI's terminal accents |
 | Logo ink (black) | `#0A0A0A` | The `jackin` word / `j` letter on the block |
 | Logo chevron (white) | `#FFFFFF` | The `❯` chevron on the block |
+| Chevron accent | `#5CF07A` | Brighter green for non-logo UI accents only (links, focus rings, sidebar pills); never the logo block |
 | Muted accent | `#1D9E75` | UI accent when pure phosphor is too strong; never part of the mark |
 | Dark canvas | `#0A0A0A` | Default background the block floats on |
 
-The mark is always a `#5CF07A` block with a black `jackin` word and a white `❯` chevron, in both light and dark contexts — one colorway, no light/dark variants. Square corners only: terminals cannot round corners, so neither does the block or any UI surface. Never recolor the chevron green, never make the word and chevron the same color, never drop the block.
+The mark is always a `#00FF41` phosphor block with a black `jackin` word and a white `❯` chevron, in both light and dark contexts — one colorway, no light/dark variants. The logo uses the real jackin green (the same `#00FF41` as the rain and terminal); the brighter `#5CF07A` is reserved for non-logo UI accents. Square corners only: terminals cannot round corners, so neither does the block or any UI surface. Never recolor the chevron green, never make the word and chevron the same color, never drop the block.
 
 ## Type
 
@@ -63,7 +64,7 @@ codex j❯
 claude j❯
 ```
 
-The prompt sigil renders on the same green block: a black `j` and a white `❯` on `#5CF07A`, square edges, where the prompt renderer supports color.
+The prompt sigil renders on the same green block: a black `j` and a white `❯` on `#00FF41`, square edges, where the prompt renderer supports color.
 
 ## Assets
 

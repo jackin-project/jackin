@@ -41,7 +41,7 @@
   /* Logo lockup: the mark is always a phosphor-green block with black
      letters and a white chevron, on every surface and in both themes.
      Square corners only — terminals cannot round, so neither do we. */
-  --jk-logo-block:   #5cf07a;
+  --jk-logo-block:   #00ff41;
   --jk-logo-ink:     #0a0a0a;
   --jk-logo-chevron: #ffffff;
 

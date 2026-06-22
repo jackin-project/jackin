@@ -31,10 +31,11 @@ pub const fn color(rgb: Rgb) -> Color {
 }
 
 pub const PHOSPHOR_GREEN: Color = color(PHOSPHOR_GREEN_RGB);
-/// Logo block green (`#5CF07A`). The brand pill sits on this block with a
-/// black word and a white chevron. Distinct from `PHOSPHOR_GREEN`, which
-/// stays the general UI accent and the digital-rain phosphor.
-pub const BRAND_BLOCK: Color = Color::Rgb(92, 240, 122);
+/// Logo block green: the canonical phosphor green (`#00FF41`), the same green
+/// the rest of the CLI and the digital rain use. The brand pill sits on this
+/// block with a black word and a white chevron — the logo uses the real jackin
+/// green, not the muted `#5CF07A` chevron-accent.
+pub const BRAND_BLOCK: Color = PHOSPHOR_GREEN;
 pub const PHOSPHOR_DIM: Color = color(PHOSPHOR_DIM_RGB);
 pub const PHOSPHOR_DARK: Color = color(PHOSPHOR_DARK_RGB);
 pub const INPUT_BG_DIM: Color = color(INPUT_BG_DIM_RGB);

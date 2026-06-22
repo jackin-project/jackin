@@ -851,7 +851,7 @@ fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
         // codes. Assert the word plus the block colour rather than a contiguous
         // `jackin❯` substring.
         assert!(
-            frame.contains("jackin") && frame.contains("48;2;92;240;122"),
+            frame.contains("jackin") && frame.contains("48;2;0;255;65"),
             "{context} should preserve the top status brand (green block) while a dialog is open: {frame:?}"
         );
         assert!(
