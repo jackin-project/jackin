@@ -49,10 +49,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     outputs:
-      rust: ${{ steps.dispatch.outputs.rust || steps.filter.outputs.rust }}
-      construct: ${{ steps.dispatch.outputs.construct || steps.filter.outputs.construct }}
-      construct_image: ${{ steps.dispatch.outputs.construct_image || steps.filter.outputs.construct_image }}
-      workflows: ${{ steps.dispatch.outputs.workflows || steps.filter.outputs.workflows }}
+      rust: ${{ steps.route.outputs.rust }}
+      construct: ${{ steps.route.outputs.construct }}
+      construct_image: ${{ steps.route.outputs.construct_image }}
+      workflows: ${{ steps.route.outputs.workflows }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -86,7 +86,6 @@ jobs:
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'deny.toml'
-              - 'mise.toml'
               - 'rust-toolchain.toml'
               - 'build.rs'
               - 'src/**'
@@ -98,11 +97,125 @@ jobs:
               - 'docker-bake.hcl'
               - 'docker/construct/**'
               - 'crates/jackin-xtask/**'
-              - 'mise.toml'
             construct_image:
               - 'docker/construct/**'
             workflows:
               - '.github/workflows/**'
+            mise:
+              - 'mise.toml'
+
+      - name: Route changed paths
+        id: route
+        shell: bash
+        env:
+          FORCE_RUST: ${{ steps.dispatch.outputs.rust }}
+          FORCE_CONSTRUCT: ${{ steps.dispatch.outputs.construct }}
+          FORCE_CONSTRUCT_IMAGE: ${{ steps.dispatch.outputs.construct_image }}
+          FORCE_WORKFLOWS: ${{ steps.dispatch.outputs.workflows }}
+          FILTER_RUST: ${{ steps.filter.outputs.rust }}
+          FILTER_CONSTRUCT: ${{ steps.filter.outputs.construct }}
+          FILTER_CONSTRUCT_IMAGE: ${{ steps.filter.outputs.construct_image }}
+          FILTER_WORKFLOWS: ${{ steps.filter.outputs.workflows }}
+          FILTER_MISE: ${{ steps.filter.outputs.mise }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          rust="${FORCE_RUST:-${FILTER_RUST:-false}}"
+          construct="${FORCE_CONSTRUCT:-${FILTER_CONSTRUCT:-false}}"
+          construct_image="${FORCE_CONSTRUCT_IMAGE:-${FILTER_CONSTRUCT_IMAGE:-false}}"
+          workflows="${FORCE_WORKFLOWS:-${FILTER_WORKFLOWS:-false}}"
+
+          if [ "${FILTER_MISE:-false}" = "true" ] && [ -z "${FORCE_RUST:-}" ]; then
+            base=""
+            if [ -n "$BASE_REF" ]; then
+              git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+              base=$(git merge-base HEAD "refs/remotes/origin/$BASE_REF")
+            elif [ -n "$BEFORE_SHA" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+              base="$BEFORE_SHA"
+            elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+              base="HEAD^"
+            fi
+
+            if [ -z "$base" ] || ! git cat-file -e "$base:mise.toml" 2>/dev/null; then
+              rust=true
+            else
+              git show "$base:mise.toml" > "$RUNNER_TEMP/mise-base.toml"
+              awk '
+                function keep(name) {
+                  return name == "zig" ||
+                    name == "cargo-audit" ||
+                    name == "cargo-deny" ||
+                    name == "cargo-fuzz" ||
+                    name == "cargo-hack" ||
+                    name == "cargo-nextest" ||
+                    name == "cargo-shear" ||
+                    name == "cargo-zigbuild"
+                }
+                /^\[tools\]$/ { section = "tools"; next }
+                /^\[tool_alias\]$/ { section = "tool_alias"; next }
+                /^\[tools\./ {
+                  section = $0
+                  sub(/^\[tools\./, "", section)
+                  sub(/\]$/, "", section)
+                  next
+                }
+                /^\[/ { section = ""; next }
+                /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+                {
+                  key = $1
+                  sub(/[[:space:]]*=.*/, "", key)
+                  gsub(/"/, "", key)
+                  if (section == "tools" && keep(key)) print section "." key "=" $0
+                  else if (section == "tool_alias" && keep(key)) print section "." key "=" $0
+                  else if (keep(section)) print "tools." section "." $0
+                }
+              ' "$RUNNER_TEMP/mise-base.toml" > "$RUNNER_TEMP/mise-base-rust.txt"
+              awk '
+                function keep(name) {
+                  return name == "zig" ||
+                    name == "cargo-audit" ||
+                    name == "cargo-deny" ||
+                    name == "cargo-fuzz" ||
+                    name == "cargo-hack" ||
+                    name == "cargo-nextest" ||
+                    name == "cargo-shear" ||
+                    name == "cargo-zigbuild"
+                }
+                /^\[tools\]$/ { section = "tools"; next }
+                /^\[tool_alias\]$/ { section = "tool_alias"; next }
+                /^\[tools\./ {
+                  section = $0
+                  sub(/^\[tools\./, "", section)
+                  sub(/\]$/, "", section)
+                  next
+                }
+                /^\[/ { section = ""; next }
+                /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+                {
+                  key = $1
+                  sub(/[[:space:]]*=.*/, "", key)
+                  gsub(/"/, "", key)
+                  if (section == "tools" && keep(key)) print section "." key "=" $0
+                  else if (section == "tool_alias" && keep(key)) print section "." key "=" $0
+                  else if (keep(section)) print "tools." section "." $0
+                }
+              ' mise.toml > "$RUNNER_TEMP/mise-head-rust.txt"
+
+              if ! cmp -s "$RUNNER_TEMP/mise-base-rust.txt" "$RUNNER_TEMP/mise-head-rust.txt"; then
+                rust=true
+              fi
+            fi
+          fi
+
+          {
+            echo "rust=$rust"
+            echo "construct=$construct"
+            echo "construct_image=$construct_image"
+            echo "workflows=$workflows"
+          } >> "$GITHUB_OUTPUT"
 
   actionlint:
     needs: [changes, matrix-setup]
