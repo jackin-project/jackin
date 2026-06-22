@@ -24,7 +24,7 @@ pub struct MaterializedWorkspace {
     pub workdir: String,
     pub mounts: Vec<MaterializedMount>,
     /// Threaded through from `ResolvedWorkspace` so `launch_role_runtime`
-    /// can stamp the `jackin.keep_awake=true` label on the container
+    /// can stamp the `jackin.keep.awake=true` label on the container
     /// without a config re-lookup. Read by the keep-awake reconciler.
     pub keep_awake_enabled: bool,
 }

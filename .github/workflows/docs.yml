@@ -189,9 +189,9 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/src
             ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-registry-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
+            cargo-registry-v2-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Cache mise cargo tools
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
@@ -262,9 +262,9 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/src
             ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-registry-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
+            cargo-registry-v2-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Cache mise cargo tools
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5

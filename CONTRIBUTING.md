@@ -1,62 +1,76 @@
-# Contributing to jackin'
-
-Thanks for contributing. A few ground rules.
+# Commits, Branching & Contributing
 
 ## License
 
-jackin' is licensed under the Apache License, Version 2.0. By submitting a contribution, you agree it will be licensed under the same terms per Section 5 of the Apache License 2.0.
+Apache 2.0. Contributions licensed under same terms (Section 5).
 
-## Developer Certificate of Origin (DCO)
+## DCO
 
-All contributions must be signed off under the Developer Certificate of Origin v1.1 (https://developercertificate.org/). Sign off every commit with:
+All contributions signed off under [DCO v1.1](https://developercertificate.org/). Enforced by [DCO2 GitHub App](https://github.com/cncf/dco2) — unsigned commit blocks PR.
 
-    git commit -s
+Employer contributions: confirm authorization before submitting. Use personal email in commit author + sign-off.
 
-This adds a `Signed-off-by: Your Name <email>` trailer asserting you have the right to submit the contribution under the project's license.
+## How to Submit
 
-The full DCO text:
+1. Fork. Branch feature off `main`.
+2. Change. Sign every commit: `git commit -s`.
+3. Open PR describing problem solved. CI must pass.
 
-> Developer Certificate of Origin
-> Version 1.1
->
-> By making a contribution to this project, I certify that:
->
-> (a) The contribution was created in whole or in part by me and I
->     have the right to submit it under the open source license
->     indicated in the file; or
->
-> (b) The contribution is based upon previous work that, to the best
->     of my knowledge, is covered under an appropriate open source
->     license and I have the right under that license to submit that
->     work with modifications, whether created in whole or in part
->     by me, under the same open source license (unless I am
->     permitted to submit under a different license), as indicated
->     in the file; or
->
-> (c) The contribution was provided directly to me by some other
->     person who certified (a), (b) or (c) and I have not modified
->     it.
->
-> (d) I understand and agree that this project and the contribution
->     are public and that a record of the contribution (including all
->     personal information I submit with it, including my sign-off) is
->     maintained indefinitely and may be redistributed consistent with
->     this project or the open source license(s) involved.
+## Branching
 
-## Contributions made on behalf of an employer
+Never commit to `main`. All work on own branch.
 
-If your contribution is made in the course of your employment, or if your employer has rights to inventions you make, you are responsible for ensuring you have authorization to contribute the work under the Apache License 2.0 and to sign the DCO. If in doubt, do not submit until you have confirmed this with your employer in writing.
+Names: `feature/`, `fix/`, `refactor/`, or `chore/` prefix + short lowercase hyphen description.
 
-Use a personal email address (not an employer email) in your commit author identity and DCO sign-off.
+### Sync with main: rebase only, never merge
 
-## How to submit
+```bash
+git fetch origin
+git rebase origin/main
+git push --force-with-lease origin <branch>   # requires operator approval
+```
 
-1. Fork the repository.
-2. Create a feature branch.
-3. Make your changes. Commit with `git commit -s` on every commit.
-4. Open a pull request describing what problem it solves.
-5. Ensure CI passes.
+Never `git merge main`. Merge commits drag bot/renovate commits into PR diff → break DCO + squash-merge. Rebase keeps history clean, DCO scoped to author's own commits.
 
-## Non-trivial contributions
+## Commit Format
 
-For contributions beyond small bug fixes or typos, maintainers may ask you to confirm in the PR thread that the work was done outside the scope of any employer's employment agreement and that you are authorized to submit it. Standard due diligence, not an accusation.
+[Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/). Subject: `<type>[scope][!]: <desc>`
+
+| Type | Use |
+|---|---|
+| `feat` | New user-visible feature |
+| `fix` | Bug fix |
+| `docs` | Docs-only |
+| `style` | Formatting, no logic |
+| `refactor` | Restructure, no behavior change |
+| `perf` | Performance |
+| `test` | Tests |
+| `build` | Build/tooling/deps |
+| `ci` | CI config |
+| `chore` | Maintenance (release, merge, deps) |
+| `revert` | Reverts prior commit |
+
+Breaking: `feat!:` or `feat(scope)!:` + `BREAKING CHANGE:` footer. PR title = squash-merge subject — same rules.
+
+## Signing
+
+```sh
+git commit -s -m "feat(scope): description"
+git commit --amend -s --no-edit   # forgot -s → force-push after (operator approval required)
+```
+
+DCO fail on PR: fix first, before anything else.
+
+## Merge-Readiness Check
+
+Run when PR ready to merge (not before every commit):
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo check --all-targets
+cargo nextest run --all-features
+cargo nextest run -p jackin --features e2e --profile docker-e2e
+```
+
+Fmt fail → `cargo fmt`, re-check. See [TESTING.md](TESTING.md).

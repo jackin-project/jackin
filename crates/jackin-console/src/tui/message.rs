@@ -213,6 +213,7 @@ pub enum ConsoleInputOutcome<RoleSelector, Agent, InstanceAction, Provider> {
     Continue,
     ExitJackin,
     LaunchNamed(String),
+    PrewarmNamed(String),
     LaunchCurrentDir,
     LaunchWithAgent(RoleSelector),
     LaunchWithRuntimeAgent(Agent),
@@ -271,6 +272,7 @@ impl<Agent> ConsoleInstanceAction<Agent> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConsoleOutcome<RoleSelector, Workspace, Agent, Provider> {
     Launch(RoleSelector, Workspace, Option<Agent>),
+    PrewarmNamed(String),
     InstanceAction {
         container: String,
         action: ConsoleInstanceAction<Agent>,

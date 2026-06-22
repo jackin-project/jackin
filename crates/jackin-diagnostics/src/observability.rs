@@ -883,9 +883,24 @@ mod otlp {
             "{level},hyper=off,h2=off,tower=off,tonic=off,reqwest=off,\
              opentelemetry=off,opentelemetry_sdk=off,opentelemetry_otlp=off"
         );
+        // Surface OTLP exporter/SDK diagnostics (export failures, refused
+        // endpoint, gRPC errors) to the capsule's stderr — captured by
+        // `docker logs` and mirrored into `multiplexer.log`. The OTLP span/log
+        // layers above keep `opentelemetry*=off`, so these diagnostics never
+        // feed back through the exporter: no export-error → log → export loop.
+        // Without this sink, a failing in-container export is silently dropped
+        // (a silent failure), making "no capsule telemetry in the backend"
+        // impossible to diagnose.
+        let otlp_diag_layer = tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_writer(std::io::stderr)
+            .with_filter(EnvFilter::new(
+                "off,opentelemetry=warn,opentelemetry_sdk=warn,opentelemetry_otlp=warn",
+            ));
         let installed = tracing_subscriber::registry()
             .with(span_layer.with_filter(EnvFilter::new(directive.clone())))
             .with(log_layer.with_filter(EnvFilter::new(directive)))
+            .with(otlp_diag_layer)
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
