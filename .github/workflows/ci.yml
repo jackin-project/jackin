@@ -244,7 +244,15 @@ jobs:
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
       - run: rustup component add clippy
-      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - run: cargo clippy --timings --workspace --all-targets --all-features --locked -- -D warnings
+      - name: Upload cargo timings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cargo-timings-clippy-${{ matrix.config.lane }}
+          path: target/cargo-timings/*.html
+          if-no-files-found: ignore
+          retention-days: 7
   dependency-policy:
     needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
@@ -323,7 +331,15 @@ jobs:
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
-      - run: cargo check --workspace --all-targets --locked
+      - run: cargo check --timings --workspace --all-targets --locked
+      - name: Upload cargo timings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cargo-timings-check-default-${{ matrix.config.lane }}
+          path: target/cargo-timings/*.html
+          if-no-files-found: ignore
+          retention-days: 7
   construct-e2e-image:
     needs: changes
     if: needs.changes.outputs.construct_image == 'true'
@@ -613,7 +629,15 @@ jobs:
           # reruns skip recompiling unchanged dependencies.
       - run: rustup target add ${{ matrix.target.triple }}
       - name: Build validator (${{ matrix.target.triple }})
-        run: cargo zigbuild --release --locked --bin jackin-role --target ${{ matrix.target.triple }}.2.17
+        run: cargo zigbuild --timings --release --locked --bin jackin-role --target ${{ matrix.target.triple }}.2.17
+      - name: Upload cargo timings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cargo-timings-validator-${{ matrix.target.triple }}-${{ matrix.config.lane }}
+          path: target/cargo-timings/*.html
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Package validator
         run: |
           archive="jackin-role-${{ matrix.target.triple }}.tar.gz"
