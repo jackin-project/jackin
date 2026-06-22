@@ -111,6 +111,35 @@ jobs:
             exit 0
           fi
 
+          extract_release_mise() {
+            awk '
+              function keep(name) {
+                return name == "zig" ||
+                  name == "cosign" ||
+                  name == "syft" ||
+                  name == "cargo-zigbuild"
+              }
+              /^\[tools\]$/ { section = "tools"; next }
+              /^\[tool_alias\]$/ { section = "tool_alias"; next }
+              /^\[tools\./ {
+                section = $0
+                sub(/^\[tools\./, "", section)
+                sub(/\]$/, "", section)
+                next
+              }
+              /^\[/ { section = ""; next }
+              /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+              {
+                key = $1
+                sub(/[[:space:]]*=.*/, "", key)
+                gsub(/"/, "", key)
+                if (section == "tools" && keep(key)) print section "." key "=" $0
+                else if (section == "tool_alias" && keep(key)) print section "." key "=" $0
+                else if (keep(section)) print "tools." section "." $0
+              }
+            ' "$1"
+          }
+
           source=false
           while IFS= read -r path; do
             # Skip the trailing-newline empty iteration.
@@ -125,6 +154,20 @@ jobs:
             case "$path" in
               .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/**|docker/runtime/**|crates/**)
                 source=true
+                ;;
+              mise.toml)
+                if ! git cat-file -e "${old_sha}:mise.toml" 2>/dev/null; then
+                  source=true
+                  continue
+                fi
+
+                git show "${old_sha}:mise.toml" > "$RUNNER_TEMP/mise-preview-base.toml"
+                extract_release_mise "$RUNNER_TEMP/mise-preview-base.toml" > "$RUNNER_TEMP/mise-preview-base-release.txt"
+                extract_release_mise mise.toml > "$RUNNER_TEMP/mise-preview-head-release.txt"
+
+                if ! cmp -s "$RUNNER_TEMP/mise-preview-base-release.txt" "$RUNNER_TEMP/mise-preview-head-release.txt"; then
+                  source=true
+                fi
                 ;;
             esac
           done <<< "$diff_files"
