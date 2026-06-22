@@ -265,8 +265,6 @@ jobs:
           cache_key_prefix: "mise-v2"
           install_args: "actionlint shellcheck"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - id: cargo-registry-cache
-        uses: ./.github/actions/cache-cargo-registry
       - run: actionlint .github/workflows/*.yml
 
   fmt:
@@ -298,17 +296,6 @@ jobs:
           cache_key_prefix: "mise-v2"
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - id: cargo-registry-cache
-        uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ci-default-dev-workspace-v2
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
       - run: rustup component add rustfmt
       - run: cargo fmt --check
 
