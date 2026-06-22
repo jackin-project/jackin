@@ -297,4 +297,17 @@ jobs:
           chmod +x target/debug/jackin-capsule
           echo "JACKIN_CAPSULE_BIN=$PWD/target/debug/jackin-capsule" >> "$GITHUB_ENV"
       - name: Run Docker E2E smoke tests
-        run: cargo nextest run -p jackin --features e2e --profile docker-e2e --color=always --locked
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          attempt=1
+          until cargo fetch --locked; do
+            if [ "$attempt" -ge 3 ]; then
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+            attempt="$((attempt + 1))"
+          done
+
+          cargo nextest run -p jackin --features e2e --profile docker-e2e --color=always --locked
