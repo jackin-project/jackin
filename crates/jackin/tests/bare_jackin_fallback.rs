@@ -37,7 +37,7 @@ fn console_subcommand_without_tty_errors() {
         .assert()
         .failure()
         .stderr(predicate::str::contains(
-            "jackin' console requires an interactive terminal",
+            "jackin❯ console requires an interactive terminal",
         ));
 }
 

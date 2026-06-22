@@ -1313,7 +1313,7 @@ nav.landing-topnav .landing-star {
   user-select: none;
 }
 .landing-logo .jk-brand-mark__chevron {
-  color: #5cf07a;
+  color: #ffffff;
 }
 .landing-nav-right { display: flex; gap: 14px; align-items: center; }
 .landing-star {
@@ -1430,7 +1430,7 @@ nav.landing-topnav .landing-star {
 }
 
 .landing-hero-wordmark .jk-brand-mark__chevron {
-  color: #5cf07a;
+  color: #ffffff;
 }
 
 .landing-hero-wordmark .jk-brand-mark__byline {

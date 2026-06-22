@@ -1,4 +1,4 @@
-//! Shared TUI tokens, models, and components used by jackin's
+//! Shared TUI tokens, models, and components used by jackin❯'s
 //! terminal surfaces.
 //!
 //! Backend-neutral types such as RGB tokens, tab-cell layout, hint
@@ -115,6 +115,11 @@ pub const RAIN_DARK: Rgb = PHOSPHOR_DARK;
 
 /// White used for titles, hotkey glyphs, and the active-tab underline.
 pub const WHITE: Rgb = Rgb::new(255, 255, 255);
+
+/// Logo block green (`#5CF07A`). The brand pill sits on this block with a
+/// black word and a white chevron — distinct from the `PHOSPHOR_GREEN`
+/// UI accent and the digital-rain phosphor.
+pub const BRAND_BLOCK: Rgb = Rgb::new(92, 240, 122);
 
 /// Almost-invisible dim background for the input band inside a
 /// text-input dialog. Picked so the input region is visible even when
@@ -239,7 +244,7 @@ pub mod ansi {
     /// Help/banner form of the brand pill, shared with the host and
     /// capsule status bars so every surface shows the same logo.
     pub const BRAND_BANNER: &str =
-        "\n  \x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m jackin' \x1b[0m\n";
+        "\n  \x1b[1m\x1b[48;2;92;240;122m\x1b[38;2;0;0;0m jackin\x1b[38;2;255;255;255m❯\x1b[38;2;0;0;0m \x1b[0m\n";
 
     /// Build a foreground SGR for a shared RGB token.
     pub const fn rgb_fg(rgb: Rgb) -> &'static str {

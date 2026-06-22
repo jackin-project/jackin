@@ -1,4 +1,4 @@
-//! Text measurement, tab layout, and terminal-title helpers for jackin' TUI surfaces.
+//! Text measurement, tab layout, and terminal-title helpers for jackin❯ TUI surfaces.
 
 use ratatui::layout::Rect;
 

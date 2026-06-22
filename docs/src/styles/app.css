@@ -12,6 +12,16 @@
 @source '../**/*.{ts,tsx}';
 @source '../../node_modules/fumadocs-ui/dist/**/*.{js,mjs}';
 
+/* Square corners only. Terminals cannot round corners, so no jackin❯ surface
+   does either — the wordmark block, buttons, cards, inputs, and Fumadocs chrome
+   all stay rectangular. Hard reset so third-party UI inherits the CLI aesthetic.
+   Imported last, so it wins over Tailwind/Fumadocs radius utilities. */
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
+}
+
 html {
   scrollbar-gutter: stable;
 }

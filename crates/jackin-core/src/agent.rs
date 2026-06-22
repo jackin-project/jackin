@@ -1,4 +1,4 @@
-//! `Agent` enum: the set of AI agents jackin' can provision inside a role
+//! `Agent` enum: the set of AI agents jackin❯ can provision inside a role
 //! container.
 //!
 //! Single source of truth for agent identity — variant ordering, display
@@ -14,7 +14,7 @@ use crate::auth::AuthForwardMode;
 use crate::constants::CLAUDE_OAUTH_TOKEN_ENV;
 use crate::env_model;
 
-/// The set of AI agents jackin' can provision.
+/// The set of AI agents jackin❯ can provision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Agent {

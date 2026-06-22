@@ -135,7 +135,7 @@ fn rich_cleanup_prompt(container: &str, worktree_path: &str, reason: PreservedRe
         PromptContextLine::Blank,
         PromptContextLine::Path(worktree_path.to_owned()),
         PromptContextLine::Blank,
-        PromptContextLine::Muted("Choose how jackin' should handle this worktree.".to_owned()),
+        PromptContextLine::Muted("Choose how jackin❯ should handle this worktree.".to_owned()),
     ];
     let options = vec![
         "Return to role to address it".to_owned(),

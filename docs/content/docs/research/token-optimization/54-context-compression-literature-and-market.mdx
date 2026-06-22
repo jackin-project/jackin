@@ -101,12 +101,12 @@ This is the table the dossier was missing: sort compression by *where* it acts, 
 - **Correct the soft-prompt framing (K1).** 500xCompressor/ICAE/xRAG are not hosted-usable "without fine-tuning" — they need embedding-input or per-layer-KV channels; the family is self-host-only.
 - **Promote output brevity above input compression** in the recommendation hierarchy on cache-neutrality grounds (§C).
 
-## E. jackin' implications
+## E. jackin❯ implications
 
-The compression layer sorts cleanly onto the cache-safety classification (§C), and the jackin' recommendation follows from it:
+The compression layer sorts cleanly onto the cache-safety classification (§C), and the jackin❯ recommendation follows from it:
 
 1. **Bake the cache-safe set, in order:** output brevity (already shipped via the caveman family) → write-time observation compression (pilot headroom MCP mode or a hook equivalent like the-complexity-trap masking / chop / Squeez-style filtering) → native cache-maximization (`/cd`, stable prefixes, `cache_control` discipline) → offline compress-once for stable corpora (the CAG pattern).
-2. **Do not put a whole-prompt compressor in a jackin' container's hot path** — it is a cache-bust risk, a CompressionAttack surface (file 46 FL3), and on already-caching Claude Code it usually loses (the RTK issue tracker is the worked cautionary tale: a hook that *raised* cost 18%).
+2. **Do not put a whole-prompt compressor in a jackin❯ container's hot path** — it is a cache-bust risk, a CompressionAttack surface (file 46 FL3), and on already-caching Claude Code it usually loses (the RTK issue tracker is the worked cautionary tale: a hook that *raised* cost 18%).
 3. **Prefer peer-reviewed, code-domain, cache-aware tools** when piloting: the-complexity-trap (observation masking), OpenHands-style batched condensation, ACON. Rank candidates by evidence, never by stars.
 4. **Reuse the file-51 validation harness** with cache-read continuity as a first-class metric (already added in 53's harness): accept a compressor only if it beats the existing hooks+code-intel arm on tokens-per-solved-task at equal quality *and* preserves `cache_read`.
 5. **Memory layer: pick one** reversible, cross-agent store if needed (headroom memory, Letta, or Zep/Graphiti — the only one with paired before/after token counts), and demand net-accounting before trusting it.
@@ -126,4 +126,4 @@ All accessed 2026-06-15. Independent measurements and peer-reviewed work flagged
 
 - **Star counts are point-in-time (2026-06-15) and unreliable as quality signals in this niche** (§A filter 1); reported only because adoption was asked about, with the watcher-ratio flag.
 - **Two arXiv IDs could not be independently confirmed and may be mis-transcribed or pre-registration placeholders:** SWE-Pruner's (cited as 2601.16746) and a structural-graph paper (2603.27277, also referenced in file 51's ledger). The GitHub repos behind them are real and star-verified; treat those two specific identifiers as tentative pending a direct arXiv check.
-- This file synthesizes two parallel research sweeps plus direct primary-source verification of every load-bearing claim; per the dossier's standing rule, no headline percentage here is a banked saving until reproduced on jackin' tasks via the file-51/53 validation harness at equal quality.
+- This file synthesizes two parallel research sweeps plus direct primary-source verification of every load-bearing claim; per the dossier's standing rule, no headline percentage here is a banked saving until reproduced on jackin❯ tasks via the file-51/53 validation harness at equal quality.

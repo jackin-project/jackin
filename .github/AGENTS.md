@@ -101,7 +101,7 @@ or `jackin console --debug` for console-side changes. Do not rebuild capsule her
 
 Inside container, operator must verify:
 
-- Row 0 status bar is visible: `jackin'  [<agent-name>]`
+- Row 0 status bar is visible: `jackin❯  [<agent-name>]`
 - Agent TUI starts and renders correctly below status bar
 - `Ctrl+\` opens command palette (override with `JACKIN_PALETTE_KEY`)
 - Mouse clicks, arrow keys, paste reach agent unmodified

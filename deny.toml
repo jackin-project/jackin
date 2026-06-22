@@ -1,6 +1,6 @@
 [advisories]
 ignore = [
-    # Transitive through sigstore/openidconnect. No patched rsa exists; jackin'
+    # Transitive through sigstore/openidconnect. No patched rsa exists; jackin❯
     # uses sigstore for image verification, not network-observable RSA decrypt.
     { id = "RUSTSEC-2023-0071", reason = "No safe upgrade is available; current use is not network-observable RSA decryption." },
     { id = "RUSTSEC-2026-0173", reason = "No safe upgrade is available in current tabled/sigstore/oci-client releases; proc-macro-error2 is build-time only." },

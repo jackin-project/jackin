@@ -18,8 +18,6 @@ use jackin_tui::components::{Panel, PanelFocus};
 
 // ── Status bar (row 0 + row 1) ────────────────────────────────────────────────
 
-const BRAND_TEXT: &str = " jackin' ";
-
 /// Brand pill + tab cells (row 0) and the active-tab underline (row 1),
 /// painted into the Ratatui `Buffer` so the `SocketBackend` diff tracks every
 /// chrome cell. The `plan` is computed once per frame by the compositor and
@@ -88,16 +86,13 @@ impl Widget for StatusBarWidget<'_> {
             }
         }
 
-        // Row 0: brand pill.
-        buf.set_string(
-            area.x,
-            area.y,
-            BRAND_TEXT,
-            Style::default()
-                .bg(jackin_tui::theme::PHOSPHOR_GREEN)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
-        );
+        // Row 0: brand pill — green block, black word, white chevron.
+        let pill = Style::default()
+            .bg(jackin_tui::theme::BRAND_BLOCK)
+            .add_modifier(Modifier::BOLD);
+        buf.set_string(area.x, area.y, " jackin", pill.fg(Color::Black));
+        buf.set_string(area.x.saturating_add(7), area.y, "❯", pill.fg(jackin_tui::theme::WHITE));
+        buf.set_string(area.x.saturating_add(8), area.y, " ", pill);
 
         // Row 0: tab cells.
         for (idx, cell) in plan.cells.iter().enumerate() {

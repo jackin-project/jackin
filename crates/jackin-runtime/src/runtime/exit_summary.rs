@@ -1,6 +1,6 @@
 //! Exit "still running" summary data.
 //!
-//! When the operator leaves one foreground session while other jackin'
+//! When the operator leaves one foreground session while other jackin❯
 //! instances are still running, the rich boundary outro does not play: the
 //! operator is still inside the Construct. We still build a compact,
 //! privacy-preserving summary for diagnostics. Saved workspaces contribute

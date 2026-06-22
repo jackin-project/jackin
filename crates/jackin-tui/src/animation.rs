@@ -10,7 +10,7 @@ use owo_colors::OwoColorize as _;
 use std::io::{self, Write};
 
 use crate::output::clear_screen;
-use crate::{PHOSPHOR_DIM, PHOSPHOR_GREEN, Rgb, WHITE, owo_rgb};
+use crate::{BRAND_BLOCK, PHOSPHOR_DIM, Rgb, WHITE, owo_rgb};
 
 fn stderr_fragment(args: std::fmt::Arguments<'_>) {
     let mut stderr = io::stderr().lock();
@@ -155,18 +155,21 @@ fn center_col(cols: u16, width: usize) -> u16 {
     u16::try_from(margin + 1).unwrap_or(1)
 }
 
-const BRAND_PILL: &str = " jackin' ";
+const BRAND_PILL: &str = " jackin❯ ";
 
 fn draw_brand_pill_bottom() {
     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let row = rows.saturating_sub(2).max(1);
     let col = center_col(cols, BRAND_PILL.chars().count());
+    // Green block, black word, white chevron — split so the chevron stays white.
     stderr_fragment(format_args!(
-        "\x1b[{row};{col}H{}",
-        BRAND_PILL
+        "\x1b[{row};{col}H{}{}{}",
+        " jackin"
             .bold()
             .color(owo_rgb(crate::BLACK))
-            .on_color(owo_rgb(PHOSPHOR_GREEN))
+            .on_color(owo_rgb(BRAND_BLOCK)),
+        "❯".bold().color(owo_rgb(WHITE)).on_color(owo_rgb(BRAND_BLOCK)),
+        " ".on_color(owo_rgb(BRAND_BLOCK)),
     ));
 }
 

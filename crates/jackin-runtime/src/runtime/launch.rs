@@ -177,7 +177,7 @@ use progress_helpers::{
     sensitive_mount_prompt,
 };
 
-/// Returns the per-agent mount strings in jackin's `src:dst[:ro]`
+/// Returns the per-agent mount strings in jackin❯'s `src:dst[:ro]`
 /// idiom for `docker run -v`.
 ///
 /// Every provisioned agent is represented on `state.auth`, so the mount block

@@ -47,7 +47,7 @@ pub const TAG_BELL: u8 = 0x85;
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 pub const MAX_HELLO_ENV: usize = 64;
 /// Per-entry cap on Hello env-value byte length. Operator-supplied env
-/// values in jackin' are short (slugs, booleans, file paths); cap at
+/// values in jackin❯ are short (slugs, booleans, file paths); cap at
 /// 8 KiB so a buggy or hostile client cannot smuggle a megabyte-sized
 /// env entry past `MAX_HELLO_ENV` (the count cap) into the spawned
 /// session's environment block.

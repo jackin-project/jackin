@@ -181,7 +181,7 @@ pub fn pre_existing_redundant_mounts_message(original_name: &str, collapses: &[R
         .collect();
     format!(
         "pre-existing redundant mount(s) in this workspace: {}; \
-         run `jackin' workspace prune {original_name}` to clean up",
+         run `jackin❯ workspace prune {original_name}` to clean up",
         details.join(", "),
     )
 }

@@ -193,7 +193,7 @@ fn debug_dialog_keeps_status_bar_visible() {
 
     let buf = terminal.backend().buffer();
     let row0: String = (0..30).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
-    assert!(row0.contains("jackin'"), "status brand missing: {row0:?}");
+    assert!(row0.contains("jackin❯"), "status brand missing: {row0:?}");
     assert!(row0.contains("Codex"), "status tab missing: {row0:?}");
     let row1: String = (0..30).map(|x| buf[(x, 1)].symbol().to_owned()).collect();
     assert!(
@@ -280,7 +280,7 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
         "selection copy toast must not draw over hint/spacer/footer rows: {all_rows:?}"
     );
     assert!(
-        all_rows[0].contains("jackin'"),
+        all_rows[0].contains("jackin❯"),
         "status brand missing: {:?}",
         all_rows[0]
     );

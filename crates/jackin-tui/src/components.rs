@@ -1,4 +1,4 @@
-//! Reusable Ratatui components shared by jackin' terminal surfaces.
+//! Reusable Ratatui components shared by jackin❯ terminal surfaces.
 
 pub mod bottom_chrome;
 pub mod brand_header;

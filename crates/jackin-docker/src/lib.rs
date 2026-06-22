@@ -1,4 +1,4 @@
-//! Concrete Docker daemon and subprocess runner for jackin'.
+//! Concrete Docker daemon and subprocess runner for jackin❯.
 
 pub mod docker_client;
 pub mod net;

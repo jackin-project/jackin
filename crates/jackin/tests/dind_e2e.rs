@@ -583,7 +583,7 @@ fn pty_command(
         // Inherit DOCKER_HOST/DOCKER_TLS_VERIFY/DOCKER_CERT_PATH so the launch
         // drives whatever daemon the operator points at — the DOCKER_HOST
         // behavior architecture.mdx documents. TESTCONTAINERS_HOST_OVERRIDE
-        // stays stripped so a host value can't bleed past jackin's reserved
+        // stays stripped so a host value can't bleed past jackin❯'s reserved
         // per-container override into the in-container testcontainers smoke.
         .env_remove("TESTCONTAINERS_HOST_OVERRIDE");
     apply_host_docker_config(&mut command);

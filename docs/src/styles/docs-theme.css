@@ -38,6 +38,13 @@
   --jk-brand:      #5cf07a;
   --jk-brand-muted: #1d9e75;
 
+  /* Logo lockup: the mark is always a phosphor-green block with black
+     letters and a white chevron, on every surface and in both themes.
+     Square corners only — terminals cannot round, so neither do we. */
+  --jk-logo-block:   #5cf07a;
+  --jk-logo-ink:     #0a0a0a;
+  --jk-logo-chevron: #ffffff;
+
   /* Fallback --jk-* tokens (dark). Ensures tokens resolve before
      data-theme gets applied to <html>. */
   --jk-bg:         #0a0a0a;
@@ -270,7 +277,10 @@ body {
   font-weight: 500;
   line-height: 1;
   letter-spacing: 0;
-  color: var(--jk-text);
+  color: var(--jk-logo-ink);
+  background: var(--jk-logo-block);
+  padding: 0.1em 0.36em;
+  border-radius: 0;
   user-select: none;
 }
 
@@ -285,14 +295,14 @@ body {
 
 .jk-brand-mark__text,
 .jk-name__text {
-  color: var(--jk-text);
+  color: var(--jk-logo-ink);
 }
 
 .jk-brand-mark__chevron,
 .jk-name__chevron,
 .jk-site-title .jk-brand-mark__chevron,
 .jk-sidebar-wordmark .jk-brand-mark__chevron {
-  color: var(--jk-brand);
+  color: var(--jk-logo-chevron);
 }
 
 .jk-brand-mark__byline {
@@ -2005,7 +2015,10 @@ site-search dialog {
   display: inline-flex;
   align-items: baseline;
   font-family: var(--sl-font-mono);
-  color: inherit;
+  color: var(--jk-logo-ink);
+  background: var(--jk-logo-block);
+  padding: 0.05em 0.3em;
+  border-radius: 0;
   font-weight: 500;
   letter-spacing: 0;
 }
@@ -2021,8 +2034,9 @@ site-search dialog {
   font-weight: inherit;
 }
 
-/* Inside links the link colour wins so the name stays underlined
-   without competing against the surrounding link text. */
-a .jk-name {
-  color: inherit;
+/* The mark keeps its black-on-green block even inside links and
+   headings; only the surrounding text takes the link/heading colour. */
+a .jk-name,
+:where(h1, h2, h3, h4, h5, h6) .jk-name {
+  color: var(--jk-logo-ink);
 }

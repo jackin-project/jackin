@@ -341,14 +341,14 @@ fn classify_ps_comm_output(success: bool, stdout: &str) -> Liveness {
 ///
 /// `nohup` only ignores SIGHUP; it does not start a new session, and
 /// neither does the wrapper shell. The detached caffeinate inherits
-/// jackin's process group ID. Two practical consequences:
+/// jackin❯'s process group ID. Two practical consequences:
 ///
 /// 1. Closing the controlling terminal is safe — SIGHUP is ignored
 ///    by the child and the terminal-driven SIGHUP would land on a
 ///    process group whose only foreground member (jackin) has
 ///    already exited.
 /// 2. A *group-targeted* signal (e.g. `kill -TERM -<pgid>`, or some
-///    process-supervisor tooling) sent to jackin's original PGID
+///    process-supervisor tooling) sent to jackin❯'s original PGID
 ///    after jackin has exited will also reach the orphaned
 ///    caffeinate. In typical interactive shell use this never fires
 ///    (Ctrl-C targets the foreground PGID, and there is no

@@ -10,7 +10,7 @@ use ratatui::widgets::Paragraph;
 
 use crate::LaunchView;
 
-/// Top header: the ` jackin' ` brand pill and separator (from the shared
+/// Top header: the ` jackin❯ ` brand pill and separator (from the shared
 /// `brand_header_line` component), then the loading line (`Loading <role> in <path>`).
 ///
 /// Uses `brand_header_line` so the pill styling stays in sync with the console

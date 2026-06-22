@@ -68,7 +68,7 @@ That is infrastructure. It does **not** automatically provide:
 - source-of-truth verification before patching.
 
 Those must come from a layer above Qdrant, such as Code Context Engine, Claude
-Context, a custom indexer, or a future jackin' role extension.
+Context, a custom indexer, or a future jackin❯ role extension.
 
 ## Qdrant vs the tools already considered
 
@@ -77,7 +77,7 @@ Context, a custom indexer, or a future jackin' role extension.
 | **fff** | Fast file/path/content search with a warm resident index, frecency, git annotations, fuzzy fallback. | Semantic memory, symbols, callers, deps. | Keep. It reduces dead-end search loops and latency. |
 | **codedb** | Code intelligence: outline, symbol, search, callers, deps, compact reads, task context. | Semantic natural-language memory over docs/examples unless those are indexed as code/text. | Keep as the primary open-source code-intelligence candidate. |
 | **Qdrant MCP server** | Generic semantic memory: store snippets/docs/decisions and retrieve by natural language. | Code structure, exact references, edits, safe spans. | Optional only. Useful for docs/examples/decisions, not as the core code-navigation layer. |
-| **Raw Qdrant custom index** | Building your own vector/hybrid backend with full control over metadata, filtering, storage, and model choice. | Turnkey agent behavior. You must build chunking, ranking, freshness, compression, and instructions. | Good backend if jackin' builds its own vector-context service; overkill as a default role dependency. |
+| **Raw Qdrant custom index** | Building your own vector/hybrid backend with full control over metadata, filtering, storage, and model choice. | Turnkey agent behavior. You must build chunking, ranking, freshness, compression, and instructions. | Good backend if jackin❯ builds its own vector-context service; overkill as a default role dependency. |
 | **Code Context Engine** | Local code-aware retrieval with AST chunks, vector+BM25, graph expansion, compression, memory, and claimed token accounting. | Mature production track record; headline benchmark uses full-file baseline. | Better first benchmark than raw Qdrant if the objective is token reduction. |
 | **Claude Context** | MCP semantic code search using Milvus/Zilliz with hybrid retrieval and agent setup. | Exact symbol graph; adds cloud/vector DB dependency unless self-hosting Milvus. | Good comparison arm for semantic RAG; not a replacement for codedb. |
 | **Serena** | Local semantic navigation through language-server semantics. | Vector memory over docs/examples. | Better than Qdrant for symbol/navigation tasks. |
@@ -88,28 +88,28 @@ Context, a custom indexer, or a future jackin' role extension.
 The question is not "which vector DB is best in abstract?" It is "which backend
 would make sense for AI coding agents trying to spend fewer tokens?"
 
-| Backend | Fit for jackin' agent token optimization | Why |
+| Backend | Fit for jackin❯ agent token optimization | Why |
 |---|---|---|
-| **Qdrant** | **Best raw open-source backend candidate** if jackin' builds its own semantic memory/context service. | Strong local/server options, hybrid dense+sparse retrieval, payload filters, quantization, Rust implementation, official MCP server. |
+| **Qdrant** | **Best raw open-source backend candidate** if jackin❯ builds its own semantic memory/context service. | Strong local/server options, hybrid dense+sparse retrieval, payload filters, quantization, Rust implementation, official MCP server. |
 | **Milvus / Zilliz** | Best if adopting Claude Context or large-scale managed vector infrastructure. | Claude Context already uses Milvus/Zilliz; Milvus is built for large-scale distributed vector search and hybrid/full-text search. |
 | **Weaviate** | Strong if the goal shifts toward managed agent memory / agentic search. | Mature vector DB with cloud, MCP/server ecosystem, and explicit agent-memory/product surface. Heavier than needed for a local role. |
-| **Chroma** | Good prototype/local RAG store. | Already appears indirectly in the dossier through context-rot evidence; less compelling as the production backend for jackin' role work. |
+| **Chroma** | Good prototype/local RAG store. | Already appears indirectly in the dossier through context-rot evidence; less compelling as the production backend for jackin❯ role work. |
 | **LanceDB** | Good embedded/local columnar vector store when you want a library-style deployment. | Less direct MCP/code-agent story in the current comparison. |
 | **Vespa** | Strong when vector search is only one part of a larger hybrid search/ranking engine. | Better fit for production search stacks with lexical retrieval, tensors, reranking, and serving-time ML; too heavy for a default local role. |
-| **Turbopuffer** | Strong managed/serverless candidate when cloud cost and scale dominate. | Proprietary cloud service; useful comparison arm for production RAG/search, not a local jackin' default. |
-| **pgvector** | Good when Postgres is already the system of record. | jackin' does not currently need a Postgres dependency just to improve coding-agent search. |
+| **Turbopuffer** | Strong managed/serverless candidate when cloud cost and scale dominate. | Proprietary cloud service; useful comparison arm for production RAG/search, not a local jackin❯ default. |
+| **pgvector** | Good when Postgres is already the system of record. | jackin❯ does not currently need a Postgres dependency just to improve coding-agent search. |
 | **Pinecone** | Strong managed vector service. | Adds cloud/vendor dependency without a code-agent-specific advantage over Qdrant/Milvus-based local options. |
 | **FAISS / hnswlib** | Good vector indexes inside an application. | Not a persistence, metadata, filtering, ops, or MCP layer by itself. |
 
 **Verdict:** if the project wants a raw vector DB backend, Qdrant is the best fit
-among open-source options for a jackin' role pilot. But the best **solution** for
+among open-source options for a jackin❯ role pilot. But the best **solution** for
 token usage is probably not raw Qdrant; it is a code-aware retrieval layer that
 may use Qdrant underneath.
 
 ## Benchmark evidence: does anyone prove they beat Qdrant?
 
 No public source found proves that any raw vector database is **significantly
-better than Qdrant for jackin's actual metric**: fewer total tokens per solved
+better than Qdrant for jackin❯'s actual metric**: fewer total tokens per solved
 coding-agent task on top of `fff + codedb`. The available evidence measures
 database performance, retrieval quality, or code-context-tool compression, not
 the full agent loop.
@@ -117,7 +117,7 @@ the full agent loop.
 | Evidence | What it supports | What it does not prove |
 |---|---|---|
 | **Qdrant benchmarks** | Qdrant reports strong open-source DB-level results: high RPS, low latency, comparable precision, same-machine methodology, and open-sourced benchmark code. | Vendor-run; Qdrant explicitly says it is probably biased. It measures vector DB performance, not agent token savings. |
-| **VectorDBBench / Zilliz leaderboard** | Milvus/Zilliz can beat Qdrant Cloud on some cloud cost/performance leaderboards. The 1M Cohere result shown on 2026-06-13 has ZillizCloud at p99 2 ms / 13,316 QPS / 0.9383 recall versus QdrantCloud at p99 6.4 ms / 1,242 QPS / 0.9474 recall; its streaming chart also favors ZillizCloud on QPS. | Zilliz/Milvus-affiliated; recall is not identical; it is a DB benchmark, not a coding-agent token benchmark. It says "Milvus may be better for this workload," not "Milvus saves jackin' tokens." |
+| **VectorDBBench / Zilliz leaderboard** | Milvus/Zilliz can beat Qdrant Cloud on some cloud cost/performance leaderboards. The 1M Cohere result shown on 2026-06-13 has ZillizCloud at p99 2 ms / 13,316 QPS / 0.9383 recall versus QdrantCloud at p99 6.4 ms / 1,242 QPS / 0.9474 recall; its streaming chart also favors ZillizCloud on QPS. | Zilliz/Milvus-affiliated; recall is not identical; it is a DB benchmark, not a coding-agent token benchmark. It says "Milvus may be better for this workload," not "Milvus saves jackin❯ tokens." |
 | **RAGPerf** | Academic end-to-end RAG benchmarking exists and explicitly treats vector DB choice as one component among embedding, indexing, retrieval, reranking, and generation. It supports LanceDB, Milvus, Qdrant, Chroma, and Elasticsearch and measures throughput plus quality metrics. | It is a framework/paper, not a published jackin-style result proving one DB dominates for code-agent token economy. |
 | **2026 HPC VDB study** | Independent academic work compares Qdrant, Milvus, and Weaviate at large HPC scale and shows workload characteristics, segmentation, recall-cost trade-offs, and scaling limits dominate. | It is not a local coding-agent workload and does not crown a universal winner. |
 | **Code Context Engine / Claude Context** | These are stronger evidence for token reduction because they include AST chunking, hybrid retrieval, graph/context logic, compression, freshness, and agent wiring. CCE claims 94% retrieval savings against full-file reads; Claude Context claims about 40% token reduction at equivalent retrieval quality. | They are not raw vector DB comparisons. Their baselines are not `fff + codedb`, so they still need a local A/B. |
@@ -137,7 +137,7 @@ So the verified answer is:
 - **Better search platform for production hybrid ranking:** possibly Vespa.
 - **Better solution for coding-agent token savings:** not a raw DB; benchmark Code
   Context Engine or Claude Context as code-aware layers.
-- **Better default for jackin' right now:** no vector DB by default. Keep
+- **Better default for jackin❯ right now:** no vector DB by default. Keep
   `fff + codedb`; add a vector layer only as an opt-in semantic-memory/RAG arm.
 
 ## Where Qdrant would add value
@@ -249,7 +249,7 @@ Expected negative or neutral cases:
 - whole-response semantic caching, which file `19` already killed for coding
   agents.
 
-## Recommended jackin' setup if piloted
+## Recommended jackin❯ setup if piloted
 
 Do **not** add Qdrant to every role. Add a separate opt-in vector-context pilot
 for the-architect or a research role.
@@ -292,7 +292,7 @@ claude mcp add qdrant-code-search \
   -- uvx mcp-server-qdrant
 ```
 
-For a jackin' role, prefer the same command inside a setup hook and point Qdrant
+For a jackin❯ role, prefer the same command inside a setup hook and point Qdrant
 storage at role/container state. Do not run the upstream registration against the
 operator's host config without explicit opt-in.
 
@@ -300,11 +300,11 @@ operator's host config without explicit opt-in.
 
 | Rank | Stack | Use when | Verdict |
 |---|---|---|---|
-| 1 | **rust-analyzer + ast-grep + codedb + fff** | Normal jackin' Rust/code work. | Best default. No vector DB needed. |
+| 1 | **rust-analyzer + ast-grep + codedb + fff** | Normal jackin❯ Rust/code work. | Best default. No vector DB needed. |
 | 2 | **Add Code Context Engine as a benchmark arm** | You want a local code-aware token-savings experiment with published numbers. | Better than raw Qdrant for proving token savings, but benchmark baseline is generous. |
 | 3 | **Add Qdrant MCP as semantic memory/docs/examples** | You have lots of examples/docs/decisions and exact search is not enough. | Useful optional layer; not default. |
-| 4 | **Build custom Qdrant-backed jackin' context service** | You need full control over local vector storage, metadata, freshness, and retrieval policy. | Potentially strong, but it is a product project, not a quick tool install. |
-| 5 | **Claude Context / Milvus, Sourcegraph, Qodo, Augment** | You accept external services or heavier enterprise tooling. | Better for broad enterprise context than for default local jackin' roles. |
+| 4 | **Build custom Qdrant-backed jackin❯ context service** | You need full control over local vector storage, metadata, freshness, and retrieval policy. | Potentially strong, but it is a product project, not a quick tool install. |
+| 5 | **Claude Context / Milvus, Sourcegraph, Qodo, Augment** | You accept external services or heavier enterprise tooling. | Better for broad enterprise context than for default local jackin❯ roles. |
 
 ## Validation protocol
 
@@ -361,7 +361,7 @@ Qdrant is a good vector database and a credible backend for semantic memory/RAG.
 It should **not** replace fff or codedb, and it should **not** be added as a
 default third tool merely because vector databases are popular.
 
-For jackin', the practical recommendation is:
+For jackin❯, the practical recommendation is:
 
 ```text
 Default code role:

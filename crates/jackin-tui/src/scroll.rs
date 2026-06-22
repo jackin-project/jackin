@@ -1,7 +1,7 @@
 //! Shared scrollbar state, metrics, and offset adapters.
 //!
 //! `tui-scrollbar` owns proportional metrics and pointer interaction math.
-//! jackin' owns rendering, so this module exposes small helpers that convert
+//! jackin❯ owns rendering, so this module exposes small helpers that convert
 //! those metrics into the full-cell thumbs and clamped offsets used by the
 //! host console, launch progress overlay, and capsule renderer.
 

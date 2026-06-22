@@ -427,7 +427,7 @@ fn read_loose_git_ref_oid(path: &Path) -> Option<Oid> {
     }
     let Some(oid) = Oid::parse(trimmed) else {
         // File present, content unexpected: corruption, mid-write, or
-        // a hash format jackin' doesn't recognise. Distinguish from
+        // a hash format jackin❯ doesn't recognise. Distinguish from
         // the file-missing case (logged by `read_text_bounded` itself)
         // so triage can localise.
         cdebug_malformed_git_file("git ref", path, trimmed);

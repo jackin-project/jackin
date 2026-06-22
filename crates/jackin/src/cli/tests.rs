@@ -30,9 +30,9 @@ fn help_text(args: &[&str]) -> String {
 #[test]
 fn root_help_shows_banner_pill() {
     let help = help_text(&["jackin", "--help"]);
-    // The banner is the ` jackin' ` brand pill at the top of the help.
+    // The banner is the ` jackin❯ ` brand pill at the top of the help.
     assert!(
-        help.trim_start().starts_with("jackin'"),
+        help.trim_start().starts_with("jackin❯"),
         "brand pill should lead the help: {help:?}"
     );
 }
@@ -150,7 +150,7 @@ fn all_subcommand_help_pages_show_banner() {
     for args in &subcommands {
         let help = help_text(args);
         assert!(
-            help.contains("jackin'"),
+            help.contains("jackin❯"),
             "brand pill missing in: {}",
             args.join(" ")
         );

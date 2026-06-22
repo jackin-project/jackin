@@ -15,7 +15,7 @@ pub enum CockpitAction {
     /// Ctrl+C: hard cancel. Intercepted before dispatch (it must win even while
     /// a dialog is open); the binding exists so its hint derives from this table.
     HardExit,
-    /// Open the "Exit jackin'?" quit confirmation (graceful cancel + cleanup).
+    /// Open the "Exit jackin❯?" quit confirmation (graceful cancel + cleanup).
     OpenQuitConfirm,
 }
 

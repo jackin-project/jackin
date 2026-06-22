@@ -273,7 +273,7 @@ fn pre_existing_redundant_mounts_message_names_workspace_and_paths() {
     );
 
     assert!(message.contains("pre-existing redundant mount(s) in this workspace"));
-    assert!(message.contains("run `jackin' workspace prune proj`"));
+    assert!(message.contains("run `jackin❯ workspace prune proj`"));
 }
 
 #[test]

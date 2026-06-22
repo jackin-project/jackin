@@ -9,8 +9,8 @@ Volume II area file for blind spot 4. Volume I covered the
 excludeDynamicSections *mechanism* as one technique (`13` tech 7), but left the **hosted** (Claude
 API / subscription) cross-container story thin and explicitly flagged the dynamic-section size as
 unmeasured (`13` Gaps #6). This file builds the hosted-fleet model: when N containers share one
-cached system prefix versus each paying its own, what a launcher (jackin') centralizes, and the
-fleet×quota interaction. This is the jackin'-relevant gap — jackin' launches container fleets.
+cached system prefix versus each paying its own, what a launcher (jackin❯) centralizes, and the
+fleet×quota interaction. This is the jackin❯-relevant gap — jackin❯ launches container fleets.
 
 **TL;DR**
 
@@ -110,7 +110,7 @@ never pools.
  that must not share a cache (org wall is the only hard isolation).
 - **Availability:** SDK / GATEWAY (workspace = an API-key/credential property).
 - **Effort to adopt:** hours (fleet auth config).
-- **Composability:** precondition for F2/F3; pairs with the jackin' launcher (F6).
+- **Composability:** precondition for F2/F3; pairs with the jackin❯ launcher (F6).
 - **Validation protocol:** launch two containers in different dirs under one workspace with identical
  prefixes; assert container 2's first call shows `cache_read>0` on the system segment.
 
@@ -162,7 +162,7 @@ write + (N−1) reads.
 - **Availability:** SDK (orchestrator awaits first token before fan-out).
 - **Effort to adopt:** hours (launch sequencing in the orchestrator).
 - **Composability:** essential with F1/F2; pairs with 1h TTL for bursty fleets (writes survive the
- wave); the jackin' launcher is the natural home (F6).
+ wave); the jackin❯ launcher is the natural home (F6).
 - **Validation protocol:** launch a wave simultaneously vs warm-then-fan-out; diff first-call
  `cache_read` (≈0 vs ≈prefix) and total `cache_creation`.
 
@@ -218,17 +218,17 @@ prefix.
 - **Validation protocol:** confirm cross-tenant cache behavior matches intent (a second tenant in the
  same workspace reads the shared prefix; a tenant in a separate org does not).
 
-### F6. jackin'-baked fleet cache policy — centralize what every container must inherit
+### F6. jackin❯-baked fleet cache policy — centralize what every container must inherit
 
 The launcher is the one place to enforce workspace pinning, the dynamic-section flag, pre-warm,
 version floor, and SDK-credit placement so the whole fleet inherits cache sharing without per-user
 discipline.
 
-- **Coverage-delta:** Volume I K16 (`20`) proposes baking the optimization pack into jackin'; the
+- **Coverage-delta:** Volume I K16 (`20`) proposes baking the optimization pack into jackin❯; the
  **specific hosted-fleet items** (workspace auth, excludeDynamicSections, cold-start pre-warm,
  SDK-version floor, off-cap credit placement) are new and concrete.
 - **Layer:** infrastructure (all fleet layers).
-- **Mechanism:** jackin's launch env assembly is the chokepoint: pin every container to one workspace
+- **Mechanism:** jackin❯'s launch env assembly is the chokepoint: pin every container to one workspace
  (F1), set `--exclude-dynamic-system-prompt-sections` / the SDK flag (F2), warm the shared prefix
  once before fanning out the wave (F3), enforce the SDK version floor (avoid F2's cohort split / F4),
  and place non-interactive fleet work on the separate API-rate SDK credit so it
@@ -239,7 +239,7 @@ discipline.
  integrated fleet number).
 - **Quality risk:** **NEUTRAL-to-NEGATIVE-COST** (defaults encode the safe variants; F2's mild
  authority tradeoff is the only quality note).
-- **Availability:** BUILDABLE (jackin' roadmap; insertion points mapped in Volume I 20 K16 / 32).
+- **Availability:** BUILDABLE (jackin❯ roadmap; insertion points mapped in Volume I 20 K16 / 32).
 - **Effort to adopt:** high once, amortized across every launch.
 - **Composability:** the composition layer for F1–F5; must respect tool-list stability (any tool-def
  change busts the whole fleet's prefix).

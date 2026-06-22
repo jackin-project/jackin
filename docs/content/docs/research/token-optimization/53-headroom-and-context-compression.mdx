@@ -18,7 +18,7 @@ The **canonical, deepest cross-tool head-to-head** now lives in its own folder: 
 - **"96.2% total savings" double-counts caching Claude Code already banks.** That figure multiplies headroom's compression by prompt-caching's 90%-off — but Claude Code already runs maximally cached (dossier K4: caching is the floor, not an available saving). Headroom's *incremental* lever on Claude Code is the compression fraction on the live zone alone.
 - **Headroom's own production telemetry settles the headline: median whole-session compression is 4.8%.** Across 50,000+ proxy sessions / 250+ instances (Mar–Apr 2026) the vendor reports **median 4.8% / P75 6.9% / mean 11.3%** whole-session compression, reaching 40–80% only on heavy tool-use sessions; the limitations page says it outright — "Short conversational exchanges (median 4.8% compression)." Two independent hands-on deploys land in the tool-heavy band: Miya-Gadget (2026-06-03) measured 59,742→31,358 tokens (**47.5%**) with RAG prose compressed **0%** and logs only 31%, calling the "95%" claim "oversold"; an HN user reported "~50%." The "60–95%" headline is the per-redundant-payload best case, not the whole-session reality. The headline survives only as a per-payload ratio on redundant JSON/logs (see the benchmarks section). The *mechanisms*, meanwhile, inherit **T1** from the dossier's own local reproductions (log-filter −94.2%, outline −91%, symbol-search −98%, JSON-minify −34.3%/−41.2%). Headroom productizes proven levers; it does not invent a new physics.
 - **Two ideas in headroom are genuinely new to the dossier:** reversible compression with on-demand retrieval (CCR + `headroom_retrieve`) answers white-space #8 ("output brevity with quality gates"), and `headroom learn` (mine failed sessions → write corrections to CLAUDE.md/AGENTS.md) is a self-improving-memory lever not present anywhere in Volume I–III.
-- **jackin' verdict:** pilot headroom's **MCP mode** as an A/B arm against the levers the dossier already recommends (hook filtering — record 20; code-intelligence outlines — file 51; serialization — record 14), measured on incremental tokens-per-solved-task. **Do not default to proxy mode** in a jackin' container: it adds a cache-bust risk, a per-request ML model in the hot path, a CompressionAttack surface (file 46 FL3), and a double-compaction conflict with Claude Code's own context management.
+- **jackin❯ verdict:** pilot headroom's **MCP mode** as an A/B arm against the levers the dossier already recommends (hook filtering — record 20; code-intelligence outlines — file 51; serialization — record 14), measured on incremental tokens-per-solved-task. **Do not default to proxy mode** in a jackin❯ container: it adds a cache-bust risk, a per-request ML model in the hot path, a CompressionAttack surface (file 46 FL3), and a double-compaction conflict with Claude Code's own context management.
 
 ## What headroom is
 
@@ -160,7 +160,7 @@ These use the §10 record schema. Levers headroom merely productizes (log filter
 - **Quality risk:** **RISKY** — an auto-written rule that is wrong or over-general is one bad PR that erases months of savings (record 07's failure mode), and unbounded auto-append violates CLAUDE.md slimming. Falsify by reviewing every auto-written rule before commit and replaying the rule-sensitive task set.
 - **Availability:** `CLAUDE-CODE-TODAY` (CLI command).
 - **Effort to adopt:** minutes to run; ongoing editorial discipline to keep the file lean.
-- **Composability:** feeds record 07 (CLAUDE.md) and the jackin' `[token_policy]` idea (file 32); anti-synergy with prefix slimming if left unbounded.
+- **Composability:** feeds record 07 (CLAUDE.md) and the jackin❯ `[token_policy]` idea (file 32); anti-synergy with prefix slimming if left unbounded.
 - **Validation protocol:** human-gate every correction; cap the file size; A/B the failure rate on the task class the correction targets, and confirm the added prefix rent is smaller than the retries it prevents.
 
 ### H4. Cross-agent deduplicated shared memory
@@ -211,12 +211,12 @@ The parallel literature re-sweep (running) will extend this with any 2025–2026
 - **Correct the caveman evidence citation (file 03 record 01 / K1).** The repo-cited "arXiv 2604.00025, brevity improved accuracy +26 points" is now verified to *exist* (file 03 flagged it unverified) — but it is a single unaffiliated author, unreviewed, its +26.3pp is on a cherry-picked 7.7% subset where verbose large models self-sabotage, and it tests no Claude model and no code task. Keep the citation; treat it as suggestive NL-only and do **not** propagate "+26 points" as transferable. The defensible "brevity can improve accuracy" evidence is Chain-of-Draft on Claude 3.5 Sonnet (arXiv 2502.18600: +4.1pp on the sports task at −92% output) — a modest single-digit effect, consistent with the dossier's existing caveman read.
 - **No change to the 10× verdict.** Headroom attacks the 61% cache bucket, which is the right target, but its realistic whole-bill effect is bounded (per the K1-style correction) and it does not touch thinking (20%). The dossier's verdict stands: ≈2.5× defensible, ≈5–6.2× with validated routing, no honest 10× at zero quality loss. Headroom is a strong *addition to the Aggressive stack's input layer*, not a new multiplier that breaks the wall.
 
-## jackin' adoption recommendation
+## jackin❯ adoption recommendation
 
 Headroom fits the same role-scoped, opt-in, measured-locally pattern file 51 set for code-intelligence tools, with one extra guardrail because it sits closer to the model.
 
 1. **Pilot MCP mode, not proxy mode.** Register `headroom` as an MCP server inside a role container (user scope), expose `headroom_compress` / `headroom_retrieve`, and have the agent compress large tool outputs/observations on demand. This is the cache-safe path and keeps the compression auditable per call.
-2. **Never default the whole-prompt proxy in a jackin' container.** It risks busting the cache Claude Code already manages, double-compacts against Claude Code's own context management, puts an auto-downloaded model in the hot path (latency + an offline/SSL-inspection asset to provision), and creates a CompressionAttack surface. If the proxy is evaluated at all, it must be an explicit, isolated experiment with cache-read continuity checked in JSONL.
+2. **Never default the whole-prompt proxy in a jackin❯ container.** It risks busting the cache Claude Code already manages, double-compacts against Claude Code's own context management, puts an auto-downloaded model in the hot path (latency + an offline/SSL-inspection asset to provision), and creates a CompressionAttack surface. If the proxy is evaluated at all, it must be an explicit, isolated experiment with cache-read continuity checked in JSONL.
 3. **A/B against the levers the dossier already banks**, not against a naive baseline: hook filtering (record 20), code-intelligence outlines (file 51), and serialization (record 14) already capture most of headroom's compressible wins, cache-safely and with no extra dependency. Headroom earns its place only if it beats that stack net of MCP schema rent and retrieve round-trips.
 4. **Make host effects explicit.** Headroom fetches the ONNX runtime and kompress-base over TLS and runs local processes; per the host-write ban, install and cache assets inside the container, and pre-provision the model for offline/sandboxed roles.
 5. **Choose one memory layer.** If adopting headroom memory, retire cavemem for that workflow (running both is pure overhead); keep the choice explicit and measured.
@@ -245,7 +245,7 @@ Accept headroom for token optimization only if, versus the Hooks+Code-intel arm:
   net of MCP schema rent and headroom_retrieve round-trips
 ```
 
-Per the dossier's standing rule: a per-payload compression ratio is not a banked saving until it survives this harness on jackin' tasks at equal quality.
+Per the dossier's standing rule: a per-payload compression ratio is not a banked saving until it survives this harness on jackin❯ tasks at equal quality.
 
 ## Claims to kill (headroom-specific graveyard)
 

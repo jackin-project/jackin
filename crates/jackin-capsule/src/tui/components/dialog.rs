@@ -266,7 +266,7 @@ impl ConfirmKind {
             Self::CloseTab => {
                 "Reap every pane in this tab. Unsaved state across all panes is lost."
             }
-            Self::Exit => "Stop all agents; jackin' will clean up.",
+            Self::Exit => "Stop all agents; jackin❯ will clean up.",
         }
     }
 }

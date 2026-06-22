@@ -1,4 +1,4 @@
-//! `Agent` enum: the set of AI agents jackin' can provision inside a role
+//! `Agent` enum: the set of AI agents jackin❯ can provision inside a role
 //! container.
 //!
 //! Single source of truth for agent identity — variant ordering, display

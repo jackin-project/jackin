@@ -14,7 +14,7 @@ title: "19 — Infrastructure-level (self-hosted / gateway tier)"
 
 ## The two regimes
 
-| | Hosted Claude (jackin' / Claude Code today) | Self-hosted open weights behind Claude Code |
+| | Hosted Claude (jackin❯ / Claude Code today) | Self-hosted open weights behind Claude Code |
 |---|---|---|
 | Billing unit | Tokens (Fable 5 $10/$50 per MTok; cache read 0.1x, write 1.25x/2x) | GPU-seconds; "tokens saved" = prefill compute saved |
 | KV access | `cache_control` only (verified against live Messages API) | Full: prefix cache, offload tiers, routing, eviction |
@@ -157,7 +157,7 @@ One-line pitch: GPU memory caps the prefix-cache working set; spilling KV to CPU
 - **Availability:** GATEWAY-OR-SELF-HOST.
 - **Effort to adopt:** days — CPU-RAM tier is easy; 3FS/Mooncake are real infrastructure; ratio tuning (2:1 published).
 - **Composability:** multiplies APC/RadixAttention — turns within-session caching into across-session and across-replica caching. The 40%→80% delta IS the composability story: GPU-only cache was evicting half the reusable prefixes of a coding-agent fleet. Requires session-affinity routing (next record) to be useful at fleet scale.
-- **Validation protocol:** replay a recorded multi-session jackin' day (6 sessions, interleaved) against SGLang with and without HiCache; report hit rate, recomputed prefill tokens, TTFT p50/p99, and assert temperature-0 output equality. This is also gap #1 below — nobody has published exactly this.
+- **Validation protocol:** replay a recorded multi-session jackin❯ day (6 sessions, interleaved) against SGLang with and without HiCache; report hit rate, recomputed prefill tokens, TTFT p50/p99, and assert temperature-0 output equality. This is also gap #1 below — nobody has published exactly this.
 
 ### LMCache (KV-cache layer for vLLM: offload + cross-engine sharing)
 

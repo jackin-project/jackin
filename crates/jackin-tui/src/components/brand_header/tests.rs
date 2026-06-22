@@ -13,7 +13,11 @@ fn renders_brand_pill_and_label() {
     let row: String = (0..32)
         .map(|x| buffer[(x, 0)].symbol().to_owned())
         .collect();
-    assert!(row.contains(" jackin'  · Console"), "row: {row:?}");
-    assert_eq!(buffer[(1, 0)].bg, PHOSPHOR_GREEN);
+    assert!(row.contains(" jackin❯  · Console"), "row: {row:?}");
+    // Green block, black word, white chevron — never the same colour.
+    assert_eq!(buffer[(1, 0)].bg, BRAND_BLOCK);
+    assert_eq!(buffer[(1, 0)].fg, Color::Black);
+    assert_eq!(buffer[(7, 0)].symbol(), "❯");
+    assert_eq!(buffer[(7, 0)].fg, WHITE);
     assert_eq!(buffer[(11, 0)].fg, PHOSPHOR_DARK);
 }

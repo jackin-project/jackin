@@ -3,7 +3,7 @@ source: crates/jackin-console/src/tui/view/tests.rs
 assertion_line: 1035
 expression: rendered
 ---
- jackin'  · edit workspace · ws                                                           
+ jackin❯  · edit workspace · ws                                                           
                                                                                           
                                                                                           
  General   Mounts   Roles   Environments   Auth                                           

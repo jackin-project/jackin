@@ -2,7 +2,7 @@
 title: "Brand Identity System"
 ---
 
-**Status**: Partially implemented — non-Rust surfaces shipped; Rust CLI/Capsule output deferred
+**Status**: Partially implemented — web/docs/README and CLI/Capsule brand text plus the green-block pill shipped; net-new frozen `--help` banner art and version splash still deferred
 
 ## Problem
 
@@ -104,8 +104,8 @@ The first implementation chose a three-part system after sketching the terminal,
 
 | Direction | Sketch result | Decision |
 |---|---|---|
-| Prompt sigil | `j❯` stayed legible at prompt size and favicon size, with the `j` in foreground color and the chevron in `#5CF07A`. | Chosen for prompt, favicon, app/PWA icons, and monogram surfaces. |
-| Wordmark-first lockup | `jackin❯` over `by tailrocks` taught the name clearly in docs chrome, README, and social cards without inventing a second symbol. | Chosen for docs, landing hero, README hero, and Open Graph artwork. |
+| Prompt sigil | `j❯` stayed legible at prompt size and favicon size on the `#5CF07A` block, with a black `j` and a white chevron, square corners. | Chosen for prompt, favicon, app/PWA icons, and monogram surfaces. |
+| Wordmark-first lockup | `jackin❯` over `by tailrocks` on the green block taught the name clearly in docs chrome, README, and social cards without inventing a second symbol. | Chosen for docs, landing hero, README hero, and Open Graph artwork. |
 | Rain-cut wordmark | A frozen field built from `j`, `a`, `c`, `k`, `i`, `n`, `❯`, and box/block glyphs gave large static surfaces enough texture without animating the mark. | Chosen for README and social image atmosphere. |
 
 Boundary-gate and hardline-connector variants were rejected for this pass because they introduced extra geometry that did not reduce cleanly to the terminal prompt mark.
@@ -121,13 +121,14 @@ The live animated digital rain on the website and landing page is intentionally 
 - The chevron is `❯` (`U+276F`, HEAVY RIGHT-POINTING ANGLE QUOTATION MARK ORNAMENT). Use it everywhere the surface can render Unicode: website, docs, README, terminal output, help text, screenshots, SVG/PNG assets, favicons, app icons, package metadata, and social cards.
 - The ASCII fallback `>` is an exception for constrained environments only: plaintext systems that cannot render `❯`, terminals with broken glyph coverage, legacy metadata fields, package registries that reject Unicode, search snippets, or copy channels where Unicode loss is proven. When fallback is required, use only `j>` or `jackin>`. Never use fallback just because it is easier to type in source.
 - Never substitute another fancy chevron, arrow, bracket, prompt glyph, apostrophe, capitalization, or decorated spelling.
-- The chevron is always bright jackin❯ green. The `jackin` word or `j` letter is always white on dark backgrounds or black on light backgrounds. If the chevron and letters are the same color, or if the letters use gray, green, or another accent, the logo is wrong.
-- Rendered documentation should treat `jackin❯` and `j❯` as brand marks where the renderer supports styling: white or black letters chosen by background contrast, bright green `❯`, monospace font, and copyable text. Markdown-only or code-block contexts may use plain unstyled `jackin❯`, but HTML/MDX components, docs headers, README banners, command output examples with ANSI captures, and generated assets should preserve the color split.
-- Icon/favicons use only the short form (`j❯` or `j>` fallback). Do not squeeze the full wordmark into icon surfaces.
-- Wordmark/logotype surfaces use the full form (`jackin❯` or `jackin>` fallback), with separate light and dark colorways: black letters on white/light backgrounds, white letters on black/dark backgrounds, and the same bright green chevron in both.
+- The mark always sits inside a solid phosphor-green block (`#5CF07A`): the `jackin` word or `j` letter is **black** (`#0A0A0A`), the `❯` chevron is **white** (`#FFFFFF`), and the block fills behind the whole mark on every surface and in both light and dark page themes. If the mark is drawn without the green block, with a green chevron, or with the word and chevron the same color, the logo is wrong.
+- Rendered documentation should treat `jackin❯` and `j❯` as brand marks where the renderer supports styling: the green `#5CF07A` block with black letters and a white chevron, monospace font, and copyable text. Markdown-only or code-block contexts may use plain unstyled `jackin❯`, but HTML/MDX components, docs headers, README banners, command output examples with ANSI captures, and generated assets should preserve the block treatment.
+- Icon/favicons use only the short form (`j❯` or `j>` fallback) on the same green block. Do not squeeze the full wordmark into icon surfaces.
+- Wordmark/logotype surfaces use the full form (`jackin❯` or `jackin>` fallback) on the green block. There is one colorway, not separate light/dark variants: black letters and a white chevron on `#5CF07A` in every context.
 - The proposed rebrand retires the trailing-apostrophe wordmark. The implementation PR must update the agent-only spelling rule in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> at the same time it updates public docs and assets, so the repository does not mix old and new brand rules indefinitely.
 - Rich-text prose should use `jackin❯` when referring to the product or project by name. Plaintext-only environments may use `jackin>`. Compact logo surfaces may use `j❯`, and compact plaintext fallback surfaces may use `j>`. Literal commands, binaries, crates, packages, environment variables, config keys, file paths, labels, selectors, URLs, and code identifiers stay `jackin` only where the reader must type or match the literal identifier.
 - The wordmark and monogram use one monospace font and one weight across all official surfaces. Do not split the `j` and `❯` into different fonts or weights.
+- Square corners only. Terminals cannot round corners, so no jackin❯ surface does either: the logo block, buttons, cards, inputs, favicons, and app icons all stay rectangular with no `border-radius` and no rounded icon mask. The website enforces this with a global `border-radius: 0` reset so third-party UI inherits the CLI aesthetic.
 
 ## Quality Bar
 
@@ -135,7 +136,7 @@ Every candidate mark must pass these tests before implementation:
 
 - **Terminal fidelity:** render legibly in a monospace terminal as plain text, with and without ANSI color.
 - **Fallback restraint:** prove each `>` fallback is needed by the target surface; otherwise use `❯`.
-- **Color recognition:** every rendered logo/documentation treatment that supports styling must show the word or `j` in white/black according to the background and the chevron in `#5CF07A`, not merely spell the mark as text.
+- **Color recognition:** every rendered logo/documentation treatment that supports styling must show the mark on the `#5CF07A` block with black letters and a white chevron, not merely spell the mark as text.
 - **Website parity:** the website mark must be recognizably the same shape as the terminal prompt mark, not a separate illustration that only shares a name.
 - **Small-size survival:** the mark must remain identifiable at 16x16 favicon size and 22-24px nav size.
 - **Large-size confidence:** the mark must not feel empty or accidental at README/OG/hero scale.
@@ -147,22 +148,16 @@ Every candidate mark must pass these tests before implementation:
 
 | Token | Hex | Use |
 |---|---:|---|
-| Bright chevron green | `#5CF07A` | Canonical chevron color on dark and light brand surfaces |
-| Muted accent | `#1D9E75` | Optional UI-layer accent when pure phosphor is too loud; not for the logo chevron |
-| Logo white | `#FFFFFF` | Letters on dark logo surfaces |
-| Dark canvas | `#0A0A0A` | Default background |
-| Logo black | `#0A0A0A` | Letters on light, cream, and other non-dark logo surfaces |
-| Cream optional | `#F4F1E8` | Sticker/print-only retro-manual surface |
+| Logo block green | `#5CF07A` | The solid block every mark sits on; also the canonical phosphor green |
+| Logo ink (black) | `#0A0A0A` | The `jackin` word / `j` letter on the block |
+| Logo chevron (white) | `#FFFFFF` | The `❯` chevron on the block |
+| Muted accent | `#1D9E75` | Optional UI-layer accent when pure phosphor is too loud; never part of the mark |
+| Dark canvas | `#0A0A0A` | Default page/app background the block floats on |
+| Cream optional | `#F4F1E8` | Sticker/print-only retro-manual surface (the block stays green on it) |
 
-Official colorways:
+The mark has one colorway, not several: a `#5CF07A` block, `#0A0A0A` letters, a `#FFFFFF` chevron, square corners. It renders identically on dark canvases, light docs, cream stickers, and inside terminals — the block carries the brand color so the surrounding surface never has to.
 
-| Name | Background | Letters | Chevron | Use |
-|---|---:|---:|---:|---|
-| Dark | `#0A0A0A` | `#FFFFFF` | `#5CF07A` | Default terminal, website, dark-mode docs, dark app chrome |
-| Light | `#FFFFFF` | `#0A0A0A` | `#5CF07A` | Light-mode docs, README surfaces, print contexts |
-| Cream | `#F4F1E8` | `#0A0A0A` | `#5CF07A` | Optional sticker-only variant |
-
-Do not place the official mark directly on a bright green field if doing so would force the chevron to become black or disappear. Green backgrounds may be used elsewhere in the UI, stickers, or CTAs, but logo artwork must preserve the white/black word plus green chevron relationship.
+The mark is always placed on the green block. Earlier drafts forbade green-field logos and required a green chevron; that is reversed — the block is now mandatory and the chevron is white. Green may still appear elsewhere in the UI (digital rain, accents, CTAs); only the mark owns the black-letters-on-green plus white-chevron relationship.
 
 Forbidden treatments:
 
@@ -306,7 +301,7 @@ If any future implementation offers to update host-side prompt snippets, shell t
 
 ## Defer
 
-- Rust CLI/Capsule output, frozen `--help` banner, version/splash treatment, and Rust snapshot tests. This PR intentionally avoids Rust while refactoring is in flight.
+- Net-new terminal art only: the frozen-rain `--help` banner field and a full version/splash redesign. The CLI/Capsule brand *text* (`jackin❯`) and the green-block pill (black word, white chevron) on every jackin-owned surface already shipped; what remains deferred is the larger rain/banner artwork, not the mark itself.
 - Desktop and mobile app implementation beyond source icon preparation.
 - Hosted analytics for Open Graph or attribution effectiveness.
 - Recolorable theme packs, seasonal marks, or per-runtime logo variants.

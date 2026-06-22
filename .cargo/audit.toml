@@ -1,6 +1,6 @@
 [advisories]
 ignore = [
-    # Transitive through sigstore/openidconnect. No patched rsa exists; jackin'
+    # Transitive through sigstore/openidconnect. No patched rsa exists; jackin❯
     # uses sigstore for image verification, not network-observable RSA decrypt.
     "RUSTSEC-2023-0071",
     # Transitive through tabled_derive and sigstore/oci-client. Current latest

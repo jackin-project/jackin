@@ -184,7 +184,7 @@ pub fn render_derived_dockerfile(
     // Agent CLI binaries are NOT baked into the image — the host's prefetched
     // binaries are bind-mounted read-only at `docker run` (see
     // `agent_binary_mounts`), so an agent version bump no longer rebuilds the
-    // derived image. The overlay only stages jackin's own runtime assets; the
+    // derived image. The overlay only stages jackin❯'s own runtime assets; the
     // ENV PATH below covers every agent's bin dir so the mounted binaries
     // resolve. Claude plugin setup moves to capsule runtime-setup.
     //
@@ -401,7 +401,7 @@ pub fn create_derived_build_context_for_agents(
     // Validation policy by ingress channel — intentionally asymmetric:
     //
     // - `base_image_override` argument: hard error on invalid input.
-    //   The caller is jackin's own runtime code (or a future CLI flag
+    //   The caller is jackin❯'s own runtime code (or a future CLI flag
     //   the operator typed explicitly). A typo / programmer bug is
     //   worth failing the build loudly.
     //

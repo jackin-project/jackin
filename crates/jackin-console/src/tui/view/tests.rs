@@ -452,8 +452,8 @@ fn tui_header_uses_lowercase_jackin_with_apostrophe() {
         .collect();
 
     assert!(
-        dump.contains("jackin'"),
-        "header must render 'jackin'' (lowercase + trailing apostrophe); got {dump:?}"
+        dump.contains("jackin❯"),
+        "header must render 'jackin❯' (lowercase + trailing apostrophe); got {dump:?}"
     );
     assert!(
         !dump.contains("JACKIN"),

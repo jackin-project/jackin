@@ -124,7 +124,7 @@ tokens (exact, scrollable) instead of the 1,568–4,784 image cap or the 1.98–
 **−50% to −85%**; a 25-page text-extractable PDF is ~40,000 tokens as text vs 78,806 as a PDF =
 **~−50%** (file 42 measured). Plus exact characters and downstream grep-ability.
 
-**Feasibility verdict:** BUILDABLE — needs a local OCR/extraction tool in the container (jackin' can
+**Feasibility verdict:** BUILDABLE — needs a local OCR/extraction tool in the container (jackin❯ can
 bake it in, file 44 F6). For born-digital PDFs `pdftotext` is trivial; OCR for screenshots is heavier.
 
 **Tier:** T1 (measured token deltas). **Quality risk:** NEGATIVE-COST for textual media (cheaper +
@@ -149,7 +149,7 @@ premium entirely (t≈0 → never buy speed). Net: the same total-cost optimum f
 automatically.
 
 **Feasibility verdict:** BUILDABLE — detect interactive-vs-autonomous from the launch context
-(jackin' knows whether a human is attached) and set `speed: "fast"` at session start (never mid-turn —
+(jackin❯ knows whether a human is attached) and set `speed: "fast"` at session start (never mid-turn —
 it re-bills the prefix, file 43).
 
 **Tier:** T1 (fast-mode pricing/speed) + ESTIMATE (developer-minute value). **Quality risk:** NEUTRAL
@@ -173,7 +173,7 @@ reads of the repo core; cold-start ~10× cut (F3). Per turn, the repo core costs
 exploration tokens. Bounded by the 200K subscription context (file 41) — the *core*, not the whole
 repo, fits.
 
-**Feasibility verdict:** BUILDABLE — jackin's launcher is the natural home (it already owns the
+**Feasibility verdict:** BUILDABLE — jackin❯'s launcher is the natural home (it already owns the
 insertion points, Vol I K16 / file 44 F6). The hard part is curating "the stable core" and keeping it
 byte-stable (any edit busts it).
 
@@ -213,7 +213,7 @@ mis-calibration (false clears) is the residual risk. **Effort:** days.
 output caps, cache discipline) compiles to each agent's native config: Cursor `.cursor/rules` +
 model variants, Codex `config.toml` profiles, Gemini `settings.json` aliases + `contextManagement`,
 Aider flags (`--cache-prompts`, `--map-tokens`, architect/editor/weak), Claude Code env + role TOML
-(jackin' K16). The stack survives an agent switch as a recompile, not a rewrite.
+(jackin❯ K16). The stack survives an agent switch as a recompile, not a rewrite.
 
 **Savings math:** no new per-lever saving; it preserves the *whole stack's* savings across agents and
 prevents the silent loss when a team moves tools (file 45: ~80% of the stack ports as discipline, ~60%

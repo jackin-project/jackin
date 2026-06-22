@@ -252,12 +252,12 @@ pub const fn width_pct(state: &ConfirmState) -> u16 {
     }
 }
 
-/// The canonical "Exit jackin'?" confirmation, shared by every surface that
+/// The canonical "Exit jackin❯?" confirmation, shared by every surface that
 /// can quit the app (console, launch cockpit). One construction site keeps the
 /// wording and shape identical everywhere. Default focus = No.
 #[must_use]
 pub fn exit_confirm_state() -> ConfirmState {
-    ConfirmState::new("Exit jackin'?")
+    ConfirmState::new("Exit jackin❯?")
 }
 
 /// Exit confirmation for surfaces where quitting force-stops the container and
@@ -268,7 +268,7 @@ pub fn exit_confirm_state() -> ConfirmState {
 pub fn exit_confirm_state_with_data_loss() -> ConfirmState {
     ConfirmState::details(
         "Confirm",
-        "Exit jackin'?",
+        "Exit jackin❯?",
         Vec::new(),
         vec![
             "Exiting force-stops the container immediately.".into(),

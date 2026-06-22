@@ -48,11 +48,11 @@ pub fn role_repository_remote_mismatch_message() -> &'static str {
 }
 
 pub fn invalid_role_repository_message(detail: impl std::fmt::Display) -> String {
-    format!("Repository is not a valid jackin' role: {detail}.")
+    format!("Repository is not a valid jackin❯ role: {detail}.")
 }
 
 pub fn generic_role_repository_error_message() -> &'static str {
-    "Repository could not be used as a jackin' role."
+    "Repository could not be used as a jackin❯ role."
 }
 
 pub fn missing_role_repository_file_message(file: impl std::fmt::Display) -> String {

@@ -13,9 +13,11 @@ const pub = join(root, 'public')
 
 const jbMono = readFileSync(join(root, 'node_modules', '@fontsource', 'jetbrains-mono', 'files', 'jetbrains-mono-latin-500-normal.woff'))
 
-const BG = '#0a0a0a'
-const TEXT = '#ffffff'
-const ACCENT = '#5cf07a'
+// The mark is always a phosphor-green block with black letters and a white
+// chevron. Square corners only — terminals cannot round, so neither do we.
+const BLOCK = '#5cf07a'
+const INK = '#0a0a0a'
+const CHEVRON = '#ffffff'
 
 function Chevron({ size, stroke }: { size: number; stroke: number }) {
   return React.createElement('div', {
@@ -23,8 +25,8 @@ function Chevron({ size, stroke }: { size: number; stroke: number }) {
       display: 'flex',
       width: size,
       height: size,
-      borderTop: `${stroke}px solid ${ACCENT}`,
-      borderRight: `${stroke}px solid ${ACCENT}`,
+      borderTop: `${stroke}px solid ${CHEVRON}`,
+      borderRight: `${stroke}px solid ${CHEVRON}`,
       transform: 'rotate(45deg)',
       marginLeft: -18,
       marginTop: 8,
@@ -42,11 +44,11 @@ function Icon() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: BG,
+        backgroundColor: BLOCK,
         fontFamily: 'JetBrainsMono',
         fontWeight: 500,
         lineHeight: 1,
-        borderRadius: 80,
+        borderRadius: 0,
       },
     },
     React.createElement(
@@ -60,7 +62,7 @@ function Icon() {
           marginTop: -14,
         },
       },
-      React.createElement('span', { style: { display: 'flex', color: TEXT } }, 'j'),
+      React.createElement('span', { style: { display: 'flex', color: INK } }, 'j'),
       React.createElement(Chevron, { size: 132, stroke: 24 }),
     ),
   )
@@ -106,7 +108,7 @@ function faviconIco(images: Buffer[]) {
 
 writeFileSync(
   join(pub, 'favicon.svg'),
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="${BG}"/><text x="220" y="324" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="290" font-weight="500" fill="${TEXT}">j</text><path d="M286 174 382 256 286 338" fill="none" stroke="${ACCENT}" stroke-width="40" stroke-linecap="square" stroke-linejoin="miter"/></svg>\n`,
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="${BLOCK}"/><text x="220" y="324" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="290" font-weight="500" fill="${INK}">j</text><path d="M286 174 382 256 286 338" fill="none" stroke="${CHEVRON}" stroke-width="40" stroke-linecap="square" stroke-linejoin="miter"/></svg>\n`,
 )
 console.log('wrote favicon.svg')
 
@@ -134,8 +136,8 @@ const manifest = {
     "Jack your AI coding agents in. Isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.",
   start_url: '/',
   display: 'standalone',
-  background_color: BG,
-  theme_color: BG,
+  background_color: '#0a0a0a',
+  theme_color: '#0a0a0a',
   icons: [
     { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
     { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },

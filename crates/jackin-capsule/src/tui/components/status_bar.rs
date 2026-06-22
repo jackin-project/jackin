@@ -14,7 +14,7 @@
 /// click regions from the same `status_bar_plan` the widget uses to paint.
 /// The visible shape mirrors the jackin console TUI's tab strip:
 ///
-/// - Row 0: ` jackin' ` brand pill, then tab cells.
+/// - Row 0: ` jackin❯ ` brand pill, then tab cells.
 /// - Row 1: a thick `━` underline beneath the active tab cell only;
 ///   blank elsewhere. The underline carries the operator's focus
 ///   signal — the same pattern the console uses below "General /
@@ -23,7 +23,7 @@
 /// Inactive tab cells get a subtle dark-grey background so they stand
 /// out against the terminal's default-black background. The active tab
 /// uses a slightly lifted graphite background instead of the brand
-/// green, so it stays distinct from the ` jackin' ` brand pill, plus
+/// green, so it stays distinct from the ` jackin❯ ` brand pill, plus
 /// the row-1 white underline.
 ///
 /// Layout columns come from `jackin_tui::lay_out_tabs`, so the
@@ -44,7 +44,7 @@ fn display_cols(s: &str) -> u16 {
     u16::try_from(jackin_tui::display_cols(s)).unwrap_or(u16::MAX)
 }
 
-const BRAND_TEXT: &str = " jackin' ";
+const BRAND_TEXT: &str = " jackin❯ ";
 const BRAND_PAD_COLS: u16 = 1; // single space between brand pill and first tab
 const TAB_GLYPH_PLACEHOLDER: &str = " X";
 

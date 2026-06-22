@@ -46,7 +46,7 @@ Every Volume II technique was checked against the named Volume I file before cla
 | 41 Q1–Q7 (quota model, prefix-as-quota, window size, request-volume, 1h-in-allowance, overage decision, SDK-off-cap) | 13 (caching), 01 (econ), README | Vol I prices in $ only; "quota" named in 13, modeled 0× — the cap weighting, denominator, re-sort, and the 06-15 split are all new |
 | 42 M1–M6 (vision routing, downsample, text-over-screenshot, text-over-PDF, crop, lazy vision) | 12, 16, 03 | Multimodal = 0 substantive hits in 00–32 ; image/PDF token costs unmeasured |
 | 43 L1–L6 (fast-mode purchase, optimizer latency tax, parallel-time, cache-on-both-axes, batch-time, quota-edge decision) | 17:110, 18:132, 19:147, 01:52 | Latency mentioned in scatter; never built into a time-value decision model (v·t·s > Δ$) |
-| 44 F1–F6 (workspace fleet sharing, excludeDynamicSections sized, cold-start pre-warm, subagent-caching audit, multi-tenant boundary, jackin' fleet policy) | 13 tech 7, 19:116-187, 17 | Vol I covers self-host fleet (19) + the SDK flag (13); hosted cross-container sharing, the measured dynamic-section size, and #29966 are new |
+| 44 F1–F6 (workspace fleet sharing, excludeDynamicSections sized, cold-start pre-warm, subagent-caching audit, multi-tenant boundary, jackin❯ fleet policy) | 13 tech 7, 19:116-187, 17 | Vol I covers self-host fleet (19) + the SDK flag (13); hosted cross-container sharing, the measured dynamic-section size, and #29966 are new |
 | 45 P1–P6 (portable core, keepalive borrow, 3-tier routing borrow, dedup borrow, per-tool budgets borrow, non-portable edge) | 14/15 availability labels, 18:196 | No portability matrix exists in 00–32; reverse-portability (borrow from other agents) is new |
 | 46 FL1–FL5 (CAG-via-caching, /cd, no-compressor-security, KV-family verdict, Fable→Opus re-decision) | 03, 19, 20 K1/K2/K15 | KV-eviction family (SnapKV/H2O/PyramidKV/KVQuant), CAG, CompressionAttack, /cd, the Fable promo = 0 hits / post-freeze |
 | 47 G1–G6 (real governors, max_tokens replacement, online canary, guard tax, degrade-don't-die, recursion cap) | 15:123-135, 31, 32:13 | Vol I has offline harness + max_tokens-as-rail only; runtime budget governance + online drift detection are new |
@@ -118,12 +118,12 @@ a Claude Code `/usage-credits` monthly cap and (for fleets) a workspace rate lim
 Opus 4.8 before 06-23.
 
 **Aggressive (with validation) — adds:** the CAG warm-repo cached prefix (preload the stable repo core
-once); fleet workspace cache sharing + cold-start pre-warm (jackin'); time-value-driven fast mode for
+once); fleet workspace cache sharing + cold-start pre-warm (jackin❯); time-value-driven fast mode for
 interactive sessions; an online-quality canary so aggressive register/effort compression runs behind a
 live safety net.
 
 **Unbelievable (chase the ceiling) — adds:** the quota-window scheduler + per-account quota-denominator
-prober (close the cap INCOMPLETE); the cross-provider portable-policy compiler; the jackin'-baked fleet
+prober (close the cap INCOMPLETE); the cross-provider portable-policy compiler; the jackin❯-baked fleet
 cache + governance pack. **Binding constraint, restated:** on dollars, still the frontier-thinking +
 cache-read floor (no 10×). On quota, the binding constraint is the **unpublished denominator** — you
 cannot prove "10× more tasks per cap" without measuring the cap, which only a header-reading proxy can

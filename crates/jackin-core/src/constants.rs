@@ -1,4 +1,4 @@
-//! Shared string constants used across all jackin' crates.
+//! Shared string constants used across all jackin❯ crates.
 //!
 //! These are the canonical definitions — callers import from here rather than
 //! repeating the literal. All belong to the role-repo contract or the

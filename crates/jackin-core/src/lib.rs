@@ -1,6 +1,6 @@
-//! jackin-core: universal vocabulary types shared across all jackin' crates.
+//! jackin-core: universal vocabulary types shared across all jackin❯ crates.
 //!
-//! This is a leaf crate — it has no jackin' dependencies, no tokio, no
+//! This is a leaf crate — it has no jackin❯ dependencies, no tokio, no
 //! subprocess, no filesystem access. Every higher crate depends on this one,
 //! never the reverse.
 //!

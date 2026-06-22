@@ -183,7 +183,7 @@ A 4K screenshot and a 1,456×819 screenshot cost the *same* on Sonnet (both clam
  legibility for fine detail. Falsify by OCR/readback on the downsized image.
 - **Availability:** CLAUDE-CODE-TODAY via a PreToolUse hook that resizes screenshots before they
  enter context (the screenshot tool path); SDK for programmatic capture.
-- **Effort to adopt:** hours (a resize hook; needs an image lib in the container — see 44/jackin').
+- **Effort to adopt:** hours (a resize hook; needs an image lib in the container — see 44/jackin❯).
 - **Composability:** pairs with M1 (route then size) and M5 (crop then size).
 - **Validation protocol:** capture at native and at capped resolution; confirm identical task success
  and the expected token drop on Opus.

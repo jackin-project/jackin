@@ -74,7 +74,7 @@ pub async fn fetch_text(url: &str) -> Result<String> {
 /// Download `url` to `dest` using fast-down parallel chunks.
 ///
 /// Work-stealing across `DOWNLOAD_CONCURRENCY` connections with mmap writes. All
-/// CDNs jackin' pulls from support Range requests; bail fast if one somehow does
+/// CDNs jackin❯ pulls from support Range requests; bail fast if one somehow does
 /// not. Creates `dest`'s parent directory when missing. Bounded by
 /// `DOWNLOAD_TIMEOUT` — completeness/integrity of the result is the caller's
 /// SHA-256 check, since the mmap pre-sizes the file (a dropped chunk leaves a

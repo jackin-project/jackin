@@ -57,7 +57,7 @@ fn outer_terminal_reset_sequence() -> Vec<u8> {
 /// Reassert after attach and focus swaps so a pane that requested legacy X10
 /// or press-only mouse tracking cannot downgrade the multiplexer's own input
 /// channel. Alternate-scroll (`?1007`) is disabled because some terminals
-/// translate wheel gestures in the alternate screen into cursor keys; jackin'
+/// translate wheel gestures in the alternate screen into cursor keys; jackin❯
 /// needs the wheel to stay as mouse input so the daemon can decide whether
 /// scrollback, PTY mouse forwarding, or a no-op owns it.
 ///

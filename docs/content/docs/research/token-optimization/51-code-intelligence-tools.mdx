@@ -32,7 +32,7 @@ there are stronger alternatives for AI-agent code intelligence and token savings
  For enterprise multi-repo code intelligence, **Sourcegraph MCP** is stronger.
  For open-source semantic RAG with a published token-reduction claim,
  **Code Context Engine** and **Claude Context** are the clearest candidates.
-- **For jackin': pilot inside a role container, measure locally, and keep host
+- **For jackin❯: pilot inside a role container, measure locally, and keep host
  effects explicit.** The existing the-architect roadmap already proposes `fff`;
  codedb deserves an adjacent A/B pilot, and Serena/Claude Context deserve
  competitor arms if MCP schema overhead is deferred or bounded.
@@ -61,7 +61,7 @@ retrieval engine and CodeGraff as the broader agent/product surface around it.
 | Token-savings evidence | Explicit vendor numbers: e.g. README claims structured search results around tens of tokens vs large raw grep dumps; benchmarks page claims 4x fewer bytes in a full edit workflow | Text says fewer grep roundtrips and token-efficient; no numeric token percentage in README text. Latency and memory claims are specific | Site claims "40x leaner", aggregate "tokens saved", structural read 47 vs 2,103 tokens, and 9x byte reduction in article workflow |
 | Evidence tier for tokens | **T3/T4**: specific public numbers, vendor-interested, not locally replicated here | **T4**: plausible, but numeric token effect unpublished in text | **T4**: product counters and examples, vendor-interested, broad workflow confounders |
 | Quality risk | Stale/wrong project root, unbounded tree/snapshot dumps, over-trusting fuzzy or structural approximation, telemetry/cache host writes | Fuzzy false positives, overusing it for semantic questions better answered by LSP/ast-grep/codedb | Larger adoption surface, paid/proprietary pieces, possible agent displacement, gateway/provider changes |
-| jackin' fit | Good candidate for a role-scoped MCP/CLI pilot, with host-write guardrails | Already mapped in the-architect roadmap as resident file-search MCP | Evaluate only as an explicit alternative agent role/toolchain, not as default core behavior |
+| jackin❯ fit | Good candidate for a role-scoped MCP/CLI pilot, with host-write guardrails | Already mapped in the-architect roadmap as resident file-search MCP | Evaluate only as an explicit alternative agent role/toolchain, not as default core behavior |
 
 ## Alternatives found in the internet re-sweep
 
@@ -72,7 +72,7 @@ best tools for this use case?** Not universally.
 |---|---|---|---|---|
 | **Serena** (`oraios/serena`) | Open-source semantic coding agent toolkit built around language servers and MCP | You need local, language-aware symbol navigation/editing through existing LSPs. It is more semantic than fff and overlaps codedb's strongest local use case. | You need codedb's remote public-repo queries, repo snapshots, or one bundled codebase context composer; quality depends on language-server coverage and project setup. | Likely token-positive for symbol tasks; no local measurement yet. Best local open-source competitor to codedb. |
 | **Code Context Engine** (`elara-labs/code-context-engine`) | Local open-source MCP with AST-aware chunks, hybrid vector/BM25 retrieval, graph expansion, compression, and session memory | You want a local tool whose primary pitch is measurable input-token reduction and one index shared across Claude Code, Codex, Cursor, Gemini CLI, and others. | The headline 94% benchmark is against full-file reads; the docs explicitly say real savings against normal Claude Code should be lower. Newer/smaller project than Serena or Sourcegraph. | Strongest open-source numeric token-saving claim found, but must be treated as T4/T3 until reproduced against the native harness baseline. |
-| **Augment Context Engine** | Commercial/hosted codebase context engine and agent integration | You want the strongest published commercial claims for codebase-context quality and cost reduction, and cloud/vendor dependency is acceptable. | You need open, local-only, reproducible mechanics inside a jackin' role; model gateway/context engine effects are hard to separate. | Vendor claims include large quality gains and lower token bills. Treat as T4 until independently measured. |
+| **Augment Context Engine** | Commercial/hosted codebase context engine and agent integration | You want the strongest published commercial claims for codebase-context quality and cost reduction, and cloud/vendor dependency is acceptable. | You need open, local-only, reproducible mechanics inside a jackin❯ role; model gateway/context engine effects are hard to separate. | Vendor claims include large quality gains and lower token bills. Treat as T4 until independently measured. |
 | **Sourcegraph MCP / Cody context** | Enterprise code search, precise code navigation, SCIP-backed code intelligence, multi-repo context | You need cross-repo impact analysis, exact definitions/references across large organizations, or existing Sourcegraph infrastructure. | You only need a single local repo; setup and service dependency are heavier than codedb/Serena/fff. | Strong for reducing wrong-file exploration at enterprise scale; token % not publicly established for this exact use case. |
 | **Qodo Context Engine MCP** | Commercial/enterprise deep-research codebase context engine exposed over MCP | You need multi-repo organization-aware answers, architectural impact analysis, and repository/docs knowledge through a managed context engine. | Heavier than local retrieval tools; agentic reasoning can add its own token cost, and token-saving claims are not the main public evidence. | More about correctness and broad impact analysis than raw token reduction; evaluate alongside Sourcegraph/Augment, not against fff. |
 | **Claude Context** (`zilliztech/claude-context`) | Open-source semantic code search MCP / RAG layer | You want vector+keyword semantic retrieval with a published benchmark claiming token reduction, and structural symbol graph is less important. | You need exact callers/dependencies or edits by symbol; embedding retrieval can return plausible but wrong context. | Public benchmark claims 39.4% token reduction on a code-search task set; needs local reproduction. |
@@ -89,13 +89,13 @@ best tools for this use case?** Not universally.
 | Local file/path/content search speed | **fff** | Narrow but very good fit: warm resident search with frecency/git metadata. |
 | Local task-shaped code context with many MCP primitives | **codedb** | Best bundled open-source package among the original set: outline/symbol/callers/deps/read/context. |
 | Local open-source token-savings benchmark | **Code Context Engine**, then **Claude Context** | CCE publishes the largest number but against a generous full-file baseline; Claude Context publishes a smaller semantic-search reduction. Both need local reproduction. |
-| Commercial best-effort "give the agent the right context" | **Augment Context Engine** | Strongest vendor-side context-quality and cost claims, but not local/open enough to treat as jackin' default. |
+| Commercial best-effort "give the agent the right context" | **Augment Context Engine** | Strongest vendor-side context-quality and cost claims, but not local/open enough to treat as jackin❯ default. |
 | Enterprise multi-repo impact analysis | **Sourcegraph MCP** or **Qodo Context Engine MCP** | Sourcegraph is the precise code-search/code-intelligence infrastructure answer; Qodo is the agentic deep-research/org-knowledge answer. |
 | Semantic RAG with an explicit token-saving benchmark | **Claude Context** | Clearest open-source numeric token-reduction claim found in the sweep, though it is not structural code intelligence. |
 | Rust-specific correctness | **rust-analyzer + ast-grep**, optionally with codedb/Serena | For Rust, LSP definitions/references and structural patterns are more trustworthy than fuzzy search. |
 
 **Practical answer:** codedb and fff are not "the best two" as a pair. A stronger
-local jackin' stack would be:
+local jackin❯ stack would be:
 
 ```text
 rust-analyzer / ast-grep for exact semantic + structural facts
@@ -171,7 +171,7 @@ intelligence saves tokens only if calls return bounded, task-shaped context.
 
 **Local adoption verdict:** Add codedb to the validation harness as an A/B arm
 against native `rg`/Read and against fff. Do not count vendor token multipliers as
-banked savings until measured on jackin' tasks.
+banked savings until measured on jackin❯ tasks.
 
 ### fff verdict
 
@@ -226,7 +226,7 @@ mentions aggregate tokens saved, per-op token counts, and last-30-day counters, 
 those are not independently auditable from the page. The codedb article's 9x byte
 workflow example is more concrete but still a selected vendor example.
 
-**Local adoption verdict:** Do not fold CodeGraff into jackin' core. If useful,
+**Local adoption verdict:** Do not fold CodeGraff into jackin❯ core. If useful,
 model it as an explicit role/toolchain experiment. Extract the technique pattern
 first: function-scope read, bounded search, diff-returning edits, and batch tools.
 
@@ -278,7 +278,7 @@ ast-grep is a complement to, not a replacement for, codedb's caller/dependency g
 and rust-analyzer's compiler truth — exactly the routing the recommended stack and
 the architect roadmap already encode.
 
-**jackin' verdict.** For a multi-runtime role, the **CLI form on `PATH` plus a shared
+**jackin❯ verdict.** For a multi-runtime role, the **CLI form on `PATH` plus a shared
 guidance file is the right default** — zero schema rent, every runtime reaches it,
 no Claude-only lock-in — which is precisely what the the-architect pilot chose (the
 Claude-only skill is deliberately *not* in that pilot, and the experimental MCP's
@@ -306,7 +306,7 @@ five-month staleness make it a weak default. Decision record and routing:
 5. **Smoke-test freshness at session start.** Run a status/index-ready check before
  relying on results, especially after large code generation or checkout changes.
 6. **Make host effects explicit.** The upstream installers may write `~/.codedb`,
- `~/.claude.json`, `~/.codex/config.toml`, or other client config. In jackin',
+ `~/.claude.json`, `~/.codex/config.toml`, or other client config. In jackin❯,
  install and register inside the role container unless the operator explicitly
  opts into host changes.
 
@@ -328,7 +328,7 @@ Use codedb for code navigation before broad text search:
 
 Setup shape:
 
-- Install inside the agent environment, not the host, for jackin' roles.
+- Install inside the agent environment, not the host, for jackin❯ roles.
 - Disable telemetry if the environment requires it: `CODEDB_NO_TELEMETRY=1`.
 - Register MCP at user scope inside the container, for example:
  `claude mcp add codedb -s user -- /usr/local/bin/codedb mcp` or
@@ -376,14 +376,14 @@ Use CodeGraff/Graff local file tools to avoid whole-file reads:
 Setup shape:
 
 - Treat CodeGraff as an explicit agent/toolchain role, not as a transparent
- dependency of jackin' core.
+ dependency of jackin❯ core.
 - Install only in the container or on an operator-approved host path.
 - Separate the free/open `graff`/codedb path from paid Pro tooling and the
  CodeGraff model gateway. Measure each independently.
 - If using the gateway, keep model-routing/cache effects separate from local
  file-tool savings; otherwise the token analysis becomes impossible to attribute.
 
-## jackin' adoption recommendation
+## jackin❯ adoption recommendation
 
 The existing roadmap page
 <RepoFile path="docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx">docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx</RepoFile>
@@ -492,7 +492,7 @@ help the agent look at fewer, better spans of code.
 - **Code Context Engine:** strongest local open-source token-savings claim found;
  benchmark against native Claude/Codex behavior before trusting the 94% headline.
 - **Augment / Sourcegraph / Qodo:** stronger commercial or enterprise answers for broad
- codebase context, but too heavy/vendor-bound for a default jackin' role.
+ codebase context, but too heavy/vendor-bound for a default jackin❯ role.
 - **Claude Context:** best open-source alternative found with a public numeric
  token-reduction claim; evaluate for semantic-RAG tasks, not exact refactors.
 
@@ -508,7 +508,7 @@ speedup more than a guaranteed token cut.
 
 The full treatment — Qdrant vs alternatives (Milvus, LanceDB, pgvector, Turbopuffer, …); the benchmark
 evidence (no engine decisively beats Qdrant, "best" is workload-dependent); the docs-corpus case; token
-economics; a jackin' container setup; and a runnable validation protocol — is in
+economics; a jackin❯ container setup; and a runnable validation protocol — is in
 [`52-qdrant-and-vector-databases.md`](/research/token-optimization/52-qdrant-and-vector-databases/).
 
 ## Source ledger
@@ -544,8 +544,8 @@ economics; a jackin' container setup; and a runnable validation protocol — is 
 - ast-grep agent skill (Claude-only, reliability-focused `SKILL.md`, 750★, stale since 2026-01): [https://github.com/ast-grep/agent-skill](https://github.com/ast-grep/agent-skill)
 - ast-grep MCP (experimental, 4 tools, 423★): [https://github.com/ast-grep/ast-grep-mcp](https://github.com/ast-grep/ast-grep-mcp)
 - Structural-vs-graph token analysis (independent; the 32× / 3–50× figures are graph-tool numbers, not ast-grep's): [https://zzet.org/gortex/grep-replacement-for-ai-agents/](https://zzet.org/gortex/grep-replacement-for-ai-agents/) · "which tool when" (lexical/structural/graph/semantic modalities) [https://ceaksan.com/en/code-search-for-ai-agents-which-tool-when](https://ceaksan.com/en/code-search-for-ai-agents-which-tool-when)
-- ast-grep CLI/skill decision record for jackin' roles: <RepoFile path="docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx">docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx</RepoFile>
-- Existing jackin' fff pilot roadmap:
+- ast-grep CLI/skill decision record for jackin❯ roles: <RepoFile path="docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx">docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx</RepoFile>
+- Existing jackin❯ fff pilot roadmap:
  <RepoFile path="docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx">docs/content/docs/reference/roadmap/architect-code-intelligence-tooling.mdx</RepoFile>
 
 Vector/semantic layer:

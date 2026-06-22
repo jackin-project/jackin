@@ -16,6 +16,11 @@ const BG = '#0a0a0a'
 const TEXT = '#ffffff'
 const MUTED = '#9ca8a1'
 const ACCENT = '#5cf07a'
+// The wordmark is always a phosphor-green block: black letters, white chevron,
+// square corners. ACCENT stays for non-logo UI highlights on the dark card.
+const BLOCK = '#5cf07a'
+const INK = '#0a0a0a'
+const CHEVRON = '#ffffff'
 const RAIN_COLS = 80
 const RAIN_ROWS = 24
 
@@ -80,8 +85,8 @@ function Chevron({ size, stroke, marginLeft = 0 }: { size: number; stroke: numbe
       display: 'flex',
       width: size,
       height: size,
-      borderTop: `${stroke}px solid ${ACCENT}`,
-      borderRight: `${stroke}px solid ${ACCENT}`,
+      borderTop: `${stroke}px solid ${CHEVRON}`,
+      borderRight: `${stroke}px solid ${CHEVRON}`,
       transform: 'rotate(45deg)',
       marginLeft,
       marginTop: size * 0.08,
@@ -139,13 +144,17 @@ function Card({ width, height }: { width: number; height: number }) {
         {
           style: {
             display: 'flex',
+            alignItems: 'center',
+            alignSelf: 'flex-start',
             fontFamily: 'JetBrainsMono',
             fontSize: 142,
             fontWeight: 600,
             letterSpacing: 0,
-            color: TEXT,
+            color: INK,
+            background: BLOCK,
+            padding: '6px 26px',
             lineHeight: 1,
-            marginBottom: 12,
+            marginBottom: 16,
           },
         },
         React.createElement('span', { style: { display: 'flex' } }, 'jackin'),
@@ -244,9 +253,10 @@ const readmeHeroSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" heig
     ${rainSvgField(1280, 640)}
   </g>
   <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">
-    <text x="580" y="322" font-size="138" font-weight="600" fill="${TEXT}">jackin</text>
-    <path d="M836 214 916 292 836 370" fill="none" stroke="${ACCENT}" stroke-width="24" stroke-linecap="square" stroke-linejoin="miter"/>
-    <text x="640" y="374" font-size="26" font-weight="500" fill="${MUTED}">by tailrocks</text>
+    <rect x="296" y="206" width="660" height="176" fill="${BLOCK}"/>
+    <text x="586" y="338" font-size="138" font-weight="600" fill="${INK}">jackin</text>
+    <path d="M842 240 916 314 842 388" fill="none" stroke="${CHEVRON}" stroke-width="24" stroke-linecap="square" stroke-linejoin="miter"/>
+    <text x="626" y="446" font-size="26" font-weight="500" fill="${MUTED}">by tailrocks</text>
   </g>
 </svg>
 `

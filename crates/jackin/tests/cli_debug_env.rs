@@ -75,7 +75,7 @@ mod env_does_not_break_parsing {
             .assert()
             .failure()
             .stderr(predicate::str::contains(
-                "jackin' console requires an interactive terminal",
+                "jackin❯ console requires an interactive terminal",
             ));
     }
 
@@ -88,7 +88,7 @@ mod env_does_not_break_parsing {
             .assert()
             .failure()
             .stderr(predicate::str::contains(
-                "jackin' console requires an interactive terminal",
+                "jackin❯ console requires an interactive terminal",
             ));
     }
 
@@ -105,7 +105,7 @@ mod env_does_not_break_parsing {
             .assert()
             .failure()
             .stderr(predicate::str::contains(
-                "jackin' console requires an interactive terminal",
+                "jackin❯ console requires an interactive terminal",
             ));
     }
 }
