@@ -85,10 +85,11 @@ jobs:
           if [ "${{ inputs.all-features }}" = "true" ]; then
             args+=(--all-features)
           fi
-          cargo nextest run "${args[@]}"
+          cargo nextest run --timings=html "${args[@]}"
 
           if [ "${{ inputs.all-features }}" = "true" ]; then
             cargo nextest run \
+              --timings=html \
               -p jackin \
               --features e2e \
               --profile docker-e2e \
@@ -97,6 +98,14 @@ jobs:
               --locked
             cargo build -p jackin-capsule --bin jackin-capsule --locked
           fi
+      - name: Upload cargo timings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cargo-timings-nextest-prepare-${{ matrix.config.lane }}
+          path: target/cargo-timings/*.html
+          if-no-files-found: ignore
+          retention-days: 7
 
   packages:
     needs: prepare
