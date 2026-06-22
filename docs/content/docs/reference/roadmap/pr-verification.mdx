@@ -20,7 +20,7 @@ Three things make the console the right home for this, anchored to the instance 
 
 ## Phase 0 — `jackin-dev` local PR sync
 
-The first implementation creates a dedicated `jackin-dev` binary installed with jackin' itself. This binary is for contributor and maintainer workflows around testing jackin' locally. It is not a replacement for the product CLI; it is the host-side setup tool that turns the current PR-body shell recipe into a stable command.
+The first implementation creates a dedicated `crates/jackin-dev` crate that builds a `jackin-dev` binary. This binary is for contributor and maintainer workflows around testing jackin' locally. It is not a replacement for the product CLI; it is the host-side setup tool that turns the current PR-body shell recipe into a stable command. The crate starts at version `0.1.0`, and every future change that adds or changes shipped `jackin-dev` functionality bumps that crate version.
 
 The default checkout block becomes:
 
@@ -64,7 +64,7 @@ jackin-dev pr status <PR_NUMBER>
 
 Responsibility stays split cleanly: `jackin-dev` owns outside-the-repo orchestration, while `cargo xtask` remains for tasks that only make sense once a checkout already exists, such as construct build/publish helpers, docs/sidebar maintenance, schema checks, PTY fixture extraction, and PR body skeleton generation.
 
-Packaging is part of this work. `jackin-dev` is distributed through the `jackin-project/homebrew-tap` repository by a separate workflow dedicated to this binary, not by jackin's normal stable release workflow or preview workflow. When source inputs for this binary change, that dedicated workflow builds a new `jackin-dev` artifact, assigns the next generated version for that artifact, and updates the Homebrew tap formula so operators can install or upgrade it from the tap. If a PR does not touch `jackin-dev` inputs, the tap entry does not need to move. Operators reviewing jackin' PRs should be able to install or update from the tap and immediately run `jackin-dev pr sync` without a prior source checkout.
+Packaging is part of this work. `jackin-dev` is distributed through the `jackin-project/homebrew-tap` repository by a separate workflow named `jackin-dev`, dedicated to this binary, not by jackin's normal stable release workflow or preview workflow. When source inputs for this crate change, that dedicated workflow builds a new `jackin-dev` artifact for the crate's current version and updates the Homebrew tap formula so operators can install or upgrade it from the tap. If a PR does not touch `jackin-dev` inputs, the tap entry does not need to move. Operators reviewing jackin' PRs should be able to install or update from the tap and immediately run `jackin-dev pr sync` without a prior source checkout.
 
 ## Deferred console-native flow
 
@@ -259,7 +259,7 @@ The near-term novel piece is a shipped developer binary that prepares a host-sid
 
 ## Implementation now
 
-Ship `jackin-dev` through the Homebrew tap with a source-filtered workflow dedicated to this binary; implement `jackin-dev pr sync`, `clean`, `env`, `path`, and `status`; replace PR-body checkout boilerplate with the `sync` flow; store checkout, copied config, empty state home, and env file under one isolated, reclaimable PR bundle; auto-enable capsule and construct prep from the pull request diff.
+Add `crates/jackin-dev` at version `0.1.0`; ship its `jackin-dev` binary through the Homebrew tap with a source-filtered workflow named `jackin-dev`; implement `jackin-dev pr sync`, `clean`, `env`, `path`, and `status`; replace PR-body checkout boilerplate with the `sync` flow; store checkout, copied config, empty state home, and env file under one isolated, reclaimable PR bundle; auto-enable capsule and construct prep from the pull request diff.
 
 ## Future phases
 

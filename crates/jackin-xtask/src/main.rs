@@ -40,9 +40,9 @@ enum Command {
     /// Use as `cargo xtask construct <subcommand>`.
     #[command(subcommand)]
     Construct(construct::ConstructCommand),
-    /// Prepare an isolated local checkout for PR verification.
+    /// Generate pull request body skeletons.
     ///
-    /// Use as `cargo xtask pr prepare <number>`.
+    /// Use as `cargo xtask pr body`.
     #[command(subcommand)]
     Pr(pr::PrCommand),
     /// Extract a PTY byte-stream fixture from a `--debug` run log for the
