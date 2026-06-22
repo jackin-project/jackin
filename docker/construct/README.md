@@ -10,7 +10,7 @@ For full details — including what's installed, how it is built, the image laye
 
 | File | Purpose |
 |---|---|
-| `Dockerfile` | Builds the construct image on Debian Trixie with core tools (git, Docker CLI, mise, ripgrep, fd, fzf, GitHub CLI, zsh, fish, starship) and security tools (tirith, shellfirm) |
+| `Dockerfile` | Builds the construct image on Debian Trixie with core tools (git, Docker CLI, Buildx, Compose, mise, ripgrep, fd, fzf, GitHub CLI, zsh, fish, starship) and security tools (tirith, shellfirm) |
 | `zshrc` | zsh configuration — sources oh-my-zsh (with `ZSH_THEME=""` so Starship owns the prompt), enables auto-title, sets up mise shims and security tool hooks. Default shell for the `agent` user. |
 | `fish-config.fish` | fish configuration — opt-in alternative shell. Initialises Starship and replicates zsh's OSC 0/2 + OSC 7 title hooks so pane border titles work identically. |
 | `starship.toml` | Shared prompt config for zsh and fish; renders the `j❯` sigil with the canonical green chevron and prefixes the active `JACKIN_AGENT` when present. |
@@ -34,7 +34,7 @@ Agent repos build on top of the construct. jackin then generates a derived layer
 
 ## Building
 
-Construct image builds are defined by the repo-root `docker-bake.hcl` file and wrapped by the repo-root `Justfile`.
+Construct image builds are defined by the repo-root `docker-bake.hcl` file and driven by the `construct-*` mise tasks, which delegate to the `jackin-xtask` crate.
 
 The supported local validation flow, architecture-specific debugging commands, advanced publish rehearsal workflow, CI behavior, and published tags are documented on the [Construct Image](https://jackin.tailrocks.com/developing/construct-image/) page.
 

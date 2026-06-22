@@ -1,0 +1,152 @@
+---
+title: Capsule Session Lifecycle
+description: Technical reference for how jackin❯ creates, manages, and tears down Capsule-managed sessions
+---
+
+## Overview
+
+Every role container runs the jackin❯ Capsule (`jackin-capsule`) as PID 1. The daemon owns the PTY sessions, renders the in-container multiplexer, serves `/jackin/run/jackin.sock`, and exits when the last live session ends. The host attaches with a separate `docker exec -it <container> /jackin/runtime/jackin-capsule` client. See [jackin❯ Capsule](/reference/capsule//) for the control-plane design and wire protocol.
+
+There are two session types:
+
+| Session type | Agent slug | Command source |
+|---|---|---|
+| Agent pane | `claude`, `codex`, `amp`, `kimi`, or `opencode` | `/jackin/runtime/entrypoint.sh` |
+| Shell pane | none | `/bin/zsh` |
+
+`JACKIN_AGENT` is per agent pane. The daemon sets it only when spawning `/jackin/runtime/entrypoint.sh`; shell panes do not receive it.
+
+## Container Startup (`jackin load`)
+
+When `jackin load` provisions a new instance, the container launch happens in two steps:
+
+1. The launcher writes `~/.jackin/sockets/<container>/agent.toml`; Docker mounts that directory at `/jackin/run`, so PID 1 reads the same file as `/jackin/run/agent.toml`.
+2. `docker run -d ... <image> <agent>` starts the container detached. The image entrypoint is `/jackin/runtime/jackin-capsule`; the trailing `<agent>` argv tells PID 1 which initial agent tab to spawn. It is not exported as a container environment variable.
+3. The launcher checks that PID 1 did not exit before attach. If it exited, the launcher captures the last 40 lines of container logs and surfaces an actionable error.
+4. The launcher runs `docker exec -it <container> /jackin/runtime/jackin-capsule`. The client connects to the daemon socket and blocks the operator terminal for the duration of the attach.
+
+Implementation: <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> (`launch_role_runtime`, `diagnose_premature_exit`) and <RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile> (`resolve_initial_agent`).
+
+## Reconnecting (`jackin hardline`)
+
+`jackin hardline` inspects the target container and chooses the reconnect path:
+
+- **Container is running**: attach with `docker exec -it <container> /jackin/runtime/jackin-capsule`.
+- **Container is running and the operator requested a new agent session**: run `docker exec --workdir <workdir> -it <container> /jackin/runtime/jackin-capsule new <agent>`. The agent slug travels as argv; `JACKIN_AGENT` is set later inside the spawned PTY.
+- **Container is running and the operator requested a shell**: run `docker exec -it <container> /jackin/runtime/jackin-capsule new`. No agent slug means a shell pane.
+- **Container is stopped with crash state**: restore the required DinD sidecar, network, and certs when needed, restart the role container, then attach.
+- **Container is gone but indexed recoverable state exists**: rebuild the runtime around jackin-managed local state.
+
+Implementation: <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
+
+## Session Inventory
+
+jackin❯ queries the daemon through its socket by executing:
+
+```bash
+/jackin/runtime/jackin-capsule status
+```
+
+The command opens the Capsule control channel, sends a typed `Status` request, and prints a line-oriented summary that older host paths parse into `AgentSession` records. Host console previews use the same control channel with a JSON `Snapshot` request: same-kernel Docker hosts connect directly to the bind-mounted socket, while Docker Desktop hosts fall back to `docker exec ... /jackin/runtime/jackin-capsule snapshot` because the host cannot connect to a Linux VM Unix socket directly. If the container is not running, inventory is reported as `sessions:not_running` without contacting Docker.
+
+Implementation: <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> (`inspect_agent_sessions`) and <RepoFile path="crates/jackin-capsule/src/client.rs">crates/jackin-capsule/src/client.rs</RepoFile> (`run_status`).
+
+## Container Shutdown
+
+### Normal Exit
+
+1. An agent or shell process exits.
+2. The daemon removes the pane and redraws the multiplexer.
+3. If no live sessions remain, PID 1 drains the final frame and exits.
+4. The host finalizer observes the stopped container and runs cleanup:
+   - `docker rm -f <role-container>`
+   - `docker rm -f <dind-container>`
+   - `docker volume rm <certs-volume>`
+   - `docker network rm <network>`
+5. Keep-awake state is reconciled after the managed containers are gone.
+
+The palette **Exit** command deliberately drives this same shutdown shape. It asks for confirmation, terminates every live pane, lets PID 1 exit once the session set is empty, and then the reconnect/attach finalizer removes the Docker resources with the normal eject cleanup path.
+
+### Detach
+
+When the operator detaches or the terminal closes while sessions are still alive, the attach client exits but PID 1 and the session PTYs continue running. `jackin hardline` can reconnect to the daemon later. The DinD sidecar, network, and certs volume remain while the role container is preserved. This is separate from **Exit**: detach is the keep-running path, while **Exit** is the stop-and-clean-up path.
+
+### Crash Or Forced Stop
+
+If the role container exits non-zero or is OOM-killed, jackin❯ records crash state and removes the DinD sidecar, network, and certs volume. If Docker sends `SIGTERM` to the role container, PID 1 shuts down the daemon and sessions as the container namespace exits.
+
+## What Persists Across Session Exit
+
+| Thing | Persists? | Notes |
+|---|---|---|
+| Agent conversation history | Yes | Stored in the per-instance durable home mount on the host |
+| Agent auth tokens | Yes (per auth mode) | Depends on the configured auth forwarding mode |
+| Files written in the mounted workspace | Yes | Host-side mount |
+| In-container packages installed ad hoc | No | Writable layer is lost on container stop/removal |
+| DinD images | No | DinD state is recreated with the sidecar |
+| Capsule session layout/state | No | Sessions are recreated by `hardline --new` or the next `load` |
+
+## Debugging Capsule Crashes (Symbolicated Build)
+
+When a container exits with code 101 (Rust panic) and the backtrace in `~/.jackin/data/<container>/state/multiplexer.log` shows only `<unknown>` frames, the capsule binary was built in the default `release` profile which strips all symbols. Rebuild with the `capsule-debug` profile to get resolved frame names.
+
+### Build the debug capsule
+
+```bash
+# build once — output is jackin-capsule-debug in the standard cache path
+eval "$(cargo run --bin build-jackin-capsule -- --profile debug --export)"
+# --debug is an alias for --profile debug
+eval "$(cargo run --bin build-jackin-capsule -- --debug --export)"
+```
+
+The debug capsule uses `[profile.capsule-debug]` in <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> (inherits release optimisation, retains symbols + DWARF line tables, does **not** strip). The resulting binary is ~10× larger but is otherwise byte-compatible with the release capsule.
+
+### Launch with the debug capsule
+
+```bash
+# JACKIN_CAPSULE_BIN is already set from the eval above
+RUST_BACKTRACE=full cargo run --bin jackin -- load the-architect . --debug
+```
+
+Set `RUST_BACKTRACE=full` so the panic hook's `Backtrace::force_capture()` in <RepoFile path="crates/jackin-capsule/src/logging.rs">crates/jackin-capsule/src/logging.rs</RepoFile> emits the full stack. The backtrace is written to `~/.jackin/data/<container>/state/multiplexer.log`; the diagnostics run log (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`) records the `capsule_log` path so you can locate it from the run id alone.
+
+For a controlled symbolication smoke, set `JACKIN_CAPSULE_FORCE_PANIC=1` on the host launch. The host passes it through to the container only for that run; the capsule initializes logging first, then intentionally panics with a stable diagnostics message so the run JSONL's `capsule_log` path can be checked for resolved `crates/jackin-capsule/...` frames.
+
+```bash
+eval "$(cargo run --bin build-jackin-capsule -- --profile debug --export)"
+JACKIN_CAPSULE_FORCE_PANIC=1 RUST_BACKTRACE=full \
+  cargo run --bin jackin -- --debug load the-architect . --agent claude
+```
+
+### Triage flow
+
+1. Reproduce the crash with the debug capsule and `RUST_BACKTRACE=full`.
+2. Share the run id printed at launch start.
+3. Read `multiplexer.log` at the `capsule_log` path in the run JSONL. The panic site now resolves to `function_name at file.rs:line`.
+
+The panic hook and `Backtrace::force_capture()` are always present — only the debug binary adds the symbol table that makes them useful.
+
+## Interaction Diagram
+
+```text
+jackin load
+  -> docker run -d ... <image> claude
+       -> jackin-capsule PID 1 spawns initial Claude PTY
+  -> docker exec -it <container> jackin-capsule
+       -> attach client renders the daemon session
+
+running container
+  -> hardline
+       -> docker exec -it <container> jackin-capsule
+  -> hardline --new --agent codex
+       -> docker exec -it <container> jackin-capsule new codex
+       -> daemon spawns Codex PTY with JACKIN_AGENT=codex
+  -> hardline --shell
+       -> docker exec -it <container> jackin-capsule new
+       -> daemon spawns zsh PTY without JACKIN_AGENT
+
+last live PTY exits
+  -> daemon exits
+  -> Docker reports container stopped
+  -> host cleanup removes role container, DinD, cert volume, and network
+```

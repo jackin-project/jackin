@@ -7,7 +7,7 @@ title: "Move documentation to a separate repository"
 ## Problem
 
 The Fumadocs documentation site currently lives inside this
-repo under `docs/` (entry point: <RepoFile path="docs/source.config.ts" />, with sidebar metadata in `docs/content/docs/**/meta.json`).
+repo under `docs/` (entry point: <RepoFile path="docs/source.config.ts">docs/source.config.ts</RepoFile>, with sidebar metadata in `docs/content/docs/**/meta.json`).
 That worked while jackin❯ was a
 single Rust crate, but the project is now an **ecosystem of GitHub
 repositories**:
@@ -48,7 +48,7 @@ is enforced by physical co-location:
 
 - A behaviour change in `src/cli/**` ships with the matching update to
   `docs/content/docs/commands/<cmd>.mdx` in the same commit.
-- The per-PR contract in <RepoFile path="PROJECT_STRUCTURE.md" /> ("Code
+- The per-PR contract in <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> ("Code
   ↔ Docs Cross-Reference" table) is enforceable because both sides are
   in the same diff.
 - The PR review surface naturally includes docs.
@@ -158,11 +158,11 @@ Doing this without breaking anything is the primary risk.
   filter-repo` or `git subtree split`).
 - Switch the GitHub Actions deploy workflow.
 - Delete `docs/` from this repo in the same release cut, and update
-  every reference (<RepoFile path="PROJECT_STRUCTURE.md" />,
-  <RepoFile path="AGENTS.md" />, <RepoFile path="docs/AGENTS.md" />,
+  every reference (<RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile>,
+  <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>, <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile>,
   and the docs cross-reference table).
 
-Per <RepoFile path="AGENTS.md" /> ("Project status: pre-release"), the
+Per <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> ("Project status: pre-release"), the
 move can be a hard cut — no compatibility shim, no parallel docs trees.
 
 ## Inspirations / prior art
@@ -200,16 +200,16 @@ When this lands, the following should all be true:
    the reviewer.
 4. `PROJECT_STRUCTURE.md` and the cross-reference table are updated to
    point at the new repo and explain the new flow.
-5. The freshness check from the docs site's own <RepoFile path="docs/AGENTS.md" />
+5. The freshness check from the docs site's own <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile>
    ("Roadmap sidebar discipline", `<RepoFile />` validation, lychee
    link checks) is preserved or improved.
 
 ## Related
 
-- [Codebase Map](/reference/codebase-map/) — must be updated to point
+- [Codebase Map](/reference/getting-oriented/codebase-map/) — must be updated to point
   at the new repo when this lands.
-- [split workspace-file layout](/reference/configuration/#one-file-per-workspace-by-design) — orthogonal, but in the same "configuration / workflow ergonomics" cluster.
+- [split workspace-file layout](/reference/runtime/configuration/#one-file-per-workspace-by-design) — orthogonal, but in the same "configuration / workflow ergonomics" cluster.
 - [Developer Reference Fumadocs section](/reference/roadmap/developer-reference-setup/) — also a docs-discoverability item, since both depend on docs being easy to find and edit.
-- <RepoFile path="PROJECT_STRUCTURE.md" /> — the "Code ↔ Docs
+- <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> — the "Code ↔ Docs
   Cross-Reference" table is the single biggest piece of in-repo state
   that has to migrate or be re-enforced.

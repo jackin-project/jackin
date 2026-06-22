@@ -1,0 +1,182 @@
+name: Rust Nextest Packages
+
+on:
+  workflow_call:
+    inputs:
+      runner-configs-json:
+        description: JSON array of runner lane configs. Each item has lane and JSON-encoded runner fields.
+        required: true
+        type: string
+      all-features:
+        description: Run each package with all Cargo features enabled.
+        required: true
+        type: boolean
+      cache-shared-key:
+        description: Shared Rust cache namespace for this nextest lane.
+        required: true
+        type: string
+    secrets:
+      GH_READONLY_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(inputs.runner-configs-json) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo nextest prepare (${{ matrix.config.lane }})
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_NET_RETRY: "10"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache mise cargo tools
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.local/share/mise/installs/cargo-*
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-${{ hashFiles('mise.toml') }}
+          restore-keys: |
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          install_args: "rust cargo:cargo-nextest"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: ${{ inputs.cache-shared-key }}
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          # One workspace-level nextest cache per runner lane. The package
+          # matrix restores this exact cache read-only; per-package cache keys
+          # fragment the workspace graph and force cold downloads/builds. This
+          # cache intentionally keeps workspace artifacts because they are the
+          # prepared output consumed by the per-crate fan-out.
+      - name: Build nextest binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          attempt=1
+          until cargo fetch --locked; do
+            if [ "$attempt" -ge 3 ]; then
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+            attempt="$((attempt + 1))"
+          done
+
+          args=(--workspace --no-run --no-tests=pass --color=always --locked)
+          if [ "${{ inputs.all-features }}" = "true" ]; then
+            args+=(--all-features)
+          fi
+          cargo nextest run "${args[@]}"
+
+          if [ "${{ inputs.all-features }}" = "true" ]; then
+            cargo nextest run \
+              -p jackin \
+              --features e2e \
+              --profile docker-e2e \
+              --no-run \
+              --color=always \
+              --locked
+            cargo build -p jackin-capsule --bin jackin-capsule --locked
+          fi
+
+  packages:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(inputs.runner-configs-json) }}
+        package:
+          - jackin
+          - jackin-build-meta
+          - jackin-capsule
+          - jackin-config
+          - jackin-console
+          - jackin-core
+          - jackin-diagnostics
+          - jackin-docker
+          - jackin-env
+          - jackin-image
+          - jackin-launch
+          - jackin-manifest
+          - jackin-pr-trailers
+          - jackin-protocol
+          - jackin-runtime
+          - jackin-term
+          - jackin-tui
+          - jackin-tui-lookbook
+          - jackin-xtask
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo nextest ${{ matrix.package }} (${{ matrix.config.lane }})
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_NET_RETRY: "10"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache mise cargo tools
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.local/share/mise/installs/cargo-*
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-${{ hashFiles('mise.toml') }}
+          restore-keys: |
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          install_args: "rust cargo:cargo-nextest"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: ${{ inputs.cache-shared-key }}
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          save-if: "false"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback.
+          # The prepare job owns saving this workspace cache; package jobs only
+          # restore it so the matrix cannot create 19 isolated target caches.
+      - name: Run package tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          attempt=1
+          until cargo fetch --locked; do
+            if [ "$attempt" -ge 3 ]; then
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+            attempt="$((attempt + 1))"
+          done
+
+          args=(-p "${{ matrix.package }}" --no-tests=pass --color=always --locked)
+          if [ "${{ inputs.all-features }}" = "true" ]; then
+            args+=(--all-features)
+          fi
+          cargo nextest run "${args[@]}"

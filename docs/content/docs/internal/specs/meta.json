@@ -1,0 +1,9 @@
+{
+  "title": "Behavioral Specs",
+  "pages": [
+    "index",
+    "auth-source-folder-sync",
+    "runtime-launch",
+    "op-picker"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "title": "Developer Reference",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "architecture",
+    "code-tour",
+    "specs"
+  ]
+}

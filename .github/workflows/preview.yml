@@ -27,6 +27,8 @@ jobs:
     outputs:
       source: ${{ steps.filter.outputs.source }}
       sha: ${{ steps.source.outputs.sha }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+      version: ${{ steps.meta.outputs.version }}
     steps:
       - name: Resolve source SHA
         id: source
@@ -44,7 +46,7 @@ jobs:
             echo "sha=${WORKFLOW_RUN_SHA}" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ steps.source.outputs.sha }}
           fetch-depth: 0
@@ -128,10 +130,49 @@ jobs:
 
           echo "source=$source" >> "$GITHUB_OUTPUT"
 
+      - name: Compute preview metadata
+        id: meta
+        if: steps.filter.outputs.source == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FULL_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          base_version=${base_version%-dev}
+          short_sha=$(printf '%s' "$FULL_SHA" | cut -c1-7)
+          # Derive the preview counter from GitHub's server-side commit history
+          # instead of `git rev-list --count HEAD` so the version stays
+          # monotonic even if the runner checkout is unexpectedly shallow.
+          # shellcheck disable=SC2016
+          graphql_query='query($owner: String!, $name: String!, $oid: GitObjectID!) { repository(owner: $owner, name: $name) { object(oid: $oid) { ... on Commit { history(first: 1) { totalCount } } } } }'
+          commit_count=$(
+            jq -cn \
+              --arg query "$graphql_query" \
+              --arg owner "$GITHUB_REPOSITORY_OWNER" \
+              --arg name "${GITHUB_REPOSITORY#*/}" \
+              --arg oid "$FULL_SHA" \
+              '{query: $query, variables: {owner: $owner, name: $name, oid: $oid}}' |
+              curl -fsSL \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Content-Type: application/json" \
+                --data @- \
+                https://api.github.com/graphql |
+              jq -er '.data.repository.object.history.totalCount'
+          )
+          {
+            echo "full_sha=$FULL_SHA"
+            echo "short_sha=$short_sha"
+            echo "version=${base_version}-preview.${commit_count}+${short_sha}"
+          } >> "$GITHUB_OUTPUT"
+
   build-preview:
     needs: source-changed
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -151,34 +192,38 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             zigbuild_target: x86_64-unknown-linux-gnu.2.17
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        with:
-          install_args: "rust zig cargo:cargo-zigbuild"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - run: rustup target add ${{ matrix.target }}
-      - name: Cache Cargo registry
+      - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
-            cargo-registry-${{ runner.os }}-
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache mise cargo tools
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.local/share/mise/installs/cargo-*
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-${{ hashFiles('mise.toml') }}
+          restore-keys: |
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          install_args: "rust zig cargo:cargo-zigbuild cosign syft"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: ${{ github.job }}-${{ matrix.target }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
+      - run: rustup target add ${{ matrix.target }}
       - name: Cache macOS SDK
         if: contains(matrix.target, 'apple')
         id: sdk-cache
@@ -202,6 +247,7 @@ jobs:
       - name: Build
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
+          JACKIN_VERSION_OVERRIDE: ${{ needs.source-changed.outputs.version }}
         run: cargo zigbuild --release --locked --target "$ZIGBUILD_TARGET"
       - name: Package
         env:
@@ -212,18 +258,31 @@ jobs:
             -C "target/${TARGET}/release" \
             jackin jackin-role
           sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
+          echo "archive=$archive" >> "$GITHUB_ENV"
+
+      - name: Sign, SBOM, and attest archive
+        uses: ./.github/actions/sign-and-attest-archive
+        with:
+          archive: ${{ env.archive }}
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jackin-${{ matrix.target }}
           path: |
             jackin-${{ matrix.target }}.tar.gz
             jackin-${{ matrix.target }}.tar.gz.sha256
+            jackin-${{ matrix.target }}.tar.gz.bundle
+            jackin-${{ matrix.target }}.tar.gz.sbom.json
 
 
   build-jackin-capsule:
     needs: source-changed
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -237,46 +296,43 @@ jobs:
             zigbuild_target: x86_64-unknown-linux-gnu.2.17
             arch: amd64
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        with:
-          install_args: "rust zig cargo:cargo-zigbuild"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - run: rustup target add ${{ matrix.target }}
-      - name: Cache Cargo registry
+      - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
-            cargo-registry-${{ runner.os }}-
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache mise cargo tools
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.local/share/mise/installs/cargo-*
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-${{ hashFiles('mise.toml') }}
+          restore-keys: |
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          install_args: "rust zig cargo:cargo-zigbuild cosign syft"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: ${{ github.job }}-${{ matrix.target }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
+      - run: rustup target add ${{ matrix.target }}
       - name: Build
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
-          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
-        run: |
-          # Compute version string in the same format as build.rs:
-          # "{CARGO_PKG_VERSION}+{7-char-sha}" so jackin-capsule --version
-          # matches what the host jackin CLI reports.
-          base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          short_sha=$(printf '%s' "$FULL_SHA" | cut -c1-7)
-          export JACKIN_VERSION_OVERRIDE="${base_version}+${short_sha}"
-          cargo zigbuild --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
+          JACKIN_VERSION_OVERRIDE: ${{ needs.source-changed.outputs.version }}
+        run: cargo zigbuild --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
       - name: Publish binary as release asset
         env:
           ARCH: ${{ matrix.arch }}
@@ -288,12 +344,21 @@ jobs:
             -C "target/${TARGET}/release" \
             jackin-capsule
           sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
+          echo "archive=$archive" >> "$GITHUB_ENV"
+
+      - name: Sign, SBOM, and attest archive
+        uses: ./.github/actions/sign-and-attest-archive
+        with:
+          archive: ${{ env.archive }}
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jackin-capsule-${{ matrix.target }}
           path: |
             jackin-capsule-${{ matrix.target }}.tar.gz
             jackin-capsule-${{ matrix.target }}.tar.gz.sha256
+            jackin-capsule-${{ matrix.target }}.tar.gz.bundle
+            jackin-capsule-${{ matrix.target }}.tar.gz.sbom.json
 
   publish-preview:
     needs: [source-changed, build-preview, build-jackin-capsule]
@@ -301,8 +366,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
           fetch-depth: 0
@@ -339,43 +405,30 @@ jobs:
               ;;
           esac
 
-      - name: Compute preview metadata
-        id: meta
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
+      - name: Read platform SHA256s
+        id: shas
         run: |
-          base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          base_version=${base_version%-dev}
-          short_sha=$(printf '%s' "$FULL_SHA" | cut -c1-7)
-          # Derive the preview counter from GitHub's server-side commit history
-          # instead of `git rev-list --count HEAD` so the version stays
-          # monotonic even if the runner checkout is unexpectedly shallow.
-          graphql_query='query($owner: String!, $name: String!, $oid: GitObjectID!) { repository(owner: $owner, name: $name) { object(oid: $oid) { ... on Commit { history(first: 1) { totalCount } } } } }'
-          commit_count=$(
-            jq -cn \
-              --arg query "$graphql_query" \
-              --arg owner "$GITHUB_REPOSITORY_OWNER" \
-              --arg name "${GITHUB_REPOSITORY#*/}" \
-              --arg oid "$FULL_SHA" \
-              '{query: $query, variables: {owner: $owner, name: $name, oid: $oid}}' |
-              curl -fsSL \
-                -H "Authorization: Bearer $GITHUB_TOKEN" \
-                -H "Content-Type: application/json" \
-                --data @- \
-                https://api.github.com/graphql |
-              jq -er '.data.repository.object.history.totalCount'
-          )
           {
-            echo "full_sha=$FULL_SHA"
-            echo "short_sha=$short_sha"
-            echo "version=${base_version}-preview.${commit_count}+${short_sha}"
+            echo "arm64_macos=$(cat artifacts/jackin-aarch64-apple-darwin.tar.gz.sha256)"
+            echo "x86_macos=$(cat artifacts/jackin-x86_64-apple-darwin.tar.gz.sha256)"
+            echo "arm64_linux=$(cat artifacts/jackin-aarch64-unknown-linux-gnu.tar.gz.sha256)"
+            echo "x86_linux=$(cat artifacts/jackin-x86_64-unknown-linux-gnu.tar.gz.sha256)"
+            echo "capsule_arm64_linux=$(cat artifacts/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256)"
+            echo "capsule_x86_linux=$(cat artifacts/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256)"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Produce and sign capsule manifest
+        uses: ./.github/actions/sign-capsule-manifest
+        with:
+          version: ${{ needs.source-changed.outputs.version }}
+          arm64-sha: ${{ steps.shas.outputs.capsule_arm64_linux }}
+          x86-sha: ${{ steps.shas.outputs.capsule_x86_linux }}
+          github-token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Publish preview GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.meta.outputs.version }}
+          VERSION: ${{ needs.source-changed.outputs.version }}
           SHA: ${{ needs.source-changed.outputs.sha }}
         run: |
           set -euo pipefail
@@ -383,8 +436,14 @@ jobs:
           assets=(
             artifacts/jackin-[ax]*.tar.gz
             artifacts/jackin-[ax]*.tar.gz.sha256
+            artifacts/jackin-[ax]*.tar.gz.bundle
+            artifacts/jackin-[ax]*.tar.gz.sbom.json
             artifacts/jackin-capsule-*.tar.gz
             artifacts/jackin-capsule-*.tar.gz.sha256
+            artifacts/jackin-capsule-*.tar.gz.bundle
+            artifacts/jackin-capsule-*.tar.gz.sbom.json
+            artifacts/capsule-manifest.json
+            artifacts/capsule-manifest.json.bundle
           )
 
           # The repository protects tags from deletion and non-fast-forward
@@ -415,17 +474,7 @@ jobs:
             exit "$status"
           fi
 
-      - name: Read platform SHA256s
-        id: shas
-        run: |
-          echo "arm64_macos=$(cat artifacts/jackin-aarch64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "x86_macos=$(cat artifacts/jackin-x86_64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "arm64_linux=$(cat artifacts/jackin-aarch64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "x86_linux=$(cat artifacts/jackin-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "capsule_arm64_linux=$(cat artifacts/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-          echo "capsule_x86_linux=$(cat artifacts/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: jackin-project/homebrew-tap
           ref: main
@@ -448,8 +497,8 @@ jobs:
 
       - name: Rewrite preview formula
         env:
-          VERSION: ${{ steps.meta.outputs.version }}
-          FULL_SHA: ${{ steps.meta.outputs.full_sha }}
+          VERSION: ${{ needs.source-changed.outputs.version }}
+          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
           ARM64_SHA256: ${{ steps.shas.outputs.arm64_macos }}
           X86_SHA256: ${{ steps.shas.outputs.x86_macos }}
           LINUX_ARM64_SHA256: ${{ steps.shas.outputs.arm64_linux }}
@@ -533,10 +582,11 @@ jobs:
         id: pr_body
         env:
           OLD_SHA: ${{ steps.prev.outputs.old_sha }}
-          NEW_SHA: ${{ steps.meta.outputs.full_sha }}
-          VERSION: ${{ steps.meta.outputs.version }}
+          NEW_SHA: ${{ needs.source-changed.outputs.sha }}
+          VERSION: ${{ needs.source-changed.outputs.version }}
         run: |
           body_file="${RUNNER_TEMP}/pr-body.md"
+          # shellcheck disable=SC2016
           {
             printf 'Automated preview formula update for **jackin@preview %s**.\n\n' "$VERSION"
             printf -- '- Source: [`%s`](https://github.com/jackin-project/jackin/commit/%s)\n' \
@@ -569,8 +619,8 @@ jobs:
         working-directory: homebrew-tap
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          VERSION: ${{ steps.meta.outputs.version }}
-          SHORT_SHA: ${{ steps.meta.outputs.short_sha }}
+          VERSION: ${{ needs.source-changed.outputs.version }}
+          SHORT_SHA: ${{ needs.source-changed.outputs.short_sha }}
           PR_BODY_FILE: ${{ steps.pr_body.outputs.body_file }}
         run: |
           git add Formula/jackin-preview.rb

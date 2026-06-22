@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "integration test fixture setup should fail immediately with source location"
+)]
+
 use std::io::Write as _;
 use std::os::unix::fs::symlink;
 use std::process::{Command, Stdio};
@@ -11,12 +16,15 @@ fn run_hook(input: &str, source: Option<&str>) -> String {
     let message_path = temp.path().join("COMMIT_EDITMSG");
     let hook_path = temp.path().join("prepare-commit-msg");
     let git_config_path = temp.path().join("gitconfig");
+    let dco_cache_path = temp.path().join("git-dco-identity");
+    let xdg_config_home = temp.path().join("xdg-config");
     std::fs::write(&message_path, input).unwrap();
     std::fs::write(
         &git_config_path,
         "[user]\n\tname = Test User\n\temail = test@example.com\n",
     )
     .unwrap();
+    std::fs::create_dir(&xdg_config_home).unwrap();
     symlink(env!("CARGO_BIN_EXE_jackin-capsule"), &hook_path).unwrap();
 
     let mut command = Command::new(&hook_path);
@@ -24,12 +32,20 @@ fn run_hook(input: &str, source: Option<&str>) -> String {
         .arg(&message_path)
         .current_dir(temp.path())
         .env("GIT_CONFIG_GLOBAL", &git_config_path)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("HOME", temp.path())
+        .env("XDG_CONFIG_HOME", &xdg_config_home)
+        .env("JACKIN_GIT_DCO_IDENTITY_CACHE", &dco_cache_path)
         .env("JACKIN_AGENT", "codex")
         .env("JACKIN_GIT_COAUTHOR_TRAILER", "1")
         .env("JACKIN_GIT_DCO", "1");
     if let Some(source) = source {
         command.arg(source);
     }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "integration test invokes the hook subprocess directly"
+    )]
     let output = command.output().unwrap();
     assert!(
         output.status.success(),

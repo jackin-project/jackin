@@ -13,7 +13,7 @@
     "gen-icons": "bun run scripts/gen-icons.ts",
     "check:repo-links": "bun run scripts/check-repo-links.ts",
     "check:roadmap-sidebar": "bun run scripts/check-roadmap-sidebar.ts",
-    "check:links": "lychee --config lychee.toml --include-fragments --remap \"https://jackin.tailrocks.com/(.*) file://$PWD/.output/public/\\$1\" --remap \"https://github.com/jackin-project/jackin/edit/main/(.*) file://$PWD/../\\$1\" --remap \"https://github.com/jackin-project/jackin/blob/main/(.*) file://$PWD/../\\$1\" --root-dir \"$PWD/.output/public\" '.output/public/**/*.html'",
+    "check:links": "lychee --config lychee.toml --include-fragments --remap \"https://jackin.tailrocks.com/(.*) file://$PWD/.output/public/\\$1\" --remap \"https://github.com/jackin-project/jackin/edit/main/(.*) file://$PWD/../\\$1\" --remap \"https://github.com/jackin-project/jackin/blob/main/(.*) file://$PWD/../\\$1\" --remap \"https://github.com/jackin-project/jackin/issues https://api.github.com/repos/jackin-project/jackin/issues\" --remap \"https://github.com/([^/]+)/([^/]+)/blob/([^/]+)/(.*) https://api.github.com/repos/\\$1/\\$2/contents/\\$4?ref=\\$3\" --remap \"https://github.com/([^/]+)/([^/]+)/tree/([^/]+)/(.*) https://api.github.com/repos/\\$1/\\$2/contents/\\$4?ref=\\$3\" --root-dir \"$PWD/.output/public\" '.output/public/**/*.html'",
     "check:links:fresh": "bun run check:repo-links && bun run build && bun run check:links",
     "test": "bun test"
   },
@@ -49,7 +49,7 @@
     "@fontsource/inter": "5.2.8",
     "@fontsource/jetbrains-mono": "5.2.8",
     "@types/bun": "1.3.14",
-    "@types/react": "19.2.15",
+    "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "typescript": "6.0.3"
   }

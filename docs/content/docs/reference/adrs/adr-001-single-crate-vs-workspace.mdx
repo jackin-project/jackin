@@ -1,0 +1,30 @@
+---
+title: "ADR-001: Single-crate vs Cargo workspace"
+description: "Why jackin❯ started as a single crate and when it transitioned to a Cargo workspace."
+---
+
+**Status**: Accepted
+**Current state**: Cargo workspace — 17 member crates under `crates/`, root `jackin` binary crate at `crates/jackin/`. Total ~170 K lines of Rust.
+**Date**: 2026-05-30
+**Deciders**: Operator + agent
+
+## Context
+
+Rust projects can live in one crate (`src/` only) or in a Cargo workspace (`workspace.members = [...]`). The initial choice was to stay single-crate and delay workspace adoption until the cost was justified. The threshold was set at 150 K lines of Rust source.
+
+Reference projects that stay single-crate at comparable scale: `starship` (~120 K LOC at the time of this decision), `fd-find`. Neither uses a workspace despite large codebases.
+
+## Decision
+
+**Phase 1 — stay single-crate while total Rust LOC < 150 K.** All code lived in one crate. No `crates/` directory. Fast `cargo build`, minimal <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> overhead, no intra-workspace dependency graph to maintain.
+
+**Trigger for workspace adoption**: either (a) total Rust LOC exceeds 150 K, or (b) a type from the core codebase is needed by external tooling (an `jackin-core` use case). Whichever comes first.
+
+**Phase 2 — workspace adopted (current state).** The codebase crossed ~170 K lines as surface-specific crates (`jackin-capsule`, `jackin-launch`, `jackin-console`, `jackin-tui`, `jackin-tui-lookbook`, `jackin-protocol`, `jackin-build-meta`) were extracted. The workspace root is <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> with `members = [...]`; the `jackin` binary crate at `crates/jackin/` remains the primary binary. The `crates/` directory is the canonical home for all member crates.
+
+## Consequences
+
+- Incremental builds are faster per-crate: changing `jackin-capsule` does not recompile `jackin-tui`.
+- The root `jackin` crate is still the entry point for `cargo build --bin jackin`; operators and CI do not change their build commands.
+- Cross-crate `pub` boundaries enforce the TUI architecture boundary rule: `jackin-console` cannot accidentally call `jackin-capsule` internals.
+- New code that serves only one surface starts in that surface's crate; code used by two or more surfaces moves to a shared crate (`jackin-tui`, `jackin-protocol`).

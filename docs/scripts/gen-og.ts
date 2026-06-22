@@ -192,6 +192,35 @@ function Card({ width, height }: { width: number; height: number }) {
   )
 }
 
+// Static rain field for the committed README hero SVG. Built from the same
+// rainEngine char pool and phosphor ramp as the live site and OG cards so the
+// rain reads identically on every surface.
+function rainSvgField(width: number, height: number): string {
+  const rng = seeded(0x1acc1a11)
+  const state = createRainState(RAIN_COLS, RAIN_ROWS, rng)
+  for (let i = 0; i < 80; i++) tickRain(state, rng)
+
+  const cellW = width / RAIN_COLS
+  const cellH = height / RAIN_ROWS
+  const esc = (ch: string) => (ch === '&' ? '&amp;' : ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch)
+  const cells: string[] = []
+
+  for (let r = 0; r < RAIN_ROWS; r++) {
+    for (let c = 0; c < RAIN_COLS; c++) {
+      const cell = state.grid[r][c]
+      if (!cell) continue
+      const color = ageToColor(cell.age)
+      if (!color) continue
+      const dim = r >= 7 && r <= 16 && c >= 28 && c <= 64
+      const x = (c * cellW + cellW / 2).toFixed(1)
+      const y = (r * cellH + cellH * 0.72).toFixed(1)
+      cells.push(`<text x="${x}" y="${y}" fill="${color}" opacity="${dim ? 0.12 : 0.9}">${esc(cell.ch)}</text>`)
+    }
+  }
+
+  return cells.join('\n    ')
+}
+
 async function generate(width: number, height: number, output: string) {
   const response = new ImageResponse(React.createElement(Card, { width, height }), {
     width,
@@ -211,11 +240,8 @@ async function generate(width: number, height: number, output: string) {
 
 const readmeHeroSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="jackin❯ by tailrocks">
   <rect width="1280" height="640" fill="${BG}"/>
-  <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="22" font-weight="600" fill="${ACCENT}" opacity="0.26">
-    <text x="42" y="70">j a c k i n ❯ │ ┆ j ❯ │ ┇ j a c k i n ❯ │ ┆ j ❯</text>
-    <text x="118" y="138">┆ j ❯ │ j a c k i n ❯ ┇ │ j ❯ │ j a c k i n ❯</text>
-    <text x="78" y="514">j ❯ │ ┇ j a c k i n ❯ │ ┆ j ❯ │ j a c k i n ❯</text>
-    <text x="172" y="582">│ j a c k i n ❯ ┆ j ❯ │ ┇ j a c k i n ❯ │</text>
+  <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="22" font-weight="600" text-anchor="middle">
+    ${rainSvgField(1280, 640)}
   </g>
   <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">
     <text x="580" y="322" font-size="138" font-weight="600" fill="${TEXT}">jackin</text>

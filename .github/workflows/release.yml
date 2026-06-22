@@ -24,7 +24,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Require main for manual releases
         if: github.event_name == 'workflow_dispatch'
@@ -52,39 +52,12 @@ jobs:
 
   test:
     needs: check-version
-    runs-on: ubuntu-latest
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_TERM_COLOR: always
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        with:
-          install_args: "rust cargo:cargo-nextest"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-
-      - name: Install mold linker
-        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
-      - run: cargo nextest run --color=always
+    uses: ./.github/workflows/rust-nextest.yml
+    with:
+      runner-configs-json: '[{"lane":"Release","runner":"\"ubuntu-latest\""}]'
+      all-features: false
+      cache-shared-key: nextest-default-workspace-v1
+    secrets: inherit
 
   build:
     needs: [check-version, test]
@@ -102,49 +75,60 @@ jobs:
             os: ubuntu-latest
             zigbuild: true
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       VERSION: ${{ needs.check-version.outputs.version }}
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        with:
-          install_args: "rust"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - run: rustup target add ${{ matrix.target }}
-      - name: Cache Cargo registry
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
-            cargo-registry-${{ runner.os }}-
-
-      - name: Install mold linker
-        if: runner.os == 'Linux'
-        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
-
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache mise cargo tools
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.local/share/mise/installs/cargo-*
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-${{ hashFiles('mise.toml') }}
+          restore-keys: |
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          install_args: "rust cosign syft"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: ${{ github.job }}-${{ matrix.target }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
+      - run: rustup target add ${{ matrix.target }}
       - name: Install cargo-zigbuild
         if: matrix.zigbuild
-        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "zig cargo:cargo-zigbuild"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: ${{ github.job }}-${{ matrix.target }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
       - name: Build
         env:
           JACKIN_VERSION_OVERRIDE: ${{ needs.check-version.outputs.version }}
@@ -160,6 +144,12 @@ jobs:
           archive="jackin-${VERSION}-${{ matrix.target }}.tar.gz"
           tar -czf "$archive" -C "target/${{ matrix.target }}/release" jackin jackin-role
           shasum -a 256 "$archive" > "$archive.sha256"
+          echo "archive=$archive" >> "$GITHUB_ENV"
+
+      - name: Sign, SBOM, and attest archive
+        uses: ./.github/actions/sign-and-attest-archive
+        with:
+          archive: ${{ env.archive }}
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -167,10 +157,16 @@ jobs:
           path: |
             jackin-*.tar.gz
             jackin-*.tar.gz.sha256
+            jackin-*.tar.gz.bundle
+            jackin-*.tar.gz.sbom.json
 
   build-jackin-capsule:
     needs: [check-version, test]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -182,32 +178,36 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             zigbuild_target: x86_64-unknown-linux-gnu.2.17
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        with:
-          install_args: "rust zig cargo:cargo-zigbuild"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - run: rustup target add ${{ matrix.target }}
-      - name: Cache Cargo registry
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
-            cargo-registry-${{ runner.os }}-
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache mise cargo tools
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.local/share/mise/installs/cargo-*
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-${{ hashFiles('mise.toml') }}
+          restore-keys: |
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          install_args: "rust zig cargo:cargo-zigbuild cosign syft"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: ${{ github.job }}-${{ matrix.target }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
+      - run: rustup target add ${{ matrix.target }}
       - name: Build
         env:
           JACKIN_VERSION_OVERRIDE: ${{ needs.check-version.outputs.version }}
@@ -223,18 +223,28 @@ jobs:
             -C "target/${TARGET}/release" \
             jackin-capsule
           sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
+          echo "archive=$archive" >> "$GITHUB_ENV"
+
+      - name: Sign, SBOM, and attest archive
+        uses: ./.github/actions/sign-and-attest-archive
+        with:
+          archive: ${{ env.archive }}
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jackin-capsule-${{ matrix.target }}
           path: |
             jackin-capsule-*.tar.gz
             jackin-capsule-*.tar.gz.sha256
+            jackin-capsule-*.tar.gz.bundle
+            jackin-capsule-*.tar.gz.sbom.json
 
   release:
     needs: [check-version, build, build-jackin-capsule]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     outputs:
       arm64_macos: ${{ steps.shas.outputs.arm64_macos }}
       x86_macos: ${{ steps.shas.outputs.x86_macos }}
@@ -245,7 +255,7 @@ jobs:
     env:
       VERSION: ${{ needs.check-version.outputs.version }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -264,12 +274,22 @@ jobs:
           read_sha() {
             awk '{print $1}' "artifacts/$1.sha256"
           }
-          echo "arm64_macos=$(read_sha "jackin-${VERSION}-aarch64-apple-darwin.tar.gz")" >> "$GITHUB_OUTPUT"
-          echo "x86_macos=$(read_sha "jackin-${VERSION}-x86_64-apple-darwin.tar.gz")" >> "$GITHUB_OUTPUT"
-          echo "arm64_linux=$(read_sha "jackin-${VERSION}-aarch64-unknown-linux-gnu.tar.gz")" >> "$GITHUB_OUTPUT"
-          echo "x86_linux=$(read_sha "jackin-${VERSION}-x86_64-unknown-linux-gnu.tar.gz")" >> "$GITHUB_OUTPUT"
-          echo "capsule_arm64_linux=$(read_sha "jackin-capsule-${VERSION}-aarch64-unknown-linux-gnu.tar.gz")" >> "$GITHUB_OUTPUT"
-          echo "capsule_x86_linux=$(read_sha "jackin-capsule-${VERSION}-x86_64-unknown-linux-gnu.tar.gz")" >> "$GITHUB_OUTPUT"
+          {
+            echo "arm64_macos=$(read_sha "jackin-${VERSION}-aarch64-apple-darwin.tar.gz")"
+            echo "x86_macos=$(read_sha "jackin-${VERSION}-x86_64-apple-darwin.tar.gz")"
+            echo "arm64_linux=$(read_sha "jackin-${VERSION}-aarch64-unknown-linux-gnu.tar.gz")"
+            echo "x86_linux=$(read_sha "jackin-${VERSION}-x86_64-unknown-linux-gnu.tar.gz")"
+            echo "capsule_arm64_linux=$(read_sha "jackin-capsule-${VERSION}-aarch64-unknown-linux-gnu.tar.gz")"
+            echo "capsule_x86_linux=$(read_sha "jackin-capsule-${VERSION}-x86_64-unknown-linux-gnu.tar.gz")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Produce and sign capsule manifest
+        uses: ./.github/actions/sign-capsule-manifest
+        with:
+          version: ${{ needs.check-version.outputs.version }}
+          arm64-sha: ${{ steps.shas.outputs.capsule_arm64_linux }}
+          x86-sha: ${{ steps.shas.outputs.capsule_x86_linux }}
+          github-token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Create GitHub Release
         env:
@@ -278,8 +298,14 @@ jobs:
           gh release create "v${VERSION}" \
             artifacts/jackin-[0-9]*.tar.gz \
             artifacts/jackin-[0-9]*.tar.gz.sha256 \
+            artifacts/jackin-[0-9]*.tar.gz.bundle \
+            artifacts/jackin-[0-9]*.tar.gz.sbom.json \
             artifacts/jackin-capsule-*.tar.gz \
             artifacts/jackin-capsule-*.tar.gz.sha256 \
+            artifacts/jackin-capsule-*.tar.gz.bundle \
+            artifacts/jackin-capsule-*.tar.gz.sbom.json \
+            artifacts/capsule-manifest.json \
+            artifacts/capsule-manifest.json.bundle \
             --title "v${VERSION}" \
             --generate-notes
 
@@ -291,7 +317,7 @@ jobs:
     needs: [check-version, release]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: jackin-project/homebrew-tap
           ref: main

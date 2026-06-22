@@ -1,0 +1,25 @@
+---
+source: crates/jackin-console/src/tui/view/tests/snapshot/tests.rs
+assertion_line: 245
+expression: rendered
+---
+ jackin'  · settings                                                                      
+                                                                                          
+                                                                                          
+ General   Mounts   Environments   Auth   Trust                                           
+━━━━━━━━━                                                                                 
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│  Co-author trailer         disabled                                                    │
+│  DCO sign-off              disabled                                                    │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+                                                                                          
+       ←→ switch tab   ⇥/↓ enter content   S save settings   Esc back · Ctrl-Q quit

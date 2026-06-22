@@ -3,10 +3,15 @@
   "defaultOpen": false,
   "pages": [
     "../multi-runtime-support",
+    "../alternative-llm-providers",
     "../native-apm-role-support",
+    "../auth-reliability-program",
+    "../auth-overwrite-on-new-tab",
+    "../auth-health-and-visibility",
     "../claude-auth-strategy",
     "../workspace-claude-token-setup",
     "../github-cli-auth-strategy",
-    "../onepassword-integration"
+    "../onepassword-integration",
+    "../agent-launch-flags-api"
   ]
 }

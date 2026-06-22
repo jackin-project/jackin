@@ -34,7 +34,7 @@ Creating a custom agent lets you define a specialized environment for a specific
    Start from the generated file and add the tools your role needs:
 
    ```dockerfile
-   FROM projectjackin/construct:0.3-trixie
+   FROM projectjackin/construct:0.4-trixie
 
    # Install Rust via mise
    RUN mise install rust@stable && mise use --global rust@stable
@@ -81,11 +81,11 @@ Use `jackin role migrate` on your own desktop when you are updating a checked-ou
 Your final stage **must** start from the construct image:
 
 ```dockerfile
-FROM projectjackin/construct:0.3-trixie
+FROM projectjackin/construct:0.4-trixie
 ```
 
 <Aside type="caution">
-The final stage must use a versioned construct tag (e.g. `projectjackin/construct:0.3-trixie`). The floating `:trixie` tag, `:latest`, or any other non-versioned tag fails validation. Renovate can track version bumps automatically — the generated role repo includes a Renovate configuration with a regex versioning rule for construct version pins.
+The final stage must use a versioned construct tag (e.g. `projectjackin/construct:0.4-trixie`). The floating `:trixie` tag, `:latest`, or any other non-versioned tag fails validation. Renovate can track version bumps automatically — the generated role repo includes a Renovate configuration with a regex versioning rule for construct version pins.
 </Aside>
 ### Multi-stage builds are supported
 
@@ -99,7 +99,7 @@ COPY tools/ .
 RUN cargo build --release
 
 # Final stage — must use the construct
-FROM projectjackin/construct:0.3-trixie
+FROM projectjackin/construct:0.4-trixie
 COPY --from=builder /build/target/release/my-tool /usr/local/bin/
 ```
 
@@ -285,7 +285,7 @@ On your **own** fork:
    short name (`your-role`) to load from your fork instead of the
    upstream, use `jackin config trust grant <selector>` and any
    selector-source helpers your jackin❯ release exposes — see the
-   [Configuration File](/reference/configuration/) internals
+   [Configuration File](/reference/runtime/configuration/) internals
    reference if you need the on-disk schema.
 3. Run `jackin load <role> --role-branch <branch> --rebuild`.
 4. When the change is ready, open a PR against the upstream role

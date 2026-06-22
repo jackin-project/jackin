@@ -92,7 +92,7 @@ The implementation PR should prototype several logo directions before choosing o
 |---|---|---|---|---|
 | **A. Prompt sigil** | `j❯` as the primary monogram | Terminal prompt, favicon, package icons | Native to shells; copyable; high distribution through screenshots | Quiet as large standalone artwork unless paired with a richer lockup |
 | **B. Boundary gate** | A minimal doorway/portal made from a vertical boundary plus `❯`, with `j` as the operator entering | Website hero, README banner, social card | Makes the "drop through a boundary into a Construct" idea visible without extra copy | Must stay text-renderable in terminal; easy to overcomplicate |
-| **C. Hardline connector** | `j` shaped as a cable/line feeding into `❯` | README hero, app icon, sticker | Ties the Matrix vocabulary to a concrete connection image | Could become generic cable/plug tech branding if not constrained |
+| **C. Hardline connector** | `j` shaped as a cable/line feeding into `❯` | README hero, app icon, sticker | Ties the hardline vocabulary to a concrete connection image | Could become generic cable/plug tech branding if not constrained |
 | **D. Rain-cut wordmark** | Frozen digital rain field with `jackin❯` cut out or locked bright in the center | `--help`, README hero, OG card | Distinctive, terminal-native, already aligned with the current site | Too noisy for favicon/app icon; should be environment treatment, not the only mark |
 | **E. Wordmark-first lockup** | `jackin❯` over `by tailrocks`, with `j❯` as the small-size extraction | Docs header, README top, website nav | Clear for a young brand; teaches the sigil before using it alone | Less iconically unique until repeated prompt exposure builds memory |
 
@@ -110,6 +110,8 @@ The first implementation chose a three-part system after sketching the terminal,
 
 Boundary-gate and hardline-connector variants were rejected for this pass because they introduced extra geometry that did not reduce cleanly to the terminal prompt mark.
 
+The live animated digital rain on the website and landing page is intentionally left unchanged. Its existing character pool and phosphor-green color ramp are already correct and on-brand; the rebrand does not restyle the live rain, retint it to the chevron green, or rebuild its glyph set from the wordmark characters. The frozen rain-cut treatment above is a separate static treatment for README and social images only, and the brand color tokens do not override the animated rain's existing palette.
+
 ## Brand Invariants
 
 - There are exactly four valid text forms: `j❯`, `j>`, `jackin❯`, and `jackin>`. No other text representation is part of the brand system.
@@ -123,7 +125,7 @@ Boundary-gate and hardline-connector variants were rejected for this pass becaus
 - Rendered documentation should treat `jackin❯` and `j❯` as brand marks where the renderer supports styling: white or black letters chosen by background contrast, bright green `❯`, monospace font, and copyable text. Markdown-only or code-block contexts may use plain unstyled `jackin❯`, but HTML/MDX components, docs headers, README banners, command output examples with ANSI captures, and generated assets should preserve the color split.
 - Icon/favicons use only the short form (`j❯` or `j>` fallback). Do not squeeze the full wordmark into icon surfaces.
 - Wordmark/logotype surfaces use the full form (`jackin❯` or `jackin>` fallback), with separate light and dark colorways: black letters on white/light backgrounds, white letters on black/dark backgrounds, and the same bright green chevron in both.
-- The proposed rebrand retires the trailing-apostrophe wordmark. The implementation PR must update the agent-only spelling rule in <RepoFile path="AGENTS.md" /> at the same time it updates public docs and assets, so the repository does not mix old and new brand rules indefinitely.
+- The proposed rebrand retires the trailing-apostrophe wordmark. The implementation PR must update the agent-only spelling rule in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> at the same time it updates public docs and assets, so the repository does not mix old and new brand rules indefinitely.
 - Rich-text prose should use `jackin❯` when referring to the product or project by name. Plaintext-only environments may use `jackin>`. Compact logo surfaces may use `j❯`, and compact plaintext fallback surfaces may use `j>`. Literal commands, binaries, crates, packages, environment variables, config keys, file paths, labels, selectors, URLs, and code identifiers stay `jackin` only where the reader must type or match the literal identifier.
 - The wordmark and monogram use one monospace font and one weight across all official surfaces. Do not split the `j` and `❯` into different fonts or weights.
 
@@ -225,7 +227,7 @@ The optional first-run or `--version` banner may use a short ASCII wordmark with
 
 ## Web, Docs, and Social Surfaces
 
-Website and docs work should replace the old apostrophe wordmark with the proposed wordmark and tokenized brand colors in one coordinated PR. The current docs title override in <RepoFile path="docs/src/components/chrome/SiteTitle.tsx" /> and theme tokens in <RepoFile path="docs/src/styles/docs-theme.css" /> are likely first-touch files.
+Website and docs work should replace the old apostrophe wordmark with the proposed wordmark and tokenized brand colors in one coordinated PR. The current docs title override in <RepoFile path="docs/src/components/chrome/SiteTitle.tsx">docs/src/components/chrome/SiteTitle.tsx</RepoFile> and theme tokens in <RepoFile path="docs/src/styles/docs-theme.css">docs/src/styles/docs-theme.css</RepoFile> are likely first-touch files.
 
 Docs should make the brand visually recognizable without sacrificing copyability. Where MDX/HTML is available, `jackin❯` should render as one inline brand component with white or black `jackin` text, chosen by background contrast, and a `#5CF07A` chevron; the copied text should still be `jackin❯`. In plain Markdown/code contexts, write `jackin❯` directly and reserve `jackin>` only for documented fallback surfaces.
 
@@ -251,7 +253,7 @@ Required asset outputs:
 - SVG favicon using the actual monogram.
 - Open Graph image at 1200x630 using dark canvas, optional faint grid, wordmark in the top-left quadrant, supporting tagline, site URL, and preview version tag.
 
-The existing public assets under <RepoFile path="docs/public/favicon.svg" />, <RepoFile path="docs/public/apple-touch-icon.png" />, <RepoFile path="docs/public/icon-192.png" />, <RepoFile path="docs/public/icon-512.png" />, <RepoFile path="docs/public/og-image.png" />, and <RepoFile path="docs/public/og-image-github.png" /> should be regenerated together once the spec is accepted.
+The existing public assets under <RepoFile path="docs/public/favicon.svg">docs/public/favicon.svg</RepoFile>, <RepoFile path="docs/public/apple-touch-icon.png">docs/public/apple-touch-icon.png</RepoFile>, <RepoFile path="docs/public/icon-192.png">docs/public/icon-192.png</RepoFile>, <RepoFile path="docs/public/icon-512.png">docs/public/icon-512.png</RepoFile>, <RepoFile path="docs/public/og-image.png">docs/public/og-image.png</RepoFile>, and <RepoFile path="docs/public/og-image-github.png">docs/public/og-image-github.png</RepoFile> should be regenerated together once the spec is accepted.
 
 ## App and Package Surfaces
 
@@ -261,9 +263,9 @@ Inside future desktop/mobile apps, the default surface stays dark, the chevron s
 
 ## Voice
 
-The visual identity and copy should share the same register: terse, terminal-native, slightly formal in the style of an old computing manual. Keep Matrix-coded vocabulary where it is already product language: Operator, Construct, hardline, load, eject, exile, agent-smith, the Architect. Avoid exclamation marks, emojis in marketing copy, "delightful", "magical", and "AI-powered" as a generic modifier.
+The visual identity and copy should share the same register: terse, terminal-native, slightly formal in the style of an old computing manual. Keep the established product vocabulary where it is already product language: Operator, Construct, hardline, load, eject, exile, agent-smith, the Architect. Avoid exclamation marks, emojis in marketing copy, "delightful", "magical", and "AI-powered" as a generic modifier.
 
-After the rebrand lands, prose should use the new wordmark where rich text reliably renders `❯`; plaintext-only contexts may use `jackin>`. Until that implementation PR updates the repository's agent rules, contributors should continue following the current spelling rule in <RepoFile path="AGENTS.md" /> outside this roadmap proposal.
+After the rebrand lands, prose should use the new wordmark where rich text reliably renders `❯`; plaintext-only contexts may use `jackin>`. Until that implementation PR updates the repository's agent rules, contributors should continue following the current spelling rule in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> outside this roadmap proposal.
 
 ## Implementation Plan
 
@@ -272,7 +274,7 @@ After the rebrand lands, prose should use the new wordmark where rich text relia
 3. Choose the system: decide which direction owns the standalone website/icon mark, which owns the prompt, and which owns environmental treatments such as frozen rain.
 4. Freeze the final spec: confirm the mark, chevron character, colors, typography, prohibited treatments, prompt shape, byline lockup, and asset list.
 5. Update repository rules and published docs together: agent spelling policy, README, docs navigation, landing page, public docs references, and any user-facing pages that describe the product name or terminal output.
-6. Run the global brand text sweep: find every prose occurrence of `jackin❯`, `Jackin`, `jackin❯`, and `JACKIN` and replace product/project mentions with `jackin❯`. Use `jackin>` only after confirming the target surface cannot render `❯`. Do not rewrite literal commands, code identifiers, paths, package names, env vars, URLs, or examples where the operator must type `jackin`.
+6. Run the global brand text sweep: find every prose occurrence of `jackin❯`, `jackin❯`, `jackin❯`, and `JACKIN` and replace product/project mentions with `jackin❯`. Use `jackin>` only after confirming the target surface cannot render `❯`. Do not rewrite literal commands, code identifiers, paths, package names, env vars, URLs, or examples where the operator must type `jackin`.
 7. Replace docs/site visual assets: Fumadocs title, landing hero, README hero banner, favicons, app/PWA icons, Open Graph card, and any social-card generation code.
 8. Update CLI and terminal output: frozen `--help` banner, version/splash treatment, jackin-owned status prefixes, Capsule chrome, prompt setup inside role containers, and tests for ANSI color output where practical.
 9. Update package/distribution surfaces: Homebrew metadata, release artifacts, GitHub social preview, and any future desktop/mobile icon source files.
@@ -280,7 +282,7 @@ After the rebrand lands, prose should use the new wordmark where rich text relia
 
 ## Host-Side Effects
 
-Prompt and shell branding are subject to the host-mutation rule in <RepoFile path="AGENTS.md" />. The implementation must not silently edit the operator's host shell files, dotfiles, terminal profile, Git config, repository metadata, or GitHub CLI config. Prompt changes belong inside role containers, jackin-owned runtime scaffolding, or an explicitly surfaced operator opt-in.
+Prompt and shell branding are subject to the host-mutation rule in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>. The implementation must not silently edit the operator's host shell files, dotfiles, terminal profile, Git config, repository metadata, or GitHub CLI config. Prompt changes belong inside role containers, jackin-owned runtime scaffolding, or an explicitly surfaced operator opt-in.
 
 If any future implementation offers to update host-side prompt snippets, shell themes, app icons, repo badges, social metadata, or package-manager metadata in operator-owned repositories, it must show the exact write before applying it and require explicit consent.
 
@@ -324,14 +326,14 @@ If any future implementation offers to update host-side prompt snippets, shell t
 
 ## Related Files
 
-- <RepoFile path="AGENTS.md" /> — current agent-only spelling rule that must change with the rebrand implementation
-- <RepoFile path="README.md" /> — public repository entry point
-- <RepoFile path="docs/src/routes/index.tsx" /> — landing page
-- <RepoFile path="docs/src/components/chrome/SiteTitle.tsx" /> — docs header wordmark
-- <RepoFile path="docs/src/styles/docs-theme.css" /> — docs color and font tokens
-- <RepoFile path="src/tui/output.rs" /> — CLI output helpers and terminal title
-- <RepoFile path="src/tui/animation.rs" /> — current TUI logo animation
-- <RepoFile path="docker/runtime/entrypoint.sh" /> — role-container shell/runtime setup surface
+- <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> — current agent-only spelling rule that must change with the rebrand implementation
+- <RepoFile path="README.md">README.md</RepoFile> — public repository entry point
+- <RepoFile path="docs/src/routes/index.tsx">docs/src/routes/index.tsx</RepoFile> — landing page
+- <RepoFile path="docs/src/components/chrome/SiteTitle.tsx">docs/src/components/chrome/SiteTitle.tsx</RepoFile> — docs header wordmark
+- <RepoFile path="docs/src/styles/docs-theme.css">docs/src/styles/docs-theme.css</RepoFile> — docs color and font tokens
+- <RepoFile path="crates/jackin/src/tui.rs">crates/jackin/src/tui.rs</RepoFile> — CLI output helpers and terminal title
+- <RepoFile path="crates/jackin-tui/src/lib.rs">crates/jackin-tui/src/lib.rs</RepoFile> — current TUI logo animation
+- <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> — role-container shell/runtime setup surface
 
 ## Related Roadmap
 

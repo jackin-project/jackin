@@ -6,7 +6,7 @@ title: "Public Attribution and Project Growth"
 
 ## Problem
 
-jackin❯ strongest marketing channel is likely to be the work it helps operators ship, not paid promotion. When an agent uses jackin❯ to produce commits, PRs, issues, docs, or role repositories, the project can stay invisible unless the operator explicitly mentions it. Other agent tools are already using source-control metadata as a lightweight attribution surface: the Orca commit [`5ca6828`](https://github.com/stablyai/orca/commit/5ca68283715d74e5916a2f3b6dcd55b2702e2748) includes `Co-authored-by: Orca <help@stably.ai>` alongside human and agent trailers, making Orca visible in GitHub history and the commit UI.
+The strongest jackin❯ marketing channel is likely to be the work it helps operators ship, not paid promotion. When an agent uses jackin❯ to produce commits, PRs, issues, docs, or role repositories, the project can stay invisible unless the operator explicitly mentions it. Other agent tools are already using source-control metadata as a lightweight attribution surface: the Orca commit [`5ca6828`](https://github.com/stablyai/orca/commit/5ca68283715d74e5916a2f3b6dcd55b2702e2748) includes `Co-authored-by: Orca <help@stably.ai>` alongside human and agent trailers, making Orca visible in GitHub history and the commit UI.
 
 jackin❯ should research the same class of growth tactics, but the design needs a stricter bar than "add our name everywhere." Git commit trailers touch operator repositories, project attribution policies, authorship semantics, DCO flows, and trust. A promotional tactic that surprises the operator or pollutes downstream history would conflict with jackin❯ host-side-effects rule and do more damage than good.
 
@@ -22,7 +22,7 @@ jackin❯ should research the same class of growth tactics, but the design needs
 - Orca example: [`stablyai/orca@5ca6828`](https://github.com/stablyai/orca/commit/5ca68283715d74e5916a2f3b6dcd55b2702e2748) uses `Co-authored-by: Orca <help@stably.ai>` in a GitHub-visible commit trailer.
 - GitHub's supported multi-author mechanism is the [`Co-authored-by` commit trailer](https://docs.github.com/en/pull-requests/committing-changes-to-your-project/creating-and-editing-commits/creating-a-commit-with-multiple-authors).
 - Git's native trailer tooling is [`git interpret-trailers`](https://git-scm.com/docs/git-interpret-trailers), which should be preferred over ad-hoc string manipulation if jackin❯ ever edits commit messages.
-- The current jackin❯ repository policy requires one agent `Co-authored-by` trailer for each AI agent involved in a commit; see <RepoFile path="AGENTS.md" />. Any jackin❯ attribution mechanism must respect local project rules like that instead of assuming the product can append unrelated attribution lines.
+- The current jackin❯ repository policy requires one agent `Co-authored-by` trailer for each AI agent involved in a commit; see <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>. Any jackin❯ attribution mechanism must respect local project rules like that instead of assuming the product can append unrelated attribution lines.
 
 ## Recommended Research Shape
 
@@ -34,7 +34,7 @@ Treat "public attribution" as a small project-growth program with commit trailer
 |---|---|---|---|
 | `Co-authored-by: jackin❯ ...` trailer | High on GitHub; can show in author UI | High | Implies authorship. Conflicts with repos that reserve `Co-authored-by` for people or agent runtimes. Should only be considered when jackin❯ materially generated or transformed the commit and the repo policy allows it. |
 | `Generated-with: jackin❯ <url>` trailer | Medium; visible in raw commit message | Medium | More semantically honest for orchestration, but GitHub does not currently elevate it in the UI. Good default candidate if the goal is attribution without authorship claims. |
-| `Orchestrated-by: jackin❯ <url>` trailer | Medium; visible in raw commit message | Medium | Best semantic fit for the container/session orchestrator role. Needs ecosystem research because custom trailers vary by project. |
+| `Orchestrated-by: jackin❯ <url>` trailer | Medium; visible in raw commit message | Medium | Best semantic fit for jackin❯ role as the container/session orchestrator. Needs ecosystem research because custom trailers vary by project. |
 | PR body footer | Medium; visible during review | Low | Operator-controlled and easy to remove. Can link to jackin❯ and explain the role/runtime/session context without touching immutable commit history. |
 | `agent tag protocol` emission | Operator-visible inside jackin❯ | Low | Helps jackin❯ track its own workflows but does not market externally unless mirrored into PR bodies or status checks. |
 | Docs/readme badge for role repos | Medium for role authors | Low | Role authors can opt in to "Built for jackin❯" badges without affecting source history. |
@@ -51,7 +51,7 @@ Treat "public attribution" as a small project-growth program with commit trailer
 
 ## Host-side Effects
 
-Commit trailers and PR-body footers can write to host-side repositories or remote PR metadata. That makes this roadmap item subject to the hard host-mutation rule in <RepoFile path="AGENTS.md" />.
+Commit trailers and PR-body footers can write to host-side repositories or remote PR metadata. That makes this roadmap item subject to the hard host-mutation rule in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>.
 
 Any implementation must:
 
@@ -79,15 +79,15 @@ Any implementation must:
 ## Open Questions
 
 - Should jackin❯ ever use `Co-authored-by`, or should it reserve that trailer for the actual agent runtime and use `Orchestrated-by` / `Generated-with` for the product layer?
-- What should the canonical identity be: `jackin❯ <...>`, `jackin> <...>`, `jackin-project[bot] <...>`, or a real GitHub App noreply identity?
+- What should the canonical identity be: `jackin❯ <...>`, `jackin❯ <...>`, `jackin-project[bot] <...>`, or a real GitHub App noreply identity?
 - Should role authors be allowed to set a role-specific attribution line, or would that turn every role into a marketing channel with inconsistent policy?
-- Can jackin❯ infer a repo's trailer policy from local files such as <RepoFile path="AGENTS.md" />, <RepoFile path="COMMITS.md" />, or <RepoFile path="CONTRIBUTING.md" />, or should policy always be explicit config?
+- Can jackin❯ infer a repo's trailer policy from local files such as <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> or <RepoFile path="CONTRIBUTING.md">CONTRIBUTING.md</RepoFile>, or should policy always be explicit config?
 - Is PR-body attribution more valuable because reviewers see it before merge, or less valuable because it disappears from the permanent Git history after squash merges?
 
 ## Related Files
 
-- <RepoFile path="AGENTS.md" /> — current agent trailer policy for this repository
-- <RepoFile path="COMMITS.md" /> — commit-message rules that any jackin❯ helper must respect in this repository
+- <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> — current agent trailer policy for this repository
+- <RepoFile path="CONTRIBUTING.md">CONTRIBUTING.md</RepoFile> — commit-message rules that any jackin❯ helper must respect in this repository
 - Future module, e.g. `src/git/attribution.rs` — trailer/footer preview and policy evaluation if this ships
 - Future CLI surface, e.g. `jackin attribution preview` / `jackin attribution apply`
 

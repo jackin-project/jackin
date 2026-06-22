@@ -1,3 +1,9 @@
+//! Capsule runtime configuration: load and validate `CapsuleConfig` from the
+//! TOML file written by the host at container launch.
+//!
+//! Not responsible for: config schema definition (see `jackin-protocol`) or
+//! host-side config serialization.
+
 use anyhow::{Context, Result};
 use jackin_protocol::CapsuleConfig;
 
@@ -15,28 +21,28 @@ pub fn load_optional() -> Option<CapsuleConfig> {
         Ok(contents) => contents,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
         Err(error) => {
-            eprintln!(
+            crate::output::stderr_line(format_args!(
                 "[jackin-capsule] ignoring unreadable {}: {error:#}",
                 jackin_protocol::CAPSULE_CONFIG_PATH
-            );
+            ));
             return None;
         }
     };
     let config = match toml::from_str::<CapsuleConfig>(&contents) {
         Ok(config) => config,
         Err(error) => {
-            eprintln!(
+            crate::output::stderr_line(format_args!(
                 "[jackin-capsule] ignoring invalid {}: {error:#}",
                 jackin_protocol::CAPSULE_CONFIG_PATH
-            );
+            ));
             return None;
         }
     };
     if let Err(error) = validate(&config) {
-        eprintln!(
+        crate::output::stderr_line(format_args!(
             "[jackin-capsule] ignoring invalid {}: {error:#}",
             jackin_protocol::CAPSULE_CONFIG_PATH
-        );
+        ));
         return None;
     }
     Some(config)

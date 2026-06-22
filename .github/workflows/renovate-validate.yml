@@ -2,7 +2,7 @@ name: Renovate Validate
 
 # Verify the upstream sources the Renovate `customManagers` point at
 # still resolve and still list the expected package names. Renovate's
-# `deb` and `github-releases` datasources can otherwise look like "no updates
+# `github-releases` datasource can otherwise look like "no updates
 # available", so a renamed upstream package would silently re-introduce
 # version drift. The mise check also verifies the pinned version still exists
 # for both construct architectures.
@@ -34,9 +34,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Verify mise apt source lists the pinned mise package
+      - name: Verify the pinned mise release ships both construct architectures
         shell: bash
         run: |
           set -euo pipefail
@@ -45,18 +45,12 @@ jobs:
             echo "::error::MISE_VERSION is empty"
             exit 1
           fi
-          for arch in amd64 arm64; do
-            url="https://mise.en.dev/deb/dists/stable/main/binary-${arch}/Packages"
-            if ! body=$(curl -fsSL --max-time 30 "$url" 2>&1); then
-              echo "::error::failed to fetch ${url}: ${body}"
-              exit 1
-            fi
-            if ! awk -v version="$MISE_VERSION" '
-              $1 == "Package:" { in_mise = ($2 == "mise"); next }
-              in_mise && $1 == "Version:" && $2 == version { found = 1 }
-              END { exit found ? 0 : 1 }
-            ' <<<"$body"; then
-              echo "::error::${url} did not list mise version ${MISE_VERSION}"
+          # The standalone installer (https://mise.run) the construct
+          # Dockerfile pipes to `sh` downloads these exact release assets.
+          for arch in x64 arm64; do
+            url="https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-${arch}.tar.gz"
+            if ! curl -fsSLI --max-time 30 -o /dev/null "$url"; then
+              echo "::error::${url} did not resolve — mise v${MISE_VERSION} is missing the linux-${arch} release asset"
               exit 1
             fi
           done

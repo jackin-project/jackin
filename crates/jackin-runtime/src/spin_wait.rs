@@ -1,0 +1,79 @@
+//! Async spinner-wait helper for polling operations.
+//!
+//! Animates a braille spinner on stderr while polling an async function.
+//! Silences itself when the rich launch cockpit owns the terminal so the
+//! spinner never streams over the alternate screen.
+
+#![expect(
+    clippy::print_stderr,
+    reason = "spinner redraws intentional terminal control sequences on stderr"
+)]
+
+use std::io::{self, Write as _};
+
+use jackin_diagnostics::{is_debug_mode, rich_terminal_owned};
+use jackin_tui::{PHOSPHOR_DIM, PHOSPHOR_GREEN, owo_rgb};
+
+/// Display a spinner while waiting, returning when `poll` returns `Ok(())`.
+///
+/// `poll` is called up to `max_attempts` times with `interval` between calls.
+/// The spinner animates smoothly independent of the poll interval.
+pub async fn spin_wait<F, Fut>(
+    message: &str,
+    max_attempts: u32,
+    interval: std::time::Duration,
+    mut poll: F,
+) -> anyhow::Result<()>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = anyhow::Result<()>>,
+{
+    use owo_colors::OwoColorize as _;
+
+    const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    const SPIN_MS: u64 = 80;
+    let mg = owo_rgb(PHOSPHOR_GREEN);
+    let mut last_err = None;
+    let mut frame_idx: usize = 0;
+
+    let debug = is_debug_mode();
+    // A full-screen rich surface (the launch cockpit) owns the terminal —
+    // its own waiting animation conveys progress, so the spinner must stay
+    // silent or it streams over the alternate screen.
+    let suppressed = rich_terminal_owned();
+    for _attempt in 0..max_attempts {
+        if debug && !suppressed {
+            eprint!("\r\x1b[2K");
+            drop(io::stderr().flush());
+        }
+        match poll().await {
+            Ok(()) => {
+                if !suppressed {
+                    eprint!("\r\x1b[2K");
+                    drop(io::stderr().flush());
+                }
+                return Ok(());
+            }
+            Err(e) => last_err = Some(e),
+        }
+        let spins = interval.as_millis() as u64 / SPIN_MS;
+        for _ in 0..spins {
+            if !suppressed {
+                let frame = FRAMES[frame_idx % FRAMES.len()];
+                eprint!(
+                    "\r   {}   {}",
+                    frame.color(mg).bold(),
+                    message.color(owo_rgb(PHOSPHOR_DIM)).bold()
+                );
+                drop(io::stderr().flush());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(SPIN_MS)).await;
+            frame_idx += 1;
+        }
+    }
+    if !suppressed {
+        eprint!("\r\x1b[2K");
+        drop(io::stderr().flush());
+    }
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("timed out: {message}")))
+}

@@ -1,0 +1,31 @@
+[package]
+name = "jackin-manifest"
+version = "0.6.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Role manifest loading, validation, and migration for jackin."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+[lib]
+name = "jackin_manifest"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
+jackin-config = { version = "0.6.0-dev", path = "../jackin-config" }
+jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
+anyhow = "1.0"
+toml = "1.1"
+toml_edit = "0.25"
+dockerfile-parser-rs = "3.3.0"
+thiserror = "2.0"
+
+[dev-dependencies]
+tempfile = "=3.27.0"
+
+[lints]
+workspace = true

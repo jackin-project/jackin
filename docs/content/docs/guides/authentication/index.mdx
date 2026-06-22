@@ -4,18 +4,24 @@ description: How jackin❯ forwards your host logins into agent containers
 ---
 
 
-jackin❯ starts every agent container with the credentials it needs already in place — your `Claude Code` login, your `Codex` login, your `Amp` login, your `Kimi` login, your `OpenCode` login, and your `GitHub CLI` login all flow into the container automatically, so the agent runs from the moment it starts and you never see a `/login` prompt or a `gh auth login` device-flow on first launch.
+jackin❯ starts every agent container with the credentials it needs already in place — your `Claude Code` login, your `Codex` login, your `Amp` login, your `Kimi` login, your `OpenCode` login, your `Grok` login, and your `GitHub CLI` login all flow into the container automatically, so the agent runs from the moment it starts and you never see a `/login` prompt or a `gh auth login` device-flow on first launch.
 
 Every authentication axis jackin❯ supports today follows the same pattern. The pages in this group cover the operator surface for each axis:
 
 **[Agent Authentication](/guides/authentication/agents/)**  
-`Claude Code`, `Codex`, `Amp`, `Kimi`, and `OpenCode` credentials forwarded into the agent container, with optional API-key or OAuth-token alternatives.
+`Claude Code`, `Codex`, `Amp`, `Kimi`, `OpenCode`, and `Grok` credentials forwarded into the agent container, with optional API-key alternatives (plus OAuth token for Claude Code).
 
 **[GitHub CLI Authentication](/guides/authentication/github-cli/)**  
 The host's `gh` login forwarded so `git push`, `gh` commands, and the in-container GitHub MCP tools authenticate without prompts.
 
 **[Z.AI (GLM Coding Plan)](/guides/authentication/zai/)**  
-Configure `ZAI_API_KEY` to unlock Z.AI as a selectable provider for Claude Code sessions — a cost-efficient Anthropic-compatible endpoint that runs alongside Anthropic tabs in the same container.
+Configure `ZAI_API_KEY` to unlock Z.AI as a selectable provider for Claude Code sessions — an Anthropic-compatible GLM endpoint that runs alongside Anthropic tabs in the same container.
+
+**[MiniMax (Token Plan)](/guides/authentication/minimax/)**  
+Configure `MINIMAX_API_KEY` to unlock MiniMax as a selectable provider for Claude Code sessions — MiniMax's Anthropic-compatible endpoint backed by MiniMax-M3.
+
+**[Kimi](/guides/authentication/kimi/)**  
+Configure `KIMI_CODE_API_KEY` to unlock Kimi as a selectable provider for Claude Code sessions — Kimi's Anthropic-compatible coding endpoint backed by `kimi-for-coding`.
 
 ## The shape every axis shares
 

@@ -108,7 +108,7 @@ An role is a normal git repo with a Dockerfile and manifest. That gives you:
 - reproducibility from source
 - role-specific environments instead of one mutable universal box
 
-This is one of jackin❯ biggest advantages.
+This is one of the biggest jackin❯ advantages.
 
 ### 3. Workspaces are first-class
 
@@ -131,7 +131,7 @@ jackin❯ is especially good when you want:
 - several agents against different branches
 - reattachable long-lived local sessions
 
-Docker Sandboxes can run multiple sandboxes, but jackin❯ role and workspace model makes this style of work more explicit.
+Docker Sandboxes can run multiple sandboxes, but the jackin❯ role and workspace model makes this style of work more explicit.
 
 ### 5. Host-side cache reuse for agent builds
 
@@ -152,7 +152,7 @@ Still, the structural reason for higher overhead is clear:
 - each sandbox has its own private Docker state
 - Docker documents that installed packages and Docker state persist per sandbox
 
-So the baseline cost per sandbox will usually be materially higher than jackin❯ model of:
+So the baseline cost per sandbox will usually be materially higher than the jackin❯ model of:
 
 - one host Docker engine
 - one agent container
@@ -210,7 +210,9 @@ It is a weakness because ad-hoc runtime setup work disappears when the container
 
 ### 5. Runtime binaries are cached by jackin❯
 
-jackin❯ resolves agent runtime metadata on the host, downloads each required Linux binary once per version and architecture, and copies the cached binary into derived image builds. This keeps repeated rebuilds fast while still checking for newer Claude Code, Codex, Amp, Kimi, and OpenCode versions.
+jackin❯ resolves agent runtime metadata on the host, uses that metadata to find the latest Linux binary for the host's container architecture, downloads that binary once per version, and stores it under jackin❯ local cache. During image preparation, all supported agent binaries are resolved and prepared together; cache misses use jackin❯ `fast-down` parallel downloader instead of a sequential file fetch. Derived image builds then copy those cached binaries into the image instead of running each agent's upstream installer. This keeps repeated rebuilds fast while still checking for newer Claude Code, Codex, Amp, Kimi, OpenCode, and Grok versions.
+
+If jackin❯ cannot resolve or download the current hard-coded binary URL because an upstream release layout changed or a server is unavailable, it first tries the newest executable already present in the local cache. If no usable cached executable exists, the derived Dockerfile switches that agent to the official upstream installer script instead of copying a missing binary. That fallback is slower, but it follows the agent vendor's own install path, and jackin❯ emits a warning so the operator can see that binary pre-download failed and an installer fallback was used.
 
 ## Other approaches
 

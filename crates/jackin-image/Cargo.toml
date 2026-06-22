@@ -1,0 +1,48 @@
+[package]
+name = "jackin-image"
+version = "0.6.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Image generation and binary artifact management for jackin'."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+[lib]
+name = "jackin_image"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
+jackin-manifest = { version = "0.6.0-dev", path = "../jackin-manifest" }
+jackin-docker = { version = "0.6.0-dev", path = "../jackin-docker" }
+jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
+sha2 = "0.11"
+tar = "0.4"
+flate2 = "1.1"
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3.20"
+tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
+reqwest = { version = "0.13", default-features = false }
+# Sigstore Rust client for cosign bundle verification of capsule-manifest.json.
+# Pre-1.0 (0.14.x) but the only canonical option for in-process keyless bundle
+# verification without a `cosign` system dep. Alternatives evaluated: shell out
+# to `cosign` CLI (requires system install), GitHub Attestations API via `gh`
+# (requires `gh` on PATH). Selected for hermetic operation with no system dep.
+sigstore = { version = "0.14", default-features = false, features = ["cosign"] }
+base64 = "0.22"
+x509-cert = { version = "0.2", default-features = false, features = ["pem"] }
+
+[build-dependencies]
+jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
+
+[dev-dependencies]
+filetime = "=0.2.29"
+tokio = { version = "=1.52.3", features = ["test-util"] }
+
+[lints]
+workspace = true

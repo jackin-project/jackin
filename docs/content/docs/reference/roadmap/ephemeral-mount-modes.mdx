@@ -215,16 +215,16 @@ gets the right behavior.
 
 ## Related Files
 
-- <RepoFile path="src/workspace/mod.rs" /> — `MountConfig`,
+- <RepoFile path="crates/jackin/src/workspace.rs">crates/jackin/src/workspace.rs</RepoFile> — `MountConfig`,
   `MountIsolation` enum extension
-- <RepoFile path="src/workspace/mounts.rs" /> — parser for the new
+- <RepoFile path="crates/jackin-config/src/mounts.rs">crates/jackin-config/src/mounts.rs</RepoFile> — parser for the new
   modes; rejects `src` for `tmpfs`/`ephemeral`
-- <RepoFile path="src/runtime/launch.rs" /> — Docker arg construction
-- <RepoFile path="src/runtime/cleanup.rs" /> — volume cleanup on
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — Docker arg construction
+- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs">crates/jackin-runtime/src/runtime/cleanup.rs</RepoFile> — volume cleanup on
   `purge`
-- <RepoFile path="src/manifest/mod.rs" /> — `[[runtime.mounts]]`
+- <RepoFile path="crates/jackin-manifest/src/manifest.rs">crates/jackin-manifest/src/manifest.rs</RepoFile> — `[[runtime.mounts]]`
   role-level defaults
-- <RepoFile path="src/cli/workspace.rs" /> — `--mount-isolation tmpfs`
+- <RepoFile path="crates/jackin/src/cli/workspace.rs">crates/jackin/src/cli/workspace.rs</RepoFile> — `--mount-isolation tmpfs`
   / `ephemeral` in workspace edit/create
 
 ## See Also

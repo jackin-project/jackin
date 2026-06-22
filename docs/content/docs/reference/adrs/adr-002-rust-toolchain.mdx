@@ -1,0 +1,48 @@
+---
+title: "ADR-002: Rust toolchain pinning and MSRV policy"
+description: "How jackin❯ pins its Rust toolchain and what the MSRV guarantee covers."
+---
+
+**Status**: Accepted
+**Current state**: Toolchain pinned at `1.96.0` in <RepoFile path="rust-toolchain.toml">rust-toolchain.toml</RepoFile>. MSRV `1.94` declared in <RepoFile path="Cargo.toml">Cargo.toml</RepoFile>. Edition `2024`.
+**Date**: 2026-05-30
+**Deciders**: Operator + agent
+
+## Context
+
+Rust releases a new stable every six weeks. Without an explicit pin, `rustup` resolves to whatever stable the developer's machine has, which differs between contributors and CI runs. Two separate concerns need a home:
+
+1. **The pinned toolchain** — the exact Rust version used for development, CI, and release builds.
+2. **The MSRV** (Minimum Supported Rust Version) — the oldest stable Rust that can compile the crate.
+
+## Decision
+
+**Pinned toolchain: `rust-toolchain.toml` is the single source of truth.**
+
+```toml
+[toolchain]
+channel = "1.96.0"
+components = ["clippy", "rustfmt"]
+targets = ["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
+```
+
+`rustup`, `rust-analyzer`, `mise` (via idiomatic version file detection), and CI (via `jdx/mise-action`) all read this file. The channel is a specific stable version, never `stable` or `nightly`, so every build environment uses identical compiler behaviour.
+
+The channel is bumped when a new stable release adds a feature the codebase wants to use (e.g. `edition = "2024"` requires ≥ 1.85; `let-else`, `let-chains`, and other 2024 edition features drive the floor up over time). Bumps land as a separate commit so the diff is unambiguous.
+
+**MSRV: declared in <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> as `rust-version`.**
+
+```toml
+rust-version = "1.94"
+```
+
+The MSRV is the oldest stable Rust that compiles the workspace without `--ignore-rust-version`. It is verified by a dedicated `msrv` CI job that builds with the declared version. MSRV is always ≤ the pinned toolchain.
+
+**Edition: `2024`** (`edition = "2024"` in every crate's <RepoFile path="Cargo.toml">Cargo.toml</RepoFile>). The 2024 edition floor is ≥ 1.85.
+
+## Consequences
+
+- Every contributor and CI job compiles with the same compiler. "Works on my machine" compiler differences are eliminated.
+- `rust-toolchain.toml` channel bumps are intentional and reviewable; accidental toolchain drift is impossible.
+- The MSRV CI job catches regressions before they reach `main`: adding a dependency or language feature that requires a newer compiler fails the `msrv` job immediately.
+- `mise install` on a fresh checkout installs the exact toolchain version without a separate `rustup` command.

@@ -277,7 +277,7 @@ The workflow runner should sit above three existing/future jackin❯ surfaces:
 
 | Surface | Responsibility |
 |---|---|
-| [jackin❯ Capsule](/reference/jackin-capsule/) | Visible sessions, PTYs, attach/hijack, per-pane status, session input/output, and future `session.read` / `wait` control calls. |
+| [jackin❯ Capsule](/reference/capsule//) | Visible sessions, PTYs, attach/hijack, per-pane status, session input/output, and future `session.read` / `wait` control calls. |
 | [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) | Reliable `working`, `blocked`, `done`, `idle`, `unknown`, and stuck signals. Workflows must consume this authority instead of treating silence as state. |
 | [Persistent storage layer](/reference/roadmap/persistent-storage-layer/) | Durable run records, event logs, GitHub links, review results, and retry/cancel state. |
 
@@ -285,7 +285,7 @@ The runner can initially live in the host CLI process for foreground runs. Overn
 
 ### Capsule API prerequisites
 
-The current `status` and `snapshot` control calls are enough for display, but not enough for reliable workflow orchestration. The runner needs a typed control surface that can manipulate sessions without pretending terminal text is an API.
+The current `status` and `snapshot` control calls are enough for display, but not enough for reliable workflow orchestration. The runner needs a typed control surface that can manipulate sessions without pretending terminal text is an API. [Terminal observation and automation](/reference/roadmap/terminal-observation-automation/) owns the detailed read/wait/send/capture/tab/session API shape; this section names the subset the workflow runner depends on.
 
 | API | Needed for V1? | Purpose |
 |---|---|---|
@@ -449,7 +449,7 @@ Resolve and record memory briefs for manual runs before full automation. This ph
 
 ### Phase 2 — Capsule session control API
 
-Add the missing control calls the workflow runner needs: create session, send prompt/input, read visible/recent output for debugging, wait for status, focus/attach by session, and cancel. These should extend <RepoFile path="crates/jackin-protocol/src/control.rs" /> and the Capsule daemon rather than shelling into terminal sessions.
+Add the missing control calls the workflow runner needs: create session, send prompt/input, read visible/recent output for debugging, wait for status, focus/attach by session, and cancel. These should extend <RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile> and the Capsule daemon rather than shelling into terminal sessions.
 
 ### Phase 3 — Hardcoded `roadmap-to-pr`
 

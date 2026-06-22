@@ -1,0 +1,83 @@
+---
+title: jackin doctor
+description: "Run pre-flight health checks for your jackin❯ setup"
+---
+
+## Synopsis
+
+```bash
+jackin doctor [OPTIONS]
+```
+
+Run a fixed set of health checks and print a one-line status per check with remediation hints on failure.
+
+`jackin doctor` is the fastest way to diagnose setup problems before loading a role. The same checks run automatically as a lightweight pre-flight gate when you invoke `jackin load`, `jackin hardline`, `jackin eject`, `jackin exile`, or `jackin purge`; the pre-flight gate blocks those commands if any check fails.
+
+## Options
+
+| Option | Description |
+|---|---|
+| `--format <human\|json>` | Output format. `human` (default) prints a colour-coded table. `json` emits a structured envelope with one object per check. |
+| `--debug` | Enable diagnostic tracing and print a run id at start. |
+
+## Checks
+
+`jackin doctor` runs these checks in order:
+
+| Check | What it verifies | Hint on failure |
+|---|---|---|
+| `docker_daemon` | Docker daemon is reachable and responding | Start Docker Desktop, OrbStack, or run `colima start` |
+| `docker_version` | `docker version` succeeds | Upgrade Docker |
+| `disk_space` | ≥ 1 GiB free on the jackin data partition | `jackin prune` or `docker system prune` |
+| `config_dir` | `~/.config/jackin/` exists and is writable | `mkdir -p ~/.config/jackin` |
+| `jackin_dir` | `~/.jackin/` exists | `mkdir -p ~/.jackin` |
+| `capsule_cache` | `jackin-capsule` binary is cached for the current version | Will download on next `jackin load` |
+| `gh_auth` | `gh auth status` succeeds | `gh auth login` (required for GitHub auth-forward) |
+| `op_cli` | 1Password CLI is signed in | `op signin` (only needed for `op://` workspace env vars) |
+| `mise` | `mise` is present, when invoked from a source checkout | `curl https://mise.run \| sh` |
+| `clock_skew` | System clock is after late 2023 | Sync via NTP |
+| `orphaned_containers` | No jackin-managed containers without a matching instance manifest | `jackin prune orphaned` |
+| `stale_isolation` | No `isolation.json` files pointing at vanished worktrees | `jackin prune isolation` |
+
+`gh_auth`, `op_cli`, and `mise` checks produce `warn` (not `fail`) when not satisfied — they do not block the pre-flight gate.
+
+## Output
+
+Human format:
+
+```
+  jackin❯
+
+doctor
+
+  ok    docker_daemon    Docker daemon reachable
+  ok    docker_version   Docker server 29.4.0
+  ok    disk_space       569037 MiB free
+  warn  capsule_cache    jackin-capsule 0.6.0 not in cache — will download on next load
+         → Run `jackin load` to trigger download
+  ...
+
+✓  all checks passed (or warned)
+```
+
+JSON format (`--format json`) emits an envelope:
+
+```json
+{
+  "schema_version": "v1",
+  "data": [
+    {"name": "docker_daemon", "status": "ok",   "message": "Docker daemon reachable", "hint": null},
+    {"name": "capsule_cache", "status": "warn",  "message": "jackin-capsule … not in cache", "hint": "Run `jackin load`…"}
+  ]
+}
+```
+
+## Examples
+
+```bash
+# Run all checks
+jackin doctor
+
+# Machine-readable output for scripting
+jackin doctor --format json | jq '.data[] | select(.status == "fail")'
+```

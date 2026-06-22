@@ -24,8 +24,20 @@ fn output_frame_has_five_byte_overhead_only() {
 
 #[test]
 fn shutdown_frame_is_empty_payload() {
-    let bytes = encode_server(ServerFrame::Shutdown);
+    let bytes = encode_server(ServerFrame::Shutdown { reason: None });
     assert_eq!(bytes, vec![TAG_SHUTDOWN, 0, 0, 0, 0]);
+}
+
+#[test]
+fn shutdown_frame_can_carry_reason() {
+    let bytes = encode_server(ServerFrame::Shutdown {
+        reason: Some("session process exited with code 1".to_owned()),
+    });
+    assert_eq!(bytes[0], TAG_SHUTDOWN);
+    assert_eq!(
+        &bytes[5..],
+        b"session process exited with code 1".as_slice()
+    );
 }
 
 #[test]
@@ -118,7 +130,7 @@ fn hello_env_count_over_cap_is_rejected_by_encoder() {
     // Encoder symmetry: the decoder bails on env_count > MAX_HELLO_ENV;
     // the encoder must too, otherwise a refactor that drops one side
     // would silently produce frames the peer rejects.
-    let env: Vec<(String, String)> = (0..MAX_HELLO_ENV + 1)
+    let env: Vec<(String, String)> = (0..=MAX_HELLO_ENV)
         .map(|i| (format!("K{i}"), "v".into()))
         .collect();
     let err = encode_client(ClientFrame::Hello {

@@ -152,11 +152,11 @@ last-cleanup time.
 ## Related Files
 
 - New module (e.g. `src/runtime/idle.rs`) — supervisor
-- <RepoFile path="src/manifest/mod.rs" /> — `[runtime.idle]` schema
-- <RepoFile path="src/runtime/launch.rs" /> — wires supervisor into
+- <RepoFile path="crates/jackin-manifest/src/manifest.rs">crates/jackin-manifest/src/manifest.rs</RepoFile> — `[runtime.idle]` schema
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — wires supervisor into
   instance lifecycle
 - The persistent-storage module — cleanup history table
-- <RepoFile path="src/console/manager/state.rs" /> — last-cleanup
+- <RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile> — last-cleanup
   display
 
 ## See Also

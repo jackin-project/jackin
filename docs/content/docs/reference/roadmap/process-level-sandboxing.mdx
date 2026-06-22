@@ -165,10 +165,10 @@ The DinD container already applies a default seccomp profile. jackin❯ could ti
 
 ## Related Files
 
-- <RepoFile path="docker/runtime/entrypoint.sh" /> — current runtime entrypoint; wrapping point for a sandboxed execution shim
-- <RepoFile path="docker/construct/Dockerfile" /> — construct image; install point for the zerobox binary
-- <RepoFile path="src/runtime/launch.rs" /> — launch orchestration; policy derivation hook
-- <RepoFile path="src/workspace/mounts.rs" /> — mount resolution; source of per-mount access intent
+- <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> — current runtime entrypoint; wrapping point for a sandboxed execution shim
+- <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> — construct image; install point for the zerobox binary
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — launch orchestration; policy derivation hook
+- <RepoFile path="crates/jackin-config/src/mounts.rs">crates/jackin-config/src/mounts.rs</RepoFile> — mount resolution; source of per-mount access intent
 - [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) — the VM/container isolation tier this item complements
 - [Network egress policy](/reference/roadmap/network-egress-policy/) — the per-workspace network policy item; process sandboxing operates at finer per-operation granularity
 - [Security model](/guides/security-model/) — current operator-facing security boundary statement

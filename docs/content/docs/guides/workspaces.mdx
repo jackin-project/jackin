@@ -146,7 +146,7 @@ If you exited non-interactively (no terminal to ask), jackin❯ always preserves
 
 If a container crashed or was terminated unexpectedly, jackin❯ also keeps everything in place — `jackin hardline` can restart the container so you continue where the agent left off.
 
-For the exact safety policy (which branches count as safe, how the squash-merged-and-pruned case is detected, what the per-mount state file records), see [Foreground session finalization](/reference/architecture/#foreground-session-finalization) in the internals section.
+For the exact safety policy (which branches count as safe, how the squash-merged-and-pruned case is detected, what the per-mount state file records), see [Foreground session finalization](/reference/getting-oriented/architecture/#foreground-session-finalization) in the internals section.
 
 ### Validation
 
@@ -172,7 +172,7 @@ To inspect what's been materialized for a container, use
 `jackin workspace show <name>` (the **Isolation** column shows the
 effective mode for every mount) or `git worktree list` on the host
 repo. If you need the on-disk layout details, see
-[Architecture](/reference/architecture/) in the internals section.
+[Architecture](/reference/getting-oriented/architecture/) in the internals section.
 
 ## Managing workspaces
 

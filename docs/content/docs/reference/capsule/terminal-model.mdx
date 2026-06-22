@@ -1,0 +1,130 @@
+---
+title: "Capsule Terminal Model"
+---
+
+jackin❯ Capsule uses `jackin-term` as its owned terminal model. This page records why the old `vt100` dependency was retired and what `jackin-term` owns.
+
+## The Job
+
+The Capsule is a re-emitting PTY multiplexer. It does not draw pixels. It reads bytes from an agent PTY inside the container, keeps an in-memory terminal screen for each pane, and emits terminal bytes back to the attached host terminal.
+
+That job needs four things:
+
+- a correct VT/ANSI parser;
+- a screen grid with cursor, modes, styles, alternate screen, and scrollback;
+- a way to know what changed without re-reading the whole pane every frame;
+- typed side-channel events for title, clipboard, OSC 7 cwd, focus, mouse, and keyboard protocol state.
+
+The accepted pipeline is:
+
+```text
+PTY bytes
+  -> vte::Parser
+  -> jackin_term::DamageGrid
+  -> GridView / GridSnapshot observation APIs
+  -> PaneBodyWidget + Ratatui full widget tree
+  -> SocketBackend ANSI encoder
+  -> ClientWriter synchronized frame
+```
+
+`vte` is still an external dependency because parsing terminal escape bytes is a solved parser problem. jackin❯ owns the grid, damage tracking, snapshots, passthrough stream, and capsule-facing API.
+
+## Why `vt100` Was The First Choice
+
+`vt100` was the natural first terminal-model dependency because it is small, Rust-native, and shaped for terminal re-emission. Its `Screen::contents_diff()` and `contents_formatted()` APIs can serialize a terminal screen back into escape bytes, which is exactly the kind of operation a tmux- or Zellij-style multiplexer eventually needs.
+
+It also exposed callback hooks for OSC and unhandled control traffic, which made it possible to intercept title, clipboard, and related terminal side channels.
+
+That made `vt100` a good bootstrap choice: it proved that Capsule needed a terminal model, not raw ANSI pass-through, and it let the first multiplexer path ship without hand-writing a parser.
+
+## Why `vt100` Had To Go
+
+The retired path depended on a fork pinned to a git SHA, not the crates.io release:
+
+```toml
+vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715..." }
+```
+
+The fork existed for capsule-specific behavior, especially scrollback clearing. The upstream maintenance signal made that fork effectively permanent: the upstream crate had gone quiet, had multiple old unmerged PRs, and the exact scrollback-clearing patch jackin❯ needed was still not merged. Continuing with `vt100` meant carrying an ad hoc fork indefinitely.
+
+The bigger technical issue was fit. The Capsule no longer used `vt100`'s defining emit API. The old live path read the entire `vt100::Screen`, rebuilt pane snapshots, allocated strings for cell contents, diffed those snapshots itself, and only then emitted changes. That meant `vt100` supplied a parser and readable grid, but it did not supply the data the live renderer actually needed: source-recorded damage.
+
+That caused three structural costs:
+
+- **Full-pane work for partial changes.** With no dirty-row API, the renderer had to inspect the whole pane to discover that only a few rows changed.
+- **Per-frame allocation pressure.** Cell contents were copied out through string-shaped APIs before rendering.
+- **Duplicated terminal state.** Capsule-owned scrollback, passthrough, hover/cursor decisions, and cached pane snapshots could drift from the terminal model that parsed the PTY.
+
+Those are architecture problems, not just performance problems. A forked crate with the wrong API shape would keep forcing capsule-specific state around the outside of the model.
+
+## What `jackin-term` Does Differently
+
+| Concern | Old `vt100` path | `jackin-term` path |
+|---|---|---|
+| Parser | `vt100`'s parser/state machine | `vte::Parser` feeding `DamageGrid` through `vte::Perform` |
+| Grid ownership | external `vt100::Screen` plus Capsule-side caches | one owned `DamageGrid` per pane |
+| Damage | not exposed; Capsule rediscovered changes by snapshot diffing | dirty rows recorded when PTY bytes mutate the grid |
+| Cell contents | string-shaped cell contents copied into snapshots | `CompactString` cells, inline for common graphemes |
+| Scrollback | external screen plus Capsule-side bookkeeping | primary, alternate, and scrollback rows in jackin-term row stores |
+| Passthrough | callback hooks plus local capture glue | typed `PassthroughEvent` stream |
+| Live focused pane | full snapshot rebuild before emit | `GridView` borrowed by `PaneBodyWidget`; Ratatui owns the only client diff |
+| Full/chrome/dialog frames | local render/diff layer | `GridView` / `GridSnapshot` through `PaneBodyWidget` and Ratatui |
+| Maintenance | permanent fork risk | crate owned in the workspace |
+
+The most important difference is that `jackin-term` records damage at the source. When the parser writes to the grid, the grid marks the affected rows. The compositor uses that fact to decide whether a frame is needed and the conformance harness uses the grid as the expected model. The emitted frame is still one Ratatui buffer diff, not a direct dirty-patch serialization path; this keeps the physical client terminal and Ratatui's previous buffer aligned.
+
+Earlier capsule versions split focused live-pane output into a direct `GridPatch` encoder and used Ratatui only for chrome, dialogs, selection, scrollback views, and layout-wide redraws. That was faster for narrow streaming cases, but it meant two emit paths could mutate the same outer terminal while only one of them updated Ratatui's baseline. ADR-005 retires that split: dirty rows are an invalidation and observation mechanism, while pane bodies render through `PaneBodyWidget` as part of the full widget tree.
+
+## What Shipped
+
+`jackin-term` is the only terminal model in Capsule:
+
+- removed `vt100` from production dependencies, test dependencies, fuzz targets, benchmarks, lockfile paths, and source-policy exceptions;
+- removed the transitional feature flag and fallback path;
+- added conformance replay tests that feed the same corpus one chunk and byte-by-byte, then compare final screen state;
+- added fuzz coverage for parser/grid determinism and no-panic behavior;
+- retired the temporary focused dirty-patch emit tier after it proved useful for measurement but structurally unsafe as a second writer;
+- added echo-back render-conformance tests proving emitted frames replay to the same visible state as the pane model;
+- moved pane rendering to one `DamageGrid` source of truth for screen cells, scrollback, cursor visibility, passthrough events, and dirty rows.
+
+The key measurement evidence recorded during the PR:
+
+| Evidence | What it proved |
+|---|---|
+| `jk-run-aa0e87` | real Capsule direct-grid-patch p99 timing and bytes per changed cell |
+| `jk-run-048a0e` | focused-path zero-allocation proof |
+| `jk-run-46eab7` | historical direct-`GridPatch` wire output matched theoretical minimum with 0.00% overhead, helping quantify the cost accepted when ADR-005 retired that tier |
+| `jk-run-0bb409` | headless 16- and 32-pane scaling measurements |
+
+## Why Not Adopt A Different Emulator
+
+The evaluated alternatives each helped clarify the design, but none replaced the need for `jackin-term`:
+
+- `alacritty_terminal` has a fast grid and damage ideas, but it is built for GPU terminal rendering and does not provide jackin❯ re-emitting multiplexer API.
+- `termwiz` has useful surface/diff API ideas, but brings a heavier WezTerm-shaped model and still does not own Capsule-specific passthrough and control semantics.
+- Zellij proves the architecture: `vte` plus an owned grid plus damage-aware terminal output. Its implementation is application-internal, not a small reusable crate.
+- libvterm and Ghostty are valuable references, but non-Rust libraries are not acceptable dependencies for this project. Their ideas can be reimplemented in Rust with attribution; their binaries are not linked.
+
+The result is intentionally hybrid: depend on `vte` for the parser, borrow proven grid/damage ideas from mature terminals and multiplexers, and keep jackin❯ capsule-specific model in a small Rust crate that the workspace controls.
+
+## The emit side: one frame model, one writer
+
+`jackin-term` is also the reference emulator for the capsule's emit path. Every frame the capsule composes is one `Terminal::draw` of the full widget tree, encoded to ANSI by `SocketBackend` and written by `ClientWriter` inside `?2026` synchronized-output brackets. The frame carries more than cells: cursor position/visibility and the focused pane's mode set (bracketed paste, application cursor keys, kitty keyboard level) are derived per frame from `DamageGrid` state and reconciled against the last asserted client state, and dialog hyperlink rects are frame data the encoder brackets with `OSC 8` during cell emission. The echo-back conformance harness (`crates/jackin-capsule/src/daemon/tests/render_conformance.rs`) replays PTY streams through the multiplexer, feeds every emitted frame into a second `DamageGrid` standing in for the operator's terminal, and asserts cell-exact equality with the pane grid plus the cursor contract — screen == model is CI-enforced, not review-enforced. Damage tracking decides *whether* a frame composes, never *what* it emits.
+
+## Scrollback retention and per-pane terminal state
+
+- **Retention semantics: preserve-on-clear with exact dedupe.** A full-screen clear (ED2, or ED0 at the home cursor) on the primary screen pushes the visible non-blank rows into scrollback — but only when screen content actually mutated since the previous preserve and the block is not byte-identical to the last preserved block. Repeated clear/repaint cycles therefore cannot duplicate the transcript, while a screen the operator cleared without ever scrolling stays recoverable. The alternative — retain only scroll-evicted rows — was rejected because it silently drops that recoverability, a capability the wheel-scroll fixtures assert today. Enforced by `repeated_clear_without_mutation_preserves_exactly_once` in `crates/jackin-term/src/grid/model_correctness_tests.rs`.
+- **The scrollback view offset has one owner: the grid.** `Session` only delegates (`Session::scrollback_offset()` reads `DamageGrid::scrollback()`); every mutation routes through `DamageGrid::set_scrollback`, which clamps against the filled scrollback, so the offset can never diverge from the view (D12).
+- **DECSTR is handled in-grid**: attrs, margins, deferred wrap, cursor visibility, application cursor keys, bracketed paste, and the saved cursor reset locally; the sequence is never forwarded to the host.
+- **DECSCUSR is per-pane state**: the grid tracks `cursor_style`, and the capsule's per-frame reconciliation asserts it for the focused pane only.
+- **Cells hold grapheme clusters**: zero-width input (combining marks, variation selectors, ZWJ) joins the previously written cell, and a character following a ZWJ continues that cluster; cluster width stays the base width because DECRQM declines mode 2027. Overwriting a wide lead blanks its orphaned continuation cell.
+- **OSC 10/11 default-color queries are answered from grid state** (`set_reported_colors`), with the reply terminator mirroring the query's (BEL stays BEL, ST stays ST). The capsule stores the attach client's palette — read from the host terminal before the attach Hello — into every pane grid; the dark-theme defaults answer when no client report exists. Agents gate theming on this reply: codex emits zero background SGR until OSC 11 is answered.
+
+## Invariants
+
+- `vt100` must not return as a dependency, feature flag, fallback path, benchmark baseline, fuzz target, or source-policy exception.
+- `jackin-term` owns terminal state; Capsule code should not recreate a second terminal model beside it.
+- New terminal side channels become typed `PassthroughEvent`s or `DamageGrid` state, not ad hoc parser callbacks in the renderer.
+- Focused live-pane performance claims must stay backed by tests or debug-run evidence.
+- Full-frame visual behavior stays under Ratatui and the TUI architecture rules; `jackin-term` is the model, not a parallel chrome renderer.
+- After every composed frame, a virtual terminal fed the emitted bytes equals the pane grid within the pane rect (screen == model), and no code path outside `ClientWriter` writes to the attach socket.
