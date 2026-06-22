@@ -179,8 +179,8 @@ jobs:
           # layers written by earlier runs of this PR so mid-PR iterations stay warm too.
           CACHE_FROM: |
             type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.platform }}
-            type=gha,scope=construct-pr-${{ matrix.platform }}
-          CACHE_TO: type=gha,scope=construct-pr-${{ matrix.platform }},mode=max
+            type=gha,scope=construct-pr-${{ matrix.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }}
+          CACHE_TO: type=gha,scope=construct-pr-${{ matrix.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }},mode=max
         run: mise run construct-build-platform ${{ matrix.platform }}
 
       - name: Push ${{ matrix.platform }} image by digest

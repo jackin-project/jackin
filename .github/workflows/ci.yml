@@ -476,8 +476,8 @@ jobs:
           set -a && source docker/construct/versions.env && set +a
           docker buildx build \
             --cache-from type=registry,ref=projectjackin/construct:buildcache-amd64 \
-            --cache-from type=gha,scope=construct-ci-e2e \
-            --cache-to type=gha,scope=construct-ci-e2e,mode=max \
+            --cache-from type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }} \
+            --cache-to type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }},mode=max \
             --build-arg SHELLFIRM_VERSION="$SHELLFIRM_VERSION" \
             --build-arg TIRITH_VERSION="$TIRITH_VERSION" \
             --build-arg MISE_VERSION="$MISE_VERSION" \
