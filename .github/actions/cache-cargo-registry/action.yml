@@ -25,6 +25,8 @@ runs:
     - name: Fetch Cargo registry
       if: steps.restore.outputs.cache-hit != 'true'
       shell: bash
+      env:
+        RUSTC_WRAPPER: ""
       run: |
         set -euo pipefail
         attempt=1
