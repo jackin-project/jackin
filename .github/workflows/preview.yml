@@ -1,11 +1,15 @@
 name: Publish Homebrew Preview
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
+  push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      lanes:
+        description: "Which runner(s) to run on. Default github; use both for parity runs."
+        type: choice
+        options: [github, velnor, both]
+        default: github
 
 permissions:
   actions: read
@@ -16,14 +20,49 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  matrix-setup:
+    name: Select runner lane
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      configs: ${{ steps.config.outputs.configs }}
+      has_github: ${{ steps.config.outputs.has_github }}
+    steps:
+      - name: Build runner config
+        id: config
+        env:
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+        run: |
+          set -euo pipefail
+          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\""}'
+          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]"}'
+
+          case "$LANES" in
+            github)
+              configs=$(jq -cn --argjson github "$github" '[$github]')
+              has_github=true
+              ;;
+            velnor)
+              configs=$(jq -cn --argjson velnor "$velnor" '[$velnor]')
+              has_github=false
+              ;;
+            both)
+              configs=$(jq -cn --argjson github "$github" --argjson velnor "$velnor" '[$github, $velnor]')
+              has_github=true
+              ;;
+            *)
+              echo "::error::Unsupported lanes value: $LANES"
+              exit 1
+              ;;
+          esac
+
+          echo "configs=$configs" >> "$GITHUB_OUTPUT"
+          echo "has_github=$has_github" >> "$GITHUB_OUTPUT"
+
   source-changed:
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_repository.full_name == github.repository &&
-       github.event.workflow_run.head_branch == 'main')
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     outputs:
@@ -39,14 +78,21 @@ jobs:
           # template substitution — keeps the script style identical to
           # the rest of this workflow's run blocks.
           DISPATCH_SHA: ${{ github.sha }}
-          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          PUSH_SHA: ${{ github.sha }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "sha=${DISPATCH_SHA}" >> "$GITHUB_OUTPUT"
-          else
-            echo "sha=${WORKFLOW_RUN_SHA}" >> "$GITHUB_OUTPUT"
-          fi
+          case "$EVENT_NAME" in
+            workflow_dispatch)
+              echo "sha=${DISPATCH_SHA}" >> "$GITHUB_OUTPUT"
+              ;;
+            push)
+              echo "sha=${PUSH_SHA}" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Unsupported event: ${EVENT_NAME}"
+              exit 1
+              ;;
+          esac
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -212,9 +258,10 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   build-preview:
-    needs: source-changed
+    name: build preview jackin (${{ matrix.config.lane }}, ${{ matrix.target.target }})
+    needs: [matrix-setup, source-changed]
     if: needs.source-changed.outputs.source == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -225,19 +272,16 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "on"
-      SCCACHE_GHA_CACHE_TO: sccache-preview-jackin-${{ matrix.target }}
-      SCCACHE_GHA_CACHE_FROM: sccache-preview-jackin-${{ matrix.target }}
+      SCCACHE_GHA_CACHE_TO: sccache-preview-jackin-${{ matrix.target.target }}
+      SCCACHE_GHA_CACHE_FROM: sccache-preview-jackin-${{ matrix.target.target }}
     strategy:
       matrix:
-        include:
-          # macOS targets cross-compiled from Linux via cargo-zigbuild +
-          # real macOS SDK. Zig respects SDKROOT for framework lookups;
-          # SDK sourced from joseluisq/macosx-sdks, cached between runs.
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        target:
           - target: aarch64-apple-darwin
             zigbuild_target: aarch64-apple-darwin
           - target: x86_64-apple-darwin
             zigbuild_target: x86_64-apple-darwin
-          # Linux targets: glibc 2.17 minimum for broad host compatibility.
           - target: aarch64-unknown-linux-gnu
             zigbuild_target: aarch64-unknown-linux-gnu.2.17
           - target: x86_64-unknown-linux-gnu
@@ -263,13 +307,13 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: archive-jackin-${{ matrix.target }}
+          shared-key: archive-jackin-${{ matrix.target.target }}
           cache-all-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
-      - run: rustup target add ${{ matrix.target }}
+      - run: rustup target add ${{ matrix.target.target }}
       - name: Export sccache GitHub cache runtime
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
@@ -277,20 +321,20 @@ jobs:
             core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
       - name: Cache macOS SDK
-        if: contains(matrix.target, 'apple')
+        if: contains(matrix.target.target, 'apple')
         id: sdk-cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: /tmp/macos-sdk
           key: macos-sdk-26.1
       - name: Download macOS SDK
-        if: contains(matrix.target, 'apple') && steps.sdk-cache.outputs.cache-hit != 'true'
+        if: contains(matrix.target.target, 'apple') && steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p /tmp/macos-sdk
           curl -fsSL "https://github.com/joseluisq/macosx-sdks/releases/download/26.1/MacOSX26.1.sdk.tar.xz" \
             | tar -xJ -C /tmp/macos-sdk
       - name: Set macOS SDKROOT
-        if: contains(matrix.target, 'apple')
+        if: contains(matrix.target.target, 'apple')
         run: |
           echo "SDKROOT=/tmp/macos-sdk/MacOSX26.1.sdk" >> "$GITHUB_ENV"
           # Pin deployment target so the binary runs on macOS 12+ even
@@ -300,19 +344,19 @@ jobs:
         uses: ./.github/actions/build-release-archive
         with:
           package: jackin
-          target: ${{ matrix.target }}
-          zigbuild-target: ${{ matrix.zigbuild_target }}
+          target: ${{ matrix.target.target }}
+          zigbuild-target: ${{ matrix.target.zigbuild_target }}
           version: ${{ needs.source-changed.outputs.version }}
-          archive-basename: jackin-${{ matrix.target }}
-          artifact-name: jackin-${{ matrix.target }}
-          timings-artifact-name: cargo-timings-preview-jackin-${{ matrix.target }}
+          archive-basename: jackin-${{ matrix.target.target }}
+          artifact-name: preview-${{ matrix.config.lane }}-jackin-${{ matrix.target.target }}
+          timings-artifact-name: cargo-timings-preview-jackin-${{ matrix.target.target }}-${{ matrix.config.lane }}
       - name: Write sccache stats
         if: always()
         run: |
-          stats_file="sccache-stats-preview-jackin-${{ matrix.target }}.txt"
+          stats_file="sccache-stats-preview-jackin-${{ matrix.target.target }}-${{ matrix.config.lane }}.txt"
           sccache --show-stats | tee "$stats_file"
           {
-            echo "### sccache preview jackin ${{ matrix.target }}"
+            echo "### sccache preview jackin ${{ matrix.target.target }} (${{ matrix.config.lane }})"
             echo '```text'
             cat "$stats_file"
             echo '```'
@@ -321,15 +365,16 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: sccache-stats-preview-jackin-${{ matrix.target }}
-          path: sccache-stats-preview-jackin-${{ matrix.target }}.txt
+          name: sccache-stats-preview-jackin-${{ matrix.target.target }}-${{ matrix.config.lane }}
+          path: sccache-stats-preview-jackin-${{ matrix.target.target }}-${{ matrix.config.lane }}.txt
           if-no-files-found: ignore
           retention-days: 7
 
   build-jackin-capsule:
-    needs: source-changed
+    name: build preview capsule (${{ matrix.config.lane }}, ${{ matrix.target.target }})
+    needs: [matrix-setup, source-changed]
     if: needs.source-changed.outputs.source == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -340,11 +385,12 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "on"
-      SCCACHE_GHA_CACHE_TO: sccache-preview-capsule-${{ matrix.target }}
-      SCCACHE_GHA_CACHE_FROM: sccache-preview-capsule-${{ matrix.target }}
+      SCCACHE_GHA_CACHE_TO: sccache-preview-capsule-${{ matrix.target.target }}
+      SCCACHE_GHA_CACHE_FROM: sccache-preview-capsule-${{ matrix.target.target }}
     strategy:
       matrix:
-        include:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        target:
           - target: aarch64-unknown-linux-gnu
             zigbuild_target: aarch64-unknown-linux-gnu.2.17
             arch: arm64
@@ -372,13 +418,13 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: archive-capsule-${{ matrix.target }}
+          shared-key: archive-capsule-${{ matrix.target.target }}
           cache-all-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
-      - run: rustup target add ${{ matrix.target }}
+      - run: rustup target add ${{ matrix.target.target }}
       - name: Export sccache GitHub cache runtime
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
@@ -389,19 +435,19 @@ jobs:
         uses: ./.github/actions/build-release-archive
         with:
           package: jackin-capsule
-          target: ${{ matrix.target }}
-          zigbuild-target: ${{ matrix.zigbuild_target }}
+          target: ${{ matrix.target.target }}
+          zigbuild-target: ${{ matrix.target.zigbuild_target }}
           version: ${{ needs.source-changed.outputs.version }}
-          archive-basename: jackin-capsule-${{ matrix.target }}
-          artifact-name: jackin-capsule-${{ matrix.target }}
-          timings-artifact-name: cargo-timings-preview-capsule-${{ matrix.target }}
+          archive-basename: jackin-capsule-${{ matrix.target.target }}
+          artifact-name: preview-${{ matrix.config.lane }}-jackin-capsule-${{ matrix.target.target }}
+          timings-artifact-name: cargo-timings-preview-capsule-${{ matrix.target.target }}-${{ matrix.config.lane }}
       - name: Write sccache stats
         if: always()
         run: |
-          stats_file="sccache-stats-preview-capsule-${{ matrix.target }}.txt"
+          stats_file="sccache-stats-preview-capsule-${{ matrix.target.target }}-${{ matrix.config.lane }}.txt"
           sccache --show-stats | tee "$stats_file"
           {
-            echo "### sccache preview capsule ${{ matrix.target }}"
+            echo "### sccache preview capsule ${{ matrix.target.target }} (${{ matrix.config.lane }})"
             echo '```text'
             cat "$stats_file"
             echo '```'
@@ -410,13 +456,76 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: sccache-stats-preview-capsule-${{ matrix.target }}
-          path: sccache-stats-preview-capsule-${{ matrix.target }}.txt
+          name: sccache-stats-preview-capsule-${{ matrix.target.target }}-${{ matrix.config.lane }}
+          path: sccache-stats-preview-capsule-${{ matrix.target.target }}-${{ matrix.config.lane }}.txt
           if-no-files-found: ignore
           retention-days: 7
+
+  publish-gate:
+    needs: [matrix-setup, source-changed, build-preview, build-jackin-capsule]
+    if: needs.source-changed.outputs.source == 'true' && needs.matrix-setup.outputs.has_github == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      ci_ok: ${{ steps.ci.outputs.ok }}
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Wait for matching CI
+        id: ci
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          deadline=$((SECONDS + 2400))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            run=$(
+              curl -fsSL \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${FULL_SHA}&branch=main&event=push&per_page=10" |
+                jq -c '[.workflow_runs[] | select(.head_sha == "'"$FULL_SHA"'")] | sort_by(.run_started_at) | reverse | .[0] // empty'
+            )
+
+            if [ -z "$run" ]; then
+              echo "Waiting for CI run for ${FULL_SHA}"
+              sleep 30
+              continue
+            fi
+
+            status=$(jq -r '.status' <<< "$run")
+            conclusion=$(jq -r '.conclusion // ""' <<< "$run")
+            url=$(jq -r '.html_url' <<< "$run")
+            echo "CI status for ${FULL_SHA}: ${status} ${conclusion} (${url})"
+
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then
+                echo "ok=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "ok=false" >> "$GITHUB_OUTPUT"
+              fi
+              exit 0
+            fi
+
+            sleep 30
+          done
+
+          echo "::error::Timed out waiting for CI run for ${FULL_SHA}"
+          exit 1
+
   publish-preview:
-    needs: [source-changed, build-preview, build-jackin-capsule]
-    if: needs.source-changed.outputs.source == 'true'
+    needs: [source-changed, build-preview, build-jackin-capsule, publish-gate]
+    if: needs.source-changed.outputs.source == 'true' && needs.publish-gate.outputs.ci_ok == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     concurrency:
@@ -434,10 +543,10 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
+          pattern: preview-GitHub-*
           merge-multiple: true
 
       - name: Verify source SHA is on main
-        if: github.event_name == 'workflow_run'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           FULL_SHA: ${{ needs.source-changed.outputs.sha }}
@@ -702,7 +811,7 @@ jobs:
 
   timing-summary:
     if: always()
-    needs: [source-changed, build-preview, build-jackin-capsule, publish-preview]
+    needs: [matrix-setup, source-changed, build-preview, build-jackin-capsule, publish-gate, publish-preview]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
