@@ -45,6 +45,9 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_NET_RETRY: "10"
       CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
@@ -60,7 +63,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: ${{ matrix.config.lane == 'Velnor' && 'rust cargo-nextest sccache' || 'rust cargo-nextest' }}
+          install_args: "rust cargo-nextest sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -69,15 +72,10 @@ jobs:
           shared-key: ${{ inputs.cache-shared-key }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           # One workspace-level nextest cache per runner lane. The package and
           # Docker lanes restore this cache read-only; per-package keys fragment
           # the workspace graph and force cold downloads/builds.
-      - name: Enable local sccache
-        if: matrix.config.lane == 'Velnor'
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "SCCACHE_BASEDIRS=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - name: Build nextest binaries
         shell: bash
         run: |
@@ -153,6 +151,9 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_NET_RETRY: "10"
       CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
@@ -168,7 +169,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: ${{ matrix.config.lane == 'Velnor' && 'rust cargo-nextest sccache' || 'rust cargo-nextest' }}
+          install_args: "rust cargo-nextest sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -177,17 +178,12 @@ jobs:
           shared-key: ${{ inputs.cache-shared-key }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           save-if: "false"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback.
           # The prepare job owns saving this workspace cache; package jobs stay
           # read-only so the matrix cannot create isolated target caches.
-      - name: Enable local sccache
-        if: matrix.config.lane == 'Velnor'
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "SCCACHE_BASEDIRS=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - name: Run package tests
         shell: bash
         run: |
@@ -232,6 +228,9 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_NET_RETRY: "10"
       CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
@@ -247,7 +246,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: ${{ matrix.config.lane == 'Velnor' && 'rust cargo-nextest sccache' || 'rust cargo-nextest' }}
+          install_args: "rust cargo-nextest sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -256,15 +255,10 @@ jobs:
           shared-key: ${{ inputs.cache-shared-key }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           save-if: "false"
           # The prepare job owns this cache. Docker E2E stays read-only and
           # uses local cache restore instead of downloading a target artifact.
-      - name: Enable local sccache
-        if: matrix.config.lane == 'Velnor'
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-          echo "SCCACHE_BASEDIRS=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - name: Download construct image for E2E
         if: inputs.construct-image-changed
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
