@@ -56,7 +56,7 @@ jobs:
     with:
       runner-configs-json: '[{"lane":"Release","runner":"\"ubuntu-latest\""}]'
       all-features: false
-      cache-shared-key: nextest-default
+      cache-shared-key: nextest-default-workspace-v1
     secrets: inherit
 
   build:
