@@ -859,8 +859,7 @@ fn neighbors(x: u16, y: u16, area: Rect) -> impl Iterator<Item = (u16, u16)> {
 
 fn is_green_border_cell(buf: &Buffer, coord: (u16, u16)) -> bool {
     let cell = &buf[coord];
-    cell.fg == PHOSPHOR_GREEN
-        && matches!(cell.symbol(), "┌" | "┐" | "└" | "┘" | "─" | "│")
+    cell.fg == PHOSPHOR_GREEN && matches!(cell.symbol(), "┌" | "┐" | "└" | "┘" | "─" | "│")
 }
 
 fn test_cwd() -> std::path::PathBuf {

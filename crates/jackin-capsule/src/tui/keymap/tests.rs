@@ -80,7 +80,10 @@ fn prefix_keymap_has_shown_hints_for_primary_commands() {
     );
     // chord_glyph derives uppercase from Char('c') / Char('x') when glyph: None
     assert!(keys.contains(&"C"), "must show C (new tab): {keys:?}");
-    assert!(keys.contains(&"X"), "must show X (close/kill pane): {keys:?}");
+    assert!(
+        keys.contains(&"X"),
+        "must show X (close/kill pane): {keys:?}"
+    );
 }
 
 #[test]

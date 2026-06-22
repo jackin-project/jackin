@@ -1,12 +1,12 @@
 //! Shared footer hint fragments for modal pickers and confirmations.
 
 use crate::tui::keymap::{
-    AUTH_EDIT_SOURCE_KEYMAP, AUTH_MANAGE_KEYMAP, EDITOR_CONTENT_KEYMAP, EditorContentAction,
+    AUTH_EDIT_SOURCE_KEYMAP, AUTH_MANAGE_KEYMAP, EDITOR_CONTENT_KEYMAP,
     EDITOR_GENERAL_RENAME_KEYMAP, EDITOR_GENERAL_TOGGLE_KEYMAP, EDITOR_GENERAL_WORKDIR_KEYMAP,
-    EDITOR_GLOBAL_KEYMAP, EditorGlobalAction, EDITOR_ROLE_NEW_KEYMAP, EDITOR_TAB_BAR_KEYMAP,
-    EditorTabBarAction, PREVIEW_PANE_KEYMAP, PreviewPaneAction, SETTINGS_ENV_TAB_KEYMAP,
-    SettingsEnvTabAction, SETTINGS_GENERAL_TOGGLE_KEYMAP,
-    SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP, SettingsGlobalMountsTabAction, SETTINGS_TRUST_TOGGLE_KEYMAP,
+    EDITOR_GLOBAL_KEYMAP, EDITOR_ROLE_NEW_KEYMAP, EDITOR_TAB_BAR_KEYMAP, EditorContentAction,
+    EditorGlobalAction, EditorTabBarAction, PREVIEW_PANE_KEYMAP, PreviewPaneAction,
+    SETTINGS_ENV_TAB_KEYMAP, SETTINGS_GENERAL_TOGGLE_KEYMAP, SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP,
+    SETTINGS_TRUST_TOGGLE_KEYMAP, SettingsEnvTabAction, SettingsGlobalMountsTabAction,
     WORKSPACE_LIST_KEYMAP, WorkspaceListAction,
 };
 use jackin_tui::HintSpan;
@@ -431,7 +431,10 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
                     HintSpan::Sep,
                 ]);
             }
-            items.extend([HintSpan::Key(g(WorkspaceListAction::NewSession)), HintSpan::Text("new")]);
+            items.extend([
+                HintSpan::Key(g(WorkspaceListAction::NewSession)),
+                HintSpan::Text("new"),
+            ]);
             if is_saved {
                 items.extend([
                     HintSpan::Sep,
@@ -804,7 +807,9 @@ fn workspace_picker_footer_items(
     }
     if include_quit {
         items.push(HintSpan::GroupSep);
-        items.push(HintSpan::Key(WORKSPACE_LIST_KEYMAP.glyph_for(WorkspaceListAction::Quit)));
+        items.push(HintSpan::Key(
+            WORKSPACE_LIST_KEYMAP.glyph_for(WorkspaceListAction::Quit),
+        ));
         items.push(HintSpan::Text("quit"));
     }
     items
@@ -1129,24 +1134,11 @@ pub fn error_popup_footer_items() -> Vec<HintSpan<'static>> {
 /// advertises a scroll direction the operator cannot move.
 #[must_use]
 pub fn container_info_footer_items(axes: ScrollAxes) -> Vec<HintSpan<'static>> {
-    let mut items = scroll_hint_spans(axes);
-    if !items.is_empty() {
-        items.push(HintSpan::GroupSep);
-    }
-    items.extend([
-        // UNREGISTERABLE(container-info-copy): Enter copies value inline; no ContainerInfo keymap.
-        HintSpan::Key("↵"),
-        HintSpan::Text("copy value"),
-        HintSpan::GroupSep,
-        // UNREGISTERABLE(container-info-no-keymap): Esc dismisses inline.
-        HintSpan::Key("Esc"),
-        HintSpan::Text("dismiss"),
-        HintSpan::GroupSep,
-        // UNREGISTERABLE(mouse): mouse click cannot be expressed as a KeyChord.
-        HintSpan::Key("click"),
-        HintSpan::Text("copy value"),
-    ]);
-    items
+    // Delegate to the shared Debug-info hint builder so the console list modal,
+    // the launch cockpit, and any future surface render byte-identical hint bars
+    // for the same dialog. The UNREGISTERABLE annotations live at the shared
+    // definition in `jackin_tui::components::debug_info_hint_spans`.
+    jackin_tui::components::debug_info_hint_spans(axes)
 }
 
 #[must_use]
