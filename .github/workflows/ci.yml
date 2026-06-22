@@ -532,6 +532,9 @@ jobs:
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
     name: construct E2E image (${{ matrix.config.lane }})
+    env:
+      BUILDX_BUILDER: jackin-construct
+      LOCAL_REGISTRY_IMAGE: projectjackin/construct
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       # When docker/construct/** changes, the published construct:trixie image
@@ -539,24 +542,41 @@ jobs:
       # republished after merge to main. Build the construct image in its own
       # job and pass it to nextest as a Docker tar so the E2E tests use the
       # updated image rather than pulling the outdated one from the registry.
+      - name: Cache Rust toolchain
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "rust"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: construct-e2e-image-${{ matrix.config.lane }}
+          cache-all-crates: "true"
       - name: Set up Docker Buildx for E2E cache
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        with:
+          name: ${{ env.BUILDX_BUILDER }}
       - name: Expose GitHub Actions cache runtime
         uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
       - name: Build construct image for E2E
+        env:
+          CACHE_FROM: |
+            type=registry,ref=projectjackin/construct:buildcache-amd64
+            type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }}
+          CACHE_TO: type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }},mode=max
         run: |
           set -euo pipefail
-          set -a && source docker/construct/versions.env && set +a
-          docker buildx build \
-            --cache-from type=registry,ref=projectjackin/construct:buildcache-amd64 \
-            --cache-from type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }} \
-            --cache-to type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }},mode=max \
-            --build-arg SHELLFIRM_VERSION="$SHELLFIRM_VERSION" \
-            --build-arg TIRITH_VERSION="$TIRITH_VERSION" \
-            --build-arg MISE_VERSION="$MISE_VERSION" \
-            --output type=docker,dest=construct-trixie.tar \
-            -t projectjackin/construct:trixie \
-            docker/construct/
+          mise run construct-build-platform amd64
+          docker save --output construct-trixie.tar projectjackin/construct:trixie
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: construct-trixie-image-${{ matrix.config.lane }}
