@@ -384,10 +384,19 @@ jobs:
           retention-days: 1
 
   test:
+    needs: [changes, matrix-setup]
+    if: needs.changes.outputs.rust == 'true'
+    uses: ./.github/workflows/rust-nextest.yml
+    with:
+      runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
+      all-features: true
+    secrets: inherit
+
+  docker-e2e:
     # construct-e2e-image is an optionally-skipped artifact producer (hence the
-    # always() + !failure() pattern). check-all-features was removed from needs:
-    # it only added up to ~2.5 min of dead critical-path time before the
-    # slowest job (nextest, ~9 min on main pushes) could start.
+    # always() + !failure() pattern). Keep real Docker/PTY smoke coverage out
+    # of the per-crate nextest matrix so deterministic package tests can fan out
+    # immediately and this environment-backed lane can own its prerequisites.
     needs: [changes, construct-e2e-image, matrix-setup]
     if: always() && needs.changes.outputs.rust == 'true' && !failure() && !cancelled()
     strategy:
@@ -395,7 +404,7 @@ jobs:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
     runs-on: ${{ fromJSON(matrix.config.runner) }}
-    name: cargo nextest (${{ matrix.config.lane }})
+    name: Docker E2E smoke (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -451,9 +460,8 @@ jobs:
         run: |
           cargo build -p jackin-capsule --bin jackin-capsule
           echo "JACKIN_CAPSULE_BIN=$PWD/target/debug/jackin-capsule" >> "$GITHUB_ENV"
-      - run: cargo nextest run --workspace --all-features --color=always
       - name: Run Docker E2E smoke tests
-        run: cargo nextest run -p jackin --features e2e --run-ignored=only -E 'binary(dind_e2e)' --color=always
+        run: cargo nextest run -p jackin --features e2e --profile docker-e2e --color=always
   fuzz:
     needs: [changes, check-all-features, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
@@ -731,6 +739,7 @@ jobs:
       - check-default
       - construct-e2e-image
       - test
+      - docker-e2e
       - fuzz
       - bench-build
       - msrv

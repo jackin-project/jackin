@@ -158,7 +158,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 ```sh
 cargo nextest run -E '<SCOPED_TEST_FILTER>'
 cargo nextest run --all-features
-cargo nextest run -p jackin --features e2e --run-ignored=only -E 'binary(dind_e2e)'
+cargo nextest run -p jackin --features e2e --profile docker-e2e
 ```
 
 <Drop this whole subsection when the PR has no Rust test coverage to run.

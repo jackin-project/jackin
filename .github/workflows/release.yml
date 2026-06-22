@@ -52,41 +52,11 @@ jobs:
 
   test:
     needs: check-version
-    runs-on: ubuntu-latest
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_TERM_COLOR: always
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Cache Rust toolchain
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
-          restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache mise cargo tools
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-${{ hashFiles('mise.toml') }}
-          restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        with:
-          install_args: "rust cargo:cargo-nextest"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
-        with:
-          shared-key: ${{ github.job }}
-          cache-all-crates: "true"
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
-      - run: cargo nextest run --color=always
+    uses: ./.github/workflows/rust-nextest.yml
+    with:
+      runner-configs-json: '[{"lane":"Release","runner":"\"ubuntu-latest\""}]'
+      all-features: false
+    secrets: inherit
 
   build:
     needs: [check-version, test]
