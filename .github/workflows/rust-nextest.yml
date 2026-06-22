@@ -48,6 +48,7 @@ jobs:
     name: cargo nextest ${{ matrix.package }} (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
+      CARGO_NET_RETRY: "10"
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -83,7 +84,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          args=(-p "${{ matrix.package }}" --no-tests=pass --color=always)
+
+          attempt=1
+          until cargo fetch --locked; do
+            if [ "$attempt" -ge 3 ]; then
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+            attempt="$((attempt + 1))"
+          done
+
+          args=(-p "${{ matrix.package }}" --no-tests=pass --color=always --locked)
           if [ "${{ inputs.all-features }}" = "true" ]; then
             args+=(--all-features)
           fi
