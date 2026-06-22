@@ -221,6 +221,7 @@ pub(super) fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
 /// `M mount · P pick · C/Esc cancel`.
 pub(super) fn git_prompt_footer_items(has_url: bool) -> Vec<jackin_tui::HintSpan<'static>> {
     use jackin_tui::HintSpan;
+    // UNREGISTERABLE(git-prompt-no-keymap): M/P/O handled inline; no GIT_PROMPT_KEYMAP registered.
     let mut spans = vec![
         HintSpan::Key("M"),
         HintSpan::Text("mount"),
@@ -233,15 +234,19 @@ pub(super) fn git_prompt_footer_items(has_url: bool) -> Vec<jackin_tui::HintSpan
     }
     spans.extend([
         HintSpan::GroupSep,
+        // UNREGISTERABLE(multi-key-display-group): ⇥/→ combines Tab and Right arrow.
         HintSpan::Key("\u{21e5}/\u{2192}"),
         HintSpan::Text("next"),
         HintSpan::Sep,
+        // UNREGISTERABLE(multi-key-display-group): ⇤/← combines BackTab and Left arrow.
         HintSpan::Key("\u{21e4}/\u{2190}"),
         HintSpan::Text("prev"),
         HintSpan::Sep,
+        // UNREGISTERABLE(git-prompt-no-keymap): ↵ confirms inline.
         HintSpan::Key("\u{21b5}"),
         HintSpan::Text("select"),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(multi-key-display-group): combined C/Esc cancel display.
         HintSpan::Key("C/Esc"),
         HintSpan::Text("cancel"),
     ]);
