@@ -25,6 +25,14 @@ inputs:
   timings-artifact-name:
     description: Uploaded cargo timings artifact name.
     required: true
+  sccache-stats-artifact-name:
+    description: Optional uploaded sccache stats artifact name.
+    required: false
+    default: ""
+  sccache-stats-heading:
+    description: Optional step-summary heading for sccache stats.
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -69,6 +77,33 @@ runs:
       with:
         name: ${{ inputs.timings-artifact-name }}
         path: target/cargo-timings/*.html
+        if-no-files-found: ignore
+        retention-days: 7
+
+    - name: Write sccache stats
+      if: always() && inputs.sccache-stats-artifact-name != ''
+      shell: bash
+      env:
+        SCCACHE_STATS_ARTIFACT_NAME: ${{ inputs.sccache-stats-artifact-name }}
+        SCCACHE_STATS_HEADING: ${{ inputs.sccache-stats-heading }}
+      run: |
+        set -euo pipefail
+
+        stats_file="${SCCACHE_STATS_ARTIFACT_NAME}.txt"
+        sccache --show-stats | tee "$stats_file"
+        {
+          echo "### ${SCCACHE_STATS_HEADING:-$SCCACHE_STATS_ARTIFACT_NAME}"
+          echo '```text'
+          cat "$stats_file"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload sccache stats
+      if: always() && inputs.sccache-stats-artifact-name != ''
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ inputs.sccache-stats-artifact-name }}
+        path: ${{ inputs.sccache-stats-artifact-name }}.txt
         if-no-files-found: ignore
         retention-days: 7
 
