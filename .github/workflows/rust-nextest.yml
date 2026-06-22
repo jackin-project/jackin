@@ -110,6 +110,7 @@ jobs:
           - jackin-config
           - jackin-console
           - jackin-core
+          - jackin-dev
           - jackin-diagnostics
           - jackin-docker
           - jackin-env

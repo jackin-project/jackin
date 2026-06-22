@@ -1,0 +1,219 @@
+name: jackin-dev
+
+on:
+  pull_request:
+    paths:
+      - ".github/actions/sign-and-attest-archive/**"
+      - ".github/workflows/jackin-dev.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "crates/jackin-dev/**"
+      - "mise.toml"
+      - "rust-toolchain.toml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/actions/sign-and-attest-archive/**"
+      - ".github/workflows/jackin-dev.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "crates/jackin-dev/**"
+      - "mise.toml"
+      - "rust-toolchain.toml"
+  workflow_dispatch:
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - id: version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/jackin-dev/Cargo.toml | head -1)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  assert-version:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Assert jackin-dev version is unpublished
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          if gh release view "jackin-dev-v${VERSION}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "jackin-dev-v${VERSION} already exists; bump crates/jackin-dev/Cargo.toml"
+            exit 1
+          fi
+
+  build:
+    needs: [version, assert-version]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            zigbuild_target: aarch64-apple-darwin
+          - target: x86_64-apple-darwin
+            zigbuild_target: x86_64-apple-darwin
+          - target: aarch64-unknown-linux-gnu
+            zigbuild_target: aarch64-unknown-linux-gnu.2.17
+          - target: x86_64-unknown-linux-gnu
+            zigbuild_target: x86_64-unknown-linux-gnu.2.17
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          install_args: "rust zig cargo:cargo-zigbuild cosign syft"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: jackin-dev-${{ matrix.target }}
+          cache-all-crates: "true"
+      - run: rustup target add ${{ matrix.target }}
+      - name: Cache macOS SDK
+        if: contains(matrix.target, 'apple')
+        id: sdk-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: /tmp/macos-sdk
+          key: macos-sdk-26.1
+      - name: Download macOS SDK
+        if: contains(matrix.target, 'apple') && steps.sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/macos-sdk
+          curl -fsSL "https://github.com/joseluisq/macosx-sdks/releases/download/26.1/MacOSX26.1.sdk.tar.xz" \
+            | tar -xJ -C /tmp/macos-sdk
+      - name: Set macOS SDKROOT
+        if: contains(matrix.target, 'apple')
+        run: |
+          echo "SDKROOT=/tmp/macos-sdk/MacOSX26.1.sdk" >> "$GITHUB_ENV"
+          echo "MACOSX_DEPLOYMENT_TARGET=12.0" >> "$GITHUB_ENV"
+      - name: Build
+        env:
+          ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
+        run: cargo zigbuild --release --locked -p jackin-dev --target "$ZIGBUILD_TARGET"
+      - name: Package
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          archive="jackin-dev-${VERSION}-${TARGET}.tar.gz"
+          tar -czf "$archive" \
+            -C "target/${TARGET}/release" \
+            jackin-dev
+          sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
+          echo "archive=$archive" >> "$GITHUB_ENV"
+      - name: Sign, SBOM, and attest archive
+        uses: ./.github/actions/sign-and-attest-archive
+        with:
+          archive: ${{ env.archive }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jackin-dev-${{ matrix.target }}
+          path: |
+            jackin-dev-*.tar.gz
+            jackin-dev-*.tar.gz.sha256
+            jackin-dev-*.tar.gz.bundle
+            jackin-dev-*.tar.gz.sbom.json
+
+  publish:
+    if: github.ref == 'refs/heads/main'
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: jackin-dev-*
+          path: artifacts
+          merge-multiple: true
+      - name: Publish jackin-dev release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "jackin-dev-v${VERSION}" \
+            artifacts/jackin-dev-*.tar.gz \
+            artifacts/jackin-dev-*.tar.gz.sha256 \
+            artifacts/jackin-dev-*.tar.gz.bundle \
+            artifacts/jackin-dev-*.tar.gz.sbom.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "jackin-dev v${VERSION}" \
+            --notes "jackin-dev v${VERSION}"
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: jackin-project/homebrew-tap
+          ref: main
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+      - name: Rewrite jackin-dev formula
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          read_sha() {
+            cat "artifacts/jackin-dev-${VERSION}-$1.tar.gz.sha256"
+          }
+          ARM64_MACOS_SHA256=$(read_sha aarch64-apple-darwin)
+          X86_MACOS_SHA256=$(read_sha x86_64-apple-darwin)
+          ARM64_LINUX_SHA256=$(read_sha aarch64-unknown-linux-gnu)
+          X86_LINUX_SHA256=$(read_sha x86_64-unknown-linux-gnu)
+
+          cat > homebrew-tap/Formula/jackin-dev.rb <<EOF
+          class JackinDev < Formula
+            desc "Developer tooling for local jackin pull request verification"
+            homepage "https://github.com/jackin-project/jackin"
+            version "${VERSION}"
+            license "Apache-2.0"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/jackin-project/jackin/releases/download/jackin-dev-v${VERSION}/jackin-dev-${VERSION}-aarch64-apple-darwin.tar.gz"
+                sha256 "${ARM64_MACOS_SHA256}"
+              end
+              on_intel do
+                url "https://github.com/jackin-project/jackin/releases/download/jackin-dev-v${VERSION}/jackin-dev-${VERSION}-x86_64-apple-darwin.tar.gz"
+                sha256 "${X86_MACOS_SHA256}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/jackin-project/jackin/releases/download/jackin-dev-v${VERSION}/jackin-dev-${VERSION}-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "${ARM64_LINUX_SHA256}"
+              end
+              on_intel do
+                url "https://github.com/jackin-project/jackin/releases/download/jackin-dev-v${VERSION}/jackin-dev-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${X86_LINUX_SHA256}"
+              end
+            end
+
+            def install
+              bin.install "jackin-dev"
+            end
+
+            test do
+              system "#{bin}/jackin-dev", "--help"
+            end
+          end
+          EOF
+
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/jackin-dev.rb
+          git commit -m "Update jackin-dev to ${VERSION}"
+          git push origin main

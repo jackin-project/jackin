@@ -2456,6 +2456,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-dev"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde_json",
+]
+
+[[package]]
 name = "jackin-diagnostics"
 version = "0.6.0-dev"
 dependencies = [
