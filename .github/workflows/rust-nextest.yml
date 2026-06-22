@@ -15,6 +15,11 @@ on:
         description: Shared Rust cache namespace for this nextest lane.
         required: true
         type: string
+      construct-image-changed:
+        description: Download and load the PR-built construct image before Docker E2E.
+        required: false
+        default: false
+        type: boolean
     secrets:
       GH_READONLY_TOKEN:
         required: false
@@ -181,3 +186,60 @@ jobs:
             args+=(--all-features)
           fi
           cargo nextest run "${args[@]}"
+
+  docker-e2e:
+    needs: prepare
+    if: inputs.all-features
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(inputs.runner-configs-json) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: Docker E2E smoke (${{ matrix.config.lane }})
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_NET_RETRY: "10"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache mise cargo tools
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.local/share/mise/installs/cargo-*
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-${{ hashFiles('mise.toml') }}
+          restore-keys: |
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          install_args: "rust cargo:cargo-nextest"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: ${{ inputs.cache-shared-key }}
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          save-if: "false"
+          # The prepare job owns this cache. Docker E2E restores the prepared
+          # workspace so it can start after prepare without rebuilding the graph.
+      - name: Download construct image for E2E
+        if: inputs.construct-image-changed
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: construct-trixie-image
+          path: /tmp
+      - name: Load construct image for E2E
+        if: inputs.construct-image-changed
+        run: docker load --input /tmp/construct-trixie.tar
+      - name: Point nextest at prepared jackin-capsule
+        run: echo "JACKIN_CAPSULE_BIN=$PWD/target/debug/jackin-capsule" >> "$GITHUB_ENV"
+      - name: Run Docker E2E smoke tests
+        run: cargo nextest run -p jackin --features e2e --profile docker-e2e --color=always --locked

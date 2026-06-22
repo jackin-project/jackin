@@ -231,7 +231,7 @@ jobs:
           # reruns skip recompiling unchanged dependencies.
       - run: cargo check --workspace --all-targets --all-features --locked
   clippy:
-    needs: [changes, check-all-features, matrix-setup]
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
@@ -312,7 +312,7 @@ jobs:
       - run: cargo deny check licenses bans sources
 
   check-default:
-    needs: [changes, check-all-features, matrix-setup]
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
@@ -384,89 +384,15 @@ jobs:
           retention-days: 1
 
   test:
-    needs: [changes, matrix-setup]
-    if: needs.changes.outputs.rust == 'true'
+    needs: [changes, construct-e2e-image, matrix-setup]
+    if: always() && needs.changes.outputs.rust == 'true' && !failure() && !cancelled()
     uses: ./.github/workflows/rust-nextest.yml
     with:
       runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
       all-features: true
       cache-shared-key: nextest-all-features-workspace-v1
+      construct-image-changed: ${{ needs.changes.outputs.construct_image == 'true' }}
     secrets: inherit
-
-  docker-e2e:
-    # construct-e2e-image is an optionally-skipped artifact producer (hence the
-    # always() + !failure() pattern). Keep real Docker/PTY smoke coverage out
-    # of the per-crate nextest matrix so deterministic package tests can fan out
-    # immediately and this environment-backed lane can own its prerequisites.
-    needs: [changes, construct-e2e-image, matrix-setup, test]
-    if: always() && needs.changes.outputs.rust == 'true' && !failure() && !cancelled()
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
-    runs-on: ${{ fromJSON(matrix.config.runner) }}
-    name: Docker E2E smoke (${{ matrix.config.lane }})
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_NET_RETRY: "10"
-      CARGO_TERM_COLOR: always
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Cache Rust toolchain
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
-          restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache mise cargo tools
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-${{ hashFiles('mise.toml') }}
-          restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        with:
-          install_args: "rust cargo:cargo-nextest"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: nextest-all-features-workspace-v1
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          save-if: "false"
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback.
-          # The reusable nextest prepare job owns this cache; Docker E2E restores
-          # it so the environment-backed smoke lane does not redownload/rebuild
-          # the workspace graph.
-      - name: Download construct image for E2E
-        if: needs.changes.outputs.construct_image == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: construct-trixie-image
-          path: /tmp
-      - name: Load construct image for E2E
-        if: needs.changes.outputs.construct_image == 'true'
-        run: docker load --input /tmp/construct-trixie.tar
-      # `dind_e2e` invokes `jackin load` end-to-end. `jackin load` calls
-      # `capsule_binary::ensure_available`, which downloads the
-      # `jackin-capsule` artifact from the rolling `preview` GitHub Release.
-      # CI runs before the preview workflow uploads that asset for this
-      # commit, so the download 404s. Build a local test binary and point
-      # `ensure_available` at it via `JACKIN_CAPSULE_BIN`; the env var is
-      # inherited by every subprocess `dind_e2e` spawns. Use the dev profile
-      # here so this step shares artifacts with `cargo nextest` instead of
-      # forcing a second release-profile dependency graph.
-      - name: Build jackin-capsule for nextest
-        run: |
-          cargo build -p jackin-capsule --bin jackin-capsule --locked
-          echo "JACKIN_CAPSULE_BIN=$PWD/target/debug/jackin-capsule" >> "$GITHUB_ENV"
-      - name: Run Docker E2E smoke tests
-        run: cargo nextest run -p jackin --features e2e --profile docker-e2e --color=always --locked
   fuzz:
     needs: [changes, check-all-features, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
@@ -744,7 +670,6 @@ jobs:
       - check-default
       - construct-e2e-image
       - test
-      - docker-e2e
       - fuzz
       - bench-build
       - msrv
