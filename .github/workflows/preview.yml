@@ -270,11 +270,6 @@ jobs:
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
-      RUSTC_WRAPPER: sccache
-      SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
-      SCCACHE_GHA_CACHE_TO: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.target }}-preview-jackin-${{ github.run_id }}-${{ github.run_attempt }}
-      SCCACHE_GHA_CACHE_FROM: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.target }}-
     strategy:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
@@ -304,7 +299,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust zig cargo-zigbuild cosign syft sccache"
+          install_args: ${{ matrix.config.lane == 'Velnor' && 'rust zig cargo-zigbuild cosign syft sccache' || 'rust zig cargo-zigbuild cosign syft' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -318,13 +313,11 @@ jobs:
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
       - run: rustup target add ${{ matrix.target.target }}
-      - name: Export sccache GitHub cache runtime
-        if: matrix.config.lane == 'GitHub'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+      - name: Enable local sccache
+        if: matrix.config.lane == 'Velnor'
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_BASEDIRS=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - name: Cache macOS SDK
         if: contains(matrix.target.target, 'apple')
         id: sdk-cache
@@ -355,7 +348,7 @@ jobs:
           archive-basename: jackin-${{ matrix.target.target }}
           artifact-name: preview-${{ matrix.config.lane }}-jackin-${{ matrix.target.target }}
           timings-artifact-name: cargo-timings-preview-jackin-${{ matrix.target.target }}-${{ matrix.config.lane }}
-          sccache-stats-artifact-name: sccache-stats-preview-jackin-${{ matrix.target.target }}-${{ matrix.config.lane }}
+          sccache-stats-artifact-name: ${{ matrix.config.lane == 'Velnor' && format('sccache-stats-preview-jackin-{0}-{1}', matrix.target.target, matrix.config.lane) || '' }}
           sccache-stats-heading: sccache preview jackin ${{ matrix.target.target }} (${{ matrix.config.lane }})
 
   build-jackin-capsule:
@@ -371,11 +364,6 @@ jobs:
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
-      RUSTC_WRAPPER: sccache
-      SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
-      SCCACHE_GHA_CACHE_TO: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.target }}-preview-capsule-${{ github.run_id }}-${{ github.run_attempt }}
-      SCCACHE_GHA_CACHE_FROM: sccache-archive-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}-${{ matrix.target.target }}-
     strategy:
       matrix:
         config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
@@ -403,7 +391,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust zig cargo-zigbuild cosign syft sccache"
+          install_args: ${{ matrix.config.lane == 'Velnor' && 'rust zig cargo-zigbuild cosign syft sccache' || 'rust zig cargo-zigbuild cosign syft' }}
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -417,13 +405,11 @@ jobs:
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
       - run: rustup target add ${{ matrix.target.target }}
-      - name: Export sccache GitHub cache runtime
-        if: matrix.config.lane == 'GitHub'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+      - name: Enable local sccache
+        if: matrix.config.lane == 'Velnor'
+        run: |
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_BASEDIRS=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
       - name: Build signed capsule archive
         uses: ./.github/actions/build-release-archive
         with:
@@ -434,7 +420,7 @@ jobs:
           archive-basename: jackin-capsule-${{ matrix.target.target }}
           artifact-name: preview-${{ matrix.config.lane }}-jackin-capsule-${{ matrix.target.target }}
           timings-artifact-name: cargo-timings-preview-capsule-${{ matrix.target.target }}-${{ matrix.config.lane }}
-          sccache-stats-artifact-name: sccache-stats-preview-capsule-${{ matrix.target.target }}-${{ matrix.config.lane }}
+          sccache-stats-artifact-name: ${{ matrix.config.lane == 'Velnor' && format('sccache-stats-preview-capsule-{0}-{1}', matrix.target.target, matrix.config.lane) || '' }}
           sccache-stats-heading: sccache preview capsule ${{ matrix.target.target }} (${{ matrix.config.lane }})
 
   publish-gate:
