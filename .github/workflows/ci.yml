@@ -390,6 +390,7 @@ jobs:
     with:
       runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
       all-features: true
+      cache-shared-key: nextest-all-features
     secrets: inherit
 
   docker-e2e:
@@ -397,7 +398,7 @@ jobs:
     # always() + !failure() pattern). Keep real Docker/PTY smoke coverage out
     # of the per-crate nextest matrix so deterministic package tests can fan out
     # immediately and this environment-backed lane can own its prerequisites.
-    needs: [changes, construct-e2e-image, matrix-setup]
+    needs: [changes, construct-e2e-image, matrix-setup, test]
     if: always() && needs.changes.outputs.rust == 'true' && !failure() && !cancelled()
     strategy:
       fail-fast: false
@@ -407,6 +408,7 @@ jobs:
     name: Docker E2E smoke (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
+      CARGO_NET_RETRY: "10"
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -432,12 +434,14 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
-          shared-key: ${{ github.job }}
+          shared-key: nextest-all-features
           cache-all-crates: "true"
+          save-if: "false"
           # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
+          # PR/branch/release reads the default branch's warm cache via fallback.
+          # The reusable nextest prepare job owns this cache; Docker E2E restores
+          # it so the environment-backed smoke lane does not redownload/rebuild
+          # the workspace graph.
       - name: Download construct image for E2E
         if: needs.changes.outputs.construct_image == 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -458,10 +462,10 @@ jobs:
       # forcing a second release-profile dependency graph.
       - name: Build jackin-capsule for nextest
         run: |
-          cargo build -p jackin-capsule --bin jackin-capsule
+          cargo build -p jackin-capsule --bin jackin-capsule --locked
           echo "JACKIN_CAPSULE_BIN=$PWD/target/debug/jackin-capsule" >> "$GITHUB_ENV"
       - name: Run Docker E2E smoke tests
-        run: cargo nextest run -p jackin --features e2e --profile docker-e2e --color=always
+        run: cargo nextest run -p jackin --features e2e --profile docker-e2e --color=always --locked
   fuzz:
     needs: [changes, check-all-features, matrix-setup]
     if: needs.changes.outputs.rust == 'true'

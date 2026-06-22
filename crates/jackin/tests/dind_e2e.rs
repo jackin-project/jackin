@@ -371,9 +371,8 @@ fn require_capsule_binary_override() {
 }
 
 fn is_elf_binary(path: &Path) -> bool {
-    let mut file = match std::fs::File::open(path) {
-        Ok(file) => file,
-        Err(_) => return false,
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
     };
     let mut magic = [0_u8; 4];
     file.read_exact(&mut magic).is_ok() && magic == [0x7f, b'E', b'L', b'F']
