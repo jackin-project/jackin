@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -13,6 +14,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  cache-usage:
+    name: Cache usage review
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Summarize GitHub Actions cache usage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          usage_json=$(gh api "repos/${GITHUB_REPOSITORY}/actions/cache/usage")
+          active_count=$(jq -r ".active_caches_count" <<< "$usage_json")
+          active_bytes=$(jq -r ".active_caches_size_in_bytes" <<< "$usage_json")
+          active_gib=$(awk -v bytes="$active_bytes" 'BEGIN { printf "%.6f", bytes / 1024 / 1024 / 1024 }')
+
+          {
+            echo "### GitHub Actions cache usage"
+            printf -- "- Active caches: %s\n" "$active_count"
+            printf -- "- Active cache size: %.2f GiB\n" "$active_gib"
+            echo
+            echo "| Cache key | Size | Last accessed |"
+            echo "| --- | ---: | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          gh api "repos/${GITHUB_REPOSITORY}/actions/caches?per_page=10&sort=size_in_bytes&direction=desc" \
+            --jq ".actions_caches[] | [.key, .size_in_bytes, .last_accessed_at] | @tsv" |
+            while IFS=$'\t' read -r key size_bytes last_accessed; do
+              size_mib=$(awk -v bytes="$size_bytes" 'BEGIN { printf "%.6f", bytes / 1024 / 1024 }')
+              printf "| \`%s\` | %.1f MiB | %s |\n" "$key" "$size_mib" "$last_accessed" >> "$GITHUB_STEP_SUMMARY"
+            done
+
   scheduled-hygiene:
     name: Scheduled hygiene
     runs-on: ubuntu-latest
