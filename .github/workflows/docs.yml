@@ -197,20 +197,12 @@ jobs:
           restore-keys: |
             cargo-registry-v2-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Cache mise cargo tools
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-codebook-lsp-${{ hashFiles('mise.toml') }}
-          restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-codebook-lsp-
-
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust cargo:codebook-lsp"
+          install_args: "rust codebook-lsp"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Run Codebook docs spell check
@@ -272,20 +264,12 @@ jobs:
           restore-keys: |
             cargo-registry-v2-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Cache mise cargo tools
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-codebook-lsp-${{ hashFiles('mise.toml') }}
-          restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-codebook-lsp-
-
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust cargo:codebook-lsp"
+          install_args: "rust codebook-lsp"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Run Codebook source spell check

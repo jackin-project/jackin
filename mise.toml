@@ -3,19 +3,61 @@ actionlint = "1.7.12"
 bun = "1.3.14"
 cosign = "3.1.1"
 shellcheck = "0.11.0"
-"cargo:cargo-audit" = "0.22.2"
-"cargo:cargo-deny" = "0.19.8"
-"cargo:cargo-fuzz" = "0.13.1"
-"cargo:cargo-hack" = "0.6.45"
-"cargo:codebook-lsp" = "0.3.41"
-"cargo:cargo-nextest" = "0.9.136"
-"cargo:cargo-shear" = "1.13.0"
-"cargo:cargo-zigbuild" = "0.23.0"
 node = "24.17.0"
 syft = "1.45.1"
 zig = "0.16.0"
 # rust is read from `rust-toolchain.toml` via the `idiomatic_version_file`
 # setting below — single source of truth for the toolchain channel and components.
+
+[tool_alias]
+cargo-audit = "github:rustsec/rustsec"
+cargo-deny = "github:EmbarkStudios/cargo-deny"
+cargo-fuzz = "github:rust-fuzz/cargo-fuzz"
+cargo-hack = "github:taiki-e/cargo-hack"
+cargo-nextest = "github:nextest-rs/nextest"
+cargo-shear = "github:Boshen/cargo-shear"
+cargo-zigbuild = "github:rust-cross/cargo-zigbuild"
+codebook-lsp = "github:blopker/codebook"
+
+[tools.cargo-audit]
+version = "cargo-audit/v0.22.2"
+matching = "cargo-audit"
+rename_exe = "cargo-audit"
+
+[tools.cargo-deny]
+version = "0.19.8"
+matching = "cargo-deny"
+rename_exe = "cargo-deny"
+
+[tools.cargo-fuzz]
+version = "0.13.1"
+matching = "cargo-fuzz"
+rename_exe = "cargo-fuzz"
+
+[tools.cargo-hack]
+version = "0.6.45"
+matching = "cargo-hack"
+rename_exe = "cargo-hack"
+
+[tools.cargo-nextest]
+version = "cargo-nextest-0.9.136"
+matching = "cargo-nextest"
+rename_exe = "cargo-nextest"
+
+[tools.cargo-shear]
+version = "1.13.0"
+matching = "cargo-shear"
+rename_exe = "cargo-shear"
+
+[tools.cargo-zigbuild]
+version = "0.23.0"
+matching = "cargo-zigbuild"
+rename_exe = "cargo-zigbuild"
+
+[tools.codebook-lsp]
+version = "0.3.41"
+matching = "codebook-lsp"
+rename_exe = "codebook-lsp"
 
 [settings]
 idiomatic_version_file_enable_tools = ["rust"]
