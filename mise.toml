@@ -18,6 +18,7 @@ cargo-nextest = "github:nextest-rs/nextest"
 cargo-shear = "github:Boshen/cargo-shear"
 cargo-zigbuild = "github:rust-cross/cargo-zigbuild"
 codebook-lsp = "github:blopker/codebook"
+sccache = "github:mozilla/sccache"
 
 [tools.cargo-audit]
 version = "cargo-audit/v0.22.2"
@@ -58,6 +59,11 @@ rename_exe = "cargo-zigbuild"
 version = "0.3.41"
 matching = "codebook-lsp"
 rename_exe = "codebook-lsp"
+
+[tools.sccache]
+version = "0.16.0"
+matching = "sccache"
+rename_exe = "sccache"
 
 [settings]
 idiomatic_version_file_enable_tools = ["rust"]
