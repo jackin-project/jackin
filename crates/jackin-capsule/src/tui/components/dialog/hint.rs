@@ -3,64 +3,83 @@
 use jackin_tui::HintSpan;
 
 use crate::tui::keymap::{
-    FILTER_LIST_KEYMAP, FilterListAction, READ_ONLY_DISMISS_KEYMAP, RENAME_KEYMAP, RenameAction,
+    CAPSULE_GLOBAL_KEYMAP, FILTER_LIST_KEYMAP, FilterListAction, PREFIX_COMMAND_KEYMAP,
+    READ_ONLY_DISMISS_KEYMAP, RENAME_KEYMAP, ReadOnlyDismissAction, RenameAction,
 };
+
+/// Derive a display glyph for a raw palette-key byte.
+///
+/// Mirrors the `Ctrl-` prefix convention used by [`jackin_tui::keymap::chord_glyph`]
+/// so the hint bar is visually consistent regardless of which key the operator
+/// configured via `JACKIN_PALETTE_KEY`.
+fn format_key_glyph(byte: u8) -> String {
+    match byte {
+        0x01..=0x1A => format!("Ctrl-{}", (b'@' + byte) as char),
+        0x1C => "Ctrl-\\".to_owned(),
+        _ => format!("0x{byte:02X}"),
+    }
+}
 
 /// Return the appropriate hint spans for the main view (no dialog open).
 ///
 /// When `prefix_awaiting` is true the operator has pressed the prefix key and
-/// a compact cheat-sheet of the most-used prefix commands replaces the normal
+/// a keymap-derived cheat-sheet of prefix commands replaces the normal
 /// navigation hints so discovery is possible without a manual.
+///
+/// `palette_key` is the resolved palette-key byte (`self.palette_key.unwrap_or(0x1C)`
+/// from [`crate::tui::input::InputParser`]); it drives the dynamic glyph so the
+/// hint bar stays correct when `JACKIN_PALETTE_KEY` overrides the default.
 pub(crate) fn main_view_hint(
     scrollback_active: bool,
+    palette_key: u8,
     axes: jackin_tui::components::ScrollAxes,
     prefix_awaiting: bool,
 ) -> Vec<HintSpan<'static>> {
     if prefix_awaiting {
-        return vec![
-            HintSpan::Key("space/:"),
-            HintSpan::Text("palette"),
-            HintSpan::GroupSep,
-            HintSpan::Key("h/j/k/l"),
-            HintSpan::Text("split/nav"),
-            HintSpan::GroupSep,
-            HintSpan::Key("n/c"),
-            HintSpan::Text("new/close"),
-            HintSpan::GroupSep,
-            HintSpan::Key("Ctrl-Q"),
-            HintSpan::Text("quit"),
-        ];
+        let mut spans = PREFIX_COMMAND_KEYMAP.hint_spans(); // all Shown prefix keys
+        spans.push(HintSpan::GroupSep);
+        spans.push(HintSpan::Dyn(format_key_glyph(palette_key))); // dynamic palette key glyph
+        spans.push(HintSpan::Text("palette"));
+        spans.push(HintSpan::GroupSep);
+        spans.extend(CAPSULE_GLOBAL_KEYMAP.hint_spans()); // Ctrl-Q quit
+        return spans;
     }
     if scrollback_active {
         let mut spans = jackin_tui::components::scroll_hint_spans(axes);
         if !spans.is_empty() {
             spans.push(HintSpan::GroupSep);
         }
+        // UNREGISTERABLE(scrollback-modal): Esc handled by InputParser scrollback
+        // state check in input.rs, not a static Keymap — no scrollback keymap exists yet.
         spans.push(HintSpan::Key("Esc"));
         spans.push(HintSpan::Text("exit scrollback"));
         spans.push(HintSpan::GroupSep);
-        spans.push(HintSpan::Key("Ctrl+\\"));
+        spans.push(HintSpan::Dyn(format_key_glyph(palette_key)));
         spans.push(HintSpan::Text("menu"));
         spans.push(HintSpan::GroupSep);
-        spans.push(HintSpan::Key("Ctrl-Q"));
-        spans.push(HintSpan::Text("quit"));
+        spans.extend(CAPSULE_GLOBAL_KEYMAP.hint_spans());
         spans
     } else {
-        let mut spans = vec![HintSpan::Key("Ctrl+\\"), HintSpan::Text("menu")];
+        let mut spans = vec![
+            HintSpan::Dyn(format_key_glyph(palette_key)),
+            HintSpan::Text("menu"),
+        ];
         let scroll = jackin_tui::components::scroll_hint_spans(axes);
         if !scroll.is_empty() {
             spans.push(HintSpan::GroupSep);
             spans.extend(scroll);
         }
         spans.push(HintSpan::GroupSep);
+        // UNREGISTERABLE(CSI): corresponds to the Alt+Shift+Arrow decode in input.rs.
+        // Hand-written pending KeyChord::Csi extension tracked in item E of the same roadmap item.
         spans.push(HintSpan::Key("Alt+Shift+↑↓←→"));
         spans.push(HintSpan::Text("resize pane"));
         spans.push(HintSpan::GroupSep);
+        // UNREGISTERABLE(mouse): mouse click cannot be expressed as a KeyChord.
         spans.push(HintSpan::Key("click"));
         spans.push(HintSpan::Text("focus pane"));
         spans.push(HintSpan::GroupSep);
-        spans.push(HintSpan::Key("Ctrl-Q"));
-        spans.push(HintSpan::Text("quit"));
+        spans.extend(CAPSULE_GLOBAL_KEYMAP.hint_spans());
         spans
     }
 }
@@ -119,6 +138,8 @@ pub(super) fn info_dialog_hint(
     copy_label: &'static str,
     axes: jackin_tui::components::ScrollAxes,
 ) -> Vec<HintSpan<'static>> {
+    // UNREGISTERABLE(info-dialog-copy): Enter selects the active copy target;
+    // handled inline by ContainerInfo/GitHubContext — no InfoDialog keymap registered.
     let mut spans = vec![HintSpan::Key("↵"), HintSpan::Text(copy_label)];
     let scroll = jackin_tui::components::scroll_hint_spans(axes);
     if !scroll.is_empty() {
@@ -126,7 +147,9 @@ pub(super) fn info_dialog_hint(
         spans.extend(scroll);
     }
     spans.push(HintSpan::GroupSep);
-    spans.push(HintSpan::Key("Esc"));
+    spans.push(HintSpan::Key(
+        READ_ONLY_DISMISS_KEYMAP.glyph_for(ReadOnlyDismissAction::Dismiss),
+    ));
     spans.push(HintSpan::Text("dismiss"));
     spans
 }

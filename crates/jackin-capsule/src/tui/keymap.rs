@@ -8,7 +8,35 @@
 
 use jackin_tui::components::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
 
-use crate::tui::input::{ArrowDir, PrefixCommand};
+use crate::tui::input::{ArrowDir, InputEvent, PrefixCommand};
+
+// ── Global capsule shortcuts ──────────────────────────────────────────────────
+
+/// Actions available everywhere in the capsule TUI regardless of which dialog
+/// or mode is active. These bindings back both dispatch and hint advertisement
+/// from a single source of truth.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GlobalCapsuleAction {
+    RequestExit,
+}
+
+impl GlobalCapsuleAction {
+    pub(crate) fn to_input_event(self) -> InputEvent {
+        match self {
+            GlobalCapsuleAction::RequestExit => InputEvent::RequestExit,
+        }
+    }
+}
+
+/// Global keymap for capsule-wide shortcuts. Dispatched before any modal or
+/// prefix check so these chords work on every surface without per-mode wiring.
+pub(crate) static CAPSULE_GLOBAL_KEYMAP: Keymap<GlobalCapsuleAction> = Keymap::new(&[KeyBinding {
+    chords: &[KeyChord::ctrl(LogicalKey::Char('q'))],
+    action: GlobalCapsuleAction::RequestExit,
+    hint: Some("quit"),
+    visibility: Visibility::Shown,
+    glyph: None, // auto-derives "Ctrl-Q"
+}]);
 
 /// Static binding table for prefix-mode commands.
 ///
@@ -23,63 +51,65 @@ pub(crate) static PREFIX_COMMAND_KEYMAP: Keymap<PrefixCommand> = Keymap::new(&[
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::Char('c'))],
         action: PrefixCommand::NewTab,
-        hint: Some("new"),
+        hint: Some("new tab"),
         visibility: Visibility::Shown,
-        glyph: Some("c"),
+        glyph: None,
     },
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::Char('n'))],
         action: PrefixCommand::NextTab,
         hint: Some("next tab"),
         visibility: Visibility::Shown,
-        glyph: Some("n"),
+        glyph: None,
     },
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::Char('x'))],
         action: PrefixCommand::KillPane,
         hint: Some("close"),
         visibility: Visibility::Shown,
-        glyph: Some("x"),
+        glyph: None,
     },
+    // h — primary focus nav; grouped glyph advertises all four directions.
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::Char('h'))],
         action: PrefixCommand::MoveFocus(ArrowDir::Left),
-        hint: Some("focus left"),
+        hint: Some("nav"),
         visibility: Visibility::Shown,
-        glyph: Some("h"),
+        glyph: Some("h/j/k/l"),
     },
+    // j, k, l — dispatch but do not produce hint spans.
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::Char('j'))],
         action: PrefixCommand::MoveFocus(ArrowDir::Down),
-        hint: Some("focus down"),
-        visibility: Visibility::Shown,
-        glyph: Some("j"),
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
     },
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::Char('k'))],
         action: PrefixCommand::MoveFocus(ArrowDir::Up),
-        hint: Some("focus up"),
-        visibility: Visibility::Shown,
-        glyph: Some("k"),
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
     },
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::Char('l'))],
         action: PrefixCommand::MoveFocus(ArrowDir::Right),
-        hint: Some("focus right"),
-        visibility: Visibility::Shown,
-        glyph: Some("l"),
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
     },
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::Char('"'))],
         action: PrefixCommand::SplitTopBottom,
-        hint: Some("split top/bottom"),
+        hint: Some("split ↕"),
         visibility: Visibility::Shown,
         glyph: Some("\""),
     },
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::Char('%'))],
         action: PrefixCommand::SplitSideBySide,
-        hint: Some("split left/right"),
+        hint: Some("split ↔"),
         visibility: Visibility::Shown,
         glyph: Some("%"),
     },

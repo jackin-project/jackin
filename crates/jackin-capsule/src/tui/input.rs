@@ -323,6 +323,13 @@ impl InputParser {
         self.prefix.is_some()
     }
 
+    /// The resolved palette-key byte, or `None` when palette mode is disabled.
+    /// Used by the hint builder to render the correct key glyph when the
+    /// operator has overridden `JACKIN_PALETTE_KEY`.
+    pub fn palette_key(&self) -> Option<u8> {
+        self.palette_key
+    }
+
     /// Parse a chunk of client bytes into a stream of events.
     pub fn parse(&mut self, bytes: &[u8]) -> Vec<InputEvent> {
         let mut events = Vec::new();
@@ -348,13 +355,12 @@ impl InputParser {
                         // `JACKIN_PALETTE_KEY=none`.
                         flush(&mut data, &mut events);
                         events.push(InputEvent::OpenPalette);
-                    } else if b == CTRL_Q {
-                        // Ctrl+Q → exit confirmation. Same quit chord as the
-                        // console and launch cockpit. Requires the client tty
-                        // to keep `0x11` out of XON/XOFF flow control (raw mode
-                        // clears IXON), otherwise the byte never reaches here.
+                    } else if let Some(chord) = jackin_tui::keymap::raw_bytes_to_chord(&[b])
+                        && let Some(action) =
+                            crate::tui::keymap::CAPSULE_GLOBAL_KEYMAP.dispatch(chord)
+                    {
                         flush(&mut data, &mut events);
-                        events.push(InputEvent::RequestExit);
+                        events.push(action.to_input_event());
                     } else if Some(b) == self.prefix {
                         flush(&mut data, &mut events);
                         self.state = State::PrefixAwait;
@@ -528,9 +534,6 @@ impl InputParser {
 
 const PASTE_START: &[u8] = b"\x1b[200~";
 const PASTE_END: &[u8] = b"\x1b[201~";
-
-/// `Ctrl+Q` control byte (DC1). The quit-confirmation chord.
-const CTRL_Q: u8 = 0x11;
 
 fn flush(data: &mut Vec<u8>, events: &mut Vec<InputEvent>) {
     if !data.is_empty() {
@@ -737,7 +740,10 @@ fn classify_csi(seq: &[u8]) -> Option<Option<InputEvent>> {
             return Some(None);
         }
 
-        // Alt+Shift+Arrow → multiplexer pane resize.
+        // UNREGISTERABLE(CSI): Alt+Shift+Arrow is a multi-byte CSI escape sequence.
+        // Keymap<A> operates on single bytes and cannot represent multi-byte chords.
+        // When KeyChord gains a Csi(CsiKey) variant (see roadmap item
+        // "Keymap registry and hint-bar consistency", item E), this arm moves into a keymap.
         if modifier == 4 {
             let dir = match final_byte {
                 b'A' => ArrowDir::Up,
