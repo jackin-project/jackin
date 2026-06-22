@@ -1837,17 +1837,27 @@ pub(super) async fn build_agent_image(
     };
     drop(repo_lock);
 
+    // Read the rendered Dockerfile once and drive every downstream decision
+    // (debug dump, ROLE_GIT_SHA arg, github_token secret) off the in-memory
+    // body instead of re-reading the file 2–3× per build. On read error fall
+    // back to each predicate's conservative default (token=true, sha=false).
+    let dockerfile_body = std::fs::read_to_string(&build.dockerfile_path).ok();
     if debug {
-        let dockerfile_body = std::fs::read_to_string(&build.dockerfile_path)
-            .unwrap_or_else(|e| format!("<read failed: {e}>"));
+        let rendered = dockerfile_body.as_deref().unwrap_or("<read failed>");
         jackin_diagnostics::emit_debug_line(
             "image",
             &format!(
-                "DerivedDockerfile ({}):\n{dockerfile_body}",
+                "DerivedDockerfile ({}):\n{rendered}",
                 build.dockerfile_path.display(),
             ),
         );
     }
+    let requests_role_git_sha = dockerfile_body
+        .as_deref()
+        .is_some_and(dockerfile_body_requests_role_git_sha_arg);
+    let requests_github_token = dockerfile_body
+        .as_deref()
+        .is_none_or(dockerfile_body_requests_github_token_secret);
     let image = local_image_name.clone();
 
     let build_arg_role_git_sha =
@@ -1926,7 +1936,7 @@ pub(super) async fn build_agent_image(
     if supported_set_uses_cache_bust(&validated_repo.manifest) {
         build_args.extend(["--build-arg", &cache_bust]);
     }
-    if dockerfile_requests_role_git_sha_arg(&build.dockerfile_path) {
+    if requests_role_git_sha {
         build_args.extend(["--build-arg", &build_arg_role_git_sha]);
     }
     for label in &recipe_labels {
@@ -1934,10 +1944,8 @@ pub(super) async fn build_agent_image(
     }
     build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);
 
-    let dockerfile_requests_github_token =
-        dockerfile_requests_github_token_secret(&build.dockerfile_path);
     jackin_diagnostics::active_timing_started("derived image", "resolve_github_token", None);
-    let github_token = if dockerfile_requests_github_token {
+    let github_token = if requests_github_token {
         resolve_github_token(runner).await
     } else {
         None
@@ -1945,7 +1953,7 @@ pub(super) async fn build_agent_image(
     jackin_diagnostics::active_timing_done(
         "derived image",
         "resolve_github_token",
-        if !dockerfile_requests_github_token {
+        if !requests_github_token {
             Some("skipped")
         } else if github_token.is_some() {
             Some("token")

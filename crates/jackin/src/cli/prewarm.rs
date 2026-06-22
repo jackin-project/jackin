@@ -328,6 +328,34 @@ async fn prewarm_role_repos(
     }
 }
 
+/// Resolve a role's git source: prefer an explicit `--role-git` override, else
+/// look it up in `config.roles[selector]`. On miss, the error suggests
+/// `--role-git` only when `suggest_role_git_flag` is set — the flag conflicts
+/// with `--workspace`/`--all-workspaces`, so the workspace path must not hint it.
+fn resolve_role_git(
+    config: &AppConfig,
+    selector: &RoleSelector,
+    override_git: Option<&str>,
+    suggest_role_git_flag: bool,
+) -> anyhow::Result<String> {
+    override_git
+        .map(str::to_owned)
+        .or_else(|| {
+            config
+                .roles
+                .get(&selector.key())
+                .map(|source| source.git.clone())
+        })
+        .ok_or_else(|| {
+            let hint = if suggest_role_git_flag {
+                "; pass `--role-git <url>`"
+            } else {
+                ""
+            };
+            anyhow::anyhow!("no git source configured for role `{selector}`{hint}")
+        })
+}
+
 struct PrewarmRoleTarget {
     selector: RoleSelector,
     role_git: String,
@@ -360,20 +388,7 @@ impl PrewarmRoleTarget {
 
         if let Some(role) = args.role.as_deref() {
             let selector = RoleSelector::parse(role)?;
-            let role_git = args
-                .role_git
-                .clone()
-                .or_else(|| {
-                    config
-                        .roles
-                        .get(&selector.key())
-                        .map(|source| source.git.clone())
-                })
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "no git source configured for role `{selector}`; pass `--role-git <url>`"
-                    )
-                })?;
+            let role_git = resolve_role_git(config, &selector, args.role_git.as_deref(), true)?;
             return Ok(vec![Self { selector, role_git }]);
         }
 
@@ -401,11 +416,7 @@ impl PrewarmRoleTarget {
             return Ok(None);
         };
         let selector = RoleSelector::parse(role)?;
-        let role_git = config
-            .roles
-            .get(&selector.key())
-            .map(|source| source.git.clone())
-            .ok_or_else(|| anyhow::anyhow!("no git source configured for role `{selector}`"))?;
+        let role_git = resolve_role_git(config, &selector, None, false)?;
         Ok(Some(Self { selector, role_git }))
     }
 }
@@ -546,20 +557,7 @@ impl PrewarmImageTarget {
 
         if let Some(role) = args.role.as_deref() {
             let selector = RoleSelector::parse(role)?;
-            let role_git = args
-                .role_git
-                .clone()
-                .or_else(|| {
-                    config
-                        .roles
-                        .get(&selector.key())
-                        .map(|source| source.git.clone())
-                })
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "no git source configured for role `{selector}`; pass `--role-git <url>`"
-                    )
-                })?;
+            let role_git = resolve_role_git(config, &selector, args.role_git.as_deref(), true)?;
             return Ok(vec![Self {
                 label: selector.to_string(),
                 selector,
@@ -595,11 +593,7 @@ impl PrewarmImageTarget {
             return Ok(None);
         };
         let selector = RoleSelector::parse(role)?;
-        let role_git = config
-            .roles
-            .get(&selector.key())
-            .map(|source| source.git.clone())
-            .ok_or_else(|| anyhow::anyhow!("no git source configured for role `{selector}`"))?;
+        let role_git = resolve_role_git(config, &selector, None, false)?;
         let (agents, is_agent_narrowed) = if args.agents.is_empty() {
             workspace
                 .default_agent
