@@ -33,7 +33,7 @@ jackin' split across multiple GitHub repos. This repo owns CLI; siblings own rol
 | [`jackin-project/homebrew-tap`](https://github.com/jackin-project/homebrew-tap) | Homebrew formulae — preview now, stable once jackin reaches first stable release |
 | [`jackin-project/jackin-marketplace`](https://github.com/jackin-project/jackin-marketplace) | Claude plugin marketplace consumed by role manifests |
 | [`jackin-project/validate-agent-action`](https://github.com/jackin-project/validate-agent-action) | GitHub Action validating `jackin.role.toml` in role repos |
-| [`jackin-project/jackin-dev`](https://github.com/jackin-project/jackin-dev) | Internal dev tooling and shared dotfiles |
+| [`jackin-project/jackin-dev`](https://github.com/jackin-project/jackin-dev) | Legacy/internal dev tooling and shared dotfiles; the installed PR verification binary now lives in this repo under `crates/jackin-dev/` |
 | [`jackin-project/jackin-github-terraform`](https://github.com/jackin-project/jackin-github-terraform) | Terraform managing the `jackin-project` GitHub org |
 
 ## Root files in this repo
@@ -60,6 +60,7 @@ CLI source under `src/`; supporting files at repo root:
 | `TODO.md` | Small follow-ups and per-PR stale-docs check |
 | `release.toml` | Release configuration |
 | `mise.toml` | Tool versions and construct image task definitions |
+| `crates/jackin-dev/` | Installed developer helper binary (`jackin-dev`) for local PR checkout/sync/isolation workflows |
 | `crates/jackin-xtask/` | Workspace automation binary (`cargo xtask`): construct image tasks + PTY fixture extraction; full command inventory at [Workspace Automation](https://jackin.tailrocks.com/reference/getting-oriented/xtasks/) |
 | `docker-bake.hcl` | Declarative Docker Bake build graph for construct image |
 | `rust-toolchain.toml` | Pinned Rust toolchain (CI-enforced MSRV) |
