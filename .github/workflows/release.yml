@@ -127,7 +127,7 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "on"
+      SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
       SCCACHE_GHA_CACHE_TO: sccache-release-jackin-${{ matrix.config.lane }}-${{ matrix.target.triple }}
       SCCACHE_GHA_CACHE_FROM: sccache-release-jackin-${{ matrix.config.lane }}-${{ matrix.target.triple }}
     steps:
@@ -157,6 +157,7 @@ jobs:
           # reruns skip recompiling unchanged dependencies.
       - run: rustup target add ${{ matrix.target.triple }}
       - name: Export sccache GitHub cache runtime
+        if: matrix.config.lane == 'GitHub'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
@@ -206,7 +207,7 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "on"
+      SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
       SCCACHE_GHA_CACHE_TO: sccache-release-capsule-${{ matrix.config.lane }}-${{ matrix.target.triple }}
       SCCACHE_GHA_CACHE_FROM: sccache-release-capsule-${{ matrix.config.lane }}-${{ matrix.target.triple }}
     strategy:
@@ -245,6 +246,7 @@ jobs:
           # reruns skip recompiling unchanged dependencies.
       - run: rustup target add ${{ matrix.target.triple }}
       - name: Export sccache GitHub cache runtime
+        if: matrix.config.lane == 'GitHub'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
