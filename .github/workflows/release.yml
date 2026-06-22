@@ -61,21 +61,19 @@ jobs:
     secrets: inherit
 
   build:
-    needs: [check-version, test]
+    needs: check-version
     strategy:
       matrix:
         include:
           - target: x86_64-apple-darwin
-            os: macos-latest
+            zigbuild_target: x86_64-apple-darwin
           - target: aarch64-apple-darwin
-            os: macos-latest
+            zigbuild_target: aarch64-apple-darwin
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            zigbuild: true
+            zigbuild_target: x86_64-unknown-linux-gnu.2.17
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            zigbuild: true
-    runs-on: ${{ matrix.os }}
+            zigbuild_target: aarch64-unknown-linux-gnu.2.17
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
@@ -100,43 +98,40 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust cosign syft"
+          install_args: "rust zig cargo-zigbuild cosign syft"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}-${{ matrix.target }}
+          shared-key: archive-jackin-${{ matrix.target }}
           cache-all-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
       - run: rustup target add ${{ matrix.target }}
-      - name: Install cargo-zigbuild
-        if: matrix.zigbuild
-        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - name: Cache macOS SDK
+        if: contains(matrix.target, 'apple')
+        id: sdk-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          version: "2026.6.11"
-          cache_key_prefix: "mise-v2"
-          install_args: "zig cargo-zigbuild"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ${{ github.job }}-${{ matrix.target }}
-          cache-all-crates: "true"
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
+          path: /tmp/macos-sdk
+          key: macos-sdk-26.1
+      - name: Download macOS SDK
+        if: contains(matrix.target, 'apple') && steps.sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/macos-sdk
+          curl -fsSL "https://github.com/joseluisq/macosx-sdks/releases/download/26.1/MacOSX26.1.sdk.tar.xz" \
+            | tar -xJ -C /tmp/macos-sdk
+      - name: Set macOS SDKROOT
+        if: contains(matrix.target, 'apple')
+        run: |
+          echo "SDKROOT=/tmp/macos-sdk/MacOSX26.1.sdk" >> "$GITHUB_ENV"
+          echo "MACOSX_DEPLOYMENT_TARGET=12.0" >> "$GITHUB_ENV"
       - name: Build
         env:
           JACKIN_VERSION_OVERRIDE: ${{ needs.check-version.outputs.version }}
-        run: |
-          if [ "${{ matrix.zigbuild }}" = "true" ]; then
-            cargo zigbuild --timings --release --locked --target ${{ matrix.target }}.2.17
-          else
-            cargo build --timings --release --locked --target ${{ matrix.target }}
-          fi
+          ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
+        run: cargo zigbuild --timings --release --locked --target "$ZIGBUILD_TARGET"
       - name: Upload cargo timings
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -150,7 +145,7 @@ jobs:
         run: |
           archive="jackin-${VERSION}-${{ matrix.target }}.tar.gz"
           tar -czf "$archive" -C "target/${{ matrix.target }}/release" jackin jackin-role
-          shasum -a 256 "$archive" > "$archive.sha256"
+          sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
           echo "archive=$archive" >> "$GITHUB_ENV"
 
       - name: Sign, SBOM, and attest archive
@@ -168,7 +163,7 @@ jobs:
             jackin-*.tar.gz.sbom.json
 
   build-jackin-capsule:
-    needs: [check-version, test]
+    needs: check-version
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -204,7 +199,7 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}-${{ matrix.target }}
+          shared-key: archive-capsule-${{ matrix.target }}
           cache-all-crates: "true"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
@@ -251,7 +246,7 @@ jobs:
             jackin-capsule-*.tar.gz.sbom.json
 
   release:
-    needs: [check-version, build, build-jackin-capsule]
+    needs: [check-version, test, build, build-jackin-capsule]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
