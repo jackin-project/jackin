@@ -110,29 +110,14 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJSON(inputs.runner-configs-json) }}
-        package:
+        group:
           - jackin
-          - jackin-build-meta
           - jackin-capsule
-          - jackin-config
-          - jackin-console
-          - jackin-core
-          - jackin-dev
-          - jackin-diagnostics
-          - jackin-docker
-          - jackin-env
-          - jackin-image
-          - jackin-launch
-          - jackin-manifest
-          - jackin-pr-trailers
-          - jackin-protocol
           - jackin-runtime
-          - jackin-term
           - jackin-tui
-          - jackin-tui-lookbook
-          - jackin-xtask
+          - small-crates
     runs-on: ${{ fromJSON(matrix.config.runner) }}
-    name: cargo nextest ${{ matrix.package }} (${{ matrix.config.lane }})
+    name: cargo nextest ${{ matrix.group }} (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_NET_RETRY: "10"
@@ -185,7 +170,26 @@ jobs:
             attempt="$((attempt + 1))"
           done
 
-          args=(-p "${{ matrix.package }}" --no-tests=pass --color=always --locked)
+          case "${{ matrix.group }}" in
+            jackin|jackin-capsule|jackin-runtime|jackin-tui)
+              args=(-p "${{ matrix.group }}")
+              ;;
+            small-crates)
+              args=(
+                --workspace
+                --exclude jackin
+                --exclude jackin-capsule
+                --exclude jackin-runtime
+                --exclude jackin-tui
+              )
+              ;;
+            *)
+              echo "::error::unknown nextest package group: ${{ matrix.group }}"
+              exit 1
+              ;;
+          esac
+
+          args+=(--no-tests=pass --color=always --locked)
           if [ "${{ inputs.all-features }}" = "true" ]; then
             args+=(--all-features)
           fi
