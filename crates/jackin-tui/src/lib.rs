@@ -261,12 +261,14 @@ pub mod ansi {
     }
 
     /// Static "frozen digital rain" field shown above the root `jackin --help`
-    /// pill on a wide interactive terminal: phosphor glyphs from the shared rain
-    /// pool, fading downward toward the `jackin❯` pill clap prints below it.
-    /// Deterministic (a fixed per-cell seed), so the output is identical on
-    /// every run; bounded to 58 columns. Printed directly to the terminal (not
-    /// through clap, which reflows multi-line ANSI art). A static documentation
-    /// surface — not the live launch rain, which the Launch Progress TUI owns.
+    /// pill on a wide interactive terminal. A single frame of the same rain the
+    /// launch cockpit renders: per-column drops with a white head and a trail
+    /// fading up through phosphor to dark (the shared `RAIN_*` palette and age
+    /// ramp), so it reads as vertical rain, not scattered glyphs. Deterministic
+    /// (fixed per-column seeds), identical on every run; bounded to 58 columns.
+    /// Printed directly to the terminal (not through clap, which reflows
+    /// multi-line ANSI art). A static documentation surface — not the live
+    /// launch rain, which the Launch Progress TUI owns.
     pub fn help_banner() -> &'static str {
         static BANNER: std::sync::LazyLock<String> = std::sync::LazyLock::new(build_help_banner);
         BANNER.as_str()
@@ -278,42 +280,64 @@ pub mod ansi {
 
     fn build_help_banner() -> String {
         const W: usize = 56;
-        const H: usize = 4;
-        // Same alphanumeric pool as the live rain, minus brace/angle glyphs.
+        const H: usize = 5;
+        // Full rain pool, matching the launch cockpit and the live site rain.
         const POOL: &[u8] =
-            b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@#$%&*|/\\~";
-        // Phosphor ramp, brightest at the bottom row so the field reads as rain
-        // settling onto the pill clap prints underneath.
-        const RAMP: [&str; 5] = [
-            "\x1b[38;2;0;80;18m",     // dark
-            "\x1b[38;2;0;80;18m",     // dark
-            "\x1b[38;2;0;140;30m",    // dim
-            "\x1b[38;2;0;255;65m",    // phosphor
-            "\x1b[38;2;180;255;180m", // pale leader
-        ];
+            b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@#$%&*<>{}[]|/\\~";
+
+        // Same age -> colour ramp as the launch rain's `age_to_color`: a white
+        // head fading up through phosphor to dark before the trail dies.
+        let age_to_rgb = |age: u16| -> Option<Rgb> {
+            match age {
+                0 => Some(crate::RAIN_HEAD),
+                1..=2 => Some(crate::RAIN_FRESH),
+                3..=5 => Some(crate::RAIN_BODY),
+                6..=10 => Some(crate::RAIN_MID),
+                11..=16 => Some(crate::RAIN_DIM),
+                17..=24 => Some(crate::RAIN_DARK),
+                _ => None,
+            }
+        };
+        let xorshift = |mut s: u64| -> u64 {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            s
+        };
 
         let mut out = String::from("\n");
         for r in 0..H {
-            // Thin the field toward the top so it fades in above the pill.
-            let density = 16 + r * 6;
             out.push_str("  ");
             for c in 0..W {
-                // Deterministic per-cell value; identical on every run.
-                let mut s = (r as u64)
-                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-                    ^ (c as u64).wrapping_mul(0xD1B5_4A32_D192_ED03)
-                    ^ 0xCAFE_F00D_1234_5678;
-                s ^= s << 13;
-                s ^= s >> 7;
-                s ^= s << 17;
-                if (s % 100) < density as u64 {
-                    let bucket = (s >> 8) as usize % RAMP.len();
-                    let ch = POOL[(s >> 16) as usize % POOL.len()] as char;
-                    out.push_str(RAMP[bucket]);
-                    out.push(ch);
-                    out.push_str(RESET);
+                // Per-column drop: a falling white head with a trail above it, so
+                // the field reads as vertical rain rather than scattered noise.
+                let col_seed = xorshift((c as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x5EED);
+                let lit = if col_seed % 100 < 46 {
+                    // Head may sit just below the window so some columns show only
+                    // the dimmer tail; fade rate sets the trail length.
+                    let head = (col_seed >> 8) % (H as u64 + 4);
+                    let fade = 1 + (col_seed >> 24) % 3;
+                    if (r as u64) <= head {
+                        // Trail length tops out at 24 age units, so this fits u16.
+                        age_to_rgb(((head - r as u64) * fade) as u16)
+                    } else {
+                        None
+                    }
                 } else {
-                    out.push(' ');
+                    None
+                };
+                match lit {
+                    Some(rgb) => {
+                        let g = xorshift(
+                            (r as u64).wrapping_mul(0xD1B5_4A32_D192_ED03)
+                                ^ (c as u64).wrapping_mul(0x2545_F491_4F6C_DD1D)
+                                ^ 0xCAFE_F00D,
+                        );
+                        let ch = POOL[(g as usize) % POOL.len()] as char;
+                        out.push_str(&format!("\x1b[38;2;{};{};{}m{ch}", rgb.r, rgb.g, rgb.b));
+                        out.push_str(RESET);
+                    }
+                    None => out.push(' '),
                 }
             }
             while out.ends_with(' ') {
