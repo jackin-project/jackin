@@ -365,9 +365,8 @@ fn prebuilt_shellfirm_matches(version: &str) -> Result<bool> {
         clippy::disallowed_methods,
         reason = "build helper: synchronous version probe before Docker build"
     )]
-    let output = match Command::new(path).arg("--version").output() {
-        Ok(output) => output,
-        Err(_) => return Ok(false),
+    let Ok(output) = Command::new(path).arg("--version").output() else {
+        return Ok(false);
     };
     if !output.status.success() {
         return Ok(false);
