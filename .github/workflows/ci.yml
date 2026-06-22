@@ -1,5 +1,5 @@
-# NOTE: `preview.yml` triggers on `workflow_run.workflows: ["CI"]`,
-# so the workflow name below is load-bearing. Renaming this file's
+# NOTE: `preview.yml` gates its publish step on the latest successful
+# push run for this workflow name and source SHA. Renaming this file's
 # `name:` field silently breaks the Homebrew preview publish chain.
 name: CI
 
@@ -695,81 +695,6 @@ jobs:
           # reruns skip recompiling unchanged dependencies.
       - run: cargo audit
 
-  build-validator:
-    needs: [changes, matrix-setup]
-    # Run on push-to-main when Rust inputs change, and on any
-    # workflow_dispatch so a maintainer can re-build the validator
-    # artifacts on demand without waiting for a Rust-touching push.
-    if: >-
-      (github.event_name == 'push' &&
-       github.ref == 'refs/heads/main' &&
-       needs.changes.outputs.rust == 'true') ||
-      github.event_name == 'workflow_dispatch'
-    runs-on: ${{ fromJSON(matrix.config.runner) }}
-    timeout-minutes: 60
-    name: cargo build validator (${{ matrix.config.lane }})
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_TERM_COLOR: always
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
-        target:
-          - triple: x86_64-unknown-linux-gnu
-            zigbuild: true
-          - triple: aarch64-unknown-linux-gnu
-            zigbuild: true
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Cache Rust toolchain
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
-          restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        with:
-          version: "2026.6.11"
-          cache_key_prefix: "mise-v2"
-          install_args: "${{ matrix.target.zigbuild && 'rust zig cargo-zigbuild' || 'rust' }}"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ${{ github.job }}-${{ matrix.target.triple }}
-          cache-all-crates: "true"
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
-      - run: rustup target add ${{ matrix.target.triple }}
-      - name: Build validator (${{ matrix.target.triple }})
-        run: cargo zigbuild --timings --release --locked --bin jackin-role --target ${{ matrix.target.triple }}.2.17
-      - name: Upload cargo timings
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: cargo-timings-validator-${{ matrix.target.triple }}-${{ matrix.config.lane }}
-          path: target/cargo-timings/*.html
-          if-no-files-found: ignore
-          retention-days: 7
-      - name: Package validator
-        run: |
-          archive="jackin-role-${{ matrix.target.triple }}.tar.gz"
-          tar -czf "$archive" -C "target/${{ matrix.target.triple }}/release" jackin-role
-          sha256sum "$archive" > "$archive.sha256"
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: jackin-role-${{ matrix.target.triple }}-${{ matrix.config.lane }}
-          path: |
-            jackin-role-${{ matrix.target.triple }}.tar.gz
-            jackin-role-${{ matrix.target.triple }}.tar.gz.sha256
-          retention-days: 7
-
   # Single stable check name for branch-protection required-status,
   # regardless of which gated jobs skipped under it.
   ci-required:
@@ -788,7 +713,6 @@ jobs:
       - fuzz
       - bench-build
       - msrv
-      - build-validator
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
