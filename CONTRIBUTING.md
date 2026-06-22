@@ -70,6 +70,7 @@ cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo check --all-targets
 cargo nextest run --all-features
+cargo nextest run -p jackin --features e2e --run-ignored=only -E 'binary(dind_e2e)'
 ```
 
 Fmt fail → `cargo fmt`, re-check. See [TESTING.md](TESTING.md).

@@ -26,11 +26,22 @@ Run tests for specific module:
 cargo nextest run -E 'test(/module::tests/)'
 ```
 
-Run Docker-backed smoke tests:
+Run all feature-gated Rust tests except ignored environment-backed smoke tests:
 
 ```sh
 cargo nextest run --all-features
 ```
+
+Run Docker-backed smoke tests:
+
+```sh
+cargo nextest run -p jackin --features e2e --run-ignored=only -E 'binary(dind_e2e)'
+```
+
+In PR checkouts, run `cargo xtask pr prepare <PR_NUMBER> --capsule` and source
+the generated `env.sh` first. Outside the PR prepare flow, use
+`eval "$(cargo run --bin build-jackin-capsule -- --export)"` before the
+Docker-backed smoke command.
 
 Never `cargo test` — always `cargo nextest run`.
 

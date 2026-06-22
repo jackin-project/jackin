@@ -452,6 +452,8 @@ jobs:
           cargo build -p jackin-capsule --bin jackin-capsule
           echo "JACKIN_CAPSULE_BIN=$PWD/target/debug/jackin-capsule" >> "$GITHUB_ENV"
       - run: cargo nextest run --workspace --all-features --color=always
+      - name: Run Docker E2E smoke tests
+        run: cargo nextest run -p jackin --features e2e --run-ignored=only -E 'binary(dind_e2e)' --color=always
   fuzz:
     needs: [changes, check-all-features, matrix-setup]
     if: needs.changes.outputs.rust == 'true'

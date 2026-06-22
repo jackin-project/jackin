@@ -2807,6 +2807,10 @@ plugins = []
         !recorded.contains("gh auth token"),
         "Dockerfiles without id=github_token must skip build-token lookup; recorded:\n{recorded}"
     );
+    assert!(
+        !build_call.contains("--secret") && !build_call.contains("id=github_token"),
+        "Dockerfiles without id=github_token must not inject a BuildKit secret; got:\n{build_call}"
+    );
     assert!(!recorded.contains("id -u"));
     assert!(!recorded.contains("id -g"));
 
@@ -2826,10 +2830,10 @@ plugins = []
             .contains(&("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned()))
     );
     assert!(
-        !build_opts
+        build_opts
             .extra_env
             .contains(&("DOCKER_BUILDKIT".to_owned(), "1".to_owned())),
-        "BuildKit secret mode should stay off when no GitHub token secret is requested"
+        "Docker builds must use BuildKit even when no GitHub token secret is requested"
     );
 }
 

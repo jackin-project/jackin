@@ -14,7 +14,7 @@
 )]
 
 use std::io::{Read, Write as _};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{
     Arc, Mutex,
@@ -54,6 +54,7 @@ impl Drop for E2eRoleCleanup {
 }
 
 #[test]
+#[ignore = "requires Docker, a local jackin-capsule binary, PTY support, and networked image/dependency pulls"]
 fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     require_e2e_prereqs();
     let _serial = e2e_serial_lock();
@@ -159,6 +160,7 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
 }
 
 #[test]
+#[ignore = "requires Docker, a local jackin-capsule binary, PTY support, and networked image/dependency pulls"]
 fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
     require_e2e_prereqs();
     let _serial = e2e_serial_lock();
@@ -306,10 +308,11 @@ fn find_report_value<'a>(report: &'a str, key: &str) -> Option<&'a str> {
 }
 
 /// Hard-fail with an actionable message when the e2e prerequisites are
-/// missing. The `e2e` feature is opt-in (CI runs `cargo nextest run
-/// --all-features` on a Docker-equipped runner); silently skipping would
-/// turn a missing prereq into a green check.
+/// missing. These tests are ignored by default and only run when the operator
+/// asks for the real Docker smoke lane; silently skipping would turn a missing
+/// prereq into a green check.
 fn require_e2e_prereqs() {
+    require_capsule_binary_override();
     assert!(
         docker_available(),
         "e2e tests require a running Docker daemon (`docker info` failed). \
@@ -321,6 +324,39 @@ fn require_e2e_prereqs() {
          Install bsdmainutils (Debian/Ubuntu) or util-linux (most distros), \
          or disable the `e2e` feature."
     );
+}
+
+fn require_capsule_binary_override() {
+    let Some(path) = std::env::var_os("JACKIN_CAPSULE_BIN") else {
+        panic!(
+            "e2e tests require JACKIN_CAPSULE_BIN to point at a locally built \
+             Linux jackin-capsule binary. In PR checkouts, run \
+             `cargo xtask pr prepare <PR_NUMBER> --capsule` and source the \
+             generated env.sh first. Outside that flow, run \
+             `eval \"$(cargo run --bin build-jackin-capsule -- --export)\"`. \
+             The e2e harness must not fall back to the preview-release \
+             download verifier."
+        );
+    };
+    let path = PathBuf::from(path);
+    assert!(
+        path.is_file(),
+        "JACKIN_CAPSULE_BIN must point at a file, got {}",
+        path.display()
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(&path)
+            .unwrap_or_else(|error| panic!("failed to stat {}: {error}", path.display()))
+            .permissions()
+            .mode();
+        assert!(
+            mode & 0o111 != 0,
+            "JACKIN_CAPSULE_BIN must be executable, got {}",
+            path.display()
+        );
+    }
 }
 
 fn docker_available() -> bool {
@@ -363,10 +399,15 @@ fn run_in_pty_with_input(
     input: &str,
     input_mode: PtyInputMode,
 ) -> std::process::Output {
-    let mut command = pty_command(jackin, args, home, cwd, extra_env, true);
+    let mut command = pty_command(jackin, args, home, cwd, extra_env);
     if input.is_empty() {
-        command.stdin(Stdio::null());
-        return command.output().expect("script must spawn");
+        let child = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("script must spawn");
+        return wait_for_pty_output(child, home, Duration::from_mins(6));
     }
 
     let mut child = command
@@ -378,13 +419,60 @@ fn run_in_pty_with_input(
     let mut stdin = child.stdin.take().expect("script stdin must be piped");
     match input_mode {
         PtyInputMode::OnceAfter(delay) => {
-            std::thread::sleep(delay);
-            stdin
-                .write_all(input.as_bytes())
-                .expect("script stdin write must succeed");
-            drop(stdin);
-            child.wait_with_output().expect("script must finish")
+            let input = input.to_owned();
+            let writer = std::thread::spawn(move || {
+                std::thread::sleep(delay);
+                drop(stdin.write_all(input.as_bytes()));
+            });
+            let output = wait_for_pty_output(child, home, Duration::from_mins(6));
+            writer.join().expect("stdin writer must finish");
+            output
         }
+    }
+}
+
+fn wait_for_pty_output(
+    mut child: std::process::Child,
+    home: &Path,
+    timeout: Duration,
+) -> std::process::Output {
+    let stdout = child.stdout.take().expect("script stdout must be piped");
+    let stderr = child.stderr.take().expect("script stderr must be piped");
+    let (stdout_buf, stdout_reader) = spawn_pipe_collector(stdout);
+    let (stderr_buf, stderr_reader) = spawn_pipe_collector(stderr);
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        if let Some(status) = child.try_wait().expect("script status must be readable") {
+            stdout_reader.join().expect("stdout reader must finish");
+            stderr_reader.join().expect("stderr reader must finish");
+            return std::process::Output {
+                status,
+                stdout: buffer_bytes(&stdout_buf),
+                stderr: buffer_bytes(&stderr_buf),
+            };
+        }
+
+        if Instant::now() >= deadline {
+            drop(child.kill());
+            let status = child.wait().expect("script must finish");
+            stdout_reader.join().expect("stdout reader must finish");
+            stderr_reader.join().expect("stderr reader must finish");
+            let output = std::process::Output {
+                status,
+                stdout: buffer_bytes(&stdout_buf),
+                stderr: buffer_bytes(&stderr_buf),
+            };
+            panic!(
+                "timed out waiting for PTY command after {}s\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
+                timeout.as_secs(),
+                diagnostics_snapshot(home),
+                tail_text(&String::from_utf8_lossy(&output.stdout)),
+                tail_text(&String::from_utf8_lossy(&output.stderr)),
+            );
+        }
+
+        std::thread::sleep(Duration::from_millis(100));
     }
 }
 
@@ -394,15 +482,8 @@ fn pty_command(
     home: &Path,
     cwd: &Path,
     extra_env: &[(&str, &str)],
-    linux_timeout: bool,
 ) -> Command {
-    let mut command = if cfg!(target_os = "linux") && linux_timeout {
-        let mut command = Command::new("timeout");
-        command.args(["--kill-after=5s", "360s", "script"]);
-        command
-    } else {
-        Command::new("script")
-    };
+    let mut command = Command::new("script");
     // BSD `script` (macOS) takes the command as positional args after the
     // typescript file. util-linux `script` (most Linux distros) takes it
     // via `-c <shell-string>`. BusyBox `script` is closer to BSD; if
@@ -452,7 +533,7 @@ fn run_in_pty_until_file(
     script: &[PtyScriptStep],
     sentinel: PtyFileSentinel<'_>,
 ) -> std::process::Output {
-    let mut child = pty_command(jackin, args, home, cwd, extra_env, false)
+    let mut child = pty_command(jackin, args, home, cwd, extra_env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -694,7 +775,7 @@ fn diagnostics_snapshot(home: &Path) -> String {
     out
 }
 
-fn latest_docker_build_log(home: &Path) -> Option<std::path::PathBuf> {
+fn latest_docker_build_log(home: &Path) -> Option<PathBuf> {
     let dir = home.join(".jackin/data/diagnostics/runs");
     let mut files = std::fs::read_dir(&dir)
         .ok()?
