@@ -46,7 +46,7 @@ Each pull request gets one self-contained bundle:
 
 `env.sh` exports `PATH` so the freshly built checkout binary wins, `JACKIN_CONFIG_DIR` pointing at `state/config`, and `JACKIN_HOME_DIR` pointing at `state/home`. That makes the whole verification root removable with one directory delete and prevents stale `~/.config/jackin-pr-*` or `~/.jackin-pr-*` folders from accumulating.
 
-`sync` defaults to the safe real-world profile: copy the operator's real jackin' configuration into the bundle, replace the prior copied config on each sync, and keep runtime state empty and bundle-local. If no real configuration exists, it creates an empty config directory. Clean-room verification stays available as an explicit override, but normal PR bodies do not carry `--config copy` or `--replace-config` flags because those are the default.
+`sync` defaults to the safe real-world profile: copy the operator's real jackin' configuration into the bundle, replace the prior copied config on each sync, and keep runtime state empty and bundle-local. If no real configuration exists, it creates an empty config directory. Clean-room verification stays available as an explicit `--config blank` override, but normal PR bodies stay flagless because `--config copy` is the default.
 
 `sync` also decides expensive prep from the pull request diff. If the pull request touches `crates/jackin-capsule/` or the shared protocol surface the capsule consumes, it builds and exports the PR's `jackin-capsule` binary into `env.sh`. If the pull request touches construct image inputs, it builds the local construct image and exports `JACKIN_CONSTRUCT_IMAGE`. Routine PR instructions stay flagless; the command explains what it auto-enabled and why.
 

@@ -11,6 +11,10 @@ use serde_json::Value;
 
 const DEFAULT_REPO: &str = "jackin-project/jackin";
 const REPO_DIR_NAME: &str = "jackin";
+// Locked to the `construct-build-local` default tag composed from
+// `LOCAL_REGISTRY_IMAGE`/`STABLE_TAG` in `jackin-xtask/src/construct.rs`; if
+// those defaults move, or are overridden in the environment, the exported
+// `JACKIN_CONSTRUCT_IMAGE` drifts from the image the build actually produces.
 const CONSTRUCT_IMAGE: &str = "jackin-local/construct:trixie";
 
 #[derive(Parser)]
@@ -38,11 +42,12 @@ enum PrCommand {
     /// Print the PR verification bundle path.
     Path(PrPathArgs),
     /// Show local checkout/env freshness for a PR verification bundle.
-    Status(StatusArgs),
+    Status(PrRepoArgs),
 }
 
+/// Fields shared by every command that resolves a PR against a remote repo.
 #[derive(Args)]
-struct SyncArgs {
+struct PrRepoArgs {
     /// GitHub pull request number.
     pr: u64,
     /// Repository in owner/name form.
@@ -51,11 +56,18 @@ struct SyncArgs {
     /// PR test root. Defaults to ~/Projects/jackin-project/test/pr-<number>.
     #[arg(long)]
     test_dir: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct SyncArgs {
+    #[command(flatten)]
+    common: PrRepoArgs,
     /// Isolated config source for `JACKIN_CONFIG_DIR`.
     #[arg(long, value_enum, default_value_t = ConfigSource::Copy)]
     config: ConfigSource,
 }
 
+/// Fields for local-only commands; these never touch the remote, so no `--repo`.
 #[derive(Args)]
 struct PrPathArgs {
     /// GitHub pull request number.
@@ -65,19 +77,7 @@ struct PrPathArgs {
     test_dir: Option<PathBuf>,
 }
 
-#[derive(Args)]
-struct StatusArgs {
-    /// GitHub pull request number.
-    pr: u64,
-    /// Repository in owner/name form.
-    #[arg(long, default_value = DEFAULT_REPO)]
-    repo: String,
-    /// PR test root. Defaults to ~/Projects/jackin-project/test/pr-<number>.
-    #[arg(long)]
-    test_dir: Option<PathBuf>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+#[derive(Clone, Copy, Debug, ValueEnum)]
 enum ConfigSource {
     /// Start with an empty PR-scoped config directory.
     Blank,
@@ -122,6 +122,7 @@ impl PrPaths {
 #[derive(Debug)]
 struct PullRequestInfo {
     head_oid: String,
+    changed_files: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -159,13 +160,13 @@ fn run(cli: Cli) -> Result<()> {
 }
 
 fn sync(args: SyncArgs) -> Result<()> {
-    let paths = PrPaths::new(args.pr, args.test_dir)?;
+    let paths = PrPaths::new(args.common.pr, args.common.test_dir)?;
     let home = home_dir()?;
-    let pr = pr_info(args.pr, &args.repo)?;
+    let pr = pr_info(args.common.pr, &args.common.repo)?;
 
     fs::create_dir_all(&paths.root)
         .with_context(|| format!("creating {}", paths.root.display()))?;
-    checkout_repo(&args.repo, args.pr, &paths.repo)?;
+    checkout_repo(&args.common.repo, args.common.pr, &paths.repo)?;
     run_checked(command("mise", ["trust"]).current_dir(&paths.repo))?;
     run_checked(command("mise", ["install"]).current_dir(&paths.repo))?;
     run_checked(command("cargo", ["build", "--bin", "jackin"]).current_dir(&paths.repo))?;
@@ -174,8 +175,7 @@ fn sync(args: SyncArgs) -> Result<()> {
     fs::create_dir_all(&paths.home)
         .with_context(|| format!("creating {}", paths.home.display()))?;
 
-    let changed_files = pr_changed_files(args.pr, &args.repo)?;
-    let auto = auto_prep(&changed_files);
+    let auto = auto_prep(&pr.changed_files);
 
     let mut env_lines = env_lines(&paths);
 
@@ -190,7 +190,7 @@ fn sync(args: SyncArgs) -> Result<()> {
 
     fs::write(&paths.env_file, format!("{}\n", env_lines.join("\n")))
         .with_context(|| format!("writing {}", paths.env_file.display()))?;
-    print_sync_summary(args.pr, &paths, &pr, &auto, &changed_files);
+    print_sync_summary(args.common.pr, &paths, &pr, &auto);
     Ok(())
 }
 
@@ -208,13 +208,19 @@ fn clean(args: PrPathArgs) -> Result<()> {
 
 fn print_env(args: PrPathArgs) -> Result<()> {
     let paths = PrPaths::new(args.pr, args.test_dir)?;
-    emit_line(format!("cd {}", shell_quote(paths.repo.as_os_str())));
-    emit_line(format!(
-        "source {}",
-        shell_quote(paths.env_file.as_os_str())
-    ));
-    emit_line("which jackin");
+    for line in enter_lines(&paths) {
+        emit_line(line);
+    }
     Ok(())
+}
+
+/// Shell commands an operator runs to enter a synced PR bundle.
+fn enter_lines(paths: &PrPaths) -> [String; 3] {
+    [
+        format!("cd {}", shell_quote(paths.repo.as_os_str())),
+        format!("source {}", shell_quote(paths.env_file.as_os_str())),
+        "which jackin".to_owned(),
+    ]
 }
 
 fn print_path(args: PrPathArgs) -> Result<()> {
@@ -223,18 +229,16 @@ fn print_path(args: PrPathArgs) -> Result<()> {
     Ok(())
 }
 
-fn status(args: StatusArgs) -> Result<()> {
+fn status(args: PrRepoArgs) -> Result<()> {
     let paths = PrPaths::new(args.pr, args.test_dir)?;
     let pr = pr_info(args.pr, &args.repo)?;
-    let local_head = if paths.repo.join(".git").exists() {
-        Some(git_output(&paths.repo, ["rev-parse", "HEAD"])?)
+    let (local_head, local_branch) = if paths.repo.join(".git").exists() {
+        (
+            Some(git_output(&paths.repo, ["rev-parse", "HEAD"])?),
+            Some(git_output(&paths.repo, ["branch", "--show-current"])?),
+        )
     } else {
-        None
-    };
-    let local_branch = if paths.repo.join(".git").exists() {
-        Some(git_output(&paths.repo, ["branch", "--show-current"])?)
-    } else {
-        None
+        (None, None)
     };
     let fresh = local_head.as_deref() == Some(pr.head_oid.as_str());
 
@@ -250,7 +254,7 @@ fn status(args: StatusArgs) -> Result<()> {
         local_head.as_deref().unwrap_or("<missing>")
     ));
     emit_line(format!("remote head: {}", pr.head_oid));
-    emit_line(format!("fresh: {}", if fresh { "yes" } else { "no" }));
+    emit_line(format!("fresh: {}", yes_no(fresh)));
     emit_line(format!("env: {}", exists_label(&paths.env_file)));
     emit_line(format!("config: {}", exists_label(&paths.config)));
     emit_line(format!("home: {}", exists_label(&paths.home)));
@@ -267,13 +271,32 @@ fn pr_info(pr: u64, repo: &str) -> Result<PullRequestInfo> {
             "--repo",
             repo,
             "--json",
-            "headRefOid",
+            "headRefOid,files",
         ],
     );
     let output = run_output(&mut cmd)?;
     let json: Value = serde_json::from_slice(&output).context("parsing gh pr view JSON")?;
-    let head_oid = json_string(&json, "headRefOid")?;
-    Ok(PullRequestInfo { head_oid })
+    parse_pr_info(&json)
+}
+
+// A missing or non-array `files` field is a contract break, not a zero-file PR:
+// silently collapsing it to empty would downgrade every `auto_prep` build
+// decision to "not needed" and launch the operator against a stale binary.
+fn parse_pr_info(json: &Value) -> Result<PullRequestInfo> {
+    let head_oid = json_string(json, "headRefOid")?;
+    let changed_files = match json.get("files") {
+        Some(Value::Array(files)) => files
+            .iter()
+            .filter_map(|file| file.get("path").and_then(Value::as_str))
+            .filter(|path| !path.is_empty())
+            .map(str::to_owned)
+            .collect(),
+        _ => bail!("gh pr view did not return a `files` array"),
+    };
+    Ok(PullRequestInfo {
+        head_oid,
+        changed_files,
+    })
 }
 
 fn json_string(json: &Value, key: &str) -> Result<String> {
@@ -282,19 +305,6 @@ fn json_string(json: &Value, key: &str) -> Result<String> {
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
         .ok_or_else(|| anyhow!("gh pr view did not return {key}"))
-}
-
-fn pr_changed_files(pr: u64, repo: &str) -> Result<Vec<String>> {
-    let mut cmd = command(
-        "gh",
-        ["pr", "diff", &pr.to_string(), "--repo", repo, "--name-only"],
-    );
-    let output = run_output(&mut cmd)?;
-    Ok(String::from_utf8_lossy(&output)
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(str::to_owned)
-        .collect())
 }
 
 fn checkout_repo(repo: &str, pr: u64, repo_dir: &Path) -> Result<()> {
@@ -339,20 +349,12 @@ fn prepare_config(source: ConfigSource, config_dir: &Path, home: &Path) -> Resul
         fs::remove_dir_all(config_dir)
             .with_context(|| format!("removing {}", config_dir.display()))?;
     }
+    let source_dir = home.join(".config/jackin");
     match source {
-        ConfigSource::Blank => fs::create_dir_all(config_dir)
-            .with_context(|| format!("creating {}", config_dir.display()))?,
-        ConfigSource::Copy => {
-            let source_dir = home.join(".config/jackin");
-            if source_dir.exists() {
-                copy_dir_recursive(&source_dir, config_dir)?;
-            } else {
-                fs::create_dir_all(config_dir)
-                    .with_context(|| format!("creating {}", config_dir.display()))?;
-            }
-        }
+        ConfigSource::Copy if source_dir.exists() => copy_dir_recursive(&source_dir, config_dir),
+        ConfigSource::Copy | ConfigSource::Blank => fs::create_dir_all(config_dir)
+            .with_context(|| format!("creating {}", config_dir.display())),
     }
-    Ok(())
 }
 
 fn copy_dir_recursive(source: &Path, target: &Path) -> Result<()> {
@@ -412,6 +414,9 @@ fn auto_prep(files: &[String]) -> AutoPrep {
     }
 }
 
+// Couples to the `build-jackin-capsule --export` contract: it prints exactly
+// one `export JACKIN_CAPSULE_BIN=<path>` line to stdout (build chatter goes to
+// stderr). If that output format changes, this match must change with it.
 fn build_capsule_export(repo_dir: &Path) -> Result<String> {
     let output = run_output(
         command(
@@ -453,32 +458,36 @@ where
     S: AsRef<OsStr>,
 {
     let output = run_output(command("git", args).current_dir(repo_dir))?;
-    Ok(String::from_utf8_lossy(&output).trim().to_owned())
+    let text = String::from_utf8(output).context("git output was not UTF-8")?;
+    Ok(text.trim().to_owned())
 }
 
 fn run_checked(cmd: &mut Command) -> Result<()> {
-    let display = display_command(cmd);
-    let status = cmd.status().with_context(|| format!("running {display}"))?;
+    let status = cmd
+        .status()
+        .with_context(|| format!("running {}", display_command(cmd)))?;
     if status.success() {
         Ok(())
     } else {
-        Err(anyhow!("{display} failed with {status}"))
+        Err(anyhow!("{} failed with {status}", display_command(cmd)))
     }
 }
 
 fn run_output(cmd: &mut Command) -> Result<Vec<u8>> {
-    let display = display_command(cmd);
     #[expect(
         clippy::disallowed_methods,
         reason = "jackin-dev shells out to gh, git, cargo, and mise"
     )]
-    let output = cmd.output().with_context(|| format!("running {display}"))?;
+    let output = cmd
+        .output()
+        .with_context(|| format!("running {}", display_command(cmd)))?;
     if output.status.success() {
         Ok(output.stdout)
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(anyhow!(
-            "{display} failed with {}\n{}",
+            "{} failed with {}\n{}",
+            display_command(cmd),
             output.status,
             stderr.trim()
         ))
@@ -511,44 +520,33 @@ fn shell_quote(value: &OsStr) -> String {
     }
 }
 
-fn exists_label(path: &Path) -> &'static str {
-    if path.exists() { "yes" } else { "no" }
+fn yes_no(value: bool) -> &'static str {
+    if value { "yes" } else { "no" }
 }
 
-fn print_sync_summary(
-    pr: u64,
-    paths: &PrPaths,
-    info: &PullRequestInfo,
-    auto: &AutoPrep,
-    changed_files: &[String],
-) {
+fn exists_label(path: &Path) -> &'static str {
+    yes_no(path.exists())
+}
+
+fn built_label(value: bool) -> &'static str {
+    if value { "built" } else { "not needed" }
+}
+
+fn print_sync_summary(pr: u64, paths: &PrPaths, info: &PullRequestInfo, auto: &AutoPrep) {
     emit_line(format!("Synced PR #{pr}:"));
     emit_line(format!("  repo: {}", paths.repo.display()));
     emit_line(format!("  env:  {}", paths.env_file.display()));
     emit_line(format!("  config: {}", paths.config.display()));
     emit_line(format!("  home:   {}", paths.home.display()));
     emit_line(format!("  head:   {}", info.head_oid));
-    emit_line(format!("  files:  {}", changed_files.len()));
-    emit_line(format!(
-        "  capsule: {}",
-        if auto.capsule { "built" } else { "not needed" }
-    ));
-    emit_line(format!(
-        "  construct: {}",
-        if auto.construct {
-            "built"
-        } else {
-            "not needed"
-        }
-    ));
+    emit_line(format!("  files:  {}", info.changed_files.len()));
+    emit_line(format!("  capsule: {}", built_label(auto.capsule)));
+    emit_line(format!("  construct: {}", built_label(auto.construct)));
     emit_line("");
     emit_line("Next:");
-    emit_line(format!("  cd {}", shell_quote(paths.repo.as_os_str())));
-    emit_line(format!(
-        "  source {}",
-        shell_quote(paths.env_file.as_os_str())
-    ));
-    emit_line("  which jackin");
+    for line in enter_lines(paths) {
+        emit_line(format!("  {line}"));
+    }
 }
 
 fn emit_line(line: impl AsRef<str>) {
@@ -562,57 +560,4 @@ fn emit_line(line: impl AsRef<str>) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn paths_stay_inside_pr_bundle() {
-        let root = PathBuf::from("/Users/example/Projects/jackin-project/test/pr-580");
-        let paths = PrPaths::from_root(root.clone());
-
-        assert_eq!(paths.repo, root.join("jackin"));
-        assert_eq!(paths.env_file, root.join("env.sh"));
-        assert_eq!(paths.config, root.join("state/config"));
-        assert_eq!(paths.home, root.join("state/home"));
-    }
-
-    #[test]
-    fn env_points_at_bundle_state() {
-        let root = PathBuf::from("/Users/example/Projects/jackin-project/test/pr-580");
-        let paths = PrPaths::from_root(root.clone());
-        let env = env_lines(&paths).join("\n");
-
-        assert!(env.contains("/Users/example/Projects/jackin-project/test/pr-580/state/config"));
-        assert!(env.contains("/Users/example/Projects/jackin-project/test/pr-580/state/home"));
-        assert!(!env.contains(".config/jackin-pr-"));
-        assert!(!env.contains(".jackin-pr-"));
-    }
-
-    #[test]
-    fn auto_prep_detects_capsule_and_construct_inputs() {
-        let auto = auto_prep(&[
-            "crates/jackin-capsule/src/lib.rs".to_owned(),
-            "docker/construct/Dockerfile".to_owned(),
-        ]);
-
-        assert!(auto.capsule);
-        assert!(auto.construct);
-    }
-
-    #[test]
-    fn auto_prep_ignores_docs_only_changes() {
-        let auto =
-            auto_prep(&["docs/content/docs/reference/roadmap/pr-verification.mdx".to_owned()]);
-
-        assert!(!auto.capsule);
-        assert!(!auto.construct);
-    }
-
-    #[test]
-    fn shell_quote_quotes_spaces() {
-        assert_eq!(
-            shell_quote(OsStr::new("/tmp/with space/env.sh")),
-            "'/tmp/with space/env.sh'"
-        );
-    }
-}
+mod tests;
