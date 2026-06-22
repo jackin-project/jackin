@@ -64,7 +64,7 @@ jackin-dev pr status <PR_NUMBER>
 
 Responsibility stays split cleanly: `jackin-dev` owns outside-the-repo orchestration, while `cargo xtask` remains for tasks that only make sense once a checkout already exists, such as construct build/publish helpers, docs/sidebar maintenance, schema checks, PTY fixture extraction, and PR body skeleton generation.
 
-Packaging is part of this work. The release and preview artifacts must include `jackin-dev`, and the generated Homebrew formulae in the `jackin-project/homebrew-tap` repository must install it beside `jackin` and `jackin-role`. Any future PR that changes `jackin-dev` as an installed binary must keep that packaging path current: build artifacts, archive contents, release workflow, preview workflow, and Homebrew tap formula output move together. Operators reviewing jackin' PRs should be able to install or update from the tap and immediately run `jackin-dev pr sync` without a prior source checkout.
+Packaging is part of this work. `jackin-dev` is distributed through the `jackin-project/homebrew-tap` repository by a separate workflow dedicated to this binary, not by jackin's normal stable release workflow or preview workflow. When source inputs for this binary change, that dedicated workflow builds a new `jackin-dev` artifact, assigns the next generated version for that artifact, and updates the Homebrew tap formula so operators can install or upgrade it from the tap. If a PR does not touch `jackin-dev` inputs, the tap entry does not need to move. Operators reviewing jackin' PRs should be able to install or update from the tap and immediately run `jackin-dev pr sync` without a prior source checkout.
 
 ## Deferred console-native flow
 
@@ -259,7 +259,7 @@ The near-term novel piece is a shipped developer binary that prepares a host-sid
 
 ## Implementation now
 
-Ship `jackin-dev` with the Homebrew package and Homebrew tap formula output; implement `jackin-dev pr sync`, `clean`, `env`, `path`, and `status`; replace PR-body checkout boilerplate with the `sync` flow; store checkout, copied config, empty state home, and env file under one isolated, reclaimable PR bundle; auto-enable capsule and construct prep from the pull request diff.
+Ship `jackin-dev` through the Homebrew tap with a source-filtered workflow dedicated to this binary; implement `jackin-dev pr sync`, `clean`, `env`, `path`, and `status`; replace PR-body checkout boilerplate with the `sync` flow; store checkout, copied config, empty state home, and env file under one isolated, reclaimable PR bundle; auto-enable capsule and construct prep from the pull request diff.
 
 ## Future phases
 
