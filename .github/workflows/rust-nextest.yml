@@ -20,6 +20,11 @@ on:
         required: false
         default: false
         type: boolean
+      docker-e2e:
+        description: Build and run the real Docker E2E nextest lane.
+        required: false
+        default: false
+        type: boolean
     secrets:
       GH_READONLY_TOKEN:
         required: false
@@ -98,7 +103,7 @@ jobs:
           fi
           cargo nextest run --timings "${args[@]}"
 
-          if [ "${{ inputs.all-features }}" = "true" ]; then
+          if [ "${{ inputs.docker-e2e }}" = "true" ]; then
             cargo nextest run \
               --timings \
               -p jackin \
@@ -141,7 +146,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - name: Upload prepared jackin-capsule
-        if: inputs.all-features
+        if: inputs.docker-e2e
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jackin-capsule-${{ matrix.config.lane }}
@@ -236,7 +241,7 @@ jobs:
 
   docker-e2e:
     needs: prepare
-    if: inputs.all-features
+    if: inputs.docker-e2e
     strategy:
       fail-fast: false
       matrix:

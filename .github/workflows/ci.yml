@@ -53,6 +53,7 @@ jobs:
       rust: ${{ steps.route.outputs.rust }}
       construct: ${{ steps.route.outputs.construct }}
       construct_image: ${{ steps.route.outputs.construct_image }}
+      docker_e2e: ${{ steps.route.outputs.docker_e2e }}
       workflows: ${{ steps.route.outputs.workflows }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -68,6 +69,7 @@ jobs:
             echo "rust=true"
             echo "construct=true"
             echo "construct_image=true"
+            echo "docker_e2e=true"
             echo "workflows=true"
           } >> "$GITHUB_OUTPUT"
 
@@ -100,6 +102,24 @@ jobs:
               - 'crates/jackin-xtask/**'
             construct_image:
               - 'docker/construct/**'
+            docker_e2e:
+              - '.config/nextest.toml'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/rust-nextest.yml'
+              - 'docker/**'
+              - 'crates/jackin/tests/dind_e2e.rs'
+              - 'crates/jackin/tests/fixtures/**'
+              - 'crates/jackin/src/runtime.rs'
+              - 'crates/jackin/src/app/**'
+              - 'crates/jackin/src/cli/role.rs'
+              - 'crates/jackin/src/cli/prewarm.rs'
+              - 'crates/jackin/src/docker_client/**'
+              - 'crates/jackin/src/repo_contract/**'
+              - 'crates/jackin-capsule/**'
+              - 'crates/jackin-docker/**'
+              - 'crates/jackin-image/**'
+              - 'crates/jackin-launch/**'
+              - 'crates/jackin-runtime/**'
             workflows:
               - '.github/workflows/**'
             mise:
@@ -112,10 +132,12 @@ jobs:
           FORCE_RUST: ${{ steps.dispatch.outputs.rust }}
           FORCE_CONSTRUCT: ${{ steps.dispatch.outputs.construct }}
           FORCE_CONSTRUCT_IMAGE: ${{ steps.dispatch.outputs.construct_image }}
+          FORCE_DOCKER_E2E: ${{ steps.dispatch.outputs.docker_e2e }}
           FORCE_WORKFLOWS: ${{ steps.dispatch.outputs.workflows }}
           FILTER_RUST: ${{ steps.filter.outputs.rust }}
           FILTER_CONSTRUCT: ${{ steps.filter.outputs.construct }}
           FILTER_CONSTRUCT_IMAGE: ${{ steps.filter.outputs.construct_image }}
+          FILTER_DOCKER_E2E: ${{ steps.filter.outputs.docker_e2e }}
           FILTER_WORKFLOWS: ${{ steps.filter.outputs.workflows }}
           FILTER_MISE: ${{ steps.filter.outputs.mise }}
           BASE_REF: ${{ github.base_ref }}
@@ -127,7 +149,13 @@ jobs:
           rust="${FORCE_RUST:-${FILTER_RUST:-false}}"
           construct="${FORCE_CONSTRUCT:-${FILTER_CONSTRUCT:-false}}"
           construct_image="${FORCE_CONSTRUCT_IMAGE:-${FILTER_CONSTRUCT_IMAGE:-false}}"
+          docker_e2e="${FORCE_DOCKER_E2E:-${FILTER_DOCKER_E2E:-false}}"
           workflows="${FORCE_WORKFLOWS:-${FILTER_WORKFLOWS:-false}}"
+
+          if [ "$docker_e2e" = "true" ] || [ "$construct_image" = "true" ]; then
+            rust=true
+            docker_e2e=true
+          fi
 
           if [ "${FILTER_MISE:-false}" = "true" ] && [ -z "${FORCE_RUST:-}" ]; then
             base=""
@@ -215,6 +243,7 @@ jobs:
             echo "rust=$rust"
             echo "construct=$construct"
             echo "construct_image=$construct_image"
+            echo "docker_e2e=$docker_e2e"
             echo "workflows=$workflows"
           } >> "$GITHUB_OUTPUT"
 
@@ -592,6 +621,7 @@ jobs:
       all-features: true
       cache-shared-key: nextest-all-features-workspace-v1
       construct-image-changed: ${{ needs.changes.outputs.construct_image == 'true' }}
+      docker-e2e: ${{ needs.changes.outputs.docker_e2e == 'true' }}
     secrets: inherit
   fuzz:
     needs: [changes, matrix-setup]
