@@ -301,7 +301,7 @@ If any future implementation offers to update host-side prompt snippets, shell t
 
 ## Defer
 
-- Net-new terminal art only: the frozen-rain `--help` banner field and a full version/splash redesign. The CLI/Capsule brand *text* (`jackin❯`) and the green-block pill (black word, white chevron) on every jackin-owned surface already shipped; what remains deferred is the larger rain/banner artwork, not the mark itself.
+- Net-new terminal art only: the frozen-rain `--help` banner field and a full version/splash redesign. The CLI/Capsule brand *text* (`jackin❯`) and the green-block pill (black word, white chevron) on every jackin-owned surface already shipped; what remains deferred is the larger rain/banner artwork, not the mark itself. The frozen-rain field cannot ride clap's `before_help`/`--version`: clap intercepts those during parsing and reflows/strips multi-line ANSI art, so it needs a dedicated non-clap render path (a self-contained banner printer with its own TTY and width detection) rather than a one-line config change. That printer is the deferred work.
 - Desktop and mobile app implementation beyond source icon preparation.
 - Hosted analytics for Open Graph or attribution effectiveness.
 - Recolorable theme packs, seasonal marks, or per-runtime logo variants.
