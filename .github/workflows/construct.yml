@@ -173,6 +173,15 @@ jobs:
               attempt="$((attempt + 1))"
             done
           fi
+      - name: Save Cargo registry
+        if: steps.cargo-registry-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git/db
+          key: ${{ steps.cargo-registry-cache.outputs.cache-primary-key }}
       - name: Resolve construct tool versions
         id: versions
         shell: bash
@@ -296,6 +305,15 @@ jobs:
               attempt="$((attempt + 1))"
             done
           fi
+      - name: Save Cargo registry
+        if: steps.cargo-registry-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git/db
+          key: ${{ steps.cargo-registry-cache.outputs.cache-primary-key }}
       - name: Log in to Docker Hub
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
@@ -385,6 +403,15 @@ jobs:
               attempt="$((attempt + 1))"
             done
           fi
+      - name: Save Cargo registry
+        if: steps.cargo-registry-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git/db
+          key: ${{ steps.cargo-registry-cache.outputs.cache-primary-key }}
       - name: Verify docker buildx CLI resolves under workflow env
         # `docker buildx ls` reads BUILDX_BUILDER (and the rest of
         # buildx's env-driven config) and fails fast on a missing

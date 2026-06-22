@@ -141,6 +141,15 @@ jobs:
             -cf "$handoff_dir/target.tar.zst" \
             -C "$GITHUB_WORKSPACE" \
             target
+      - name: Save Cargo registry
+        if: steps.cargo-registry-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git/db
+          key: ${{ steps.cargo-registry-cache.outputs.cache-primary-key }}
       - name: Upload prepared nextest workspace
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
