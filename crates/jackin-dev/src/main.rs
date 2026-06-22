@@ -121,8 +121,6 @@ impl PrPaths {
 
 #[derive(Debug)]
 struct PullRequestInfo {
-    head_ref: String,
-    head_repo: Option<String>,
     head_oid: String,
 }
 
@@ -167,7 +165,7 @@ fn sync(args: SyncArgs) -> Result<()> {
 
     fs::create_dir_all(&paths.root)
         .with_context(|| format!("creating {}", paths.root.display()))?;
-    checkout_repo(&args.repo, args.pr, &pr, &paths.repo)?;
+    checkout_repo(&args.repo, args.pr, &paths.repo)?;
     run_checked(command("mise", ["trust"]).current_dir(&paths.repo))?;
     run_checked(command("mise", ["install"]).current_dir(&paths.repo))?;
     run_checked(command("cargo", ["build", "--bin", "jackin"]).current_dir(&paths.repo))?;
@@ -269,23 +267,13 @@ fn pr_info(pr: u64, repo: &str) -> Result<PullRequestInfo> {
             "--repo",
             repo,
             "--json",
-            "headRefName,headRepository,headRefOid",
+            "headRefOid",
         ],
     );
     let output = run_output(&mut cmd)?;
     let json: Value = serde_json::from_slice(&output).context("parsing gh pr view JSON")?;
-    let head_ref = json_string(&json, "headRefName")?;
     let head_oid = json_string(&json, "headRefOid")?;
-    let head_repo = json
-        .get("headRepository")
-        .and_then(|repo| repo.get("nameWithOwner"))
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    Ok(PullRequestInfo {
-        head_ref,
-        head_repo,
-        head_oid,
-    })
+    Ok(PullRequestInfo { head_oid })
 }
 
 fn json_string(json: &Value, key: &str) -> Result<String> {
@@ -309,7 +297,7 @@ fn pr_changed_files(pr: u64, repo: &str) -> Result<Vec<String>> {
         .collect())
 }
 
-fn checkout_repo(repo: &str, pr: u64, info: &PullRequestInfo, repo_dir: &Path) -> Result<()> {
+fn checkout_repo(repo: &str, pr: u64, repo_dir: &Path) -> Result<()> {
     if !repo_dir.join(".git").exists() {
         let parent = repo_dir
             .parent()
@@ -327,46 +315,22 @@ fn checkout_repo(repo: &str, pr: u64, info: &PullRequestInfo, repo_dir: &Path) -
         )?;
     }
 
-    let same_repo = info
-        .head_repo
-        .as_deref()
-        .is_none_or(|head_repo| head_repo == repo);
-    if same_repo {
-        let remote_ref = format!("refs/remotes/origin/{}", info.head_ref);
-        run_checked(
-            command(
-                "git",
-                [
-                    "fetch",
-                    "-f",
-                    "origin",
-                    &format!("{}:{remote_ref}", info.head_ref),
-                ],
-            )
-            .current_dir(repo_dir),
-        )?;
-        run_checked(
-            command("git", ["checkout", "-B", &info.head_ref, &remote_ref]).current_dir(repo_dir),
-        )?;
-    } else {
-        let remote_ref = format!("refs/remotes/origin/pr-{pr}-head");
-        run_checked(
-            command(
-                "git",
-                [
-                    "fetch",
-                    "-f",
-                    "origin",
-                    &format!("pull/{pr}/head:{remote_ref}"),
-                ],
-            )
-            .current_dir(repo_dir),
-        )?;
-        run_checked(
-            command("git", ["checkout", "-B", &format!("pr-{pr}"), &remote_ref])
-                .current_dir(repo_dir),
-        )?;
-    }
+    let remote_ref = format!("refs/remotes/origin/pr-{pr}-head");
+    run_checked(
+        command(
+            "git",
+            [
+                "fetch",
+                "-f",
+                "origin",
+                &format!("pull/{pr}/head:{remote_ref}"),
+            ],
+        )
+        .current_dir(repo_dir),
+    )?;
+    run_checked(
+        command("git", ["checkout", "-B", &format!("pr-{pr}"), &remote_ref]).current_dir(repo_dir),
+    )?;
     Ok(())
 }
 
