@@ -6,6 +6,7 @@
 //! invoke it.
 
 use std::fs;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -15,6 +16,7 @@ const CANONICAL_REGISTRY_IMAGE: &str = "projectjackin/construct";
 const VERSION_FILE: &str = "docker/construct/VERSION";
 const VERSIONS_ENV_FILE: &str = "docker/construct/versions.env";
 const BAKE_FILE: &str = "docker-bake.hcl";
+const SHELLFIRM_PREBUILT: &str = "docker/construct/prebuilt/shellfirm";
 
 #[derive(Subcommand)]
 pub(crate) enum ConstructCommand {
@@ -220,6 +222,7 @@ fn reset_buildx(cfg: &Config) -> Result<()> {
 }
 
 fn build_local(cfg: &Config) -> Result<()> {
+    ensure_shellfirm_prebuilt(cfg, &cfg.local_platform)?;
     let mut cmd = docker([
         "buildx",
         "bake",
@@ -235,6 +238,7 @@ fn build_local(cfg: &Config) -> Result<()> {
 }
 
 fn build_platform(cfg: &Config, platform: Platform) -> Result<()> {
+    ensure_shellfirm_prebuilt(cfg, platform.docker())?;
     let mut cmd = docker([
         "buildx",
         "bake",
@@ -253,6 +257,7 @@ fn build_platform(cfg: &Config, platform: Platform) -> Result<()> {
 
 fn push_platform(cfg: &Config, platform: Platform) -> Result<()> {
     cfg.guard_local_publish()?;
+    ensure_shellfirm_prebuilt(cfg, platform.docker())?;
     fs::create_dir_all(&cfg.digest_dir)
         .with_context(|| format!("creating digest dir {}", cfg.digest_dir))?;
     let metadata_file = format!("{}/metadata-{}.json", cfg.digest_dir, platform.name());
@@ -308,6 +313,83 @@ fn apply_cache_args(cmd: &mut Command, target: &str) {
         cmd.arg("--set")
             .arg(format!("{target}.cache-to={cache_to}"));
     }
+}
+
+fn ensure_shellfirm_prebuilt(cfg: &Config, expected_platform: &str) -> Result<()> {
+    let host_platform = host_platform()?;
+    if host_platform != expected_platform {
+        bail!(
+            "construct shellfirm prebuild requires a native runner: host is {host_platform}, requested {expected_platform}"
+        );
+    }
+    if prebuilt_shellfirm_matches(&cfg.shellfirm_version)? {
+        return Ok(());
+    }
+
+    let root = format!("target/construct-shellfirm-{}", cfg.shellfirm_version);
+    drop(fs::remove_dir_all(&root));
+    run_checked(cargo([
+        "install",
+        "shellfirm",
+        "--version",
+        &cfg.shellfirm_version,
+        "--locked",
+        "--root",
+        &root,
+    ]))?;
+    let source = Path::new(&root).join("bin/shellfirm");
+    fs::create_dir_all(
+        Path::new(SHELLFIRM_PREBUILT)
+            .parent()
+            .context("shellfirm prebuilt path has no parent")?,
+    )
+    .context("creating shellfirm prebuilt directory")?;
+    fs::copy(&source, SHELLFIRM_PREBUILT)
+        .with_context(|| format!("copying {} to {SHELLFIRM_PREBUILT}", source.display()))?;
+    set_executable(SHELLFIRM_PREBUILT)?;
+    if !prebuilt_shellfirm_matches(&cfg.shellfirm_version)? {
+        bail!(
+            "prebuilt shellfirm does not report version {}",
+            cfg.shellfirm_version
+        );
+    }
+    Ok(())
+}
+
+fn prebuilt_shellfirm_matches(version: &str) -> Result<bool> {
+    let path = Path::new(SHELLFIRM_PREBUILT);
+    if !path.exists() {
+        return Ok(false);
+    }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "build helper: synchronous version probe before Docker build"
+    )]
+    let output = match Command::new(path).arg("--version").output() {
+        Ok(output) => output,
+        Err(_) => return Ok(false),
+    };
+    if !output.status.success() {
+        return Ok(false);
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(stdout.split_whitespace().any(|part| part == version))
+}
+
+#[cfg(unix)]
+fn set_executable(path: &str) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut permissions = fs::metadata(path)
+        .with_context(|| format!("reading permissions for {path}"))?
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(path, permissions).with_context(|| format!("setting {path} executable"))
+}
+
+#[cfg(not(unix))]
+fn set_executable(_path: &str) -> Result<()> {
+    Ok(())
 }
 
 fn assert_version_unpublished(cfg: &Config) -> Result<()> {
@@ -497,6 +579,12 @@ fn find_digest(value: &serde_json::Value) -> Option<String> {
 
 fn docker<const N: usize>(args: [&str; N]) -> Command {
     let mut cmd = Command::new("docker");
+    cmd.args(args);
+    cmd
+}
+
+fn cargo<const N: usize>(args: [&str; N]) -> Command {
+    let mut cmd = Command::new("cargo");
     cmd.args(args);
     cmd
 }
