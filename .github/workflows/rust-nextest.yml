@@ -69,6 +69,7 @@ jobs:
           shared-key: ${{ inputs.cache-shared-key }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           # One workspace-level nextest cache per runner lane. The package and
           # Docker lanes restore this cache read-only; per-package keys fragment
           # the workspace graph and force cold downloads/builds.
@@ -176,6 +177,7 @@ jobs:
           shared-key: ${{ inputs.cache-shared-key }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           save-if: "false"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback.
@@ -254,6 +256,7 @@ jobs:
           shared-key: ${{ inputs.cache-shared-key }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           save-if: "false"
           # The prepare job owns this cache. Docker E2E stays read-only and
           # uses local cache restore instead of downloading a target artifact.

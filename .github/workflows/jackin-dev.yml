@@ -189,7 +189,7 @@ jobs:
           shared-key: jackin-dev-${{ matrix.target.target }}-workspace-v2
           cache-all-crates: "true"
           cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           # Match release/preview archive builds: one target-scoped workspace
           # cache, shared across branches through GitHub's default-branch
           # fallback, plus the lockfile-bound Cargo registry cache above.

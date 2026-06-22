@@ -150,6 +150,7 @@ jobs:
           shared-key: release-archive-jackin-${{ matrix.target.triple }}-workspace-v2
           cache-all-crates: "true"
           cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
@@ -236,6 +237,7 @@ jobs:
           shared-key: release-archive-capsule-${{ matrix.target.triple }}-workspace-v2
           cache-all-crates: "true"
           cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
