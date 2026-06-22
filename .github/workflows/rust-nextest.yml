@@ -115,6 +115,34 @@ jobs:
               --locked
             cargo build -p jackin-capsule --bin jackin-capsule --locked --offline
           fi
+      - name: Pack prepared nextest workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          handoff_dir="$RUNNER_TEMP/nextest-handoff"
+          rm -rf "$handoff_dir"
+          mkdir -p "$handoff_dir"
+          mkdir -p "$HOME/.cargo/registry/index" "$HOME/.cargo/registry/cache" "$HOME/.cargo/git/db"
+
+          tar --posix --use-compress-program zstdmt \
+            -cf "$handoff_dir/cargo-home.tar.zst" \
+            -C "$HOME" \
+            .cargo/registry/index \
+            .cargo/registry/cache \
+            .cargo/git/db
+          tar --posix --use-compress-program zstdmt \
+            -cf "$handoff_dir/target.tar.zst" \
+            -C "$GITHUB_WORKSPACE" \
+            target
+      - name: Upload prepared nextest workspace
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nextest-workspace-${{ matrix.config.lane }}
+          path: ${{ runner.temp }}/nextest-handoff/*.tar.zst
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
       - name: Upload cargo timings
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -205,6 +233,17 @@ jobs:
           # PR/branch/release reads the default branch's warm cache via fallback.
           # The prepare job owns saving this workspace cache; package jobs only
           # restore it so the matrix cannot create 19 isolated target caches.
+      - name: Download prepared nextest workspace
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: nextest-workspace-${{ matrix.config.lane }}
+          path: ${{ runner.temp }}/nextest-handoff
+      - name: Restore prepared nextest workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar --use-compress-program unzstd -xf "$RUNNER_TEMP/nextest-handoff/cargo-home.tar.zst" -C "$HOME"
+          tar --use-compress-program unzstd -xf "$RUNNER_TEMP/nextest-handoff/target.tar.zst" -C "$GITHUB_WORKSPACE"
       - name: Export sccache GitHub cache runtime
         if: matrix.config.lane == 'GitHub'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -285,6 +324,17 @@ jobs:
           save-if: "false"
           # The prepare job owns this cache. Docker E2E restores the prepared
           # workspace so it can start after prepare without rebuilding the graph.
+      - name: Download prepared nextest workspace
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: nextest-workspace-${{ matrix.config.lane }}
+          path: ${{ runner.temp }}/nextest-handoff
+      - name: Restore prepared nextest workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar --use-compress-program unzstd -xf "$RUNNER_TEMP/nextest-handoff/cargo-home.tar.zst" -C "$HOME"
+          tar --use-compress-program unzstd -xf "$RUNNER_TEMP/nextest-handoff/target.tar.zst" -C "$GITHUB_WORKSPACE"
       - name: Export sccache GitHub cache runtime
         if: matrix.config.lane == 'GitHub'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
