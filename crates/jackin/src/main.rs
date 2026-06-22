@@ -44,9 +44,9 @@ async fn main() {
             }
         }
         Action::PrintHelpAndExit => {
-            // Bare `jackin` on a non-interactive stdout: clap's help already
-            // carries the one-line pill (inherited from the flattened console
-            // args); the frozen rain is reserved for interactive `--help`.
+            // Bare `jackin` on a non-interactive stdout: one-line pill (the
+            // root command no longer carries clap's `before_help`), then help.
+            print!("{}", jackin_tui::ansi::BRAND_BANNER);
             let mut cmd = Cli::command();
             drop(cmd.print_help());
             println!();
@@ -110,19 +110,19 @@ fn print_root_help_banner() {
         std::env::args().skip(1).any(|arg| names.contains(&arg))
     };
     if is_subcommand_help {
-        return;
+        return; // clap's `before_help` pill covers subcommand help
     }
-    // clap renders the one-line `jackin❯` pill below (the root inherits it from
-    // the flattened console args). On a wide interactive terminal we add the
-    // frozen-rain field above that pill as atmosphere; piped or narrow output
-    // keeps just the pill.
-    if !std::io::stdout().is_terminal() {
-        return;
-    }
-    let wide_enough = crossterm::terminal::size()
-        .is_ok_and(|(cols, _)| cols >= jackin_tui::ansi::HELP_BANNER_MIN_COLS);
-    if wide_enough {
-        print!("{}", jackin_tui::ansi::help_banner());
+    // The root command no longer carries clap's pill, so the binary always
+    // prints a brand mark here: the big frozen-rain banner with the centered
+    // lockup on a roomy interactive terminal, otherwise the one-line pill.
+    let interactive = std::io::stdout().is_terminal();
+    match crossterm::terminal::size() {
+        Ok((cols, rows))
+            if interactive && cols >= jackin_tui::ansi::HELP_BANNER_MIN_COLS && rows >= 20 =>
+        {
+            print!("{}", jackin_tui::ansi::help_banner(cols));
+        }
+        _ => print!("{}", jackin_tui::ansi::BRAND_BANNER),
     }
 }
 

@@ -117,6 +117,8 @@ pub enum Command {
     /// Delete cached or stale jackin data
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Prune(PruneCommand),
+    /// Open the operator console to manage workspaces, launch roles, and more
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Console(ConsoleArgs),
     /// Validate, migrate, and scaffold role repositories
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]

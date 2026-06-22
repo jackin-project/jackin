@@ -227,16 +227,20 @@ fn help_banner_is_deterministic_bounded_phosphor() {
         n
     }
 
-    let a = ansi::help_banner();
-    // Cached + deterministic: same pointer, identical bytes on every call.
-    assert!(std::ptr::eq(a, ansi::help_banner()));
+    let a = ansi::help_banner(80);
+    // Deterministic: identical bytes for the same width on every call.
+    assert_eq!(a, ansi::help_banner(80));
+    // Centered lockup: the green block, the word, and the byline.
+    assert!(a.contains("\x1b[48;2;0;255;65m"));
+    assert!(a.contains("jackin"));
+    assert!(a.contains("by tailrocks"));
     // Phosphor rain present (not a blank field).
-    assert!(a.contains("\x1b[38;2;0;255;65m") || a.contains("\x1b[38;2;0;140;30m"));
-    // Bounded so it never wraps a terminal at the documented minimum width.
+    assert!(a.contains("\x1b[38;2;0;255;65m"));
+    // Bounded so it never wraps the terminal it was sized for.
     for line in a.lines() {
         assert!(
-            visible_cols(line) < ansi::HELP_BANNER_MIN_COLS as usize,
-            "help banner line exceeds min width: {line:?}"
+            visible_cols(line) <= 80,
+            "help banner line exceeds terminal width: {line:?}"
         );
     }
 }
