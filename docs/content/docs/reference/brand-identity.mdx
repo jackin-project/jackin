@@ -5,7 +5,7 @@ description: Canonical mark, color, typography, prompt, and asset rules for jack
 
 # Brand Identity
 
-jackin❯ uses a terminal-native mark: lowercase monospace text plus a green prompt chevron.
+jackin❯ uses a terminal-native mark: lowercase monospace text on a solid phosphor-green block — a black `jackin` word and a white `❯` chevron, with square corners.
 
 ## Text Forms
 
@@ -35,13 +35,13 @@ Use the byline on logos, banners, cards, README artwork, social cards, splash su
 
 | Token | Hex | Use |
 |---|---:|---|
-| Bright chevron green | `#5CF07A` | Canonical chevron color on dark and light logo surfaces |
-| Muted accent | `#1D9E75` | UI accent when pure phosphor is too strong |
-| Logo white | `#FFFFFF` | Letters on dark logo surfaces |
-| Dark canvas | `#0A0A0A` | Default dark brand background |
-| Logo black | `#0A0A0A` | Letters on light logo surfaces |
+| Logo block green | `#5CF07A` | The solid block every mark sits on |
+| Logo ink (black) | `#0A0A0A` | The `jackin` word / `j` letter on the block |
+| Logo chevron (white) | `#FFFFFF` | The `❯` chevron on the block |
+| Muted accent | `#1D9E75` | UI accent when pure phosphor is too strong; never part of the mark |
+| Dark canvas | `#0A0A0A` | Default background the block floats on |
 
-The `jackin` letters or `j` are white on dark backgrounds and black on light backgrounds. The chevron is always `#5CF07A` where styling is available. Do not recolor the whole mark as one color.
+The mark is always a `#5CF07A` block with a black `jackin` word and a white `❯` chevron, in both light and dark contexts — one colorway, no light/dark variants. Square corners only: terminals cannot round corners, so neither does the block or any UI surface. Never recolor the chevron green, never make the word and chevron the same color, never drop the block.
 
 ## Type
 
@@ -63,7 +63,7 @@ codex j❯
 claude j❯
 ```
 
-The `j` uses the terminal foreground. The chevron uses `#5CF07A` when the prompt renderer supports color.
+The prompt sigil renders on the same green block: a black `j` and a white `❯` on `#5CF07A`, square edges, where the prompt renderer supports color.
 
 ## Assets
 

@@ -214,11 +214,11 @@ j❯ Building derived image         OK
 ✓  Agent loaded. You're inside.
 ```
 
-The `j` and agent name use the terminal default foreground. The chevron uses phosphor green or the user's terminal-theme green when the terminal exposes one. For boxes and progress, Unicode box-drawing characters and block characters are preferred, with `--no-unicode` as the explicit fallback path.
+The prompt sigil `j❯` renders on the green block: a black `j` and a white `❯` on `#5CF07A`, square edges (shipped in the construct image's Starship config). The agent name to its left uses the terminal default foreground and stays off the block. For boxes and progress, Unicode box-drawing characters and block characters are preferred, with `--no-unicode` as the explicit fallback path.
 
 The shared Clap `--help` banner should use frozen brand rain, not animation. The rain field should be built from the brand vocabulary (`j`, `a`, `c`, `k`, `i`, `n`, `❯`, and the box/block drawing glyphs the CLI already uses) and should frame the `jackin❯` / `by tailrocks` lockup without overwhelming the command list. This is a static documentation/help surface, not the live launch progress rain. The live launch rain behavior remains owned by the Launch Progress TUI lifecycle.
 
-The optional first-run or `--version` banner may use a short ASCII wordmark with a right-side green chevron rail, but it must stay under six lines and must not appear on routine command output.
+The optional first-run or `--version` banner may use a short ASCII wordmark on the green block — black word, white chevron, square edges — but it must stay under six lines and must not appear on routine command output.
 
 ## Web, Docs, and Social Surfaces
 
@@ -252,7 +252,7 @@ The existing public assets under <RepoFile path="docs/public/favicon.svg">docs/p
 
 ## App and Package Surfaces
 
-The CLI is the first implementation target, but the identity should be ready for future desktop and mobile surfaces. Desktop and mobile app icons need their own sketch pass because OS docks and home screens are visually crowded, but they must still preserve the white/black letter plus green chevron relationship. Package-manager metadata that supports icons should receive the dark monogram as SVG and 256x256 PNG.
+The CLI is the first implementation target, but the identity should be ready for future desktop and mobile surfaces. Desktop and mobile app icons need their own sketch pass because OS docks and home screens are visually crowded, but they must still preserve the black-word-plus-white-chevron-on-green-block relationship and square corners. Package-manager metadata that supports icons should receive the dark monogram as SVG and 256x256 PNG.
 
 Inside future desktop/mobile apps, the default surface stays dark, the chevron shape informs primary accents, and inactive states use restrained neutrals rather than new brand colors.
 
@@ -286,7 +286,7 @@ If any future implementation offers to update host-side prompt snippets, shell t
 - One canonical source describes the mark, colors, type, spacing, terminal use, web use, app/package use, and copy rules.
 - Logo artwork consistently includes the `by tailrocks` byline under `jackin❯`; ordinary prose and typed commands do not.
 - Every brand/prose/logo occurrence uses exactly one of `j❯`, `j>`, `jackin❯`, or `jackin>`, except literal code/command identifiers that must remain `jackin`.
-- The chevron uses the canonical bright green in every logo colorway; only surrounding UI accents may use muted green variants.
+- Every logo surface renders the mark on the `#5CF07A` block with a black word and a white chevron; only surrounding UI accents may use muted green variants.
 - Favicon and app-icon assets use the short form only, never the full wordmark.
 - Public docs, README, docs chrome, landing page, favicons, Open Graph assets, and CLI-visible surfaces agree on the same wordmark and monogram.
 - At least three candidate directions have been sketched across terminal, website, README hero, and favicon constraints before the final mark is chosen.
@@ -297,7 +297,7 @@ If any future implementation offers to update host-side prompt snippets, shell t
 - CLI and container prompt changes are tested or snapshot-covered enough to prevent accidental same-color marks and apostrophe regressions.
 - The implementation PR documents which screenshots or external assets were intentionally deferred.
 - Roadmap and agent rules are updated in the same PR that flips public prose to the new brand spelling.
-- This roadmap-only PR does not change runtime code, CLI help output, generated assets, or public prose outside the roadmap itself.
+- Square corners are enforced everywhere — the logo block, buttons, cards, inputs, favicons, and app icons — via a global `border-radius: 0` reset; no surface uses rounded corners.
 
 ## Defer
 
