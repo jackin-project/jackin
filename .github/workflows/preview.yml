@@ -245,7 +245,15 @@ jobs:
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
           JACKIN_VERSION_OVERRIDE: ${{ needs.source-changed.outputs.version }}
-        run: cargo zigbuild --release --locked --target "$ZIGBUILD_TARGET"
+        run: cargo zigbuild --timings --release --locked --target "$ZIGBUILD_TARGET"
+      - name: Upload cargo timings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cargo-timings-preview-jackin-${{ matrix.target }}
+          path: target/cargo-timings/*.html
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Package
         env:
           TARGET: ${{ matrix.target }}
@@ -325,7 +333,15 @@ jobs:
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
           JACKIN_VERSION_OVERRIDE: ${{ needs.source-changed.outputs.version }}
-        run: cargo zigbuild --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
+        run: cargo zigbuild --timings --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
+      - name: Upload cargo timings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cargo-timings-preview-capsule-${{ matrix.target }}
+          path: target/cargo-timings/*.html
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Publish binary as release asset
         env:
           ARCH: ${{ matrix.arch }}

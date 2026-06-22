@@ -133,10 +133,18 @@ jobs:
           JACKIN_VERSION_OVERRIDE: ${{ needs.check-version.outputs.version }}
         run: |
           if [ "${{ matrix.zigbuild }}" = "true" ]; then
-            cargo zigbuild --release --locked --target ${{ matrix.target }}.2.17
+            cargo zigbuild --timings --release --locked --target ${{ matrix.target }}.2.17
           else
-            cargo build --release --locked --target ${{ matrix.target }}
+            cargo build --timings --release --locked --target ${{ matrix.target }}
           fi
+      - name: Upload cargo timings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cargo-timings-release-jackin-${{ matrix.target }}
+          path: target/cargo-timings/*.html
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Package
         run: |
@@ -207,7 +215,15 @@ jobs:
         env:
           JACKIN_VERSION_OVERRIDE: ${{ needs.check-version.outputs.version }}
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
-        run: cargo zigbuild --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
+        run: cargo zigbuild --timings --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
+      - name: Upload cargo timings
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cargo-timings-release-capsule-${{ matrix.target }}
+          path: target/cargo-timings/*.html
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Package
         env:
           TARGET: ${{ matrix.target }}
