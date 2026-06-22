@@ -20,14 +20,15 @@ The end state should be change-aware CI/CD. Docs-only changes should not build R
 
 Every speedup PR under this roadmap should follow this loop:
 
-1. **Measure** the current workflow/lane with job duration, long steps, cache hits/misses, queue time if visible, and the exact changed-file class that caused the work.
+1. **Measure** every workflow/lane from every run before calling the optimization done. Record job duration, long steps, queue time if visible, cache hits/misses, cache keys, `sccache` hit rates, and the exact changed-file class that caused the work.
 2. **Explain** the number: compilation, dependency download, tool install, Docker layer build, image push/pull, test execution, artifact upload, signing, or publish gate.
 3. **Research** available speedups for that specific cost center: cache backend, cache key, test partitioning, nextest archive reuse, `sccache`, BuildKit cache mounts, prebuilt tool install, runner choice, or path-filter precision.
 4. **Apply** one focused change or one tightly related group of changes.
 5. **Rerun** equivalent scenarios: at minimum one PR-style run and one main/preview-style run when the change affects both.
 6. **Compare** before/after wall time, first-failure time, required-check completion time, cache hit rate, and coverage surface.
-7. **Record** the result in the PR and, if the decision changes the roadmap, update this item with the measured outcome.
-8. **Repeat** until further speedups would require dropping coverage, weakening publish safety, or spending disproportionate engineering effort for negligible wall-clock gain.
+7. **Inspect logs aggressively** for dependency download and rebuild markers: `No cache found`, `Updating crates.io index`, `Downloading`, large third-party `Compiling` blocks, BuildKit cache misses, source-compiled tools, and low `sccache` hit rates. If any marker appears after the first cache-populating run for the same dependency/tool inputs, explain why the cache was dirty or patch the workflow so the next sequential run reuses the cache.
+8. **Record** the result in the PR and, if the decision changes the roadmap, update this item with the measured outcome.
+9. **Repeat** until further speedups would require dropping coverage, weakening publish safety, or spending disproportionate engineering effort for negligible wall-clock gain. A run is not accepted as optimized while an avoidable dependency download, source tool compile, third-party dependency compile, or cache-key fragmentation remains.
 
 ## Change-impact Routing Goal
 
