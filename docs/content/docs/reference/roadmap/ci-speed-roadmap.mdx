@@ -2,7 +2,7 @@
 title: "CI/CD Speed Roadmap"
 ---
 
-**Status**: Open -- run analysis captured; implementation roadmap prioritized for wall-clock impact, with lint-lane de-serialization, package-matrix collapse, preview/CI overlap, and a warm persistent-runner lane leading the order. Phase 9 step 1 is implemented in PR #632, and the Docker E2E lane now lives inside the reusable nextest workflow where it depends on `prepare` instead of the full package matrix.
+**Status**: Open -- run analysis captured; implementation roadmap prioritized for wall-clock impact, with lint-lane de-serialization, package-matrix collapse, preview/CI overlap, and a warm persistent-runner lane leading the order. Phase 9 step 1 is implemented in PR #632, and the Docker E2E lane now lives inside the reusable nextest workflow where it depends on `prepare` instead of the full package matrix. Phase 1 steps 1, 2, and 4 are also implemented: `jdx/mise-action` now pins the mise binary version with a stable cache prefix, and docs CI uses `bun ci`.
 
 ## Problem
 

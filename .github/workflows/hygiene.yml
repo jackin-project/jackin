@@ -39,6 +39,8 @@ jobs:
             mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-deny-fuzz-hack-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
           install_args: "rust cargo:cargo-deny cargo:cargo-fuzz cargo:cargo-hack"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1

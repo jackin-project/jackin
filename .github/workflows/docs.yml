@@ -78,6 +78,8 @@ jobs:
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
           working_directory: docs
           install_args: "bun node"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -91,7 +93,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: docs
-        run: bun install --frozen-lockfile
+        run: bun ci
 
       - name: Check source repository links
         working-directory: docs
@@ -112,6 +114,8 @@ jobs:
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
           working_directory: docs
           install_args: "bun node lychee"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -125,7 +129,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: docs
-        run: bun install --frozen-lockfile
+        run: bun ci
 
       - name: Build site
         working-directory: docs
@@ -204,6 +208,8 @@ jobs:
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
           install_args: "rust cargo:codebook-lsp"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
@@ -277,6 +283,8 @@ jobs:
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
           install_args: "rust cargo:codebook-lsp"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
