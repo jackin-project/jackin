@@ -42,8 +42,8 @@ jobs:
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: ${{ matrix.config.lane == 'GitHub' && 'on' || 'off' }}
-      SCCACHE_GHA_CACHE_TO: sccache-nextest-prepare-${{ inputs.cache-shared-key }}-${{ matrix.config.lane }}
-      SCCACHE_GHA_CACHE_FROM: sccache-nextest-prepare-${{ inputs.cache-shared-key }}-${{ matrix.config.lane }}
+      SCCACHE_GHA_CACHE_TO: sccache-nextest-prepare-${{ inputs.cache-shared-key }}-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}
+      SCCACHE_GHA_CACHE_FROM: sccache-nextest-prepare-${{ inputs.cache-shared-key }}-${{ matrix.config.lane }}-${{ matrix.config.runner_os }}-${{ matrix.config.runner_arch }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
