@@ -30,110 +30,11 @@ on:
         required: false
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
-  prepare:
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJSON(inputs.runner-configs-json) }}
-    runs-on: ${{ fromJSON(matrix.config.runner) }}
-    timeout-minutes: 60
-    name: cargo nextest prepare (${{ matrix.config.lane }})
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_NET_RETRY: "10"
-      CARGO_TERM_COLOR: always
-      RUSTC_WRAPPER: sccache
-      SCCACHE_BASEDIRS: ${{ github.workspace }}
-      SCCACHE_GHA_ENABLED: "off"
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Cache Rust toolchain
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
-          restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        with:
-          version: "2026.6.11"
-          cache_key_prefix: "mise-v2"
-          install_args: "rust cargo-nextest sccache"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - id: cargo-registry-cache
-        uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ${{ inputs.cache-shared-key }}
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          # One workspace-level nextest cache per runner lane. The package and
-          # Docker lanes restore this cache read-only; per-package keys fragment
-          # the workspace graph and force cold downloads/builds.
-      - name: Build nextest binaries
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cargo fetch --locked --offline
-
-          args=(--workspace --no-run --no-tests=pass --color=always --locked)
-          if [ "${{ inputs.all-features }}" = "true" ]; then
-            args+=(--all-features)
-          fi
-          cargo nextest run --timings --offline "${args[@]}"
-
-          if [ "${{ inputs.docker-e2e }}" = "true" ]; then
-            cargo nextest run \
-              --timings \
-              --offline \
-              -p jackin \
-              --features e2e \
-              --profile docker-e2e \
-              --no-run \
-              --color=always \
-              --locked
-            cargo build -p jackin-capsule --bin jackin-capsule --locked --offline
-          fi
-      - name: Upload cargo timings
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: cargo-timings-nextest-prepare-${{ matrix.config.lane }}
-          path: target/cargo-timings/*.html
-          if-no-files-found: ignore
-          retention-days: 7
-      - name: Write sccache stats
-        if: always() && matrix.config.lane == 'Velnor'
-        run: |
-          if ! command -v sccache >/dev/null 2>&1; then
-            echo "sccache not installed; skipping stats"
-            exit 0
-          fi
-          stats_file="sccache-stats-nextest-prepare-${{ inputs.cache-shared-key }}-${{ matrix.config.lane }}.txt"
-          sccache --show-stats | tee "$stats_file"
-          {
-            echo "### sccache nextest prepare ${{ inputs.cache-shared-key }} (${{ matrix.config.lane }})"
-            echo '```text'
-            cat "$stats_file"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload sccache stats
-        if: always() && matrix.config.lane == 'Velnor'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: sccache-stats-nextest-prepare-${{ inputs.cache-shared-key }}-${{ matrix.config.lane }}
-          path: sccache-stats-nextest-prepare-${{ inputs.cache-shared-key }}-${{ matrix.config.lane }}.txt
-          if-no-files-found: ignore
-          retention-days: 7
   packages:
-    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -171,20 +72,21 @@ jobs:
           cache_key_prefix: "mise-v2"
           install_args: "rust cargo-nextest sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: ${{ inputs.cache-shared-key }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: "false"
+          save-if: ${{ matrix.group == 'jackin' }}
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback.
-          # The prepare job owns saving this workspace cache; package jobs stay
-          # read-only so the matrix cannot create isolated target caches. The
-          # rust-cache archive already carries ~/.cargo, including registry and
-          # git DB state, so fan-out jobs do not restore the separate Cargo
-          # registry cache again.
+          # Package shards start immediately and share one cache namespace; a
+          # cold target cache compiles in parallel instead of blocking behind a
+          # serialized prepare job. The jackin shard owns saves because it pulls
+          # the widest package graph.
       - name: Run package tests
         shell: bash
         run: |
@@ -216,7 +118,6 @@ jobs:
           cargo nextest run "${args[@]}"
 
   docker-e2e:
-    needs: prepare
     if: inputs.docker-e2e
     strategy:
       fail-fast: false
@@ -249,24 +150,40 @@ jobs:
           cache_key_prefix: "mise-v2"
           install_args: "rust cargo-nextest sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: ${{ inputs.cache-shared-key }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           save-if: "false"
-          # The prepare job owns this cache. Docker E2E stays read-only and
-          # uses local cache restore instead of downloading a target artifact.
-          # The rust-cache archive already carries ~/.cargo, including registry
-          # and git DB state, so this fan-out job does not restore the separate
-          # Cargo registry cache again.
+          # Use the same cache namespace as package tests. Docker E2E remains
+          # independent so target-cache misses do not serialize deterministic
+          # package tests behind this environment-backed smoke lane.
       - name: Download construct image for E2E
         if: inputs.construct-image-changed
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: construct-trixie-image-${{ matrix.config.lane }}
-          path: /tmp
+        shell: bash
+        env:
+          ARTIFACT_NAME: construct-trixie-image-${{ matrix.config.lane }}
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          artifact_id="$(
+            gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/artifacts" \
+              --paginate \
+              --jq ".artifacts[] | select(.name == \"${ARTIFACT_NAME}\") | .id" \
+              | head -n 1
+          )"
+          if [ -z "$artifact_id" ]; then
+            echo "Artifact not found: ${ARTIFACT_NAME}" >&2
+            exit 1
+          fi
+          gh api "repos/${REPOSITORY}/actions/artifacts/${artifact_id}/zip" > /tmp/construct-trixie-image.zip
+          unzip -o /tmp/construct-trixie-image.zip -d /tmp
       - name: Load construct image for E2E
         if: inputs.construct-image-changed
         run: docker load --input /tmp/construct-trixie.tar
@@ -274,10 +191,17 @@ jobs:
         run: cargo build -p jackin-capsule --bin jackin-capsule --locked --offline
       - name: Point nextest at jackin-capsule
         run: |
-          chmod +x target/debug/jackin-capsule
-          echo "JACKIN_CAPSULE_BIN=$PWD/target/debug/jackin-capsule" >> "$GITHUB_ENV"
+          capsule_bin="${CARGO_TARGET_DIR:-target}/debug/jackin-capsule"
+          chmod +x "$capsule_bin"
+          case "$capsule_bin" in
+            /*) echo "JACKIN_CAPSULE_BIN=$capsule_bin" >> "$GITHUB_ENV" ;;
+            *) echo "JACKIN_CAPSULE_BIN=$PWD/$capsule_bin" >> "$GITHUB_ENV" ;;
+          esac
       - name: Run Docker E2E smoke tests
         shell: bash
         run: |
           set -euo pipefail
+          if [ -n "${VELNOR_DOCKER_HOST_TEMP:-}" ]; then
+            export TMPDIR="$VELNOR_DOCKER_HOST_TEMP"
+          fi
           cargo nextest run -p jackin --features e2e --profile docker-e2e --color=always --locked --offline
