@@ -70,6 +70,8 @@ jobs:
           cache_key_prefix: "mise-v2"
           install_args: "rust cargo-deny cargo-fuzz cargo-hack"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: ci-policy-workspace-v2
@@ -110,6 +112,8 @@ jobs:
           cache_key_prefix: "mise-v2"
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
           shared-key: native-macos-workspace-v2
