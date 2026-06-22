@@ -19,9 +19,9 @@ runs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git/db
-        key: cargo-registry-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+        key: cargo-registry-v4-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
         restore-keys: |
-          cargo-registry-v3-${{ runner.os }}-${{ runner.arch }}-
+          cargo-registry-v4-
     - name: Fetch Cargo registry
       if: steps.restore.outputs.cache-hit != 'true'
       shell: bash
