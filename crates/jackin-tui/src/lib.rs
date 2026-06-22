@@ -247,6 +247,19 @@ pub mod ansi {
     pub const BRAND_BANNER: &str =
         "\n  \x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m jackin\x1b[38;2;255;255;255m❯\x1b[38;2;0;0;0m \x1b[0m\n";
 
+    /// Multi-line `jackin --version` splash for an interactive terminal: the
+    /// green-block `jackin❯` pill, the version string, and the `by tailrocks`
+    /// byline. Stays under six lines and is brand-aligned — the mark is the
+    /// terminal pill, never figlet/illustration art. Piped output gets clap's
+    /// plain `jackin <version>` instead.
+    #[must_use]
+    pub fn version_splash(version: &str) -> String {
+        let pill = "\x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m jackin\x1b[38;2;255;255;255m❯\x1b[38;2;0;0;0m \x1b[0m";
+        format!(
+            "\n  {pill}  \x1b[38;2;0;255;65m{version}\x1b[0m\n  \x1b[38;2;94;106;100mby tailrocks\x1b[0m\n"
+        )
+    }
+
     /// Static "frozen digital rain" field shown above the root `jackin --help`
     /// pill on a wide interactive terminal: phosphor glyphs from the shared rain
     /// pool, fading downward toward the `jackin❯` pill clap prints below it.

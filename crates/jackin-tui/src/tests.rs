@@ -197,6 +197,18 @@ fn fixed_prefix_scroll_segments_keep_combining_mark_with_base() {
 }
 
 #[test]
+fn version_splash_has_mark_version_byline_under_six_lines() {
+    let s = ansi::version_splash("9.9.9");
+    assert!(s.contains("jackin"));
+    assert!(s.contains("9.9.9"));
+    assert!(s.contains("by tailrocks"));
+    // Green block + white chevron (never the same colour as the word).
+    assert!(s.contains("\x1b[48;2;0;255;65m"));
+    assert!(s.contains("\x1b[38;2;255;255;255m"));
+    assert!(s.lines().count() <= 6, "version splash exceeds six lines");
+}
+
+#[test]
 fn help_banner_is_deterministic_bounded_phosphor() {
     fn visible_cols(line: &str) -> usize {
         let mut n = 0;

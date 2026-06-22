@@ -2,7 +2,7 @@
 title: "Brand Identity System"
 ---
 
-**Status**: Partially implemented — web/docs/README, CLI/Capsule brand text, the phosphor green-block mark, and the frozen-rain `--help` banner shipped; a full multi-line `--version` splash redesign still deferred
+**Status**: Implemented — web/docs/README, CLI/Capsule brand text, the phosphor green-block mark (black word, white chevron, square corners), the construct-image prompt sigil, the frozen-rain `jackin --help` banner, and the `jackin --version` splash all shipped. Only out-of-scope future surfaces remain deferred (desktop/mobile apps, hosted analytics, auto host-shell-prompt install, a public brand-kit download page).
 
 ## Problem
 
@@ -302,7 +302,8 @@ If any future implementation offers to update host-side prompt snippets, shell t
 
 ## Defer
 
-- A full multi-line `--version` splash / ASCII-wordmark redesign. The frozen-rain `--help` banner already shipped — the binary prints it above clap's pill on a wide interactive terminal (clap reflows multi-line ANSI art through `before_help`, so a dedicated printer with its own TTY and width detection renders it), and `--version` shows the one-line pill splash on a TTY. Only the larger multi-line splash art remains deferred.
+The implemented CLI surfaces — `jackin❯` text everywhere, the green-block pill, the frozen-rain `jackin --help` banner, and the `jackin --version` splash (pill + version + byline) — all shipped. Remaining deferred work is out of scope for the rebrand itself:
+
 - Desktop and mobile app implementation beyond source icon preparation.
 - Hosted analytics for Open Graph or attribution effectiveness.
 - Recolorable theme packs, seasonal marks, or per-runtime logo variants.

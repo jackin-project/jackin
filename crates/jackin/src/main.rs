@@ -72,6 +72,10 @@ async fn main() {
 /// narrow/piped terminal) before clap renders the help body; subcommand help
 /// keeps clap's own `before_help` pill. Real usage errors fall through to
 /// clap's default rendering (stderr, exit 2).
+#[expect(
+    clippy::exit,
+    reason = "binary entrypoint — exit after rendering the version splash"
+)]
 fn handle_parse_error(err: clap::Error) -> ! {
     use clap::error::ErrorKind;
     match err.kind() {
@@ -79,7 +83,11 @@ fn handle_parse_error(err: clap::Error) -> ! {
             print_root_help_banner();
         }
         ErrorKind::DisplayVersion if std::io::stdout().is_terminal() => {
-            print!("{}", jackin_tui::ansi::BRAND_BANNER);
+            // Interactive `--version`: brand splash instead of clap's plain
+            // `jackin <version>` line. Piped output falls through to clap.
+            let version = Cli::command().get_version().unwrap_or_default().to_owned();
+            print!("{}", jackin_tui::ansi::version_splash(&version));
+            std::process::exit(0);
         }
         _ => {}
     }
