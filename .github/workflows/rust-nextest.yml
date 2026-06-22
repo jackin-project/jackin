@@ -243,7 +243,7 @@ jobs:
         if: inputs.construct-image-changed
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: construct-trixie-image
+          name: construct-trixie-image-${{ matrix.config.lane }}
           path: /tmp
       - name: Load construct image for E2E
         if: inputs.construct-image-changed

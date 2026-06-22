@@ -455,11 +455,15 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
   construct-e2e-image:
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.construct_image == 'true'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
-    name: construct E2E image
+    name: construct E2E image (${{ matrix.config.lane }})
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       # When docker/construct/** changes, the published construct:trixie image
@@ -487,7 +491,7 @@ jobs:
             docker/construct/
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: construct-trixie-image
+          name: construct-trixie-image-${{ matrix.config.lane }}
           path: construct-trixie.tar
           retention-days: 1
 
