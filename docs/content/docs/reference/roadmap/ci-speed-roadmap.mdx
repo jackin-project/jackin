@@ -2,7 +2,7 @@
 title: "CI/CD Speed Roadmap"
 ---
 
-**Status**: Open -- run analysis captured; implementation roadmap prioritized for wall-clock impact, with lint-lane de-serialization, package-matrix collapse, preview/CI overlap, and a warm persistent-runner lane leading the order. Phase 9 step 1 is implemented in PR #632, and the Docker E2E lane now lives inside the reusable nextest workflow where it depends on `prepare` instead of the full package matrix. Phase 1 steps 1, 2, and 4 are also implemented: `jdx/mise-action` now pins the mise binary version with a stable cache prefix, and docs CI uses `bun ci`. Phase 2 now uses the middle-ground package shape from this roadmap: named heavy-crate nextest jobs plus one small-crate bucket instead of the old 19-way matrix. The timeout guardrail is implemented for CI, construct, preview, release, reusable nextest jobs, and Renovate. Phase 8 lane-awareness has started: `build-validator` now runs through the same runner-lane matrix as the Rust gates. Renovate no longer runs on every push to `main`; it stays scheduled and available through `workflow_dispatch`.
+**Status**: Open -- run analysis captured; implementation roadmap prioritized for wall-clock impact, with lint-lane de-serialization, package-matrix collapse, preview/CI overlap, and a warm persistent-runner lane leading the order. Phase 9 steps 1 and 2 are implemented in PR #632: `check-all-features` is removed, and `clippy` owns the all-features compile gate while `check-default` owns the default-feature compile gate. The Docker E2E lane now lives inside the reusable nextest workflow where it depends on `prepare` instead of the full package matrix. Phase 1 steps 1, 2, 4, and 6 are also implemented: `jdx/mise-action` now pins the mise binary version with a stable cache prefix, docs CI uses `bun ci`, and CI cargo tools install through mise's GitHub release backend instead of the source-compiling cargo backend. Phase 2 now uses the middle-ground package shape from this roadmap: named heavy-crate nextest jobs plus one small-crate bucket instead of the old 19-way matrix. The timeout guardrail is implemented for CI, construct, preview, release, reusable nextest jobs, and Renovate. Phase 8 lane-awareness has started: `build-validator` now runs through the same runner-lane matrix as the Rust gates. Renovate no longer runs on every push to `main`; it stays scheduled and available through `workflow_dispatch`.
 
 ## Problem
 
@@ -64,7 +64,7 @@ The inherited CI matrix split item also called out the real Docker boundary dire
 
 - Path filters in <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile>, <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile>, <RepoFile path=".github/workflows/construct.yml">.github/workflows/construct.yml</RepoFile>, and <RepoFile path=".github/workflows/preview.yml">.github/workflows/preview.yml</RepoFile> prevent unrelated workflows from doing full work.
 - PR workflow concurrency cancels stale PR runs while preserving non-cancelled release serialization.
-- Rust jobs restore `~/.rustup`, mise cargo-tool caches, and `Swatinem/rust-cache` target/cargo caches; the reusable nextest workflow centralizes the expensive test-binary build and shares it with package jobs.
+- Rust jobs restore `~/.rustup`, mise-managed tool caches, and `Swatinem/rust-cache` target/cargo caches; the reusable nextest workflow centralizes the expensive test-binary build and shares it with package jobs.
 - Construct builds use Buildx with registry cache for published main builds and GitHub Actions cache scopes for PR/rehearsal builds.
 - The construct Dockerfile already installs pinned `sccache` inside the image build for the `shellfirm` cargo install path.
 - Docs jobs cache Bun's download cache and lychee's link cache, and they separate repo-link checks from full site build/link checks.
@@ -74,20 +74,20 @@ The inherited CI matrix split item also called out the real Docker boundary dire
 
 ### Two co-critical lanes set the floor, not one
 
-The analyzed `CI` run is gated by two independent lanes that each take roughly twelve minutes, so speeding up only one of them leaves the workflow's wall clock unchanged. The lint lane runs `check-all-features` and then `clippy` and `check-default`, which are serialized because both of the latter declare `needs: check-all-features`. The test lane runs nextest `prepare`, then the per-package matrix, then `docker-e2e`, which waits for the entire reusable `test` workflow.
+The analyzed `CI` run was gated by two independent lanes that each took roughly twelve minutes, so speeding up only one of them would have left the workflow's wall clock unchanged. The old lint lane ran `check-all-features` and then `clippy` and `check-default`, which were serialized because both of the latter declared `needs: check-all-features`. The old test lane ran nextest `prepare`, then the per-package matrix, then `docker-e2e`, which waited for the entire reusable `test` workflow.
 
 ```
 changes
- ├─ check-all-features ──┬─ clippy            (lint lane, ~12m)
+ ├─ check-all-features ──┬─ clippy              (old lint lane, ~12m)
  │                       └─ check-default
- └─ test: prepare ─ packages(19) ─ docker-e2e  (test lane, ~12m)
+ └─ test: prepare ─ packages(19) ─ docker-e2e    (old test lane, ~12m)
 ```
 
-The existing findings below address the test lane (move `docker-e2e` onto `prepare`, reshape the matrix); they do nothing for the lint lane, which then becomes the sole ~12-minute critical path. Both lanes have to be cut for the workflow to get materially faster, which is why the recommended execution order starts with the lint lane (the cheapest cut) and the package matrix (the largest restore-overhead cut).
+PR #632 cuts both lanes: the lint lane no longer runs the redundant `check-all-features` job, Docker E2E starts after `prepare`, and the package matrix is bucketed into named heavy crates plus one small-crate bucket. The remaining critical path should be remeasured before choosing the next cut.
 
 ### Lint and check jobs serialize behind a cache they do not share
 
-In <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile>, `clippy` and `check-default` both declare `needs: check-all-features`, but every one of the three jobs sets its `Swatinem/rust-cache` `shared-key` to its own `github.job`, so they never share a `target/` directory. The dependency therefore buys nothing on the green path: `clippy` waits for `check-all-features` to finish and then recompiles the workspace from its own cold cache, adding a full compile to the lint lane for no reuse. Because `cargo clippy --workspace --all-targets --all-features` performs the full type and borrow check before linting, `clippy` is a strict superset of `check-all-features` -- anything that compiles under clippy compiles under check, and check cannot catch a compile error clippy would miss. The edge only saves runner minutes when a compile is already broken, at the cost of serializing the green path. For a wall-clock-first goal the fix is to drop the edge so the three jobs run in parallel, or to delete `check-all-features` outright and let `clippy` own the all-features compile gate while `check-default` owns the default-feature gate. Either removes roughly one full workspace compile from the critical path (Phase 9).
+In the old <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> shape, `clippy` and `check-default` both declared `needs: check-all-features`, but every one of the three jobs set its `Swatinem/rust-cache` `shared-key` to its own `github.job`, so they never shared a `target/` directory. The dependency bought nothing on the green path: `clippy` waited for `check-all-features` to finish and then recompiled the workspace from its own cold cache, adding a full compile to the lint lane for no reuse. Because `cargo clippy --workspace --all-targets --all-features` performs the full type and borrow check before linting, `clippy` is a strict superset of `check-all-features` -- anything that compiles under clippy compiles under check, and check cannot catch a compile error clippy would miss. PR #632 removes the redundant `check-all-features` job entirely, leaving `clippy` as the all-features compile gate and `check-default` as the default-feature compile gate.
 
 ### Critical-path sequencing beats more matrix fan-out
 
@@ -95,7 +95,7 @@ The prior "split the monolithic check job" work is partly implemented now: fmt, 
 
 The remaining matrix work should preserve the original attribution goal as well as speed: lint/check, deterministic package tests, integration-heavy runtime tests, Docker E2E, capsule, MSRV, validator, dependency policy, and audit should stay distinguishable in GitHub checks even if the implementation moves to nextest archives, partitions, or shared build artifacts.
 
-There is a second, larger opportunity in the same lane: the 19-package matrix is mostly fixed overhead. `prepare` already builds every test binary with `cargo nextest run --workspace --no-run --all-features`, so each package job mainly restores a multi-gigabyte `target/` cache and then runs fast tests; roughly eighteen of those cache restores are redundant. Collapsing the matrix to a single `cargo nextest run --workspace` execution job, or to a few named heavy-crate jobs plus one bucket job for the small crates, removes most of that restore overhead and shrinks the matrix tail that currently delays `docker-e2e`. The same lane also rebuilds `jackin-capsule` inside the Docker E2E job even though `prepare` already produced it into the shared cache. Both are detailed in Phase 2.
+There was a second, larger opportunity in the same lane: the 19-package matrix was mostly fixed overhead. `prepare` already builds every test binary with `cargo nextest run --workspace --no-run --all-features`, so each package job mainly restored a multi-gigabyte `target/` cache and then ran fast tests; roughly eighteen of those cache restores were redundant. PR #632 adopts the middle ground from Phase 2: named jobs for the heavy crates plus one bucket job for the small crates. Docker E2E also points `JACKIN_CAPSULE_BIN` at the prepared `target/debug/jackin-capsule` binary instead of rebuilding it.
 
 ### Main-to-preview is serialized too late
 
@@ -145,7 +145,7 @@ Every push to `main` fires `CI`, `Construct Image`, `Docs`, and `Renovate` concu
 
 ### Path filters over-trigger on shared tool config
 
-The `rust` path filter in <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> includes <RepoFile path="mise.toml">mise.toml</RepoFile>, so bumping a docs-only tool version fires the entire Rust CI surface. The mise cargo-tools cache keys also hash the whole <RepoFile path="mise.toml">mise.toml</RepoFile>, so any single tool bump invalidates every tool cache across `CI`, `Docs`, and `Hygiene`. Finer-grained filters, and per-tool cache keys that hash only the relevant tool entry, keep an unrelated tool bump from firing or cold-starting lanes it cannot affect (Phase 1).
+The `rust` path filter in <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> includes <RepoFile path="mise.toml">mise.toml</RepoFile>, so bumping a docs-only tool version fires the entire Rust CI surface. PR #632 removed the stale per-tool cargo-install cache keys, but the path filter remains broad. Finer-grained filters keep an unrelated tool bump from firing lanes it cannot affect (Phase 1).
 
 ## Implementation Phases
 
@@ -153,7 +153,7 @@ The phases below are grouped by change class and risk; the numbers are identifie
 
 | Rank | Work | Phase | Estimated wall-clock effect | Risk |
 | --- | --- | --- | --- | --- |
-| 1 | De-serialize `clippy`/`check-default` from `check-all-features` (or delete the redundant check job) | Phase 9 | removes ~one full workspace compile (~6m) from the lint lane | low -- clippy is a strict superset of check |
+| 1 | Done in PR #632: delete the redundant `check-all-features` job and let `clippy` own the all-features compile gate | Phase 9 | removes ~one full workspace compile (~6m) from the lint lane | low -- clippy is a strict superset of check |
 | 2 | Collapse or bucket the 19-package nextest matrix | Phase 2 | removes ~14-18 redundant cache restores and shrinks the tail that gates `docker-e2e` | medium -- benchmark attribution |
 | 3 | Overlap the preview build with CI, or fold it into the CI DAG | Phase 4 | removes ~12.5m of cross-workflow idle before publish | medium -- publish gating must stay exact |
 | 4 | Warm persistent-runner fast lane for Rust changes | Phase 8 | minutes to sub-minute for incremental Rust changes | high -- fork/secret isolation |
@@ -166,7 +166,7 @@ Measurement (Phase 0) still comes first in practice: capture a lane's baseline b
 ### Phase 0 -- Measurement and cache truth
 
 1. Add a small workflow timing summary to `CI`, `Docs`, `Construct Image`, `Publish Homebrew Preview`, and `Release`: write job duration, long steps, cache hits/misses, and final critical path to the GitHub step summary.
-2. Add `cargo --timings` artifacts for `check-all-features`, `clippy`, nextest prepare, validator builds, preview builds, and release builds. Keep artifacts short-retention and non-required.
+2. Add `cargo --timings` artifacts for `clippy`, `check-default`, nextest prepare, validator builds, preview builds, and release builds. Keep artifacts short-retention and non-required.
 3. When testing `sccache`, always emit `sccache --show-stats` and fail the experiment only on compile failure, not low hit rate.
 4. Track the target metric explicitly: time to first red signal on PR, time to all required PR checks, time from merge to CI green, time from merge to preview published, and time from tag/manual dispatch to release published.
 
@@ -200,7 +200,7 @@ Measurement (Phase 0) still comes first in practice: capture a lane's baseline b
 2. Wire the GitHub Actions cache backend explicitly: `RUSTC_WRAPPER=sccache`, `SCCACHE_GHA_ENABLED=true`, lane-specific `SCCACHE_GHA_CACHE_TO`/`SCCACHE_GHA_CACHE_FROM`, and the required GitHub Actions runtime cache variables. Keep `CARGO_INCREMENTAL=0` in every `sccache` lane.
 3. Pilot host `sccache` on preview `cargo zigbuild` jobs first. Those jobs spent 5m 47s to 6m 03s in the `Build` step on the analyzed run and have stable target-specific cache namespaces, so hit/miss data will be meaningful quickly.
 4. Emit `sccache --show-stats` to the step summary and upload the raw stats as a short-retention artifact. Treat low hit rate as data, not a failure; fail only on build correctness.
-5. If preview hit rate is useful, extend to release builds and then to `check-all-features`/`clippy`/`nextest prepare`. Do not remove `Swatinem/rust-cache` until measured data shows `sccache` plus cargo registry/tool caches is faster and less cache-heavy. `rust-cache` still handles dependency downloads, target reuse, and same-run package fan-out well.
+5. If preview hit rate is useful, extend to release builds and then to `clippy`/`check-default`/nextest prepare. Do not remove `Swatinem/rust-cache` until measured data shows `sccache` plus cargo registry/tool caches is faster and less cache-heavy. `rust-cache` still handles dependency downloads, target reuse, and same-run package fan-out well.
 6. Use separate namespaces for dev/test, release, target triple, feature set, and runner OS/arch. A single huge shared compiler cache will churn and obscure misses.
 7. Treat the GitHub Actions cache backend for `sccache` as rate-limited. Under wide parallel fan-out (the 19-way nextest matrix, or many build legs at once) it returns HTTP 429 the way the Docker GHA cache does, so a hit-rate pilot there will thrash and mislead. Pilot `sccache` on a backend that does not throttle -- local disk on the persistent runner, or S3/Redis -- which is also why `sccache` pairs best with the warm-runner lane (Phase 8), where an on-disk `target/` already outperforms a remote compiler cache. On hosted runners, scope any pilot to a few concurrent legs and compare against the `Swatinem/rust-cache` baseline before widening.
 
@@ -250,10 +250,10 @@ Measurement (Phase 0) still comes first in practice: capture a lane's baseline b
 
 ### Phase 9 -- Host lint/check critical-path de-serialization
 
-1. Remove the `needs: check-all-features` edge from `clippy` and `check-default` in <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> so the three compile-heavy jobs run in parallel instead of serially. They already use separate `Swatinem/rust-cache` `shared-key` namespaces, so the edge never shared a `target/`; on the green path it only adds one full workspace compile to the lint lane.
-2. Evaluate deleting `check-all-features` entirely. `cargo clippy --workspace --all-targets --all-features` runs the full type and borrow check before linting, so it is a strict superset of `cargo check --workspace --all-targets --all-features`; keeping `clippy` as the all-features gate and `check-default` as the default-feature gate preserves coverage while removing a redundant compile-heavy job and its cache.
+1. Done in PR #632: remove the `needs: check-all-features` edge from `clippy` and `check-default` in <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> so compile-heavy jobs are not serialized behind a cache they do not share.
+2. Done in PR #632: delete `check-all-features` entirely. `cargo clippy --workspace --all-targets --all-features` runs the full type and borrow check before linting, so it is a strict superset of `cargo check --workspace --all-targets --all-features`; keeping `clippy` as the all-features gate and `check-default` as the default-feature gate preserves coverage while removing a redundant compile-heavy job and its cache.
 3. If the fail-fast-on-broken-compile behavior of the old edge is still wanted to save runner minutes on red PRs, recover it cheaply: let `fmt` (about 24s) and nextest `prepare` carry the fast red signal, or add a single quick `cargo check` on one core crate rather than gating the whole lint lane behind a full-workspace check.
-4. This is the cheapest large win in the roadmap -- one PR, low risk -- and should land first; capture the lint-lane wall clock before and after per Phase 0.
+4. After this lands, capture the lint-lane wall clock before and after per Phase 0 and use the measured critical path to pick the next cut.
 
 ## Guardrails
 
