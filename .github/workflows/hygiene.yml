@@ -79,11 +79,10 @@ jobs:
           # reruns skip recompiling unchanged dependencies.
       - run: cargo deny check advisories
       - run: cargo hack check --workspace --feature-powerset --all-targets --locked
-      - run: rustup target add x86_64-unknown-linux-musl
       - name: Long jackin-term fuzz run
         run: |
           cd crates/jackin-term
-          cargo fuzz run --sanitizer none damage_grid_process -- -max_total_time=300
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu damage_grid_process -- -max_total_time=300
 
   native-macos:
     name: Native macOS smoke

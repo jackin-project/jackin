@@ -538,11 +538,10 @@ jobs:
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
-      - run: rustup target add x86_64-unknown-linux-musl
       - name: Fuzz jackin-term parser path
         run: |
           cd crates/jackin-term
-          cargo fuzz run --sanitizer none damage_grid_process -- -max_total_time=60
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu damage_grid_process -- -max_total_time=60
   bench-build:
     # One job builds both benches: the two matrix legs compiled the shared
     # dependency graph twice with two separate target caches (cache-quota
