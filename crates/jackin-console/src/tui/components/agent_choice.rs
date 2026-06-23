@@ -48,14 +48,14 @@ impl<A: AgentChoice> AgentChoiceState<A> {
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<A> {
         match key.code {
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down | KeyCode::Char('j' | 'J') => {
                 let idx = focus_index_in(&self.choices, self.focused);
                 if idx + 1 < self.choices.len() {
                     self.focused = self.choices[idx + 1];
                 }
                 ModalOutcome::Continue
             }
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up | KeyCode::Char('k' | 'K') => {
                 let idx = focus_index_in(&self.choices, self.focused);
                 if idx > 0 {
                     self.focused = self.choices[idx - 1];

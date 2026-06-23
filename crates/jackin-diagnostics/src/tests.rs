@@ -6,11 +6,13 @@ use std::time::{Duration, SystemTime};
 
 use jackin_core::JackinPaths;
 
-use crate::logging::{DEBUG_BUFFER_ACTIVE, drain_debug_buffer};
+use crate::logging::{DEBUG_BUFFER_ACTIVE, drain_debug_buffer, should_tee_debug_to_stderr};
 use crate::run::{
-    MAX_RUN_ARTIFACT_AGE, MAX_RUN_ARTIFACTS, RunDiagnostics, mint_run_id, prune_old_runs_in_dir,
+    MAX_RUN_ARTIFACT_AGE, MAX_RUN_ARTIFACTS, RunDiagnostics,
+    external_run_id_from_resource_attributes, flag_is_truthy, mint_run_id, prune_old_runs_in_dir,
     prune_runs_preserving, run_dir,
 };
+use crate::summary::summarize_reader;
 use crate::terminal::{
     host_screen_owned, rich_surface_active, set_host_screen_owned, set_rich_surface_active,
 };
@@ -22,16 +24,74 @@ use crate::{
 static DEBUG_BUFFER_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 fn init_test_tracing() {
-    drop(init_tracing(false));
+    drop(init_tracing(false, "jk-run-test00"));
 }
 
 // ── run.rs tests ─────────────────────────────────────────────────────────────
 
 #[test]
-fn run_id_has_operator_handle_shape() {
+fn mint_run_id_is_bare_six_hex() {
     let id = mint_run_id();
-    assert!(id.starts_with("jk-run-"));
-    assert_eq!(id.len(), "jk-run-42f9aa".len());
+    // Bare unique value — no prefix, six lowercase hex digits.
+    assert_eq!(id.len(), 6);
+    assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
+}
+
+#[test]
+fn external_run_id_strips_parallax_run_prefix() {
+    assert_eq!(
+        external_run_id_from_resource_attributes(
+            "service.name=parallax,parallax.run.id=run_18b946258b86fe20"
+        )
+        .as_deref(),
+        Some("18b946258b86fe20")
+    );
+}
+
+#[test]
+fn external_run_id_ignores_unrelated_resource_attributes() {
+    assert_eq!(
+        external_run_id_from_resource_attributes("service.name=parallax,foo=bar"),
+        None
+    );
+}
+
+#[test]
+fn external_run_id_empty_after_prefix_is_none() {
+    // `run_` with nothing usable after normalization must yield None (not
+    // Some("")) so the caller falls back to a minted id rather than an empty
+    // run id / `.jsonl` filename.
+    assert_eq!(
+        external_run_id_from_resource_attributes("parallax.run.id=run_"),
+        None
+    );
+    assert_eq!(
+        external_run_id_from_resource_attributes("parallax.run.id=  "),
+        None
+    );
+}
+
+#[test]
+fn external_run_id_drops_disallowed_chars_and_caps_length() {
+    // Non run-id chars are filtered out (the `run_` prefix is stripped first).
+    assert_eq!(
+        external_run_id_from_resource_attributes("parallax.run.id=run_ab/cd!ef").as_deref(),
+        Some("abcdef")
+    );
+    // Result is capped at 64 chars.
+    let long = "z".repeat(100);
+    let id = external_run_id_from_resource_attributes(&format!("parallax.run.id={long}")).unwrap();
+    assert_eq!(id.len(), 64);
+}
+
+#[test]
+fn flag_is_truthy_vocabulary() {
+    for truthy in ["1", "true", "yes", "on", "TRUE", "On", "  yes  "] {
+        assert!(flag_is_truthy(truthy), "{truthy:?} should be truthy");
+    }
+    for falsy in ["0", "false", "no", "off", "", "  ", "2", "enable"] {
+        assert!(!flag_is_truthy(falsy), "{falsy:?} should be falsy");
+    }
 }
 
 #[test]
@@ -47,6 +107,20 @@ fn writes_jsonl_events() {
     assert!(contents.contains("\"run_id\""));
     assert!(contents.contains("\"hello\""));
     assert!(contents.contains("\"debug\""));
+}
+
+#[test]
+fn writes_error_jsonl_events() {
+    init_test_tracing();
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, true, "load").unwrap();
+
+    run.error("attach_error", "capsule attach failed");
+
+    let contents = fs::read_to_string(run.path()).unwrap();
+    assert!(contents.contains("\"kind\":\"attach_error\""), "{contents}");
+    assert!(contents.contains("capsule attach failed"), "{contents}");
 }
 
 #[test]
@@ -92,6 +166,61 @@ fn run_summary_includes_metrics_surface() {
     assert!(summary.contains("event_counts"), "{summary}");
     assert!(summary.contains("cache_hits"), "{summary}");
     assert!(summary.contains(":1"), "{summary}");
+}
+
+#[test]
+fn timing_events_include_nested_duration_summary() {
+    init_test_tracing();
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, true, "load").unwrap();
+
+    run.timing_started("credentials", "operator_env", Some("layers"));
+    run.timing_done("credentials", "operator_env", Some("2 vars"));
+    run.emit_run_summary();
+
+    let contents = fs::read_to_string(run.path()).unwrap();
+    let timing_done = contents
+        .lines()
+        .find(|line| line.contains("\"kind\":\"timing_done\""))
+        .unwrap();
+    assert!(
+        timing_done.contains("\"stage\":\"credentials\""),
+        "{timing_done}"
+    );
+    assert!(timing_done.contains("operator_env"), "{timing_done}");
+    assert!(timing_done.contains("duration_ms"), "{timing_done}");
+
+    let summary = contents
+        .lines()
+        .find(|line| line.contains("\"kind\":\"run_summary\""))
+        .unwrap();
+    assert!(
+        summary.contains("timing_duration_histograms_ms"),
+        "{summary}"
+    );
+    assert!(summary.contains("credentials/operator_env"), "{summary}");
+}
+
+#[test]
+fn docker_build_step_event_records_structured_detail() {
+    init_test_tracing();
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, true, "load").unwrap();
+
+    run.docker_build_step("12", "DONE", Some(76_500), false);
+
+    let contents = fs::read_to_string(run.path()).unwrap();
+    let event = contents
+        .lines()
+        .find(|line| line.contains("\"kind\":\"docker_build_step\""))
+        .unwrap();
+    assert!(event.contains("\"stage\":\"derived image\""), "{event}");
+    assert!(event.contains("\\\"step\\\":\\\"12\\\""), "{event}");
+    assert!(event.contains("\\\"label\\\":\\\"DONE\\\""), "{event}");
+    assert!(event.contains("\\\"duration_ms\\\":76500"), "{event}");
+    assert!(event.contains("\\\"cached\\\":false"), "{event}");
 }
 
 #[test]
@@ -340,6 +469,32 @@ fn debug_lines_drop_while_a_noncapturing_run_owns_output() {
 }
 
 #[test]
+fn debug_lines_tee_only_before_rich_terminal_ownership() {
+    use std::sync::atomic::Ordering;
+    let _lock = DEBUG_BUFFER_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
+    drop(drain_debug_buffer());
+    set_rich_surface_active(false);
+    set_host_screen_owned(false);
+
+    assert!(should_tee_debug_to_stderr());
+
+    begin_debug_buffering();
+    assert!(!should_tee_debug_to_stderr());
+    end_debug_buffering();
+
+    set_rich_surface_active(true);
+    assert!(!should_tee_debug_to_stderr());
+    set_rich_surface_active(false);
+
+    set_host_screen_owned(true);
+    assert!(!should_tee_debug_to_stderr());
+    set_host_screen_owned(false);
+}
+
+#[test]
 fn compact_lines_write_run_file_while_rich_surface_owns_terminal() {
     init_test_tracing();
     let _lock = DEBUG_BUFFER_TEST_LOCK
@@ -385,6 +540,117 @@ fn compact_lines_write_run_file_while_host_screen_owns_terminal() {
     assert!(
         jsonl.contains("hidden while host owns raw screen"),
         "{jsonl}"
+    );
+}
+
+#[test]
+fn diagnostics_summary_extracts_stage_timing_cache_and_build_steps() {
+    let jsonl = r##"
+{"ts_ms":1000,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"run","message":"command load started"}
+{"ts_ms":1100,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"stage_done","message":"resolved","stage":"credentials","detail":"{\"duration_ms\":55,\"detail\":\"resolved\"}"}
+{"ts_ms":1200,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"timing_done","message":"operator_env done","stage":"credentials","detail":"{\"name\":\"operator_env\",\"duration_ms\":34,\"detail\":\"2 vars\"}"}
+{"ts_ms":1250,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"timing_done","message":"manifest_env done","stage":"credentials","detail":"{\"name\":\"manifest_env\",\"duration_ms\":1,\"detail\":\"skipped\"}"}
+{"ts_ms":1300,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"image_cache_hit","message":"reusing derived image jk_role","stage":"derived image","detail":"recipe_hash_match"}
+{"ts_ms":1350,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"image_refresh_background","message":"reusing derived image jk_role; background refresh pending","stage":"derived image","detail":"published_image_stale"}
+{"ts_ms":1375,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"selected_image_refresh_started","message":"refreshing selected runtime image in background","stage":"derived image","detail":"claude:published_image_stale"}
+{"ts_ms":1380,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"image_build_source","message":"derived image build source selected","stage":"derived image","detail":"{\"source\":\"workspace_dockerfile\",\"reason\":\"missing_local_image\",\"base_image\":null,\"pull_base_image\":false}"}
+{"ts_ms":1400,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"build_context_snapshot","message":"derived workspace build context snapshot","stage":"derived image","detail":"{\"source\":\"workspace\",\"files\":12,\"bytes\":4096,\"context_dir\":\"/tmp/jackin-context\"}"}
+{"ts_ms":1500,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"docker_build_step","message":"docker build step #6 RUN thing","stage":"derived image","detail":"{\"step\":\"#6\",\"label\":\"RUN thing\",\"duration_ms\":8500,\"cached\":false}"}
+{"ts_ms":1600,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"launch_plan_rejected","message":"launch plan rejected","stage":"restore","detail":"{\"plan\":\"AttachExisting\",\"reason\":\"current_role_container_missing\",\"container\":\"jk-test\",\"state\":\"not_found\"}"}
+{"ts_ms":1700,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"launch_plan","message":"launch plan selected","stage":"restore","detail":"{\"plan\":\"CreateFromValidImage\",\"reason\":\"current_role_container_missing\",\"container\":\"jk-test\"}"}
+{"ts_ms":1750,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"prewarmed_dind_adoption","message":"adopted","stage":"sidecar","detail":"ready_ms=12;source=state;state_age_ms=34;prewarm_ready_ms=56"}
+{"ts_ms":1800,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"stage_started","message":"opening","stage":"hardline"}
+{"ts_ms":3000,"run_id":"jk-run-test","trace_id":"jk-run-test","kind":"debug","message":"operator session still attached"}
+"##;
+
+    let summary = summarize_reader(std::io::Cursor::new(jsonl)).unwrap();
+
+    assert_eq!(summary.run_id.as_deref(), Some("jk-run-test"));
+    assert_eq!(summary.event_count, 15);
+    assert_eq!(summary.wall_duration_ms(), Some(2000));
+    assert_eq!(summary.startup_duration_ms(), Some(800));
+    assert_eq!(
+        summary
+            .stage_durations_ms
+            .get("credentials")
+            .map(Vec::as_slice),
+        Some(&[55][..])
+    );
+    assert_eq!(
+        summary
+            .timing_durations_ms
+            .get("credentials/operator_env")
+            .map(Vec::as_slice),
+        Some(&[34][..])
+    );
+    assert_eq!(summary.skipped_timings.len(), 1);
+    assert_eq!(summary.skipped_timings[0].stage, "credentials");
+    assert_eq!(summary.skipped_timings[0].name, "manifest_env");
+    assert_eq!(summary.skipped_timings[0].detail, "skipped");
+    assert_eq!(summary.cache_hits(), 1);
+    assert_eq!(summary.cache_misses(), 0);
+    assert_eq!(summary.cache_events.len(), 3);
+    assert_eq!(summary.cache_events[1].kind, "image_refresh_background");
+    assert_eq!(
+        summary.cache_events[1].detail.as_deref(),
+        Some("published_image_stale")
+    );
+    assert_eq!(
+        summary.cache_events[2].kind,
+        "selected_image_refresh_started"
+    );
+    assert_eq!(
+        summary.cache_events[2].detail.as_deref(),
+        Some("claude:published_image_stale")
+    );
+    assert_eq!(summary.build_context_snapshots.len(), 1);
+    assert_eq!(
+        summary.build_context_snapshots[0].source.as_deref(),
+        Some("workspace")
+    );
+    assert_eq!(summary.build_context_snapshots[0].files, 12);
+    assert_eq!(summary.build_context_snapshots[0].bytes, 4096);
+    assert_eq!(
+        summary.build_context_snapshots[0].context_dir.as_deref(),
+        Some("/tmp/jackin-context")
+    );
+    assert_eq!(summary.image_build_sources.len(), 1);
+    assert_eq!(
+        summary.image_build_sources[0].source.as_deref(),
+        Some("workspace_dockerfile")
+    );
+    assert_eq!(
+        summary.image_build_sources[0].reason.as_deref(),
+        Some("missing_local_image")
+    );
+    assert!(!summary.image_build_sources[0].pull_base_image);
+    assert_eq!(summary.docker_build_steps.len(), 1);
+    assert_eq!(summary.docker_build_steps[0].duration_ms, Some(8500));
+    assert!(!summary.docker_build_steps[0].cached);
+    assert_eq!(summary.launch_plan_events.len(), 2);
+    assert_eq!(
+        summary.launch_plan_events[0].plan.as_deref(),
+        Some("AttachExisting")
+    );
+    assert_eq!(
+        summary.launch_plan_events[1].reason.as_deref(),
+        Some("current_role_container_missing")
+    );
+    assert_eq!(summary.prewarmed_dind_adoptions.len(), 1);
+    assert_eq!(summary.prewarmed_dind_adoptions[0].outcome, "adopted");
+    assert_eq!(
+        summary.prewarmed_dind_adoptions[0].detail.as_deref(),
+        Some("ready_ms=12;source=state;state_age_ms=34;prewarm_ready_ms=56")
+    );
+    assert_eq!(summary.prewarmed_dind_adoptions[0].ready_ms, Some(12));
+    assert_eq!(
+        summary.prewarmed_dind_adoptions[0].source.as_deref(),
+        Some("state")
+    );
+    assert_eq!(summary.prewarmed_dind_adoptions[0].state_age_ms, Some(34));
+    assert_eq!(
+        summary.prewarmed_dind_adoptions[0].prewarm_ready_ms,
+        Some(56)
     );
 }
 

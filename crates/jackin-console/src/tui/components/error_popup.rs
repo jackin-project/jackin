@@ -9,6 +9,15 @@ pub fn error_popup_state(
     jackin_tui::components::ErrorPopupState::new(title, message)
 }
 
+/// Shared error dialog for a rejected auth source folder. Used by both the
+/// workspace-editor and global-settings source-folder pickers so the
+/// rejection looks and reads identically on either surface.
+pub fn invalid_source_folder_error_popup_state(
+    reason: impl Into<String>,
+) -> jackin_tui::components::ErrorPopupState {
+    error_popup_state("Invalid source folder", reason)
+}
+
 pub fn role_load_error_popup_state(
     message: impl Into<String>,
 ) -> jackin_tui::components::ErrorPopupState {

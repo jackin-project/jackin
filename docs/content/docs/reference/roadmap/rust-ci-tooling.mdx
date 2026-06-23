@@ -8,12 +8,12 @@ title: "Rust CI tooling and dependency hygiene"
 
 jackin's CI runs the Rust baseline — `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo nextest`, an MSRV check, `sccache`, and `mold` — but nothing beyond it. Two whole layers a mature Rust project of this size (~91K lines of production Rust, a four-crate workspace, 447 resolved packages) normally has are absent:
 
-- **No dependency-hygiene layer.** The 447-package tree (85 direct dependencies in the root <RepoFile path="Cargo.toml" /> plus the four workspace crates, per <RepoFile path="Cargo.lock" />) is unchecked: no advisory scan, no license gate, no unused-dependency check, no duplicate-version or source check.
+- **No dependency-hygiene layer.** The 447-package tree (85 direct dependencies in the root <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> plus the four workspace crates, per <RepoFile path="Cargo.lock">Cargo.lock</RepoFile>) is unchecked: no advisory scan, no license gate, no unused-dependency check, no duplicate-version or source check.
 - **No quality-instrumentation layer.** No coverage measurement to find untested paths, no snapshot tests for the two TUI surfaces whose rendered output is otherwise asserted by hand, no spell-check on prose and identifiers.
 
 This item is the umbrella for closing both gaps, plus a deferred release-automation track. It is **phased**: Phase 1 is cheap, high-value tooling to adopt now; Phase 2 is release-time automation that only becomes load-bearing at the first tagged release; a final section records what was evaluated and deliberately skipped for this project profile (solo-maintainer, pre-release, `Apache-2.0`, binary CLI workspace shipping static binaries via a Homebrew tap and `cargo-zigbuild`).
 
-Per the solo-maintainer staffing model in <RepoFile path="AGENTS.md" />, there is no second human to notice a `RUSTSEC` advisory, a copyleft license sneaking in through a transitive bump, or a regression in an untested branch. Automated CI checks are the substitute, exactly as multi-agent review substitutes for the missing second reviewer elsewhere. Every tool below installs through `mise` (per the mise-only CI rule in <RepoFile path=".github/AGENTS.md" />) and, where it gates, folds into the `ci-required` aggregator.
+Per the solo-maintainer staffing model in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>, there is no second human to notice a `RUSTSEC` advisory, a copyleft license sneaking in through a transitive bump, or a regression in an untested branch. Automated CI checks are the substitute, exactly as multi-agent review substitutes for the missing second reviewer elsewhere. Every tool below installs through `mise` (per the mise-only CI rule in <RepoFile path=".github/AGENTS.md">.github/AGENTS.md</RepoFile>) and, where it gates, folds into the `ci-required` aggregator.
 
 ## Phase 1 — adopt now
 
@@ -108,7 +108,7 @@ The empty `allow-git` list makes any new git dependency an explicit, reviewable 
 
 `cargo-llvm-cov` wraps rustc's LLVM source-based instrumentation to produce precise line/region coverage. It is the **only** coverage tool the official nextest docs document, and it integrates natively via `cargo llvm-cov nextest` — so it reuses jackin's existing test runner rather than introducing a parallel one. It runs on **stable** (branch coverage and doc-test coverage need nightly and stay off), is maintained by `taiki-e` (v0.8.7, May 2026, same author as the `install-action` already idiomatic in Rust CI), and emits LCOV / JSON / Cobertura / Codecov formats.
 
-For jackin' specifically, coverage is the instrument that surfaces the untested branches in exactly the auth / Docker / TUI code where <RepoFile path="AGENTS.md" /> already flags pervasive duplication — the places a missing call site in one of two near-identical paths hides.
+For jackin' specifically, coverage is the instrument that surfaces the untested branches in exactly the auth / Docker / TUI code where <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> already flags pervasive duplication — the places a missing call site in one of two near-identical paths hides.
 
 **Run it informational, not as a gate.** A hard coverage-percentage threshold on a solo, pre-release project buys merge friction and threshold bikeshedding, not safety. The recommended shape is `cargo llvm-cov nextest --lcov` uploaded to Codecov as a PR comment (or kept as a CI artifact), with no pass/fail bar. Codecov upload requires a CI token and sends coverage data to an external service — opt-in, and the only part of this item with an external-service dependency.
 
@@ -122,16 +122,16 @@ The substantive design for *what* is snapshotted — styled SVG goldens for TUI 
 
 Codebook (`codebook-lsp lint`) is the adopted spell-check gate. It combines Spellbook's Hunspell-compatible dictionary engine with Tree-sitter-aware parsing, so it can check prose-heavy project files and source comments without treating every code token as plain English.
 
-The first CI integration is whole-branch, not diff-only. <RepoFile path=".github/workflows/docs.yml" /> runs two separate required jobs:
+The first CI integration is whole-branch, not diff-only. <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile> runs two separate required jobs:
 
 - `spell-check-docs` checks root contributor Markdown, GitHub workflow text, and the published docs corpus.
 - `spell-check-source` checks Rust source, crate TOML files, and Docker runtime/construct scripts.
 
-Both jobs run `codebook-lsp --root . lint --unique ...` over tracked files on the current branch and use the project dictionary in <RepoFile path=".codebook.toml" />. The initial dictionary is a baseline of current jackin' vocabulary, tool names, British spellings already used in docs, terminal/protocol acronyms, and synthetic fixture words. New words introduced after this PR are checked against that baseline.
+Both jobs run `codebook-lsp --root . lint --unique ...` over tracked files on the current branch and use the project dictionary in <RepoFile path=".codebook.toml">.codebook.toml</RepoFile>. The initial dictionary is a baseline of current jackin' vocabulary, tool names, British spellings already used in docs, terminal/protocol acronyms, and synthetic fixture words. New words introduced after this PR are checked against that baseline.
 
 ## Phase 2 — at or after first release
 
-These are release-time tools. They are sound and well-matched to jackin's distribution shape, but become load-bearing only once the project cuts its first tagged release — and <RepoFile path="AGENTS.md" /> explicitly defers `CHANGELOG.md` population until then.
+These are release-time tools. They are sound and well-matched to jackin's distribution shape, but become load-bearing only once the project cuts its first tagged release — and <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> explicitly defers `CHANGELOG.md` population until then.
 
 - **`dist` (formerly `cargo-dist`)** — generates the full `plan → build → host → publish → announce` release pipeline plus tarballs and installers, including a **Homebrew-tap** installer and GitHub-Release hosting, and natively supports **`cargo-zigbuild`** — precisely jackin's current distribution shape (Homebrew tap + cross-compiled release binaries). It is the canonical, actively-maintained choice (v0.32.0, May 2026; the former `astral-sh/cargo-dist` fork was archived December 2025 with users pointed back upstream). Adopting it means replacing the hand-rolled release workflow, so it is a deliberate release-time migration decision, not a drop-in.
 - **`git-cliff`** — generates `CHANGELOG.md` from Conventional Commits (which jackin' already uses), with templated output. Widely adopted (~11.9k stars), actively maintained (v2.13.1, April 2026). It is also the changelog engine `release-plz` uses under the hood. Load-bearing only once the changelog is populated at first release.
@@ -159,9 +159,9 @@ These verdicts are reasoned from ecosystem norms plus the verified facts below; 
 There are two integration paths for `cargo-deny`, and they pull in different directions:
 
 - **Upstream-canonical: `EmbarkStudios/cargo-deny-action@v2`** — the documented canonical CI integration, a single step after `actions/checkout` with the binary bundled by the action (`@v2` currently ships cargo-deny 0.19.x). Lowest friction, but installs a tool *outside* `mise`.
-- **Project-consistent: install via `mise`, run the binary directly** — jackin's mise-only CI tool-install rule in <RepoFile path=".github/AGENTS.md" /> requires every CI tool to come from <RepoFile path="mise.toml" />, like the existing `cargo:cargo-nextest` and `cargo:cargo-zigbuild` entries.
+- **Project-consistent: install via `mise`, run the binary directly** — jackin's mise-only CI tool-install rule in <RepoFile path=".github/AGENTS.md">.github/AGENTS.md</RepoFile> requires every CI tool to come from <RepoFile path="mise.toml">mise.toml</RepoFile>, like the existing `cargo:cargo-nextest` and `cargo:cargo-zigbuild` entries.
 
-**Recommendation: the mise path**, to honour the project's hard rule and keep one tool-install mechanism. The `cargo-deny-action` is noted as the upstream-canonical alternative, explicitly *not* adopted because it bypasses `mise`. A new `deny` job in <RepoFile path=".github/workflows/ci.yml" />, mirroring the existing `check` / `msrv` jobs:
+**Recommendation: the mise path**, to honour the project's hard rule and keep one tool-install mechanism. The `cargo-deny-action` is noted as the upstream-canonical alternative, explicitly *not* adopted because it bypasses `mise`. A new `deny` job in <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile>, mirroring the existing `check` / `msrv` jobs:
 
 ```yaml
   deny:
@@ -175,7 +175,7 @@ There are two integration paths for `cargo-deny`, and they pull in different dir
       - run: cargo shear
 ```
 
-All Phase 1 tools are pinned in <RepoFile path="mise.toml" /> alongside the existing `cargo:cargo-nextest` / `cargo:cargo-zigbuild` entries:
+All Phase 1 tools are pinned in <RepoFile path="mise.toml">mise.toml</RepoFile> alongside the existing `cargo:cargo-nextest` / `cargo:cargo-zigbuild` entries:
 
 ```toml
 "cargo:cargo-deny" = "<pinned>"      # e.g. the 0.19.x line current in mid-2026
@@ -186,7 +186,7 @@ All Phase 1 tools are pinned in <RepoFile path="mise.toml" /> alongside the exis
 # optional locally and not required in CI (snapshots assert via the nextest run).
 ```
 
-The `deny`, Codebook spell-check, and (informational) coverage steps slot into CI behind the existing aggregators. Codebook currently joins <RepoFile path=".github/workflows/docs.yml" /> through the `docs-required` aggregator as `spell-check-docs` and `spell-check-source`. Coverage is non-gating and does not join a required aggregator.
+The `deny`, Codebook spell-check, and (informational) coverage steps slot into CI behind the existing aggregators. Codebook currently joins <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile> through the `docs-required` aggregator as `spell-check-docs` and `spell-check-source`. Coverage is non-gating and does not join a required aggregator.
 
 ### Advisory-freshness consideration
 
@@ -197,7 +197,7 @@ The `RUSTSEC` database updates independently of the repo, so a green PR can turn
 
 ## Host-side effects
 
-**None on the operator's machine.** All work is CI configuration plus root tool configuration files such as <RepoFile path="deny.toml" /> and <RepoFile path=".codebook.toml" />, pinned tool entries in <RepoFile path="mise.toml" />, and an `insta` dev-dependency. The only external-service interaction is the optional Codecov upload for coverage, which sends coverage data (derived from source, no secrets) to Codecov and requires a CI token — opt-in, and isolated to the non-gating coverage step.
+**None on the operator's machine.** All work is CI configuration plus root tool configuration files such as <RepoFile path="deny.toml">deny.toml</RepoFile> and <RepoFile path=".codebook.toml">.codebook.toml</RepoFile>, pinned tool entries in <RepoFile path="mise.toml">mise.toml</RepoFile>, and an `insta` dev-dependency. The only external-service interaction is the optional Codecov upload for coverage, which sends coverage data (derived from source, no secrets) to Codecov and requires a CI token — opt-in, and isolated to the non-gating coverage step.
 
 ## Steps
 
@@ -205,14 +205,14 @@ Phase 1 — dependency hygiene:
 
 1. Add `deny.toml` at the repo root with the allow-list, bans, and strict crates.io-only sources config above.
 2. Resolve the `WTFPL` crate: add a scoped `licenses.exceptions` entry, or replace the dependency.
-3. Add `cargo:cargo-audit`, `cargo:cargo-deny`, and `cargo:cargo-shear` to <RepoFile path="mise.toml" /> with pinned versions; add a documented `cargo-shear` ignore only for a confirmed false positive.
-4. Add the `deny` job to <RepoFile path=".github/workflows/ci.yml" /> behind the `rust` paths-filter and the `ci-required` `needs` list; add the scheduled advisory run.
+3. Add `cargo:cargo-audit`, `cargo:cargo-deny`, and `cargo:cargo-shear` to <RepoFile path="mise.toml">mise.toml</RepoFile> with pinned versions; add a documented `cargo-shear` ignore only for a confirmed false positive.
+4. Add the `deny` job to <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> behind the `rust` paths-filter and the `ci-required` `needs` list; add the scheduled advisory run.
 
 Phase 1 — quality instrumentation:
 
-5. Add `cargo:cargo-llvm-cov` to <RepoFile path="mise.toml" />; add a non-gating coverage step (`cargo llvm-cov nextest --lcov`) with Codecov upload or artifact retention.
+5. Add `cargo:cargo-llvm-cov` to <RepoFile path="mise.toml">mise.toml</RepoFile>; add a non-gating coverage step (`cargo llvm-cov nextest --lcov`) with Codecov upload or artifact retention.
 6. Add `insta` as a workspace dev-dependency; write the first snapshots for launch-progress renders, dialog redraws, and capsule chrome.
-7. Add <RepoFile path=".codebook.toml" />, `cargo:codebook-lsp` in <RepoFile path="mise.toml" />, and the whole-branch `spell-check-docs` / `spell-check-source` jobs in <RepoFile path=".github/workflows/docs.yml" />.
+7. Add <RepoFile path=".codebook.toml">.codebook.toml</RepoFile>, `cargo:codebook-lsp` in <RepoFile path="mise.toml">mise.toml</RepoFile>, and the whole-branch `spell-check-docs` / `spell-check-source` jobs in <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile>.
 
 Phase 2 — at/after first release:
 

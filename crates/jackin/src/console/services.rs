@@ -1,12 +1,532 @@
 //! Console side-effect adapters.
 
-pub(super) mod agents;
-pub(super) mod browser;
-pub(super) mod config;
-pub(crate) mod file_browser;
-pub(super) mod instances;
-pub(super) mod op;
-pub(super) mod op_picker;
-pub(super) mod role_load;
-pub(super) mod token_setup;
-pub(super) mod workspace_save;
+pub(super) mod agents {
+    pub(crate) async fn resolve_supported_for_console(
+        paths: &crate::paths::JackinPaths,
+        config: &jackin_config::AppConfig,
+        role: &jackin_core::RoleSelector,
+        runner: &mut impl crate::docker::CommandRunner,
+    ) -> anyhow::Result<Vec<jackin_core::Agent>> {
+        crate::runtime::resolve_supported_agents_for_console(paths, config, role, runner).await
+    }
+
+    pub(crate) async fn load_inline_picker_choices(
+        paths: &crate::paths::JackinPaths,
+        config: &jackin_config::AppConfig,
+        role: &jackin_core::RoleSelector,
+        runner: &mut impl crate::docker::CommandRunner,
+    ) -> anyhow::Result<Option<Vec<jackin_core::Agent>>> {
+        let agents = resolve_supported_for_console(paths, config, role, runner).await?;
+        if agents.len() < 2 {
+            return Ok(None);
+        }
+        Ok(Some(agents))
+    }
+}
+pub(super) mod config {
+    //! Non-TUI config persistence services.
+
+    use crate::paths::JackinPaths;
+    #[cfg(test)]
+    use jackin_config::GlobalMountRow;
+    use jackin_config::WorkspaceConfig;
+    use jackin_config::{AppConfig, RoleSource};
+    use jackin_console::services::config_save::{
+        WorkspaceSaveDiffOp, build_workspace_edit, workspace_save_diff_plan,
+    };
+
+    pub(crate) use jackin_console::services::config_save::{SettingsSaveInput, save_settings};
+
+    #[cfg(test)]
+    mod tests;
+
+    pub(crate) fn upsert_role_source(
+        config: &mut AppConfig,
+        paths: &JackinPaths,
+        key: &str,
+        source: &RoleSource,
+    ) -> anyhow::Result<()> {
+        let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
+        editor_doc.upsert_agent_source(key, source);
+        *config = editor_doc.save()?;
+        Ok(())
+    }
+
+    pub(crate) fn remove_workspace(
+        config: &mut AppConfig,
+        paths: &JackinPaths,
+        name: &str,
+    ) -> anyhow::Result<()> {
+        let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
+        editor_doc.remove_workspace(name)?;
+        *config = editor_doc.save()?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn save_global_mounts(
+        paths: &JackinPaths,
+        original: &[GlobalMountRow],
+        pending: &[GlobalMountRow],
+    ) -> anyhow::Result<AppConfig> {
+        AppConfig::validate_global_mount_rows(pending)?;
+        let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
+        for row in original {
+            editor_doc.remove_mount(&row.name, row.scope.as_deref());
+        }
+        for row in pending {
+            editor_doc.add_mount(&row.name, row.mount.clone(), row.scope.as_deref());
+        }
+        editor_doc.save()
+    }
+
+    pub(crate) enum WorkspaceSaveMode {
+        Edit {
+            original_name: String,
+            pending_name: Option<String>,
+            effective_removals: Vec<String>,
+        },
+        Create {
+            name: String,
+        },
+    }
+
+    pub(crate) struct WorkspaceSaveInput<'a> {
+        pub mode: WorkspaceSaveMode,
+        pub original: &'a WorkspaceConfig,
+        pub pending: &'a WorkspaceConfig,
+    }
+
+    pub(crate) struct WorkspaceSaveResult {
+        pub config: AppConfig,
+        pub current_name: String,
+        pub pending_rename: Option<String>,
+    }
+
+    #[allow(clippy::useless_let_if_seq)]
+    pub(crate) fn save_workspace(
+        paths: &JackinPaths,
+        input: WorkspaceSaveInput<'_>,
+    ) -> anyhow::Result<WorkspaceSaveResult> {
+        let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
+        let (pending_rename, current_name) = match input.mode {
+            WorkspaceSaveMode::Edit {
+                original_name,
+                pending_name,
+                effective_removals,
+            } => {
+                let mut current_name = original_name;
+                let mut rename_to = None;
+                if let Some(new_name) = pending_name
+                    && new_name != current_name
+                {
+                    editor_doc.rename_workspace(&current_name, &new_name)?;
+                    current_name.clone_from(&new_name);
+                    rename_to = Some(new_name);
+                }
+
+                let mut edit = build_workspace_edit(input.original, input.pending);
+                edit.remove_destinations = effective_removals;
+                editor_doc.edit_workspace(&current_name, edit)?;
+                (rename_to, current_name)
+            }
+            WorkspaceSaveMode::Create { name } => {
+                editor_doc.create_workspace(&name, input.pending.clone())?;
+                (None, name)
+            }
+        };
+
+        apply_workspace_save_diff_plan(
+            &mut editor_doc,
+            &current_name,
+            input.original,
+            input.pending,
+        )?;
+        let config = editor_doc.save()?;
+        Ok(WorkspaceSaveResult {
+            config,
+            current_name,
+            pending_rename,
+        })
+    }
+
+    fn apply_workspace_save_diff_plan(
+        editor_doc: &mut jackin_config::ConfigEditor,
+        workspace_name: &str,
+        original: &WorkspaceConfig,
+        pending: &WorkspaceConfig,
+    ) -> anyhow::Result<()> {
+        for op in workspace_save_diff_plan(workspace_name, original, pending) {
+            match op {
+                WorkspaceSaveDiffOp::WorkspaceAuthForward { agent, mode } => {
+                    editor_doc.set_workspace_auth_forward(workspace_name, agent, mode);
+                }
+                WorkspaceSaveDiffOp::WorkspaceGithubAuthForward { mode } => {
+                    editor_doc.set_workspace_github_auth_forward(workspace_name, mode);
+                }
+                WorkspaceSaveDiffOp::WorkspaceRoleAuthForward { role, agent, mode } => {
+                    editor_doc.set_workspace_role_auth_forward(workspace_name, &role, agent, mode);
+                }
+                WorkspaceSaveDiffOp::WorkspaceRoleGithubAuthForward { role, mode } => {
+                    editor_doc.set_workspace_role_github_auth_forward(workspace_name, &role, mode);
+                }
+                WorkspaceSaveDiffOp::WorkspaceSyncSourceDir { agent, source } => {
+                    editor_doc.set_workspace_sync_source_dir(
+                        workspace_name,
+                        agent,
+                        source.as_deref(),
+                    );
+                }
+                WorkspaceSaveDiffOp::WorkspaceRoleSyncSourceDir {
+                    role,
+                    agent,
+                    source,
+                } => {
+                    editor_doc.set_workspace_role_sync_source_dir(
+                        workspace_name,
+                        &role,
+                        agent,
+                        source.as_deref(),
+                    );
+                }
+                WorkspaceSaveDiffOp::EnvSet { scope, key, value } => {
+                    editor_doc.set_env_var(&scope, &key, value)?;
+                }
+                WorkspaceSaveDiffOp::EnvRemove { scope, key } => {
+                    let _ = editor_doc.remove_env_var(&scope, &key);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+pub(super) mod instances {
+    //! Non-TUI instance discovery services.
+
+    use std::collections::{HashMap, HashSet};
+
+    use anyhow::Context;
+    use jackin_console::tui::state::ManagerInstanceRefreshSnapshot;
+
+    pub(crate) fn load_instance_refresh_snapshot(
+        paths: &crate::paths::JackinPaths,
+    ) -> Result<ManagerInstanceRefreshSnapshot, String> {
+        let index = crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir)
+            .map_err(|error| error.to_string())?;
+        let mut instances = index.instances;
+        reconcile_live_running_instances(paths, &mut instances);
+
+        let mut sessions = HashMap::new();
+        let mut session_errors = HashSet::new();
+        let mut snapshot_targets: Vec<String> = Vec::new();
+
+        for entry in &instances {
+            if matches!(
+                entry.status,
+                crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
+            ) {
+                let state_dir = paths.data_dir.join(&entry.container_base);
+                match crate::instance::InstanceManifest::read(&state_dir) {
+                    Ok(manifest) if !manifest.sessions.is_empty() => {
+                        sessions.insert(entry.container_base.clone(), manifest.sessions);
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        crate::debug_log!(
+                            "console",
+                            "manifest read failed for {}: {e:#}",
+                            entry.container_base
+                        );
+                        session_errors.insert(entry.container_base.clone());
+                    }
+                }
+                snapshot_targets.push(entry.container_base.clone());
+            }
+        }
+
+        let mut snapshots = HashMap::new();
+        let snapshot_results = fetch_snapshots_parallel(paths, &snapshot_targets);
+        for (container, result) in snapshot_results {
+            match result {
+                Ok(Some(snapshot)) => {
+                    snapshots.insert(container, snapshot);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    crate::debug_log!("console", "snapshot fetch failed for {container}: {e:#}");
+                }
+            }
+        }
+
+        Ok(ManagerInstanceRefreshSnapshot {
+            instances,
+            sessions,
+            session_errors,
+            snapshots,
+        })
+    }
+
+    pub(crate) fn running_role_containers() -> anyhow::Result<Vec<String>> {
+        let mut command = std::process::Command::new("docker");
+        command.args([
+            "ps",
+            "--filter",
+            "label=jackin.kind=role",
+            "--format",
+            "{{.Names}}",
+        ]);
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "instance refresh is launched through spawn_blocking_subscription"
+        )]
+        let output = command
+            .output()
+            .map_err(anyhow::Error::new)
+            .context("starting docker ps for live instance reconciliation")?;
+        anyhow::ensure!(
+            output.status.success(),
+            "docker ps exited with status {:?}: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(ToOwned::to_owned)
+            .collect())
+    }
+
+    fn reconcile_live_running_instances(
+        paths: &crate::paths::JackinPaths,
+        instances: &mut Vec<crate::instance::InstanceIndexEntry>,
+    ) {
+        let running = match running_role_containers() {
+            Ok(running) => running,
+            Err(error) => {
+                jackin_diagnostics::emit_compact_line(
+                    "error",
+                    &live_instance_reconciliation_error_line(&format!("{error:#}")),
+                );
+                return;
+            }
+        };
+        overlay_running_instances(paths, instances, &running);
+    }
+
+    fn live_instance_reconciliation_error_line(error: &str) -> String {
+        format!("jackin: error: live instance reconciliation skipped: docker ps failed: {error}")
+    }
+
+    pub(crate) fn overlay_running_instances(
+        paths: &crate::paths::JackinPaths,
+        instances: &mut Vec<crate::instance::InstanceIndexEntry>,
+        running_containers: &[String],
+    ) {
+        if running_containers.is_empty() {
+            return;
+        }
+
+        let mut known: HashSet<String> = instances
+            .iter()
+            .map(|entry| entry.container_base.clone())
+            .collect();
+        for container in running_containers {
+            if let Some(entry) = instances
+                .iter_mut()
+                .find(|entry| entry.container_base == *container)
+            {
+                entry.status = crate::instance::InstanceStatus::Running;
+                continue;
+            }
+
+            let state_dir = paths.data_dir.join(container);
+            let Some(manifest) = crate::instance::InstanceManifest::read_or_log(
+                &state_dir,
+                "overlay_running_instances",
+            ) else {
+                continue;
+            };
+            if !known.insert(container.clone()) {
+                continue;
+            }
+            let mut entry = manifest.to_index_entry();
+            entry.status = crate::instance::InstanceStatus::Running;
+            instances.push(entry);
+        }
+    }
+
+    fn fetch_snapshots_parallel(
+        paths: &crate::paths::JackinPaths,
+        targets: &[String],
+    ) -> Vec<(
+        String,
+        anyhow::Result<Option<crate::runtime::snapshot::InstanceSnapshot>>,
+    )> {
+        const SNAPSHOT_FANOUT_CHUNK: usize = 8;
+        let mut results = Vec::with_capacity(targets.len());
+        for chunk in targets.chunks(SNAPSHOT_FANOUT_CHUNK) {
+            let chunk_results = std::thread::scope(|s| {
+                #[allow(clippy::needless_collect)]
+                let handles: Vec<_> = chunk
+                    .iter()
+                    .map(|container| {
+                        let container = container.clone();
+                        s.spawn(move || {
+                            let result =
+                                crate::runtime::snapshot::fetch_snapshot(paths, &container);
+                            (container, result)
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|h| match h.join() {
+                        Ok(pair) => pair,
+                        Err(panic_payload) => {
+                            let detail = panic_payload
+                                .downcast_ref::<&'static str>()
+                                .map(|s| (*s).to_owned())
+                                .or_else(|| panic_payload.downcast_ref::<String>().cloned())
+                                .unwrap_or_else(|| "<non-string panic payload>".to_owned());
+                            (
+                                "<unknown-container>".to_owned(),
+                                Err(anyhow::anyhow!("snapshot worker thread panicked: {detail}")),
+                            )
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            });
+            results.extend(chunk_results);
+        }
+        results
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn live_instance_reconciliation_error_is_operator_visible() {
+            let line = super::live_instance_reconciliation_error_line(
+                "failed to connect to the docker API",
+            );
+
+            assert_eq!(
+                line,
+                "jackin: error: live instance reconciliation skipped: docker ps failed: \
+                 failed to connect to the docker API"
+            );
+            assert!(!line.contains("[jackin debug console]"));
+        }
+    }
+}
+pub(super) mod role_load {
+    use futures_util::FutureExt as _;
+    use jackin_tui::runtime::BlockingSubscription;
+
+    pub(crate) fn start_role_registration(
+        paths: crate::paths::JackinPaths,
+        selector: jackin_core::RoleSelector,
+        git_url: String,
+    ) -> BlockingSubscription<anyhow::Result<()>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let mut runner = crate::docker::ShellRunner {
+                debug: crate::tui::is_debug_mode(),
+            };
+            let result = register_with_runner(
+                &paths,
+                &selector,
+                &git_url,
+                &mut runner,
+                crate::tui::is_debug_mode(),
+            )
+            .await;
+            drop(tx.send(result));
+        });
+        rx
+    }
+
+    pub(crate) async fn register_with_runner(
+        paths: &crate::paths::JackinPaths,
+        selector: &jackin_core::RoleSelector,
+        git_url: &str,
+        runner: &mut impl crate::docker::CommandRunner,
+        debug: bool,
+    ) -> anyhow::Result<()> {
+        std::panic::AssertUnwindSafe(async {
+            crate::runtime::register_agent_repo(paths, selector, git_url, runner, debug).await?;
+            Ok::<_, anyhow::Error>(())
+        })
+        .catch_unwind()
+        .await
+        .unwrap_or_else(|payload| {
+            let panic_message = panic_payload_message(payload.as_ref());
+            Err(anyhow::anyhow!("role loader panicked: {panic_message}"))
+        })
+    }
+
+    fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+        if let Some(message) = payload.downcast_ref::<&str>() {
+            return (*message).to_owned();
+        }
+        if let Some(message) = payload.downcast_ref::<String>() {
+            return message.clone();
+        }
+        "role loader panicked with a non-string payload".to_owned()
+    }
+}
+
+pub(super) mod workspace_save {
+    use jackin_tui::runtime::BlockingSubscription;
+
+    /// Start the Docker-backed drift check for an edited workspace.
+    pub(crate) fn start_drift_check(
+        paths: crate::paths::JackinPaths,
+        workspace_name: String,
+        prospective_mounts: Vec<jackin_config::MountConfig>,
+    ) -> BlockingSubscription<anyhow::Result<crate::runtime::drift::DriftDetection>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let result = async {
+                let docker = crate::docker_client::BollardDockerClient::connect()?;
+                crate::runtime::drift::detect_workspace_edit_drift(
+                    &paths,
+                    &workspace_name,
+                    &prospective_mounts,
+                    &docker,
+                )
+                .await
+            }
+            .await;
+            drop(tx.send(result));
+        });
+        rx
+    }
+
+    /// Start cleanup for isolated mount records removed by a workspace save.
+    pub(crate) fn start_isolation_cleanup(
+        paths: crate::paths::JackinPaths,
+        records: Vec<jackin_runtime::isolation::state::IsolationRecord>,
+    ) -> BlockingSubscription<anyhow::Result<()>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let result = async {
+                for rec in records {
+                    let container_dir = paths.data_dir.join(&rec.container_name);
+                    let mut runner = crate::docker::ShellRunner::default();
+                    jackin_runtime::isolation::cleanup::force_cleanup_isolated(
+                        &rec,
+                        &container_dir,
+                        &mut runner,
+                    )
+                    .await?;
+                }
+                Ok(())
+            }
+            .await;
+            drop(tx.send(result));
+        });
+        rx
+    }
+}

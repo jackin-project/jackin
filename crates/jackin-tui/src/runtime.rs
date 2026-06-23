@@ -55,6 +55,16 @@ pub trait Subscription {
 
 pub type BlockingSubscription<T> = tokio::sync::oneshot::Receiver<T>;
 
+/// Wrap an already-computed value as a ready `BlockingSubscription`.
+///
+/// Avoids requiring callers to import `tokio` directly when they need to
+/// short-circuit the load path (e.g. cache hit in op-picker load).
+pub fn ready_blocking_subscription<T: Send + 'static>(value: T) -> BlockingSubscription<T> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    drop(tx.send(value));
+    rx
+}
+
 /// Spawn blocking work and expose its single result as a subscription.
 ///
 /// This keeps the TUI-side contract consistent: callers start slow work as an

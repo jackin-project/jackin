@@ -5,7 +5,7 @@ description: "PHOSPHOR color palette, border color semantics, left sidebar conve
 
 ## PHOSPHOR Color Palette
 
-The canonical RGB values live in the `jackin-tui` crate palette (<RepoFile path="crates/jackin-tui/src/lib.rs" />) so the host TUI and the in-container multiplexer cannot drift; <RepoFile path="crates/jackin-tui/src/theme.rs" /> adapts them into ratatui `Color` constants that the rest of the host TUI imports. Never define local color constants.
+The canonical RGB values live in the `jackin-tui` crate palette (<RepoFile path="crates/jackin-tui/src/lib.rs">crates/jackin-tui/src/lib.rs</RepoFile>) so the host TUI and the in-container multiplexer cannot drift; <RepoFile path="crates/jackin-tui/src/theme.rs">crates/jackin-tui/src/theme.rs</RepoFile> adapts them into ratatui `Color` constants that the rest of the host TUI imports. Never define local color constants.
 
 **All colors come from named theme tokens; no inline `Color::Rgb(...)` literals outside `theme.rs`.** Every new color must be added as a named constant in `lib.rs` and re-exported from `theme.rs` as a ratatui `Color`. Inline RGB literals are a design-decision violation.
 
@@ -121,7 +121,7 @@ Examples of correctly capitalized titles: `"General"`, `"Environments"`, `"Debug
 
 ## Capsule ANSI color encoders: static allowlist vs dynamic runtime
 
-The capsule's ANSI renderer uses two flavors of the color-encoding helpers in <RepoFile path="crates/jackin-tui/src/lib.rs" />:
+The capsule's ANSI renderer uses two flavors of the color-encoding helpers in <RepoFile path="crates/jackin-tui/src/lib.rs">crates/jackin-tui/src/lib.rs</RepoFile>:
 
 - **`rgb_fg(color)` / `rgb_bg(color)` — `const fn`, compile-time only.** These return a `&'static str` from a fixed allowlist of named palette colors. An unlisted color is a **compile error** (not a runtime panic), which is the desired behavior for constant tables: if you add a named color to the palette and forget to add it to the allowlist, the build fails loudly. Use these for `const COLOR_NAME: &str = rgb_fg(PHOSPHOR_GREEN)` table entries.
 
@@ -140,4 +140,4 @@ Any value the operator can click to copy (a file path, run id, container id, URL
 - **Hover:** the value brightens to `LINK_FG_HOVER` while the pointer is over it, and the pointer switches to the clickable shape where supported. A copyable value with no hover colour change is a violation — the hover feedback is what tells the operator it is interactive.
 - **Click:** copies the full value to the clipboard (OSC 52) and shows the transient "Copied!" badge on that row. The visible text may be abbreviated; the copied payload and the OSC 8 `href` carry the full value.
 
-These rules are enforced by the shared component (<RepoFile path="crates/jackin-tui/src/components/container_info.rs" />): every copyable row renders through the same styling, so the affordance never drifts between the console, launch cockpit, and capsule. New copyable surfaces reuse that component rather than re-implementing the colour/underline/hover rules.
+These rules are enforced by the shared component (<RepoFile path="crates/jackin-tui/src/components/container_info.rs">crates/jackin-tui/src/components/container_info.rs</RepoFile>): every copyable row renders through the same styling, so the affordance never drifts between the console, launch cockpit, and capsule. New copyable surfaces reuse that component rather than re-implementing the colour/underline/hover rules.

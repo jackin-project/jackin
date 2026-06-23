@@ -112,3 +112,12 @@ fn state_paths_have_sensible_structure() {
         }
     }
 }
+
+#[test]
+fn amp_state_paths_describe_xdg_data_store() {
+    let paths = Agent::Amp.runtime().state_paths();
+
+    assert_eq!(paths.credential_dir, ".local/share/amp");
+    assert_eq!(paths.credential_file, Some(".local/share/amp/secrets.json"));
+    assert_eq!(paths.folder_env_var, Some("XDG_DATA_HOME"));
+}

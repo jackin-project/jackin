@@ -8,6 +8,7 @@ use std::io::Write;
 #[cfg(test)]
 use std::time::Duration;
 
+pub use jackin_launch::LaunchCancelled;
 use jackin_launch::LaunchHostTerminal;
 pub use jackin_launch::progress::LaunchProgress;
 #[cfg(test)]

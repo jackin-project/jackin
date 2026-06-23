@@ -24,7 +24,7 @@ An operator working with jackin' across multiple projects or companies will even
 
 **3. Multi-company auth used to require manual account switching** (fixed for file-backed agent auth). An operator with a personal Claude account and a company Claude account used to have no way to tell different workspaces to read from different credential directories. Every workspace read from the same hardcoded `~/.claude` path, so the operator had to manually switch accounts on the host before launching each workspace, or all workspaces shared one account.
 
-*Fixed in Phase 1. See [Agent Authentication → Choosing a sync source folder](/guides/authentication/agents/#choosing-a-sync-source-folder/) and the schema-version entry for `v1alpha13` in [Schema Versions](/reference/runtime/schema-versions/).*
+*Fixed in Phase 1. Source folders are visible as preview rows in the Auth tab and edited through the Auth dialog so workspace and role changes are saved only through the normal workspace save confirmation. See [Agent Authentication → Choosing a sync source folder](/guides/authentication/agents/#choosing-a-sync-source-folder/) and the schema-version entry for `v1alpha13` in [Schema Versions](/reference/runtime/schema-versions/).*
 
 **4. Silent 401 after host token rotation** (long sessions). The host's Claude Code or GitHub CLI rotates an OAuth token automatically in the background. The container holds a snapshot of the pre-rotation token. The server invalidates the old token. The next API call from inside the container fails with `401`. The operator has no warning before it happens.
 
@@ -99,6 +99,8 @@ Phase 6 (credential exposure hardening) — parallel track, no strict ordering
 
 **Exact shipped scope:** `AgentAuthConfig` gained the optional `sync_source_dir` field, config and workspace schemas were bumped to `v1alpha13`, migration fixtures were added for both file kinds, auth resolution now carries the resolved source folder through provisioning, and the console Auth tab exposes a **Source folder** row for sync-mode agents.
 
+**Follow-up hardening (shipped):** Two correctness gaps in source-folder sync were closed. First, an explicit Claude source folder no longer falls back to the default host `~/.claude` credentials or the default macOS Keychain item when the folder has no file-based credentials — it reads that folder's own per-config-dir Keychain entry (`Claude Code-credentials-<sha256(path)[..8]>`) and, on a miss, leaves the capsule unauthenticated rather than leaking the default account. Second, the Source Folder picker now validates a candidate folder against the selected agent's credential structure (Claude, Codex, Amp, Kimi, OpenCode, Grok) and rejects a wrong folder inline instead of saving a path that yields no credentials. See [Auth Source-Folder Sync spec](/internal/specs/auth-source-folder-sync/) (INV-3, INV-7).
+
 **Prerequisite for:** Phase 4 (live sync should consume the resolved source rather than the hardcoded path).
 
 **Detail:** [Agent Authentication → Choosing a sync source folder](/guides/authentication/agents/#choosing-a-sync-source-folder/) and [Schema Versions](/reference/runtime/schema-versions/).
@@ -159,7 +161,7 @@ Third, the console Auth tab gains a health indicator column per agent row (probe
 
 **Status: Not yet shipped. Design is complete but depends on Phase 3.**
 
-**Exact PR scope:** Per-axis daemon adapters; `jackin-auth-watcher` in-container binary; shared-store mount strategy in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />; `sync` → `forward` rename with full schema migration artifacts for all three versioned file kinds; construct image update to include `jackin-auth-watcher`.
+**Exact PR scope:** Per-axis daemon adapters; `jackin-auth-watcher` in-container binary; shared-store mount strategy in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile>; `sync` → `forward` rename with full schema migration artifacts for all three versioned file kinds; construct image update to include `jackin-auth-watcher`.
 
 **Prerequisite for:** Phase 7 benefits from Phase 4 but does not strictly require it.
 

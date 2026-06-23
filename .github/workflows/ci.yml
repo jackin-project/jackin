@@ -9,6 +9,13 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      lanes:
+        description: |
+          Which runner(s) to run on. Default github; use both for parity runs.
+        type: choice
+        default: github
+        options: [github, velnor, both]
 
 permissions:
   contents: read
@@ -18,6 +25,25 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  matrix-setup:
+    name: Select runner lane
+    runs-on: ubuntu-latest
+    outputs:
+      configs: ${{ steps.set.outputs.configs }}
+    steps:
+      - id: set
+        env:
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+        run: |
+          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\""}'
+          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]"}'
+          case "$LANES" in
+            velnor) configs="[$velnor]" ;;
+            both)   configs="[$github,$velnor]" ;;
+            *)      configs="[$github]" ;;
+          esac
+          echo "configs=$configs" >> "$GITHUB_OUTPUT"
+
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -26,7 +52,7 @@ jobs:
       construct_image: ${{ steps.dispatch.outputs.construct_image || steps.filter.outputs.construct_image }}
       workflows: ${{ steps.dispatch.outputs.workflows || steps.filter.outputs.workflows }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
 
@@ -77,27 +103,35 @@ jobs:
               - '.github/workflows/**'
 
   actionlint:
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.workflows == 'true'
-    runs-on: ubuntu-latest
-    name: actionlint
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: actionlint (${{ matrix.config.lane }})
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "actionlint shellcheck"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - run: actionlint .github/workflows/*.yml
 
   fmt:
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo fmt
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo fmt (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -107,34 +141,34 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
+          shared-key: ${{ github.job }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
       - run: rustup component add rustfmt
       - run: cargo fmt --check
 
-  check-all-features:
-    needs: changes
+  schema-check:
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo check all features
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: schema-check (${{ matrix.config.lane }})
     env:
-      CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -144,60 +178,36 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - name: Cache Cargo build artifacts
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-all-features-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-all-features-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-all-features-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-all-features-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-all-features-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-check-all-features-
-      - run: cargo check --workspace --all-targets --all-features --locked
-      - name: Show sccache stats
-        if: always() && steps.sccache.outcome == 'success'
-        run: sccache --show-stats
+          shared-key: ${{ github.job }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
+      - name: Fetch base branch
+        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+      - run: cargo run -p jackin-xtask --locked -- schema-check --base origin/main
 
-  clippy:
-    needs: [changes, check-all-features]
+  check-all-features:
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo clippy
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo check all features (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -207,60 +217,69 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - name: Cache Cargo build artifacts
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: ${{ github.job }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
+      - run: cargo check --workspace --all-targets --all-features --locked
+  clippy:
+    needs: [changes, check-all-features, matrix-setup]
+    if: needs.changes.outputs.rust == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo clippy (${{ matrix.config.lane }})
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-clippy-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-clippy-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-clippy-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-clippy-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-clippy-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-clippy-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-clippy-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-clippy-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-clippy-
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          install_args: "rust"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: ${{ github.job }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
       - run: rustup component add clippy
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-      - name: Show sccache stats
-        if: always() && steps.sccache.outcome == 'success'
-        run: sccache --show-stats
-
   dependency-policy:
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo dependency policy
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo dependency policy (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -270,17 +289,6 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
       - name: Cache mise cargo tools
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -288,23 +296,35 @@ jobs:
           key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-deny-shear-${{ hashFiles('mise.toml') }}
           restore-keys: |
             mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-deny-shear-
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "rust cargo:cargo-deny cargo:cargo-shear"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: ${{ github.job }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
       - run: cargo shear
       - run: cargo deny check licenses bans sources
 
   check-default:
-    needs: [changes, check-all-features]
+    needs: [changes, check-all-features, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo check default
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo check default (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -314,63 +334,26 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - name: Cache Cargo build artifacts
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-default-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-default-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-default-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-check-default-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-default-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-default-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-default-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-check-default-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-check-default-
-      # Verify the default-features compile path. Clippy above runs with
-      # --all-features, so without this step the default build is otherwise
-      # untouched in CI. The `e2e` feature is purely additive (empty `e2e
-      # = []` plus a single `#![cfg(feature = "e2e")]` test file), so
-      # running nextest both with and without it would re-execute every
-      # non-feature-gated test for no extra coverage.
+          shared-key: ${{ github.job }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
       - run: cargo check --workspace --all-targets --locked
-      - name: Show sccache stats
-        if: always() && steps.sccache.outcome == 'success'
-        run: sccache --show-stats
-
   construct-e2e-image:
     needs: changes
     if: needs.changes.outputs.construct_image == 'true'
     runs-on: ubuntu-latest
     name: construct E2E image
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       # When docker/construct/** changes, the published construct:trixie image
       # on Docker Hub is stale for the lifetime of the PR — it is only
       # republished after merge to main. Build the construct image in its own
@@ -385,6 +368,7 @@ jobs:
           set -euo pipefail
           set -a && source docker/construct/versions.env && set +a
           docker buildx build \
+            --cache-from type=registry,ref=projectjackin/construct:buildcache-amd64 \
             --cache-from type=gha,scope=construct-ci-e2e \
             --cache-to type=gha,scope=construct-ci-e2e,mode=max \
             --build-arg SHELLFIRM_VERSION="$SHELLFIRM_VERSION" \
@@ -400,19 +384,34 @@ jobs:
           retention-days: 1
 
   test:
+    needs: [changes, matrix-setup]
+    if: needs.changes.outputs.rust == 'true'
+    uses: ./.github/workflows/rust-nextest.yml
+    with:
+      runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
+      all-features: true
+      cache-shared-key: nextest-all-features-workspace-v1
+    secrets: inherit
+
+  docker-e2e:
     # construct-e2e-image is an optionally-skipped artifact producer (hence the
-    # always() + !failure() pattern). check-all-features was removed from needs:
-    # it only added up to ~2.5 min of dead critical-path time before the
-    # slowest job (nextest, ~9 min on main pushes) could start.
-    needs: [changes, construct-e2e-image]
+    # always() + !failure() pattern). Keep real Docker/PTY smoke coverage out
+    # of the per-crate nextest matrix so deterministic package tests can fan out
+    # immediately and this environment-backed lane can own its prerequisites.
+    needs: [changes, construct-e2e-image, matrix-setup, test]
     if: always() && needs.changes.outputs.rust == 'true' && !failure() && !cancelled()
-    runs-on: ubuntu-latest
-    name: cargo nextest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: Docker E2E smoke (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
+      CARGO_NET_RETRY: "10"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -422,27 +421,6 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - name: Cache mise cargo tools
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -450,25 +428,21 @@ jobs:
           key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-${{ hashFiles('mise.toml') }}
           restore-keys: |
             mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-nextest-
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "rust cargo:cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - name: Cache Cargo build artifacts
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-nextest-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-nextest-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-nextest-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-nextest-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-nextest-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-nextest-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-nextest-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-nextest-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-nextest-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-check-all-features-${{ hashFiles('Cargo.lock') }}-
+          shared-key: nextest-all-features-workspace-v1
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          save-if: "false"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback.
+          # The reusable nextest prepare job owns this cache; Docker E2E restores
+          # it so the environment-backed smoke lane does not redownload/rebuild
+          # the workspace graph.
       - name: Download construct image for E2E
         if: needs.changes.outputs.construct_image == 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -489,23 +463,24 @@ jobs:
       # forcing a second release-profile dependency graph.
       - name: Build jackin-capsule for nextest
         run: |
-          cargo build -p jackin-capsule --bin jackin-capsule
+          cargo build -p jackin-capsule --bin jackin-capsule --locked
           echo "JACKIN_CAPSULE_BIN=$PWD/target/debug/jackin-capsule" >> "$GITHUB_ENV"
-      - run: cargo nextest run --workspace --all-features --color=always
-      - name: Show sccache stats
-        if: always() && steps.sccache.outcome == 'success'
-        run: sccache --show-stats
-
+      - name: Run Docker E2E smoke tests
+        run: cargo nextest run -p jackin --features e2e --profile docker-e2e --color=always --locked
   fuzz:
-    needs: [changes, check-all-features]
+    needs: [changes, check-all-features, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo fuzz
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo fuzz (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -515,27 +490,6 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - name: Cache mise cargo tools
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -543,48 +497,40 @@ jobs:
           key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-fuzz-${{ hashFiles('mise.toml') }}
           restore-keys: |
             mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-fuzz-
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "rust cargo:cargo-fuzz"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - name: Cache Cargo build artifacts
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          path: |
-            target
-            crates/jackin-term/fuzz/target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-fuzz-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-fuzz-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-fuzz-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-fuzz-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-fuzz-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-fuzz-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-fuzz-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-fuzz-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-fuzz-
+          shared-key: ${{ github.job }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
       - name: Fuzz jackin-term parser path
         run: |
           cd crates/jackin-term
           cargo fuzz run --sanitizer none damage_grid_process -- -max_total_time=60
-      - name: Show sccache stats
-        if: always() && steps.sccache.outcome == 'success'
-        run: sccache --show-stats
-
   bench-build:
     # One job builds both benches: the two matrix legs compiled the shared
     # dependency graph twice with two separate target caches (cache-quota
     # pressure -> eviction churn). bench-build also no longer waits on
     # check-all-features — they validate independently.
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo bench build
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo bench build (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -594,69 +540,39 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - name: Cache Cargo build artifacts
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-bench-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-bench-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-bench-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-bench-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-bench-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-bench-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-bench-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-bench-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-bench-
-      # Build (but don't run) the frame-time and pane-body benchmarks to
-      # ensure they compile on every CI run. Full criterion runs happen
-      # locally or in dedicated perf workflows.
+          shared-key: ${{ github.job }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
       - run: |
           cargo build --bench console_frame -p jackin
           cargo build --bench pane_body -p jackin-capsule
-      - name: Show sccache stats
-        if: always() && steps.sccache.outcome == 'success'
-        run: sccache --show-stats
-
   msrv:
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
     # Verify that the crate still builds on its declared MSRV
     # (`rust-version` in Cargo.toml). This is independent of the toolchain
     # pin in rust-toolchain.toml, which tracks the latest tested stable
     # used for day-to-day builds.
-    runs-on: ubuntu-latest
-    name: cargo msrv check
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo msrv check (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Read MSRV from Cargo.toml
         id: msrv
         run: echo "version=$(sed -n 's/^rust-version = \"\(.*\)\"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
@@ -669,63 +585,38 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ steps.msrv.outputs.version }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "rust@${{ steps.msrv.outputs.version }}"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache Cargo build artifacts
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-msrv-${{ steps.msrv.outputs.version }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-msrv-${{ steps.msrv.outputs.version }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-msrv-${{ steps.msrv.outputs.version }}-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-msrv-${{ steps.msrv.outputs.version }}-
+          shared-key: ${{ github.job }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
       - name: cargo check on MSRV
         run: cargo check --workspace --all-targets --locked
         env:
           RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
-      - name: Show sccache stats
-        if: always() && steps.sccache.outcome == 'success'
-        run: sccache --show-stats
-
   audit:
     # Advisories are also covered daily by hygiene.yml (cargo deny check
     # advisories); in PR CI the audit only needs to run when the dependency
     # graph can change (the rust filter includes Cargo.lock).
-    needs: changes
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    name: cargo audit
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    name: cargo audit (${{ matrix.config.lane }})
     env:
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -754,10 +645,18 @@ jobs:
           key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-audit-${{ hashFiles('mise.toml') }}
           restore-keys: |
             mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-audit-
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "rust cargo:cargo-audit"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: ${{ github.job }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
       - run: cargo audit
 
   build-validator:
@@ -783,7 +682,7 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             zigbuild: true
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -793,27 +692,6 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - name: Cache mise cargo tools
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -821,31 +699,21 @@ jobs:
           key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-${{ hashFiles('mise.toml') }}
           restore-keys: |
             mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-
-      - uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "${{ matrix.zigbuild && 'rust zig cargo:cargo-zigbuild' || 'rust' }}"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - run: rustup target add ${{ matrix.target }}
-      - name: Cache Cargo build artifacts
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.head_ref || github.ref_name }}-build-validator-${{ matrix.target }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ github.base_ref || 'main' }}-build-validator-${{ matrix.target }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-build-validator-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-build-validator-${{ matrix.target }}-
+          shared-key: ${{ github.job }}-${{ matrix.target }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
+      - run: rustup target add ${{ matrix.target }}
       - name: Build validator (${{ matrix.target }})
         run: cargo zigbuild --release --locked --bin jackin-role --target ${{ matrix.target }}.2.17
-      - name: Show sccache stats
-        if: always() && steps.sccache.outcome == 'success'
-        run: sccache --show-stats
-
       - name: Package validator
         run: |
           archive="jackin-role-${{ matrix.target }}.tar.gz"
@@ -865,6 +733,7 @@ jobs:
   ci-required:
     if: always()
     needs:
+      - matrix-setup
       - changes
       - actionlint
       - audit
@@ -875,13 +744,14 @@ jobs:
       - check-default
       - construct-e2e-image
       - test
+      - docker-e2e
       - fuzz
       - bench-build
       - msrv
       - build-validator
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/aggregate-needs
         with:
           needs-json: ${{ toJSON(needs) }}

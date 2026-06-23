@@ -222,17 +222,33 @@ pub(super) fn git_prompt_buttons(focus: GitPromptFocus) -> Line<'static> {
 pub(super) fn git_prompt_footer_items(has_url: bool) -> Vec<jackin_tui::HintSpan<'static>> {
     use jackin_tui::HintSpan;
     let mut spans = vec![
+        // UNREGISTERABLE(git-prompt-no-keymap): M handled inline; no GIT_PROMPT_KEYMAP registered.
         HintSpan::Key("M"),
         HintSpan::Text("mount"),
         HintSpan::Sep,
+        // UNREGISTERABLE(git-prompt-no-keymap): P handled inline; no GIT_PROMPT_KEYMAP registered.
         HintSpan::Key("P"),
         HintSpan::Text("pick"),
     ];
     if has_url {
+        // UNREGISTERABLE(git-prompt-no-keymap): O handled inline; no GIT_PROMPT_KEYMAP registered.
         spans.extend([HintSpan::Sep, HintSpan::Key("O"), HintSpan::Text("open")]);
     }
     spans.extend([
+        HintSpan::GroupSep,
+        // UNREGISTERABLE(multi-key-display-group): ⇥/→ combines Tab and Right arrow.
+        HintSpan::Key("\u{21e5}/\u{2192}"),
+        HintSpan::Text("next"),
         HintSpan::Sep,
+        // UNREGISTERABLE(multi-key-display-group): ⇤/← combines BackTab and Left arrow.
+        HintSpan::Key("\u{21e4}/\u{2190}"),
+        HintSpan::Text("prev"),
+        HintSpan::Sep,
+        // UNREGISTERABLE(git-prompt-no-keymap): ↵ confirms inline.
+        HintSpan::Key("\u{21b5}"),
+        HintSpan::Text("select"),
+        HintSpan::GroupSep,
+        // UNREGISTERABLE(multi-key-display-group): combined C/Esc cancel display.
         HintSpan::Key("C/Esc"),
         HintSpan::Text("cancel"),
     ]);

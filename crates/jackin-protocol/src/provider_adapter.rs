@@ -139,7 +139,7 @@ impl ProviderAdapter for AnthropicAdapter {
         // Anthropic's API key variable. The subscription path (`claude`) does
         // not need it — see `needs_key_for_agent` — but agents that do (e.g.
         // `opencode`) authenticate with this key.
-        Some("ANTHROPIC_API_KEY")
+        Some(jackin_core::env_model::ANTHROPIC_API_KEY_ENV_NAME)
     }
 }
 
@@ -171,7 +171,7 @@ impl ProviderAdapter for OpenaiAdapter {
     }
 
     fn key_env_var(&self) -> Option<&'static str> {
-        Some("OPENAI_API_KEY")
+        Some(jackin_core::env_model::OPENAI_API_KEY_ENV_NAME)
     }
 }
 
@@ -213,7 +213,7 @@ impl ProviderAdapter for ZaiAdapter {
     }
 
     fn key_env_var(&self) -> Option<&'static str> {
-        Some("ZAI_API_KEY")
+        Some(jackin_core::env_model::ZAI_API_KEY_ENV_NAME)
     }
 }
 
@@ -252,7 +252,7 @@ impl ProviderAdapter for MinimaxAdapter {
     }
 
     fn key_env_var(&self) -> Option<&'static str> {
-        Some("MINIMAX_API_KEY")
+        Some(jackin_core::env_model::MINIMAX_API_KEY_ENV_NAME)
     }
 
     fn codex_profile(&self) -> Option<&'static str> {
@@ -295,6 +295,6 @@ impl ProviderAdapter for KimiAdapter {
     }
 
     fn key_env_var(&self) -> Option<&'static str> {
-        Some("KIMI_CODE_API_KEY")
+        Some(jackin_core::env_model::KIMI_CODE_API_KEY_ENV_NAME)
     }
 }
