@@ -402,6 +402,10 @@ fn find_shellfirm_binary() -> Option<PathBuf> {
 }
 
 fn find_mise_tool(program: &str) -> Option<PathBuf> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "build helper: synchronous mise probe before Docker build"
+    )]
     let output = Command::new("mise")
         .arg("which")
         .arg(program)
@@ -419,11 +423,15 @@ fn find_mise_tool(program: &str) -> Option<PathBuf> {
 }
 
 fn is_mise_shim(path: &Path) -> bool {
-    path.components()
-        .map(|component| component.as_os_str())
-        .collect::<Vec<_>>()
-        .windows(2)
-        .any(|components| components[0] == "mise" && components[1] == "shims")
+    let mut previous_was_mise = false;
+    for component in path.components() {
+        let name = component.as_os_str();
+        if previous_was_mise && name == "shims" {
+            return true;
+        }
+        previous_was_mise = name == "mise";
+    }
+    false
 }
 
 #[cfg(unix)]
