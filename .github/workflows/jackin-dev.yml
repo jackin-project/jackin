@@ -38,6 +38,21 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+      - name: Cache Rust toolchain
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "rust"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Require jackin-dev version bump for artifact changes
         env:
@@ -47,17 +62,42 @@ jobs:
           set -euo pipefail
 
           diff_files=$(git diff --name-only "${BASE_SHA}...${HEAD_SHA}")
-          source_changed=false
+          artifact_changed=false
+          lock_changed=false
           while IFS= read -r path; do
             [ -z "$path" ] && continue
             case "$path" in
-              Cargo.toml|Cargo.lock|crates/jackin-dev/**)
-                source_changed=true
+              Cargo.toml|crates/jackin-dev/**)
+                artifact_changed=true
+                ;;
+              Cargo.lock)
+                lock_changed=true
                 ;;
             esac
           done <<< "$diff_files"
 
-          if [ "$source_changed" != true ]; then
+          if [ "$lock_changed" = true ] && [ "$artifact_changed" != true ]; then
+            base_tree="$RUNNER_TEMP/jackin-dev-base.tree"
+            head_tree="$RUNNER_TEMP/jackin-dev-head.tree"
+            base_worktree="$RUNNER_TEMP/jackin-dev-base"
+
+            git worktree add --detach "$base_worktree" "$BASE_SHA"
+            (
+              cd "$base_worktree"
+              cargo tree -p jackin-dev --locked --edges normal,build --prefix none |
+                sed -E 's| \([^)]*/crates/jackin-dev\)||' |
+                sort -u
+            ) > "$base_tree"
+            cargo tree -p jackin-dev --locked --edges normal,build --prefix none |
+              sed -E 's| \([^)]*/crates/jackin-dev\)||' |
+              sort -u > "$head_tree"
+
+            if ! cmp -s "$base_tree" "$head_tree"; then
+              artifact_changed=true
+            fi
+          fi
+
+          if [ "$artifact_changed" != true ]; then
             exit 0
           fi
 
