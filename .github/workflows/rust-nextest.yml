@@ -15,6 +15,11 @@ on:
         description: Shared Rust cache namespace for this nextest lane.
         required: true
         type: string
+      save-target-cache:
+        description: Save the restored Rust target cache after package or Docker jobs finish.
+        required: false
+        default: true
+        type: boolean
       construct-image-changed:
         description: Download and load the PR-built construct image before Docker E2E.
         required: false
@@ -46,7 +51,7 @@ jobs:
     name: cargo nextest ${{ matrix.group }} (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
-      CARGO_NET_RETRY: "10"
+      CARGO_NET_OFFLINE: "true"
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
@@ -73,15 +78,15 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: ${{ inputs.cache-shared-key }}
-          key: package-${{ matrix.group }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: ${{ matrix.config.lane == 'GitHub' }}
+          save-if: ${{ inputs.save-target-cache && matrix.config.lane == 'GitHub' }}
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback.
-          # Package shards start immediately under one shared namespace, but each
-          # shard owns its target-cache suffix because their test graphs differ.
+          # CI package shards restore the clippy-owned all-features cache instead
+          # of saving it; otherwise the fastest shard can permanently seed the
+          # shared exact key with a narrow dependency graph.
           # Velnor proves parity from persistent local state without writing GHA
           # target archives; GitHub populates the hosted fallback caches.
       - name: Run package tests
@@ -131,7 +136,7 @@ jobs:
     name: Docker E2E smoke (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
-      CARGO_NET_RETRY: "10"
+      CARGO_NET_OFFLINE: "true"
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
@@ -158,15 +163,14 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: ${{ inputs.cache-shared-key }}
-          key: docker-e2e
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: ${{ matrix.config.lane == 'GitHub' }}
-          # Keep the same shared namespace as package tests, with a Docker-only
-          # suffix because the smoke binary graph is not a package-shard graph.
-          # Docker E2E remains independent so target-cache misses do not serialize
-          # deterministic package tests behind this environment-backed smoke lane.
+          save-if: ${{ inputs.save-target-cache && matrix.config.lane == 'GitHub' }}
+          # Keep the same shared namespace as package tests. CI restores the
+          # clippy-owned cache here; Docker E2E must not be the first writer for
+          # the shared exact key because its smoke graph is narrower than the
+          # all-targets compile graph.
       - name: Download construct image for E2E
         if: inputs.construct-image-changed
         shell: bash
