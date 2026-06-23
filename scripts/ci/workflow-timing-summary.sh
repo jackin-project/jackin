@@ -49,6 +49,7 @@ third_party_build_count=0
 source_tool_compile_count=0
 sccache_issue_count=0
 prepared_workspace_count=0
+velnor_job_log_artifact_count=0
 github_cache_count=""
 github_cache_bytes=""
 
@@ -67,14 +68,46 @@ append_marker_matches() {
   local marker="$1"
   local job="$2"
   local pattern="$3"
+  local file="$4"
   local lines
 
-  lines=$(grep -Ein "$pattern" || true)
+  lines=$(grep -Ein "$pattern" "$file" || true)
   [ -n "$lines" ] || return
 
   printf '%s\n' "$lines" | while IFS= read -r line; do
     printf '%s\t%s\t%s\n' "$marker" "$job" "$line" >> "$log_markers_file"
   done
+}
+
+scan_logs_file() {
+  local name="$1"
+  local logs_file="$2"
+  local hits misses restores failures downloads builds source_tools sccache_issues prepared_workspace
+
+  hits=$(grep -Eci 'Cache hit for:|Restored from cache key|Cache restored successfully' "$logs_file" || true)
+  misses=$(grep -Eci 'Cache not found|not found for input keys|Cache miss' "$logs_file" || true)
+  restores=$(grep -Eci 'Restoring cache|Cache Size:' "$logs_file" || true)
+  failures=$(grep -Eci 'Failed to restore cache|Failed to save cache|Unable to reserve cache' "$logs_file" || true)
+  downloads=$(grep -Eci "$dependency_download_pattern" "$logs_file" || true)
+  builds=$(grep -Eci "$third_party_build_pattern" "$logs_file" || true)
+  source_tools=$(grep -Eci "$source_tool_compile_pattern" "$logs_file" || true)
+  sccache_issues=$(grep -Eci "$sccache_issue_pattern" "$logs_file" || true)
+  prepared_workspace=$(grep -Eci "$prepared_workspace_pattern" "$logs_file" || true)
+  cache_hit_count=$((cache_hit_count + hits))
+  cache_miss_count=$((cache_miss_count + misses))
+  cache_restore_count=$((cache_restore_count + restores))
+  cache_failure_count=$((cache_failure_count + failures))
+  dependency_download_count=$((dependency_download_count + downloads))
+  third_party_build_count=$((third_party_build_count + builds))
+  source_tool_compile_count=$((source_tool_compile_count + source_tools))
+  sccache_issue_count=$((sccache_issue_count + sccache_issues))
+  prepared_workspace_count=$((prepared_workspace_count + prepared_workspace))
+
+  append_marker_matches "dependency download" "$name" "$dependency_download_pattern" "$logs_file"
+  append_marker_matches "third-party compile/check/build" "$name" "$third_party_build_pattern" "$logs_file"
+  append_marker_matches "source tool compile" "$name" "$source_tool_compile_pattern" "$logs_file"
+  append_marker_matches "sccache issue" "$name" "$sccache_issue_pattern" "$logs_file"
+  append_marker_matches "prepared workspace" "$name" "$prepared_workspace_pattern" "$logs_file"
 }
 
 while IFS= read -r job_b64; do
@@ -119,35 +152,33 @@ while IFS= read -r job_b64; do
     fi
   done
 
-  if logs=$(gh api "repos/${repo}/actions/jobs/${job_id}/logs" 2>/dev/null); then
-    hits=$(printf '%s\n' "$logs" | grep -Eci 'Cache hit for:|Restored from cache key|Cache restored successfully' || true)
-    misses=$(printf '%s\n' "$logs" | grep -Eci 'Cache not found|not found for input keys|Cache miss' || true)
-    restores=$(printf '%s\n' "$logs" | grep -Eci 'Restoring cache|Cache Size:' || true)
-    failures=$(printf '%s\n' "$logs" | grep -Eci 'Failed to restore cache|Failed to save cache|Unable to reserve cache' || true)
-    downloads=$(printf '%s\n' "$logs" | grep -Eci "$dependency_download_pattern" || true)
-    builds=$(printf '%s\n' "$logs" | grep -Eci "$third_party_build_pattern" || true)
-    source_tools=$(printf '%s\n' "$logs" | grep -Eci "$source_tool_compile_pattern" || true)
-    sccache_issues=$(printf '%s\n' "$logs" | grep -Eci "$sccache_issue_pattern" || true)
-    prepared_workspace=$(printf '%s\n' "$logs" | grep -Eci "$prepared_workspace_pattern" || true)
-    cache_hit_count=$((cache_hit_count + hits))
-    cache_miss_count=$((cache_miss_count + misses))
-    cache_restore_count=$((cache_restore_count + restores))
-    cache_failure_count=$((cache_failure_count + failures))
-    dependency_download_count=$((dependency_download_count + downloads))
-    third_party_build_count=$((third_party_build_count + builds))
-    source_tool_compile_count=$((source_tool_compile_count + source_tools))
-    sccache_issue_count=$((sccache_issue_count + sccache_issues))
-    prepared_workspace_count=$((prepared_workspace_count + prepared_workspace))
-
-    printf '%s\n' "$logs" | append_marker_matches "dependency download" "$name" "$dependency_download_pattern"
-    printf '%s\n' "$logs" | append_marker_matches "third-party compile/check/build" "$name" "$third_party_build_pattern"
-    printf '%s\n' "$logs" | append_marker_matches "source tool compile" "$name" "$source_tool_compile_pattern"
-    printf '%s\n' "$logs" | append_marker_matches "sccache issue" "$name" "$sccache_issue_pattern"
-    printf '%s\n' "$logs" | append_marker_matches "prepared workspace" "$name" "$prepared_workspace_pattern"
+  logs_file="${RUNNER_TEMP:-/tmp}/workflow-job-${run_id}-${job_id}.log"
+  if gh api "repos/${repo}/actions/jobs/${job_id}/logs" > "$logs_file" 2>/dev/null; then
+    scan_logs_file "$name" "$logs_file"
   else
     printf 'log unavailable: %s (%s)\n' "$name" "$job_id" >> "$cache_file"
   fi
 done < "$jobs_file"
+
+artifacts_file="${RUNNER_TEMP:-/tmp}/workflow-artifacts-${run_id}.tsv"
+if gh api "repos/${repo}/actions/runs/${run_id}/artifacts?per_page=100" \
+  --paginate \
+  --jq '.artifacts[] | select(.name == "job-log") | [.id, .size_in_bytes] | @tsv' > "$artifacts_file" 2>/dev/null; then
+  while IFS=$'\t' read -r artifact_id artifact_size; do
+    [ -n "$artifact_id" ] || continue
+    artifact_zip="${RUNNER_TEMP:-/tmp}/workflow-job-log-${run_id}-${artifact_id}.zip"
+    artifact_log="${RUNNER_TEMP:-/tmp}/workflow-job-log-${run_id}-${artifact_id}.log"
+    if gh api "repos/${repo}/actions/artifacts/${artifact_id}/zip" > "$artifact_zip" 2>/dev/null &&
+      unzip -p "$artifact_zip" job-log.txt > "$artifact_log" 2>/dev/null; then
+      velnor_job_log_artifact_count=$((velnor_job_log_artifact_count + 1))
+      scan_logs_file "Velnor job-log artifact ${artifact_id}" "$artifact_log"
+    else
+      printf 'job-log artifact unavailable: %s (%s bytes)\n' "$artifact_id" "${artifact_size:-unknown}" >> "$cache_file"
+    fi
+  done < "$artifacts_file"
+else
+  printf 'job-log artifact list unavailable for run %s\n' "$run_id" >> "$cache_file"
+fi
 
 first_red_metric() {
   awk -F '\t' '
@@ -329,6 +360,7 @@ print_github_cache_budget() {
     "$cache_hit_count" "$cache_miss_count" "$cache_restore_count" "$cache_failure_count"
   printf -- '- Rebuild/download markers in job logs: %s dependency download markers, %s third-party compile/check/build markers, %s source-tool compile markers, %s sccache issue markers, %s prepared-workspace artifact markers\n\n' \
     "$dependency_download_count" "$third_party_build_count" "$source_tool_compile_count" "$sccache_issue_count" "$prepared_workspace_count"
+  printf -- '- Velnor job-log artifacts scanned: %s\n\n' "$velnor_job_log_artifact_count"
 
   print_target_metrics
   print_github_cache_budget
