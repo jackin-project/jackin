@@ -1,78 +1,126 @@
 name: jackin-dev
 
 on:
-  pull_request:
-    paths:
-      - ".github/actions/sign-and-attest-archive/**"
-      - ".github/workflows/jackin-dev.yml"
-      - "Cargo.lock"
-      - "Cargo.toml"
-      - "crates/jackin-dev/**"
-      - "mise.toml"
-      - "rust-toolchain.toml"
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
-    paths:
-      - ".github/actions/sign-and-attest-archive/**"
-      - ".github/workflows/jackin-dev.yml"
-      - "Cargo.lock"
-      - "Cargo.toml"
-      - "crates/jackin-dev/**"
-      - "mise.toml"
-      - "rust-toolchain.toml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: homebrew-tap-publish
+  cancel-in-progress: true
+
 jobs:
-  version:
+  source-changed:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      source: ${{ steps.filter.outputs.source }}
+      sha: ${{ steps.source.outputs.sha }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+      version: ${{ steps.meta.outputs.version }}
+      old_sha: ${{ steps.filter.outputs.old_sha }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - id: version
-        run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/jackin-dev/Cargo.toml | head -1)
-          test -n "$version"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-  assert-version:
-    needs: version
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 2
-      - name: Assert jackin-dev version is unpublished
+      - name: Resolve source SHA
+        id: source
         env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.version.outputs.version }}
-          EVENT_BEFORE: ${{ github.event.before }}
+          DISPATCH_SHA: ${{ github.sha }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if gh release view "jackin-dev-v${VERSION}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            changed_files=$(mktemp)
-            if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-              git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
-              git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" > "$changed_files"
-            elif [ -n "${EVENT_BEFORE:-}" ] && [ "$EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]; then
-              git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-              git diff --name-only "$EVENT_BEFORE" "$GITHUB_SHA" > "$changed_files"
-            else
-              git diff --name-only HEAD~1 HEAD > "$changed_files"
-            fi
-
-            if ! grep -Eq '^(\.github/actions/sign-and-attest-archive/|Cargo\.lock$|Cargo\.toml$|crates/jackin-dev/|mise\.toml$|rust-toolchain\.toml$)' "$changed_files"; then
-              echo "jackin-dev-v${VERSION} already exists, but no jackin-dev release inputs changed; continuing so the tap formula can recover"
-              exit 0
-            fi
-
-            echo "jackin-dev-v${VERSION} already exists; bump crates/jackin-dev/Cargo.toml"
-            exit 1
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "sha=${DISPATCH_SHA}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${WORKFLOW_RUN_SHA}" >> "$GITHUB_OUTPUT"
           fi
 
-  build:
-    needs: [version, assert-version]
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Classify changed paths
+        id: filter
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "old_sha=" >> "$GITHUB_OUTPUT"
+            echo "source=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          sha="$SOURCE_SHA"
+          old_sha=""
+          formula_err=""
+          if formula_body=$(curl -fsSL --max-time 30 "https://raw.githubusercontent.com/jackin-project/homebrew-tap/main/Formula/jackin-dev.rb" 2>&1); then
+            old_sha=$(printf '%s\n' "$formula_body" | sed -n 's|^[[:space:]]*# source-sha: \([0-9a-f]\{40\}\)$|\1|p' | head -1)
+          else
+            formula_err="$formula_body"
+            echo "::warning::failed to fetch homebrew-tap formula: ${formula_err}; falling open"
+          fi
+          echo "old_sha=${old_sha}" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$formula_err" ] || [ -z "$old_sha" ] || [ "$old_sha" = "$sha" ] \
+             || ! git rev-parse --verify "${old_sha}^{commit}" >/dev/null 2>&1; then
+            echo "source=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          diff_err=""
+          if ! { diff_files=$(git diff --name-only "${old_sha}...${sha}" 2>/tmp/diff.err); }; then
+            diff_err=$(cat /tmp/diff.err)
+            echo "::warning::diff failed for ${old_sha}...${sha}: ${diff_err}; falling open"
+            echo "source=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          source=false
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+            case "$path" in
+              .github/actions/sign-and-attest-archive/**|.github/workflows/jackin-dev.yml|Cargo.toml|Cargo.lock|mise.toml|rust-toolchain.toml|crates/jackin-dev/**)
+                source=true
+                ;;
+            esac
+          done <<< "$diff_files"
+
+          echo "source=$source" >> "$GITHUB_OUTPUT"
+
+      - name: Compute jackin-dev metadata
+        id: meta
+        if: steps.filter.outputs.source == 'true'
+        env:
+          FULL_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/jackin-dev/Cargo.toml | head -1)
+          semver_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$'
+          if ! printf '%s\n' "$version" | grep -Eq "$semver_re"; then
+            echo "::error::crates/jackin-dev/Cargo.toml version must be standard SemVer"
+            exit 1
+          fi
+          {
+            echo "short_sha=$(printf '%s' "$FULL_SHA" | cut -c1-7)"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+
+  build-jackin-dev:
+    needs: source-changed
+    if: needs.source-changed.outputs.source == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -94,13 +142,31 @@ jobs:
             zigbuild_target: x86_64-unknown-linux-gnu.2.17
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ needs.source-changed.outputs.sha }}
+      - name: Cache Rust toolchain
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache mise cargo tools
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.local/share/mise/installs/cargo-*
+          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-${{ hashFiles('mise.toml') }}
+          restore-keys: |
+            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           install_args: "rust zig cargo:cargo-zigbuild cosign syft"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
-          shared-key: jackin-dev-${{ matrix.target }}
+          shared-key: ${{ github.job }}-${{ matrix.target }}
           cache-all-crates: "true"
       - run: rustup target add ${{ matrix.target }}
       - name: Cache macOS SDK
@@ -124,11 +190,12 @@ jobs:
       - name: Build
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
+          JACKIN_VERSION_OVERRIDE: ${{ needs.source-changed.outputs.version }}
         run: cargo zigbuild --release --locked -p jackin-dev --target "$ZIGBUILD_TARGET"
       - name: Package
         env:
           TARGET: ${{ matrix.target }}
-          VERSION: ${{ needs.version.outputs.version }}
+          VERSION: ${{ needs.source-changed.outputs.version }}
         run: |
           archive="jackin-dev-${VERSION}-${TARGET}.tar.gz"
           tar -czf "$archive" \
@@ -136,10 +203,12 @@ jobs:
             jackin-dev
           sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
           echo "archive=$archive" >> "$GITHUB_ENV"
+
       - name: Sign, SBOM, and attest archive
         uses: ./.github/actions/sign-and-attest-archive
         with:
           archive: ${{ env.archive }}
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jackin-dev-${{ matrix.target }}
@@ -149,25 +218,60 @@ jobs:
             jackin-dev-*.tar.gz.bundle
             jackin-dev-*.tar.gz.sbom.json
 
-  publish:
-    if: github.ref == 'refs/heads/main'
-    needs: [version, build]
+  publish-jackin-dev:
+    needs: [source-changed, build-jackin-dev]
+    if: needs.source-changed.outputs.source == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ needs.source-changed.outputs.sha }}
+          fetch-depth: 0
+
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: jackin-dev-*
           path: artifacts
           merge-multiple: true
-      - name: Publish jackin-dev release
+
+      - name: Verify source SHA is on main
+        if: github.event_name == 'workflow_run'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
+        run: |
+          compare_status=$(
+            curl -fsSL \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/compare/${FULL_SHA}...main" |
+              jq -er '.status'
+          )
+
+          case "$compare_status" in
+            identical|ahead) ;;
+            *)
+              echo "::error::source SHA ${FULL_SHA} is not on main (compare status: ${compare_status})"
+              exit 1
+              ;;
+          esac
+
+      - name: Publish jackin-dev GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.version.outputs.version }}
+          VERSION: ${{ needs.source-changed.outputs.version }}
+          SHA: ${{ needs.source-changed.outputs.sha }}
+          OLD_SHA: ${{ needs.source-changed.outputs.old_sha }}
         run: |
+          set -euo pipefail
           tag="jackin-dev-v${VERSION}"
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [ -n "$OLD_SHA" ] && [ "$OLD_SHA" != "$SHA" ]; then
+              echo "::error::${tag} already exists for a different source SHA; bump crates/jackin-dev/Cargo.toml"
+              exit 1
+            fi
             echo "$tag already exists; reusing published release assets for formula shas"
             gh release download "$tag" \
               --repo "$GITHUB_REPOSITORY" \
@@ -183,27 +287,49 @@ jobs:
             artifacts/jackin-dev-*.tar.gz.bundle \
             artifacts/jackin-dev-*.tar.gz.sbom.json \
             --repo "$GITHUB_REPOSITORY" \
-            --title "jackin-dev v${VERSION}" \
-            --notes "jackin-dev v${VERSION}"
+            --target "$SHA" \
+            --title "jackin-dev ${VERSION}" \
+            --notes "jackin-dev ${VERSION}"
+
+      - name: Read platform SHA256s
+        id: shas
+        env:
+          VERSION: ${{ needs.source-changed.outputs.version }}
+        run: |
+          {
+            printf 'arm64_macos=%s\n' "$(cat "artifacts/jackin-dev-${VERSION}-aarch64-apple-darwin.tar.gz.sha256")"
+            printf 'x86_macos=%s\n' "$(cat "artifacts/jackin-dev-${VERSION}-x86_64-apple-darwin.tar.gz.sha256")"
+            printf 'arm64_linux=%s\n' "$(cat "artifacts/jackin-dev-${VERSION}-aarch64-unknown-linux-gnu.tar.gz.sha256")"
+            printf 'x86_linux=%s\n' "$(cat "artifacts/jackin-dev-${VERSION}-x86_64-unknown-linux-gnu.tar.gz.sha256")"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: jackin-project/homebrew-tap
           ref: main
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: homebrew-tap
+
+      - name: Extract previous jackin-dev SHA
+        id: prev
+        run: |
+          old_sha=$(
+            sed -n 's|^[[:space:]]*# source-sha: \([0-9a-f]\{40\}\)$|\1|p' \
+              homebrew-tap/Formula/jackin-dev.rb | head -1
+          )
+          echo "old_sha=${old_sha}" >> "$GITHUB_OUTPUT"
+
       - name: Rewrite jackin-dev formula
         env:
-          VERSION: ${{ needs.version.outputs.version }}
+          VERSION: ${{ needs.source-changed.outputs.version }}
+          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
+          ARM64_SHA256: ${{ steps.shas.outputs.arm64_macos }}
+          X86_SHA256: ${{ steps.shas.outputs.x86_macos }}
+          LINUX_ARM64_SHA256: ${{ steps.shas.outputs.arm64_linux }}
+          LINUX_X86_SHA256: ${{ steps.shas.outputs.x86_linux }}
         run: |
-          read_sha() {
-            cat "artifacts/jackin-dev-${VERSION}-$1.tar.gz.sha256"
-          }
-          ARM64_MACOS_SHA256=$(read_sha aarch64-apple-darwin)
-          X86_MACOS_SHA256=$(read_sha x86_64-apple-darwin)
-          ARM64_LINUX_SHA256=$(read_sha aarch64-unknown-linux-gnu)
-          X86_LINUX_SHA256=$(read_sha x86_64-unknown-linux-gnu)
-
           cat > homebrew-tap/Formula/jackin-dev.rb <<EOF
+          # source-sha: ${FULL_SHA}
           class JackinDev < Formula
             desc "Developer tooling for local jackin pull request verification"
             homepage "https://github.com/jackin-project/jackin"
@@ -213,22 +339,22 @@ jobs:
             on_macos do
               on_arm do
                 url "https://github.com/jackin-project/jackin/releases/download/jackin-dev-v${VERSION}/jackin-dev-${VERSION}-aarch64-apple-darwin.tar.gz"
-                sha256 "${ARM64_MACOS_SHA256}"
+                sha256 "${ARM64_SHA256}"
               end
               on_intel do
                 url "https://github.com/jackin-project/jackin/releases/download/jackin-dev-v${VERSION}/jackin-dev-${VERSION}-x86_64-apple-darwin.tar.gz"
-                sha256 "${X86_MACOS_SHA256}"
+                sha256 "${X86_SHA256}"
               end
             end
 
             on_linux do
               on_arm do
                 url "https://github.com/jackin-project/jackin/releases/download/jackin-dev-v${VERSION}/jackin-dev-${VERSION}-aarch64-unknown-linux-gnu.tar.gz"
-                sha256 "${ARM64_LINUX_SHA256}"
+                sha256 "${LINUX_ARM64_SHA256}"
               end
               on_intel do
                 url "https://github.com/jackin-project/jackin/releases/download/jackin-dev-v${VERSION}/jackin-dev-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
-                sha256 "${X86_LINUX_SHA256}"
+                sha256 "${LINUX_X86_SHA256}"
               end
             end
 
@@ -256,13 +382,24 @@ jobs:
       - name: Build PR body
         id: pr_body
         env:
-          VERSION: ${{ needs.version.outputs.version }}
+          OLD_SHA: ${{ steps.prev.outputs.old_sha }}
+          NEW_SHA: ${{ needs.source-changed.outputs.sha }}
+          VERSION: ${{ needs.source-changed.outputs.version }}
         run: |
-          body_file="${RUNNER_TEMP}/homebrew-pr-body.md"
+          body_file="${RUNNER_TEMP}/pr-body.md"
+          # shellcheck disable=SC2016
           {
             printf 'Automated jackin-dev formula update for **jackin-dev %s**.\n\n' "$VERSION"
+            printf -- '- Source: [`%s`](https://github.com/jackin-project/jackin/commit/%s)\n' \
+              "${NEW_SHA:0:7}" "$NEW_SHA"
             printf -- '- Release: https://github.com/jackin-project/jackin/releases/tag/jackin-dev-v%s\n' "$VERSION"
-            printf -- '- Installs the jackin-dev helper used by jackin pull request verification blocks.\n'
+            if [ -n "$OLD_SHA" ] && [ "$OLD_SHA" != "$NEW_SHA" ]; then
+              printf -- '- Previous: [`%s`](https://github.com/jackin-project/jackin/commit/%s)\n' \
+                "${OLD_SHA:0:7}" "$OLD_SHA"
+              printf -- '- [Full diff](https://github.com/jackin-project/jackin/compare/%s...%s)\n' \
+                "$OLD_SHA" "$NEW_SHA"
+            fi
+            printf -- '- [CHANGELOG](https://github.com/jackin-project/jackin/blob/%s/CHANGELOG.md)\n' "$NEW_SHA"
           } > "$body_file"
           echo "body_file=$body_file" >> "$GITHUB_OUTPUT"
 
@@ -270,7 +407,7 @@ jobs:
         working-directory: homebrew-tap
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          VERSION: ${{ needs.version.outputs.version }}
+          VERSION: ${{ needs.source-changed.outputs.version }}
           PR_BODY_FILE: ${{ steps.pr_body.outputs.body_file }}
         run: |
           git add Formula/jackin-dev.rb
