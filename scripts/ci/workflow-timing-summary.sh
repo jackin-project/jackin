@@ -191,7 +191,7 @@ print_step_category_totals() {
       if (step ~ /jdx\/mise-action|mise|rustup|Set up job/) return "tool setup"
       if (step ~ /upload-artifact|download-artifact|Upload|Download/) return "artifacts"
       if (step ~ /Docker|Buildx|construct image|docker /) return "docker"
-      if (step ~ /cargo |Cargo |nextest|clippy|fmt|audit|deny|shear|fuzz|bench|schema/) return "cargo"
+      if (step ~ /cargo |Cargo |nextest|package tests|clippy|fmt|audit|deny|shear|fuzz|bench|schema/) return "cargo"
       return "other"
     }
     {
