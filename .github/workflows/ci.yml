@@ -299,8 +299,40 @@ jobs:
       - run: rustup component add rustfmt
       - run: cargo fmt --check
 
-  schema-check:
+  cargo-registry-warmup:
     needs: [changes, matrix-setup]
+    if: needs.changes.outputs.rust == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
+    name: cargo registry warmup (${{ matrix.config.lane }})
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "rust"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+
+  schema-check:
+    needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
@@ -345,7 +377,7 @@ jobs:
       - run: cargo run -p jackin-xtask --locked -- schema-check --base origin/main
 
   clippy:
-    needs: [changes, matrix-setup]
+    needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
@@ -356,6 +388,7 @@ jobs:
     name: cargo clippy (${{ matrix.config.lane }})
     env:
       CARGO_INCREMENTAL: "0"
+      CARGO_NET_OFFLINE: "true"
       CARGO_TERM_COLOR: always
       RUSTC_WRAPPER: sccache
       SCCACHE_BASEDIRS: ${{ github.workspace }}
@@ -400,7 +433,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
   dependency-policy:
-    needs: [changes, matrix-setup]
+    needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
@@ -430,21 +463,11 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ci-policy-workspace-v2
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
       - run: cargo shear
       - run: cargo deny check licenses bans sources
 
   check-default:
-    needs: [changes, matrix-setup]
+    needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
@@ -521,7 +544,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
   construct-e2e-image:
-    needs: [changes, matrix-setup]
+    needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.construct_image == 'true'
     strategy:
       fail-fast: false
@@ -557,7 +580,7 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: construct-e2e-image-${{ matrix.config.lane }}-workspace-v2
           cache-all-crates: "true"
@@ -586,7 +609,7 @@ jobs:
           retention-days: 1
 
   test:
-    needs: [changes, construct-e2e-image, matrix-setup]
+    needs: [changes, construct-e2e-image, matrix-setup, cargo-registry-warmup]
     if: always() && needs.changes.outputs.rust == 'true' && !failure() && !cancelled()
     uses: ./.github/workflows/rust-nextest.yml
     with:
@@ -597,7 +620,7 @@ jobs:
       docker-e2e: ${{ needs.changes.outputs.docker_e2e == 'true' }}
     secrets: inherit
   fuzz:
-    needs: [changes, matrix-setup]
+    needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
@@ -641,13 +664,14 @@ jobs:
       - name: Fuzz jackin-term parser path
         run: |
           cd crates/jackin-term
+          cargo fetch --locked --offline
           cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu damage_grid_process -- -max_total_time=60
   bench-build:
     # One job builds both benches: the two matrix legs compiled the shared
     # dependency graph twice with two separate target caches (cache-quota
     # pressure -> eviction churn). bench-build validates independently
     # from the clippy-owned all-features compile gate.
-    needs: [changes, matrix-setup]
+    needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
@@ -692,7 +716,7 @@ jobs:
           cargo build --bench console_frame -p jackin
           cargo build --bench pane_body -p jackin-capsule
   msrv:
-    needs: [changes, matrix-setup]
+    needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
     # Verify that the crate still builds on its declared MSRV
     # (`rust-version` in Cargo.toml). This is independent of the toolchain
@@ -748,7 +772,7 @@ jobs:
     # Advisories are also covered daily by hygiene.yml (cargo deny check
     # advisories); in PR CI the audit only needs to run when the dependency
     # graph can change (the rust filter includes Cargo.lock).
-    needs: [changes, matrix-setup]
+    needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
@@ -771,14 +795,10 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - name: Cache audit indexes
+        id: audit-cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: |
-            ~/.cargo/advisory-db
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
+          path: ~/.cargo/advisory-db
           key: cargo-audit-${{ runner.os }}-${{ hashFiles('Cargo.lock', '.cargo/audit.toml') }}
           restore-keys: |
             cargo-audit-${{ runner.os }}-
@@ -790,17 +810,16 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ci-policy-workspace-v2
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
-      - run: cargo audit
+      - name: Run cargo audit
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          args=(--no-yanked)
+          if [ "${{ steps.audit-cache.outputs.cache-hit }}" = "true" ]; then
+            args+=(--no-fetch --stale)
+          fi
+          cargo audit "${args[@]}"
 
   # Single stable check name for branch-protection required-status,
   # regardless of which gated jobs skipped under it.
@@ -811,6 +830,7 @@ jobs:
       - changes
       - actionlint
       - audit
+      - cargo-registry-warmup
       - fmt
       - clippy
       - dependency-policy
