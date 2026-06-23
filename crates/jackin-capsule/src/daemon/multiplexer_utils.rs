@@ -1,8 +1,5 @@
 //! Miscellaneous Multiplexer utility methods.
 
-use std::collections::BTreeMap;
-use std::time::Instant;
-
 use super::{
     Dialog, FullRedrawReason, MAX_SESSIONS, MAX_TABS, Multiplexer, PaletteCloseLabel, Result,
     SESSION_ENV_PASSTHROUGH, SessionInfo,
@@ -32,8 +29,62 @@ impl Multiplexer {
         self.dialog_push(Dialog::new_command_palette(close_label));
     }
 
+    /// Terminal geometry + identity for a new session's grid. The single
+    /// construction point for `SessionTerminal` so both spawn paths (new tab,
+    /// split) carry the attach client's reported colors.
+    pub(super) fn session_terminal(&self, rows: u16, cols: u16) -> crate::session::SessionTerminal {
+        crate::session::SessionTerminal {
+            rows,
+            cols,
+            row_arena: self.terminal_row_arena.clone(),
+            default_fg: self.attached_terminal.default_fg,
+            default_bg: self.attached_terminal.default_bg,
+        }
+    }
+
+    /// Re-apply the attached client's terminal colors to every live grid.
+    /// Called on (re)attach: a container can be reattached from a terminal
+    /// with a different palette, and agents that query OSC 10/11 later must
+    /// see the current client's colors. A client that could not read its
+    /// palette reports `None`, which keeps each grid's previous colors —
+    /// the last known answer beats resetting to the baked-in default.
+    pub(super) fn apply_client_colors_to_sessions(&mut self) {
+        let fg = self.attached_terminal.default_fg;
+        let bg = self.attached_terminal.default_bg;
+        for session in self.sessions.values_mut() {
+            session.shadow_grid.set_reported_colors(fg, bg);
+        }
+    }
+
     pub(super) fn model_for_agent(&self, agent: &str) -> Option<&str> {
         self.launch_config.model_for_agent(agent)
+    }
+
+    /// Model the agent launches with. `OpenCode` has no model of its own, so a
+    /// picked alt provider supplies it via its `<provider>/<model>` string
+    /// (the `-m` flag); without it `OpenCode` falls back to its default provider
+    /// block. Every other agent uses the role-manifest model and the provider
+    /// only redirects auth env.
+    ///
+    /// Resolution for `OpenCode` + a picked provider: the role manifest's
+    /// `[opencode.providers.<id>].model` override, then the provider's built-in
+    /// default, then the agent's role-manifest model.
+    pub(super) fn launch_model(&self, agent: &str, provider_label: Option<&str>) -> Option<&str> {
+        if let Some(provider) = provider_label
+            .filter(|_| agent == "opencode")
+            .and_then(jackin_protocol::Provider::from_label)
+        {
+            if let Some(model) = self
+                .launch_config
+                .provider_model(agent, provider.manifest_id())
+            {
+                return Some(model);
+            }
+            if let Some(model) = provider.opencode_model() {
+                return Some(model);
+            }
+        }
+        self.model_for_agent(agent)
     }
 
     /// Providers selectable for `agent`. An empty vec means only the
@@ -61,6 +112,53 @@ impl Multiplexer {
         self.provider_keys.get(&provider).map(String::as_str)
     }
 
+    /// Resolve a known provider to the spawn env: its `env_overrides` plus, for
+    /// Codex with a resolved key, the `JACKIN_CODEX_PROFILE` activation. Both
+    /// the host-initiated `AgentWithProvider` spawn and the in-container
+    /// provider picker route through here so the Codex `--profile` wiring
+    /// cannot drift between the two paths.
+    pub(super) fn provider_spawn_env(
+        &self,
+        agent_slug: &str,
+        provider: jackin_protocol::Provider,
+    ) -> Vec<(String, String)> {
+        let token = self.token_for_provider(provider);
+        if token.is_none() && provider.adapter().needs_key_for_agent(agent_slug) {
+            crate::clog!(
+                "spawn: provider {:?} selected but its API key is unresolved in container; session falls back to the agent's default auth",
+                provider.label()
+            );
+        }
+        let mut env = provider.env_overrides(token);
+        // Codex activates an alt provider through a v2 `--profile`. Inject the
+        // profile name only when the key resolved: runtime-setup writes the
+        // profile file (`minimax.config.toml`) only when the key is present, so
+        // pushing the flag without it would make `codex --profile` fail on a
+        // missing file instead of falling back to native auth.
+        if agent_slug == "codex"
+            && token.is_some()
+            && let Some(profile) = provider.codex_profile()
+        {
+            env.push(("JACKIN_CODEX_PROFILE".to_owned(), profile.to_owned()));
+        }
+        // Claude maps a provider to a model through the `ANTHROPIC_DEFAULT_*_MODEL`
+        // env the provider injects. A role's `[claude.providers.<id>].model`
+        // override replaces those defaults so the operator can pin a different
+        // model for that provider without editing the agent default.
+        if agent_slug == "claude"
+            && let Some(model) = self
+                .launch_config
+                .provider_model(agent_slug, provider.manifest_id())
+        {
+            for (key, value) in &mut env {
+                if key.starts_with("ANTHROPIC_DEFAULT_") && key.ends_with("_MODEL") {
+                    *value = model.to_owned();
+                }
+            }
+        }
+        env
+    }
+
     /// Bound the per-container surface for any path that allocates a
     /// new PTY (top-level spawn, split, etc.). All such paths must
     /// route through here so `MAX_TABS` / `MAX_SESSIONS` are enforced
@@ -85,22 +183,29 @@ impl Multiplexer {
         self.sessions.is_empty()
     }
 
-    pub(super) fn request_full_redraw(&mut self, reason: FullRedrawReason) {
-        self.pending_full_redraw = Some(reason);
-        self.pending_diff_redraw = None;
-        self.dirty_panes.clear();
-    }
-
-    pub(super) fn request_diff_redraw(&mut self, reason: FullRedrawReason) {
-        if self.pending_full_redraw.is_none() {
-            self.pending_diff_redraw = Some(reason);
+    /// Record a state change that can affect the visible frame. Handlers
+    /// only mutate state and call this; the render loop composes when the
+    /// generation moved. `FirstAttach` and `Resize` additionally arm the
+    /// wipe policy — the only two reasons whose next frame starts with a
+    /// screen erase.
+    pub(super) fn invalidate(&mut self, reason: FullRedrawReason) {
+        self.frame_generation = self.frame_generation.wrapping_add(1);
+        self.last_invalidate_reason = Some(reason);
+        if matches!(
+            reason,
+            FullRedrawReason::FirstAttach | FullRedrawReason::Resize
+        ) {
+            self.wipe_pending = Some(reason);
         }
+        crate::cdebug!(
+            "invalidate: reason={} generation={}",
+            reason.as_str(),
+            self.frame_generation,
+        );
     }
 
     pub(super) fn has_pending_render(&self) -> bool {
-        self.pending_full_redraw.is_some()
-            || self.pending_diff_redraw.is_some()
-            || !self.dirty_panes.is_empty()
+        self.frame_generation != self.rendered_generation
     }
 
     pub(super) fn session_infos(&self) -> Vec<SessionInfo> {
@@ -111,133 +216,8 @@ impl Multiplexer {
                 id,
                 label: s.label.clone(),
                 agent: s.agent.clone(),
-                state: s.state(),
+                state: s.state,
                 active: Some(id) == focused,
-                token_usage: self
-                    .token_monitor
-                    .totals(id)
-                    .map(super::super::token_monitor::TokenTotals::to_summary),
-                agent_status_report: Some(s.status.report(
-                    s.agent.clone(),
-                    if s.status.seen { s.status.revision } else { 0 },
-                )),
-            })
-            .collect()
-    }
-
-    pub(super) fn visible_text_snapshots(&self) -> BTreeMap<u64, Vec<String>> {
-        self.sessions
-            .iter()
-            .map(|(&id, session)| (id, session.visible_lines()))
-            .collect()
-    }
-
-    pub(super) fn status_explain_snapshots(&self) -> BTreeMap<u64, serde_json::Value> {
-        let now = Instant::now();
-        self.sessions
-            .iter()
-            .map(|(&id, session)| {
-                let visible_lines = session.visible_lines();
-                let summary = &session.status.last_snapshot_summary;
-                let gate = session.hook_authority.as_ref().and_then(|authority| {
-                    self.runtime_gate_states
-                        .get(&format!("{id}:{}", authority.source_id))
-                });
-                let report = session.status.report(
-                    session.agent.clone(),
-                    if session.status.seen {
-                        session.status.revision
-                    } else {
-                        0
-                    },
-                );
-                let watchdog_demoted = summary
-                    .has_note(crate::agent_status::evidence::EvidenceNote::WatchdogDemoted);
-                let value = serde_json::json!({
-                    "session_id": id,
-                    "label": session.label,
-                    "agent": session.agent,
-                    "effective": session.status.effective.label(),
-                    "raw": session.status.raw.label(),
-                    "seen": session.status.seen,
-                    "revision": session.status.revision,
-                    "status_report": report,
-                    "evidence": {
-                        "winner": format!("{:?}", summary.winner).to_ascii_lowercase(),
-                        "confidence": format!("{:?}", summary.confidence).to_ascii_lowercase(),
-                        "rule_id": summary.rule_id,
-                        "authority_source": summary.authority_source,
-                        "foreground_pgid": summary.foreground_pgid,
-                        "activity": {
-                            "last_output_ms_ago": summary.last_output.map(|at| now.saturating_duration_since(at).as_millis()),
-                            "last_input_ms_ago": summary.last_input.map(|at| now.saturating_duration_since(at).as_millis()),
-                        },
-                        "process": {
-                            "child_process_count": summary.child_process_count,
-                            "cpu_jiffies_delta": summary.cpu_jiffies_delta,
-                            "process_exited": summary.process_exited,
-                            "foreground_returned_to_shell": summary.foreground_returned_to_shell,
-                            "root_is_agent": summary.root_is_agent,
-                        },
-                        "screen": {
-                            "visible_blocker": summary.visible_blocker,
-                            "visible_idle": summary.visible_idle,
-                            "visible_working": summary.visible_working,
-                        },
-                        "osc": {
-                            "progress_active": summary.osc_progress_active,
-                            "title": session.osc_evidence.title,
-                            "title_changed_ms_ago": session.osc_evidence.title_changed_at.map(|at| now.saturating_duration_since(at).as_millis()),
-                            "notify_edge_ms_ago": session.osc_evidence.notify_edge_at.map(|at| now.saturating_duration_since(at).as_millis()),
-                            "progress_cleared_ms_ago": session.osc_evidence.progress_cleared_at.map(|at| now.saturating_duration_since(at).as_millis()),
-                            "bel_ms_ago": session.osc_evidence.bel_at.map(|at| now.saturating_duration_since(at).as_millis()),
-                            "bel_count": session.osc_evidence.bel_count,
-                            "shell_state": session.osc_evidence.shell_state.map(jackin_protocol::agent_status::AgentRawState::label),
-                            "shell_mark_ms_ago": session.osc_evidence.shell_mark_at.map(|at| now.saturating_duration_since(at).as_millis()),
-                        },
-                        "subagents_active": summary.subagents_active,
-                        "stale_report": summary.stale_report,
-                        "notes": summary.notes.iter().map(|note| format!("{note:?}").to_ascii_lowercase()).collect::<Vec<_>>(),
-                    },
-                    "stuck": {
-                        "active": watchdog_demoted,
-                        "reason": if watchdog_demoted { Some("watchdog_demoted") } else { None },
-                        "last_output_ms_ago": summary.last_output.map(|at| now.saturating_duration_since(at).as_millis()),
-                        "cpu_jiffies_delta": summary.cpu_jiffies_delta,
-                        "child_process_count": summary.child_process_count,
-                        "authority_source": summary.authority_source,
-                        "foreground_pgid": summary.foreground_pgid,
-                        "evidence_winner": format!("{:?}", summary.winner).to_ascii_lowercase(),
-                        "notes": summary.notes.iter().map(|note| format!("{note:?}").to_ascii_lowercase()).collect::<Vec<_>>(),
-                    },
-                    "authority": session.hook_authority.as_ref().map(|authority| serde_json::json!({
-                        "source_id": authority.source_id,
-                        "agent_label": authority.agent_label,
-                        "grade": format!("{:?}", super::authority_grade_for_runtime(&authority.agent_label)).to_ascii_lowercase(),
-                        "origin": authority.origin.label(),
-                        "raw_state": authority.raw_state,
-                        "seq": authority.seq,
-                        "last_seen_ms_ago": now.saturating_duration_since(authority.last_seen).as_millis(),
-                    })),
-                    "gate": gate.map(|gate| serde_json::json!({
-                        "pending_permission": gate.pending_permission,
-                        "subagents_active": gate.subagents_active,
-                        "notes": gate.notes.iter().map(|note| format!("{note:?}").to_ascii_lowercase()).collect::<Vec<_>>(),
-                    })),
-                    "debounce": {
-                        "candidate": session.pending_status_transition.candidate.map(jackin_protocol::control::AgentState::label),
-                        "confirmations": session.pending_status_transition.confirmations,
-                    },
-                    "rules": self.rule_packs.explain_with_virtuals(
-                        session.agent.as_deref(),
-                        &visible_lines,
-                        super::status_rule_virtual_regions(session, true),
-                    ),
-                    "visible": {
-                        "lines": visible_lines,
-                    },
-                });
-                (id, value)
             })
             .collect()
     }
@@ -264,22 +244,13 @@ impl Multiplexer {
                             session_id: id,
                             label: session.label.clone(),
                             agent: session.agent.clone(),
-                            state: session.state(),
-                            agent_status_report: Some(session.status.report(
-                                session.agent.clone(),
-                                if session.status.seen {
-                                    session.status.revision
-                                } else {
-                                    0
-                                },
-                            )),
+                            state: session.state,
                         },
                         None => PaneSnapshot {
                             session_id: id,
                             label: "(missing)".to_owned(),
                             agent: None,
                             state: crate::protocol::control::AgentState::Idle,
-                            agent_status_report: None,
                         },
                     })
                     .collect();

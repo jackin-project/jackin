@@ -2,7 +2,7 @@
 title: "Alternative LLM Providers (MiniMax, Kimi, GLM everywhere)"
 ---
 
-**Status**: Partially implemented — Phases 1–4 shipped on `main` (catalog + Claude Code + Codex MiniMax + OpenCode + operator Auth-tab rows); Codex GLM and Kimi cells remain deferred pending upstream Responses-API endpoint.
+**Status**: Partially implemented — Phases 1–4 shipped on `main` (catalog + Claude Code + Codex MiniMax + Codex OpenAI default + OpenCode + operator Auth-tab rows + provider picker that collapses the agent's native auth + per-provider model overrides in role manifests via `[<agent>.providers.<id>]`); Codex GLM and Kimi cells remain deferred pending upstream Responses-API endpoint.
 
 > **Registry note.** Provider routing now lives behind the workspace crate registry. The durable design record for the runtime/provider adapter work lives in [Architecture](/reference/getting-oriented/architecture/#agentruntime-and-provider-registry).
 
@@ -57,9 +57,13 @@ This item ships **only the cells that are clearly documented, testable, and work
 
 | Provider | Claude Code | Codex | OpenCode |
 |---|---|---|---|
+| **Anthropic** (native) | ✅ ship | n/a | ✅ ship |
+| **OpenAI** (native) | n/a | ✅ ship — Codex's default auth; no `wire_api` redirect needed | n/a |
 | **MiniMax** | ✅ ship | ✅ ship (`wire_api = "responses"`) | ✅ ship |
 | **Z.AI / GLM** | ✅ shipped | ✖ deferred — Chat-only, blocked on current Codex | ✅ ship |
 | **Kimi** | ✅ ship | ✖ deferred — Chat-only, no Responses endpoint | ✅ ship |
+
+The "native" rows cover each agent's own auth surface: Anthropic for Claude Code (subscription), OpenAI for Codex (`auth.json` sync or `OPENAI_API_KEY`). They are catalog entries even though no env redirect is emitted — the catalog drives the provider picker, and the picker skips these entries when no alt provider is configured (so Claude and Codex launch with no picker when only the native auth is available, mirroring each other).
 
 The two deferred Codex cells are a protocol mismatch, not a missing-key problem (see Open Questions): GLM and Kimi expose only Chat Completions, and Codex no longer speaks it. They become deliverable only if upstream ships a Responses-compatible endpoint, at which point they reduce to catalog data. Treat them as known-blocked, not as work to attempt and discover broken.
 
@@ -76,11 +80,13 @@ Claude Code routes to an Anthropic-compatible endpoint through process environme
 - `ANTHROPIC_DEFAULT_OPUS_MODEL` / `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_HAIKU_MODEL` — per-provider tier mapping
 - `API_TIMEOUT_MS`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` — operational settings already injected for Z.AI
 
-Extending Claude Code support to MiniMax and Kimi is purely catalog data: add the variants, their base URLs, and their model maps. The injection path in <RepoFile path="crates/jackin-protocol/src/lib.rs" /> and the allowlist in `SESSION_ENV_PASSTHROUGH` (<RepoFile path="crates/jackin-capsule/src/session.rs" />) already carry the `ANTHROPIC_*` keys.
+Extending Claude Code support to MiniMax and Kimi is purely catalog data: add the variants, their base URLs, and their model maps. The injection path in <RepoFile path="crates/jackin-protocol/src/lib.rs">crates/jackin-protocol/src/lib.rs</RepoFile> and the allowlist in `SESSION_ENV_PASSTHROUGH` (<RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>) already carry the `ANTHROPIC_*` keys.
 
-### Codex — generated `~/.codex/config.toml` `[model_providers]` block (new mechanism)
+### Codex — provider block + v2 profile file + model catalog (new mechanism)
 
-Codex routes to a custom backend through a `[model_providers.<id>]` table plus a `[profiles.<id>]` table in `~/.codex/config.toml`. MiniMax is the deliverable Codex cell because it speaks the Responses API Codex now requires:
+Codex routes to a custom backend through a `[model_providers.<id>]` table in `~/.codex/config.toml` plus a **v2 profile** that selects it. MiniMax is the deliverable Codex cell because it speaks the Responses API Codex now requires. jackin' writes three pieces during `jackin-capsule runtime-setup` (see <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile>), all inside the container — the host's `~/.codex/` is never touched (the host-side rule in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> forbids it).
+
+1. The provider block, appended to `~/.codex/config.toml`:
 
 ```toml
 [model_providers.minimax]
@@ -88,19 +94,24 @@ name = "MiniMax"
 base_url = "https://api.minimax.io/v1"
 env_key = "MINIMAX_API_KEY"
 wire_api = "responses"
+```
 
-[profiles.minimax]
+2. The profile file `~/.codex/minimax.config.toml`, loaded by `codex --profile minimax`. It lives in its own file, **not** as a `[profiles.minimax]` table inside `config.toml`: Codex errors when `--profile` is passed alongside a legacy v1 profiles table. The context window is deliberately omitted here — a profile-scoped `model_context_window` is clamped to the model's fallback cap, so it can never raise the window for a custom model.
+
+```toml
 model_provider = "minimax"
 model = "MiniMax-M3"
 ```
 
-GLM and Kimi would use the same shape with `wire_api = "chat"`, but Codex no longer accepts Chat Completions, so those two cells are deferred (see Deliverable scope and Open Questions) rather than generated.
+3. The model catalog `~/.codex/minimax.models.json`, derived at setup from the installed Codex's own catalog (`codex debug models`) and patched to a `MiniMax-M3` entry with a real 512k context window. Without it Codex has no metadata for `MiniMax-M3`, falls back to a ~272k window plus a per-turn "metadata not found, can degrade performance" warning, and clamps any window override to that fallback cap. Deriving the entry from the live catalog keeps it matching the installed Codex's `ModelInfo` schema rather than a snapshot that drifts as Codex evolves.
 
-jackin' generates this file **inside the container** during `jackin-capsule runtime-setup` (the same stage that already seeds agent home dirs; see <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />). The host's `~/.codex/config.toml` is never touched (the host-side rule in <RepoFile path="AGENTS.md" /> forbids it). Today the only in-container write to `~/.codex/config.toml` marks the workspace trusted; this extends that same in-container write surface with a provider block.
+The capsule injects `JACKIN_CODEX_PROFILE=minimax` into the spawn env (allowlisted in `SESSION_ENV_PASSTHROUGH`, <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>); the entrypoint turns it into `--profile minimax` plus `-c model_catalog_json=~/.codex/minimax.models.json` (the catalog is passed as a `-c` override because a profile-file `model_catalog_json` key trips a Codex config-parse bug).
+
+GLM and Kimi would use the same provider shape with `wire_api = "chat"`, but Codex no longer accepts Chat Completions, so those two cells are deferred (see Deliverable scope and Open Questions) rather than generated.
 
 ### OpenCode — self-contained `provider` blocks in `~/.config/opencode/opencode.json`
 
-`jackin-capsule runtime-setup` writes `~/.config/opencode/opencode.json` (see `write_opencode_config` in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />) with `"permission":"allow"` plus a `provider` block for each alt provider whose key is present in the container env. Each block is **self-contained** — it pins the SDK (`npm`), base URL, API key, and the one model id — rather than overriding only `baseURL` and leaving OpenCode to fill the rest from its bundled models.dev registry:
+`jackin-capsule runtime-setup` writes `~/.config/opencode/opencode.json` (see `write_opencode_config` in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile>) with `"permission":"allow"` plus a `provider` block for each alt provider whose key is present in the container env. Each block is **self-contained** — it pins the SDK (`npm`), base URL, API key, and the one model id — rather than overriding only `baseURL` and leaving OpenCode to fill the rest from its bundled models.dev registry:
 
 ```json
 {
@@ -124,7 +135,7 @@ One provider catalog, three renderers, plus the operator surface that already ex
 
 ### 1. Generalize the provider catalog
 
-In <RepoFile path="crates/jackin-protocol/src/lib.rs" />:
+In <RepoFile path="crates/jackin-protocol/src/lib.rs">crates/jackin-protocol/src/lib.rs</RepoFile>:
 
 - Add `Provider::Minimax` and `Provider::Kimi` variants alongside `Anthropic` and `Zai`. (The `Kimi` *provider* is distinct from the `kimi` *agent runtime* — naming in code and docs must keep that separation explicit so the two concepts do not blur.)
 - Add a per-provider constant block (base URLs for both protocol surfaces, model-tier map, timeout) mirroring the existing `ZAI_*` constants.
@@ -178,13 +189,13 @@ Auth-tab rows, N-item picker generalization, per-provider tab labels, and the pe
 
 ## Related files
 
-- <RepoFile path="crates/jackin-protocol/src/lib.rs" /> — `Provider` enum, `env_overrides`, `available_for`, `ZAI_*` constants
-- <RepoFile path="crates/jackin-capsule/src/session.rs" /> — `SESSION_ENV_PASSTHROUGH` allowlist
-- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — in-container key resolution (`ZAI_API_KEY`) and provider env application
-- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — in-container agent setup (target for Codex `config.toml` generation)
-- <RepoFile path="docker/runtime/entrypoint.sh" /> — `OPENCODE_CONFIG_CONTENT` export
-- <RepoFile path="crates/jackin-core/src/manifest.rs" /> — per-agent `model` fields
-- <RepoFile path="crates/jackin/src/console/manager.rs" /> — `zai_key_present` and the Auth tab
+- <RepoFile path="crates/jackin-protocol/src/lib.rs">crates/jackin-protocol/src/lib.rs</RepoFile> — `Provider` enum, `env_overrides`, `available_for`, `ZAI_*` constants
+- <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile> — `SESSION_ENV_PASSTHROUGH` allowlist
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile> — in-container key resolution (`ZAI_API_KEY`) and provider env application
+- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> — in-container agent setup (target for Codex `config.toml` generation)
+- <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> — `OPENCODE_CONFIG_CONTENT` export
+- <RepoFile path="crates/jackin-core/src/manifest.rs">crates/jackin-core/src/manifest.rs</RepoFile> — per-agent `model` fields
+- <RepoFile path="crates/jackin-console/src/tui/state/manager.rs">crates/jackin-console/src/tui/state/manager.rs</RepoFile> — `zai_key_present` and the Auth tab
 
 ## Cross-references
 

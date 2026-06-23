@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use directories::BaseDirs;
 use jackin_tui::runtime::BlockingSubscription;
 
+use crate::tui::components::file_browser::{FileBrowserOutcome, FileBrowserState};
 pub use crate::tui::components::file_browser::{FolderEntry, FolderListing};
 
 /// Directories excluded from the listing when browsing $HOME.
@@ -111,6 +112,17 @@ pub fn load_entries(cwd: &Path, root: &Path, show_hidden: bool) -> Vec<FolderEnt
 /// Build the initial browser listing rooted at `$HOME`.
 pub fn listing_from_home() -> anyhow::Result<FolderListing> {
     listing_from_home_with_hidden_inner(false)
+}
+
+pub fn state_from_home() -> anyhow::Result<FileBrowserState> {
+    Ok(FileBrowserState::from_listing(listing_from_home()?))
+}
+
+/// Open a file browser from `$HOME` with dotfile directories visible.
+pub fn state_from_home_with_hidden() -> anyhow::Result<FileBrowserState> {
+    let mut state = FileBrowserState::from_listing(listing_from_home_with_hidden()?);
+    state.show_hidden = true;
+    Ok(state)
 }
 
 /// Build a listing at `cwd`, canonicalizing paths but not clamping to root.
@@ -218,6 +230,45 @@ pub fn start_git_url_resolution(path: PathBuf) -> BlockingSubscription<Option<St
         "jackin-file-browser-git-url",
         move || resolve_git_url(&path),
     )
+}
+
+pub fn request_git_url_resolution(state: &mut FileBrowserState, path: PathBuf) {
+    let rx = start_git_url_resolution(path);
+    state.attach_git_url_resolution(rx);
+}
+
+pub fn clamp_state_to_cwd(state: &mut FileBrowserState, cwd: &Path) {
+    let listing = clamped_listing_with_hidden(&state.root, cwd, state.show_hidden);
+    state.apply_listing(listing);
+}
+
+pub fn apply_state_outcome(
+    state: &mut FileBrowserState,
+    outcome: FileBrowserOutcome<PathBuf>,
+) -> FileBrowserOutcome<PathBuf> {
+    match outcome {
+        FileBrowserOutcome::NavigateTo(path) => {
+            let listing = clamped_listing_with_hidden(&state.root, &path, state.show_hidden);
+            state.apply_listing(listing);
+            FileBrowserOutcome::Continue
+        }
+        FileBrowserOutcome::NavigateUp => {
+            if let Some(listing) =
+                parent_listing_with_hidden(&state.root, state.cwd(), state.show_hidden)
+            {
+                state.apply_listing(listing);
+            }
+            FileBrowserOutcome::Continue
+        }
+        FileBrowserOutcome::RequestCommit(path) => match validate_commit(&state.root, &path) {
+            Ok(path) => FileBrowserOutcome::Commit(path),
+            Err(reason) => {
+                state.reject_commit(reason);
+                FileBrowserOutcome::Continue
+            }
+        },
+        other => other,
+    }
 }
 
 /// Open a resolved git web URL in the host browser.

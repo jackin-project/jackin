@@ -2,13 +2,13 @@
 title: "Launch Progress TUI"
 ---
 
-**Status**: Partially implemented — the rich launch runtime/TUI has shipped; remaining work is hardening, richer diagnostics tooling, and broader PTY/E2E coverage
+**Status**: Partially implemented — the rich launch runtime/TUI has shipped; remaining work is hardening, richer diagnostics tooling, broader PTY/E2E coverage, and surfacing the timing evidence needed by [Instant launch architecture](/reference/roadmap/instant-launch-architecture/)
 
-The shipped launch progress spine provides: run IDs for every command, JSONL run diagnostics, instance-lifecycle boundary rain gating, structured launch stages, rich/test renderers, console-triggered launch reuse, and `JACKIN_NO_MOTION=1`. The old compact/plain launch renderer has been removed from the load path; launch now requires the rich surface, and launch-time decisions render as dialogs. The first implementation intentionally does not add a `jackin diagnostics` command. Remaining follow-up work is to harden the rich renderer with broader snapshot coverage, expose a diagnostics viewer once the JSONL shape settles, and add deeper startup parallelism beyond the initial independent preflight overlap.
+The shipped launch progress spine provides: run IDs for every command, JSONL run diagnostics, instance-lifecycle boundary rain gating, structured launch stages, rich/test renderers, console-triggered launch reuse, and `JACKIN_NO_MOTION=1`. The old compact/plain launch renderer has been removed from the load path; launch now requires the rich surface, and launch-time decisions render as dialogs. The first implementation intentionally does not add a `jackin diagnostics` command. Remaining follow-up work is to harden the rich renderer with broader snapshot coverage, expose a diagnostics viewer once the JSONL shape settles, and make the launch surface report the substage timing evidence required by [Instant launch architecture](/reference/roadmap/instant-launch-architecture/).
 
 ## Problem
 
-`jackin load` and the launch path entered from `jackin console` should feel like the same product surface, but today the launch path still reads as a sequence of terminal printouts. The current implementation in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> uses direct status lines, config tables, animated step shimmer, and full-screen rain hooks that are tied to a single launch rather than to the larger "operator has entered or left jackin'" lifecycle. That makes repeated sequential launches slower and visually noisy, and it makes debug mode worse for normal users because troubleshooting detail competes with the product-level progress story.
+`jackin load` and the launch path entered from `jackin console` should feel like the same product surface, but today the launch path still reads as a sequence of terminal printouts. The current implementation in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> uses direct status lines, config tables, animated step shimmer, and full-screen rain hooks that are tied to a single launch rather than to the larger "operator has entered or left jackin'" lifecycle. That makes repeated sequential launches slower and visually noisy, and it makes debug mode worse for normal users because troubleshooting detail competes with the product-level progress story.
 
 The missing product model is a launch cockpit: a compact, recognizable, cyberpunk-styled TUI that explains what jackin' is doing now, what is waiting next, where failures are recorded, and when the operator has crossed a session boundary. Full digital rain should mark entering or leaving jackin' work, not every container start. The stage names should use jackin' vocabulary: the `construct` is the base world, the derived image is the role-specific layer, the Capsule is the persistent in-container control plane, and the `hardline` is the direct line into a running agent session.
 
@@ -51,7 +51,7 @@ image         jackin/agent-smith:latest
 ○ hardline       queued
 
 status: pulling projectjackin/construct:trixie
-diagnostics: run jk-run-42f9
+diagnostics: run 42f9
 ```
 
 Ad-hoc directory example:
@@ -77,7 +77,7 @@ image         jackin/agent-smith:latest
 ○ hardline       queued
 
 status: pulling projectjackin/construct:trixie
-diagnostics: run jk-run-42f9
+diagnostics: run 42f9
 ```
 
 The identity panel should never label an ad-hoc directory as a workspace. For a saved workspace, show the workspace name first and then the configured workdir/mount summary. For a directory launch, show `directory` first and describe the direct mount shape. This keeps the TUI honest about whether jackin' is applying a saved workspace configuration or simply launching in the target directory the operator chose.
@@ -193,7 +193,7 @@ Docker unavailable
 jackin' could not reach the Docker daemon.
 
 docker daemon is not responding
-diagnostics: run jk-run-42f9
+diagnostics: run 42f9
 ```
 
 The dialog should show:
@@ -206,11 +206,11 @@ The dialog should show:
 
 The footer for a fatal launch failure should expose exactly one action: `Enter Close`. There should be no `Retry`, `Continue`, `Back`, secondary close button, or multi-button confirmation state unless a future failure class is explicitly recoverable without leaving the launch. Pressing `Enter` closes the dialog and exits the launch path immediately.
 
-The detailed error, command trace, Docker API trace, captured `docker logs`, build output, and debug evidence belong outside the launch UI. The operator-facing surface shows the short diagnosis and a stable diagnostics reference only. After the UI exits, an operator or agent can inspect the corresponding diagnostics artifact directly. The canonical operator handle is a run ID, for example `jk-run-42f9`, not a container ID. A dedicated diagnostics command is out of scope for the first implementation.
+The detailed error, command trace, Docker API trace, captured `docker logs`, build output, and debug evidence belong outside the launch UI. The operator-facing surface shows the short diagnosis and a stable diagnostics reference only. After the UI exits, an operator or agent can inspect the corresponding diagnostics artifact directly. The canonical operator handle is a run ID, for example `42f9`, not a container ID. A dedicated diagnostics command is out of scope for the first implementation.
 
 ## Diagnostics model
 
-The current `debug_log!` channel in <RepoFile path="crates/jackin/src/tui.rs" /> writes debug lines to stderr or a temporary buffer while the console TUI is active. Launch progress needs the same split but with a durable diagnostics destination and a hard product boundary: detailed logs are never rendered in the launch UI.
+The current `debug_log!` channel in <RepoFile path="crates/jackin/src/tui.rs">crates/jackin/src/tui.rs</RepoFile> writes debug lines to stderr or a temporary buffer while the console TUI is active. Launch progress needs the same split but with a durable diagnostics destination and a hard product boundary: detailed logs are never rendered in the launch UI.
 
 - Compact UI events go to the renderer.
 - Compact launch breadcrumbs go to the diagnostics artifact even without `--debug`.
@@ -218,7 +218,7 @@ The current `debug_log!` channel in <RepoFile path="crates/jackin/src/tui.rs" />
 - The TUI never streams the debug firehose, Docker build output, captured `docker logs`, or command stdout/stderr directly.
 - Secrets and token values remain redacted; source references are allowed only where existing auth diagnostics already permit them.
 - On launch failure before a container exists, the host-side diagnostics artifact is the primary artifact. Once the Capsule multiplexer is running, diagnostics should point to the relevant in-container artifact for that instance/session instead of making the operator guess which container to inspect.
-- Every `jackin ...` command invocation should mint a diagnostics `run_id` before command-specific work begins. The launch progress surface should display only that compact handle: `diagnostics: run jk-run-42f9`.
+- Every `jackin ...` command invocation should mint a diagnostics `run_id` before command-specific work begins. The launch progress surface should display only that compact handle: `diagnostics: run 42f9`.
 - A run may contain multiple traces, and each trace may contain nested spans. Traces cover workflow-sized operations such as preflight, container launch, reconnect, or hardline opening. Spans cover stage-sized operations such as `identity`, `role`, `construct`, `capsule`, and `hardline`.
 - Diagnostics events should carry `run_id`, `trace_id`, and optional `span_id`. Related reconnect/restore flows should use links to previous run IDs, trace IDs, instance IDs, or Capsule session IDs instead of reusing a stale run as the current command's identity.
 - Container names, Docker container IDs, instance IDs, and Capsule session IDs are evidence references attached when discovered. They are not the canonical diagnostics identity because a run can fail before a container exists, reconnect to an existing container, or open multiple traces against one instance.

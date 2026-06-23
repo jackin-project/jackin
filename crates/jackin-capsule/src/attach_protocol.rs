@@ -1,6 +1,5 @@
 //! Client attach/detach lifecycle for the capsule multiplexer.
 
-use std::collections::BTreeMap;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::sync::mpsc;
@@ -36,19 +35,14 @@ pub(crate) struct AttachHandshake {
 /// socket), and forwards validated attach Hellos back to the main
 /// loop via `handshake_tx`. Owning the slow `read_exact` here keeps a
 /// silent or slow client from stalling the daemon's main `select!`.
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn perform_handshake(
     mut stream: UnixStream,
     client_permit: tokio::sync::OwnedSemaphorePermit,
     handshake_tx: mpsc::UnboundedSender<AttachHandshake>,
     sessions_snapshot: Vec<crate::protocol::control::SessionInfo>,
     tabs_snapshot: Vec<crate::protocol::control::TabSnapshot>,
-    visible_text_snapshot: BTreeMap<u64, Vec<String>>,
-    status_explain_snapshot: BTreeMap<u64, serde_json::Value>,
     history_snapshot: Vec<jackin_protocol::control::AgentRegistryEntry>,
     active_tab: u32,
-    control_msg_tx: mpsc::UnboundedSender<crate::protocol::control::ClientMsg>,
-    state_broadcast_tx: tokio::sync::broadcast::Sender<crate::protocol::control::ServerMsg>,
 ) {
     // Bound the handshake reads. A client that opens the socket and
     // never sends a byte otherwise holds the `OwnedSemaphorePermit`
@@ -82,12 +76,8 @@ pub(crate) async fn perform_handshake(
             first[0],
             sessions_snapshot,
             tabs_snapshot,
-            visible_text_snapshot,
-            status_explain_snapshot,
             history_snapshot,
             active_tab,
-            control_msg_tx,
-            state_broadcast_tx,
         )
         .await;
         drop(client_permit);
@@ -147,17 +137,34 @@ pub(crate) async fn perform_handshake(
 }
 
 pub(crate) async fn drain_and_exit(mux: &mut Multiplexer) {
-    detach_client(mux).await;
+    drain_and_exit_with_reason(mux, None).await;
+}
+
+pub(crate) async fn drain_and_exit_with_reason(mux: &mut Multiplexer, reason: Option<String>) {
+    if let Some(reason) = reason.as_deref() {
+        mux.send_out_of_band(format!("\r\n[jackin-capsule] {reason}\r\n").into_bytes());
+    }
+    detach_attached_task_with_reason(mux, "drain_and_exit", reason.as_deref()).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 }
 
 const ATTACH_SHUTDOWN_FLUSH_GRACE_MS: u64 = 50;
 
-pub(crate) fn send_attached_shutdown(mux: &mut Multiplexer, context: &str) -> bool {
-    let Some(tx) = mux.attached_out.take() else {
+pub(crate) fn send_attached_shutdown(
+    mux: &mut Multiplexer,
+    context: &str,
+    reason: Option<&str>,
+) -> bool {
+    mux.client.flush_out_of_band();
+    let Some(tx) = mux.client.take() else {
         return false;
     };
-    if tx.send(encode_server(ServerFrame::Shutdown)).is_err() {
+    if tx
+        .send(encode_server(ServerFrame::Shutdown {
+            reason: reason.map(str::to_owned),
+        }))
+        .is_err()
+    {
         crate::clog!("{context}: client receiver already dropped; Shutdown frame not delivered");
     }
     true
@@ -173,12 +180,19 @@ pub(crate) fn send_attached_shutdown(mux: &mut Multiplexer, context: &str) -> bo
 /// `cmd_tx`. Used by SIGTERM / SIGINT shutdown, explicit detach, and
 /// `drain_and_exit`.
 pub(crate) async fn detach_attached_task(mux: &mut Multiplexer, context: &str) {
-    let had_sender = send_attached_shutdown(mux, context);
+    detach_attached_task_with_reason(mux, context, None).await;
+}
+
+async fn detach_attached_task_with_reason(
+    mux: &mut Multiplexer,
+    context: &str,
+    reason: Option<&str>,
+) {
+    let had_sender = send_attached_shutdown(mux, context, reason);
     // The latch is paired with the sender's lifetime: clearing
     // `attached_out` invalidates the previous attach, so the next
     // assignment (in the takeover branch of `run_daemon`) starts from
     // a clean state regardless of which code path reassigns it.
-    mux.attached_out_dead_logged = false;
     if had_sender {
         tokio::time::sleep(Duration::from_millis(ATTACH_SHUTDOWN_FLUSH_GRACE_MS)).await;
     }

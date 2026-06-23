@@ -11,6 +11,51 @@ use std::time::Instant;
 
 use crate::agent_status::policy::CPU_SAMPLE_WINDOW;
 
+#[cfg(not(target_os = "linux"))]
+mod procfs {
+    use std::path::PathBuf;
+
+    pub mod process {
+        use super::PathBuf;
+
+        #[derive(Debug, Clone)]
+        pub struct Process;
+
+        #[derive(Debug, Clone)]
+        pub struct Stat {
+            pub pid: i32,
+            pub ppid: i32,
+            pub pgrp: i32,
+            pub tpgid: i32,
+            pub comm: String,
+            pub utime: u64,
+            pub stime: u64,
+        }
+
+        impl Process {
+            pub fn new(_pid: i32) -> Result<Self, ()> {
+                Err(())
+            }
+
+            pub fn stat(&self) -> Result<Stat, ()> {
+                Err(())
+            }
+
+            pub fn exe(&self) -> Result<PathBuf, ()> {
+                Err(())
+            }
+
+            pub fn cmdline(&self) -> Result<Vec<String>, ()> {
+                Err(())
+            }
+        }
+
+        pub fn all_processes() -> Result<std::vec::IntoIter<Result<Process, ()>>, ()> {
+            Ok(Vec::new().into_iter())
+        }
+    }
+}
+
 /// Information about a single process read from /proc.
 #[derive(Debug, Clone)]
 pub struct ProcessInfo {

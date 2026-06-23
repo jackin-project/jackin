@@ -9,7 +9,6 @@ use ratatui::{
 };
 
 use super::{CellStyle, SocketBackend};
-use jackin_term::DamageGrid;
 
 #[test]
 fn backend_renders_text_to_output_buffer() {
@@ -44,6 +43,33 @@ fn resize_updates_reported_size() {
     assert_eq!(size.width, 120);
     assert_eq!(size.height, 40);
     assert_eq!(backend.current_style, CellStyle::default());
+}
+
+#[test]
+fn suppressed_clear_resets_style_without_screen_erase() {
+    let mut backend = SocketBackend::new(80, 24);
+    backend.current_style = CellStyle {
+        fg: Color::Red,
+        bg: Color::Blue,
+        modifiers: Modifier::BOLD,
+    };
+
+    backend.suppress_next_clear_escape();
+    backend.clear_region(ClearType::All).unwrap();
+    assert!(
+        backend.take_output().is_empty(),
+        "suppressed clear must not emit bytes"
+    );
+    assert_eq!(backend.current_style, CellStyle::default());
+
+    // One-shot: the next unsuppressed clear erases again.
+    backend.clear_region(ClearType::All).unwrap();
+    let output = backend.take_output();
+    assert!(
+        output.windows(4).any(|w| w == b"\x1b[2J"),
+        "unsuppressed clear must erase: {:?}",
+        String::from_utf8_lossy(&output)
+    );
 }
 
 #[test]
@@ -124,28 +150,4 @@ fn cursor_movement_encodes_four_digit_coords() {
         .unwrap();
 
     assert_eq!(backend.take_output(), b"\x1b[1000;1001H");
-}
-
-#[test]
-fn grid_patch_encoder_emits_only_changed_cell_span() {
-    let mut grid = DamageGrid::new(3, 12, 100);
-    let mut backend = SocketBackend::new(12, 3);
-    let area = Rect::new(0, 0, 12, 3);
-
-    grid.process(b"\x1b[1;1Halpha\x1b[2;1Hbeta");
-    {
-        let patch = grid.dump_dirty_patch();
-        backend.draw_grid_patch(area, &patch);
-    }
-    backend.take_output();
-
-    grid.process(b"\x1b[2;3HZ");
-    {
-        let patch = grid.dump_dirty_patch();
-        assert_eq!(patch.changed_cell_count(), 1);
-        backend.draw_grid_patch(area, &patch);
-    }
-
-    let output = backend.take_output();
-    assert_eq!(String::from_utf8_lossy(&output), "\x1b[2;3HZ");
 }

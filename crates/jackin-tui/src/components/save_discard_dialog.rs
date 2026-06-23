@@ -1,6 +1,6 @@
 //! Three-way dirty-exit confirmation dialog.
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
@@ -8,7 +8,8 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::ModalOutcome;
+use crate::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
+use crate::{HintSpan, ModalOutcome};
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
 use super::dialog_layout::{dialog_inner_chunks, render_dialog_shell};
@@ -17,6 +18,94 @@ use super::dialog_layout::{dialog_inner_chunks, render_dialog_shell};
 pub enum SaveDiscardChoice {
     Save,
     Discard,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveDiscardAction {
+    Save,
+    Discard,
+    Cancel,
+    FocusNext,
+    FocusPrev,
+    CommitFocused,
+}
+
+const SAVE_DISCARD_BINDINGS: &[KeyBinding<SaveDiscardAction>] = &[
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        action: SaveDiscardAction::CommitFocused,
+        hint: Some("select"),
+        visibility: Visibility::Shown,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('s')),
+            KeyChord::plain(LogicalKey::Char('S')),
+        ],
+        action: SaveDiscardAction::Save,
+        hint: Some("save"),
+        visibility: Visibility::Shown,
+        glyph: Some("S"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('d')),
+            KeyChord::plain(LogicalKey::Char('D')),
+        ],
+        action: SaveDiscardAction::Discard,
+        hint: Some("discard"),
+        visibility: Visibility::Shown,
+        glyph: Some("D"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('c')),
+            KeyChord::plain(LogicalKey::Char('C')),
+        ],
+        action: SaveDiscardAction::Cancel,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Esc)],
+        action: SaveDiscardAction::Cancel,
+        hint: Some("cancel"),
+        visibility: Visibility::Shown,
+        glyph: Some("Esc"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Tab),
+            KeyChord::plain(LogicalKey::Right),
+            KeyChord::plain(LogicalKey::Char('l')),
+            KeyChord::plain(LogicalKey::Char('L')),
+        ],
+        action: SaveDiscardAction::FocusNext,
+        hint: Some("move"),
+        visibility: Visibility::Shown,
+        glyph: Some("⇥/→"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::BackTab),
+            KeyChord::plain(LogicalKey::Left),
+            KeyChord::plain(LogicalKey::Char('h')),
+            KeyChord::plain(LogicalKey::Char('H')),
+        ],
+        action: SaveDiscardAction::FocusPrev,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+];
+
+pub static SAVE_DISCARD_KEYMAP: Keymap<SaveDiscardAction> = Keymap::new(SAVE_DISCARD_BINDINGS);
+
+#[must_use]
+pub fn save_discard_hint_spans() -> Vec<HintSpan<'static>> {
+    SAVE_DISCARD_KEYMAP.hint_spans()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,12 +131,12 @@ impl SaveDiscardState {
         }
     }
 
-    pub const fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<SaveDiscardChoice> {
-        match key.code {
-            KeyCode::Char('s' | 'S') => ModalOutcome::Commit(SaveDiscardChoice::Save),
-            KeyCode::Char('d' | 'D') => ModalOutcome::Commit(SaveDiscardChoice::Discard),
-            KeyCode::Char('c' | 'C') | KeyCode::Esc => ModalOutcome::Cancel,
-            KeyCode::Tab | KeyCode::Right | KeyCode::Char('l' | 'L') => {
+    pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<SaveDiscardChoice> {
+        match SAVE_DISCARD_KEYMAP.dispatch(KeyChord::from(key)) {
+            Some(SaveDiscardAction::Save) => ModalOutcome::Commit(SaveDiscardChoice::Save),
+            Some(SaveDiscardAction::Discard) => ModalOutcome::Commit(SaveDiscardChoice::Discard),
+            Some(SaveDiscardAction::Cancel) => ModalOutcome::Cancel,
+            Some(SaveDiscardAction::FocusNext) => {
                 self.focus = match self.focus {
                     SaveDiscardFocus::Save => SaveDiscardFocus::Discard,
                     SaveDiscardFocus::Discard => SaveDiscardFocus::Cancel,
@@ -55,7 +144,7 @@ impl SaveDiscardState {
                 };
                 ModalOutcome::Continue
             }
-            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h' | 'H') => {
+            Some(SaveDiscardAction::FocusPrev) => {
                 self.focus = match self.focus {
                     SaveDiscardFocus::Save => SaveDiscardFocus::Cancel,
                     SaveDiscardFocus::Discard => SaveDiscardFocus::Save,
@@ -63,12 +152,12 @@ impl SaveDiscardState {
                 };
                 ModalOutcome::Continue
             }
-            KeyCode::Enter => match self.focus {
+            Some(SaveDiscardAction::CommitFocused) => match self.focus {
                 SaveDiscardFocus::Save => ModalOutcome::Commit(SaveDiscardChoice::Save),
                 SaveDiscardFocus::Discard => ModalOutcome::Commit(SaveDiscardChoice::Discard),
                 SaveDiscardFocus::Cancel => ModalOutcome::Cancel,
             },
-            _ => ModalOutcome::Continue,
+            None => ModalOutcome::Continue,
         }
     }
 }

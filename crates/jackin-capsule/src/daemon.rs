@@ -22,7 +22,7 @@ use chrono::{DateTime, Utc};
 ///     byte: `0x00` → control (length prefix), anything else → attach.
 ///   - Lifecycle: the daemon exits when the last session ends so the
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
 #[cfg(test)]
 use std::path::Path;
@@ -41,8 +41,9 @@ use tokio::time::{Duration, interval};
 use portable_pty::CommandBuilder;
 
 use crate::attach_protocol::{
-    AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,
-    initial_spawn_request, perform_handshake, spawn_request_label,
+    AttachHandshake, detach_attached_task, detach_client, drain_and_exit,
+    drain_and_exit_with_reason, handle_attach_client, initial_spawn_request, perform_handshake,
+    spawn_request_label,
 };
 #[cfg(test)]
 use crate::git_context::{
@@ -116,14 +117,14 @@ use crate::tui::title::{
 #[cfg(test)]
 use crate::tui::update::prefix_full_redraw_reason;
 use crate::tui::update::{
-    ActionFramePlan, DialogActionFramePlan, FullRedrawReason, HoverFramePlan,
-    dialog_action_frame_plan, dialog_change_redraw_reason, drag_resize_ratio,
-    drag_resize_redraw_reason, explicit_redraw_reason, first_attach_redraw_reason,
-    focus_change_redraw_reason, hover_frame_plan, palette_route_frame_plan,
-    pane_data_redraw_reason, resize_redraw_reason, selection_change_redraw_reason,
+    FullRedrawReason, HoverFramePlan, dialog_action_frame_plan, dialog_change_redraw_reason,
+    drag_resize_ratio, drag_resize_redraw_reason, explicit_redraw_reason,
+    first_attach_redraw_reason, focus_change_redraw_reason, hover_frame_plan,
+    palette_route_frame_plan, pane_data_redraw_reason, selection_change_redraw_reason,
     selection_start_redraw_reason, session_exit_redraw_reason, status_change_redraw_reason,
+    wheel_scrollback_redraw_reason,
 };
-use crate::tui::view::{spawn_failure_banner, spawn_request_failure_message};
+use crate::tui::view::spawn_request_failure_message;
 
 mod compositor;
 mod context_mgmt;
@@ -172,19 +173,12 @@ pub struct Multiplexer {
     env_passthrough: Vec<(String, String)>,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
     event_rx: mpsc::UnboundedReceiver<SessionEvent>,
-    state_broadcast_tx: tokio::sync::broadcast::Sender<crate::protocol::control::ServerMsg>,
-    status_cpu_samples: HashMap<u64, Option<crate::agent_status::process::ProcessCpuSample>>,
     zoomed: Option<u64>,
     input_parser: InputParser,
     detach_requested: bool,
-    pub(crate) attached_out: Option<mpsc::UnboundedSender<Vec<u8>>>,
-    /// Latched true on the first `send_to_client` after `attached_out`
-    /// was set: once the receiver drops mid-attach, every subsequent
-    /// frame send into the same channel will also fail. Without this
-    /// latch the per-tick redraw + per-PTY output + per-OSC repaint
-    /// would write one `clog!` line each, swamping `multiplexer.log`.
-    /// Cleared whenever `attached_out` is reassigned (next attach).
-    pub(crate) attached_out_dead_logged: bool,
+    /// The only writer to the attach socket: composed frames are
+    /// `?2026`-bracketed, out-of-band bytes flush at frame boundaries.
+    pub(crate) client: crate::client_writer::ClientWriter,
     /// `JoinHandle` of the spawned `handle_attach_client` task for the
     /// currently-attached client. Tracked so a takeover (second `Hello`)
     /// can abort the old task's reader loop — without the abort, the
@@ -206,23 +200,32 @@ pub struct Multiplexer {
     /// Candidate text selection captured on primary press. Promoted to
     /// `selection` only after real drag motion leaves the anchor cell.
     pending_selection: Option<SelectionState>,
+    /// Previous primary press on a pane cell, kept one click long so the
+    /// next press can be classified as a double-click (word select).
+    last_pane_press: Option<mouse_input::PanePress>,
     /// True after a dragged selection was copied and its highlight remains
     /// visible. Cleared by the next click or typed input.
     selection_copied: bool,
     selection_copy_feedback_deadline: Option<Instant>,
-    /// Last visible pane-body snapshot per session. PTY output can
-    /// then repaint only rows whose grid cells changed.
-    /// Pane bodies dirtied by PTY output. The render ticker drains
-    /// this at most once per frame, preserving the existing coalescing
-    /// behavior while avoiding broad body redraws.
-    dirty_panes: HashSet<u64>,
-    /// Named full-frame invalidation, used whenever partial pane-body
-    /// repainting would be unsafe or when chrome/status/dialog/layout
-    /// changed outside the pane body.
-    pending_full_redraw: Option<FullRedrawReason>,
-    /// Named no-clear invalidation for chrome/status/dialog updates that can
-    /// safely ride Ratatui's cell diff instead of clearing the terminal.
-    pending_diff_redraw: Option<FullRedrawReason>,
+    /// Monotonic state-change counter: every mutation that can affect the
+    /// visible frame bumps it via `invalidate`. The render loop composes
+    /// when it moved past `rendered_generation` — there are no repaint
+    /// tiers and no per-cause request flags (derived rendering, §3.2 of
+    /// the capsule rendering plan).
+    frame_generation: u64,
+    /// Generation the last composed frame reflected.
+    rendered_generation: u64,
+    /// Wipe policy: a real `\x1b[2J` precedes the next frame only for
+    /// `FirstAttach` and `Resize` — the geometry events whose previous
+    /// layout must not survive. Every other invalidation repaints in place.
+    wipe_pending: Option<FullRedrawReason>,
+    /// Telemetry: the most recent invalidation reason, labelled on the next
+    /// composed frame's debug trace.
+    last_invalidate_reason: Option<FullRedrawReason>,
+    /// Cursor + mode state the encoder asserted with the last frame; the
+    /// per-frame reconciliation emits only transitions against this. `None`
+    /// (fresh attach) asserts everything explicitly.
+    last_asserted_client_state: Option<compositor::AssertedClientState>,
     /// Last pointer shape emitted through OSC 22. Stored so passive
     /// mouse motion does not spam the outer terminal with duplicate
     /// pointer-shape updates.
@@ -242,12 +245,9 @@ pub struct Multiplexer {
     /// tab list on every redraw. Reset to `None` when a child pane
     /// updates its own title so the next full frame re-asserts.
     last_outer_terminal_title: Option<String>,
-    /// Last raw bottom-chrome bytes (branch/PR bar, hint row, debug chip). The
-    /// chrome is appended after every Ratatui frame but rarely changes; skipping
-    /// the re-append when it is byte-identical stops the bottom bar flickering on
-    /// every frame under streaming output. Reset to `None` whenever a frame
-    /// clears the screen so the chrome is re-asserted after the wipe.
-    last_bottom_chrome: Option<Vec<u8>>,
+    /// Spawn-failure notice rendered as a top-row banner widget until the
+    /// next operator keystroke clears it.
+    spawn_failure: Option<String>,
     hover_target: Option<HoverTarget>,
     /// Deadline for hiding the transient "Copied!" badge in whichever
     /// dialog most recently performed a jackin-owned OSC 52 copy.
@@ -290,10 +290,6 @@ pub struct Multiplexer {
     /// tool-availability race does not freeze PR discovery for the
     /// daemon lifetime.
     workdir_context: WorkdirContext,
-    /// TOML rule-pack screen detector registry.
-    rule_packs: crate::agent_status::rules::RulePackRegistry,
-    /// Per-session token usage monitor.
-    token_monitor: crate::token_monitor::TokenMonitor,
     /// Ratatui terminal backed by [`SocketBackend`].
     ///
     /// Chrome widgets (status bar, pane boxes, dialogs) render through this
@@ -317,53 +313,9 @@ pub struct Multiplexer {
     /// Debug-only process RSS/CPU sampler, emitted on the state ticker so live
     /// multi-pane smokes can attach resource data to the run id.
     resource_metrics: resource_metrics::ResourceMetricsSampler,
-    /// Per-source event gates for runtime hook/plugin reports.
-    runtime_gate_states: HashMap<String, crate::agent_status::gating::SourceGateState>,
-    runtime_event_sequences: HashMap<String, u64>,
-    child_agent_states: HashMap<(u64, u64), crate::agent_status::evidence::RawAgentState>,
-    status_transition_times: HashMap<u64, VecDeque<Instant>>,
-    watchdog_demotions: HashMap<u64, u64>,
-    blocked_renotify_at: HashMap<u64, Instant>,
-    status_last_eval: HashMap<u64, Instant>,
-    status_dirty_sessions: HashSet<u64>,
-    last_workspace_status: Option<WorkspaceStatusSnapshot>,
     /// Offset into the wordlist for the next codename pick, seeded once at
     /// daemon construction from the current time subsecond nanos.
     wordlist_offset: usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct WorkspaceStatusSnapshot {
-    effective: crate::protocol::AgentState,
-    session_count: u32,
-    blocked_count: u32,
-    done_count: u32,
-    working_count: u32,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ForegroundShellHandoffProbe {
-    agent_expected: bool,
-    agent_identity_observed: bool,
-    startup_grace_done: bool,
-    child_alive: bool,
-    root_is_agent: bool,
-    foreground_is_agent: bool,
-    root_pgid: Option<u32>,
-    foreground_pgid: Option<u32>,
-    child_process_count: u32,
-}
-
-fn agent_foreground_returned_to_shell(probe: ForegroundShellHandoffProbe) -> bool {
-    probe.agent_expected
-        && probe.agent_identity_observed
-        && probe.startup_grace_done
-        && probe.child_alive
-        && !probe.root_is_agent
-        && !probe.foreground_is_agent
-        && probe.child_process_count == 0
-        && probe.root_pgid.is_some()
-        && probe.root_pgid == probe.foreground_pgid
 }
 
 /// In-memory record of one tab ever opened in this container lifetime.
@@ -457,8 +409,6 @@ impl Multiplexer {
     pub fn new(rows: u16, cols: u16, launch_config: CapsuleConfig) -> io::Result<Self> {
         let (rows, cols) = normalize_size(rows, cols);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let (state_broadcast_tx, _) =
-            tokio::sync::broadcast::channel::<crate::protocol::control::ServerMsg>(256);
         let content_rows = available_content_rows(rows);
         let agents = launch_config.supported_agents();
         let provider_keys: BTreeMap<jackin_protocol::Provider, String> =
@@ -477,6 +427,8 @@ impl Multiplexer {
             .collect();
 
         let input_bindings = crate::services::input_bindings::resolve_input_bindings();
+        let palette_glyph =
+            crate::services::input_bindings::palette_key_glyph(input_bindings.palette_key);
         let input_parser = InputParser::new(input_bindings.prefix, input_bindings.palette_key);
         let workdir = PathBuf::from(&launch_config.workdir);
         let workdir_context = WorkdirContext::resolve(&workdir);
@@ -494,6 +446,7 @@ impl Multiplexer {
             status_identity.instance_id,
         );
         status_bar.set_prefix_enabled(input_parser.prefix_enabled());
+        status_bar.palette_key_glyph = palette_glyph;
 
         let ratatui_terminal =
             ratatui::Terminal::new(crate::tui::socket_backend::SocketBackend::new(cols, rows))?;
@@ -512,28 +465,28 @@ impl Multiplexer {
             env_passthrough,
             event_tx,
             event_rx,
-            state_broadcast_tx,
-            status_cpu_samples: HashMap::new(),
             zoomed: None,
             input_parser,
             detach_requested: false,
-            attached_out: None,
-            attached_out_dead_logged: false,
+            client: crate::client_writer::ClientWriter::default(),
             attached_task: None,
             last_tab_click: None,
             drag: None,
             selection: None,
             pending_selection: None,
+            last_pane_press: None,
             selection_copied: false,
             selection_copy_feedback_deadline: None,
-            dirty_panes: HashSet::new(),
-            pending_full_redraw: None,
-            pending_diff_redraw: None,
+            frame_generation: 0,
+            rendered_generation: 0,
+            wipe_pending: None,
+            last_invalidate_reason: None,
+            last_asserted_client_state: None,
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: false,
             attached_terminal: ClientTerminal::default(),
             last_outer_terminal_title: None,
-            last_bottom_chrome: None,
+            spawn_failure: None,
             hover_target: None,
             dialog_copy_feedback_deadline: None,
             pull_request_context_branch: None,
@@ -544,10 +497,6 @@ impl Multiplexer {
             pull_request_context_cache: HashMap::new(),
             workdir,
             workdir_context,
-            rule_packs: crate::agent_status::rules::RulePackRegistry::bundled().map_err(
-                |error| io::Error::other(format!("invalid bundled rule packs: {error:#}")),
-            )?,
-            token_monitor: crate::token_monitor::TokenMonitor::new(),
             provider_keys,
             ratatui_terminal,
             terminal_row_arena: jackin_term::RowArena::default(),
@@ -555,15 +504,6 @@ impl Multiplexer {
             codename_retired: HashSet::new(),
             agent_history: Vec::new(),
             resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
-            runtime_gate_states: HashMap::new(),
-            runtime_event_sequences: HashMap::new(),
-            child_agent_states: HashMap::new(),
-            status_transition_times: HashMap::new(),
-            watchdog_demotions: HashMap::new(),
-            blocked_renotify_at: HashMap::new(),
-            status_last_eval: HashMap::new(),
-            status_dirty_sessions: HashSet::new(),
-            last_workspace_status: None,
             wordlist_offset: {
                 use std::time::{SystemTime, UNIX_EPOCH};
                 SystemTime::now()
@@ -573,697 +513,21 @@ impl Multiplexer {
         })
     }
 
-    fn send_to_client(&mut self, frame: ServerFrame) {
-        if let Some(tx) = &self.attached_out
-            && tx.send(encode_server(frame)).is_err()
-            && !self.attached_out_dead_logged
-        {
-            self.attached_out_dead_logged = true;
-            crate::clog!(
-                "send_to_client: client receiver dropped; frame discarded (this attach is dead)"
-            );
-        }
+    /// Send a composed frame to the attached client through the single
+    /// writer. Queued out-of-band bytes flush ahead of the bracketed frame.
+    fn send_frame(&mut self, bytes: Vec<u8>) {
+        self.client.write_frame(bytes);
     }
 
-    fn send_output(&mut self, bytes: Vec<u8>) {
-        if crate::logging::debug_enabled() {
-            let (moves, max_row, max_col, erases) = scan_emitted_frame(&bytes);
-            crate::cdebug!(
-                "send: bytes={} cursor_moves={} max_row_addressed={} max_col_addressed={} erases={} term={}x{} over_rows={} over_cols={}",
-                bytes.len(),
-                moves,
-                max_row,
-                max_col,
-                erases,
-                self.term_cols,
-                self.term_rows,
-                max_row > self.term_rows,
-                max_col > self.term_cols,
-            );
-            // Verbatim dump of only the smallest frames (chrome-only). Capped
-            // tight so a steady-state run can't balloon the log to hundreds of
-            // MB — full frames are summarised by the `send:` line above.
-            if bytes.len() <= 1200 {
-                crate::cdebug!("send-bytes: {}", escape_for_log(&bytes));
-            }
-        }
-        self.send_to_client(ServerFrame::Output(bytes));
-    }
-
-    fn broadcast_agent_state_changed(
-        &self,
-        session_id: u64,
-        session: &Session,
-        raw_state: Option<String>,
-        reason: Option<String>,
-    ) {
-        let summary = &session.status.last_snapshot_summary;
-        drop(
-            self.state_broadcast_tx
-                .send(crate::protocol::control::ServerMsg::AgentStateChanged {
-                    session_id,
-                    raw_state: raw_state.or_else(|| Some(session.status.raw.label().to_owned())),
-                    effective: session.state().label().to_owned(),
-                    seen: session.status.seen,
-                    source: summary
-                        .authority_source
-                        .clone()
-                        .unwrap_or_else(|| format!("{:?}", summary.winner).to_ascii_lowercase()),
-                    confidence: Some(
-                        format!("{:?}", session.status.confidence).to_ascii_lowercase(),
-                    ),
-                    detected_agent: session.agent.clone(),
-                    foreground_pgid: summary.foreground_pgid,
-                    visible_blocker: summary.visible_blocker,
-                    visible_idle: summary.visible_idle,
-                    visible_working: summary.visible_working,
-                    process_exited: summary.process_exited,
-                    foreground_returned_to_shell: summary.foreground_returned_to_shell,
-                    stale_report: summary.stale_report,
-                    subagents_active: summary.subagents_active,
-                    seq: session
-                        .hook_authority
-                        .as_ref()
-                        .map(|authority| authority.seq),
-                    ts_ns: session
-                        .hook_authority
-                        .as_ref()
-                        .map(|authority| authority.ts_ns),
-                    revision: session.status.revision,
-                    last_seen_revision: Some(if session.status.seen {
-                        session.status.revision
-                    } else {
-                        0
-                    }),
-                    reason,
-                }),
-        );
-    }
-
-    pub(super) fn broadcast_session_spawned(
-        &self,
-        session_id: u64,
-        agent: Option<String>,
-        label: String,
-    ) {
-        drop(
-            self.state_broadcast_tx
-                .send(crate::protocol::control::ServerMsg::SessionSpawned {
-                    session_id,
-                    agent,
-                    label,
-                }),
-        );
-    }
-
-    pub(super) fn broadcast_session_exited(&self, session_id: u64) {
-        drop(
-            self.state_broadcast_tx
-                .send(crate::protocol::control::ServerMsg::SessionExited { session_id }),
-        );
-    }
-
-    fn workspace_status_snapshot(&self) -> WorkspaceStatusSnapshot {
-        let mut states = Vec::new();
-        let mut snapshot = WorkspaceStatusSnapshot {
-            effective: crate::protocol::AgentState::Unknown,
-            session_count: self.sessions.len() as u32,
-            blocked_count: 0,
-            done_count: 0,
-            working_count: 0,
-        };
-        for session in self.sessions.values() {
-            let state = session.state();
-            states.push(state);
-            match state {
-                crate::protocol::AgentState::Blocked => {
-                    snapshot.blocked_count = snapshot.blocked_count.saturating_add(1);
-                }
-                crate::protocol::AgentState::Done => {
-                    snapshot.done_count = snapshot.done_count.saturating_add(1);
-                }
-                crate::protocol::AgentState::Working => {
-                    snapshot.working_count = snapshot.working_count.saturating_add(1);
-                }
-                crate::protocol::AgentState::Idle | crate::protocol::AgentState::Unknown => {}
-            }
-        }
-        snapshot.effective = crate::agent_status::arbitrate::roll_up_states(states.iter());
-        snapshot
-    }
-
-    fn maybe_broadcast_workspace_status_changed(&mut self) {
-        let snapshot = self.workspace_status_snapshot();
-        if self.last_workspace_status == Some(snapshot) {
-            return;
-        }
-        self.last_workspace_status = Some(snapshot);
-        drop(self.state_broadcast_tx.send(
-            crate::protocol::control::ServerMsg::WorkspaceStatusChanged {
-                effective: snapshot.effective.label().to_owned(),
-                session_count: snapshot.session_count,
-                blocked_count: snapshot.blocked_count,
-                done_count: snapshot.done_count,
-                working_count: snapshot.working_count,
-                ts_ns: unix_time_ns(),
-            },
-        ));
-    }
-
-    fn status_change_reason(result: &crate::agent_status::arbitrate::ArbitrationResult) -> String {
-        if result
-            .summary
-            .has_note(crate::agent_status::evidence::EvidenceNote::WatchdogDemoted)
-        {
-            "watchdog_demoted".to_owned()
-        } else if result
-            .summary
-            .has_note(crate::agent_status::evidence::EvidenceNote::ForegroundReturnedToShell)
-        {
-            "foreground_returned_to_shell".to_owned()
-        } else {
-            format!("{:?}", result.winner).to_ascii_lowercase()
-        }
-    }
-
-    fn mark_agent_session_returned_to_shell(&mut self, session_id: u64, now: Instant) {
-        let key_prefix = format!("{session_id}:");
-        self.runtime_gate_states
-            .retain(|key, _| !key.starts_with(&key_prefix));
-        self.runtime_event_sequences
-            .retain(|key, _| !key.starts_with(&key_prefix));
-        self.child_agent_states
-            .retain(|(parent_id, child_id), _| *parent_id != session_id && *child_id != session_id);
-
-        let Some(session) = self.sessions.get_mut(&session_id) else {
-            return;
-        };
-        let previous_agent = session.agent.take();
-        let previous_source = session
-            .hook_authority
-            .as_ref()
-            .map(|authority| authority.source_id.clone());
-        session.hook_authority = None;
-        session.sequence_tracker.clear_all();
-        session.osc_evidence.clear_agent_signals();
-        session.osc_evidence.shell_state = Some(crate::agent_status::evidence::RawAgentState::Idle);
-        session.osc_evidence.shell_mark_at = Some(now);
-        session.agent_identity_observed = false;
-        session.status.last_snapshot_summary.authority_source = None;
-        session.status.last_snapshot_summary.subagents_active = 0;
-        session.status.last_snapshot_summary.osc_progress_active = false;
-        session.status.last_snapshot_summary.root_is_agent = false;
-        crate::clog!(
-            "status.agent.returned_to_shell: session={session_id} agent={:?} source={:?}",
-            previous_agent,
-            previous_source
-        );
-    }
-
-    fn invalidate_rejected_authority(
-        &mut self,
-        session_id: u64,
-        result: &crate::agent_status::arbitrate::ArbitrationResult,
-    ) {
-        let watchdog_demoted = result
-            .summary
-            .has_note(crate::agent_status::evidence::EvidenceNote::WatchdogDemoted);
-        if !watchdog_demoted && !result.summary.stale_report {
-            return;
-        }
-        let Some(source_id) = result.summary.authority_source.as_deref() else {
-            return;
-        };
-        let key = format!("{session_id}:{source_id}");
-        self.runtime_gate_states.remove(&key);
-        if let Some(session) = self.sessions.get_mut(&session_id)
-            && session
-                .hook_authority
-                .as_ref()
-                .is_some_and(|authority| authority.source_id == source_id)
-        {
-            let reason = if watchdog_demoted {
-                "watchdog_demoted"
-            } else {
-                "stale_report"
-            };
-            crate::clog!(
-                "status.authority.cleared: session={session_id} source={source_id} reason={reason}"
-            );
-            session.hook_authority = None;
-        }
-    }
-
-    fn record_status_transition(&mut self, session_id: u64, now: Instant) {
-        let transitions = self.status_transition_times.entry(session_id).or_default();
-        transitions.push_back(now);
-        let window = Duration::from_mins(1);
-        while transitions
-            .front()
-            .is_some_and(|at| now.duration_since(*at) > window)
-        {
-            transitions.pop_front();
-        }
-        let per_minute = transitions.len();
-        crate::cdebug!(
-            "status.telemetry: session={session_id} transitions_per_minute={per_minute}"
-        );
-        if per_minute >= 10 {
-            crate::clog!(
-                "status.telemetry: session={session_id} high flap rate transitions_per_minute={per_minute}"
-            );
-        }
-    }
-
-    fn record_watchdog_demoted(
-        &mut self,
-        session_id: u64,
-        summary: &crate::agent_status::evidence::EvidenceSummary,
-        now: Instant,
-    ) {
-        let count = self.watchdog_demotions.entry(session_id).or_default();
-        *count = count.saturating_add(1);
-        let count = *count;
-        crate::clog!(
-            "status.stuck: session={session_id} reason=watchdog_demoted count={count} \
-             winner={:?} authority_source={:?} rule_id={:?} last_output_ms_ago={:?} \
-             cpu_jiffies_delta={} child_process_count={} foreground_pgid={:?} \
-             visible_blocker={} visible_idle={} visible_working={} notes={:?}",
-            summary.winner,
-            summary.authority_source,
-            summary.rule_id,
-            summary
-                .last_output
-                .map(|at| now.saturating_duration_since(at).as_millis()),
-            summary.cpu_jiffies_delta,
-            summary.child_process_count,
-            summary.foreground_pgid,
-            summary.visible_blocker,
-            summary.visible_idle,
-            summary.visible_working,
-            summary.notes,
-        );
-    }
-
-    fn maybe_renotify_blocked(&mut self, session_id: u64, now: Instant) {
-        let Some(session) = self.sessions.get(&session_id) else {
-            return;
-        };
-        if session.status.effective != crate::protocol::AgentState::Blocked {
-            self.blocked_renotify_at.remove(&session_id);
-            return;
-        }
-        let due = self
-            .blocked_renotify_at
-            .get(&session_id)
-            .is_none_or(|last| {
-                now.duration_since(*last) >= crate::agent_status::policy::RENOTIFY_INTERVAL
-            });
-        if !due {
-            return;
-        }
-        self.blocked_renotify_at.insert(session_id, now);
-        if let Some(session) = self.sessions.get(&session_id) {
-            crate::clog!("status.renotify: session={session_id} still blocked");
-            self.broadcast_agent_state_changed(
-                session_id,
-                session,
-                Some(session.status.raw.label().to_owned()),
-                Some("renotify".to_owned()),
-            );
-        }
-    }
-
-    fn mark_status_dirty(&mut self, session_id: u64) {
-        self.status_dirty_sessions.insert(session_id);
-    }
-
-    fn status_eval_due(&mut self, session_id: u64, now: Instant) -> bool {
-        let last = self.status_last_eval.get(&session_id).copied();
-        let dirty_due = self.status_dirty_sessions.contains(&session_id)
-            && last.is_none_or(|last| {
-                now.duration_since(last) >= crate::agent_status::policy::EVAL_COALESCE
-            });
-        let floor_due = last.is_none_or(|last| now.duration_since(last) >= STATE_TICK_INTERVAL);
-        if dirty_due || floor_due {
-            self.status_dirty_sessions.remove(&session_id);
-            self.status_last_eval.insert(session_id, now);
-            true
-        } else {
-            false
-        }
-    }
-
-    pub(super) fn cleanup_status_bookkeeping(&mut self, session_id: u64) {
-        self.status_cpu_samples.remove(&session_id);
-        self.status_transition_times.remove(&session_id);
-        self.watchdog_demotions.remove(&session_id);
-        self.blocked_renotify_at.remove(&session_id);
-        self.status_last_eval.remove(&session_id);
-        self.status_dirty_sessions.remove(&session_id);
-        self.child_agent_states
-            .retain(|(parent_id, child_id), _| *parent_id != session_id && *child_id != session_id);
-        self.runtime_gate_states
-            .retain(|key, _| !key.starts_with(&format!("{session_id}:")));
-        self.runtime_event_sequences
-            .retain(|key, _| !key.starts_with(&format!("{session_id}:")));
-        self.maybe_broadcast_workspace_status_changed();
-    }
-
-    fn next_runtime_event_seq(&mut self, session_id: u64, source_id: &str) -> u64 {
-        let key = format!("{session_id}:{source_id}");
-        let seq = self.runtime_event_sequences.entry(key).or_default();
-        *seq = seq.saturating_add(1);
-        *seq
-    }
-
-    fn status_rule_match(
-        &self,
-        session: &Session,
-        now: Instant,
-        visible_lines: &[String],
-        agent_osc_allowed: bool,
-    ) -> Option<crate::agent_status::rules::RuleMatch> {
-        if now.duration_since(session.spawned_at) < crate::agent_status::policy::STARTUP_GRACE {
-            None
-        } else {
-            self.rule_packs.evaluate_with_virtuals(
-                session.agent.as_deref(),
-                visible_lines,
-                status_rule_virtual_regions(session, agent_osc_allowed),
-            )
-        }
-    }
-
-    fn handle_control_msg(&mut self, msg: crate::protocol::control::ClientMsg) {
-        use crate::agent_status::HookAuthority;
-        use crate::protocol::control::ClientMsg;
-
-        match msg {
-            ClientMsg::ReportAgentState {
-                session_id,
-                source_id,
-                agent_label,
-                raw_state,
-                seq,
-                ts_ns,
-                message,
-            } => {
-                let Some(session) = self.sessions.get_mut(&session_id) else {
-                    crate::cdebug!("control: report for unknown session {session_id}");
-                    return;
-                };
-                if !session.sequence_tracker.accept(&source_id, seq) {
-                    crate::cdebug!(
-                        "control: stale report ignored session={session_id} source={source_id} seq={seq}"
-                    );
-                    return;
-                }
-                if !matches!(
-                    raw_state.as_str(),
-                    "unknown" | "working" | "blocked" | "idle"
-                ) {
-                    crate::cdebug!(
-                        "control: unknown raw agent state session={session_id} raw={raw_state}"
-                    );
-                    return;
-                }
-                session.hook_authority = Some(HookAuthority {
-                    source_id: source_id.clone(),
-                    agent_label,
-                    raw_state,
-                    origin: crate::agent_status::AuthorityOrigin::DirectStateReport,
-                    seq,
-                    ts_ns,
-                    message,
-                    last_seen: Instant::now(),
-                });
-                self.mark_status_dirty(session_id);
-            }
-            ClientMsg::HeartbeatAgentAuthority {
-                session_id,
-                source_id,
-                seq,
-            } => {
-                if let Some(session) = self.sessions.get_mut(&session_id)
-                    && session.sequence_tracker.accept(&source_id, seq)
-                    && let Some(authority) = session.hook_authority.as_mut()
-                    && authority.source_id == source_id
-                {
-                    authority.seq = seq;
-                    authority.ts_ns = unix_time_ns();
-                    authority.last_seen = Instant::now();
-                    self.mark_status_dirty(session_id);
-                }
-            }
-            ClientMsg::ClearAgentAuthority {
-                session_id,
-                source_id,
-            } => {
-                if let Some(session) = self.sessions.get_mut(&session_id) {
-                    session.sequence_tracker.clear_source(&source_id);
-                    if session
-                        .hook_authority
-                        .as_ref()
-                        .is_some_and(|authority| authority.source_id == source_id)
-                    {
-                        session.hook_authority = None;
-                        self.mark_status_dirty(session_id);
-                    }
-                }
-            }
-            ClientMsg::ReportRuntimeEvent {
-                session_id,
-                source_id,
-                runtime,
-                event,
-                payload: _,
-            } => {
-                let seq = self.next_runtime_event_seq(session_id, &source_id);
-                let gate = self
-                    .runtime_gate_states
-                    .entry(format!("{session_id}:{source_id}"))
-                    .or_default();
-                let runtime_event = crate::agent_status::gating::RuntimeEvent {
-                    runtime: runtime.clone(),
-                    event,
-                };
-                let effect = crate::agent_status::gating::map_event(&runtime_event, gate);
-                match effect {
-                    crate::agent_status::gating::GateEffect::Authority {
-                        state,
-                        pending_permission: _,
-                        subagents_active: _,
-                        notes: _,
-                    } => {
-                        let ts_ns = unix_time_ns();
-                        if let Some(session) = self.sessions.get_mut(&session_id) {
-                            session.hook_authority = Some(HookAuthority {
-                                source_id: source_id.clone(),
-                                agent_label: runtime,
-                                raw_state: state.label().to_owned(),
-                                origin: crate::agent_status::AuthorityOrigin::RuntimeEvent,
-                                seq,
-                                ts_ns,
-                                message: None,
-                                last_seen: Instant::now(),
-                            });
-                            self.mark_status_dirty(session_id);
-                        }
-                    }
-                    crate::agent_status::gating::GateEffect::Heartbeat => {
-                        if let Some(session) = self.sessions.get_mut(&session_id)
-                            && let Some(authority) = session.hook_authority.as_mut()
-                            && authority.source_id == source_id
-                        {
-                            authority.seq = seq;
-                            authority.ts_ns = unix_time_ns();
-                            authority.last_seen = Instant::now();
-                            self.mark_status_dirty(session_id);
-                        }
-                    }
-                    crate::agent_status::gating::GateEffect::Clear => {
-                        self.runtime_gate_states
-                            .remove(&format!("{session_id}:{source_id}"));
-                        self.runtime_event_sequences
-                            .remove(&format!("{session_id}:{source_id}"));
-                        if let Some(session) = self.sessions.get_mut(&session_id)
-                            && session
-                                .hook_authority
-                                .as_ref()
-                                .is_some_and(|authority| authority.source_id == source_id)
-                        {
-                            session.hook_authority = None;
-                            self.mark_status_dirty(session_id);
-                        }
-                    }
-                    crate::agent_status::gating::GateEffect::CounterOnly { .. } => {
-                        if let Some(session) = self.sessions.get_mut(&session_id)
-                            && let Some(authority) = session.hook_authority.as_mut()
-                            && authority.source_id == source_id
-                        {
-                            authority.seq = seq;
-                            authority.ts_ns = unix_time_ns();
-                            authority.last_seen = Instant::now();
-                        }
-                        self.mark_status_dirty(session_id);
-                    }
-                    crate::agent_status::gating::GateEffect::Ignore => {}
-                }
-            }
-            ClientMsg::ReportChildAgentState {
-                parent_session_id,
-                child_session_id,
-                raw_state,
-                seq,
-            } => {
-                let Some(parent) = self.sessions.get_mut(&parent_session_id) else {
-                    crate::cdebug!(
-                        "control: child report for unknown parent session={parent_session_id}"
-                    );
-                    return;
-                };
-                let source_id = format!("child:{child_session_id}");
-                if !parent.sequence_tracker.accept(&source_id, seq) {
-                    crate::cdebug!(
-                        "control: stale child report ignored parent={parent_session_id} child={child_session_id} seq={seq}"
-                    );
-                    return;
-                }
-                let raw = match raw_state.as_str() {
-                    "working" => crate::agent_status::evidence::RawAgentState::Working,
-                    "blocked" => crate::agent_status::evidence::RawAgentState::Blocked,
-                    "idle" | "done" => crate::agent_status::evidence::RawAgentState::Idle,
-                    "unknown" => crate::agent_status::evidence::RawAgentState::Unknown,
-                    other => {
-                        crate::cdebug!(
-                            "control: unknown child raw state parent={parent_session_id} child={child_session_id} raw={other}"
-                        );
-                        return;
-                    }
-                };
-                if matches!(
-                    raw,
-                    crate::agent_status::evidence::RawAgentState::Idle
-                        | crate::agent_status::evidence::RawAgentState::Unknown
-                ) {
-                    self.child_agent_states
-                        .remove(&(parent_session_id, child_session_id));
-                } else {
-                    self.child_agent_states
-                        .insert((parent_session_id, child_session_id), raw);
-                }
-                self.mark_status_dirty(parent_session_id);
-            }
-            _ => {}
-        }
+    /// Queue bytes that are not cell content (OSC passthrough, clipboard,
+    /// pointer shapes, mode prefaces); they flush at the next frame boundary.
+    pub(crate) fn send_out_of_band(&mut self, bytes: Vec<u8>) {
+        self.client.enqueue_out_of_band(bytes);
     }
 }
 
-fn unix_time_ns() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| {
-            duration.as_nanos().min(u128::from(u64::MAX)) as u64
-        })
-}
-
-fn authority_grade_for_runtime(runtime: &str) -> crate::agent_status::evidence::AuthorityGrade {
-    match runtime {
-        "opencode" => crate::agent_status::evidence::AuthorityGrade::Complete,
-        _ => crate::agent_status::evidence::AuthorityGrade::Partial,
-    }
-}
-
-fn status_rule_virtual_regions(
-    session: &Session,
-    agent_osc_allowed: bool,
-) -> crate::agent_status::rules::VirtualRegions<'_> {
-    crate::agent_status::rules::VirtualRegions {
-        osc_title: agent_osc_allowed
-            .then_some(session.osc_evidence.title.as_deref())
-            .flatten(),
-        osc_progress: agent_osc_allowed.then_some(if session.osc_evidence.progress_active {
-            "active"
-        } else if session.osc_evidence.progress_cleared_at.is_some() {
-            "cleared"
-        } else {
-            "inactive"
-        }),
-    }
-}
-
-/// Scan an emitted frame for the diagnostic fingerprint a render bug leaves:
-/// how many absolute cursor moves it contains, the largest row/col it
-/// addresses (1-based, from `CSI row;col H`), and how many full-screen erases
-/// (`CSI 2 J`) it carries. A `max_row_addressed` greater than `term_rows` (or
-/// col greater than `term_cols`) is the signature of a geometry the capsule and
-/// the outer terminal disagree on — content lands off-screen or wraps. Two
-/// chrome blocks in one frame show up as a doubled cursor-move count. The scan
-/// is over our own trusted output, so the few lines of hand parsing are cheaper
-/// than a dependency.
-/// Render a frame's bytes as a single readable line: ESC as `\e`, other
-/// control bytes as `\xNN`, printable ASCII verbatim. Used only behind the
-/// debug flag to dump small chrome frames for triage.
-fn escape_for_log(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        match b {
-            0x1b => out.push_str("\\e"),
-            b'\n' => out.push_str("\\n"),
-            b'\r' => out.push_str("\\r"),
-            0x20..=0x7e => out.push(b as char),
-            _ => out.push_str(&format!("\\x{b:02x}")),
-        }
-    }
-    out
-}
-
-fn scan_emitted_frame(bytes: &[u8]) -> (usize, u16, u16, usize) {
-    let mut moves = 0usize;
-    let mut erases = 0usize;
-    let mut max_row = 0u16;
-    let mut max_col = 0u16;
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        if bytes[i] == 0x1b && bytes[i + 1] == b'[' {
-            let params_start = i + 2;
-            let mut j = params_start;
-            while j < bytes.len() && (bytes[j].is_ascii_digit() || bytes[j] == b';') {
-                j += 1;
-            }
-            if j < bytes.len() {
-                let final_byte = bytes[j];
-                let params = &bytes[params_start..j];
-                match final_byte {
-                    b'H' | b'f' => {
-                        moves += 1;
-                        let mut parts = params.split(|&b| b == b';');
-                        let row = parts
-                            .next()
-                            .and_then(|p| std::str::from_utf8(p).ok())
-                            .and_then(|s| s.parse::<u16>().ok())
-                            .unwrap_or(1);
-                        let col = parts
-                            .next()
-                            .and_then(|p| std::str::from_utf8(p).ok())
-                            .and_then(|s| s.parse::<u16>().ok())
-                            .unwrap_or(1);
-                        max_row = max_row.max(row);
-                        max_col = max_col.max(col);
-                    }
-                    b'J' if params == b"2" => erases += 1,
-                    _ => {}
-                }
-                i = j + 1;
-                continue;
-            }
-        }
-        i += 1;
-    }
-    (moves, max_row, max_col, erases)
-}
+#[cfg(test)]
+use crate::client_writer::scan_emitted_frame;
 
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
 pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> Result<()> {
@@ -1283,6 +547,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // diagnostic. Failures fall back to stderr-only, so this is safe
     // to call unconditionally.
     crate::logging::init();
+    // OTLP export for this session — no-op unless the host injected an
+    // endpoint. Installs the tracing subscriber the clog!/cdebug! bridge and
+    // the session-anchor span feed into; the guard flushes on daemon exit.
+    let _otlp_flush = crate::telemetry::init();
     let _live_dhat_profiler = crate::alloc_telemetry::init_from_env();
     crate::debug_panic::panic_if_requested_from_env();
     crate::clog!(
@@ -1302,10 +570,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
 
     let mut new_clients = socket::start_listener()?;
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
-    let mut state_ticker = interval(crate::agent_status::policy::EVAL_COALESCE);
-    let mut token_ticker = interval(Duration::from_secs(30));
-    let mut render_ticker = interval(RENDER_TICK_INTERVAL);
-    render_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut state_ticker = interval(STATE_TICK_INTERVAL);
     let mut sigterm = signal(SignalKind::terminate())?;
     let mut sigint = signal(SignalKind::interrupt())?;
 
@@ -1317,8 +582,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // handshakes ride this channel back to the main loop, which then
     // applies the take-over + spawns the persistent attach task.
     let (handshake_tx, mut handshake_rx) = mpsc::unbounded_channel::<AttachHandshake>();
-    let (control_msg_tx, mut control_msg_rx) =
-        mpsc::unbounded_channel::<crate::protocol::control::ClientMsg>();
 
     // Resolve the operator's escape-time once at startup; the value
     // cannot change after daemon launch, so per-iteration env reads
@@ -1350,6 +613,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // select loop dozens of times per second, and a fresh deadline
     // each wake-up never lapses before the next PTY output resets it.
     let mut esc_deadline: Option<tokio::time::Instant> = None;
+    // Event-driven composition with a cadence cap (§3.10): compose
+    // immediately when the last frame is older than the cap, otherwise
+    // schedule at the cap. Latency is no longer floored at a fixed tick —
+    // the first event after an idle gap paints at once, and bursts coalesce
+    // to one frame per cap interval. Atomicity comes from the writer's
+    // `?2026` brackets, not from pacing.
+    let mut last_frame_at: Option<tokio::time::Instant> = None;
     loop {
         if mux.input_parser.esc_pending() {
             if esc_deadline.is_none() {
@@ -1358,6 +628,16 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
         } else {
             esc_deadline = None;
         }
+        let render_deadline: Option<tokio::time::Instant> =
+            if mux.has_pending_render() || mux.client.has_out_of_band() {
+                Some(
+                    last_frame_at.map_or_else(tokio::time::Instant::now, |last| {
+                        (last + RENDER_TICK_INTERVAL).max(tokio::time::Instant::now())
+                    }),
+                )
+            } else {
+                None
+            };
         tokio::select! {
             biased;
 
@@ -1381,24 +661,16 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let handshake_tx = handshake_tx.clone();
                 let sessions_snapshot = mux.session_infos();
                 let tabs_snapshot = mux.tab_snapshots();
-                let visible_text_snapshot = mux.visible_text_snapshots();
-                let status_explain_snapshot = mux.status_explain_snapshots();
                 let history_snapshot = mux.agent_registry_snapshot();
                 let active_tab = u32::try_from(mux.active_tab).unwrap_or(0);
-                let control_msg_tx = control_msg_tx.clone();
-                let state_broadcast_tx = mux.state_broadcast_tx.clone();
                 tokio::spawn(perform_handshake(
                     stream,
                     client_permit,
                     handshake_tx,
                     sessions_snapshot,
                     tabs_snapshot,
-                    visible_text_snapshot,
-                    status_explain_snapshot,
                     history_snapshot,
                     active_tab,
-                    control_msg_tx,
-                    state_broadcast_tx,
                 ));
             }
 
@@ -1417,7 +689,18 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 crate::cdebug!("resize-event: source=attach rows={rows} cols={cols}");
                 mux.resize(rows, cols);
                 mux.pointer_shapes_supported = terminal.pointer_shapes_supported();
+                // Attach-handshake outcome (clog tier): the triage line for
+                // "agent themed wrong" reports — None means the client could
+                // not read its terminal's palette and grids keep what they
+                // had.
+                crate::clog!(
+                    "attach: client terminal term={:?} colors fg={:?} bg={:?}",
+                    terminal.term,
+                    terminal.default_fg,
+                    terminal.default_bg,
+                );
                 mux.attached_terminal = terminal;
+                mux.apply_client_colors_to_sessions();
                 mux.pointer_shape = PointerShape::Default;
                 if mux.sessions.is_empty()
                     && let Some(request) = pending_initial_spawn.take()
@@ -1473,8 +756,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     crate::clog!("takeover: drained {drained} stale frame(s) from prior client");
                 }
                 let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
-                mux.attached_out = Some(new_out_tx.clone());
-                mux.attached_out_dead_logged = false;
+                mux.client.attach(new_out_tx.clone());
                 // Build the initial-attach burst as a typed list so a
                 // typo at one call site cannot disagree with the clog
                 // label. A send failure here means the receiver was
@@ -1500,31 +782,17 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         crate::tui::terminal::client_owned_mode_state().to_vec(),
                     )),
                 ));
-                if let Some(focused) = mux.active_focused_id()
-                    && let Some(session) = mux.sessions.get(&focused)
-                {
-                    for bytes in session.current_mode_state() {
-                        initial_frames.push((
-                            InitialFrameKind::FocusedPaneModes,
-                            encode_server(ServerFrame::Output(bytes)),
-                        ));
-                    }
-                }
-                if let Some(focused) = mux.active_focused_id() {
-                    mux.acknowledge_focused_agent_status(focused);
-                }
+                // A fresh client has no asserted cursor/mode state; the
+                // first frame's reconciliation asserts everything explicitly.
+                mux.last_asserted_client_state = None;
+                mux.spawn_failure = spawn_failure;
+                mux.invalidate(first_attach_redraw_reason());
                 let mut initial = crate::tui::terminal::RESET_CLEAR_HOME.to_vec();
-                initial.extend(mux.compose_full_redraw(first_attach_redraw_reason()));
+                initial.extend(mux.compose_pending_frame());
                 initial_frames.push((
                     InitialFrameKind::FirstAttach,
                     encode_server(ServerFrame::Output(initial)),
                 ));
-                if let Some(reason) = spawn_failure {
-                    initial_frames.push((
-                        InitialFrameKind::SpawnFailureBanner,
-                        encode_server(ServerFrame::Output(spawn_failure_banner(&reason))),
-                    ));
-                }
                 let first_failure = initial_frames
                     .into_iter()
                     .find_map(|(kind, bytes)| new_out_tx.send(bytes).err().map(|_| kind));
@@ -1533,7 +801,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         "attach: receiver closed before initial frame ({}); operator's terminal will not paint",
                         kind.label()
                     );
-                    mux.attached_out_dead_logged = true;
+                    mux.client.mark_dead_logged();
                 }
                 let cmd_tx_for_task = cmd_tx.clone();
                 mux.attached_task = Some(tokio::spawn(async move {
@@ -1575,10 +843,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 }
             }
 
-            Some(msg) = control_msg_rx.recv() => {
-                mux.handle_control_msg(msg);
-            }
-
             // PTY output or exit event from a session.
             Some(event) = mux.event_rx.recv() => {
                 match event {
@@ -1603,79 +867,68 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             // clipboard writes, and titles must not
                             // reach the operator's outer terminal.
                             let drained = session.drain_passthrough();
-                            // Mode-state transitions (bracketed paste,
-                            // etc.) round-trip through the outer
-                            // terminal. Drain regardless of focus for
-                            // the same reason; on focus swap,
-                            // `current_mode_state()` restores the
-                            // destination pane's full mode set in one
-                            // shot, so intermediate transitions of
-                            // backgrounded panes do not need to leak
-                            // out (and would be silently dropped here
-                            // anyway).
-                            let mode_transitions = session.drain_mode_transitions();
                             if is_focused {
                                 reassert_outer_terminal_title = !drained.is_empty();
                                 to_emit.extend(drained);
-                                to_emit.extend(mode_transitions);
                             }
                         }
                         for bytes in to_emit {
-                            mux.send_output(bytes);
+                            mux.send_out_of_band(bytes);
                         }
                         if reassert_outer_terminal_title {
                             mux.last_outer_terminal_title = None;
                         }
-                        mux.mark_status_dirty(session_id);
-                        // Mark the pane body dirty; the render ticker coalesces
-                        // bursts of PTY output into one frame per
-                        // tick. Dialog-open still invalidates — the
-                        // render ticker now paints the dialog overlay
-                        // against the latest pane state, so dismiss
-                        // doesn't produce a sudden burst of
-                        // accumulated frames.
-                        mux.request_pane_body_redraw(session_id);
+                        // Bump the generation; the render loop coalesces
+                        // bursts of PTY output into one frame per pass.
+                        // Dialog-open still invalidates — the next frame
+                        // paints the dialog overlay against the latest pane
+                        // state, so dismiss doesn't jump.
+                        mux.invalidate(FullRedrawReason::PtyOutput);
                     }
-                    SessionEvent::Exited { session_id } => {
+                    SessionEvent::Exited {
+                        session_id,
+                        mut reason,
+                    } => {
+                        // Only a non-clean exit carries a `reason`; skip the
+                        // pane snapshot entirely on clean teardown so the grid
+                        // render never runs on the common exit path. When the
+                        // pane has no tail to attach (PTY never rendered, or the
+                        // session was already removed), keep the base reason —
+                        // dropping it would misroute a real failure into the
+                        // clean-shutdown branch and swallow it.
+                        if let Some(base) = reason.take() {
+                            let tail = mux
+                                .sessions
+                                .get(&session_id)
+                                .and_then(|session| session.diagnostic_tail(12));
+                            reason = Some(match tail {
+                                Some(tail) => {
+                                    crate::clog!(
+                                        "session {session_id}: final output tail:\n{tail}"
+                                    );
+                                    format!("{base}\nlast pane output:\n{tail}")
+                                }
+                                None => base,
+                            });
+                        }
                         // Remove the pane / tab immediately rather than
                         // leaving a stale `○ Done` placeholder behind.
                         // Matches the operator's mental model: "agent
                         // exited → its tab is gone."
-                        if let Some(session) = mux.sessions.get_mut(&session_id) {
-                            let summary = crate::agent_status::evidence::EvidenceSummary {
-                                process_exited: true,
-                                winner: crate::agent_status::evidence::EvidenceWinner::ProcessExit,
-                                notes: vec![crate::agent_status::evidence::EvidenceNote::ProcessExited],
-                                ..Default::default()
-                            };
-                            session.status.seen = true;
-                            let changed = session.status.publish_raw(
-                                crate::agent_status::evidence::RawAgentState::Idle,
-                                jackin_protocol::agent_status::AgentStatusConfidence::Weak,
-                                summary,
-                            );
-                            session.state = session.status.effective;
-                            if changed.is_some() {
-                                mux.record_status_transition(session_id, Instant::now());
-                                if let Some(session) = mux.sessions.get(&session_id) {
-                                    mux.broadcast_agent_state_changed(
-                                        session_id,
-                                        session,
-                                        Some("idle".to_owned()),
-                                        Some("process_exit".to_owned()),
-                                    );
-                                }
-                            }
-                        }
                         mux.remove_exited_session(session_id);
-                        mux.request_full_redraw(session_exit_redraw_reason());
+                        mux.invalidate(session_exit_redraw_reason());
                         // When the last live session exits — whether
                         // the operator typed `/exit` in the agent or
                         // the agent crashed — there is nothing left to
                         // attach to. Tear down the container so the
                         // host cleanup path fires.
                         if mux.no_live_sessions() {
-                            drain_and_exit(&mut mux).await;
+                            if let Some(reason) = reason {
+                                crate::clog!("session {session_id}: final session exited: {reason}");
+                                drain_and_exit_with_reason(&mut mux, Some(reason)).await;
+                            } else {
+                                drain_and_exit(&mut mux).await;
+                            }
                             return Ok(());
                         }
                     }
@@ -1691,7 +944,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             context,
                             Instant::now(),
                         ) {
-                            mux.request_diff_redraw(status_change_redraw_reason());
+                            mux.invalidate(status_change_redraw_reason());
                         }
                     }
                     SessionEvent::PullRequestContextLoaded {
@@ -1707,7 +960,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                             outcome,
                             Instant::now(),
                         ) {
-                            mux.request_diff_redraw(status_change_redraw_reason());
+                            mux.invalidate(status_change_redraw_reason());
                         }
                     }
                 }
@@ -1725,28 +978,24 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 esc_deadline = None;
                 let events = mux.input_parser.flush_pending_esc();
                 for event in events {
-                    if let Some(redraw) = mux.handle_input(event) {
-                        mux.send_output(redraw);
-                    }
+                    mux.handle_input(event);
                 }
             }
 
-            // Render ticker: drain dirty pane bodies or a named full-frame
-            // invalidation at ~30 fps. One
-            // frame per tick at most, regardless of how many PTY
-            // events arrived since the last tick. Full-frame fallback
-            // includes the dialog overlay when one is open, so the
-            // open-dialog case still composes (and the operator sees
-            // dialog content over the latest pane state) instead of
-            // accumulating dirty until dismiss — without this the
-            // dismiss frame was a sudden jump of N frames' worth of
-            // accumulated PTY output that the operator had no way to
-            // see coming.
-            _ = render_ticker.tick(), if mux.has_pending_render() => {
-                let frame_data = mux.compose_pending_frame();
-                if !frame_data.is_empty() {
-                    mux.send_output(frame_data);
+            // Render pass: fires the moment the deadline lapses — immediately
+            // after an idle gap, or one cadence-cap after the previous frame
+            // during a burst. An empty frame degenerates to an out-of-band
+            // flush inside the writer, so queued OSC bytes never sit past a
+            // pass.
+            () = async {
+                match render_deadline {
+                    Some(deadline) => tokio::time::sleep_until(deadline).await,
+                    None => std::future::pending().await,
                 }
+            }, if render_deadline.is_some() => {
+                let frame_data = mux.compose_pending_frame();
+                mux.send_frame(frame_data);
+                last_frame_at = Some(tokio::time::Instant::now());
             }
 
             // Branch changes are directly operator-triggered (`git checkout`)
@@ -1777,271 +1026,18 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // identical. A full redraw (clear + repaint) every tick reads as
                 // a constant flicker, so skip it unless state actually changed.
                 let states_before: Vec<_> =
-                    mux.sessions.iter().map(|(id, s)| (*id, s.state())).collect();
-                let eval_now = Instant::now();
-                let session_ids: Vec<u64> = mux
-                    .sessions
-                    .keys()
-                    .copied()
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .filter(|session_id| mux.status_eval_due(*session_id, eval_now))
-                    .collect();
-                for session_id in session_ids {
-                    let now = Instant::now();
-                    let process_anchor = mux
-                        .sessions
-                        .get(&session_id)
-                        .map(|session| (session.child_pid, session.agent.clone()));
-                    let default_agent_expected =
-                        process_anchor.as_ref().is_some_and(|(_, agent)| agent.is_some());
-                    let process_probe = process_anchor.and_then(|(child_pid, agent)| {
-                        child_pid.map(|pid| {
-                            let root_info = crate::agent_status::process::read_process_info(pid);
-                            let child_alive = root_info.is_some();
-                            let root_pgid = root_info.as_ref().map(|info| info.pgid);
-                            let root_is_agent = root_info
-                                .as_ref()
-                                .and_then(crate::agent_status::process::identify_agent)
-                                .is_some_and(|kind| {
-                                    agent
-                                        .as_deref()
-                                        .is_some_and(|agent| kind.as_str() == agent)
-                                });
-                            let detected =
-                                crate::agent_status::process::detect_foreground_agent(pid);
-                            let foreground_pgid = detected.as_ref().map(|(_, pgid)| *pgid);
-                            let foreground_is_agent =
-                                detected.as_ref().is_some_and(|(kind, _)| {
-                                    agent
-                                        .as_deref()
-                                        .is_some_and(|agent| kind.as_str() == agent)
-                                });
-                            let child_process_count =
-                                crate::agent_status::process::descendant_process_count(pid);
-                            let sample = mux.status_cpu_samples.entry(session_id).or_default();
-                            let cpu_jiffies_delta =
-                                crate::agent_status::process::sample_cpu_jiffies_delta(
-                                    pid, sample, now,
-                                );
-                            (
-                                child_alive,
-                                root_is_agent,
-                                root_pgid,
-                                foreground_is_agent,
-                                foreground_pgid,
-                                child_process_count,
-                                cpu_jiffies_delta,
-                            )
-                        })
-                    });
-                    let (
-                        child_alive,
-                        root_is_agent,
-                        root_pgid,
-                        foreground_is_agent,
-                        foreground_pgid,
-                        child_process_count,
-                        cpu_jiffies_delta,
-                    ) = process_probe.unwrap_or((
-                        true,
-                        default_agent_expected,
-                        None,
-                        default_agent_expected,
-                        None,
-                        0,
-                        0,
-                    ));
-                    let mut foreground_returned_to_shell = false;
-                    if let Some(session) = mux.sessions.get_mut(&session_id) {
-                        if session.agent.is_some() && (root_is_agent || foreground_is_agent) {
-                            session.agent_identity_observed = true;
-                        }
-                        foreground_returned_to_shell = agent_foreground_returned_to_shell(
-                            ForegroundShellHandoffProbe {
-                                agent_expected: session.agent.is_some(),
-                                agent_identity_observed: session.agent_identity_observed,
-                                startup_grace_done: now.duration_since(session.spawned_at)
-                                    >= crate::agent_status::policy::STARTUP_GRACE,
-                                child_alive,
-                                root_is_agent,
-                                foreground_is_agent,
-                                root_pgid,
-                                foreground_pgid,
-                                child_process_count,
-                            },
-                        );
-                        if session.agent.is_some()
-                            && (!child_alive
-                                || foreground_returned_to_shell
-                                || !foreground_is_agent)
-                        {
-                            session.osc_evidence.clear_agent_signals();
-                        }
-                    }
-                    let result = mux.sessions.get(&session_id).map(|session| {
-                        let visible_lines = session.visible_lines();
-                        let rule_match =
-                            mux.status_rule_match(session, now, &visible_lines, foreground_is_agent);
-                        let screen_state = rule_match.as_ref().and_then(|matched| matched.state);
-                        let authority = session.hook_authority.as_ref().map(|authority| {
-                            let gate = mux
-                                .runtime_gate_states
-                                .get(&format!("{session_id}:{}", authority.source_id));
-                            crate::agent_status::evidence::AuthorityEvidence {
-                                source_id: authority.source_id.clone(),
-                                grade: authority_grade_for_runtime(&authority.agent_label),
-                                direct_state_report: matches!(
-                                    authority.origin,
-                                    crate::agent_status::AuthorityOrigin::DirectStateReport
-                                ),
-                                mapped_state: match authority.raw_state.as_str() {
-                                    "working" => {
-                                        crate::agent_status::evidence::RawAgentState::Working
-                                    }
-                                    "blocked" => {
-                                        crate::agent_status::evidence::RawAgentState::Blocked
-                                    }
-                                    "idle" => crate::agent_status::evidence::RawAgentState::Idle,
-                                    _ => crate::agent_status::evidence::RawAgentState::Unknown,
-                                },
-                                pending_permission: gate.is_some_and(|gate| gate.pending_permission)
-                                    || authority.raw_state == "blocked",
-                                last_event: authority.last_seen,
-                                seq: authority.seq,
-                                notes: gate.map_or_else(Vec::new, |gate| gate.notes.clone()),
-                            }
-                        });
-                        let hook_subagents = session
-                            .hook_authority
-                            .as_ref()
-                            .and_then(|authority| {
-                                mux.runtime_gate_states
-                                    .get(&format!("{session_id}:{}", authority.source_id))
-                            })
-                            .map_or(0, |gate| gate.subagents_active);
-                        let bridge_subagents = mux
-                            .child_agent_states
-                            .keys()
-                            .filter(|(parent_id, _)| *parent_id == session_id)
-                            .count() as u32;
-                        let snapshot = crate::agent_status::evidence::EvidenceSnapshot {
-                            authority,
-                            osc: session.osc_evidence.clone(),
-                            screen: crate::agent_status::evidence::ScreenEvidence {
-                                state: screen_state,
-                                rule_id: rule_match.as_ref().map(|matched| matched.rule_id.clone()),
-                                strong: rule_match.as_ref().is_some_and(|matched| matched.strong),
-                                freeze: rule_match.as_ref().is_some_and(|matched| matched.freeze),
-                                observed_at: now,
-                            },
-                            process: crate::agent_status::evidence::ProcessEvidence {
-                                process_exited: !child_alive,
-                                foreground_returned_to_shell,
-                                child_alive,
-                                root_is_agent,
-                                foreground_is_agent,
-                                foreground_pgid,
-                                child_process_count,
-                                cpu_jiffies_delta,
-                            },
-                            activity: crate::agent_status::evidence::ActivityEvidence {
-                                last_output: Some(session.last_output_at),
-                                last_input: Some(session.last_input_at),
-                            },
-                            subagents_active: hook_subagents.saturating_add(bridge_subagents),
-                        };
-                        crate::agent_status::policy::apply_watchdog(
-                            crate::agent_status::arbitrate::arbitrate(
-                            &snapshot,
-                            session.status.raw,
-                            now,
-                            ),
-                            now,
-                        )
-                    });
-                    let Some(result) = result else {
-                        continue;
-                    };
-                    crate::cdebug!(
-                        "status.eval: session={session_id} raw={} confidence={:?} \
-                         winner={:?} authority_source={:?} rule_id={:?} \
-                         visible_blocker={} visible_idle={} visible_working={} \
-                         stale_report={} root_is_agent={} foreground_returned_to_shell={} \
-                         foreground_pgid={:?} child_process_count={} cpu_jiffies_delta={} \
-                         subagents_active={} notes={:?}",
-                        result.raw.label(),
-                        result.confidence,
-                        result.winner,
-                        result.summary.authority_source,
-                        result.summary.rule_id,
-                        result.summary.visible_blocker,
-                        result.summary.visible_idle,
-                        result.summary.visible_working,
-                        result.summary.stale_report,
-                        result.summary.root_is_agent,
-                        result.summary.foreground_returned_to_shell,
-                        result.summary.foreground_pgid,
-                        result.summary.child_process_count,
-                        result.summary.cpu_jiffies_delta,
-                        result.summary.subagents_active,
-                        result.summary.notes,
-                    );
-                    mux.invalidate_rejected_authority(session_id, &result);
-                    let foreground_returned_to_shell =
-                        result.summary.foreground_returned_to_shell;
-                    let changed = mux.sessions.get_mut(&session_id).and_then(|session| {
-                        if !crate::agent_status::policy::should_publish_candidate(
-                            session.status.effective,
-                            &result,
-                            &mut session.pending_status_transition,
-                        ) {
-                            return None;
-                        }
-                        let changed = session.status.publish_raw(
-                            result.raw,
-                            result.confidence,
-                            result.summary.clone(),
-                        );
-                        session.state = session.status.effective;
-                        changed
-                    });
-                    if changed.is_some() {
-                        let now = Instant::now();
-                        mux.record_status_transition(session_id, now);
-                        if result
-                            .summary
-                            .has_note(crate::agent_status::evidence::EvidenceNote::WatchdogDemoted)
-                        {
-                            mux.record_watchdog_demoted(session_id, &result.summary, now);
-                        }
-                        if let Some(session) = mux.sessions.get(&session_id) {
-                            let reason = Multiplexer::status_change_reason(&result);
-                            mux.broadcast_agent_state_changed(
-                                session_id,
-                                session,
-                                Some(result.raw.label().to_owned()),
-                                Some(reason),
-                            );
-                        }
-                        mux.maybe_broadcast_workspace_status_changed();
-                    }
-                    if foreground_returned_to_shell {
-                        mux.mark_agent_session_returned_to_shell(session_id, Instant::now());
-                    }
-                    mux.maybe_renotify_blocked(session_id, Instant::now());
+                    mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
+                for session in mux.sessions.values_mut() {
+                    session.refresh_state();
                 }
                 let states_after: Vec<_> =
-                    mux.sessions.iter().map(|(id, s)| (*id, s.state())).collect();
+                    mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
                 if mux.expire_dialog_copy_feedback(Instant::now()) {
-                    let frame_data =
-                        mux.compose_dialog_overlay_frame(dialog_change_redraw_reason());
-                    mux.send_output(frame_data);
+                    mux.invalidate(dialog_change_redraw_reason());
                     continue;
                 }
                 if mux.expire_selection_copy_feedback(Instant::now()) {
-                    let frame_data = mux.compose_partial_frame(HashSet::new());
-                    mux.send_output(frame_data);
+                    mux.invalidate(selection_change_redraw_reason());
                     continue;
                 }
                 // A modal owns the whole screen behind an opaque backdrop;
@@ -2055,35 +1051,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     continue;
                 }
                 mux.refresh_tab_labels();
-                let sbuf = mux.compose_diff_frame(status_change_redraw_reason());
-                mux.send_output(sbuf);
-            }
-
-            _ = token_ticker.tick() => {
-                let changed = mux.token_monitor.poll_due_sessions();
-                for session_id in changed {
-                    if let Some(totals) = mux.token_monitor.totals(session_id) {
-                        let agent = mux
-                            .sessions
-                            .get(&session_id)
-                            .and_then(|session| session.agent.clone())
-                            .unwrap_or_else(|| "unknown".to_owned());
-                        drop(mux.state_broadcast_tx.send(
-                            crate::protocol::control::ServerMsg::TokenUsageChanged {
-                                session_id,
-                                agent,
-                                model: totals.model.clone(),
-                                input_tokens: totals.input_tokens,
-                                output_tokens: totals.output_tokens,
-                                cache_read_tokens: totals.cache_read_tokens,
-                                cache_write_tokens: totals.cache_write_tokens,
-                                cost_usd: totals.cost_usd,
-                                ts_ns: Utc::now().timestamp_nanos_opt().unwrap_or_default() as u64,
-                            },
-                        ));
-                    }
-                }
-                mux.request_diff_redraw(status_change_redraw_reason());
+                mux.invalidate(status_change_redraw_reason());
             }
         }
     }
@@ -2097,9 +1065,9 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         }
         ClientFrame::Resize { rows, cols } => {
             crate::cdebug!("resize-event: source=client-frame rows={rows} cols={cols}");
+            // resize() records the Resize invalidation (and its wipe); the
+            // render loop composes the resized frame on the next pass.
             mux.resize(rows, cols);
-            let frame_data = mux.compose_full_redraw(resize_redraw_reason());
-            mux.send_output(frame_data);
         }
         ClientFrame::Input(bytes) => {
             // Debug-only input-path telemetry: every chunk from the
@@ -2118,15 +1086,12 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             for event in events {
                 let mode = mux.mux_mode();
                 crate::cdebug!("  → InputEvent::{:?} mode={mode:?}", event,);
-                if let Some(redraw) = mux.handle_input(event) {
-                    mux.send_output(redraw);
-                }
+                mux.handle_input(event);
             }
             let prefix_mode = prefix_mode_for_mux_mode(mux.mux_mode());
             if mux.status_bar.prefix_mode != prefix_mode {
                 mux.status_bar.set_prefix_mode(prefix_mode);
-                let frame_data = mux.compose_full_redraw(explicit_redraw_reason());
-                mux.send_output(frame_data);
+                mux.invalidate(explicit_redraw_reason());
             }
         }
         ClientFrame::Command(_payload) => {

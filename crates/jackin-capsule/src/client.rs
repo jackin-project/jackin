@@ -5,7 +5,6 @@
 //! in-container rendering.
 
 use anyhow::{Context, Result};
-use std::path::PathBuf;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
@@ -28,7 +27,28 @@ pub async fn run_client(
 
 /// Query the daemon for current session list and print it.
 pub async fn run_status() -> Result<()> {
-    let msg = request_control(ClientMsg::Status).await?;
+    let mut stream = UnixStream::connect(SOCKET_PATH)
+        .await
+        .context("cannot connect to jackin-capsule daemon")?;
+
+    let msg = control_frame(&ClientMsg::Status);
+    stream.write_all(&msg).await?;
+
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).await?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    // Mirror the daemon-side cap in `socket::read_control_msg`. A
+    // buggy or wedged daemon (or a peer that won the socket race
+    // inside the container) could otherwise send `0xFFFFFFFF` and
+    // force a 4 GiB allocation attempt in the client.
+    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
+    if len > MAX_CONTROL_REPLY {
+        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
+    }
+    let mut body = vec![0u8; len];
+    stream.read_exact(&mut body).await?;
+
+    let msg: ServerMsg = serde_json::from_slice(&body)?;
     let sessions = match msg {
         ServerMsg::SessionList { sessions } => sessions,
         ServerMsg::Unknown => {
@@ -42,7 +62,6 @@ pub async fn run_status() -> Result<()> {
         ServerMsg::AgentRegistry { .. } => {
             anyhow::bail!("daemon replied with AgentRegistry for Status request")
         }
-        _ => anyhow::bail!("daemon replied with unexpected message type for Status request"),
     };
     crate::output::stdout_line(format_args!("Sessions: {}", sessions.len()));
     for s in &sessions {
@@ -64,7 +83,25 @@ pub async fn run_status() -> Result<()> {
 /// console can deserialize the same struct it shares with the
 /// daemon — no second schema to keep in sync.
 pub async fn run_snapshot() -> Result<()> {
-    let msg = request_control(ClientMsg::Snapshot).await?;
+    let mut stream = UnixStream::connect(SOCKET_PATH)
+        .await
+        .context("cannot connect to jackin-capsule daemon")?;
+
+    stream
+        .write_all(&control_frame(&ClientMsg::Snapshot))
+        .await?;
+
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).await?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
+    if len > MAX_CONTROL_REPLY {
+        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
+    }
+    let mut body = vec![0u8; len];
+    stream.read_exact(&mut body).await?;
+
+    let msg: ServerMsg = serde_json::from_slice(&body)?;
     let (tabs, active_tab) = match msg {
         ServerMsg::Snapshot { tabs, active_tab } => (tabs, active_tab),
         ServerMsg::Unknown => {
@@ -78,72 +115,12 @@ pub async fn run_snapshot() -> Result<()> {
         ServerMsg::AgentRegistry { .. } => {
             anyhow::bail!("daemon replied with AgentRegistry for Snapshot request")
         }
-        _ => anyhow::bail!("daemon replied with unexpected message type for Snapshot request"),
     };
     let payload = serde_json::json!({
         "tabs": tabs,
         "active_tab": active_tab,
     });
     crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&payload)?));
-    Ok(())
-}
-
-async fn request_control(msg: ClientMsg) -> Result<ServerMsg> {
-    let mut stream = UnixStream::connect(SOCKET_PATH)
-        .await
-        .context("cannot connect to jackin-capsule daemon")?;
-
-    stream.write_all(&control_frame(&msg)).await?;
-
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await?;
-    let len = u32::from_be_bytes(len_buf) as usize;
-    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
-    if len > MAX_CONTROL_REPLY {
-        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
-    }
-    let mut body = vec![0u8; len];
-    stream.read_exact(&mut body).await?;
-
-    Ok(serde_json::from_slice(&body)?)
-}
-
-pub async fn run_status_explain(session_id: u64) -> Result<()> {
-    let msg = request_control(ClientMsg::SessionStatusExplain { session_id }).await?;
-    let ServerMsg::SessionStatusExplain { report, .. } = msg else {
-        anyhow::bail!("daemon replied with unexpected message type for Status explain");
-    };
-    crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&report)?));
-    Ok(())
-}
-
-pub async fn run_status_capture(session_id: u64) -> Result<()> {
-    let explain = request_control(ClientMsg::SessionStatusExplain { session_id }).await?;
-    let visible = request_control(ClientMsg::SessionReadVisible {
-        session_id,
-        rows: None,
-    })
-    .await?;
-    let ServerMsg::SessionStatusExplain { report, .. } = explain else {
-        anyhow::bail!("daemon replied with unexpected message type for Status capture explain");
-    };
-    let lines = match visible {
-        ServerMsg::SessionVisibleText { lines, .. } => lines,
-        _ => Vec::new(),
-    };
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let dir = PathBuf::from("/jackin/state/agent-status/captures")
-        .join(format!("session-{session_id}-{stamp}"));
-    std::fs::create_dir_all(&dir)?;
-    std::fs::write(dir.join("visible.txt"), lines.join("\n"))?;
-    std::fs::write(
-        dir.join("evidence.json"),
-        serde_json::to_vec_pretty(&report)?,
-    )?;
-    crate::output::stdout_line(format_args!("{}", dir.display()));
     Ok(())
 }
 
@@ -189,7 +166,6 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
         ServerMsg::Snapshot { .. } => {
             anyhow::bail!("daemon replied with Snapshot for Agents request")
         }
-        _ => anyhow::bail!("daemon replied with unexpected message type for Agents request"),
     };
 
     // Determine caller's own codename and annotate matching records.

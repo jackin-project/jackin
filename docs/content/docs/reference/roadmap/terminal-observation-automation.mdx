@@ -68,7 +68,7 @@ The landscape splits into recorders, scripted demo/test tools, VT emulators, wid
 
 ## Current jackin' leverage
 
-Capsule already has the right substrate. It runs as the in-container control plane, owns PTYs and sessions, keeps `DamageGrid` state per session, forwards raw output over the binary attach channel, and exposes a JSON control channel for one-shot queries. The relevant local surfaces are <RepoFile path="crates/jackin-capsule/src/session.rs" />, <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, <RepoFile path="crates/jackin-capsule/src/client.rs" />, <RepoFile path="crates/jackin-protocol/src/control.rs" />, and <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" />.
+Capsule already has the right substrate. It runs as the in-container control plane, owns PTYs and sessions, keeps `DamageGrid` state per session, forwards raw output over the binary attach channel, and exposes a JSON control channel for one-shot queries. The relevant local surfaces are <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/client.rs">crates/jackin-capsule/src/client.rs</RepoFile>, <RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile>, and <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile>.
 
 The missing pieces are not another PTY runner. They are typed control messages, stable artifact schemas, recording policy, and host/CLI adapters that can use the live screen state safely.
 
@@ -269,7 +269,7 @@ Add a tiny tape/expect-style runner for smoke tests and demos. Then expose the s
 
 ## Implementation notes
 
-- Keep local file references linked with `<RepoFile />` when this roadmap item is updated; the key implementation seams are <RepoFile path="crates/jackin-protocol/src/control.rs" />, <RepoFile path="crates/jackin-capsule/src/socket.rs" />, <RepoFile path="crates/jackin-capsule/src/session.rs" />, <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, and <RepoFile path="crates/jackin-runtime/src/runtime/snapshot.rs" />.
+- Keep local file references linked with `<RepoFile />` when this roadmap item is updated; the key implementation seams are <RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/socket.rs">crates/jackin-capsule/src/socket.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>, and <RepoFile path="crates/jackin-runtime/src/runtime/snapshot.rs">crates/jackin-runtime/src/runtime/snapshot.rs</RepoFile>.
 - Prefer protocol additions that are useful to both the CLI and the future daemon/MCP surface. Do not add CLI-only shell parsing that the daemon later has to reverse-engineer.
 - Every blocking wait must have a timeout, cancellation behavior, and diagnostic output. A wait that silently hangs is worse than no wait primitive.
 - Add fixture tests for ANSI streams, wide characters, alternate screen behavior, cursor visibility, line wrapping, and OSC passthrough interactions before depending on snapshots for workflow decisions.

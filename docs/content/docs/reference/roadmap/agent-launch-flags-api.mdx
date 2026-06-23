@@ -6,7 +6,7 @@ title: "Agent Launch Flags API"
 
 ## Problem
 
-<RepoFile path="docker/runtime/entrypoint.sh" /> hardcodes launch commands per agent:
+<RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> hardcodes launch commands per agent:
 
 ```bash
 case "${JACKIN_AGENT:?}" in
@@ -84,9 +84,9 @@ Move launch dispatch from entrypoint.sh to jackin-capsule.
 
 ## Related Files
 
-- <RepoFile path="docker/runtime/entrypoint.sh" />
-- <RepoFile path="crates/jackin-core/src/agent.rs" />
-- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />
+- <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile>
+- <RepoFile path="crates/jackin-core/src/agent.rs">crates/jackin-core/src/agent.rs</RepoFile>
+- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile>
 
 ## Cross-references
 

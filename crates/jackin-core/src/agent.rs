@@ -12,6 +12,7 @@ use std::str::FromStr;
 
 use crate::auth::AuthForwardMode;
 use crate::constants::CLAUDE_OAUTH_TOKEN_ENV;
+use crate::env_model;
 
 /// The set of AI agents jackin' can provision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -63,91 +64,7 @@ impl Agent {
     /// Generate the Dockerfile `RUN` block that installs this agent's CLI
     /// from a pre-fetched binary at `source` path.
     pub fn install_block(self, source: &str) -> String {
-        match self {
-            Self::Claude => format!(
-                "\
-USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /jackin/runtime/agent-binaries
-COPY --chown=agent:agent {source} /jackin/runtime/agent-binaries/claude
-RUN set -euxo pipefail && \\
-    : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 /jackin/runtime/agent-binaries/claude && \\
-    /jackin/runtime/agent-binaries/claude install && \\
-    claude --version
-"
-            ),
-            Self::Codex => format!(
-                "\
-USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.local/bin
-COPY --chown=agent:agent {source} /home/agent/.local/bin/codex
-ENV PATH=\"/home/agent/.local/bin:${{PATH}}\"
-RUN set -euxo pipefail && \\
-    : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 \"${{HOME}}/.local/bin/codex\" && \\
-    codex --version
-"
-            ),
-            Self::Amp => format!(
-                "\
-USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.amp/bin
-COPY --chown=agent:agent {source} /home/agent/.amp/bin/amp
-ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${{PATH}}\"
-RUN set -euxo pipefail && \\
-    : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 \"${{HOME}}/.amp/bin/amp\" && \\
-    mkdir -p \"${{HOME}}/.local/bin\" && \\
-    ln -sf \"${{HOME}}/.amp/bin/amp\" \"${{HOME}}/.local/bin/amp\" && \\
-    amp --version
-"
-            ),
-            Self::Kimi => format!(
-                "\
-USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.kimi-code/bin
-COPY --chown=agent:agent {source} /home/agent/.kimi-code/bin/kimi
-ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${{PATH}}\"
-RUN set -euxo pipefail && \\
-    : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 \"${{HOME}}/.kimi-code/bin/kimi\" && \\
-    kimi --version
-"
-            ),
-            Self::Opencode => format!(
-                "\
-USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.opencode/bin
-COPY --chown=agent:agent {source} /home/agent/.opencode/bin/opencode
-ENV PATH=\"/home/agent/.opencode/bin:${{PATH}}\"
-RUN set -euxo pipefail && \\
-    : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 \"${{HOME}}/.opencode/bin/opencode\" && \\
-    opencode --version
-"
-            ),
-            Self::Grok => format!(
-                "\
-USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.grok/bin /home/agent/.local/bin
-COPY --chown=agent:agent {source} /home/agent/.grok/bin/grok
-ENV PATH=\"/home/agent/.grok/bin:/home/agent/.local/bin:${{PATH}}\"
-RUN set -euxo pipefail && \\
-    : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 \"${{HOME}}/.grok/bin/grok\" && \\
-    ln -sf \"${{HOME}}/.grok/bin/grok\" \"${{HOME}}/.grok/bin/agent\" && \\
-    ln -sf \"${{HOME}}/.grok/bin/grok\" \"${{HOME}}/.local/bin/grok\" && \\
-    ln -sf \"${{HOME}}/.grok/bin/grok\" \"${{HOME}}/.local/bin/agent\" && \\
-    grok --version
-"
-            ),
-        }
+        self.runtime().install_block(source)
     }
 
     /// Generate the Dockerfile `RUN` block that installs this agent's CLI
@@ -170,13 +87,13 @@ RUN set -euxo pipefail && \\
     pub const fn required_env_var(self, mode: AuthForwardMode) -> Option<&'static str> {
         use AuthForwardMode as M;
         match (self, mode) {
-            (Self::Claude, M::ApiKey) => Some("ANTHROPIC_API_KEY"),
+            (Self::Claude, M::ApiKey) => Some(env_model::ANTHROPIC_API_KEY_ENV_NAME),
             (Self::Claude, M::OAuthToken) => Some(CLAUDE_OAUTH_TOKEN_ENV),
-            (Self::Codex, M::ApiKey) => Some("OPENAI_API_KEY"),
-            (Self::Amp, M::ApiKey) => Some("AMP_API_KEY"),
-            (Self::Kimi, M::ApiKey) => Some("KIMI_API_KEY"),
-            (Self::Opencode, M::ApiKey) => Some("OPENCODE_API_KEY"),
-            (Self::Grok, M::ApiKey) => Some("XAI_API_KEY"),
+            (Self::Codex, M::ApiKey) => Some(env_model::OPENAI_API_KEY_ENV_NAME),
+            (Self::Amp, M::ApiKey) => Some(env_model::AMP_API_KEY_ENV_NAME),
+            (Self::Kimi, M::ApiKey) => Some(env_model::KIMI_API_KEY_ENV_NAME),
+            (Self::Opencode, M::ApiKey) => Some(env_model::OPENCODE_API_KEY_ENV_NAME),
+            (Self::Grok, M::ApiKey) => Some(env_model::XAI_API_KEY_ENV_NAME),
             (Self::Claude, M::Sync | M::Ignore)
             | (
                 Self::Codex | Self::Amp | Self::Kimi | Self::Opencode | Self::Grok,
@@ -249,7 +166,5 @@ impl FromStr for Agent {
 pub mod adapters;
 pub mod runtime;
 
-#[cfg(test)]
-mod auth_table_tests;
 #[cfg(test)]
 mod tests;

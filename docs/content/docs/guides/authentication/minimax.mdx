@@ -1,11 +1,11 @@
 ---
 title: MiniMax (Token Plan)
-description: Use MiniMax's Anthropic-compatible endpoint as an alternative provider for Claude Code sessions
+description: Use MiniMax as an alternative provider for Claude Code and Codex sessions
 ---
 
-[MiniMax's Token Plan](https://platform.minimax.io/subscribe/token-plan) provides an Anthropic-compatible API endpoint (`https://api.minimax.io/anthropic`) backed by the MiniMax-M3 model. Because the endpoint speaks the same protocol as Anthropic's API, Claude Code works against it without modification — jackin' injects the redirect at session-spawn time.
+[MiniMax's Token Plan](https://platform.minimax.io/subscribe/token-plan) is available as an alternative provider for both Claude Code and Codex sessions, backed by the MiniMax-M3 model. Claude Code reaches it through MiniMax's Anthropic-compatible endpoint (`https://api.minimax.io/anthropic`); Codex reaches it through MiniMax's OpenAI-compatible endpoint. In both cases jackin' wires the redirect into the container at session-spawn time and never touches your host agent settings.
 
-When `MINIMAX_API_KEY` is configured, opening a new Claude tab presents a provider picker with **MiniMax** as one of the options. Operators without a MiniMax key see no change: MiniMax does not appear in the picker.
+When `MINIMAX_API_KEY` is configured, opening a new Claude or Codex tab presents a provider picker with **MiniMax** as one of the options. Operators without a MiniMax key see no change: MiniMax does not appear in the picker.
 
 <Aside type="tip">
 MiniMax is configured in the **Auth** tab of `jackin console`, not by hand-editing any config file.
@@ -41,20 +41,22 @@ To remove MiniMax, open the same row, cycle the mode back to **Ignore**, and sav
 
 With `MINIMAX_API_KEY` configured:
 
-**At workspace launch** — launch a workspace and choose the Claude agent. Before the container starts, a provider picker appears. Use arrow keys and `Enter` to pick. `Escape` cancels back to the agent picker.
+**At workspace launch** — launch a workspace and choose the Claude or Codex agent. Before the container starts, a provider picker appears. Use arrow keys and `Enter` to pick. `Escape` cancels back to the agent picker.
 
-**In the multiplexer** — press `N` inside a running container to open a new agent tab. When you pick Claude, the same provider picker appears if multiple providers are available.
+**In the multiplexer** — press `N` inside a running container to open a new agent tab. When you pick Claude or Codex, the same provider picker appears if multiple providers are available.
 
 ## Tab labels
 
-The tab strip label reflects the active provider:
+The tab strip label reflects the agent and its active provider:
 
-| Active provider | Tab label |
-|---|---|
-| Anthropic | `Claude (Anthropic)` |
-| MiniMax | `Claude (MiniMax)` |
+| Agent | Active provider | Tab label |
+|---|---|---|
+| Claude | Anthropic | `Claude (Anthropic)` |
+| Claude | MiniMax | `Claude (MiniMax)` |
+| Codex | OpenAI | `Codex (OpenAI)` |
+| Codex | MiniMax | `Codex (MiniMax)` |
 
-When only Anthropic is configured, the bare `Claude` label is used — no suffix.
+When only the agent's native provider is configured (Anthropic for Claude, OpenAI for Codex), the bare `Claude` / `Codex` label is used — no suffix.
 
 ## Scopes
 
@@ -66,7 +68,7 @@ Set a global key to have MiniMax available in every workspace, or set a per-work
 
 ## How the redirect works
 
-When you select MiniMax in the provider picker, jackin' injects environment variables into the spawned Claude Code process at launch time — not into any shared config file:
+When you select MiniMax for a **Claude Code** session, jackin' injects environment variables into the spawned Claude Code process at launch time — not into any shared config file:
 
 - `ANTHROPIC_AUTH_TOKEN` — set to your `MINIMAX_API_KEY` value
 - `ANTHROPIC_BASE_URL` — set to `https://api.minimax.io/anthropic`
@@ -78,7 +80,9 @@ When you select MiniMax in the provider picker, jackin' injects environment vari
 
 MiniMax-M3 is the single model served by the Token Plan, so all three Claude tier slots map to the same model. The timeout prevents premature disconnection on long agent runs through the proxy.
 
-**No other tabs or sessions in the container are affected.** Anthropic tabs continue to use the container's own credentials.
+When you select MiniMax for a **Codex** session, jackin' instead activates MiniMax through Codex's own provider configuration inside the container, since Codex reaches MiniMax over its OpenAI-compatible endpoint. As with Claude, the setup lives only in the container — your host Codex config is never modified.
+
+**No other tabs or sessions in the container are affected.** A session on the agent's native provider continues to use the container's own credentials.
 
 Your `MINIMAX_API_KEY` is never written to the logs, including `--debug` output.
 

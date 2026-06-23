@@ -49,6 +49,79 @@ fn cached_path_replaces_plus_in_version() {
 }
 
 #[test]
+fn normalize_sigstore_v03_bundle_maps_current_cosign_fields() {
+    let raw = serde_json::json!({
+        "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+        "verificationMaterial": {
+            "certificate": {
+                "rawBytes": BASE64.encode([1, 2, 3, 4])
+            },
+            "tlogEntries": [{
+                "logIndex": "42",
+                "logId": { "keyId": BASE64.encode(b"rekor-key") },
+                "integratedTime": "1234",
+                "inclusionPromise": {
+                    "signedEntryTimestamp": "set"
+                },
+                "canonicalizedBody": "body"
+            }]
+        },
+        "messageSignature": {
+            "signature": "sig"
+        }
+    })
+    .to_string();
+
+    let normalized = normalize_sigstore_v03_bundle(&raw).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&normalized).unwrap();
+
+    assert_eq!(json["base64Signature"], "sig");
+    assert_eq!(json["rekorBundle"]["SignedEntryTimestamp"], "set");
+    assert_eq!(json["rekorBundle"]["Payload"]["body"], "body");
+    assert_eq!(json["rekorBundle"]["Payload"]["integratedTime"], 1234);
+    assert_eq!(json["rekorBundle"]["Payload"]["logIndex"], 42);
+    assert_eq!(
+        json["rekorBundle"]["Payload"]["logID"],
+        "72656b6f722d6b6579"
+    );
+
+    let cert = BASE64.decode(json["cert"].as_str().unwrap()).unwrap();
+    let cert = String::from_utf8(cert).unwrap();
+    assert!(cert.starts_with("-----BEGIN CERTIFICATE-----\n"));
+    assert!(cert.ends_with("-----END CERTIFICATE-----\n"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn ensure_available_repairs_non_executable_cached_capsule_binary() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(dir.path());
+    let cached = cached_binary_path(&paths.cache_dir, REQUIRED_VERSION, container_arch());
+    std::fs::create_dir_all(cached.parent().unwrap()).unwrap();
+    std::fs::write(&cached, b"cached").unwrap();
+    let mut permissions = std::fs::metadata(&cached).unwrap().permissions();
+    permissions.set_mode(0o644);
+    std::fs::set_permissions(&cached, permissions).unwrap();
+
+    let diagnostics = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
+    let _guard = diagnostics.activate();
+
+    // Call the post-override resolver directly: CI exports JACKIN_CAPSULE_BIN
+    // for the whole nextest run, which would otherwise short-circuit
+    // `ensure_available` before the cache-repair path under test.
+    let binary = resolve_cached_or_fetch(&paths)
+        .await
+        .expect("cached capsule binary mode should be repaired without download");
+
+    assert_eq!(binary, cached);
+    assert!(is_executable_file(&binary));
+    let diagnostics_log = std::fs::read_to_string(diagnostics.path()).unwrap();
+    assert!(diagnostics_log.contains("capsule_binary_cache_repaired"));
+}
+
+#[test]
 fn packaged_binary_path_for_keg_uses_libexec_arch_dir() {
     let path = packaged_binary_path_for_keg(
         Path::new("/opt/homebrew/Cellar/jackin-preview/0.6.0-preview.1"),
@@ -99,10 +172,14 @@ fn base_download_url_stable_uses_version_tag() {
 #[test]
 fn rekor_keys_decode_and_contain_expected_id() {
     let keys = rekor_verification_keys();
-    assert_eq!(keys.len(), 1, "expected exactly one Rekor key");
+    assert_eq!(keys.len(), 2, "expected base64 and hex Rekor key IDs");
     assert!(
         keys.contains_key(SIGSTORE_REKOR_KEY_ID),
         "expected key ID {SIGSTORE_REKOR_KEY_ID} not found in decoded map"
+    );
+    assert!(
+        keys.contains_key("c0d23d6ad406973f9559f3ba2d1ca01f84147d8ffc5b8445c224f98b9591801d"),
+        "expected hex Rekor key ID not found in decoded map"
     );
     // Confirm the key variant is ECDSA P-256, matching Sigstore production Rekor.
     let key = keys.get(SIGSTORE_REKOR_KEY_ID).unwrap();

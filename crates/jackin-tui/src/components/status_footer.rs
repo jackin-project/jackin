@@ -140,7 +140,7 @@ impl Widget for StatusFooter<'_> {
         } else {
             Color::Black
         };
-        let activity = Line::from(vec![
+        let left_spans = vec![
             Span::raw(" "),
             Span::styled(
                 self.left.to_owned(),
@@ -149,7 +149,8 @@ impl Widget for StatusFooter<'_> {
                     .fg(activity_fg)
                     .add_modifier(Modifier::BOLD),
             ),
-        ]);
+        ];
+        let activity = Line::from(left_spans);
         Paragraph::new(activity).render(cols[0], buf);
 
         if !right_spans.is_empty() {

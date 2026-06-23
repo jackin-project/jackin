@@ -1,7 +1,5 @@
 //! Pane layout, resize, focus, and split methods for the Multiplexer.
 
-use crate::session::SessionTerminal;
-
 use super::{
     ArrowDir, Direction, Multiplexer, Rect, Result, STATUS_BAR_ROWS, Session, SplitDirection,
     SplitDirectionGeometry, SplitPosition, Tab, VisiblePane, available_content_rows, content_rect,
@@ -49,7 +47,6 @@ impl Multiplexer {
             &tab_codename,
         );
         let agent_for_log = agent_slug.clone();
-        let agent_for_monitor = agent_slug.clone();
         let (session, new_id) = Session::spawn(
             &launch.label,
             agent_slug,
@@ -58,17 +55,10 @@ impl Multiplexer {
                 env_overrides: env_overrides.to_vec(),
             }),
             launch.cmd,
-            SessionTerminal {
-                rows: spawn_rows,
-                cols: spawn_cols,
-                row_arena: self.terminal_row_arena.clone(),
-            },
+            self.session_terminal(spawn_rows, spawn_cols),
             self.event_tx.clone(),
         )?;
         self.sessions.insert(new_id, session);
-        if let Some(agent_slug) = agent_for_monitor.as_deref() {
-            self.token_monitor.register_session(new_id, agent_slug);
-        }
         let tab = &mut self.tabs[self.active_tab];
         let placed = match direction {
             SplitDirection::Left => tab.tree.split_h(from_id, new_id, SplitPosition::Before),
@@ -84,16 +74,12 @@ impl Multiplexer {
             if let Some(orphan) = self.sessions.remove(&new_id) {
                 orphan.terminate();
             }
-            self.token_monitor.deregister_session(new_id);
-            self.cleanup_status_bookkeeping(new_id);
             crate::clog!(
                 "action: split aborted — from_id={from_id} no longer in tab tree; reaped orphan id={new_id}",
             );
             return Ok(());
         }
         tab.focused_id = new_id;
-        self.broadcast_session_spawned(new_id, agent_for_log.clone(), launch.label.clone());
-        self.maybe_broadcast_workspace_status_changed();
         self.resize_panes();
         self.synthesise_focus_swap(Some(from_id), Some(new_id));
         crate::clog!(
@@ -166,15 +152,8 @@ impl Multiplexer {
                 self.active_tab = self.tabs.len().saturating_sub(1);
             }
         }
-        self.broadcast_session_exited(id);
-        self.token_monitor.deregister_session(id);
-        self.cleanup_status_bookkeeping(id);
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
-        // Reset the ratatui double-buffer so the next compose_full_frame
-        // redraws every cell from scratch, preventing stale cells from the
-        // removed pane from showing through (Defect 29 — layout-change repaint).
-        drop(self.ratatui_terminal.clear());
     }
 
     pub(super) fn resize_panes(&mut self) {
@@ -213,13 +192,18 @@ impl Multiplexer {
         self.term_cols = cols;
         self.content_rows = available_content_rows(self.term_rows);
         self.resize_panes();
-        self.dirty_panes.clear(); // pending_full_redraw will repaint everything
         self.ratatui_terminal.backend_mut().resize(cols, rows);
-        // A size change invalidates Ratatui's previous-buffer geometry. Clear
-        // only the double-buffer state; SocketBackend::clear() deliberately
-        // avoids emitting a screen erase, so the next frame is a full repaint
-        // without a blank flash.
+        // A size change invalidates Ratatui's previous-buffer geometry. Reset
+        // only the double-buffer state: Terminal::clear() routes through
+        // clear_region(All) → `\x1b[2J`, and that stray erase would otherwise
+        // sit in the backend buffer and ride whatever frame drains next. The
+        // visible wipe belongs to the Resize full redraw, not to this
+        // bookkeeping call.
+        self.ratatui_terminal
+            .backend_mut()
+            .suppress_next_clear_escape();
         drop(self.ratatui_terminal.clear());
+        self.invalidate(super::FullRedrawReason::Resize);
     }
 
     pub(super) fn reconcile_content_rows(&mut self) -> bool {
@@ -311,12 +295,6 @@ impl Multiplexer {
         }
     }
 
-    pub(super) fn request_pane_body_redraw(&mut self, session_id: u64) {
-        if self.pending_full_redraw.is_none() {
-            self.dirty_panes.insert(session_id);
-        }
-    }
-
     pub(super) fn visible_panes(&self) -> Vec<VisiblePane> {
         let content_rect = content_rect(self.content_rows, self.term_cols);
         let focused_id = self.active_focused_id();
@@ -389,47 +367,14 @@ impl Multiplexer {
         {
             s.send_input(b"\x1b[O");
         }
+        // Cursor and mode state for the newly focused pane are reconciled
+        // by the next composed frame (§3.4) — no assertion site here.
         if let Some(n) = new
             && let Some(s) = self.sessions.get(&n)
+            && s.focus_events_enabled()
         {
-            if s.focus_events_enabled() {
-                s.send_input(b"\x1b[I");
-            }
-            // Reset the outer terminal to a known baseline, then
-            // re-emit every mode the new pane wants live.
-            // Mouse/focus are reasserted as client-owned modes so a
-            // pane cannot downgrade the multiplexer's input channel
-            // to legacy X10 after a focus-changing close/split.
-            if self.attached_out.is_some() {
-                let mut frames: Vec<Vec<u8>> = Vec::new();
-                frames.push(Session::focus_swap_reset().to_vec());
-                frames.push(crate::tui::terminal::client_owned_mode_state().to_vec());
-                for bytes in s.current_mode_state() {
-                    frames.push(bytes);
-                }
-                for bytes in frames {
-                    self.send_output(bytes);
-                }
-            }
+            s.send_input(b"\x1b[I");
         }
-        if let Some(n) = new {
-            self.acknowledge_focused_agent_status(n);
-        }
-    }
-
-    pub(super) fn acknowledge_focused_agent_status(&mut self, session_id: u64) -> bool {
-        let changed = self.sessions.get_mut(&session_id).and_then(|session| {
-            let changed = crate::agent_status::seen::mark_pane_focused(&mut session.status);
-            session.state = session.status.effective;
-            changed
-        });
-        if changed.is_some()
-            && let Some(session) = self.sessions.get(&session_id)
-        {
-            self.broadcast_agent_state_changed(session_id, session, None, Some("seen".to_owned()));
-            return true;
-        }
-        false
     }
 
     /// Switch focus to the pane the operator clicked on, if it differs
@@ -487,7 +432,6 @@ impl Multiplexer {
             && let Some(session) = self.sessions.get_mut(&id)
         {
             session.clear_scrollback_and_request_screen_clear();
-            self.dirty_panes.remove(&id);
         }
     }
 

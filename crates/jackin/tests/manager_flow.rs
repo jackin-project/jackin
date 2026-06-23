@@ -1,5 +1,5 @@
 //! End-to-end integration test for the workspace manager TUI.
-//! Drives `manager::handle_key` with a scripted key stream — no live
+//! Drives `tui::handle_key` with a scripted key stream — no live
 //! terminal.
 
 #![expect(
@@ -14,19 +14,18 @@ use jackin::{
     config::{AppConfig, ConfigEditor},
     console::{
         ConsoleStage,
-        manager::{
-            InputOutcome, ManagerStage, ManagerState,
-            auth_kind::AuthKind,
-            dispatch_launch_for_workspace, execute_pending_workspace_save_commit, handle_key,
+        effects::execute_pending_workspace_save_commit,
+        tui::{
+            InputOutcome, ManagerStage, ManagerState, dispatch_launch_for_workspace, handle_key,
             new_console_state,
-            state::{
-                AuthRow, EditorState, EditorStateExt, EditorTab, FieldFocus, Modal, auth_flat_rows,
-            },
+            state::{AuthRow, EditorState, EditorTab, FieldFocus, Modal},
         },
     },
     paths::JackinPaths,
     workspace::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride},
 };
+use jackin_console::tui::auth::AuthKind;
+use jackin_core::env_model;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use tempfile::tempdir;
@@ -129,7 +128,7 @@ fn render_to_dump(state: &ManagerState<'_>, config: &AppConfig, cwd: &std::path:
     let backend = TestBackend::new(100, 30);
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| {
-        jackin::console::manager::render(f, f.area(), state, config, cwd);
+        jackin::console::tui::render(f, f.area(), state, config, cwd);
     })
     .unwrap();
     let buf = term.backend().buffer();
@@ -502,7 +501,7 @@ fn auth_row_idx(
     config: &AppConfig,
     pred: impl Fn(&AuthRow) -> bool,
 ) -> usize {
-    auth_flat_rows(ed, config)
+    ed.auth_flat_rows(config)
         .iter()
         .position(pred)
         .expect("required auth row not found")
@@ -612,7 +611,9 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         "form commit must set workspace × claude mode in pending"
     );
     assert!(
-        pending.env.contains_key("ANTHROPIC_API_KEY"),
+        pending
+            .env
+            .contains_key(env_model::ANTHROPIC_API_KEY_ENV_NAME),
         "form commit must set credential env var in pending"
     );
 
@@ -646,7 +647,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     );
     let env_value = ws_on_disk
         .env
-        .get("ANTHROPIC_API_KEY")
+        .get(env_model::ANTHROPIC_API_KEY_ENV_NAME)
         .expect("reload must see ANTHROPIC_API_KEY in workspace env");
     match env_value {
         jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "sk-ant-test"),
@@ -668,7 +669,10 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         "raw TOML must carry auth_forward = \"api_key\"; got:\n{toml}"
     );
     assert!(
-        toml.contains(r#"ANTHROPIC_API_KEY = "sk-ant-test""#),
+        toml.contains(&format!(
+            r#"{} = "sk-ant-test""#,
+            env_model::ANTHROPIC_API_KEY_ENV_NAME
+        )),
         "raw TOML must carry the credential env var; got:\n{toml}"
     );
     Ok(())
@@ -725,7 +729,7 @@ fn auth_credential_source_enter_opens_source_picker() -> Result<()> {
             editor(&state).modal
         );
     };
-    assert_eq!(picker.key, "ANTHROPIC_API_KEY");
+    assert_eq!(picker.key, env_model::ANTHROPIC_API_KEY_ENV_NAME);
 
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
     assert!(
@@ -768,8 +772,7 @@ fn auth_add_role_override_flow_uses_selected_auth_kind() -> Result<()> {
     assert!(
         match &editor(&state).modal {
             Some(Modal::AuthForm {
-                target:
-                    jackin::console::manager::state::AuthFormTarget::WorkspaceRole { role, kind },
+                target: jackin::console::tui::state::AuthFormTarget::WorkspaceRole { role, kind },
                 ..
             }) => {
                 assert_eq!(*kind, AuthKind::Claude);
@@ -1038,11 +1041,10 @@ fn auth_tab_cycle_off_auth_clears_selected_agent() -> Result<()> {
     Ok(())
 }
 
-/// Pressing D on a `WorkspaceSource` row clears the workspace-level
-/// auth-forward override for the focused kind. Mirrors the existing
-/// `RoleSource` clear test but for the workspace layer.
+/// Pressing D on a `WorkspaceSource` row is a no-op. The main auth panel
+/// renders source rows as previews; edits happen through the mode row's dialog.
 #[test]
-fn auth_workspace_source_d_clears_workspace_mode() -> Result<()> {
+fn auth_workspace_source_d_is_noop() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_config(&paths, temp.path())?;
@@ -1054,7 +1056,7 @@ fn auth_workspace_source_d_clears_workspace_mode() -> Result<()> {
         ..Default::default()
     });
     ws.env.insert(
-        "ANTHROPIC_API_KEY".into(),
+        env_model::ANTHROPIC_API_KEY_ENV_NAME.into(),
         jackin::operator_env::EnvValue::Plain("k".into()),
     );
 
@@ -1084,11 +1086,11 @@ fn auth_workspace_source_d_clears_workspace_mode() -> Result<()> {
     let ed = editor(&state);
     assert!(
         ed.modal.is_none(),
-        "workspace source clear must be silent (no modal)"
+        "workspace source preview no-op must be silent (no modal)"
     );
     assert!(
-        ed.pending.claude.is_none(),
-        "D on WorkspaceSource must drop the workspace-level claude override"
+        ed.pending.claude.is_some(),
+        "D on WorkspaceSource must keep the workspace-level claude override"
     );
     Ok(())
 }

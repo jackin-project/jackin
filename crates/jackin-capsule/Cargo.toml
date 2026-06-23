@@ -28,7 +28,11 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0"
 jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
+# OTLP export for the in-container session, runtime-gated on the endpoint the
+# host injects. Pulls the opentelemetry stack into the capsule image.
+jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics", features = ["otlp"] }
 jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
+tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.1"
@@ -43,7 +47,6 @@ jackin-term = { version = "0.6.0-dev", path = "../jackin-term" }
 url = "2"
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-procfs = "0.18"
 regex = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 ureq = { version = "2.12", features = ["tls"] }
@@ -54,6 +57,9 @@ dhat = { version = "0.3.3", optional = true }
 # tui-term was evaluated for pane-body rendering (see ADR-004) but did not fit
 # the capsule's owned-grid model. The custom cell widget approach is used instead.
 
+[target.'cfg(target_os = "linux")'.dependencies]
+procfs = "0.18"
+
 [build-dependencies]
 jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
 
@@ -62,10 +68,10 @@ name = "pane_body"
 harness = false
 
 [dev-dependencies]
-criterion = { version = "0.8", features = ["html_reports"] }
+criterion = { version = "=0.8.2", features = ["html_reports"] }
 tempfile = "=3.27.0"
-insta = { version = "1", features = ["filters"] }
-jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
+insta = { version = "=1.48.0", features = ["filters"] }
+tokio = { version = "=1.52.3", features = ["test-util"] }
 
 [lints]
 workspace = true

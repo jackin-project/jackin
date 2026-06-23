@@ -135,7 +135,7 @@ Several of these gaps — subagent visibility, permission-stall detection — ar
 
 Orca's core bet is that worktrees are sufficient isolation. That works for a developer who trusts their agents and wants parallel throughput on one machine. It does not work for the jackin' model where:
 
-- The operator's host machine must not be mutated silently (hard rule in <RepoFile path="AGENTS.md" />)
+- The operator's host machine must not be mutated silently (hard rule in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>)
 - Credentials must not leak between agents or sessions without explicit forwarding
 - The agent environment must be reproducible from a role manifest across machines
 - Isolation must be explained and auditable before launch (see [session contract and explain mode](/reference/roadmap/session-contract-explain-mode/))

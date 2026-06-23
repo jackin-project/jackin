@@ -358,7 +358,7 @@ pub fn render_failure_popup(
     );
     // The popup draws no hint of its own; keys live in the shared hint row and
     // the status footer row remains visible beneath it.
-    render_hint_bar(frame, chrome.hint, FAILURE_HINT);
+    render_hint_bar(frame, chrome.hint, &failure_hint_spans());
 }
 
 #[must_use]
@@ -409,85 +409,22 @@ pub fn failure_popup_hyperlink_overlay(
     out
 }
 
-/// Footer-hint keys for the launch failure popup (dismiss only).
-const FAILURE_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("click"),
-    HintSpan::Text("copy value"),
-    HintSpan::GroupSep,
-    HintSpan::Key("↵/Esc"),
-    HintSpan::Text("dismiss"),
-];
+/// Footer-hint keys for the launch failure popup. The dismiss group derives
+/// from `FAILURE_KEYMAP` (the dispatch table); the global keys derive from
+/// `cockpit_global_hint_spans`. Only the mouse "click copy value" affordance is
+/// authored here since it is not a key.
+fn failure_hint_spans() -> Vec<HintSpan<'static>> {
+    let mut spans = vec![
+        // UNREGISTERABLE(mouse): mouse click cannot be expressed as a KeyChord.
+        HintSpan::Key("click"),
+        HintSpan::Text("copy value"),
+        HintSpan::GroupSep,
+    ];
+    spans.extend(crate::tui::keymap::FAILURE_KEYMAP.hint_spans());
+    spans.push(HintSpan::GroupSep);
+    spans.extend(crate::tui::keymap::cockpit_global_hint_spans());
+    spans
+}
 
 #[cfg(test)]
-mod tests {
-    use crate::tui::app::{LaunchIdentity, LaunchTargetKind};
-    use crate::tui::update::initial_view;
-    use crate::tui::view::render_launch_frame;
-    use crate::{LaunchStage, tui::app::LaunchFailure};
-    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
-
-    fn row_text(buf: &Buffer, row: u16, width: u16) -> String {
-        (0..width)
-            .map(|x| buf[(x, row)].symbol().to_owned())
-            .collect()
-    }
-
-    #[test]
-    fn failure_popup_keeps_status_footer_visible() {
-        let area = Rect::new(0, 0, 90, 18);
-        let mut view = initial_view();
-        view.frame = 30;
-        view.status = "docker build failed".to_owned();
-        view.identity = Some(LaunchIdentity {
-            role: "the-architect".to_owned(),
-            agent: "claude".to_owned(),
-            target_kind: LaunchTargetKind::Directory,
-            target_label: ".".to_owned(),
-            mounts: Vec::new(),
-            image: None,
-            container: Some("jk-2y0t4aw6-the-architect".to_owned()),
-        });
-        view.failure = Some(LaunchFailure {
-            title: "Build failed".to_owned(),
-            summary: "docker build failed".to_owned(),
-            detail: None,
-            next_step: None,
-            stage: LaunchStage::DerivedImage,
-            diagnostics_path: None,
-            command_output_path: None,
-        });
-
-        let backend = TestBackend::new(area.width, area.height);
-        let mut terminal = Terminal::new(backend).expect("test backend should initialize");
-        terminal
-            .draw(|frame| {
-                render_launch_frame(
-                    frame,
-                    &view,
-                    "jk-run-c46709",
-                    "/tmp/jk-run-c46709.jsonl",
-                    true,
-                    None,
-                    true,
-                    "0.6.0-test",
-                );
-            })
-            .expect("render should succeed");
-
-        let hint = row_text(terminal.backend().buffer(), area.height - 3, area.width);
-        let spacer = row_text(terminal.backend().buffer(), area.height - 2, area.width);
-        let footer = row_text(terminal.backend().buffer(), area.height - 1, area.width);
-        assert!(
-            hint.contains("copy value") && hint.contains("dismiss"),
-            "failure popup hints should render in the shared hint row: {hint:?}"
-        );
-        assert!(
-            !spacer.contains("copy value") && !spacer.contains("jk-run-c46709"),
-            "spacer row should stay between hints and footer: {spacer:?}"
-        );
-        assert!(
-            footer.contains("jk-run-c46709") && footer.contains("2y0t4aw6"),
-            "status footer should remain visible while failure popup is open: {footer:?}"
-        );
-    }
-}
+mod tests;

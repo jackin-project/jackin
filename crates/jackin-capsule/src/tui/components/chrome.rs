@@ -48,30 +48,25 @@ impl StatusBarWidget<'_> {
         }
         let glyph_char = match cell.glyph {
             TabGlyph::None => ' ',
-            TabGlyph::Working => '◌',
             TabGlyph::Done => '○',
             TabGlyph::Blocked => '●',
-            TabGlyph::Unknown => '·',
         };
         // Cell layout: ` <name> <sep> <glyph> ` — matches emit_tab_row0.
         let content = format!(" {} {} ", cell.name, glyph_char);
         let x = area.x.saturating_add(cell.start_col0);
         buf.set_string(x, area.y, &content, style);
         // Blocked glyph is bright red; overpaint just that cell, same bg.
-        if !matches!(cell.glyph, TabGlyph::None | TabGlyph::Done) {
+        if matches!(cell.glyph, TabGlyph::Blocked) {
             let name_cols = u16::try_from(jackin_tui::display_cols(&cell.name)).unwrap_or(u16::MAX);
             let glyph_x = x.saturating_add(name_cols).saturating_add(2);
-            let (glyph, fg, modifier) = match cell.glyph {
-                TabGlyph::Blocked => ("●", jackin_tui::theme::STATUS_BLOCKED_RED, Modifier::BOLD),
-                TabGlyph::Working => ("◌", jackin_tui::theme::PHOSPHOR_DARK, Modifier::empty()),
-                TabGlyph::Unknown => ("·", Color::Rgb(96, 96, 96), Modifier::empty()),
-                TabGlyph::None | TabGlyph::Done => unreachable!(),
-            };
             buf.set_string(
                 glyph_x,
                 area.y,
-                glyph,
-                Style::default().bg(bg).fg(fg).add_modifier(modifier),
+                "●",
+                Style::default()
+                    .bg(bg)
+                    .fg(jackin_tui::theme::STATUS_BLOCKED_RED)
+                    .add_modifier(Modifier::BOLD),
             );
         }
     }
@@ -186,6 +181,254 @@ impl Widget for PaneBorderWidget {
 }
 
 pub use jackin_tui::components::ModalBackdrop as DialogBackdrop;
+use jackin_tui::theme::color;
+
+const BAR_BG: Color = color(jackin_tui::WHITE);
+const BAR_FG: Color = color(jackin_tui::BLACK);
+const BAR_LINK_FG: Color = color(jackin_tui::LINK_BLUE);
+const BAR_HOVER_BG: Color = Color::Rgb(225, 245, 255);
+const BAR_HOVER_FG: Color = Color::Rgb(0, 55, 140);
+
+/// Bottom chrome (branch/PR bar, hint row, debug chip) as a widget. Replaces
+/// the raw-ANSI append + byte cache: the rows ride the Ratatui cell buffer
+/// like every other cell, so one compositor owns the whole frame (§3.2 of
+/// the capsule rendering plan).
+pub(crate) struct BottomChromeWidget<'a> {
+    pub(crate) branch: Option<&'a str>,
+    pub(crate) pull_request: Option<&'a crate::pull_request::PullRequestInfo>,
+    pub(crate) pull_request_loading: bool,
+    pub(crate) instance_id_label: &'a str,
+    pub(crate) hover_target: Option<crate::tui::app::HoverTarget>,
+    pub(crate) scrollback_active: bool,
+    pub(crate) scroll_axes: jackin_tui::scroll::ScrollAxes,
+    pub(crate) debug_run_id: Option<&'a str>,
+    /// When the operator has pressed the prefix key and the multiplexer is
+    /// awaiting a command chord, the hint bar switches to a prefix-command
+    /// cheat-sheet instead of the normal navigation hints.
+    pub(crate) prefix_awaiting: bool,
+    /// Resolved palette-key byte (`InputParser::palette_key().unwrap_or(0x1C)`).
+    /// Passed to the hint builder so the palette-key glyph matches the
+    /// operator's `JACKIN_PALETTE_KEY` configuration.
+    pub(crate) palette_key: u8,
+}
+
+impl Widget for BottomChromeWidget<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        use crate::tui::app::HoverTarget;
+        render_branch_bar_row(
+            buf,
+            area,
+            self.branch,
+            self.pull_request,
+            self.pull_request_loading,
+            self.instance_id_label,
+            self.hover_target,
+        );
+        if let Some(run_id) = self.debug_run_id.filter(|r| !r.is_empty()) {
+            let chip = format!(" {run_id} ");
+            let chip_cols = jackin_tui::display_cols(&chip) as u16;
+            let bar_y = area.height.saturating_sub(1);
+            let x = area.width.saturating_sub(chip_cols);
+            let style = if self.hover_target == Some(HoverTarget::DebugChip) {
+                Style::default()
+                    .bg(color(jackin_tui::WHITE))
+                    .fg(color(jackin_tui::DANGER_RED))
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+                    .bg(color(jackin_tui::DANGER_RED))
+                    .fg(color(jackin_tui::WHITE))
+                    .add_modifier(Modifier::BOLD)
+            };
+            buf.set_string(x, bar_y, &chip, style);
+        }
+        let spans = crate::tui::components::dialog::main_view_hint(
+            self.scrollback_active,
+            self.palette_key,
+            self.scroll_axes,
+            self.prefix_awaiting,
+        );
+        render_hint_spans_row(buf, area, &spans);
+    }
+}
+
+/// Dialog variant of the bottom chrome: branch/PR bar plus the dialog's own
+/// footer hint spans.
+pub(crate) struct DialogBottomChromeWidget<'a> {
+    pub(crate) branch: Option<&'a str>,
+    pub(crate) pull_request: Option<&'a crate::pull_request::PullRequestInfo>,
+    pub(crate) pull_request_loading: bool,
+    pub(crate) instance_id_label: &'a str,
+    pub(crate) hint_spans: Option<&'a [jackin_tui::HintSpan<'a>]>,
+}
+
+impl Widget for DialogBottomChromeWidget<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        render_branch_bar_row(
+            buf,
+            area,
+            self.branch,
+            self.pull_request,
+            self.pull_request_loading,
+            self.instance_id_label,
+            None,
+        );
+        if let Some(spans) = self.hint_spans {
+            render_hint_spans_row(buf, area, spans);
+        }
+    }
+}
+
+/// Spawn-failure banner: a red one-line notice painted over the top row.
+/// Cleared by the next operator keystroke.
+pub(crate) struct SpawnFailureBannerWidget<'a> {
+    pub(crate) reason: &'a str,
+}
+
+impl Widget for SpawnFailureBannerWidget<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        if area.height == 0 {
+            return;
+        }
+        let style = Style::default()
+            .fg(color(jackin_tui::DANGER_RED))
+            .add_modifier(Modifier::BOLD);
+        for x in area.left()..area.right() {
+            buf[(x, area.top())].reset();
+        }
+        buf.set_string(area.x, area.y, format!("jackin: {}", self.reason), style);
+    }
+}
+
+fn render_branch_bar_row(
+    buf: &mut Buffer,
+    area: Rect,
+    branch: Option<&str>,
+    pull_request: Option<&crate::pull_request::PullRequestInfo>,
+    pull_request_loading: bool,
+    instance_id_label: &str,
+    hover_target: Option<crate::tui::app::HoverTarget>,
+) {
+    use crate::tui::app::HoverTarget;
+    use crate::tui::components::branch_context_bar::branch_context_bar_layout;
+    let Some(layout) = branch_context_bar_layout(
+        area.height,
+        area.width,
+        branch,
+        pull_request,
+        pull_request_loading,
+        instance_id_label,
+    ) else {
+        return;
+    };
+    let bar_y = area.height.saturating_sub(1);
+    let base = Style::default().bg(BAR_BG).fg(BAR_FG);
+    for x in area.left()..area.right() {
+        buf.set_string(x, bar_y, " ", base);
+    }
+    let left_hovered = hover_target == Some(HoverTarget::BranchContext);
+    let left_style = chunk_style(left_hovered, BAR_FG, true);
+    buf.set_string(area.x, bar_y, &layout.left, left_style);
+    if let Some(region) = layout.container_region {
+        let container_hovered = hover_target == Some(HoverTarget::Container);
+        let container_style = chunk_style(container_hovered, BAR_LINK_FG, false);
+        buf.set_string(
+            area.x + region.start.saturating_sub(1),
+            bar_y,
+            &layout.container,
+            container_style,
+        );
+    }
+}
+
+/// Per-chunk colour rule, ported from the raw renderer: the left chunk is
+/// always bold; the container chunk is bold only on hover and uses the link
+/// foreground when idle.
+fn chunk_style(hovered: bool, idle_fg: Color, always_bold: bool) -> Style {
+    let mut style = if hovered {
+        Style::default().bg(BAR_HOVER_BG).fg(BAR_HOVER_FG)
+    } else {
+        Style::default().bg(BAR_BG).fg(idle_fg)
+    };
+    if always_bold || hovered {
+        style = style.add_modifier(Modifier::BOLD);
+    }
+    style
+}
+
+/// Returns the largest prefix of `spans` whose column width fits inside `max_cols`,
+/// always truncating at a `GroupSep` boundary to avoid splitting a key+text pair.
+/// Returns an empty slice if even the first group overflows.
+fn truncate_spans_to_cols<'a>(
+    spans: &'a [jackin_tui::HintSpan<'_>],
+    max_cols: usize,
+) -> &'a [jackin_tui::HintSpan<'a>] {
+    // Split into groups at GroupSep boundaries; accumulate greedily.
+    let mut last_fit_end = 0usize;
+    let mut running_cols = 0usize;
+
+    let mut i = 0;
+    while i < spans.len() {
+        // Measure from i to next GroupSep (exclusive) — one logical group.
+        let group_end = spans[i..]
+            .iter()
+            .position(|s| matches!(s, jackin_tui::HintSpan::GroupSep))
+            .map_or(spans.len(), |rel| i + rel + 1); // include the GroupSep itself
+
+        let group_cols = jackin_tui::hint_row_cols(&spans[i..group_end]);
+        let candidate = running_cols.saturating_add(group_cols);
+        if candidate > max_cols {
+            break;
+        }
+        running_cols = candidate;
+        last_fit_end = group_end;
+        i = group_end;
+    }
+
+    // Strip trailing GroupSep if present so the last group doesn't end with whitespace.
+    let mut end = last_fit_end;
+    while end > 0 && matches!(spans[end - 1], jackin_tui::HintSpan::GroupSep) {
+        end -= 1;
+    }
+    &spans[..end]
+}
+
+/// Centered hint spans on the row above the separator pad — the widget port
+/// of `render_hint_row`, same column math so centring is identical.
+/// Gracefully truncates at group boundaries when the full row is too wide.
+fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::HintSpan<'_>]) {
+    use crate::tui::components::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
+    if area.height < BRANCH_CONTEXT_BAR_ROWS + 2 {
+        return;
+    }
+    let available = usize::from(area.width).saturating_sub(4); // 2 col padding each side
+    let visible = truncate_spans_to_cols(spans, available);
+    if visible.is_empty() {
+        return;
+    }
+    let total = jackin_tui::hint_row_cols(visible);
+    let padded_total = total.saturating_add(4);
+    let row_y = area.height - (BRANCH_CONTEXT_BAR_ROWS + 2);
+    let start_col = ((usize::from(area.width)).saturating_sub(padded_total) / 2) as u16;
+    let key_style = Style::default()
+        .fg(color(jackin_tui::WHITE))
+        .add_modifier(Modifier::BOLD);
+    let text_style = Style::default().fg(color(jackin_tui::PHOSPHOR_GREEN));
+    let dyn_style = Style::default().fg(color(jackin_tui::PHOSPHOR_DIM));
+    let sep_style = Style::default().fg(color(jackin_tui::PHOSPHOR_DARK));
+    let mut x = area.x + start_col + 2;
+    for span in visible {
+        let (text, style): (String, Style) = match span {
+            jackin_tui::HintSpan::Key(k) => ((*k).to_owned(), key_style),
+            jackin_tui::HintSpan::Text(t) => (format!(" {t}"), text_style),
+            jackin_tui::HintSpan::Dyn(t) => (format!(" {t}"), dyn_style),
+            jackin_tui::HintSpan::Sep => (" · ".to_owned(), sep_style),
+            jackin_tui::HintSpan::GroupSep => ("   ".to_owned(), sep_style),
+        };
+        buf.set_string(x, row_y, &text, style);
+        x += jackin_tui::display_cols(&text) as u16;
+    }
+}
 
 #[cfg(test)]
 mod tests;

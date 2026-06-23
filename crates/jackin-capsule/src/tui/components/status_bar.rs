@@ -71,8 +71,6 @@ pub struct StatusBar {
     pub hint_region: Option<(u16, u16)>,
     pub prefix_mode: PrefixMode,
     pub prefix_enabled: bool,
-    pub prefix_label: String,
-    pub palette_label: String,
     /// Full role-container name (`jk-<short>-<workspace>-<role>`).
     /// Consumed by the `ContainerInfo` modal and copy action.
     pub identity_label: String,
@@ -84,6 +82,9 @@ pub struct StatusBar {
     /// lossy short form `thearchitect`, not the canonical
     /// `the-architect` selector the operator typed).
     pub role: String,
+    /// Short display label for the configured palette key (e.g. `"C-\\"` for
+    /// the default `Ctrl+\`). `None` if the palette shortcut is disabled.
+    pub palette_key_glyph: Option<String>,
 }
 
 impl Default for StatusBar {
@@ -111,11 +112,10 @@ impl StatusBar {
             hint_region: None,
             prefix_mode: PrefixMode::Idle,
             prefix_enabled: false,
-            prefix_label: "Ctrl+B".to_owned(),
-            palette_label: "Ctrl+\\".to_owned(),
             identity_label,
             instance_id_label,
             role,
+            palette_key_glyph: Some("C-\\".to_owned()),
         }
     }
 
@@ -203,9 +203,16 @@ pub struct StatusBarPlan {
     pub(crate) overflow_col: Option<u16>,
 }
 
-pub(crate) fn button_text_for(prefix_mode: PrefixMode) -> String {
+pub(crate) fn button_text_for(prefix_mode: PrefixMode, palette_key_glyph: Option<&str>) -> String {
     match prefix_mode {
-        PrefixMode::Idle => " ☰Menu ".to_owned(),
+        PrefixMode::Idle => match palette_key_glyph {
+            // Show configured shortcut key in the label so the operator can see
+            // which chord opens the palette — meaningful when JACKIN_PALETTE_KEY
+            // is overridden from the default Ctrl+\.
+            Some(glyph) => format!(" {glyph} Menu "),
+            // Palette shortcut disabled — fall back to the visual ☰ icon only.
+            None => " ☰Menu ".to_owned(),
+        },
         PrefixMode::Awaiting => " prefix… ".to_owned(),
     }
 }
@@ -219,8 +226,9 @@ pub fn status_bar_plan(
     active_tab: usize,
     sessions_state: &[(u64, VisibleAgentState)],
     prefix_mode: PrefixMode,
+    palette_key_glyph: Option<&str>,
 ) -> StatusBarPlan {
-    let hint_text = button_text_for(prefix_mode);
+    let hint_text = button_text_for(prefix_mode, palette_key_glyph);
     let hint_cols = display_cols(&hint_text);
     let reserve_right: u16 = hint_cols + 2; // 1 col padding + 1 trailing space
 
@@ -291,13 +299,11 @@ pub(crate) enum TabGlyph {
     /// always reserved so cell width stays stable across state
     /// transitions.
     None,
-    Working,
     /// `Done` — `○`, default tab foreground colour.
     Done,
     /// `Blocked` — `●`, rendered in bright red as the high-visibility
     /// "agent waiting" indicator.
     Blocked,
-    Unknown,
 }
 
 /// Resolve the base name + state glyph for a tab. The caller builds
@@ -316,25 +322,11 @@ fn tab_label(tab: &Tab, states: &[(u64, VisibleAgentState)]) -> (String, TabGlyp
             .iter()
             .any(|(sid, st)| sid == id && *st == VisibleAgentState::Done)
     });
-    let has_working = ids.iter().any(|id| {
-        states
-            .iter()
-            .any(|(sid, st)| sid == id && *st == VisibleAgentState::Working)
-    });
-    let has_unknown = ids.iter().any(|id| {
-        states
-            .iter()
-            .any(|(sid, st)| sid == id && *st == VisibleAgentState::Unknown)
-    });
 
     let glyph = if has_blocked {
         TabGlyph::Blocked
     } else if has_done {
         TabGlyph::Done
-    } else if has_working {
-        TabGlyph::Working
-    } else if has_unknown {
-        TabGlyph::Unknown
     } else {
         TabGlyph::None
     };

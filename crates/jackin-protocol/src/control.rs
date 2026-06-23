@@ -1,9 +1,10 @@
 //! Control channel: length-prefixed JSON request / response messages.
 //!
-//! Used by the host CLI for one-shot queries such as `status`,
-//! `snapshot`, `wait_session_status`, and `session_status_explain`.
-//! `events_subscribe` upgrades the same framing to a persistent event
-//! stream after the first request.
+//! Used by the host CLI for one-shot queries — `status`, `snapshot`,
+//! and future `session.create` / `session.kill` / `session.title` /
+//! `events`. The host opens a Unix socket connection, writes one
+//! framed JSON request, reads one framed JSON response, and
+//! disconnects.
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,74 +14,6 @@ pub enum ClientMsg {
     Status,
     /// Request the tab/pane tree snapshot.
     Snapshot,
-    /// Role-authored cooperative reporter sends raw agent state for one session.
-    /// Built-in runtime hooks/plugins should use `ReportRuntimeEvent` so
-    /// daemon-side mapping and gating remain the authority.
-    ReportAgentState {
-        session_id: u64,
-        source_id: String,
-        agent_label: String,
-        /// Raw state: "working", "blocked", "idle", "unknown"
-        raw_state: String,
-        /// Monotonic sequence number supplied by role-authored reporters.
-        seq: u64,
-        /// Nanoseconds since UNIX epoch.
-        ts_ns: u64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        message: Option<String>,
-    },
-    /// Reporter heartbeat — confirms source is still alive.
-    HeartbeatAgentAuthority {
-        session_id: u64,
-        source_id: String,
-        seq: u64,
-    },
-    /// Runtime reporter releases its authority (exits or goes stale).
-    ClearAgentAuthority { session_id: u64, source_id: String },
-    /// Runtime bridge reports descendant/subagent lifecycle.
-    ReportChildAgentState {
-        parent_session_id: u64,
-        child_session_id: u64,
-        raw_state: String,
-        seq: u64,
-    },
-    /// Runtime hook/plugin forwards a vendor event for daemon-side mapping.
-    ReportRuntimeEvent {
-        session_id: u64,
-        source_id: String,
-        runtime: String,
-        event: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        payload: Option<serde_json::Value>,
-    },
-    /// Subscribe to agent state change events. After this message the
-    /// connection becomes a persistent streaming channel.
-    EventsSubscribe {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        subscriber_id: Option<String>,
-    },
-    /// Block until a session reaches one of the target statuses.
-    WaitSessionStatus {
-        session_id: u64,
-        target_statuses: Vec<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        timeout_ms: Option<u64>,
-    },
-    /// Read visible pane text for debugging.
-    SessionReadVisible {
-        session_id: u64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        rows: Option<u16>,
-    },
-    /// Read the daemon's current status diagnostic bundle for one session.
-    SessionStatusExplain { session_id: u64 },
-    /// One-shot query for current token totals for a session.
-    TokenGetSession { session_id: u64 },
-    /// Query the model catalog for available models.
-    TokenGetModels {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        provider: Option<String>,
-    },
     /// Request the agent registry (codenames, agent types, providers, timestamps).
     Agents,
     /// Forward-compat sink for variants added by a newer peer.
@@ -102,138 +35,11 @@ pub enum ServerMsg {
         tabs: Vec<TabSnapshot>,
         active_tab: u32,
     },
-    /// Pushed to subscribed clients on every effective-status change.
-    AgentStateChanged {
-        session_id: u64,
-        /// Raw detector state: "working", "blocked", "idle", "unknown"
-        #[serde(skip_serializing_if = "Option::is_none")]
-        raw_state: Option<String>,
-        /// Effective status: "working", "blocked", "done", "idle", "unknown"
-        effective: String,
-        seen: bool,
-        /// Authority source description
-        source: String,
-        /// Confidence tier: "authoritative", "strong", "weak", "unknown"
-        #[serde(skip_serializing_if = "Option::is_none")]
-        confidence: Option<String>,
-        /// Detected agent slug, if identified
-        #[serde(skip_serializing_if = "Option::is_none")]
-        detected_agent: Option<String>,
-        /// Foreground process group ID
-        #[serde(skip_serializing_if = "Option::is_none")]
-        foreground_pgid: Option<u32>,
-        /// Screen detector saw an explicit approval/input prompt
-        #[serde(default)]
-        visible_blocker: bool,
-        /// Screen detector saw an idle prompt
-        #[serde(default)]
-        visible_idle: bool,
-        /// Screen detector saw active working chrome
-        #[serde(default)]
-        visible_working: bool,
-        /// Child process has exited
-        #[serde(default)]
-        process_exited: bool,
-        /// Agent root handed the foreground process group back to a shell-like process
-        #[serde(default)]
-        foreground_returned_to_shell: bool,
-        /// Hook report was found stale and cleared
-        #[serde(default)]
-        stale_report: bool,
-        /// Active descendant/subagent count reported by runtime hooks or bridge reporters.
-        #[serde(default)]
-        subagents_active: u32,
-        /// Monotonic sequence number assigned by the authority source.
-        #[serde(skip_serializing_if = "Option::is_none")]
-        seq: Option<u64>,
-        /// Nanoseconds since UNIX epoch when the event was emitted
-        #[serde(skip_serializing_if = "Option::is_none")]
-        ts_ns: Option<u64>,
-        revision: u64,
-        /// Last revision seen by the operator
-        #[serde(skip_serializing_if = "Option::is_none")]
-        last_seen_revision: Option<u64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        reason: Option<String>,
-    },
-    /// A new session has been created.
-    SessionSpawned {
-        session_id: u64,
-        agent: Option<String>,
-        label: String,
-    },
-    /// A session has exited.
-    SessionExited { session_id: u64 },
-    /// Token totals for a session have been updated.
-    TokenUsageChanged {
-        session_id: u64,
-        agent: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        model: Option<String>,
-        input_tokens: u64,
-        output_tokens: u64,
-        cache_read_tokens: u64,
-        cache_write_tokens: u64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        cost_usd: Option<f64>,
-        ts_ns: u64,
-    },
-    /// Workspace-level roll-up status changed.
-    WorkspaceStatusChanged {
-        effective: String,
-        session_count: u32,
-        blocked_count: u32,
-        done_count: u32,
-        working_count: u32,
-        ts_ns: u64,
-    },
-    /// Response to `TokenGetSession`.
-    TokenSessionResult {
-        session_id: u64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        token_usage: Option<TokenUsageSummary>,
-    },
-    /// Response to `TokenGetModels`.
-    TokenModelsResult {
-        provider: String,
-        models: Vec<String>,
-    },
-    /// Response to `WaitSessionStatus` — the current state at the time the wait resolved.
-    SessionStatusResult {
-        session_id: u64,
-        effective: String,
-        revision: u64,
-        /// `"satisfied"`, `"timeout"`, `"not_found"`.
-        outcome: String,
-    },
-    /// Response to `SessionReadVisible`.
-    SessionVisibleText { session_id: u64, lines: Vec<String> },
-    /// Response to `SessionStatusExplain`.
-    SessionStatusExplain {
-        session_id: u64,
-        report: serde_json::Value,
-    },
-    /// Welcome frame sent to every connecting client.
-    Welcome { jackin_protocol_version: String },
-    /// Error response.
-    Error { code: String, message: String },
     /// Agent registry: every tab ever opened in this container lifetime.
     AgentRegistry { records: Vec<AgentRegistryEntry> },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct TokenUsageSummary {
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub cache_read_tokens: u64,
-    pub cache_write_tokens: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cost_usd: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
 }
 
 /// One entry in the agent registry, representing a tab that was (or is) open.
@@ -269,10 +75,6 @@ pub struct SessionInfo {
     pub agent: Option<String>,
     pub state: AgentState,
     pub active: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub token_usage: Option<TokenUsageSummary>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_status_report: Option<crate::agent_status::AgentStatusReport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -292,8 +94,6 @@ pub struct PaneSnapshot {
     /// `None` for shell sessions; the agent slug otherwise.
     pub agent: Option<String>,
     pub state: AgentState,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_status_report: Option<crate::agent_status::AgentStatusReport>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -303,10 +103,6 @@ pub enum AgentState {
     Blocked,
     Done,
     Idle,
-    /// State not yet determined. Safer default than `Blocked` when no
-    /// reliable signal is available. Phase 1 arbitration will replace this
-    /// with a real detection result.
-    Unknown,
 }
 
 impl AgentState {
@@ -316,7 +112,6 @@ impl AgentState {
             Self::Blocked => "blocked",
             Self::Done => "done",
             Self::Idle => "idle",
-            Self::Unknown => "unknown",
         }
     }
 }

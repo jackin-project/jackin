@@ -1,81 +1,130 @@
 //! Footer hint rows for capsule dialogs.
 
-use jackin_tui::{
-    HintSpan, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE,
-    ansi::{BG_DARK, BOLD, RESET, rgb_fg},
-    hint_row_cols,
+use jackin_tui::HintSpan;
+
+use crate::tui::keymap::{
+    CAPSULE_GLOBAL_KEYMAP, FILTER_LIST_KEYMAP, FilterListAction, PREFIX_COMMAND_KEYMAP,
+    READ_ONLY_DISMISS_KEYMAP, RENAME_KEYMAP, RESIZE_PANE_KEYMAP, ReadOnlyDismissAction,
+    RenameAction,
 };
 
-const FG_GREEN: &str = rgb_fg(PHOSPHOR_GREEN);
-const FG_DIM: &str = rgb_fg(PHOSPHOR_DIM);
-const FG_BORDER: &str = rgb_fg(PHOSPHOR_DARK);
-const FG_WHITE: &str = rgb_fg(WHITE);
+/// Derive a display glyph for a raw palette-key byte.
+///
+/// Mirrors the `Ctrl-` prefix convention used by [`jackin_tui::keymap::chord_glyph`]
+/// so the hint bar is visually consistent regardless of which key the operator
+/// configured via `JACKIN_PALETTE_KEY`.
+fn format_key_glyph(byte: u8) -> String {
+    match byte {
+        0x01..=0x1A => format!("Ctrl-{}", (b'@' + byte) as char),
+        0x1C => "Ctrl-\\".to_owned(),
+        _ => format!("0x{byte:02X}"),
+    }
+}
 
 /// Return the appropriate hint spans for the main view (no dialog open).
+///
+/// When `prefix_awaiting` is true the operator has pressed the prefix key and
+/// a keymap-derived cheat-sheet of prefix commands replaces the normal
+/// navigation hints so discovery is possible without a manual.
+///
+/// `palette_key` is the resolved palette-key byte (`self.palette_key.unwrap_or(0x1C)`
+/// from [`crate::tui::input::InputParser`]); it drives the dynamic glyph so the
+/// hint bar stays correct when `JACKIN_PALETTE_KEY` overrides the default.
 pub(crate) fn main_view_hint(
     scrollback_active: bool,
+    palette_key: u8,
     axes: jackin_tui::components::ScrollAxes,
+    prefix_awaiting: bool,
 ) -> Vec<HintSpan<'static>> {
+    if prefix_awaiting {
+        let mut spans = PREFIX_COMMAND_KEYMAP.hint_spans(); // all Shown prefix keys
+        spans.push(HintSpan::GroupSep);
+        spans.push(HintSpan::Dyn(format_key_glyph(palette_key))); // dynamic palette key glyph
+        spans.push(HintSpan::Text("palette"));
+        spans.push(HintSpan::GroupSep);
+        spans.extend(CAPSULE_GLOBAL_KEYMAP.hint_spans()); // Ctrl-Q quit
+        return spans;
+    }
     if scrollback_active {
         let mut spans = jackin_tui::components::scroll_hint_spans(axes);
         if !spans.is_empty() {
             spans.push(HintSpan::GroupSep);
         }
+        // UNREGISTERABLE(scrollback-modal): Esc handled by InputParser scrollback state check; no scrollback keymap exists.
         spans.push(HintSpan::Key("Esc"));
         spans.push(HintSpan::Text("exit scrollback"));
         spans.push(HintSpan::GroupSep);
-        spans.push(HintSpan::Key("Ctrl+\\"));
+        spans.push(HintSpan::Dyn(format_key_glyph(palette_key)));
         spans.push(HintSpan::Text("menu"));
+        spans.push(HintSpan::GroupSep);
+        spans.extend(CAPSULE_GLOBAL_KEYMAP.hint_spans());
         spans
     } else {
-        let mut spans = vec![HintSpan::Key("Ctrl+\\"), HintSpan::Text("menu")];
+        let mut spans = vec![
+            HintSpan::Dyn(format_key_glyph(palette_key)),
+            HintSpan::Text("menu"),
+        ];
         let scroll = jackin_tui::components::scroll_hint_spans(axes);
         if !scroll.is_empty() {
             spans.push(HintSpan::GroupSep);
             spans.extend(scroll);
         }
         spans.push(HintSpan::GroupSep);
+        spans.extend(RESIZE_PANE_KEYMAP.hint_spans());
+        spans.push(HintSpan::GroupSep);
+        // UNREGISTERABLE(mouse): mouse click cannot be expressed as a KeyChord.
         spans.push(HintSpan::Key("click"));
         spans.push(HintSpan::Text("focus pane"));
+        spans.push(HintSpan::GroupSep);
+        spans.extend(CAPSULE_GLOBAL_KEYMAP.hint_spans());
         spans
     }
 }
 
-pub(super) const PALETTE_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↑↓"),
-    HintSpan::Text("navigate"),
-    HintSpan::GroupSep,
-    HintSpan::Text("type filter"),
-    HintSpan::GroupSep,
-    HintSpan::Key("↵"),
-    HintSpan::Text("select"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("cancel"),
-];
+/// Shared footer for the filterable list dialogs. Every key glyph derives from
+/// [`FILTER_LIST_KEYMAP`]; the call site supplies the contextual confirm label
+/// (`"select"` vs `"launch"`) and whether the "type filter" group appears
+/// (`ProviderPicker` has no filter input). Navigate keeps the keymap's own
+/// `"navigate"` label; cancel keeps its `"cancel"` label.
+fn filter_list_hint(confirm_label: &'static str, type_filter: bool) -> Vec<HintSpan<'static>> {
+    let mut spans = Vec::with_capacity(10);
+    FILTER_LIST_KEYMAP.push_spans_for(FilterListAction::NavigateUp, &mut spans);
+    if type_filter {
+        spans.push(HintSpan::GroupSep);
+        spans.push(HintSpan::Text("type filter"));
+    }
+    spans.push(HintSpan::GroupSep);
+    spans.push(HintSpan::Key(
+        FILTER_LIST_KEYMAP.glyph_for(FilterListAction::Confirm),
+    ));
+    spans.push(HintSpan::Text(confirm_label));
+    spans.push(HintSpan::GroupSep);
+    FILTER_LIST_KEYMAP.push_spans_for(FilterListAction::Dismiss, &mut spans);
+    spans
+}
 
-pub(super) const PICKER_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↑↓"),
-    HintSpan::Text("navigate"),
-    HintSpan::GroupSep,
-    HintSpan::Text("type filter"),
-    HintSpan::GroupSep,
-    HintSpan::Key("↵"),
-    HintSpan::Text("launch"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("cancel"),
-];
+pub(super) fn palette_hint() -> Vec<HintSpan<'static>> {
+    filter_list_hint("select", true)
+}
 
-pub(super) const RENAME_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↵"),
-    HintSpan::Text("save"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("cancel"),
-    HintSpan::GroupSep,
-    HintSpan::Text("empty = auto name"),
-];
+pub(super) fn picker_hint() -> Vec<HintSpan<'static>> {
+    filter_list_hint("launch", true)
+}
+
+/// Provider picker has no filter input — hint without the "type filter" group.
+pub(super) fn provider_hint() -> Vec<HintSpan<'static>> {
+    filter_list_hint("select", false)
+}
+
+pub(super) fn rename_hint() -> Vec<HintSpan<'static>> {
+    let mut spans = Vec::with_capacity(7);
+    RENAME_KEYMAP.push_spans_for(RenameAction::Save, &mut spans);
+    spans.push(HintSpan::GroupSep);
+    RENAME_KEYMAP.push_spans_for(RenameAction::Dismiss, &mut spans);
+    spans.push(HintSpan::GroupSep);
+    spans.push(HintSpan::Text("empty = auto name"));
+    spans
+}
 
 /// Read-only info-dialog hint: copy key, the *available* scroll axes (per
 /// `axes`, omitted when the body fits), then dismiss — built from the shared
@@ -86,6 +135,7 @@ pub(super) fn info_dialog_hint(
     copy_label: &'static str,
     axes: jackin_tui::components::ScrollAxes,
 ) -> Vec<HintSpan<'static>> {
+    // UNREGISTERABLE(info-dialog-copy): Enter selects the active copy target inline; no InfoDialog keymap registered.
     let mut spans = vec![HintSpan::Key("↵"), HintSpan::Text(copy_label)];
     let scroll = jackin_tui::components::scroll_hint_spans(axes);
     if !scroll.is_empty() {
@@ -93,179 +143,20 @@ pub(super) fn info_dialog_hint(
         spans.extend(scroll);
     }
     spans.push(HintSpan::GroupSep);
-    spans.push(HintSpan::Key("Esc"));
+    spans.push(HintSpan::Key(
+        READ_ONLY_DISMISS_KEYMAP.glyph_for(ReadOnlyDismissAction::Dismiss),
+    ));
     spans.push(HintSpan::Text("dismiss"));
     spans
 }
 
-pub(super) const READ_ONLY_HINT: &[HintSpan<'static>] =
-    &[HintSpan::Key("Esc"), HintSpan::Text("dismiss")];
-
-pub(super) const CONFIRM_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Y"),
-    HintSpan::Text("confirm"),
-    HintSpan::GroupSep,
-    HintSpan::Key("N"),
-    HintSpan::Text("cancel"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("back"),
-];
-
-/// Compute the visual column width of a hint span row. Matches the
-/// formatting in `render_hint_row` so centring is exact.
-pub(crate) fn render_hint_row(buf: &mut Vec<u8>, row: u16, term_cols: u16, spans: &[HintSpan<'_>]) {
-    let total = hint_row_cols(spans);
-    let padded_total = total.saturating_add(4);
-    if padded_total > term_cols as usize {
-        crate::cdebug!(
-            "hint-row: SKIP row={} term_cols={} content_cols={} padded={} (too wide)",
-            row,
-            term_cols,
-            total,
-            padded_total,
-        );
-        return;
-    }
-    let start_col = ((term_cols as usize).saturating_sub(padded_total) / 2) as u16;
-    crate::cdebug!(
-        "hint-row: row={} term_cols={} content_cols={} padded={} start_col={}",
-        row,
-        term_cols,
-        total,
-        padded_total,
-        start_col,
-    );
-    move_to(buf, row, 0);
-    buf.extend_from_slice(BG_DARK.as_bytes());
-    for _ in 0..term_cols {
-        buf.push(b' ');
-    }
-    move_to(buf, row, start_col);
-    buf.extend_from_slice(BG_DARK.as_bytes());
-    buf.extend_from_slice(FG_BORDER.as_bytes());
-    buf.extend_from_slice("  ".as_bytes());
-    for span in spans {
-        match span {
-            HintSpan::Key(k) => {
-                buf.extend_from_slice(BG_DARK.as_bytes());
-                buf.extend_from_slice(FG_WHITE.as_bytes());
-                buf.extend_from_slice(BOLD.as_bytes());
-                buf.extend_from_slice(k.as_bytes());
-                buf.extend_from_slice(RESET.as_bytes());
-            }
-            HintSpan::Text(t) => {
-                buf.extend_from_slice(BG_DARK.as_bytes());
-                buf.extend_from_slice(FG_GREEN.as_bytes());
-                buf.push(b' ');
-                buf.extend_from_slice(t.as_bytes());
-                buf.extend_from_slice(RESET.as_bytes());
-            }
-            HintSpan::Dyn(t) => {
-                buf.extend_from_slice(BG_DARK.as_bytes());
-                buf.extend_from_slice(FG_DIM.as_bytes());
-                buf.push(b' ');
-                buf.extend_from_slice(t.as_bytes());
-                buf.extend_from_slice(RESET.as_bytes());
-            }
-            HintSpan::Sep => {
-                buf.extend_from_slice(BG_DARK.as_bytes());
-                buf.extend_from_slice(FG_BORDER.as_bytes());
-                buf.extend_from_slice(" · ".as_bytes());
-                buf.extend_from_slice(RESET.as_bytes());
-            }
-            HintSpan::GroupSep => {
-                buf.extend_from_slice("   ".as_bytes());
-            }
-        }
-    }
-    buf.extend_from_slice(BG_DARK.as_bytes());
-    buf.extend_from_slice(FG_BORDER.as_bytes());
-    buf.extend_from_slice("  ".as_bytes());
-    buf.extend_from_slice(RESET.as_bytes());
+pub(super) fn read_only_hint() -> Vec<HintSpan<'static>> {
+    READ_ONLY_DISMISS_KEYMAP.hint_spans()
 }
 
-fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
-    buf.extend_from_slice(b"\x1b[");
-    write_dec(buf, row + 1);
-    buf.push(b';');
-    write_dec(buf, col + 1);
-    buf.push(b'H');
-}
-
-fn write_dec(buf: &mut Vec<u8>, n: u16) {
-    if n == 0 {
-        buf.push(b'0');
-        return;
-    }
-    let mut tmp = [0_u8; 5];
-    let mut i = 5;
-    let mut v = n;
-    while v > 0 {
-        i -= 1;
-        tmp[i] = b'0' + (v % 10) as u8;
-        v /= 10;
-    }
-    buf.extend_from_slice(&tmp[i..]);
+pub(super) fn confirm_hint() -> Vec<HintSpan<'static>> {
+    jackin_tui::components::confirm_hint_spans()
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn labels(spans: &[HintSpan<'_>]) -> String {
-        spans
-            .iter()
-            .filter_map(|span| match span {
-                HintSpan::Key(text) | HintSpan::Text(text) => Some((*text).to_owned()),
-                HintSpan::Dyn(text) => Some(text.clone()),
-                HintSpan::Sep | HintSpan::GroupSep => None,
-            })
-            .collect::<Vec<_>>()
-            .join(" ")
-    }
-
-    #[test]
-    fn main_view_hint_omits_scroll_when_focused_pane_fits() {
-        let hint = labels(&main_view_hint(
-            false,
-            jackin_tui::components::ScrollAxes::default(),
-        ));
-        assert!(hint.contains("Ctrl+\\ menu"));
-        assert!(hint.contains("click focus pane"));
-        assert!(
-            !hint.contains("scroll"),
-            "fit-content main view must not advertise scroll: {hint}"
-        );
-    }
-
-    #[test]
-    fn main_view_hint_advertises_only_visible_scroll_axis() {
-        let hint = labels(&main_view_hint(
-            false,
-            jackin_tui::components::ScrollAxes {
-                vertical: true,
-                horizontal: false,
-            },
-        ));
-        assert!(hint.contains("↑↓ scroll"));
-        assert!(
-            !hint.contains("←→"),
-            "vertical-only pane must not advertise horizontal scroll: {hint}"
-        );
-    }
-
-    #[test]
-    fn scrollback_hint_omits_scroll_when_no_axis_is_visible() {
-        let hint = labels(&main_view_hint(
-            true,
-            jackin_tui::components::ScrollAxes::default(),
-        ));
-        assert!(hint.contains("Esc exit scrollback"));
-        assert!(hint.contains("Ctrl+\\ menu"));
-        assert!(
-            !hint.contains("↑↓ scroll"),
-            "scrollback exit hint must not advertise scroll without a visible axis: {hint}"
-        );
-    }
-}
+mod tests;

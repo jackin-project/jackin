@@ -1,7 +1,6 @@
 //! Session, tab, and pane lifecycle methods for the Multiplexer.
 
-use crate::session::SessionTerminal;
-use crate::tui::view::{spawn_failure_agent_label, spawn_failure_banner, spawn_failure_message};
+use crate::tui::view::{spawn_failure_agent_label, spawn_failure_message};
 
 use super::{
     AgentRecord, Multiplexer, PickerIntent, Result, Session, SessionLaunch, SpawnRequest, Tab, Utc,
@@ -85,9 +84,6 @@ impl Multiplexer {
             if let Some(session) = self.sessions.remove(&id) {
                 session.terminate();
             }
-            self.broadcast_session_exited(id);
-            self.token_monitor.deregister_session(id);
-            self.cleanup_status_bookkeeping(id);
         }
         self.tabs.remove(self.active_tab);
         self.retire_codename(&closed_codename);
@@ -97,9 +93,6 @@ impl Multiplexer {
         self.zoomed = None;
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
-        // Reset the ratatui double-buffer after tab close to prevent stale cells
-        // from the removed tab from persisting (Defect 29 — layout-change repaint).
-        drop(self.ratatui_terminal.clear());
     }
 
     pub(super) fn exit_all_sessions(&mut self) {
@@ -109,19 +102,12 @@ impl Multiplexer {
             self.sessions.len(),
             self.tabs.len()
         );
-        let exited_ids = self.sessions.keys().copied().collect::<Vec<_>>();
         for (_, session) in self.sessions.drain() {
             session.terminate();
         }
-        for id in exited_ids {
-            self.broadcast_session_exited(id);
-            self.cleanup_status_bookkeeping(id);
-        }
-        self.token_monitor.clear();
         self.tabs.clear();
         self.active_tab = 0;
         self.zoomed = None;
-        self.dirty_panes.clear();
         self.dialog_copy_feedback_deadline = None;
         self.hover_target = None;
     }
@@ -196,9 +182,6 @@ impl Multiplexer {
             }
         }
         self.sessions.remove(&session_id);
-        self.broadcast_session_exited(session_id);
-        self.token_monitor.deregister_session(session_id);
-        self.cleanup_status_bookkeeping(session_id);
         self.zoomed = self.zoomed.filter(|&id| id != session_id);
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
@@ -227,20 +210,12 @@ impl Multiplexer {
                 {
                     anyhow::bail!("rejected agent {slug:?}: {reason}");
                 }
+                // Token is resolved container-side (not on the wire) from the
+                // per-provider API key env; the host only sends the label.
                 let resolved_env = if let Some(provider) =
                     jackin_protocol::Provider::from_label(&provider_label)
                 {
-                    // Token is resolved here (not on the wire) from the
-                    // container's per-provider API key env; the host only
-                    // sends the label.
-                    let token = self.token_for_provider(provider);
-                    if token.is_none() && provider != jackin_protocol::Provider::Anthropic {
-                        crate::clog!(
-                            "spawn: provider {:?} selected but its API key is unresolved in container; session falls back to the agent's default auth",
-                            provider.label()
-                        );
-                    }
-                    provider.env_overrides(token)
+                    self.provider_spawn_env(&slug, provider)
                 } else {
                     crate::clog!(
                         "spawn: unknown provider label {provider_label:?}; no env redirect applied"
@@ -268,7 +243,7 @@ impl Multiplexer {
                     label,
                     cmd: build_agent_command(
                         slug,
-                        self.model_for_agent(slug),
+                        self.launch_model(slug, provider_label),
                         env_passthrough,
                         cwd,
                         codename,
@@ -327,8 +302,8 @@ impl Multiplexer {
             // Surface to the attach client too — otherwise the dialog
             // closes successfully and the operator sees no new pane and
             // no explanation.
-            let banner = spawn_failure_banner(&spawn_failure_message(agent_label, &err));
-            self.send_output(banner);
+            self.spawn_failure = Some(spawn_failure_message(agent_label, &err));
+            self.invalidate(super::FullRedrawReason::StatusChange);
         }
     }
 
@@ -350,8 +325,8 @@ impl Multiplexer {
         if let Err(err) = result {
             let agent_label = spawn_failure_agent_label(agent.as_deref());
             crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
-            let banner = spawn_failure_banner(&spawn_failure_message(agent_label, &err));
-            self.send_output(banner);
+            self.spawn_failure = Some(spawn_failure_message(agent_label, &err));
+            self.invalidate(super::FullRedrawReason::StatusChange);
         }
     }
 
@@ -392,18 +367,14 @@ impl Multiplexer {
                 env_overrides: env_overrides.to_vec(),
             }),
             launch.cmd,
-            SessionTerminal {
-                rows: self.content_rows.saturating_sub(2),
-                cols: self.term_cols.saturating_sub(2),
-                row_arena: self.terminal_row_arena.clone(),
-            },
+            self.session_terminal(
+                self.content_rows.saturating_sub(2),
+                self.term_cols.saturating_sub(2),
+            ),
             self.event_tx.clone(),
         )?;
         let tab_label = launch.label.clone();
         self.sessions.insert(id, session);
-        if let Some(agent_slug) = agent.as_deref() {
-            self.token_monitor.register_session(id, agent_slug);
-        }
         if self.tabs.is_empty() {
             self.tabs
                 .push(Tab::new_single(tab_label, id, codename.clone()));
@@ -430,8 +401,6 @@ impl Multiplexer {
             started_at: Utc::now(),
             exited_at: None,
         });
-        self.broadcast_session_spawned(id, agent.clone(), launch.label.clone());
-        self.maybe_broadcast_workspace_status_changed();
         // Reflow so the new pane's PTY gets the correct interior
         // dimensions (outer rect minus border rows/cols). Without
         // this, the session keeps its initial `content_rows ×

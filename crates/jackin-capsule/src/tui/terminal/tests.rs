@@ -80,3 +80,15 @@ fn normalize_size_replaces_zero_dimensions_with_defaults() {
 fn normalize_size_clamps_tiny_dimensions_to_pty_safe_floor() {
     assert_eq!(normalize_size(1, 1), (MIN_ROWS, MIN_COLS));
 }
+
+#[test]
+fn outer_terminal_reset_leads_with_sgr_reset() {
+    // The last frame's colors stay asserted on the outer terminal; without
+    // a leading SGR reset the host's post-exit output BCE-fills with the
+    // final background (the red run-id chip turned the whole screen red).
+    let reset = outer_terminal_reset_sequence();
+    assert!(
+        reset.starts_with(b"\x1b[0m"),
+        "outer terminal reset must start with SGR reset: {reset:?}"
+    );
+}
