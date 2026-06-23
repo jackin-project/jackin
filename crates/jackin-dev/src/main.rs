@@ -1,5 +1,6 @@
 //! Developer tooling for local jackin pull request verification.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -121,6 +122,7 @@ impl PrPaths {
 
 #[derive(Debug)]
 struct PullRequestInfo {
+    head_ref_name: String,
     head_oid: String,
     changed_files: Vec<String>,
 }
@@ -129,6 +131,13 @@ struct PullRequestInfo {
 struct AutoPrep {
     capsule: bool,
     construct: bool,
+}
+
+#[derive(Debug)]
+struct WorkspacePackage {
+    name: String,
+    root: PathBuf,
+    dependencies: Vec<String>,
 }
 
 fn main() -> std::process::ExitCode {
@@ -166,7 +175,12 @@ fn sync(args: SyncArgs) -> Result<()> {
 
     fs::create_dir_all(&paths.root)
         .with_context(|| format!("creating {}", paths.root.display()))?;
-    checkout_repo(&args.common.repo, args.common.pr, &paths.repo)?;
+    checkout_repo(
+        &args.common.repo,
+        args.common.pr,
+        &pr.head_ref_name,
+        &paths.repo,
+    )?;
     run_checked(command("mise", ["trust"]).current_dir(&paths.repo))?;
     run_checked(command("mise", ["install"]).current_dir(&paths.repo))?;
     run_checked(command("cargo", ["build", "--bin", "jackin"]).current_dir(&paths.repo))?;
@@ -175,7 +189,7 @@ fn sync(args: SyncArgs) -> Result<()> {
     fs::create_dir_all(&paths.home)
         .with_context(|| format!("creating {}", paths.home.display()))?;
 
-    let auto = auto_prep(&pr.changed_files);
+    let auto = auto_prep(&paths.repo, &pr.changed_files)?;
 
     let mut env_lines = env_lines(&paths);
 
@@ -271,7 +285,7 @@ fn pr_info(pr: u64, repo: &str) -> Result<PullRequestInfo> {
             "--repo",
             repo,
             "--json",
-            "headRefOid,files",
+            "headRefName,headRefOid,files",
         ],
     );
     let output = run_output(&mut cmd)?;
@@ -283,6 +297,7 @@ fn pr_info(pr: u64, repo: &str) -> Result<PullRequestInfo> {
 // silently collapsing it to empty would downgrade every `auto_prep` build
 // decision to "not needed" and launch the operator against a stale binary.
 fn parse_pr_info(json: &Value) -> Result<PullRequestInfo> {
+    let head_ref_name = json_string(json, "headRefName")?;
     let head_oid = json_string(json, "headRefOid")?;
     let changed_files = match json.get("files") {
         Some(Value::Array(files)) => files
@@ -294,6 +309,7 @@ fn parse_pr_info(json: &Value) -> Result<PullRequestInfo> {
         _ => bail!("gh pr view did not return a `files` array"),
     };
     Ok(PullRequestInfo {
+        head_ref_name,
         head_oid,
         changed_files,
     })
@@ -307,7 +323,7 @@ fn json_string(json: &Value, key: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("gh pr view did not return {key}"))
 }
 
-fn checkout_repo(repo: &str, pr: u64, repo_dir: &Path) -> Result<()> {
+fn checkout_repo(repo: &str, pr: u64, head_ref_name: &str, repo_dir: &Path) -> Result<()> {
     if !repo_dir.join(".git").exists() {
         let parent = repo_dir
             .parent()
@@ -325,21 +341,49 @@ fn checkout_repo(repo: &str, pr: u64, repo_dir: &Path) -> Result<()> {
         )?;
     }
 
-    let remote_ref = format!("refs/remotes/origin/pr-{pr}-head");
-    run_checked(
+    let head_remote_ref = format!("refs/remotes/origin/{head_ref_name}");
+    let head_upstream = format!("origin/{head_ref_name}");
+    let fetched_head_branch = run_status(
         command(
             "git",
             [
                 "fetch",
                 "-f",
                 "origin",
-                &format!("pull/{pr}/head:{remote_ref}"),
+                &format!("refs/heads/{head_ref_name}:{head_remote_ref}"),
             ],
         )
         .current_dir(repo_dir),
     )?;
+
+    let (remote_ref, upstream) = if fetched_head_branch {
+        (head_remote_ref, head_upstream)
+    } else {
+        let pr_remote_ref = format!("refs/remotes/origin/pr-{pr}-head");
+        run_checked(
+            command(
+                "git",
+                [
+                    "fetch",
+                    "-f",
+                    "origin",
+                    &format!("pull/{pr}/head:{pr_remote_ref}"),
+                ],
+            )
+            .current_dir(repo_dir),
+        )?;
+        (pr_remote_ref, format!("origin/pr-{pr}-head"))
+    };
+
     run_checked(
-        command("git", ["checkout", "-B", &format!("pr-{pr}"), &remote_ref]).current_dir(repo_dir),
+        command("git", ["checkout", "-B", head_ref_name, &remote_ref]).current_dir(repo_dir),
+    )?;
+    run_checked(
+        command(
+            "git",
+            ["branch", "--set-upstream-to", &upstream, head_ref_name],
+        )
+        .current_dir(repo_dir),
     )?;
     Ok(())
 }
@@ -399,19 +443,125 @@ fn env_lines(paths: &PrPaths) -> Vec<String> {
     ]
 }
 
-fn auto_prep(files: &[String]) -> AutoPrep {
-    AutoPrep {
-        capsule: files.iter().any(|file| {
-            file.starts_with("crates/jackin-capsule/")
-                || file.starts_with("crates/jackin-protocol/")
-        }),
-        construct: files.iter().any(|file| {
-            file.starts_with("docker/construct/")
-                || file == "docker-bake.hcl"
-                || file == "mise.toml"
-                || file.starts_with("crates/jackin-xtask/src/construct")
-        }),
+fn auto_prep(repo_dir: &Path, files: &[String]) -> Result<AutoPrep> {
+    Ok(AutoPrep {
+        capsule: capsule_build_required(repo_dir, files)?,
+        construct: construct_build_required(files),
+    })
+}
+
+fn construct_build_required(files: &[String]) -> bool {
+    files.iter().any(|file| {
+        file.starts_with("docker/construct/")
+            || file == "docker-bake.hcl"
+            || file == "mise.toml"
+            || file.starts_with("crates/jackin-xtask/src/construct")
+    })
+}
+
+fn capsule_build_required(repo_dir: &Path, files: &[String]) -> Result<bool> {
+    if files.iter().any(|file| {
+        matches!(
+            file.as_str(),
+            "Cargo.lock" | "Cargo.toml" | "rust-toolchain.toml" | "mise.toml"
+        ) || file.starts_with(".cargo/")
+    }) {
+        return Ok(true);
     }
+
+    let packages = workspace_packages(repo_dir)?;
+    let affected = affected_workspace_packages(repo_dir, files, &packages)?;
+    if affected.is_empty() {
+        return Ok(false);
+    }
+    let closure = local_dependency_closure(&packages, "jackin-capsule")?;
+    Ok(!affected.is_disjoint(&closure))
+}
+
+fn workspace_packages(repo_dir: &Path) -> Result<Vec<WorkspacePackage>> {
+    let output = run_output(
+        command("cargo", ["metadata", "--format-version=1", "--no-deps"]).current_dir(repo_dir),
+    )?;
+    let json: Value = serde_json::from_slice(&output).context("parsing cargo metadata JSON")?;
+    let packages = json
+        .get("packages")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("cargo metadata did not return a packages array"))?;
+
+    packages
+        .iter()
+        .map(|package| {
+            let name = json_string(package, "name")?;
+            let manifest_path = PathBuf::from(json_string(package, "manifest_path")?);
+            let root = manifest_path
+                .parent()
+                .ok_or_else(|| anyhow!("package {name} manifest has no parent"))?
+                .to_owned();
+            let dependencies = package
+                .get("dependencies")
+                .and_then(Value::as_array)
+                .ok_or_else(|| anyhow!("package {name} missing dependencies array"))?
+                .iter()
+                .filter(|dependency| {
+                    dependency.get("path").and_then(Value::as_str).is_some()
+                        && dependency.get("kind").and_then(Value::as_str) != Some("dev")
+                })
+                .filter_map(|dependency| dependency.get("name").and_then(Value::as_str))
+                .map(str::to_owned)
+                .collect();
+            Ok(WorkspacePackage {
+                name,
+                root,
+                dependencies,
+            })
+        })
+        .collect()
+}
+
+fn affected_workspace_packages(
+    repo_dir: &Path,
+    files: &[String],
+    packages: &[WorkspacePackage],
+) -> Result<BTreeSet<String>> {
+    let mut affected = BTreeSet::new();
+    for file in files {
+        let file = Path::new(file);
+        for package in packages {
+            let package_root = package.root.strip_prefix(repo_dir).with_context(|| {
+                format!(
+                    "package {} root {} is outside repo {}",
+                    package.name,
+                    package.root.display(),
+                    repo_dir.display()
+                )
+            })?;
+            if file.starts_with(package_root) {
+                affected.insert(package.name.clone());
+            }
+        }
+    }
+    Ok(affected)
+}
+
+fn local_dependency_closure(packages: &[WorkspacePackage], root: &str) -> Result<BTreeSet<String>> {
+    let by_name: BTreeMap<&str, &WorkspacePackage> = packages
+        .iter()
+        .map(|package| (package.name.as_str(), package))
+        .collect();
+    let mut closure = BTreeSet::new();
+    let mut stack = vec![root.to_owned()];
+
+    while let Some(name) = stack.pop() {
+        if !closure.insert(name.clone()) {
+            continue;
+        }
+        let package = by_name
+            .get(name.as_str())
+            .ok_or_else(|| anyhow!("workspace package {name:?} not found"))?;
+        stack.extend(package.dependencies.iter().cloned());
+    }
+
+    Ok(closure)
 }
 
 // Couples to the `build-jackin-capsule --export` contract: it prints exactly
@@ -471,6 +621,13 @@ fn run_checked(cmd: &mut Command) -> Result<()> {
     } else {
         Err(anyhow!("{} failed with {status}", display_command(cmd)))
     }
+}
+
+fn run_status(cmd: &mut Command) -> Result<bool> {
+    let status = cmd
+        .status()
+        .with_context(|| format!("running {}", display_command(cmd)))?;
+    Ok(status.success())
 }
 
 fn run_output(cmd: &mut Command) -> Result<Vec<u8>> {
