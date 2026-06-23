@@ -597,6 +597,18 @@ jobs:
           name: ${{ env.BUILDX_BUILDER }}
       - name: Expose GitHub Actions cache runtime
         uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
+      - name: Resolve construct tool versions
+        id: versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          source docker/construct/versions.env
+          echo "shellfirm-version=${SHELLFIRM_VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Restore prebuilt shellfirm
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: docker/construct/prebuilt
+          key: shellfirm-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.shellfirm-version }}-${{ hashFiles('rust-toolchain.toml') }}
       - name: Build construct image for E2E
         env:
           CACHE_FROM: |
