@@ -215,6 +215,15 @@ pub(crate) fn stories() -> Vec<Story> {
             story_status_footer_launch_progress,
         ),
         Story::new(
+            "status-footer/cockpit-chrome",
+            "Status footer",
+            "StatusFooter",
+            "Launch cockpit bottom chrome: hint bar above the white status footer.",
+            72,
+            3,
+            story_status_footer_cockpit_chrome,
+        ),
+        Story::new(
             "text-input/workspace-name",
             "Text input",
             "TextInput",
@@ -439,6 +448,10 @@ fn story_filter_input_populated(frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn story_hint_bar_manager_footer(frame: &mut Frame<'_>, area: Rect) {
+    // UNREGISTERABLE(lookbook-fixture): static gallery sample illustrating the
+    // hint-bar widget's layout. The lookbook crate has no dispatch surface and
+    // no `Keymap<A>` to derive these glyphs from — every entry is demo content,
+    // not an advertised real keybinding.
     let spans = [
         HintSpan::Key("↑↓"),
         HintSpan::Text("select"),
@@ -516,6 +529,37 @@ fn story_status_footer_launch_progress(frame: &mut Frame<'_>, area: Rect) {
         1.0, // fully opaque — the real launch cockpit fades in over ~30 frames
         StatusFooterHover {
             left: true,
+            right: false,
+            right_debug: false,
+        },
+    );
+}
+
+// UNREGISTERABLE(lookbook-fixture): static gallery sample mirroring the launch
+// cockpit's hint bar. The real cockpit derives these from COCKPIT_KEYMAP, but
+// the lookbook crate depends only on jackin-tui and cannot reference the launch
+// keymap — so this preview hardcodes the same glyphs as demo content.
+const COCKPIT_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Ctrl-C"),
+    HintSpan::Text("abort"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Ctrl-Q"),
+    HintSpan::Text("quit"),
+];
+
+fn story_status_footer_cockpit_chrome(frame: &mut Frame<'_>, area: Rect) {
+    use jackin_tui::components::{bottom_chrome_areas, render_hint_bar};
+    let chrome = bottom_chrome_areas(area);
+    render_hint_bar(frame, chrome.hint, COCKPIT_HINT);
+    render_status_footer(
+        frame,
+        chrome.footer,
+        "Building role image: rust-dev",
+        "s7f8a2c1",
+        Some("jk-run-3d7e23"),
+        1.0,
+        StatusFooterHover {
+            left: false,
             right: false,
             right_debug: false,
         },

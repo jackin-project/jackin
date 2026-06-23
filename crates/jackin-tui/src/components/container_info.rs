@@ -107,7 +107,7 @@ pub struct DebugInfo {
     pub agent: Option<String>,
     /// Working directory / target label.
     pub target: Option<String>,
-    /// Bare run id (`jk-run-xxxxxx`) — never the log path.
+    /// Bare run id — never the log path.
     pub run_id: Option<String>,
     /// Absolute path to the run's diagnostics JSONL. Rendered copyable with a
     /// `file://` hyperlink; the bare run id goes in [`Self::run_id`] instead.
@@ -342,20 +342,34 @@ pub fn clamp_dialog_scroll(
 }
 
 /// Keys for the Debug-info dialog hint bar: the *available* scroll axes (per
-/// `axes`) then keyboard copy + dismiss. The scroll segment is omitted entirely
-/// when the body fits, and shows only the axis/axes that actually overflow —
-/// the dialog never advertises a direction the operator cannot move.
+/// `axes`), keyboard copy, dismiss, then click-to-copy. The scroll segment is
+/// omitted entirely when the body fits, and shows only the axis/axes that
+/// actually overflow — the dialog never advertises a direction the operator
+/// cannot move.
+///
+/// Single source of truth for the Debug-info hint bar: the console list modal
+/// and the launch cockpit both render this exact sequence so the same dialog
+/// never drifts between surfaces. The keyboard and mouse affordances are
+/// inline-handled (Enter copies the hovered row, Esc dismisses, left-click
+/// copies) with no backing `Keymap<A>`, so each span carries an
+/// `// UNREGISTERABLE` annotation per the keymap/hint-bar enforcement rule.
 #[must_use]
 pub fn debug_info_hint_spans(axes: crate::components::ScrollAxes) -> Vec<crate::HintSpan<'static>> {
     let mut spans = crate::components::scroll_hint_spans(axes);
     if axes.any() {
         spans.push(crate::HintSpan::GroupSep);
     }
+    // UNREGISTERABLE(container-info-copy): Enter copies the active row inline; no ContainerInfo keymap.
     spans.push(crate::HintSpan::Key("↵"));
     spans.push(crate::HintSpan::Text("copy value"));
     spans.push(crate::HintSpan::GroupSep);
+    // UNREGISTERABLE(container-info-no-keymap): Esc dismisses inline.
     spans.push(crate::HintSpan::Key("Esc"));
     spans.push(crate::HintSpan::Text("dismiss"));
+    spans.push(crate::HintSpan::GroupSep);
+    // UNREGISTERABLE(mouse): mouse click cannot be expressed as a KeyChord.
+    spans.push(crate::HintSpan::Key("click"));
+    spans.push(crate::HintSpan::Text("copy value"));
     spans
 }
 
@@ -406,6 +420,40 @@ pub fn copy_payload_at(
                 && col < p.screen_x.saturating_add(p.visible_target_cols)
         })
         .map(|p| (p.idx, state.rows[p.idx].value.clone()))
+}
+
+/// Visible hyperlink cells for the encoder's frame-layer OSC 8 emission:
+/// one `(rect, uri)` per linked row slice currently on screen. The capsule's
+/// cell encoder brackets exactly these cells during emission, replacing the
+/// raw post-frame overlay (the host console still uses
+/// [`hyperlink_overlay`]).
+#[must_use]
+pub fn hyperlink_regions(area: Rect, state: &ContainerInfoState) -> Vec<(Rect, String)> {
+    value_placements(area, state)
+        .into_iter()
+        .filter_map(|p| {
+            let row = &state.rows[p.idx];
+            let href = row.href()?;
+            let visible = crate::display_cols_slice(
+                row.value(),
+                p.skip_cols,
+                usize::from(p.visible_value_cols),
+            );
+            if visible.is_empty() {
+                return None;
+            }
+            let width = crate::display_cols(&visible) as u16;
+            Some((
+                Rect {
+                    x: p.screen_x.saturating_sub(1),
+                    y: p.screen_y.saturating_sub(1),
+                    width,
+                    height: 1,
+                },
+                href.to_owned(),
+            ))
+        })
+        .collect()
 }
 
 #[must_use]

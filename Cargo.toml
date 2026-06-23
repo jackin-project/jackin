@@ -6,6 +6,7 @@ members = [
     "crates/jackin-config",
     "crates/jackin-console",
     "crates/jackin-core",
+    "crates/jackin-dev",
     "crates/jackin-diagnostics",
     "crates/jackin-docker",
     "crates/jackin-env",
@@ -18,6 +19,7 @@ members = [
     "crates/jackin-tui",
     "crates/jackin-tui-lookbook",
     "crates/jackin-xtask",
+    "crates/jackin-pr-trailers",
 ]
 resolver = "3"
 

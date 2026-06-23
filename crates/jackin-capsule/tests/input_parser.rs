@@ -183,7 +183,7 @@ fn prefix_commands_for_default_bindings_when_prefix_enabled() {
     ];
     for (input, expected) in bindings {
         let evs = parse_prefix_only(input);
-        assert_eq!(evs, vec![InputEvent::PrefixCommand(expected.clone())]);
+        assert_eq!(evs, vec![InputEvent::PrefixCommand(*expected)]);
     }
 }
 

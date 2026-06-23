@@ -1,5 +1,6 @@
 //! Tests for `view`.
 use super::*;
+use crate::tui::state::SettingsTab;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -31,6 +32,30 @@ fn settings_frame_areas_match_header_tabs_body_footer_contract() {
 #[test]
 fn settings_header_title_is_screen_owned() {
     assert_eq!(settings_header_title(), "settings");
+}
+
+#[test]
+fn settings_modal_render_plan_prioritizes_visible_modal_family() {
+    assert_eq!(
+        settings_modal_render_plan(true, true, true, true),
+        SettingsModalRenderPlan::ErrorPopup
+    );
+    assert_eq!(
+        settings_modal_render_plan(false, true, true, true),
+        SettingsModalRenderPlan::Mounts
+    );
+    assert_eq!(
+        settings_modal_render_plan(false, false, true, true),
+        SettingsModalRenderPlan::Environments
+    );
+    assert_eq!(
+        settings_modal_render_plan(false, false, false, true),
+        SettingsModalRenderPlan::Auth
+    );
+    assert_eq!(
+        settings_modal_render_plan(false, false, false, false),
+        SettingsModalRenderPlan::None
+    );
 }
 
 #[test]
@@ -105,6 +130,65 @@ fn settings_env_value_text_label_names_key() {
 }
 
 #[test]
+fn settings_env_value_edit_text_plan_owns_lookup_and_labels() {
+    let pending = SettingsEnvConfig {
+        env: BTreeMap::from([(
+            "TOKEN".to_owned(),
+            jackin_core::EnvValue::Plain("abc".to_owned()),
+        )]),
+        roles: BTreeMap::from([(
+            "ops".to_owned(),
+            BTreeMap::from([(
+                "ROLE_TOKEN".to_owned(),
+                jackin_core::EnvValue::Plain("def".to_owned()),
+            )]),
+        )]),
+    };
+
+    assert_eq!(
+        settings_env_value_edit_text_plan(&pending, SettingsEnvScope::Global, "TOKEN".to_owned()),
+        SettingsEnvValueEditTextPlan {
+            target: SettingsEnvTextTarget::EnvValue {
+                scope: SettingsEnvScope::Global,
+                key: "TOKEN".to_owned(),
+            },
+            label: "Edit TOKEN".to_owned(),
+            current: "abc".to_owned(),
+        }
+    );
+    assert_eq!(
+        settings_env_value_edit_text_plan(
+            &pending,
+            SettingsEnvScope::Role("ops".to_owned()),
+            "ROLE_TOKEN".to_owned()
+        ),
+        SettingsEnvValueEditTextPlan {
+            target: SettingsEnvTextTarget::EnvValue {
+                scope: SettingsEnvScope::Role("ops".to_owned()),
+                key: "ROLE_TOKEN".to_owned(),
+            },
+            label: "Edit ROLE_TOKEN".to_owned(),
+            current: "def".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn settings_env_plain_value_text_plan_owns_empty_value_modal() {
+    assert_eq!(
+        settings_env_plain_value_text_plan(SettingsEnvScope::Global, "TOKEN".to_owned()),
+        SettingsEnvValueEditTextPlan {
+            target: SettingsEnvTextTarget::EnvValue {
+                scope: SettingsEnvScope::Global,
+                key: "TOKEN".to_owned(),
+            },
+            label: "Edit TOKEN".to_owned(),
+            current: String::new(),
+        }
+    );
+}
+
+#[test]
 fn settings_env_source_picker_state_names_key() {
     let state = settings_env_source_picker_state("TOKEN");
 
@@ -137,6 +221,92 @@ fn global_mount_scope_text_value_uses_empty_global_fallback() {
 }
 
 #[test]
+fn global_mount_edit_text_initial_routes_edit_targets() {
+    let row = jackin_config::GlobalMountRow {
+        scope: Some("ops".to_owned()),
+        name: "cache".to_owned(),
+        mount: jackin_config::MountConfig {
+            src: "/host/cache".to_owned(),
+            dst: "/jackin/cache".to_owned(),
+            readonly: true,
+            isolation: jackin_config::MountIsolation::Shared,
+        },
+    };
+
+    assert_eq!(
+        global_mount_edit_text_initial(&row, &GlobalMountTextTarget::Rename),
+        Some("cache".to_owned())
+    );
+    assert_eq!(
+        global_mount_edit_text_initial(&row, &GlobalMountTextTarget::Source),
+        Some("/host/cache".to_owned())
+    );
+    assert_eq!(
+        global_mount_edit_text_initial(&row, &GlobalMountTextTarget::Destination),
+        Some("/jackin/cache".to_owned())
+    );
+    assert_eq!(
+        global_mount_edit_text_initial(&row, &GlobalMountTextTarget::Scope),
+        Some("ops".to_owned())
+    );
+    assert_eq!(
+        global_mount_edit_text_initial(&row, &GlobalMountTextTarget::AddSource),
+        None
+    );
+}
+
+#[test]
+fn global_mount_selected_edit_text_plan_routes_selected_row() {
+    let rows = vec![
+        jackin_config::GlobalMountRow {
+            scope: None,
+            name: "logs".to_owned(),
+            mount: jackin_config::MountConfig {
+                src: "/host/logs".to_owned(),
+                dst: "/jackin/logs".to_owned(),
+                readonly: false,
+                isolation: jackin_config::MountIsolation::Shared,
+            },
+        },
+        jackin_config::GlobalMountRow {
+            scope: Some("ops".to_owned()),
+            name: "cache".to_owned(),
+            mount: jackin_config::MountConfig {
+                src: "/host/cache".to_owned(),
+                dst: "/jackin/cache".to_owned(),
+                readonly: true,
+                isolation: jackin_config::MountIsolation::Shared,
+            },
+        },
+    ];
+
+    assert_eq!(
+        global_mount_selected_edit_text_plan(&rows, 1, GlobalMountTextTarget::Rename),
+        Some(GlobalMountEditTextPlan {
+            target: GlobalMountTextTarget::Rename,
+            label: "Rename mount",
+            initial: "cache".to_owned(),
+        })
+    );
+    assert_eq!(
+        global_mount_selected_edit_text_plan(&rows, 1, GlobalMountTextTarget::Scope),
+        Some(GlobalMountEditTextPlan {
+            target: GlobalMountTextTarget::Scope,
+            label: "Scope (empty = global)",
+            initial: "ops".to_owned(),
+        })
+    );
+    assert_eq!(
+        global_mount_selected_edit_text_plan(&rows, 3, GlobalMountTextTarget::Rename),
+        None
+    );
+    assert_eq!(
+        global_mount_selected_edit_text_plan(&rows, 1, GlobalMountTextTarget::AddSource),
+        None
+    );
+}
+
+#[test]
 fn global_mount_text_target_labels_are_settings_owned() {
     assert_eq!(
         global_mount_text_target_label(&GlobalMountTextTarget::Rename),
@@ -163,8 +333,8 @@ fn settings_env_delete_confirm_prompt_names_key() {
 #[test]
 fn settings_env_key_input_state_marks_scope_duplicates() {
     let mut pending = SettingsEnvConfig {
-        env: std::collections::BTreeMap::new(),
-        roles: std::collections::BTreeMap::new(),
+        env: BTreeMap::new(),
+        roles: BTreeMap::new(),
     };
     pending.env.insert("GLOBAL".to_owned(), "1".to_owned());
     pending
@@ -252,6 +422,40 @@ fn settings_env_new_key_labels_name_scope() {
 }
 
 #[test]
+fn settings_env_key_text_plans_own_target_and_label() {
+    assert_eq!(
+        settings_env_new_key_text_plan(SettingsEnvScope::Global),
+        SettingsEnvKeyTextPlan {
+            scope: SettingsEnvScope::Global,
+            target: SettingsEnvTextTarget::EnvKey {
+                scope: SettingsEnvScope::Global,
+            },
+            label: "New global environment key".to_owned(),
+        }
+    );
+    assert_eq!(
+        settings_env_new_key_after_picker_text_plan(SettingsEnvScope::Role("alpha".to_owned())),
+        SettingsEnvKeyTextPlan {
+            scope: SettingsEnvScope::Role("alpha".to_owned()),
+            target: SettingsEnvTextTarget::EnvKey {
+                scope: SettingsEnvScope::Role("alpha".to_owned()),
+            },
+            label: "New environment key for alpha".to_owned(),
+        }
+    );
+    assert_eq!(
+        settings_env_empty_key_text_plan(SettingsEnvScope::Global),
+        SettingsEnvKeyTextPlan {
+            scope: SettingsEnvScope::Global,
+            target: SettingsEnvTextTarget::EnvKey {
+                scope: SettingsEnvScope::Global,
+            },
+            label: "Key cannot be empty".to_owned(),
+        }
+    );
+}
+
+#[test]
 fn trust_lines_include_header_empty_row_and_truncate_long_role() {
     let rows = [SettingsTrustRow {
         role: "very-long-role-name-that-will-truncate".to_owned(),
@@ -289,7 +493,6 @@ fn auth_lines_render_kind_mode_source_and_spacer() {
             display: AuthSourceFolderDisplay {
                 kind: AuthSourceFolderKind::Default,
                 path: "~/.claude".to_owned(),
-                env_var: Some("CLAUDE_CONFIG_DIR".to_owned()),
             },
         },
         SettingsAuthLineRow::Spacer,
@@ -306,11 +509,53 @@ fn auth_lines_render_kind_mode_source_and_spacer() {
     );
     assert_eq!(lines[3].spans[0].content.as_ref(), "  ");
     assert_eq!(lines[3].spans[1].content.as_ref(), "Source folder ");
+    assert_eq!(lines[3].spans[2].content.as_ref(), "default: ~/.claude");
     assert!(lines[4].spans.is_empty());
 
     let folder_selected = auth_lines(&rows, 3, true);
     assert_eq!(folder_selected[2].spans[0].content.as_ref(), "  ");
     assert_eq!(folder_selected[3].spans[0].content.as_ref(), "\u{25b8} ");
+}
+
+#[test]
+fn auth_source_folder_rows_render_display_kinds_without_env_suffix() {
+    let rows = vec![
+        SettingsAuthLineRow::SourceFolder {
+            display: AuthSourceFolderDisplay {
+                kind: AuthSourceFolderKind::Default,
+                path: "~/.claude".to_owned(),
+            },
+        },
+        SettingsAuthLineRow::SourceFolder {
+            display: AuthSourceFolderDisplay {
+                kind: AuthSourceFolderKind::Inherited,
+                path: "/global/claude".to_owned(),
+            },
+        },
+        SettingsAuthLineRow::SourceFolder {
+            display: AuthSourceFolderDisplay {
+                kind: AuthSourceFolderKind::Explicit,
+                path: "/settings/claude".to_owned(),
+            },
+        },
+    ];
+    let lines = auth_lines(&rows, 0, true);
+
+    assert_eq!(lines[0].spans[2].content.as_ref(), "default: ~/.claude");
+    assert_eq!(
+        lines[1].spans[2].content.as_ref(),
+        "inherited: /global/claude"
+    );
+    assert_eq!(lines[2].spans[2].content.as_ref(), "/settings/claude");
+    for line in lines {
+        let text = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert!(!text.contains("explicit:"), "{text}");
+        assert!(!text.contains('('), "{text}");
+    }
 }
 
 #[test]
@@ -413,4 +658,42 @@ fn auth_content_height_drill_in_tracks_credential_row_and_error() {
         ),
         5
     );
+}
+
+#[test]
+fn settings_header_does_not_duplicate_active_tab_label() {
+    use jackin_config::AppConfig;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn render_settings_to_dump(state: &crate::tui::state::SettingsState<'_>) -> String {
+        let backend = TestBackend::new(90, 18);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|frame| render_settings_with_footer(frame, frame.area(), state, false))
+            .unwrap();
+        let buf = term.backend().buffer();
+        let mut out = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                out.push_str(buf[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    let config = AppConfig::default();
+    for tab in SettingsTab::ALL {
+        let mut state = crate::tui::state::SettingsState::from_config(&config);
+        state.active_tab = tab;
+        let dump = render_settings_to_dump(&state);
+        let header = dump.lines().next().unwrap_or_default();
+        assert!(
+            header.contains("settings"),
+            "settings header missing for {tab:?}: {header:?}"
+        );
+        assert!(
+            !header.contains("settings ·"),
+            "settings header must not duplicate active tab for {tab:?}: {header:?}"
+        );
+    }
 }

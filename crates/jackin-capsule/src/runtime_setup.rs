@@ -36,10 +36,32 @@ const GIT_DCO_IDENTITY_CACHE: &str = "/jackin/state/git-dco-identity";
 const GIT_DCO_IDENTITY_CACHE_ENV: &str = "JACKIN_GIT_DCO_IDENTITY_CACHE";
 
 pub fn run() -> Result<()> {
-    run_container_init_once()?;
-    install_git_trailer_hook_if_requested()?;
-    cache_dco_identity_if_needed();
-    run_agent_setup()
+    run_runtime_setup_concurrently(
+        run_container_init_once,
+        install_git_trailer_hook_if_requested,
+        cache_dco_identity_if_needed,
+        run_agent_setup,
+    )
+}
+
+fn run_runtime_setup_concurrently(
+    container_init: impl FnOnce() -> Result<()> + Send + 'static,
+    git_hook: impl FnOnce() -> Result<()>,
+    dco_cache: impl FnOnce(),
+    agent_setup: impl FnOnce() -> Result<()> + Send + 'static,
+) -> Result<()> {
+    let agent_setup = std::thread::spawn(agent_setup);
+    let foreground: Result<()> = (|| {
+        container_init()?;
+        git_hook()?;
+        dco_cache();
+        Ok(())
+    })();
+    let agent_result = agent_setup
+        .join()
+        .map_err(|_| anyhow::anyhow!("runtime agent setup thread panicked"))?;
+    foreground?;
+    agent_result
 }
 
 /// Write a run-once marker (`ok\n`), creating its parent directory first.
@@ -312,7 +334,80 @@ fn setup_claude(copy_auth: bool) -> Result<()> {
             &["mcp", "add", "shellfirm", "--", "shellfirm", "mcp"],
         );
     }
+    setup_claude_plugins();
     Ok(())
+}
+
+/// Install the Claude plugin marketplaces and plugins declared by the role
+/// manifest, once per home.
+///
+/// Plugin setup moved here from the image build: the `claude` binary is now
+/// bind-mounted read-only at `docker run` (not baked into the derived image), so
+/// there is no longer a build step to run `claude plugin install`. Idempotent via
+/// a marker so re-launches and sibling tabs do not re-run it.
+fn setup_claude_plugins() {
+    let Some(config) = crate::config::load_optional() else {
+        return;
+    };
+    if config.claude_marketplaces.is_empty() && config.claude_plugins.is_empty() {
+        return;
+    }
+    // Re-run when the declared plugin set changes. The marker records the exact
+    // marketplaces+plugins it was written for (the old image build keyed its
+    // bundle cache on a hash of the same commands); a bare exists() check would
+    // shadow a `jackin.role.toml` plugin edit forever.
+    let fingerprint = claude_plugin_fingerprint(&config);
+    let marker = Path::new("/home/agent/.claude/.jackin-plugins.done");
+    if fs::read_to_string(marker).ok().as_deref() == Some(fingerprint.as_str()) {
+        return;
+    }
+    // The official marketplace backs the common plugins; tolerate it already
+    // being registered.
+    run_optional_command(
+        "claude",
+        &[
+            "plugin",
+            "marketplace",
+            "add",
+            "anthropics/claude-plugins-official",
+        ],
+    );
+    for marketplace in &config.claude_marketplaces {
+        let mut args = vec!["plugin", "marketplace", "add", marketplace.source.as_str()];
+        if !marketplace.sparse.is_empty() {
+            args.push("--sparse");
+            for path in &marketplace.sparse {
+                args.push(path.as_str());
+            }
+        }
+        run_optional_command("claude", &args);
+    }
+    for plugin in &config.claude_plugins {
+        run_optional_command("claude", &["plugin", "install", plugin.as_str()]);
+    }
+    fs::create_dir_all("/home/agent/.claude").ok();
+    fs::write(marker, &fingerprint).ok();
+}
+
+/// Stable fingerprint of the declared Claude marketplaces + plugins, stored as
+/// the install marker's contents so a changed plugin set re-triggers install.
+fn claude_plugin_fingerprint(config: &jackin_protocol::CapsuleConfig) -> String {
+    let mut out = String::new();
+    for marketplace in &config.claude_marketplaces {
+        out.push_str("m:");
+        out.push_str(&marketplace.source);
+        for path in &marketplace.sparse {
+            out.push(' ');
+            out.push_str(path);
+        }
+        out.push('\n');
+    }
+    for plugin in &config.claude_plugins {
+        out.push_str("p:");
+        out.push_str(plugin);
+        out.push('\n');
+    }
+    out
 }
 
 fn setup_codex(copy_auth: bool) -> Result<()> {
@@ -335,68 +430,117 @@ fn setup_codex(copy_auth: bool) -> Result<()> {
     Ok(())
 }
 
-/// Appends `[model_providers]` + `[profiles]` blocks for available alt
-/// providers to `config.toml` under `codex_dir`. `MiniMax` is the only
-/// deliverable Codex cell (Responses-API compatible); GLM and Kimi are
-/// deferred. Idempotent: skips the write if the block is already present.
+/// Appends the `[model_providers.minimax]` block to `config.toml` and writes
+/// the v2 profile file `minimax.config.toml` under `codex_dir`. `MiniMax` is
+/// the only deliverable Codex cell (Responses-API compatible); GLM and Kimi
+/// are deferred. Both writes are idempotent across repeated setup invocations.
 fn write_codex_provider_config(codex_dir: &Path) -> Result<()> {
-    write_codex_provider_config_inner(codex_dir, nonempty_env("MINIMAX_API_KEY").is_some())
+    write_codex_provider_config_inner(
+        codex_dir,
+        nonempty_env("MINIMAX_API_KEY").is_some(),
+        &codex_minimax_model(),
+    )
+}
+
+/// `MiniMax` model Codex routes to: the role's `[codex.providers.minimax].model`
+/// override (carried in the capsule config) when set, else the built-in default.
+fn codex_minimax_model() -> String {
+    crate::config::load_optional()
+        .and_then(|config| config.provider_model("codex", "minimax").map(str::to_owned))
+        .unwrap_or_else(|| jackin_protocol::MINIMAX_DEFAULT_MODEL.to_owned())
 }
 
 /// Core of [`write_codex_provider_config`] with env reading lifted out so tests
-/// drive the MiniMax-present decision directly (no process-global env mutation).
-fn write_codex_provider_config_inner(codex_dir: &Path, minimax_present: bool) -> Result<()> {
+/// drive the MiniMax-present decision and the model directly (no process-global
+/// env or config mutation).
+fn write_codex_provider_config_inner(
+    codex_dir: &Path,
+    minimax_present: bool,
+    model: &str,
+) -> Result<()> {
     if !minimax_present {
         return Ok(());
     }
-    let config_path = codex_dir.join("config.toml");
     fs::create_dir_all(codex_dir)
         .with_context(|| format!("failed to create {}", codex_dir.display()))?;
-    // Check for existing block before appending to stay idempotent across
-    // repeated setup invocations (duplicate TOML table keys are a parse error).
-    if config_path.exists() {
-        let existing = fs::read_to_string(&config_path).with_context(|| {
+
+    // ── config.toml: append [model_providers.minimax] if not already present ──
+    // Duplicate TOML table keys are a parse error, so we guard with a
+    // substring check before appending.
+    let config_path = codex_dir.join("config.toml");
+    let provider_block_missing = !config_path.exists()
+        || !fs::read_to_string(&config_path)
+            .with_context(|| {
+                format!(
+                    "failed to read {} for idempotency check",
+                    config_path.display()
+                )
+            })?
+            .contains("[model_providers.minimax]");
+    if provider_block_missing {
+        let provider_block = codex_minimax_provider_toml()?;
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "capsule runtime setup runs before entering the multiplexer render loop"
+        )]
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&config_path)
+            .with_context(|| {
+                format!(
+                    "failed to open {} for provider config",
+                    config_path.display()
+                )
+            })?;
+        file.write_all(provider_block.as_bytes()).with_context(|| {
             format!(
-                "failed to read {} for idempotency check",
+                "failed to write MiniMax provider block to {}",
                 config_path.display()
             )
         })?;
-        if existing.contains("[model_providers.minimax]") {
-            return Ok(());
-        }
-    }
-    let provider_block = codex_minimax_provider_toml()?;
-    // Append so any operator-authored config.toml content is preserved.
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "capsule runtime setup runs before entering the multiplexer render loop"
-    )]
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&config_path)
-        .with_context(|| {
-            format!(
-                "failed to open {} for provider config",
-                config_path.display()
-            )
-        })?;
-    file.write_all(provider_block.as_bytes()).with_context(|| {
-        format!(
-            "failed to write MiniMax provider block to {}",
+        crate::output::stdout_line(format_args!(
+            "[entrypoint] codex: wrote MiniMax provider block to {}",
             config_path.display()
-        )
-    })?;
-    crate::output::stdout_line(format_args!(
-        "[entrypoint] codex: wrote MiniMax provider block to {}",
-        config_path.display()
-    ));
+        ));
+    } else {
+        crate::cdebug!(
+            "codex: [model_providers.minimax] already present in {}; skipping append",
+            config_path.display()
+        );
+    }
+
+    // ── minimax.config.toml: Codex v2 profile file, loaded by `--profile minimax` ──
+    // Do NOT also write `[profiles.minimax]` into config.toml: Codex errors when
+    // `--profile` is passed alongside a legacy v1 profiles table.
+    let profile_path = codex_dir.join("minimax.config.toml");
+    if profile_path.exists() {
+        crate::cdebug!(
+            "codex: {} already exists; leaving operator/prior profile as-is",
+            profile_path.display()
+        );
+    } else {
+        let profile = codex_minimax_profile_toml(model)?;
+        fs::write(&profile_path, profile.as_bytes()).with_context(|| {
+            format!(
+                "failed to write MiniMax profile config to {}",
+                profile_path.display()
+            )
+        })?;
+        crate::output::stdout_line(format_args!(
+            "[entrypoint] codex: wrote MiniMax profile config to {}",
+            profile_path.display()
+        ));
+    }
+
+    // ── minimax.models.json: model catalog so the MiniMax model has real metadata ─
+    write_codex_minimax_catalog(codex_dir, model)?;
+
     Ok(())
 }
 
-/// Serializes the `MiniMax` `[model_providers.minimax]` + `[profiles.minimax]`
-/// Codex block via the `toml` crate (a leading newline separates it from any
-/// existing appended-to content).
+/// Serializes the `[model_providers.minimax]` block for `config.toml` via the
+/// `toml` crate. A leading newline separates it from any existing content.
 fn codex_minimax_provider_toml() -> Result<String> {
     #[derive(serde::Serialize)]
     struct ProviderEntry {
@@ -406,14 +550,8 @@ fn codex_minimax_provider_toml() -> Result<String> {
         wire_api: &'static str,
     }
     #[derive(serde::Serialize)]
-    struct ProfileEntry {
-        model_provider: &'static str,
-        model: &'static str,
-    }
-    #[derive(serde::Serialize)]
     struct CodexBlock {
         model_providers: std::collections::BTreeMap<&'static str, ProviderEntry>,
-        profiles: std::collections::BTreeMap<&'static str, ProfileEntry>,
     }
     let block = CodexBlock {
         model_providers: [(
@@ -427,19 +565,120 @@ fn codex_minimax_provider_toml() -> Result<String> {
         )]
         .into_iter()
         .collect(),
-        profiles: [(
-            "minimax",
-            ProfileEntry {
-                model_provider: "minimax",
-                model: jackin_protocol::MINIMAX_DEFAULT_MODEL,
-            },
-        )]
-        .into_iter()
-        .collect(),
     };
     let body =
         toml::to_string(&block).context("failed to serialize Codex MiniMax provider block")?;
     Ok(format!("\n{body}"))
+}
+
+/// Serializes the Codex v2 profile file content (`minimax.config.toml`).
+/// Loaded by `codex --profile minimax`; sets `model_provider` for that session.
+/// The context window is NOT set here: a profile-scoped `model_context_window`
+/// is clamped to the active model's fallback cap (~272k), so it can never raise
+/// the window for a custom model. `minimax.models.json` carries the real 512k
+/// window instead (see [`write_codex_minimax_catalog`]).
+fn codex_minimax_profile_toml(model: &str) -> Result<String> {
+    #[derive(serde::Serialize)]
+    struct ProfileConfig<'a> {
+        model_provider: &'static str,
+        model: &'a str,
+    }
+    let config = ProfileConfig {
+        model_provider: "minimax",
+        model,
+    };
+    toml::to_string(&config).context("failed to serialize Codex MiniMax profile config")
+}
+
+/// Writes `minimax.models.json` — a Codex model catalog giving `MiniMax-M3` real
+/// metadata (a 512k context window). MiniMax-M3 is absent from Codex's bundled
+/// catalog, so without this Codex uses generic fallback metadata: a ~272k window
+/// plus a "metadata not found, can degrade performance" warning on every turn,
+/// and it clamps any `model_context_window` override to that fallback cap. A
+/// catalog entry is the only mechanism that lifts the window. The entry is
+/// derived at runtime from the installed Codex's own catalog (`codex debug
+/// models`) so it always matches the running binary's `ModelInfo` schema rather
+/// than a snapshot that drifts as Codex evolves. The entrypoint activates it
+/// with `-c model_catalog_json=<file>` alongside `--profile minimax` (a
+/// profile-file `model_catalog_json` key trips a Codex config-parse bug).
+///
+/// Best-effort: if Codex is missing or its output won't parse, the catalog is
+/// skipped and Codex falls back to its generic metadata — the model still runs.
+fn write_codex_minimax_catalog(codex_dir: &Path, model: &str) -> Result<()> {
+    let catalog_path = codex_dir.join("minimax.models.json");
+    if catalog_path.exists() {
+        crate::cdebug!(
+            "codex: {} already exists; leaving as-is",
+            catalog_path.display()
+        );
+        return Ok(());
+    }
+    let Some(template) = codex_catalog_template_entry() else {
+        crate::clog!(
+            "codex: no usable entry from `codex debug models`; skipping MiniMax model catalog (Codex falls back to generic metadata)"
+        );
+        return Ok(());
+    };
+    let catalog = build_minimax_catalog(&template, model);
+    let body = serde_json::to_string_pretty(&catalog)
+        .context("failed to serialize MiniMax model catalog")?;
+    fs::write(&catalog_path, body.as_bytes()).with_context(|| {
+        format!(
+            "failed to write MiniMax model catalog to {}",
+            catalog_path.display()
+        )
+    })?;
+    crate::output::stdout_line(format_args!(
+        "[entrypoint] codex: wrote MiniMax model catalog to {}",
+        catalog_path.display()
+    ));
+    Ok(())
+}
+
+/// First entry of the installed Codex's model catalog as an object map, used as a
+/// schema-correct template. Any entry works: [`build_minimax_catalog`] overwrites
+/// the identity and window fields and leaves the rest (tool config, capability
+/// flags, base instructions) as the running binary already shaped them. `None`
+/// when Codex is absent, fails, or its output has no model object to template.
+fn codex_catalog_template_entry() -> Option<serde_json::Map<String, serde_json::Value>> {
+    let mut command = Command::new("codex");
+    command.args(["debug", "models"]);
+    let output = runtime_setup_output(&mut command).ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    json.get("models")?
+        .as_array()?
+        .first()?
+        .as_object()
+        .cloned()
+}
+
+/// Patches a Codex catalog entry into the `MiniMax-M3` entry: real identity and
+/// the `MiniMax` context window, with the template model's promo fields cleared.
+fn build_minimax_catalog(
+    template: &serde_json::Map<String, serde_json::Value>,
+    model: &str,
+) -> serde_json::Value {
+    let mut entry = template.clone();
+    entry.insert("slug".to_owned(), json!(model));
+    entry.insert("display_name".to_owned(), json!(model));
+    entry.insert(
+        "description".to_owned(),
+        json!("MiniMax Token Plan model (served via jackin)."),
+    );
+    let window = jackin_protocol::MINIMAX_CONTEXT_WINDOW;
+    entry.insert("context_window".to_owned(), json!(window));
+    entry.insert("max_context_window".to_owned(), json!(window));
+    // Compact at 90% of the window so Codex compacts before truncating near the limit.
+    entry.insert(
+        "auto_compact_token_limit".to_owned(),
+        json!(window * 9 / 10),
+    );
+    entry.insert("availability_nux".to_owned(), serde_json::Value::Null);
+    entry.insert("upgrade".to_owned(), serde_json::Value::Null);
+    json!({ "models": [entry] })
 }
 
 fn setup_amp(copy_auth: bool) -> Result<()> {

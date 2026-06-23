@@ -7,7 +7,9 @@
 pub mod app;
 pub mod components;
 pub mod effect;
+pub(crate) mod host_colors;
 pub mod input;
+pub(crate) mod keymap;
 pub mod layout;
 pub mod message;
 pub mod render;

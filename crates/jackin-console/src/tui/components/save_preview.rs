@@ -5,12 +5,27 @@ use std::collections::{BTreeMap, BTreeSet};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
+use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
+use crate::tui::screens::editor::model::{EditorMode, EditorState};
+use crate::tui::screens::settings::model::{
+    GlobalMountsState, SettingsAuthState, SettingsEnvState, SettingsState, SettingsTrustState,
+};
+use crate::tui::{
+    auth::{AuthKind, AuthMode, auth_mode_supports_source_folder},
+    auth_config::{
+        auth_kind_agent, editor_source_folder_display, env_display_map,
+        env_display_map_without_auth_credentials, panel_auth_source_value, resolve_panel_mode,
+        role_auth_mode_and_credential,
+    },
+};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceSavePreview {
     pub mode: WorkspaceSaveMode,
     pub original_workdir: Option<String>,
     pub pending_workdir: String,
     pub mount_diffs: Vec<WorkspaceMountDiff>,
+    pub auth_changes: Vec<WorkspaceAuthChange>,
     pub original_allowed_roles: Vec<String>,
     pub pending_allowed_roles: Vec<String>,
     pub role_count: usize,
@@ -42,6 +57,168 @@ pub fn workspace_create_display_name(pending_name: Option<&str>) -> String {
     pending_name.unwrap_or("(unnamed)").to_owned()
 }
 
+#[must_use]
+pub fn workspace_save_preview<
+    Modal,
+    SaveFlow,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    editor: &EditorState<
+        jackin_config::WorkspaceConfig,
+        crate::mount_info_cache::MountInfoCache,
+        Modal,
+        SaveFlow,
+        jackin_config::EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+    collapse_lines: &[Line<'static>],
+) -> WorkspaceSavePreview {
+    let mode = match &editor.mode {
+        EditorMode::Create => WorkspaceSaveMode::Create {
+            name: workspace_create_display_name(editor.pending_name.as_deref()),
+        },
+        EditorMode::Edit { name } => WorkspaceSaveMode::Edit {
+            original_name: name.clone(),
+            display_name: editor.pending_name.clone().unwrap_or_else(|| name.clone()),
+            pending_name: editor.pending_name.clone(),
+        },
+    };
+
+    let workspace_name = match &editor.mode {
+        EditorMode::Edit { name } => name.as_str(),
+        EditorMode::Create => editor.pending_name.as_deref().unwrap_or("(new workspace)"),
+    };
+
+    WorkspaceSavePreview {
+        mode,
+        original_workdir: matches!(editor.mode, EditorMode::Edit { .. })
+            .then(|| jackin_tui::shorten_home(&editor.original.workdir)),
+        pending_workdir: jackin_tui::shorten_home(&editor.pending.workdir),
+        mount_diffs: workspace_mount_diffs_preview(editor),
+        auth_changes: workspace_auth_changes(
+            config,
+            workspace_name,
+            &editor.original,
+            &editor.pending,
+        ),
+        original_allowed_roles: editor.original.allowed_roles.clone(),
+        pending_allowed_roles: editor.pending.allowed_roles.clone(),
+        role_count: config.roles.len(),
+        original_default_role: editor.original.default_role.clone(),
+        pending_default_role: editor.pending.default_role.clone(),
+        original_keep_awake: editor.original.keep_awake.enabled,
+        pending_keep_awake: editor.pending.keep_awake.enabled,
+        original_git_pull: editor.original.git_pull_on_entry,
+        pending_git_pull: editor.pending.git_pull_on_entry,
+        env_original: workspace_env_preview(&editor.original),
+        env_pending: workspace_env_preview(&editor.pending),
+        collapse_lines: collapse_lines.to_vec(),
+    }
+}
+
+#[must_use]
+pub fn build_workspace_save_lines<
+    Modal,
+    SaveFlow,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    editor: &EditorState<
+        jackin_config::WorkspaceConfig,
+        crate::mount_info_cache::MountInfoCache,
+        Modal,
+        SaveFlow,
+        jackin_config::EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    config: &jackin_config::AppConfig,
+    collapse_lines: &[Line<'static>],
+) -> Vec<Line<'static>> {
+    workspace_save_lines(&workspace_save_preview(editor, config, collapse_lines))
+}
+
+fn workspace_mount_diffs_preview<
+    Modal,
+    SaveFlow,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    editor: &EditorState<
+        jackin_config::WorkspaceConfig,
+        crate::mount_info_cache::MountInfoCache,
+        Modal,
+        SaveFlow,
+        jackin_config::EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+) -> Vec<WorkspaceMountDiff> {
+    match editor.mode {
+        EditorMode::Create => editor
+            .pending
+            .mounts
+            .iter()
+            .map(|mount| {
+                WorkspaceMountDiff::Added(workspace_mount_preview_row(
+                    mount,
+                    &editor.mount_info_cache,
+                ))
+            })
+            .collect(),
+        EditorMode::Edit { .. } => {
+            crate::mount_diff::classify_mount_diffs(&editor.original.mounts, &editor.pending.mounts)
+                .into_iter()
+                .map(|diff| match diff {
+                    crate::mount_diff::MountDiff::Added(mount) => WorkspaceMountDiff::Added(
+                        workspace_mount_preview_row(mount, &editor.mount_info_cache),
+                    ),
+                    crate::mount_diff::MountDiff::Removed(mount) => WorkspaceMountDiff::Removed(
+                        workspace_mount_preview_row(mount, &editor.mount_info_cache),
+                    ),
+                    crate::mount_diff::MountDiff::Modified { original, pending } => {
+                        WorkspaceMountDiff::Modified {
+                            original: workspace_mount_preview_row(
+                                original,
+                                &editor.mount_info_cache,
+                            ),
+                            pending: workspace_mount_preview_row(pending, &editor.mount_info_cache),
+                        }
+                    }
+                    crate::mount_diff::MountDiff::Unchanged(_) => WorkspaceMountDiff::Unchanged,
+                })
+                .collect()
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkspaceMountDiff {
     Added(WorkspaceMountPreviewRow),
@@ -62,6 +239,215 @@ pub struct WorkspaceMountPreviewRow {
     pub kind: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceAuthChange {
+    pub label: String,
+    pub original: String,
+    pub pending: String,
+}
+
+#[must_use]
+pub fn workspace_auth_change(
+    label_prefix: &str,
+    field: &str,
+    original: &str,
+    pending: &str,
+) -> WorkspaceAuthChange {
+    WorkspaceAuthChange {
+        label: format!("{label_prefix} {field}"),
+        original: original.to_owned(),
+        pending: pending.to_owned(),
+    }
+}
+
+#[must_use]
+pub fn credential_presence(
+    config: &jackin_config::AppConfig,
+    workspace_name: &str,
+    role: &str,
+    kind: AuthKind,
+    mode: AuthMode,
+) -> bool {
+    let Some(env_name) = kind.required_env_var(mode) else {
+        return false;
+    };
+    panel_auth_source_value(config, workspace_name, role, env_name, kind).is_some()
+}
+
+#[must_use]
+pub const fn credential_label(present: bool) -> &'static str {
+    if present { "(set)" } else { "(unset)" }
+}
+
+#[must_use]
+pub fn source_folder_text(display: &AuthSourceFolderDisplay) -> String {
+    match display.kind {
+        AuthSourceFolderKind::Default => format!("default: {}", display.path),
+        AuthSourceFolderKind::Explicit => display.path.clone(),
+        AuthSourceFolderKind::Inherited => format!("inherited: {}", display.path),
+    }
+}
+
+#[must_use]
+pub fn workspace_env_preview(workspace: &jackin_config::WorkspaceConfig) -> SettingsEnvPreview {
+    SettingsEnvPreview {
+        env: env_display_map_without_auth_credentials(&workspace.env),
+        roles: workspace
+            .roles
+            .iter()
+            .map(|(role, config)| {
+                (
+                    role.clone(),
+                    env_display_map_without_auth_credentials(&config.env),
+                )
+            })
+            .collect(),
+    }
+}
+
+#[must_use]
+pub fn role_auth_relevant(
+    original: &jackin_config::WorkspaceConfig,
+    pending: &jackin_config::WorkspaceConfig,
+    role: &str,
+    kind: AuthKind,
+) -> bool {
+    let original_role = original.roles.get(role);
+    let pending_role = pending.roles.get(role);
+    role_auth_mode_and_credential(original_role, kind)
+        != role_auth_mode_and_credential(pending_role, kind)
+        || role_sync_source_dir_text(original_role, kind)
+            != role_sync_source_dir_text(pending_role, kind)
+}
+
+fn role_sync_source_dir_text(
+    role: Option<&jackin_config::WorkspaceRoleOverride>,
+    kind: AuthKind,
+) -> Option<String> {
+    let agent = auth_kind_agent(kind)?;
+    role.and_then(|role| role.sync_source_dir_for(agent))
+        .map(|path| path.display().to_string())
+}
+
+#[must_use]
+pub fn workspace_auth_changes(
+    config: &jackin_config::AppConfig,
+    workspace_name: &str,
+    original: &jackin_config::WorkspaceConfig,
+    pending: &jackin_config::WorkspaceConfig,
+) -> Vec<WorkspaceAuthChange> {
+    let original_cfg = config_with_workspace(config, workspace_name, original.clone());
+    let pending_cfg = config_with_workspace(config, workspace_name, pending.clone());
+    let mut changes = Vec::new();
+
+    for kind in AuthKind::WORKSPACE_PANEL_KINDS {
+        push_auth_layer_changes(
+            &mut changes,
+            kind.label().to_owned(),
+            &original_cfg,
+            &pending_cfg,
+            workspace_name,
+            "",
+            *kind,
+        );
+    }
+
+    let role_names: BTreeSet<String> = original
+        .roles
+        .keys()
+        .chain(pending.roles.keys())
+        .cloned()
+        .collect();
+    for role in role_names {
+        for kind in AuthKind::WORKSPACE_PANEL_KINDS {
+            if !role_auth_relevant(original, pending, &role, *kind) {
+                continue;
+            }
+            push_auth_layer_changes(
+                &mut changes,
+                format!("Role {role} / {}", kind.label()),
+                &original_cfg,
+                &pending_cfg,
+                workspace_name,
+                &role,
+                *kind,
+            );
+        }
+    }
+
+    changes
+}
+
+fn config_with_workspace(
+    config: &jackin_config::AppConfig,
+    workspace_name: &str,
+    workspace: jackin_config::WorkspaceConfig,
+) -> jackin_config::AppConfig {
+    let mut next = config.clone();
+    next.workspaces.insert(workspace_name.to_owned(), workspace);
+    next
+}
+
+fn push_auth_layer_changes(
+    changes: &mut Vec<WorkspaceAuthChange>,
+    label_prefix: String,
+    original_cfg: &jackin_config::AppConfig,
+    pending_cfg: &jackin_config::AppConfig,
+    workspace_name: &str,
+    role: &str,
+    kind: AuthKind,
+) {
+    let original_mode = resolve_panel_mode(original_cfg, kind, workspace_name, role);
+    let pending_mode = resolve_panel_mode(pending_cfg, kind, workspace_name, role);
+    if original_mode != pending_mode {
+        changes.push(workspace_auth_change(
+            &label_prefix,
+            "mode",
+            original_mode.as_str(),
+            pending_mode.as_str(),
+        ));
+    }
+
+    let original_credential =
+        credential_presence(original_cfg, workspace_name, role, kind, original_mode);
+    let pending_credential =
+        credential_presence(pending_cfg, workspace_name, role, kind, pending_mode);
+    if original_credential != pending_credential {
+        changes.push(workspace_auth_change(
+            &label_prefix,
+            "credential",
+            credential_label(original_credential),
+            credential_label(pending_credential),
+        ));
+    }
+
+    if auth_kind_agent(kind).is_some()
+        && (auth_mode_supports_source_folder(kind, original_mode)
+            || auth_mode_supports_source_folder(kind, pending_mode))
+    {
+        let original_source = source_folder_text(&editor_source_folder_display(
+            original_cfg,
+            workspace_name,
+            role,
+            kind,
+        ));
+        let pending_source = source_folder_text(&editor_source_folder_display(
+            pending_cfg,
+            workspace_name,
+            role,
+            kind,
+        ));
+        if original_source != pending_source {
+            changes.push(workspace_auth_change(
+                &label_prefix,
+                "source folder",
+                &original_source,
+                &pending_source,
+            ));
+        }
+    }
+}
+
 impl WorkspaceMountPreviewRow {
     #[must_use]
     pub fn summary(&self) -> String {
@@ -79,6 +465,20 @@ impl WorkspaceMountPreviewRow {
 }
 
 #[must_use]
+pub fn workspace_mount_preview_row(
+    mount: &jackin_config::MountConfig,
+    cache: &crate::mount_info_cache::MountInfoCache,
+) -> WorkspaceMountPreviewRow {
+    WorkspaceMountPreviewRow {
+        src: jackin_tui::shorten_home(&mount.src),
+        dst: jackin_tui::shorten_home(&mount.dst),
+        readonly: mount.readonly,
+        isolation: mount.isolation.as_str().to_owned(),
+        kind: cache.label(&mount.src),
+    }
+}
+
+#[must_use]
 pub fn collapse_section_lines(collapses: &[(String, String)]) -> Vec<Line<'static>> {
     let style = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
     collapses
@@ -90,6 +490,20 @@ pub fn collapse_section_lines(collapses: &[(String, String)]) -> Vec<Line<'stati
             ))
         })
         .collect()
+}
+
+#[must_use]
+pub fn collapse_removal_lines(collapses: &[jackin_config::Removal]) -> Vec<Line<'static>> {
+    let display_pairs: Vec<_> = collapses
+        .iter()
+        .map(|removal| {
+            (
+                jackin_tui::shorten_home(&removal.child.src),
+                jackin_tui::shorten_home(&removal.covered_by.src),
+            )
+        })
+        .collect();
+    collapse_section_lines(&display_pairs)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,6 +519,123 @@ pub struct SettingsSavePreview {
     pub auth_github_env_pending: BTreeMap<String, String>,
     pub trust_original: Vec<TrustPreviewRow>,
     pub trust_pending: Vec<TrustPreviewRow>,
+}
+
+pub type ConsoleSettingsState<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+> = SettingsState<
+    GlobalMountsState<jackin_config::GlobalMountRow, MountModal>,
+    SettingsEnvState<jackin_config::EnvValue, EnvModal>,
+    SettingsAuthState<jackin_config::EnvValue, AuthModal, PendingOpCommit>,
+    SettingsTrustState,
+    ErrorPopup,
+    PendingToken,
+>;
+
+#[must_use]
+pub fn settings_save_preview<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    settings: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+) -> SettingsSavePreview {
+    SettingsSavePreview {
+        general: SettingsGeneralPreview {
+            original_coauthor_trailer: settings.general.original_coauthor_trailer,
+            pending_coauthor_trailer: settings.general.pending_coauthor_trailer,
+            original_dco: settings.general.original_dco,
+            pending_dco: settings.general.pending_dco,
+        },
+        mounts_original: settings
+            .mounts
+            .original
+            .iter()
+            .map(global_mount_preview_row)
+            .collect(),
+        mounts_pending: settings
+            .mounts
+            .pending
+            .iter()
+            .map(global_mount_preview_row)
+            .collect(),
+        env_original: settings_env_preview(&settings.env.original),
+        env_pending: settings_env_preview(&settings.env.pending),
+        auth_original: settings
+            .auth
+            .original
+            .iter()
+            .map(|row| AuthPreviewRow {
+                label: row.kind.label().to_owned(),
+                mode: row.mode.as_str().to_owned(),
+            })
+            .collect(),
+        auth_pending: settings
+            .auth
+            .pending
+            .iter()
+            .map(|row| AuthPreviewRow {
+                label: row.kind.label().to_owned(),
+                mode: row.mode.as_str().to_owned(),
+            })
+            .collect(),
+        auth_github_env_original: env_display_map(&settings.auth.original_github_env),
+        auth_github_env_pending: env_display_map(&settings.auth.github_env),
+        trust_original: settings
+            .trust
+            .original
+            .iter()
+            .map(|row| TrustPreviewRow {
+                role: row.role.clone(),
+                trusted: row.trusted,
+            })
+            .collect(),
+        trust_pending: settings
+            .trust
+            .pending
+            .iter()
+            .map(|row| TrustPreviewRow {
+                role: row.role.clone(),
+                trusted: row.trusted,
+            })
+            .collect(),
+    }
+}
+
+#[must_use]
+pub fn build_settings_save_lines<
+    MountModal,
+    EnvModal,
+    AuthModal,
+    ErrorPopup,
+    PendingToken,
+    PendingOpCommit,
+>(
+    settings: &ConsoleSettingsState<
+        MountModal,
+        EnvModal,
+        AuthModal,
+        ErrorPopup,
+        PendingToken,
+        PendingOpCommit,
+    >,
+) -> Vec<Line<'static>> {
+    settings_save_lines(&settings_save_preview(settings))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,10 +662,35 @@ pub struct MountPreviewRow {
     pub readonly: bool,
 }
 
+#[must_use]
+pub fn global_mount_preview_row(row: &jackin_config::GlobalMountRow) -> MountPreviewRow {
+    MountPreviewRow {
+        scope: row.scope.clone(),
+        name: row.name.clone(),
+        src: jackin_tui::shorten_home(&row.mount.src),
+        dst: jackin_tui::shorten_home(&row.mount.dst),
+        readonly: row.mount.readonly,
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SettingsEnvPreview {
     pub env: BTreeMap<String, String>,
     pub roles: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+#[must_use]
+pub fn settings_env_preview(
+    config: &crate::tui::screens::settings::model::SettingsEnvConfig<jackin_config::EnvValue>,
+) -> SettingsEnvPreview {
+    SettingsEnvPreview {
+        env: env_display_map(&config.env),
+        roles: config
+            .roles
+            .iter()
+            .map(|(role, env)| (role.clone(), env_display_map(env)))
+            .collect(),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -236,6 +792,7 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
                 out.push(Line::from(Span::styled("Env vars:", heading)));
                 out.extend(env_lines);
             }
+            append_workspace_auth_lines(&mut out, &preview.auth_changes, heading, value, dim);
         }
         WorkspaceSaveMode::Edit {
             original_name,
@@ -372,6 +929,7 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
                 out.push(Line::from(Span::styled("Env vars:", heading)));
                 out.extend(env_lines);
             }
+            append_workspace_auth_lines(&mut out, &preview.auth_changes, heading, value, dim);
         }
     }
 
@@ -385,6 +943,34 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
     }
 
     out
+}
+
+fn append_workspace_auth_lines(
+    out: &mut Vec<Line<'static>>,
+    changes: &[WorkspaceAuthChange],
+    heading: Style,
+    value: Style,
+    dim: Style,
+) {
+    if changes.is_empty() {
+        return;
+    }
+    out.push(Line::raw(""));
+    out.push(Line::from(Span::styled("Auth:", heading)));
+    for change in changes {
+        out.push(Line::from(Span::styled(
+            format!("  {}", change.label),
+            heading,
+        )));
+        out.push(Line::from(Span::styled(
+            format!("    - {}", change.original),
+            dim,
+        )));
+        out.push(Line::from(Span::styled(
+            format!("    + {}", change.pending),
+            value,
+        )));
+    }
 }
 
 fn allowed_roles_summary(preview: &WorkspaceSavePreview) -> String {

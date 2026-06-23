@@ -70,6 +70,21 @@ fn is_executable_file_requires_exec_bit() {
     assert!(!is_executable_file(&dir.path().join("missing")));
 }
 
+#[cfg(unix)]
+#[test]
+fn repair_executable_file_sets_exec_bit_on_regular_file() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().unwrap();
+    let plain = dir.path().join("plain");
+    std::fs::write(&plain, b"x").unwrap();
+    std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    assert!(repair_executable_file(&plain).unwrap());
+    assert!(is_executable_file(&plain));
+    assert!(!repair_executable_file(dir.path()).unwrap());
+    assert!(!repair_executable_file(&dir.path().join("missing")).unwrap());
+}
+
 #[test]
 fn parse_sha256_hex_accepts_valid_and_rejects_garbage() {
     let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";

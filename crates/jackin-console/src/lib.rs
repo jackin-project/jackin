@@ -1,4 +1,10 @@
-//! Host console surface ownership and runtime helpers.
+//! Canonical host-console product surface.
+//!
+//! This crate owns reusable console state, update/input planning, view
+//! composition, components, pure product decisions, and effects-as-data. The
+//! binary crate (`jackin`) remains responsible for CLI dispatch, host terminal
+//! ownership, Docker/runtime/config IO, and interpreting effects into real
+//! side effects.
 
 pub mod github_mounts;
 pub mod mount_diff;

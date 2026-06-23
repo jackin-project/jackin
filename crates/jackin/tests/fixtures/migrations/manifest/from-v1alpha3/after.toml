@@ -1,4 +1,4 @@
-version = "v1alpha4"
+version = "v1alpha5"
 dockerfile = "Dockerfile"
 agents = ["claude", "kimi", "opencode"]
 

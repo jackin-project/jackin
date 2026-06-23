@@ -1,0 +1,3 @@
+# Recorded PTY fixtures for the render-conformance harness
+
+Binary PTY byte streams (`<agent>-<scenario>.bin`) recorded from real agent sessions and replayed by `crates/jackin-capsule/src/daemon/render_conformance_tests.rs`. Record with `cargo xtask pty-fixture <run.jsonl> <session-label> <out.bin>` from a `--debug` run — see the "Recording capsule render-conformance fixtures" section in the repository's TESTING.md. The directory currently holds no recordings: the Stage-0 operator capture in CAPSULE_RENDERING_FINDINGS.md is blocked on an operator run id, and the harness ships synthetic streams until it lands.

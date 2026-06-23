@@ -25,6 +25,15 @@ impl ShellRunner {
         if let Some(dir) = cwd {
             command.current_dir(dir);
         }
+        // Kill the child if its awaiting future is dropped. The launch cancel
+        // path (`while_waiting` losing the `select!` on Ctrl+C) drops the run
+        // future mid-flight; without this the spawned process — notably a slow
+        // `docker build` — keeps running detached, holding the daemon, so the
+        // cancel-driven `LoadCleanup` then blocks on that same busy daemon and
+        // the terminal appears frozen. `kill_on_drop` only fires when the
+        // future is dropped before the child exits, so normal awaited runs are
+        // unaffected.
+        command.kill_on_drop(true);
         command
     }
 

@@ -43,7 +43,6 @@ pub enum AuthSourceFolderKind {
 pub struct AuthSourceFolderDisplay {
     pub kind: AuthSourceFolderKind,
     pub path: String,
-    pub env_var: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -6,7 +6,7 @@ title: "Split operator_env.rs"
 
 ## Problem
 
-<RepoFile path="crates/jackin-env/src/resolve.rs" /> is **3573L** total (was 2975L at original analysis — +20% growth). It has grown into a shared cross-cutting module that serves runtime launch, config validation/persistence, console widgets, and the console op-cache layer. The file mixes public traits/parsers, subprocess client logic, metadata parsing for the picker, env-layer composition, launch diagnostics, and tests.
+<RepoFile path="crates/jackin-env/src/resolve.rs">crates/jackin-env/src/resolve.rs</RepoFile> is **3573L** total (was 2975L at original analysis — +20% growth). It has grown into a shared cross-cutting module that serves runtime launch, config validation/persistence, console widgets, and the console op-cache layer. The file mixes public traits/parsers, subprocess client logic, metadata parsing for the picker, env-layer composition, launch diagnostics, and tests.
 
 ## Proposed split
 
@@ -42,6 +42,6 @@ After split, existing callers such as `use crate::operator_env::resolve_operator
 
 ## Related files
 
-- <RepoFile path="crates/jackin-env/src/resolve.rs" /> — target file (3573L)
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — resolves operator env and emits launch diagnostics
-- <RepoFile path="crates/jackin/src/console/tui/op_picker.rs" /> — uses `OpStructRunner` / picker metadata
+- <RepoFile path="crates/jackin-env/src/resolve.rs">crates/jackin-env/src/resolve.rs</RepoFile> — target file (3573L)
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — resolves operator env and emits launch diagnostics
+- <RepoFile path="crates/jackin-console/src/tui/op_picker.rs">crates/jackin-console/src/tui/op_picker.rs</RepoFile> — uses `OpStructRunner` / picker metadata

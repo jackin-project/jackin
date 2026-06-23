@@ -50,7 +50,8 @@ pub use planner::{
     apply_isolation_overrides, plan_collapse, plan_create, plan_edit,
 };
 pub use resolve::{
-    LoadWorkspaceInput, current_dir_workspace, resolve_load_workspace, saved_workspace_match_depth,
+    LoadWorkspaceInput, current_dir_workspace, find_saved_workspace_for_cwd,
+    resolve_load_workspace, saved_workspace_match_depth,
 };
 pub use schema::{
     DockerConfig, DockerMounts, GitConfig, GlobalMountConfig, KeepAwakeConfig, MountConfig,

@@ -137,17 +137,34 @@ pub(crate) async fn perform_handshake(
 }
 
 pub(crate) async fn drain_and_exit(mux: &mut Multiplexer) {
-    detach_client(mux).await;
+    drain_and_exit_with_reason(mux, None).await;
+}
+
+pub(crate) async fn drain_and_exit_with_reason(mux: &mut Multiplexer, reason: Option<String>) {
+    if let Some(reason) = reason.as_deref() {
+        mux.send_out_of_band(format!("\r\n[jackin-capsule] {reason}\r\n").into_bytes());
+    }
+    detach_attached_task_with_reason(mux, "drain_and_exit", reason.as_deref()).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 }
 
 const ATTACH_SHUTDOWN_FLUSH_GRACE_MS: u64 = 50;
 
-pub(crate) fn send_attached_shutdown(mux: &mut Multiplexer, context: &str) -> bool {
-    let Some(tx) = mux.attached_out.take() else {
+pub(crate) fn send_attached_shutdown(
+    mux: &mut Multiplexer,
+    context: &str,
+    reason: Option<&str>,
+) -> bool {
+    mux.client.flush_out_of_band();
+    let Some(tx) = mux.client.take() else {
         return false;
     };
-    if tx.send(encode_server(ServerFrame::Shutdown)).is_err() {
+    if tx
+        .send(encode_server(ServerFrame::Shutdown {
+            reason: reason.map(str::to_owned),
+        }))
+        .is_err()
+    {
         crate::clog!("{context}: client receiver already dropped; Shutdown frame not delivered");
     }
     true
@@ -163,12 +180,19 @@ pub(crate) fn send_attached_shutdown(mux: &mut Multiplexer, context: &str) -> bo
 /// `cmd_tx`. Used by SIGTERM / SIGINT shutdown, explicit detach, and
 /// `drain_and_exit`.
 pub(crate) async fn detach_attached_task(mux: &mut Multiplexer, context: &str) {
-    let had_sender = send_attached_shutdown(mux, context);
+    detach_attached_task_with_reason(mux, context, None).await;
+}
+
+async fn detach_attached_task_with_reason(
+    mux: &mut Multiplexer,
+    context: &str,
+    reason: Option<&str>,
+) {
+    let had_sender = send_attached_shutdown(mux, context, reason);
     // The latch is paired with the sender's lifetime: clearing
     // `attached_out` invalidates the previous attach, so the next
     // assignment (in the takeover branch of `run_daemon`) starts from
     // a clean state regardless of which code path reassigns it.
-    mux.attached_out_dead_logged = false;
     if had_sender {
         tokio::time::sleep(Duration::from_millis(ATTACH_SHUTDOWN_FLUSH_GRACE_MS)).await;
     }

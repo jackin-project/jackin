@@ -50,25 +50,25 @@ impl Multiplexer {
         let session_count = self.sessions.len();
         let tab_count = self.tabs.len();
         let visible_panes = self.visible_pane_count();
-        let dirty_panes = self.dirty_panes.len();
+        let pending_render = self.has_pending_render();
         let Some((sample, cpu_percent)) = self.resource_metrics.record() else {
             crate::cdebug!(
-                "resource: sample unavailable sessions={} tabs={} panes={} dirty_panes={}",
+                "resource: sample unavailable sessions={} tabs={} panes={} pending_render={}",
                 session_count,
                 tab_count,
                 visible_panes,
-                dirty_panes
+                pending_render
             );
             return;
         };
         let cpu_percent =
             cpu_percent.map_or_else(|| "n/a".to_owned(), |value| format!("{value:.2}"));
         crate::cdebug!(
-            "resource: sessions={} tabs={} panes={} dirty_panes={} rss_kib={} cpu_jiffies={} cpu_percent_estimate={}",
+            "resource: sessions={} tabs={} panes={} pending_render={} rss_kib={} cpu_jiffies={} cpu_percent_estimate={}",
             session_count,
             tab_count,
             visible_panes,
-            dirty_panes,
+            pending_render,
             sample.rss_kib,
             sample.cpu_jiffies,
             cpu_percent
@@ -111,20 +111,4 @@ fn parse_stat_cpu_jiffies(stat: &str) -> Option<u64> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{parse_stat_cpu_jiffies, parse_status_rss_kib};
-
-    #[test]
-    fn parses_status_rss_kib() {
-        let status = "Name:\tjackin-capsule\nVmRSS:\t  143720 kB\nThreads:\t1\n";
-
-        assert_eq!(parse_status_rss_kib(status), Some(143_720));
-    }
-
-    #[test]
-    fn parses_stat_cpu_jiffies_with_spaces_in_comm() {
-        let stat = "123 (jackin capsule) S 1 2 3 4 5 6 7 8 9 10 42 58 14 15";
-
-        assert_eq!(parse_stat_cpu_jiffies(stat), Some(100));
-    }
-}
+mod tests;

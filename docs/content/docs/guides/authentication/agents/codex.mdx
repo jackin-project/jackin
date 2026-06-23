@@ -34,6 +34,14 @@ A ChatGPT Plus or Team subscription includes Codex CLI access with a fixed month
 
 The plan you have on the host is the one the container sees.
 
+## Alternative providers
+
+Codex sessions can also run against providers that expose an OpenAI-compatible endpoint. [MiniMax](/guides/authentication/minimax/) is the provider jackin' supports today; once you configure a `MINIMAX_API_KEY` in jackin' Auth settings, Codex launches can choose MiniMax instead of OpenAI.
+
+MiniMax works with Codex because Codex already speaks an OpenAI-compatible endpoint. jackin' keeps that provider setup inside its own Auth settings and the selected container process, so you do not edit host Codex settings to use MiniMax through jackin'.
+
+For subscription, API-key, and provider-picker details, see [MiniMax authentication](/guides/authentication/minimax/). MiniMax is a provider choice at session launch time; it does not change the Codex auth modes below.
+
 ## Modes available
 
 | Mode | Supported |
