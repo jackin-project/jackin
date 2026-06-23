@@ -58,6 +58,8 @@ third_party_build_pattern='^[[:space:]]*(Compiling|Checking|Building) [[:alnum:]
 source_tool_compile_pattern='cargo install|Installing [[:alnum:]_.+-]+ v[0-9].*from source|Compiling [[:alnum:]_.+-]+ v[0-9].*\(.*cargo.*registry'
 sccache_issue_pattern='sccache.*(error|failed|write|server)'
 prepared_workspace_pattern='Download prepared nextest workspace|Restore prepared nextest workspace|prepared nextest workspace'
+cache_miss_pattern='Cache not found|No cache found|not found for input keys'
+cache_failure_pattern='Failed to restore cache|Failed to save cache|Unable to reserve cache'
 
 if cache_usage_json=$(gh api "repos/${repo}/actions/cache/usage" 2>/dev/null); then
   github_cache_count=$(printf '%s' "$cache_usage_json" | jq -r '.active_caches_count // ""')
@@ -83,16 +85,20 @@ scan_logs_file() {
   local name="$1"
   local logs_file="$2"
   local hits misses restores failures downloads builds source_tools sccache_issues prepared_workspace
+  local normalized_logs_file="${logs_file}.normalized"
 
-  hits=$(grep -Eci 'Cache hit for:|Restored from cache key|Cache restored successfully' "$logs_file" || true)
-  misses=$(grep -Eci 'Cache not found|not found for input keys|Cache miss' "$logs_file" || true)
-  restores=$(grep -Eci 'Restoring cache|Cache Size:' "$logs_file" || true)
-  failures=$(grep -Eci 'Failed to restore cache|Failed to save cache|Unable to reserve cache' "$logs_file" || true)
-  downloads=$(grep -Eci "$dependency_download_pattern" "$logs_file" || true)
-  builds=$(grep -Eci "$third_party_build_pattern" "$logs_file" || true)
-  source_tools=$(grep -Eci "$source_tool_compile_pattern" "$logs_file" || true)
-  sccache_issues=$(grep -Eci "$sccache_issue_pattern" "$logs_file" || true)
-  prepared_workspace=$(grep -Eci "$prepared_workspace_pattern" "$logs_file" || true)
+  perl -pe 's/\e\[[0-9;]*[A-Za-z]//g; s/^[0-9]{4}-[0-9T:.-]+Z[[:space:]]+//; s/^[^\t]+\t[^\t]+\t[0-9]{4}-[0-9T:.-]+Z[[:space:]]+//' \
+    "$logs_file" > "$normalized_logs_file"
+
+  hits=$(grep -Eci 'Cache hit for:|Restored from cache key|Cache restored successfully' "$normalized_logs_file" || true)
+  misses=$(grep -Eci "$cache_miss_pattern" "$normalized_logs_file" || true)
+  restores=$(grep -Eci 'Restoring cache|Cache Size:' "$normalized_logs_file" || true)
+  failures=$(grep -Eci "$cache_failure_pattern" "$normalized_logs_file" || true)
+  downloads=$(grep -Eci "$dependency_download_pattern" "$normalized_logs_file" || true)
+  builds=$(grep -Eci "$third_party_build_pattern" "$normalized_logs_file" || true)
+  source_tools=$(grep -Eci "$source_tool_compile_pattern" "$normalized_logs_file" || true)
+  sccache_issues=$(grep -Eci "$sccache_issue_pattern" "$normalized_logs_file" || true)
+  prepared_workspace=$(grep -Eci "$prepared_workspace_pattern" "$normalized_logs_file" || true)
   cache_hit_count=$((cache_hit_count + hits))
   cache_miss_count=$((cache_miss_count + misses))
   cache_restore_count=$((cache_restore_count + restores))
@@ -103,11 +109,13 @@ scan_logs_file() {
   sccache_issue_count=$((sccache_issue_count + sccache_issues))
   prepared_workspace_count=$((prepared_workspace_count + prepared_workspace))
 
-  append_marker_matches "dependency download" "$name" "$dependency_download_pattern" "$logs_file"
-  append_marker_matches "third-party compile/check/build" "$name" "$third_party_build_pattern" "$logs_file"
-  append_marker_matches "source tool compile" "$name" "$source_tool_compile_pattern" "$logs_file"
-  append_marker_matches "sccache issue" "$name" "$sccache_issue_pattern" "$logs_file"
-  append_marker_matches "prepared workspace" "$name" "$prepared_workspace_pattern" "$logs_file"
+  append_marker_matches "cache miss" "$name" "$cache_miss_pattern" "$normalized_logs_file"
+  append_marker_matches "cache failure" "$name" "$cache_failure_pattern" "$normalized_logs_file"
+  append_marker_matches "dependency download" "$name" "$dependency_download_pattern" "$normalized_logs_file"
+  append_marker_matches "third-party compile/check/build" "$name" "$third_party_build_pattern" "$normalized_logs_file"
+  append_marker_matches "source tool compile" "$name" "$source_tool_compile_pattern" "$normalized_logs_file"
+  append_marker_matches "sccache issue" "$name" "$sccache_issue_pattern" "$normalized_logs_file"
+  append_marker_matches "prepared workspace" "$name" "$prepared_workspace_pattern" "$normalized_logs_file"
   return 0
 }
 
@@ -395,8 +403,8 @@ print_github_cache_budget() {
   fi
 
   if [ -s "$log_markers_file" ]; then
-    printf '\n### Rebuild and Download Markers\n\n'
-    printf 'These markers require review on warm sequential runs. True first-run cache population is acceptable; repeated dependency downloads, source tool compiles, third-party compile/check/build markers, low compiler-cache utility, or prepared-workspace artifact restores should be explained or fixed.\n\n'
+    printf '\n### Cache, Rebuild, and Download Markers\n\n'
+    printf 'These markers require review on warm sequential runs. True first-run cache population is acceptable; repeated cache misses/failures, dependency downloads, source tool compiles, third-party compile/check/build markers, low compiler-cache utility, or prepared-workspace artifact restores should be explained or fixed.\n\n'
     printf '| Marker | Job | Log line |\n| --- | --- | --- |\n'
     head -n 25 "$log_markers_file" | while IFS=$'\t' read -r marker job line; do
       line="${line//|/\\|}"
