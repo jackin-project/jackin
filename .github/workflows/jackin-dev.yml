@@ -47,6 +47,10 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           if gh release view "jackin-dev-v${VERSION}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+              echo "jackin-dev-v${VERSION} already exists; continuing so the tap formula can recover"
+              exit 0
+            fi
             echo "jackin-dev-v${VERSION} already exists; bump crates/jackin-dev/Cargo.toml"
             exit 1
           fi
@@ -146,7 +150,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          gh release create "jackin-dev-v${VERSION}" \
+          tag="jackin-dev-v${VERSION}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "$tag already exists; reusing published release assets for formula shas"
+            gh release download "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern 'jackin-dev-*.tar.gz.sha256' \
+              --dir artifacts \
+              --clobber
+            exit 0
+          fi
+
+          gh release create "$tag" \
             artifacts/jackin-dev-*.tar.gz \
             artifacts/jackin-dev-*.tar.gz.sha256 \
             artifacts/jackin-dev-*.tar.gz.bundle \
@@ -211,9 +226,52 @@ jobs:
           end
           EOF
 
-          cd homebrew-tap
+      - name: Verify jackin-dev formula downloads
+        run: |
+          set -euo pipefail
+          while IFS= read -r url; do
+            echo "Verifying $url"
+            curl -fsIL --retry 3 --retry-all-errors --max-time 30 "$url" >/dev/null
+          done < <(
+            sed -n 's|^[[:space:]]*url "\(https://github.com/jackin-project/jackin/releases/download/jackin-dev-v[^"]*\)".*$|\1|p' \
+              homebrew-tap/Formula/jackin-dev.rb
+          )
+
+      - name: Build PR body
+        id: pr_body
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          body_file="${RUNNER_TEMP}/homebrew-pr-body.md"
+          {
+            printf 'Automated jackin-dev formula update for **jackin-dev %s**.\n\n' "$VERSION"
+            printf -- '- Release: https://github.com/jackin-project/jackin/releases/tag/jackin-dev-v%s\n' "$VERSION"
+            printf -- '- Installs the jackin-dev helper used by jackin pull request verification blocks.\n'
+          } > "$body_file"
+          echo "body_file=$body_file" >> "$GITHUB_OUTPUT"
+
+      - name: Open and merge PR for tap update
+        working-directory: homebrew-tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PR_BODY_FILE: ${{ steps.pr_body.outputs.body_file }}
+        run: |
+          git add Formula/jackin-dev.rb
+          if git diff --cached --quiet --exit-code; then
+            echo "jackin-dev formula already up to date"
+            exit 0
+          fi
+          branch="jackin-dev/formula-${VERSION}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/jackin-dev.rb
-          git commit -m "Update jackin-dev to ${VERSION}"
-          git push origin main
+          git switch -c "$branch"
+          git commit -m "chore: update jackin-dev to ${VERSION}"
+          git push -u origin "$branch"
+          pr_url=$(gh pr create \
+            --title "chore: update jackin-dev to ${VERSION}" \
+            --body-file "$PR_BODY_FILE" \
+            --base main \
+            --head "$branch")
+          echo "Opened PR: $pr_url"
+          gh pr merge "$pr_url" --squash --delete-branch
