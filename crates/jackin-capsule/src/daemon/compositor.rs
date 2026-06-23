@@ -131,8 +131,16 @@ impl Multiplexer {
         // composed cell differ, so the diff repaints the full frame in place.
         // Until the extra writers are deleted (PR 3 of the capsule rendering
         // plan), the previous buffer cannot be trusted as the client model.
+        //
+        // ratatui-core ≥ 0.1.2 calls `previous.cell_width()` during the diff,
+        // which triggers a debug_assert on 1-byte ASCII control characters.
+        // Use a private-use BMP scalar (U+E001, 3 bytes in UTF-8) instead of
+        // U+0001: `cell_width` skips the 1-byte fast-path for multi-byte
+        // symbols and calls `unicode_width` directly, avoiding the assert.
+        // U+E001 is never produced by any widget, so the diff still sees every
+        // cell as changed and re-emits the full frame.
         for cell in &mut self.ratatui_terminal.current_buffer_mut().content {
-            cell.set_symbol("\u{1}");
+            cell.set_symbol("\u{E001}");
         }
         self.ratatui_terminal.swap_buffers();
 
@@ -151,6 +159,7 @@ impl Multiplexer {
         // Status-bar inputs snapshotted before the draw closure borrows self.
         let session_states = self.snapshot_session_states();
         let prefix_mode = self.status_bar.prefix_mode;
+        let palette_key_glyph = self.status_bar.palette_key_glyph.as_deref();
         // Lay out row 0 once per frame. The owned plan is shared with the
         // status-bar widget (paint), the tab tooltip, and the click-region
         // refresh below, so the bar is never laid out more than once per frame.
@@ -160,6 +169,7 @@ impl Multiplexer {
             active_tab,
             &session_states,
             prefix_mode,
+            palette_key_glyph,
         );
         let hover_target = self.hover_target;
         let hovered_tab = crate::tui::view::hovered_tab(hover_target);
@@ -344,6 +354,7 @@ impl Multiplexer {
         } else {
             None
         };
+        let palette_key = self.input_parser.palette_key().unwrap_or(0x1C);
         let branch = self.context_bar_branch().map(str::to_owned);
         let pull_request = self.pull_request_context.clone();
         let pull_request_loading = self.pull_request_context_loading();
@@ -400,6 +411,7 @@ impl Multiplexer {
                     debug_run_id: debug_run_id_owned.as_deref(),
                     dialog_hint_spans: dialog_hint_spans.as_deref(),
                     spawn_failure: spawn_failure.as_deref(),
+                    palette_key,
                 },
             );
         });

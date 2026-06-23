@@ -25,3 +25,5 @@ docs/superpowers/plans/
 # same reasoning as docs/superpowers/plans/ above.
 /prompts/
 .claude/
+
+PR-576-review.md

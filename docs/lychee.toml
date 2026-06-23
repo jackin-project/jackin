@@ -12,47 +12,26 @@ cache = true
 # are also throttled below to make a 429 less likely.
 accept = ["100..=103", "200..=299", "429"]
 exclude = [
+  # chatgpt.com returns 403 to all automated clients including lychee.
   "https://chatgpt\\.com/",
-  # Zylos serves this public research page to browsers and search crawlers, but
-  # returns HTTP 402 to lychee in CI.
-  "https://zylos\\.ai/research/2026-04-01-ai-agent-input-ready-detection-cursor-vs-regex",
-  # ccmux is reachable in browsers and search crawlers, but lychee reports it
-  # as network-unreachable in some environments.
-  "https://ccmux\\.ai/",
-  # Imbue's Sculptor page is public but has failed as network-unreachable from
-  # GitHub Actions while passing local link checks.
-  "https://imbue\\.com/sculptor/",
-  # NN/g serves this public article to browsers, but returns HTTP 403 to lychee
-  # from GitHub Actions.
-  "https://www\\.nngroup\\.com/articles/visibility-system-status/",
-  # mise's public docs root has returned network-unreachable from lychee while
-  # passing in browsers.
-  "https://mise\\.jdx\\.dev/",
-  # libvterm's public project page has failed with connection errors from
-  # GitHub Actions while remaining browser-accessible.
-  "https://www\\.leonerd\\.org\\.uk/code/libvterm/",
-  # BigGo's public Ghostty/libghostty-vt article has timed out from GitHub
-  # Actions while remaining browser-accessible.
-  "https://biggo\\.com/news/202509240113_Ghostty_libghostty-vt_Library_Terminal_Emulation",
   # GitHub issue-list links are remapped to the API during static docs checks;
   # the API endpoint can return 403 from GitHub Actions even for public repos.
   "https://api\\.github\\.com/repos/jackin-project/jackin/issues",
   # ACM DOI pages are public in browsers/search but return 403 to lychee in CI.
   "https://dl\\.acm\\.org/doi/10\\.1145/3735636",
-  # Milvus pages below are public, but currently loop through redirects for
-  # lychee from GitHub Actions.
+  # Milvus pages below loop through redirects infinitely (verified locally:
+  # 302 → 302 → … hitting max-redirects with no final destination).
   "https://milvus\\.io/blog/claude-context-vs-claude-code-complete-code-context-solution-for-ai-coding-assistants\\.md",
   "https://milvus\\.io/blog/claude-context-reduce-claude-code-token-usage\\.md",
   "https://milvus\\.io/docs/overview\\.md",
-  # Public vendor/project pages below intermittently reject or fail requests
-  # from the link-check environment.
+  # grok.com/supergrok returns 403 to all automated clients.
   "https://grok\\.com/supergrok",
-  "https://orcahq\\.ai/",
-  "https://zotregistry\\.dev/?",
-  "https://www\\.amazon\\.science/publications/keyword-search-is-all-you-need-achieving-rag-level-performance-without-vector-databases-using-agentic-tool-use",
-  "https://docs\\.weaviate\\.io/weaviate",
-  "https://www\\.pinecone\\.io/learn/vector-database/",
-  "https://www\\.ory\\.com/brand",
+  # Medium returns 403 to all automated clients for this page.
+  "https://paul-hackenberger\\.medium\\.com/the-ultimate-token-saving-stack-rtk-caveman-and-tokensave-163badadd9ec",
+  # graemerocher/multicode has many blob links (≥48) that remap to GitHub
+  # Contents API calls; the volume triggers GitHub's secondary rate limit
+  # (403) even with the api.github.com host throttle below.
+  "https://api\\.github\\.com/repos/graemerocher/multicode/",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]
@@ -76,5 +55,11 @@ include_mail = true
 scheme = ["https", "http", "file", "mailto"]
 
 [hosts."github.com"]
+concurrency = 4
+request_interval = "500ms"
+
+# blob→API remaps hit api.github.com; mirror the same throttle so the
+# GitHub secondary rate limit is not triggered by the default concurrency=32.
+[hosts."api.github.com"]
 concurrency = 4
 request_interval = "500ms"

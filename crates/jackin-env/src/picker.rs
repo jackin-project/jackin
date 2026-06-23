@@ -13,7 +13,7 @@ pub fn default_op_struct_runner() -> std::sync::Arc<dyn OpStructRunner + Send + 
 /// `jackin-env` no longer depends on `jackin-console` for data types.
 pub use jackin_core::op_types::{OpAccount, OpField, OpItem, OpVault};
 
-pub type OpCache = jackin_console::tui::components::op_picker::OpPickerCache;
+pub type OpCache = jackin_core::op_cache::OpCache<OpAccount, OpVault, OpItem, OpField>;
 
 // Accept either `id` or `account_uuid` so the probe works against
 // current and older op CLI shapes. `email` / `url` default to empty

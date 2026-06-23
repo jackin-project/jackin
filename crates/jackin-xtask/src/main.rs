@@ -17,8 +17,10 @@
 //! invokes rather than reimplementing in flag assembly.
 
 mod construct;
+mod docs;
 mod pr;
 mod pty_fixture;
+mod schema;
 
 use std::process::ExitCode;
 
@@ -38,14 +40,33 @@ enum Command {
     /// Use as `cargo xtask construct <subcommand>`.
     #[command(subcommand)]
     Construct(construct::ConstructCommand),
-    /// Prepare an isolated local checkout for PR verification.
+    /// Generate pull request body skeletons.
     ///
-    /// Use as `cargo xtask pr prepare <number>`.
+    /// Use as `cargo xtask pr body`.
     #[command(subcommand)]
     Pr(pr::PrCommand),
     /// Extract a PTY byte-stream fixture from a `--debug` run log for the
     /// capsule render-conformance harness.
     PtyFixture(pty_fixture::PtyFixtureArgs),
+    /// Scaffold a new roadmap item and register it in the sidebar.
+    ///
+    /// Use as `cargo xtask change new <slug> --group <group>`.
+    #[command(subcommand)]
+    Change(docs::ChangeCommand),
+    /// Scaffold or validate research dossiers.
+    ///
+    /// Use as `cargo xtask research scaffold <slug>` / `research check`.
+    #[command(subcommand)]
+    Research(docs::ResearchCommand),
+    /// Roadmap sidebar maintenance.
+    ///
+    /// Use as `cargo xtask roadmap audit` / `roadmap retire <slug>`.
+    #[command(subcommand)]
+    Roadmap(docs::RoadmapCommand),
+    /// Enforce the versioned-schema five-artifact rule on a diff.
+    ///
+    /// Use as `cargo xtask schema-check --base origin/main`.
+    SchemaCheck(schema::SchemaCheckArgs),
 }
 
 fn main() -> ExitCode {
@@ -54,6 +75,10 @@ fn main() -> ExitCode {
         Command::Construct(cmd) => construct::run(cmd),
         Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),
+        Command::Change(cmd) => docs::run_change(cmd),
+        Command::Research(cmd) => docs::run_research(cmd),
+        Command::Roadmap(cmd) => docs::run_roadmap(cmd),
+        Command::SchemaCheck(args) => schema::run(args),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

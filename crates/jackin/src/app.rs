@@ -91,6 +91,15 @@ pub async fn run(cli: Cli) -> Result<()> {
     let debug = cli.debug;
     tui::set_debug_mode(debug);
 
+    // Fail fast and loud on an unsupported OTLP protocol: jackin exports over
+    // gRPC only. An OTLP endpoint configured with a non-grpc protocol would
+    // otherwise build an exporter that silently never delivers — surface it as a
+    // structured fatal error at startup rather than running with broken
+    // telemetry the operator believes is working.
+    if let Some(requested) = crate::diagnostics::unsupported_otlp_protocol() {
+        return Err(crate::error::JackinError::UnsupportedOtlpProtocol { requested }.into());
+    }
+
     // Resolve the subcommand. Bare `jackin` currently routes to the same
     // console handler as `jackin console`; the TTY-capability fallback and
     // the deprecation warning for `launch` land in a follow-up commit.
@@ -161,10 +170,12 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::Purge(args) => {
             prune_cmd::handle_purge(args, &paths, &mut runner, connect_docker).await
         }
+        Command::Prewarm(args) => crate::cli::prewarm::run(&args, &paths, &config, debug).await,
         Command::Prune(cmd) => {
             prune_cmd::handle_prune(cmd, &paths, &mut runner, connect_docker).await
         }
         Command::Doctor(args) => crate::cli::doctor::run(&args, &paths).await,
+        Command::Diagnostics(command) => crate::cli::diagnostics::run(&command, &paths),
         Command::Status(args) => crate::cli::status::run(&args, &paths).await,
         Command::Help { .. } => {
             // Handled upstream in dispatch before reaching this function.
@@ -185,6 +196,7 @@ const fn command_name(command: &Command) -> &'static str {
         Command::Eject(_) => "eject",
         Command::Exile => "exile",
         Command::Purge(_) => "purge",
+        Command::Prewarm(_) => "prewarm",
         Command::Prune(_) => "prune",
         Command::Console(_) => "console",
         Command::Role(_) => "role",
@@ -192,6 +204,7 @@ const fn command_name(command: &Command) -> &'static str {
         Command::Config(_) => "config",
         Command::Logs(_) => "logs",
         Command::Doctor(_) => "doctor",
+        Command::Diagnostics(_) => "diagnostics",
         Command::Status(_) => "status",
         Command::Help { .. } => "help",
     }
@@ -215,6 +228,23 @@ fn announce_debug_run(diagnostics: &crate::diagnostics::RunDiagnostics) {
         "[jackin]".bold()
     );
     let _unused = writeln!(err, "    {}", diagnostics.run_id());
+    if diagnostics.persists() {
+        let _unused = writeln!(err, "[jackin] diagnostics log:");
+        let _unused = writeln!(err, "    {}", diagnostics.path().display());
+    } else {
+        let _unused = writeln!(
+            err,
+            "[jackin] diagnostics file: off (OTLP active; set JACKIN_DIAGNOSTICS_FILE=1 to also write it)"
+        );
+    }
+    match crate::diagnostics::configured_endpoint_summary() {
+        Some(endpoint) => {
+            let _unused = writeln!(err, "[jackin] OTLP endpoint: {endpoint}");
+        }
+        None => {
+            let _unused = writeln!(err, "[jackin] OTLP export: disabled");
+        }
+    }
     if std::io::stdin().is_terminal() {
         let _unused = write!(err, "[jackin] press Enter to continue... ");
         drop(err.flush());
@@ -344,6 +374,4 @@ fn render_auth_show(config: &AppConfig) -> String {
 }
 
 #[cfg(test)]
-mod auth_set_tests;
-#[cfg(test)]
-mod resolve_role_tests;
+mod tests;

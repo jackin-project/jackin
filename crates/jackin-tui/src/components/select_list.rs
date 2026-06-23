@@ -7,14 +7,98 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, HighlightSpacing, ListItem, Paragraph, Widget};
 
-use crate::ModalOutcome;
 use crate::components::FilterInput;
 use crate::components::panel::{Panel, PanelFocus};
 use crate::components::scrollable_panel::ScrollableList;
+use crate::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
 use crate::scroll::{cursor_follow_offset, full_cell_thumb, is_scrollable};
 use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN};
+use crate::{HintSpan, ModalOutcome};
 
 const SELECT_LIST_HORIZONTAL_SCROLL_STEP: u16 = 4;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectListAction {
+    NavUp,
+    NavDown,
+    ScrollLeft,
+    ScrollRight,
+    ScrollHome,
+    DeleteFilter,
+    Commit,
+    Cancel,
+}
+
+const SELECT_LIST_BINDINGS: &[KeyBinding<SelectListAction>] = &[
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Up)],
+        action: SelectListAction::NavUp,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Down)],
+        action: SelectListAction::NavDown,
+        hint: Some("navigate"),
+        visibility: Visibility::Shown,
+        glyph: Some("↑↓"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Left)],
+        action: SelectListAction::ScrollLeft,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Right)],
+        action: SelectListAction::ScrollRight,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Home)],
+        action: SelectListAction::ScrollHome,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Backspace)],
+        action: SelectListAction::DeleteFilter,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        action: SelectListAction::Commit,
+        hint: Some("select"),
+        visibility: Visibility::Shown,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Esc)],
+        action: SelectListAction::Cancel,
+        hint: Some("cancel"),
+        visibility: Visibility::Shown,
+        glyph: None,
+    },
+];
+
+pub static SELECT_LIST_KEYMAP: Keymap<SelectListAction> = Keymap::new(SELECT_LIST_BINDINGS);
+
+/// Hint spans for the filter-picker: keymap-derived structured keys plus the
+/// free-text "type to filter" group that cannot be expressed as a chord.
+#[must_use]
+pub fn select_list_hint_spans() -> Vec<HintSpan<'static>> {
+    let mut spans = SELECT_LIST_KEYMAP.hint_spans();
+    spans.push(HintSpan::GroupSep);
+    spans.push(HintSpan::Text("type to filter"));
+    spans
+}
 
 #[derive(Debug)]
 pub struct SelectListState {
@@ -102,48 +186,51 @@ impl SelectListState {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<usize> {
-        match key.code {
-            KeyCode::Up => {
-                self.cycle_select(-1);
-                ModalOutcome::Continue
-            }
-            KeyCode::Down => {
-                self.cycle_select(1);
-                ModalOutcome::Continue
-            }
-            KeyCode::Left => {
-                self.scroll_x = self
-                    .scroll_x
-                    .saturating_sub(SELECT_LIST_HORIZONTAL_SCROLL_STEP);
-                ModalOutcome::Continue
-            }
-            KeyCode::Right => {
-                self.scroll_x = self
-                    .scroll_x
-                    .saturating_add(SELECT_LIST_HORIZONTAL_SCROLL_STEP);
-                ModalOutcome::Continue
-            }
-            KeyCode::Home => {
-                self.scroll_x = 0;
-                ModalOutcome::Continue
-            }
-            KeyCode::Backspace => {
-                if self.filter.pop().is_some() {
-                    self.recompute_filtered();
+        let chord = KeyChord::from(key);
+        if let Some(action) = SELECT_LIST_KEYMAP.dispatch(chord) {
+            return match action {
+                SelectListAction::NavUp => {
+                    self.cycle_select(-1);
+                    ModalOutcome::Continue
                 }
-                ModalOutcome::Continue
-            }
-            KeyCode::Enter => self
-                .selected_index()
-                .map_or(ModalOutcome::Continue, ModalOutcome::Commit),
-            KeyCode::Esc => ModalOutcome::Cancel,
-            KeyCode::Char(ch) => {
-                self.filter.push(ch);
-                self.recompute_filtered();
-                ModalOutcome::Continue
-            }
-            _ => ModalOutcome::Continue,
+                SelectListAction::NavDown => {
+                    self.cycle_select(1);
+                    ModalOutcome::Continue
+                }
+                SelectListAction::ScrollLeft => {
+                    self.scroll_x = self
+                        .scroll_x
+                        .saturating_sub(SELECT_LIST_HORIZONTAL_SCROLL_STEP);
+                    ModalOutcome::Continue
+                }
+                SelectListAction::ScrollRight => {
+                    self.scroll_x = self
+                        .scroll_x
+                        .saturating_add(SELECT_LIST_HORIZONTAL_SCROLL_STEP);
+                    ModalOutcome::Continue
+                }
+                SelectListAction::ScrollHome => {
+                    self.scroll_x = 0;
+                    ModalOutcome::Continue
+                }
+                SelectListAction::DeleteFilter => {
+                    if self.filter.pop().is_some() {
+                        self.recompute_filtered();
+                    }
+                    ModalOutcome::Continue
+                }
+                SelectListAction::Commit => self
+                    .selected_index()
+                    .map_or(ModalOutcome::Continue, ModalOutcome::Commit),
+                SelectListAction::Cancel => ModalOutcome::Cancel,
+            };
         }
+        // Printable chars not bound to any action flow into the type-to-filter buffer.
+        if let KeyCode::Char(ch) = key.code {
+            self.filter.push(ch);
+            self.recompute_filtered();
+        }
+        ModalOutcome::Continue
     }
 
     fn cycle_select(&mut self, delta: i32) {
@@ -506,140 +593,4 @@ fn render_picker_horizontal_scrollbar(
 }
 
 #[cfg(test)]
-mod picker_list_tests {
-    use super::{PickerRow, SelectList, SelectListState, render_picker_list};
-    use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN};
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::buffer::Buffer;
-    use ratatui::layout::Rect;
-    use ratatui::widgets::{ListItem, Widget};
-
-    fn row_symbols(buf: &Buffer, y: u16, width: u16) -> String {
-        (0..width)
-            .map(|x| buf[(x, y)].symbol().to_owned())
-            .collect()
-    }
-
-    #[test]
-    fn separator_spans_full_width_and_centers_label() {
-        let width = 24u16;
-        let area = Rect {
-            x: 0,
-            y: 0,
-            width,
-            height: 4,
-        };
-        let mut buf = Buffer::empty(area);
-        let rows = vec![
-            PickerRow::Separator("agents".to_owned()),
-            PickerRow::Item(ListItem::new("Claude")),
-            PickerRow::Item(ListItem::new("Codex")),
-        ];
-        render_picker_list(area, &mut buf, rows, Some(1));
-
-        let sep = row_symbols(&buf, 0, width);
-        // Edge-to-edge: dashes reach both borders, ignoring the 2-col gutter.
-        assert!(
-            sep.starts_with('\u{2500}') && sep.ends_with('\u{2500}'),
-            "divider must span full width: {sep:?}"
-        );
-        assert!(sep.contains("agents"), "label present: {sep:?}");
-        // Label centered: leading and trailing dash runs match (±1 for odd
-        // remainder). Count by character, not byte — dashes are multi-byte.
-        let chars: Vec<char> = sep.chars().collect();
-        let left = chars.iter().take_while(|c| **c == '\u{2500}').count();
-        let right = chars.iter().rev().take_while(|c| **c == '\u{2500}').count();
-        assert!(
-            left.abs_diff(right) <= 1,
-            "label not centered: left={left} right={right} in {sep:?}"
-        );
-
-        // The dashes are PHOSPHOR_DARK.
-        assert_eq!(buf[(0u16, 0u16)].fg, PHOSPHOR_DARK);
-    }
-
-    #[test]
-    fn item_rows_keep_selection_gutter() {
-        let width = 20u16;
-        let area = Rect {
-            x: 0,
-            y: 0,
-            width,
-            height: 3,
-        };
-        let mut buf = Buffer::empty(area);
-        let rows = vec![
-            PickerRow::Item(ListItem::new("Claude")),
-            PickerRow::Item(ListItem::new("Codex")),
-        ];
-        render_picker_list(area, &mut buf, rows, Some(0));
-        // Selected row 0 shows the ▸ cursor in the reserved gutter.
-        assert_eq!(buf[(0u16, 0u16)].symbol(), "\u{25b8}");
-    }
-
-    #[test]
-    fn rich_picker_lines_get_shared_selection_chrome() {
-        let area = Rect {
-            x: 0,
-            y: 0,
-            width: 24,
-            height: 3,
-        };
-        let mut buf = Buffer::empty(area);
-        let lines = vec![
-            ratatui::text::Line::from(vec![
-                ratatui::text::Span::raw("alpha"),
-                ratatui::text::Span::raw("  "),
-                ratatui::text::Span::raw("dim context"),
-            ]),
-            ratatui::text::Line::from("beta"),
-        ];
-
-        super::render_picker_lines(area, &mut buf, lines, Some(1));
-
-        assert_eq!(buf[(0u16, 1u16)].symbol(), "\u{25b8}");
-        assert_eq!(buf[(0u16, 1u16)].bg, PHOSPHOR_GREEN);
-        assert_eq!(
-            buf[(0u16, 0u16)].symbol(),
-            " ",
-            "callers pass raw content; shared renderer owns the cursor gutter"
-        );
-    }
-
-    #[test]
-    fn select_list_right_left_keys_scroll_horizontally() {
-        let mut state = SelectListState::new(vec!["0123456789abcdef".to_owned()]);
-
-        let _ = state.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
-        assert_eq!(state.scroll_x(), 4);
-
-        let _ = state.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
-        assert_eq!(state.scroll_x(), 0);
-    }
-
-    #[test]
-    fn select_list_renders_horizontal_scroll_window() {
-        let mut state = SelectListState::new(vec!["0123456789abcdef".to_owned()]);
-        let _ = state.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
-
-        let area = Rect {
-            x: 0,
-            y: 0,
-            width: 12,
-            height: 6,
-        };
-        let mut buf = Buffer::empty(area);
-        SelectList::new(&state, "pick").render(area, &mut buf);
-
-        let rendered = row_symbols(&buf, 3, 12);
-        assert!(
-            rendered.contains("456789"),
-            "scrolled row should expose shifted label window: {rendered:?}"
-        );
-        let scrollbar = row_symbols(&buf, 4, 12);
-        assert!(
-            scrollbar.contains('━'),
-            "wide labels should render horizontal scrollbar: {scrollbar:?}"
-        );
-    }
-}
+mod tests;

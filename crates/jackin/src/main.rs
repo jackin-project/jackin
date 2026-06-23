@@ -22,8 +22,7 @@ async fn main() {
                 debug,
             };
             if let Err(error) = Box::pin(jackin::run(cli)).await {
-                render_error(&error, debug);
-                std::process::exit(1);
+                exit_for_run_error(&error, debug);
             }
         }
         Action::RunCommand(command) => {
@@ -33,8 +32,7 @@ async fn main() {
                 debug,
             };
             if let Err(error) = Box::pin(jackin::run(cli)).await {
-                render_error(&error, debug);
-                std::process::exit(1);
+                exit_for_run_error(&error, debug);
             }
         }
         Action::PrintHelpAndExit => {
@@ -54,6 +52,24 @@ async fn main() {
             std::process::exit(1);
         }
     }
+}
+
+/// Terminate after a failed `jackin::run`, distinguishing a deliberate
+/// operator cancel from a real failure.
+///
+/// Operator cancel (Ctrl+C / Ctrl+Q / a Cancel modal) is an intent, not an
+/// error: exit cleanly with status 0 and render nothing — the launch surface
+/// has already restored the terminal. Every other error renders and exits 1.
+#[expect(
+    clippy::exit,
+    reason = "binary entrypoint — exit is the correct mechanism"
+)]
+fn exit_for_run_error(error: &anyhow::Error, debug: bool) -> ! {
+    if jackin::runtime::progress::LaunchCancelled::is_cancel(error) {
+        std::process::exit(0);
+    }
+    render_error(error, debug);
+    std::process::exit(1);
 }
 
 /// Render an error at the binary entry point.

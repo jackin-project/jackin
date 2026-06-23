@@ -5,6 +5,7 @@ pub mod logging;
 pub mod observability;
 pub mod run;
 pub mod screen;
+pub mod summary;
 pub mod terminal;
 
 pub use logging::{
@@ -12,17 +13,23 @@ pub use logging::{
     end_debug_buffering, format_debug_line, is_debug_mode, set_debug_mode,
 };
 pub use observability::{
-    ContainerOtlp, configured_endpoint, container_otlp, init_capsule_tracing, init_tracing,
-    otel_keys, shutdown_capsule_tracing,
+    ContainerOtlp, configured_endpoint, configured_endpoint_summary, container_otlp,
+    init_capsule_tracing, init_tracing, otel_keys, shutdown_capsule_tracing,
+    unsupported_otlp_protocol,
 };
 pub use run::{
-    ActiveRunGuard, RunDiagnostics, active_debug, active_run, mint_session_id, prune_all_runs,
-    prune_old_runs,
+    ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_timing_done,
+    active_timing_started, mint_session_id, prune_all_runs, prune_old_runs,
 };
 pub use screen::{
     Screen, ScreenGuard, carry_link_forward, current_traceparent, enter_screen, launch_trace,
     record_action, record_capsule_activity, set_agent_selected, set_agents_active, set_provider,
     set_workspace, set_workspace_kind,
+};
+pub use summary::{
+    BuildContextSnapshotSummary, CacheEventSummary, DiagnosticsSummary, DockerBuildStepSummary,
+    ImageBuildSourceSummary, LaunchPlanEventSummary, PrewarmedDindAdoptionSummary,
+    SkippedTimingSummary, summarize_reader, summarize_run_file,
 };
 pub use terminal::{
     host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,

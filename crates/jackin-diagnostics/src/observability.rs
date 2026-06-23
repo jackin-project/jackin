@@ -2,9 +2,9 @@
 //!
 //! The default subscriber installs only [`JackinDiagnosticsLayer`]. It has no
 //! stdout/stderr sink: diagnostic output must never stream over the operator's
-//! full-screen TUI or plain CLI surface. With `--features otlp` and
-//! `JACKIN_OTLP_ENDPOINT` set, an OTLP export layer is added beside the JSONL
-//! layer.
+//! full-screen TUI or plain CLI surface. With `--features otlp` and a standard
+//! OTLP endpoint configured (`OTEL_EXPORTER_OTLP_ENDPOINT`), an OTLP export
+//! layer is added beside the JSONL layer.
 
 use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
@@ -67,7 +67,27 @@ where
     S: Subscriber + for<'lookup> tracing_subscriber::registry::LookupSpan<'lookup>,
 {
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
-        if event.metadata().target() != JSONL_TARGET {
+        let metadata = event.metadata();
+        if metadata.target() != JSONL_TARGET {
+            // The OpenTelemetry SDK reports its own failures (export errors,
+            // dropped batches, partial-success) as `tracing` events on
+            // `opentelemetry*` targets. They are filtered OUT of the OTLP log
+            // bridge (else an export error would itself try to export — a
+            // feedback loop), so this layer is the only place they can be made
+            // durable: capture WARN+ into the active run as `otlp_internal`.
+            // Without this, "telemetry isn't reaching the backend" is invisible.
+            if metadata.target().starts_with("opentelemetry")
+                && matches!(
+                    *metadata.level(),
+                    tracing::Level::WARN | tracing::Level::ERROR
+                )
+            {
+                let mut visitor = OtelInternalVisitor::default();
+                event.record(&mut visitor);
+                if let Some(run) = crate::active_run() {
+                    run.record_otlp_internal(metadata.level().as_str(), &visitor.into_message());
+                }
+            }
             return;
         }
         let mut visitor = DiagnosticsEventVisitor::default();
@@ -143,26 +163,82 @@ impl DiagnosticsEventVisitor {
     }
 }
 
+/// Flattens an OpenTelemetry-internal event's fields into one line. These
+/// events carry a `name` (the exporter event tag, e.g. `ExportFailed`) plus
+/// ad-hoc fields (`error`, `reason`, …); concatenate them so the run record
+/// shows the exporter's own words verbatim rather than just a level.
+#[derive(Default)]
+struct OtelInternalVisitor {
+    name: Option<String>,
+    fields: Vec<String>,
+}
+
+impl OtelInternalVisitor {
+    fn into_message(self) -> String {
+        let mut parts = Vec::new();
+        if let Some(name) = self.name {
+            parts.push(name);
+        }
+        parts.extend(self.fields);
+        if parts.is_empty() {
+            "opentelemetry internal event".to_owned()
+        } else {
+            parts.join(" ")
+        }
+    }
+
+    fn record_field(&mut self, name: &str, value: String) {
+        match name {
+            "name" => self.name = Some(value),
+            "message" => self.fields.insert(0, value),
+            _ => self.fields.push(format!("{name}={value}")),
+        }
+    }
+}
+
+impl Visit for OtelInternalVisitor {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        self.record_field(field.name(), value.to_owned());
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+        self.record_field(field.name(), format!("{value:?}"));
+    }
+}
+
 /// Install the global `tracing` subscriber.
 ///
 /// Default build: installs the JSONL diagnostics layer and no terminal sink.
-/// With `--features otlp` and an OTLP endpoint configured
-/// (`JACKIN_OTLP_ENDPOINT`, falling back to `OTEL_EXPORTER_OTLP_ENDPOINT`),
+/// With `--features otlp` and a standard OTLP endpoint configured
+/// (`OTEL_EXPORTER_OTLP_ENDPOINT`, or the per-signal endpoint vars),
 /// installs OTLP span, log, and metric export beside the JSONL layer, with the
 /// diagnostics run id stamped on the OTLP resource so an external backend
 /// (e.g. Parallax) can answer "show me run `<id>`".
 ///
-/// Returns `Ok(())` on success; the OTLP path returns an error if the global
-/// subscriber is already set (e.g. a test that installs twice).
+/// Returns `Ok(true)` when OTLP export was installed (the backend is the active
+/// sink), `Ok(false)` when only the JSONL diagnostics layer is installed (no
+/// endpoint configured). Returns `Err` when a configured OTLP endpoint's
+/// exporter fails to build or the subscriber is already set; on the exporter
+/// failure path the JSONL-only layer is still installed as a fallback so the run
+/// file (now the active sink) keeps capturing events.
 // `allow`, not `expect`: the body is trivially const only in the default
 // (no-otlp) build; the otlp build does non-const setup, so the lint fires in one
 // cfg and not the other and a single non-const signature is required.
 #[allow(clippy::missing_const_for_fn)]
-pub fn init_tracing(debug: bool, run_id: &str) -> anyhow::Result<()> {
+pub fn init_tracing(debug: bool, run_id: &str) -> anyhow::Result<bool> {
     #[cfg(feature = "otlp")]
     {
-        if let Some(endpoint) = otlp::endpoint() {
-            return otlp::init(debug, run_id, &endpoint);
+        if let Some(endpoints) = otlp::endpoints() {
+            return match otlp::init(debug, run_id, &endpoints) {
+                Ok(()) => Ok(true),
+                Err(error) => {
+                    // OTLP requested but unavailable: install the JSONL-only
+                    // layer so the file fallback still captures events, then
+                    // report the failure to the caller (which surfaces it).
+                    install_jsonl_only();
+                    Err(error)
+                }
+            };
         }
     }
 
@@ -171,7 +247,36 @@ pub fn init_tracing(debug: bool, run_id: &str) -> anyhow::Result<()> {
     tracing_subscriber::registry()
         .with(JackinDiagnosticsLayer)
         .try_init()
-        .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"))
+        .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"))?;
+    Ok(false)
+}
+
+/// Install the JSONL-only subscriber as a fallback. Ignores an
+/// already-installed error: that means a subscriber exists, which is all the
+/// fallback needs. Only the otlp build reaches this (the failed-exporter path).
+#[cfg(feature = "otlp")]
+fn install_jsonl_only() {
+    drop(
+        tracing_subscriber::registry()
+            .with(JackinDiagnosticsLayer)
+            .try_init(),
+    );
+}
+
+/// The first explicitly-requested OTLP protocol jackin cannot honor, when an
+/// OTLP endpoint is configured (i.e. export is intended). `None` means the
+/// configuration is exportable (grpc or unset) or no endpoint is set. Callers
+/// use this to fail fast with a clear operator error before doing any work.
+#[must_use]
+pub fn unsupported_otlp_protocol() -> Option<String> {
+    #[cfg(feature = "otlp")]
+    {
+        otlp::first_unsupported_protocol()
+    }
+    #[cfg(not(feature = "otlp"))]
+    {
+        None
+    }
 }
 
 /// Flush and shut down the OTLP exporters, if any are active.
@@ -210,7 +315,7 @@ pub fn init_capsule_tracing(
     traceparent: Option<&str>,
 ) -> anyhow::Result<bool> {
     #[cfg(feature = "otlp")]
-    let activated = match otlp::endpoint() {
+    let activated = match otlp::base_endpoint() {
         Some(endpoint) => {
             otlp::init_capsule(session_id, run_id, traceparent, &endpoint)?;
             true
@@ -225,17 +330,46 @@ pub fn init_capsule_tracing(
     Ok(activated)
 }
 
-/// The configured host OTLP endpoint (`JACKIN_OTLP_ENDPOINT`, falling back to
-/// `OTEL_EXPORTER_OTLP_ENDPOINT`), or `None` when export is off / not compiled.
+/// The configured host OTLP endpoint (`OTEL_EXPORTER_OTLP_ENDPOINT`), or `None`
+/// when export is off / not compiled.
 #[must_use]
 pub fn configured_endpoint() -> Option<String> {
     #[cfg(feature = "otlp")]
     {
-        otlp::endpoint()
+        otlp::base_endpoint()
     }
     #[cfg(not(feature = "otlp"))]
     {
         None
+    }
+}
+
+/// Human-readable host OTLP endpoint configuration for debug banners.
+#[must_use]
+pub fn configured_endpoint_summary() -> Option<String> {
+    #[cfg(feature = "otlp")]
+    {
+        otlp::endpoint_summary()
+    }
+    #[cfg(not(feature = "otlp"))]
+    {
+        None
+    }
+}
+
+/// Whether the operator set any OTLP endpoint env var (export intended), even if
+/// the resulting config is incomplete and so installs no exporter. Lets the
+/// caller surface "export configured but disabled" instead of silently treating
+/// it as never requested. Always `false` without the `otlp` feature.
+#[must_use]
+pub fn otlp_endpoint_configured() -> bool {
+    #[cfg(feature = "otlp")]
+    {
+        otlp::any_endpoint_configured()
+    }
+    #[cfg(not(feature = "otlp"))]
+    {
+        false
     }
 }
 
@@ -253,7 +387,23 @@ pub struct ContainerOtlp {
 /// container. `None` when export is off.
 #[must_use]
 pub fn container_otlp() -> Option<ContainerOtlp> {
-    configured_endpoint().map(|endpoint| rewrite_endpoint_for_container(&endpoint))
+    container_endpoint().map(|endpoint| rewrite_endpoint_for_container(&endpoint))
+}
+
+/// The single endpoint to inject as the container's `OTEL_EXPORTER_OTLP_ENDPOINT`.
+/// Prefers the base var; falls back to the resolved traces endpoint so a
+/// per-signal-only host config (per-signal vars, no base) still gives the capsule
+/// a reachable collector instead of silently disabling capsule export. gRPC sends
+/// every signal to one target, so a single endpoint is the right container shape.
+fn container_endpoint() -> Option<String> {
+    #[cfg(feature = "otlp")]
+    {
+        otlp::container_endpoint()
+    }
+    #[cfg(not(feature = "otlp"))]
+    {
+        None
+    }
 }
 
 /// Rewrite a host-loopback OTLP endpoint to `host.docker.internal` (the host
@@ -287,30 +437,7 @@ fn rewrite_endpoint_for_container(endpoint: &str) -> ContainerOtlp {
 }
 
 #[cfg(test)]
-mod endpoint_rewrite_tests {
-    use super::rewrite_endpoint_for_container;
-
-    #[test]
-    fn loopback_is_rewritten_to_host_gateway() {
-        let rewritten = rewrite_endpoint_for_container("http://127.0.0.1:4318");
-        assert_eq!(rewritten.endpoint, "http://host.docker.internal:4318");
-        assert!(rewritten.needs_host_gateway);
-
-        let with_path = rewrite_endpoint_for_container("http://localhost:4318/v1/traces");
-        assert_eq!(
-            with_path.endpoint,
-            "http://host.docker.internal:4318/v1/traces"
-        );
-        assert!(with_path.needs_host_gateway);
-    }
-
-    #[test]
-    fn routable_host_is_left_alone() {
-        let rewritten = rewrite_endpoint_for_container("http://otel.internal:4318");
-        assert_eq!(rewritten.endpoint, "http://otel.internal:4318");
-        assert!(!rewritten.needs_host_gateway);
-    }
-}
+mod tests;
 
 /// OTLP export: spans (stage timings + screen/launch traces), logs (the
 /// diagnostics event stream), and process/runtime metrics to one endpoint.
@@ -327,8 +454,12 @@ mod otlp {
     use opentelemetry_otlp::WithExportConfig;
     use opentelemetry_sdk::Resource;
     use opentelemetry_sdk::logs::SdkLoggerProvider;
+    use opentelemetry_sdk::logs::log_processor_with_async_runtime::BatchLogProcessor;
     use opentelemetry_sdk::metrics::SdkMeterProvider;
+    use opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicReader;
+    use opentelemetry_sdk::runtime::Tokio;
     use opentelemetry_sdk::trace::SdkTracerProvider;
+    use opentelemetry_sdk::trace::span_processor_with_async_runtime::BatchSpanProcessor;
     use tracing_subscriber::EnvFilter;
     use tracing_subscriber::prelude::*;
 
@@ -349,98 +480,294 @@ mod otlp {
     impl OtlpProviders {
         /// Flush buffered telemetry, then shut the exporters down. Called once,
         /// from `ActiveRunGuard::drop`, on every run exit path.
+        ///
+        /// A `force_flush` failure is the authoritative "the backend did not
+        /// receive this run" signal — the SDK surfaces a failed export through
+        /// this `Result`, not (reliably) through a `tracing` event. So a flush
+        /// error emits one compact operator notice (stderr / deferred under a
+        /// rich TUI) rather than being dropped; otherwise an unreachable or
+        /// wrong-protocol backend would fail completely silently. `shutdown`
+        /// errors stay quiet — by then the data is already flushed-or-lost and a
+        /// second notice adds only noise.
         fn flush_and_shutdown(&self) {
-            drop(self.tracer.force_flush());
+            let trace_flush = self.tracer.force_flush();
             drop(self.tracer.shutdown());
-            drop(self.logger.force_flush());
+            let log_flush = self.logger.force_flush();
             drop(self.logger.shutdown());
-            if let Some(meter) = &self.meter {
-                drop(meter.force_flush());
+            let metric_flush = self.meter.as_ref().map(|meter| {
+                let flushed = meter.force_flush();
                 drop(meter.shutdown());
+                flushed
+            });
+            let failed = trace_flush
+                .err()
+                .or_else(|| log_flush.err())
+                .or_else(|| metric_flush.and_then(Result::err));
+            if let Some(error) = failed {
+                // Direct to stderr, not the deferred buffer: this fires at final
+                // teardown where the run guard may outlive the terminal session,
+                // so a buffered notice could never be drained. The TUI is already
+                // gone by now, so stderr can't corrupt it.
+                crate::logging::emit_teardown_notice(&format!(
+                    "telemetry export failed to reach the backend (run telemetry may be incomplete): {error}"
+                ));
             }
         }
     }
 
     static PROVIDERS: OnceLock<OtlpProviders> = OnceLock::new();
 
-    /// The OTLP endpoint, when configured. `JACKIN_OTLP_ENDPOINT` wins over
-    /// the standard `OTEL_EXPORTER_OTLP_ENDPOINT`, which wrappers such as
-    /// `parallax run start -- jackin …` inject without jackin'-specific
-    /// knowledge.
-    pub(super) fn endpoint() -> Option<String> {
-        resolve_endpoint(
-            std::env::var("JACKIN_OTLP_ENDPOINT").ok(),
+    /// Dedicated multi-thread tokio runtime that drives OTLP export. Held for the
+    /// process lifetime so the async-runtime batch processors (and tonic's h2
+    /// connection driver) have a reactor decoupled from jackin's current-thread
+    /// main: the `futures_executor::block_on` flush parks the main thread, and
+    /// these worker threads keep exporting regardless. One worker is plenty for
+    /// a single run's telemetry volume.
+    static OTEL_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+
+    /// Build-or-get the dedicated telemetry runtime. Providers must be built
+    /// inside its [`tokio::runtime::Runtime::enter`] guard so their workers spawn
+    /// onto it rather than the ambient (current-thread) app runtime.
+    fn otel_runtime() -> anyhow::Result<&'static tokio::runtime::Runtime> {
+        if let Some(runtime) = OTEL_RUNTIME.get() {
+            return Ok(runtime);
+        }
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .thread_name("jackin-otel")
+            .build()
+            .map_err(|e| anyhow::anyhow!("OTLP telemetry runtime init failed: {e}"))?;
+        Ok(OTEL_RUNTIME.get_or_init(|| runtime))
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub(super) struct OtlpEndpoints {
+        traces: String,
+        logs: String,
+        metrics: Option<String>,
+    }
+
+    impl OtlpEndpoints {
+        /// The per-signal endpoints a single base produces. OTLP/gRPC sends every
+        /// signal to the same endpoint verbatim and routes by gRPC service name,
+        /// so — unlike OTLP/HTTP — no `/v1/<signal>` path is appended and all
+        /// three share `base`.
+        fn from_base(base: &str) -> Self {
+            Self::new(base, base, Some(base))
+        }
+
+        /// The one construction choke point. Every field is run through
+        /// [`grpc_endpoint`] here so the "normalized gRPC channel target"
+        /// invariant has a single enforcement site rather than being re-asserted
+        /// at each caller (where one could silently drift).
+        fn new(traces: &str, logs: &str, metrics: Option<&str>) -> Self {
+            Self {
+                traces: grpc_endpoint(traces),
+                logs: grpc_endpoint(logs),
+                metrics: metrics.map(grpc_endpoint),
+            }
+        }
+    }
+
+    /// Host OTLP endpoints, when configured via the standard OTLP env vars.
+    /// `OTEL_EXPORTER_OTLP_ENDPOINT` provides a base for every signal; the
+    /// per-signal endpoint vars wrappers commonly inject override it per signal.
+    pub(super) fn endpoints() -> Option<OtlpEndpoints> {
+        resolve_endpoints(
             std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
+            std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT").ok(),
+            std::env::var("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT").ok(),
+            std::env::var("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT").ok(),
         )
     }
 
-    /// `JACKIN_OTLP_ENDPOINT` wins; an empty value falls through to the next
-    /// candidate (an exported-but-empty var must not produce a blank endpoint);
-    /// neither set yields `None` and no OTLP layer is installed.
-    fn resolve_endpoint(jackin: Option<String>, otel: Option<String>) -> Option<String> {
-        [jackin, otel].into_iter().flatten().find(|s| !s.is_empty())
+    /// The standard OTLP endpoint env vars (generic base + per-signal). Used to
+    /// tell "operator configured export" apart from "export not requested" even
+    /// when the config is incomplete (e.g. only a metrics endpoint, which can't
+    /// build the mandatory traces+logs and so yields no `OtlpEndpoints`).
+    const ENDPOINT_VARS: [&str; 4] = [
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+    ];
+
+    /// Whether any OTLP endpoint var is set to a non-empty value — i.e. the
+    /// operator intends export. True even when [`endpoints`] returns `None`
+    /// because the config is incomplete; the caller uses the gap to surface a
+    /// notice rather than silently disabling export.
+    pub(super) fn any_endpoint_configured() -> bool {
+        ENDPOINT_VARS
+            .iter()
+            .any(|var| std::env::var(var).is_ok_and(|value| !value.trim().is_empty()))
     }
 
-    /// Per-signal OTLP/HTTP URL: a bare base endpoint (`http://host:4318`)
-    /// gets the standard signal path appended; an endpoint that already ends
-    /// with *this* signal's path is used verbatim. The check is `ends_with` on
-    /// the matching `signal_path`, not a loose `contains("/v1/")`: a base of
-    /// `http://host/v1/traces` must still get `/v1/logs` and `/v1/metrics`
-    /// appended for the other two signals rather than posting all three to the
-    /// traces path. (`with_endpoint` is used verbatim by the SDK — it only
-    /// auto-appends for the env-var path, which jackin reads itself.)
-    fn signal_url(endpoint: &str, signal_path: &str) -> String {
-        let trimmed = endpoint.trim_end_matches('/');
-        if trimmed.ends_with(signal_path) {
-            return trimmed.to_owned();
+    /// The endpoint handed to a launched container. The base var wins; absent it,
+    /// the resolved traces endpoint stands in so a per-signal-only host config
+    /// still reaches the capsule. Both are already `grpc_endpoint`-normalized.
+    pub(super) fn container_endpoint() -> Option<String> {
+        base_endpoint().or_else(|| endpoints().map(|endpoints| endpoints.traces))
+    }
+
+    pub(super) fn base_endpoint() -> Option<String> {
+        resolve_endpoint(std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok())
+            .map(|endpoint| grpc_endpoint(&endpoint))
+    }
+
+    pub(super) fn endpoint_summary() -> Option<String> {
+        let endpoints = endpoints()?;
+        // A single configured base drives all three signal URLs, so collapse to
+        // it; per-signal overrides break the match and are spelled out in full.
+        if let Some(base) = base_endpoint()
+            && endpoints == OtlpEndpoints::from_base(&base)
+        {
+            return Some(base);
         }
-        format!("{trimmed}/{signal_path}")
+        Some(format!(
+            "traces={}, logs={}, metrics={}",
+            endpoints.traces,
+            endpoints.logs,
+            endpoints.metrics.as_deref().unwrap_or("disabled")
+        ))
+    }
+
+    /// The configured base endpoint, if any. An exported-but-empty var must not
+    /// produce a blank endpoint, so an empty value resolves to `None` and no
+    /// OTLP layer is installed.
+    fn resolve_endpoint(otel: Option<String>) -> Option<String> {
+        otel.filter(|s| !s.is_empty())
+    }
+
+    fn resolve_endpoints(
+        otel: Option<String>,
+        traces: Option<String>,
+        logs: Option<String>,
+        metrics: Option<String>,
+    ) -> Option<OtlpEndpoints> {
+        let generic = resolve_endpoint(otel);
+        // OTLP/gRPC: a per-signal endpoint var (if set) wins, else the generic
+        // base. `OtlpEndpoints::new` applies `grpc_endpoint` normalization; this
+        // closure only resolves which raw value to use. No `/v1/<signal>` path is
+        // appended (an OTLP/HTTP convention; gRPC routes by service name).
+        let signal = |specific: Option<String>| {
+            specific
+                .filter(|s| !s.is_empty())
+                .or_else(|| generic.clone())
+        };
+        Some(OtlpEndpoints::new(
+            &signal(traces)?,
+            &signal(logs)?,
+            signal(metrics).as_deref(),
+        ))
+    }
+
+    /// Normalize a gRPC endpoint: strip trailing slashes. The OTLP/gRPC exporter
+    /// uses the endpoint as the channel target (`http://host:4317`) and routes by
+    /// gRPC service name, so — unlike OTLP/HTTP — no signal path is appended.
+    fn grpc_endpoint(endpoint: &str) -> String {
+        endpoint.trim_end_matches('/').to_owned()
+    }
+
+    /// Whether an explicit `OTEL_EXPORTER_OTLP_*_PROTOCOL` value names something
+    /// jackin cannot send. jackin exports OTLP over gRPC only; an empty value or
+    /// `grpc` is fine, anything else (`http/protobuf`, `http/json`, …) is not.
+    fn unsupported_protocol(value: &str) -> bool {
+        let value = value.trim();
+        !value.is_empty() && value != "grpc"
+    }
+
+    /// The standard OTLP protocol-selection env vars (generic + per-signal). The
+    /// protocol guard and the fatal startup check both scan this one list so they
+    /// can never drift — a new per-signal var missed by one but not the other
+    /// would silently re-open the wrong-protocol no-deliver hole.
+    const PROTOCOL_VARS: [&str; 4] = [
+        "OTEL_EXPORTER_OTLP_PROTOCOL",
+        "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL",
+        "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL",
+        "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL",
+    ];
+
+    /// jackin exports OTLP over gRPC only. If a non-grpc protocol is explicitly
+    /// requested via the standard env vars, fail loudly here rather than build a
+    /// gRPC exporter against an endpoint meant for HTTP — a silent no-deliver is
+    /// exactly the failure mode this guards against.
+    fn ensure_grpc_protocol() -> Result<(), String> {
+        for var in PROTOCOL_VARS {
+            if let Ok(value) = std::env::var(var)
+                && unsupported_protocol(&value)
+            {
+                return Err(format!(
+                    "{var}={} is not supported — jackin exports OTLP over grpc only",
+                    value.trim()
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// The first explicitly-requested non-grpc protocol value, but only when an
+    /// OTLP endpoint is configured (no endpoint → no export intended → the
+    /// protocol vars are moot). Drives the fatal startup check.
+    pub(super) fn first_unsupported_protocol() -> Option<String> {
+        endpoints()?;
+        PROTOCOL_VARS.into_iter().find_map(|var| {
+            std::env::var(var)
+                .ok()
+                .filter(|value| unsupported_protocol(value))
+                .map(|value| value.trim().to_owned())
+        })
     }
 
     /// The OTLP resource. `service.name` is always `jackin`; the diagnostics
     /// run id rides as `parallax.run.id` (dotted) so backends can correlate
     /// telemetry with the run JSONL the operator shares. `jackin.component`
     /// marks this process as the host (the in-container capsule stamps
-    /// `capsule`). The run id is omitted when a wrapper already provided one
-    /// via `OTEL_RESOURCE_ATTRIBUTES` — then the wrapper's grouping wins and
-    /// the env detector supplies it.
+    /// `capsule`).
     fn resource(run_id: &str) -> Resource {
-        let wrapper_supplied =
-            std::env::var("OTEL_RESOURCE_ATTRIBUTES").is_ok_and(|v| v.contains("parallax.run.id="));
-        build_resource(run_id, wrapper_supplied)
+        build_resource(run_id)
     }
 
-    fn build_resource(run_id: &str, wrapper_supplied: bool) -> Resource {
-        let mut attributes = vec![
+    fn build_resource(run_id: &str) -> Resource {
+        let attributes = vec![
             KeyValue::new(keys::SERVICE_NAME, "jackin"),
             KeyValue::new(keys::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
             KeyValue::new(keys::COMPONENT, "host"),
+            KeyValue::new(keys::RUN_ID, run_id.to_owned()),
         ];
-        if !wrapper_supplied {
-            attributes.push(KeyValue::new(keys::RUN_ID, run_id.to_owned()));
-        }
         Resource::builder().with_attributes(attributes).build()
     }
 
-    pub(super) fn init(debug: bool, run_id: &str, endpoint: &str) -> anyhow::Result<()> {
+    pub(super) fn init(debug: bool, run_id: &str, endpoints: &OtlpEndpoints) -> anyhow::Result<()> {
+        ensure_grpc_protocol().map_err(|e| anyhow::anyhow!(e))?;
+        let runtime = otel_runtime()?;
+        // The tokio runtime gauges must report jackin's app runtime, not the
+        // dedicated telemetry runtime — capture its handle before entering ours.
+        let app_handle = tokio::runtime::Handle::try_current().ok();
+        // Build every exporter, processor, and reader inside the dedicated
+        // runtime: the async-runtime processors spawn their worker tasks (and
+        // tonic spawns its h2 connection driver) onto whichever runtime is
+        // entered here, and they must land on the multi-thread telemetry runtime
+        // — not jackin's current-thread main, where flush would deadlock.
+        let _runtime_guard = runtime.enter();
         let span_exporter = opentelemetry_otlp::SpanExporter::builder()
-            .with_http()
-            .with_endpoint(signal_url(endpoint, "v1/traces"))
+            .with_tonic()
+            .with_endpoint(endpoints.traces.clone())
             .build()
             .map_err(|e| anyhow::anyhow!("OTLP span exporter init failed: {e}"))?;
         let log_exporter = opentelemetry_otlp::LogExporter::builder()
-            .with_http()
-            .with_endpoint(signal_url(endpoint, "v1/logs"))
+            .with_tonic()
+            .with_endpoint(endpoints.logs.clone())
             .build()
             .map_err(|e| anyhow::anyhow!("OTLP log exporter init failed: {e}"))?;
 
         let resource = resource(run_id);
         let tracer_provider = SdkTracerProvider::builder()
-            .with_batch_exporter(span_exporter)
+            .with_span_processor(BatchSpanProcessor::builder(span_exporter, Tokio).build())
             .with_resource(resource.clone())
             .build();
         let logger_provider = SdkLoggerProvider::builder()
-            .with_batch_exporter(log_exporter)
+            .with_log_processor(BatchLogProcessor::builder(log_exporter, Tokio).build())
             .with_resource(resource.clone())
             .build();
         // Metrics are best-effort: a failed exporter build must never block
@@ -448,17 +775,22 @@ mod otlp {
         // emitting here would predate `try_init()` and the message would hit no
         // subscriber, so the one diagnostic this branch exists to surface would
         // be dropped on the floor.
-        let (meter_provider, metric_error) = match init_metrics(&resource, endpoint) {
-            Ok(provider) => (Some(provider), None),
-            Err(error) => (None, Some(error)),
-        };
+        let (meter_provider, metric_error) =
+            if let Some(metrics_endpoint) = endpoints.metrics.as_deref() {
+                match init_metrics(&resource, metrics_endpoint, app_handle) {
+                    Ok(provider) => (Some(provider), None),
+                    Err(error) => (None, Some(error)),
+                }
+            } else {
+                (None, None)
+            };
 
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
         let level = if debug { "debug" } else { "info" };
-        // Scope the export to jackin's own telemetry. Silencing the OTLP/HTTP
+        // Scope the export to jackin's own telemetry. Silencing the OTLP
         // transport stack stops the log bridge from re-exporting the exporter's
         // own request logs (a feedback loop under `--debug`) and keeps the
         // backend free of dependency-internal spans the operator never asked for.
@@ -505,35 +837,42 @@ mod otlp {
 
     /// Install OTLP export for the capsule. Mirrors `init` but composes no
     /// `JackinDiagnosticsLayer` (the capsule has no JSONL run) and stamps the
-    /// capsule resource. The exporter-building lines duplicate `init` because
-    /// the layer composition differs structurally; keep the two in step.
+    /// capsule resource. The shared preamble (`ensure_grpc_protocol`, the
+    /// dedicated `otel_runtime().enter()` guard, the `with_tonic()` exporter and
+    /// Batch-processor builds) duplicates `init` because the layer composition
+    /// differs structurally; a change to any of that setup must touch both.
     pub(super) fn init_capsule(
         session_id: &str,
         run_id: Option<&str>,
         traceparent: Option<&str>,
         endpoint: &str,
     ) -> anyhow::Result<()> {
+        ensure_grpc_protocol().map_err(|e| anyhow::anyhow!(e))?;
+        let endpoint = grpc_endpoint(endpoint);
+        let runtime = otel_runtime()?;
+        let app_handle = tokio::runtime::Handle::try_current().ok();
+        let _runtime_guard = runtime.enter();
         let span_exporter = opentelemetry_otlp::SpanExporter::builder()
-            .with_http()
-            .with_endpoint(signal_url(endpoint, "v1/traces"))
+            .with_tonic()
+            .with_endpoint(endpoint.clone())
             .build()
             .map_err(|e| anyhow::anyhow!("OTLP span exporter init failed: {e}"))?;
         let log_exporter = opentelemetry_otlp::LogExporter::builder()
-            .with_http()
-            .with_endpoint(signal_url(endpoint, "v1/logs"))
+            .with_tonic()
+            .with_endpoint(endpoint.clone())
             .build()
             .map_err(|e| anyhow::anyhow!("OTLP log exporter init failed: {e}"))?;
 
         let resource = capsule_resource(session_id, run_id);
         let tracer_provider = SdkTracerProvider::builder()
-            .with_batch_exporter(span_exporter)
+            .with_span_processor(BatchSpanProcessor::builder(span_exporter, Tokio).build())
             .with_resource(resource.clone())
             .build();
         let logger_provider = SdkLoggerProvider::builder()
-            .with_batch_exporter(log_exporter)
+            .with_log_processor(BatchLogProcessor::builder(log_exporter, Tokio).build())
             .with_resource(resource.clone())
             .build();
-        let meter_provider = init_metrics(&resource, endpoint).ok();
+        let meter_provider = init_metrics(&resource, &endpoint, app_handle).ok();
 
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
@@ -544,9 +883,24 @@ mod otlp {
             "{level},hyper=off,h2=off,tower=off,tonic=off,reqwest=off,\
              opentelemetry=off,opentelemetry_sdk=off,opentelemetry_otlp=off"
         );
+        // Surface OTLP exporter/SDK diagnostics (export failures, refused
+        // endpoint, gRPC errors) to the capsule's stderr — captured by
+        // `docker logs` and mirrored into `multiplexer.log`. The OTLP span/log
+        // layers above keep `opentelemetry*=off`, so these diagnostics never
+        // feed back through the exporter: no export-error → log → export loop.
+        // Without this sink, a failing in-container export is silently dropped
+        // (a silent failure), making "no capsule telemetry in the backend"
+        // impossible to diagnose.
+        let otlp_diag_layer = tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_writer(std::io::stderr)
+            .with_filter(EnvFilter::new(
+                "off,opentelemetry=warn,opentelemetry_sdk=warn,opentelemetry_otlp=warn",
+            ));
         let installed = tracing_subscriber::registry()
             .with(span_layer.with_filter(EnvFilter::new(directive.clone())))
             .with(log_layer.with_filter(EnvFilter::new(directive)))
+            .with(otlp_diag_layer)
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
@@ -655,20 +1009,25 @@ mod otlp {
 
     /// Process and runtime metrics, exported every 5 s: CPU utilization and
     /// memory via `sysinfo`, plus the stable tokio runtime counters (workers,
-    /// alive tasks, global queue depth) read from the runtime handle captured
-    /// here at init. Observations run on the exporter's collect thread, so
-    /// the handle is captured eagerly — `Handle::current()` would panic
-    /// there.
-    fn init_metrics(resource: &Resource, endpoint: &str) -> anyhow::Result<SdkMeterProvider> {
+    /// alive tasks, global queue depth) read from `app_handle` — jackin's *app*
+    /// runtime handle, captured by the caller before entering the dedicated
+    /// telemetry runtime. Capturing it here would instead read the telemetry
+    /// runtime; reading it from the collect thread (no ambient runtime) would
+    /// yield `None`.
+    fn init_metrics(
+        resource: &Resource,
+        metrics_endpoint: &str,
+        app_handle: Option<tokio::runtime::Handle>,
+    ) -> anyhow::Result<SdkMeterProvider> {
         use opentelemetry::metrics::MeterProvider as _;
         use std::sync::Mutex;
 
         let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
-            .with_http()
-            .with_endpoint(signal_url(endpoint, "v1/metrics"))
+            .with_tonic()
+            .with_endpoint(metrics_endpoint.to_owned())
             .build()
             .map_err(|e| anyhow::anyhow!("OTLP metric exporter init failed: {e}"))?;
-        let reader = opentelemetry_sdk::metrics::PeriodicReader::builder(metric_exporter)
+        let reader = PeriodicReader::builder(metric_exporter, Tokio)
             .with_interval(std::time::Duration::from_secs(5))
             .build();
         let provider = SdkMeterProvider::builder()
@@ -723,7 +1082,7 @@ mod otlp {
             );
         }
 
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        if let Some(handle) = app_handle {
             let workers = handle.clone();
             drop(
                 meter
@@ -765,107 +1124,7 @@ mod otlp {
     }
 
     #[cfg(test)]
-    mod tests {
-        use opentelemetry::Key;
-
-        use super::keys;
-        use super::{build_resource, resolve_endpoint, signal_url};
-
-        fn attr(resource: &opentelemetry_sdk::Resource, key: &'static str) -> Option<String> {
-            resource
-                .get(&Key::from_static_str(key))
-                .map(|value| value.to_string())
-        }
-
-        #[test]
-        fn bare_endpoint_gets_signal_path() {
-            assert_eq!(
-                signal_url("http://127.0.0.1:4318", "v1/traces"),
-                "http://127.0.0.1:4318/v1/traces"
-            );
-            assert_eq!(
-                signal_url("http://127.0.0.1:4318/", "v1/logs"),
-                "http://127.0.0.1:4318/v1/logs"
-            );
-        }
-
-        #[test]
-        fn trailing_slashes_are_all_trimmed_before_append() {
-            assert_eq!(
-                signal_url("http://127.0.0.1:4318//", "v1/traces"),
-                "http://127.0.0.1:4318/v1/traces"
-            );
-        }
-
-        #[test]
-        fn matching_signal_path_is_used_verbatim() {
-            assert_eq!(
-                signal_url("http://otlp.internal/v1/traces", "v1/traces"),
-                "http://otlp.internal/v1/traces"
-            );
-        }
-
-        #[test]
-        fn non_matching_signal_path_still_appends() {
-            // A traces-specific base reused for the logs signal must not be
-            // sent to the traces path: `ends_with` only short-circuits the
-            // signal that actually matches, so logs get their own path.
-            assert_eq!(
-                signal_url("http://otlp.internal/v1/traces", "v1/logs"),
-                "http://otlp.internal/v1/traces/v1/logs"
-            );
-        }
-
-        #[test]
-        fn endpoint_precedence_and_empty_filtering() {
-            // JACKIN wins over OTEL.
-            assert_eq!(
-                resolve_endpoint(
-                    Some("http://jk:4318".into()),
-                    Some("http://otel:4318".into())
-                ),
-                Some("http://jk:4318".into())
-            );
-            // OTEL is the fallback.
-            assert_eq!(
-                resolve_endpoint(None, Some("http://otel:4318".into())),
-                Some("http://otel:4318".into())
-            );
-            // An exported-but-empty JACKIN var falls through to OTEL.
-            assert_eq!(
-                resolve_endpoint(Some(String::new()), Some("http://otel:4318".into())),
-                Some("http://otel:4318".into())
-            );
-            // Empty on both → None (no malformed exporter against "").
-            assert_eq!(
-                resolve_endpoint(Some(String::new()), Some(String::new())),
-                None
-            );
-            // Neither set → None (no OTLP layer installed).
-            assert_eq!(resolve_endpoint(None, None), None);
-        }
-
-        #[test]
-        fn resource_carries_service_name_run_id_and_component() {
-            let resource = build_resource("jk-run-0a1b2c", false);
-            assert_eq!(attr(&resource, keys::SERVICE_NAME), Some("jackin".into()));
-            assert_eq!(attr(&resource, keys::COMPONENT), Some("host".into()));
-            // The single dotted run-id key is parallax.run.id (no jackin.run.id).
-            assert_eq!(keys::RUN_ID, "parallax.run.id");
-            assert_eq!(attr(&resource, keys::RUN_ID), Some("jk-run-0a1b2c".into()));
-        }
-
-        #[test]
-        fn wrapper_supplied_run_id_is_not_double_stamped() {
-            // A wrapper injected parallax.run.id via OTEL_RESOURCE_ATTRIBUTES;
-            // jackin must not add its own, letting the wrapper's grouping win
-            // (the env detector supplies it).
-            let resource = build_resource("jk-run-x", true);
-            assert_eq!(attr(&resource, keys::RUN_ID), None);
-            // Non-run-id keys still ride.
-            assert_eq!(attr(&resource, keys::COMPONENT), Some("host".into()));
-        }
-    }
+    mod tests;
 }
 
 pub(crate) fn emit_jsonl_event(
@@ -875,13 +1134,50 @@ pub(crate) fn emit_jsonl_event(
     stage: Option<&str>,
     detail: Option<&str>,
 ) {
+    emit_jsonl_event_with_level(run_id, kind, message, stage, detail, JsonlEventLevel::Info);
+}
+
+pub(crate) fn emit_jsonl_error(
+    run_id: &str,
+    kind: &str,
+    message: &str,
+    stage: Option<&str>,
+    detail: Option<&str>,
+) {
+    emit_jsonl_event_with_level(run_id, kind, message, stage, detail, JsonlEventLevel::Error);
+}
+
+enum JsonlEventLevel {
+    Info,
+    Error,
+}
+
+fn emit_jsonl_event_with_level(
+    run_id: &str,
+    kind: &str,
+    message: &str,
+    stage: Option<&str>,
+    detail: Option<&str>,
+    level: JsonlEventLevel,
+) {
     let stage = stage.unwrap_or("<none>");
     let detail = detail.unwrap_or("<none>");
     // The `--debug` firehose is DEBUG-severity so external exporters filter
     // it by level; the JSONL layer ignores levels and records everything.
     // The trailing format message becomes the OTLP log body — without it,
     // exported records carry attributes but an empty body.
-    if kind == "debug" {
+    if matches!(level, JsonlEventLevel::Error) {
+        tracing::error!(
+            target: JSONL_TARGET,
+            jackin_jsonl = true,
+            run_id = run_id,
+            kind = kind,
+            diagnostics_message = message,
+            stage = stage,
+            detail = detail,
+            "{message}"
+        );
+    } else if kind == "debug" {
         tracing::debug!(
             target: JSONL_TARGET,
             jackin_jsonl = true,

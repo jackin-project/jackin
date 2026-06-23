@@ -5,6 +5,7 @@ pub mod auth_panel;
 pub mod confirm_save;
 pub mod container_info;
 pub mod editor_rows;
+pub mod env_value;
 pub mod error_popup;
 pub mod file_browser;
 pub mod footer_hints;

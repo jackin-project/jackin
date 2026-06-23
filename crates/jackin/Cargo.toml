@@ -49,7 +49,6 @@ ratatui = "0.30"
 crossterm = { version = "0.29", features = ["event-stream"] }
 dialoguer = "0.12"
 tabled = "0.21.0"
-open = "5.3.4"
 clap_mangen = "0.3"
 tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
 futures-util = "0.3"
@@ -62,7 +61,6 @@ jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
 assert_cmd = "=2.2.2"
 jackin-runtime = { version = "0.6.0-dev", path = "../jackin-runtime", features = ["test-support"] }
 criterion = { version = "=0.8.2", features = ["html_reports"] }
-insta = { version = "=1.47.2", features = ["filters"] }
 predicates = "=3.1.4"
 tokio = { version = "=1.52.3", features = ["test-util"] }
 
@@ -72,13 +70,13 @@ harness = false
 
 [features]
 # `otlp` is default so installed binaries can export runs to a local OTLP
-# backend (e.g. Parallax) without a rebuild. Runtime-gated: with neither
-# JACKIN_OTLP_ENDPOINT nor OTEL_EXPORTER_OTLP_ENDPOINT set, the export
-# layer is never installed and runs behave exactly as before.
+# backend (e.g. Parallax) without a rebuild. Runtime-gated: with no standard
+# OTLP endpoint env set, the export layer is never installed and runs behave
+# exactly as before.
 # Opt out: cargo build --no-default-features.
 default = ["otlp"]
-# `e2e` gates real-Docker smoke tests. Default `cargo nextest run` skips them;
-# enable with `--features e2e` on a host with a reachable Docker daemon.
+# `e2e` compiles real-Docker smoke tests. The default nextest profile excludes
+# them; run the `docker-e2e` nextest profile on a prepared Docker host.
 e2e = []
 # `otlp` enables the OpenTelemetry OTLP span, log, and metric export layer in
 # jackin-diagnostics (runtime-gated on the endpoint env vars above).

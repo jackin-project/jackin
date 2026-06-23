@@ -22,11 +22,11 @@ path = "src/lib.rs"
 #    feature (e.g. `cargo build -p jackin --no-default-features`) has zero
 #    opentelemetry deps. NB the `jackin` binary enables `otlp` by default, so
 #    its default build does link opentelemetry — opt out with that flag.
-# 2. Runtime: `JACKIN_OTLP_ENDPOINT=http://…:4318` (or the standard
-#    `OTEL_EXPORTER_OTLP_ENDPOINT`) — no-op if unset even when compiled in
+# 2. Runtime: the standard `OTEL_EXPORTER_OTLP_ENDPOINT=http://…:4318` (or the
+#    per-signal endpoint vars) — no-op if unset even when compiled in
 #
 # Usage: cargo build --features jackin-diagnostics/otlp
-# Then: JACKIN_OTLP_ENDPOINT=http://localhost:4318 cargo run --bin jackin -- console --debug
+# Then: OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 cargo run --bin jackin -- console --debug
 otlp = [
     "dep:opentelemetry",
     "dep:opentelemetry-otlp",
@@ -44,25 +44,42 @@ serde_json = "1.0"
 rand = "0.10"
 anyhow = "1.0"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 crossterm = "0.29"
 # OTLP export (optional — only compiled in with `--features otlp`)
 opentelemetry = { version = "0.32", optional = true }
-# reqwest-blocking-client only: the batch processors run on their own
-# dedicated threads (no tokio reactor), where the async client panics with
-# "there is no reactor running".
-opentelemetry-otlp = { version = "0.32", features = ["http-proto", "reqwest-blocking-client", "metrics"], optional = true }
-# No `rt-tokio`: the batch span/log processors and the PeriodicReader all run
-# on their own dedicated threads (the 0.28+ design), so the async-runtime
-# integration would be dead weight.
-opentelemetry_sdk = { version = "0.32", features = ["metrics"], optional = true }
+# gRPC/tonic is the ONLY transport. It is the reference backend's (Parallax)
+# default and what `parallax run` injects (`OTEL_EXPORTER_OTLP_ENDPOINT` ->
+# :4317, `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`). One transport keeps the export
+# path single and matches the highest-throughput OTLP wire protocol (protobuf
+# over multiplexed HTTP/2). A non-grpc `OTEL_EXPORTER_OTLP_PROTOCOL` is rejected
+# loudly rather than mis-sent (see `ensure_grpc_protocol`).
+opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "metrics"], optional = true }
+# gRPC/tonic export is async and cannot run on the stable dedicated-thread batch
+# processors (they `block_on` the export off any reactor -> panic). It needs the
+# async-runtime processors driven by a tokio runtime. jackin's host and capsule
+# both use a *current-thread* tokio main, where neither off-the-shelf runtime
+# fits: plain `rt-tokio` spawns the worker on the app runtime and the
+# `futures_executor::block_on` flush then parks the only thread -> deadlock;
+# `rt-tokio-current-thread`'s isolated per-spawn runtime cannot drive tonic's h2
+# connection -> the export hangs. So jackin owns a dedicated *multi-thread*
+# runtime for telemetry and builds the providers inside its `enter()` guard with
+# the `rt-tokio` (`Tokio`) runtime — see `observability::otlp::otel_runtime`.
+opentelemetry_sdk = { version = "0.32", features = [
+    "metrics",
+    "rt-tokio",
+    "experimental_trace_batch_span_processor_with_async_runtime",
+    "experimental_logs_batch_log_processor_with_async_runtime",
+    "experimental_metrics_periodicreader_with_async_runtime",
+], optional = true }
 opentelemetry-appender-tracing = { version = "0.32", optional = true }
 tracing-opentelemetry = { version = "0.33", optional = true }
 # Process metrics (CPU, memory) for the OTLP gauge callbacks.
-sysinfo = { version = "0.37", optional = true, default-features = false, features = ["system"] }
-# Handle::metrics() for the tokio runtime gauges; the app's runtime handle
-# is captured at subscriber init and read from the exporter thread.
-tokio = { version = "1", optional = true, default-features = false, features = ["rt"] }
+sysinfo = { version = "0.39", optional = true, default-features = false, features = ["system"] }
+# `rt-multi-thread` powers the dedicated telemetry runtime (see
+# `observability::otlp::otel_runtime`); `Handle::metrics()` feeds the tokio
+# runtime gauges from the app's handle, captured at subscriber init.
+tokio = { version = "1", optional = true, default-features = false, features = ["rt", "rt-multi-thread"] }
 
 [dev-dependencies]
 tempfile = "=3.27.0"

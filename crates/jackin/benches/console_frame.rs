@@ -11,7 +11,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use ratatui::{Terminal, backend::TestBackend};
 
 use jackin::config::AppConfig;
-use jackin::console::manager::{ManagerState, prepare_for_render, render};
+use jackin::console::tui::{ManagerState, prepare_for_render, render};
 
 fn build_list_state(config: &AppConfig) -> ManagerState<'_> {
     let cwd = std::path::Path::new("/workspace/jackin-project/jackin");

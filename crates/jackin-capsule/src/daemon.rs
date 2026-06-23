@@ -41,8 +41,9 @@ use tokio::time::{Duration, interval};
 use portable_pty::CommandBuilder;
 
 use crate::attach_protocol::{
-    AttachHandshake, detach_attached_task, detach_client, drain_and_exit, handle_attach_client,
-    initial_spawn_request, perform_handshake, spawn_request_label,
+    AttachHandshake, detach_attached_task, detach_client, drain_and_exit,
+    drain_and_exit_with_reason, handle_attach_client, initial_spawn_request, perform_handshake,
+    spawn_request_label,
 };
 #[cfg(test)]
 use crate::git_context::{
@@ -426,6 +427,8 @@ impl Multiplexer {
             .collect();
 
         let input_bindings = crate::services::input_bindings::resolve_input_bindings();
+        let palette_glyph =
+            crate::services::input_bindings::palette_key_glyph(input_bindings.palette_key);
         let input_parser = InputParser::new(input_bindings.prefix, input_bindings.palette_key);
         let workdir = PathBuf::from(&launch_config.workdir);
         let workdir_context = WorkdirContext::resolve(&workdir);
@@ -443,6 +446,7 @@ impl Multiplexer {
             status_identity.instance_id,
         );
         status_bar.set_prefix_enabled(input_parser.prefix_enabled());
+        status_bar.palette_key_glyph = palette_glyph;
 
         let ratatui_terminal =
             ratatui::Terminal::new(crate::tui::socket_backend::SocketBackend::new(cols, rows))?;
@@ -517,7 +521,7 @@ impl Multiplexer {
 
     /// Queue bytes that are not cell content (OSC passthrough, clipboard,
     /// pointer shapes, mode prefaces); they flush at the next frame boundary.
-    fn send_out_of_band(&mut self, bytes: Vec<u8>) {
+    pub(crate) fn send_out_of_band(&mut self, bytes: Vec<u8>) {
         self.client.enqueue_out_of_band(bytes);
     }
 }
@@ -881,7 +885,32 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         // state, so dismiss doesn't jump.
                         mux.invalidate(FullRedrawReason::PtyOutput);
                     }
-                    SessionEvent::Exited { session_id } => {
+                    SessionEvent::Exited {
+                        session_id,
+                        mut reason,
+                    } => {
+                        // Only a non-clean exit carries a `reason`; skip the
+                        // pane snapshot entirely on clean teardown so the grid
+                        // render never runs on the common exit path. When the
+                        // pane has no tail to attach (PTY never rendered, or the
+                        // session was already removed), keep the base reason —
+                        // dropping it would misroute a real failure into the
+                        // clean-shutdown branch and swallow it.
+                        if let Some(base) = reason.take() {
+                            let tail = mux
+                                .sessions
+                                .get(&session_id)
+                                .and_then(|session| session.diagnostic_tail(12));
+                            reason = Some(match tail {
+                                Some(tail) => {
+                                    crate::clog!(
+                                        "session {session_id}: final output tail:\n{tail}"
+                                    );
+                                    format!("{base}\nlast pane output:\n{tail}")
+                                }
+                                None => base,
+                            });
+                        }
                         // Remove the pane / tab immediately rather than
                         // leaving a stale `○ Done` placeholder behind.
                         // Matches the operator's mental model: "agent
@@ -894,7 +923,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         // attach to. Tear down the container so the
                         // host cleanup path fires.
                         if mux.no_live_sessions() {
-                            drain_and_exit(&mut mux).await;
+                            if let Some(reason) = reason {
+                                crate::clog!("session {session_id}: final session exited: {reason}");
+                                drain_and_exit_with_reason(&mut mux, Some(reason)).await;
+                            } else {
+                                drain_and_exit(&mut mux).await;
+                            }
                             return Ok(());
                         }
                     }
@@ -1091,7 +1125,5 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
     }
 }
 
-#[cfg(test)]
-mod render_conformance_tests;
 #[cfg(test)]
 mod tests;

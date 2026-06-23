@@ -111,7 +111,12 @@ pub async fn run_client(
                             break Err(anyhow::anyhow!("stdout flush failed: {e}"));
                         }
                     }
-                    ServerFrame::Shutdown => break Ok(()),
+                    ServerFrame::Shutdown { reason } => {
+                        if let Some(reason) = reason {
+                            break Err(anyhow::anyhow!(reason));
+                        }
+                        break Ok(());
+                    }
                     ServerFrame::Bell => {
                         let mut stdout = std::io::stdout();
                         if let Err(e) = stdout.write_all(b"\x07") {

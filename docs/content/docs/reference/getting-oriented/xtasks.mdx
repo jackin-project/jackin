@@ -25,28 +25,50 @@ The `construct` family (source: <RepoFile path="crates/jackin-xtask/src/construc
 | `cargo xtask construct publish-manifest` | `construct-publish-manifest` | Combine per-platform digest pushes into one multi-platform manifest. CI publish step. |
 | `cargo xtask construct inspect` | `construct-inspect` | Print the resolved Bake configuration without building — dry-run inspection. |
 
-## Pull request verification tasks
+## Pull request verification helpers
 
-`cargo xtask pr prepare <PR_NUMBER>` (source: <RepoFile path="crates/jackin-xtask/src/pr.rs">crates/jackin-xtask/src/pr.rs</RepoFile>) replaces the repeated PR setup work after the template bootstraps a repository checkout. It asks GitHub for the PR head, refreshes `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/jackin`, checks out the PR branch, trusts and installs mise, builds the local `jackin` binary, creates PR-scoped config/state directories, and writes `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/env.sh`.
+`jackin-dev pr sync <PR_NUMBER>` (source: <RepoFile path="crates/jackin-dev/src/main.rs">crates/jackin-dev/src/main.rs</RepoFile>) owns the checkout and isolation setup for local PR verification. It asks GitHub for the PR head, refreshes `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/jackin`, checks out the PR's real head branch while keeping the bundle directory keyed by PR number, trusts and installs mise, builds the local `jackin` binary, copies live config into `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/state/config`, creates empty runtime state under `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/state/home`, and writes `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/env.sh`.
 
-Source the generated env file before smoke testing the PR. The xtask runs as a child process, so it cannot export into the parent shell directly. The env file prepends the checkout's `target/debug` directory to `PATH`, sets `JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"`, sets `JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"`, and includes `JACKIN_CAPSULE_BIN` when `--capsule` was used.
+Source the generated env file before smoke testing the PR. `jackin-dev` runs as a child process, so it cannot export into the parent shell directly. The env file prepends the checkout's `target/debug` directory to `PATH`, sets `JACKIN_CONFIG_DIR` to the PR bundle's copied config, sets `JACKIN_HOME_DIR` to the PR bundle's empty state home, and includes `JACKIN_CAPSULE_BIN` or `JACKIN_CONSTRUCT_IMAGE` only when the PR diff requires local capsule or construct preparation.
 
-| Option | What it adds |
+| Command | What it does |
 | --- | --- |
-| `--config blank` | Use an empty PR-scoped config directory. This is the default. |
-| `--config copy` | Copy the host's `~/.config/jackin` into the PR-scoped config directory before testing. |
-| `--replace-config` | Remove an existing PR-scoped config directory before preparing the selected config source. |
-| `--construct` | Run `mise run construct-build-local` and append `JACKIN_CONSTRUCT_IMAGE=jackin-local/construct:trixie` to `env.sh`. |
-| `--capsule` | Run `cargo run --bin build-jackin-capsule -- --export` and append the resulting `JACKIN_CAPSULE_BIN` export to `env.sh`. |
+| `jackin-dev pr sync <PR_NUMBER>` | Clone or refresh the PR checkout on the PR's real branch, prepare isolated config/state, build local `jackin`, auto-build capsule/construct inputs from the diff, and write `env.sh`. |
+| `jackin-dev pr clean <PR_NUMBER>` | Remove the full PR verification bundle. |
+| `jackin-dev pr env <PR_NUMBER>` | Print the `cd`, `source`, and `which jackin` commands for entering the bundle. |
+| `jackin-dev pr path <PR_NUMBER>` | Print the PR bundle root. |
+| `jackin-dev pr status <PR_NUMBER>` | Show local checkout freshness, branch/head SHAs, and env/state existence. |
+
+`sync` takes optional overrides: `--config blank` starts from an empty config directory for clean-room verification (default `copy` mirrors the operator's live config), `--test-dir <path>` relocates the bundle root, and `--repo <owner/name>` targets a different repository.
+
+`cargo xtask pr body --base <ref>` assembles a PR body from the diff. It prints a classified change digest (rust / docs / capsule / schema, plus the changed-file list) to **stderr**, and the body skeleton — <RepoFile path=".github/PULL_REQUEST_TEMPLATE.md">.github/PULL_REQUEST_TEMPLATE.md</RepoFile> with the verify-locally `###` blocks that do not apply to the diff removed — to **stdout**. The split lets you redirect the body to a file (`cargo xtask pr body > body.md`) while reading the digest in the terminal. Block selection: Checkout always; Static checks / Rust tests / User smoke on a Rust change; Schema migration smoke on a versioned-schema touch; Docs checks / Documentation on a `docs/**` change; jackin-capsule smoke on a `crates/jackin-capsule/` change. The prose sections stay as template placeholders for the author to fill.
 
 ## PTY fixture extraction
 
-`cargo xtask pty-fixture <run.jsonl> <session-label> <out.bin>` (source: <RepoFile path="crates/jackin-xtask/src/pty_fixture.rs">crates/jackin-xtask/src/pty_fixture.rs</RepoFile>) turns a `--debug` run log into a replayable terminal-fixture file. It scans the log for the capsule's `session feed_pty bytes:` debug lines, filters them to one session label (the `label=` field, e.g. `Codex`), decodes the hex byte dumps, and concatenates them in order into a binary fixture for the render-conformance harness in <RepoFile path="crates/jackin-capsule/src/daemon/render_conformance_tests.rs">crates/jackin-capsule/src/daemon/render_conformance_tests.rs</RepoFile>.
+`cargo xtask pty-fixture <run.jsonl> <session-label> <out.bin>` (source: <RepoFile path="crates/jackin-xtask/src/pty_fixture.rs">crates/jackin-xtask/src/pty_fixture.rs</RepoFile>) turns a `--debug` run log into a replayable terminal-fixture file. It scans the log for the capsule's `session feed_pty bytes:` debug lines, filters them to one session label (the `label=` field, e.g. `Codex`), decodes the hex byte dumps, and concatenates them in order into a binary fixture for the render-conformance harness in <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs">crates/jackin-capsule/src/daemon/tests.rs</RepoFile>.
 
 Both log shapes work as input: the host diagnostics run JSONL (capsule lines embedded inside JSON string fields) and a raw in-container `multiplexer.log`. Fixtures land under <RepoFile path="crates/jackin-capsule/tests/fixtures/pty/README.md">crates/jackin-capsule/tests/fixtures/pty/README.md</RepoFile> by convention, and the full recording flow — reproducing with `--debug`, locating the run id, extracting, and wiring the fixture into the harness — is documented in <RepoFile path="TESTING.md">TESTING.md</RepoFile>.
 
 Reach for it when an operator-reported rendering bug needs the agent's exact byte stream as a regression test: one command replaces hand-extracting hex from logs.
 
+## Documentation sidebar tasks
+
+The `change`, `research`, and `roadmap` families (source: <RepoFile path="crates/jackin-xtask/src/docs.rs">crates/jackin-xtask/src/docs.rs</RepoFile>) scaffold and validate the Fumadocs `meta.json` sidebars under `docs/content/docs/`, so contributors never hand-edit the sidebar JSON or leave a new page unreachable. They locate the repo root by walking up for `docs/content/docs`, so they run from anywhere in the tree.
+
+| Command | What it does |
+| --- | --- |
+| `cargo xtask change new <slug> --group <group>` | Scaffold a roadmap item at `reference/roadmap/<slug>.mdx` (frontmatter, `**Status**: Open`, `Problem`/`Why It Matters`/`Design`/`Tasks`/`Related Files`) and register it as `../<slug>` in the named group's `meta.json`. `--title` overrides the title-cased default. |
+| `cargo xtask research scaffold <slug>` | Scaffold a research dossier at `research/<slug>/` with `index.mdx`, a `prompt.mdx` brief, a `meta.json` (`pages: ["index", "prompt"]`), and register the dossier in the parent `research/meta.json`. `--title` overrides the default. |
+| `cargo xtask research check` | Validate every research `meta.json`: each `pages` entry resolves to a file/dir on disk, and no `.mdx` is orphaned. Non-zero exit on any problem. |
+| `cargo xtask roadmap audit` | Same validation for the roadmap subtree, including `(group)` folders and `../<slug>` cross-references. Non-zero exit on any problem. |
+| `cargo xtask roadmap retire <slug>` | Retire a shipped roadmap item. `--plan` (default) prints a read-only worklist — page content, inbound links, and the sidebar entry. `--apply` drops the `../<slug>` group entry, deletes the `.mdx`, runs the audit, and fails if any inbound link still resolves to it. `--partial` sets `**Status**: Partially implemented` and keeps the page. |
+
+`research check` is read-only and deterministic. Roadmap sidebar parity is already gated in CI by `bun run check:roadmap-sidebar` (in the docs workflow), so `roadmap audit` is the local equivalent rather than a second CI gate.
+
+## Schema migration gate
+
+`cargo xtask schema-check --base <ref>` (source: <RepoFile path="crates/jackin-xtask/src/schema.rs">crates/jackin-xtask/src/schema.rs</RepoFile>) enforces the five-artifact rule for versioned schemas described in <RepoFile path="PRERELEASE.md">PRERELEASE.md</RepoFile>. It reads each `CURRENT_{CONFIG,WORKSPACE,MANIFEST}_VERSION` on the working tree and at the base ref; when one is bumped it asserts the new `from-<predecessor>/` fixture directory exists (`meta.toml` / `before.toml` / `after.toml`, with the right `target_version`) and that <RepoFile path="docs/content/docs/reference/runtime/schema-versions.mdx">schema-versions.mdx</RepoFile> carries a Timeline entry for the new version. The migration step and the existing-fixture re-bake are already enforced by `tests/migration_fixtures.rs`, so this gate covers only the two artifacts those tests cannot see. The CI workflow runs it on every Rust change so a partial schema bump fails before merge.
+
 ## Adding a new xtask
 
-New automation belongs in this binary, not in shell scripts or one-off `justfile` recipes: add a module under <RepoFile path="crates/jackin-xtask/src/main.rs">crates/jackin-xtask/src/main.rs</RepoFile>, register the subcommand in the `Command` enum, and — when CI or contributors will invoke it routinely — add a delegating mise task. Update this page in the same PR.
+Repo-internal automation belongs in this binary, not in shell scripts or one-off `justfile` recipes: add a module under <RepoFile path="crates/jackin-xtask/src/main.rs">crates/jackin-xtask/src/main.rs</RepoFile>, register the subcommand in the `Command` enum, and — when CI or contributors will invoke it routinely — add a delegating mise task. Host-side developer workflows that must be available before a checkout exists belong in `jackin-dev` instead. Update this page in the same PR.
