@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: homebrew-tap-publish
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   source-changed:
