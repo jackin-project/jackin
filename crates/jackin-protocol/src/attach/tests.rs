@@ -229,7 +229,10 @@ fn server_frames_roundtrip() {
     for frame in [
         ServerFrame::Output(b"raw bytes".to_vec()),
         ServerFrame::SessionList(br#"[{"id":1}]"#.to_vec()),
-        ServerFrame::Shutdown,
+        ServerFrame::Shutdown { reason: None },
+        ServerFrame::Shutdown {
+            reason: Some("agent exited with code 2".to_owned()),
+        },
         ServerFrame::Bell,
         ServerFrame::HostOpenUrl("https://github.com/jackin-project/jackin/actions/runs/1".into()),
         ServerFrame::HostOpenUrl("mailto:operator@example.com".into()),

@@ -50,6 +50,9 @@ serde_yaml_ng = "0.10.0"
 tempfile = "3.20"
 url = "2"
 
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", features = ["user"] }
+
 [dev-dependencies]
 tokio = { version = "=1.52.3", features = ["test-util"] }
 

@@ -1,14 +1,15 @@
-//! jackin' interactive console (`jackin console`): TUI and domain logic.
+//! Binary adapter for the jackin' interactive console (`jackin console`).
 //!
-//! Entry point is `run_console`. The module tree is split into:
+//! Phase 5 adapter-shell end state. Entry point is `run_console`. All
+//! console product state, update, view, input planning, and business rules
+//! live in `jackin-console` or lower crates. This module only binds that
+//! surface to the binary crate's concrete config, Docker, runtime, terminal,
+//! and CLI services.
 //!
-//! * `domain` — pure data transforms and business rules (no side effects).
-//! * `tui` — Elm Architecture state machine, input handling, and render loop.
-//! * `services` — background async helpers (refresh, drift check, etc.).
-//! * `effects` — side-effecting operations dispatched by the event loop.
-//!
-//! Not responsible for: the rendering primitives themselves (those live in
-//! `jackin-console` and `jackin-tui` crates).
+//! * `terminal` — inline host-terminal adapter (debug-buffering globals).
+//! * `tui` — inline type aliases + thin input/state adapters; `tui/run.rs` owns the event loop.
+//! * `services` — root IO adapters (config, instances, role load, workspace save).
+//! * `effects` — interpreter for typed `ManagerEffect` values.
 
 // `ConsoleStage` collapsed to a single variant in PR #171's Modal::RolePicker
 // cleanup. The module is kept as-is (with `if let ConsoleStage::Manager(_)`
@@ -17,456 +18,86 @@
 // than peppering individual sites.
 #![allow(irrefutable_let_patterns)]
 
-mod domain;
 pub mod effects;
-pub mod manager;
-mod outcome;
-mod preview;
 mod services;
-pub mod terminal;
+pub mod terminal {
+    //! Host adapter for console terminal ownership.
+    //!
+    //! Terminal lifecycle lives in `jackin-console`'s TUI boundary. This root
+    //! module only binds that generic terminal code to the root crate's host
+    //! debug-buffering globals.
+
+    pub use jackin_console::tui::terminal::TerminalSession;
+    pub(crate) use jackin_console::tui::terminal::{
+        MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS,
+    };
+
+    struct HostConsoleTerminal;
+
+    impl jackin_console::ConsoleHostTerminal for HostConsoleTerminal {
+        fn begin_debug_buffering(&self) {
+            crate::tui::begin_debug_buffering();
+        }
+
+        fn end_debug_buffering(&self) {
+            crate::tui::end_debug_buffering();
+        }
+
+        fn set_host_screen_owned(&self, owned: bool) {
+            crate::tui::set_host_screen_owned(owned);
+        }
+
+        fn host_screen_owned(&self) -> bool {
+            crate::tui::host_screen_owned()
+        }
+    }
+
+    static HOST_CONSOLE_TERMINAL: HostConsoleTerminal = HostConsoleTerminal;
+
+    pub(crate) fn host_console_terminal() -> &'static dyn jackin_console::ConsoleHostTerminal {
+        &HOST_CONSOLE_TERMINAL
+    }
+
+    pub(crate) fn suspend_console_terminal(stdout: &mut std::io::Stdout) {
+        jackin_console::tui::terminal::suspend_console_terminal(stdout, host_console_terminal());
+    }
+
+    pub(crate) fn resume_console_terminal(stdout: &mut std::io::Stdout) -> anyhow::Result<()> {
+        jackin_console::tui::terminal::resume_console_terminal(stdout, host_console_terminal())
+    }
+}
 pub mod tui;
-pub mod widgets;
+
+/// Validate a picked source folder against the agent an auth form targets.
+/// Returns `Ok(())` for non-agent auth kinds. Runtime validation stays in the
+/// binary adapter because `jackin-console` cannot depend on runtime.
+pub(super) fn validate_auth_source_folder(
+    kind: Option<jackin_console::tui::auth::AuthKind>,
+    path: &std::path::Path,
+) -> Result<(), String> {
+    use jackin_console::tui::auth_config::auth_kind_agent;
+    let Some(agent) = kind.and_then(auth_kind_agent) else {
+        return Ok(());
+    };
+    let host_home = directories::BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .unwrap_or_default();
+    jackin_runtime::instance::validate_sync_source_dir(agent, path, &host_home)
+}
 
 #[cfg(test)]
-use domain::providers_for_launch;
-pub use domain::{WorkspaceChoice, build_workspace_choice};
-pub use outcome::{ConsoleInstanceAction, ConsoleOutcome, InstanceActionHandler};
+pub(crate) use jackin_console::services::role_source::resolve_role_input_source;
+
+pub use jackin_console::services::launch::{WorkspaceChoice, build_workspace_choice};
 pub use terminal::TerminalSession;
-#[cfg(test)]
-pub(super) use tui::consumes_letter_input;
-#[cfg(test)]
-use tui::is_on_main_screen;
-#[cfg(test)]
-use tui::prompts::prompt_agent_for_launch;
 pub use tui::{ConsoleStage, ConsoleState, run_console};
 
-#[cfg(test)]
-mod quit_confirm_tests {
-    //! Pin the gates for the Q-intercept and the
-    //! `ConfirmState::handle_key` outcomes the run-loop dispatches.
-    use super::tui::debug::{console_location_debug, key_debug_name};
-    use super::tui::prompts::{
-        AgentPickerChoices, OnPromptFailure, PromptOutcome, show_role_resolution_error,
-    };
-    use super::*;
-    use crate::config::AppConfig;
-    use crate::console::tui::state::{
-        EditorState, FileBrowserTarget, ManagerStage, Modal, SecretsScopeTag, TextInputTarget,
-    };
-    use crate::selector::RoleSelector;
-    use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
-    use jackin_console::tui::components::file_browser::FileBrowserState;
-    use jackin_tui::ModalOutcome;
-    use jackin_tui::components::{ConfirmState, TextInputState};
-
-    fn fresh_state() -> ConsoleState {
-        let cwd = std::env::temp_dir();
-        let config = AppConfig::default();
-        tui::new_console_state(&config, &cwd).unwrap()
-    }
-
-    fn key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent {
-        crossterm::event::KeyEvent {
-            code,
-            modifiers: crossterm::event::KeyModifiers::NONE,
-            kind: crossterm::event::KeyEventKind::Press,
-            state: crossterm::event::KeyEventState::NONE,
-        }
-    }
-
-    #[test]
-    fn main_screen_is_list_with_no_modal() {
-        let state = fresh_state();
-        assert!(is_on_main_screen(&state));
-        assert!(!consumes_letter_input(&state));
-    }
-
-    #[test]
-    fn editor_stage_is_not_main_screen() {
-        let mut state = fresh_state();
-        let ConsoleStage::Manager(ms) = &mut state.stage;
-        ms.stage = ManagerStage::Editor(EditorState::new_create());
-        assert!(!is_on_main_screen(&state));
-    }
-
-    #[test]
-    fn list_modal_is_not_main_screen() {
-        let mut state = fresh_state();
-        let ConsoleStage::Manager(ms) = &mut state.stage;
-        // FileBrowser stands in for any list-anchored modal — predicate
-        // only checks `is_some`.
-        ms.list_modal = Some(Modal::FileBrowser {
-            target: FileBrowserTarget::CreateFirstMountSrc,
-            state: FileBrowserState::from_listing(
-                jackin_console::services::file_browser::listing_from_home().unwrap(),
-            ),
-        });
-        assert!(!is_on_main_screen(&state));
-    }
-
-    #[test]
-    fn text_input_modal_consumes_letter_input() {
-        let mut state = fresh_state();
-        let ConsoleStage::Manager(ms) = &mut state.stage;
-        let mut editor = EditorState::new_create();
-        editor.modal = Some(Modal::TextInput {
-            target: TextInputTarget::EnvKey {
-                scope: SecretsScopeTag::Workspace,
-            },
-            state: TextInputState::new("Key", ""),
-        });
-        ms.stage = ManagerStage::Editor(editor);
-        assert!(consumes_letter_input(&state));
-        assert!(!is_on_main_screen(&state));
-    }
-
-    #[test]
-    fn debug_key_redacts_text_input_characters() {
-        let mut state = fresh_state();
-        let ConsoleStage::Manager(ms) = &mut state.stage;
-        let mut editor = EditorState::new_create();
-        editor.modal = Some(Modal::TextInput {
-            target: TextInputTarget::EnvValue {
-                scope: SecretsScopeTag::Workspace,
-                key: "TOKEN".into(),
-            },
-            state: TextInputState::new("Value", ""),
-        });
-        ms.stage = ManagerStage::Editor(editor);
-
-        assert_eq!(
-            key_debug_name(&state, key(crossterm::event::KeyCode::Char('s'))),
-            "Char(<redacted>)"
-        );
-        assert_eq!(
-            key_debug_name(&state, key(crossterm::event::KeyCode::Enter)),
-            "Enter"
-        );
-    }
-
-    #[test]
-    fn debug_location_includes_stage_and_modal_without_values() {
-        let mut state = fresh_state();
-        let ConsoleStage::Manager(ms) = &mut state.stage;
-        let mut editor = EditorState::new_create();
-        editor.modal = Some(Modal::TextInput {
-            target: TextInputTarget::EnvValue {
-                scope: SecretsScopeTag::Workspace,
-                key: "TOKEN".into(),
-            },
-            state: TextInputState::new("Value", ""),
-        });
-        ms.stage = ManagerStage::Editor(editor);
-
-        let location = console_location_debug(&state);
-        assert!(location.contains("editor"), "{location}");
-        assert!(location.contains("modal=TextInput"), "{location}");
-        assert!(!location.contains("TOKEN"), "{location}");
-    }
-
-    #[test]
-    fn quit_confirm_handle_key_y_commits_exit() {
-        let mut s = ConfirmState::new("Exit jackin'?");
-        assert!(matches!(
-            s.handle_key(key(crossterm::event::KeyCode::Char('y'))),
-            ModalOutcome::Commit(true)
-        ));
-    }
-
-    #[test]
-    fn quit_confirm_handle_key_n_returns_commit_false() {
-        let mut s = ConfirmState::new("Exit jackin'?");
-        assert!(matches!(
-            s.handle_key(key(crossterm::event::KeyCode::Char('n'))),
-            ModalOutcome::Commit(false)
-        ));
-    }
-
-    #[test]
-    fn quit_confirm_handle_key_esc_cancels() {
-        let mut s = ConfirmState::new("Exit jackin'?");
-        assert!(matches!(
-            s.handle_key(key(crossterm::event::KeyCode::Esc)),
-            ModalOutcome::Cancel
-        ));
-    }
-
-    #[test]
-    fn show_role_resolution_error_opens_error_popup_with_role_and_error() {
-        let mut state = fresh_state();
-        let selector = RoleSelector::new(Some("acme"), "agent-smith");
-        let error = anyhow::anyhow!("network is unreachable");
-
-        show_role_resolution_error(&mut state, &selector, &error);
-
-        let ConsoleStage::Manager(ms) = &mut state.stage;
-        let Some(Modal::ErrorPopup { state: popup }) = ms.list_modal.as_ref() else {
-            panic!("expected ErrorPopup, got {:?}", ms.list_modal);
-        };
-        let body = format!("{popup:?}");
-        assert!(
-            body.contains("acme/agent-smith"),
-            "popup must reference the failing role selector: {body}"
-        );
-        assert!(
-            body.contains("network is unreachable"),
-            "popup must surface the underlying error: {body}"
-        );
-    }
-
-    #[test]
-    fn providers_for_launch_include_all_zai_env_layers() {
-        let mut config = AppConfig::default();
-        config.env.insert(
-            "ZAI_API_KEY".into(),
-            crate::operator_env::EnvValue::Plain("global-key".into()),
-        );
-        config.workspaces.insert(
-            "global-demo".into(),
-            crate::workspace::WorkspaceConfig::default(),
-        );
-        assert_eq!(
-            providers_for_launch(
-                &config,
-                "global-demo",
-                "the-architect",
-                crate::agent::Agent::Claude,
-            )
-            .len(),
-            2
-        );
-        config.env.clear();
-
-        let mut workspace = crate::workspace::WorkspaceConfig::default();
-        workspace.env.insert(
-            "ZAI_API_KEY".into(),
-            crate::operator_env::EnvValue::Plain("workspace-key".into()),
-        );
-        config.workspaces.insert("workspace-demo".into(), workspace);
-        assert_eq!(
-            providers_for_launch(
-                &config,
-                "workspace-demo",
-                "the-architect",
-                crate::agent::Agent::Claude,
-            )
-            .len(),
-            2
-        );
-
-        config.workspaces.remove("workspace-demo");
-        let mut role = crate::config::RoleSource::default();
-        role.env.insert(
-            "ZAI_API_KEY".into(),
-            crate::operator_env::EnvValue::Plain("role-key".into()),
-        );
-        config.roles.insert("the-architect".into(), role);
-        config.workspaces.insert(
-            "role-demo".into(),
-            crate::workspace::WorkspaceConfig::default(),
-        );
-        assert_eq!(
-            providers_for_launch(
-                &config,
-                "role-demo",
-                "the-architect",
-                crate::agent::Agent::Claude,
-            )
-            .len(),
-            2
-        );
-
-        config.roles.clear();
-        let mut workspace_role = crate::workspace::WorkspaceConfig::default();
-        let mut role_override = crate::workspace::WorkspaceRoleOverride::default();
-        role_override.env.insert(
-            "ZAI_API_KEY".into(),
-            crate::operator_env::EnvValue::Plain("workspace-role-key".into()),
-        );
-        workspace_role
-            .roles
-            .insert("the-architect".into(), role_override);
-        config
-            .workspaces
-            .insert("workspace-role-demo".into(), workspace_role);
-        let providers = providers_for_launch(
-            &config,
-            "workspace-role-demo",
-            "the-architect",
-            crate::agent::Agent::Claude,
-        );
-        assert_eq!(providers.len(), 2);
-        assert_eq!(providers[1], jackin_protocol::Provider::Zai);
-    }
-
-    #[test]
-    fn providers_for_launch_rejects_non_claude_agents() {
-        let mut config = AppConfig::default();
-        config.env.insert(
-            "ZAI_API_KEY".into(),
-            crate::operator_env::EnvValue::Plain("global-key".into()),
-        );
-        config
-            .workspaces
-            .insert("demo".into(), crate::workspace::WorkspaceConfig::default());
-
-        let providers =
-            providers_for_launch(&config, "demo", "the-architect", crate::agent::Agent::Codex);
-
-        assert!(providers.is_empty());
-    }
-
-    fn unresolved_workspace() -> ResolvedWorkspace {
-        ResolvedWorkspace {
-            label: "scratch".to_owned(),
-            workdir: "/workspace".to_owned(),
-            mounts: Vec::new(),
-            default_agent: None,
-            keep_awake_enabled: false,
-            git_pull_on_entry: false,
-        }
-    }
-
-    fn run_prompt_for_unknown_role(on_failure: OnPromptFailure) -> (ConsoleState, PromptOutcome) {
-        let cwd = std::env::temp_dir();
-        let config = AppConfig::default();
-        let mut state = tui::new_console_state(&config, &cwd).unwrap();
-        let selector = RoleSelector::new(None, "agent-smith");
-        let workspace = unresolved_workspace();
-        let input = LoadWorkspaceInput::CurrentDir;
-        let outcome = prompt_agent_for_launch(
-            &mut state,
-            &selector,
-            &workspace,
-            input,
-            on_failure,
-            AgentPickerChoices::Failed(anyhow::anyhow!("unknown role")),
-        );
-        (state, outcome)
-    }
-
-    #[test]
-    fn prompt_agent_for_launch_skips_resolution_when_workspace_default_agent_set() {
-        // workspace.default_agent.is_some() must short-circuit before
-        // any agent-picker state opens — operators with a configured default
-        // never wait on a resolution round trip just to confirm a launch.
-        let cwd = std::env::temp_dir();
-        let config = AppConfig::default();
-        let mut state = tui::new_console_state(&config, &cwd).unwrap();
-        let selector = RoleSelector::new(None, "agent-smith");
-        let mut workspace = unresolved_workspace();
-        workspace.default_agent = Some(crate::agent::Agent::Codex);
-
-        let outcome = prompt_agent_for_launch(
-            &mut state,
-            &selector,
-            &workspace,
-            LoadWorkspaceInput::CurrentDir,
-            OnPromptFailure::ClearPending,
-            AgentPickerChoices::Failed(anyhow::anyhow!("must not be observed")),
-        );
-
-        assert!(matches!(outcome, PromptOutcome::Launch));
-        let ConsoleStage::Manager(ms) = &state.stage;
-        assert!(
-            ms.list_modal.is_none(),
-            "no modal must be opened on the default-agent short-circuit"
-        );
-        assert!(
-            ms.status_overlay.is_none(),
-            "no status overlay must be left behind on the default-agent short-circuit"
-        );
-    }
-
-    #[test]
-    fn prompt_agent_for_launch_restore_pending_keeps_input_for_retry() {
-        let (state, outcome) = run_prompt_for_unknown_role(OnPromptFailure::RestorePending);
-        assert!(matches!(outcome, PromptOutcome::Defer));
-        assert!(
-            state.pending_launch.is_some(),
-            "RestorePending must hold the input so the operator can retry after dismissing the error"
-        );
-        let ConsoleStage::Manager(ms) = &state.stage;
-        assert!(
-            matches!(ms.list_modal, Some(Modal::ErrorPopup { .. })),
-            "Failed outcome must surface the error popup regardless of restore policy"
-        );
-    }
-
-    #[test]
-    fn prompt_agent_for_launch_clear_pending_drops_input() {
-        let (state, outcome) = run_prompt_for_unknown_role(OnPromptFailure::ClearPending);
-        assert!(matches!(outcome, PromptOutcome::Defer));
-        assert!(
-            state.pending_launch.is_none(),
-            "ClearPending must drop the input so a fresh workspace pick re-resolves cleanly"
-        );
-        let ConsoleStage::Manager(ms) = &state.stage;
-        assert!(
-            matches!(ms.list_modal, Some(Modal::ErrorPopup { .. })),
-            "Failed outcome must surface the error popup regardless of restore policy"
-        );
-    }
-}
-
-#[cfg(test)]
-mod op_cache_invalidation_tests {
-    use crate::console::services::op_picker::invalidate_cache_for_ref;
-    use crate::operator_env::OpCache;
-    use crate::operator_env::{OpField, OpItem, OpRef};
-    use std::cell::RefCell;
-    use std::rc::Rc;
-
-    #[test]
-    fn invalidate_op_cache_for_ref_drops_items_and_fields() {
-        let cache = Rc::new(RefCell::new(OpCache::default()));
-        let account = Some("ACCT");
-        cache.borrow_mut().put_items(
-            account,
-            "v1",
-            vec![OpItem {
-                id: "i1".into(),
-                name: "Claude".into(),
-                subtitle: String::new(),
-            }],
-        );
-        cache.borrow_mut().put_fields(
-            account,
-            "v1",
-            "i1",
-            vec![OpField {
-                id: "f1".into(),
-                label: "token".into(),
-                field_type: "CONCEALED".into(),
-                concealed: true,
-                reference: String::new(),
-            }],
-        );
-
-        invalidate_cache_for_ref(
-            &cache,
-            &OpRef {
-                op: "op://v1/i1/f1".into(),
-                path: "Work/Claude/token".into(),
-                account: Some("ACCT".into()),
-            },
-        );
-
-        assert!(cache.borrow().get_items(account, "v1").is_none());
-        assert!(cache.borrow().get_fields(account, "v1", "i1").is_none());
-    }
-
-    #[test]
-    fn invalidate_op_cache_for_ref_ignores_unparseable_ref() {
-        let cache = Rc::new(RefCell::new(OpCache::default()));
-        // A non-op:// literal must be a no-op, not a panic.
-        invalidate_cache_for_ref(
-            &cache,
-            &OpRef {
-                op: "not-a-ref".into(),
-                path: String::new(),
-                account: None,
-            },
-        );
-    }
-}
+pub type ConsoleInstanceAction =
+    jackin_console::tui::message::ConsoleInstanceAction<jackin_core::Agent>;
+pub type ConsoleOutcome = jackin_console::tui::message::ConsoleOutcome<
+    jackin_core::RoleSelector,
+    jackin_config::ResolvedWorkspace,
+    jackin_core::Agent,
+    jackin_protocol::Provider,
+>;
+pub use jackin_console::tui::message::InstanceActionHandler;

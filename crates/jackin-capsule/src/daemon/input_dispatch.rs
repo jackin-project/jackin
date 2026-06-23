@@ -268,6 +268,15 @@ impl Multiplexer {
                 }
                 self.invalidate_for(&Action::OpenPalette);
             }
+            Action::RequestExit => {
+                // Ctrl+Q → confirm before the force-stop. Esc/No dismisses and
+                // resumes; Yes routes to ExitAllSessions (immediate teardown).
+                self.cancel_drag();
+                self.dialog_push(Dialog::new_confirm_action(
+                    crate::tui::components::dialog::ConfirmKind::Exit,
+                ));
+                self.invalidate_for(&Action::RequestExit);
+            }
             Action::OpenContainerInfo => {
                 self.open_container_info_dialog();
                 self.invalidate_for(&Action::OpenContainerInfo);

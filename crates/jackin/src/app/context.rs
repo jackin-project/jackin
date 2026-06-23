@@ -140,69 +140,6 @@ pub(crate) fn resolve_target_name_with_choice(
     }
 }
 
-/// Find the saved workspace whose host workdir or mounted host path best
-/// matches `cwd`. Returns `None` when no saved workspace covers the path.
-///
-/// Deepest mount-root match wins; ties go to iteration order (`BTreeMap`
-/// alphabetical by workspace name). Shared by both the non-interactive
-/// CLI resolvers (`jackin load`, `jackin hardline`) and the interactive
-/// TUI workspace preselection in `console/`.
-pub(crate) fn find_saved_workspace_for_cwd<'a>(
-    config: &'a AppConfig,
-    cwd: &Path,
-) -> Option<(&'a str, &'a WorkspaceConfig)> {
-    config
-        .workspaces
-        .iter()
-        .filter_map(|(name, ws)| {
-            crate::workspace::saved_workspace_match_depth(ws, cwd).map(|depth| (name, ws, depth))
-        })
-        .max_by_key(|(_, _, depth)| *depth)
-        .map(|(name, ws, _)| (name.as_str(), ws))
-}
-
-/// Return the configured roles permitted by a workspace's `allowed_roles`.
-///
-/// An empty `allowed_roles` list means "any configured role" — that is
-/// the historical TUI and CLI contract, pinned by Phase 0 characterization
-/// tests in `console/`. Roles named in `allowed_roles` but absent from
-/// `config.roles` are silently dropped (no fabricated selectors).
-pub(crate) fn eligible_roles_for_workspace(
-    config: &AppConfig,
-    workspace: &WorkspaceConfig,
-) -> Vec<RoleSelector> {
-    config
-        .roles
-        .keys()
-        .filter_map(|key| RoleSelector::parse(key).ok())
-        .filter(|role| {
-            workspace.allowed_roles.is_empty()
-                || workspace
-                    .allowed_roles
-                    .iter()
-                    .any(|allowed| allowed == &role.key())
-        })
-        .collect()
-}
-
-/// Return the index of the preferred role within `eligible`.
-///
-/// Priority: `last_role` first, then `default_role`. Returns `None` when
-/// neither is set or when the named role is not in `eligible`. The TUI's
-/// preselection and the CLI's context resolver both go through this
-/// helper so the ordering cannot silently diverge.
-pub(crate) fn preferred_agent_index(
-    eligible: &[RoleSelector],
-    last_role: Option<&str>,
-    default_role: Option<&str>,
-) -> Option<usize> {
-    last_role
-        .and_then(|last| eligible.iter().position(|role| role.key() == last))
-        .or_else(|| {
-            default_role.and_then(|default| eligible.iter().position(|role| role.key() == default))
-        })
-}
-
 /// Resolve the role and workspace from the current directory context.
 ///
 /// Finds the saved workspace whose host workdir or mounted host path best
@@ -228,11 +165,12 @@ pub(crate) fn resolve_agent_from_context_with_choice(
     cwd: &Path,
     mut choose: impl FnMut(&str, Vec<String>) -> Result<usize>,
 ) -> Result<(RoleSelector, LoadWorkspaceInput)> {
-    if let Some((name, ws)) = find_saved_workspace_for_cwd(config, cwd) {
-        let eligible = eligible_roles_for_workspace(config, ws);
+    if let Some((name, ws)) = jackin_config::find_saved_workspace_for_cwd(config, cwd) {
+        let eligible =
+            jackin_console::workspace::eligible_roles_for_workspace(config.roles.keys(), ws);
 
         // Preferred-role shortcut: last_role, then default_role.
-        if let Some(preferred_idx) = preferred_agent_index(
+        if let Some(preferred_idx) = jackin_console::workspace::preferred_role_index(
             &eligible,
             ws.last_role.as_deref(),
             ws.default_role.as_deref(),
@@ -281,7 +219,7 @@ pub(crate) async fn resolve_running_container_from_context(
     cwd: &Path,
     docker: &impl DockerApi,
 ) -> Result<String> {
-    let Some((name, ws)) = find_saved_workspace_for_cwd(config, cwd) else {
+    let Some((name, ws)) = jackin_config::find_saved_workspace_for_cwd(config, cwd) else {
         return resolve_ad_hoc_container_from_context(paths, cwd, docker).await.or_else(|err| {
             anyhow::bail!(
                 "no saved workspace matches the current directory, and no ad-hoc instance matches it: {err}\n\

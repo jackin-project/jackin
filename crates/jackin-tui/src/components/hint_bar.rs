@@ -45,36 +45,6 @@ impl Widget for HintBar<'_> {
     }
 }
 
-/// `↵ confirm   Esc cancel`
-pub const CONFIRM_DISMISS_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↵"),
-    HintSpan::Text("confirm"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("cancel"),
-];
-
-/// `↵ select   Esc cancel`
-pub const SELECT_CANCEL_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↵"),
-    HintSpan::Text("select"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("cancel"),
-];
-
-/// `↵ dismiss`
-pub const DISMISS_HINT: &[HintSpan<'static>] = &[HintSpan::Key("↵"), HintSpan::Text("dismiss")];
-
-/// `↵ dismiss   Esc cancel`
-pub const DISMISS_CANCEL_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↵"),
-    HintSpan::Text("dismiss"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Esc"),
-    HintSpan::Text("cancel"),
-];
-
 pub fn render_hint_bar(frame: &mut ratatui::Frame<'_>, area: Rect, spans: &[HintSpan<'_>]) {
     frame.render_widget(HintBar::new(spans), area);
 }

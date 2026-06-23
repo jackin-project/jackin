@@ -13,6 +13,7 @@ pub mod ansi_text;
 pub mod components;
 pub mod geometry;
 pub mod host_colors;
+pub mod keymap;
 pub mod output;
 pub mod prune_output;
 pub mod runtime;

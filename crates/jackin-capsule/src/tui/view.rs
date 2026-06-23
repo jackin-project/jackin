@@ -63,6 +63,8 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     /// Spawn-failure notice painted over the top row until the next
     /// operator keystroke clears it.
     pub(crate) spawn_failure: Option<&'a str>,
+    /// Resolved palette-key byte (`InputParser::palette_key().unwrap_or(0x1C)`).
+    pub(crate) palette_key: u8,
     /// Transient host clipboard image paste result. Painted in the content
     /// toast area so it cannot overwrite status rows or bottom chrome.
     pub(crate) clipboard_image_notice: Option<&'a str>,
@@ -293,6 +295,9 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             scrollback_active: view.scrollback_active,
             scroll_axes: view.main_scroll_axes,
             debug_run_id: view.debug_run_id,
+            prefix_awaiting: view.prefix_mode
+                == crate::tui::components::status_bar::PrefixMode::Awaiting,
+            palette_key: view.palette_key,
         },
         frame.area(),
     );

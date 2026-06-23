@@ -2,6 +2,8 @@
 
 use jackin_tui::runtime::BlockingSubscription;
 
+pub const INSTANCE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Subscription {
     /// Keyboard, mouse, resize, focus, and paste events from crossterm.
@@ -31,6 +33,62 @@ pub fn op_read_worker_disconnected_message() -> &'static str {
 
 pub fn instance_refresh_worker_disconnected_message() -> &'static str {
     "instance refresh worker disconnected"
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InstanceRefreshThrottleState {
+    pub in_flight: bool,
+    pub last_refresh: Option<std::time::Instant>,
+    pub generation: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InstanceRefreshThrottlePlan {
+    pub last_refresh: Option<std::time::Instant>,
+    pub generation: u64,
+    pub start_generation: Option<u64>,
+}
+
+#[must_use]
+pub fn instance_refresh_throttle_plan(
+    state: InstanceRefreshThrottleState,
+    now: std::time::Instant,
+) -> InstanceRefreshThrottlePlan {
+    if state.in_flight {
+        return InstanceRefreshThrottlePlan {
+            last_refresh: state.last_refresh,
+            generation: state.generation,
+            start_generation: None,
+        };
+    }
+    if let Some(last) = state.last_refresh
+        && now.duration_since(last) < INSTANCE_REFRESH_INTERVAL
+    {
+        return InstanceRefreshThrottlePlan {
+            last_refresh: state.last_refresh,
+            generation: state.generation,
+            start_generation: None,
+        };
+    }
+    let generation = state.generation.wrapping_add(1);
+    InstanceRefreshThrottlePlan {
+        last_refresh: Some(now),
+        generation,
+        start_generation: Some(generation),
+    }
+}
+
+#[must_use]
+pub const fn forced_instance_refresh_generation(generation: u64) -> u64 {
+    generation.wrapping_add(1)
+}
+
+#[derive(Debug)]
+pub struct InstanceRefreshSnapshot<Instance, Session, Snapshot> {
+    pub instances: Vec<Instance>,
+    pub sessions: std::collections::HashMap<String, Vec<Session>>,
+    pub session_errors: std::collections::HashSet<String>,
+    pub snapshots: std::collections::HashMap<String, Snapshot>,
 }
 
 /// In-flight 1Password read triggered by an op picker commit from an auth form.

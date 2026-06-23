@@ -3,6 +3,7 @@
 use super::super::test_support::FakeRunner;
 use super::*;
 use jackin_config::AppConfig;
+use std::collections::HashMap;
 
 #[test]
 fn sensitive_mount_prompt_lists_every_hit_src_and_reason() {
@@ -30,6 +31,8 @@ use crate::isolation::materialize::{MaterializedMount, MaterializedWorkspace, Wo
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use std::collections::VecDeque;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tempfile::tempdir;
 
 fn workspace_manifest(
@@ -192,6 +195,7 @@ async fn diagnose_premature_exit_returns_none_when_container_running() {
         &mut runner,
         "jk-the-architect",
         ExitPhase::PreAttach,
+        None,
     )
     .await;
     assert!(
@@ -220,6 +224,7 @@ async fn diagnose_premature_exit_includes_logs_when_container_already_stopped() 
         &mut runner,
         "jk-the-architect",
         ExitPhase::PreAttach,
+        None,
     )
     .await
     .expect("stopped container must produce a diagnostic error");
@@ -254,7 +259,7 @@ async fn diagnose_premature_exit_flags_oom_kill_distinct_from_normal_exit() {
         ..Default::default()
     };
     let mut runner = FakeRunner::with_capture_queue([String::new()]);
-    let err = diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach)
+    let err = diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach, None)
         .await
         .expect("OOM-killed container is a premature exit");
     let msg = err.to_string();
@@ -271,7 +276,7 @@ async fn diagnose_premature_exit_passes_through_when_inspect_returns_notfound() 
     let docker = FakeDockerClient::default(); // empty queue → NotFound
     let mut runner = FakeRunner::default();
     assert!(
-        diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach,)
+        diagnose_premature_exit(&docker, &mut runner, "jackin-x", ExitPhase::PreAttach, None)
             .await
             .is_none(),
         "NotFound must not abort launch before exec attempt"
@@ -299,6 +304,7 @@ async fn diagnose_premature_exit_swallows_post_attach_clean_exit() {
         &mut runner,
         "jk-the-architect",
         ExitPhase::PostAttach,
+        None,
     )
     .await;
     assert!(
@@ -331,6 +337,7 @@ async fn diagnose_premature_exit_surfaces_post_attach_nonzero_exit() {
         &mut runner,
         "jk-the-architect",
         ExitPhase::PostAttach,
+        None,
     )
     .await
     .expect("post-attach non-zero exit must produce a diagnostic error");
@@ -367,6 +374,7 @@ async fn diagnose_premature_exit_surfaces_pre_attach_exit_zero() {
         &mut runner,
         "jk-the-architect",
         ExitPhase::PreAttach,
+        None,
     )
     .await
     .expect("pre-attach exit 0 must still flag a missing Capsule");
@@ -376,6 +384,56 @@ async fn diagnose_premature_exit_surfaces_pre_attach_exit_zero() {
         "phase label missing in: {msg}"
     );
     assert!(msg.contains("exit 0"), "exit code missing in: {msg}");
+}
+
+#[tokio::test]
+async fn diagnose_premature_exit_falls_back_to_multiplexer_log_when_docker_logs_empty() {
+    // The capsule daemon routes its startup diagnostics to multiplexer.log
+    // rather than stderr, so a pre-attach PID-1 crash leaves `docker logs`
+    // empty. The diagnostic must fall back to the capsule log tail instead of
+    // reporting an opaque "no log output".
+    use crate::runtime::test_support::FakeDockerClient;
+    use jackin_docker::docker_client::ContainerState;
+
+    let temp = tempdir().unwrap();
+    let mux_log = temp.path().join("multiplexer.log");
+    std::fs::write(
+        &mux_log,
+        "daemon start\nthread 'main' panicked: capsule boom\n",
+    )
+    .unwrap();
+
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
+            exit_code: 1,
+            oom_killed: false,
+        }])),
+        ..Default::default()
+    };
+    // Empty `docker logs` output → drives the multiplexer.log fallback branch.
+    let mut runner = FakeRunner::with_capture_queue([String::new()]);
+    let err = diagnose_premature_exit(
+        &docker,
+        &mut runner,
+        "jk-the-architect",
+        ExitPhase::PreAttach,
+        Some(mux_log.to_str().unwrap()),
+    )
+    .await
+    .expect("pre-attach exit 1 must produce a diagnostic error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("multiplexer.log"),
+        "fallback should name the capsule log: {msg}"
+    );
+    assert!(
+        msg.contains("capsule boom"),
+        "capsule log tail missing from msg: {msg}"
+    );
+    assert!(
+        !msg.contains("no log output"),
+        "must not report 'no log output' when the capsule log has content: {msg}"
+    );
 }
 
 #[tokio::test]
@@ -439,6 +497,185 @@ plugins = []
     assert!(
         !mounts.iter().any(|m| m.contains("/jackin/claude/")),
         "ignore mode must not mount Claude auth handoff files: {mounts:?}"
+    );
+}
+
+#[test]
+fn github_config_mount_skips_absent_ignored_state() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("role-state");
+    let state = RoleState {
+        root: root.clone(),
+        gh_config_dir: root.join(".config/gh"),
+        gh_provision_outcome: crate::instance::GithubProvisionOutcome::Skipped,
+        agent_runtime: crate::instance::AgentRuntimeState {
+            agent: jackin_core::agent::Agent::Claude,
+            model: None,
+        },
+        auth: crate::instance::ProvisionedAuth::default(),
+    };
+
+    assert!(
+        github_config_mount(&state).is_none(),
+        "ignored GitHub auth with no state should not make docker create an empty gh config dir"
+    );
+}
+
+#[test]
+fn github_config_mount_keeps_existing_ignored_state() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("role-state");
+    let gh_config_dir = root.join(".config/gh");
+    std::fs::create_dir_all(&gh_config_dir).unwrap();
+    let state = RoleState {
+        root,
+        gh_config_dir,
+        gh_provision_outcome: crate::instance::GithubProvisionOutcome::Skipped,
+        agent_runtime: crate::instance::AgentRuntimeState {
+            agent: jackin_core::agent::Agent::Claude,
+            model: None,
+        },
+        auth: crate::instance::ProvisionedAuth::default(),
+    };
+
+    assert!(
+        github_config_mount(&state)
+            .as_deref()
+            .is_some_and(|mount| mount.ends_with(":/home/agent/.config/gh")),
+        "existing jackin-owned GitHub state should still mount"
+    );
+}
+
+#[tokio::test]
+async fn role_state_prepare_for_agents_skips_sibling_auth_slots() {
+    use crate::instance::{PrepareResolvers, RoleState};
+    use jackin_core::agent::Agent;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let manifest_temp = tempdir().unwrap();
+    std::fs::write(
+        manifest_temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        manifest_temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
+    let codex_mode_resolutions = AtomicUsize::new(0);
+    let codex_sync_resolutions = AtomicUsize::new(0);
+
+    let (state, _) = RoleState::prepare_for_agents(
+        &paths,
+        "jk-agent-smith",
+        &manifest,
+        &PrepareResolvers {
+            auth_modes: &|agent| {
+                if agent == Agent::Codex {
+                    codex_mode_resolutions.fetch_add(1, Ordering::SeqCst);
+                }
+                jackin_config::AuthForwardMode::Ignore
+            },
+            sync_source_dirs: &|agent| {
+                if agent == Agent::Codex {
+                    codex_sync_resolutions.fetch_add(1, Ordering::SeqCst);
+                }
+                None
+            },
+        },
+        &crate::instance::GithubAuthContext::default(),
+        temp.path(),
+        Agent::Claude,
+        &[Agent::Claude],
+    )
+    .unwrap();
+
+    assert!(state.auth.claude.is_some(), "selected Claude slot missing");
+    assert!(
+        state.auth.codex.is_none(),
+        "sibling Codex auth slot must not be provisioned"
+    );
+    assert_eq!(
+        codex_mode_resolutions.load(Ordering::SeqCst),
+        0,
+        "sibling auth mode must not be resolved"
+    );
+    assert_eq!(
+        codex_sync_resolutions.load(Ordering::SeqCst),
+        0,
+        "sibling sync-source override must not be resolved"
+    );
+}
+
+#[tokio::test]
+async fn sibling_auth_prewarm_records_timing() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let manifest_temp = tempdir().unwrap();
+    std::fs::write(
+        manifest_temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        manifest_temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = jackin_manifest::load_role_manifest(manifest_temp.path()).unwrap();
+    let config = AppConfig::load_or_init(&paths).unwrap();
+    let prewarm = SiblingAuthPrewarm {
+        manifest: &manifest,
+        config: &config,
+        workspace_name: "workspace",
+        role_key: "agent-smith",
+    };
+
+    spawn_sibling_auth_prewarm(
+        &paths,
+        "jk-agent-smith",
+        &prewarm,
+        jackin_core::agent::Agent::Claude,
+    );
+
+    for _ in 0..20 {
+        let jsonl = std::fs::read_to_string(run.path()).unwrap();
+        if jsonl.contains("\"kind\":\"sibling_auth_prewarm_done\"") {
+            assert!(jsonl.contains("\"kind\":\"launch_plan\""), "{jsonl}");
+            assert!(jsonl.contains("PrewarmOnly"), "{jsonl}");
+            assert!(jsonl.contains("sibling_auth_prewarm:codex"), "{jsonl}");
+            assert!(jsonl.contains("\"kind\":\"timing_done\""), "{jsonl}");
+            assert!(jsonl.contains("sibling_auth_prewarm"), "{jsonl}");
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    panic!(
+        "sibling auth prewarm did not finish: {}",
+        std::fs::read_to_string(run.path()).unwrap()
     );
 }
 
@@ -1107,7 +1344,7 @@ async fn workspace_mise_paths_cover_workdir_and_mount_destinations() {
 
 #[tokio::test]
 async fn workspace_mise_env_does_not_override_operator_value() {
-    let workspace = repo_workspace(std::path::Path::new("/host/repo"));
+    let workspace = repo_workspace(Path::new("/host/repo"));
     let mut vars = vec![(
         MISE_TRUSTED_CONFIG_PATHS_ENV.to_owned(),
         "/operator/trusted".to_owned(),
@@ -1124,10 +1361,44 @@ async fn workspace_mise_env_does_not_override_operator_value() {
     );
 }
 
+#[test]
+fn read_text_tail_returns_recent_lines_only() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("capsule.log");
+    std::fs::write(&path, "one\ntwo\nthree\nfour\n").unwrap();
+
+    assert_eq!(
+        read_text_tail(&path, 2).unwrap(),
+        Some("three\nfour".to_owned())
+    );
+}
+
+#[test]
+fn attach_failure_error_includes_capsule_log_tail() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("capsule.log");
+    std::fs::write(&path, "agent stderr\nfatal: missing token\n").unwrap();
+
+    let error = attach_failure_error(
+        "jk-test",
+        &anyhow::anyhow!("command failed: docker exec ..."),
+        &path,
+        &path.display().to_string(),
+    )
+    .to_string();
+
+    assert!(
+        error.contains("capsule attach failed for jk-test"),
+        "{error}"
+    );
+    assert!(error.contains("command failed: docker exec"), "{error}");
+    assert!(error.contains("fatal: missing token"), "{error}");
+}
+
 /// A Codex-authed role state rooted at `root` plus a workspace whose
 /// workdir (`/workspace`) and single mount (`/workspace/repo`) are the two
 /// paths `seed_codex_project_trust` should mark trusted.
-fn codex_trust_fixture(root: &std::path::Path) -> (RoleState, jackin_config::ResolvedWorkspace) {
+fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorkspace) {
     let state = RoleState {
         root: root.to_path_buf(),
         gh_config_dir: root.join("gh"),
@@ -1318,7 +1589,7 @@ echo "pulled $2"
     assert!(marker_dir.join("repo-b.started").is_file());
 }
 
-fn repo_workspace(repo_dir: &std::path::Path) -> jackin_config::ResolvedWorkspace {
+fn repo_workspace(repo_dir: &Path) -> jackin_config::ResolvedWorkspace {
     jackin_config::ResolvedWorkspace {
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_owned(),
@@ -1365,13 +1636,20 @@ fn launched_role_container_name(runner: &FakeRunner) -> String {
     arg_after(command, "--name")
 }
 
-fn launched_dind_container_name(runner: &FakeRunner) -> String {
-    let command = runner
-        .recorded
+fn launched_dind_container(
+    docker: &crate::runtime::test_support::FakeDockerClient,
+) -> (String, jackin_core::ContainerSpec) {
+    docker
+        .created_containers
+        .borrow()
         .iter()
-        .find(|call| call.contains("docker run -d --name ") && call.contains("jackin.kind=dind"))
-        .expect("expected DinD docker run command");
-    arg_after(command, "--name")
+        .find(|(_, spec)| {
+            spec.labels
+                .get("jackin.kind")
+                .is_some_and(|value| value == "dind")
+        })
+        .cloned()
+        .expect("expected DinD container")
 }
 
 fn dind_env_from_run_cmd(run_cmd: &str) -> String {
@@ -1588,16 +1866,13 @@ plugins = ["code-review@claude-plugins-official"]
             .any(|call| call.contains("claude plugin install"))
     );
 
-    let dind = launched_dind_container_name(&runner);
+    let (dind, dind_spec) = launched_dind_container(&docker);
     assert!(crate::instance::naming::is_dns_label(&dind));
     assert!(!dind.contains("__"));
-    let dind_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains(&format!("docker run -d --name {dind}")))
-        .expect("expected DinD startup command");
     assert!(
-        dind_cmd.contains(&format!("DOCKER_TLS_SAN=DNS:{dind}")),
+        dind_spec
+            .env
+            .contains(&format!("DOCKER_TLS_SAN=DNS:{dind}")),
         "DinD SAN must include the DNS-safe DinD name with a DNS: prefix"
     );
 }
@@ -1887,10 +2162,22 @@ model = "gpt-5"
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker build "))
+        .find(|call| call.contains("docker build ") && call.contains("DerivedDockerfile"))
         .unwrap();
     // No published_image and no --rebuild → workspace mode without --pull
     assert!(!build_cmd.contains("--pull"));
+    // The derived image is agent-independent and installs every supported
+    // agent. This role supports Claude (a cache-bust install), so the build
+    // consumes JACKIN_CACHE_BUST regardless of which agent was selected — the
+    // cache-bust axis is keyed on the supported set, not the launched agent.
+    assert!(
+        build_cmd.contains("--build-arg JACKIN_CACHE_BUST="),
+        "supported set includes a cache-bust agent (claude); got: {build_cmd}"
+    );
+    assert!(
+        !build_cmd.contains("--label jackin.recipe.cache.bust=unused"),
+        "supported set with claude must record an active cache bust; got: {build_cmd}"
+    );
 
     let run_cmd = runner
         .recorded
@@ -1905,13 +2192,11 @@ model = "gpt-5"
         run_cmd.ends_with(" codex"),
         "initial agent must be passed as container argv"
     );
-    assert!(run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"));
     assert!(!run_cmd.contains("/jackin/codex/config.toml"));
-    // Multi-agent role `agents = ["claude", "codex"]` provisions
-    // every supported agent's home state so `hardline --new --agent
-    // claude` can switch agents without re-authentication. The
-    // selected-agent runtime is still Codex (the docker-run argv ends in `codex`),
-    // but Claude's mounts must be present.
+    // Multi-agent role `agents = ["claude", "codex"]` provisions and mounts
+    // every supported agent's home state at `docker run`, so a later
+    // `hardline --new --agent claude` tab finds its auth without relaunching.
+    // Both mounts must be present; the initially-selected agent is Codex.
     assert!(run_cmd.contains("/home/agent/.claude"));
     assert!(run_cmd.contains("/home/agent/.codex"));
     let container_name = launched_role_container_name(&runner);
@@ -2207,7 +2492,7 @@ fn console_resolution_fixture() -> ConsoleResolutionFixture {
     }
 }
 
-fn write_role_repo(repo_dir: &std::path::Path, manifest: &str) {
+fn write_role_repo(repo_dir: &Path, manifest: &str) {
     std::fs::create_dir_all(repo_dir).unwrap();
     std::fs::write(
         repo_dir.join("Dockerfile"),
@@ -2217,7 +2502,7 @@ fn write_role_repo(repo_dir: &std::path::Path, manifest: &str) {
     std::fs::write(repo_dir.join("jackin.role.toml"), manifest).unwrap();
 }
 
-fn seed_cached_repo(repo_dir: &std::path::Path, manifest: &str) {
+fn seed_cached_repo(repo_dir: &Path, manifest: &str) {
     write_role_repo(repo_dir, manifest);
     std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
 }
@@ -2459,7 +2744,7 @@ plugins = []
 }
 
 #[tokio::test]
-async fn load_agent_passes_host_uid_and_gid_to_docker_build() {
+async fn load_agent_does_not_bake_host_uid_and_gid_into_docker_build() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
@@ -2523,15 +2808,34 @@ plugins = []
     let build_call = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker build ") && call.contains("-t jk_agent-smith"))
+        .find(|call| {
+            call.contains("docker build ")
+                && call.contains("DerivedDockerfile")
+                && call.contains("-t jk_agent-smith")
+        })
         .unwrap();
-    assert!(build_call.contains("--build-arg JACKIN_HOST_UID="));
-    assert!(build_call.contains("--build-arg JACKIN_HOST_GID="));
+    assert!(!build_call.contains("--build-arg JACKIN_HOST_UID="));
+    assert!(!build_call.contains("--build-arg JACKIN_HOST_GID="));
+    assert!(!build_call.contains("--build-arg ROLE_GIT_SHA="));
+    // The host-identity strategy is now folded into the master recipe hash
+    // (no standalone label); its presence proves the recipe was stamped.
+    assert!(build_call.contains("--label jackin.image.recipe.hash="));
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        !recorded.contains("gh auth token"),
+        "Dockerfiles without id=github_token must skip build-token lookup; recorded:\n{recorded}"
+    );
+    assert!(
+        !build_call.contains("--secret") && !build_call.contains("id=github_token"),
+        "Dockerfiles without id=github_token must not inject a BuildKit secret; got:\n{build_call}"
+    );
+    assert!(!recorded.contains("id -u"));
+    assert!(!recorded.contains("id -g"));
 
     let build_run_index = runner
         .run_recorded
         .iter()
-        .position(|call| call.contains("docker build "))
+        .position(|call| call.contains("docker build ") && call.contains("DerivedDockerfile"))
         .unwrap();
     let build_opts = &runner.run_options[build_run_index];
     assert!(build_opts.capture_stdout);
@@ -2542,6 +2846,177 @@ plugins = []
         build_opts
             .extra_env
             .contains(&("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned()))
+    );
+    assert!(
+        build_opts
+            .extra_env
+            .contains(&("DOCKER_BUILDKIT".to_owned(), "1".to_owned())),
+        "Docker builds must use BuildKit even when no GitHub token secret is requested"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_tags_fresh_published_image_as_local_base() {
+    // A fresh published image is pulled, verified by Docker image labels, and
+    // tagged into the local jk_<role>__base name. The overlay derives FROM that
+    // local base without running a restamp Docker build.
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let role_sha = "21a9002";
+    let mut runner = FakeRunner::for_load_agent([role_sha.to_owned()]);
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role:latest"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker.inspect_image_labels_queue.borrow_mut().push_back(
+        [
+            (
+                crate::runtime::naming::LABEL_IMAGE_ROLE_GIT_SHA.to_owned(),
+                role_sha.to_owned(),
+            ),
+            (
+                crate::runtime::naming::LABEL_IMAGE_CONSTRUCT_VERSION.to_owned(),
+                "0.1-trixie".to_owned(),
+            ),
+        ]
+        .into(),
+    );
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&repo_dir),
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    // The base is a local tag of the already verified published image.
+    let base_tag = runner
+        .recorded
+        .iter()
+        .find(|c| c.contains("docker tag docker.io/myorg/my-role:latest jk_agent-smith__base"))
+        .expect("fresh published image must be tagged into a local base");
+    assert!(
+        base_tag.ends_with(&format!(":{role_sha}")),
+        "base tag must use the role SHA; got: {base_tag}"
+    );
+    assert!(
+        !runner
+            .recorded
+            .iter()
+            .any(|c| c.contains("docker build ") && c.contains("BaseDockerfile")),
+        "fresh published images must not be restamped through a Docker build"
+    );
+    // The overlay derives FROM that local base, not the published image.
+    assert!(
+        runner
+            .recorded
+            .iter()
+            .any(|c| c.contains("docker build ") && c.contains("DerivedDockerfile")),
+        "overlay must derive FROM the local base"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_builds_local_role_base_then_derives_overlay_from_it() {
+    // The workspace build is two-stage: first a role *base* image
+    // (jk_<role>__base, the role Dockerfile, no overlay), then the derived image
+    // (FROM that base + jackin overlay). The base carries the role-sha + construct
+    // labels so it can be reused across overlay rebuilds.
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&repo_dir),
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    // Stage 1: the role base build.
+    let base_build = runner
+        .recorded
+        .iter()
+        .find(|c| c.contains("docker build ") && c.contains("BaseDockerfile"))
+        .expect("workspace build must first build the role base image");
+    assert!(
+        base_build.contains("-t jk_agent-smith__base"),
+        "base build must tag jk_<role>__base; got: {base_build}"
+    );
+    assert!(
+        base_build.contains("--label jackin.construct.image=")
+            && base_build.contains("--label jackin.role.git.sha="),
+        "base build must stamp construct + role-sha labels for reuse; got: {base_build}"
+    );
+    assert!(
+        !base_build.contains("DerivedDockerfile"),
+        "base build must not include the jackin overlay; got: {base_build}"
+    );
+
+    // Stage 2: the derived overlay build, FROM the local base (not the construct).
+    let derived_build = runner
+        .recorded
+        .iter()
+        .find(|c| c.contains("docker build ") && c.contains("DerivedDockerfile"))
+        .expect("workspace build must derive the overlay after the base");
+    assert!(
+        !derived_build.contains("--pull"),
+        "derived build is FROM a local base and must never --pull; got: {derived_build}"
+    );
+    assert!(
+        derived_build.contains("--label jackin.image.recipe.hash="),
+        "derived build stamps the recipe labels; got: {derived_build}"
     );
 }
 
@@ -2588,12 +3063,1403 @@ plugins = []
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker build "))
+        .find(|call| call.contains("docker build ") && call.contains("DerivedDockerfile"))
         .unwrap();
     assert!(
         !build_cmd.contains("--pull"),
         "workspace mode without --rebuild must not pass --pull"
     );
+    assert!(
+        build_cmd.contains("--label jackin.image.recipe.version=v4"),
+        "workspace build must stamp recipe version label; got: {build_cmd}"
+    );
+    assert!(
+        build_cmd.contains("--label jackin.image.recipe.hash="),
+        "workspace build must stamp recipe hash label; got: {build_cmd}"
+    );
+    // Agent-independence is now captured inside the recipe hash (the
+    // supported-agent set is a recipe input) rather than a standalone label.
+    assert!(
+        build_cmd.contains("--label jackin.manifest.version="),
+        "workspace build must stamp the manifest version label; got: {build_cmd}"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector, Some("abc123"));
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(
+        cached_repo.repo_dir.join("Dockerfile"),
+        cached_repo.repo_dir.join("context-copy-poison"),
+    )
+    .unwrap();
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    runner.fail_on = vec![
+        "docker build ".to_owned(),
+        "gh auth token".to_owned(),
+        "docker run --rm --entrypoint".to_owned(),
+        "agent_binary".to_owned(),
+    ];
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        !recorded.contains("docker build "),
+        "valid local recipe must skip docker build; recorded:\n{recorded}"
+    );
+    assert!(
+        !recorded.contains("gh auth token"),
+        "valid local recipe must skip GitHub token lookup; recorded:\n{recorded}"
+    );
+    assert!(
+        !recorded.contains("docker run --rm --entrypoint"),
+        "valid local recipe must skip foreground agent version probe; recorded:\n{recorded}"
+    );
+    assert!(
+        !recorded.contains("agent_binary_resolve_started"),
+        "valid local recipe must skip runtime binary preparation; recorded:\n{recorded}"
+    );
+    assert!(
+        docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|call| call == &format!("docker inspect image:{image}")),
+        "valid local image must still be inspected for recipe labels"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_refresh_background_reuses_valid_local_image_and_skips_build_work() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    std::fs::write(
+        cached_repo.repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role:latest"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector, Some("abc123"));
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(HashMap::from([(
+            crate::runtime::naming::LABEL_IMAGE_ROLE_GIT_SHA.to_owned(),
+            "old-sha".to_owned(),
+        )]));
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    runner.fail_on = vec![
+        "docker build ".to_owned(),
+        "gh auth token".to_owned(),
+        "docker run --rm --entrypoint".to_owned(),
+        "agent_binary".to_owned(),
+    ];
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        !recorded.contains("docker build "),
+        "refresh-background decision must skip docker build; recorded:\n{recorded}"
+    );
+    assert!(
+        !recorded.contains("gh auth token"),
+        "refresh-background decision must skip GitHub token lookup; recorded:\n{recorded}"
+    );
+    assert!(
+        !recorded.contains("docker run --rm --entrypoint"),
+        "refresh-background decision must skip foreground version probe; recorded:\n{recorded}"
+    );
+    assert!(
+        !recorded.contains("agent_binary_resolve_started"),
+        "refresh-background decision must skip runtime binary preparation; recorded:\n{recorded}"
+    );
+
+    let docker_recorded = docker.recorded.borrow();
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call == "docker pull docker.io/myorg/my-role:latest"),
+        "refresh-background decision must check published image freshness: {docker_recorded:?}"
+    );
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call == &format!("docker inspect image:{image}")),
+        "refresh-background decision must inspect valid local recipe labels: {docker_recorded:?}"
+    );
+}
+
+#[tokio::test]
+async fn valid_image_decision_runs_before_operator_env_resolution() {
+    struct FailingOpRunner;
+
+    impl jackin_env::OpRunner for FailingOpRunner {
+        fn read(&self, _reference: &str) -> anyhow::Result<String> {
+            anyhow::bail!("operator env read intentionally failed")
+        }
+
+        fn probe(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    config.env.insert(
+        "OPERATOR_IMAGE_ORDER".to_owned(),
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+            op: "op://vault/item/field".to_owned(),
+            path: "Vault/Item/Field".to_owned(),
+            account: None,
+        }),
+    );
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector, Some("abc123"));
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        op_runner: Some(Box::new(FailingOpRunner)),
+        ..LoadOptions::default()
+    };
+
+    let error = load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("operator env resolution failed"),
+        "expected operator env failure after image decision, got {error:#}"
+    );
+    assert!(
+        docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|call| call == &format!("docker inspect image:{image}")),
+        "valid image must be inspected before operator env can fail"
+    );
+}
+
+#[tokio::test]
+async fn stale_agent_version_cache_does_not_force_foreground_update_probe() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector, Some("abc123"));
+    jackin_image::version_check::store_cache_bust(&paths, &image, "stored-bust");
+    jackin_image::version_check::store_version(&paths, agent, &image, "1.0.0");
+    let latest = jackin_image::agent_binary::AgentRelease {
+        agent,
+        version: "2.0.0".to_owned(),
+        url: "https://example.invalid/claude".to_owned(),
+        checksum: None,
+        archive_member: None,
+    };
+    let latest_path = paths
+        .cache_dir
+        .join("agent-binaries")
+        .join(agent.slug())
+        .join("latest.json");
+    std::fs::create_dir_all(latest_path.parent().unwrap()).unwrap();
+    std::fs::write(latest_path, serde_json::to_string(&latest).unwrap()).unwrap();
+    let stale_labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("oldsha"),
+        None,
+        None,
+        "stored-bust",
+    );
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(stale_labels);
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    let build_cmd = runner
+        .recorded
+        .iter()
+        .find(|call| call.contains("docker build ") && call.contains("DerivedDockerfile"))
+        .expect("stale role SHA must trigger a derived image rebuild");
+    assert!(
+        build_cmd.contains("--build-arg JACKIN_CACHE_BUST=stored-bust"),
+        "normal rebuild path must not run latest-release update probe and mint a fresh cache bust; got: {build_cmd}"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector, None);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let mut docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    docker.fail_with = vec![(
+        "create_container:".to_owned(),
+        "dind create failed".to_owned(),
+    )];
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+
+    let error = load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("dind create failed"),
+        "unexpected error: {error:#}"
+    );
+    let docker_recorded = docker.recorded.borrow();
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call.starts_with("docker rm -f jk-") && !call.ends_with("-dind")),
+        "role container cleanup missing after sidecar failure: {docker_recorded:?}"
+    );
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call.starts_with("docker rm -f jk-") && call.ends_with("-dind")),
+        "DinD cleanup missing after sidecar failure: {docker_recorded:?}"
+    );
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call.starts_with("docker volume rm jk-")),
+        "cert volume cleanup missing after sidecar failure: {docker_recorded:?}"
+    );
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call.starts_with("docker network rm jk-")),
+        "network cleanup missing after sidecar failure: {docker_recorded:?}"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_skips_operator_env_resolution_when_no_env_layers_apply() {
+    struct FailingOpRunner;
+
+    impl jackin_env::OpRunner for FailingOpRunner {
+        fn read(&self, _reference: &str) -> anyhow::Result<String> {
+            anyhow::bail!("operator env should not be resolved")
+        }
+
+        fn probe(&self) -> anyhow::Result<()> {
+            anyhow::bail!("operator env should not probe op")
+        }
+    }
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector, None);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        agent: Some(agent),
+        op_runner: Some(Box::new(FailingOpRunner)),
+        ..LoadOptions::default()
+    };
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn load_agent_skips_non_required_operator_credential_refs() {
+    struct FailingCredentialOpRunner;
+
+    impl jackin_env::OpRunner for FailingCredentialOpRunner {
+        fn read(&self, reference: &str) -> anyhow::Result<String> {
+            anyhow::bail!("non-required credential ref should not be resolved: {reference}")
+        }
+
+        fn probe(&self) -> anyhow::Result<()> {
+            anyhow::bail!("non-required credential refs should not probe op")
+        }
+    }
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    config.env.insert(
+        "OPENAI_API_KEY".to_owned(),
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+            op: "op://vault/openai/key".to_owned(),
+            path: "Vault/OpenAI/key".to_owned(),
+            account: None,
+        }),
+    );
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector, None);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        agent: Some(agent),
+        op_runner: Some(Box::new(FailingCredentialOpRunner)),
+        ..LoadOptions::default()
+    };
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn load_agent_skips_non_required_manifest_credential_prompts() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    std::fs::write(
+        cached_repo.repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[env.OPENAI_API_KEY]
+interactive = true
+prompt = "Codex API key"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector, None);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        agent: Some(agent),
+        ..LoadOptions::default()
+    };
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        runner
+            .recorded
+            .iter()
+            .filter(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
+            .all(|call| !call.contains("OPENAI_API_KEY")),
+        "non-selected manifest credential leaked into docker run: {:?}",
+        runner.recorded
+    );
+}
+
+#[test]
+fn credential_key_filter_resolves_every_supported_agent_credential() {
+    use jackin_core::agent::Agent;
+
+    // Generic operator/manifest vars always resolve.
+    assert!(launch_pipeline::credential_key_needed_for_role(
+        &[Agent::Codex],
+        "OPERATOR_SMOKE"
+    ));
+    // A credential for an agent the role cannot run stays lazy: launching a
+    // Claude-only role never needs Codex's OPENAI_API_KEY.
+    assert!(!launch_pipeline::credential_key_needed_for_role(
+        &[Agent::Claude],
+        "OPENAI_API_KEY"
+    ));
+    // A supported agent's own credential resolves even when that agent's
+    // resolved mode (e.g. Sync) would not read it — the operator declared it
+    // and an ApiKey tab for that agent must find it in the container env.
+    assert!(launch_pipeline::credential_key_needed_for_role(
+        &[Agent::Codex],
+        "OPENAI_API_KEY"
+    ));
+    // Multi-agent role: every supported agent's credential resolves so any tab
+    // can authenticate, not just the initially-selected agent.
+    assert!(launch_pipeline::credential_key_needed_for_role(
+        &[Agent::Claude, Agent::Codex],
+        "OPENAI_API_KEY"
+    ));
+    assert!(launch_pipeline::credential_key_needed_for_role(
+        &[Agent::Claude, Agent::Codex],
+        "ANTHROPIC_API_KEY"
+    ));
+    // Empty slice: no agent can run, so known credential keys are skipped;
+    // generic/unknown keys still pass through.
+    assert!(!launch_pipeline::credential_key_needed_for_role(
+        &[],
+        "ANTHROPIC_API_KEY"
+    ));
+    assert!(launch_pipeline::credential_key_needed_for_role(
+        &[],
+        "MY_CUSTOM_VAR"
+    ));
+}
+
+#[test]
+fn manifest_env_timing_detail_distinguishes_skips_from_empty_results() {
+    assert_eq!(manifest_env_timing_detail(true, 0), "skipped");
+    assert_eq!(manifest_env_timing_detail(false, 0), "0 vars");
+    assert_eq!(manifest_env_timing_detail(false, 2), "2 vars");
+}
+
+#[tokio::test]
+async fn load_agent_skips_github_env_resolution_when_github_auth_ignored() {
+    struct FailingGithubOpRunner;
+
+    impl jackin_env::OpRunner for FailingGithubOpRunner {
+        fn read(&self, _reference: &str) -> anyhow::Result<String> {
+            anyhow::bail!("ignored github env should not be resolved")
+        }
+    }
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let mut github_env = std::collections::BTreeMap::new();
+    github_env.insert(
+        jackin_core::env_model::GH_TOKEN_ENV_NAME.to_owned(),
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+            op: "op://vault/github/token".to_owned(),
+            path: "Vault/GitHub/token".to_owned(),
+            account: None,
+        }),
+    );
+    config.github = Some(jackin_config::GithubAuthConfig {
+        auth_forward: jackin_config::GithubAuthMode::Ignore,
+        env: github_env,
+    });
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector, None);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        agent: Some(agent),
+        op_runner: Some(Box::new(FailingGithubOpRunner)),
+        ..LoadOptions::default()
+    };
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn load_agent_skips_unused_github_env_resolution() {
+    struct FailingUnusedGithubOpRunner;
+
+    impl jackin_env::OpRunner for FailingUnusedGithubOpRunner {
+        fn read(&self, reference: &str) -> anyhow::Result<String> {
+            anyhow::bail!("unused github env ref should not be resolved: {reference}")
+        }
+    }
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let mut github_env = std::collections::BTreeMap::new();
+    github_env.insert(
+        jackin_core::env_model::GH_TOKEN_ENV_NAME.to_owned(),
+        jackin_core::EnvValue::Plain("ghp_test".to_owned()),
+    );
+    github_env.insert(
+        "UNUSED_GITHUB_SECRET".to_owned(),
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+            op: "op://vault/github/unused".to_owned(),
+            path: "Vault/GitHub/unused".to_owned(),
+            account: None,
+        }),
+    );
+    config.github = Some(jackin_config::GithubAuthConfig {
+        auth_forward: jackin_config::GithubAuthMode::Token,
+        env: github_env,
+    });
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector, None);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        agent: Some(agent),
+        op_runner: Some(Box::new(FailingUnusedGithubOpRunner)),
+        ..LoadOptions::default()
+    };
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap();
+
+    let run_cmd = runner
+        .recorded
+        .iter()
+        .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
+        .unwrap();
+    assert!(
+        run_cmd.contains("-e GH_TOKEN=ghp_test"),
+        "required GitHub token must still inject; got: {run_cmd}"
+    );
+    assert!(
+        !run_cmd.contains("UNUSED_GITHUB_SECRET"),
+        "unused GitHub env keys are not runtime env; got: {run_cmd}"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
+    // Regression for the adopted-prewarm-DinD leak: `adopt_prewarmed_dind_sidecar`
+    // takes over a *running* prewarmed DinD container/network/volume and deletes
+    // its on-disk state, so nothing re-adopts it. A fallible preflight after
+    // adoption (here Token-mode GitHub auth with no resolvable token) must tear
+    // those resources down rather than orphan a live privileged container.
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    // Token mode with an empty env => GH_TOKEN resolves to None =>
+    // `verify_github_token_present` fails, after adoption.
+    config.github = Some(jackin_config::GithubAuthConfig {
+        auth_forward: jackin_config::GithubAuthMode::Token,
+        env: std::collections::BTreeMap::new(),
+    });
+
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector, None);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+
+    // Seed a kept, running prewarmed DinD so the launch adopts it.
+    let prewarm_dind = "jk-prewarm-b4-dind";
+    let prewarm_net = "jk-prewarm-b4-net";
+    let prewarm_certs = "jk-prewarm-b4-certs";
+    write_prewarmed_dind_state(
+        &paths,
+        &DindSidecarPrewarm {
+            dind: prewarm_dind.to_owned(),
+            network: prewarm_net.to_owned(),
+            certs_volume: prewarm_certs.to_owned(),
+            ready_ms: 12,
+            kept: true,
+        },
+    )
+    .unwrap();
+
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    // Image-reuse path (no build needed to reach adoption).
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    // Adoption: pin the prewarmed dind to Running by name (the restore/claim
+    // inspects that run first hit the default NotFound), and give its network
+    // the prewarm labels so adoption accepts it.
+    docker
+        .inspect_state_by_name
+        .borrow_mut()
+        .insert(prewarm_dind.to_owned(), ContainerState::Running);
+    let mut network_labels = HashMap::new();
+    network_labels.insert("jackin.kind".to_owned(), "prewarm-dind".to_owned());
+    network_labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
+    docker.inspect_network_queue.borrow_mut().push_back(Some(
+        jackin_docker::docker_client::NetworkRow {
+            name: prewarm_net.to_owned(),
+            labels: network_labels,
+        },
+    ));
+    docker
+        .exec_capture_queue
+        .borrow_mut()
+        .push_back(String::new());
+    docker
+        .exec_capture_queue
+        .borrow_mut()
+        .push_back(String::new());
+
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        agent: Some(agent),
+        ..LoadOptions::default()
+    };
+
+    let result = load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "missing Token-mode GitHub token must fail the launch"
+    );
+    let recorded = docker.recorded.borrow();
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == &format!("docker rm -f {prewarm_dind}")),
+        "adopted prewarm DinD must be torn down on post-adoption failure; recorded: {recorded:?}"
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == &format!("docker network rm {prewarm_net}")),
+        "adopted prewarm network must be torn down; recorded: {recorded:?}"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_attaches_running_current_instance_before_credentials_and_build() {
+    struct FailingOpRunner;
+
+    impl jackin_env::OpRunner for FailingOpRunner {
+        fn read(&self, _reference: &str) -> anyhow::Result<String> {
+            anyhow::bail!("attach-first path should not resolve operator env")
+        }
+
+        fn probe(&self) -> anyhow::Result<()> {
+            anyhow::bail!("attach-first path should not probe op")
+        }
+    }
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    config.env.insert(
+        "OPERATOR_ATTACH_SECRET".to_owned(),
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+            op: "op://vault/item/attach-secret".to_owned(),
+            path: "Vault/Item/attach secret".to_owned(),
+            account: None,
+        }),
+    );
+    let git_marker = temp.path().join("git-pull-ran");
+    let git_script = temp.path().join("git");
+    std::fs::write(
+        &git_script,
+        format!("#!/bin/sh\ntouch '{}'\nexit 43\n", git_marker.display()),
+    )
+    .unwrap();
+    let mut perms = std::fs::metadata(&git_script).unwrap().permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+    std::fs::set_permissions(&git_script, perms).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    config.workspaces.insert(
+        "workspace".to_owned(),
+        jackin_config::WorkspaceConfig {
+            workdir: "/workspace".to_owned(),
+            default_agent: Some(jackin_core::agent::Agent::Claude),
+            ..jackin_config::WorkspaceConfig::default()
+        },
+    );
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let mut manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Claude,
+    );
+    manifest.mark_status(InstanceStatus::Running);
+    write_indexed_manifest(&paths, &manifest);
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Running,
+            ContainerState::Running,
+        ])),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
+            String::new(),
+            "Sessions: 1\n".to_owned(),
+        ])),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+    ]);
+    let mut workspace = repo_workspace(&cached_repo.repo_dir);
+    workspace.label = "workspace".to_owned();
+    workspace.default_agent = Some(jackin_core::agent::Agent::Claude);
+    workspace.git_pull_on_entry = true;
+    let opts = LoadOptions {
+        git_program: Some(git_script),
+        op_runner: Some(Box::new(FailingOpRunner)),
+        ..LoadOptions::default()
+    };
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap();
+
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        recorded.contains("docker exec")
+            && recorded.contains(container_name)
+            && recorded.contains("jackin-capsule"),
+        "running current-role instance must attach through Capsule; recorded:\n{recorded}"
+    );
+    for forbidden in [
+        "docker build ",
+        "gh auth token",
+        "docker inspect image:",
+        "docker run --rm --entrypoint",
+    ] {
+        assert!(
+            !recorded.contains(forbidden),
+            "attach-first path must skip {forbidden}; recorded:\n{recorded}"
+        );
+    }
+    assert!(
+        !recorded.contains(&cached_repo.repo_dir.display().to_string()),
+        "attach-first path must not touch the cached role repo before hardline; recorded:\n{recorded}"
+    );
+    assert!(
+        !git_marker.exists(),
+        "attach-first path must not run workspace git_pull_on_entry before hardline"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_attaches_explicit_restore_container_before_role_repo() {
+    struct FailingOpRunner;
+
+    impl jackin_env::OpRunner for FailingOpRunner {
+        fn read(&self, _reference: &str) -> anyhow::Result<String> {
+            anyhow::bail!("explicit restore path should not resolve operator env")
+        }
+
+        fn probe(&self) -> anyhow::Result<()> {
+            anyhow::bail!("explicit restore path should not probe op")
+        }
+    }
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    config.env.insert(
+        "OPERATOR_RESTORE_SECRET".to_owned(),
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+            op: "op://vault/item/restore-secret".to_owned(),
+            path: "Vault/Item/restore secret".to_owned(),
+            account: None,
+        }),
+    );
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Running,
+            ContainerState::Running,
+        ])),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
+            String::new(),
+            "Sessions: 1\n".to_owned(),
+        ])),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        op_runner: Some(Box::new(FailingOpRunner)),
+        restore_container_base: Some(container_name.to_owned()),
+        role_branch: Some("restore-ref".to_owned()),
+        ..LoadOptions::default()
+    };
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await
+    .unwrap();
+
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        recorded.contains("docker exec")
+            && recorded.contains(container_name)
+            && recorded.contains("jackin-capsule"),
+        "explicit restore container must attach through Capsule; recorded:\n{recorded}"
+    );
+    for forbidden in [
+        &cached_repo.repo_dir.display().to_string(),
+        "docker build ",
+        "gh auth token",
+        "docker inspect image:",
+        "docker run --rm --entrypoint",
+    ] {
+        assert!(
+            !recorded.contains(forbidden),
+            "explicit restore path must skip {forbidden}; recorded:\n{recorded}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn load_agent_starts_stopped_current_instance_before_credentials_and_build() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    config.workspaces.insert(
+        "workspace".to_owned(),
+        jackin_config::WorkspaceConfig {
+            workdir: "/workspace".to_owned(),
+            default_agent: Some(jackin_core::agent::Agent::Claude),
+            ..jackin_config::WorkspaceConfig::default()
+        },
+    );
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let mut manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Claude,
+    );
+    manifest.mark_status(InstanceStatus::Running);
+    write_indexed_manifest(&paths, &manifest);
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Stopped {
+                exit_code: 137,
+                oom_killed: false,
+            },
+            ContainerState::Stopped {
+                exit_code: 137,
+                oom_killed: false,
+            },
+            ContainerState::Running,
+        ])),
+        exec_capture_queue: std::cell::RefCell::new(VecDeque::from([
+            String::new(),
+            "Sessions: 1\n".to_owned(),
+        ])),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+    ]);
+    let mut workspace = repo_workspace(&cached_repo.repo_dir);
+    workspace.label = "workspace".to_owned();
+    workspace.default_agent = Some(jackin_core::agent::Agent::Claude);
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    let docker_recorded = docker.recorded.borrow();
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call == &format!("start_container:{container_name}")),
+        "stopped current-role instance must be started; recorded: {docker_recorded:?}"
+    );
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        recorded.contains("docker exec")
+            && recorded.contains(container_name)
+            && recorded.contains("jackin-capsule"),
+        "started current-role instance must attach through Capsule; recorded:\n{recorded}"
+    );
+    for forbidden in [
+        "docker build ",
+        "gh auth token",
+        "docker inspect image:",
+        "docker run --rm --entrypoint",
+    ] {
+        assert!(
+            !recorded.contains(forbidden),
+            "stopped restore path must skip {forbidden}; recorded:\n{recorded}"
+        );
+    }
+    assert!(
+        !recorded.contains(&cached_repo.repo_dir.display().to_string()),
+        "stopped restore path must not touch the cached role repo before hardline; recorded:\n{recorded}"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_recreates_missing_current_instance_from_valid_image_without_build() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    config.workspaces.insert(
+        "workspace".to_owned(),
+        jackin_config::WorkspaceConfig {
+            workdir: "/workspace".to_owned(),
+            ..jackin_config::WorkspaceConfig::default()
+        },
+    );
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let mut manifest = workspace_manifest(container_name, "agent-smith", "Agent Smith", agent);
+    manifest.mark_status(InstanceStatus::Running);
+    write_indexed_manifest(&paths, &manifest);
+    let image = crate::runtime::naming::image_name(&selector, None);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::NotFound,
+            ContainerState::NotFound,
+        ])),
+        list_image_tags_queue: std::cell::RefCell::new(VecDeque::from([vec![image.clone()]])),
+        inspect_image_labels_queue: std::cell::RefCell::new(VecDeque::from([labels])),
+        ..Default::default()
+    };
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let mut workspace = repo_workspace(&cached_repo.repo_dir);
+    workspace.label = "workspace".to_owned();
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap();
+
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        recorded.contains("docker run -d")
+            && recorded.contains(&format!("--name {container_name}"))
+            && recorded.contains(&image),
+        "valid-image recreate path must run the missing role container from the reusable image; recorded:\n{recorded}"
+    );
+    for forbidden in [
+        "docker build ",
+        "gh auth token",
+        "docker run --rm --entrypoint",
+    ] {
+        assert!(
+            !recorded.contains(forbidden),
+            "valid-image recreate path must skip {forbidden}; recorded:\n{recorded}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -2651,13 +4517,101 @@ plugins = []
 }
 
 #[tokio::test]
+async fn load_agent_rebuild_does_not_attach_running_current_instance() {
+    // Regression for the `--rebuild` fast-path bypass: the early restore gate
+    // is guarded by `!opts.rebuild`, but a forced rebuild then falls through to
+    // the *second* restore resolution. Without the matching guard there,
+    // `resolve_restore_candidate` returns `AttachCurrentRole` for a running
+    // current-role container and `return`s into it — silently skipping the
+    // build the operator asked for. A running current-role container is seeded
+    // here (inspect queue returns `Running`) so that if the guard regresses the
+    // launch attaches and records no `docker build`, failing this test.
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    config.workspaces.insert(
+        "workspace".to_owned(),
+        jackin_config::WorkspaceConfig {
+            workdir: "/workspace".to_owned(),
+            default_agent: Some(jackin_core::agent::Agent::Claude),
+            ..jackin_config::WorkspaceConfig::default()
+        },
+    );
+    let selector = RoleSelector::new(None, "agent-smith");
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    // Index a running current-role container that the resolver would attach to.
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let mut manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Claude,
+    );
+    manifest.mark_status(InstanceStatus::Running);
+    write_indexed_manifest(&paths, &manifest);
+
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Running,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
+    let mut workspace = repo_workspace(&repo_dir);
+    workspace.label = "workspace".to_owned();
+    workspace.default_agent = Some(jackin_core::agent::Agent::Claude);
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions {
+            rebuild: true,
+            ..LoadOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let recorded = runner.recorded.join("\n");
+    assert!(
+        recorded.contains("docker build "),
+        "--rebuild must build even when a running current-role container exists \
+         (must not take the attach/start fast path); recorded:\n{recorded}"
+    );
+}
+
+#[tokio::test]
 async fn load_agent_passes_pull_flag_with_published_image() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    let mut runner = FakeRunner::for_load_agent([String::new()]);
+    let role_sha = "21a9002";
+    let mut runner = FakeRunner::for_load_agent([role_sha.to_owned()]);
 
     let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
     std::fs::create_dir_all(&repo_dir).unwrap();
@@ -2679,6 +4633,13 @@ plugins = []
     .unwrap();
 
     let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(HashMap::from([(
+            crate::runtime::naming::LABEL_IMAGE_ROLE_GIT_SHA.to_owned(),
+            role_sha.to_owned(),
+        )]));
     load_role(
         &paths,
         &mut config,
@@ -2691,33 +4652,41 @@ plugins = []
     .await
     .unwrap();
 
-    let build_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains("docker build "))
-        .unwrap();
     assert!(
-        build_cmd.contains("--pull"),
-        "pre-built image mode must pass --pull to check for registry updates"
+        docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|call| call == "docker pull docker.io/myorg/my-role:latest"),
+        "pre-built image mode must pull to check for registry updates"
     );
-    // Derived image must carry the construct image label.
     assert!(
-        build_cmd.contains("jackin.construct_image=projectjackin/construct:trixie"),
-        "build must label the construct image used; got: {build_cmd}"
+        runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("docker tag docker.io/myorg/my-role:latest")),
+        "fresh published image must be tagged as the local base"
+    );
+    assert!(
+        runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("docker build ") && call.contains("DerivedDockerfile")),
+        "derived overlay build must still run"
     );
 }
 
 #[tokio::test]
 async fn load_agent_uses_prebuilt_when_construct_version_matches() {
-    // When the published image's jackin.construct_version label matches the
-    // Dockerfile's pinned tag, the pre-built image is used (no staleness).
+    // When the published image's jackin.role.git.sha label matches the role
+    // checkout, the pre-built image is used.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    // Capture queue (after preamble): [label value for CONSTRUCT_VERSION]
-    let mut runner = FakeRunner::for_load_agent(["0.1-trixie".to_owned()]);
+    let role_sha = "21a9002";
+    let mut runner = FakeRunner::for_load_agent([role_sha.to_owned()]);
 
     let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
     std::fs::create_dir_all(&repo_dir).unwrap();
@@ -2739,6 +4708,19 @@ plugins = []
     .unwrap();
 
     let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(HashMap::from([
+            (
+                crate::runtime::naming::LABEL_IMAGE_ROLE_GIT_SHA.to_owned(),
+                role_sha.to_owned(),
+            ),
+            (
+                crate::runtime::naming::LABEL_IMAGE_CONSTRUCT_VERSION.to_owned(),
+                "0.1-trixie".to_owned(),
+            ),
+        ]));
     load_role(
         &paths,
         &mut config,
@@ -2751,30 +4733,28 @@ plugins = []
     .await
     .unwrap();
 
-    let build_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains("docker build "))
-        .unwrap();
     assert!(
-        build_cmd.contains("--pull"),
-        "pre-built mode must pass --pull; got: {build_cmd}"
+        runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("docker tag docker.io/myorg/my-role:latest")),
+        "pre-built mode must tag the verified image as the local base; got: {:?}",
+        runner.recorded
     );
 }
 
 #[tokio::test]
-async fn load_agent_falls_back_to_workspace_when_construct_version_stale() {
-    // When the published image's jackin.construct_version label differs from
-    // the Dockerfile's pinned tag, jackin falls back to workspace mode.
+async fn load_agent_falls_back_to_workspace_when_role_sha_label_missing() {
+    // When the published image cannot prove it was built for the current role
+    // SHA, jackin falls back to workspace mode.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    // Capture queue (after preamble): [stale label value from published image]
-    // The published image pre-dates the Renovate bump: it carries 0.0-trixie
-    // but the Dockerfile now pins 0.1-trixie, triggering workspace fallback.
-    let mut runner = FakeRunner::for_load_agent(["0.0-trixie".to_owned()]);
+    // The published image does not carry the current role SHA, triggering
+    // workspace fallback.
+    let mut runner = FakeRunner::for_load_agent(["abc123".to_owned()]);
 
     let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
     std::fs::create_dir_all(&repo_dir).unwrap();
@@ -2796,6 +4776,10 @@ plugins = []
     .unwrap();
 
     let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(HashMap::new());
     load_role(
         &paths,
         &mut config,
@@ -2826,18 +4810,16 @@ plugins = []
 }
 
 #[tokio::test]
-async fn load_agent_uses_prebuilt_when_construct_version_label_absent() {
-    // Backward-compatibility guarantee: published images built before the
-    // jackin.construct_version label was introduced have no label. jackin
-    // must treat the absent label as "not stale" so those images keep
-    // working without forcing a full workspace rebuild on every launch.
+async fn load_agent_uses_prebuilt_when_role_sha_matches_without_construct_version() {
+    // The role SHA label is authoritative for current published images. A
+    // matching SHA is enough even when construct-version is absent.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    // Empty inspect_image_labels queue → no construct label → no mismatch.
-    let mut runner = FakeRunner::for_load_agent([String::new()]);
+    let role_sha = "21a9002";
+    let mut runner = FakeRunner::for_load_agent([role_sha.to_owned()]);
 
     let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
     std::fs::create_dir_all(&repo_dir).unwrap();
@@ -2859,6 +4841,13 @@ plugins = []
     .unwrap();
 
     let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(HashMap::from([(
+            crate::runtime::naming::LABEL_IMAGE_ROLE_GIT_SHA.to_owned(),
+            role_sha.to_owned(),
+        )]));
     load_role(
         &paths,
         &mut config,
@@ -2871,15 +4860,12 @@ plugins = []
     .await
     .unwrap();
 
-    let build_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains("docker build "))
-        .unwrap();
-    // Prebuilt mode: --pull is passed to pick up a refreshed published image.
     assert!(
-        build_cmd.contains("--pull"),
-        "prebuilt mode must pass --pull; got: {build_cmd}"
+        runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("docker tag docker.io/myorg/my-role:latest")),
+        "prebuilt mode must tag the verified image as the local base"
     );
     // In prebuilt mode rebuild=false, so the construct-mismatch guard calls
     // inspect_image_labels on the derived image (bollard). Workspace-rebuild mode skips it.
@@ -3080,7 +5066,7 @@ plugins = []
     .await
     .unwrap();
 
-    let dind = launched_dind_container_name(&runner);
+    let (dind, _) = launched_dind_container(&docker);
     // DinD readiness check polls via docker exec (bollard)
     assert!(
         docker
@@ -3090,14 +5076,21 @@ plugins = []
             .any(|call| call.contains(&format!("docker exec {dind} docker info")))
     );
 
-    // DinD container is started (via runner) before the readiness check (via docker)
-    let dind_start_runner = runner
-        .recorded
+    // DinD container is created/started through DockerApi before readiness checks.
+    let docker_recorded = docker.recorded.borrow();
+    let dind_start = docker_recorded
         .iter()
-        .position(|call| call.contains(&format!("docker run -d --name {dind}")))
+        .position(|call| call == &format!("start_container:{dind}"))
         .unwrap();
     // docker exec calls go through bollard docker.exec_capture
-    let docker_recorded = docker.recorded.borrow();
+    let dind_info = docker_recorded
+        .iter()
+        .position(|call| call.contains(&format!("docker exec {dind} docker info")))
+        .unwrap();
+    assert!(
+        dind_start < dind_info,
+        "DinD must start before readiness polling; recorded: {docker_recorded:?}"
+    );
     assert!(
         docker_recorded
             .iter()
@@ -3109,7 +5102,6 @@ plugins = []
     assert!(docker_recorded.iter().any(|call| {
         call.contains(&format!("docker exec {dind} test -f /certs/client/ca.pem"))
     }));
-    let _ = dind_start_runner;
 }
 
 #[tokio::test]
@@ -3159,22 +5151,21 @@ plugins = []
     .await
     .unwrap();
 
-    let dind = launched_dind_container_name(&runner);
+    let (dind, dind_spec) = launched_dind_container(&docker);
     let certs_volume = dind.strip_suffix("-dind").unwrap().to_owned() + "-dind-certs";
     assert!(crate::instance::naming::is_dns_label(&dind), "{dind}");
 
-    // DinD sidecar: TLS enabled with cert volume
-    let dind_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains(&format!("docker run -d --name {dind}")))
-        .unwrap();
+    // DinD sidecar: TLS enabled with cert volume.
     assert!(
-        dind_cmd.contains("DOCKER_TLS_CERTDIR=/certs"),
+        dind_spec
+            .env
+            .contains(&"DOCKER_TLS_CERTDIR=/certs".to_owned()),
         "DinD must enable TLS cert generation"
     );
     assert!(
-        dind_cmd.contains(&format!("{certs_volume}:/certs/client")),
+        dind_spec
+            .binds
+            .contains(&format!("{certs_volume}:/certs/client")),
         "DinD must mount cert volume"
     );
     // DinD's auto-generated server cert must include the container name as a
@@ -3188,9 +5179,15 @@ plugins = []
     // prefix), and openssl rejects SAN entries that lack a type tag with
     // `v2i_GENERAL_NAME_ex: missing value`.
     assert!(
-        dind_cmd.contains(&format!("DOCKER_TLS_SAN=DNS:{dind}")),
+        dind_spec
+            .env
+            .contains(&format!("DOCKER_TLS_SAN=DNS:{dind}")),
         "DinD SAN value must be prefixed with `DNS:` so openssl accepts it"
     );
+    assert!(dind_spec.privileged, "DinD must run privileged");
+    let expected_network = dind.strip_suffix("-dind").unwrap().to_owned() + "-net";
+    assert_eq!(dind_spec.network, expected_network);
+    assert_eq!(dind_spec.image, "docker:dind");
 
     // Role container: TLS client config
     let run_cmd = runner
@@ -3469,7 +5466,7 @@ plugins = []
         .iter()
         .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
         .unwrap();
-    assert!(run_cmd.contains("jackin.display_name=Agent Smith"));
+    assert!(run_cmd.contains("jackin.display.name=Agent Smith"));
 }
 
 #[tokio::test]
@@ -3529,7 +5526,7 @@ plugins = []
         .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
         .unwrap();
     assert!(
-        run_cmd.contains("--label jackin.keep_awake=true"),
+        run_cmd.contains("--label jackin.keep.awake=true"),
         "role container with keep_awake_enabled must carry the keep_awake label, \
              so runtime::caffeinate::reconcile can detect it via docker ps --filter; \
              actual run command: {run_cmd}"
@@ -3592,7 +5589,7 @@ plugins = []
         .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
         .unwrap();
     assert!(
-        !run_cmd.contains("jackin.keep_awake"),
+        !run_cmd.contains("jackin.keep.awake"),
         "role container without keep_awake_enabled must not carry the label, \
              else the reconciler would hold caffeinate for opted-out workspaces; \
              actual run command: {run_cmd}"
@@ -3976,7 +5973,7 @@ async fn render_exit_preserves_universe_marker_when_instances_remain() {
         list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![
             jackin_docker::docker_client::ContainerRow {
                 name: "jk-still-running".to_owned(),
-                labels: std::collections::HashMap::new(),
+                labels: HashMap::new(),
             },
         ]])),
         ..Default::default()
@@ -4739,7 +6736,7 @@ async fn claim_container_name_saved_workspace_includes_workspace_component() {
 }
 
 #[tokio::test]
-async fn restore_candidate_requires_rich_dialog_for_fresh_load() {
+async fn missing_matching_instance_recreates_current_role() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
@@ -4753,20 +6750,96 @@ async fn restore_candidate_requires_rich_dialog_for_fresh_load() {
     manifest
         .write(&paths.data_dir.join(container_name))
         .unwrap();
-    // inspect_container_state -> NotFound -> candidate available, but no
-    // rich progress dialog is available in this direct unit-test call.
+    // Missing current-role containers can be recreated in-place. The image
+    // decision later decides whether that recreate can reuse the local image
+    // or must rebuild.
     let docker = crate::runtime::test_support::FakeDockerClient::default();
 
-    let error = resolve_workspace_restore(&paths, "agent-smith", &docker)
+    let candidate = resolve_workspace_restore(&paths, "agent-smith", &docker)
         .await
-        .unwrap_err();
+        .unwrap();
 
-    assert!(error.to_string().contains("rich launch dialog"));
-    assert!(error.to_string().contains(container_name));
+    assert_eq!(
+        candidate,
+        RestoreResolution::RecreateCurrentRole(container_name.to_owned())
+    );
 }
 
 #[tokio::test]
-async fn running_matching_instance_does_not_block_fresh_load() {
+async fn missing_matching_instance_records_launch_plan_rejections() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Claude,
+    );
+    manifest
+        .write(&paths.data_dir.join(container_name))
+        .unwrap();
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
+    let _active = run.activate();
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+
+    let candidate = resolve_workspace_restore(&paths, "agent-smith", &docker)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        candidate,
+        RestoreResolution::RecreateCurrentRole(container_name.to_owned())
+    );
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        jsonl.contains("\"kind\":\"launch_plan_rejected\""),
+        "{jsonl}"
+    );
+    assert!(jsonl.contains("AttachExisting"), "{jsonl}");
+    assert!(jsonl.contains("StartStopped"), "{jsonl}");
+    assert!(jsonl.contains("current_role_container_missing"), "{jsonl}");
+    assert!(
+        !jsonl.contains("\"kind\":\"launch_plan\""),
+        "restore lookup must not select CreateFromValidImage/BuildAndCreate before image decision: {jsonl}"
+    );
+    assert!(
+        jsonl.contains("\"kind\":\"timing_done\"")
+            && jsonl.contains("current_restore_candidate")
+            && jsonl.contains("inspect_current_container")
+            && jsonl.contains("create_from_valid_image"),
+        "restore candidate scans should be timed before credentials/build: {jsonl}"
+    );
+}
+
+#[test]
+fn image_materialization_plan_uses_image_decision() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+
+    emit_image_materialization_plan(true, "recipe_hash_match", false, "jk-new");
+    emit_image_materialization_plan(true, "published_image_stale", false, "jk-refresh");
+    emit_image_materialization_plan(false, "hooks_hash_changed", true, "jk-recreate");
+
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(jsonl.contains("CreateFromValidImage"), "{jsonl}");
+    assert!(
+        jsonl.contains("no_restore_candidate_valid_image"),
+        "{jsonl}"
+    );
+    assert!(
+        jsonl.contains("no_restore_candidate_valid_image:published_image_stale"),
+        "{jsonl}"
+    );
+    assert!(jsonl.contains("BuildAndCreate"), "{jsonl}");
+    assert!(jsonl.contains("hooks_hash_changed"), "{jsonl}");
+}
+
+#[tokio::test]
+async fn current_restore_candidate_lookup_records_timing() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
@@ -4778,7 +6851,54 @@ async fn running_matching_instance_does_not_block_fresh_load() {
         jackin_core::agent::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-    // Running → not a restore candidate → StartFresh
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
+        ..Default::default()
+    };
+
+    let resolution = resolve_current_restore_candidate_timed(
+        &paths,
+        Some("workspace"),
+        "workspace",
+        "/workspace",
+        "agent-smith",
+        jackin_core::agent::Agent::Claude,
+        &docker,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        resolution,
+        Some(RestoreResolution::AttachCurrentRole(
+            container_name.to_owned()
+        ))
+    );
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        jsonl.contains("current_restore_candidate")
+            && jsonl.contains("inspect_current_container")
+            && jsonl.contains("attach_existing"),
+        "current restore lookup must be timed for earliest attach-first path: {jsonl}"
+    );
+}
+
+#[tokio::test]
+async fn running_matching_instance_attaches_current_role() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Claude,
+    );
+    write_indexed_manifest(&paths, &manifest);
+    // Running current-role container is the attach-first path.
     let docker = crate::runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
@@ -4788,11 +6908,14 @@ async fn running_matching_instance_does_not_block_fresh_load() {
         .await
         .unwrap();
 
-    assert_eq!(candidate, RestoreResolution::StartFresh);
+    assert_eq!(
+        candidate,
+        RestoreResolution::AttachCurrentRole(container_name.to_owned())
+    );
 }
 
 #[tokio::test]
-async fn stopped_matching_instance_does_not_block_fresh_load() {
+async fn stopped_matching_instance_starts_current_role() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
@@ -4804,7 +6927,8 @@ async fn stopped_matching_instance_does_not_block_fresh_load() {
         jackin_core::agent::Agent::Claude,
     );
     write_indexed_manifest(&paths, &manifest);
-    // Stopped (non-clean) → not a restore candidate → StartFresh
+    // Stopped current-role containers can be started and reconnected without
+    // rebuilding or resolving launch credentials.
     let docker = crate::runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 137,
@@ -4817,7 +6941,270 @@ async fn stopped_matching_instance_does_not_block_fresh_load() {
         .await
         .unwrap();
 
-    assert_eq!(candidate, RestoreResolution::StartFresh);
+    assert_eq!(
+        candidate,
+        RestoreResolution::StartCurrentRole(container_name.to_owned())
+    );
+}
+
+#[tokio::test]
+async fn single_current_role_candidate_attaches_before_agent_selection() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Codex,
+    );
+    write_indexed_manifest(&paths, &manifest);
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
+        ..Default::default()
+    };
+
+    let candidate = resolve_unselected_current_restore_candidate_timed(
+        &paths,
+        Some("workspace"),
+        "workspace",
+        "/workspace",
+        "agent-smith",
+        &docker,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        candidate,
+        Some(RestoreResolution::AttachCurrentRole(
+            container_name.to_owned()
+        ))
+    );
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(jsonl.contains("AttachExisting"), "{jsonl}");
+    assert!(
+        jsonl.contains("single_current_role_agent_container_running"),
+        "{jsonl}"
+    );
+    assert!(
+        jsonl.contains("current_restore_candidate_unselected_agent")
+            && jsonl.contains("attach_existing"),
+        "{jsonl}"
+    );
+}
+
+#[tokio::test]
+async fn single_stopped_current_role_candidate_starts_before_agent_selection() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Codex,
+    );
+    write_indexed_manifest(&paths, &manifest);
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
+            exit_code: 0,
+            oom_killed: false,
+        }])),
+        ..Default::default()
+    };
+
+    let candidate = resolve_unselected_current_restore_candidate_timed(
+        &paths,
+        Some("workspace"),
+        "workspace",
+        "/workspace",
+        "agent-smith",
+        &docker,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        candidate,
+        Some(RestoreResolution::StartCurrentRole(
+            container_name.to_owned()
+        ))
+    );
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(jsonl.contains("StartStopped"), "{jsonl}");
+    assert!(
+        jsonl.contains("single_current_role_agent_container_startable"),
+        "{jsonl}"
+    );
+    assert!(
+        jsonl.contains("current_restore_candidate_unselected_agent")
+            && jsonl.contains("start_stopped"),
+        "{jsonl}"
+    );
+}
+
+#[tokio::test]
+async fn single_missing_current_role_candidate_recreates_with_recorded_agent() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+    let manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Codex,
+    );
+    write_indexed_manifest(&paths, &manifest);
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::NotFound])),
+        ..Default::default()
+    };
+
+    let candidate = resolve_unselected_current_restore_candidate_with_agent_timed(
+        &paths,
+        Some("workspace"),
+        "workspace",
+        "/workspace",
+        "agent-smith",
+        &docker,
+    )
+    .await
+    .unwrap()
+    .expect("missing unselected current-role instance should recreate");
+
+    assert_eq!(candidate.agent, jackin_core::agent::Agent::Codex);
+    assert_eq!(
+        candidate.resolution,
+        RestoreResolution::RecreateCurrentRole(container_name.to_owned())
+    );
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        jsonl.contains("single_current_role_agent_container_missing"),
+        "{jsonl}"
+    );
+    assert!(
+        jsonl.contains("current_restore_candidate_unselected_agent")
+            && jsonl.contains("create_from_valid_image"),
+        "{jsonl}"
+    );
+}
+
+#[tokio::test]
+async fn only_viable_current_role_candidate_attaches_before_agent_selection() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let claude = workspace_manifest(
+        "jk-k7p9m2xq-workspace-agentsmith-claude",
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Claude,
+    );
+    let codex = workspace_manifest(
+        "jk-k7p9m2xq-workspace-agentsmith-codex",
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Codex,
+    );
+    write_indexed_manifest(&paths, &claude);
+    write_indexed_manifest(&paths, &codex);
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::NotFound,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
+
+    let candidate = resolve_unselected_current_restore_candidate_timed(
+        &paths,
+        Some("workspace"),
+        "workspace",
+        "/workspace",
+        "agent-smith",
+        &docker,
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(
+        candidate,
+        Some(RestoreResolution::AttachCurrentRole(_))
+    ));
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        jsonl.contains("only_viable_current_role_agent_container_running"),
+        "{jsonl}"
+    );
+    assert!(
+        jsonl.contains("current_restore_candidate_unselected_agent")
+            && jsonl.contains("attach_existing"),
+        "{jsonl}"
+    );
+}
+
+#[tokio::test]
+async fn multiple_current_role_agents_wait_for_agent_selection() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let claude = workspace_manifest(
+        "jk-k7p9m2xq-workspace-agentsmith-claude",
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Claude,
+    );
+    let codex = workspace_manifest(
+        "jk-k7p9m2xq-workspace-agentsmith-codex",
+        "agent-smith",
+        "Agent Smith",
+        jackin_core::agent::Agent::Codex,
+    );
+    write_indexed_manifest(&paths, &claude);
+    write_indexed_manifest(&paths, &codex);
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let docker = crate::runtime::test_support::FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Running,
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
+
+    let candidate = resolve_unselected_current_restore_candidate_timed(
+        &paths,
+        Some("workspace"),
+        "workspace",
+        "/workspace",
+        "agent-smith",
+        &docker,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(candidate, None);
+    assert!(
+        docker.inspect_queue.borrow().is_empty(),
+        "ambiguous unselected-agent restore must inspect all current candidates before deferring"
+    );
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        jsonl.contains("multiple_current_role_agents_need_selection"),
+        "{jsonl}"
+    );
 }
 
 #[tokio::test]
@@ -5173,9 +7560,12 @@ async fn verify_credential_ignore_returns_ok_regardless() {
 #[tokio::test]
 async fn verify_credential_api_key_present_ok() {
     use jackin_config::AuthForwardMode;
-    use jackin_core::agent::Agent;
+    use jackin_core::{agent::Agent, env_model};
     let mut merged = std::collections::BTreeMap::new();
-    merged.insert("ANTHROPIC_API_KEY".into(), "sk-ant-xxx".into());
+    merged.insert(
+        env_model::ANTHROPIC_API_KEY_ENV_NAME.into(),
+        "sk-ant-xxx".into(),
+    );
     let layers: Vec<(String, EnvLayerState)> = vec![];
     let r = verify_credential_env_present(
         Agent::Claude,
@@ -5192,9 +7582,9 @@ async fn verify_credential_api_key_present_ok() {
 #[tokio::test]
 async fn verify_credential_api_key_missing_returns_structured_error() {
     use jackin_config::AuthForwardMode;
-    use jackin_core::agent::Agent;
+    use jackin_core::{agent::Agent, env_model};
     let mut merged = std::collections::BTreeMap::new();
-    merged.insert("ANTHROPIC_API_KEY".into(), String::new());
+    merged.insert(env_model::ANTHROPIC_API_KEY_ENV_NAME.into(), String::new());
     let layers = vec![
         ("[env]".into(), EnvLayerState::Unset),
         ("[roles.smith.env]".into(), EnvLayerState::Unset),
@@ -5233,7 +7623,7 @@ async fn verify_credential_api_key_missing_returns_structured_error() {
             mode_resolution,
             ..
         } => {
-            assert_eq!(env_var, "ANTHROPIC_API_KEY");
+            assert_eq!(env_var, env_model::ANTHROPIC_API_KEY_ENV_NAME);
             assert_eq!(agent, Agent::Claude);
             assert_eq!(mode, AuthForwardMode::ApiKey);
             assert_eq!(workspace, "proj");
@@ -5395,13 +7785,86 @@ async fn build_mode_resolution_role_override_wins() {
 }
 
 #[tokio::test]
+async fn sync_source_resolution_uses_workspace_role_scope_per_agent() {
+    use jackin_config::{AgentAuthConfig, WorkspaceConfig, WorkspaceRoleOverride};
+    use jackin_core::agent::Agent;
+    use std::path::PathBuf;
+
+    let mut cfg = AppConfig {
+        codex: Some(AgentAuthConfig {
+            sync_source_dir: Some(PathBuf::from("/global/codex")),
+            ..Default::default()
+        }),
+        amp: Some(AgentAuthConfig {
+            sync_source_dir: Some(PathBuf::from("/global/amp")),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let mut workspace = WorkspaceConfig {
+        codex: Some(AgentAuthConfig {
+            sync_source_dir: Some(PathBuf::from("/workspace/codex")),
+            ..Default::default()
+        }),
+        amp: Some(AgentAuthConfig {
+            sync_source_dir: Some(PathBuf::from("/workspace/amp")),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    workspace.roles.insert(
+        "architect".to_owned(),
+        WorkspaceRoleOverride {
+            codex: Some(AgentAuthConfig {
+                sync_source_dir: Some(PathBuf::from("/role/architect/codex")),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    );
+    workspace.roles.insert(
+        "builder".to_owned(),
+        WorkspaceRoleOverride {
+            amp: Some(AgentAuthConfig {
+                sync_source_dir: Some(PathBuf::from("/role/builder/amp")),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    );
+    cfg.workspaces.insert("proj".to_owned(), workspace);
+
+    let architect_source =
+        |agent| jackin_config::resolve_sync_source_dir(&cfg, agent, "proj", "architect");
+    let builder_source =
+        |agent| jackin_config::resolve_sync_source_dir(&cfg, agent, "proj", "builder");
+
+    assert_eq!(
+        architect_source(Agent::Codex),
+        Some(PathBuf::from("/role/architect/codex"))
+    );
+    assert_eq!(
+        architect_source(Agent::Amp),
+        Some(PathBuf::from("/workspace/amp"))
+    );
+    assert_eq!(
+        builder_source(Agent::Codex),
+        Some(PathBuf::from("/workspace/codex"))
+    );
+    assert_eq!(
+        builder_source(Agent::Amp),
+        Some(PathBuf::from("/role/builder/amp"))
+    );
+}
+
+#[tokio::test]
 async fn build_env_layer_states_classifies_present_vs_absent() {
     use jackin_config::{WorkspaceConfig, WorkspaceRoleOverride};
-    use jackin_core::{EnvValue, OpRef};
+    use jackin_core::{EnvValue, OpRef, env_model};
 
     let mut ro = WorkspaceRoleOverride::default();
     ro.env.insert(
-        "ANTHROPIC_API_KEY".into(),
+        env_model::ANTHROPIC_API_KEY_ENV_NAME.into(),
         EnvValue::OpRef(OpRef {
             op: "op://uuid/test/field".into(),
             path: "Test/api/key".into(),
@@ -5413,7 +7876,8 @@ async fn build_env_layer_states_classifies_present_vs_absent() {
     let mut cfg = AppConfig::default();
     cfg.workspaces.insert("proj".into(), ws);
 
-    let layers = build_env_layer_states(&cfg, "proj", "smith", "ANTHROPIC_API_KEY");
+    let layers =
+        build_env_layer_states(&cfg, "proj", "smith", env_model::ANTHROPIC_API_KEY_ENV_NAME);
     assert_eq!(layers.len(), 4);
     assert_eq!(layers[0].0, "[env]");
     assert_eq!(layers[0].1, EnvLayerState::Unset);
@@ -5427,19 +7891,20 @@ async fn build_env_layer_states_classifies_present_vs_absent() {
 
 #[tokio::test]
 async fn build_env_layer_states_classifies_literal_at_global() {
-    use jackin_core::EnvValue;
+    use jackin_core::{EnvValue, env_model};
 
     let mut env = std::collections::BTreeMap::new();
     env.insert(
-        "ANTHROPIC_API_KEY".into(),
-        EnvValue::Plain("$ANTHROPIC_API_KEY".into()),
+        env_model::ANTHROPIC_API_KEY_ENV_NAME.into(),
+        EnvValue::Plain(format!("${}", env_model::ANTHROPIC_API_KEY_ENV_NAME)),
     );
     let cfg = AppConfig {
         env,
         ..AppConfig::default()
     };
 
-    let layers = build_env_layer_states(&cfg, "proj", "smith", "ANTHROPIC_API_KEY");
+    let layers =
+        build_env_layer_states(&cfg, "proj", "smith", env_model::ANTHROPIC_API_KEY_ENV_NAME);
     assert_eq!(layers[0].1, EnvLayerState::ResolvedLiteral);
     assert_eq!(layers[1].1, EnvLayerState::Unset);
     assert_eq!(layers[2].1, EnvLayerState::Unset);
@@ -5584,10 +8049,12 @@ async fn inspect_attach_outcome_unknown_status_returns_still_running() {
 
 #[tokio::test]
 async fn auth_credential_missing_displays_layer_trace() {
+    use jackin_core::env_model;
+
     let err = LaunchError::AuthCredentialMissing {
         agent: jackin_core::agent::Agent::Claude,
         mode: jackin_config::AuthForwardMode::ApiKey,
-        env_var: "ANTHROPIC_API_KEY",
+        env_var: env_model::ANTHROPIC_API_KEY_ENV_NAME,
         workspace: "proj".into(),
         role: "smith".into(),
         mode_resolution: vec![
@@ -5613,7 +8080,10 @@ async fn auth_credential_missing_displays_layer_trace() {
     };
     let s = err.to_string();
     assert!(s.contains("auth_forward is 'api_key'"), "got: {s}");
-    assert!(s.contains("ANTHROPIC_API_KEY"), "got: {s}");
+    assert!(
+        s.contains(env_model::ANTHROPIC_API_KEY_ENV_NAME),
+        "got: {s}"
+    );
     assert!(
         s.contains("workspace × role × claude    -> api_key"),
         "got: {s}"
@@ -5781,4 +8251,74 @@ async fn resolve_github_env_map_aggregates_failures() {
     );
     assert!(s.contains("GH_TOKEN"), "got: {s}");
     assert!(s.contains("GH_HOST"), "got: {s}");
+}
+
+struct ConcurrentGithubOpRunner {
+    active: Arc<AtomicUsize>,
+    max_active: Arc<AtomicUsize>,
+}
+
+impl ConcurrentGithubOpRunner {
+    fn record_active(&self, active: usize) {
+        let mut observed = self.max_active.load(Ordering::SeqCst);
+        while active > observed {
+            match self.max_active.compare_exchange(
+                observed,
+                active,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return,
+                Err(next) => observed = next,
+            }
+        }
+    }
+}
+
+impl jackin_env::OpRunner for ConcurrentGithubOpRunner {
+    fn read(&self, reference: &str) -> anyhow::Result<String> {
+        let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+        self.record_active(active);
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "test runner deliberately holds worker OS threads open to prove overlap"
+        )]
+        std::thread::sleep(std::time::Duration::from_millis(25));
+        self.active.fetch_sub(1, Ordering::SeqCst);
+        Ok(format!("secret-for-{reference}"))
+    }
+}
+
+#[tokio::test]
+async fn resolve_github_env_map_reads_independent_op_refs_concurrently() {
+    use std::collections::BTreeMap;
+    let mut decls: BTreeMap<String, jackin_core::EnvValue> = BTreeMap::new();
+    for key in ["GH_TOKEN", "GH_ENTERPRISE_TOKEN", "GH_HOST"] {
+        decls.insert(
+            key.into(),
+            jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+                op: format!("op://vault/item/{key}"),
+                path: format!("Vault/Item/{key}"),
+                account: None,
+            }),
+        );
+    }
+    let active = Arc::new(AtomicUsize::new(0));
+    let max_active = Arc::new(AtomicUsize::new(0));
+    let runner = ConcurrentGithubOpRunner {
+        active,
+        max_active: Arc::clone(&max_active),
+    };
+    let opts = LoadOptions {
+        op_runner: Some(Box::new(runner)),
+        ..LoadOptions::default()
+    };
+
+    let resolved = resolve_github_env_map(&decls, &opts).unwrap();
+
+    assert_eq!(resolved.len(), 3);
+    assert!(
+        max_active.load(Ordering::SeqCst) > 1,
+        "expected overlapping github env op reads"
+    );
 }

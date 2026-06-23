@@ -86,7 +86,8 @@ fn osc8_uri_is_safe(uri: &str) -> bool {
     if uri.is_empty() {
         return true;
     }
-    jackin_core::url_text::is_host_open_url(uri.trim())
+    let lower = uri.trim().to_ascii_lowercase();
+    lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
 }
 
 /// Parse an `OSC 7` payload into a local-filesystem path. `OSC 7`
@@ -181,9 +182,7 @@ impl OscPolicy {
 }
 
 fn is_env_deny(name: &str) -> bool {
-    std::env::var(name)
-        .as_deref()
-        .is_ok_and(jackin_core::env_model::env_value_is_deny)
+    matches!(std::env::var(name).as_deref(), Ok("deny" | "off" | "no"))
 }
 
 pub fn next_id() -> u64 {
@@ -256,6 +255,7 @@ pub enum SessionEvent {
     },
     Exited {
         session_id: u64,
+        reason: Option<String>,
     },
     GitBranchContextRefreshRequested,
     GitBranchContextLoaded {
@@ -441,6 +441,10 @@ impl Session {
         terminal: SessionTerminal,
         event_tx: mpsc::UnboundedSender<SessionEvent>,
     ) -> Result<(Self, u64)> {
+        let label = label.into();
+        // Per-tab trace: each pane/agent spawn is its own short trace on the
+        // session timeline (shares the resource session.id).
+        jackin_diagnostics::record_capsule_activity(&label, agent.as_deref());
         let rows = terminal.rows;
         let cols = terminal.cols;
         let pty_system = native_pty_system();
@@ -501,7 +505,10 @@ impl Session {
             };
             let Some(mut writer) = writer else {
                 if event_tx_writer_err
-                    .send(SessionEvent::Exited { session_id: sid })
+                    .send(SessionEvent::Exited {
+                        session_id: sid,
+                        reason: Some("session PTY writer failed to initialize".to_owned()),
+                    })
                     .is_err()
                 {
                     crate::clog!(
@@ -517,7 +524,10 @@ impl Session {
                         e.raw_os_error()
                     );
                     if event_tx_writer_err
-                        .send(SessionEvent::Exited { session_id: sid })
+                        .send(SessionEvent::Exited {
+                            session_id: sid,
+                            reason: Some(format!("session PTY write failed: {e}")),
+                        })
                         .is_err()
                     {
                         crate::clog!(
@@ -548,7 +558,10 @@ impl Session {
             };
             let Some(mut reader) = reader else {
                 if event_tx_reader_err
-                    .send(SessionEvent::Exited { session_id: sid })
+                    .send(SessionEvent::Exited {
+                        session_id: sid,
+                        reason: Some("session PTY reader failed to initialize".to_owned()),
+                    })
                     .is_err()
                 {
                     crate::clog!(
@@ -618,7 +631,10 @@ impl Session {
             }
             crate::clog!("session {sid}: child reaped: {status:?}");
             if event_tx_exit
-                .send(SessionEvent::Exited { session_id: sid })
+                .send(SessionEvent::Exited {
+                    session_id: sid,
+                    reason: child_exit_reason(status.as_ref()),
+                })
                 .is_err()
             {
                 crate::clog!(
@@ -629,7 +645,7 @@ impl Session {
 
         Ok((
             Session {
-                label: label.into(),
+                label,
                 agent,
                 provider,
                 state: AgentState::Working,
@@ -730,6 +746,25 @@ impl Session {
 
     pub(crate) fn render_content_snapshot(&self, viewport_cols: u16) -> Vec<RowSnapshot> {
         crate::tui::render::pane_content_from_damagegrid(&self.shadow_grid, viewport_cols)
+    }
+
+    pub(crate) fn diagnostic_tail(&self, max_rows: usize) -> Option<String> {
+        if max_rows == 0 {
+            return None;
+        }
+        let (_, cols) = self.shadow_grid.size();
+        let mut lines: Vec<String> = self
+            .render_content_snapshot(cols)
+            .into_iter()
+            .rev()
+            .filter_map(|row| {
+                let line = row.text_range(0, cols).trim_end().to_owned();
+                (!line.trim().is_empty()).then_some(line)
+            })
+            .take(max_rows)
+            .collect();
+        lines.reverse();
+        (!lines.is_empty()).then(|| lines.join("\n"))
     }
 
     pub fn hyperlink_target_at_content_row(&self, row: usize, col: u16) -> Option<&str> {
@@ -1095,6 +1130,20 @@ impl Session {
         // tab removal directly; no transient `○ Done` glyph.
         let elapsed = self.last_output_at.elapsed();
         self.state = state_after_refresh(self.state, elapsed);
+    }
+}
+
+fn child_exit_reason(status: Result<&portable_pty::ExitStatus, &std::io::Error>) -> Option<String> {
+    match status {
+        Ok(status) if status.success() => None,
+        Ok(status) => match status.signal() {
+            Some(signal) => Some(format!("session process exited after signal {signal}")),
+            None => Some(format!(
+                "session process exited with code {}",
+                status.exit_code()
+            )),
+        },
+        Err(err) => Some(format!("session process wait failed: {err}")),
     }
 }
 

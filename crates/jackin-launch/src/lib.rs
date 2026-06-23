@@ -17,6 +17,39 @@ pub use tui::app::{
 pub use tui::message::LaunchMessage;
 pub use tui::update::{active_stage_index, initial_view, update_launch_view, update_stage};
 
+/// Marker error: the operator deliberately aborted the launch (Ctrl+C,
+/// Ctrl+Q, or a Cancel modal). This is an intent, not a failure — the binary
+/// entry point treats it as a clean exit and never renders it as `error:`.
+///
+/// Carried as a concrete error inside an `anyhow::Error` so any layer can
+/// detect it via [`LaunchCancelled::is_cancel`] regardless of `.context(..)`
+/// wrapping. `Display` keeps the historical "launch cancelled by operator"
+/// wording for debug/log surfaces.
+#[derive(Debug)]
+pub struct LaunchCancelled;
+
+impl std::fmt::Display for LaunchCancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("launch cancelled by operator")
+    }
+}
+
+impl std::error::Error for LaunchCancelled {}
+
+impl LaunchCancelled {
+    /// Build the cancellation as an `anyhow::Error` for return up the stack.
+    pub fn err() -> anyhow::Error {
+        anyhow::Error::new(Self)
+    }
+
+    /// `true` if `error` — or anything in its source chain — is a
+    /// `LaunchCancelled`. `anyhow`'s downcast walks the chain, so the check
+    /// survives intermediate `.context(..)` layers.
+    pub fn is_cancel(error: &anyhow::Error) -> bool {
+        error.downcast_ref::<Self>().is_some()
+    }
+}
+
 pub trait LaunchDiagnostics: Send + Sync {
     fn run_id(&self) -> &str;
     fn path(&self) -> &Path;

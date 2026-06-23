@@ -151,6 +151,7 @@ impl Multiplexer {
         // Status-bar inputs snapshotted before the draw closure borrows self.
         let session_states = self.snapshot_session_states();
         let prefix_mode = self.status_bar.prefix_mode;
+        let palette_key_glyph = self.status_bar.palette_key_glyph.as_deref();
         // Lay out row 0 once per frame. The owned plan is shared with the
         // status-bar widget (paint), the tab tooltip, and the click-region
         // refresh below, so the bar is never laid out more than once per frame.
@@ -160,6 +161,7 @@ impl Multiplexer {
             active_tab,
             &session_states,
             prefix_mode,
+            palette_key_glyph,
         );
         let hover_target = self.hover_target;
         let hovered_tab = crate::tui::view::hovered_tab(hover_target);
@@ -348,6 +350,7 @@ impl Multiplexer {
         let pull_request = self.pull_request_context.clone();
         let pull_request_loading = self.pull_request_context_loading();
         let spawn_failure = self.spawn_failure.clone();
+        let palette_key = self.input_parser.palette_key().unwrap_or(0x1C);
         let clipboard_image_notice = self.clipboard_image_notice.clone();
         let link_hover_notice = self
             .link_hover_url
@@ -405,6 +408,7 @@ impl Multiplexer {
                     debug_run_id: debug_run_id_owned.as_deref(),
                     dialog_hint_spans: dialog_hint_spans.as_deref(),
                     spawn_failure: spawn_failure.as_deref(),
+                    palette_key,
                     clipboard_image_notice: clipboard_image_notice.as_deref(),
                     link_hover_notice: link_hover_notice.as_deref(),
                 },

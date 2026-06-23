@@ -26,6 +26,7 @@ pub enum ErrorCode {
     E013,
     E014,
     E015,
+    E016,
 }
 
 impl ErrorCode {
@@ -46,6 +47,7 @@ impl ErrorCode {
             Self::E013 => "E013",
             Self::E014 => "E014",
             Self::E015 => "E015",
+            Self::E016 => "E016",
         }
     }
 }
@@ -152,6 +154,9 @@ pub enum JackinError {
 
     #[error("Worktree materialization conflict: {path}")]
     WorktreeConflict { path: String },
+
+    #[error("Unsupported OTLP protocol: {requested}")]
+    UnsupportedOtlpProtocol { requested: String },
 }
 
 impl JackinError {
@@ -247,6 +252,14 @@ impl JackinError {
                 "Worktree materialization conflict",
                 "Run `jackin prune isolation` to clean up stale worktrees, then re-run.",
             ).with_detail(format!("Conflict at: {path}")),
+
+            Self::UnsupportedOtlpProtocol { requested } => UserMessage::new(
+                ErrorCode::E016,
+                "Unsupported OTLP protocol",
+                "jackin exports OTLP over gRPC only. Set OTEL_EXPORTER_OTLP_PROTOCOL=grpc (point OTEL_EXPORTER_OTLP_ENDPOINT at the gRPC endpoint, e.g. http://localhost:4317), or unset the OTLP endpoint vars to disable export.",
+            ).with_detail(format!(
+                "Requested protocol {requested:?} via OTEL_EXPORTER_OTLP_*_PROTOCOL; supported: grpc."
+            )),
         }
     }
 }

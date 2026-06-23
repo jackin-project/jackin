@@ -6,21 +6,23 @@ use super::super::test_support::{key, mount};
 use super::{
     EditorModalOutcome, apply_file_browser_to_editor, apply_text_input_to_pending,
     env_key_input_state, handle_editor_modal, poll_role_load, role_load_input_state,
-    secret_new_key_label, secrets_flat_rows,
+    secret_new_key_label,
 };
-use crate::config::{AgentAuthConfig, AppConfig, AuthForwardMode};
 use crate::console::tui::input::handle_key;
 use crate::console::tui::state::{
-    AuthRow, ConfirmTarget, EditorState, EditorStateExt, EditorTab, FieldFocus, FileBrowserTarget,
-    ManagerStage, ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag,
-    TextInputTarget, auth_flat_rows,
+    AuthRow, ConfirmTarget, EditorState, EditorTab, FieldFocus, FileBrowserTarget, ManagerStage,
+    ManagerState, Modal, PendingRoleLoad, SecretsRow, SecretsScopeTag, TextInputTarget,
 };
-use crate::operator_env::OpCache;
-use crate::paths::JackinPaths;
-use crate::runtime::test_support::{first_temp_role_repo, seed_valid_role_repo};
-use crate::workspace::{MountConfig, WorkspaceConfig};
 use crossterm::event::KeyCode;
+use jackin_config::{AgentAuthConfig, AppConfig, AuthForwardMode};
+use jackin_config::{MountConfig, WorkspaceConfig};
 use jackin_console::tui::auth::AuthKind;
+use jackin_core::JackinPaths;
+use jackin_env::OpCache;
+use jackin_manifest::repo::CachedRepo;
+use jackin_runtime::runtime::test_support::{
+    FakeRunner, first_temp_role_repo, seed_valid_role_repo,
+};
 use ratatui::layout::Rect;
 use tempfile::TempDir;
 
@@ -79,7 +81,7 @@ fn config_with_agents(names: &[&str]) -> AppConfig {
     for name in names {
         config.roles.insert(
             (*name).into(),
-            crate::config::RoleSource {
+            jackin_config::RoleSource {
                 git: format!("https://example.test/{name}.git"),
                 ..Default::default()
             },
@@ -119,7 +121,7 @@ fn ws_with_one_mount(readonly: bool) -> WorkspaceConfig {
             src: "/host/a".into(),
             dst: "/host/a".into(),
             readonly,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }],
         ..WorkspaceConfig::default()
     }
@@ -294,6 +296,113 @@ fn edit_mode_enter_on_name_row_still_opens_rename_modal() {
     }
 }
 
+fn auth_cursor_rows() -> Vec<AuthRow> {
+    vec![
+        AuthRow::WorkspaceMode {
+            kind: AuthKind::Claude,
+        },
+        AuthRow::WorkspaceSource {
+            kind: AuthKind::Claude,
+        },
+        AuthRow::WorkspaceSourceFolder {
+            kind: AuthKind::Claude,
+        },
+        AuthRow::Spacer,
+        AuthRow::RoleHeader {
+            role: "smith".into(),
+            expanded: true,
+        },
+        AuthRow::RoleMode {
+            role: "smith".into(),
+            kind: AuthKind::Claude,
+        },
+        AuthRow::RoleSource {
+            role: "smith".into(),
+            kind: AuthKind::Claude,
+        },
+        AuthRow::RoleSourceFolder {
+            role: "smith".into(),
+            kind: AuthKind::Claude,
+        },
+        AuthRow::Spacer,
+        AuthRow::AddSentinel { eligible: 1 },
+    ]
+}
+
+#[test]
+fn down_skips_workspace_preview_rows_and_spacer() {
+    let rows = auth_cursor_rows();
+    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
+    assert_eq!(
+        jackin_console::tui::screens::editor::update::step_cursor_down(&skipped, 1, rows.len() - 1),
+        4
+    );
+}
+
+#[test]
+fn down_skips_role_preview_rows_and_spacer() {
+    let rows = auth_cursor_rows();
+    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
+    assert_eq!(
+        jackin_console::tui::screens::editor::update::step_cursor_down(&skipped, 6, rows.len() - 1),
+        9
+    );
+}
+
+#[test]
+fn down_at_max_with_only_preview_remaining_returns_candidate() {
+    let rows = vec![
+        AuthRow::WorkspaceMode {
+            kind: AuthKind::Claude,
+        },
+        AuthRow::WorkspaceSourceFolder {
+            kind: AuthKind::Claude,
+        },
+    ];
+    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
+    assert_eq!(
+        jackin_console::tui::screens::editor::update::step_cursor_down(&skipped, 1, 1),
+        1
+    );
+}
+
+#[test]
+fn up_skips_workspace_preview_rows_to_workspace_mode() {
+    let rows = auth_cursor_rows();
+    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
+    assert_eq!(
+        jackin_console::tui::screens::editor::update::step_cursor_up(&skipped, 3),
+        0
+    );
+}
+
+#[test]
+fn up_skips_role_preview_rows_to_role_mode() {
+    let rows = auth_cursor_rows();
+    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
+    assert_eq!(
+        jackin_console::tui::screens::editor::update::step_cursor_up(&skipped, 7),
+        5
+    );
+}
+
+#[test]
+fn up_at_zero_preview_clamps_to_zero() {
+    let rows = vec![
+        AuthRow::WorkspaceSourceFolder {
+            kind: AuthKind::Claude,
+        },
+        AuthRow::WorkspaceMode {
+            kind: AuthKind::Claude,
+        },
+    ];
+    let skipped = jackin_console::tui::screens::editor::update::auth_skipped_rows(&rows);
+    assert_eq!(
+        jackin_console::tui::screens::editor::update::step_cursor_up(&skipped, 0),
+        0
+    );
+}
+
 #[test]
 fn enter_on_auth_workspace_source_preview_row_is_noop() {
     let tmp = tempfile::tempdir().unwrap();
@@ -313,7 +422,8 @@ fn enter_on_auth_workspace_source_preview_row_is_noop() {
     let mut editor = EditorState::new_edit("proj".into(), workspace);
     editor.active_tab = EditorTab::Auth;
     editor.auth_selected_kind = Some(AuthKind::Claude);
-    let source_idx = auth_flat_rows(&editor, &config)
+    let source_idx = editor
+        .auth_flat_rows(&config)
         .iter()
         .position(|row| {
             matches!(
@@ -362,7 +472,8 @@ fn enter_on_auth_workspace_source_folder_preview_row_is_noop() {
     let mut editor = EditorState::new_edit("proj".into(), workspace);
     editor.active_tab = EditorTab::Auth;
     editor.auth_selected_kind = Some(AuthKind::Claude);
-    let source_folder_idx = auth_flat_rows(&editor, &config)
+    let source_folder_idx = editor
+        .auth_flat_rows(&config)
         .iter()
         .position(|row| {
             matches!(
@@ -501,7 +612,7 @@ fn o_on_folder_mount_opens_error_popup() {
             src: "/host/plain-dir".into(),
             dst: "/host/plain-dir".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }],
         ..WorkspaceConfig::default()
     };
@@ -535,7 +646,7 @@ fn added_mount_defaults_to_shared_isolation() {
     assert_eq!(editor.pending.mounts.len(), 1);
     assert_eq!(
         editor.pending.mounts[0].isolation,
-        crate::isolation::MountIsolation::Shared
+        jackin_config::MountIsolation::Shared
     );
 }
 
@@ -742,10 +853,10 @@ async fn role_input_resolves_then_persists_namespaced_role_after_trust() {
 
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
     editor.pending.allowed_roles = vec!["agent-smith".into()];
-    let selector = crate::selector::RoleSelector::parse("chainargos/agent-brown").unwrap();
-    let cached_repo = crate::repo::CachedRepo::new(&paths, &selector);
+    let selector = jackin_core::RoleSelector::parse("chainargos/agent-brown").unwrap();
+    let cached_repo = CachedRepo::new(&paths, &selector);
     let data_dir = paths.data_dir.clone();
-    let mut runner = crate::runtime::FakeRunner::default();
+    let mut runner = FakeRunner::default();
     runner.side_effects.push((
         "git clone".to_owned(),
         Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
@@ -889,7 +1000,7 @@ fn role_load_poll_success_replaces_loading_popup_with_trust_prompt() {
 
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
     let (tx, rx) = tokio::sync::oneshot::channel();
-    let source = crate::config::RoleSource {
+    let source = jackin_config::RoleSource {
         git: "https://github.com/chainargos/jackin-agent-brown.git".into(),
         trusted: false,
         ..Default::default()
@@ -950,7 +1061,7 @@ async fn role_input_trust_decline_keeps_registered_role_untrusted() {
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
     editor.pending.allowed_roles = vec!["agent-smith".into()];
     let data_dir = paths.data_dir.clone();
-    let mut runner = crate::runtime::FakeRunner::default();
+    let mut runner = FakeRunner::default();
     runner.side_effects.push((
         "git clone".to_owned(),
         Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
@@ -1002,7 +1113,7 @@ async fn role_input_existing_untrusted_role_can_be_validated_and_trusted() {
     let mut config = config_with_agents(&["agent-smith"]);
     config.roles.insert(
         "chainargos/agent-brown".into(),
-        crate::config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/chainargos/jackin-agent-brown.git".into(),
             trusted: false,
             ..Default::default()
@@ -1013,7 +1124,7 @@ async fn role_input_existing_untrusted_role_can_be_validated_and_trusted() {
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
     editor.pending.allowed_roles = vec!["agent-smith".into()];
     let data_dir = paths.data_dir.clone();
-    let mut runner = crate::runtime::FakeRunner::default();
+    let mut runner = FakeRunner::default();
     runner.side_effects.push((
         "git clone".to_owned(),
         Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
@@ -1070,7 +1181,7 @@ async fn role_input_trusted_existing_role_skips_trust_prompt() {
     let mut config = config_with_agents(&["agent-smith"]);
     config.roles.insert(
         "chainargos/agent-brown".into(),
-        crate::config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/chainargos/jackin-agent-brown.git".into(),
             trusted: true,
             ..Default::default()
@@ -1081,7 +1192,7 @@ async fn role_input_trusted_existing_role_skips_trust_prompt() {
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
     editor.pending.allowed_roles = vec!["agent-smith".into()];
     let data_dir = paths.data_dir.clone();
-    let mut runner = crate::runtime::FakeRunner::default();
+    let mut runner = FakeRunner::default();
     runner.side_effects.push((
         "git clone".to_owned(),
         Box::new(move || seed_first_temp_valid_role_repo(&data_dir)),
@@ -1120,7 +1231,7 @@ async fn role_input_clone_failure_reports_candidate_repository_url() {
     std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
 
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
-    let mut runner = crate::runtime::FakeRunner::default();
+    let mut runner = FakeRunner::default();
     runner
         .fail_with
         .push(("git clone".into(), "repository not found".into()));
@@ -1186,7 +1297,7 @@ async fn role_input_invalid_repo_reports_role_contract_error() {
 
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
     let data_dir = paths.data_dir.clone();
-    let mut runner = crate::runtime::FakeRunner::default();
+    let mut runner = FakeRunner::default();
     runner.side_effects.push((
         "git clone".to_owned(),
         Box::new(move || {
@@ -1283,7 +1394,7 @@ async fn role_input_panic_in_registration_is_converted_to_error_popup() {
     std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
 
     let mut editor = EditorState::new_edit("ws".into(), empty_ws());
-    let mut runner = crate::runtime::FakeRunner::default();
+    let mut runner = FakeRunner::default();
     runner.side_effects.push((
         "git clone".to_owned(),
         Box::new(|| panic!("test panic while cloning role repo")),
@@ -1681,14 +1792,14 @@ fn rows_beyond_workspace_mounts_are_noop_in_workspace_editor() {
     let mut config = AppConfig::default();
     config
         .roles
-        .insert("agent-smith".into(), crate::config::RoleSource::default());
+        .insert("agent-smith".into(), jackin_config::RoleSource::default());
     config.add_mount(
         "cache",
         MountConfig {
             src: src.display().to_string(),
             dst: "/cache".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         },
         None,
     );
@@ -1709,7 +1820,7 @@ fn rows_beyond_workspace_mounts_are_noop_in_workspace_editor() {
     assert!(!e.pending.mounts[0].readonly);
     assert_eq!(
         e.pending.mounts[0].isolation,
-        crate::isolation::MountIsolation::Shared
+        jackin_config::MountIsolation::Shared
     );
 }
 
@@ -1804,7 +1915,7 @@ fn i_key_cycles_isolation_on_current_mount_row() {
     };
     assert_eq!(
         e.pending.mounts[0].isolation,
-        crate::isolation::MountIsolation::Worktree,
+        jackin_config::MountIsolation::Worktree,
         "I on a Shared mount must cycle to Worktree",
     );
     assert!(
@@ -1827,7 +1938,7 @@ fn i_key_lowercase_also_cycles_isolation() {
     };
     assert_eq!(
         e.pending.mounts[0].isolation,
-        crate::isolation::MountIsolation::Worktree,
+        jackin_config::MountIsolation::Worktree,
     );
 }
 
@@ -1846,7 +1957,7 @@ fn enter_on_op_workspace_key_row_is_noop() {
     let mut ws = empty_ws();
     ws.env.insert(
         "DB_URL".into(),
-        crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://abc-vault/abc-item/password".into(),
             path: "Work/db/password".into(),
             account: None,
@@ -1891,7 +2002,7 @@ fn enter_on_op_agent_key_row_is_noop() {
     let mut ag_env = std::collections::BTreeMap::new();
     ag_env.insert(
         "API_TOKEN".into(),
-        crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://abc-vault/abc-item/api-token".into(),
             path: "Personal/api/token".into(),
             account: None,
@@ -1899,7 +2010,7 @@ fn enter_on_op_agent_key_row_is_noop() {
     );
     ws.roles.insert(
         "smith".into(),
-        crate::workspace::WorkspaceRoleOverride {
+        jackin_config::WorkspaceRoleOverride {
             env: ag_env,
             claude: None,
             codex: None,
@@ -2081,7 +2192,7 @@ fn m_on_op_reference_row_is_noop() {
     let mut ws = empty_ws();
     ws.env.insert(
         "DB_URL".into(),
-        crate::operator_env::EnvValue::OpRef(crate::operator_env::OpRef {
+        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
             op: "op://abc-vault/abc-item/password".into(),
             path: "Work/db/password".into(),
             account: None,
@@ -2187,7 +2298,7 @@ fn m_on_agent_key_unmasks_only_that_row_in_that_agent_scope() {
     ag_env.insert("API_TOKEN".into(), "role-value".into());
     ws.roles.insert(
         "smith".into(),
-        crate::workspace::WorkspaceRoleOverride {
+        jackin_config::WorkspaceRoleOverride {
             env: ag_env,
             claude: None,
             codex: None,
@@ -2203,7 +2314,8 @@ fn m_on_agent_key_unmasks_only_that_row_in_that_agent_scope() {
     editor.active_tab = EditorTab::Secrets;
     editor.set_tab_bar_focused(false);
     editor.secrets_expanded.insert("smith".into());
-    let role_key_row = secrets_flat_rows(&editor)
+    let role_key_row = editor
+        .secrets_flat_rows()
         .iter()
         .position(|row| {
             matches!(
@@ -2255,7 +2367,7 @@ fn cursor_skips_section_spacer_on_down_arrow() {
     ag_env.insert("LOG_LEVEL".into(), "debug".into());
     ws.roles.insert(
         "agent-smith".into(),
-        crate::workspace::WorkspaceRoleOverride {
+        jackin_config::WorkspaceRoleOverride {
             env: ag_env,
             claude: None,
             codex: None,
@@ -2281,7 +2393,7 @@ fn cursor_skips_section_spacer_on_down_arrow() {
     // Sanity-check the row layout matches the comment above before
     // exercising the navigation.
     if let ManagerStage::Editor(e) = &state.stage {
-        let rows = secrets_flat_rows(e);
+        let rows = e.secrets_flat_rows();
         assert!(matches!(
             rows.first(),
             Some(SecretsRow::WorkspaceAddSentinel)
@@ -2511,13 +2623,13 @@ fn tui_text_entry_op_uri_always_commits_as_plain() {
 
     assert_eq!(
         stored,
-        &crate::operator_env::EnvValue::Plain("op://Vault/Item/Field".into()),
+        &jackin_core::EnvValue::Plain("op://Vault/Item/Field".into()),
         "text-entry commit of op:// string must store EnvValue::Plain, \
              not EnvValue::OpRef — the picker is the only path to OpRef"
     );
     // Belt-and-suspenders: confirm it is NOT an OpRef.
     assert!(
-        !matches!(stored, crate::operator_env::EnvValue::OpRef(_)),
+        !matches!(stored, jackin_core::EnvValue::OpRef(_)),
         "text entry must never produce EnvValue::OpRef"
     );
 }

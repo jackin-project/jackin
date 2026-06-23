@@ -63,7 +63,7 @@ Two distinct concerns plumbed through the same console panel:
 
 ### Per-agent sampling
 
-Use the Docker stats API (`docker stats --no-stream` or, via the `DockerApi` trait in <RepoFile path="crates/jackin-docker/src/docker_client.rs" />, the typed `ContainerStats` endpoint). Sample every 2 seconds while the console is open; pause sampling when the panel is collapsed.
+Use the Docker stats API (`docker stats --no-stream` or, via the `DockerApi` trait in <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile>, the typed `ContainerStats` endpoint). Sample every 2 seconds while the console is open; pause sampling when the panel is collapsed.
 
 Fields per agent:
 
@@ -134,8 +134,8 @@ per-agent table includes a status column to its left.
 
 - New module (e.g. `src/console/panels/resources.rs`) —
   panel rendering + sampling loop
-- <RepoFile path="crates/jackin/src/console/tui/state.rs" /> — keybinding wiring
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — sampling adapter trait
+- <RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile> — keybinding wiring
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — sampling adapter trait
   starts here, moves into per-backend modules over time
 
 ## See Also

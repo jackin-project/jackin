@@ -250,7 +250,7 @@ where
                         })?;
                         terminal_output.flush().context("stdout flush failed")?;
                     }
-                    ServerFrame::Shutdown => break Ok(()),
+                    ServerFrame::Shutdown { reason: _ } => break Ok(()),
                     ServerFrame::Bell => {
                         terminal_output
                             .write_all(b"\x07")
@@ -1701,7 +1701,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
             server
-                .write_all(&encode_server(ServerFrame::Shutdown))
+                .write_all(&encode_server(ServerFrame::Shutdown { reason: None }))
                 .await
                 .unwrap();
             frame
@@ -1771,7 +1771,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
             server
-                .write_all(&encode_server(ServerFrame::Shutdown))
+                .write_all(&encode_server(ServerFrame::Shutdown { reason: None }))
                 .await
                 .unwrap();
             input
@@ -1827,7 +1827,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
             server
-                .write_all(&encode_server(ServerFrame::Shutdown))
+                .write_all(&encode_server(ServerFrame::Shutdown { reason: None }))
                 .await
                 .unwrap();
             input
@@ -1879,7 +1879,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
             server
-                .write_all(&encode_server(ServerFrame::Shutdown))
+                .write_all(&encode_server(ServerFrame::Shutdown { reason: None }))
                 .await
                 .unwrap();
             input
@@ -1934,7 +1934,7 @@ mod tests {
                 .await
                 .unwrap();
             server
-                .write_all(&encode_server(ServerFrame::Shutdown))
+                .write_all(&encode_server(ServerFrame::Shutdown { reason: None }))
                 .await
                 .unwrap();
         });

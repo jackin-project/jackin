@@ -147,4 +147,6 @@ In `--debug` mode, the diagnostic expands to per-key reference strings and scope
 
 A role's manifest can declare env vars the role expects — including interactive prompts. Operator env is resolved first and pre-seeds matching manifest variables, so a configured value skips the manifest prompt. Manifest env fills in the remaining values, then operator env is overlaid on top: **operator wins on key conflict.** This lets you pin a value that the manifest would otherwise prompt for, or swap a manifest default for a workspace-specific secret.
 
+Built-in agent credential keys stay selected-runtime scoped. If a manifest declares a sibling runtime credential such as `OPENAI_API_KEY` during a `Claude Code` launch, jackin' leaves that prompt/value lazy unless the selected runtime's auth mode needs that exact key. Generic manifest env vars still resolve normally.
+
 See [Authentication Forwarding](/guides/authentication/) for the companion mechanism that forwards Claude Code credentials from host to container. Env scopes and auth forwarding are orthogonal — use both.

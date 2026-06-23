@@ -335,7 +335,7 @@ pub enum ServerFrame {
     Welcome { session_count: u32 },
     Output(Vec<u8>),
     SessionList(Vec<u8>),
-    Shutdown,
+    Shutdown { reason: Option<String> },
     Bell,
     HostOpenUrl(String),
     FileExportStart(FileExportStart),
@@ -362,7 +362,10 @@ pub fn encode_server(frame: ServerFrame) -> Vec<u8> {
         ServerFrame::Welcome { session_count } => encode(TAG_WELCOME, &session_count.to_be_bytes()),
         ServerFrame::Output(bytes) => encode(TAG_OUTPUT, &bytes),
         ServerFrame::SessionList(json) => encode(TAG_SESSION_LIST, &json),
-        ServerFrame::Shutdown => encode(TAG_SHUTDOWN, &[]),
+        ServerFrame::Shutdown { reason } => encode(
+            TAG_SHUTDOWN,
+            reason.as_deref().unwrap_or_default().as_bytes(),
+        ),
         ServerFrame::Bell => encode(TAG_BELL, &[]),
         ServerFrame::HostOpenUrl(url) => encode(TAG_HOST_OPEN_URL, url.as_bytes()),
         ServerFrame::FileExportStart(start) => encode_file_export_start(start),
@@ -980,7 +983,17 @@ pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
         }
         TAG_OUTPUT => ServerFrame::Output(payload),
         TAG_SESSION_LIST => ServerFrame::SessionList(payload),
-        TAG_SHUTDOWN => ServerFrame::Shutdown,
+        TAG_SHUTDOWN => {
+            let reason = if payload.is_empty() {
+                None
+            } else {
+                Some(
+                    String::from_utf8(payload)
+                        .context("shutdown reason payload is not valid UTF-8")?,
+                )
+            };
+            ServerFrame::Shutdown { reason }
+        }
         TAG_BELL => ServerFrame::Bell,
         TAG_HOST_OPEN_URL => {
             let url = std::str::from_utf8(&payload)

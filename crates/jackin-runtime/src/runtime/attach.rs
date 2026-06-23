@@ -351,6 +351,16 @@ pub(super) async fn start_or_reconnect_capsule_client(
     reconnect_or_create_session_with_focus(paths, container_name, None, docker, runner).await
 }
 
+pub(super) async fn start_or_hardline_agent(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    start_or_reconnect_capsule_client(paths, container_name, docker, runner).await?;
+    finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
+}
+
 /// Verify the container is reachable (running/paused/restarting).
 /// Returns `Ok(())` when reachable, `Err` otherwise.
 /// `stopped_hint` is the trailing clause of the "is stopped" error, e.g. "restart it before opening a shell".

@@ -27,16 +27,14 @@ impl AgentRuntime for KimiRuntime {
         format!(
             "\
 USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.kimi-code/bin
-COPY --chown=agent:agent {source} /home/agent/.kimi-code/bin/kimi
+COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.kimi-code/bin/kimi
 ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${{PATH}}\"
-RUN set -euxo pipefail && \\
-    : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 \"${{HOME}}/.kimi-code/bin/kimi\" && \\
-    kimi --version
 "
         )
+    }
+
+    fn container_binary_paths(&self) -> &'static [&'static str] {
+        &["/home/agent/.kimi-code/bin/kimi"]
     }
 
     fn fallback_install_block(&self) -> String {
@@ -53,7 +51,7 @@ RUN set -euxo pipefail && \\
 
     fn required_env_var(&self, mode: AuthForwardMode) -> Option<&'static str> {
         match mode {
-            AuthForwardMode::ApiKey => Some("KIMI_API_KEY"),
+            AuthForwardMode::ApiKey => Some(crate::env_model::KIMI_API_KEY_ENV_NAME),
             AuthForwardMode::Sync | AuthForwardMode::Ignore | AuthForwardMode::OAuthToken => None,
         }
     }

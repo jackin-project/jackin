@@ -34,6 +34,8 @@ fn widget_bar(
         scrollback_active: false,
         scroll_axes: jackin_tui::scroll::ScrollAxes::none(),
         debug_run_id: None,
+        prefix_awaiting: false,
+        palette_key: 0x1C,
     }
     .render(area, &mut buf);
     let text: String = (0..cols)

@@ -93,7 +93,8 @@ use input::{
 mod hint;
 pub(crate) use hint::main_view_hint;
 use hint::{
-    CONFIRM_HINT, PALETTE_HINT, PICKER_HINT, READ_ONLY_HINT, RENAME_HINT, info_dialog_hint,
+    confirm_hint, info_dialog_hint, palette_hint, picker_hint, provider_hint, read_only_hint,
+    rename_hint,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1489,12 +1490,12 @@ impl Dialog {
         axes: jackin_tui::components::ScrollAxes,
     ) -> Vec<HintSpan<'static>> {
         match self {
-            Self::CommandPalette { .. } => PALETTE_HINT.to_vec(),
+            Self::CommandPalette { .. } => palette_hint(),
             Self::SplitDirectionPicker { .. }
             | Self::AgentPicker { .. }
-            | Self::CloseTargetPicker { .. }
-            | Self::ProviderPicker { .. } => PICKER_HINT.to_vec(),
-            Self::RenameTab { .. } | Self::ExportFile { .. } => RENAME_HINT.to_vec(),
+            | Self::CloseTargetPicker { .. } => picker_hint(),
+            Self::ProviderPicker { .. } => provider_hint(),
+            Self::RenameTab { .. } | Self::ExportFile { .. } => rename_hint(),
             Self::ContainerInfo { .. } => info_dialog_hint("copy value", axes),
             Self::GitHubContext { .. } => {
                 if github.and_then(|view| view.status.loaded()).is_some() {
@@ -1516,10 +1517,10 @@ impl Dialog {
                     );
                     spans
                 } else {
-                    READ_ONLY_HINT.to_vec()
+                    read_only_hint()
                 }
             }
-            Self::ConfirmAction { .. } => CONFIRM_HINT.to_vec(),
+            Self::ConfirmAction { .. } => confirm_hint(),
         }
     }
 

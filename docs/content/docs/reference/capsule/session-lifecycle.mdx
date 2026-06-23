@@ -25,7 +25,7 @@ When `jackin load` provisions a new instance, the container launch happens in tw
 3. The launcher checks that PID 1 did not exit before attach. If it exited, the launcher captures the last 40 lines of container logs and surfaces an actionable error.
 4. The launcher runs `docker exec -it <container> /jackin/runtime/jackin-capsule`. The client connects to the daemon socket and blocks the operator terminal for the duration of the attach.
 
-Implementation: <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> (`launch_role_runtime`, `diagnose_premature_exit`) and <RepoFile path="crates/jackin-capsule/src/main.rs" /> (`resolve_initial_agent`).
+Implementation: <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> (`launch_role_runtime`, `diagnose_premature_exit`) and <RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile> (`resolve_initial_agent`).
 
 ## Reconnecting (`jackin hardline`)
 
@@ -37,7 +37,7 @@ Implementation: <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> 
 - **Container is stopped with crash state**: restore the required DinD sidecar, network, and certs when needed, restart the role container, then attach.
 - **Container is gone but indexed recoverable state exists**: rebuild the runtime around jackin-managed local state.
 
-Implementation: <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
+Implementation: <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
 
 ## Session Inventory
 
@@ -49,7 +49,7 @@ jackin' queries the daemon through its socket by executing:
 
 The command opens the Capsule control channel, sends a typed `Status` request, and prints a line-oriented summary that older host paths parse into `AgentSession` records. Host console previews use the same control channel with a JSON `Snapshot` request: same-kernel Docker hosts connect directly to the bind-mounted socket, while Docker Desktop hosts fall back to `docker exec ... /jackin/runtime/jackin-capsule snapshot` because the host cannot connect to a Linux VM Unix socket directly. If the container is not running, inventory is reported as `sessions:not_running` without contacting Docker.
 
-Implementation: <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> (`inspect_agent_sessions`) and <RepoFile path="crates/jackin-capsule/src/client.rs" /> (`run_status`).
+Implementation: <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> (`inspect_agent_sessions`) and <RepoFile path="crates/jackin-capsule/src/client.rs">crates/jackin-capsule/src/client.rs</RepoFile> (`run_status`).
 
 ## Container Shutdown
 
@@ -99,7 +99,7 @@ eval "$(cargo run --bin build-jackin-capsule -- --profile debug --export)"
 eval "$(cargo run --bin build-jackin-capsule -- --debug --export)"
 ```
 
-The debug capsule uses `[profile.capsule-debug]` in <RepoFile path="Cargo.toml" /> (inherits release optimisation, retains symbols + DWARF line tables, does **not** strip). The resulting binary is ~10× larger but is otherwise byte-compatible with the release capsule.
+The debug capsule uses `[profile.capsule-debug]` in <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> (inherits release optimisation, retains symbols + DWARF line tables, does **not** strip). The resulting binary is ~10× larger but is otherwise byte-compatible with the release capsule.
 
 ### Launch with the debug capsule
 
@@ -108,7 +108,7 @@ The debug capsule uses `[profile.capsule-debug]` in <RepoFile path="Cargo.toml" 
 RUST_BACKTRACE=full cargo run --bin jackin -- load the-architect . --debug
 ```
 
-Set `RUST_BACKTRACE=full` so the panic hook's `Backtrace::force_capture()` in <RepoFile path="crates/jackin-capsule/src/logging.rs" /> emits the full stack. The backtrace is written to `~/.jackin/data/<container>/state/multiplexer.log`; the diagnostics run log (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`) records the `capsule_log` path so you can locate it from the run id alone.
+Set `RUST_BACKTRACE=full` so the panic hook's `Backtrace::force_capture()` in <RepoFile path="crates/jackin-capsule/src/logging.rs">crates/jackin-capsule/src/logging.rs</RepoFile> emits the full stack. The backtrace is written to `~/.jackin/data/<container>/state/multiplexer.log`; the diagnostics run log (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`) records the `capsule_log` path so you can locate it from the run id alone.
 
 For a controlled symbolication smoke, set `JACKIN_CAPSULE_FORCE_PANIC=1` on the host launch. The host passes it through to the container only for that run; the capsule initializes logging first, then intentionally panics with a stable diagnostics message so the run JSONL's `capsule_log` path can be checked for resolved `crates/jackin-capsule/...` frames.
 

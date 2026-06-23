@@ -10,6 +10,25 @@
 # system default or export
 # `RUSTFLAGS="-C link-arg=-fuse-ld=mold"` in your shell.
 
+# Network resilience for every `cargo` invocation — CI runners and local
+# builds alike. GitHub-hosted runners intermittently drop the crates.io
+# index or a crate download mid-transfer (curl `[18] Transferred a partial
+# file`); with the default of 3 retries that still surfaces as a flaky red
+# on required checks (e.g. clippy failing to update the registry). Raising
+# the retry count here — rather than per-job in each workflow — means every
+# pipeline (ci, preview, release, construct, hygiene) and every local build
+# share one resilient behaviour, so this class of transient failure is
+# fixed in one place instead of re-patched per workflow.
+[net]
+retry = 10
+
+# Pin the sparse registry protocol explicitly. It is the default on current
+# toolchains, but stating it keeps index access HTTP-range-based (resumable,
+# retryable) rather than a full git clone, which is both faster and far less
+# prone to the partial-transfer failures above.
+[registries.crates-io]
+protocol = "sparse"
+
 # `cargo xtask` is the standard entrypoint for workspace tasks
 # (e.g. `cargo xtask construct <subcommand>`).
 # mise tasks delegate to it via this alias (singular only; the plural

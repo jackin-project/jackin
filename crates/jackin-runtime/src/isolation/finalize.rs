@@ -52,6 +52,15 @@ impl AttachOutcome {
     pub const fn oom_killed() -> Self {
         Self::OomKilled
     }
+
+    #[allow(dead_code)]
+    pub(crate) fn as_label(self) -> String {
+        match self {
+            Self::StillRunning => "still_running".to_owned(),
+            Self::Stopped(code) => format!("stopped_{code}"),
+            Self::OomKilled => "oom_killed".to_owned(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,6 +68,17 @@ pub enum FinalizeDecision {
     Preserved,
     Cleaned,
     ReturnToAgent,
+}
+
+impl FinalizeDecision {
+    #[allow(dead_code)]
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Preserved => "preserved",
+            Self::Cleaned => "cleaned",
+            Self::ReturnToAgent => "return_to_agent",
+        }
+    }
 }
 
 /// Why the post-attach finalizer is preserving a worktree instead of
