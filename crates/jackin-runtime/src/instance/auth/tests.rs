@@ -1424,6 +1424,9 @@ fn surfaces_unreadable_host_secrets_json_as_error() {
     )
     .unwrap();
     std::fs::set_permissions(&host_secrets, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read_to_string(&host_secrets).is_ok() {
+        return;
+    }
 
     let result = RoleState::provision_amp_auth(&secrets_json, AuthForwardMode::Sync, &host_home);
 
@@ -2733,6 +2736,9 @@ fn surfaces_unreadable_credential_file_as_error() {
 
     let cred = host_home.join(".kimi-code/credentials/access_token");
     std::fs::set_permissions(&cred, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read_to_string(&cred).is_ok() {
+        return;
+    }
 
     let result = RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home);
 
@@ -2759,6 +2765,9 @@ fn surfaces_unreadable_config_toml_as_error() {
 
     let cfg = host_home.join(".kimi-code/config.toml");
     std::fs::set_permissions(&cfg, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read_to_string(&cfg).is_ok() {
+        return;
+    }
 
     let result = RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home);
 

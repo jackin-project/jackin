@@ -5,8 +5,16 @@ on:
     tags:
       - 'v[0-9]*'
   workflow_dispatch:
+    inputs:
+      lanes:
+        description: |
+          Which runner(s) to run on. Default github; use both for parity runs.
+        type: choice
+        default: github
+        options: [github, velnor, both]
 
 permissions:
+  actions: read
   contents: read
 
 # Two simultaneous tag pushes (or a tag push racing a workflow_dispatch
@@ -19,8 +27,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  matrix-setup:
+    name: Select runner lane
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      configs: ${{ steps.set.outputs.configs }}
+      has_github: ${{ steps.set.outputs.has_github }}
+    steps:
+      - id: set
+        env:
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+        run: |
+          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}'
+          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}'
+          case "$LANES" in
+            velnor)
+              configs="[$velnor]"
+              has_github=false
+              ;;
+            both)
+              configs="[$github,$velnor]"
+              has_github=true
+              ;;
+            *)
+              configs="[$github]"
+              has_github=true
+              ;;
+          esac
+          {
+            echo "configs=$configs"
+            echo "has_github=$has_github"
+          } >> "$GITHUB_OUTPUT"
+
   check-version:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -51,38 +93,42 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
   test:
-    needs: check-version
+    needs: [check-version, matrix-setup]
     uses: ./.github/workflows/rust-nextest.yml
     with:
-      runner-configs-json: '[{"lane":"Release","runner":"\"ubuntu-latest\""}]'
+      runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
       all-features: false
-      cache-shared-key: nextest-default-workspace-v1
+      cache-shared-key: nextest-default-workspace-v2
     secrets: inherit
 
   build:
-    needs: [check-version, test]
+    needs: [check-version, matrix-setup]
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - target: x86_64-apple-darwin
-            os: macos-latest
-          - target: aarch64-apple-darwin
-            os: macos-latest
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            zigbuild: true
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            zigbuild: true
-    runs-on: ${{ matrix.os }}
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        target:
+          - triple: x86_64-apple-darwin
+            zigbuild_target: x86_64-apple-darwin
+          - triple: aarch64-apple-darwin
+            zigbuild_target: aarch64-apple-darwin
+          - triple: x86_64-unknown-linux-gnu
+            zigbuild_target: x86_64-unknown-linux-gnu.2.17
+          - triple: aarch64-unknown-linux-gnu
+            zigbuild_target: aarch64-unknown-linux-gnu.2.17
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
+    name: build jackin ${{ matrix.target.triple }} (${{ matrix.config.lane }})
     permissions:
       contents: read
       id-token: write
       attestations: write
     env:
-      VERSION: ${{ needs.check-version.outputs.version }}
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
@@ -94,75 +140,61 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache mise cargo tools
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-${{ hashFiles('mise.toml') }}
-          restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
-          install_args: "rust cosign syft"
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "rust zig cargo-zigbuild cosign syft sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}-${{ matrix.target }}
+          shared-key: release-archive-jackin-${{ matrix.target.triple }}-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
-      - run: rustup target add ${{ matrix.target }}
-      - name: Install cargo-zigbuild
-        if: matrix.zigbuild
-        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+      - run: rustup target add ${{ matrix.target.triple }}
+      - name: Cache macOS SDK
+        if: contains(matrix.target.triple, 'apple')
+        id: sdk-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          install_args: "zig cargo:cargo-zigbuild"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
-
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          shared-key: ${{ github.job }}-${{ matrix.target }}
-          cache-all-crates: "true"
-          # No branch in the cache key: GitHub isolates branch caches, so every
-          # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
-      - name: Build
-        env:
-          JACKIN_VERSION_OVERRIDE: ${{ needs.check-version.outputs.version }}
+          path: /tmp/macos-sdk
+          key: macos-sdk-26.1
+      - name: Download macOS SDK
+        if: contains(matrix.target.triple, 'apple') && steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
-          if [ "${{ matrix.zigbuild }}" = "true" ]; then
-            cargo zigbuild --release --locked --target ${{ matrix.target }}.2.17
-          else
-            cargo build --release --locked --target ${{ matrix.target }}
-          fi
-
-      - name: Package
+          mkdir -p /tmp/macos-sdk
+          curl -fsSL "https://github.com/joseluisq/macosx-sdks/releases/download/26.1/MacOSX26.1.sdk.tar.xz" \
+            | tar -xJ -C /tmp/macos-sdk
+      - name: Set macOS SDKROOT
+        if: contains(matrix.target.triple, 'apple')
         run: |
-          archive="jackin-${VERSION}-${{ matrix.target }}.tar.gz"
-          tar -czf "$archive" -C "target/${{ matrix.target }}/release" jackin jackin-role
-          shasum -a 256 "$archive" > "$archive.sha256"
-          echo "archive=$archive" >> "$GITHUB_ENV"
-
-      - name: Sign, SBOM, and attest archive
-        uses: ./.github/actions/sign-and-attest-archive
+          echo "SDKROOT=/tmp/macos-sdk/MacOSX26.1.sdk" >> "$GITHUB_ENV"
+          echo "MACOSX_DEPLOYMENT_TARGET=12.0" >> "$GITHUB_ENV"
+      - name: Build signed archive
+        uses: ./.github/actions/build-release-archive
         with:
-          archive: ${{ env.archive }}
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: jackin-${{ matrix.target }}
-          path: |
-            jackin-*.tar.gz
-            jackin-*.tar.gz.sha256
-            jackin-*.tar.gz.bundle
-            jackin-*.tar.gz.sbom.json
+          package: jackin
+          target: ${{ matrix.target.triple }}
+          zigbuild-target: ${{ matrix.target.zigbuild_target }}
+          version: ${{ needs.check-version.outputs.version }}
+          archive-basename: jackin-${{ needs.check-version.outputs.version }}-${{ matrix.target.triple }}
+          artifact-name: release-${{ matrix.config.lane }}-jackin-${{ matrix.target.triple }}
+          timings-artifact-name: cargo-timings-release-jackin-${{ matrix.target.triple }}-${{ matrix.config.lane }}
+          sccache-stats-artifact-name: ${{ matrix.config.lane == 'Velnor' && format('sccache-stats-release-jackin-{0}-{1}', matrix.target.triple, matrix.config.lane) || '' }}
+          sccache-stats-heading: sccache release jackin ${{ matrix.target.triple }} (${{ matrix.config.lane }})
 
   build-jackin-capsule:
-    needs: [check-version, test]
-    runs-on: ubuntu-latest
+    needs: [check-version, matrix-setup]
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
+    name: build jackin-capsule ${{ matrix.target.triple }} (${{ matrix.config.lane }})
     permissions:
       contents: read
       id-token: write
@@ -170,12 +202,17 @@ jobs:
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - target: aarch64-unknown-linux-gnu
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        target:
+          - triple: aarch64-unknown-linux-gnu
             zigbuild_target: aarch64-unknown-linux-gnu.2.17
-          - target: x86_64-unknown-linux-gnu
+          - triple: x86_64-unknown-linux-gnu
             zigbuild_target: x86_64-unknown-linux-gnu.2.17
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -188,60 +225,43 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache mise cargo tools
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-${{ hashFiles('mise.toml') }}
-          restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
-          install_args: "rust zig cargo:cargo-zigbuild cosign syft"
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "rust zig cargo-zigbuild cosign syft sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}-${{ matrix.target }}
+          shared-key: release-archive-capsule-${{ matrix.target.triple }}-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
-      - run: rustup target add ${{ matrix.target }}
-      - name: Build
-        env:
-          JACKIN_VERSION_OVERRIDE: ${{ needs.check-version.outputs.version }}
-          ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
-        run: cargo zigbuild --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
-      - name: Package
-        env:
-          TARGET: ${{ matrix.target }}
-          VERSION: ${{ needs.check-version.outputs.version }}
-        run: |
-          archive="jackin-capsule-${VERSION}-${TARGET}.tar.gz"
-          tar -czf "$archive" \
-            -C "target/${TARGET}/release" \
-            jackin-capsule
-          sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
-          echo "archive=$archive" >> "$GITHUB_ENV"
-
-      - name: Sign, SBOM, and attest archive
-        uses: ./.github/actions/sign-and-attest-archive
+      - run: rustup target add ${{ matrix.target.triple }}
+      - name: Build signed capsule archive
+        uses: ./.github/actions/build-release-archive
         with:
-          archive: ${{ env.archive }}
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: jackin-capsule-${{ matrix.target }}
-          path: |
-            jackin-capsule-*.tar.gz
-            jackin-capsule-*.tar.gz.sha256
-            jackin-capsule-*.tar.gz.bundle
-            jackin-capsule-*.tar.gz.sbom.json
+          package: jackin-capsule
+          target: ${{ matrix.target.triple }}
+          zigbuild-target: ${{ matrix.target.zigbuild_target }}
+          version: ${{ needs.check-version.outputs.version }}
+          archive-basename: jackin-capsule-${{ needs.check-version.outputs.version }}-${{ matrix.target.triple }}
+          artifact-name: release-${{ matrix.config.lane }}-jackin-capsule-${{ matrix.target.triple }}
+          timings-artifact-name: cargo-timings-release-capsule-${{ matrix.target.triple }}-${{ matrix.config.lane }}
+          sccache-stats-artifact-name: ${{ matrix.config.lane == 'Velnor' && format('sccache-stats-release-capsule-{0}-{1}', matrix.target.triple, matrix.config.lane) || '' }}
+          sccache-stats-heading: sccache release capsule ${{ matrix.target.triple }} (${{ matrix.config.lane }})
 
   release:
-    needs: [check-version, build, build-jackin-capsule]
+    if: needs.matrix-setup.outputs.has_github == 'true'
+    needs: [check-version, matrix-setup, test, build, build-jackin-capsule]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: write
       id-token: write
@@ -259,6 +279,7 @@ jobs:
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
+          pattern: release-GitHub-*
           path: artifacts
           merge-multiple: true
 
@@ -316,6 +337,7 @@ jobs:
     if: needs.release.result == 'success'
     needs: [check-version, release]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -424,3 +446,18 @@ jobs:
             --head "$branch")
           echo "Opened PR: $pr_url"
           gh pr merge "$pr_url" --squash --delete-branch
+
+  timing-summary:
+    if: always()
+    needs: [matrix-setup, check-version, test, build, build-jackin-capsule, release, homebrew]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Write workflow timing summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/workflow-timing-summary.sh Release
