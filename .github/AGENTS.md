@@ -300,6 +300,28 @@ See canonical break in [jackin-project/jackin#266](https://github.com/jackin-pro
 
 Every workflow that writes to a public registry, tag, release, or Homebrew formula MUST gate actual publish step on `main`. PRs + dispatches from feature branches may build + test but must never publish. Derive a single `is_publish` boolean once (in `changes` job), gate every side-effect step on it — do not restate branch conditions inline at multiple steps.
 
+## Publish concurrency: latest wins, shared writers serialize
+
+Publish workflows MUST protect freshness first. Any workflow that publishes a rolling channel, mutable formula, release alias, or "latest" install target must cancel stale runs from the same stream: use a workflow-level `concurrency` group scoped to that stream with `cancel-in-progress: true`. This includes preview-style commit channels and SemVer channels such as `jackin-dev` when multiple source commits can queue before the tap catches up. Otherwise a slower older run can finish after a newer run and overwrite the formula back to an older source. After any overlapping publish activity, each Homebrew formula must point at the newest valid source for that formula: latest preview commit for preview, latest committed dev version/source for jackin-dev.
+
+Shared external writers are a separate concern. When multiple freshness-cancelled workflows write the same protected resource, such as the Homebrew tap, do not put all workflows in one cancelling top-level group. That lets one stream cancel another stream before it publishes. Instead keep each workflow's top-level freshness group separate and add a job-level mutex only around the final shared write, with `cancel-in-progress: false`, so the writers serialize without dropping the other stream.
+
+Pattern:
+
+```yaml
+concurrency:
+  group: homebrew-preview-publish
+  cancel-in-progress: true
+
+jobs:
+  publish-preview:
+    concurrency:
+      group: homebrew-tap-publish
+      cancel-in-progress: false
+```
+
+Use distinct top-level freshness groups for distinct publish streams (`homebrew-preview-publish`, `jackin-dev-publish`, etc.). Use the same job-level shared-writer group only for the step/job that mutates the shared resource. Never queue whole publish workflows as a freshness strategy; queued whole workflows can publish an older artifact after a newer one. If the shared writer cannot prove the source is still publishable, add an explicit freshness check before writing rather than disabling cancellation for the whole workflow.
+
 ## Smoke-test push-only jobs before merging
 
 Jobs gated to `push to main`, `workflow_dispatch && ref == main`, or `workflow_run` events do not run on `pull_request`. If a PR modifies such a job, smoke-test via `gh workflow run --ref <feature-branch>` before merging — PR-time CI never exercises it.
