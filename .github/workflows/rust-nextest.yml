@@ -77,16 +77,17 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: ${{ inputs.cache-shared-key }}
+          key: package-${{ matrix.group }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: ${{ matrix.group == 'jackin' }}
+          save-if: ${{ matrix.config.lane == 'GitHub' }}
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback.
-          # Package shards start immediately and share one cache namespace; a
-          # cold target cache compiles in parallel instead of blocking behind a
-          # serialized prepare job. The jackin shard owns saves because it pulls
-          # the widest package graph.
+          # Package shards start immediately under one shared namespace, but each
+          # shard owns its target-cache suffix because their test graphs differ.
+          # Velnor proves parity from persistent local state without writing GHA
+          # target archives; GitHub populates the hosted fallback caches.
       - name: Run package tests
         shell: bash
         run: |
@@ -155,13 +156,15 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: ${{ inputs.cache-shared-key }}
+          key: docker-e2e
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: "false"
-          # Use the same cache namespace as package tests. Docker E2E remains
-          # independent so target-cache misses do not serialize deterministic
-          # package tests behind this environment-backed smoke lane.
+          save-if: ${{ matrix.config.lane == 'GitHub' }}
+          # Keep the same shared namespace as package tests, with a Docker-only
+          # suffix because the smoke binary graph is not a package-shard graph.
+          # Docker E2E remains independent so target-cache misses do not serialize
+          # deterministic package tests behind this environment-backed smoke lane.
       - name: Download construct image for E2E
         if: inputs.construct-image-changed
         shell: bash
