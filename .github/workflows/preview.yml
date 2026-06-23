@@ -349,6 +349,7 @@ jobs:
           timings-artifact-name: cargo-timings-preview-jackin-${{ matrix.target.target }}-${{ matrix.config.lane }}
           sccache-stats-artifact-name: sccache-stats-preview-jackin-${{ matrix.target.target }}-${{ matrix.config.lane }}
           sccache-stats-heading: sccache preview jackin ${{ matrix.target.target }} (${{ matrix.config.lane }})
+          attest: ${{ matrix.config.lane == 'GitHub' && 'true' || 'false' }}
 
   build-jackin-capsule:
     name: build preview capsule (${{ matrix.config.lane }}, ${{ matrix.target.target }})
@@ -420,6 +421,7 @@ jobs:
           timings-artifact-name: cargo-timings-preview-capsule-${{ matrix.target.target }}-${{ matrix.config.lane }}
           sccache-stats-artifact-name: sccache-stats-preview-capsule-${{ matrix.target.target }}-${{ matrix.config.lane }}
           sccache-stats-heading: sccache preview capsule ${{ matrix.target.target }} (${{ matrix.config.lane }})
+          attest: ${{ matrix.config.lane == 'GitHub' && 'true' || 'false' }}
 
   publish-gate:
     needs: [matrix-setup, source-changed, build-preview, build-jackin-capsule]

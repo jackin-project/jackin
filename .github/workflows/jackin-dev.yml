@@ -302,6 +302,7 @@ jobs:
         uses: ./.github/actions/sign-and-attest-archive
         with:
           archive: ${{ env.archive }}
+          attest: ${{ matrix.config.lane == 'GitHub' && 'true' || 'false' }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jackin-dev-${{ matrix.config.lane }}-${{ matrix.target.target }}

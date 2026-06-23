@@ -189,6 +189,7 @@ jobs:
           timings-artifact-name: cargo-timings-release-jackin-${{ matrix.target.triple }}-${{ matrix.config.lane }}
           sccache-stats-artifact-name: sccache-stats-release-jackin-${{ matrix.target.triple }}-${{ matrix.config.lane }}
           sccache-stats-heading: sccache release jackin ${{ matrix.target.triple }} (${{ matrix.config.lane }})
+          attest: ${{ matrix.config.lane == 'GitHub' && 'true' || 'false' }}
 
   build-jackin-capsule:
     needs: [check-version, matrix-setup]
@@ -256,6 +257,7 @@ jobs:
           timings-artifact-name: cargo-timings-release-capsule-${{ matrix.target.triple }}-${{ matrix.config.lane }}
           sccache-stats-artifact-name: sccache-stats-release-capsule-${{ matrix.target.triple }}-${{ matrix.config.lane }}
           sccache-stats-heading: sccache release capsule ${{ matrix.target.triple }} (${{ matrix.config.lane }})
+          attest: ${{ matrix.config.lane == 'GitHub' && 'true' || 'false' }}
 
   release:
     if: needs.matrix-setup.outputs.has_github == 'true'

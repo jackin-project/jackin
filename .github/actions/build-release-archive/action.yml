@@ -33,6 +33,10 @@ inputs:
     description: Optional step-summary heading for sccache stats.
     required: false
     default: ""
+  attest:
+    description: Whether to run GitHub artifact attestation for the archive.
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
@@ -134,6 +138,7 @@ runs:
       uses: ./.github/actions/sign-and-attest-archive
       with:
         archive: ${{ steps.package.outputs.archive }}
+        attest: ${{ inputs.attest }}
 
     - name: Upload archive artifact
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

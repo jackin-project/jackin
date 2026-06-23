@@ -2,7 +2,7 @@ name: Sign and attest a release archive
 description: |
   Sign a built `.tar.gz` archive with cosign keyless signing (producing
   `<archive>.bundle`), generate a CycloneDX SBOM with syft (`<archive>.sbom.json`),
-  and attest SLSA build provenance for it. Used by the `build` /
+  and optionally attest SLSA build provenance for it. Used by the `build` /
   `build-jackin-capsule` jobs in release.yml and the `build-preview` /
   `build-jackin-capsule` jobs in preview.yml so the three-step signing contract
   lives in one place instead of four verbatim copies.
@@ -15,6 +15,10 @@ inputs:
   archive:
     description: Path to the .tar.gz archive to sign, SBOM, and attest.
     required: true
+  attest:
+    description: Whether to run GitHub artifact attestation for the archive.
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
@@ -31,6 +35,7 @@ runs:
       run: syft scan "${ARCHIVE}" -o cyclonedx-json > "${ARCHIVE}.sbom.json"
 
     - name: Attest build provenance
+      if: inputs.attest == 'true'
       uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
       env:
         INPUT_CREATE-STORAGE-RECORD: "true"
