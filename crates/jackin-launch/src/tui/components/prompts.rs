@@ -104,20 +104,25 @@ const fn text_prompt_hint(skippable: bool) -> &'static [HintSpan<'static>] {
 }
 
 const TEXT_PROMPT_HINT: &[HintSpan<'static>] = &[
+    // UNREGISTERABLE(text-prompt-no-keymap): Enter confirms the field inline; no TEXT_PROMPT_KEYMAP registered.
     HintSpan::Key("↵"),
     HintSpan::Text("save"),
     HintSpan::GroupSep,
+    // UNREGISTERABLE(multi-key-display-group): combined Ctrl-C/Ctrl-Q/Esc cancel display.
     HintSpan::Key("Ctrl-C/Ctrl-Q/Esc"),
     HintSpan::Text("cancel"),
 ];
 
 const TEXT_PROMPT_SKIP_HINT: &[HintSpan<'static>] = &[
+    // UNREGISTERABLE(text-prompt-no-keymap): Enter confirms the field inline; no TEXT_PROMPT_KEYMAP registered.
     HintSpan::Key("↵"),
     HintSpan::Text("save"),
     HintSpan::GroupSep,
+    // UNREGISTERABLE(dynamic-input-instruction): "empty" is a display label for the skip affordance, not a key.
     HintSpan::Key("empty"),
     HintSpan::Text("skip"),
     HintSpan::GroupSep,
+    // UNREGISTERABLE(multi-key-display-group): combined Ctrl-C/Ctrl-Q/Esc cancel display.
     HintSpan::Key("Ctrl-C/Ctrl-Q/Esc"),
     HintSpan::Text("cancel"),
 ];

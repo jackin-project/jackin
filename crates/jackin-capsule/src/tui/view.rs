@@ -63,6 +63,10 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     /// Spawn-failure notice painted over the top row until the next
     /// operator keystroke clears it.
     pub(crate) spawn_failure: Option<&'a str>,
+    /// Resolved palette-key byte (`InputParser::palette_key().unwrap_or(0x1C)`).
+    /// Forwarded to the hint builder so the palette-key glyph reflects the
+    /// operator's `JACKIN_PALETTE_KEY` setting.
+    pub(crate) palette_key: u8,
 }
 
 /// Paint the scrollback scrollbar on a pane's right border through the shared
@@ -286,6 +290,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             debug_run_id: view.debug_run_id,
             prefix_awaiting: view.prefix_mode
                 == crate::tui::components::status_bar::PrefixMode::Awaiting,
+            palette_key: view.palette_key,
         },
         frame.area(),
     );

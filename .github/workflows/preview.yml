@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: homebrew-tap-publish
+  group: homebrew-preview-publish
   cancel-in-progress: true
 
 jobs:
@@ -204,27 +204,6 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - name: Cache mise cargo tools
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -236,18 +215,15 @@ jobs:
         with:
           install_args: "rust zig cargo:cargo-zigbuild cosign syft"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - run: rustup target add ${{ matrix.target }}
-      - name: Cache Cargo build artifacts
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-release-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-release-
+          shared-key: ${{ github.job }}-${{ matrix.target }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
+      - run: rustup target add ${{ matrix.target }}
       - name: Cache macOS SDK
         if: contains(matrix.target, 'apple')
         id: sdk-cache
@@ -332,27 +308,6 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - name: Cache mise cargo tools
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -364,21 +319,15 @@ jobs:
         with:
           install_args: "rust zig cargo:cargo-zigbuild cosign syft"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - run: rustup target add ${{ matrix.target }}
-      - name: Cache Cargo build artifacts
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          path: target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-capsule-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-capsule-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-capsule-release-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-capsule-release-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-release-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-capsule-release-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-capsule-release-
+          shared-key: ${{ github.job }}-${{ matrix.target }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
+      - run: rustup target add ${{ matrix.target }}
       - name: Build
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
@@ -415,6 +364,9 @@ jobs:
     needs: [source-changed, build-preview, build-jackin-capsule]
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ubuntu-latest
+    concurrency:
+      group: homebrew-tap-publish
+      cancel-in-progress: false
     permissions:
       contents: write
       id-token: write

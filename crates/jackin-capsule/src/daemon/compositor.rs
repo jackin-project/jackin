@@ -354,6 +354,7 @@ impl Multiplexer {
         } else {
             None
         };
+        let palette_key = self.input_parser.palette_key().unwrap_or(0x1C);
         let branch = self.context_bar_branch().map(str::to_owned);
         let pull_request = self.pull_request_context.clone();
         let pull_request_loading = self.pull_request_context_loading();
@@ -410,6 +411,7 @@ impl Multiplexer {
                     debug_run_id: debug_run_id_owned.as_deref(),
                     dialog_hint_spans: dialog_hint_spans.as_deref(),
                     spawn_failure: spawn_failure.as_deref(),
+                    palette_key,
                 },
             );
         });

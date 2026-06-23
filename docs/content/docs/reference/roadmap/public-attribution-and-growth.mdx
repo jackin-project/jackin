@@ -81,13 +81,13 @@ Any implementation must:
 - Should jackin' ever use `Co-authored-by`, or should it reserve that trailer for the actual agent runtime and use `Orchestrated-by` / `Generated-with` for the product layer?
 - What should the canonical identity be: `jackin' <...>`, `Jackin <...>`, `jackin-project[bot] <...>`, or a real GitHub App noreply identity?
 - Should role authors be allowed to set a role-specific attribution line, or would that turn every role into a marketing channel with inconsistent policy?
-- Can jackin' infer a repo's trailer policy from local files such as <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>, <RepoFile path="COMMITS.md">COMMITS.md</RepoFile>, or <RepoFile path="CONTRIBUTING.md">CONTRIBUTING.md</RepoFile>, or should policy always be explicit config?
+- Can jackin' infer a repo's trailer policy from local files such as <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> or <RepoFile path="CONTRIBUTING.md">CONTRIBUTING.md</RepoFile>, or should policy always be explicit config?
 - Is PR-body attribution more valuable because reviewers see it before merge, or less valuable because it disappears from the permanent Git history after squash merges?
 
 ## Related Files
 
 - <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> — current agent trailer policy for this repository
-- <RepoFile path="COMMITS.md">COMMITS.md</RepoFile> — commit-message rules that any jackin' helper must respect in this repository
+- <RepoFile path="CONTRIBUTING.md">CONTRIBUTING.md</RepoFile> — commit-message rules that any jackin' helper must respect in this repository
 - Future module, e.g. `src/git/attribution.rs` — trailer/footer preview and policy evaluation if this ships
 - Future CLI surface, e.g. `jackin attribution preview` / `jackin attribution apply`
 

@@ -44,6 +44,25 @@ pub struct CapsuleConfig {
     /// instead of defaulting to Anthropic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial_provider: Option<InitialProvider>,
+    /// Claude plugin marketplaces declared by the role manifest. The capsule
+    /// registers them at container start — the agent binary is mounted, not
+    /// baked, so plugin setup moved out of the image build into runtime-setup.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub claude_marketplaces: Vec<ClaudeMarketplace>,
+    /// Claude plugins declared by the role manifest, installed at container
+    /// start by the capsule.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub claude_plugins: Vec<String>,
+}
+
+/// A Claude plugin marketplace the capsule registers at container start via
+/// `claude plugin marketplace add`. Mirrors the role manifest's
+/// `[[claude.marketplaces]]` without `jackin-protocol` depending on `jackin-core`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ClaudeMarketplace {
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sparse: Vec<String>,
 }
 
 /// Provider selection for the capsule's initial session spawn. Carries

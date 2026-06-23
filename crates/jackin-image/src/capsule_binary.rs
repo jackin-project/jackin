@@ -37,7 +37,7 @@ use jackin_core::JackinPaths;
 
 use crate::binary_artifact::{
     chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
-    parse_sha256_hex, sha256_hex,
+    parse_sha256_hex, repair_executable_file, sha256_hex,
 };
 
 pub const REQUIRED_VERSION: &str = env!("JACKIN_VERSION");
@@ -72,22 +72,16 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
         return Ok(path);
     }
 
-    // Tests stub the binary by writing a placeholder file at this
-    // well-known location (see `install_test_stub`). Used by both lib
-    // tests via `cfg!(test)` and integration tests via the helper
-    // call; production hosts never have this file because the cache
-    // dir lives under `~/.jackin/cache/` and gets the real binary on
-    // first run. `cfg!(test)` short-circuits the stub write for lib
-    // tests so they don't need any per-test setup.
-    let stub_path = paths.cache_dir.join("jackin-capsule-test-stub");
-    if cfg!(test) {
-        install_test_stub(paths).context("installing in-process test stub")?;
-        return Ok(stub_path);
-    }
-    if stub_path.exists() && is_executable_file(&stub_path) {
-        return Ok(stub_path);
-    }
+    resolve_cached_or_fetch(paths).await
+}
 
+/// Resolve the binary from cache (repairing a stale executable bit),
+/// packaged Homebrew tree, or download — everything *after* the
+/// `JACKIN_CAPSULE_BIN` override. Split out so tests can exercise the
+/// cache-repair path without unsetting the process-global env var
+/// (`unsafe` env mutation is forbidden workspace-wide, and CI exports
+/// `JACKIN_CAPSULE_BIN` for the whole nextest run).
+async fn resolve_cached_or_fetch(paths: &JackinPaths) -> Result<PathBuf> {
     let arch = container_arch();
     let cached = cached_binary_path(&paths.cache_dir, REQUIRED_VERSION, arch);
 
@@ -97,6 +91,35 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
             "cache hit for jackin-capsule {REQUIRED_VERSION} linux/{arch}"
         );
         return Ok(cached);
+    }
+    if repair_executable_file(&cached)? {
+        jackin_diagnostics::debug_log!(
+            "capsule_binary",
+            "repaired executable bit for cached jackin-capsule {REQUIRED_VERSION} linux/{arch} at {}",
+            cached.display()
+        );
+        record(
+            "capsule_binary_cache_repaired",
+            &format!("{REQUIRED_VERSION} linux/{arch} at {}", cached.display()),
+        );
+        return Ok(cached);
+    }
+
+    // Tests stub the binary by writing a placeholder file at this
+    // well-known location (see `install_test_stub`). Used by both lib
+    // tests via `cfg!(test)` and integration tests via the helper
+    // call; production hosts never have this file because the cache
+    // dir lives under `~/.jackin/cache/` and gets the real binary on
+    // first run. `cfg!(test)` short-circuits the stub write for lib
+    // tests so they don't need any per-test setup, after cached-binary
+    // behavior has had a chance to run.
+    let stub_path = paths.cache_dir.join("jackin-capsule-test-stub");
+    if cfg!(test) {
+        install_test_stub(paths).context("installing in-process test stub")?;
+        return Ok(stub_path);
+    }
+    if stub_path.exists() && is_executable_file(&stub_path) {
+        return Ok(stub_path);
     }
 
     if let Some(packaged) = packaged_binary_path(REQUIRED_VERSION, arch).await {
@@ -125,6 +148,14 @@ pub fn cached_binary_path(cache_dir: &Path, version: &str, arch: &str) -> PathBu
         .join(safe_version)
         .join(format!("linux-{arch}"))
         .join("jackin-capsule")
+}
+
+fn record(kind: &str, message: &str) {
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.compact(kind, message);
+    } else {
+        jackin_diagnostics::debug_log!("capsule_binary", "{kind}: {message}");
+    }
 }
 
 async fn packaged_binary_path(version: &str, arch: &str) -> Option<PathBuf> {
@@ -421,7 +452,14 @@ fn rekor_verification_keys()
             "SIGSTORE_REKOR_PUB_KEY_B64 decoded to invalid SPKI DER; \
              verify the key matches logId wNI9atQG... in trusted_root.json",
         );
-        std::collections::BTreeMap::from([(SIGSTORE_REKOR_KEY_ID.to_owned(), key)])
+        let key_id_hex =
+            hex_lower(&BASE64.decode(SIGSTORE_REKOR_KEY_ID).expect(
+                "SIGSTORE_REKOR_KEY_ID is malformed base64; update it with the Rekor log ID",
+            ));
+        std::collections::BTreeMap::from([
+            (SIGSTORE_REKOR_KEY_ID.to_owned(), key.clone()),
+            (key_id_hex, key),
+        ])
     })
 }
 
@@ -552,6 +590,113 @@ fn verify_rekor_body_binds_bundle(
     Ok(())
 }
 
+fn verified_signed_artifact_bundle(
+    raw: &str,
+) -> Result<sigstore::cosign::bundle::SignedArtifactBundle> {
+    use sigstore::cosign::bundle::SignedArtifactBundle;
+
+    match SignedArtifactBundle::new_verified(raw, rekor_verification_keys()) {
+        Ok(bundle) => Ok(bundle),
+        Err(legacy_err) => {
+            let normalized = normalize_sigstore_v03_bundle(raw).with_context(|| {
+                format!("legacy cosign bundle parse failed first: {legacy_err}")
+            })?;
+            SignedArtifactBundle::new_verified(&normalized, rekor_verification_keys())
+                .context("verifying normalized Sigstore bundle v0.3 as legacy cosign bundle")
+        }
+    }
+}
+
+fn normalize_sigstore_v03_bundle(raw: &str) -> Result<String> {
+    let json: serde_json::Value =
+        serde_json::from_str(raw).context("parsing Sigstore bundle v0.3 JSON")?;
+    let media_type = json_pointer_string(&json, "/mediaType")?;
+    anyhow::ensure!(
+        media_type == "application/vnd.dev.sigstore.bundle.v0.3+json",
+        "unsupported capsule manifest bundle mediaType {media_type:?}"
+    );
+
+    let cert_der_b64 = json_pointer_string(&json, "/verificationMaterial/certificate/rawBytes")?;
+    let cert_der = BASE64
+        .decode(cert_der_b64)
+        .context("base64-decoding Sigstore bundle v0.3 certificate rawBytes")?;
+    let cert_pem = der_cert_to_pem(&cert_der);
+    let cert = BASE64.encode(cert_pem.as_bytes());
+
+    let signature = json_pointer_string(&json, "/messageSignature/signature")?;
+    let entry = json
+        .pointer("/verificationMaterial/tlogEntries/0")
+        .context("Sigstore bundle v0.3 missing verificationMaterial.tlogEntries[0]")?;
+    let signed_entry_timestamp =
+        json_pointer_string(entry, "/inclusionPromise/signedEntryTimestamp")?;
+    let body = json_pointer_string(entry, "/canonicalizedBody")?;
+    let integrated_time = json_pointer_i64(entry, "/integratedTime")?;
+    let log_index = json_pointer_i64(entry, "/logIndex")?;
+    let log_id = hex_lower(
+        &BASE64
+            .decode(json_pointer_string(entry, "/logId/keyId")?)
+            .context("base64-decoding Sigstore bundle v0.3 logId.keyId")?,
+    );
+
+    Ok(serde_json::json!({
+        "base64Signature": signature,
+        "cert": cert,
+        "rekorBundle": {
+            "SignedEntryTimestamp": signed_entry_timestamp,
+            "Payload": {
+                "body": body,
+                "integratedTime": integrated_time,
+                "logIndex": log_index,
+                "logID": log_id,
+            },
+        },
+    })
+    .to_string())
+}
+
+fn json_pointer_string(json: &serde_json::Value, pointer: &str) -> Result<String> {
+    json.pointer(pointer)
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| anyhow::anyhow!("missing string field {pointer}"))
+}
+
+fn json_pointer_i64(json: &serde_json::Value, pointer: &str) -> Result<i64> {
+    let value = json
+        .pointer(pointer)
+        .ok_or_else(|| anyhow::anyhow!("missing integer field {pointer}"))?;
+    if let Some(number) = value.as_i64() {
+        return Ok(number);
+    }
+    value
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("field {pointer} is not an integer string"))?
+        .parse()
+        .with_context(|| format!("parsing integer field {pointer}"))
+}
+
+fn der_cert_to_pem(der: &[u8]) -> String {
+    let encoded = BASE64.encode(der);
+    let mut pem = String::from("-----BEGIN CERTIFICATE-----\n");
+    for chunk in encoded.as_bytes().chunks(64) {
+        pem.push_str(&String::from_utf8_lossy(chunk));
+        pem.push('\n');
+    }
+    pem.push_str("-----END CERTIFICATE-----\n");
+    pem
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(char::from(HEX[usize::from(byte >> 4)]));
+        out.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    out
+}
+
 /// Failure is a hard abort — no warn-and-continue fallback.
 async fn fetch_and_verify_manifest(
     version: &str,
@@ -559,7 +704,6 @@ async fn fetch_and_verify_manifest(
     arch: &str,
     is_preview: bool,
 ) -> Result<String> {
-    use sigstore::cosign::bundle::SignedArtifactBundle;
     // CosignCapabilities is the trait that defines verify_blob; must be in scope.
     use sigstore::cosign::{Client, CosignCapabilities};
 
@@ -584,7 +728,7 @@ async fn fetch_and_verify_manifest(
     // Verify the Rekor Signed Entry Timestamp — proves the bundle was logged at signing time.
     let manifest_bytes = manifest_text.as_bytes();
 
-    let bundle = SignedArtifactBundle::new_verified(&bundle_text, rekor_verification_keys())
+    let bundle = verified_signed_artifact_bundle(&bundle_text)
         .context("verifying Rekor log entry in capsule manifest bundle")?;
 
     // Cross-check: the Rekor payload body must cover these exact manifest bytes and this

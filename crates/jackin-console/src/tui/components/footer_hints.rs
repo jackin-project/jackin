@@ -1,10 +1,13 @@
 //! Shared footer hint fragments for modal pickers and confirmations.
 
 use crate::tui::keymap::{
-    AUTH_EDIT_SOURCE_KEYMAP, AUTH_MANAGE_KEYMAP, EDITOR_GENERAL_RENAME_KEYMAP,
-    EDITOR_GENERAL_TOGGLE_KEYMAP, EDITOR_GENERAL_WORKDIR_KEYMAP, EDITOR_ROLE_NEW_KEYMAP,
-    PREVIEW_PANE_KEYMAP, PreviewPaneAction, SETTINGS_GENERAL_TOGGLE_KEYMAP,
-    SETTINGS_TRUST_TOGGLE_KEYMAP, WORKSPACE_LIST_KEYMAP, WorkspaceListAction,
+    AUTH_EDIT_SOURCE_KEYMAP, AUTH_MANAGE_KEYMAP, EDITOR_CONTENT_KEYMAP,
+    EDITOR_GENERAL_RENAME_KEYMAP, EDITOR_GENERAL_TOGGLE_KEYMAP, EDITOR_GENERAL_WORKDIR_KEYMAP,
+    EDITOR_GLOBAL_KEYMAP, EDITOR_ROLE_NEW_KEYMAP, EDITOR_TAB_BAR_KEYMAP, EditorContentAction,
+    EditorGlobalAction, EditorTabBarAction, PREVIEW_PANE_KEYMAP, PreviewPaneAction,
+    SETTINGS_ENV_TAB_KEYMAP, SETTINGS_GENERAL_TOGGLE_KEYMAP, SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP,
+    SETTINGS_TRUST_TOGGLE_KEYMAP, SettingsEnvTabAction, SettingsGlobalMountsTabAction,
+    WORKSPACE_LIST_KEYMAP, WorkspaceListAction,
 };
 use jackin_tui::HintSpan;
 use jackin_tui::components::{
@@ -37,6 +40,7 @@ pub enum WorkspaceListFooterMode {
         scroll_axes: ScrollAxes,
         enter_label: &'static str,
         is_saved: bool,
+        show_prewarm: bool,
         show_expand: bool,
         show_collapse: bool,
         show_open_in_github: bool,
@@ -52,6 +56,7 @@ pub struct WorkspaceListFooterFacts {
     pub selected_instance_has_snapshot: bool,
     pub selected_saved_workspace: bool,
     pub selected_new_workspace: bool,
+    pub show_prewarm: bool,
     pub show_expand: bool,
     pub show_collapse: bool,
     pub workspace_scroll_axes: ScrollAxes,
@@ -127,6 +132,9 @@ pub const fn workspace_list_footer_facts(
         selected_instance_has_snapshot: facts.selected_instance_has_snapshot,
         selected_saved_workspace: row_facts.selected_saved_workspace,
         selected_new_workspace: row_facts.selected_new_workspace,
+        // Surface the `W` prewarm hint exactly when a saved workspace is
+        // selected — the only row for which `W` dispatches PrewarmNamed.
+        show_prewarm: row_facts.selected_saved_workspace,
         show_expand: facts.show_expand,
         show_collapse: facts.show_collapse,
         workspace_scroll_axes: facts.workspace_scroll_axes,
@@ -311,6 +319,7 @@ pub fn workspace_list_footer_mode_for_facts(
             "launch"
         },
         is_saved: facts.selected_saved_workspace,
+        show_prewarm: facts.show_prewarm,
         show_expand: facts.show_expand,
         show_collapse: facts.show_collapse,
         show_open_in_github: facts.show_open_in_github,
@@ -387,6 +396,7 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
             scroll_axes,
             enter_label,
             is_saved,
+            show_prewarm,
             show_expand,
             show_collapse,
             show_open_in_github,
@@ -411,6 +421,13 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
                 items.extend([
                     HintSpan::Key(g(WorkspaceListAction::Edit)),
                     HintSpan::Text("edit"),
+                    HintSpan::Sep,
+                ]);
+            }
+            if show_prewarm {
+                items.extend([
+                    HintSpan::Key(g(WorkspaceListAction::Prewarm)),
+                    HintSpan::Text("prewarm"),
                     HintSpan::Sep,
                 ]);
             }
@@ -532,6 +549,7 @@ pub fn create_prelude_footer_items() -> Vec<HintSpan<'static>> {
     vec![
         HintSpan::Dyn("Create workspace — follow the prompts".to_owned()),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(create-prelude-no-keymap): Esc handled inline; no dedicated create-prelude keymap.
         HintSpan::Key("Esc"),
         HintSpan::Text("cancel"),
     ]
@@ -551,12 +569,15 @@ pub fn editor_general_row_footer_items(row: usize, has_mounts: bool) -> Vec<Hint
 pub fn editor_role_row_footer_items(is_existing_role: bool) -> Vec<HintSpan<'static>> {
     if is_existing_role {
         vec![
+            // UNREGISTERABLE(editor-role-existing-no-keymap): Space toggles allow/disallow inline; no EDITOR_ROLE_EXISTING_KEYMAP.
             HintSpan::Key("␣"),
             HintSpan::Text("allow/disallow"),
             HintSpan::Sep,
+            // UNREGISTERABLE(editor-role-existing-no-keymap): asterisk sets default role inline; no EDITOR_ROLE_EXISTING_KEYMAP.
             HintSpan::Key("*"),
             HintSpan::Text("set/unset default"),
             HintSpan::Sep,
+            // UNREGISTERABLE(editor-role-existing-no-keymap): A loads role inline; no EDITOR_ROLE_EXISTING_KEYMAP.
             HintSpan::Key("A"),
             HintSpan::Text("load role"),
         ]
@@ -639,19 +660,24 @@ pub fn auth_row_footer_items(mode: AuthRowFooterMode) -> Vec<HintSpan<'static>> 
     match mode {
         AuthRowFooterMode::ManageAuth => AUTH_MANAGE_KEYMAP.hint_spans(),
         AuthRowFooterMode::EditMode => vec![
+            // UNREGISTERABLE(auth-edit-mode-no-keymap): handled inline; no dedicated auth-edit-mode or role-header keymap.
             HintSpan::Key("↵"),
             HintSpan::Text("edit mode"),
             HintSpan::Sep,
+            // UNREGISTERABLE(auth-edit-mode-no-keymap): handled inline; no dedicated auth-edit-mode or role-header keymap.
             HintSpan::Key("D"),
             HintSpan::Text("reset"),
         ],
         AuthRowFooterMode::RoleHeader => vec![
+            // UNREGISTERABLE(auth-edit-mode-no-keymap): handled inline; no dedicated auth-edit-mode or role-header keymap.
             HintSpan::Key("↵"),
             HintSpan::Text("expand"),
             HintSpan::Sep,
+            // UNREGISTERABLE(auth-edit-mode-no-keymap): handled inline; no dedicated auth-edit-mode or role-header keymap.
             HintSpan::Key("←/→"),
             HintSpan::Text("collapse/expand"),
             HintSpan::Sep,
+            // UNREGISTERABLE(auth-edit-mode-no-keymap): handled inline; no dedicated auth-edit-mode or role-header keymap.
             HintSpan::Key("D"),
             HintSpan::Text("reset"),
         ],
@@ -741,12 +767,17 @@ pub fn settings_contextual_row_footer_items(
 
 #[must_use]
 pub fn add_row_footer_items(label: &'static str) -> Vec<HintSpan<'static>> {
-    vec![HintSpan::Key("↵/A"), HintSpan::Text(label)]
+    vec![
+        // UNREGISTERABLE(multi-key-display-group): combined Enter/A display; Enter and A are separate chords.
+        HintSpan::Key("↵/A"),
+        HintSpan::Text(label),
+    ]
 }
 
 pub fn append_generate_token_footer_item(items: &mut Vec<HintSpan<'static>>) {
     items.extend([
         HintSpan::GroupSep,
+        // UNREGISTERABLE(auth-form-no-keymap): G triggers token generation inline; no AUTH_FORM_KEYMAP.
         HintSpan::Key("G"),
         HintSpan::Text("generate"),
     ]);
@@ -757,11 +788,13 @@ fn workspace_picker_footer_items(
     include_quit: bool,
 ) -> Vec<HintSpan<'static>> {
     let mut items = vec![
+        // UNREGISTERABLE(multi-key-display-group): combined up/down navigation display.
         HintSpan::Key("\u{2191}\u{2193}"),
         HintSpan::Sep,
-        HintSpan::Key("↵"),
+        HintSpan::Key(WORKSPACE_LIST_KEYMAP.glyph_for(WorkspaceListAction::Enter)),
         HintSpan::Text("launch"),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(workspace-picker-no-keymap): Esc handled inline; no dedicated workspace-picker keymap.
         HintSpan::Key("Esc"),
         HintSpan::Text("return to workspaces"),
         HintSpan::GroupSep,
@@ -774,7 +807,9 @@ fn workspace_picker_footer_items(
     }
     if include_quit {
         items.push(HintSpan::GroupSep);
-        items.push(HintSpan::Key("Ctrl-Q"));
+        items.push(HintSpan::Key(
+            WORKSPACE_LIST_KEYMAP.glyph_for(WorkspaceListAction::Quit),
+        ));
         items.push(HintSpan::Text("quit"));
     }
     items
@@ -783,18 +818,23 @@ fn workspace_picker_footer_items(
 #[must_use]
 pub fn mount_destination_footer_items() -> Vec<HintSpan<'static>> {
     vec![
+        // UNREGISTERABLE(mount-destination-no-keymap): M handled inline; no MOUNT_DESTINATION_KEYMAP.
         HintSpan::Key("M"),
         HintSpan::Text("mount"),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(mount-destination-no-keymap): E handled inline.
         HintSpan::Key("E"),
         HintSpan::Text("edit"),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(multi-key-display-group): combined left/right display.
         HintSpan::Key("\u{2190}/\u{2192}"),
         HintSpan::Text("move"),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(mount-destination-no-keymap): Enter confirms inline.
         HintSpan::Key("↵"),
         HintSpan::Text("select"),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(multi-key-display-group): combined C/Esc cancel display.
         HintSpan::Key("C/Esc"),
         HintSpan::Text("cancel"),
     ]
@@ -803,12 +843,15 @@ pub fn mount_destination_footer_items() -> Vec<HintSpan<'static>> {
 #[must_use]
 pub fn segmented_choice_footer_items() -> Vec<HintSpan<'static>> {
     vec![
+        // UNREGISTERABLE(multi-key-display-group)
         HintSpan::Key("\u{2190}/\u{2192}"),
         HintSpan::Text("move"),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(segmented-choice-no-keymap): Enter handled inline; no SEGMENTED_CHOICE_KEYMAP.
         HintSpan::Key("↵"),
         HintSpan::Text("select"),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(segmented-choice-no-keymap): Esc handled inline.
         HintSpan::Key("Esc"),
         HintSpan::Text("cancel"),
     ]
@@ -817,12 +860,15 @@ pub fn segmented_choice_footer_items() -> Vec<HintSpan<'static>> {
 #[must_use]
 pub fn pick_list_footer_items(commit_label: &'static str) -> Vec<HintSpan<'static>> {
     vec![
+        // UNREGISTERABLE(multi-key-display-group)
         HintSpan::Key("\u{2191}\u{2193}"),
         HintSpan::Text("navigate"),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(pick-list-no-keymap): Enter handled inline; no PICK_LIST_KEYMAP.
         HintSpan::Key("↵"),
         HintSpan::Text(commit_label),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(pick-list-no-keymap): Esc handled inline.
         HintSpan::Key("Esc"),
         HintSpan::Text("cancel"),
     ]
@@ -834,15 +880,18 @@ pub fn filtered_picker_footer_items(
     include_collapse: bool,
 ) -> Vec<HintSpan<'static>> {
     let mut items = vec![
+        // UNREGISTERABLE(multi-key-display-group)
         HintSpan::Key("\u{2191}\u{2193}"),
         HintSpan::Text("navigate"),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(descriptive-label): not a key — describes free-text filter input.
         HintSpan::Key("type"),
         HintSpan::Text("filter"),
     ];
     if include_refresh {
         items.extend([
             HintSpan::GroupSep,
+            // UNREGISTERABLE(filtered-picker-no-keymap): R refresh handled inline; no FILTERED_PICKER_KEYMAP.
             HintSpan::Key("R"),
             HintSpan::Text("refresh"),
         ]);
@@ -850,15 +899,18 @@ pub fn filtered_picker_footer_items(
     if include_collapse {
         items.extend([
             HintSpan::GroupSep,
+            // UNREGISTERABLE(multi-key-display-group)
             HintSpan::Key("\u{2190}/\u{2192}"),
             HintSpan::Text("collapse/expand section"),
         ]);
     }
     items.extend([
         HintSpan::GroupSep,
+        // UNREGISTERABLE(filtered-picker-no-keymap): Enter selects inline.
         HintSpan::Key("↵"),
         HintSpan::Text("select"),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(filtered-picker-no-keymap): Esc cancels inline.
         HintSpan::Key("Esc"),
         HintSpan::Text("cancel"),
     ]);
@@ -868,12 +920,15 @@ pub fn filtered_picker_footer_items(
 #[must_use]
 pub fn op_section_footer_items() -> Vec<HintSpan<'static>> {
     vec![
+        // UNREGISTERABLE(multi-key-display-group)
         HintSpan::Key("\u{2191}\u{2193}"),
         HintSpan::Text("navigate"),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(op-section-no-keymap): Enter handled inline; no OP_SECTION_KEYMAP.
         HintSpan::Key("↵"),
         HintSpan::Text("select"),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(op-section-no-keymap): Esc handled inline.
         HintSpan::Key("Esc"),
         HintSpan::Text("cancel"),
     ]
@@ -1044,9 +1099,10 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
 #[must_use]
 pub fn confirm_save_footer_items(scroll_axes: ScrollAxes) -> Vec<HintSpan<'static>> {
     let mut items = vec![
-        HintSpan::Key("S"),
+        HintSpan::Key(EDITOR_GLOBAL_KEYMAP.glyph_for(EditorGlobalAction::Save)),
         HintSpan::Text("save"),
         HintSpan::GroupSep,
+        // UNREGISTERABLE(multi-key-display-group): combined C/Esc cancel display.
         HintSpan::Key("C/Esc"),
         HintSpan::Text("cancel"),
     ];
@@ -1078,21 +1134,11 @@ pub fn error_popup_footer_items() -> Vec<HintSpan<'static>> {
 /// advertises a scroll direction the operator cannot move.
 #[must_use]
 pub fn container_info_footer_items(axes: ScrollAxes) -> Vec<HintSpan<'static>> {
-    let mut items = scroll_hint_spans(axes);
-    if !items.is_empty() {
-        items.push(HintSpan::GroupSep);
-    }
-    items.extend([
-        HintSpan::Key("↵"),
-        HintSpan::Text("copy value"),
-        HintSpan::GroupSep,
-        HintSpan::Key("Esc"),
-        HintSpan::Text("dismiss"),
-        HintSpan::GroupSep,
-        HintSpan::Key("click"),
-        HintSpan::Text("copy value"),
-    ]);
-    items
+    // Delegate to the shared Debug-info hint builder so the console list modal,
+    // the launch cockpit, and any future surface render byte-identical hint bars
+    // for the same dialog. The UNREGISTERABLE annotations live at the shared
+    // definition in `jackin_tui::components::debug_info_hint_spans`.
+    jackin_tui::components::debug_info_hint_spans(axes)
 }
 
 #[must_use]
@@ -1118,13 +1164,15 @@ pub fn tab_bar_footer_items(
     dirty_change_count: Option<usize>,
 ) -> Vec<HintSpan<'static>> {
     let mut items = vec![
+        // UNREGISTERABLE(multi-key-display-group): combined prev/next tab display; EDITOR_TAB_BAR_KEYMAP splits these into separate PrevTab (←/⇤) and NextTab (→) entries.
         HintSpan::Key("\u{2190}\u{2192}"),
         HintSpan::Text("switch tab"),
     ];
     if enter_content {
         items.extend([
             HintSpan::GroupSep,
-            HintSpan::Key("\u{21e5}/\u{2193}"),
+            // Both EDITOR_TAB_BAR_KEYMAP and SETTINGS_TAB_BAR_KEYMAP use the same glyph.
+            HintSpan::Key(EDITOR_TAB_BAR_KEYMAP.glyph_for(EditorTabBarAction::FocusContent)),
             HintSpan::Text("enter content"),
         ]);
     }
@@ -1139,7 +1187,8 @@ pub fn content_footer_items(
     dirty_change_count: Option<usize>,
 ) -> Vec<HintSpan<'static>> {
     let mut items = vec![
-        HintSpan::Key("\u{2191}\u{2193}"),
+        // Both EDITOR_CONTENT_KEYMAP and SETTINGS_*_TAB_KEYMAP use the same ↑↓ glyph.
+        HintSpan::Key(EDITOR_CONTENT_KEYMAP.glyph_for(EditorContentAction::MoveUp)),
         HintSpan::Text("navigate"),
     ];
 
@@ -1150,7 +1199,7 @@ pub fn content_footer_items(
 
     items.extend([
         HintSpan::GroupSep,
-        HintSpan::Key("\u{21e7}"),
+        HintSpan::Key(EDITOR_CONTENT_KEYMAP.glyph_for(EditorContentAction::FocusTabBar)),
         HintSpan::Text("tab bar"),
         HintSpan::GroupSep,
     ]);
@@ -1164,18 +1213,22 @@ pub fn workspace_mount_row_footer_items(
     scroll_axes: ScrollAxes,
 ) -> Vec<HintSpan<'static>> {
     let mut items = vec![
+        // UNREGISTERABLE(workspace-mount-row-no-keymap): D removes mount inline; no WORKSPACE_MOUNT_ROW_KEYMAP.
         HintSpan::Key("D"),
         HintSpan::Text("remove"),
         HintSpan::Sep,
+        // UNREGISTERABLE(workspace-mount-row-no-keymap): A adds mount inline.
         HintSpan::Key("A"),
         HintSpan::Text("add"),
     ];
     append_open_in_github(&mut items, has_github_url);
     items.extend([
         HintSpan::Sep,
+        // UNREGISTERABLE(workspace-mount-row-no-keymap): R toggles read-only inline.
         HintSpan::Key("R"),
         HintSpan::Text("toggle ro/rw"),
         HintSpan::Sep,
+        // UNREGISTERABLE(workspace-mount-row-no-keymap): I cycles isolation inline.
         HintSpan::Key("I"),
         HintSpan::Text("cycle isolation"),
     ]);
@@ -1192,29 +1245,36 @@ pub fn global_mount_row_footer_items(
     has_github_url: bool,
     scroll_axes: ScrollAxes,
 ) -> Vec<HintSpan<'static>> {
+    let g = |a| SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP.glyph_for(a);
     let mut items = vec![
-        HintSpan::Key("D"),
+        HintSpan::Key(g(SettingsGlobalMountsTabAction::Delete)),
         HintSpan::Text("remove"),
         HintSpan::Sep,
-        HintSpan::Key("A"),
+        HintSpan::Key(g(SettingsGlobalMountsTabAction::Add)),
         HintSpan::Text("add"),
     ];
-    append_open_in_github(&mut items, has_github_url);
+    if has_github_url {
+        items.extend([
+            HintSpan::Sep,
+            HintSpan::Key(g(SettingsGlobalMountsTabAction::OpenGithub)),
+            HintSpan::Text("open in GitHub"),
+        ]);
+    }
     items.extend([
         HintSpan::Sep,
-        HintSpan::Key("R"),
+        HintSpan::Key(g(SettingsGlobalMountsTabAction::ToggleReadonly)),
         HintSpan::Text("toggle ro/rw"),
         HintSpan::Sep,
-        HintSpan::Key("N"),
+        HintSpan::Key(g(SettingsGlobalMountsTabAction::EditRename)),
         HintSpan::Text("rename"),
         HintSpan::Sep,
-        HintSpan::Key("1"),
+        HintSpan::Key(g(SettingsGlobalMountsTabAction::EditSource)),
         HintSpan::Text("edit source"),
         HintSpan::Sep,
-        HintSpan::Key("2"),
+        HintSpan::Key(g(SettingsGlobalMountsTabAction::EditDest)),
         HintSpan::Text("edit dst"),
         HintSpan::Sep,
-        HintSpan::Key("3"),
+        HintSpan::Key(g(SettingsGlobalMountsTabAction::EditScope)),
         HintSpan::Text("edit scope"),
     ]);
     let scroll_items = scroll_hint_spans(scroll_axes);
@@ -1227,11 +1287,12 @@ pub fn global_mount_row_footer_items(
 
 #[must_use]
 pub fn secret_op_ref_row_footer_items(op_available: bool) -> Vec<HintSpan<'static>> {
+    let g = |a| SETTINGS_ENV_TAB_KEYMAP.glyph_for(a);
     let mut items = if op_available {
         vec![
-            HintSpan::Key("↵"),
+            HintSpan::Key(g(SettingsEnvTabAction::Enter)),
             HintSpan::Sep,
-            HintSpan::Key("P"),
+            HintSpan::Key(g(SettingsEnvTabAction::OpenPicker)),
             HintSpan::Text("re-pick from 1Password"),
             HintSpan::Sep,
         ]
@@ -1239,10 +1300,10 @@ pub fn secret_op_ref_row_footer_items(op_available: bool) -> Vec<HintSpan<'stati
         Vec::new()
     };
     items.extend([
-        HintSpan::Key("D"),
+        HintSpan::Key(g(SettingsEnvTabAction::Delete)),
         HintSpan::Text("delete"),
         HintSpan::Sep,
-        HintSpan::Key("A"),
+        HintSpan::Key(g(SettingsEnvTabAction::Add)),
         HintSpan::Text("add"),
     ]);
     items
@@ -1250,23 +1311,24 @@ pub fn secret_op_ref_row_footer_items(op_available: bool) -> Vec<HintSpan<'stati
 
 #[must_use]
 pub fn secret_plain_row_footer_items(op_available: bool) -> Vec<HintSpan<'static>> {
+    let g = |a| SETTINGS_ENV_TAB_KEYMAP.glyph_for(a);
     let mut items = vec![
-        HintSpan::Key("↵"),
+        HintSpan::Key(g(SettingsEnvTabAction::Enter)),
         HintSpan::Text("edit"),
         HintSpan::Sep,
-        HintSpan::Key("D"),
+        HintSpan::Key(g(SettingsEnvTabAction::Delete)),
         HintSpan::Text("delete"),
         HintSpan::Sep,
-        HintSpan::Key("A"),
+        HintSpan::Key(g(SettingsEnvTabAction::Add)),
         HintSpan::Text("add"),
         HintSpan::Sep,
-        HintSpan::Key("M"),
+        HintSpan::Key(g(SettingsEnvTabAction::ToggleMask)),
         HintSpan::Text("mask/unmask"),
     ];
     if op_available {
         items.extend([
             HintSpan::Sep,
-            HintSpan::Key("P"),
+            HintSpan::Key(g(SettingsEnvTabAction::OpenPicker)),
             HintSpan::Text("1Password"),
         ]);
     }
@@ -1275,11 +1337,15 @@ pub fn secret_plain_row_footer_items(op_available: bool) -> Vec<HintSpan<'static
 
 #[must_use]
 pub fn secret_add_row_footer_items(op_available: bool) -> Vec<HintSpan<'static>> {
-    let mut items = vec![HintSpan::Key("↵"), HintSpan::Text("add")];
+    let g = |a| SETTINGS_ENV_TAB_KEYMAP.glyph_for(a);
+    let mut items = vec![
+        HintSpan::Key(g(SettingsEnvTabAction::Enter)),
+        HintSpan::Text("add"),
+    ];
     if op_available {
         items.extend([
             HintSpan::Sep,
-            HintSpan::Key("P"),
+            HintSpan::Key(g(SettingsEnvTabAction::OpenPicker)),
             HintSpan::Text("1Password"),
         ]);
     }
@@ -1289,13 +1355,14 @@ pub fn secret_add_row_footer_items(op_available: bool) -> Vec<HintSpan<'static>>
 #[must_use]
 pub fn secret_role_header_footer_items() -> Vec<HintSpan<'static>> {
     vec![
-        HintSpan::Key("↵"),
+        HintSpan::Key(SETTINGS_ENV_TAB_KEYMAP.glyph_for(SettingsEnvTabAction::Enter)),
         HintSpan::Text("expand"),
         HintSpan::Sep,
+        // UNREGISTERABLE(multi-key-display-group): combined collapse/expand left/right display.
         HintSpan::Key("←/→"),
         HintSpan::Text("collapse/expand"),
         HintSpan::Sep,
-        HintSpan::Key("A"),
+        HintSpan::Key(SETTINGS_ENV_TAB_KEYMAP.glyph_for(SettingsEnvTabAction::Add)),
         HintSpan::Text("add"),
     ]
 }
@@ -1308,54 +1375,70 @@ pub fn auth_form_footer_items(
 ) -> Vec<HintSpan<'static>> {
     let mut items: Vec<HintSpan<'static>> = match focus {
         AuthFormFocus::Mode => {
-            let mut v = vec![HintSpan::Key("\u{2423}"), HintSpan::Text("cycle")];
+            let mut v = vec![
+                // UNREGISTERABLE(auth-form-no-keymap): Space cycles mode inline.
+                HintSpan::Key("\u{2423}"),
+                HintSpan::Text("cycle"),
+            ];
             if shows_source_folder || shows_credential_block {
                 v.extend([
                     HintSpan::Sep,
+                    // UNREGISTERABLE(auth-form-no-keymap): Down navigates fields inline.
                     HintSpan::Key("\u{2193}"),
                     HintSpan::Text("navigate"),
                 ]);
             }
             v.extend([
                 HintSpan::GroupSep,
+                // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.
                 HintSpan::Key("\u{21e5}"),
                 HintSpan::Text("button row"),
             ]);
             v
         }
         AuthFormFocus::SourceFolder => vec![
+            // UNREGISTERABLE(auth-form-no-keymap): Enter handled inline.
             HintSpan::Key("↵"),
             HintSpan::Text("browse"),
             HintSpan::Sep,
+            // UNREGISTERABLE(multi-key-display-group): combined navigate display.
             HintSpan::Key("\u{2191}/\u{2193}"),
             HintSpan::Text("navigate"),
             HintSpan::GroupSep,
+            // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.
             HintSpan::Key("\u{21e5}"),
             HintSpan::Text("button row"),
         ],
         AuthFormFocus::CredentialSource => vec![
+            // UNREGISTERABLE(auth-form-no-keymap): Enter confirms the field inline.
             HintSpan::Key("↵"),
             HintSpan::Text("set"),
             HintSpan::Sep,
+            // UNREGISTERABLE(auth-form-no-keymap): ↑↓ navigates credential source list inline.
             HintSpan::Key("\u{2191}"),
             HintSpan::Text("navigate"),
             HintSpan::GroupSep,
+            // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.
             HintSpan::Key("\u{21e5}"),
             HintSpan::Text("button row"),
         ],
         AuthFormFocus::Save | AuthFormFocus::Cancel | AuthFormFocus::Reset => vec![
+            // UNREGISTERABLE(multi-key-display-group): combined left/right display.
             HintSpan::Key("\u{2190}/\u{2192}"),
             HintSpan::Text("move"),
             HintSpan::GroupSep,
+            // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.
             HintSpan::Key("\u{21e5}"),
             HintSpan::Text("fields"),
             HintSpan::GroupSep,
+            // UNREGISTERABLE(auth-form-no-keymap): Enter handled inline.
             HintSpan::Key("↵"),
             HintSpan::Text("select"),
         ],
     };
     items.extend([
         HintSpan::GroupSep,
+        // UNREGISTERABLE(auth-form-no-keymap): Esc cancels inline.
         HintSpan::Key("Esc"),
         HintSpan::Text("cancel"),
     ]);
@@ -1366,6 +1449,7 @@ fn append_open_in_github(items: &mut Vec<HintSpan<'static>>, has_github_url: boo
     if has_github_url {
         items.extend([
             HintSpan::Sep,
+            // UNREGISTERABLE(workspace-mount-no-keymap): used by workspace-mount rows which have no backing keymap; global-mount callers use SETTINGS_GLOBAL_MOUNTS_TAB_KEYMAP directly.
             HintSpan::Key("O"),
             HintSpan::Text("open in GitHub"),
         ]);
@@ -1379,7 +1463,7 @@ fn append_save_and_escape(
 ) {
     items.extend([
         HintSpan::GroupSep,
-        HintSpan::Key("S"),
+        HintSpan::Key(EDITOR_GLOBAL_KEYMAP.glyph_for(EditorGlobalAction::Save)),
         HintSpan::Text(save_label),
     ]);
     if let Some(count) = dirty_change_count {
@@ -1387,14 +1471,14 @@ fn append_save_and_escape(
     }
     items.extend([
         HintSpan::GroupSep,
-        HintSpan::Key("Esc"),
+        HintSpan::Key(EDITOR_GLOBAL_KEYMAP.glyph_for(EditorGlobalAction::Escape)),
         HintSpan::Text(if dirty_change_count.is_some() {
             "discard"
         } else {
             "back"
         }),
         HintSpan::Sep,
-        HintSpan::Key("Ctrl-Q"),
+        HintSpan::Key(WORKSPACE_LIST_KEYMAP.glyph_for(WorkspaceListAction::Quit)),
         HintSpan::Text("quit"),
     ]);
 }

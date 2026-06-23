@@ -2,7 +2,8 @@
 set -eu
 
 state_dir="/jackin/state/jackin-sentinel"
-mkdir -p "$state_dir" "$HOME/.local/bin"
+bin_dir="$state_dir/bin"
+mkdir -p "$state_dir" "$bin_dir"
 
 {
   printf 'setup_once=1\n'
@@ -11,7 +12,7 @@ mkdir -p "$state_dir" "$HOME/.local/bin"
   printf 'literal_template=%s\n' "${LITERAL_TEMPLATE:-unset}"
 } > "$state_dir/setup-once.env"
 
-cat > "$HOME/.local/bin/jackin-sentinel-report" <<'REPORT'
+cat > "$bin_dir/jackin-sentinel-report" <<'REPORT'
 #!/usr/bin/env sh
 set -eu
 
@@ -51,4 +52,4 @@ fi
 echo "JACKIN_SENTINEL_REPORT_END"
 REPORT
 
-chmod +x "$HOME/.local/bin/jackin-sentinel-report"
+chmod +x "$bin_dir/jackin-sentinel-report"
