@@ -108,3 +108,18 @@ fn esc_cancels() {
         ModalOutcome::Cancel
     ));
 }
+
+#[test]
+fn vim_j_upper_moves_down() {
+    let mut s = AgentChoiceState::<TestAgent>::new();
+    drop(s.handle_key(key(KeyCode::Char('J'))));
+    assert_eq!(s.focused, TestAgent::Codex);
+}
+
+#[test]
+fn vim_k_upper_moves_up() {
+    let mut s = AgentChoiceState::<TestAgent>::new();
+    s.focused = TestAgent::Kimi;
+    drop(s.handle_key(key(KeyCode::Char('K'))));
+    assert_eq!(s.focused, TestAgent::Amp);
+}

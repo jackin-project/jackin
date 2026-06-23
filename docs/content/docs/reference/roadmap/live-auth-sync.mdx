@@ -65,7 +65,7 @@ Options for resolving the naming clash before this feature ships:
 Option A or B is preferable: they make the existing mode's actual
 behaviour visible from the name and reserve the unmodified `sync`
 for what operators expect. Pre-release breaking-change policy
-(see <RepoFile path="AGENTS.md" /> → "Project status: pre-release")
+(see <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> → "Project status: pre-release")
 makes a rename across `[github]` / `[claude]` / `[codex]`
 configurations cheap. The implementation PR for this roadmap item
 should rename in lockstep with the daemon's first ship; not
@@ -196,7 +196,7 @@ This live-sync item depends on `jackin daemon` Phase 1 (empty daemon — lifecyc
 
 ## Host-side effects
 
-Per <RepoFile path="AGENTS.md" /> "Never mutate the host machine
+Per <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> "Never mutate the host machine
 silently": the live-sync adapter writes to host-side state. Each
 write is opt-in via the workspace's chosen mode (`live` /
 `sync` / `forward` / `ignore`) and surfaces in the daemon's

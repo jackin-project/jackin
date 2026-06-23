@@ -40,7 +40,9 @@ pub(crate) fn render_fallback_install_block(
 USER agent
 ARG JACKIN_CACHE_BUST=0
 ENV PATH=\"{path_prefix}:${{PATH}}\"
-RUN set -euxo pipefail && \\
+ENV XDG_CACHE_HOME=\"/home/agent/.cache\"
+RUN --mount=type=cache,id=jackin-agent-fallback-{version_check_bin},target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\
+    set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
     {install_command} && \\
     {version_check_bin} --version
@@ -74,6 +76,15 @@ pub trait AgentRuntime: Send + Sync + 'static + private::Sealed {
     /// Dockerfile `RUN` block that installs this agent's CLI from a
     /// pre-fetched binary at `source` (relative path inside the image).
     fn install_block(&self, source: &str) -> String;
+
+    /// Absolute in-container path(s) where this agent's CLI binary lives on
+    /// `PATH`. The host's prefetched binary is bind-mounted read-only at each of
+    /// these at `docker run` instead of being baked into the image, so an agent
+    /// version bump no longer rebuilds the derived image. Usually one path; an
+    /// agent reachable under more than one name (grok also as `agent`) returns
+    /// several. The parent dirs are also what the derived image's `PATH` is built
+    /// from, so this is the single source of truth for both.
+    fn container_binary_paths(&self) -> &'static [&'static str];
 
     /// Dockerfile `RUN` block that installs this agent's CLI from the official
     /// upstream installer. Used only when host-side binary prefetch fails.

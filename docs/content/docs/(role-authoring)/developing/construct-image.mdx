@@ -72,9 +72,9 @@ The construct creates an `agent` user with:
 
 ## How it's built
 
-The construct source starts at <RepoFile path="docker/construct/Dockerfile" /> in the jackin' repository. The declarative build definition lives in <RepoFile path="docker-bake.hcl" /> at the repo root, and the supported command surface is the `construct-*` mise tasks defined in <RepoFile path="mise.toml" />, backed by the <RepoFile path="crates/jackin-xtask/src/construct.rs" /> Rust task runner.
+The construct source starts at <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> in the jackin' repository. The declarative build definition lives in <RepoFile path="docker-bake.hcl">docker-bake.hcl</RepoFile> at the repo root, and the supported command surface is the `construct-*` mise tasks defined in <RepoFile path="mise.toml">mise.toml</RepoFile>, backed by the <RepoFile path="crates/jackin-xtask/src/construct.rs">crates/jackin-xtask/src/construct.rs</RepoFile> Rust task runner.
 
-<RepoFile path="docker/construct/versions.env" /> remains the source of truth for the pinned `tirith`, `shellfirm`, and `MISE_VERSION` build args used by <RepoFile path="docker/construct/Dockerfile" />. `mise` is installed with the official standalone installer during the Docker build, which downloads the pinned version's release asset from GitHub — where every version stays available, so the pin never goes stale. The pinned version gives Buildx a stable cache key, and Renovate bumps invalidate the mise install layer when upstream publishes a new release.
+<RepoFile path="docker/construct/versions.env">docker/construct/versions.env</RepoFile> remains the source of truth for the pinned `tirith`, `shellfirm`, and `MISE_VERSION` build args used by <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile>. `mise` is installed with the official standalone installer during the Docker build, which downloads the pinned version's release asset from GitHub — where every version stays available, so the pin never goes stale. The pinned version gives Buildx a stable cache key, and Renovate bumps invalidate the mise install layer when upstream publishes a new release.
 
 ## Build workflow
 
@@ -131,7 +131,7 @@ REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER mise run construct-publish-manifest
 </Aside>
 ### CI behavior
 
-GitHub Actions reuses the same `mise run` commands on native `ubuntu-24.04` and `ubuntu-24.04-arm` runners. Construct CI validates broad build plumbing when changes touch `docker/construct/**`, <RepoFile path="docker-bake.hcl" />, the `crates/jackin-xtask/` task runner, or <RepoFile path=".github/workflows/construct.yml" />. It only treats a run as a construct-image publish candidate when changes touch inputs baked into the image itself: <RepoFile path="docker-bake.hcl" />, <RepoFile path="docker/construct/Dockerfile" />, <RepoFile path="docker/construct/versions.env" />, <RepoFile path="docker/construct/zshrc" />, or <RepoFile path="docker/construct/fish-config.fish" />.
+GitHub Actions reuses the same `mise run` commands on native `ubuntu-24.04` and `ubuntu-24.04-arm` runners. Construct CI validates broad build plumbing when changes touch `docker/construct/**`, <RepoFile path="docker-bake.hcl">docker-bake.hcl</RepoFile>, the `crates/jackin-xtask/` task runner, or <RepoFile path=".github/workflows/construct.yml">.github/workflows/construct.yml</RepoFile>. It only treats a run as a construct-image publish candidate when changes touch inputs baked into the image itself: <RepoFile path="docker-bake.hcl">docker-bake.hcl</RepoFile>, <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile>, <RepoFile path="docker/construct/versions.env">docker/construct/versions.env</RepoFile>, <RepoFile path="docker/construct/zshrc">docker/construct/zshrc</RepoFile>, or <RepoFile path="docker/construct/fish-config.fish">docker/construct/fish-config.fish</RepoFile>.
 
 Pull requests, plus manual workflow runs against non-`main` branches, build both architectures natively without pushing images. Those validation jobs use the GitHub Actions cache backend; the cache key includes the pinned `MISE_VERSION`, so a Renovate mise bump invalidates the mise install layer while unrelated earlier layers can still be reused. They still do not receive Docker Hub credentials.
 
@@ -147,13 +147,13 @@ The published tags are:
 
 When you load an agent, jackin' doesn't use the construct directly. It generates a **derived Dockerfile** that adds:
 
-1. **User remapping** — adjusts the `agent` user's UID/GID to match your host user
-2. **Agent installation** — copies jackin's cached agent binaries for every agent declared in the role manifest
+1. **Agent installation** — copies jackin's cached binary for the selected runtime into the derived image
+2. **Runtime-owned directories** — creates the `/jackin/` runtime, state, run, default-home, and hook paths the container uses
 3. **Plugin installation** — any Claude plugins declared in the role manifest
 4. **Runtime entrypoint + setup bridge** — the script delegates deterministic setup to `jackin-capsule runtime-setup`, then keeps the shell-native work: sourcing role hooks and `exec`-ing the selected agent. The Rust setup path handles one-time container git/GitHub initialization, the shared git trailer hook, durable agent-home seeding, auth handoff refreshes, and Claude MCP registration. It wires up GitHub if `gh` is already authenticated; it does not perform `gh auth login`, so an unauthenticated `gh` is left alone with a notice.
 
 <Aside type="note">
-Every load re-runs `docker build` on the derived Dockerfile. Docker's layer cache makes most subsequent loads fast, but there is no separate "skip build if image exists" shortcut. Before the build, jackin' resolves the latest agent binary metadata and stores downloaded binaries under its host cache. Passing `--rebuild` invalidates agent installation layers; unchanged versions are copied from the local cache instead of downloaded again.
+jackin' tags derived images per role and selected agent. Warm launches inspect recipe labels first; if the role source, construct/base image, runtime recipe, selected agent install, `jackin-capsule`, hooks, Claude plugin recipe, and host identity strategy still match, launch reuses the local image and skips binary prep, build-context creation, GitHub build-token lookup, `docker build`, and the selected-agent version probe. Passing `--rebuild` forces a fresh derived image.
 </Aside>
 ## Extending the construct
 
@@ -161,7 +161,7 @@ Role repos add their tools on top of the construct. The construct provides the f
 
 ```
 ┌─────────────────────────────────┐
-│  Derived Layer (jackin-managed) │  Agent CLIs, entrypoint, user mapping
+│  Derived Layer (jackin-managed) │  Selected agent CLI, entrypoint, /jackin state
 ├─────────────────────────────────┤
 │  Agent Layer (your Dockerfile)  │  Rust, Node, Python, custom tools
 ├─────────────────────────────────┤

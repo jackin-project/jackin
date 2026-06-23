@@ -119,35 +119,13 @@ export TIRITH=0
 Then paste the checkout block:
 
 ```sh
-export JACKIN_PR_TEST_DIR="$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>"
-mkdir -p "$JACKIN_PR_TEST_DIR"
-cd "$JACKIN_PR_TEST_DIR"
-
-if [ ! -d jackin/.git ]; then
-  git clone https://github.com/jackin-project/jackin.git
-fi
-
-cd jackin
-git fetch -f origin pull/<PR_NUMBER>/head:refs/remotes/origin/pr-<PR_NUMBER>-head
-git checkout -B pr-<PR_NUMBER> refs/remotes/origin/pr-<PR_NUMBER>-head
-cargo xtask pr prepare <PR_NUMBER>
-cd "$JACKIN_PR_TEST_DIR/jackin"
-source "$JACKIN_PR_TEST_DIR/env.sh"
+jackin-dev pr sync <PR_NUMBER>
+cd "$(jackin-dev pr path <PR_NUMBER>)/jackin"
+source "$(jackin-dev pr path <PR_NUMBER>)/env.sh"
 which jackin
 ```
 
-<To test against a copy of the host config instead of a blank PR-scoped config,
-change the `cargo xtask pr prepare` command to `cargo xtask pr prepare <PR_NUMBER> --config copy`.
-Add `--replace-config` when refreshing an existing PR-scoped config directory.>
-
-<Capsule PRs only: add `--capsule` to the `cargo xtask pr prepare` command so
-the env file exports `JACKIN_CAPSULE_BIN` before any `### User smoke` /
-`### jackin-capsule smoke` step. The export does not affect the current shell
-until the generated env file is sourced. After `source "$JACKIN_PR_TEST_DIR/env.sh"`,
-`echo "$JACKIN_CAPSULE_BIN"` must print the PR-built capsule path.>
-
-<Construct image PRs only: add `--construct` to the `cargo xtask pr prepare`
-command so the env file exports `JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"`.>
+`jackin-dev pr sync` clones or refreshes the PR checkout, checks out the PR's real head branch, builds the local `jackin` binary, copies live config into the PR bundle, creates empty PR-scoped state, writes `env.sh`, builds and exports a local `JACKIN_CAPSULE_BIN` when the changed workspace package is in the `jackin-capsule` dependency closure, and auto-builds the PR construct image when the changed files require it. After `source "$(jackin-dev pr path <PR_NUMBER>)/env.sh"`, `echo "$JACKIN_CAPSULE_BIN"` is set only when the PR requires a local capsule, and `echo "$JACKIN_CONSTRUCT_IMAGE"` is set only for PRs whose diff requires a local construct image.
 
 ### Static checks
 
@@ -161,6 +139,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 ```sh
 cargo nextest run -E '<SCOPED_TEST_FILTER>'
 cargo nextest run --all-features
+cargo nextest run -p jackin --features e2e --profile docker-e2e
 ```
 
 <Drop this whole subsection when the PR has no Rust test coverage to run.
@@ -207,6 +186,7 @@ per-page localhost render walk still goes in `### Documentation` below.>
   bun install --frozen-lockfile
   bun run build
   bun run check:repo-links
+  bun run check:roadmap-sidebar
   bunx tsc --noEmit
   bun test
 )
@@ -224,16 +204,15 @@ workspace state, in-container commands, and expected output that disambiguate a
 pass/fail. Add narrower repeat checks after the console flow when helpful, e.g.
 `jackin load <role> <target> --debug`. Replace the console
 command only when the changed behavior has no meaningful console route. For PRs
-touching `crates/jackin-capsule/`, keep `--capsule` on the Checkout block's
-prepare command — otherwise the console launches with a stale binary.>
+touching `crates/jackin-capsule/`, keep the Checkout block's `jackin-dev pr sync`
+before this smoke command — otherwise the console launches with a stale binary.>
 
 ### jackin-capsule smoke
 
 <Drop this whole subsection when the PR does NOT touch `crates/jackin-capsule/`.
 Include it whenever any file under `crates/jackin-capsule/src/` is changed.
-This block assumes the Checkout block used `cargo xtask pr prepare <PR_NUMBER>
---capsule` and sourced the generated env file — do not repeat the capsule build
-here.>
+This block assumes the Checkout block used `jackin-dev pr sync <PR_NUMBER>` and
+sourced the generated env file — do not repeat the capsule build here.>
 
 ```sh
 jackin load the-architect . --debug

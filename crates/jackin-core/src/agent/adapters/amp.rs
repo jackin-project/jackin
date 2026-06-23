@@ -26,18 +26,14 @@ impl AgentRuntime for AmpRuntime {
         format!(
             "\
 USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.amp/bin
-COPY --chown=agent:agent {source} /home/agent/.amp/bin/amp
+COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.amp/bin/amp
 ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${{PATH}}\"
-RUN set -euxo pipefail && \\
-    : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 \"${{HOME}}/.amp/bin/amp\" && \\
-    mkdir -p \"${{HOME}}/.local/bin\" && \\
-    ln -sf \"${{HOME}}/.amp/bin/amp\" \"${{HOME}}/.local/bin/amp\" && \\
-    amp --version
 "
         )
+    }
+
+    fn container_binary_paths(&self) -> &'static [&'static str] {
+        &["/home/agent/.amp/bin/amp"]
     }
 
     fn fallback_install_block(&self) -> String {
@@ -54,7 +50,7 @@ RUN set -euxo pipefail && \\
 
     fn required_env_var(&self, mode: AuthForwardMode) -> Option<&'static str> {
         match mode {
-            AuthForwardMode::ApiKey => Some("AMP_API_KEY"),
+            AuthForwardMode::ApiKey => Some(crate::env_model::AMP_API_KEY_ENV_NAME),
             AuthForwardMode::Sync | AuthForwardMode::Ignore | AuthForwardMode::OAuthToken => None,
         }
     }
@@ -71,7 +67,7 @@ RUN set -euxo pipefail && \\
         AgentStatePaths {
             credential_dir: ".local/share/amp",
             credential_file: Some(".local/share/amp/secrets.json"),
-            folder_env_var: Some("AMP_DATA_HOME"),
+            folder_env_var: Some("XDG_DATA_HOME"),
         }
     }
 

@@ -20,7 +20,78 @@ use super::{
     HostMissingReason, RoleState,
 };
 use jackin_config::{AuthForwardMode, GithubAuthMode};
+use jackin_core::agent::Agent;
 use std::path::Path;
+
+/// Validate that `source_dir` carries the credential structure `agent`
+/// expects for sync-mode auth forwarding.
+///
+/// Returns `Ok(())` when the folder holds usable credentials for that
+/// agent, or `Err(message)` describing what is missing. The message is
+/// shown verbatim in the Source Folder picker so an operator cannot
+/// silently select a folder that yields no credentials (and, for Claude,
+/// would otherwise leak the default account into the capsule).
+///
+/// `host_home` is the operator's real home directory; it gates the macOS
+/// Keychain probe used to validate a file-less Claude config dir and is
+/// otherwise unused.
+pub fn validate_sync_source_dir(
+    agent: Agent,
+    source_dir: &Path,
+    host_home: &Path,
+) -> Result<(), String> {
+    if !source_dir.is_dir() {
+        return Err(format!("{} is not a directory.", source_dir.display()));
+    }
+    match agent {
+        // Claude has no single credential file on macOS — the login lives
+        // in the Keychain — so accept either the file or a matching
+        // Keychain entry for this exact config dir.
+        Agent::Claude => {
+            if read_host_credentials_from_claude_config_dir(source_dir, host_home).is_some() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Not a Claude config folder: {} has no .credentials.json and no matching \
+                     macOS Keychain login. Select the folder you set as CLAUDE_CONFIG_DIR when \
+                     you logged in to Claude.",
+                    source_dir.display()
+                ))
+            }
+        }
+        Agent::Codex => require_credential_file(source_dir, "auth.json", "Codex"),
+        Agent::Grok => require_credential_file(source_dir, "auth.json", "Grok"),
+        Agent::Opencode => require_credential_file(source_dir, "auth.json", "OpenCode"),
+        Agent::Amp => require_credential_file(source_dir, "secrets.json", "Amp"),
+        // Kimi syncs a directory tree rather than a single file.
+        Agent::Kimi => {
+            if source_dir.join("config.toml").is_file() && source_dir.join("credentials").is_dir() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Not a Kimi config folder: {} must contain config.toml and a credentials/ \
+                     directory.",
+                    source_dir.display()
+                ))
+            }
+        }
+    }
+}
+
+/// Require a non-empty credential file named `name` directly inside `dir`.
+fn require_credential_file(dir: &Path, name: &str, agent: &str) -> Result<(), String> {
+    match std::fs::read_to_string(dir.join(name)) {
+        Ok(content) if !content.trim().is_empty() => Ok(()),
+        Ok(_) => Err(format!(
+            "{agent} credential {name} in {} is empty.",
+            dir.display()
+        )),
+        Err(_) => Err(format!(
+            "Not a {agent} config folder: expected {name} directly inside {}.",
+            dir.display()
+        )),
+    }
+}
 
 impl RoleState {
     /// Provision Codex auth state. Runtime policy is passed as CLI
@@ -58,11 +129,27 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_codex_auth_from_path(auth_json, mode, &host_home.join(".codex/auth.json"))
+    }
+
+    pub(super) fn provision_codex_auth_from_source_dir(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_codex_auth_from_path(auth_json, mode, &source_dir.join("auth.json"))
+    }
+
+    fn provision_codex_auth_from_path(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        host_auth_json: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
         // OAuthToken is parser-rejected for Codex (unreachable in production),
         // so no warning is needed. Codex has no empty/whitespace content guard.
         provision_single_file_credential(
             auth_json,
-            &host_home.join(".codex/auth.json"),
+            host_auth_json,
             mode,
             "Codex auth.json",
             "Codex",
@@ -120,30 +207,45 @@ impl RoleState {
                 let token = github.token.clone().unwrap_or_default();
                 Ok(GithubProvisionOutcome::TokenMode { token })
             }
-            GithubAuthMode::Sync => match read_host_gh_token(host_home)? {
-                HostGhResolution::Resolved(resolved) => {
-                    let content = render_hosts_yml(&resolved.token, resolved.user.as_deref());
-                    // Skip the write when content matches what's already
-                    // on disk — avoids touching mtime + atomic-rename on
-                    // every launch when nothing changed. Mirrors the
-                    // codex provisioner's no-churn guard.
-                    let needs_write = !std::fs::read_to_string(hosts_yml)
-                        .is_ok_and(|existing| existing == content);
-                    if needs_write {
-                        write_private_file(hosts_yml, &content)?;
-                    } else {
-                        repair_permissions(hosts_yml);
-                    }
-                    Ok(GithubProvisionOutcome::Synced {
-                        token: resolved.token,
-                        source: resolved.source,
+            GithubAuthMode::Sync => {
+                let resolved = if let Some(token) = github
+                    .token
+                    .as_ref()
+                    .filter(|token| !token.trim().is_empty())
+                {
+                    HostGhResolution::Resolved(HostGhAuth {
+                        token: token.clone(),
+                        user: None,
+                        source: GithubTokenSource::ConfiguredEnv,
                     })
+                } else {
+                    read_host_gh_token(host_home)?
+                };
+                match resolved {
+                    HostGhResolution::Resolved(resolved) => {
+                        let content = render_hosts_yml(&resolved.token, resolved.user.as_deref());
+                        // Skip the write when content matches what's already
+                        // on disk — avoids touching mtime + atomic-rename on
+                        // every launch when nothing changed. Mirrors the
+                        // codex provisioner's no-churn guard.
+                        let needs_write = !std::fs::read_to_string(hosts_yml)
+                            .is_ok_and(|existing| existing == content);
+                        if needs_write {
+                            write_private_file(hosts_yml, &content)?;
+                        } else {
+                            repair_permissions(hosts_yml);
+                        }
+                        Ok(GithubProvisionOutcome::Synced {
+                            token: resolved.token,
+                            source: resolved.source,
+                        })
+                    }
+                    HostGhResolution::Missing(reason) => {
+                        repair_permissions(hosts_yml);
+                        Ok(GithubProvisionOutcome::HostMissing { reason })
+                    }
                 }
-                HostGhResolution::Missing(reason) => {
-                    repair_permissions(hosts_yml);
-                    Ok(GithubProvisionOutcome::HostMissing { reason })
-                }
-            },
+            }
         }
     }
 }
@@ -443,6 +545,69 @@ impl RoleState {
         );
         Ok((outcome, forward_auth))
     }
+
+    pub(super) fn provision_claude_auth_from_config_dir(
+        account_json: &Path,
+        credentials_json: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
+        let host_claude_json = source_dir.join(".claude.json");
+
+        let outcome = match mode {
+            AuthForwardMode::Ignore => {
+                wipe_claude_state(account_json, credentials_json)?;
+                AuthProvisionOutcome::Skipped
+            }
+            AuthForwardMode::ApiKey => {
+                wipe_claude_state(account_json, credentials_json)?;
+                AuthProvisionOutcome::Skipped
+            }
+            AuthForwardMode::OAuthToken => {
+                if credentials_json.exists() {
+                    std::fs::remove_file(credentials_json)?;
+                }
+                write_private_file(account_json, r#"{"hasCompletedOnboarding":true}"#)?;
+                AuthProvisionOutcome::TokenMode
+            }
+            AuthForwardMode::Sync => {
+                // Read ONLY the selected source folder's credentials. An
+                // explicit source dir must never fall back to the default
+                // host `~/.claude` / default Keychain account — that leak
+                // is exactly the bug this path guards against (an operator
+                // who picked an Enterprise source folder would otherwise
+                // get their default Max account inside the capsule).
+                if let Some(creds) =
+                    read_host_credentials_from_claude_config_dir(source_dir, host_home)
+                {
+                    copy_host_claude_json(&host_claude_json, account_json)?;
+                    write_private_file(credentials_json, &creds)?;
+                    AuthProvisionOutcome::Synced
+                } else {
+                    eprintln!(
+                        "[jackin] Claude source folder {} has no readable credentials — \
+                         leaving unauthenticated (no fallback to the default account)",
+                        source_dir.display()
+                    );
+                    if !account_json.exists() {
+                        write_private_file(account_json, "{}")?;
+                    }
+                    repair_permissions(account_json);
+                    repair_permissions(credentials_json);
+                    AuthProvisionOutcome::HostMissing
+                }
+            }
+        };
+
+        let forward_auth = matches!(
+            outcome,
+            AuthProvisionOutcome::Synced
+                | AuthProvisionOutcome::HostMissing
+                | AuthProvisionOutcome::TokenMode
+        );
+        Ok((outcome, forward_auth))
+    }
 }
 
 impl RoleState {
@@ -462,9 +627,29 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_amp_auth_from_path(
+            secrets_json,
+            mode,
+            &host_home.join(".local/share/amp/secrets.json"),
+        )
+    }
+
+    pub(super) fn provision_amp_auth_from_source_dir(
+        secrets_json: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_amp_auth_from_path(secrets_json, mode, &source_dir.join("secrets.json"))
+    }
+
+    fn provision_amp_auth_from_path(
+        secrets_json: &Path,
+        mode: AuthForwardMode,
+        host_secrets_json: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
         provision_single_file_credential(
             secrets_json,
-            &host_home.join(".local/share/amp/secrets.json"),
+            host_secrets_json,
             mode,
             "Amp secrets.json",
             "Amp",
@@ -510,9 +695,17 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
+        Self::provision_kimi_auth_from_source_dir(kimi_dir, mode, &host_home.join(".kimi-code"))
+    }
+
+    pub(super) fn provision_kimi_auth_from_source_dir(
+        kimi_dir: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
         provision_kimi_dir_credential(
             kimi_dir,
-            &host_home.join(".kimi-code"),
+            source_dir,
             mode,
             KIMI_SYNC_FILES,
             "Kimi dir",
@@ -650,9 +843,29 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_opencode_auth_from_path(
+            auth_json,
+            mode,
+            &host_home.join(".local/share/opencode/auth.json"),
+        )
+    }
+
+    pub(super) fn provision_opencode_auth_from_source_dir(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_opencode_auth_from_path(auth_json, mode, &source_dir.join("auth.json"))
+    }
+
+    fn provision_opencode_auth_from_path(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        host_auth_json: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
         provision_single_file_credential(
             auth_json,
-            &host_home.join(".local/share/opencode/auth.json"),
+            host_auth_json,
             mode,
             "OpenCode auth.json",
             "OpenCode",
@@ -677,9 +890,25 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_grok_auth_from_path(auth_json, mode, &host_home.join(".grok/auth.json"))
+    }
+
+    pub(super) fn provision_grok_auth_from_source_dir(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        source_dir: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        Self::provision_grok_auth_from_path(auth_json, mode, &source_dir.join("auth.json"))
+    }
+
+    fn provision_grok_auth_from_path(
+        auth_json: &Path,
+        mode: AuthForwardMode,
+        host_auth_json: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
         provision_single_file_credential(
             auth_json,
-            &host_home.join(".grok/auth.json"),
+            host_auth_json,
             mode,
             "Grok auth.json",
             "Grok",
@@ -752,12 +981,29 @@ fn provision_single_file_credential(
                 AuthProvisionOutcome::HostMissing
             }
             Ok(content) => {
-                write_private_file(target, &content).with_context(|| {
-                    format!(
-                        "failed to write {agent_name} role-state {label} at {}",
-                        target.display()
-                    )
-                })?;
+                // No-churn guard: skip the atomic write when the role-state
+                // file already holds identical content. `write_private_file`
+                // replaces the inode (temp + rename); on macOS that
+                // invalidates a live single-file bind mount into the running
+                // container. The background sibling-auth prewarm
+                // (`prewarm_auth_for_agents`, spawned during launch) re-runs
+                // this for already-foreground-provisioned agents, so an
+                // unconditional rename races `docker create` and silently
+                // breaks the foreground container's auth mounts — leaving the
+                // sibling agent unauthenticated. Mirrors the GitHub
+                // provisioner's no-churn guard.
+                let unchanged =
+                    std::fs::read_to_string(target).is_ok_and(|existing| existing == content);
+                if unchanged {
+                    repair_permissions(target);
+                } else {
+                    write_private_file(target, &content).with_context(|| {
+                        format!(
+                            "failed to write {agent_name} role-state {label} at {}",
+                            target.display()
+                        )
+                    })?;
+                }
                 AuthProvisionOutcome::Synced
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -853,7 +1099,26 @@ fn wipe_claude_state(account_json: &Path, credentials_json: &Path) -> anyhow::Re
     Ok(())
 }
 
-/// Read the host's Claude Code OAuth credentials.
+/// Read a Claude `.credentials.json` file, treating empty/whitespace as
+/// absent so a blank file neither shadows the macOS Keychain fallback nor
+/// provisions the capsule with credentials that boot the agent
+/// unauthenticated. A read error on a file the operator explicitly selected
+/// (permissions, IO) is a real failure — log it rather than folding it into
+/// the silent not-found path; only `NotFound` is treated as "no file here".
+fn read_nonempty_credentials_file(path: &Path) -> Option<String> {
+    match std::fs::read_to_string(path) {
+        Ok(content) if !content.trim().is_empty() => Some(content),
+        Ok(_) => None,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            eprintln!("[jackin] warning: failed to read {}: {e}", path.display());
+            None
+        }
+    }
+}
+
+/// Read the host's Claude Code OAuth credentials for the default
+/// `~/.claude` config dir.
 ///
 /// Checks the file-based store at `~/.claude/.credentials.json` first
 /// (used on Linux, and makes the function testable with temp dirs).
@@ -862,7 +1127,7 @@ fn wipe_claude_state(account_json: &Path, credentials_json: &Path) -> anyhow::Re
 fn read_host_credentials(host_home: &Path) -> Option<String> {
     // File-based credentials (Linux, or macOS with an explicit export).
     let creds_path = host_home.join(".claude/.credentials.json");
-    if let Ok(content) = std::fs::read_to_string(creds_path) {
+    if let Some(content) = read_nonempty_credentials_file(&creds_path) {
         return Some(content);
     }
 
@@ -870,32 +1135,96 @@ fn read_host_credentials(host_home: &Path) -> Option<String> {
     // real home directory.  This keeps tests hermetic (they use temp
     // dirs) while still supporting the Keychain in production.
     #[cfg(target_os = "macos")]
-    {
-        let real_home = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf());
-        if real_home.as_deref() == Some(host_home) {
-            #[expect(
-                clippy::disallowed_methods,
-                reason = "macOS Keychain read runs inside spawn_blocking during launch"
-            )]
-            let output = std::process::Command::new("security")
-                .args([
-                    "find-generic-password",
-                    "-s",
-                    "Claude Code-credentials",
-                    "-w",
-                ])
-                .output()
-                .ok()?;
-            if output.status.success() {
-                let creds = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-                if !creds.is_empty() {
-                    return Some(creds);
-                }
-            }
-        }
+    if host_home_is_real(host_home) {
+        return read_claude_keychain(CLAUDE_KEYCHAIN_SERVICE_BASE);
     }
 
     None
+}
+
+/// Read the host's Claude Code OAuth credentials for an explicit
+/// `CLAUDE_CONFIG_DIR` source folder (Workspace Auth sync mode).
+///
+/// Reads ONLY credentials belonging to `source_dir`: the file-based
+/// `source_dir/.credentials.json` first, then — on macOS — the Keychain
+/// entry Claude Code provisions for that specific config dir. It never
+/// falls back to the default `~/.claude` credentials or the default
+/// Keychain service; an operator who selected a source folder must get
+/// that folder's account (e.g. a company Enterprise login) or nothing,
+/// never the default Max account leaking in from the host.
+fn read_host_credentials_from_claude_config_dir(
+    source_dir: &Path,
+    host_home: &Path,
+) -> Option<String> {
+    // File-based credentials (Linux, or macOS with an explicit export).
+    let creds_path = source_dir.join(".credentials.json");
+    if let Some(content) = read_nonempty_credentials_file(&creds_path) {
+        return Some(content);
+    }
+
+    // macOS Keychain — Claude Code stores per-config-dir credentials
+    // under a service name derived from the config dir path. Gated on the
+    // real home directory so tests stay hermetic (temp dirs never shell
+    // out to `security`).
+    #[cfg(target_os = "macos")]
+    if host_home_is_real(host_home) {
+        let service = claude_keychain_service_for_config_dir(source_dir, host_home);
+        return read_claude_keychain(&service);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    let _ = host_home;
+    None
+}
+
+/// Base macOS Keychain service name Claude Code uses for the default
+/// `~/.claude` config dir.
+#[cfg(target_os = "macos")]
+const CLAUDE_KEYCHAIN_SERVICE_BASE: &str = "Claude Code-credentials";
+
+/// Read a credential blob from the macOS login Keychain under `service`.
+/// Returns `None` on lookup failure or an empty value.
+#[cfg(target_os = "macos")]
+fn read_claude_keychain(service: &str) -> Option<String> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "macOS Keychain read runs inside spawn_blocking during launch"
+    )]
+    let output = std::process::Command::new("security")
+        .args(["find-generic-password", "-s", service, "-w"])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let creds = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if !creds.is_empty() {
+            return Some(creds);
+        }
+    }
+    None
+}
+
+/// Derive the macOS Keychain service name Claude Code uses for a given
+/// `CLAUDE_CONFIG_DIR`.
+///
+/// Claude Code keys the default `~/.claude` config dir under the bare
+/// `"Claude Code-credentials"` service, and every other config dir under
+/// `"Claude Code-credentials-<suffix>"` where `<suffix>` is the first
+/// eight hex chars (four bytes) of the SHA-256 of the absolute config dir
+/// path. Verified against a live Keychain entry (`~/.claude-work`
+/// → `…-3342f2c7`).
+#[cfg(target_os = "macos")]
+fn claude_keychain_service_for_config_dir(source_dir: &Path, host_home: &Path) -> String {
+    use sha2::{Digest, Sha256};
+
+    // The default config dir uses the bare service name, not a suffix.
+    if source_dir == host_home.join(".claude") {
+        return CLAUDE_KEYCHAIN_SERVICE_BASE.to_owned();
+    }
+
+    let digest = Sha256::digest(source_dir.to_string_lossy().as_bytes());
+    let mut suffix = crate::instance::naming::hex_lower(&digest);
+    suffix.truncate(8);
+    format!("{CLAUDE_KEYCHAIN_SERVICE_BASE}-{suffix}")
 }
 
 /// Reject symlinks at `path` to prevent a compromised role from
@@ -1032,13 +1361,5 @@ fn repair_permissions(path: &Path) {
     }
 }
 
-#[cfg(test)]
-mod amp_auth_tests;
-#[cfg(test)]
-mod codex_auth_tests;
-#[cfg(test)]
-mod github_auth_tests;
-#[cfg(test)]
-mod kimi_auth_tests;
 #[cfg(test)]
 mod tests;

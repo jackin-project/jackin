@@ -1,5 +1,6 @@
 //! Launch cockpit top-level frame composition.
 
+use jackin_tui::components::{BOTTOM_CHROME_ROWS, bottom_chrome_areas, render_hint_bar};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::widgets::Clear;
@@ -15,6 +16,7 @@ use crate::tui::components::failure_dialog::{
 use crate::tui::components::footer::render_footer;
 use crate::tui::components::header::render_cockpit_header;
 use crate::tui::components::progress_rail::render_progress;
+use crate::tui::components::prompts::draw_confirm;
 use crate::tui::components::rain::{RainState, render_rain};
 
 #[allow(clippy::too_many_arguments)]
@@ -31,6 +33,23 @@ pub fn render_launch_frame(
     let area = frame.area();
     frame.render_widget(Clear, area);
 
+    // Quit confirmation supersedes every other surface (matching the console),
+    // owning the screen behind its own backdrop until the operator answers.
+    // `draw_confirm` lays out the dimmed backdrop, the centered dialog, and the
+    // hint row; render the status footer underneath so the bottom chrome stays
+    // intact — hint row, blank spacer, then the status bar at the very bottom.
+    if let Some(confirm) = &view.quit_confirm {
+        draw_confirm(frame, confirm);
+        render_footer(
+            frame,
+            bottom_chrome_areas(area).footer,
+            view,
+            run_id,
+            debug_mode,
+        );
+        return;
+    }
+
     // The build-log overlay owns the whole screen behind an opaque backdrop,
     // matching the capsule modal convention (hide everything, don't dim).
     if view.build_log_open {
@@ -43,17 +62,23 @@ pub fn render_launch_frame(
         .constraints([
             Constraint::Length(2), // brand header (pill + spacer) — shared chrome
             Constraint::Min(8),    // launch body
-            Constraint::Length(1), // status / diagnostics
+            Constraint::Length(BOTTOM_CHROME_ROWS), // hint bar + spacer + status footer
         ])
         .split(area);
 
     // Freeze animated accents while a failure popup owns the screen so no
     // live cue keeps moving behind the modal.
     let frozen = no_motion || view.failure.is_some();
+    let chrome = bottom_chrome_areas(rows[2]);
 
     render_cockpit_header(frame, rows[0], view, frozen);
     render_body(frame, rows[1], view, frozen, rain);
-    render_footer(frame, rows[2], view, run_id, debug_mode);
+    render_hint_bar(
+        frame,
+        chrome.hint,
+        &crate::tui::keymap::cockpit_global_hint_spans(),
+    );
+    render_footer(frame, chrome.footer, view, run_id, debug_mode);
 
     if let Some(failure) = &view.failure {
         render_failure_popup(frame, area, view, failure, run_id);

@@ -24,7 +24,16 @@ impl StepCounter {
         self.progress = Some(progress);
     }
 
-    pub(in crate::runtime::launch) async fn next(&mut self, text: &str) {
+    pub(in crate::runtime::launch) async fn next(&mut self, text: &str) -> anyhow::Result<()> {
+        // Step boundaries are cancellation checkpoints. Long blocking ops are
+        // each raced against the token via the progress `while_waiting` seam,
+        // but the quick async work *between* them (docker inspects, cache
+        // probes) is not individually raced; bailing here bounds how long a
+        // Ctrl+C can go unobserved to a single step. The bail unwinds through
+        // the pipeline's normal `Err` cleanup, same as any leaf race.
+        if self.is_cancelled() {
+            return Err(jackin_launch::LaunchCancelled::err());
+        }
         if let (Some(progress), Some(stage)) = (&mut self.progress, self.current_stage) {
             progress.stage_done(stage, completion_label(stage));
         }
@@ -36,6 +45,16 @@ impl StepCounter {
             progress.stage_started(stage, text);
             progress.settle_stage_visual().await;
         }
+        Ok(())
+    }
+
+    /// `true` once the operator has hit Ctrl+C / Ctrl+Q on the rich launch
+    /// surface. Always `false` in the headless (no-progress) path, where
+    /// cancellation is the OS's SIGINT rather than the cockpit's token.
+    pub(in crate::runtime::launch) fn is_cancelled(&self) -> bool {
+        self.progress
+            .as_ref()
+            .is_some_and(|progress| progress.cancel_token().is_cancelled())
     }
 
     pub(in crate::runtime::launch) fn done(&self) {
@@ -187,3 +206,6 @@ pub(in crate::runtime::launch) fn launch_mount_lines(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests;

@@ -59,7 +59,7 @@ impl OpPickerState {
     fn handle_account_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match key.code {
             KeyCode::Esc => ModalOutcome::Cancel,
-            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('r' | 'R') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Re-fires the probe so add/remove of signed-in
                 // accounts mid-session is picked up without restart.
                 let plan = account_stage_refresh_plan();
@@ -115,7 +115,7 @@ impl OpPickerState {
 
     fn handle_vault_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match key.code {
-            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('r' | 'R') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let account_id = self.selected_account_id();
                 let plan = vault_stage_refresh_plan();
                 self.op_cache
@@ -197,7 +197,7 @@ impl OpPickerState {
 
     fn handle_item_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match key.code {
-            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('r' | 'R') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let account_id = self.selected_account_id();
                 let vault_id = self.selected_vault_id_or_default();
                 self.op_cache
@@ -354,7 +354,7 @@ impl OpPickerState {
     )]
     fn handle_field_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match key.code {
-            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('r' | 'R') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let account_id = self.selected_account_id();
                 let vault_id = self.selected_vault_id_or_default();
                 let item_id = self.selected_item_id_or_default();
@@ -602,72 +602,4 @@ impl OpPickerState {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crossterm::event::{KeyEventKind, KeyEventState};
-    use jackin_core::op_types::{OpAccount, OpItem};
-
-    fn key(code: KeyCode) -> KeyEvent {
-        KeyEvent {
-            code,
-            modifiers: KeyModifiers::NONE,
-            kind: KeyEventKind::Press,
-            state: KeyEventState::NONE,
-        }
-    }
-
-    fn account(id: &str, email: &str) -> OpAccount {
-        OpAccount {
-            id: id.to_owned(),
-            email: email.to_owned(),
-            url: format!("{id}.1password.com"),
-        }
-    }
-
-    fn item(id: &str, name: &str) -> OpItem {
-        OpItem {
-            id: id.to_owned(),
-            name: name.to_owned(),
-            subtitle: String::new(),
-        }
-    }
-
-    #[test]
-    fn account_filter_shrinking_below_selection_resets_to_first_match() {
-        let mut state = OpPickerState::new();
-        state.load_state = OpLoadState::Ready;
-        state.stage = OpPickerStage::Account;
-        state.accounts = vec![
-            account("a", "alex@example.com"),
-            account("b", "briar@example.com"),
-            account("c", "casey@example.com"),
-        ];
-        state.account_list_state = list_state_for_count(state.accounts.len());
-        state.account_list_state.select(Some(2));
-
-        state.handle_key(key(KeyCode::Char('b')));
-
-        assert_eq!(state.filtered_accounts().len(), 1);
-        assert_eq!(state.filtered_accounts()[0].email, "briar@example.com");
-        assert_eq!(state.account_list_state.selected, Some(0));
-    }
-
-    #[test]
-    fn item_filter_without_matches_clears_selection() {
-        let mut state = OpPickerState::new();
-        state.load_state = OpLoadState::Ready;
-        state.stage = OpPickerStage::Item;
-        state.items = vec![
-            item("a", "Cloudflare"),
-            item("b", "GitHub"),
-            item("c", "Stripe"),
-        ];
-        state.item_list_state = list_state_for_count(state.items.len());
-        state.item_list_state.select(Some(2));
-
-        state.handle_key(key(KeyCode::Char('z')));
-
-        assert!(state.filtered_item_choices().is_empty());
-        assert_eq!(state.item_list_state.selected, None);
-    }
-}
+mod tests;

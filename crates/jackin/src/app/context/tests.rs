@@ -2,6 +2,7 @@
 use super::*;
 use crate::config;
 use crate::workspace;
+use jackin_config::find_saved_workspace_for_cwd;
 
 #[test]
 fn classify_target_tilde_path() {

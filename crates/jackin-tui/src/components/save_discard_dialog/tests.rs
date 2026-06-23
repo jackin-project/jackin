@@ -1,6 +1,6 @@
 //! Tests for `save_discard_dialog`.
 use super::*;
-use crossterm::event::{KeyEventKind, KeyEventState, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent {

@@ -62,9 +62,9 @@ That means a role defines the tools and conventions, while jackin' injects the a
 
 ## Role repository tooling
 
-Role repositories are normal source repositories, so jackin' keeps role maintenance split between two surfaces. The main operator CLI owns desktop ergonomics: its role-authoring dispatch validates checked-out role repositories, applies manifest migrations to local copies, and writes small starter repositories for authors. That path lives in <RepoFile path="crates/jackin/src/role_authoring.rs" /> and reuses the same manifest migration registry and repository contract checks used by runtime launch.
+Role repositories are normal source repositories, so jackin' keeps role maintenance split between two surfaces. The main operator CLI owns desktop ergonomics: its role-authoring dispatch validates checked-out role repositories, applies manifest migrations to local copies, and writes small starter repositories for authors. That path lives in <RepoFile path="crates/jackin/src/role_authoring.rs">crates/jackin/src/role_authoring.rs</RepoFile> and reuses the same manifest migration registry and repository contract checks used by runtime launch.
 
-Automation stays on the small role-focused binary in <RepoFile path="crates/jackin/src/bin/role.rs" />. CI workflows and future Renovate-style migration jobs should not depend on the full operator CLI just to validate a role repo or restamp a manifest; they call the standalone validator, which shares <RepoFile path="crates/jackin-manifest/src/repo.rs" /> and <RepoFile path="crates/jackin-manifest/src/migrations.rs" /> with the desktop path.
+Automation stays on the small role-focused binary in <RepoFile path="crates/jackin/src/bin/role.rs">crates/jackin/src/bin/role.rs</RepoFile>. CI workflows and future Renovate-style migration jobs should not depend on the full operator CLI just to validate a role repo or restamp a manifest; they call the standalone validator, which shares <RepoFile path="crates/jackin-manifest/src/repo.rs">crates/jackin-manifest/src/repo.rs</RepoFile> and <RepoFile path="crates/jackin-manifest/src/migrations.rs">crates/jackin-manifest/src/migrations.rs</RepoFile> with the desktop path.
 
 ## Container lifecycle
 
@@ -83,7 +83,7 @@ Every `jackin ...` invocation mints a run diagnostics ID before command-specific
 9. **Start the agent container detached** (`docker run -d ... <image> <agent>`) with `jackin-capsule` as PID 1. The trailing `<agent>` argv selects only the initial tab; it is not a container-level environment variable.
 10. **Attach the operator terminal** via `docker exec -it <container> /jackin/runtime/jackin-capsule`. The client connects to the PID 1 daemon over `/jackin/run/jackin.sock` and renders the in-container multiplexer.
 
-Launch progress is emitted through <RepoFile path="crates/jackin-runtime/src/runtime/progress.rs" />. Rich terminals render the Ratatui launch cockpit; low-capability or non-interactive terminals receive compact deterministic stage lines. The public stages are stable (`identity`, `role`, `credentials`, `construct`, `agent binaries`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) even when implementation details change underneath. The rich cockpit may briefly dwell on stage changes so very fast work still produces a legible full-sequence rail before the terminal is handed to the Capsule client.
+Launch progress is emitted through <RepoFile path="crates/jackin-runtime/src/runtime/progress.rs">crates/jackin-runtime/src/runtime/progress.rs</RepoFile>. Rich terminals render the Ratatui launch cockpit; low-capability or non-interactive terminals receive compact deterministic stage lines. The public stages are stable (`identity`, `role`, `credentials`, `construct`, `agent binaries`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`) even when implementation details change underneath. The rich cockpit may briefly dwell on stage changes so very fast work still produces a legible full-sequence rail before the terminal is handed to the Capsule client.
 
 | Stage label | Technical work behind the label |
 |---|---|
@@ -115,7 +115,7 @@ Every fresh launch gets a unique DNS-safe instance identity. Existing running or
 
 ### Capsule supervisor and session model
 
-Every role container runs the jackin' Capsule (<RepoFile path="crates/jackin-capsule/src/main.rs" />) as PID 1. In daemon mode it reaps children, manages PTYs, renders the multiplexer, and serves the socket API. `SIGTERM` / `SIGINT` trigger orderly shutdown, and the daemon exits when the last live session ends so Docker reports a clean container exit. The full Capsule design is documented in [jackin' Capsule](/reference/capsule//).
+Every role container runs the jackin' Capsule (<RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile>) as PID 1. In daemon mode it reaps children, manages PTYs, renders the multiplexer, and serves the socket API. `SIGTERM` / `SIGINT` trigger orderly shutdown, and the daemon exits when the last live session ends so Docker reports a clean container exit. The full Capsule design is documented in [jackin' Capsule](/reference/capsule//).
 
 Sessions are daemon-owned PTYs inside the running container. All agent sessions are equal — there is no "primary" or "secondary" distinction.
 
@@ -126,13 +126,13 @@ Sessions are daemon-owned PTYs inside the running container. All agent sessions 
 
 When an agent session exits cleanly (the operator types `/exit` or the agent finishes), the daemon removes that pane. If no live sessions remain, PID 1 exits and the host cleanup path tears down the role container, DinD sidecar, certs volume, and network.
 
-`JACKIN_AGENT` is set per agent PTY by <RepoFile path="crates/jackin-capsule/src/session.rs" />, immediately before `/jackin/runtime/entrypoint.sh` runs. The daemon's own process does not carry `JACKIN_AGENT`, so shell panes and future mixed-agent sessions do not inherit a misleading container-wide agent value.
+`JACKIN_AGENT` is set per agent PTY by <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>, immediately before `/jackin/runtime/entrypoint.sh` runs. The daemon's own process does not carry `JACKIN_AGENT`, so shell panes and future mixed-agent sessions do not inherit a misleading container-wide agent value.
 
 Role identity, workspace workdir, supported-agent order, and model overrides are not duplicated into container-wide environment variables. The daemon reads those values from `/jackin/run/agent.toml`, keeping all jackin-owned in-container runtime state under `/jackin/`.
 
 Session state is not yet reconciled against the live container on console refresh — Phase 4 of the [Console agent session control](/reference/roadmap/console-agent-session-control/) roadmap covers this work. The `sessions` field in the instance manifest is written but not populated until reconciliation lands.
 
-Implementation: <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> (`launch_role_runtime`), <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
+Implementation: <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>, <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> (`launch_role_runtime`), <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
 
 ### Stopping
 
@@ -178,7 +178,7 @@ The container no longer runs tmux for agent sessions. The Capsule owns the PTYs 
 | Escape timing | The input parser treats Escape as data for the pane except when a jackin' dialog is open; dialogs receive normalized legacy keys even after an embedded TUI enables progressive keyboard reporting. |
 | Mouse | The client keeps the outer terminal in SGR any-event mode. The daemon handles clicks on jackin' chrome and forwards pane mouse events only when the pane's program opted into mouse reporting. |
 
-Implementation: <RepoFile path="crates/jackin-capsule/src/client.rs" />, <RepoFile path="crates/jackin-capsule/src/tui/input.rs" />, <RepoFile path="crates/jackin-capsule/src/session.rs" />, and <RepoFile path="crates/jackin-capsule/src/daemon.rs" />.
+Implementation: <RepoFile path="crates/jackin-capsule/src/client.rs">crates/jackin-capsule/src/client.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/tui/input.rs">crates/jackin-capsule/src/tui/input.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>, and <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>.
 
 Operators running `jackin console` from inside their own tmux session need matching host-side configuration so that modified keys are forwarded through the host tmux before they reach the container. See the [Running inside tmux](/guides/tmux/) operator guide.
 
@@ -322,7 +322,7 @@ If the main thing you need is the strongest local boundary for autonomous agents
 
 ## Technology stack
 
-jackin' is built in Rust. The runtime dependencies, grouped by what they own, match <RepoFile path="Cargo.toml" />:
+jackin' is built in Rust. The runtime dependencies, grouped by what they own, match <RepoFile path="Cargo.toml">Cargo.toml</RepoFile>:
 
 | Concern | Crates |
 |---|---|
@@ -338,9 +338,9 @@ jackin' is built in Rust. The runtime dependencies, grouped by what they own, ma
 | Open external URLs | `open` |
 | Test helpers (dev) | `assert_cmd`, `predicates` |
 
-The project targets **Rust edition 2024** with a current MSRV of **1.94** (see `rust-version` in <RepoFile path="Cargo.toml" />) and `unsafe_code = "forbid"` at the crate root. Clippy lints are configured with `correctness` and `suspicious` set to `deny` and `complexity`/`style`/`perf`/`pedantic`/`nursery` set to `warn` — see <RepoFile path="Cargo.toml" /> for the full lint table.
+The project targets **Rust edition 2024** with a current MSRV of **1.94** (see `rust-version` in <RepoFile path="Cargo.toml">Cargo.toml</RepoFile>) and `unsafe_code = "forbid"` at the crate root. Clippy lints are configured with `correctness` and `suspicious` set to `deny` and `complexity`/`style`/`perf`/`pedantic`/`nursery` set to `warn` — see <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> for the full lint table.
 
-When this list drifts from <RepoFile path="Cargo.toml" />, <RepoFile path="Cargo.toml" /> wins. Update both in the same PR.
+When this list drifts from <RepoFile path="Cargo.toml">Cargo.toml</RepoFile>, <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> wins. Update both in the same PR.
 
 ## Async architecture and the "no blocking on the render thread" rule
 
@@ -361,9 +361,9 @@ Both the host CLI (`crates/jackin/src/main.rs`) and the capsule daemon (`crates/
 
 `spawn_blocking` works on the `current_thread` runtime — it uses Tokio's separate blocking thread pool, so the runtime thread keeps polling the render task while the blocking work runs elsewhere.
 
-**Known open sites (Defect 43).** A small number of blocking calls remain in the provisioning path. The highest-priority one is `RoleState::prepare` in <RepoFile path="crates/jackin-runtime/src/instance.rs" />, which runs `gh` CLI, macOS keychain (`security`), and filesystem copies directly on the async provisioning task — and is therefore the most likely rain-freeze cause when git auth or 1Password are involved. Wrap it in `spawn_blocking` and clone the necessary inputs for the closure. Subsequent conversions: `op_cli.rs` poll loops, and any remaining `std::process::Command` in async-reachable paths.
+**Known open sites (Defect 43).** A small number of blocking calls remain in the provisioning path. The highest-priority one is `RoleState::prepare` in <RepoFile path="crates/jackin-runtime/src/instance.rs">crates/jackin-runtime/src/instance.rs</RepoFile>, which runs `gh` CLI, macOS keychain (`security`), and filesystem copies directly on the async provisioning task — and is therefore the most likely rain-freeze cause when git auth or 1Password are involved. Wrap it in `spawn_blocking` and clone the necessary inputs for the closure. Subsequent conversions: `op_cli.rs` poll loops, and any remaining `std::process::Command` in async-reachable paths.
 
-**Parallelism: `try_join!` for independent stages.** The launch pipeline in <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> already uses `tokio::join!` for some independent steps. The pattern is `try_join!(stage_a, stage_b)` for stages with no data dependency, so they run concurrently while the render task keeps ticking. Each stage emits its own `stage_started` / `stage_done` events to the progress channel; the shared-state mutex in `SharedView` handles out-of-order updates already. Extending this to more stage groups is incremental and safe.
+**Parallelism: `try_join!` for independent stages.** The launch pipeline in <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs</RepoFile> already uses `tokio::join!` for some independent steps. The pattern is `try_join!(stage_a, stage_b)` for stages with no data dependency, so they run concurrently while the render task keeps ticking. Each stage emits its own `stage_started` / `stage_done` events to the progress channel; the shared-state mutex in `SharedView` handles out-of-order updates already. Extending this to more stage groups is incremental and safe.
 
 ## AgentRuntime and Provider registry
 

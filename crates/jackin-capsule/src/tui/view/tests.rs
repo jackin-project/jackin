@@ -21,8 +21,14 @@ fn chrome_frame(
     let tabs = [Tab::new_single("Codex", 1, "codex")];
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan =
-        crate::tui::components::status_bar::status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle);
+    let status_plan = crate::tui::components::status_bar::status_bar_plan(
+        80,
+        &tabs,
+        0,
+        &[],
+        PrefixMode::Idle,
+        None,
+    );
     terminal
         .draw(|frame| {
             render_capsule_ratatui_frame(
@@ -55,6 +61,7 @@ fn chrome_frame(
                     debug_run_id,
                     dialog_hint_spans: None,
                     spawn_failure,
+                    palette_key: 0x1C,
                 },
             );
         })
@@ -137,8 +144,14 @@ fn debug_dialog_keeps_status_bar_visible() {
     let snapshot = (DialogRatatuiSnapshot::DebugInfo(state), (3, 8, 10, 64));
     let backend = TestBackend::new(90, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan =
-        crate::tui::components::status_bar::status_bar_plan(90, &tabs, 0, &[], PrefixMode::Idle);
+    let status_plan = crate::tui::components::status_bar::status_bar_plan(
+        90,
+        &tabs,
+        0,
+        &[],
+        PrefixMode::Idle,
+        None,
+    );
 
     terminal
         .draw(|frame| {
@@ -172,6 +185,7 @@ fn debug_dialog_keeps_status_bar_visible() {
                     debug_run_id: None,
                     dialog_hint_spans: None,
                     spawn_failure: None,
+                    palette_key: 0x1C,
                 },
             );
         })
@@ -198,8 +212,14 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
     let tabs = [Tab::new_single("Codex", 1, "codex")];
     let backend = TestBackend::new(90, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan =
-        crate::tui::components::status_bar::status_bar_plan(90, &tabs, 0, &[], PrefixMode::Idle);
+    let status_plan = crate::tui::components::status_bar::status_bar_plan(
+        90,
+        &tabs,
+        0,
+        &[],
+        PrefixMode::Idle,
+        None,
+    );
 
     terminal
         .draw(|frame| {
@@ -233,6 +253,7 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
                     debug_run_id: None,
                     dialog_hint_spans: None,
                     spawn_failure: None,
+                    palette_key: 0x1C,
                 },
             );
         })

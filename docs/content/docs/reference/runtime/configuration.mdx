@@ -119,7 +119,7 @@ The layer 2 and 3 examples above belong in
 | Field | Description | Default |
 |---|---|---|
 | `auth_forward` | How the host's agent credentials (or env-supplied keys/tokens) are made available to agent containers. See [Authentication Forwarding](/guides/authentication). | `sync` |
-| `sync_source_dir` | Optional host-side source folder for file-backed `sync` auth. It is valid on global, workspace, and workspace-role agent blocks for agents that support file-backed sync. | agent runtime default |
+| `sync_source_dir` | Optional host-side source folder for file-backed `sync` auth. The value is the agent credential/config directory itself, such as `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, or an Amp data directory like `$XDG_DATA_HOME/amp`, and is valid on global, workspace, and workspace-role agent blocks for agents that support file-backed sync. | agent runtime default |
 
 Accepted values: `sync` \| `api_key` \| `oauth_token` \| `ignore`.
 `oauth_token` is **Claude only** — setting it under any `[codex]`,
@@ -149,7 +149,7 @@ Credentials referenced by `api_key` and `oauth_token` live in ordinary
 `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`, `AMP_API_KEY`, and
 `KIMI_API_KEY`, and `OPENCODE_API_KEY`.
 
-The workspace editor stages Auth-tab edits in memory until the operator confirms the workspace save. The save path in <RepoFile path="crates/jackin/src/console/services/config.rs" /> applies separate diff passes for general workspace fields, agent auth modes, agent sync source folders, and credential env values; the sync-source pass writes through `ConfigEditor` setters in <RepoFile path="crates/jackin-config/src/editor.rs" /> for both workspace and role layers. This keeps the dialog staging model consistent: the Auth dialog changes pending state only, and disk writes happen only after the workspace save confirmation.
+The workspace editor stages Auth-tab edits in memory until the operator confirms the workspace save. The save path in <RepoFile path="crates/jackin/src/console/services.rs">crates/jackin/src/console/services.rs</RepoFile> applies separate diff passes for general workspace fields, agent auth modes, agent sync source folders, and credential env values; the sync-source pass writes through `ConfigEditor` setters in <RepoFile path="crates/jackin-config/src/editor.rs">crates/jackin-config/src/editor.rs</RepoFile> for both workspace and role layers. This keeps the dialog staging model consistent: the Auth dialog changes pending state only, and disk writes happen only after the workspace save confirmation.
 
 ### GitHub CLI auth-forward settings
 

@@ -5,6 +5,7 @@
     "../../split-input-editor",
     "../../split-app-mod",
     "../../split-operator-env",
-    "../../split-runtime-launch"
+    "../../split-runtime-launch",
+    "../../unify-settings-editor-surfaces"
   ]
 }
