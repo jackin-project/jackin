@@ -50,7 +50,7 @@ Split verification into named blocks only when each block contains meaningful co
 Any PR touching `crates/jackin-capsule/` requires Checkout block to build + export capsule binary before any `jackin` smoke command, plus dedicated `### jackin-capsule smoke` block:
 
 1. Checkout block uses `jackin-dev pr sync <PR_NUMBER>`, then sources generated env file. **Must stay in Checkout, before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` after it consumes whichever binary `ensure_available` resolves first — without capsule export first, launches use cached or preview-release binary + silently skip PR's container-side changes.
-2. `### jackin-capsule smoke` uses template's launch + in-container verify checklist. Does not repeat capsule export; Checkout block already exported `JACKIN_CAPSULE_BIN` when the diff required a local capsule build.
+2. `### jackin-capsule smoke` uses template's launch + in-container verify checklist. Does not repeat capsule export; Checkout block always exports `JACKIN_CAPSULE_BIN`.
 
 `jackin-dev pr sync` cannot mutate parent shell directly. It always writes `JACKIN_CAPSULE_BIN` into generated `env.sh`; Checkout block must source that file before any smoke command. If PR also needs a local construct image, `jackin-dev` detects construct inputs from the diff and writes `JACKIN_CONSTRUCT_IMAGE` into the same env file.
 
@@ -113,7 +113,7 @@ Three env vars let operator test PR without touching live config or state:
 
 `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` mandatory in Checkout block for every PR, including docs-only + pure-refactor PRs. Operator may paste same checkout block before deciding which smoke commands to run, and schema/state writes can happen from surprising places like first-load config sync. `jackin-dev` writes them under the PR-numbered test bundle so every PR gets one removable copy of config + runtime state.
 
-For construct image PRs, `jackin-dev pr sync <PR_NUMBER>` detects construct inputs from the diff, builds the local construct image, and points jackin' at it for Dockerfile validation + role container launch instead of published one. If same PR also touches `crates/jackin-capsule/`, the same sync command also exports the local capsule.
+For construct image PRs, `jackin-dev pr sync <PR_NUMBER>` detects construct inputs from the diff, builds the local construct image, and points jackin' at it for Dockerfile validation + role container launch instead of published one. The same sync command always builds and exports the local capsule.
 
 No `JACKIN_CONSTRUCT_IMAGE` in PRs that don't touch construct image — isolation pattern scopes test risk, not exhaustively listing every env var.
 
