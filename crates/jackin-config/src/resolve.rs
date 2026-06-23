@@ -187,5 +187,26 @@ pub fn resolve_load_workspace(
     })
 }
 
+/// Find the saved workspace that best matches the current working directory.
+///
+/// Workspace workdirs must match `cwd` exactly; mount sources match as a
+/// prefix. When multiple workspaces match, the deepest path wins (most
+/// specific mount point).
+///
+/// Used by CLI context resolution and the console's workspace preselection.
+pub fn find_saved_workspace_for_cwd<'a>(
+    config: &'a AppConfig,
+    cwd: &Path,
+) -> Option<(&'a str, &'a WorkspaceConfig)> {
+    config
+        .workspaces
+        .iter()
+        .filter_map(|(name, ws)| {
+            saved_workspace_match_depth(ws, cwd).map(|depth| (name, ws, depth))
+        })
+        .max_by_key(|(_, _, depth)| *depth)
+        .map(|(name, ws, _)| (name.as_str(), ws))
+}
+
 #[cfg(test)]
 mod tests;

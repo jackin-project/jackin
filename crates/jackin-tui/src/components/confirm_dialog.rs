@@ -4,7 +4,7 @@
 //! Tab / left / right / h/l cycle focus between Yes and No.
 //! Enter commits the focused button.
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -14,12 +14,106 @@ use ratatui::{
 };
 
 use crate::{
-    ModalOutcome,
+    HintSpan, ModalOutcome,
+    keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility},
     theme::{PHOSPHOR_GREEN, WARNING_YELLOW},
 };
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
 use super::dialog_layout::{dialog_inner_chunks, render_dialog_shell};
+
+/// Actions the confirmation dialog can take.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmAction {
+    /// `Y`/`y` — always commits Yes regardless of button focus.
+    Yes,
+    /// `N`/`n` — always commits No regardless of button focus.
+    No,
+    /// `Esc` — cancel the dialog (caller-interpreted as No / dismiss).
+    Cancel,
+    /// `Tab`/`BackTab` — toggle focus between Yes and No.
+    ToggleFocus,
+    /// `Enter` — commit whichever button is currently focused.
+    CommitFocused,
+}
+
+const CONFIRM_BINDINGS: &[KeyBinding<ConfirmAction>] = &[
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        action: ConfirmAction::CommitFocused,
+        hint: Some("confirm"),
+        visibility: Visibility::Shown,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('y')),
+            KeyChord::plain(LogicalKey::Char('Y')),
+        ],
+        action: ConfirmAction::Yes,
+        hint: Some("yes"),
+        visibility: Visibility::Shown,
+        glyph: Some("Y"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('n')),
+            KeyChord::plain(LogicalKey::Char('N')),
+        ],
+        action: ConfirmAction::No,
+        hint: Some("no"),
+        visibility: Visibility::Shown,
+        // Combined glyph — Esc is a hidden alias below, shown here in the label.
+        glyph: Some("N/Esc"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Esc),
+            KeyChord::ctrl(LogicalKey::Char('c')),
+            KeyChord::ctrl(LogicalKey::Char('q')),
+        ],
+        action: ConfirmAction::Cancel,
+        hint: None,
+        // Esc/Ctrl+C/Ctrl+Q advertised via the combined "N/Esc" glyph on the No binding.
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Tab),
+            KeyChord::plain(LogicalKey::BackTab),
+        ],
+        action: ConfirmAction::ToggleFocus,
+        hint: Some("focus"),
+        visibility: Visibility::Shown,
+        glyph: Some("\u{21e5}"), // ⇥
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Left),
+            KeyChord::plain(LogicalKey::Right),
+            KeyChord::plain(LogicalKey::Char('h')),
+            KeyChord::plain(LogicalKey::Char('l')),
+        ],
+        action: ConfirmAction::ToggleFocus,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+];
+
+/// Single-source-of-truth keymap for [`ConfirmState`].
+///
+/// `hint_spans()` produces `↵ confirm   Y yes   N/Esc no   ⇥ focus`.
+/// Replace every hand-written confirm-dialog hint array with `CONFIRM_KEYMAP.hint_spans()`.
+pub static CONFIRM_KEYMAP: Keymap<ConfirmAction> = Keymap::new(CONFIRM_BINDINGS);
+
+/// Return hint spans for the confirm dialog from the authoritative registry.
+/// Prefer calling this rather than hand-writing a hint array.
+#[must_use]
+pub fn confirm_hint_spans() -> Vec<HintSpan<'static>> {
+    CONFIRM_KEYMAP.hint_spans()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmFocus {
@@ -105,24 +199,22 @@ impl ConfirmState {
         &self.kind
     }
 
-    pub const fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<bool> {
-        match key.code {
-            KeyCode::Char('y' | 'Y') => ModalOutcome::Commit(true),
-            KeyCode::Char('n' | 'N') => ModalOutcome::Commit(false),
-            KeyCode::Tab
-            | KeyCode::BackTab
-            | KeyCode::Right
-            | KeyCode::Left
-            | KeyCode::Char('l' | 'h') => {
+    pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<bool> {
+        match CONFIRM_KEYMAP.dispatch(KeyChord::from(key)) {
+            Some(ConfirmAction::Yes) => ModalOutcome::Commit(true),
+            Some(ConfirmAction::No) => ModalOutcome::Commit(false),
+            Some(ConfirmAction::Cancel) => ModalOutcome::Cancel,
+            Some(ConfirmAction::ToggleFocus) => {
                 self.focus = match self.focus {
                     ConfirmFocus::Yes => ConfirmFocus::No,
                     ConfirmFocus::No => ConfirmFocus::Yes,
                 };
                 ModalOutcome::Continue
             }
-            KeyCode::Enter => ModalOutcome::Commit(matches!(self.focus, ConfirmFocus::Yes)),
-            KeyCode::Esc => ModalOutcome::Cancel,
-            _ => ModalOutcome::Continue,
+            Some(ConfirmAction::CommitFocused) => {
+                ModalOutcome::Commit(matches!(self.focus, ConfirmFocus::Yes))
+            }
+            None => ModalOutcome::Continue,
         }
     }
 }
@@ -158,6 +250,31 @@ pub const fn width_pct(state: &ConfirmState) -> u16 {
         ConfirmKind::Default { .. } => 60,
         ConfirmKind::Details { .. } => 70,
     }
+}
+
+/// The canonical "Exit jackin'?" confirmation, shared by every surface that
+/// can quit the app (console, launch cockpit). One construction site keeps the
+/// wording and shape identical everywhere. Default focus = No.
+#[must_use]
+pub fn exit_confirm_state() -> ConfirmState {
+    ConfirmState::new("Exit jackin'?")
+}
+
+/// Exit confirmation for surfaces where quitting force-stops the container and
+/// destroys in-container state (the capsule). Same prompt as
+/// [`exit_confirm_state`], plus warning notes the operator must accept. Default
+/// focus = No.
+#[must_use]
+pub fn exit_confirm_state_with_data_loss() -> ConfirmState {
+    ConfirmState::details(
+        "Confirm",
+        "Exit jackin'?",
+        Vec::new(),
+        vec![
+            "Exiting force-stops the container immediately.".into(),
+            "Work not saved outside the container will be lost.".into(),
+        ],
+    )
 }
 
 pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmState) {

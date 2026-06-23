@@ -47,12 +47,10 @@ fn prepares_persisted_claude_state() {
     )
     .unwrap();
 
-    // Auth files exist as `{}` placeholders even under env-driven
-    // modes; they just won't be bind-mounted (`forward_auth = false`).
-    assert_eq!(
-        std::fs::read_to_string(state.claude_account_json().unwrap()).unwrap(),
-        "{}"
-    );
+    // Fresh ignore-mode launches are lazy: no jackin-owned auth files
+    // are created unless stale forwarded state must be wiped.
+    assert!(!state.claude_account_json().unwrap().exists());
+    assert!(!state.claude_credentials_json().unwrap().exists());
     assert!(
         !state.claude_forwards_auth(),
         "Ignore mode must not forward auth into the container",
@@ -75,11 +73,8 @@ fn prepares_persisted_claude_state() {
         state.claude_credentials_json().unwrap(),
         container_root.join("claude").join("credentials.json"),
     );
-    assert!(container_root.join("home/.claude").is_dir());
-    assert_eq!(
-        std::fs::read_to_string(container_root.join("home/.claude.json")).unwrap(),
-        "{}"
-    );
+    assert!(!container_root.join("home/.claude").exists());
+    assert!(!container_root.join("home/.claude.json").exists());
     assert!(container_root.join("state").is_dir());
 }
 
@@ -125,15 +120,23 @@ model = "gpt-5"
             .data_dir
             .join("jk-k7p9m2xq-agentsmith")
             .join("codex")
+            .join("auth.json")
+            .exists()
+    );
+    assert!(
+        !paths
+            .data_dir
+            .join("jk-k7p9m2xq-agentsmith")
+            .join("codex")
             .join("config.toml")
             .exists()
     );
     assert!(
-        paths
+        !paths
             .data_dir
             .join("jk-k7p9m2xq-agentsmith")
             .join("home/.codex")
-            .is_dir()
+            .exists()
     );
     // Codex state carries no Claude auth paths — the typed enum
     // makes the absence structural rather than a runtime nil.
@@ -226,4 +229,301 @@ plugins = []
         state.claude_account_json().unwrap().exists(),
         "Sync mode must leave an account.json placeholder on disk",
     );
+}
+
+#[test]
+fn prepare_emits_per_auth_slot_timings() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
+    let _active = run.activate();
+
+    RoleState::prepare(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &ignoring_resolvers(),
+        &GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::agent::Agent::Claude,
+    )
+    .unwrap();
+
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(jsonl.contains("role_state_prepare:github_auth"), "{jsonl}");
+    assert!(jsonl.contains("role_state_prepare:claude_auth"), "{jsonl}");
+    assert!(jsonl.contains("role_state_prepare:codex_auth"), "{jsonl}");
+    assert!(jsonl.contains("\"stage\":\"credentials\""), "{jsonl}");
+    assert!(
+        !jsonl.contains("oauth_token:"),
+        "timing details must not include credential values: {jsonl}"
+    );
+}
+
+#[test]
+fn github_ignore_prepare_skips_absent_state() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let manifest = simple_manifest(&temp);
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
+    let _active = run.activate();
+
+    RoleState::prepare(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &ignoring_resolvers(),
+        &GithubAuthContext {
+            mode: GithubAuthMode::Ignore,
+            token: None,
+        },
+        temp.path(),
+        jackin_core::agent::Agent::Claude,
+    )
+    .unwrap();
+
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(jsonl.contains("role_state_prepare:github_auth"), "{jsonl}");
+    assert!(jsonl.contains("skipped_no_state"), "{jsonl}");
+    assert!(
+        !paths
+            .data_dir
+            .join("jk-k7p9m2xq-agentsmith/.config/gh")
+            .exists(),
+        "no-state GitHub ignore mode should not create jackin-owned gh config state"
+    );
+}
+
+#[test]
+fn github_ignore_prepare_still_wipes_existing_state() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let manifest = simple_manifest(&temp);
+    let hosts_yml = paths
+        .data_dir
+        .join("jk-k7p9m2xq-agentsmith")
+        .join(".config/gh/hosts.yml");
+    std::fs::create_dir_all(hosts_yml.parent().unwrap()).unwrap();
+    std::fs::write(&hosts_yml, "github.com:\n    oauth_token: stale\n").unwrap();
+
+    RoleState::prepare(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &ignoring_resolvers(),
+        &GithubAuthContext {
+            mode: GithubAuthMode::Ignore,
+            token: None,
+        },
+        temp.path(),
+        jackin_core::agent::Agent::Claude,
+    )
+    .unwrap();
+
+    assert!(
+        !hosts_yml.exists(),
+        "ignore mode must still wipe stale jackin-owned GitHub auth state"
+    );
+}
+
+#[test]
+fn agent_ignore_prepare_skips_absent_state_without_host_or_home_work() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let manifest = simple_manifest(&temp);
+
+    let host_home = temp.path().join("missing-host-home");
+    let (state, outcome) = RoleState::prepare_for_agents(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &ignoring_resolvers(),
+        &GithubAuthContext::default(),
+        &host_home,
+        jackin_core::agent::Agent::Claude,
+        &[jackin_core::agent::Agent::Claude],
+    )
+    .unwrap();
+
+    assert_eq!(outcome, AuthProvisionOutcome::Skipped);
+    assert!(state.auth.claude.is_some());
+
+    let container_root = paths.data_dir.join("jk-k7p9m2xq-agentsmith");
+    assert!(
+        !container_root.join("claude").exists(),
+        "no-state ignore mode should not create jackin-owned Claude auth state"
+    );
+    assert!(
+        !container_root.join("home/.claude").exists(),
+        "no-state ignore mode should not prepare selected-agent home state"
+    );
+}
+
+#[test]
+fn agent_ignore_prepare_still_wipes_existing_state() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let manifest = simple_manifest(&temp);
+    let stale_account = paths
+        .data_dir
+        .join("jk-k7p9m2xq-agentsmith")
+        .join("claude/account.json");
+    let stale_credentials = paths
+        .data_dir
+        .join("jk-k7p9m2xq-agentsmith")
+        .join("claude/credentials.json");
+    std::fs::create_dir_all(stale_account.parent().unwrap()).unwrap();
+    std::fs::write(&stale_account, r#"{"stale":true}"#).unwrap();
+    std::fs::write(&stale_credentials, r#"{"stale":true}"#).unwrap();
+
+    RoleState::prepare_for_agents(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &ignoring_resolvers(),
+        &GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::agent::Agent::Claude,
+        &[jackin_core::agent::Agent::Claude],
+    )
+    .unwrap();
+
+    assert_eq!(std::fs::read_to_string(&stale_account).unwrap(), "{}");
+    assert!(!stale_credentials.exists());
+}
+
+#[test]
+fn prewarm_auth_for_agents_skips_github_and_selected_slot() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+    let codex_mode_resolved = std::cell::Cell::new(false);
+    let resolvers = PrepareResolvers {
+        auth_modes: &|agent| match agent {
+            jackin_core::agent::Agent::Codex => {
+                codex_mode_resolved.set(true);
+                AuthForwardMode::Ignore
+            }
+            other => panic!("unexpected selected/sibling auth mode resolution for {other}"),
+        },
+        sync_source_dirs: &|agent| match agent {
+            jackin_core::agent::Agent::Codex => None,
+            other => panic!("unexpected selected/sibling sync-source resolution for {other}"),
+        },
+    };
+
+    let count = RoleState::prewarm_auth_for_agents(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &resolvers,
+        temp.path(),
+        &[jackin_core::agent::Agent::Codex],
+    )
+    .unwrap();
+
+    assert_eq!(count, 1);
+    assert!(codex_mode_resolved.get());
+
+    let container_root = paths.data_dir.join("jk-k7p9m2xq-agentsmith");
+    assert!(
+        !container_root.join("home/.codex").exists(),
+        "ignore-mode sibling prewarm should skip absent no-state auth slots"
+    );
+    assert!(
+        !container_root.join("home/.claude").exists(),
+        "background prewarm must not provision the selected/omitted auth slot"
+    );
+}
+
+#[test]
+fn prepare_provisions_all_supported_auth_slots_after_parallel_join() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        r#"version = "v1alpha4"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex", "amp", "kimi", "opencode", "grok"]
+
+[claude]
+plugins = []
+
+[codex]
+
+[amp]
+
+[kimi]
+
+[opencode]
+
+[grok]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    let manifest = load_role_manifest(temp.path()).unwrap();
+
+    let (state, selected_outcome) = RoleState::prepare(
+        &paths,
+        "jk-k7p9m2xq-agentsmith",
+        &manifest,
+        &ignoring_resolvers(),
+        &GithubAuthContext::default(),
+        temp.path(),
+        jackin_core::agent::Agent::Grok,
+    )
+    .unwrap();
+
+    assert_eq!(selected_outcome, AuthProvisionOutcome::Skipped);
+    assert!(state.auth.claude.is_some());
+    assert!(state.auth.codex.is_some());
+    assert!(state.auth.amp.is_some());
+    assert!(state.auth.kimi.is_some());
+    assert!(state.auth.opencode.is_some());
+    assert!(state.auth.grok.is_some());
 }

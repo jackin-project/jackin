@@ -47,10 +47,9 @@ pub fn chmod_executable(_path: &Path) -> Result<()> {
 
 /// True if `path` is a regular file with an executable bit set.
 ///
-/// Every cached binary is [`chmod_executable`]'d after download, so a cached
-/// file without the bit is corrupt and must be re-fetched. On non-Unix hosts —
-/// which cannot represent the bit — this falls back to a file-exists check,
-/// matching [`chmod_executable`]'s no-op there.
+/// Every cached binary is [`chmod_executable`]'d after download. On non-Unix
+/// hosts — which cannot represent the bit — this falls back to a file-exists
+/// check, matching [`chmod_executable`]'s no-op there.
 #[cfg(unix)]
 pub fn is_executable_file(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt as _;
@@ -63,6 +62,19 @@ pub fn is_executable_file(path: &Path) -> bool {
 #[cfg(not(unix))]
 pub fn is_executable_file(path: &Path) -> bool {
     path.is_file()
+}
+
+/// Repair a regular cached binary that exists but has lost its executable bit.
+///
+/// Returns `true` only when the path is a regular file and is executable after
+/// the repair. Missing paths and directories return `false` so callers can
+/// continue to their normal fallback/download path.
+pub fn repair_executable_file(path: &Path) -> Result<bool> {
+    if !path.is_file() {
+        return Ok(false);
+    }
+    chmod_executable(path)?;
+    Ok(is_executable_file(path))
 }
 
 /// SHA-256 of a file, returned as lowercase hex.

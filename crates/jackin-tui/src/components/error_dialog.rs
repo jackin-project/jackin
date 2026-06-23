@@ -2,15 +2,51 @@
 
 use std::cell::Cell;
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 
+use crate::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
 use crate::theme::{DANGER_RED, WHITE};
-use crate::{ModalOutcome, centered_rect};
+use crate::{HintSpan, ModalOutcome, centered_rect};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorPopupAction {
+    Dismiss,
+}
+
+const ERROR_POPUP_BINDINGS: &[KeyBinding<ErrorPopupAction>] = &[
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Enter),
+            KeyChord::plain(LogicalKey::Esc),
+        ],
+        action: ErrorPopupAction::Dismiss,
+        hint: Some("dismiss"),
+        visibility: Visibility::Shown,
+        glyph: Some("↵/Esc"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('o')),
+            KeyChord::plain(LogicalKey::Char('O')),
+        ],
+        action: ErrorPopupAction::Dismiss,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+];
+
+pub static ERROR_POPUP_KEYMAP: Keymap<ErrorPopupAction> = Keymap::new(ERROR_POPUP_BINDINGS);
+
+#[must_use]
+pub fn error_popup_hint_spans() -> Vec<HintSpan<'static>> {
+    ERROR_POPUP_KEYMAP.hint_spans()
+}
 
 #[derive(Debug, Clone)]
 pub struct ErrorPopupState {
@@ -30,10 +66,10 @@ impl ErrorPopupState {
     }
 
     #[must_use]
-    pub const fn handle_key(&self, key: KeyEvent) -> ModalOutcome<()> {
-        match key.code {
-            KeyCode::Enter | KeyCode::Char('o' | 'O') | KeyCode::Esc => ModalOutcome::Cancel,
-            _ => ModalOutcome::Continue,
+    pub fn handle_key(&self, key: KeyEvent) -> ModalOutcome<()> {
+        match ERROR_POPUP_KEYMAP.dispatch(KeyChord::from(key)) {
+            Some(ErrorPopupAction::Dismiss) => ModalOutcome::Cancel,
+            None => ModalOutcome::Continue,
         }
     }
 }

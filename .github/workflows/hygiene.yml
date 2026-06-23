@@ -20,7 +20,7 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -30,27 +30,6 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-${{ runner.arch }}-
-      - id: sccache
-        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-        continue-on-error: true
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - name: Cache mise cargo tools
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -62,23 +41,17 @@ jobs:
         with:
           install_args: "rust cargo:cargo-deny cargo:cargo-fuzz cargo:cargo-hack"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - name: Cache Cargo build artifacts
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          path: |
-            target
-            crates/jackin-term/fuzz/target
-          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-hygiene-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: |
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-hygiene-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-hygiene-${{ hashFiles('Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-${{ runner.arch }}-hygiene-
+          shared-key: ${{ github.job }}
+          cache-all-crates: "true"
+          # No branch in the cache key: GitHub isolates branch caches, so every
+          # PR/branch/release reads the default branch's warm cache via fallback,
+          # and each branch also writes its own small pruned (deps-only) cache so
+          # reruns skip recompiling unchanged dependencies.
       - run: cargo deny check advisories
       - run: cargo hack check --workspace --feature-powerset --all-targets --locked
       - name: Long jackin-term fuzz run
         run: |
           cd crates/jackin-term
           cargo fuzz run --sanitizer none damage_grid_process -- -max_total_time=300
-      - name: Show sccache stats
-        if: always() && steps.sccache.outcome == 'success'
-        run: sccache --show-stats

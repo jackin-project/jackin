@@ -88,7 +88,7 @@ The trade-offs do not change the recommendation. They are real, manageable, and 
 
 1. **Initial strictness.** Start with default rule set (strict, then disable as needed) or minimal set (loose, then add rules as drift surfaces)? Default-strict is more honest about what mechanical rules buy you; minimal-then-grow is less work upfront but tends to stay minimal.
 2. **Auto-fix in CI.** Should CI ever run `rumdl check --fix` and commit back, or should `--fix` be local-only with CI strictly verifying? Local-only is the safer default; auto-fix in CI risks committing unreviewed changes from agents.
-3. **Scope.** Lint only `docs/content/docs/`, or also repo-root markdown (`README.md`, `CHANGELOG.md`, `AGENTS.md`, `RULES.md`, `BRANCHING.md`, `COMMITS.md`, `TESTING.md`, `PROJECT_STRUCTURE.md`, `DEPRECATED.md`, `CONTRIBUTING.md`)? The repo-root files are read by humans and agents from session start; their style consistency arguably matters more than the docs site.
+3. **Scope.** Lint only `docs/content/docs/`, or also repo-root markdown (`README.md`, `CHANGELOG.md`, `AGENTS.md`, `RULES.md`, `TESTING.md`, `PROJECT_STRUCTURE.md`, `DEPRECATED.md`, `CONTRIBUTING.md`)? The repo-root files are read by humans and agents from session start; their style consistency arguably matters more than the docs site.
 4. **Failure mode.** rumdl as a hard merge gate (required check) or as PR annotations only? Hard gate is consistent with `cargo fmt --check` and lychee. Annotations-only weakens the policy to the point where it adds noise without enforcement.
 
 ## Related Files

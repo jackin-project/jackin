@@ -100,7 +100,7 @@ Failures in the launch surface show a short diagnosis, the failed stage, the dia
 Host-side Docker work follows the operator's selected Docker daemon. If `DOCKER_HOST` is set to a non-empty value, jackin' uses it. Otherwise jackin' follows the active Docker CLI context (honouring a per-shell `DOCKER_CONTEXT` override) for local-socket and plain HTTP/TCP contexts, so the image build, per-agent network, DinD sidecar, and role container are created on the same Docker backend. SSH and TLS Docker contexts currently fail with an explicit error instead of silently dropping connection settings.
 </Aside>
 <Aside type="note">
-If the agent manifest declares interactive environment variables, `jackin load` prompts for values that are not already supplied by operator env before building the Docker image. This ensures no build time is wasted if you cancel.
+If the agent manifest declares interactive environment variables, `jackin load` prompts for values that are not already supplied by operator env before building the Docker image. Built-in sibling agent credential prompts stay lazy: a `Claude Code` launch does not ask for a manifest-declared `OPENAI_API_KEY` unless the selected runtime's auth mode needs that key. This ensures no build time is wasted if you cancel.
 </Aside>
 <Aside type="caution">
 Third-party agents (namespaced selectors like `org/agent-name`) require trust confirmation on first use. jackin' will show the agent name and git URL and ask you to confirm before building. You can pre-trust with `jackin config trust grant org/agent-name` or revoke with `jackin config trust revoke org/agent-name`. See [Agent source trust](/guides/security-model#4-agent-source-trust) for details.

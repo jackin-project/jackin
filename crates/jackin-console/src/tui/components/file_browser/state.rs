@@ -10,6 +10,7 @@ use tui_widget_list::ListState;
 use super::git_prompt::GitPromptFocus;
 use super::listing::{FolderEntry, FolderListing};
 use crate::tui::components::list_helpers::{cycle_select, list_state_for_count, selected_choice};
+use crate::tui::layout::point_in_rect;
 
 #[derive(Debug)]
 pub struct FileBrowserState {
@@ -51,21 +52,27 @@ impl FileBrowserState {
             super::git_prompt::git_prompt_footer_items(self.pending_git_url.is_some())
         } else {
             vec![
-                HintSpan::Key("\u{2191}\u{2193}"),
+                // UNREGISTERABLE(multi-key-display-group): ↑↓/j/k combines arrow keys and vim aliases.
+                HintSpan::Key("\u{2191}\u{2193}/j/k"),
                 HintSpan::Text("navigate"),
                 HintSpan::GroupSep,
+                // UNREGISTERABLE(multi-key-display-group): PgUp/PgDn combined display.
                 HintSpan::Key("PgUp/PgDn"),
                 HintSpan::Text("page"),
                 HintSpan::GroupSep,
-                HintSpan::Key("↵"),
+                // UNREGISTERABLE(multi-key-display-group): ↵/l combines Enter and vim right.
+                HintSpan::Key("↵/l"),
                 HintSpan::Text("open"),
                 HintSpan::GroupSep,
-                HintSpan::Key("H/\u{2190}"),
+                // UNREGISTERABLE(multi-key-display-group): H/h/← combines three up-directory bindings.
+                HintSpan::Key("H/h/\u{2190}"),
                 HintSpan::Text("up"),
                 HintSpan::GroupSep,
+                // UNREGISTERABLE(file-browser-no-keymap): S selects inline; no FILE_BROWSER_KEYMAP registered.
                 HintSpan::Key("S"),
                 HintSpan::Text("select"),
                 HintSpan::GroupSep,
+                // UNREGISTERABLE(file-browser-no-keymap): Esc handled inline.
                 HintSpan::Key("Esc"),
                 HintSpan::Text("up/cancel"),
             ]
@@ -124,6 +131,20 @@ impl FileBrowserState {
             self.entries.len(),
             delta,
         )
+    }
+
+    pub fn scroll_selection_at(
+        &mut self,
+        area: ratatui::layout::Rect,
+        column: u16,
+        row: u16,
+        delta: i16,
+    ) -> bool {
+        if self.pending_git_prompt.is_some() || !point_in_rect(column, row, area) {
+            return false;
+        }
+        let _changed = self.scroll_selection(delta);
+        true
     }
 
     pub fn page_selection(&mut self, rows: u16, direction: i16) -> bool {

@@ -104,10 +104,32 @@ const GIT_DCO_IDENTITY_CACHE: &str = "/jackin/state/git-dco-identity";
 const GIT_DCO_IDENTITY_CACHE_ENV: &str = "JACKIN_GIT_DCO_IDENTITY_CACHE";
 
 pub fn run() -> Result<()> {
-    run_container_init_once()?;
-    install_git_trailer_hook_if_requested()?;
-    cache_dco_identity_if_needed();
-    run_agent_setup()
+    run_runtime_setup_concurrently(
+        run_container_init_once,
+        install_git_trailer_hook_if_requested,
+        cache_dco_identity_if_needed,
+        run_agent_setup,
+    )
+}
+
+fn run_runtime_setup_concurrently(
+    container_init: impl FnOnce() -> Result<()> + Send + 'static,
+    git_hook: impl FnOnce() -> Result<()>,
+    dco_cache: impl FnOnce(),
+    agent_setup: impl FnOnce() -> Result<()> + Send + 'static,
+) -> Result<()> {
+    let agent_setup = std::thread::spawn(agent_setup);
+    let foreground: Result<()> = (|| {
+        container_init()?;
+        git_hook()?;
+        dco_cache();
+        Ok(())
+    })();
+    let agent_result = agent_setup
+        .join()
+        .map_err(|_| anyhow::anyhow!("runtime agent setup thread panicked"))?;
+    foreground?;
+    agent_result
 }
 
 /// Write a run-once marker (`ok\n`), creating its parent directory first.
@@ -377,7 +399,80 @@ fn setup_claude(copy_auth: bool) -> Result<()> {
             &["mcp", "add", "shellfirm", "--", "shellfirm", "mcp"],
         );
     }
+    setup_claude_plugins();
     Ok(())
+}
+
+/// Install the Claude plugin marketplaces and plugins declared by the role
+/// manifest, once per home.
+///
+/// Plugin setup moved here from the image build: the `claude` binary is now
+/// bind-mounted read-only at `docker run` (not baked into the derived image), so
+/// there is no longer a build step to run `claude plugin install`. Idempotent via
+/// a marker so re-launches and sibling tabs do not re-run it.
+fn setup_claude_plugins() {
+    let Some(config) = crate::config::load_optional() else {
+        return;
+    };
+    if config.claude_marketplaces.is_empty() && config.claude_plugins.is_empty() {
+        return;
+    }
+    // Re-run when the declared plugin set changes. The marker records the exact
+    // marketplaces+plugins it was written for (the old image build keyed its
+    // bundle cache on a hash of the same commands); a bare exists() check would
+    // shadow a `jackin.role.toml` plugin edit forever.
+    let fingerprint = claude_plugin_fingerprint(&config);
+    let marker = Path::new("/home/agent/.claude/.jackin-plugins.done");
+    if fs::read_to_string(marker).ok().as_deref() == Some(fingerprint.as_str()) {
+        return;
+    }
+    // The official marketplace backs the common plugins; tolerate it already
+    // being registered.
+    run_optional_command(
+        "claude",
+        &[
+            "plugin",
+            "marketplace",
+            "add",
+            "anthropics/claude-plugins-official",
+        ],
+    );
+    for marketplace in &config.claude_marketplaces {
+        let mut args = vec!["plugin", "marketplace", "add", marketplace.source.as_str()];
+        if !marketplace.sparse.is_empty() {
+            args.push("--sparse");
+            for path in &marketplace.sparse {
+                args.push(path.as_str());
+            }
+        }
+        run_optional_command("claude", &args);
+    }
+    for plugin in &config.claude_plugins {
+        run_optional_command("claude", &["plugin", "install", plugin.as_str()]);
+    }
+    fs::create_dir_all("/home/agent/.claude").ok();
+    fs::write(marker, &fingerprint).ok();
+}
+
+/// Stable fingerprint of the declared Claude marketplaces + plugins, stored as
+/// the install marker's contents so a changed plugin set re-triggers install.
+fn claude_plugin_fingerprint(config: &jackin_protocol::CapsuleConfig) -> String {
+    let mut out = String::new();
+    for marketplace in &config.claude_marketplaces {
+        out.push_str("m:");
+        out.push_str(&marketplace.source);
+        for path in &marketplace.sparse {
+            out.push(' ');
+            out.push_str(path);
+        }
+        out.push('\n');
+    }
+    for plugin in &config.claude_plugins {
+        out.push_str("p:");
+        out.push_str(plugin);
+        out.push('\n');
+    }
+    out
 }
 
 fn setup_codex(copy_auth: bool) -> Result<()> {
