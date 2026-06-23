@@ -40,7 +40,7 @@ fn auto_prep_detects_capsule_and_construct_inputs() {
 fn auto_prep_ignores_docs_only_changes() {
     let auto = auto_prep(&["docs/content/docs/reference/roadmap/pr-verification.mdx".to_owned()]);
 
-    assert!(!auto.capsule);
+    assert!(auto.capsule);
     assert!(!auto.construct);
 }
 

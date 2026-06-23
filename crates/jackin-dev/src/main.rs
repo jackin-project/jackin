@@ -401,10 +401,7 @@ fn env_lines(paths: &PrPaths) -> Vec<String> {
 
 fn auto_prep(files: &[String]) -> AutoPrep {
     AutoPrep {
-        capsule: files.iter().any(|file| {
-            file.starts_with("crates/jackin-capsule/")
-                || file.starts_with("crates/jackin-protocol/")
-        }),
+        capsule: true,
         construct: files.iter().any(|file| {
             file.starts_with("docker/construct/")
                 || file == "docker-bake.hcl"

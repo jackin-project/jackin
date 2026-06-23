@@ -125,7 +125,7 @@ source "$(jackin-dev pr path <PR_NUMBER>)/env.sh"
 which jackin
 ```
 
-`jackin-dev pr sync` clones or refreshes the PR checkout, builds the local `jackin` binary, copies live config into the PR bundle, creates empty PR-scoped state, writes `env.sh`, and auto-builds the PR capsule or construct image when the changed files require them. After `source "$(jackin-dev pr path <PR_NUMBER>)/env.sh"`, `echo "$JACKIN_CAPSULE_BIN"` is set only for PRs whose diff requires a local capsule build, and `echo "$JACKIN_CONSTRUCT_IMAGE"` is set only for PRs whose diff requires a local construct image.
+`jackin-dev pr sync` clones or refreshes the PR checkout, builds the local `jackin` binary, copies live config into the PR bundle, creates empty PR-scoped state, writes `env.sh`, always builds and exports a local `JACKIN_CAPSULE_BIN`, and auto-builds the PR construct image when the changed files require it. After `source "$(jackin-dev pr path <PR_NUMBER>)/env.sh"`, `echo "$JACKIN_CAPSULE_BIN"` always points at the PR-built capsule, and `echo "$JACKIN_CONSTRUCT_IMAGE"` is set only for PRs whose diff requires a local construct image.
 
 ### Static checks
 
