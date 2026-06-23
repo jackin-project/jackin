@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
-use crate::cli::role::{RoleCommand, RoleCreateArgs, RoleRepoPathArgs};
+use crate::cli::role::{RoleCommand, RoleCreateArgs, RolePublishLabelsArgs, RoleRepoPathArgs};
 use crate::manifest::migrations::CURRENT_MANIFEST_VERSION;
 use crate::repo::validate_role_repo;
 use crate::repo_contract::{DOCKERFILE_NAME, MANIFEST_FILENAME};
@@ -20,6 +20,8 @@ pub fn run(command: RoleCommand) -> anyhow::Result<()> {
         RoleCommand::Create(args) => create(&args),
         RoleCommand::ConstructVersion(args) => construct_version(args),
         RoleCommand::PublishedImage(args) => published_image(args),
+        RoleCommand::PublishedImageRepository(args) => published_image_repository(args),
+        RoleCommand::PublishLabels(args) => publish_labels(args),
     }
 }
 
@@ -45,6 +47,32 @@ fn published_image(args: RoleRepoPathArgs) -> anyhow::Result<()> {
         .published_image
         .ok_or_else(|| anyhow::anyhow!("no published_image declared in jackin.role.toml"))?;
     println!("{image}");
+    Ok(())
+}
+
+fn published_image_repository(args: RoleRepoPathArgs) -> anyhow::Result<()> {
+    let repo_dir = resolve_repo_path(args.path)?;
+    let validated = validate_role_repo(&repo_dir)?;
+    let image = validated
+        .manifest
+        .published_image
+        .ok_or_else(|| anyhow::anyhow!("no published_image declared in jackin.role.toml"))?;
+    println!(
+        "{}",
+        crate::repo_contract::published_image_repository(&image)
+    );
+    Ok(())
+}
+
+fn publish_labels(args: RolePublishLabelsArgs) -> anyhow::Result<()> {
+    let repo_dir = resolve_repo_path(args.path)?;
+    let validated = validate_role_repo(&repo_dir)?;
+    for label in crate::repo_contract::published_image_labels(
+        &validated.dockerfile.construct_version,
+        &args.role_git_sha,
+    ) {
+        println!("{label}");
+    }
     Ok(())
 }
 

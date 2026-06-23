@@ -1,7 +1,8 @@
 //! Dockerfile validation re-exports — behavior now in `jackin-manifest`.
 
 pub(crate) use jackin_manifest::repo_contract::{
-    BASE_DOCKERFILE_FROM, DOCKERFILE_NAME, MANIFEST_FILENAME,
+    BASE_DOCKERFILE_FROM, DOCKERFILE_NAME, MANIFEST_FILENAME, published_image_labels,
+    published_image_repository,
 };
 
 #[cfg(test)]
