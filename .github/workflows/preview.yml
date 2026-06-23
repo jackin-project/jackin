@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: homebrew-tap-publish
-  cancel-in-progress: false
+  group: homebrew-preview-publish
+  cancel-in-progress: true
 
 jobs:
   source-changed:
@@ -364,6 +364,9 @@ jobs:
     needs: [source-changed, build-preview, build-jackin-capsule]
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ubuntu-latest
+    concurrency:
+      group: homebrew-tap-publish
+      cancel-in-progress: false
     permissions:
       contents: write
       id-token: write

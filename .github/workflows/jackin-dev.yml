@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: homebrew-tap-publish
-  cancel-in-progress: false
+  group: jackin-dev-publish
+  cancel-in-progress: true
 
 jobs:
   source-changed:
@@ -222,6 +222,9 @@ jobs:
     needs: [source-changed, build-jackin-dev]
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ubuntu-latest
+    concurrency:
+      group: homebrew-tap-publish
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
