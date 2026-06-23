@@ -497,7 +497,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust sccache"
+          install_args: "rust cargo-nextest sccache shellfirm"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -600,7 +600,7 @@ jobs:
           CACHE_TO: type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }},mode=max
         run: |
           set -euo pipefail
-          mise run construct-build-platform amd64
+          mise run --no-deps construct-build-platform amd64
           docker save --output construct-trixie.tar projectjackin/construct:trixie
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
