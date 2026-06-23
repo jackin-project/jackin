@@ -77,16 +77,15 @@ jobs:
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ inputs.cache-shared-key }}
+          shared-key: ${{ inputs.cache-shared-key }}-package-${{ matrix.group }}
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-          save-if: ${{ inputs.save-target-cache && matrix.config.lane == 'GitHub' }}
+          save-if: ${{ matrix.config.lane == 'GitHub' }}
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback.
-          # CI package shards restore the clippy-owned all-features cache instead
-          # of saving it; otherwise the fastest shard can permanently seed the
-          # shared exact key with a narrow dependency graph.
+          # Each package shard owns its exact artifacts; a single shared key lets
+          # the fastest shard permanently seed a narrow graph for every package.
           # Velnor proves parity from persistent local state without writing GHA
           # target archives; GitHub populates the hosted fallback caches.
       - name: Run package tests
