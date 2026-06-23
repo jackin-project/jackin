@@ -9,6 +9,7 @@ on:
     - cron: '17 4 * * *'
 
 permissions:
+  actions: read
   contents: read
 
 env:
@@ -28,6 +29,7 @@ jobs:
   changes:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       docs: ${{ steps.dispatch.outputs.docs || steps.filter.outputs.docs }}
       source: ${{ steps.dispatch.outputs.source || steps.filter.outputs.source }}
@@ -71,6 +73,7 @@ jobs:
   repo-link-check:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -78,6 +81,8 @@ jobs:
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
           working_directory: docs
           install_args: "bun node"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -91,7 +96,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: docs
-        run: bun install --frozen-lockfile
+        run: bun ci
 
       - name: Check source repository links
         working-directory: docs
@@ -105,6 +110,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -112,6 +118,8 @@ jobs:
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
           working_directory: docs
           install_args: "bun node lychee"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
@@ -125,7 +133,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: docs
-        run: bun install --frozen-lockfile
+        run: bun ci
 
       - name: Build site
         working-directory: docs
@@ -167,44 +175,17 @@ jobs:
     needs: changes
     if: github.event_name != 'schedule' && needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Cache Rust toolchain
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
-          restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-v2-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Cache mise cargo tools
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-codebook-lsp-${{ hashFiles('mise.toml') }}
-          restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-codebook-lsp-
-
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
-          install_args: "rust cargo:codebook-lsp"
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "codebook-lsp"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Run Codebook docs spell check
@@ -240,44 +221,17 @@ jobs:
     needs: changes
     if: github.event_name != 'schedule' && needs.changes.outputs.source == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Cache Rust toolchain
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.rustup/toolchains
-            ~/.rustup/update-hashes
-          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
-          restore-keys: |
-            rustup-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Cache Cargo registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/registry/src
-            ~/.cargo/git/db
-          key: cargo-registry-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-v2-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Cache mise cargo tools
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-codebook-lsp-${{ hashFiles('mise.toml') }}
-          restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-codebook-lsp-
-
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
-          install_args: "rust cargo:codebook-lsp"
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "codebook-lsp"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Run Codebook source spell check
@@ -308,6 +262,7 @@ jobs:
     needs: [docs-link-check, repo-link-check]
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pages: write
@@ -353,6 +308,7 @@ jobs:
     # produces false missing-file failures after source moves.
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -373,9 +329,25 @@ jobs:
     if: always() && github.event_name != 'schedule'
     needs: [changes, repo-link-check, docs-link-check, spell-check-docs, spell-check-source, deploy, check-deployed]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/aggregate-needs
         with:
           needs-json: ${{ toJSON(needs) }}
           workflow-label: docs
+
+  timing-summary:
+    if: always()
+    needs: [docs-required, check-deployed]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Write workflow timing summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/workflow-timing-summary.sh Docs
