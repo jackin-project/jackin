@@ -3,6 +3,7 @@
 pub mod app;
 pub mod components;
 pub mod effect;
+pub mod keymap;
 pub mod message;
 pub mod run;
 pub mod subscriptions;

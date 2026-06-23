@@ -18,7 +18,8 @@ pub use migrations::{
 pub use repo::{CachedRepo, RoleRepoValidationError, ValidatedRoleRepo, validate_role_repo};
 pub use repo_contract::{
     BASE_DOCKERFILE_FROM, CONSTRUCT_IMAGE, CONSTRUCT_PINNED_TAG, CONSTRUCT_REGISTRY_IMAGE,
-    CONSTRUCT_STABLE_TAG, DOCKERFILE_NAME, MANIFEST_FILENAME, ValidatedDockerfile, construct_image,
-    validate_agent_dockerfile,
+    CONSTRUCT_STABLE_TAG, DOCKERFILE_NAME, LABEL_PUBLISHED_IMAGE_CONSTRUCT_VERSION,
+    LABEL_PUBLISHED_IMAGE_ROLE_GIT_SHA, MANIFEST_FILENAME, ValidatedDockerfile, construct_image,
+    published_image_labels, published_image_repository, validate_agent_dockerfile,
 };
 pub use validate::{is_valid_env_var_name, validate_agent_consistency, validate_role_manifest};

@@ -16,10 +16,8 @@ pub mod config;
 pub mod container_context;
 pub mod daemon;
 pub(crate) mod debug_panic;
-pub mod exec;
 pub mod git_context;
 pub mod logging;
-pub mod mcp_server;
 pub mod output;
 pub mod pid1;
 pub mod pr_context;
@@ -29,6 +27,7 @@ pub mod runtime_setup;
 pub mod services;
 pub mod session;
 pub mod socket;
+pub mod telemetry;
 pub mod util;
 
 /// Terminal-rendering code — all UI paint/layout lives here.

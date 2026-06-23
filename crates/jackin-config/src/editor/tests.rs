@@ -854,6 +854,37 @@ auth_forward = "api_key"
 }
 
 #[test]
+fn set_workspace_sync_source_dir_writes_and_removes_agent_field() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"
+[workspaces.proj]
+workdir = "/tmp/proj"
+"#,
+    )
+    .unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.set_workspace_sync_source_dir("proj", Agent::Claude, Some(Path::new("/host/claude")));
+    editor.save().unwrap();
+
+    let out = workspace_file_contents(&paths, "proj");
+    assert!(out.contains("[claude]"), "{out}");
+    assert!(out.contains(r#"sync_source_dir = "/host/claude""#), "{out}");
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.set_workspace_sync_source_dir("proj", Agent::Claude, None);
+    editor.save().unwrap();
+
+    let out = workspace_file_contents(&paths, "proj");
+    assert!(!out.contains("sync_source_dir"), "{out}");
+    assert!(!out.contains("[claude]"), "{out}");
+}
+
+#[test]
 fn set_workspace_role_auth_forward_writes_role_agent_block() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -904,6 +935,42 @@ auth_forward = "oauth_token"
 
     let out = workspace_file_contents(&paths, "proj");
     assert!(!out.contains("[roles.smith.claude]"), "{out}");
+}
+
+#[test]
+fn set_workspace_role_sync_source_dir_writes_and_removes_agent_field() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+    std::fs::write(
+        &paths.config_file,
+        r#"
+[workspaces.proj]
+workdir = "/tmp/proj"
+"#,
+    )
+    .unwrap();
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.set_workspace_role_sync_source_dir(
+        "proj",
+        "smith",
+        Agent::Codex,
+        Some(Path::new("/host/codex")),
+    );
+    editor.save().unwrap();
+
+    let out = workspace_file_contents(&paths, "proj");
+    assert!(out.contains("[roles.smith.codex]"), "{out}");
+    assert!(out.contains(r#"sync_source_dir = "/host/codex""#), "{out}");
+
+    let mut editor = ConfigEditor::open(&paths).unwrap();
+    editor.set_workspace_role_sync_source_dir("proj", "smith", Agent::Codex, None);
+    editor.save().unwrap();
+
+    let out = workspace_file_contents(&paths, "proj");
+    assert!(!out.contains("sync_source_dir"), "{out}");
+    assert!(!out.contains("[roles.smith.codex]"), "{out}");
 }
 
 #[test]
@@ -1178,7 +1245,6 @@ fn set_env_var_writes_inline_table_for_op_ref() {
                 op: "op://abc/def/fld".into(),
                 path: "Private/Claude/security/auth token".into(),
                 account: None,
-                on_demand: false,
             }),
         )
         .unwrap();
@@ -1210,7 +1276,6 @@ fn set_env_var_persists_op_ref_account() {
                 op: "op://abc/def/fld".into(),
                 path: "Work/Claude/auth token".into(),
                 account: Some("WORKACCT".into()),
-                on_demand: false,
             }),
         )
         .unwrap();

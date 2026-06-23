@@ -59,46 +59,6 @@ impl KeepAwakeConfig {
     }
 }
 
-/// Global runtime backend configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct RuntimeConfig {
-    #[serde(default = "RuntimeConfig::default_backend")]
-    pub default_backend: String,
-}
-
-impl RuntimeConfig {
-    pub fn default_backend() -> String {
-        "docker".to_owned()
-    }
-
-    pub fn is_default(&self) -> bool {
-        self.default_backend == "docker"
-    }
-}
-
-impl Default for RuntimeConfig {
-    fn default() -> Self {
-        Self {
-            default_backend: Self::default_backend(),
-        }
-    }
-}
-
-/// Per-workspace runtime backend override.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct WorkspaceRuntimeConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub backend: Option<String>,
-}
-
-impl WorkspaceRuntimeConfig {
-    pub const fn is_default(&self) -> bool {
-        self.backend.is_none()
-    }
-}
-
 // ─── Per-(workspace × role) override ─────────────────────────────────────────
 
 /// Per-(workspace × role) operator overrides — the most-specific auth layer.
@@ -183,8 +143,6 @@ pub struct WorkspaceConfig {
     pub roles: BTreeMap<String, WorkspaceRoleOverride>,
     #[serde(default, skip_serializing_if = "KeepAwakeConfig::is_default")]
     pub keep_awake: KeepAwakeConfig,
-    #[serde(default, skip_serializing_if = "WorkspaceRuntimeConfig::is_default")]
-    pub runtime: WorkspaceRuntimeConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -216,7 +174,6 @@ impl Default for WorkspaceConfig {
             env: BTreeMap::new(),
             roles: BTreeMap::new(),
             keep_awake: KeepAwakeConfig::default(),
-            runtime: WorkspaceRuntimeConfig::default(),
             claude: None,
             codex: None,
             amp: None,

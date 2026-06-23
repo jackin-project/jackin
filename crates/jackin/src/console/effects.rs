@@ -1,27 +1,24 @@
 //! Workspace-manager effect executors and background polling.
 
-use crate::config::AppConfig;
 use crate::console::services::instances::load_instance_refresh_snapshot;
-use crate::console::tui::effect::{
-    FileBrowserEffectContext, ManagerEffect, WorkspaceSaveEffect, WorkspaceSaveWriteInput,
-    WorkspaceSaveWriteMode,
+use crate::console::tui::{
+    ManagerEffect, WorkspaceSaveEffect, WorkspaceSaveWriteInput, WorkspaceSaveWriteMode,
 };
-use crate::console::tui::op_picker::OpPickerState;
+use jackin_config::AppConfig;
 use jackin_console::tui::effect::ConsoleEffect;
+use jackin_console::tui::screens::workspaces::update::saved_workspace_selected_index;
 use jackin_tui::runtime::spawn_blocking_subscription;
 
-use crate::console::tui::message::{ManagerBackgroundEvent, ManagerMessage, update_manager};
 use crate::console::tui::state::{
-    CreatePreludeState, EditorMode, EditorSaveFlow, EditorState, FileBrowserTarget,
-    GlobalMountModal, ManagerListRow, ManagerStage, ManagerState, Modal, PendingDriftCheck,
-    PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad, SettingsStateExt,
+    EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, PendingDriftCheck,
+    PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad,
 };
 use jackin_console::tui::components::error_popup;
-use jackin_console::tui::components::file_browser::FileBrowserOutcome;
 use jackin_console::tui::components::status_popup;
+use jackin_console::tui::state::update::{ManagerBackgroundEvent, ManagerMessage, update_manager};
 
 pub(crate) fn op_cli_available() -> bool {
-    crate::console::services::op::cli_available()
+    jackin_console::tui::op_picker::cli_available()
 }
 
 pub(crate) fn execute_manager_effect(
@@ -83,28 +80,35 @@ pub(crate) fn execute_manager_effect(
             true
         }
         ManagerEffect::OpenCreatePreludeFileBrowser => {
-            execute_create_prelude_file_browser_open(state);
+            jackin_console::tui::file_browser::execute_create_prelude_file_browser_open(state);
             true
         }
         ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd => {
-            execute_create_prelude_file_browser_reopen(state);
+            jackin_console::tui::file_browser::execute_create_prelude_file_browser_reopen(state);
             true
         }
         ManagerEffect::OpenEditorAddMountFileBrowser => {
-            execute_editor_add_mount_file_browser_open(state);
+            jackin_console::tui::file_browser::execute_editor_add_mount_file_browser_open(state);
             true
         }
         ManagerEffect::OpenGlobalMountFileBrowser => {
-            execute_global_mount_file_browser_open(state);
+            jackin_console::tui::file_browser::execute_global_mount_file_browser_open(state);
             true
         }
         ManagerEffect::ApplyFileBrowserOutcome { context, outcome } => {
-            execute_file_browser_outcome(state, context, outcome)
+            jackin_console::tui::file_browser::execute_file_browser_outcome(
+                state,
+                context,
+                outcome,
+                &crate::console::validate_auth_source_folder,
+            )
         }
         ManagerEffect::ResolveFileBrowserGitUrl(path) => {
-            execute_file_browser_git_url_resolution(state, &path)
+            jackin_console::tui::file_browser::execute_file_browser_git_url_resolution(state, &path)
         }
-        ManagerEffect::PollFileBrowserGitUrls => poll_file_browser_git_urls(state),
+        ManagerEffect::PollFileBrowserGitUrls => {
+            jackin_console::tui::file_browser::poll_file_browser_git_urls(state)
+        }
         ManagerEffect::PollPickerLoads => poll_picker_loads(state),
         ManagerEffect::CopyContainerInfoValue { row, payload } => {
             execute_container_info_copy(state, row, &payload)
@@ -166,310 +170,11 @@ pub fn execute_pending_workspace_save_commit(
     };
 
     if let Some(effect) =
-        crate::console::tui::input::save::commit_editor_save(state, config, plan, exit_on_success)?
+        jackin_console::tui::input::save::commit_editor_save(state, config, plan, exit_on_success)?
     {
         execute_workspace_save_effect(state, config, paths, cwd, effect);
     }
     Ok(true)
-}
-
-fn execute_global_mount_file_browser_open(state: &mut ManagerState<'_>) {
-    let ManagerStage::Settings(settings) = &mut state.stage else {
-        return;
-    };
-    match crate::console::services::file_browser::from_home() {
-        Ok(file_browser) => {
-            settings
-                .mounts
-                .open_sub_modal(GlobalMountModal::FileBrowser {
-                    state: Box::new(file_browser),
-                });
-        }
-        Err(error) => {
-            settings.mounts.add_draft = None;
-            settings.mounts.error = Some(error.to_string());
-        }
-    }
-}
-
-fn execute_editor_add_mount_file_browser_open(state: &mut ManagerState<'_>) {
-    let ManagerStage::Editor(editor) = &mut state.stage else {
-        return;
-    };
-    match crate::console::services::file_browser::from_home() {
-        Ok(file_browser) => {
-            editor.modal = Some(Modal::FileBrowser {
-                target: FileBrowserTarget::EditAddMountSrc,
-                state: file_browser,
-            });
-        }
-        Err(error) => {
-            crate::console::tui::state::open_editor_action_error(editor, &error);
-        }
-    }
-}
-
-fn execute_create_prelude_file_browser_open(state: &mut ManagerState<'_>) {
-    match crate::console::services::file_browser::from_home() {
-        Ok(file_browser) => {
-            let mut prelude = CreatePreludeState::new();
-            prelude.modal = Some(Modal::FileBrowser {
-                target: FileBrowserTarget::CreateFirstMountSrc,
-                state: file_browser,
-            });
-            drop(update_manager(
-                state,
-                ManagerMessage::EnterCreatePrelude(prelude),
-            ));
-        }
-        Err(error) => {
-            let _unused = update_manager(
-                state,
-                ManagerMessage::OpenListErrorPopup {
-                    title: error_popup::file_browser_failed_error_title().into(),
-                    message: format!("{error:#}"),
-                },
-            );
-        }
-    }
-}
-
-fn execute_create_prelude_file_browser_reopen(state: &mut ManagerState<'_>) {
-    let ManagerStage::CreatePrelude(prelude) = &mut state.stage else {
-        return;
-    };
-    let Ok(mut file_browser) = crate::console::services::file_browser::from_home() else {
-        prelude.modal = None;
-        return;
-    };
-    if let Some(cwd) = prelude.last_browser_cwd.as_ref() {
-        crate::console::services::file_browser::clamp_to_cwd(&mut file_browser, cwd);
-    }
-    prelude.modal = Some(Modal::FileBrowser {
-        target: FileBrowserTarget::CreateFirstMountSrc,
-        state: file_browser,
-    });
-}
-
-fn execute_file_browser_outcome(
-    state: &mut ManagerState<'_>,
-    context: FileBrowserEffectContext,
-    outcome: FileBrowserOutcome<std::path::PathBuf>,
-) -> bool {
-    match context {
-        FileBrowserEffectContext::Editor => execute_editor_file_browser_outcome(state, outcome),
-        FileBrowserEffectContext::Prelude { browser_cwd } => {
-            execute_prelude_file_browser_outcome(state, outcome, browser_cwd)
-        }
-        FileBrowserEffectContext::SettingsMounts => {
-            execute_settings_file_browser_outcome(state, outcome)
-        }
-    }
-}
-
-fn execute_editor_file_browser_outcome(
-    state: &mut ManagerState<'_>,
-    outcome: FileBrowserOutcome<std::path::PathBuf>,
-) -> bool {
-    let ManagerStage::Editor(editor) = &mut state.stage else {
-        return false;
-    };
-    let (target, applied) = {
-        let Some(Modal::FileBrowser { target, state }) = editor.modal.as_mut() else {
-            return false;
-        };
-        (
-            target.clone(),
-            crate::console::services::file_browser::apply_file_browser_outcome(state, outcome),
-        )
-    };
-    match applied {
-        FileBrowserOutcome::Commit(path) => {
-            crate::console::tui::input::editor::apply_file_browser_to_editor(target, editor, path);
-        }
-        FileBrowserOutcome::Cancel => editor.pop_modal_chain(),
-        FileBrowserOutcome::Continue
-        | FileBrowserOutcome::OpenGitUrl(_)
-        | FileBrowserOutcome::ResolveGitUrl(_)
-        | FileBrowserOutcome::NavigateTo(_)
-        | FileBrowserOutcome::NavigateUp
-        | FileBrowserOutcome::RequestCommit(_) => {}
-    }
-    true
-}
-
-fn execute_prelude_file_browser_outcome(
-    state: &mut ManagerState<'_>,
-    outcome: FileBrowserOutcome<std::path::PathBuf>,
-    browser_cwd: Option<std::path::PathBuf>,
-) -> bool {
-    let ManagerStage::CreatePrelude(prelude) = &mut state.stage else {
-        return false;
-    };
-    let applied = {
-        let Some(Modal::FileBrowser { state, .. }) = prelude.modal.as_mut() else {
-            return false;
-        };
-        crate::console::services::file_browser::apply_file_browser_outcome(state, outcome)
-    };
-    match applied {
-        FileBrowserOutcome::Commit(path) => {
-            prelude.modal = None;
-            prelude.last_browser_cwd = browser_cwd;
-            prelude.accept_mount_src(path);
-            let src = prelude
-                .pending_mount_src
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_default();
-            prelude.modal = Some(Modal::MountDstChoice {
-                target: FileBrowserTarget::CreateFirstMountSrc,
-                state: jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(
-                    src,
-                ),
-            });
-        }
-        FileBrowserOutcome::Cancel => {
-            prelude.modal = None;
-        }
-        FileBrowserOutcome::Continue
-        | FileBrowserOutcome::OpenGitUrl(_)
-        | FileBrowserOutcome::ResolveGitUrl(_)
-        | FileBrowserOutcome::NavigateTo(_)
-        | FileBrowserOutcome::NavigateUp
-        | FileBrowserOutcome::RequestCommit(_) => {}
-    }
-    true
-}
-
-fn execute_settings_file_browser_outcome(
-    state: &mut ManagerState<'_>,
-    outcome: FileBrowserOutcome<std::path::PathBuf>,
-) -> bool {
-    let ManagerStage::Settings(settings) = &mut state.stage else {
-        return false;
-    };
-    let applied = {
-        let Some(GlobalMountModal::FileBrowser { state }) = settings.mounts.modal.as_mut() else {
-            return false;
-        };
-        crate::console::services::file_browser::apply_file_browser_outcome(state, outcome)
-    };
-    match applied {
-        FileBrowserOutcome::Commit(path) => {
-            let src = path.display().to_string();
-            if let Some(draft) = settings.mounts.add_draft.as_mut() {
-                draft.src.clone_from(&src);
-            }
-            settings
-                .mounts
-                .open_sub_modal(GlobalMountModal::MountDstChoice {
-                    state:
-                        jackin_console::tui::components::mount_dst_choice::MountDstChoiceState::new(
-                            src,
-                        ),
-                });
-        }
-        FileBrowserOutcome::Cancel => {
-            settings.mounts.pop_modal_chain();
-            if settings.mounts.modal.is_none() {
-                settings.mounts.add_draft = None;
-            }
-        }
-        FileBrowserOutcome::Continue
-        | FileBrowserOutcome::OpenGitUrl(_)
-        | FileBrowserOutcome::ResolveGitUrl(_)
-        | FileBrowserOutcome::NavigateTo(_)
-        | FileBrowserOutcome::NavigateUp
-        | FileBrowserOutcome::RequestCommit(_) => {}
-    }
-    true
-}
-
-#[allow(clippy::option_if_let_else)]
-fn execute_file_browser_git_url_resolution(
-    state: &mut ManagerState<'_>,
-    path: &std::path::Path,
-) -> bool {
-    if let Some(modal) = state.list_modal.as_mut()
-        && attach_modal_file_browser_git_url(modal, path.to_owned())
-    {
-        return true;
-    }
-    match &mut state.stage {
-        ManagerStage::Editor(editor) => {
-            if let Some(modal) = editor.modal.as_mut()
-                && attach_modal_file_browser_git_url(modal, path.to_owned())
-            {
-                return true;
-            }
-            for modal in &mut editor.modal_parents {
-                if attach_modal_file_browser_git_url(modal, path.to_owned()) {
-                    return true;
-                }
-            }
-        }
-        ManagerStage::CreatePrelude(prelude) => {
-            if let Some(modal) = prelude.modal.as_mut()
-                && attach_modal_file_browser_git_url(modal, path.to_owned())
-            {
-                return true;
-            }
-        }
-        ManagerStage::Settings(settings) => {
-            if let Some(modal) = settings.mounts.modal.as_mut()
-                && attach_global_mount_file_browser_git_url(modal, path.to_owned())
-            {
-                return true;
-            }
-            for modal in &mut settings.mounts.modal_parents {
-                if attach_global_mount_file_browser_git_url(modal, path.to_owned()) {
-                    return true;
-                }
-            }
-        }
-        ManagerStage::List
-        | ManagerStage::ConfirmDelete { .. }
-        | ManagerStage::ConfirmInstancePurge { .. } => {}
-    }
-    false
-}
-
-fn attach_modal_file_browser_git_url(modal: &mut Modal<'_>, path: std::path::PathBuf) -> bool {
-    match modal {
-        Modal::FileBrowser { state, .. } => {
-            crate::console::services::file_browser::request_file_browser_git_url_resolution(
-                state, path,
-            );
-            true
-        }
-        _ => false,
-    }
-}
-
-fn attach_global_mount_file_browser_git_url(
-    modal: &mut GlobalMountModal<'_>,
-    path: std::path::PathBuf,
-) -> bool {
-    match modal {
-        GlobalMountModal::FileBrowser { state } => {
-            crate::console::services::file_browser::request_file_browser_git_url_resolution(
-                state, path,
-            );
-            true
-        }
-        _ => false,
-    }
-}
-
-pub(crate) fn execute_open_url(state: &mut ManagerState<'_>, url: &str) -> bool {
-    match crate::console::services::browser::open_url(url) {
-        Ok(()) => false,
-        Err(error) => {
-            report_open_url_error(state, error);
-            true
-        }
-    }
 }
 
 pub(crate) fn execute_remove_workspace(
@@ -518,7 +223,7 @@ pub(crate) fn apply_role_load_completion(
                     key = load.key,
                     raw = load.raw
                 );
-                crate::console::tui::state::open_role_resolution_error(
+                open_role_resolution_error(
                     editor,
                     &load.raw,
                     Some(&load.source.git),
@@ -568,12 +273,7 @@ pub(crate) fn apply_role_load_completion(
                 );
                 return;
             }
-            crate::console::tui::state::open_role_resolution_error(
-                editor,
-                &load.raw,
-                Some(&load.source.git),
-                &e,
-            );
+            open_role_resolution_error(editor, &load.raw, Some(&load.source.git), &e);
         }
     }
 }
@@ -588,23 +288,13 @@ pub(crate) async fn apply_role_input_with_runner_for_tests(
 ) {
     let raw = value.trim();
     crate::debug_log!("role", "resolving role loader input: raw={raw:?}");
-    let resolved = match crate::console::domain::resolve_role_input_source(config, raw) {
+    let resolved = match crate::console::resolve_role_input_source(config, raw) {
         Ok(resolved) => resolved,
         Err(error) => {
             if let Some(git) = error.source_url.as_ref() {
-                crate::console::tui::state::open_role_resolution_error(
-                    editor,
-                    &error.raw,
-                    Some(git),
-                    &error.error,
-                );
+                open_role_resolution_error(editor, &error.raw, Some(git), &error.error);
             } else {
-                crate::console::tui::state::open_role_resolution_error(
-                    editor,
-                    &error.raw,
-                    None,
-                    &error.error,
-                );
+                open_role_resolution_error(editor, &error.raw, None, &error.error);
             }
             return;
         }
@@ -645,7 +335,7 @@ pub(crate) fn persist_trusted_role_source_for_tests(
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
     key: &str,
-    source: &crate::config::RoleSource,
+    source: &jackin_config::RoleSource,
 ) {
     match execute_role_source_persist(config, paths, key, source) {
         Ok(()) => {
@@ -662,7 +352,7 @@ fn execute_trusted_role_source_persist(
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
     key: &str,
-    mut source: crate::config::RoleSource,
+    mut source: jackin_config::RoleSource,
 ) {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return;
@@ -682,111 +372,21 @@ pub(crate) fn execute_token_generate(
     paths: &crate::paths::JackinPaths,
     config: &AppConfig,
     req: &crate::console::tui::state::PendingTokenGenerate,
-) -> anyhow::Result<crate::operator_env::EnvValue> {
-    crate::console::services::token_setup::mint_token_value(paths, config, &req.scope, &req.args)
+) -> anyhow::Result<jackin_core::EnvValue> {
+    jackin_env::mint_token_value(paths, config, &req.scope, &req.args)
 }
 
-pub(crate) fn apply_token_generate_result(
-    state: &mut ManagerState<'_>,
-    result: anyhow::Result<crate::operator_env::EnvValue>,
-) {
-    match result {
-        Ok(env_value) => apply_generated_token(state, env_value),
-        Err(error) => report_token_generate_error(state, error),
-    }
-}
-
-fn apply_generated_token(state: &mut ManagerState<'_>, env_value: crate::operator_env::EnvValue) {
-    if let crate::operator_env::EnvValue::OpRef(op_ref) = &env_value {
-        crate::console::services::op_picker::invalidate_cache_for_ref(&state.op_cache, op_ref);
-    }
-
-    match &mut state.stage {
-        ManagerStage::Editor(editor) => match env_value {
-            crate::operator_env::EnvValue::OpRef(op_ref) => {
-                crate::console::tui::input::auth::apply_op_picker_to_auth_form_committed(
-                    editor, op_ref,
-                );
-            }
-            crate::operator_env::EnvValue::Plain(value)
-            | crate::operator_env::EnvValue::Extended(jackin_core::Extended { value, .. }) => {
-                crate::console::tui::input::auth::apply_plain_text_to_auth_form(editor, &value);
-            }
-        },
-        ManagerStage::Settings(settings) => match env_value {
-            crate::operator_env::EnvValue::OpRef(op_ref) => {
-                crate::console::tui::input::apply_op_picker_to_settings_auth_form_committed(
-                    &mut settings.auth,
-                    op_ref,
-                );
-            }
-            crate::operator_env::EnvValue::Plain(value)
-            | crate::operator_env::EnvValue::Extended(jackin_core::Extended { value, .. }) => {
-                crate::console::tui::input::apply_plain_text_to_settings_auth_form(
-                    &mut settings.auth,
-                    &value,
-                );
-            }
-        },
-        _ => {}
-    }
-}
-
-fn report_token_generate_error(state: &mut ManagerState<'_>, error: anyhow::Error) {
-    match &mut state.stage {
-        ManagerStage::Editor(editor) => {
-            editor.modal = Some(Modal::ErrorPopup {
-                state: error_popup::token_generation_failed_error_popup_state(error),
-            });
-        }
-        ManagerStage::Settings(_) => {
-            let _unused = update_manager(
-                state,
-                ManagerMessage::OpenSettingsErrorPopup {
-                    title: error_popup::token_generation_failed_error_title().into(),
-                    message: error.to_string(),
-                },
-            );
-        }
-        _ => {}
-    }
-}
-
-fn report_open_url_error(state: &mut ManagerState<'_>, error: anyhow::Error) {
-    match &mut state.stage {
-        ManagerStage::Editor(editor) => {
-            editor.modal = Some(Modal::ErrorPopup {
-                state: error_popup::failed_to_open_url_error_popup_state(error),
-            });
-        }
-        ManagerStage::Settings(_) => {
-            let _unused = update_manager(
-                state,
-                ManagerMessage::OpenSettingsErrorPopup {
-                    title: error_popup::failed_to_open_url_error_title().into(),
-                    message: error.to_string(),
-                },
-            );
-        }
-        _ => {
-            let _unused = update_manager(
-                state,
-                ManagerMessage::OpenListErrorPopup {
-                    title: error_popup::failed_to_open_url_error_title().into(),
-                    message: error.to_string(),
-                },
-            );
-        }
-    }
-}
+pub(crate) use jackin_console::tui::state::update::{
+    apply_token_generate_result, execute_open_url,
+};
 
 fn execute_role_registration_start(
     state: &mut ManagerState<'_>,
     paths: &crate::paths::JackinPaths,
     raw: String,
     key: &str,
-    selector: crate::selector::RoleSelector,
-    source: crate::config::RoleSource,
+    selector: jackin_core::RoleSelector,
+    source: jackin_config::RoleSource,
 ) {
     crate::debug_log!(
         "role",
@@ -811,22 +411,7 @@ fn execute_role_registration_start(
     }
 }
 
-fn execute_op_commit_validation(
-    state: &mut ManagerState<'_>,
-    op_ref: crate::operator_env::OpRef,
-    is_settings: bool,
-) {
-    let rx = crate::console::services::op::start_ref_validation(op_ref.clone());
-    if is_settings {
-        if let ManagerStage::Settings(settings) = &mut state.stage {
-            settings.auth.pending_op_commit =
-                Some(crate::console::tui::state::PendingOpCommit::new(op_ref, rx));
-        }
-    } else if let ManagerStage::Editor(editor) = &mut state.stage {
-        editor.pending_op_commit =
-            Some(crate::console::tui::state::PendingOpCommit::new(op_ref, rx));
-    }
-}
+use jackin_console::tui::state::update::execute_op_commit_validation;
 
 pub(crate) fn execute_workspace_save_effect(
     state: &mut ManagerState<'_>,
@@ -842,7 +427,7 @@ pub(crate) fn execute_workspace_save_effect(
             plan,
             exit_on_success,
         } => {
-            let has_records = crate::isolation::state::list_records_for_workspace(
+            let has_records = jackin_runtime::isolation::state::list_records_for_workspace(
                 &paths.data_dir,
                 &original_name,
             )
@@ -851,7 +436,7 @@ pub(crate) fn execute_workspace_save_effect(
                 let (_tx, rx) = tokio::sync::oneshot::channel();
                 let check = PendingDriftCheck::new(rx, original_name, plan, exit_on_success);
                 if let Ok(Some(effect)) =
-                    crate::console::tui::input::save::continue_save_after_drift_check(
+                    jackin_console::tui::input::save::continue_save_after_drift_check(
                         state,
                         config,
                         check,
@@ -984,15 +569,13 @@ pub(crate) fn execute_workspace_save_write(
                     .iter()
                     .position(|w| w.name == saved.current_name)
                 {
-                    state.selected = ManagerListRow::SavedWorkspace(idx)
-                        .to_screen_index(saved_count)
-                        .unwrap_or(0);
+                    state.selected = saved_workspace_selected_index(saved_count, idx);
                 }
             }
         }
         Err(e) => {
             if let ManagerStage::Editor(editor) = &mut state.stage {
-                crate::console::tui::input::save::open_save_error_popup(editor, &e.to_string());
+                jackin_console::tui::input::save::open_save_error_popup(editor, &e.to_string());
             }
         }
     }
@@ -1002,7 +585,7 @@ pub(crate) fn execute_role_source_persist(
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
     key: &str,
-    source: &crate::config::RoleSource,
+    source: &jackin_config::RoleSource,
 ) -> anyhow::Result<()> {
     crate::console::services::config::upsert_role_source(config, paths, key, source)
 }
@@ -1015,19 +598,24 @@ fn execute_settings_save(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
+    let mounts_save = settings.mounts.save_refs();
+    let env_save = settings.env.save_refs();
+    let auth_save = settings.auth.save_refs();
+    let trust_save = settings.trust.save_refs();
+    let general_save = settings.general.save_refs();
     match crate::console::services::config::save_settings(
         paths,
         crate::console::services::config::SettingsSaveInput {
-            mounts_original: &settings.mounts.original,
-            mounts_pending: &settings.mounts.pending,
-            env_original: &settings.env.original,
-            env_pending: &settings.env.pending,
-            auth_pending: &settings.auth.pending,
-            original_github_env: &settings.auth.original_github_env,
-            github_env: &settings.auth.github_env,
-            trust_pending: &settings.trust.pending,
-            git_coauthor_trailer: settings.general.pending_coauthor_trailer,
-            git_dco: settings.general.pending_dco,
+            mounts_original: mounts_save.original,
+            mounts_pending: mounts_save.pending,
+            env_original: env_save.original,
+            env_pending: env_save.pending,
+            auth_pending: auth_save.pending,
+            original_github_env: auth_save.original_github_env,
+            github_env: auth_save.github_env,
+            trust_pending: trust_save.pending,
+            git_coauthor_trailer: general_save.git_coauthor_trailer,
+            git_dco: general_save.git_dco,
         },
     ) {
         Ok(saved) => {
@@ -1114,7 +702,7 @@ pub(crate) fn apply_background_event(
         }
         ManagerBackgroundEvent::DriftCheckFinished { check, detection } => {
             if let Ok(Some(effect)) =
-                crate::console::tui::input::save::continue_save_after_drift_check(
+                jackin_console::tui::input::save::continue_save_after_drift_check(
                     state, config, check, detection,
                 )
             {
@@ -1124,7 +712,7 @@ pub(crate) fn apply_background_event(
         }
         ManagerBackgroundEvent::IsolationCleanupFinished { cleanup, result } => {
             if let Ok(Some(effect)) =
-                crate::console::tui::input::save::continue_save_after_isolation_cleanup(
+                jackin_console::tui::input::save::continue_save_after_isolation_cleanup(
                     state, config, cleanup, result,
                 )
             {
@@ -1136,97 +724,118 @@ pub(crate) fn apply_background_event(
 }
 
 /// Drained from the outer event loop every tick so picker results land without
-/// keystroke pumping. This executor starts non-TUI load services for pending
-/// picker requests, then routes completed subscriptions back into picker state.
-pub(crate) fn poll_picker_loads(state: &mut ManagerState<'_>) -> bool {
-    let mut dirty = false;
-    if let Some(Modal::OpPicker { state }) = state.list_modal.as_mut() {
-        dirty |= poll_op_picker_load(state);
-    }
-    if let ManagerStage::Editor(editor) = &mut state.stage
-        && let Some(Modal::OpPicker { state }) = editor.modal.as_mut()
-    {
-        dirty |= poll_op_picker_load(state);
-    }
-    if let ManagerStage::Settings(settings) = &mut state.stage
-        && let Some(crate::console::tui::state::SettingsEnvModal::OpPicker { state }) =
-            settings.env.modal.as_mut()
-    {
-        dirty |= poll_op_picker_load(state);
-    }
-    if let ManagerStage::Settings(settings) = &mut state.stage
-        && let Some(crate::console::tui::state::SettingsAuthModal::OpPicker { state }) =
-            settings.auth.modal.as_mut()
-    {
-        dirty |= poll_op_picker_load(state);
-    }
-    dirty
-}
+pub(crate) use jackin_console::tui::op_picker::poll_picker_loads;
 
-fn poll_op_picker_load(state: &mut OpPickerState) -> bool {
-    let mut dirty = execute_op_picker_pending_load(state);
-    dirty |= state.poll_load();
-    dirty |= execute_op_picker_pending_load(state);
-    dirty
-}
+// ── Role-resolution error helpers ───────────────────────────────────────────
+//
+// These depend on `crate::runtime::RepoError` and `crate::repo` types that
+// are not accessible from `jackin-console`. All callers live in this file.
 
-fn execute_op_picker_pending_load(state: &mut OpPickerState) -> bool {
-    let Some(pending) = state.take_pending_load() else {
-        return false;
+pub(crate) fn open_role_resolution_error(
+    editor: &mut EditorState<'_>,
+    raw: &str,
+    source_url: Option<&String>,
+    err: &anyhow::Error,
+) {
+    use jackin_console::tui::components::error_popup::{
+        configured_role_load_error_message, repository_role_load_error_message,
     };
-    let rx = crate::console::services::op_picker::start_load(
-        pending.cached,
-        pending.request,
-        crate::operator_env::default_op_struct_runner(),
+    crate::debug_log!(
+        "role",
+        "showing role-load error popup for raw={raw:?}: {err:?}"
     );
-    state.attach_load_receiver(rx);
-    true
+    let message = source_url.map_or_else(
+        || configured_role_load_error_message(raw),
+        |source_url| {
+            repository_role_load_error_message(raw, source_url, friendly_role_resolution_error(err))
+        },
+    );
+    editor.open_error_popup(error_popup::role_load_error_popup_state(message));
 }
 
-pub(crate) fn poll_file_browser_git_urls(state: &mut ManagerState<'_>) -> bool {
-    let mut dirty = false;
-    if let Some(modal) = state.list_modal.as_mut() {
-        dirty |= poll_modal_file_browser_git_url(modal);
+fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
+    use jackin_console::tui::components::error_popup::{
+        generic_role_repository_error_message, invalid_role_repository_message,
+        role_repository_remote_mismatch_message, role_repository_unavailable_message,
+    };
+
+    if let Some(repo_err) = err
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<crate::runtime::RepoError>())
+    {
+        return match repo_err {
+            crate::runtime::RepoError::CloneFailed(_) => {
+                role_repository_unavailable_message().into()
+            }
+            crate::runtime::RepoError::RemoteMismatch => {
+                role_repository_remote_mismatch_message().into()
+            }
+            crate::runtime::RepoError::InvalidRoleRepo(detail) => {
+                invalid_role_repository_message(humanize_invalid_role_repo(detail))
+            }
+        };
     }
-    match &mut state.stage {
-        ManagerStage::Editor(editor) => {
-            if let Some(modal) = editor.modal.as_mut() {
-                dirty |= poll_modal_file_browser_git_url(modal);
-            }
-            for modal in &mut editor.modal_parents {
-                dirty |= poll_modal_file_browser_git_url(modal);
-            }
-        }
-        ManagerStage::CreatePrelude(prelude) => {
-            if let Some(modal) = prelude.modal.as_mut() {
-                dirty |= poll_modal_file_browser_git_url(modal);
-            }
-        }
-        ManagerStage::Settings(settings) => {
-            if let Some(modal) = settings.mounts.modal.as_mut() {
-                dirty |= poll_global_mount_file_browser_git_url(modal);
-            }
-            for modal in &mut settings.mounts.modal_parents {
-                dirty |= poll_global_mount_file_browser_git_url(modal);
-            }
-        }
-        ManagerStage::List
-        | ManagerStage::ConfirmDelete { .. }
-        | ManagerStage::ConfirmInstancePurge { .. } => {}
-    }
-    dirty
+    generic_role_repository_error_message().into()
 }
 
-fn poll_modal_file_browser_git_url(modal: &mut Modal<'_>) -> bool {
-    match modal {
-        Modal::FileBrowser { state, .. } => state.poll_git_url_resolution(),
-        _ => false,
+fn humanize_invalid_role_repo(err: &crate::repo::RoleRepoValidationError) -> String {
+    use crate::repo::RoleRepoValidationError as V;
+    match err {
+        V::Missing(path) => {
+            let file = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map_or_else(|| path.display().to_string(), str::to_owned);
+            error_popup::missing_role_repository_file_message(file)
+        }
+        _ => err.to_string().trim_end_matches('.').to_owned(),
     }
 }
 
-fn poll_global_mount_file_browser_git_url(modal: &mut GlobalMountModal<'_>) -> bool {
-    match modal {
-        GlobalMountModal::FileBrowser { state } => state.poll_git_url_resolution(),
-        _ => false,
+#[cfg(test)]
+mod tests {
+    use jackin_config::AppConfig;
+    use jackin_console::tui::effect::ConsoleEffect;
+    use jackin_console::tui::state::update::{ManagerBackgroundEvent, ManagerMessage};
+
+    use crate::console::tui::state::ManagerState;
+
+    use super::{execute_manager_effect, poll_background_messages};
+
+    #[tokio::test]
+    async fn poll_background_messages_routes_file_browser_poll_through_message() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+
+        let events = poll_background_messages(&mut state, &mut config, &paths);
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ManagerBackgroundEvent::Message(ManagerMessage::PollFileBrowserGitUrls)
+        )));
+    }
+
+    #[tokio::test]
+    async fn execute_manager_effect_requests_instance_refresh() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ConsoleEffect::RequestInstanceRefresh.into(),
+        );
+
+        assert!(
+            state.instance_refresh_in_flight(),
+            "instance refresh effect should spawn a worker"
+        );
     }
 }

@@ -8,15 +8,17 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use jackin_tui::ModalOutcome;
 use jackin_tui::components::{ConfirmState, ErrorPopupState, SelectListState, TextInputState};
+use ratatui::backend::Backend as _;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
+use tokio_util::sync::CancellationToken;
 
 use crate::tui::components::prompts::{
     draw_confirm, draw_error_popup, draw_select, draw_text_prompt,
 };
 use crate::tui::message::LaunchMessage;
-use crate::tui::subscriptions::{SharedView, handle_cockpit_input};
+use crate::tui::subscriptions::{CockpitOutcome, SharedView, handle_cockpit_input};
 use crate::tui::terminal::current_terminal_area;
 use crate::tui::update::update_launch_view;
 use crate::tui::view::{launch_hyperlink_overlays, render_launch_frame};
@@ -65,6 +67,7 @@ impl RichDriver {
         run_log_path: String,
         host: &'static dyn LaunchHostTerminal,
         jackin_version: &'static str,
+        cancel_token: CancellationToken,
     ) -> Self {
         use std::sync::atomic::Ordering;
         let renderer = std::sync::Arc::new(std::sync::Mutex::new(renderer));
@@ -83,7 +86,33 @@ impl RichDriver {
                     let Ok(mut rr) = renderer.try_lock() else {
                         continue;
                     };
-                    handle_cockpit_input(&view, &run_id, &run_log_path, host, jackin_version);
+                    let outcome = handle_cockpit_input(
+                        &view,
+                        &run_id,
+                        &run_log_path,
+                        host,
+                        jackin_version,
+                        &cancel_token,
+                    );
+                    // Ctrl+C — immediate hard stop. Restore the terminal, then
+                    // exit the process at once: no graceful teardown, no waiting
+                    // on in-flight blocking work (binary download/extract,
+                    // `docker build`). Stale docker resources are reclaimed by
+                    // the next launch's `gc_orphaned_resources`. This is the one
+                    // path that deliberately skips `LoadCleanup`.
+                    if outcome == CockpitOutcome::HardExit {
+                        rr.restore_terminal();
+                        std::process::exit(0);
+                    }
+                    // Ctrl+Q (graceful) calls `cancel_token.cancel()`. Restoring
+                    // here — before any `.await` — makes the screen disappear
+                    // before the pipeline task resumes and runs cleanup. No tokio
+                    // yield between the cancel and this check, so the pipeline
+                    // cannot preempt until after restore.
+                    if cancel_token.is_cancelled() {
+                        rr.restore_terminal();
+                        break;
+                    }
                     let snapshot = match view.lock() {
                         Ok(mut v) => {
                             let build_log_lines = crate::build_log::snapshot();
@@ -148,8 +177,12 @@ fn read_pressed_key(context: &'static str) -> anyhow::Result<KeyEvent> {
         if key.kind != KeyEventKind::Press {
             continue;
         }
-        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-            anyhow::bail!("launch cancelled by operator");
+        let is_ctrl_c =
+            key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL);
+        let is_ctrl_q =
+            key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL);
+        if is_ctrl_c || is_ctrl_q {
+            return Err(crate::LaunchCancelled::err());
         }
         return Ok(key);
     }
@@ -224,7 +257,7 @@ fn update_text_prompt(
                 Some(Ok(PromptResult::Skipped))
             }
             ModalOutcome::Commit(value) => Some(Ok(PromptResult::Value(value))),
-            ModalOutcome::Cancel => Some(Err(anyhow::anyhow!("launch cancelled by operator"))),
+            ModalOutcome::Cancel => Some(Err(crate::LaunchCancelled::err())),
             ModalOutcome::Continue => None,
         },
     }
@@ -242,7 +275,7 @@ fn update_select_prompt(
                 Some(Ok(PromptResult::Skipped))
             }
             ModalOutcome::Commit(index) => Some(Ok(PromptResult::Value(options[index].clone()))),
-            ModalOutcome::Cancel => Some(Err(anyhow::anyhow!("launch cancelled by operator"))),
+            ModalOutcome::Cancel => Some(Err(crate::LaunchCancelled::err())),
             ModalOutcome::Continue => None,
         },
     }
@@ -273,7 +306,16 @@ impl RichRenderer {
         // first redraw. Under the host guard we skipped EnterAlternateScreen
         // (which would have cleared), so the console's last frame is still on
         // the inherited screen — clear it or the cockpit renders over it.
-        terminal.clear().context("clearing launch screen")?;
+        // Use backend_mut().clear() instead of terminal.clear(): ratatui-core ≥ 0.1.1
+        // added a cursor-position save/restore around the erase that blocks on a DSR
+        // query. On non-interactive PTYs (e.g. the script-based E2E harness) the
+        // terminal never answers, causing a timeout error. The backend call issues the
+        // same erase without the query; a freshly constructed Terminal already has
+        // default (empty) buffers so the next draw will repaint everything anyway.
+        terminal
+            .backend_mut()
+            .clear()
+            .context("clearing launch screen")?;
         // Ancillary status printers (spinners) go silent while this surface
         // owns the alternate screen.
         host.set_rich_surface_active(true);
@@ -596,20 +638,33 @@ fn prompt_context_lines(context: &[PromptContextLine]) -> Vec<Line<'static>> {
         .collect()
 }
 
-impl Drop for RichRenderer {
-    fn drop(&mut self) {
+impl RichRenderer {
+    /// Restore the terminal to its pre-launch state immediately.
+    ///
+    /// Called explicitly from the render task on cancel detection so that the
+    /// terminal is visible before cleanup runs (cleanup can take 10-30 s).
+    /// Sets `entered_alt_screen = false` so the `Drop` impl is a no-op if this
+    /// was already called — restoration is idempotent.
+    pub(super) fn restore_terminal(&mut self) {
         self.host.set_rich_surface_active(false);
         drop(self.terminal.backend_mut().execute(crossterm::cursor::Show));
-        // Leave the alternate screen only when we entered it; under the host
-        // guard the screen persists into the capsule attach.
         if self.entered_alt_screen {
             drop(jackin_tui::terminal_modes::disable_mouse_capture(
                 self.terminal.backend_mut(),
             ));
             drop(crossterm::terminal::disable_raw_mode());
             drop(self.terminal.backend_mut().execute(LeaveAlternateScreen));
+            self.entered_alt_screen = false;
         }
         drop(std::io::stdout().flush());
+    }
+}
+
+impl Drop for RichRenderer {
+    fn drop(&mut self) {
+        // `restore_terminal()` sets `entered_alt_screen = false` when called
+        // explicitly on cancel, making this a no-op for the cancel path.
+        self.restore_terminal();
     }
 }
 

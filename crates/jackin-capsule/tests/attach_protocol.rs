@@ -24,8 +24,20 @@ fn output_frame_has_five_byte_overhead_only() {
 
 #[test]
 fn shutdown_frame_is_empty_payload() {
-    let bytes = encode_server(ServerFrame::Shutdown);
+    let bytes = encode_server(ServerFrame::Shutdown { reason: None });
     assert_eq!(bytes, vec![TAG_SHUTDOWN, 0, 0, 0, 0]);
+}
+
+#[test]
+fn shutdown_frame_can_carry_reason() {
+    let bytes = encode_server(ServerFrame::Shutdown {
+        reason: Some("session process exited with code 1".to_owned()),
+    });
+    assert_eq!(bytes[0], TAG_SHUTDOWN);
+    assert_eq!(
+        &bytes[5..],
+        b"session process exited with code 1".as_slice()
+    );
 }
 
 #[test]

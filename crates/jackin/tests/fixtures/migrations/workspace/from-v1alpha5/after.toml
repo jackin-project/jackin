@@ -1,4 +1,4 @@
-version = "v1alpha7"
+version = "v1alpha6"
 workdir = "/workspace/prod"
 
 [claude]

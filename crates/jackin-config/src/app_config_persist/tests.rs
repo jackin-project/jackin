@@ -1,6 +1,6 @@
 //! Tests for `persist`.
 use super::*;
-use crate::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION};
+use crate::CURRENT_CONFIG_VERSION;
 use jackin_core::JackinPaths;
 use tempfile::tempdir;
 
@@ -10,14 +10,6 @@ fn wait_for_mtime_tick() {
         reason = "mtime idempotency test needs a wall-clock boundary before checking no rewrite"
     )]
     std::thread::sleep(std::time::Duration::from_millis(50));
-}
-
-fn expected_config_version_line() -> String {
-    format!(r#"version = "{CURRENT_CONFIG_VERSION}""#)
-}
-
-fn expected_workspace_version_line() -> String {
-    format!(r#"version = "{CURRENT_WORKSPACE_VERSION}""#)
 }
 
 #[test]
@@ -89,7 +81,7 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
     let out = std::fs::read_to_string(&paths.config_file).unwrap();
 
     assert_eq!(config.version, CURRENT_CONFIG_VERSION);
-    assert!(out.contains(&expected_config_version_line()), "{out}");
+    assert!(out.contains(r#"version = "v1alpha6""#), "{out}");
     assert!(out.contains("# keep me"), "{out}");
 }
 
@@ -102,8 +94,7 @@ fn load_or_init_rejects_newer_config_version() {
 
     let err = AppConfig::load_or_init(&paths).unwrap_err();
 
-    let expected = format!("only understands up to {CURRENT_CONFIG_VERSION}");
-    assert!(err.to_string().contains(&expected));
+    assert!(err.to_string().contains("only understands up to v1alpha6"));
 }
 
 #[test]
@@ -183,15 +174,12 @@ LOCAL = "only-prod"
     assert!(config.workspaces.contains_key("prod"));
 
     let global = std::fs::read_to_string(&paths.config_file).unwrap();
-    assert!(global.contains(&expected_config_version_line()), "{global}");
+    assert!(global.contains(r#"version = "v1alpha6""#), "{global}");
     assert!(global.contains("[env]"), "{global}");
     assert!(!global.contains("[workspaces."), "{global}");
 
     let workspace = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
-    assert!(
-        workspace.contains(&expected_workspace_version_line()),
-        "{workspace}"
-    );
+    assert!(workspace.contains(r#"version = "v1alpha6""#), "{workspace}");
     assert!(
         workspace.contains(r#"workdir = "/workspace/prod""#),
         "{workspace}"
@@ -344,7 +332,7 @@ fn empty_legacy_workspaces_table_still_gets_version_stamp() {
     let out = std::fs::read_to_string(&paths.config_file).unwrap();
 
     assert_eq!(config.version, CURRENT_CONFIG_VERSION);
-    assert!(out.contains(&expected_config_version_line()), "{out}");
+    assert!(out.contains(r#"version = "v1alpha6""#), "{out}");
 }
 
 #[test]
@@ -460,18 +448,12 @@ dst = "/workspace/prod"
 
     let global_on_disk = std::fs::read_to_string(&paths.config_file).unwrap();
     let global_parsed: toml::Value = toml::from_str(&global_on_disk).unwrap();
-    assert_eq!(
-        global_parsed["version"].as_str().unwrap(),
-        CURRENT_CONFIG_VERSION
-    );
+    assert_eq!(global_parsed["version"].as_str().unwrap(), "v1alpha6");
     assert!(!global_on_disk.contains("[workspaces."), "{global_on_disk}");
 
     let prod_on_disk = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
     let prod_parsed: toml::Value = toml::from_str(&prod_on_disk).unwrap();
-    assert_eq!(
-        prod_parsed["version"].as_str().unwrap(),
-        CURRENT_WORKSPACE_VERSION
-    );
+    assert_eq!(prod_parsed["version"].as_str().unwrap(), "v1alpha6");
 
     // Re-running is a no-op: file content stays byte-identical.
     let global_before = std::fs::read(&paths.config_file).unwrap();
@@ -504,10 +486,7 @@ fn load_workspace_files_migrates_legacy_split_file_in_place() {
 
     let on_disk = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
     let parsed: toml::Value = toml::from_str(&on_disk).unwrap();
-    assert_eq!(
-        parsed["version"].as_str().unwrap(),
-        CURRENT_WORKSPACE_VERSION
-    );
+    assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha6");
     assert!(on_disk.contains("# keep me"), "{on_disk}");
 }
 

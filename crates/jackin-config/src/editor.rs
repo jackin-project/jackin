@@ -148,15 +148,6 @@ impl ConfigEditor {
                 if let Some(account) = r.account {
                     tbl.insert("account", Value::from(account));
                 }
-                if r.on_demand {
-                    tbl.insert("on_demand", Value::from(true));
-                }
-                Item::Value(Value::InlineTable(tbl))
-            }
-            EnvValue::Extended(e) => {
-                let mut tbl = InlineTable::new();
-                tbl.insert("value", Value::from(e.value));
-                tbl.insert("on_demand", Value::from(e.on_demand));
                 Item::Value(Value::InlineTable(tbl))
             }
         };
@@ -354,6 +345,18 @@ impl ConfigEditor {
         }
     }
 
+    /// Write or clear `[<agent>].sync_source_dir` inside the workspace file.
+    pub fn set_workspace_sync_source_dir(
+        &mut self,
+        workspace: &str,
+        agent: Agent,
+        source: Option<&Path>,
+    ) {
+        let agent_path = vec![agent.slug().to_owned()];
+        let doc = self.workspace_doc_mut(workspace);
+        set_sync_source_dir_field(doc, &agent_path, source);
+    }
+
     /// Write or clear `[roles.<role>.<agent>].auth_forward` inside the workspace file.
     ///
     /// Mirrors [`Self::set_workspace_auth_forward`] one layer deeper.
@@ -374,6 +377,19 @@ impl ConfigEditor {
         } else {
             clear_auth_forward_field(doc, &agent_path);
         }
+    }
+
+    /// Write or clear `[roles.<role>.<agent>].sync_source_dir` inside the workspace file.
+    pub fn set_workspace_role_sync_source_dir(
+        &mut self,
+        workspace: &str,
+        role: &str,
+        agent: Agent,
+        source: Option<&Path>,
+    ) {
+        let agent_path = vec!["roles".to_owned(), role.to_owned(), agent.slug().to_owned()];
+        let doc = self.workspace_doc_mut(workspace);
+        set_sync_source_dir_field(doc, &agent_path, source);
     }
 
     /// Write or clear `[github].auth_forward` inside the workspace file.

@@ -50,13 +50,13 @@ pub use planner::{
     apply_isolation_overrides, plan_collapse, plan_create, plan_edit,
 };
 pub use resolve::{
-    LoadWorkspaceInput, current_dir_workspace, resolve_load_workspace, saved_workspace_match_depth,
+    LoadWorkspaceInput, current_dir_workspace, find_saved_workspace_for_cwd,
+    resolve_load_workspace, saved_workspace_match_depth,
 };
 pub use schema::{
     DockerConfig, DockerMounts, GitConfig, GlobalMountConfig, KeepAwakeConfig, MountConfig,
-    MountEntry, ResolvedWorkspace, RoleSource, RuntimeConfig, WorkspaceConfig, WorkspaceEdit,
-    WorkspaceRoleOverride, WorkspaceRuntimeConfig, validate_mount_paths, validate_mount_specs,
-    validate_mounts,
+    MountEntry, ResolvedWorkspace, RoleSource, WorkspaceConfig, WorkspaceEdit,
+    WorkspaceRoleOverride, validate_mount_paths, validate_mount_specs, validate_mounts,
 };
 pub use sensitive::{SensitiveMount, find_sensitive_mounts};
 pub use validation::{validate_isolation_layout, validate_workspace_config};

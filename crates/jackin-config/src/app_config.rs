@@ -16,7 +16,7 @@ use jackin_core::agent::Agent;
 use jackin_core::AuthForwardMode;
 
 use crate::auth::{AgentAuthConfig, GithubAuthConfig};
-use crate::schema::{DockerConfig, GitConfig, RoleSource, RuntimeConfig, WorkspaceConfig};
+use crate::schema::{DockerConfig, GitConfig, RoleSource, WorkspaceConfig};
 use crate::versions::CURRENT_CONFIG_VERSION;
 
 /// Top-level operator configuration (`~/.config/jackin/config.toml`).
@@ -51,8 +51,6 @@ pub struct AppConfig {
     pub git: GitConfig,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub workspaces: BTreeMap<String, WorkspaceConfig>,
-    #[serde(default, skip_serializing_if = "RuntimeConfig::is_default")]
-    pub runtime: RuntimeConfig,
 }
 
 impl AppConfig {
@@ -137,7 +135,6 @@ impl Default for AppConfig {
             docker: DockerConfig::default(),
             git: GitConfig::default(),
             workspaces: BTreeMap::new(),
-            runtime: RuntimeConfig::default(),
         }
     }
 }

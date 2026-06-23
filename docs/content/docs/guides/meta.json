@@ -6,6 +6,7 @@
     "parallel-agents",
     "parallel-agent-coordination",
     "environment-variables",
+    "run-telemetry",
     "authentication",
     "tmux",
     "security-model",

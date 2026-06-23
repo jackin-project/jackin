@@ -91,14 +91,11 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
-        // Parent dir 0o700 so only the owner can list/connect. The
-        // socket file itself gets 0o600 after bind, but on a system
-        // where the parent dir is world-x an attacker can still
-        // enumerate the path. Lock both. A chmod failure here is a
-        // security regression: refuse to bind rather than continue
-        // with a wider-than-intended attack surface. Operators on
-        // exotic filesystems (NFS without owner perms) get an
-        // actionable error instead of silent downgrade.
+        // Parent dir 0o700 so only the owner can list/connect. The socket
+        // file itself gets 0o600 after bind, but on a system where the
+        // parent dir is world-x an attacker can still enumerate the path.
+        // Lock both. The dir is host-owned and the capsule runs as that
+        // same UID (`--user` on docker run), so the owner can set this.
         std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
             .with_context(|| format!("locking socket parent {} to 0o700", parent.display()))?;
     }
@@ -108,8 +105,8 @@ fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
     // process that shares the agent uid (and any process running as a
     // different uid if the umask is generous) can connect and inject
     // `ClientFrame::Input` straight into the focused PTY. The attach
-    // channel has no authentication beyond file-mode. Same hard-error
-    // policy as the parent dir above.
+    // channel has no authentication beyond file-mode. Hard error: the
+    // capsule always owns the socket file it just created.
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
         .with_context(|| format!("locking socket {} to 0o600", path.display()))?;
     let (tx, rx) = mpsc::unbounded_channel();
@@ -265,11 +262,6 @@ async fn read_payload_lazy(
 }
 
 /// Handle a one-shot control request and close the connection.
-///
-/// `exec_tx` is `Some` when the daemon supports `ExecCommand` requests;
-/// it forwards the request into the daemon's event loop and awaits the
-/// outcome before writing the reply. When `None`, `ExecCommand` replies
-/// with `ExecDenied`.
 pub async fn handle_control_request(
     mut stream: UnixStream,
     first_byte: u8,
@@ -277,7 +269,6 @@ pub async fn handle_control_request(
     tabs: Vec<crate::protocol::control::TabSnapshot>,
     history: Vec<jackin_protocol::control::AgentRegistryEntry>,
     active_tab: u32,
-    exec_tx: Option<mpsc::UnboundedSender<crate::exec::ExecRequest>>,
 ) {
     let msg = match read_control_msg(&mut stream, first_byte).await {
         Ok(msg) => msg,
@@ -286,48 +277,9 @@ pub async fn handle_control_request(
             return;
         }
     };
-
     let reply = match msg {
         ClientMsg::Status => ServerMsg::SessionList { sessions },
         ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
-        ClientMsg::ExecCommand { command, args } => match exec_tx {
-            None => ServerMsg::ExecDenied {
-                reason: "exec not available (no daemon exec channel)".to_owned(),
-            },
-            Some(tx) => {
-                let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-                let req = crate::exec::ExecRequest {
-                    command,
-                    args,
-                    response_tx,
-                };
-                if tx.send(req).is_err() {
-                    ServerMsg::ExecDenied {
-                        reason: "daemon exec channel closed".to_owned(),
-                    }
-                } else {
-                    match response_rx.await {
-                        Ok(crate::exec::ExecOutcome::Result {
-                            exit_code,
-                            stdout,
-                            stderr,
-                            redacted_count,
-                        }) => ServerMsg::ExecResult {
-                            exit_code,
-                            stdout,
-                            stderr,
-                            redacted_count,
-                        },
-                        Ok(crate::exec::ExecOutcome::Denied { reason }) => {
-                            ServerMsg::ExecDenied { reason }
-                        }
-                        Err(_) => ServerMsg::ExecDenied {
-                            reason: "daemon dropped exec response channel".to_owned(),
-                        },
-                    }
-                }
-            }
-        },
         ClientMsg::Agents => ServerMsg::AgentRegistry { records: history },
         ClientMsg::Unknown => {
             // Reply with `Unknown` so the peer's `read_exact` returns
@@ -340,11 +292,10 @@ pub async fn handle_control_request(
     // decode and reply write cannot wedge this task forever holding the
     // attach-concurrency permit. 2 s is generous for a single localhost
     // socket write; anything slower is the peer being unresponsive.
-    let reply_type = std::mem::discriminant(&reply);
     match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(&reply))).await {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => crate::clog!("control reply write failed (reply={reply_type:?}): {e}"),
-        Err(_) => crate::clog!("control reply write timed out after 2 s (reply={reply_type:?})"),
+        Ok(Err(e)) => crate::clog!("control reply write failed (msg={msg:?}): {e}"),
+        Err(_) => crate::clog!("control reply write timed out after 2 s (msg={msg:?})"),
     }
 }
 

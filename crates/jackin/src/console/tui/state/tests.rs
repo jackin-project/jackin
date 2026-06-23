@@ -2,10 +2,16 @@
 use super::*;
 use crate::console::services::instances::load_instance_refresh_snapshot;
 use crate::console::services::instances::overlay_running_instances;
-use crate::workspace::{KeepAwakeConfig, MountConfig, WorkspaceConfig};
+use crate::console::tui::state::SettingsState;
+use jackin_config::{CURRENT_WORKSPACE_VERSION, KeepAwakeConfig, MountConfig, WorkspaceConfig};
+use jackin_console::mount_diff::{MountDiff, classify_mount_diffs};
+use jackin_core::{Agent, JackinPaths};
+use jackin_runtime::instance::{
+    DockerResources, InstanceIndex, InstanceManifest, InstanceStatus, NewInstanceManifest,
+};
 use std::path::PathBuf;
 
-fn refresh_instances(state: &mut ManagerState<'_>, paths: &crate::paths::JackinPaths) {
+fn refresh_instances(state: &mut ManagerState<'_>, paths: &JackinPaths) {
     const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
     let now = std::time::Instant::now();
     if let Some(last) = state.instances_last_refresh
@@ -22,7 +28,7 @@ fn refresh_instances(state: &mut ManagerState<'_>, paths: &crate::paths::JackinP
 
 fn empty_ws(workdir: &str) -> WorkspaceConfig {
     WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: workdir.into(),
         ..Default::default()
     }
@@ -31,26 +37,26 @@ fn empty_ws(workdir: &str) -> WorkspaceConfig {
 #[test]
 fn summary_counts_mounts_and_readonly() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/a".into(),
         mounts: vec![
             MountConfig {
                 src: "/s1".into(),
                 dst: "/a".into(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_config::MountIsolation::Shared,
             },
             MountConfig {
                 src: "/s2".into(),
                 dst: "/b".into(),
                 readonly: true,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_config::MountIsolation::Shared,
             },
         ],
         allowed_roles: vec!["agent-smith".into()],
         ..Default::default()
     };
-    let sum = workspace_summary_from_config("big-monorepo", &ws);
+    let sum = WorkspaceSummary::from_source("big-monorepo", &ws);
     assert_eq!(sum.name, "big-monorepo");
     assert_eq!(sum.mount_count, 2);
     assert_eq!(sum.readonly_mount_count, 1);
@@ -73,28 +79,27 @@ fn manager_from_config_lists_all_workspaces() {
 #[test]
 fn refresh_instances_loads_rebuildable_index() {
     let tmp = tempfile::tempdir().unwrap();
-    let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-    let mut manifest =
-        crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
-            container_base: "jk-k7p9m2xq-demo-alpha",
-            workspace_name: Some("demo"),
-            workspace_label: "demo",
-            workdir: "/workspace/demo",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "alpha",
-            role_display_name: "Alpha",
-            agent_runtime: crate::agent::Agent::Claude,
-            role_source_git: "https://example.invalid/alpha.git",
-            role_source_ref: None,
-            image_tag: "jk_alpha",
-            docker: crate::instance::DockerResources {
-                role_container: "jk-k7p9m2xq-demo-alpha".into(),
-                dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
-                network: "jk-k7p9m2xq-demo-alpha-net".into(),
-                certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
-            },
-        });
-    manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
+    let paths = JackinPaths::for_tests(tmp.path());
+    let mut manifest = InstanceManifest::new(NewInstanceManifest {
+        container_base: "jk-k7p9m2xq-demo-alpha",
+        workspace_name: Some("demo"),
+        workspace_label: "demo",
+        workdir: "/workspace/demo",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: "alpha",
+        role_display_name: "Alpha",
+        agent_runtime: Agent::Claude,
+        role_source_git: "https://example.invalid/alpha.git",
+        role_source_ref: None,
+        image_tag: "jk_alpha",
+        docker: DockerResources {
+            role_container: "jk-k7p9m2xq-demo-alpha".into(),
+            dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+            network: "jk-k7p9m2xq-demo-alpha-net".into(),
+            certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+        },
+    });
+    manifest.mark_status(InstanceStatus::RestoreAvailable);
     manifest
         .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
         .unwrap();
@@ -105,42 +110,36 @@ fn refresh_instances_loads_rebuildable_index() {
 
     assert_eq!(state.instances.len(), 1);
     assert_eq!(state.instances[0].instance_id, "k7p9m2xq");
-    assert_eq!(
-        state.instances[0].status,
-        crate::instance::InstanceStatus::RestoreAvailable
-    );
+    assert_eq!(state.instances[0].status, InstanceStatus::RestoreAvailable);
 }
 
 #[test]
 fn live_running_overlay_makes_restore_available_instance_visible() {
     let tmp = tempfile::tempdir().unwrap();
-    let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-    let mut manifest =
-        crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
-            container_base: "jk-k7p9m2xq-demo-alpha",
-            workspace_name: Some("demo"),
-            workspace_label: "demo",
-            workdir: "/workspace/demo",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "alpha",
-            role_display_name: "Alpha",
-            agent_runtime: crate::agent::Agent::Claude,
-            role_source_git: "https://example.invalid/alpha.git",
-            role_source_ref: None,
-            image_tag: "jk_alpha",
-            docker: crate::instance::DockerResources {
-                role_container: "jk-k7p9m2xq-demo-alpha".into(),
-                dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
-                network: "jk-k7p9m2xq-demo-alpha-net".into(),
-                certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
-            },
-        });
-    manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
-    crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let mut manifest = InstanceManifest::new(NewInstanceManifest {
+        container_base: "jk-k7p9m2xq-demo-alpha",
+        workspace_name: Some("demo"),
+        workspace_label: "demo",
+        workdir: "/workspace/demo",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: "alpha",
+        role_display_name: "Alpha",
+        agent_runtime: Agent::Claude,
+        role_source_git: "https://example.invalid/alpha.git",
+        role_source_ref: None,
+        image_tag: "jk_alpha",
+        docker: DockerResources {
+            role_container: "jk-k7p9m2xq-demo-alpha".into(),
+            dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+            network: "jk-k7p9m2xq-demo-alpha-net".into(),
+            certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+        },
+    });
+    manifest.mark_status(InstanceStatus::RestoreAvailable);
+    InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
 
-    let mut instances = crate::instance::InstanceIndex::read(&paths.data_dir)
-        .unwrap()
-        .instances;
+    let mut instances = InstanceIndex::read(&paths.data_dir).unwrap().instances;
     overlay_running_instances(
         &paths,
         &mut instances,
@@ -148,37 +147,33 @@ fn live_running_overlay_makes_restore_available_instance_visible() {
     );
 
     assert_eq!(instances.len(), 1);
-    assert_eq!(
-        instances[0].status,
-        crate::instance::InstanceStatus::Running
-    );
+    assert_eq!(instances[0].status, InstanceStatus::Running);
 }
 
 #[test]
 fn live_running_overlay_backfills_manifest_missing_from_index() {
     let tmp = tempfile::tempdir().unwrap();
-    let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-    let mut manifest =
-        crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
-            container_base: "jk-k7p9m2xq-demo-alpha",
-            workspace_name: Some("demo"),
-            workspace_label: "demo",
-            workdir: "/workspace/demo",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "alpha",
-            role_display_name: "Alpha",
-            agent_runtime: crate::agent::Agent::Claude,
-            role_source_git: "https://example.invalid/alpha.git",
-            role_source_ref: None,
-            image_tag: "jk_alpha",
-            docker: crate::instance::DockerResources {
-                role_container: "jk-k7p9m2xq-demo-alpha".into(),
-                dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
-                network: "jk-k7p9m2xq-demo-alpha-net".into(),
-                certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
-            },
-        });
-    manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
+    let paths = JackinPaths::for_tests(tmp.path());
+    let mut manifest = InstanceManifest::new(NewInstanceManifest {
+        container_base: "jk-k7p9m2xq-demo-alpha",
+        workspace_name: Some("demo"),
+        workspace_label: "demo",
+        workdir: "/workspace/demo",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: "alpha",
+        role_display_name: "Alpha",
+        agent_runtime: Agent::Claude,
+        role_source_git: "https://example.invalid/alpha.git",
+        role_source_ref: None,
+        image_tag: "jk_alpha",
+        docker: DockerResources {
+            role_container: "jk-k7p9m2xq-demo-alpha".into(),
+            dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+            network: "jk-k7p9m2xq-demo-alpha-net".into(),
+            certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+        },
+    });
+    manifest.mark_status(InstanceStatus::RestoreAvailable);
     manifest
         .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
         .unwrap();
@@ -192,10 +187,7 @@ fn live_running_overlay_backfills_manifest_missing_from_index() {
 
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0].container_base, "jk-k7p9m2xq-demo-alpha");
-    assert_eq!(
-        instances[0].status,
-        crate::instance::InstanceStatus::Running
-    );
+    assert_eq!(instances[0].status, InstanceStatus::Running);
 }
 
 #[test]
@@ -206,28 +198,27 @@ fn refresh_instances_throttles_within_interval() {
     // when the on-disk index changes; `force_refresh_instances_for_test`
     // bypasses the gate.
     let tmp = tempfile::tempdir().unwrap();
-    let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-    let mut manifest =
-        crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
-            container_base: "jk-k7p9m2xq-demo-alpha",
-            workspace_name: Some("demo"),
-            workspace_label: "demo",
-            workdir: "/workspace/demo",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "alpha",
-            role_display_name: "Alpha",
-            agent_runtime: crate::agent::Agent::Claude,
-            role_source_git: "https://example.invalid/alpha.git",
-            role_source_ref: None,
-            image_tag: "jk_alpha",
-            docker: crate::instance::DockerResources {
-                role_container: "jk-k7p9m2xq-demo-alpha".into(),
-                dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
-                network: "jk-k7p9m2xq-demo-alpha-net".into(),
-                certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
-            },
-        });
-    manifest.mark_status(crate::instance::InstanceStatus::Active);
+    let paths = JackinPaths::for_tests(tmp.path());
+    let mut manifest = InstanceManifest::new(NewInstanceManifest {
+        container_base: "jk-k7p9m2xq-demo-alpha",
+        workspace_name: Some("demo"),
+        workspace_label: "demo",
+        workdir: "/workspace/demo",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: "alpha",
+        role_display_name: "Alpha",
+        agent_runtime: Agent::Claude,
+        role_source_git: "https://example.invalid/alpha.git",
+        role_source_ref: None,
+        image_tag: "jk_alpha",
+        docker: DockerResources {
+            role_container: "jk-k7p9m2xq-demo-alpha".into(),
+            dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+            network: "jk-k7p9m2xq-demo-alpha-net".into(),
+            certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+        },
+    });
+    manifest.mark_status(InstanceStatus::Active);
     manifest
         .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
         .unwrap();
@@ -236,40 +227,34 @@ fn refresh_instances_throttles_within_interval() {
     let mut state = ManagerState::from_config(&config, tmp.path());
     refresh_instances(&mut state, &paths);
     assert_eq!(state.instances.len(), 1);
-    assert_eq!(
-        state.instances[0].status,
-        crate::instance::InstanceStatus::Active
-    );
+    assert_eq!(state.instances[0].status, InstanceStatus::Active);
 
     // Mutate the manifest on disk; without the bypass, an
     // immediate refresh must observe the cached value.
-    manifest.mark_status(crate::instance::InstanceStatus::Crashed);
+    manifest.mark_status(InstanceStatus::Crashed);
     manifest
         .write(&paths.data_dir.join("jackin-demo-alpha-k7p9m2xq"))
         .unwrap();
-    crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+    InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
 
     state.instances_last_refresh = Some(std::time::Instant::now());
     refresh_instances(&mut state, &paths);
     assert_eq!(
         state.instances[0].status,
-        crate::instance::InstanceStatus::Active,
+        InstanceStatus::Active,
         "throttle window must keep the cached snapshot",
     );
 
     // Bypass the throttle — disk state is now observable.
     state.force_refresh_instances_for_test();
     refresh_instances(&mut state, &paths);
-    assert_eq!(
-        state.instances[0].status,
-        crate::instance::InstanceStatus::Crashed,
-    );
+    assert_eq!(state.instances[0].status, InstanceStatus::Crashed,);
 }
 
 #[test]
 fn refresh_instances_clears_on_index_error() {
     let tmp = tempfile::tempdir().unwrap();
-    let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+    let paths = JackinPaths::for_tests(tmp.path());
     std::fs::create_dir_all(&paths.data_dir).unwrap();
     std::fs::write(paths.data_dir.join("instances.json"), b"not json").unwrap();
     let bogus = paths.data_dir.join("jackin-bogus-k7p9m2xq");
@@ -293,13 +278,13 @@ fn manager_preselects_saved_workspace_matching_cwd() {
     config.workspaces.insert(
         "big-monorepo".into(),
         WorkspaceConfig {
-            version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: workdir.clone(),
             mounts: vec![MountConfig {
                 src: workdir.clone(),
                 dst: workdir,
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_config::MountIsolation::Shared,
             }],
             ..Default::default()
         },
@@ -390,7 +375,7 @@ fn adding_mount_counts_as_one_change() {
         src: "/s".into(),
         dst: "/a".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_config::MountIsolation::Shared,
     });
     assert_eq!(e.change_count(), 1);
 }
@@ -406,7 +391,7 @@ fn isolation_only_change_counts_as_one() {
         src: "/host/jackin".into(),
         dst: "/workspace/jackin".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_config::MountIsolation::Shared,
     });
     let mut e = EditorState::new_edit("jackin".into(), ws);
     assert_eq!(e.change_count(), 0);
@@ -422,10 +407,10 @@ fn classify_mount_diffs_distinguishes_modified_from_remove_add() {
         src: "/host/jackin".into(),
         dst: "/workspace/jackin".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_config::MountIsolation::Shared,
     }];
     let mut pending = original.clone();
-    pending[0].isolation = crate::isolation::MountIsolation::Worktree;
+    pending[0].isolation = jackin_config::MountIsolation::Worktree;
 
     let diffs = classify_mount_diffs(&original, &pending);
     assert_eq!(diffs.len(), 1, "same-dst diff is one row, not two");
@@ -442,13 +427,13 @@ fn classify_mount_diffs_keeps_genuine_remove_add_separate() {
         src: "/host/a".into(),
         dst: "/workspace/a".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_config::MountIsolation::Shared,
     }];
     let pending = vec![MountConfig {
         src: "/host/b".into(),
         dst: "/workspace/b".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_config::MountIsolation::Shared,
     }];
     let diffs = classify_mount_diffs(&original, &pending);
     assert_eq!(diffs.len(), 2);
@@ -465,10 +450,9 @@ fn classify_mount_diffs_keeps_genuine_remove_add_separate() {
 fn change_count_env_set_counts_as_one() {
     let mut e = EditorState::new_edit("a".into(), empty_ws("/a"));
     assert_eq!(e.change_count(), 0);
-    e.pending.env.insert(
-        "DB_URL".into(),
-        crate::operator_env::EnvValue::Plain("postgres://…".into()),
-    );
+    e.pending
+        .env
+        .insert("DB_URL".into(), EnvValue::Plain("postgres://…".into()));
     assert_eq!(e.change_count(), 1);
 }
 
@@ -477,10 +461,8 @@ fn change_count_env_set_counts_as_one() {
 #[test]
 fn change_count_env_remove_counts_as_one() {
     let mut ws = empty_ws("/a");
-    ws.env.insert(
-        "DB_URL".into(),
-        crate::operator_env::EnvValue::Plain("postgres://…".into()),
-    );
+    ws.env
+        .insert("DB_URL".into(), EnvValue::Plain("postgres://…".into()));
     let mut e = EditorState::new_edit("a".into(), ws);
     assert_eq!(e.change_count(), 0);
     e.pending.env.remove("DB_URL");
@@ -491,14 +473,11 @@ fn change_count_env_remove_counts_as_one() {
 /// via the same map-change helper as workspace-level env.
 #[test]
 fn change_count_agent_env_delta() {
-    use crate::workspace::WorkspaceRoleOverride;
+    use jackin_config::WorkspaceRoleOverride;
     // Seed one role with one env key.
     let mut ws = empty_ws("/a");
     let mut role_x_env = std::collections::BTreeMap::new();
-    role_x_env.insert(
-        "LOG_LEVEL".into(),
-        crate::operator_env::EnvValue::Plain("info".into()),
-    );
+    role_x_env.insert("LOG_LEVEL".into(), EnvValue::Plain("info".into()));
     ws.roles.insert(
         "agent-x".into(),
         WorkspaceRoleOverride {
@@ -516,10 +495,12 @@ fn change_count_agent_env_delta() {
     assert_eq!(e.change_count(), 0);
 
     // Add a new key to pending.
-    e.pending.roles.get_mut("agent-x").unwrap().env.insert(
-        "DEBUG".into(),
-        crate::operator_env::EnvValue::Plain("1".into()),
-    );
+    e.pending
+        .roles
+        .get_mut("agent-x")
+        .unwrap()
+        .env
+        .insert("DEBUG".into(), EnvValue::Plain("1".into()));
     assert_eq!(e.change_count(), 1);
 
     // Remove the original key. Net delta: 2 (one add + one remove).
@@ -537,14 +518,14 @@ fn change_count_agent_env_delta() {
 /// `WorkspaceConfig` `PartialEq`.
 #[test]
 fn is_dirty_from_env_mutation() {
-    use crate::workspace::WorkspaceRoleOverride;
+    use jackin_config::WorkspaceRoleOverride;
 
     // Workspace env path.
     let mut e = EditorState::new_edit("a".into(), empty_ws("/a"));
     assert!(!e.is_dirty());
     e.pending
         .env
-        .insert("K".into(), crate::operator_env::EnvValue::Plain("v".into()));
+        .insert("K".into(), EnvValue::Plain("v".into()));
     assert!(e.is_dirty(), "workspace env set must make state dirty");
 
     // Per-role env path.
@@ -555,7 +536,7 @@ fn is_dirty_from_env_mutation() {
         WorkspaceRoleOverride {
             env: {
                 let mut m = std::collections::BTreeMap::new();
-                m.insert("K".into(), crate::operator_env::EnvValue::Plain("v".into()));
+                m.insert("K".into(), EnvValue::Plain("v".into()));
                 m
             },
             claude: None,
@@ -701,7 +682,7 @@ fn manager_selected_workspace_summary_is_none_for_synthetic_rows() {
 #[test]
 fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
     let temp = tempfile::tempdir().unwrap();
-    let paths = crate::paths::JackinPaths::for_tests(temp.path());
+    let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
     std::fs::write(&paths.config_file, "").unwrap();
     let source_a = temp.path().join("cache-a");
@@ -709,15 +690,15 @@ fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
     std::fs::create_dir_all(&source_a).unwrap();
     std::fs::create_dir_all(&source_b).unwrap();
 
-    let mut state = settings_global_mounts_from_config(&AppConfig::default());
-    state.pending.push(crate::config::GlobalMountRow {
+    let mut state = SettingsState::from_config(&AppConfig::default()).mounts;
+    state.pending.push(jackin_config::GlobalMountRow {
         scope: None,
         name: "gradle".into(),
         mount: MountConfig {
             src: source_a.display().to_string(),
             dst: "/home/agent/.gradle/caches".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         },
     });
     crate::console::services::config::save_global_mounts(&paths, &state.original, &state.pending)
@@ -729,14 +710,14 @@ fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
     state.pending[0].mount.dst = "/home/agent/.cargo/registry".into();
     state.pending[0].mount.readonly = true;
     state.pending[0].scope = Some("chainargos/*".into());
-    state.pending.push(crate::config::GlobalMountRow {
+    state.pending.push(jackin_config::GlobalMountRow {
         scope: None,
         name: "remove-me".into(),
         mount: MountConfig {
             src: source_a.display().to_string(),
             dst: "/remove-me".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         },
     });
     state.pending.retain(|row| row.name != "remove-me");
@@ -762,7 +743,7 @@ fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
 #[test]
 fn settings_save_zai_ignore_removes_global_key() {
     let temp = tempfile::tempdir().unwrap();
-    let paths = crate::paths::JackinPaths::for_tests(temp.path());
+    let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
     std::fs::write(
         &paths.config_file,
@@ -772,7 +753,7 @@ ZAI_API_KEY = "secret"
     )
     .unwrap();
     let config = AppConfig::load_or_init(&paths).unwrap();
-    let mut state = settings_state_from_config(&config);
+    let mut state = SettingsState::from_config(&config);
     let row = state
         .auth
         .pending
@@ -781,7 +762,7 @@ ZAI_API_KEY = "secret"
         .expect("settings auth rows include Z.AI");
     row.mode = jackin_console::tui::auth::AuthMode::Ignore;
 
-    state.remove_zai_key_when_auth_ignored();
+    state.clear_ignored_env_only_auth_keys();
     let saved = crate::console::services::config::save_settings(
         &paths,
         crate::console::services::config::SettingsSaveInput {
@@ -813,13 +794,13 @@ ZAI_API_KEY = "secret"
 fn editor_with_one_shared_mount() -> EditorState<'static> {
     use std::collections::BTreeMap;
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: String::new(),
         mounts: vec![MountConfig {
             src: "/host/a".into(),
             dst: "/host/a".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_config::MountIsolation::Shared,
         }],
         allowed_roles: vec![],
         default_role: None,
@@ -836,7 +817,6 @@ fn editor_with_one_shared_mount() -> EditorState<'static> {
         grok: None,
         github: None,
         git_pull_on_entry: false,
-        runtime: crate::config::WorkspaceRuntimeConfig::default(),
     };
     let mut e = EditorState::new_edit("ws".into(), ws);
     e.active_tab = EditorTab::Mounts;
@@ -850,7 +830,7 @@ fn cycle_isolation_shared_to_worktree() {
     e.cycle_isolation_for_selected_mount();
     assert_eq!(
         e.pending.mounts[0].isolation,
-        crate::isolation::MountIsolation::Worktree,
+        jackin_config::MountIsolation::Worktree,
         "Shared must cycle to Worktree on first I press"
     );
 }
@@ -862,13 +842,13 @@ fn cycle_isolation_worktree_back_to_shared() {
     e.cycle_isolation_for_selected_mount();
     assert_eq!(
         e.pending.mounts[0].isolation,
-        crate::isolation::MountIsolation::Clone,
+        jackin_config::MountIsolation::Clone,
         "two I presses must cycle Worktree to Clone",
     );
     e.cycle_isolation_for_selected_mount();
     assert_eq!(
         e.pending.mounts[0].isolation,
-        crate::isolation::MountIsolation::Shared,
+        jackin_config::MountIsolation::Shared,
         "three I presses must net back to Shared",
     );
     assert_eq!(

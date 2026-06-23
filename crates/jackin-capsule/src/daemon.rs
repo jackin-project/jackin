@@ -41,10 +41,10 @@ use tokio::time::{Duration, interval};
 use portable_pty::CommandBuilder;
 
 use crate::attach_protocol::{
-    AttachHandshake, ControlSnapshots, detach_attached_task, detach_client, drain_and_exit,
-    handle_attach_client, initial_spawn_request, perform_handshake, spawn_request_label,
+    AttachHandshake, detach_attached_task, detach_client, drain_and_exit,
+    drain_and_exit_with_reason, handle_attach_client, initial_spawn_request, perform_handshake,
+    spawn_request_label,
 };
-use crate::exec::{ExecOutcome, ExecRequest};
 #[cfg(test)]
 use crate::git_context::{
     PACKED_REFS_CACHE_MAX_ENTRIES, PACKED_REFS_MAX_BYTES, read_branch_from_git_head,
@@ -167,7 +167,6 @@ pub struct Multiplexer {
     /// dialog open" — every consumer treats `dialog_top()` as the
     /// canonical "is a dialog visible" check.
     dialog_stack: Vec<Dialog>,
-    exec_picker_result: Option<ExecPickerResult>,
     content_rows: u16,
     available_agents: Vec<String>,
     launch_config: CapsuleConfig,
@@ -319,16 +318,6 @@ pub struct Multiplexer {
     wordlist_offset: usize,
 }
 
-#[derive(Debug)]
-pub(crate) enum ExecPickerResult {
-    Confirmed {
-        command: String,
-        args: Vec<String>,
-        refs: Vec<crate::exec::CredRef>,
-    },
-    Cancelled,
-}
-
 /// In-memory record of one tab ever opened in this container lifetime.
 /// The history is append-only and never pruned; it is the authoritative
 /// data source for `jackin-capsule agents` and the tab hover tooltip.
@@ -438,6 +427,8 @@ impl Multiplexer {
             .collect();
 
         let input_bindings = crate::services::input_bindings::resolve_input_bindings();
+        let palette_glyph =
+            crate::services::input_bindings::palette_key_glyph(input_bindings.palette_key);
         let input_parser = InputParser::new(input_bindings.prefix, input_bindings.palette_key);
         let workdir = PathBuf::from(&launch_config.workdir);
         let workdir_context = WorkdirContext::resolve(&workdir);
@@ -455,6 +446,7 @@ impl Multiplexer {
             status_identity.instance_id,
         );
         status_bar.set_prefix_enabled(input_parser.prefix_enabled());
+        status_bar.palette_key_glyph = palette_glyph;
 
         let ratatui_terminal =
             ratatui::Terminal::new(crate::tui::socket_backend::SocketBackend::new(cols, rows))?;
@@ -467,7 +459,6 @@ impl Multiplexer {
             term_cols: cols,
             status_bar,
             dialog_stack: Vec::new(),
-            exec_picker_result: None,
             content_rows,
             available_agents: agents,
             launch_config,
@@ -530,7 +521,7 @@ impl Multiplexer {
 
     /// Queue bytes that are not cell content (OSC passthrough, clipboard,
     /// pointer shapes, mode prefaces); they flush at the next frame boundary.
-    fn send_out_of_band(&mut self, bytes: Vec<u8>) {
+    pub(crate) fn send_out_of_band(&mut self, bytes: Vec<u8>) {
         self.client.enqueue_out_of_band(bytes);
     }
 }
@@ -556,6 +547,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // diagnostic. Failures fall back to stderr-only, so this is safe
     // to call unconditionally.
     crate::logging::init();
+    // OTLP export for this session — no-op unless the host injected an
+    // endpoint. Installs the tracing subscriber the clog!/cdebug! bridge and
+    // the session-anchor span feed into; the guard flushes on daemon exit.
+    let _otlp_flush = crate::telemetry::init();
     let _live_dhat_profiler = crate::alloc_telemetry::init_from_env();
     crate::debug_panic::panic_if_requested_from_env();
     crate::clog!(
@@ -587,11 +582,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // handshakes ride this channel back to the main loop, which then
     // applies the take-over + spawns the persistent attach task.
     let (handshake_tx, mut handshake_rx) = mpsc::unbounded_channel::<AttachHandshake>();
-    let (exec_tx, mut exec_rx) = mpsc::unbounded_channel::<ExecRequest>();
-    let mut pending_exec: Option<(
-        crate::exec::ExecPickerState,
-        tokio::sync::oneshot::Sender<ExecOutcome>,
-    )> = None;
 
     // Resolve the operator's escape-time once at startup; the value
     // cannot change after daemon launch, so per-iteration env reads
@@ -673,18 +663,14 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let tabs_snapshot = mux.tab_snapshots();
                 let history_snapshot = mux.agent_registry_snapshot();
                 let active_tab = u32::try_from(mux.active_tab).unwrap_or(0);
-                let exec_tx = exec_tx.clone();
                 tokio::spawn(perform_handshake(
                     stream,
                     client_permit,
                     handshake_tx,
-                    ControlSnapshots {
-                        sessions: sessions_snapshot,
-                        tabs: tabs_snapshot,
-                        history: history_snapshot,
-                        active_tab,
-                        exec_tx: Some(exec_tx),
-                    },
+                    sessions_snapshot,
+                    tabs_snapshot,
+                    history_snapshot,
+                    active_tab,
                 ));
             }
 
@@ -828,10 +814,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 }));
             }
 
-            Some(req) = exec_rx.recv() => {
-                handle_exec_request(&mut mux, req, &mut pending_exec).await;
-            }
-
             // Inbound attach frame from the active client task.
             Some(frame) = cmd_rx.recv() => {
                 // Coalesce consecutive Resize frames: process only the latest size
@@ -851,33 +833,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     frame
                 };
                 handle_client_frame(&mut mux, frame).await;
-                if let Some(result) = mux.exec_picker_result.take()
-                    && let Some((_, response_tx)) = pending_exec.take()
-                {
-                    match result {
-                        ExecPickerResult::Confirmed {
-                            command,
-                            args,
-                            refs,
-                        } => {
-                            let host_sock = mux
-                                .launch_config
-                                .host_sock_path
-                                .clone()
-                                .unwrap_or_else(|| "/jackin/run/host.sock".to_owned());
-                            tokio::spawn(async move {
-                                let outcome =
-                                    run_exec_with_refs(command, args, refs, host_sock).await;
-                                drop(response_tx.send(outcome));
-                            });
-                        }
-                        ExecPickerResult::Cancelled => {
-                            drop(response_tx.send(ExecOutcome::Denied {
-                                reason: "operator cancelled".to_owned(),
-                            }));
-                        }
-                    }
-                }
                 if mux.detach_requested {
                     mux.detach_requested = false;
                     detach_client(&mut mux).await;
@@ -930,7 +885,32 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         // state, so dismiss doesn't jump.
                         mux.invalidate(FullRedrawReason::PtyOutput);
                     }
-                    SessionEvent::Exited { session_id } => {
+                    SessionEvent::Exited {
+                        session_id,
+                        mut reason,
+                    } => {
+                        // Only a non-clean exit carries a `reason`; skip the
+                        // pane snapshot entirely on clean teardown so the grid
+                        // render never runs on the common exit path. When the
+                        // pane has no tail to attach (PTY never rendered, or the
+                        // session was already removed), keep the base reason —
+                        // dropping it would misroute a real failure into the
+                        // clean-shutdown branch and swallow it.
+                        if let Some(base) = reason.take() {
+                            let tail = mux
+                                .sessions
+                                .get(&session_id)
+                                .and_then(|session| session.diagnostic_tail(12));
+                            reason = Some(match tail {
+                                Some(tail) => {
+                                    crate::clog!(
+                                        "session {session_id}: final output tail:\n{tail}"
+                                    );
+                                    format!("{base}\nlast pane output:\n{tail}")
+                                }
+                                None => base,
+                            });
+                        }
                         // Remove the pane / tab immediately rather than
                         // leaving a stale `○ Done` placeholder behind.
                         // Matches the operator's mental model: "agent
@@ -943,7 +923,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         // attach to. Tear down the container so the
                         // host cleanup path fires.
                         if mux.no_live_sessions() {
-                            drain_and_exit(&mut mux).await;
+                            if let Some(reason) = reason {
+                                crate::clog!("session {session_id}: final session exited: {reason}");
+                                drain_and_exit_with_reason(&mut mux, Some(reason)).await;
+                            } else {
+                                drain_and_exit(&mut mux).await;
+                            }
                             return Ok(());
                         }
                     }
@@ -1072,125 +1057,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     }
 }
 
-async fn handle_exec_request(
-    mux: &mut Multiplexer,
-    req: ExecRequest,
-    pending_exec: &mut Option<(
-        crate::exec::ExecPickerState,
-        tokio::sync::oneshot::Sender<ExecOutcome>,
-    )>,
-) {
-    crate::clog!(
-        "exec: received command={} args={}",
-        req.command,
-        req.args.len()
-    );
-    if pending_exec.is_some() {
-        crate::clog!("exec: denied; another exec awaiting approval");
-        drop(req.response_tx.send(ExecOutcome::Denied {
-            reason: "another exec is awaiting operator approval; retry shortly".to_owned(),
-        }));
-        return;
-    }
-
-    let bindings = &mux.launch_config.exec_bindings;
-    if bindings.is_empty() {
-        crate::clog!(
-            "exec: no bindings configured, running command={}",
-            req.command
-        );
-        let command = req.command;
-        let args = req.args;
-        let response_tx = req.response_tx;
-        tokio::spawn(async move {
-            let extra_env = BTreeMap::default();
-            let outcome = exec_and_log(&command, &args, &extra_env, &[]).await;
-            drop(response_tx.send(outcome));
-        });
-        return;
-    }
-
-    let items = bindings
-        .iter()
-        .map(|binding| {
-            let kind = match binding.kind.as_str() {
-                "op" => crate::exec::ExecItemKind::Op,
-                "env" => crate::exec::ExecItemKind::Env,
-                _ => crate::exec::ExecItemKind::Literal,
-            };
-            crate::exec::ExecPickerItem {
-                name: binding.name.clone(),
-                display: binding.display.clone(),
-                kind,
-                source: binding.source.clone(),
-                selected: false,
-            }
-        })
-        .collect();
-    let picker_state = crate::exec::ExecPickerState {
-        command: req.command.clone(),
-        args: req.args.clone(),
-        items,
-        cursor: 0,
-    };
-    crate::clog!(
-        "exec: awaiting operator approval command={} ({} bindings offered)",
-        req.command,
-        bindings.len()
-    );
-    mux.dialog_push(Dialog::ExecPicker(picker_state.clone()));
-    *pending_exec = Some((picker_state, req.response_tx));
-}
-
-async fn run_exec_with_refs(
-    command: String,
-    args: Vec<String>,
-    refs: Vec<crate::exec::CredRef>,
-    host_sock: String,
-) -> ExecOutcome {
-    let ref_count = refs.len();
-    let values = match crate::exec::resolve_credentials(&host_sock, refs).await {
-        Ok(values) => values,
-        Err(error) => {
-            crate::clog!("exec: credential resolution failed ({ref_count} refs): {error:#}");
-            return ExecOutcome::Denied {
-                reason: format!("credential resolution failed: {error:#}"),
-            };
-        }
-    };
-    crate::clog!(
-        "exec: resolved {} credential(s), running command={command}",
-        values.len()
-    );
-    let secret_values: Vec<String> = values.values().cloned().collect();
-    exec_and_log(&command, &args, &values, &secret_values).await
-}
-
-async fn exec_and_log(
-    command: &str,
-    args: &[String],
-    env: &BTreeMap<String, String>,
-    secrets: &[String],
-) -> ExecOutcome {
-    match crate::exec::execute_command(command, args, env, secrets).await {
-        Ok((exit_code, stdout, stderr, redacted_count)) => {
-            crate::clog!("exec: command exited code={exit_code} redacted={redacted_count}");
-            ExecOutcome::Result {
-                exit_code,
-                stdout,
-                stderr,
-                redacted_count,
-            }
-        }
-        Err(error) => {
-            crate::clog!("exec: command execution failed: {error:#}");
-            ExecOutcome::Denied {
-                reason: format!("command execution failed: {error:#}"),
-            }
-        }
-    }
-}
-
 async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
     match frame {
         ClientFrame::Hello { .. } => {
@@ -1259,7 +1125,5 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
     }
 }
 
-#[cfg(test)]
-mod render_conformance_tests;
 #[cfg(test)]
 mod tests;

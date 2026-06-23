@@ -3,6 +3,7 @@ use super::*;
 use jackin_config::{AppConfig, WorkspaceConfig};
 use jackin_core::OpRef;
 use std::cell::RefCell;
+use std::sync::Mutex;
 use tempfile::tempdir;
 
 struct FakeOpWriter {
@@ -46,7 +47,6 @@ impl FakeOpWriter {
                 op: "op://_/_/_".into(),
                 path: "_/_/_".into(),
                 account: None,
-                on_demand: false,
             },
             recorded_value: RefCell::new(None),
             recorded_field_id: RefCell::new(None),
@@ -122,27 +122,27 @@ struct FakeOpReader {
     /// Per-call queue. Each call pops one. When empty, `read`
     /// reuses the last value indefinitely so single-call tests
     /// can keep using `Self { values: vec![token] }`.
-    values: RefCell<Vec<anyhow::Result<String>>>,
-    last_ref: RefCell<Vec<String>>,
+    values: Mutex<Vec<anyhow::Result<String>>>,
+    last_ref: Mutex<Vec<String>>,
 }
 impl FakeOpReader {
     fn ok(value: &str) -> Self {
         Self {
-            values: RefCell::new(vec![Ok(value.into())]),
-            last_ref: RefCell::new(Vec::new()),
+            values: Mutex::new(vec![Ok(value.into())]),
+            last_ref: Mutex::new(Vec::new()),
         }
     }
     fn err(msg: &'static str) -> Self {
         Self {
-            values: RefCell::new(vec![Err(anyhow::anyhow!(msg))]),
-            last_ref: RefCell::new(Vec::new()),
+            values: Mutex::new(vec![Err(anyhow::anyhow!(msg))]),
+            last_ref: Mutex::new(Vec::new()),
         }
     }
 }
 impl OpRunner for FakeOpReader {
     fn read(&self, reference: &str) -> anyhow::Result<String> {
-        self.last_ref.borrow_mut().push(reference.to_owned());
-        let mut q = self.values.borrow_mut();
+        self.last_ref.lock().unwrap().push(reference.to_owned());
+        let mut q = self.values.lock().unwrap();
         if q.len() == 1 {
             // Stable: keep returning the same value/err forever.
             match &q[0] {
@@ -191,7 +191,6 @@ fn dummy_op_ref() -> OpRef {
         op: "op://VID/IID/FID".into(),
         path: "Personal/jackin · proj · claude-token/token".into(),
         account: None,
-        on_demand: false,
     }
 }
 
@@ -345,7 +344,10 @@ fn run_setup_with_runner_creates_item_and_wires_workspace_config() {
     assert!(read_back.is_some(), "stamp must parse to a day count");
 
     // Post-write read used the canonical UUID URI, not the path.
-    assert_eq!(reader.last_ref.borrow().last().unwrap(), "op://VID/IID/FID");
+    assert_eq!(
+        reader.last_ref.lock().unwrap().last().unwrap(),
+        "op://VID/IID/FID"
+    );
 }
 
 /// The `Global` scope wires the global `[claude]` auth + global env
@@ -628,7 +630,6 @@ fn run_setup_with_runner_reuse_path_surfaces_validation_error() {
                 op: "op://Other/Item/Field".into(),
                 path: "Other/Item/Field".into(),
                 account: None,
-                on_demand: false,
             }),
             ..Default::default()
         },
@@ -664,7 +665,6 @@ fn run_setup_with_runner_reuse_path_skips_capture_and_no_expiry_stamp() {
                 op: "op://VID/IID/FID".into(),
                 path: "Personal/Existing/token".into(),
                 account: None,
-                on_demand: false,
             }),
             ..Default::default()
         },
@@ -727,7 +727,7 @@ fn run_setup_with_runner_plain_text_wires_literal_and_skips_op_writer() {
     assert!(writer.deletes.borrow().is_empty());
     // No op read-back validation happened.
     assert!(
-        reader.last_ref.borrow().is_empty(),
+        reader.last_ref.lock().unwrap().is_empty(),
         "plain-text path must not read back from op"
     );
 
@@ -773,7 +773,6 @@ fn run_setup_with_runner_plain_text_with_reuse_bails() {
                 op: "op://Other/Item/Field".into(),
                 path: "Other/Item/Field".into(),
                 account: None,
-                on_demand: false,
             }),
             ..Default::default()
         },
@@ -853,7 +852,6 @@ fn run_revoke_clears_slot_mode_and_expiry_cache() {
             op: "op://VID/IID/FID".into(),
             path: "Personal/Item/token".into(),
             account: None,
-            on_demand: false,
         }),
     );
     cfg.workspaces.insert("proj".into(), ws);
@@ -892,7 +890,6 @@ fn vault_for_rotate_falls_back_to_prior_op_ref_vault() {
         op: "op://VAULT_UUID/ITEM_UUID/FIELD_UUID".into(),
         path: "Personal/jackin · proj · claude-token/token".into(),
         account: None,
-        on_demand: false,
     });
     assert_eq!(
         vault_for_rotate(None, Some(&prior)),
@@ -910,7 +907,6 @@ fn vault_for_rotate_prefers_explicit_cli_vault() {
         op: "op://OldVault/ITEM/FIELD".into(),
         path: "OldVault/Item/token".into(),
         account: None,
-        on_demand: false,
     });
     assert_eq!(
         vault_for_rotate(Some("NewVault".into()), Some(&prior)),
@@ -1005,7 +1001,6 @@ fn run_doctor_op_read_failure_wraps_error() {
             op: "op://VID/IID/FID".into(),
             path: "Personal/Item/token".into(),
             account: None,
-            on_demand: false,
         }),
     );
     cfg.workspaces.insert("proj".into(), ws);
@@ -1034,7 +1029,6 @@ fn run_revoke_with_runner_delete_op_item_calls_writer_with_parsed_uuids() {
             op: "op://VAULT_UUID/ITEM_UUID/FIELD_UUID".into(),
             path: "Personal/Item/token".into(),
             account: None,
-            on_demand: false,
         }),
     );
     cfg.workspaces.insert("proj".into(), ws);
@@ -1114,7 +1108,6 @@ fn run_revoke_with_runner_delete_op_item_failure_does_not_save_config() {
             op: "op://VID/IID/FID".into(),
             path: "Personal/Item/token".into(),
             account: None,
-            on_demand: false,
         }),
     );
     cfg.workspaces.insert("proj".into(), ws);
@@ -1183,7 +1176,6 @@ fn run_setup_with_runner_post_write_unparseable_op_ref_skips_delete_call() {
         op: "garbage-not-an-op-uri".into(),
         path: "Personal/Item/token".into(),
         account: None,
-        on_demand: false,
     };
     let writer = FakeOpWriter::new(bogus_ref);
     let reader = FakeOpReader::err("op read failed: bogus URI");

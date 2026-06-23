@@ -61,9 +61,6 @@ pub struct LoadArgs {
     /// it merges to the default branch.
     #[arg(long)]
     pub role_branch: Option<String>,
-    /// Runtime backend for this launch (`docker` or `apple-container`).
-    #[arg(long, value_parser = ["docker", "apple-container"])]
-    pub backend: Option<String>,
     /// Print the resolved launch plan (workspace, role, mounts, auth decisions,
     /// derived image) and exit without spawning any containers.
     #[arg(long)]

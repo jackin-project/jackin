@@ -142,6 +142,7 @@ macro_rules! clog {
     ($($arg:tt)*) => {{
         let line = format!("[jackin-capsule] {}", format_args!($($arg)*));
         $crate::logging::write_line(&line);
+        $crate::telemetry::bridge_log(false, &line);
     }};
 }
 
@@ -157,6 +158,7 @@ macro_rules! cdebug {
         if $crate::logging::debug_enabled() {
             let line = format!("[jackin-capsule debug] {}", format_args!($($arg)*));
             $crate::logging::write_line(&line);
+            $crate::telemetry::bridge_log(true, &line);
         }
     }};
 }

@@ -48,7 +48,7 @@ Both fields are optional and additive. A role that has never been resolved omits
 
 ### Config schema migration
 
-Per the project's pre-release schema rule (see <RepoFile path="AGENTS.md" />), any change to a serde-bearing config struct requires a version bump and a migration registry entry, even when the change is purely additive. This work would bump `CURRENT_CONFIG_VERSION` from `v1alpha2` to `v1alpha3`, add a no-op `MigrationStep`, ship a new `from-v1alpha2/` fixture, and re-bake the existing `from-legacy/` and `from-v1alpha1/` fixtures so their migration chains end at `v1alpha3`. Existing operator config files keep parsing without modification because the new fields are `Option<String>` with serde defaults.
+Per the project's pre-release schema rule (see <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>), any change to a serde-bearing config struct requires a version bump and a migration registry entry, even when the change is purely additive. This work would bump `CURRENT_CONFIG_VERSION` from `v1alpha2` to `v1alpha3`, add a no-op `MigrationStep`, ship a new `from-v1alpha2/` fixture, and re-bake the existing `from-legacy/` and `from-v1alpha1/` fixtures so their migration chains end at `v1alpha3`. Existing operator config files keep parsing without modification because the new fields are `Option<String>` with serde defaults.
 
 ### Open questions for operator review
 
@@ -61,11 +61,11 @@ Per the project's pre-release schema rule (see <RepoFile path="AGENTS.md" />), a
 
 Code:
 
-- <RepoFile path="crates/jackin/src/config.rs" /> — add `commit`, `version` fields to `RoleSource`.
-- <RepoFile path="crates/jackin-config/src/migrations.rs" /> — version bump and registry step.
-- <RepoFile path="crates/jackin-config/src/app_config_roles.rs" /> — `sync_builtin_agents` must update fields in place rather than overwriting the whole `RoleSource`, so a re-pinned built-in survives a binary upgrade.
-- <RepoFile path="crates/jackin-runtime/src/runtime/repo_cache.rs" /> — capture-pin helper, fetch+checkout-detached path for pinned commits, `--update` path, persist callback into config.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — wire the `--update` flag, include resolved version/SHA in the launch summary.
+- <RepoFile path="crates/jackin/src/config.rs">crates/jackin/src/config.rs</RepoFile> — add `commit`, `version` fields to `RoleSource`.
+- <RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile> — version bump and registry step.
+- <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile> — `sync_builtin_agents` must update fields in place rather than overwriting the whole `RoleSource`, so a re-pinned built-in survives a binary upgrade.
+- <RepoFile path="crates/jackin-runtime/src/runtime/repo_cache.rs">crates/jackin-runtime/src/runtime/repo_cache.rs</RepoFile> — capture-pin helper, fetch+checkout-detached path for pinned commits, `--update` path, persist callback into config.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — wire the `--update` flag, include resolved version/SHA in the launch summary.
 
 Docs:
 
@@ -75,6 +75,6 @@ Docs:
 
 ## Related files
 
-- <RepoFile path="crates/jackin-config/src/app_config_roles.rs" /> — `resolve_agent_source()`; `AgentSource` (defined in <RepoFile path="crates/jackin/src/config.rs" />) would gain the new fields.
-- <RepoFile path="crates/jackin-runtime/src/runtime/repo_cache.rs" /> — repo checkout logic; calls into config layer to resolve source.
-- <RepoFile path="crates/jackin-manifest/src/manifest.rs" /> — version/provenance metadata.
+- <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile> — `resolve_agent_source()`; `AgentSource` (defined in <RepoFile path="crates/jackin/src/config.rs">crates/jackin/src/config.rs</RepoFile>) would gain the new fields.
+- <RepoFile path="crates/jackin-runtime/src/runtime/repo_cache.rs">crates/jackin-runtime/src/runtime/repo_cache.rs</RepoFile> — repo checkout logic; calls into config layer to resolve source.
+- <RepoFile path="crates/jackin-manifest/src/manifest.rs">crates/jackin-manifest/src/manifest.rs</RepoFile> — version/provenance metadata.

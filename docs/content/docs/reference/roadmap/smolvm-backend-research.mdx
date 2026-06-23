@@ -435,7 +435,7 @@ Two options for handling this:
 | B.1 — capsule as PID 2 under smolvm-agent | `jackin-capsule` runs as the OCI image's entrypoint, sees itself as PID 2 (or higher) under smolvm-agent. Capsule's session/control channel speaks over the vsock port 6000 that smolvm-agent already opens, or over a side channel | Loses PID-1 reaping semantics (`smolvm-agent` handles SIGCHLD). Capsule's existing assumption of being init has to be relaxed for this backend. The lift is contained in `jackin-capsule` itself |
 | B.2 — patch smolvm-agent or fork | Submit upstream patch (or fork) to let smolvm pass through an OCI-image PID-1 entrypoint without inserting the agent. Or accept the agent as PID 1 and treat capsule as a sibling daemon launched by smolvm-agent | Upstream coordination cost; jackin' becomes a smolvm contributor. Highest control over the runtime contract but largest commitment |
 
-Recommended: **B.1**. Modify `jackin-capsule` (see <RepoFile path="crates/jackin-capsule/src/main.rs" />, current PID==1 detection at <RepoFile path="crates/jackin-capsule/src/daemon.rs" />) so the daemon-mode path no longer requires PID 1. Daemon mode currently triggers on `process::id() == 1`; the smolvm path would set an env var (`JACKIN_CAPSULE_FORCE_DAEMON=1` or similar) to opt in regardless of PID. Reaping responsibilities stay with smolvm-agent.
+Recommended: **B.1**. Modify `jackin-capsule` (see <RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile>, current PID==1 detection at <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>) so the daemon-mode path no longer requires PID 1. Daemon mode currently triggers on `process::id() == 1`; the smolvm path would set an env var (`JACKIN_CAPSULE_FORCE_DAEMON=1` or similar) to opt in regardless of PID. Reaping responsibilities stay with smolvm-agent.
 
 Best for:
 
@@ -665,7 +665,7 @@ OrbStack isolated machines are excluded from this comparison — they share OrbS
 
 ## Telemetry Surface
 
-Backend operations should emit `debug_log!("smolvm", …)` (the existing macro in <RepoFile path="crates/jackin/src/tui.rs" />). Minimum required lines:
+Backend operations should emit `debug_log!("smolvm", …)` (the existing macro in <RepoFile path="crates/jackin/src/tui.rs">crates/jackin/src/tui.rs</RepoFile>). Minimum required lines:
 
 - `smolvm version=<smolvm --version> libkrun=<v> libkrunfw=<v>`
 - `entitlement_present hypervisor=<yes|no>` (macOS)
@@ -685,7 +685,7 @@ smolvm launch mode=direct-image image=jackin-the-architect rosetta=no net=allowl
 
 ## Schema Migration Footprint
 
-This backend introduces these versioned-config additions; each lands with a `CURRENT_*_VERSION` bump per <RepoFile path="AGENTS.md" />:
+This backend introduces these versioned-config additions; each lands with a `CURRENT_*_VERSION` bump per <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>:
 
 | Surface | File kind | Type touched | Action |
 |---|---|---|---|
@@ -742,11 +742,11 @@ These need answers before Phase 0 hands-on work converts to design commitments:
 
 ## Related Files
 
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> - launch orchestration that needs a backend split.
-- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> - role image build path and OCI artifact source.
-- <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" /> - future backend/provider handles.
-- <RepoFile path="docker/runtime/entrypoint.sh" /> - capsule startup assumptions.
-- <RepoFile path="docker/construct/Dockerfile" /> - role base image to test as a smolvm workload.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> - launch orchestration that needs a backend split.
+- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> - role image build path and OCI artifact source.
+- <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs">crates/jackin-runtime/src/instance/manifest.rs</RepoFile> - future backend/provider handles.
+- <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> - capsule startup assumptions.
+- <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> - role base image to test as a smolvm workload.
 
 ## Related Roadmap Items
 

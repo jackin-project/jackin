@@ -6,7 +6,7 @@
 
 use crate::binary_artifact::{
     chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
-    parse_sha256_hex,
+    parse_sha256_hex, repair_executable_file,
 };
 use anyhow::{Context, Result};
 use jackin_core::{Agent, JackinPaths};
@@ -26,6 +26,7 @@ const GROK_BASE_FALLBACK: &str = "https://storage.googleapis.com/grok-build-publ
 pub struct AgentBinary {
     pub agent: Agent,
     pub path: PathBuf,
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +76,7 @@ pub async fn ensure_available(paths: &JackinPaths, agent: Agent) -> Result<Agent
         return Ok(AgentBinary {
             agent,
             path: stub_path,
+            version: None,
         });
     }
 
@@ -198,6 +200,23 @@ async fn ensure_binary_for_release(
         return Ok(AgentBinary {
             agent,
             path: cached.to_path_buf(),
+            version: Some(release.version.clone()),
+        });
+    }
+    if repair_cached_binary_mode_async(cached).await? {
+        record(
+            "agent_binary_cache_repaired",
+            &format!(
+                "{} {} at {}",
+                agent.slug(),
+                release.version,
+                cached.display()
+            ),
+        );
+        return Ok(AgentBinary {
+            agent,
+            path: cached.to_path_buf(),
+            version: Some(release.version.clone()),
         });
     }
     record(
@@ -238,6 +257,7 @@ async fn ensure_binary_for_release(
     Ok(AgentBinary {
         agent,
         path: cached.to_path_buf(),
+        version: Some(release.version.clone()),
     })
 }
 
@@ -623,8 +643,8 @@ async fn download_and_cache_inner(
     //
     // Only performed on Linux hosts: the cached artifacts are always Linux
     // binaries (for injection into role containers). On macOS/Windows dev
-    // machines we cannot natively exec them; verification still occurs inside
-    // the Docker build (the install_block for Grok runs `grok --version`).
+    // machines we cannot natively exec them; Grok remains the one prefetched
+    // install block that keeps a Docker-build `grok --version` smoke check.
     if release.checksum.is_none() && cfg!(target_os = "linux") {
         let status = tokio::process::Command::new(tmp_binary)
             .arg("--version")
@@ -666,6 +686,19 @@ fn test_stub_path(paths: &JackinPaths, agent: Agent) -> PathBuf {
         .cache_dir
         .join("agent-binaries-test-stub")
         .join(agent.slug())
+}
+
+/// Host path to the agent's executable for run-time bind-mounting onto the
+/// container's PATH. Returns the test stub when one is installed (so tests don't
+/// need real downloads), otherwise the newest cached real binary. `None` when no
+/// binary is available for the agent. Used by the launch path to mount agent
+/// binaries read-only instead of baking them into the derived image.
+pub fn runtime_mount_binary_path(paths: &JackinPaths, agent: Agent) -> Option<PathBuf> {
+    let stub = test_stub_path(paths, agent);
+    if is_executable_file(&stub) {
+        return Some(stub);
+    }
+    newest_cached_executable_release(paths, agent).map(|(_, _, path)| path)
 }
 
 pub fn install_test_stub(paths: &JackinPaths, agent: Agent) -> Result<()> {
@@ -828,6 +861,13 @@ async fn is_executable_file_async(path: &Path) -> bool {
     tokio::task::spawn_blocking(move || is_executable_file(&path))
         .await
         .unwrap_or(false)
+}
+
+async fn repair_cached_binary_mode_async(path: &Path) -> Result<bool> {
+    let path = path.to_owned();
+    tokio::task::spawn_blocking(move || repair_executable_file(&path))
+        .await
+        .context("cache chmod worker join")?
 }
 
 #[derive(Debug, Deserialize)]

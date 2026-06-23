@@ -1,6 +1,6 @@
 //! Tests for `error_dialog`.
 use super::*;
-use crossterm::event::{KeyEventKind, KeyEventState, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -18,6 +18,33 @@ fn enter_dismisses() {
     assert!(matches!(
         state.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Cancel
+    ));
+}
+
+#[test]
+fn esc_dismisses() {
+    let state = ErrorPopupState::new("Save failed", "workspace already exists");
+    assert!(matches!(
+        state.handle_key(key(KeyCode::Esc)),
+        ModalOutcome::Cancel
+    ));
+}
+
+#[test]
+fn o_dismisses() {
+    let state = ErrorPopupState::new("Save failed", "workspace already exists");
+    assert!(matches!(
+        state.handle_key(key(KeyCode::Char('o'))),
+        ModalOutcome::Cancel
+    ));
+}
+
+#[test]
+fn unhandled_key_continues() {
+    let state = ErrorPopupState::new("Save failed", "workspace already exists");
+    assert!(matches!(
+        state.handle_key(key(KeyCode::Char('x'))),
+        ModalOutcome::Continue
     ));
 }
 

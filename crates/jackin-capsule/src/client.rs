@@ -59,9 +59,6 @@ pub async fn run_status() -> Result<()> {
         ServerMsg::Snapshot { .. } => {
             anyhow::bail!("daemon replied with Snapshot for Status request")
         }
-        ServerMsg::ExecResult { .. } | ServerMsg::ExecDenied { .. } => {
-            anyhow::bail!("daemon replied with an exec result for Status request")
-        }
         ServerMsg::AgentRegistry { .. } => {
             anyhow::bail!("daemon replied with AgentRegistry for Status request")
         }
@@ -114,9 +111,6 @@ pub async fn run_snapshot() -> Result<()> {
         }
         ServerMsg::SessionList { .. } => {
             anyhow::bail!("daemon replied with SessionList for Snapshot request")
-        }
-        ServerMsg::ExecResult { .. } | ServerMsg::ExecDenied { .. } => {
-            anyhow::bail!("daemon replied with an exec result for Snapshot request")
         }
         ServerMsg::AgentRegistry { .. } => {
             anyhow::bail!("daemon replied with AgentRegistry for Snapshot request")
@@ -171,9 +165,6 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
         }
         ServerMsg::Snapshot { .. } => {
             anyhow::bail!("daemon replied with Snapshot for Agents request")
-        }
-        ServerMsg::ExecResult { .. } | ServerMsg::ExecDenied { .. } => {
-            anyhow::bail!("daemon replied with an exec result for Agents request")
         }
     };
 

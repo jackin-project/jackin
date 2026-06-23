@@ -687,7 +687,6 @@ impl OpWriteRunner for OpCli {
             op: op_uri,
             path,
             account: self.account.clone(),
-            on_demand: false,
         })
     }
 

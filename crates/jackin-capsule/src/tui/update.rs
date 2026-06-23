@@ -140,8 +140,6 @@ pub(crate) fn dialog_action_frame_plan(action: &DialogAction) -> DialogActionFra
         | DialogAction::PickedCloseTarget(_)
         | DialogAction::RenameTab { .. }
         | DialogAction::CopyToClipboard(_)
-        | DialogAction::ExecPickerConfirm
-        | DialogAction::ExecPickerCancel
         | DialogAction::Dismiss
         | DialogAction::Redraw
         | DialogAction::Consume => DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange),

@@ -143,20 +143,6 @@ impl Multiplexer {
                 self.dialog_copy_feedback_deadline =
                     Some(Instant::now() + DIALOG_COPY_FEEDBACK_DURATION);
             }
-            DialogAction::ExecPickerConfirm => {
-                if let Some(Dialog::ExecPicker(state)) = self.dialog_pop_one() {
-                    let refs = state.selected_refs();
-                    self.exec_picker_result = Some(crate::daemon::ExecPickerResult::Confirmed {
-                        command: state.command,
-                        args: state.args,
-                        refs,
-                    });
-                }
-            }
-            DialogAction::ExecPickerCancel => {
-                self.dialog_pop_one();
-                self.exec_picker_result = Some(crate::daemon::ExecPickerResult::Cancelled);
-            }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
                 // push it on top of the SplitDirectionPicker so Esc
@@ -198,6 +184,15 @@ impl Multiplexer {
                     PaletteToggleRoute::OpenPalette => self.open_command_palette(),
                 }
                 self.invalidate_for(&Action::OpenPalette);
+            }
+            Action::RequestExit => {
+                // Ctrl+Q → confirm before the force-stop. Esc/No dismisses and
+                // resumes; Yes routes to ExitAllSessions (immediate teardown).
+                self.cancel_drag();
+                self.dialog_push(Dialog::new_confirm_action(
+                    crate::tui::components::dialog::ConfirmKind::Exit,
+                ));
+                self.invalidate_for(&Action::RequestExit);
             }
             Action::OpenContainerInfo => {
                 self.open_container_info_dialog();

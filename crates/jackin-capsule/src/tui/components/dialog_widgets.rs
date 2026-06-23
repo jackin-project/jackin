@@ -42,6 +42,9 @@ pub(crate) enum DialogRatatuiSnapshot {
         title: String,
         body: String,
         selected_yes: bool,
+        /// Exit confirmation: render the shared data-loss variant (warns that
+        /// quitting force-stops the container) instead of the plain prompt.
+        data_loss: bool,
     },
     /// List picker (`CommandPalette`, `AgentPicker`, `SplitPicker`, `ClosePicker`,
     /// `ProviderPicker`). `show_filter` draws the type-to-filter input + gap
@@ -55,12 +58,6 @@ pub(crate) enum DialogRatatuiSnapshot {
         /// Index into `items` (includes Section rows) for the focused row.
         selected: usize,
         show_filter: bool,
-    },
-    ExecPicker {
-        command: String,
-        args: Vec<String>,
-        items: Vec<ExecPickerRenderItem>,
-        selected: usize,
     },
     /// Single-line text input (`RenameTab`).
     TextInputDialog {
@@ -77,13 +74,6 @@ pub(crate) enum DialogRatatuiSnapshot {
     DebugInfo(jackin_tui::components::ContainerInfoState),
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct ExecPickerRenderItem {
-    pub(crate) name: String,
-    pub(crate) display: String,
-    pub(crate) selected: bool,
-}
-
 impl Dialog {
     /// Build a fully-owned snapshot for Ratatui rendering. Called before
     /// the `ratatui_terminal.draw()` closure so there are no borrow conflicts.
@@ -96,11 +86,25 @@ impl Dialog {
             reason = "ContainerInfo match arm has already proven this dialog variant"
         )]
         match self {
-            Dialog::ConfirmAction { kind, selected_yes } => DialogRatatuiSnapshot::ConfirmAction {
-                title: kind.title().to_owned(),
-                body: kind.message().to_owned(),
-                selected_yes: *selected_yes,
-            },
+            Dialog::ConfirmAction { kind, selected_yes } => {
+                // Exit always renders the shared data-loss state (exit_confirm_state_with_data_loss);
+                // title/message are unused for Exit so we pass empty strings to avoid dead formatting.
+                let data_loss = matches!(kind, crate::tui::components::dialog::ConfirmKind::Exit);
+                DialogRatatuiSnapshot::ConfirmAction {
+                    title: if data_loss {
+                        String::new()
+                    } else {
+                        kind.title().to_owned()
+                    },
+                    body: if data_loss {
+                        String::new()
+                    } else {
+                        kind.message().to_owned()
+                    },
+                    selected_yes: *selected_yes,
+                    data_loss,
+                }
+            }
 
             Dialog::CommandPalette {
                 selected,
@@ -241,21 +245,6 @@ impl Dialog {
                 }
             }
 
-            Dialog::ExecPicker(state) => DialogRatatuiSnapshot::ExecPicker {
-                command: state.command.clone(),
-                args: state.args.clone(),
-                items: state
-                    .items
-                    .iter()
-                    .map(|item| ExecPickerRenderItem {
-                        name: item.name.clone(),
-                        display: item.display.clone(),
-                        selected: item.selected,
-                    })
-                    .collect(),
-                selected: state.cursor,
-            },
-
             Dialog::RenameTab { input, .. } => DialogRatatuiSnapshot::TextInputDialog {
                 dialog_title: "Rename tab".into(),
                 label: "Name".into(),
@@ -324,8 +313,9 @@ pub(crate) fn render_dialog_ratatui(
             title,
             body,
             selected_yes,
+            data_loss,
         } => {
-            render_confirm_action(frame, area, title, body, *selected_yes);
+            render_confirm_action(frame, area, title, body, *selected_yes, *data_loss);
         }
         DialogRatatuiSnapshot::FilterPicker {
             title,
@@ -335,14 +325,6 @@ pub(crate) fn render_dialog_ratatui(
             show_filter,
         } => {
             render_filter_picker(frame, area, title, filter, items, *selected, *show_filter);
-        }
-        DialogRatatuiSnapshot::ExecPicker {
-            command,
-            args,
-            items,
-            selected,
-        } => {
-            render_exec_picker(frame, area, command, args, items, *selected);
         }
         DialogRatatuiSnapshot::TextInputDialog {
             dialog_title,
@@ -375,8 +357,15 @@ fn render_confirm_action(
     title: &str,
     body: &str,
     selected_yes: bool,
+    data_loss: bool,
 ) {
-    let mut state = ConfirmState::new(format!("{title}\n\n{body}"));
+    // Exit uses the shared data-loss variant (prompt + warning notes); every
+    // other confirm keeps the plain title+body prompt. Same widget either way.
+    let mut state = if data_loss {
+        jackin_tui::components::exit_confirm_state_with_data_loss()
+    } else {
+        ConfirmState::new(format!("{title}\n\n{body}"))
+    };
     if selected_yes {
         state = state.with_focus_yes();
     }
@@ -447,60 +436,5 @@ fn render_filter_picker(
         })
         .collect();
 
-    jackin_tui::components::render_picker_list(list_area, frame.buffer_mut(), rows, Some(selected));
-}
-
-fn render_exec_picker(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    command: &str,
-    args: &[String],
-    items: &[ExecPickerRenderItem],
-    selected: usize,
-) {
-    let block = jackin_tui::components::Panel::new()
-        .title(" Allow credentials? ")
-        .focus(jackin_tui::components::PanelFocus::Focused)
-        .block();
-    let inner = block.inner(area);
-    Clear.render(area, frame.buffer_mut());
-    block.render(area, frame.buffer_mut());
-    if inner.height < 1 {
-        return;
-    }
-
-    let command_label = if args.is_empty() {
-        format!("Run: {command}")
-    } else {
-        format!("Run: {command} {}", args.join(" "))
-    };
-    let command_area = Rect { height: 1, ..inner };
-    frame.render_widget(
-        Line::from(Span::styled(
-            command_label,
-            Style::default().fg(PHOSPHOR_GREEN),
-        )),
-        command_area,
-    );
-    if inner.height < 2 {
-        return;
-    }
-    let list_area = Rect {
-        y: inner.y + 1,
-        height: inner.height.saturating_sub(1),
-        ..inner
-    };
-    let rows: Vec<jackin_tui::components::PickerRow<'_>> = items
-        .iter()
-        .map(|item| {
-            let toggle = if item.selected { "[x]" } else { "[ ]" };
-            jackin_tui::components::PickerRow::Item(ratatui::widgets::ListItem::new(Line::from(
-                Span::styled(
-                    format!("{toggle} {} ({})", item.name, item.display),
-                    Style::default().fg(PHOSPHOR_GREEN),
-                ),
-            )))
-        })
-        .collect();
     jackin_tui::components::render_picker_list(list_area, frame.buffer_mut(), rows, Some(selected));
 }

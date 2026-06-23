@@ -318,8 +318,6 @@ fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
             label: "work".into(),
         },
         DialogAction::CopyToClipboard("container".into()),
-        DialogAction::ExecPickerConfirm,
-        DialogAction::ExecPickerCancel,
         DialogAction::Dismiss,
         DialogAction::Redraw,
         DialogAction::Consume,

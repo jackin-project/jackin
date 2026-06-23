@@ -8,7 +8,7 @@ use ratatui::{Terminal, backend::TestBackend};
 fn status_bar_renders_without_tabs() {
     let backend = TestBackend::new(80, 2);
     let mut terminal = Terminal::new(backend).unwrap();
-    let plan = status_bar_plan(80, &[], 0, &[], PrefixMode::Idle);
+    let plan = status_bar_plan(80, &[], 0, &[], PrefixMode::Idle, None);
     terminal
         .draw(|frame| {
             frame.render_widget(
@@ -36,7 +36,7 @@ fn status_bar_renders_shared_tab_underline() {
     ];
     let backend = TestBackend::new(80, 2);
     let mut terminal = Terminal::new(backend).unwrap();
-    let plan = status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle);
+    let plan = status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle, None);
     terminal
         .draw(|frame| {
             frame.render_widget(
@@ -65,7 +65,7 @@ fn status_bar_resets_canvas_across_unused_columns() {
     ];
     let backend = TestBackend::new(100, 2);
     let mut terminal = Terminal::new(backend).unwrap();
-    let plan = status_bar_plan(100, &tabs, 1, &[], PrefixMode::Idle);
+    let plan = status_bar_plan(100, &tabs, 1, &[], PrefixMode::Idle, None);
     terminal
         .draw(|frame| {
             frame.render_widget(
@@ -147,4 +147,66 @@ fn unfocused_pane_border_uses_shared_panel_palette() {
         .unwrap();
     let buf = terminal.backend().buffer();
     assert_eq!(buf[(0, 0)].fg, jackin_tui::theme::PHOSPHOR_DARK);
+}
+
+// ── truncate_spans_to_cols ────────────────────────────────────────────────────
+
+#[test]
+fn truncate_spans_empty_returns_empty() {
+    assert!(truncate_spans_to_cols(&[], 80).is_empty());
+}
+
+#[test]
+fn truncate_spans_all_fit() {
+    let spans: &[jackin_tui::HintSpan<'_>] = &[
+        jackin_tui::HintSpan::Key("A"),
+        jackin_tui::HintSpan::Text("action"),
+        jackin_tui::HintSpan::GroupSep,
+        jackin_tui::HintSpan::Key("B"),
+        jackin_tui::HintSpan::Text("other"),
+    ];
+    let result = truncate_spans_to_cols(spans, 80);
+    assert_eq!(result.len(), spans.len(), "all spans must fit in 80 cols");
+}
+
+#[test]
+fn truncate_spans_first_group_too_wide_returns_empty() {
+    // A single span wider than max_cols → nothing rendered.
+    let spans: &[jackin_tui::HintSpan<'_>] = &[jackin_tui::HintSpan::Key(
+        "a very long key that exceeds the narrow terminal",
+    )];
+    let result = truncate_spans_to_cols(spans, 5);
+    assert!(
+        result.is_empty(),
+        "first-group overflow must return empty slice"
+    );
+}
+
+#[test]
+fn truncate_spans_keeps_fitting_groups_drops_overflowing() {
+    // Three groups; limit set so only groups 1+2 fit.
+    let spans: &[jackin_tui::HintSpan<'_>] = &[
+        jackin_tui::HintSpan::Key("A"),
+        jackin_tui::HintSpan::Text("short"),
+        jackin_tui::HintSpan::GroupSep,
+        jackin_tui::HintSpan::Key("B"),
+        jackin_tui::HintSpan::Text("short"),
+        jackin_tui::HintSpan::GroupSep,
+        jackin_tui::HintSpan::Key("C"),
+        jackin_tui::HintSpan::Text("overflows-the-budget-clearly"),
+    ];
+    let full = jackin_tui::hint_row_cols(spans);
+    let two_groups = jackin_tui::hint_row_cols(&spans[..5]); // A short GroupSep B short
+    let result = truncate_spans_to_cols(spans, two_groups + 2);
+    // Should keep groups 1+2 (spans[0..5]); trailing GroupSep is stripped.
+    assert!(
+        result.len() <= 5,
+        "overflow group must be dropped: got {} spans",
+        result.len()
+    );
+    assert!(
+        !matches!(result.last(), Some(jackin_tui::HintSpan::GroupSep)),
+        "trailing GroupSep must be stripped"
+    );
+    let _ = full; // suppress unused warning
 }
