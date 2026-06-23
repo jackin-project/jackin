@@ -424,6 +424,14 @@ jobs:
           # reruns skip recompiling unchanged dependencies.
       - run: rustup component add clippy
       - run: cargo clippy --timings --workspace --all-targets --all-features --locked -- -D warnings
+      - name: Stage cargo timings
+        if: always()
+        run: |
+          target_dir="${CARGO_TARGET_DIR:-target}"
+          if [ "$target_dir" != "target" ] && [ -d "${target_dir}/cargo-timings" ]; then
+            mkdir -p target/cargo-timings
+            cp -a "${target_dir}/cargo-timings/." target/cargo-timings/
+          fi
       - name: Upload cargo timings
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -518,6 +526,14 @@ jobs:
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
       - run: cargo check --timings --workspace --all-targets --locked
+      - name: Stage cargo timings
+        if: always()
+        run: |
+          target_dir="${CARGO_TARGET_DIR:-target}"
+          if [ "$target_dir" != "target" ] && [ -d "${target_dir}/cargo-timings" ]; then
+            mkdir -p target/cargo-timings
+            cp -a "${target_dir}/cargo-timings/." target/cargo-timings/
+          fi
       - name: Upload cargo timings
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

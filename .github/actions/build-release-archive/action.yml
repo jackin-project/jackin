@@ -50,6 +50,7 @@ runs:
         set -euo pipefail
 
         archive="${ARCHIVE_BASENAME}.tar.gz"
+        target_dir="${CARGO_TARGET_DIR:-target}"
         case "$PACKAGE" in
           jackin)
             cargo zigbuild --timings --release --locked --target "$ZIGBUILD_TARGET"
@@ -59,7 +60,7 @@ runs:
               --group=0 \
               --numeric-owner \
               -cf - \
-              -C "target/${TARGET}/release" \
+              -C "${target_dir}/${TARGET}/release" \
               jackin jackin-role |
               gzip -n > "$archive"
             ;;
@@ -71,7 +72,7 @@ runs:
               --group=0 \
               --numeric-owner \
               -cf - \
-              -C "target/${TARGET}/release" \
+              -C "${target_dir}/${TARGET}/release" \
               jackin-capsule |
               gzip -n > "$archive"
             ;;
@@ -80,6 +81,11 @@ runs:
             exit 1
             ;;
         esac
+
+        if [ "$target_dir" != "target" ] && [ -d "${target_dir}/cargo-timings" ]; then
+          mkdir -p target/cargo-timings
+          cp -a "${target_dir}/cargo-timings/." target/cargo-timings/
+        fi
 
         sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
         echo "archive=$archive" >> "$GITHUB_OUTPUT"
