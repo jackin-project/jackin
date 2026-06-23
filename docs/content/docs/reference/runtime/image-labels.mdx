@@ -74,7 +74,7 @@ Every published role image must carry exactly these two (written by role CI — 
 | `jackin.role.git.sha` | short role-repo commit SHA the image was built from |
 | `jackin.construct.version` | construct version tag from the role Dockerfile `FROM` line |
 
-jackin pulls the published base and verifies `jackin.role.git.sha` against the role checkout's HEAD to decide whether to tag the published image as the local base, or build the base from the workspace Dockerfile. `jackin.manifest.version` will join this contract once `jackin-role-action` is updated to stamp it.
+jackin pulls the published base and verifies `jackin.role.git.sha` against the role checkout's HEAD to decide whether to tag the published image as the local base, or build the base from the workspace Dockerfile. Role publishing workflows should get these labels from `jackin-role publish-labels --role-git-sha <sha>` so the publish path and runtime freshness check share one contract.
 
 ## Local role base
 
