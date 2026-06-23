@@ -48,6 +48,7 @@ dependency_download_count=0
 third_party_build_count=0
 source_tool_compile_count=0
 sccache_issue_count=0
+sccache_low_utility_count=0
 prepared_workspace_count=0
 velnor_job_log_artifact_count=0
 github_cache_count=""
@@ -56,7 +57,8 @@ github_cache_bytes=""
 dependency_download_pattern='Updating.*crates\.io index|Downloaded.*[0-9]+ crates?|Downloaded.*[[:alnum:]_.+-]+ v[0-9]|Downloading.*[[:alnum:]_.+-]+ v[0-9]'
 third_party_build_pattern='^[[:space:]]*(Compiling|Checking|Building) [[:alnum:]_.+-]+ v[0-9][^(/]*$'
 source_tool_compile_pattern='cargo install|Installing [[:alnum:]_.+-]+ v[0-9].*from source|Compiling [[:alnum:]_.+-]+ v[0-9].*\(.*cargo.*registry'
-sccache_issue_pattern='sccache.*(error|failed|write|server)'
+sccache_issue_pattern='sccache(:| )[[:alnum:] _-]*(error|failed)|Cache (read |write )?errors[[:space:]]+[1-9][0-9]*'
+sccache_low_utility_pattern='Cache misses( \(Rust\))?[[:space:]]+[1-9][0-9]*|Cache hits rate( \(Rust\))?[[:space:]]+0\.00 %'
 prepared_workspace_pattern='Download prepared nextest workspace|Restore prepared nextest workspace|prepared nextest workspace'
 cache_miss_pattern='Cache not found|No cache found|not found for input keys'
 cache_failure_pattern='Failed to restore cache|Failed to save cache|Unable to reserve cache'
@@ -84,7 +86,7 @@ append_marker_matches() {
 scan_logs_file() {
   local name="$1"
   local logs_file="$2"
-  local hits misses restores failures downloads builds source_tools sccache_issues prepared_workspace
+  local hits misses restores failures downloads builds source_tools sccache_issues sccache_low_utility prepared_workspace
   local normalized_logs_file="${logs_file}.normalized"
 
   perl -pe 's/\e\[[0-9;]*[A-Za-z]//g; s/^[0-9]{4}-[0-9T:.-]+Z[[:space:]]+//; s/^[^\t]+\t[^\t]+\t[0-9]{4}-[0-9T:.-]+Z[[:space:]]+//' \
@@ -98,6 +100,7 @@ scan_logs_file() {
   builds=$(grep -Eci "$third_party_build_pattern" "$normalized_logs_file" || true)
   source_tools=$(grep -Eci "$source_tool_compile_pattern" "$normalized_logs_file" || true)
   sccache_issues=$(grep -Eci "$sccache_issue_pattern" "$normalized_logs_file" || true)
+  sccache_low_utility=$(grep -Eci "$sccache_low_utility_pattern" "$normalized_logs_file" || true)
   prepared_workspace=$(grep -Eci "$prepared_workspace_pattern" "$normalized_logs_file" || true)
   cache_hit_count=$((cache_hit_count + hits))
   cache_miss_count=$((cache_miss_count + misses))
@@ -107,6 +110,7 @@ scan_logs_file() {
   third_party_build_count=$((third_party_build_count + builds))
   source_tool_compile_count=$((source_tool_compile_count + source_tools))
   sccache_issue_count=$((sccache_issue_count + sccache_issues))
+  sccache_low_utility_count=$((sccache_low_utility_count + sccache_low_utility))
   prepared_workspace_count=$((prepared_workspace_count + prepared_workspace))
 
   append_marker_matches "cache miss" "$name" "$cache_miss_pattern" "$normalized_logs_file"
@@ -115,6 +119,7 @@ scan_logs_file() {
   append_marker_matches "third-party compile/check/build" "$name" "$third_party_build_pattern" "$normalized_logs_file"
   append_marker_matches "source tool compile" "$name" "$source_tool_compile_pattern" "$normalized_logs_file"
   append_marker_matches "sccache issue" "$name" "$sccache_issue_pattern" "$normalized_logs_file"
+  append_marker_matches "sccache low utility" "$name" "$sccache_low_utility_pattern" "$normalized_logs_file"
   append_marker_matches "prepared workspace" "$name" "$prepared_workspace_pattern" "$normalized_logs_file"
   return 0
 }
@@ -373,8 +378,8 @@ print_github_cache_budget() {
   fi
   printf -- '- Cache events in job logs: %s hit/restore markers, %s miss markers, %s restore attempts, %s failure markers\n\n' \
     "$cache_hit_count" "$cache_miss_count" "$cache_restore_count" "$cache_failure_count"
-  printf -- '- Rebuild/download markers in job logs: %s dependency download markers, %s third-party compile/check/build markers, %s source-tool compile markers, %s sccache issue markers, %s prepared-workspace artifact markers\n\n' \
-    "$dependency_download_count" "$third_party_build_count" "$source_tool_compile_count" "$sccache_issue_count" "$prepared_workspace_count"
+  printf -- '- Rebuild/download markers in job logs: %s dependency download markers, %s third-party compile/check/build markers, %s source-tool compile markers, %s sccache issue markers, %s sccache low-utility markers, %s prepared-workspace artifact markers\n\n' \
+    "$dependency_download_count" "$third_party_build_count" "$source_tool_compile_count" "$sccache_issue_count" "$sccache_low_utility_count" "$prepared_workspace_count"
   printf -- '- Velnor job-log artifacts scanned: %s\n\n' "$velnor_job_log_artifact_count"
 
   print_target_metrics
