@@ -326,7 +326,7 @@ fn ensure_shellfirm_prebuilt(cfg: &Config, expected_platform: &str) -> Result<()
         return Ok(());
     }
 
-    if let Some(path) = find_in_path("shellfirm")
+    if let Some(path) = find_shellfirm_binary()
         && shellfirm_binary_matches(&path, &cfg.shellfirm_version)
             .with_context(|| format!("checking {}", path.display()))?
     {
@@ -393,8 +393,37 @@ fn find_in_path(program: &str) -> Option<PathBuf> {
     std::env::var_os("PATH").and_then(|paths| {
         std::env::split_paths(&paths)
             .map(|path| path.join(program))
-            .find(|path| path.is_file())
+            .find(|path| path.is_file() && !is_mise_shim(path))
     })
+}
+
+fn find_shellfirm_binary() -> Option<PathBuf> {
+    find_mise_tool("shellfirm").or_else(|| find_in_path("shellfirm"))
+}
+
+fn find_mise_tool(program: &str) -> Option<PathBuf> {
+    let output = Command::new("mise")
+        .arg("which")
+        .arg(program)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    if path.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(path);
+    path.is_file().then_some(path)
+}
+
+fn is_mise_shim(path: &Path) -> bool {
+    path.components()
+        .map(|component| component.as_os_str())
+        .collect::<Vec<_>>()
+        .windows(2)
+        .any(|components| components[0] == "mise" && components[1] == "shims")
 }
 
 #[cfg(unix)]
