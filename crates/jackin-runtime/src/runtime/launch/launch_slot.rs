@@ -208,21 +208,61 @@ pub(crate) fn resolve_github_env_map(
     }
     let default_runner = jackin_env::OpCli::new();
     let runner: &dyn jackin_env::OpRunner = opts.op_runner.as_deref().unwrap_or(&default_runner);
-    let mut host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
+    let host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
         opts.host_env.as_ref().map_or_else(
             || std::env::var(name),
             |map| map.get(name).cloned().ok_or(std::env::VarError::NotPresent),
         )
     };
     let mut errors: Vec<String> = Vec::new();
-    for (key, value) in declarations {
-        match jackin_env::resolve_env_value("[github.env]", key, value, runner, &mut host_env_fn) {
-            Ok(v) => {
-                resolved.insert(key.clone(), v);
-            }
-            Err(e) => errors.push(format!("  - {e}")),
+    std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(declarations.len());
+        for (key, value) in declarations {
+            let host_env_fn = &host_env_fn;
+            handles.push(scope.spawn(move || {
+                let timing_name = format!("github_env:{key}");
+                let value_kind = github_env_value_kind(value);
+                jackin_diagnostics::active_timing_started(
+                    "credentials",
+                    &timing_name,
+                    Some(value_kind),
+                );
+                let result =
+                    jackin_env::resolve_env_value("[github.env]", key, value, runner, |name| {
+                        host_env_fn(name)
+                    });
+                match result {
+                    Ok(value) => {
+                        jackin_diagnostics::active_timing_done(
+                            "credentials",
+                            &timing_name,
+                            Some(value_kind),
+                        );
+                        (key.clone(), Ok(value))
+                    }
+                    Err(error) => {
+                        jackin_diagnostics::active_timing_done(
+                            "credentials",
+                            &timing_name,
+                            Some("error"),
+                        );
+                        (key.clone(), Err(error))
+                    }
+                }
+            }));
         }
-    }
+        for handle in handles {
+            match handle
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            {
+                (key, Ok(value)) => {
+                    resolved.insert(key, value);
+                }
+                (_, Err(error)) => errors.push(format!("  - {error}")),
+            }
+        }
+    });
     if !errors.is_empty() {
         anyhow::bail!(
             "github env resolution failed for {} var(s):\n{}",
@@ -231,6 +271,44 @@ pub(crate) fn resolve_github_env_map(
         );
     }
     Ok(resolved)
+}
+
+pub(crate) fn github_env_declarations_for_mode(
+    declarations: &std::collections::BTreeMap<String, jackin_core::EnvValue>,
+    mode: jackin_config::GithubAuthMode,
+) -> std::collections::BTreeMap<String, jackin_core::EnvValue> {
+    if matches!(mode, jackin_config::GithubAuthMode::Ignore) {
+        return std::collections::BTreeMap::new();
+    }
+
+    [
+        jackin_core::env_model::GH_TOKEN_ENV_NAME,
+        jackin_core::env_model::GH_HOST_ENV_NAME,
+        jackin_core::env_model::GH_ENTERPRISE_TOKEN_ENV_NAME,
+    ]
+    .into_iter()
+    .filter_map(|key| {
+        declarations
+            .get(key)
+            .cloned()
+            .map(|value| (key.to_owned(), value))
+    })
+    .collect()
+}
+
+fn github_env_value_kind(value: &jackin_core::EnvValue) -> &'static str {
+    match value {
+        jackin_core::EnvValue::OpRef(_) => "op",
+        jackin_core::EnvValue::Plain(value)
+            if value
+                .strip_prefix("${")
+                .is_some_and(|rest| rest.ends_with('}'))
+                || value.strip_prefix('$').is_some_and(|rest| !rest.is_empty()) =>
+        {
+            "host"
+        }
+        jackin_core::EnvValue::Plain(_) => "literal",
+    }
 }
 
 /// Verify that the credential env var required by the resolved

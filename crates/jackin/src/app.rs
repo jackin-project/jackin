@@ -170,10 +170,12 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::Purge(args) => {
             prune_cmd::handle_purge(args, &paths, &mut runner, connect_docker).await
         }
+        Command::Prewarm(args) => crate::cli::prewarm::run(&args, &paths, &config, debug).await,
         Command::Prune(cmd) => {
             prune_cmd::handle_prune(cmd, &paths, &mut runner, connect_docker).await
         }
         Command::Doctor(args) => crate::cli::doctor::run(&args, &paths).await,
+        Command::Diagnostics(command) => crate::cli::diagnostics::run(&command, &paths),
         Command::Status(args) => crate::cli::status::run(&args, &paths).await,
         Command::Usage(args) => crate::cli::usage::run(&args, &paths).await,
         Command::Help { .. } => {
@@ -195,6 +197,7 @@ const fn command_name(command: &Command) -> &'static str {
         Command::Eject(_) => "eject",
         Command::Exile => "exile",
         Command::Purge(_) => "purge",
+        Command::Prewarm(_) => "prewarm",
         Command::Prune(_) => "prune",
         Command::Console(_) => "console",
         Command::Role(_) => "role",
@@ -202,6 +205,7 @@ const fn command_name(command: &Command) -> &'static str {
         Command::Config(_) => "config",
         Command::Logs(_) => "logs",
         Command::Doctor(_) => "doctor",
+        Command::Diagnostics(_) => "diagnostics",
         Command::Status(_) => "status",
         Command::Usage(_) => "usage",
         Command::Help { .. } => "help",
@@ -372,6 +376,4 @@ fn render_auth_show(config: &AppConfig) -> String {
 }
 
 #[cfg(test)]
-mod auth_set_tests;
-#[cfg(test)]
-mod resolve_role_tests;
+mod tests;

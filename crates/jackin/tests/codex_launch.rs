@@ -14,7 +14,6 @@ use jackin::paths::JackinPaths;
 use jackin::runtime::{LoadOptions, load_role};
 use jackin::selector::RoleSelector;
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
-use std::collections::BTreeMap;
 use std::path::Path;
 use tempfile::tempdir;
 
@@ -78,17 +77,10 @@ fn codex_workspace(repo_dir: &Path) -> ResolvedWorkspace {
 }
 
 fn assert_cached_agent_install_blocks(dockerfile: &str) {
-    assert_eq!(
-        dockerfile
-            .matches(&Agent::Claude.install_block(".jackin-runtime/agent-binaries/claude"))
-            .count(),
-        1
-    );
-    assert_eq!(
-        dockerfile
-            .matches(&Agent::Codex.install_block(".jackin-runtime/agent-binaries/codex"))
-            .count(),
-        1
+    // Agent binaries are mounted read-only at run time, not baked into the image.
+    assert!(
+        !dockerfile.contains("agent-binaries"),
+        "agent binaries must not be baked into the derived image; got: {dockerfile}"
     );
 }
 
@@ -134,14 +126,9 @@ model = "gpt-5"
     )
     .unwrap();
     let validated = jackin::repo::validate_role_repo(&repo_dir).unwrap();
-    let build = jackin::derived_image::create_derived_build_context(
-        &repo_dir,
-        &validated,
-        None,
-        None,
-        &BTreeMap::new(),
-    )
-    .unwrap();
+    let build =
+        jackin::derived_image::create_derived_build_context(&repo_dir, &validated, None, None)
+            .unwrap();
     let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
     assert_cached_agent_install_blocks(&dockerfile);
 
@@ -183,6 +170,10 @@ model = "gpt-5"
     );
     assert!(!run_cmd.contains("-e JACKIN_ROLE="), "{run_cmd}");
     assert!(!run_cmd.contains("-e JACKIN_WORKDIR="), "{run_cmd}");
+    assert!(
+        run_cmd.contains(":/home/agent/.local/bin/codex:ro"),
+        "codex binary must be bind-mounted read-only at run time; got: {run_cmd}"
+    );
     assert!(
         run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"),
         "{run_cmd}"

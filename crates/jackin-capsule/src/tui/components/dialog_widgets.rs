@@ -42,6 +42,9 @@ pub(crate) enum DialogRatatuiSnapshot {
         title: String,
         body: String,
         selected_yes: bool,
+        /// Exit confirmation: render the shared data-loss variant (warns that
+        /// quitting force-stops the container) instead of the plain prompt.
+        data_loss: bool,
     },
     /// List picker (`CommandPalette`, `AgentPicker`, `SplitPicker`, `ClosePicker`,
     /// `ProviderPicker`). `show_filter` draws the type-to-filter input + gap
@@ -87,11 +90,25 @@ impl Dialog {
             reason = "ContainerInfo match arm has already proven this dialog variant"
         )]
         match self {
-            Dialog::ConfirmAction { kind, selected_yes } => DialogRatatuiSnapshot::ConfirmAction {
-                title: kind.title().to_owned(),
-                body: kind.message().to_owned(),
-                selected_yes: *selected_yes,
-            },
+            Dialog::ConfirmAction { kind, selected_yes } => {
+                // Exit always renders the shared data-loss state (exit_confirm_state_with_data_loss);
+                // title/message are unused for Exit so we pass empty strings to avoid dead formatting.
+                let data_loss = matches!(kind, crate::tui::components::dialog::ConfirmKind::Exit);
+                DialogRatatuiSnapshot::ConfirmAction {
+                    title: if data_loss {
+                        String::new()
+                    } else {
+                        kind.title().to_owned()
+                    },
+                    body: if data_loss {
+                        String::new()
+                    } else {
+                        kind.message().to_owned()
+                    },
+                    selected_yes: *selected_yes,
+                    data_loss,
+                }
+            }
 
             Dialog::CommandPalette {
                 selected,
@@ -310,8 +327,9 @@ pub(crate) fn render_dialog_ratatui(
             title,
             body,
             selected_yes,
+            data_loss,
         } => {
-            render_confirm_action(frame, area, title, body, *selected_yes);
+            render_confirm_action(frame, area, title, body, *selected_yes, *data_loss);
         }
         DialogRatatuiSnapshot::FilterPicker {
             title,
@@ -356,8 +374,15 @@ fn render_confirm_action(
     title: &str,
     body: &str,
     selected_yes: bool,
+    data_loss: bool,
 ) {
-    let mut state = ConfirmState::new(format!("{title}\n\n{body}"));
+    // Exit uses the shared data-loss variant (prompt + warning notes); every
+    // other confirm keeps the plain title+body prompt. Same widget either way.
+    let mut state = if data_loss {
+        jackin_tui::components::exit_confirm_state_with_data_loss()
+    } else {
+        ConfirmState::new(format!("{title}\n\n{body}"))
+    };
     if selected_yes {
         state = state.with_focus_yes();
     }
@@ -850,10 +875,7 @@ fn usage_header_two_column(
         .checked_sub(INDENT + left_cols + right_cols)
         .filter(|gap| *gap >= 1)
         .unwrap_or(3);
-    let mut spans = vec![
-        Span::raw("  "),
-        Span::styled(left.to_owned(), left_style),
-    ];
+    let mut spans = vec![Span::raw("  "), Span::styled(left.to_owned(), left_style)];
     if !right.is_empty() {
         spans.push(Span::raw(" ".repeat(gap)));
         spans.push(Span::styled(right.to_owned(), right_style));

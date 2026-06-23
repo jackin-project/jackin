@@ -49,6 +49,7 @@ fn root_help_shows_all_commands() {
         "eject",
         "exile",
         "purge",
+        "prewarm",
         "prune",
         "console",
         "role",
@@ -129,6 +130,7 @@ fn all_subcommand_help_pages_show_banner() {
         vec!["jackin", "eject", "--help"],
         vec!["jackin", "exile", "--help"],
         vec!["jackin", "purge", "--help"],
+        vec!["jackin", "prewarm", "--help"],
         vec!["jackin", "prune", "roles", "--help"],
         vec!["jackin", "prune", "cache", "--help"],
         vec!["jackin", "prune", "images", "--help"],
@@ -202,4 +204,237 @@ fn parses_usage_workspace_json() {
                             && workspace.window_seconds == Some(3600)
                 )
     ));
+}
+
+#[test]
+fn parses_prewarm_agent_filters() {
+    let cli =
+        Cli::try_parse_from(["jackin", "prewarm", "--agent", "claude", "--agent", "kimi"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.agents == [crate::agent::Agent::Claude, crate::agent::Agent::Kimi]
+    ));
+}
+
+#[test]
+fn parses_prewarm_image_role_filters() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--role",
+        "agent-smith",
+        "--role-git",
+        "https://example.invalid/agent-smith.git",
+        "--role-branch",
+        "feat/launch-speed",
+        "--agent",
+        "codex",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.image
+                && args.role.as_deref() == Some("agent-smith")
+                && args.role_git.as_deref() == Some("https://example.invalid/agent-smith.git")
+                && args.role_branch.as_deref() == Some("feat/launch-speed")
+                && args.agents == [crate::agent::Agent::Codex]
+    ));
+}
+
+#[test]
+fn parses_prewarm_roles_single_role_filter() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--roles",
+        "--role",
+        "agent-smith",
+        "--role-git",
+        "https://example.invalid/agent-smith.git",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.roles
+                && !args.image
+                && args.role.as_deref() == Some("agent-smith")
+                && args.role_git.as_deref() == Some("https://example.invalid/agent-smith.git")
+    ));
+}
+
+#[test]
+fn parses_prewarm_roles_workspace_filter() {
+    let cli =
+        Cli::try_parse_from(["jackin", "prewarm", "--roles", "--workspace", "jackin"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.roles
+                && !args.image
+                && args.workspace.as_deref() == Some("jackin")
+                && args.role.is_none()
+                && !args.all_workspaces
+    ));
+}
+
+#[test]
+fn parses_prewarm_roles_all_workspaces_filter() {
+    let cli = Cli::try_parse_from(["jackin", "prewarm", "--roles", "--all-workspaces"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.roles
+                && !args.image
+                && args.workspace.is_none()
+                && args.role.is_none()
+                && args.all_workspaces
+    ));
+}
+
+#[test]
+fn parses_prewarm_sidecar_filter() {
+    let cli = Cli::try_parse_from(["jackin", "prewarm", "--sidecar"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args)) if args.sidecar && !args.image && !args.roles
+    ));
+}
+
+#[test]
+fn parses_prewarm_sidecar_container_keep_filter() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--sidecar-container",
+        "--keep-sidecar-container",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.sidecar_container && args.keep_sidecar_container
+    ));
+}
+
+#[test]
+fn parses_prewarm_daemon_filter() {
+    let cli = Cli::try_parse_from(["jackin", "prewarm", "--daemon"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.daemon && !args.sidecar && !args.sidecar_container && !args.keep_sidecar_container
+    ));
+}
+
+#[test]
+fn parses_prewarm_image_workspace_filters() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--workspace",
+        "jackin",
+        "--role-branch",
+        "feat/launch-speed",
+        "--agent",
+        "claude",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.image
+                && args.workspace.as_deref() == Some("jackin")
+                && !args.all_workspaces
+                && args.role.is_none()
+                && args.role_git.is_none()
+                && args.role_branch.as_deref() == Some("feat/launch-speed")
+                && args.agents == [crate::agent::Agent::Claude]
+    ));
+}
+
+#[test]
+fn parses_prewarm_image_all_workspaces() {
+    let cli = Cli::try_parse_from(["jackin", "prewarm", "--image", "--all-workspaces"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.image
+                && args.all_workspaces
+                && args.workspace.is_none()
+                && args.role.is_none()
+                && args.role_git.is_none()
+    ));
+}
+
+#[test]
+fn parses_diagnostics_compare_labels() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "diagnostics",
+        "compare",
+        "jk-run-cold",
+        "jk-run-warm",
+        "--label",
+        "cold-before",
+        "--label",
+        "warm-after",
+        "--format",
+        "json",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Diagnostics(DiagnosticsCommand::Compare(ref args)))
+            if args.labels == ["cold-before", "warm-after"]
+                && args.format == diagnostics::DiagnosticsCompareFormat::Json
+    ));
+}
+
+#[test]
+fn rejects_prewarm_image_workspace_with_role() {
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--workspace",
+        "jackin",
+        "--role",
+        "the-architect",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_prewarm_image_all_workspaces_with_workspace() {
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--all-workspaces",
+        "--workspace",
+        "jackin",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_prewarm_image_workspace_with_role_git_override() {
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--workspace",
+        "jackin",
+        "--role-git",
+        "https://example.invalid/role.git",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
 }

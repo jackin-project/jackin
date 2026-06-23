@@ -1,6 +1,7 @@
 //! Tests for `debug`.
 use super::{
-    ModalDebugKind, SettingsMountModalDebugKind, key_debug_name_for_input, modal_debug_name,
+    ConsoleLocationDebug, ConsoleStageDebug, ModalDebugKind, SettingsMountModalDebugKind,
+    console_location_debug_name, key_debug_name_for_input, modal_debug_name,
     settings_mount_modal_debug_name,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -52,5 +53,53 @@ fn settings_mount_modal_debug_names_match_root_log_vocabulary() {
     assert_eq!(
         settings_mount_modal_debug_name(SettingsMountModalDebugKind::PreviewSave),
         "preview-save"
+    );
+}
+
+#[test]
+fn console_location_debug_formats_editor_without_values() {
+    let location = ConsoleLocationDebug {
+        quit_confirm: false,
+        stage: ConsoleStageDebug::Editor {
+            mode: "Create".to_owned(),
+            tab: "Auth".to_owned(),
+            field: "EnvValue".to_owned(),
+            modal: Some(ModalDebugKind::TextInput),
+        },
+        list_modal: Some(ModalDebugKind::ErrorPopup),
+    };
+
+    assert_eq!(
+        console_location_debug_name(&location),
+        "editor mode=Create tab=Auth field=EnvValue modal=TextInput list_modal=ErrorPopup"
+    );
+}
+
+#[test]
+fn console_location_debug_quit_confirm_takes_precedence() {
+    let location = ConsoleLocationDebug {
+        quit_confirm: true,
+        stage: ConsoleStageDebug::List,
+        list_modal: Some(ModalDebugKind::ErrorPopup),
+    };
+
+    assert_eq!(console_location_debug_name(&location), "quit-confirm");
+}
+
+#[test]
+fn console_location_debug_formats_settings_mount_modal() {
+    let location = ConsoleLocationDebug {
+        quit_confirm: false,
+        stage: ConsoleStageDebug::Settings {
+            tab: "Mounts".to_owned(),
+            selected: 2,
+            modal: Some(SettingsMountModalDebugKind::ConfirmSensitive),
+        },
+        list_modal: None,
+    };
+
+    assert_eq!(
+        console_location_debug_name(&location),
+        "settings tab=Mounts selected=2 modal=confirm-sensitive"
     );
 }

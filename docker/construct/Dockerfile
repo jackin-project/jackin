@@ -1,4 +1,4 @@
-FROM rust:1.96.0-trixie@sha256:4fd8406017c992f7b8ab55a2f99a1d56aeb1d7ecd255850dfa04239a88601f73 AS security-tools
+FROM rust:1.96.0-trixie@sha256:c6811167278337db5f3b0234964ced5f538f154a2a20f09ec03721d7411c933d AS security-tools
 
 ARG SHELLFIRM_VERSION
 
@@ -51,6 +51,7 @@ RUN apt-get update && \
     git \
     git-lfs \
     jq \
+    libnss-extrausers \
     openssh-client \
     procps \
     ripgrep \
@@ -63,6 +64,18 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* \
            /var/cache/apt/* \
            /tmp/*
+
+# Resolve the `agent` user by its runtime host UID. The image bakes `agent` at
+# UID 1000, but containers run as the host operator's UID (`docker run --user`)
+# so host-owned bind-mounts are transparently writable. libnss-extrausers reads
+# an extra passwd file (bind-mounted at runtime) so `getpwuid(host_uid)` still
+# resolves to `agent` with HOME=/home/agent — keeping shells, git, and the
+# Node-based agent CLIs (which call getpwuid) happy. See
+# /reference/roadmap/construct-user-creation/.
+RUN sed -ri 's/^(passwd:.*)$/\1 extrausers/' /etc/nsswitch.conf && \
+    install -d -m 0755 /var/lib/extrausers && \
+    : > /var/lib/extrausers/passwd && \
+    : > /var/lib/extrausers/group
 
 # Configure git-lfs
 RUN git lfs install
@@ -97,12 +110,12 @@ RUN test -n "${MISE_VERSION}" || { echo "MISE_VERSION build arg is required" >&2
     curl -fsSL https://mise.run | MISE_VERSION="v${MISE_VERSION}" MISE_INSTALL_PATH=/usr/local/bin/mise sh && \
     mise --version
 
-# Install Docker CLI and Compose plugin
+# Install Docker CLI, Buildx, and Compose plugins
 RUN curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
     chmod a+r /etc/apt/keyrings/docker.asc && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list && \
     apt-get update && \
-    apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin && \
+    apt-get install -y --no-install-recommends docker-ce-cli docker-buildx-plugin docker-compose-plugin && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* \
            /var/cache/apt/* \

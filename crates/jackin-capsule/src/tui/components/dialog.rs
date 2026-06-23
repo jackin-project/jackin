@@ -73,20 +73,25 @@ impl<'a> PullRequestStatus<'a> {
 }
 
 use jackin_tui::HintSpan;
+use jackin_tui::components::{
+    CONFIRM_KEYMAP, ConfirmAction as SharedConfirmAction, raw_bytes_to_chord,
+};
+
+use crate::tui::keymap::{FILTER_LIST_KEYMAP, FilterListAction, READ_ONLY_DISMISS_KEYMAP};
 
 const PALETTE_WIDTH: u16 = 50;
 const CONTAINER_INFO_WIDTH: u16 = 86;
 mod input;
 use input::{
     PickerRow, close_target_filtered_indices, dialog_list_row_clickable, first_selectable_idx,
-    is_arrow_down, is_arrow_up, is_backspace, is_dismiss_key, is_enter, is_filter_dismiss_key,
     picker_filtered_rows, printable_filter_char, rename_tab_handle_key,
     split_direction_filtered_indices, step_selectable,
 };
 mod hint;
 pub(crate) use hint::main_view_hint;
 use hint::{
-    CONFIRM_HINT, PALETTE_HINT, PICKER_HINT, READ_ONLY_HINT, RENAME_HINT, info_dialog_hint,
+    confirm_hint, info_dialog_hint, palette_hint, picker_hint, provider_hint, read_only_hint,
+    rename_hint,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1490,7 +1495,10 @@ impl Dialog {
             self,
             Self::ContainerInfo { .. } | Self::GitHubContext { .. } | Self::Usage { .. }
         ) {
-            if is_dismiss_key(key) {
+            if raw_bytes_to_chord(key)
+                .and_then(|chord| READ_ONLY_DISMISS_KEYMAP.dispatch(chord))
+                .is_some()
+            {
                 return DialogAction::Dismiss;
             }
             if matches!(self, Self::Usage { .. }) && matches!(key, b"r" | b"R") {
@@ -1551,156 +1559,145 @@ impl Dialog {
                 _ => DialogAction::Redraw,
             };
         }
-        // ConfirmAction has its own dispatch — Y/N shortcuts toggle
-        // the selection or confirm directly, Enter acts on the
-        // current selection, Esc cancels. Routed before the type-to-
-        // filter branch so `y` and `n` keys do not flow into a
-        // filter buffer.
+        // ConfirmAction: dispatch through shared CONFIRM_KEYMAP so key
+        // behaviour and hint advertisement stay coupled.
         if let Self::ConfirmAction { kind, selected_yes } = self {
-            if key == b"\x1b" || key == b"\x03" || key == b"n" || key == b"N" {
-                return DialogAction::Dismiss;
-            }
-            if key == b"y" || key == b"Y" {
-                return DialogAction::ConfirmedAction(*kind);
-            }
-            if is_arrow_up(key)
-                || is_arrow_down(key)
-                || key == b"\x1b[C"
-                || key == b"\x1b[D"
-                || key == b"\t"
-            {
-                *selected_yes = !*selected_yes;
-                return DialogAction::Redraw;
-            }
-            if is_enter(key) {
-                if *selected_yes {
-                    return DialogAction::ConfirmedAction(*kind);
+            let action = raw_bytes_to_chord(key).and_then(|chord| CONFIRM_KEYMAP.dispatch(chord));
+            return match action {
+                Some(SharedConfirmAction::Yes) => DialogAction::ConfirmedAction(*kind),
+                Some(SharedConfirmAction::No | SharedConfirmAction::Cancel) => {
+                    DialogAction::Dismiss
                 }
-                return DialogAction::Dismiss;
-            }
-            return DialogAction::Redraw;
-        }
-        // From here on, only the type-to-filter list dialogs reach
-        // this code path. The dismiss surface is narrower than the
-        // read-only dialogs above (`q` / Backspace / Delete are
-        // typing actions that build the filter, not dismiss keys);
-        // only Esc and Ctrl+C close.
-        if is_filter_dismiss_key(key) {
-            return DialogAction::Dismiss;
-        }
-        if is_arrow_up(key) {
-            return match self {
-                Self::CommandPalette { selected, .. }
-                | Self::SplitDirectionPicker { selected, .. }
-                | Self::CloseTargetPicker { selected, .. } => {
-                    if *selected > 0 {
-                        *selected -= 1;
+                Some(SharedConfirmAction::ToggleFocus) => {
+                    *selected_yes = !*selected_yes;
+                    DialogAction::Redraw
+                }
+                Some(SharedConfirmAction::CommitFocused) => {
+                    if *selected_yes {
+                        DialogAction::ConfirmedAction(*kind)
+                    } else {
+                        DialogAction::Dismiss
                     }
-                    DialogAction::Redraw
                 }
-                Self::AgentPicker {
-                    agents,
-                    selected,
-                    filter,
-                    ..
-                } => {
-                    let visible = picker_filtered_rows(agents, filter);
-                    *selected = step_selectable(&visible, *selected, false);
-                    DialogAction::Redraw
-                }
-                Self::ProviderPicker { selected, .. } => {
-                    if *selected > 0 {
-                        *selected -= 1;
-                    }
-                    DialogAction::Redraw
-                }
-                Self::RenameTab { .. }
-                | Self::ContainerInfo { .. }
-                | Self::GitHubContext { .. }
-                | Self::Usage { .. }
-                | Self::ConfirmAction { .. } => DialogAction::Redraw,
+                None => DialogAction::Redraw,
             };
         }
-        if is_arrow_down(key) {
-            return match self {
-                Self::CommandPalette {
-                    selected,
-                    filter,
-                    close_label,
-                } => {
-                    let visible = palette_filtered_indices(filter, *close_label);
-                    if *selected + 1 < visible.len() {
-                        *selected += 1;
+        // From here on, only the type-to-filter list dialogs reach this
+        // code path. Dispatch through `FILTER_LIST_KEYMAP`: navigation,
+        // confirm, filter-backspace, and dismiss are advertised keys;
+        // printable `Char` input is not in the table and falls through
+        // (the `None` arm) to `printable_filter_char` filter building.
+        // The dismiss surface is narrower than the read-only dialogs
+        // above (`q` / Delete are typing actions that build the filter,
+        // not dismiss keys); only Esc / Ctrl+C / Ctrl+Q close.
+        match raw_bytes_to_chord(key).and_then(|chord| FILTER_LIST_KEYMAP.dispatch(chord)) {
+            Some(FilterListAction::Dismiss) => DialogAction::Dismiss,
+            Some(FilterListAction::NavigateUp) => {
+                match self {
+                    Self::CommandPalette { selected, .. }
+                    | Self::SplitDirectionPicker { selected, .. }
+                    | Self::CloseTargetPicker { selected, .. } => {
+                        if *selected > 0 {
+                            *selected -= 1;
+                        }
                     }
-                    DialogAction::Redraw
-                }
-                Self::SplitDirectionPicker { selected, filter } => {
-                    let visible = split_direction_filtered_indices(filter);
-                    if *selected + 1 < visible.len() {
-                        *selected += 1;
+                    Self::AgentPicker {
+                        agents,
+                        selected,
+                        filter,
+                        ..
+                    } => {
+                        let visible = picker_filtered_rows(agents, filter);
+                        *selected = step_selectable(&visible, *selected, false);
                     }
-                    DialogAction::Redraw
-                }
-                Self::CloseTargetPicker { selected, filter } => {
-                    let visible = close_target_filtered_indices(filter);
-                    if *selected + 1 < visible.len() {
-                        *selected += 1;
+                    Self::ProviderPicker { selected, .. } => {
+                        if *selected > 0 {
+                            *selected -= 1;
+                        }
                     }
-                    DialogAction::Redraw
+                    Self::RenameTab { .. }
+                    | Self::ContainerInfo { .. }
+                    | Self::GitHubContext { .. }
+                    | Self::Usage { .. }
+                    | Self::ConfirmAction { .. } => {}
                 }
-                Self::AgentPicker {
-                    agents,
-                    selected,
-                    filter,
-                    ..
-                } => {
-                    let visible = picker_filtered_rows(agents, filter);
-                    *selected = step_selectable(&visible, *selected, true);
-                    DialogAction::Redraw
-                }
-                Self::ProviderPicker {
-                    selected,
-                    providers,
-                    ..
-                } => {
-                    if *selected + 1 < providers.len() {
-                        *selected += 1;
-                    }
-                    DialogAction::Redraw
-                }
-                Self::RenameTab { .. }
-                | Self::ContainerInfo { .. }
-                | Self::GitHubContext { .. }
-                | Self::Usage { .. }
-                | Self::ConfirmAction { .. } => DialogAction::Redraw,
-            };
-        }
-        if is_backspace(key) {
-            match self {
-                Self::CommandPalette {
-                    filter, selected, ..
-                }
-                | Self::SplitDirectionPicker { filter, selected }
-                | Self::CloseTargetPicker { filter, selected } => {
-                    filter.pop();
-                    *selected = 0;
-                }
-                Self::AgentPicker {
-                    agents,
-                    filter,
-                    selected,
-                    ..
-                } => {
-                    filter.pop();
-                    let visible = picker_filtered_rows(agents, filter);
-                    *selected = first_selectable_idx(&visible);
-                }
-                _ => {}
+                DialogAction::Redraw
             }
-            return DialogAction::Redraw;
-        }
-        if is_enter(key) {
-            return match self {
+            Some(FilterListAction::NavigateDown) => {
+                match self {
+                    Self::CommandPalette {
+                        selected,
+                        filter,
+                        close_label,
+                    } => {
+                        let visible = palette_filtered_indices(filter, *close_label);
+                        if *selected + 1 < visible.len() {
+                            *selected += 1;
+                        }
+                    }
+                    Self::SplitDirectionPicker { selected, filter } => {
+                        let visible = split_direction_filtered_indices(filter);
+                        if *selected + 1 < visible.len() {
+                            *selected += 1;
+                        }
+                    }
+                    Self::CloseTargetPicker { selected, filter } => {
+                        let visible = close_target_filtered_indices(filter);
+                        if *selected + 1 < visible.len() {
+                            *selected += 1;
+                        }
+                    }
+                    Self::AgentPicker {
+                        agents,
+                        selected,
+                        filter,
+                        ..
+                    } => {
+                        let visible = picker_filtered_rows(agents, filter);
+                        *selected = step_selectable(&visible, *selected, true);
+                    }
+                    Self::ProviderPicker {
+                        selected,
+                        providers,
+                        ..
+                    } => {
+                        if *selected + 1 < providers.len() {
+                            *selected += 1;
+                        }
+                    }
+                    Self::RenameTab { .. }
+                    | Self::ContainerInfo { .. }
+                    | Self::GitHubContext { .. }
+                    | Self::Usage { .. }
+                    | Self::ConfirmAction { .. } => {}
+                }
+                DialogAction::Redraw
+            }
+            Some(FilterListAction::FilterBackspace) => {
+                match self {
+                    Self::CommandPalette {
+                        filter, selected, ..
+                    }
+                    | Self::SplitDirectionPicker { filter, selected }
+                    | Self::CloseTargetPicker { filter, selected } => {
+                        filter.pop();
+                        *selected = 0;
+                    }
+                    Self::AgentPicker {
+                        agents,
+                        filter,
+                        selected,
+                        ..
+                    } => {
+                        filter.pop();
+                        let visible = picker_filtered_rows(agents, filter);
+                        *selected = first_selectable_idx(&visible);
+                    }
+                    _ => {}
+                }
+                DialogAction::Redraw
+            }
+            Some(FilterListAction::Confirm) => match self {
                 Self::CommandPalette {
                     selected,
                     filter,
@@ -1765,38 +1762,39 @@ impl Dialog {
                     None => DialogAction::Redraw,
                 },
                 _ => DialogAction::Redraw,
-            };
-        }
-        // Printable ASCII single-byte chunks become filter input. Multi-
-        // byte sequences (CSI fragments that did not match a known key,
-        // etc.) are no-op redraws — the parser already classified them,
-        // and feeding them into the filter would garble the visible
-        // typing state.
-        if let Some(c) = printable_filter_char(key) {
-            match self {
-                Self::CommandPalette {
-                    filter, selected, ..
+            },
+            // Printable ASCII single-byte chunks become filter input. Multi-
+            // byte sequences (CSI fragments that did not match a known key,
+            // etc.) are no-op redraws — the parser already classified them,
+            // and feeding them into the filter would garble the visible
+            // typing state.
+            None => {
+                if let Some(c) = printable_filter_char(key) {
+                    match self {
+                        Self::CommandPalette {
+                            filter, selected, ..
+                        }
+                        | Self::SplitDirectionPicker { filter, selected }
+                        | Self::CloseTargetPicker { filter, selected } => {
+                            filter.push(c);
+                            *selected = 0;
+                        }
+                        Self::AgentPicker {
+                            agents,
+                            filter,
+                            selected,
+                            ..
+                        } => {
+                            filter.push(c);
+                            let visible = picker_filtered_rows(agents, filter);
+                            *selected = first_selectable_idx(&visible);
+                        }
+                        _ => {}
+                    }
                 }
-                | Self::SplitDirectionPicker { filter, selected }
-                | Self::CloseTargetPicker { filter, selected } => {
-                    filter.push(c);
-                    *selected = 0;
-                }
-                Self::AgentPicker {
-                    agents,
-                    filter,
-                    selected,
-                    ..
-                } => {
-                    filter.push(c);
-                    let visible = picker_filtered_rows(agents, filter);
-                    *selected = first_selectable_idx(&visible);
-                }
-                _ => {}
+                DialogAction::Redraw
             }
-            return DialogAction::Redraw;
         }
-        DialogAction::Redraw
     }
 
     /// Dispatch a left-click at `(row, col)` against the dialog's
@@ -2132,6 +2130,15 @@ impl Dialog {
                     .min(term_cols.saturating_sub(4))
                     .max(PALETTE_WIDTH)
             }
+            // Exit data-loss confirm has two warning notes wider than PALETTE_WIDTH.
+            // Use the shared Details width percentage (70%) so the notes don't truncate.
+            Self::ConfirmAction {
+                kind: ConfirmKind::Exit,
+                ..
+            } => (term_cols.saturating_mul(70) / 100).clamp(
+                PALETTE_WIDTH,
+                term_cols.saturating_sub(4).max(PALETTE_WIDTH),
+            ),
             _ => PALETTE_WIDTH,
         };
         // Filterable dialogs reserve 2 extra rows: one for the filter
@@ -2169,7 +2176,14 @@ impl Dialog {
             }),
             // 9 = border(2) + leading(1) + question(1) + empty(1) + message(1) + spacer(1) + button(1) + trailing(1)
             // Matches the canonical symmetric dialog layout (Defect 5).
-            Self::ConfirmAction { .. } => 9,
+            // Exit shows the shared data-loss variant (extra warning notes), so
+            // size it from that state rather than the fixed single-line height.
+            Self::ConfirmAction { kind, .. } => match kind {
+                ConfirmKind::Exit => jackin_tui::components::confirm_required_height(
+                    &jackin_tui::components::exit_confirm_state_with_data_loss(),
+                ),
+                ConfirmKind::ClosePane | ConfirmKind::CloseTab => 9,
+            },
             // No filter row: top border + items + bottom border.
             Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
         };
@@ -2198,22 +2212,22 @@ impl Dialog {
         axes: jackin_tui::components::ScrollAxes,
     ) -> Vec<HintSpan<'static>> {
         match self {
-            Self::CommandPalette { .. } => PALETTE_HINT.to_vec(),
+            Self::CommandPalette { .. } => palette_hint(),
             Self::SplitDirectionPicker { .. }
             | Self::AgentPicker { .. }
-            | Self::CloseTargetPicker { .. }
-            | Self::ProviderPicker { .. } => PICKER_HINT.to_vec(),
-            Self::RenameTab { .. } => RENAME_HINT.to_vec(),
+            | Self::CloseTargetPicker { .. } => picker_hint(),
+            Self::ProviderPicker { .. } => provider_hint(),
+            Self::RenameTab { .. } => rename_hint(),
             Self::ContainerInfo { .. } => info_dialog_hint("copy value", axes),
             Self::GitHubContext { .. } => {
                 if github.and_then(|view| view.status.loaded()).is_some() {
                     info_dialog_hint("copy GitHub URL", axes)
                 } else {
-                    READ_ONLY_HINT.to_vec()
+                    read_only_hint()
                 }
             }
             Self::Usage { .. } => info_dialog_hint("refresh", axes),
-            Self::ConfirmAction { .. } => CONFIRM_HINT.to_vec(),
+            Self::ConfirmAction { .. } => confirm_hint(),
         }
     }
 

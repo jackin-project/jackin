@@ -16,6 +16,13 @@ fn ctrl_backslash_opens_palette_by_default() {
 }
 
 #[test]
+fn ctrl_q_requests_exit() {
+    // Ctrl+Q (0x11) is the global quit chord — intercepted, not forwarded.
+    let events = parse_all_default(b"\x11");
+    assert_eq!(events, vec![InputEvent::RequestExit]);
+}
+
+#[test]
 fn lone_lf_passes_through_with_default_palette_key() {
     // Bracketed paste / multi-line input continuation must reach
     // the PTY as `\n` under the default palette binding.

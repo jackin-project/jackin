@@ -6,22 +6,10 @@
 
 use anyhow::Context as _;
 
-use crate::isolation::state::{IsolationRecord, list_records_for_workspace};
+use crate::isolation::state::list_records_for_workspace;
 
-/// Outcome of a pre-edit drift check for a saved workspace.
-///
-/// `running_containers` are containers still running with preserved isolated
-/// state for a mount whose `src` would be changed by the edit. The CLI
-/// rejects the edit unconditionally — the operator must eject first.
-///
-/// `stopped_records` are the corresponding records on stopped containers.
-/// The CLI requires `--delete-isolated-state` to drop them before applying
-/// the edit.
-#[derive(Debug, Clone, Default)]
-pub struct DriftDetection {
-    pub running_containers: Vec<String>,
-    pub stopped_records: Vec<IsolationRecord>,
-}
+// Pure data type — now in jackin-core so jackin-console can use it.
+pub use jackin_core::DriftDetection;
 
 /// Classify isolation drift across every container that holds preserved
 /// state for `workspace_name`.

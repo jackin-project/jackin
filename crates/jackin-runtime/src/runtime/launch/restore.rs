@@ -213,6 +213,25 @@ pub(super) fn matching_instance_manifests(
     )
 }
 
+pub(super) fn matching_current_role_manifests(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+) -> anyhow::Result<Vec<InstanceManifest>> {
+    InstanceIndex::matching_manifests(
+        &paths.data_dir,
+        InstanceQuery {
+            workspace_name,
+            workspace_label,
+            workdir,
+            role_key: Some(role_key),
+            agent_runtime: None,
+        },
+    )
+}
+
 pub(in crate::runtime) fn write_instance_status(
     paths: &JackinPaths,
     state_dir: &std::path::Path,

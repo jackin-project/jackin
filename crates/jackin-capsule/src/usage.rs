@@ -5436,10 +5436,7 @@ mod tests {
         assert_eq!(usage.response.plan_type.as_deref(), Some("pro"));
         assert_eq!(buckets[0].label, "Session");
         assert_eq!(buckets[0].remaining_percent, Some(37));
-        assert_eq!(
-            buckets[0].pace_label.as_deref(),
-            Some("15% in reserve")
-        );
+        assert_eq!(buckets[0].pace_label.as_deref(), Some("15% in reserve"));
         assert_eq!(buckets[1].label, "Weekly");
         assert_eq!(buckets[1].remaining_percent, Some(10));
         assert_eq!(buckets[1].pace_label.as_deref(), Some("1 week window"));
@@ -5720,10 +5717,7 @@ mod tests {
         assert_eq!(quota.plan_name().as_deref(), Some("Coding Pro"));
         assert_eq!(buckets[0].label, "Session token limit");
         assert_eq!(buckets[0].remaining_percent, Some(75));
-        assert_eq!(
-            buckets[0].pace_label.as_deref(),
-            Some("53% in reserve")
-        );
+        assert_eq!(buckets[0].pace_label.as_deref(), Some("53% in reserve"));
         assert_eq!(buckets[1].label, "Token quota");
         assert_eq!(buckets[1].remaining_percent, Some(10));
         assert_eq!(buckets[2].label, "Time / MCP quota");

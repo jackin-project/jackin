@@ -1255,8 +1255,16 @@ fn usage_dialog_instance_tab_renders_since_start_ledger() {
 
     assert!(values.contains(&"Overview  [Instance]  Codex  Claude  Amp"));
     assert!(values.contains(&"jk-chainargos-codexbar"));
-    assert!(values.iter().any(|value| value.contains("Started 6h 42m ago")));
-    assert!(values.iter().any(|value| value.contains("Active agent time 5h 58m")));
+    assert!(
+        values
+            .iter()
+            .any(|value| value.contains("Started 6h 42m ago"))
+    );
+    assert!(
+        values
+            .iter()
+            .any(|value| value.contains("Active agent time 5h 58m"))
+    );
     assert!(values.iter().any(|value| value.contains("514.0M")));
     assert!(values.iter().any(|value| value.contains("428.0M tokens")));
     assert!(values.iter().any(|value| value.contains("$404.61")));

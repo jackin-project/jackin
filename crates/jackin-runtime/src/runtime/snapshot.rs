@@ -36,6 +36,10 @@ use serde::Deserialize;
 
 use jackin_core::paths::JackinPaths;
 
+// `InstanceSnapshot` lives in `jackin-protocol` so the console can use it
+// without depending on `jackin-runtime`.
+pub use jackin_protocol::InstanceSnapshot;
+
 /// Cap on the JSON reply read from the daemon. Must be ≥ the daemon's
 /// frame cap so legitimate Status / Snapshot replies fit; oversized
 /// replies are rejected to bound host memory.
@@ -48,12 +52,6 @@ const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
 /// cadence, so a short timeout here keeps a dead container from
 /// stalling the UI.
 const SOCKET_TIMEOUT: Duration = Duration::from_secs(2);
-
-#[derive(Debug, Clone)]
-pub struct InstanceSnapshot {
-    pub tabs: Vec<TabSnapshot>,
-    pub active_tab: u32,
-}
 
 #[derive(Deserialize)]
 struct SnapshotPayload {
@@ -292,8 +290,17 @@ fn fetch_usage_summary_via_docker_exec(
 }
 
 fn run_docker_exec_capsule(container_name: &str, script: &str) -> Result<std::process::Output> {
+    // Match the container's run-time UID (`--user` on docker run) so fallback
+    // exec reads host-UID-owned state, not as the image's baked UID 1000.
+    let run_as_user = crate::runtime::identity::host_run_as_user();
+    let mut args: Vec<&str> = vec!["exec"];
+    if let Some(ref user) = run_as_user {
+        args.push("--user");
+        args.push(user.as_str());
+    }
+    args.extend_from_slice(&[container_name, "sh", "-lc", script]);
     let mut child = Command::new("docker")
-        .args(["exec", container_name, "sh", "-lc", script])
+        .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
