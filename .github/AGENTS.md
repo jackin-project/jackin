@@ -71,7 +71,7 @@ Canonical body shape, intent-split block list, mandatory isolation env-var rule 
 2. **Cache hit** at `~/.jackin/cache/jackin-capsule/<version>/linux-<arch>/jackin-capsule`. Cache key is `JACKIN_VERSION` (commit SHA suffix included), so any `cargo build` of jackin invalidates it.
 3. **Download** from `preview` rolling GitHub Release tag (for `-dev` / `-preview.` versions) or `v<version>` tag (for tagged releases). Cached after first successful download.
 
-Host does **not** auto-rebuild `crates/jackin-capsule/` on source edits outside the PR sync flow. To pick up local changes, operator must re-run `jackin-dev pr sync <PR_NUMBER>` — why Checkout block's sync step is mandatory.
+Host does **not** auto-rebuild `crates/jackin-capsule/` on source edits outside the PR sync flow. To pick up local capsule-affecting changes, operator must re-run `jackin-dev pr sync <PR_NUMBER>` — why Checkout block's sync step is mandatory.
 
 ### Required Checkout prepare for jackin-capsule PRs
 
@@ -81,13 +81,13 @@ Use this command in Checkout block for any PR touching `crates/jackin-capsule/`:
 jackin-dev pr sync <PR_NUMBER>
 ```
 
-`build-jackin-capsule` invokes `cargo zigbuild` (not Docker) to cross-compile Linux binary, writes artifact to host cache, and `--export` flag prints `export JACKIN_CAPSULE_BIN=<path>`. `jackin-dev` captures that export + writes it into PR env file so sourcing `env.sh` points `ensure_available` at freshly built binary. This path is required (not optional) because hand-rolled `target/<triple>/release/jackin-capsule` exports silently break when operator switches architectures or moves checkouts. First build ~2-3 minutes via cargo-zigbuild; subsequent builds incremental. Editing any file under `crates/jackin-capsule/src/` does NOT auto-invalidate the binary on disk — re-run `jackin-dev pr sync <PR_NUMBER>` to rebuild. To purge cache entirely (e.g. switching between published + locally built binaries): `rm -rf ~/.jackin/cache/jackin-capsule/`.
+`build-jackin-capsule` invokes `cargo zigbuild` (not Docker) to cross-compile Linux binary, writes artifact to host cache, and `--export` flag prints `export JACKIN_CAPSULE_BIN=<path>`. When the PR diff affects `jackin-capsule` or a workspace package in its dependency closure, `jackin-dev` captures that export + writes it into the PR env file so sourcing `env.sh` points `ensure_available` at the freshly built binary. This path is required for capsule-affecting PRs because hand-rolled `target/<triple>/release/jackin-capsule` exports silently break when operator switches architectures or moves checkouts. First build ~2-3 minutes via cargo-zigbuild; subsequent builds incremental. Editing any file under `crates/jackin-capsule/src/` does NOT auto-invalidate the binary on disk — re-run `jackin-dev pr sync <PR_NUMBER>` to rebuild. To purge cache entirely (e.g. switching between published + locally built binaries): `rm -rf ~/.jackin/cache/jackin-capsule/`.
 
-`jackin-dev` cannot export into parent shell directly. Review that Checkout block sources `$(jackin-dev pr path <PR_NUMBER>)/env.sh` after `jackin-dev pr sync <PR_NUMBER>`; only then does `JACKIN_CAPSULE_BIN` exist in operator's environment.
+`jackin-dev` cannot export into parent shell directly. Review that Checkout block sources `$(jackin-dev pr path <PR_NUMBER>)/env.sh` after `jackin-dev pr sync <PR_NUMBER>`; only then does `JACKIN_CAPSULE_BIN` exist in operator's environment for capsule-affecting PRs.
 
 If build step prints a `cargo zigbuild` error, operator should paste full `--debug` output (`cargo-zigbuild` and `zig` must be on `PATH`; install via `mise install zig cargo:cargo-zigbuild`).
 
-This line is positionally load-bearing: must stay in Checkout, **before** `### User smoke` and `### jackin-capsule smoke` (and before any other block running `jackin console` / `jackin load`). Without `jackin-dev pr sync` first, every subsequent `jackin` invocation resolves cached or downloaded binary instead of freshly built one, so PR's container-side changes silently absent from every launch in verify recipe.
+This line is positionally load-bearing for capsule-affecting PRs: must stay in Checkout, **before** `### User smoke` and `### jackin-capsule smoke` (and before any other block running `jackin console` / `jackin load`). Without `jackin-dev pr sync` first, every subsequent `jackin` invocation resolves cached or downloaded binary instead of the freshly built capsule, so PR's container-side changes silently absent from every launch in verify recipe.
 
 ### Required `### jackin-capsule smoke` launch + verify list
 
