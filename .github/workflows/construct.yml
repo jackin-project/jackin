@@ -102,7 +102,11 @@ jobs:
         shell: bash
         run: |
           echo "construct=true" >> "$GITHUB_OUTPUT"
-          echo "construct_image=true" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            echo "construct_image=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "construct_image=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Classify changed paths
         id: filter
