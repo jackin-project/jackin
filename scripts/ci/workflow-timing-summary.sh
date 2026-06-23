@@ -10,12 +10,14 @@ jobs_file="${RUNNER_TEMP:-/tmp}/workflow-jobs-${run_id}.jsonl"
 durations_file="${RUNNER_TEMP:-/tmp}/workflow-job-durations-${run_id}.tsv"
 steps_file="${RUNNER_TEMP:-/tmp}/workflow-step-durations-${run_id}.tsv"
 cache_file="${RUNNER_TEMP:-/tmp}/workflow-cache-events-${run_id}.txt"
+log_markers_file="${RUNNER_TEMP:-/tmp}/workflow-log-markers-${run_id}.tsv"
 metrics_file="${RUNNER_TEMP:-/tmp}/workflow-target-metrics-${run_id}.tsv"
 
 : > "$jobs_file"
 : > "$durations_file"
 : > "$steps_file"
 : > "$cache_file"
+: > "$log_markers_file"
 : > "$metrics_file"
 
 epoch() {
@@ -42,6 +44,38 @@ cache_hit_count=0
 cache_miss_count=0
 cache_restore_count=0
 cache_failure_count=0
+dependency_download_count=0
+third_party_build_count=0
+source_tool_compile_count=0
+sccache_issue_count=0
+prepared_workspace_count=0
+github_cache_count=""
+github_cache_bytes=""
+
+dependency_download_pattern='Updating.*crates\.io index|Downloaded.*[0-9]+ crates?|Downloaded.*[[:alnum:]_.+-]+ v[0-9]|Downloading.*[[:alnum:]_.+-]+ v[0-9]'
+third_party_build_pattern='^[[:space:]]*(Compiling|Checking|Building) [[:alnum:]_.+-]+ v[0-9][^(/]*$'
+source_tool_compile_pattern='cargo install|Installing [[:alnum:]_.+-]+ v[0-9].*from source|Compiling [[:alnum:]_.+-]+ v[0-9].*\(.*cargo.*registry'
+sccache_issue_pattern='sccache.*(error|failed|write|server)'
+prepared_workspace_pattern='Download prepared nextest workspace|Restore prepared nextest workspace|prepared nextest workspace'
+
+if cache_usage_json=$(gh api "repos/${repo}/actions/cache/usage" 2>/dev/null); then
+  github_cache_count=$(printf '%s' "$cache_usage_json" | jq -r '.active_caches_count // ""')
+  github_cache_bytes=$(printf '%s' "$cache_usage_json" | jq -r '.active_caches_size_in_bytes // ""')
+fi
+
+append_marker_matches() {
+  local marker="$1"
+  local job="$2"
+  local pattern="$3"
+  local lines
+
+  lines=$(grep -Ein "$pattern" || true)
+  [ -n "$lines" ] || return
+
+  printf '%s\n' "$lines" | while IFS= read -r line; do
+    printf '%s\t%s\t%s\n' "$marker" "$job" "$line" >> "$log_markers_file"
+  done
+}
 
 while IFS= read -r job_b64; do
   [ -n "$job_b64" ] || continue
@@ -90,10 +124,26 @@ while IFS= read -r job_b64; do
     misses=$(printf '%s\n' "$logs" | grep -Eci 'Cache not found|not found for input keys|Cache miss' || true)
     restores=$(printf '%s\n' "$logs" | grep -Eci 'Restoring cache|Cache Size:' || true)
     failures=$(printf '%s\n' "$logs" | grep -Eci 'Failed to restore cache|Failed to save cache|Unable to reserve cache' || true)
+    downloads=$(printf '%s\n' "$logs" | grep -Eci "$dependency_download_pattern" || true)
+    builds=$(printf '%s\n' "$logs" | grep -Eci "$third_party_build_pattern" || true)
+    source_tools=$(printf '%s\n' "$logs" | grep -Eci "$source_tool_compile_pattern" || true)
+    sccache_issues=$(printf '%s\n' "$logs" | grep -Eci "$sccache_issue_pattern" || true)
+    prepared_workspace=$(printf '%s\n' "$logs" | grep -Eci "$prepared_workspace_pattern" || true)
     cache_hit_count=$((cache_hit_count + hits))
     cache_miss_count=$((cache_miss_count + misses))
     cache_restore_count=$((cache_restore_count + restores))
     cache_failure_count=$((cache_failure_count + failures))
+    dependency_download_count=$((dependency_download_count + downloads))
+    third_party_build_count=$((third_party_build_count + builds))
+    source_tool_compile_count=$((source_tool_compile_count + source_tools))
+    sccache_issue_count=$((sccache_issue_count + sccache_issues))
+    prepared_workspace_count=$((prepared_workspace_count + prepared_workspace))
+
+    printf '%s\n' "$logs" | append_marker_matches "dependency download" "$name" "$dependency_download_pattern"
+    printf '%s\n' "$logs" | append_marker_matches "third-party compile/check/build" "$name" "$third_party_build_pattern"
+    printf '%s\n' "$logs" | append_marker_matches "source tool compile" "$name" "$source_tool_compile_pattern"
+    printf '%s\n' "$logs" | append_marker_matches "sccache issue" "$name" "$sccache_issue_pattern"
+    printf '%s\n' "$logs" | append_marker_matches "prepared workspace" "$name" "$prepared_workspace_pattern"
   else
     printf 'log unavailable: %s (%s)\n' "$name" "$job_id" >> "$cache_file"
   fi
@@ -174,9 +224,22 @@ print_target_metrics() {
     "Publish Homebrew Preview")
       print_elapsed_metric "Time to preview published" "$(job_completion_metric '^publish-preview$')"
       ;;
+    Hygiene)
+      print_elapsed_metric "Time to hygiene complete" "$(job_completion_metric '^Cache usage review$|^Scheduled hygiene$|^Native macOS smoke$')"
+      ;;
+    jackin-dev)
+      print_elapsed_metric "Time to jackin-dev published" "$(job_completion_metric '^publish$')"
+      print_elapsed_metric "Time to jackin-dev builds complete" "$(job_completion_metric '^build .*$')"
+      ;;
     Release)
       print_elapsed_metric "Time to GitHub release published" "$(job_completion_metric '^release$')"
       print_elapsed_metric "Time to release pipeline complete" "$(job_completion_metric '^homebrew$|^release$')"
+      ;;
+    Renovate)
+      print_elapsed_metric "Time to Renovate complete" "$(job_completion_metric '^renovate$')"
+      ;;
+    "Renovate Validate")
+      print_elapsed_metric "Time to Renovate validate complete" "$(job_completion_metric '^validate$')"
       ;;
   esac
 }
@@ -209,6 +272,52 @@ print_step_category_totals() {
   done
 }
 
+print_lane_totals() {
+  printf '\n### Runner lane totals\n\n'
+  printf '| Lane | Aggregate job time | Jobs | Longest job |\n| --- | ---: | ---: | --- |\n'
+
+  awk -F '\t' '
+    function lane_for(name) {
+      if (name ~ /\(GitHub\)$/) return "GitHub"
+      if (name ~ /\(Velnor\)$/) return "Velnor"
+      return "shared"
+    }
+    {
+      lane = lane_for($2)
+      seconds[lane] += $1
+      count[lane] += 1
+      if ($1 > max[lane]) {
+        max[lane] = $1
+        max_name[lane] = $2
+      }
+    }
+    END {
+      for (lane in seconds) {
+        printf "%d\t%s\t%d\t%d\t%s\n", seconds[lane], lane, count[lane], max[lane], max_name[lane]
+      }
+    }
+  ' "$durations_file" | sort -rn | while IFS=$'\t' read -r seconds lane count max_seconds max_name; do
+    printf '| %s | %s | %s | %s (%s) |\n' \
+      "$lane" "$(duration "$seconds")" "$count" "$max_name" "$(duration "$max_seconds")"
+  done
+}
+
+print_github_cache_budget() {
+  printf '\n### GitHub Actions Cache Budget\n\n'
+
+  if [ -z "$github_cache_count" ] || [ -z "$github_cache_bytes" ]; then
+    printf -- '- Cache usage: unavailable; actions cache API did not return usage for this token.\n'
+    return
+  fi
+
+  awk -v count="$github_cache_count" -v bytes="$github_cache_bytes" 'BEGIN {
+    gib = bytes / 1024 / 1024 / 1024
+    pct = gib / 10 * 100
+    printf "- Active caches: %s\n", count
+    printf "- Active cache size: %.2f GiB of the 10 GiB repository budget reference (%.1f%%)\n", gib, pct
+  }'
+}
+
 {
   printf '## %s timing\n\n' "$workflow_label"
   if [ "$run_start" -gt 0 ] && [ "$run_end" -gt "$run_start" ]; then
@@ -218,8 +327,11 @@ print_step_category_totals() {
   fi
   printf -- '- Cache events in job logs: %s hit/restore markers, %s miss markers, %s restore attempts, %s failure markers\n\n' \
     "$cache_hit_count" "$cache_miss_count" "$cache_restore_count" "$cache_failure_count"
+  printf -- '- Rebuild/download markers in job logs: %s dependency download markers, %s third-party compile/check/build markers, %s source-tool compile markers, %s sccache issue markers, %s prepared-workspace artifact markers\n\n' \
+    "$dependency_download_count" "$third_party_build_count" "$source_tool_compile_count" "$sccache_issue_count" "$prepared_workspace_count"
 
   print_target_metrics
+  print_github_cache_budget
 
   printf '### Longest jobs\n\n'
   printf '| Duration | Job | Result |\n| --- | --- | --- |\n'
@@ -236,9 +348,24 @@ print_step_category_totals() {
   done
 
   print_step_category_totals
+  print_lane_totals
 
   if [ -s "$cache_file" ]; then
     printf '\n### Notes\n\n'
     sed 's/^/- /' "$cache_file"
+  fi
+
+  if [ -s "$log_markers_file" ]; then
+    printf '\n### Rebuild and Download Markers\n\n'
+    printf 'These markers require review on warm sequential runs. True first-run cache population is acceptable; repeated dependency downloads, source tool compiles, third-party compile/check/build markers, low compiler-cache utility, or prepared-workspace artifact restores should be explained or fixed.\n\n'
+    printf '| Marker | Job | Log line |\n| --- | --- | --- |\n'
+    head -n 25 "$log_markers_file" | while IFS=$'\t' read -r marker job line; do
+      line="${line//|/\\|}"
+      printf "| %s | %s | \`%s\` |\n" "$marker" "$job" "$line"
+    done
+    marker_total=$(wc -l < "$log_markers_file" | tr -d ' ')
+    if [ "$marker_total" -gt 25 ]; then
+      printf '\nShowing first 25 of %s markers.\n' "$marker_total"
+    fi
   fi
 } >> "$summary"
