@@ -53,10 +53,12 @@ jobs:
           cache_key_prefix: "mise-v2"
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - uses: ./.github/actions/cache-cargo-registry
 
       - name: Require jackin-dev version bump for artifact changes
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CARGO_NET_OFFLINE: "true"
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
