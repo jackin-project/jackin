@@ -103,7 +103,11 @@ runs:
         set -euo pipefail
 
         stats_file="${SCCACHE_STATS_ARTIFACT_NAME}.txt"
-        sccache --show-stats | tee "$stats_file"
+        if ! command -v sccache >/dev/null 2>&1; then
+          echo "sccache not installed; skipping stats" | tee "$stats_file"
+        else
+          sccache --show-stats | tee "$stats_file"
+        fi
         {
           echo "### ${SCCACHE_STATS_HEADING:-$SCCACHE_STATS_ARTIFACT_NAME}"
           echo '```text'

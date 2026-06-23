@@ -264,7 +264,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "actionlint shellcheck"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - run: actionlint .github/workflows/*.yml
 
   fmt:
@@ -295,7 +295,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - run: rustup component add rustfmt
       - run: cargo fmt --check
 
@@ -327,7 +327,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
 
@@ -359,7 +359,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: ${{ runner.arch == 'X64' && 'rust shellfirm' || 'rust' }}
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -409,7 +409,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust sccache"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -432,6 +432,12 @@ jobs:
           path: target/cargo-timings/*.html
           if-no-files-found: ignore
           retention-days: 7
+      - name: Capture sccache stats
+        if: always()
+        uses: ./.github/actions/sccache-stats
+        with:
+          artifact-name: sccache-stats-ci-clippy-${{ matrix.config.lane }}
+          heading: sccache ci clippy (${{ matrix.config.lane }})
   dependency-policy:
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
@@ -460,7 +466,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust cargo-deny cargo-shear"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - run: cargo shear
@@ -498,7 +504,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust sccache"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -520,29 +526,12 @@ jobs:
           path: target/cargo-timings/*.html
           if-no-files-found: ignore
           retention-days: 7
-      - name: Write sccache stats
-        if: always() && matrix.config.lane == 'Velnor'
-        run: |
-          if ! command -v sccache >/dev/null 2>&1; then
-            echo "sccache not installed; skipping stats"
-            exit 0
-          fi
-          stats_file="sccache-stats-ci-check-default-${{ matrix.config.lane }}.txt"
-          sccache --show-stats | tee "$stats_file"
-          {
-            echo "### sccache ci check-default (${{ matrix.config.lane }})"
-            echo '```text'
-            cat "$stats_file"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload sccache stats
-        if: always() && matrix.config.lane == 'Velnor'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Capture sccache stats
+        if: always()
+        uses: ./.github/actions/sccache-stats
         with:
-          name: sccache-stats-ci-check-default-${{ matrix.config.lane }}
-          path: sccache-stats-ci-check-default-${{ matrix.config.lane }}.txt
-          if-no-files-found: ignore
-          retention-days: 7
+          artifact-name: sccache-stats-ci-check-default-${{ matrix.config.lane }}
+          heading: sccache ci check-default (${{ matrix.config.lane }})
   construct-e2e-image:
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.construct_image == 'true'
@@ -582,7 +571,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust sccache shellfirm"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -624,6 +613,12 @@ jobs:
           name: construct-trixie-image-${{ matrix.config.lane }}
           path: construct-trixie.tar
           retention-days: 1
+      - name: Capture sccache stats
+        if: always()
+        uses: ./.github/actions/sccache-stats
+        with:
+          artifact-name: sccache-stats-ci-construct-e2e-image-${{ matrix.config.lane }}
+          heading: sccache ci construct-e2e-image (${{ matrix.config.lane }})
 
   test:
     needs: [changes, construct-e2e-image, matrix-setup, cargo-registry-warmup]
@@ -665,7 +660,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust cargo-fuzz"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -716,7 +711,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -768,7 +763,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust@${{ steps.msrv.outputs.version }}"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -824,7 +819,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust cargo-audit"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - name: Run cargo audit

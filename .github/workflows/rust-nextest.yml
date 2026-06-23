@@ -25,10 +25,6 @@ on:
         required: false
         default: false
         type: boolean
-    secrets:
-      GH_READONLY_TOKEN:
-        required: false
-
 permissions:
   actions: read
   contents: read
@@ -71,7 +67,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust cargo-nextest sccache"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -117,6 +113,12 @@ jobs:
             args+=(--all-features)
           fi
           cargo nextest run "${args[@]}"
+      - name: Capture sccache stats
+        if: always()
+        uses: ./.github/actions/sccache-stats
+        with:
+          artifact-name: sccache-stats-nextest-${{ matrix.group }}-${{ matrix.config.lane }}
+          heading: sccache nextest ${{ matrix.group }} (${{ matrix.config.lane }})
 
   docker-e2e:
     if: inputs.docker-e2e
@@ -150,7 +152,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust cargo-nextest sccache"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -208,3 +210,9 @@ jobs:
             export TMPDIR="$VELNOR_DOCKER_HOST_TEMP"
           fi
           cargo nextest run -p jackin --features e2e --profile docker-e2e --color=always --locked --offline
+      - name: Capture sccache stats
+        if: always()
+        uses: ./.github/actions/sccache-stats
+        with:
+          artifact-name: sccache-stats-docker-e2e-${{ matrix.config.lane }}
+          heading: sccache docker-e2e (${{ matrix.config.lane }})

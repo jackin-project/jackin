@@ -145,7 +145,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust zig cargo-zigbuild cosign syft sccache"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -187,7 +187,7 @@ jobs:
           archive-basename: jackin-${{ needs.check-version.outputs.version }}-${{ matrix.target.triple }}
           artifact-name: release-${{ matrix.config.lane }}-jackin-${{ matrix.target.triple }}
           timings-artifact-name: cargo-timings-release-jackin-${{ matrix.target.triple }}-${{ matrix.config.lane }}
-          sccache-stats-artifact-name: ${{ matrix.config.lane == 'Velnor' && format('sccache-stats-release-jackin-{0}-{1}', matrix.target.triple, matrix.config.lane) || '' }}
+          sccache-stats-artifact-name: sccache-stats-release-jackin-${{ matrix.target.triple }}-${{ matrix.config.lane }}
           sccache-stats-heading: sccache release jackin ${{ matrix.target.triple }} (${{ matrix.config.lane }})
 
   build-jackin-capsule:
@@ -230,7 +230,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust zig cargo-zigbuild cosign syft sccache"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -254,7 +254,7 @@ jobs:
           archive-basename: jackin-capsule-${{ needs.check-version.outputs.version }}-${{ matrix.target.triple }}
           artifact-name: release-${{ matrix.config.lane }}-jackin-capsule-${{ matrix.target.triple }}
           timings-artifact-name: cargo-timings-release-capsule-${{ matrix.target.triple }}-${{ matrix.config.lane }}
-          sccache-stats-artifact-name: ${{ matrix.config.lane == 'Velnor' && format('sccache-stats-release-capsule-{0}-{1}', matrix.target.triple, matrix.config.lane) || '' }}
+          sccache-stats-artifact-name: sccache-stats-release-capsule-${{ matrix.target.triple }}-${{ matrix.config.lane }}
           sccache-stats-heading: sccache release capsule ${{ matrix.target.triple }} (${{ matrix.config.lane }})
 
   release:
@@ -310,7 +310,7 @@ jobs:
           version: ${{ needs.check-version.outputs.version }}
           arm64-sha: ${{ steps.shas.outputs.capsule_arm64_linux }}
           x86-sha: ${{ steps.shas.outputs.capsule_x86_linux }}
-          github-token: ${{ secrets.GH_READONLY_TOKEN }}
+          github-token: ${{ github.token }}
 
       - name: Create GitHub Release
         env:
