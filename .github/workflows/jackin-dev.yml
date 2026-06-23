@@ -41,16 +41,32 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 2
       - name: Assert jackin-dev version is unpublished
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
+          EVENT_BEFORE: ${{ github.event.before }}
         run: |
           if gh release view "jackin-dev-v${VERSION}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            if [ "$GITHUB_REF" = "refs/heads/main" ]; then
-              echo "jackin-dev-v${VERSION} already exists; continuing so the tap formula can recover"
+            changed_files=$(mktemp)
+            if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+              git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
+              git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD" > "$changed_files"
+            elif [ -n "${EVENT_BEFORE:-}" ] && [ "$EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]; then
+              git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+              git diff --name-only "$EVENT_BEFORE" "$GITHUB_SHA" > "$changed_files"
+            else
+              git diff --name-only HEAD~1 HEAD > "$changed_files"
+            fi
+
+            if ! grep -Eq '^(\.github/actions/sign-and-attest-archive/|Cargo\.lock$|Cargo\.toml$|crates/jackin-dev/|mise\.toml$|rust-toolchain\.toml$)' "$changed_files"; then
+              echo "jackin-dev-v${VERSION} already exists, but no jackin-dev release inputs changed; continuing so the tap formula can recover"
               exit 0
             fi
+
             echo "jackin-dev-v${VERSION} already exists; bump crates/jackin-dev/Cargo.toml"
             exit 1
           fi
