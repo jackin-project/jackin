@@ -27,6 +27,8 @@ runs:
       if: steps.restore.outputs.cache-hit != 'true'
       shell: bash
       env:
+        CARGO_NET_OFFLINE: "false"
+        CARGO_NET_RETRY: "10"
         RUSTC_WRAPPER: ""
       run: |
         set -euo pipefail
