@@ -399,7 +399,21 @@ jobs:
               printf -- '- [Full diff](https://github.com/jackin-project/jackin/compare/%s...%s)\n' \
                 "$OLD_SHA" "$NEW_SHA"
             fi
-            printf -- '- [CHANGELOG](https://github.com/jackin-project/jackin/blob/%s/CHANGELOG.md)\n' "$NEW_SHA"
+            printf -- '- [CHANGELOG](https://github.com/jackin-project/jackin/blob/%s/CHANGELOG.md)\n\n' "$NEW_SHA"
+            printf '## Commits\n\n'
+            if [ -n "$OLD_SHA" ] \
+               && git -C "${GITHUB_WORKSPACE}" rev-parse --verify --quiet "${OLD_SHA}^{commit}" >/dev/null; then
+              git -C "${GITHUB_WORKSPACE}" log --pretty=format:'- %s (%h)' "${OLD_SHA}..${NEW_SHA}"
+              printf '\n'
+            else
+              printf '_No prior jackin-dev SHA found; commit range unavailable._\n'
+            fi
+            printf '\n## Unreleased changelog\n\n'
+            awk '
+              /^## \[Unreleased\]/ {flag=1; next}
+              /^## / {flag=0}
+              flag {print}
+            ' "${GITHUB_WORKSPACE}/CHANGELOG.md" | awk 'NF{found=1} {print} END{ if(!found) print "_(empty)_" }'
           } > "$body_file"
           echo "body_file=$body_file" >> "$GITHUB_OUTPUT"
 
