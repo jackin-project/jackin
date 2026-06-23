@@ -168,7 +168,10 @@ fn draw_brand_pill_bottom() {
             .bold()
             .color(owo_rgb(crate::BLACK))
             .on_color(owo_rgb(BRAND_BLOCK)),
-        "❯".bold().color(owo_rgb(WHITE)).on_color(owo_rgb(BRAND_BLOCK)),
+        "❯"
+            .bold()
+            .color(owo_rgb(WHITE))
+            .on_color(owo_rgb(BRAND_BLOCK)),
         " ".on_color(owo_rgb(BRAND_BLOCK)),
     ));
 }

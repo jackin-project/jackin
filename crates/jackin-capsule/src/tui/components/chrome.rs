@@ -91,7 +91,12 @@ impl Widget for StatusBarWidget<'_> {
             .bg(jackin_tui::theme::BRAND_BLOCK)
             .add_modifier(Modifier::BOLD);
         buf.set_string(area.x, area.y, " jackin", pill.fg(Color::Black));
-        buf.set_string(area.x.saturating_add(7), area.y, "❯", pill.fg(jackin_tui::theme::WHITE));
+        buf.set_string(
+            area.x.saturating_add(7),
+            area.y,
+            "❯",
+            pill.fg(jackin_tui::theme::WHITE),
+        );
         buf.set_string(area.x.saturating_add(8), area.y, " ", pill);
 
         // Row 0: tab cells.

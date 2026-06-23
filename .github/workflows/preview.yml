@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: homebrew-tap-publish
+  group: homebrew-preview-publish
   cancel-in-progress: true
 
 jobs:
@@ -215,7 +215,7 @@ jobs:
         with:
           install_args: "rust zig cargo:cargo-zigbuild cosign syft"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: ${{ github.job }}-${{ matrix.target }}
           cache-all-crates: "true"
@@ -319,7 +319,7 @@ jobs:
         with:
           install_args: "rust zig cargo:cargo-zigbuild cosign syft"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: ${{ github.job }}-${{ matrix.target }}
           cache-all-crates: "true"
@@ -364,6 +364,9 @@ jobs:
     needs: [source-changed, build-preview, build-jackin-capsule]
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ubuntu-latest
+    concurrency:
+      group: homebrew-tap-publish
+      cancel-in-progress: false
     permissions:
       contents: write
       id-token: write

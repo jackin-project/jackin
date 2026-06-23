@@ -31,7 +31,9 @@ impl Widget for BrandHeader<'_> {
 #[must_use]
 pub fn brand_header_line(label: &str) -> Line<'static> {
     // The mark is a green block: black word, white chevron, square edges.
-    let block = Style::default().bg(BRAND_BLOCK).add_modifier(Modifier::BOLD);
+    let block = Style::default()
+        .bg(BRAND_BLOCK)
+        .add_modifier(Modifier::BOLD);
     Line::from(vec![
         Span::styled(" jackin", block.fg(Color::Black)),
         Span::styled("❯", block.fg(WHITE)),

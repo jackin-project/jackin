@@ -7,10 +7,10 @@ This page documents the label schema jackin stamps on **local derived role image
 
 The derived image is always a thin jackin overlay (capsule, agents, normalization) built `FROM` a **local role base** image `jk_<role>__base:<sha>`. The overlay never depends on the published image's mutable `:latest` tag — jackin always materializes an immutable local base first, from one of two sources:
 
-- **Fresh published image** → pull `docker.io/.../jackin-the-architect:latest` and **restamp it** as the local `jk_<role>__base:<sha>` (a `FROM <published>` build — no role rebuild). The overlay then derives `FROM` that local tag.
+- **Fresh published image** → pull `docker.io/.../jackin-the-architect:latest`, verify its Docker labels prove it was built from the current role commit, and tag it as the local `jk_<role>__base:<sha>` (no role rebuild, no restamp Docker build). The overlay then derives `FROM` that local tag.
 - **Published image missing/outdated, or a custom construct is in play** → build the base locally from the role Dockerfile (construct `FROM` overridden by `JACKIN_CONSTRUCT_IMAGE` when set), tagged `jk_<role>__base:<sha>`.
 
-Either way the local base carries `jackin.role.git.sha` + `jackin.construct.image` and is **reused** when the tag already exists locally and its construct matches — so warm launches skip the published pull entirely, and the heavy role layers are materialized once per (role commit, construct) (see [Local role base](#local-role-base)).
+Either way the local base is **reused** when the tag already exists locally and its labels prove the current role commit plus construct identity — so warm launches skip the published pull entirely, and the heavy role layers are materialized once per (role commit, construct) (see [Local role base](#local-role-base)).
 
 The **local derived image** `jk_<role>:<sha>` carries the full label set below. All keys use dotted namespacing (`jackin.<group>.<name>`). The role-commit SHA is stored in its short, 7-character form (e.g. `4f38b4f`), matching the image tag.
 
@@ -74,18 +74,18 @@ Every published role image must carry exactly these two (written by role CI — 
 | `jackin.role.git.sha` | short role-repo commit SHA the image was built from |
 | `jackin.construct.version` | construct version tag from the role Dockerfile `FROM` line |
 
-jackin pulls the published base and verifies `jackin.role.git.sha` against the role checkout's HEAD (plus the construct version) to decide whether to restamp the published image into the local base, or build the base from the workspace Dockerfile. `jackin.manifest.version` will join this contract once `jackin-role-action` is updated to stamp it.
+jackin pulls the published base and verifies `jackin.role.git.sha` against the role checkout's HEAD to decide whether to tag the published image as the local base, or build the base from the workspace Dockerfile. `jackin.manifest.version` will join this contract once `jackin-role-action` is updated to stamp it.
 
 ## Local role base
 
-The role base is always materialized locally as `jk_<role>__base:<sha>` — the role content with **no** jackin overlay — so the derived overlay builds `FROM` a stable local tag rather than the published `:latest`. The base is either a restamp of the pulled published image (`FROM <published>`) or a local build of the role Dockerfile (construct `FROM` overridden when `JACKIN_CONSTRUCT_IMAGE` is set). Either way it carries two labels:
+The role base is always materialized locally as `jk_<role>__base:<sha>` — the role content with **no** jackin overlay — so the derived overlay builds `FROM` a stable local tag rather than the published `:latest`. The base is either a local tag of a pulled, label-verified published image or a local build of the role Dockerfile (construct `FROM` overridden when `JACKIN_CONSTRUCT_IMAGE` is set). Locally built bases carry two labels:
 
 | Label | Meaning |
 |---|---|
 | `jackin.role.git.sha` | short role-repo commit SHA |
 | `jackin.construct.image` | the construct the base was built on (custom vs official) |
 
-On the next launch the local base is **reused** when `jk_<role>__base:<sha>` already exists and its `jackin.construct.image` matches the current construct — the role commit is the tag, the construct label distinguishes a custom-construct base from an official one. So warm launches skip the published pull, and the heavy role layers are materialized once per (role commit, construct); the overlay derives `FROM` the base.
+Tagged published bases keep the published image labels instead; reuse requires `jackin.role.git.sha` matching the current role HEAD, and any construct label present must still match (`jackin.construct.image` for local builds, `jackin.construct.version` for published images). So warm launches skip the published pull, and the heavy role layers are materialized once per role commit plus any declared construct identity; the overlay derives `FROM` the base.
 
 ## Container / network labels (GC & filtering, not image recipe)
 

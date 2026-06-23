@@ -41,7 +41,7 @@ Template deliberately omits:
 
 Every PR must include copy-pasteable "Verify locally" section in body. Agents creating PRs must also repeat same commands in final response after sharing PR URL (agent-specific rule, governed by rules under `.github/`).
 
-Use template's bootstrap clone plus `cargo xtask pr prepare <PR_NUMBER>` with real PR number + verification commands. Bootstrap exists because `cargo xtask` lives inside repo: first clone/refresh PR into `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/jackin`, then let xtask own full checkout/build/isolation prep. Xtask starts from PR-specific test directory so operator can inspect multiple PRs at once without checkout collisions. Uses PR number, not branch name, for directory: PR numbers unique + stable; branch names can contain slashes, be reused, or change during iteration. Clone/fetch step idempotent, force-updates fetched ref, prefers actual head branch name for same-repo PRs, falls back to GitHub's synthetic PR ref for fork PRs.
+Use template's `jackin-dev pr sync <PR_NUMBER>` checkout flow with real PR number + verification commands. `jackin-dev` creates or refreshes `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/jackin`, prepares isolated config/state under the same PR bundle, checks out the PR's real head branch, builds the local binary, builds and exports a local capsule when the diff changes `jackin-capsule` or a workspace package in its dependency closure, writes `env.sh`, and prints the next commands. The bundle starts from a PR-specific test directory so operator can inspect multiple PRs at once without checkout collisions. Uses PR number, not branch name, for directory; branch prompt still shows the PR's actual head branch.
 
 Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when local check worth running beyond CI + GitHub's diff UI. Add Rust tests only when relevant Rust test command exists. Add Docs checks only when relevant automated docs command exists; use template's docs gate rather than restating here. Keep Rust tests + Docs checks separate blocks; docs tests validate published documentation surface + docs tooling, not Rust project. Add User Smoke only when operator can exercise changed behavior locally (CLI, runtime, workspace, Docker, TUI, operator-flow changes). No placeholder sections saying no test applies; no commands that only print files for review. For CLI/runtime smoke, run local checkout's `jackin` binary + exercise behavior touched by PR. When behavior reachable from jackin❯ console, User Smoke block must lead with console command from template — operator's most intuitive end-to-end validation path. Follow with exact keys/clicks, setup commands, expected state needed to make changed behavior visible. Direct subcommand invocations belong after console smoke as faster repeat checks, or as primary smoke path only when changed behavior has no meaningful console route. Prose like "open the console and verify the tab" incomplete unless preceded by command operator pastes + state-seeding commands needed for UI to show changed behavior. For subcommands without `--debug`, include closest supported debug command in same smoke block + explain gap in one sentence.
 
@@ -49,14 +49,14 @@ Split verification into named blocks only when each block contains meaningful co
 
 Any PR touching `crates/jackin-capsule/` requires Checkout block to build + export capsule binary before any `jackin` smoke command, plus dedicated `### jackin-capsule smoke` block:
 
-1. Checkout block uses `cargo xtask pr prepare <PR_NUMBER> --capsule`, then sources generated env file. **Must stay in Checkout, before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` after it consumes whichever binary `ensure_available` resolves first — without capsule export first, launches use cached or preview-release binary + silently skip PR's container-side changes.
-2. `### jackin-capsule smoke` uses template's launch + in-container verify checklist. Does not repeat capsule export; Checkout block already exported `JACKIN_CAPSULE_BIN`.
+1. Checkout block uses `jackin-dev pr sync <PR_NUMBER>`, then sources generated env file. **Must stay in Checkout, before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` after it consumes whichever binary `ensure_available` resolves first — without capsule export first, launches use cached or preview-release binary + silently skip PR's container-side changes.
+2. `### jackin-capsule smoke` uses template's launch + in-container verify checklist. Does not repeat capsule export; Checkout block exports `JACKIN_CAPSULE_BIN` for capsule-affecting PRs.
 
-`cargo xtask pr prepare` cannot mutate parent shell directly. Writes `JACKIN_CAPSULE_BIN` into generated `env.sh`; Checkout block must source that file before any capsule smoke command. If PR needs both local construct image + local capsule binary, combine flags: `cargo xtask pr prepare <PR_NUMBER> --construct --capsule`.
+`jackin-dev pr sync` cannot mutate parent shell directly. It writes `JACKIN_CAPSULE_BIN` into generated `env.sh` only when the PR requires a local capsule; Checkout block must source that file before any smoke command. If PR also needs a local construct image, `jackin-dev` detects construct inputs from the diff and writes `JACKIN_CONSTRUCT_IMAGE` into the same env file.
 
 Full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports forbidden, required verify checklist, prefix-surface opt-in — lives under `## jackin-capsule PRs (hard rule)` section of rules under `.github/`. PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships checkout command + smoke block in correct order; copy rather than rewriting build invocation.
 
-A `crates/jackin-capsule/` PR that puts a `jackin` launch before Checkout block's `--capsule` prepare step, or omits `--capsule`, incomplete. Unit tests passing necessary but not sufficient.
+A `crates/jackin-capsule/` PR that puts a `jackin` launch before Checkout block's `jackin-dev pr sync` step is incomplete. Unit tests passing necessary but not sufficient.
 
 ### Documentation-only PRs
 
@@ -83,10 +83,10 @@ Checkout recipe must keep these properties:
 
 - Fetches real PR head branch into PR-numbered test directory.
 - Force-updates remote-tracking ref so operator verification survives authorized force-pushes.
-- Bootstraps working repository before invoking `cargo xtask`, so operator can start from empty test directory.
+- Bootstraps working repository before invoking repo-local build commands, so operator can start from empty test directory.
 - Builds local `jackin` binary + prepends `target/debug` so smoke commands exercise PR checkout, not previously installed binary.
-- Exports PR-scoped `JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"` and `JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"` so schema migrations, workspace writes, role caches, runtime state don't touch operator's live config/state.
-- For `crates/jackin-capsule/` PRs, uses `--capsule` before any `jackin console` or `jackin load` smoke command.
+- Exports PR-scoped `JACKIN_CONFIG_DIR="$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/state/config"` and `JACKIN_HOME_DIR="$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/state/home"` so schema migrations, workspace writes, role caches, runtime state don't touch operator's live config/state.
+- Auto-builds and exports the local capsule before any `jackin console` or `jackin load` smoke command when the changed package is in the `jackin-capsule` dependency closure.
 
 For non-trivial code changes, structure PR's "Verify locally" section by intent:
 
@@ -111,9 +111,9 @@ Three env vars let operator test PR without touching live config or state:
 | `JACKIN_HOME_DIR` | `~/.jackin` | data/, roles/, cache/ |
 | `JACKIN_CONSTRUCT_IMAGE` | `projectjackin/construct:trixie` | construct image used for role validation and launch |
 
-`JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` mandatory in Checkout block for every PR, including docs-only + pure-refactor PRs. Operator may paste same checkout block before deciding which smoke commands to run, and schema/state writes can happen from surprising places like first-load config sync. Xtask writes them as PR-numbered home directories so every PR gets removable copy of config + runtime state.
+`JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` mandatory in Checkout block for every PR, including docs-only + pure-refactor PRs. Operator may paste same checkout block before deciding which smoke commands to run, and schema/state writes can happen from surprising places like first-load config sync. `jackin-dev` writes them under the PR-numbered test bundle so every PR gets one removable copy of config + runtime state.
 
-For construct image PRs, use `cargo xtask pr prepare <PR_NUMBER> --construct` from template. Builds local construct image + points jackin❯ at it for Dockerfile validation + role container launch instead of published one. If same PR also touches `crates/jackin-capsule/`, use `--construct --capsule`.
+For construct image PRs, `jackin-dev pr sync <PR_NUMBER>` detects construct inputs from the diff, builds the local construct image, and points jackin❯ at it for Dockerfile validation + role container launch instead of published one. The same sync command builds and exports the local capsule only when the PR also affects the capsule dependency closure.
 
 No `JACKIN_CONSTRUCT_IMAGE` in PRs that don't touch construct image — isolation pattern scopes test risk, not exhaustively listing every env var.
 
@@ -235,7 +235,7 @@ Following rules apply only to agents. Full text lives in `AGENTS.md` under `.git
 - **CI must be green before merging** — `gh pr checks` confirmation before every merge; no `--admin` bypass without explicit per-failure authorization.
 - **Verify PR title/description before merging** — reconcile metadata with diff before invoking `gh pr merge`.
 - **PR squash merge messages** — squash-only, `(#PR_NUMBER)` suffix, `Signed-off-by` + `Co-authored-by` trailers at end.
-- **`jackin-capsule` PRs** — the `--capsule` prepare path, verify checklist, prefix-surface opt-in.
+- **`jackin-capsule` PRs** — the `jackin-dev pr sync` capsule auto-build path, verify checklist, prefix-surface opt-in.
 
 ## Workflow / CI changes
 

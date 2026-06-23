@@ -481,7 +481,7 @@ pub fn create_role_base_build_context(
             "published base {image:?} is not a valid Docker image reference; refusing to interpolate into Dockerfile FROM line",
         );
         std::fs::create_dir_all(&context_dir)?;
-        format!("# syntax=docker/dockerfile:1.7\nFROM {image}\n")
+        format!("FROM {image}\n")
     } else {
         copy_dir_all(repo_dir, &context_dir)?;
         let override_image = std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_default();

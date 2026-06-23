@@ -244,8 +244,7 @@ pub mod ansi {
 
     /// Help/banner form of the brand pill, shared with the host and
     /// capsule status bars so every surface shows the same logo.
-    pub const BRAND_BANNER: &str =
-        "\n  \x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m jackin\x1b[38;2;255;255;255m❯\x1b[38;2;0;0;0m \x1b[0m\n";
+    pub const BRAND_BANNER: &str = "\n  \x1b[1m\x1b[48;2;0;255;65m\x1b[38;2;0;0;0m jackin\x1b[38;2;255;255;255m❯\x1b[38;2;0;0;0m \x1b[0m\n";
 
     /// Multi-line `jackin --version` splash for an interactive terminal: the
     /// green-block `jackin❯` pill, the version string, and the `by tailrocks`
