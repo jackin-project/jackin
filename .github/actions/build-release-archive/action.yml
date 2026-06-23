@@ -55,6 +55,9 @@ runs:
 
         archive="${ARCHIVE_BASENAME}.tar.gz"
         target_dir="${CARGO_TARGET_DIR:-target}"
+        export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/zig-global-cache}"
+        export ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/zig-local-cache}"
+        mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
         case "$PACKAGE" in
           jackin)
             cargo zigbuild --timings --release --locked --target "$ZIGBUILD_TARGET"

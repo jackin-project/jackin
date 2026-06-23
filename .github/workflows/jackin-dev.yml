@@ -263,7 +263,12 @@ jobs:
       - name: Build
         env:
           ZIGBUILD_TARGET: ${{ matrix.target.zigbuild_target }}
-        run: cargo zigbuild --timings --release --locked -p jackin-dev --target "$ZIGBUILD_TARGET"
+        run: |
+          set -euo pipefail
+          export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/zig-global-cache}"
+          export ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/zig-local-cache}"
+          mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
+          cargo zigbuild --timings --release --locked -p jackin-dev --target "$ZIGBUILD_TARGET"
       - name: Stage cargo timings
         if: always()
         run: |

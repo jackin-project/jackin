@@ -72,7 +72,7 @@ append_marker_matches() {
   local lines
 
   lines=$(grep -Ein "$pattern" "$file" || true)
-  [ -n "$lines" ] || return
+  [ -n "$lines" ] || return 0
 
   printf '%s\n' "$lines" | while IFS= read -r line; do
     printf '%s\t%s\t%s\n' "$marker" "$job" "$line" >> "$log_markers_file"
@@ -108,18 +108,19 @@ scan_logs_file() {
   append_marker_matches "source tool compile" "$name" "$source_tool_compile_pattern" "$logs_file"
   append_marker_matches "sccache issue" "$name" "$sccache_issue_pattern" "$logs_file"
   append_marker_matches "prepared workspace" "$name" "$prepared_workspace_pattern" "$logs_file"
+  return 0
 }
 
 while IFS= read -r job_b64; do
   [ -n "$job_b64" ] || continue
   job_json=$(printf '%s' "$job_b64" | base64 --decode)
-  job_id=$(printf '%s' "$job_json" | jq -r '.databaseId')
+  job_id=$(printf '%s' "$job_json" | jq -r '.databaseId // .id')
   name=$(printf '%s' "$job_json" | jq -r '.name')
   status=$(printf '%s' "$job_json" | jq -r '.status')
   conclusion=$(printf '%s' "$job_json" | jq -r '.conclusion // ""')
-  url=$(printf '%s' "$job_json" | jq -r '.url')
-  started_at=$(printf '%s' "$job_json" | jq -r '.startedAt // ""')
-  completed_at=$(printf '%s' "$job_json" | jq -r '.completedAt // ""')
+  url=$(printf '%s' "$job_json" | jq -r '.html_url // .url')
+  started_at=$(printf '%s' "$job_json" | jq -r '.startedAt // .started_at // ""')
+  completed_at=$(printf '%s' "$job_json" | jq -r '.completedAt // .completed_at // ""')
   start_s=$(epoch "$started_at")
   end_s=$(epoch "$completed_at")
 
@@ -140,8 +141,14 @@ while IFS= read -r job_b64; do
 
   printf '%s' "$job_json" | jq -r --arg job "$name" '
     .steps[]
-    | select((.startedAt // "") != "" and (.completedAt // "") != "" and (.completedAt | startswith("0001-") | not))
-    | [.startedAt, .completedAt, $job, .name, (.conclusion // "")]
+    | {
+        started_at: (.startedAt // .started_at // ""),
+        completed_at: (.completedAt // .completed_at // ""),
+        name,
+        conclusion: (.conclusion // "")
+      }
+    | select(.started_at != "" and .completed_at != "" and (.completed_at | startswith("0001-") | not))
+    | [.started_at, .completed_at, $job, .name, .conclusion]
     | @tsv
   ' | while IFS=$'\t' read -r step_start step_end step_job step_name step_conclusion; do
     step_start_s=$(epoch "$step_start")
