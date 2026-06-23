@@ -55,3 +55,20 @@ jobs:
               exit 1
             fi
           done
+
+  timing-summary:
+    if: always()
+    needs: [validate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Write workflow timing summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/workflow-timing-summary.sh "Renovate Validate"
