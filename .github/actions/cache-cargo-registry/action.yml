@@ -19,8 +19,9 @@ runs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git/db
-        key: cargo-registry-v4-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+        key: cargo-registry-v5-${{ hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
         restore-keys: |
+          cargo-registry-v5-
           cargo-registry-v4-
     - name: Fetch Cargo registry
       if: steps.restore.outputs.cache-hit != 'true'
@@ -37,6 +38,17 @@ runs:
           sleep "$((attempt * 10))"
           attempt="$((attempt + 1))"
         done
+
+        while IFS= read -r manifest; do
+          attempt=1
+          until cargo fetch --manifest-path "$manifest" --locked; do
+            if [ "$attempt" -ge 3 ]; then
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+            attempt="$((attempt + 1))"
+          done
+        done < <(find crates -path '*/fuzz/Cargo.toml' -type f | sort)
     - name: Save Cargo registry
       if: steps.restore.outputs.cache-hit != 'true'
       continue-on-error: true
