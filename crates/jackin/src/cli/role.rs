@@ -148,11 +148,28 @@ pub enum RoleCommand {
     /// Print the published Docker image declared in the role manifest
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     PublishedImage(RoleRepoPathArgs),
+    /// Print the published Docker image repository without tag or digest
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    PublishedImageRepository(RoleRepoPathArgs),
+    /// Print Docker labels for publishing the role image
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    PublishLabels(RolePublishLabelsArgs),
 }
 
 /// Role repository path argument shared by `validate` and `migrate`.
 #[derive(Debug, Args, PartialEq, Eq)]
 pub struct RoleRepoPathArgs {
+    /// Role repository path. Defaults to the current directory.
+    #[arg(value_name = "ROLE_REPO_PATH")]
+    pub path: Option<PathBuf>,
+}
+
+/// Arguments for `jackin role publish-labels`.
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct RolePublishLabelsArgs {
+    /// Git commit SHA for the role repository image being published.
+    #[arg(long)]
+    pub role_git_sha: String,
     /// Role repository path. Defaults to the current directory.
     #[arg(value_name = "ROLE_REPO_PATH")]
     pub path: Option<PathBuf>,
