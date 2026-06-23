@@ -497,7 +497,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust cargo-nextest sccache shellfirm"
+          install_args: "rust sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -555,7 +555,12 @@ jobs:
     name: construct E2E image (${{ matrix.config.lane }})
     env:
       BUILDX_BUILDER: jackin-construct
+      CARGO_NET_OFFLINE: "true"
+      CARGO_TERM_COLOR: always
       LOCAL_REGISTRY_IMAGE: projectjackin/construct
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       # When docker/construct/** changes, the published construct:trixie image
@@ -585,7 +590,7 @@ jobs:
           shared-key: construct-e2e-image-${{ matrix.config.lane }}-workspace-v2
           cache-all-crates: "true"
           cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
       - name: Set up Docker Buildx for E2E cache
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
         with:
@@ -600,7 +605,7 @@ jobs:
           CACHE_TO: type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }},mode=max
         run: |
           set -euo pipefail
-          mise run --no-deps construct-build-platform amd64
+          cargo xtask construct build-platform amd64
           docker save --output construct-trixie.tar projectjackin/construct:trixie
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
