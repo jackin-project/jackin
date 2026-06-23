@@ -44,7 +44,8 @@ pub(super) const LABEL_IMAGE_CONSTRUCT: &str = "jackin.construct.image";
 /// launch time: a mismatch against the Dockerfile's pinned version means the
 /// published image pre-dates a Renovate bump; jackin falls back to workspace
 /// mode so the role's workspace Dockerfile — carrying the new pin — is used.
-pub(super) const LABEL_IMAGE_CONSTRUCT_VERSION: &str = "jackin.construct.version";
+pub(super) const LABEL_IMAGE_CONSTRUCT_VERSION: &str =
+    jackin_manifest::LABEL_PUBLISHED_IMAGE_CONSTRUCT_VERSION;
 
 /// Container label key storing the role container name. Applied to `DinD`
 /// sidecars and managed networks so GC can map them back to their role.
@@ -62,7 +63,8 @@ pub(super) const LABEL_IMAGE_KEY: &str = "jackin.image";
 /// the cached role repo the image is current and the workspace rebuild is
 /// skipped. Falls through to the construct-version check when this label is
 /// absent (images predating this feature).
-pub(super) const LABEL_IMAGE_ROLE_GIT_SHA: &str = "jackin.role.git.sha";
+pub(super) const LABEL_IMAGE_ROLE_GIT_SHA: &str =
+    jackin_manifest::LABEL_PUBLISHED_IMAGE_ROLE_GIT_SHA;
 
 /// Image label key recording the complete launch-time recipe hash for the
 /// derived image. This is the fast-path authority: when the local image's hash

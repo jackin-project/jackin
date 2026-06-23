@@ -31,6 +31,29 @@ pub const CONSTRUCT_PINNED_TAG: &str = "0.1-trixie";
 /// Canonical `FROM` line used in generated Dockerfiles and test harness fixtures.
 pub const BASE_DOCKERFILE_FROM: &str = "FROM projectjackin/construct:0.1-trixie\n";
 
+/// Published role-image label storing the construct tag from the role Dockerfile.
+pub const LABEL_PUBLISHED_IMAGE_CONSTRUCT_VERSION: &str = "jackin.construct.version";
+/// Published role-image label storing the role repository commit SHA.
+pub const LABEL_PUBLISHED_IMAGE_ROLE_GIT_SHA: &str = "jackin.role.git.sha";
+
+pub fn published_image_labels(construct_version: &str, role_git_sha: &str) -> [String; 2] {
+    [
+        format!("{LABEL_PUBLISHED_IMAGE_CONSTRUCT_VERSION}={construct_version}"),
+        format!("{LABEL_PUBLISHED_IMAGE_ROLE_GIT_SHA}={role_git_sha}"),
+    ]
+}
+
+pub fn published_image_repository(published_image: &str) -> &str {
+    let without_digest = published_image
+        .split_once('@')
+        .map_or(published_image, |(base, _)| base);
+    let last_slash = without_digest.rfind('/').unwrap_or(0);
+    match without_digest.rfind(':') {
+        Some(colon) if colon > last_slash => &without_digest[..colon],
+        _ => without_digest,
+    }
+}
+
 pub fn construct_image() -> String {
     std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_else(|_| CONSTRUCT_IMAGE.to_owned())
 }
@@ -47,7 +70,7 @@ pub struct ValidatedDockerfile {
     pub final_stage_image: String,
     pub final_stage_alias: Option<String>,
     /// Tag component of `final_stage_image` with any digest pin stripped
-    /// (e.g. `0.1-trixie`). Compared against the `jackin.construct_version`
+    /// (e.g. `0.1-trixie`). Compared against the `jackin.construct.version`
     /// label on the published image to detect staleness at launch time.
     pub construct_version: String,
 }

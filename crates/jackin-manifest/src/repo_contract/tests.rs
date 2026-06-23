@@ -120,3 +120,26 @@ FROM ${BASE}
             .contains("literal FROM projectjackin/construct:trixie")
     );
 }
+
+#[test]
+fn published_image_labels_use_canonical_keys() {
+    assert_eq!(
+        published_image_labels("0.14-trixie", "abcdef123456"),
+        [
+            "jackin.construct.version=0.14-trixie".to_owned(),
+            "jackin.role.git.sha=abcdef123456".to_owned(),
+        ]
+    );
+}
+
+#[test]
+fn published_image_repository_strips_tag_without_stripping_registry_port() {
+    assert_eq!(
+        published_image_repository("localhost:5000/projectjackin/example:latest"),
+        "localhost:5000/projectjackin/example"
+    );
+    assert_eq!(
+        published_image_repository("docker.io/projectjackin/example@sha256:abc123"),
+        "docker.io/projectjackin/example"
+    );
+}
