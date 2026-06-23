@@ -2838,16 +2838,17 @@ plugins = []
 }
 
 #[tokio::test]
-async fn load_agent_restamps_fresh_published_image_into_local_base() {
-    // A fresh published image is pulled and restamped into the local
-    // jk_<role>__base (a `FROM <published>` build), then the overlay derives FROM
-    // that local base — the overlay never depends on the mutable published tag.
+async fn load_agent_tags_fresh_published_image_as_local_base() {
+    // A fresh published image is pulled, verified by Docker image labels, and
+    // tagged into the local jk_<role>__base name. The overlay derives FROM that
+    // local base without running a restamp Docker build.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    let mut runner = FakeRunner::for_load_agent([String::new()]);
+    let role_sha = "21a9002";
+    let mut runner = FakeRunner::for_load_agent([role_sha.to_owned()]);
 
     let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
     std::fs::create_dir_all(&repo_dir).unwrap();
@@ -2869,6 +2870,19 @@ plugins = []
     .unwrap();
 
     let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker.inspect_image_labels_queue.borrow_mut().push_back(
+        [
+            (
+                crate::runtime::naming::LABEL_IMAGE_ROLE_GIT_SHA.to_owned(),
+                role_sha.to_owned(),
+            ),
+            (
+                crate::runtime::naming::LABEL_IMAGE_CONSTRUCT_VERSION.to_owned(),
+                "0.1-trixie".to_owned(),
+            ),
+        ]
+        .into(),
+    );
     load_role(
         &paths,
         &mut config,
@@ -2881,15 +2895,22 @@ plugins = []
     .await
     .unwrap();
 
-    // The base build restamps the published image (pulled) into jk_<role>__base.
-    let base_build = runner
+    // The base is a local tag of the already verified published image.
+    let base_tag = runner
         .recorded
         .iter()
-        .find(|c| c.contains("docker build ") && c.contains("BaseDockerfile"))
-        .expect("fresh published image must be restamped into a local base");
+        .find(|c| c.contains("docker tag docker.io/myorg/my-role:latest jk_agent-smith__base"))
+        .expect("fresh published image must be tagged into a local base");
     assert!(
-        base_build.contains("-t jk_agent-smith__base") && base_build.contains("--pull"),
-        "base restamp must tag jk_<role>__base and pull the published image; got: {base_build}"
+        base_tag.ends_with(&format!(":{role_sha}")),
+        "base tag must use the role SHA; got: {base_tag}"
+    );
+    assert!(
+        !runner
+            .recorded
+            .iter()
+            .any(|c| c.contains("docker build ") && c.contains("BaseDockerfile")),
+        "fresh published images must not be restamped through a Docker build"
     );
     // The overlay derives FROM that local base, not the published image.
     assert!(
@@ -4571,7 +4592,8 @@ async fn load_agent_passes_pull_flag_with_published_image() {
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    let mut runner = FakeRunner::for_load_agent([String::new()]);
+    let role_sha = "21a9002";
+    let mut runner = FakeRunner::for_load_agent([role_sha.to_owned()]);
 
     let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
     std::fs::create_dir_all(&repo_dir).unwrap();
@@ -4593,6 +4615,13 @@ plugins = []
     .unwrap();
 
     let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(HashMap::from([(
+            crate::runtime::naming::LABEL_IMAGE_ROLE_GIT_SHA.to_owned(),
+            role_sha.to_owned(),
+        )]));
     load_role(
         &paths,
         &mut config,
@@ -4605,33 +4634,41 @@ plugins = []
     .await
     .unwrap();
 
-    let build_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains("docker build "))
-        .unwrap();
     assert!(
-        build_cmd.contains("--pull"),
-        "pre-built image mode must pass --pull to check for registry updates"
+        docker
+            .recorded
+            .borrow()
+            .iter()
+            .any(|call| call == "docker pull docker.io/myorg/my-role:latest"),
+        "pre-built image mode must pull to check for registry updates"
     );
-    // Derived image must carry the construct image label.
     assert!(
-        build_cmd.contains("jackin.construct.image=projectjackin/construct:trixie"),
-        "build must label the construct image used; got: {build_cmd}"
+        runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("docker tag docker.io/myorg/my-role:latest")),
+        "fresh published image must be tagged as the local base"
+    );
+    assert!(
+        runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("docker build ") && call.contains("DerivedDockerfile")),
+        "derived overlay build must still run"
     );
 }
 
 #[tokio::test]
 async fn load_agent_uses_prebuilt_when_construct_version_matches() {
-    // When the published image's jackin.construct.version label matches the
-    // Dockerfile's pinned tag, the pre-built image is used (no staleness).
+    // When the published image's jackin.role.git.sha label matches the role
+    // checkout, the pre-built image is used.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    // Capture queue (after preamble): [label value for CONSTRUCT_VERSION]
-    let mut runner = FakeRunner::for_load_agent(["0.1-trixie".to_owned()]);
+    let role_sha = "21a9002";
+    let mut runner = FakeRunner::for_load_agent([role_sha.to_owned()]);
 
     let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
     std::fs::create_dir_all(&repo_dir).unwrap();
@@ -4653,6 +4690,19 @@ plugins = []
     .unwrap();
 
     let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(HashMap::from([
+            (
+                crate::runtime::naming::LABEL_IMAGE_ROLE_GIT_SHA.to_owned(),
+                role_sha.to_owned(),
+            ),
+            (
+                crate::runtime::naming::LABEL_IMAGE_CONSTRUCT_VERSION.to_owned(),
+                "0.1-trixie".to_owned(),
+            ),
+        ]));
     load_role(
         &paths,
         &mut config,
@@ -4665,28 +4715,27 @@ plugins = []
     .await
     .unwrap();
 
-    let build_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains("docker build "))
-        .unwrap();
     assert!(
-        build_cmd.contains("--pull"),
-        "pre-built mode must pass --pull; got: {build_cmd}"
+        runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("docker tag docker.io/myorg/my-role:latest")),
+        "pre-built mode must tag the verified image as the local base; got: {:?}",
+        runner.recorded
     );
 }
 
 #[tokio::test]
-async fn load_agent_falls_back_to_workspace_when_construct_version_stale() {
-    // When the published image's jackin.construct.version label differs from
-    // the Dockerfile's pinned tag, jackin falls back to workspace mode.
+async fn load_agent_falls_back_to_workspace_when_role_sha_label_missing() {
+    // When the published image cannot prove it was built for the current role
+    // SHA, jackin falls back to workspace mode.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    // The published image pre-dates the Renovate bump: it carries 0.0-trixie
-    // but the Dockerfile now pins 0.1-trixie, triggering workspace fallback.
+    // The published image does not carry the current role SHA, triggering
+    // workspace fallback.
     let mut runner = FakeRunner::for_load_agent(["abc123".to_owned()]);
 
     let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -4712,10 +4761,7 @@ plugins = []
     docker
         .inspect_image_labels_queue
         .borrow_mut()
-        .push_back(HashMap::from([(
-            crate::runtime::naming::LABEL_IMAGE_CONSTRUCT_VERSION.to_owned(),
-            "0.0-trixie".to_owned(),
-        )]));
+        .push_back(HashMap::new());
     load_role(
         &paths,
         &mut config,
@@ -4746,18 +4792,16 @@ plugins = []
 }
 
 #[tokio::test]
-async fn load_agent_uses_prebuilt_when_construct_version_label_absent() {
-    // Backward-compatibility guarantee: published images built before the
-    // jackin.construct.version label was introduced have no label. jackin
-    // must treat the absent label as "not stale" so those images keep
-    // working without forcing a full workspace rebuild on every launch.
+async fn load_agent_uses_prebuilt_when_role_sha_matches_without_construct_version() {
+    // The role SHA label is authoritative for current published images. A
+    // matching SHA is enough even when construct-version is absent.
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
-    // Empty inspect_image_labels queue → no construct label → no mismatch.
-    let mut runner = FakeRunner::for_load_agent([String::new()]);
+    let role_sha = "21a9002";
+    let mut runner = FakeRunner::for_load_agent([role_sha.to_owned()]);
 
     let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
     std::fs::create_dir_all(&repo_dir).unwrap();
@@ -4779,6 +4823,13 @@ plugins = []
     .unwrap();
 
     let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(HashMap::from([(
+            crate::runtime::naming::LABEL_IMAGE_ROLE_GIT_SHA.to_owned(),
+            role_sha.to_owned(),
+        )]));
     load_role(
         &paths,
         &mut config,
@@ -4791,15 +4842,12 @@ plugins = []
     .await
     .unwrap();
 
-    let build_cmd = runner
-        .recorded
-        .iter()
-        .find(|call| call.contains("docker build "))
-        .unwrap();
-    // Prebuilt mode: --pull is passed to pick up a refreshed published image.
     assert!(
-        build_cmd.contains("--pull"),
-        "prebuilt mode must pass --pull; got: {build_cmd}"
+        runner
+            .recorded
+            .iter()
+            .any(|call| call.contains("docker tag docker.io/myorg/my-role:latest")),
+        "prebuilt mode must tag the verified image as the local base"
     );
     // In prebuilt mode rebuild=false, so the construct-mismatch guard calls
     // inspect_image_labels on the derived image (bollard). Workspace-rebuild mode skips it.
