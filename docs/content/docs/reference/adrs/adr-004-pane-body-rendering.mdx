@@ -1,0 +1,62 @@
+---
+title: "ADR-004: Capsule pane-body rendering mechanism"
+---
+
+**Status**: Accepted  
+**Current state**: every pane body renders through `PaneBodyWidget` into the Ratatui buffer; the direct `GridPatch` encoder this ADR originally shipped alongside was retired by [ADR-005](/reference/adrs/adr-005-capsule-single-render-path) when the capsule moved to a single render path.
+**Date**: 2026-05-30  
+**Deciders**: Operator + agent
+
+## Context
+
+The capsule multiplexer originally rendered in-container terminal sessions (pane bodies) using a hand-rolled ANSI diff path (`PaneBodyCache`). As part of the TUI architecture roadmap, the capsule moved chrome and pane bodies through Ratatui via a custom `SocketBackend`. The pane-body rendering decision was: how should terminal cell content be rendered into a Ratatui `Buffer`?
+
+Two approaches were evaluated:
+
+### Option A: tui-term
+
+The [`tui-term`](https://docs.rs/tui-term/) crate provides a `PseudoTerminal` widget that renders a terminal screen into a Ratatui `Buffer`.
+
+**Incompatibility discovered during evaluation**: tui-term 0.3.4 implements its screen trait for third-party terminal models, but jackin' now owns its terminal model and needs typed passthrough events, dirty patches, and capsule-specific geometry. Using tui-term would add a widget adapter without removing the need for jackin-term.
+
+Both paths add friction and maintenance burden with no current timeline.
+
+### Option B: Custom cell widget
+
+A thin `Widget` impl that blits jackin-term cells directly into the Ratatui `Buffer`. No third-party dependency beyond Ratatui itself. Fully compatible with `GridSnapshot` and `GridView`, using the same internal color/style conversion the socket backend already handles.
+
+## Decision
+
+**Choose Option B (custom cell widget).**
+
+The tui-term incompatibility is a blocking constraint, not a preference. Option B delivered the first end state: pane bodies rendered inside the Ratatui `Buffer`, enabling `Buffer::diff` to handle the screen diff, with less dependency risk and no upstream coordination requirement. ADR-005 later made this widget the only pane-body emit path by deleting the focused live dirty-patch encoder.
+
+## Benchmark evidence
+
+The benchmark at <RepoFile path="crates/jackin-capsule/benches/pane_body.rs">crates/jackin-capsule/benches/pane_body.rs</RepoFile> compared the custom widget approach against the existing raw-ANSI baseline at 200 × 50 columns/rows (a representative full-screen pane):
+
+| Approach | Mean time (µs) | Throughput (Melem/s) |
+|---|---|---|
+| Custom widget (Ratatui) | 378 µs | 26.4 Melems/s |
+| Raw-ANSI baseline (current) | 118 µs | 85.1 Melems/s |
+
+The custom widget is ~3× slower than the raw-ANSI baseline. This overhead is acceptable because:
+
+1. **Ratatui's Buffer::diff eliminates redundant terminal writes**: the raw-ANSI baseline sends every changed character as a cursor-positioned escape sequence on every diff frame, while Ratatui tracks which cells changed between frames and only emits minimal output. At steady state (no changes), the Ratatui path emits nothing; the raw-ANSI path still scans the whole screen.
+
+2. **378 µs is well inside the 60 Hz budget**: the capsule targets a 16.7 ms frame budget. Even if pane rendering dominates, 378 µs leaves >97% of the frame budget for chrome, dialog, and I/O.
+
+3. **The benchmark covers a full 200 × 50 render**: real pane bodies are dirtier on input events and clean on idle; the amortized cost per operator keystroke is much lower than the per-frame number suggests.
+
+## Consequences
+
+- `PaneBodyWidget` is the custom cell widget for pane bodies in every composed frame, including live output, scrollback views, dialogs, and selection overlays.
+- Dirty rows remain on `DamageGrid` as an invalidation and observation mechanism, not as a direct client emit path.
+- The old `PaneBodyCache` row-diff ownership is retired; any remaining cache naming is metadata-only, not a second terminal model.
+- tui-term is not a dependency. Revisit only if it supports jackin-term's owned model without losing typed passthrough semantics or the single-render-path invariant.
+
+## Run the benchmark
+
+```sh
+cargo bench -p jackin-capsule --bench pane_body
+```

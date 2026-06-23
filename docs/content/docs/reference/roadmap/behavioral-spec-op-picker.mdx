@@ -2,13 +2,13 @@
 title: "Behavioral spec: op_picker"
 ---
 
-**Status**: Open — Phase 1, no confirmation needed
+**Status**: Partially implemented — spec published (2026-06-02); next step is linking from the `op_picker/mod.rs` `//!` doc to the spec URL
 
 ## Problem
 
-<RepoFile path="src/console/widgets/op_picker/mod.rs" /> is now **~3,300 lines** total (was ~1,712L at the original analysis). It has a `//!` doc but no INV-format invariant contract. The 4-level drill-down state machine has subtle invariants around the `op://` reference format, the absence of secret values in the picker path, and the collapsible-section navigation layer added to the field stage.
+`src/console/tui/op_picker/` is now split across root-console adapter files for state, input, load execution, and root commit selection, while the surface-local render/state-plan component lives in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs">crates/jackin-console/src/tui/components/op_picker.rs</RepoFile>. The old single-file analysis was ~1,712 lines; the current split still lacks an INV-format invariant contract. The 4-level drill-down state machine has subtle invariants around the `op://` reference format, the absence of secret values in the picker path, and the collapsible-section navigation layer added to the field stage.
 
-The render counterpart <RepoFile path="src/console/widgets/op_picker/render.rs" /> is **~830 lines** (separate file).
+The renderer now lives with the surface-local op-picker component in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs">crates/jackin-console/src/tui/components/op_picker.rs</RepoFile>; the root `OpPickerState` implements that crate-owned render trait.
 
 ## Key invariants
 
@@ -25,15 +25,12 @@ The render counterpart <RepoFile path="src/console/widgets/op_picker/render.rs" 
 
 The field stage has an extra navigation layer: fields belonging to named 1Password sections (detected from `OpField::reference` using `parse_op_reference`) are grouped under collapsible `SectionHeader` rows. Unsectioned fields render first. Navigation (Up/Down), collapse (Left), and expand (Right/Enter-on-header) all operate on the full display-row list, not the underlying field slice.
 
-## Steps
+## Status
 
-1. Create `docs/content/docs/internal/specs/op-picker.mdx` (once Developer Reference setup exists).
-2. Use INV-N template for the invariants above.
-3. Add sidebar entry under Developer Reference → Specs.
-4. Link from the `op_picker/mod.rs` `//!` doc to the spec URL once the internal docs section exists.
+**Spec published** — see [op_picker Behavioral Spec](/internal/specs/op-picker/).
 
 ## Related files
 
-- <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — ~3,300 lines (state machine + loader + key handler + `build_field_display_rows`)
-- <RepoFile path="src/console/widgets/op_picker/render.rs" /> — ~830 lines (render logic including collapsible section headers)
-- <RepoFile path="src/operator_env.rs" /> — uses `RawOpField`; exhaustive destructure test; `parse_op_reference` used by `build_field_display_rows`
+- `src/console/tui/op_picker/` — root-console adapter for state, loader, key handler, and root commit selection
+- <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs">crates/jackin-console/src/tui/components/op_picker.rs</RepoFile> — surface-local op-picker render/state-plan helpers including collapsible section headers
+- <RepoFile path="crates/jackin-env/src/resolve.rs">crates/jackin-env/src/resolve.rs</RepoFile> — uses `RawOpField`; exhaustive destructure test; `parse_op_reference` used by `build_field_display_rows`

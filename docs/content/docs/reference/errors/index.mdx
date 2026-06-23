@@ -1,0 +1,29 @@
+---
+title: Error Reference
+description: Stable error codes for jackin' operator-visible failures
+---
+
+jackin' uses stable error codes (`E001`–`E016`) for the most common operator-visible failures. When jackin' encounters one of these failures, it prints a structured error block with the code, a one-line headline, and a remediation hint. Pass `--debug` to see the full internal error chain alongside the structured block.
+
+## Error codes
+
+| Code | Headline |
+|------|---------|
+| [E001](/reference/errors/E001/) | Docker daemon not reachable |
+| [E002](/reference/errors/E002/) | Docker version too old |
+| [E003](/reference/errors/E003/) | Out of disk space for image build |
+| [E004](/reference/errors/E004/) | Role manifest invalid |
+| [E005](/reference/errors/E005/) | Role manifest version unsupported |
+| [E006](/reference/errors/E006/) | Role source not trusted |
+| [E007](/reference/errors/E007/) | Workspace not found |
+| [E008](/reference/errors/E008/) | Workspace config version unsupported |
+| [E009](/reference/errors/E009/) | Container name conflict |
+| [E010](/reference/errors/E010/) | DinD sidecar failed health check |
+| [E011](/reference/errors/E011/) | Port conflict on DinD TLS port |
+| [E012](/reference/errors/E012/) | GitHub CLI authentication failed |
+| [E013](/reference/errors/E013/) | 1Password CLI not signed in |
+| [E014](/reference/errors/E014/) | Capsule binary download failed |
+| [E015](/reference/errors/E015/) | Worktree materialization conflict |
+| [E016](/reference/errors/E016/) | Unsupported OTLP protocol |
+
+Run `jackin doctor` to surface potential issues before they become errors.

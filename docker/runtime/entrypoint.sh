@@ -45,6 +45,16 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     ;;
   codex)
     LAUNCH=(codex --enable goals --dangerously-bypass-approvals-and-sandbox)
+    if [ -n "${JACKIN_CODEX_PROFILE:-}" ]; then
+        LAUNCH+=(--profile "$JACKIN_CODEX_PROFILE")
+        # Activate the provider's model catalog (real metadata + context window)
+        # if runtime-setup wrote one. Passed as -c, not a profile-file key: a
+        # profile-file model_catalog_json trips a Codex config-parse bug.
+        catalog="$HOME/.codex/${JACKIN_CODEX_PROFILE}.models.json"
+        if [ -f "$catalog" ]; then
+            LAUNCH+=(-c "model_catalog_json=$catalog")
+        fi
+    fi
     if [ "$#" -gt 0 ]; then
         LAUNCH+=("$@")
     fi
@@ -64,6 +74,17 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     export OPENCODE_CONFIG_CONTENT='{"permission":"allow"}'
     LAUNCH=(opencode)
     if [ $# -gt 0 ]; then
+        LAUNCH+=("$@")
+    fi
+    ;;
+  grok)
+    # --always-approve auto-approves edits/tools (like --dangerously-*-*
+    # for Claude/Amp/Kimi/etc.).
+    # Role manifest model (if any) is passed via -m/--model in the
+    # appended "$@" (from agent_model_args).
+    # Other flags (plan mode etc.) can come via hooks or extra args.
+    LAUNCH=(grok --always-approve)
+    if [ "$#" -gt 0 ]; then
         LAUNCH+=("$@")
     fi
     ;;

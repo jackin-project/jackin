@@ -1,0 +1,23 @@
+//! Mount isolation: `MountIsolation` enum and the sub-modules that implement
+//! the three isolation strategies.
+//!
+//! * `Shared` — read-write bind mount of the host path; no git operations.
+//! * `Worktree` — git-worktree clone of the host repo, finalized post-attach.
+//! * `Clone` — full directory copy, finalized post-attach.
+//!
+//! Sub-modules: `materialize` (produces bind specs from `WorkspaceConfig`),
+//! `finalize` (post-attach preserve-vs-clean policy), `cleanup` (forced
+//! removal), `state` (`IsolationRecord` persistence), `branch` (worktree
+//! branch naming).
+
+pub mod branch;
+pub mod cleanup;
+pub mod finalize;
+pub mod materialize;
+pub mod state;
+
+pub use jackin_core::MountIsolation;
+pub use jackin_core::ParseMountIsolationError;
+
+#[cfg(test)]
+mod tests;

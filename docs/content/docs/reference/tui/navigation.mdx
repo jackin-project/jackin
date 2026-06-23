@@ -1,0 +1,376 @@
+---
+title: "Navigation & Input"
+description: "Key binding roles, W3C Tabs pattern, navigation hints, focusability rules, hover-scroll semantics, and debug output constraints."
+---
+
+## Navigation conventions
+
+jackin' TUI follows the **W3C ARIA Tabs interaction pattern** for all tabbed interfaces and the corresponding area-scoped arrow-key model everywhere else.
+
+### Key roles
+
+**Tab / BackTab** are the designated cross-area navigation keys. They move focus between logical areas: from the field area to the button row, back from the button row to the field area, and between a tab list and its tab panel (content area). Tab always moves forward in the cycle; BackTab always moves backward.
+
+**Left / Right** are intra-area horizontal keys. They move focus within the current horizontal group (e.g. between buttons in a button row, or between tabs when the tab list has focus). They must never jump between distinct areas.
+
+**Up / Down (and j / k aliases)** are intra-area vertical keys. They move focus within the current vertical field group. They must never cross the boundary from a field area into the button area or vice versa.
+
+**PageUp / PageDown** are page-scrolling keys for long list-like modals that expose them, currently the File Browser. They move the selected row by the visible listing height, use the same selection-follow math as rendering, and saturate at the first or last row instead of wrapping. A modal that accepts PageUp/PageDown must advertise them in the footer hints.
+
+### W3C Tabs pattern (required for all tabbed interfaces)
+
+All tabbed surfaces (workspace editor, settings) must implement the W3C tablist/tabpanel pattern:
+
+1. **Tab list** (the row of tab labels) is its own focus area:
+   - `←` / `→` cycle between tabs.
+   - `Tab` or `↓` moves focus into the first block inside the tab panel (content area).
+   - The active tab is visually distinguished even without tab-list focus; when the tab list IS focused, an additional highlight (e.g. bold or underline) makes this clear.
+
+2. **Tab panel** (the content below the tabs) may contain one or more blocks:
+   - `↑` / `↓` navigate within the focused block.
+   - `Tab` advances to the next block within the panel; after the last block `Tab` cycles back to the tab list.
+   - `BackTab` / `Esc` returns focus to the tab list.
+
+3. Entry into a tabbed stage (opening Settings, opening the workspace editor) must start with **tab-list focus** — the operator sees the tab labels highlighted and uses `←` / `→` to pick a tab before `Tab` / `↓` drops them into the content.
+
+This rule applies to every tabbed surface that ships; add a `tab_bar_focused: bool` field to the relevant state struct and update input dispatch and rendering accordingly whenever a new tabbed surface is added.
+
+### Other area-boundary rules
+
+- Down from the last field in a form's field area is a no-op. Tab is the key that crosses into the button area.
+- Up from the first button in the button area is a no-op. BackTab is the key that crosses back into the field area.
+
+**Exception — tree header expand/collapse:** Right = expand and Left = collapse on tree-style header rows (Secrets AgentHeader, Auth RoleHeader, Environments RoleHeader, and workspace manager list rows) is a correct intra-area semantic action. This absorption pattern is intentional and must be preserved.
+
+For the workspace manager list specifically, `←`/`→` use the selected row's own action first, then fall back to horizontal scrolling:
+
+1. If the selected row can perform the pressed tree action, `→` expands it or `←` collapses it. `←` on an instance child row collapses the parent workspace and moves the cursor to that parent row.
+2. Otherwise, if the focused sidebar list overflows horizontally, `←`/`→` scroll that list left or right.
+3. Otherwise, the key is a no-op.
+
+The `h`/`l` bindings remain horizontal-scroll aliases; they do not expand or collapse tree rows.
+
+**Exception — flat button-strip widgets:** Self-contained single-row button widgets (`confirm.rs`, `save_discard.rs`, `mount_dst_choice.rs`, `source_picker.rs`, `scope_picker.rs`) may treat Left / Right as BackTab / Tab equivalents. The entire widget is a single flat area with no area boundary to cross, so there is no violation.
+
+### Navigation hints (exhaustive — no hidden keys)
+
+**Every keyboard shortcut that is active on the current screen must appear in the footer hint bar. No key may be silently available — users must never have to guess.** The hint bar updates whenever the focused area or row context changes.
+
+Rules:
+- `↑/↓ navigate` must appear whenever a list, table, or form with multiple rows is active. It is a global footer item, not a conditional one.
+- Every action key (`Enter`, `Space`, `D`, `A`, `R`, `N`, `1`, `2`, `3`, `O`, `P`, `M`, etc.) that is live on the current row must be shown alongside its one-word description.
+- When a key applies only under certain conditions (e.g. `O open in GitHub` only for GitHub-origin mounts), show it only when the condition holds — but never suppress a key that is unconditionally active.
+- `Tab switch tab`, `S save`, and `Esc back/discard` are always shown in the global footer.
+- Keep each hint concise: one symbol or key name, one word label. Use `·` separators between hints.
+
+### Long-running work must be visible while it is happening
+
+Any TUI action that can take noticeable time, waits on I/O, talks to Docker, touches git/network state, waits on a background worker, or otherwise keeps the operator from immediately seeing the result **must show an in-surface progress or status state for the whole wait**. A static unchanged screen after an operator commits an action is a bug: it makes the interface feel stuck even when work is happening correctly.
+
+This rule is the TUI version of visibility of system status. Nielsen Norman Group's [visibility-of-system-status heuristic](https://www.nngroup.com/articles/visibility-system-status/) says systems should keep people informed through timely feedback, and specifically calls out progress indicators for work that needs longer to finish. Material's [progress-indicator guidance](https://material-web.dev/components/progress/) defines progress indicators as the component that informs users about ongoing processes such as loading or submitting work. jackin' applies that guidance to terminal UI: the operator must be able to glance at the screen and answer "what is happening now?"
+
+Required implementation shape:
+
+1. **Foreground waits get a foreground status surface.** If the action blocks the current flow, show a modal/status popup, launch cockpit, progress rail, spinner, or equivalent visual state. The role editor's `Loading role` popup and the launch cockpit are the exemplars: the operator sees the action has started, the UI remains alive, and completion transitions to the next decision or error surface.
+2. **Background work still needs a visible owner.** If a worker thread, async task, Docker command, git clone, cache refresh, token mint, or diagnostics-producing command is running because of an operator action, the screen that accepted the action owns the loading state until the worker reports success or failure. Do not leave the previous input modal, list row, or unchanged editor frame on screen while the work happens.
+3. **Use determinate progress when it is real, otherwise use indeterminate status.** A stage rail, percent, or progress bar is appropriate only when the implementation has meaningful progress signals. Unknown duration uses an indeterminate spinner/status text such as `Loading role`, `Building image`, or `Minting token`; do not fake percentages.
+4. **Name the work in operator language.** The status text should say what jackin' is doing now, not expose implementation plumbing. Use `Loading role`, `Building derived image`, `Opening hardline`, or `Refreshing 1Password items`; avoid raw command names as the primary status.
+5. **Completion must transition visibly.** Success moves to the next visible state (for example a trust prompt, updated row, opened session, or saved confirmation). Failure moves to the shared red error surface with the same diagnostics/error detail rules as the rest of the TUI. A worker result must never silently close the screen or leave the operator guessing whether anything changed.
+6. **Motion is optional; status is not.** `JACKIN_NO_MOTION=1` and low-capability renderers may freeze animation or replace a spinner with static text, but they must keep the same explicit "work is happening" state.
+
+Review checklist: whenever a PR adds or changes a TUI action that can wait, reviewers must ask: after the operator presses the committing key or clicks the action, what visible state appears before the result? If the answer is "the screen stays the same until it finishes," the PR violates this rule.
+
+### Clickable targets must look clickable (hover + hand pointer — non-negotiable)
+
+This mirrors the web/W3C convention: on a website you know something is clickable because (1) the cursor turns into a hand pointer over it, and (2) it changes appearance on hover. Every jackin' TUI element that performs an action on click **must** expose both, plus a distinct resting style:
+
+1. **Hand pointer on hover.** When the pointer is over a clickable element, the terminal cursor must switch to the hand/pointer shape via OSC 22 (`\x1b]22;pointer\x1b\\`); it returns to the default shape (`\x1b]22;default`) when the pointer leaves. This is the single most important "you can click this" signal. Both surfaces already own the mechanism — the in-container multiplexer's `PointerShape` in <RepoFile path="crates/jackin-capsule/src/tui/app.rs">crates/jackin-capsule/src/tui/app.rs</RepoFile>, OSC 22 encoder in <RepoFile path="crates/jackin-capsule/src/tui/terminal.rs">crates/jackin-capsule/src/tui/terminal.rs</RepoFile>, and `update_pointer_shape_for_mouse` in <RepoFile path="crates/jackin-capsule/src/daemon/mouse_input.rs">crates/jackin-capsule/src/daemon/mouse_input.rs</RepoFile>, plus the console's pointer handling — so a new clickable wires into the existing hover→pointer-shape resolution rather than inventing its own.
+2. **Hover style change.** The element must visibly change while hovered — a lifted background, brighter foreground, or equivalent — modest but unmistakable, matching the website's "this is interactive" clarity without overpowering the surrounding chrome. The **gold-standard exemplar is the tab strip**: hovering a tab lifts its background (`TAB_BG_INACTIVE_HOVER` / `TAB_BG_ACTIVE_HOVER`) and the console + multiplexer share the same hit-test (`jackin_tui::lay_out_tabs` + `tab_at_column`) so hover and click stay in lock-step. Model new clickables on it.
+3. **Distinct resting style.** The element looks different from inert text even when not hovered (e.g. the blue instance-id link chip, the emphasized copy value).
+
+The visual target must be the exact value or control that will act. For copy dialogs, only the value copied by `Enter` is rendered as the emphasized clickable value; informational rows stay in the normal value color. When a footer says `Enter copy <value>`, clicking that same emphasized value must perform the same copy action and show visible feedback. Do not make a whole dialog row look actionable if only one value is copied.
+
+**A click handler without both a hover style change and an OSC 22 hand-pointer is a design-decision violation.** This applies to every surface that handles mouse input — the workspace manager, the launch cockpit (the build-log button on the loading screen is a clickable and must hover + show the hand pointer), and every in-container multiplexer dialog. Reviewers reject a new clickable that lacks either cue.
+
+This rule applies to every TUI surface: list view, workspace editor (all tabs), settings (all tabs), all modals and overlays.
+
+### Space vs Enter — W3C semantic distinction
+
+**`Space`** is the key for **toggle** semantics (on/off, checked/unchecked, trusted/untrusted, allowed/disallowed). It matches the W3C ARIA patterns for checkbox, switch, and radio group. Never bind Enter to the same action as Space on a toggle widget.
+
+**`Enter`** is the key for **action** semantics (activate a button, open a dialog, confirm a choice, navigate into detail, submit a form). It is also the key for shortcut-letter bindings (`Y` yes, `N` no, `S` save, `D` discard, etc.) on confirmation dialogs.
+
+Binding both `Space` and `Enter` to the same toggle action is a W3C violation — Space is sufficient and Enter would collide with its role as the action key. Binding both to a button widget is acceptable (W3C requires both on standard buttons), but jackin' button-strip widgets use letter shortcuts + Enter to avoid this; don't add Space to them.
+
+Summary:
+- Toggle row (keep_awake, git_pull, trusted, allowed role): `Space` only.
+- Action button (Save, Cancel, Discard, Yes, No): `Enter` only (plus letter shortcut if applicable).
+- Open/navigate (expand detail, open picker, rename): `Enter` only.
+- Cycle among options in a slot (auth mode): `Space` (radio-button pattern per W3C).
+- Re-open a picker for an already-set value (1Password op-ref, source): `Enter` (action). `P` is also supported as a shortcut where op_available is true, but `Enter` must always work.
+
+### Preview rows stay visible and inert
+
+Rows that display derived state are **preview-only**: they must remain visible, never receive the `▸` cursor, never be focusable by keyboard or mouse, and never respond to `Enter`, `D`, or any other mutating key. Demoting a row to preview-only must not hide it; hiding the row is a design-decision violation because the operator loses the explanation of the effective state.
+
+All surfaces that act on a selectable row must share one focusability predicate for that row family. Cursor movement, `Enter` dispatch, destructive-key dispatch, footer mode selection, and mouse hit-testing must all ask that predicate instead of each carrying its own row list. A row that renders as preview-only but still opens a picker, clears a value, or shows a value-edit footer is a fail.
+
+### Grouped settings edit through dialogs
+
+Grouped settings panels are preview/navigation surfaces. They show the current mode, source, folder, or other derived values, but the panel itself does not mutate those values. The group has exactly one dialog entry point: its primary row, such as an Auth **Mode** row. Pressing `Enter` there opens the edit dialog; inside the dialog, `Space` cycles enumerated values, `Enter` opens choosers, and the dialog's **Save** stages the change. Pressing `Enter` on a preview value row in the panel must be a no-op.
+
+This rule applies equally to the workspace editor and Settings screen. If a value can be edited both inline from the panel and inside its dialog, the implementation violates the grouped-edit contract.
+
+### Value-row footers name the primary action first
+
+Footer hints must lead with the focused row's primary action. A mode row leads with `␣ cycle`; a source folder row inside a dialog leads with `↵ browse`; a credential source row leads with `↵ set`. `⇥ button row` is allowed as a trailing hint, but it must never be the leading hint on a value row. A footer that advertises a mutating action for a preview-only row is a bug.
+
+### Tab strip and content are mutually exclusive focus owners
+
+When a tabbed screen's **tab bar** owns focus, its active tab shows a `PHOSPHOR_GREEN` `━` underline and no content block has a green border. When a **content block** owns focus, the active tab underline switches to `WHITE` and the content block gets the `PHOSPHOR_GREEN` border. Exactly one of (tab bar, content block) shows the green signal at a time — never both.
+
+**Implementation:** `tab_bar_focused: bool` is the single owner flag. The tab strip render calls `TabStrip::new(...).focused(tab_bar_focused)` — green when `true`, white when `false`. Content blocks derive their `PanelFocus` from `!tab_bar_focused && scroll_focused`. A tab switch (keyboard or click) that returns focus to the tab bar must clear all `scroll_focused` booleans for that screen so no content block keeps a stale green border.
+
+### `↓` and `⇥` are equivalent for entering tab content
+
+Documented under [Selection highlight / `↓`/`⇥` enter-content](#-and--are-equivalent-for-entering-tab-content) (see above).
+
+### Selection highlight is always full row width
+
+Every selectable list — workspace sidebar, pickers, file browser, settings tables, capsule dialogs, lookbook sidebar — paints the selected row's background across the **full available width**, not only across the text. The canonical example is the workspace sidebar: the selected row background fills the entire row using `highlight_style(bg(PHOSPHOR_GREEN) fg(PHOSPHOR_DARK))` on the ratatui `List` widget. The `▸ ` cursor prefix is always reserved via `highlight_spacing(HighlightSpacing::Always)` so unselected rows align.
+
+A narrow text-only highlight (background stops after the last character) is a design-decision violation. The highlight must stop before any scrollbar gutter or border-owned scrollbar cell; scrollbar cells always win over row background. Route every selectable list through the shared `SelectList` component or the same `List + highlight_style` pattern the workspace sidebar uses.
+
+### `▸` cursor appears on the selected row only when the panel has focus
+
+The `▸` prefix on the selected row is **focus-gated**: it must appear if and only if the enclosing panel currently owns focus. When the panel is unfocused, suppress the `▸` — the selected row is still indicated by its row style (bold text, or the row highlight color at reduced intensity), but the cursor glyph must not show. Displaying `▸` in an unfocused panel misleads the operator into thinking the panel is the active keyboard target.
+
+**Implementation:** compute `show_cursor = panel_focused && modal.is_none()` (or the equivalent expression for the surface) and thread it through every row-line builder. Use `highlight_spacing(HighlightSpacing::Always)` on the ratatui `List` so the blank prefix column is reserved even when `show_cursor` is false — this keeps row alignment stable across focus transitions. A `▸` visible in an unfocused panel is a design-decision violation.
+
+When a child prompt or modal is open above a selectable surface, the child owns focus. Background surfaces keep their selection state but suppress both the `▸` cursor and the bright focused border. There must be exactly one focused selectable surface per layer.
+
+### Mouse-wheel axis classification is centralized
+
+Every wheel handler — on every surface, for dialog bodies **and** main scrollable panels — maps a wheel event to a scroll axis through the one shared classifier in <RepoFile path="crates/jackin-tui/src/scroll.rs">crates/jackin-tui/src/scroll.rs</RepoFile> (`mouse_scroll_delta` / `mouse_scroll_delta_with_step`), never a local `MouseEventKind` match. The classifier treats `ScrollLeft`/`ScrollRight` as horizontal **and** `Shift`+`ScrollUp`/`ScrollDown` as horizontal, because some terminals map a horizontal trackpad swipe onto a shifted vertical wheel rather than emitting native horizontal-wheel events. A surface that matches `MouseEventKind` itself will silently drop the `Shift`+vertical case and diverge from every other surface; route the event through the shared helper and dispatch on the returned axis instead. Surfaces whose horizontal step differs from the default (the host console panels step one column) pass their own step via `mouse_scroll_delta_with_step` so they share the axis/modifier rule without inheriting the default magnitude.
+
+### Topmost modal captures wheel and touchpad scroll
+
+When a modal or child prompt is open, wheel/touchpad scroll belongs to the topmost scrollable or list-like modal under the pointer. The event must not leak into the screen behind it, even when the modal selection is already at the first or last row.
+
+List-like modals move their selected row with saturating, non-wrapping scroll semantics. Keyboard Up/Down may keep the modal's normal wrapping behavior, but wheel gestures behave like scrolling: first row stays first, last row stays last. Dialog-body scrolling routes through `DialogBodyScroll`; selectable lists route through the shared list-selection scroll helper. A new picker or File Browser host context that lets the background panel scroll while the modal is open violates this rule.
+
+### Full bottom-of-screen stack: spacer → hints → spacer → status/chip row
+
+The bottom three layers of every screen must be laid out in this exact order (top to bottom):
+
+1. **One blank spacer row** above the hints — separates body from hints.
+2. **Hint bar** — keyboard shortcuts for the current focus.
+3. **One blank spacer row** below the hints — separates hints from the status row.
+4. **Status / debug-chip row** (debug mode only; absent when `--debug` is off).
+
+**Enforcement (Defect 14 — spacer above hints):** `footer_height()` in `jackin-console` returns `hint_height + 1` (spacer + hints). `render_footer()` renders hints in the bottom `hint_height` rows and leaves the top row blank.
+
+**Enforcement (Defect 39 — spacer below hints, between hints and chip):** `split_debug_area()` in `jackin-console` allocates **2 rows** for the debug section when in debug mode (1 spacer + 1 chip row). Only the bottom row is rendered with `StatusFooter`; the top row is naturally blank. The main area shrinks by 2 rows (not 1) in debug mode, so the hint bar and the chip row are always separated by one blank row.
+
+A hint row flush against the body content with no blank row above is a design-decision violation. A chip row flush against the hint row with no blank row between them is equally a violation.
+
+### `↓` and `⇥` are equivalent for entering tab content
+
+On every tabbed screen, while the tab bar owns focus, both `⇥` (Tab) and `↓` transfer focus into the tab content block — same end state, same transition. Both keys must route through the same `FocusEditorContent` / `FocusSettingsContent` dispatch so they cannot diverge. This is the W3C Tabs pattern's "enter content" step; neither key alone is sufficient.
+
+### Hints: footer only, never inside dialogs
+
+All keyboard hint text belongs in the footer bar at the bottom of the screen. Dialogs, modals, and overlays **must not** render their own internal hint line. When a modal is open, the main footer must show the modal's available keys instead of the keys for the content behind it.
+
+Enforcement:
+- Every root-console modal widget such as `src/console/tui/op_picker/` must expose a `footer_items` function (or equivalent) and remove its internal hint row.
+- `render_editor` checks `state.modal` first; if a modal is open it calls `modal_footer_items(modal)` and skips the normal contextual items.
+- `render_settings` checks the three settings modal chains (`auth.modal`, `env.modal`, `mounts.modal`) in priority order; if any is `Some`, calls the corresponding `*_modal_footer_items` function.
+- No `Constraint::Length` row for a hint line may remain inside any widget layout.
+- A full-screen overlay that hides the footer (e.g. the build-log viewer) still renders its hint as the bottom row of the screen, outside its box — not as an internal line of the box.
+
+### Hints use one shared span vocabulary and one renderer per surface
+
+Hint rows are not hand-built. The vocabulary is the shared `HintSpan` enum in `jackin-tui` (`Key`, `Text`, `Sep`, `GroupSep`), and the styling rule is identical everywhere: `Key` is white + bold, `Text` is phosphor green (rendered with a leading space), `Sep` is a gray `" · "`, `GroupSep` is three spaces, and the row is centered. Ratatui surfaces render this through the shared `HintBar` component in <RepoFile path="crates/jackin-tui/src/components/hint_bar.rs">crates/jackin-tui/src/components/hint_bar.rs</RepoFile>; the in-container multiplexer renders dialog hints in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs">crates/jackin-capsule/src/tui/components/dialog.rs</RepoFile>. Define a screen's hint as a `&[HintSpan]` constant and pass it to the renderer; do not assemble styled `Span`s, raw separator strings, or per-surface colour choices inline. A new hand-rolled hint row (its own `Span::styled` key/label pairs, its own `" · "` literal, or its own dim/green choice) is a design-decision violation: route it through the shared span list + renderer instead. This is what lets the cockpit picker, the build-log overlay, and every capsule dialog footer read identically.
+
+#### Hint spans derive from the keymap that owns dispatch
+
+The span vocabulary is shared, but the *keys* a hint bar advertises are not free text — they derive from the `Keymap<A>` that owns dispatch for that surface, never from hand-written glyphs. `Keymap<A>` in <RepoFile path="crates/jackin-tui/src/keymap.rs">crates/jackin-tui/src/keymap.rs</RepoFile> is the single source of truth: `Keymap::dispatch(chord)` and `Keymap::hint_spans()` / `Keymap::glyph_for(action)` read from the one `&'static [KeyBinding<A>]` table, so the advertised key cannot drift from the handled key for any `Shown` or `HiddenAlias` binding. Every surface keymap follows this — the shared widgets (`CONFIRM_KEYMAP`, `TEXT_INPUT_KEYMAP`, `SELECT_LIST_KEYMAP`, `ERROR_POPUP_KEYMAP`, `SAVE_DISCARD_KEYMAP`), the console tables in <RepoFile path="crates/jackin-console/src/tui/keymap.rs">crates/jackin-console/src/tui/keymap.rs</RepoFile>, the launch tables in <RepoFile path="crates/jackin-launch/src/tui/keymap.rs">crates/jackin-launch/src/tui/keymap.rs</RepoFile>, and the capsule tables (`CAPSULE_GLOBAL_KEYMAP`, `PREFIX_COMMAND_KEYMAP`, `RESIZE_PANE_KEYMAP`, and the dialog keymaps) in <RepoFile path="crates/jackin-capsule/src/tui/keymap.rs">crates/jackin-capsule/src/tui/keymap.rs</RepoFile>. Multi-byte input the byte-level `Keymap<u8>` cannot represent is bridged by `raw_bytes_to_chord` (e.g. `KeyChord::alt_shift` for the `Alt+Shift+Arrow` CSI sequence that drives `RESIZE_PANE_KEYMAP`).
+
+A `HintSpan::Key(…)` literal may appear in a hint builder only when it represents a genuinely unregisterable input: a multi-byte CSI escape sequence, a mouse event, a combined multi-key display group (e.g. `↑↓/j/k`), a dynamic runtime value, or an inline-handled surface that has no backing keymap. Every such literal must carry an `// UNREGISTERABLE(<reason>)` comment naming the specific reason. A bare `HintSpan::Key(…)` with neither a keymap entry nor an `// UNREGISTERABLE` annotation is a design-decision violation and a merge blocker. The Debug-info dialog hint bar has exactly one builder — `debug_info_hint_spans` in <RepoFile path="crates/jackin-tui/src/components/container_info.rs">crates/jackin-tui/src/components/container_info.rs</RepoFile> — and the console modal footer (`container_info_footer_items`) delegates to it, so the console, launch cockpit, and any future surface render byte-identical hints, matching the one-shared-dialog rule in [Chrome & Surfaces](/reference/tui/chrome).
+
+### Read-only pane selection
+
+Pane terminal content is read-only. Mouse selection in a capsule pane has one action: select text and copy it to the outer clipboard. It must not add editing semantics such as cut, delete, replace, paste, or in-place modification.
+
+Selection coordinates are content coordinates, not screen coordinates. Store anchor/focus against the pane's retained scrollback content so a completed selection can survive redraws and remain highlighted when the visible viewport moves. Releasing the mouse after a non-empty drag copies the selected text and keeps the highlight visible; the release itself is not a deselect action.
+
+Copied feedback uses the shared `Toast` overlay, not the hint bar. The hint bar remains reserved for available actions in the focused area; successful copy feedback is state feedback. The toast appears near the top-right of the visible surface, stays briefly on a deterministic timer, and expires without taking focus, hiding the retained selection, or changing the footer hints.
+
+The persisted selection clears only on explicit deselect: clicking unrelated content/chrome, typing input before forwarding it to the pane, or starting a new selection. Wheel scrolling after a completed selection keeps the selected content highlighted wherever that content remains visible.
+
+Dragging beyond the top or bottom of a scrollable pane auto-scrolls in that direction and extends the selection. The drag owns that pointer event; it must not also be forwarded to the PTY as mouse input. Auto-scroll is bounded by the same scrollback limits as ordinary wheel/key scroll.
+
+
+## Debug output never reaches a rich full-screen TUI
+
+When a rich alternate-screen surface owns the terminal — the launch/loading cockpit, the workspace console, the in-container multiplexer, the PR-verify surface — `--debug` must not print a single line over it. The firehose is written **only** to the diagnostics run file under `~/.jackin/data/diagnostics/runs/<run-id>.jsonl`, and external-command output is captured (never streamed to the screen) for the duration. The screen stays the clean rich experience; the evidence lands in the file.
+
+The mechanism is the `rich_surface_active` flag plus the active diagnostics run: `emit_debug_line` / `active_debug` (<RepoFile path="crates/jackin/src/tui.rs">crates/jackin/src/tui.rs</RepoFile>, <RepoFile path="crates/jackin-diagnostics/src/run.rs">crates/jackin-diagnostics/src/run.rs</RepoFile>) route to the run file, and the command runner (<RepoFile path="crates/jackin-docker/src/shell_runner.rs">crates/jackin-docker/src/shell_runner.rs</RepoFile>) suppresses live streaming whenever `--debug` is on or a rich surface is active. Streaming child output straight to `stdout`/`stderr` while a rich surface is up is a bug; route it through the diagnostics run instead.
+
+So the operator can retrieve that file, a `--debug` invocation surfaces the **run id on the plain CLI before anything else runs** (`[jackin] debug mode — save this run id…`), identically for every command — CLI or TUI — and on an interactive terminal gates entry behind an `Enter` press so the operator saves the id before the normal flow (rich or CLI, per terminal capability) takes over. When a wrapper such as Parallax provides `parallax.run.id`, jackin adopts that id for the local run (dropping a leading `run_`); otherwise jackin mints its own bare local id (six hex characters, no prefix). The gate is always plain CLI, never a rich surface. The banner also shows the diagnostics log path for direct local inspection; the run id remains the compact handle the operator hands back so an agent can locate and read the run file. Never trade the clean rich surface for inline debug spew: before a rich surface starts, `--debug` may tee debug-tier lines to stderr; once a rich surface owns the terminal, add `cdebug!` / diagnostics sites that write to the run file, not prints to the screen.
+
+---
+
+## Focusability
+
+**A passive scroll block is focusable only when its content overflows the visible area in at least one axis (horizontal or vertical).**
+
+When a passive detail block's content fits entirely within its viewport, clicking it must not show the green border and keyboard scroll keys must not change its scroll offset. A passive block that is not scrollable in any direction has nothing to communicate with a scroll-focus highlight, so showing one is actively misleading — the green border tells the operator "you can scroll here" and the operator will try, get no response, and lose trust in the UI.
+
+This does **not** apply to active interaction containers such as dialogs, pickers, forms, tab panels, and button groups. Those containers are focusable because they own keyboard interaction; they use the bright green focus-visible border even when their content fits.
+
+### Why this matters
+
+For passive detail blocks, the green border is the affordance for scroll. Operators use it as a signal: click to focus, then use H/L/Up/Down/scroll-wheel to navigate content that doesn't fit. If a passive block highlights green but has no overflow, the signal is a lie. Every interaction after that — pressing scroll keys, watching nothing happen — erodes trust in the UI conventions.
+
+### Implementation
+
+`render_scrollable_block` enforces the passive-scroll rule automatically: it computes `content_width`, `content_height`, `viewport_w`, and `viewport_h` from the lines it is about to render, checks `is_scrollable(content_width, viewport_w) || is_scrollable(content_height, viewport_h)`, and ignores the `focused` flag when the result is false. Callers pass `focused = true` or `false` from their state; the renderer suppresses the green border if the content currently fits.
+
+This means the rule is **impossible to accidentally violate** through the shared renderer. What callers must still ensure:
+
+1. **Mouse click handler (`update_scroll_focus`)** — set the `focused` / `scroll_focused` state field for any block whose hit-test rect contains the click, **regardless of whether the block is currently scrollable**. The renderer already suppresses the green border when content fits; the state field only needs to be accurate for keyboard scroll dispatch (if the block isn't scrollable, scroll keys are no-ops anyway). Do NOT add `is_scrollable` guards in the click handler — that causes a different bug where clicking a non-scrollable block silently clears focus from the previously focused block without giving it to the clicked one.
+
+2. **Resize guard** — when the terminal shrinks and content that previously overflowed now fits, `list_scroll_focus` (list view) is cleared by `focused_block_still_scrollable`. Similar guards must exist for any persistent focus state that a terminal resize can invalidate.
+
+Both checks must use the **same content height and width values** as `render_scrollable_block` uses for the actual rendered lines. Any mismatch causes the bug where the input handler clamps scroll to the wrong maximum — the scrollbar thumb stops short of the track end even though the operator has not reached the actual content limit.
+
+**Derive content extents from the rendered lines, never from a parallel column-sum.** A block's `content_width` must be `jackin_tui::components::scrollable_panel::max_line_width(&lines)` over the exact `Vec<Line>` the block renders, and its `content_height` must be that line count. Build the lines once in a pure function (e.g. `mount_display::workspace_mount_block_lines`) and feed the *same* function to both `render_scrollable_block_at` and the scroll-clamp width. Do not re-derive width by summing column widths in a separate helper: `render_scrollable_block` mirrors a row's leading indent as trailing scroll padding (`padded_line_display_cols`), so a hand-rolled column-sum is short by the indent width and the thumb stops that many cells short of the end. This is the failure mode that hid in the mount blocks — a `*_content_width` that summed columns while the renderer measured `max_line_width`.
+
+### Click hit-test area must cover the full rendered block
+
+**The mouse hit-test rect for a scrollable block must exactly match (or be a superset of) the `area` passed to `render_scrollable_block`.** Never compute the hit-test area from content dimensions or row counts — use the full rendered block height.
+
+**Why this matters:** A block that holds N content rows plus an empty trailing area is still one block. The empty rows are inside the border; they are visually part of the same scrollable surface. Operators intuitively click anywhere inside the block — including blank space below the last row — and expect focus to switch. If the hit-test rect is computed from content height alone (e.g. `height = rows + 2`), clicks in the empty trailing area fall outside the rect and silently do nothing. The operator sees their click ignored and infers the UI is broken.
+
+**Implementation rule:** Every `point_in(mouse, area)` check in `update_scroll_focus` must use the same `area` that the renderer passes to `render_scrollable_block`. In practice this means:
+
+- For full-body blocks (editor Mounts tab, editor other tabs, settings content): use `editor_content_area(term_size)` — the full body rect below header + tab strip. Do not shrink this to content height.
+- For per-block sub-areas in the list view right pane (Workspace mounts, Global mounts, Roles): use the height computed by the same block-height function the renderer's `Constraint::Length(...)` uses.
+
+In `mouse.rs`, `editor_scroll_area` wraps `editor_content_area` to guarantee they stay in sync — `editor_scroll_area` must never compute its own area dimensions independently.
+
+A violated hit-test rect is a silent bug: no compile error, no test failure, and no obvious visual artifact — the block just refuses to focus when clicked in the empty trailing area.
+
+### Horizontal scrollbar renders whenever content overflows horizontally
+
+Any block whose content is wider than its viewport renders the shared horizontal scrollbar thumb on its **bottom border**, mirroring the vertical thumb on the right border. When content fits horizontally, no scrollbar is shown.
+
+**Enforcement:** `render_scrollable_block` / `render_scrollable_block_at` already calls `render_horizontal_scrollbar(frame, area, content_width, eff_x)` internally. Any surface that tracks `scroll_x` independently must call `render_horizontal_scrollbar` itself after rendering its rows.
+
+The `H/L scroll` hint must only appear in the footer when horizontal scrolling is actually possible (content overflows the viewport). Showing `H/L scroll` when content fits is a false affordance.
+
+### Scroll hints advertise only the axes that actually overflow
+
+**Every scroll hint must reflect the body's real per-axis overflow. A surface may show `↑↓ scroll` only when its content overflows vertically, `←→ scroll` only when it overflows horizontally, `↑↓←→ scroll` only when both overflow, and no scroll hint at all when the content fits.** Showing both arrows when only one axis can move — or any scroll hint on a body that fits — is a false affordance, exactly like the `H/L scroll` rule above: the operator presses a key, nothing moves, and the convention loses trust.
+
+The hint must be derived from the **same `is_scrollable` gate the scrollbar uses**, so a hint advertises an axis if and only if that axis's scrollbar is drawn — the two never disagree. This is not optional polish: a static `↑↓←→ scroll` constant baked into a dialog is the violation this rule exists to catch (the Debug-info dialog regressed exactly this way — it advertised vertical scroll on a body that only overflowed horizontally).
+
+**Enforcement — one shared primitive, no per-surface glyph choices:**
+
+- `scroll_hint_spans(ScrollAxes { vertical, horizontal })` in <RepoFile path="crates/jackin-tui/src/components/dialog_layout.rs">crates/jackin-tui/src/components/dialog_layout.rs</RepoFile> is the single source for the scroll-key `HintSpan`s. It returns `↑↓←→`/`↑↓`/`←→`/empty. Every surface composes its full hint from this primitive plus its own dismiss/copy keys; no surface hand-writes `↑↓←→ scroll`.
+- `dialog_scroll_axes(content_width, content_height, block_area)` derives the `ScrollAxes` from content vs viewport using the scrollbar's `is_scrollable` test. Dialogs measure `content_width`/`content_height` the same way `render_scrollable_dialog_body` measures them (unpadded line width, line count), so the axes match the rendered overflow.
+- The Debug-info dialog (`debug_info_hint_spans`, which the host console's modal footer `container_info_footer_items` delegates to), the capsule's read-only info dialogs (`info_dialog_hint`, fed by `DialogRatatuiSnapshot::scroll_axes`), and the launch build-log overlay (`build_log_hint`) all route through these two functions. A new scrollable dialog that prints its own fixed scroll glyphs instead of calling `scroll_hint_spans` is a design-decision violation.
+
+### Scrollbar glyphs read identically across both axes
+
+A screen's vertical and horizontal scrollbars must look like the same control at two angles, never two different controls. The weight is governed by `ScrollbarStyle` (<RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs">crates/jackin-tui/src/components/scrollable_panel.rs</RepoFile>), and both axes of one style render at the same weight — only the orientation glyph rotates:
+
+- **Horizontal thumb — always the heavy line `━` (`U+2501`).** There is no horizontal style variant (`SCROLLBAR_HORIZONTAL_THUMB`); a full block reads poorly as a horizontal bar, so `render_horizontal_scrollbar` has no `_with_style` form.
+- **Vertical thumb — chosen by `ScrollbarStyle` (the enum applies to the vertical axis only):**
+  - `ScrollbarStyle::Line` (default everywhere): heavy rule `┃` (`U+2503`), matching the horizontal `━` weight so a screen's bottom-border and right-border bars look like one control at two angles.
+  - `ScrollbarStyle::Block`: full block `█` (`U+2588`), the opt-in thick vertical bar, selected via `render_vertical_scrollbar_with_style` / `render_vertical_scrollbar_in_area_with_style`.
+
+The track is always the dim `·` (`SCROLLBAR_TRACK`) regardless of style or axis. Default to `Line` for vertical bars unless a surface deliberately wants the thick block; the shared `render_picker_list` scroll thumb follows the `Line` glyph so modal-picker scrollbars match the rest of the TUI.
+
+### Content height formula for each block type
+
+These are the exact formulas that match what each render function passes to `render_scrollable_block`:
+
+| Block | `content_height` |
+|---|---|
+| Workspace mounts | `1 + max(data_rows, 1)` where `data_rows = sum of 1-or-2 per mount (1 if src==dst, 2 otherwise)` |
+| Global mounts / Role global mounts | `1 + data_rows` where `data_rows = sum of 1-or-2 per mount (1 if src==dst, 2 otherwise)`; empty sections render one placeholder row |
+| Roles | `2 + agent_count` (1 "Default …" row + 1 blank row + agent rows) |
+| Left sidebar (workspace names) | visible selectable row count inside the sidebar block; the renderer derives the vertical offset with `cursor_follow_offset` so the selected row stays visible after selection, expansion, refresh, and resize changes |
+
+The workspace mounts formula uses `.max(1)` because an empty mount list renders a "(none)" placeholder row, so even zero mounts produce 1 data row.
+
+---
+
+## Scrollable Blocks — Shared Component
+
+**All bordered scrollable content blocks must use `render_scrollable_block`** (defined in <RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs">crates/jackin-tui/src/components/scrollable_panel.rs</RepoFile>, re-exported through `view.rs` for manager-internal callers). Never hand-roll block creation, Paragraph scroll, or scrollbar rendering inline.
+
+`render_scrollable_block` guarantees:
+- Border color `PHOSPHOR_GREEN` when focused, `PHOSPHOR_DARK` otherwise.
+- Horizontal scrollbar rendered only when content overflows horizontally.
+- Vertical scrollbar rendered only when content overflows vertically.
+- `*scroll_x` and `*scroll_y` clamped to valid range in-place every frame (eliminates stale overshoot).
+- Scrollbar thumbs are proportional to visible content in both axes, so small overflow produces a long thumb and large overflow produces a short thumb, while a block scrolled to its maximum offset still shows the thumb at the visible end of the track.
+- Scrollbar thumb length is invariant for a fixed `content_length` + `viewport` + track length. Scrolling moves the thumb; it must never resize by one cell because of offset-dependent rounding.
+- Horizontal scrolling preserves matching trailing padding for each row's leading padding, so two-space-indented tables do not pin their final visible character against the right border or scrollbar column at maximum horizontal offset.
+
+Input hit-testing, focusability, cursor-follow scrolling, selected-list windowing, scrollbar dragging, wheel/key max-offset math, right-padding content width, and scrollbar rendering must flow through `jackin_tui::scroll` in <RepoFile path="crates/jackin-tui/src/scroll.rs">crates/jackin-tui/src/scroll.rs</RepoFile> and its Ratatui adapter in <RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs">crates/jackin-tui/src/components/scrollable_panel.rs</RepoFile>. Those modules are the source of truth for clamping, top-relative offsets, tail-relative offsets, full-cell thumb conversion, and `tui-scrollbar` metrics / interaction types. Do not reimplement `area.width - 2`, `area.height - 2`, `content - viewport`, cursor-follow viewport offsets, selected-list slicing, proportional thumb sizing, trailing scroll padding, scrollbar hit areas, track-position formulas, or wheel/key offset math in input handlers or widget renderers; drift between input geometry and renderer geometry is a scroll bug.
+
+The shared model does **not** make every scrollbar look the same. jackin' owns renderer output: console horizontal scrollbars keep dotted tracks with `━` thumbs, console vertical scrollbars keep dotted tracks with `█` thumbs, and capsule panes paint only `█` thumb cells into the right border column. Do not adopt `tui-scrollbar`'s fractional glyph renderer, arrows, or default styles for these surfaces unless this decision is explicitly revisited.
+
+Signature:
+```rust
+pub(crate) fn render_scrollable_block(
+    frame: &mut Frame,
+    area: Rect,
+    lines: Vec<Line<'_>>,
+    scroll_x: &mut u16,
+    scroll_y: &mut u16,
+    focused: bool,
+    title: Option<&str>,
+)
+```
+
+Pass `None` for `title` to suppress the block title. Pass `Some(" Title ")` (with surrounding spaces) to match the standard label style.
+
+---
+
+## Focus Persistence
+
+**Focus sustainability rule (extended):** Focus on a container must persist as long as the operator is interacting within that container. This includes all inline sub-pickers — when an inline agent picker, role picker, or provider picker opens WITHIN a focused sidebar, the sidebar border must remain green because the picker is an inline extension of the sidebar's current action, not a separate container that steals focus. The picker receives keyboard input through the sidebar; it does not claim its own focus indicator.
+
+**Inline picker focus rule:** An inline picker rendered inside a parent container must use the parent's focus state for its panel border. Use `focused = parent.list_names_focused` (or equivalent), never hardcoded `PanelFocus::Unfocused`. The `▸` cursor inside an inline picker follows the same gating: only visible when the parent container is focused. Focus on a container must persist as long as the operator is interacting within that container. Navigation keys (`↑`/`↓`/`←`/`→`) executed inside a focused container must never transfer or clear focus — they navigate within the current owner. Only an explicit user action (mouse click on a different area, `Tab` to another area, `Esc` to a parent screen) may move focus.
+
+**`list_names_focused` (left sidebar) is cleared only when:**
+1. The user clicks in the right pane — `update_scroll_focus` sends `SetListNamesFocused(false)`.
+
+**It must NOT be cleared by:** `reset_list_scroll`, workspace selection changes, terminal resize, or content fitting within the viewport. The sidebar is the primary navigation container; its focus persists for the entire session until the operator explicitly moves focus elsewhere. Clearing it on resize or content-fit is a focus-sustainability violation — the green border must not disappear while the operator is navigating workspace entries.
+
+**`list_scroll_focus` (right-pane blocks) is cleared when:**
+1. Content no longer overflows after resize — `focused_block_still_scrollable` returns `false`.
+2. User clicks left pane — `update_scroll_focus` clears it.
+3. Workspace changes — `reset_list_scroll` sets it to `None`.
+
+---
+
+## Mouse Scroll (Hover-Scroll)
+
+Mouse `ScrollLeft`/`ScrollRight` and `ScrollUp`/`ScrollDown` scroll whichever block the cursor is currently over **without requiring a prior click**. This is hover-scroll semantics, not click-then-scroll.
+
+In `scroll_active_panel`, dispatch order for the list stage:
+1. If `list_names_focused` → scroll `list_names_scroll_x` (left pane).
+2. Otherwise → compute `list_scroll_areas`, route to the block under the pointer.
+
+Every wheel path must resolve the target from the pointer position immediately before applying the delta. Stale focus state must never decide where a wheel event goes: when independently scrollable blocks share a screen, a wheel over one block must not scroll another block or no-op because a prior click or focus belonged elsewhere.
+
+The left pane scroll uses the shared `jackin_tui::scroll` clamping path after each wheel/key mutation, then the renderer clamps defensively again on every frame.
+
+---

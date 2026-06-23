@@ -15,7 +15,7 @@ roles never edit this file.
 
 Every role repo must contain a `jackin.role.toml` file at the repository root. This manifest tells jackin' how to build, configure, and identify the agent.
 
-jackin' enforces **strict parsing** — unknown fields are rejected with an error. This catches typos and prevents silent misconfiguration. Top-level `version` records the minimum manifest schema the file requires; older stamps remain valid until the manifest uses a newer field or enum value. On a desktop, use `jackin role migrate <role-repo-path>` to update a local manifest before adopting newer schema features. In CI and automated migration workflows, use the standalone `jackin-role migrate <role-repo-path>` binary instead of the full `jackin` operator CLI. See [Schema Versions](/reference/schema-versions/) for the full version history and migration matrix.
+jackin' enforces **strict parsing** — unknown fields are rejected with an error. This catches typos and prevents silent misconfiguration. Top-level `version` records the minimum manifest schema the file requires; older stamps remain valid until the manifest uses a newer field or enum value. On a desktop, use `jackin role migrate <role-repo-path>` to update a local manifest before adopting newer schema features. In CI and automated migration workflows, use the standalone `jackin-role migrate <role-repo-path>` binary instead of the full `jackin` operator CLI. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
 
 ## Full schema
 
@@ -203,6 +203,36 @@ dockerfile = "Dockerfile"
 agents = ["opencode"]
 
 [opencode]
+model = "zai-coding-plan/glm-5.1"
+```
+
+## `[<agent>.providers.<provider>]`
+
+Claude Code, Codex, and OpenCode can run against alternative providers chosen from the provider picker at session launch. By default each provider uses jackin's built-in model for that agent. A `[<agent>.providers.<provider>]` table overrides the model used **when that provider is the selected provider**, without changing the agent's own `model` default. This matters most for OpenCode, which has no model of its own and resolves its model entirely from the selected provider.
+
+| Field | Required | Description |
+|---|---|---|
+| `model` | No | Model used when this provider is selected for the agent. For OpenCode, the `provider/model` string passed to `opencode -m`; for Claude and Codex, the provider's model name |
+
+`<provider>` is the provider's lowercase id: `anthropic`, `openai`, `zai`, `minimax`, or `kimi`. Resolution order when a provider is picked: the `[<agent>.providers.<provider>]` model, then jackin's built-in default for that pair, then the agent's own `model`.
+
+```toml title="jackin.role.toml"
+[claude]
+model = "claude-sonnet-4-6"
+
+# Pin a different model when MiniMax is picked for Claude.
+[claude.providers.minimax]
+model = "MiniMax-M3"
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+
+# OpenCode routes through the selected provider's block, so the model names
+# its provider id as well.
+[opencode.providers.minimax]
+model = "minimax/MiniMax-M3"
+
+[opencode.providers.zai]
 model = "zai-coding-plan/glm-5.1"
 ```
 

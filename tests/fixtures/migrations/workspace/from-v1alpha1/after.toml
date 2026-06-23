@@ -1,8 +1,0 @@
-version = "v1alpha5"
-workdir = "/workspace/prod"
-allowed_roles = ["the-architect"]
-last_role = "the-architect"
-
-[[mounts]]
-src = "/home/operator/projects/prod"
-dst = "/workspace/prod"

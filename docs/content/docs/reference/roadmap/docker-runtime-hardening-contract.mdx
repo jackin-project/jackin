@@ -104,12 +104,12 @@ A read of the launch path on the docs/docker-hardening-orbstack-backend branch (
 
 | Concern | Location | Current value |
 |---|---|---|
-| Role container `docker run` flag assembly | <RepoFile path="src/runtime/launch.rs" /> | No `--cap-add` / `--cap-drop`, no `--security-opt seccomp=`, no `--security-opt apparmor=`, no `--security-opt no-new-privileges`, no `--read-only`, no `--tmpfs`, no `--pids-limit`, no `--memory*`. Docker defaults apply implicitly. |
-| DinD sidecar start | <RepoFile path="src/runtime/launch.rs" /> | `--privileged`. TLS cert dir at `DOCKER_TLS_CERTDIR=/certs` with `DOCKER_TLS_SAN=DNS:<dind-name>`. Cert volume bound per launch. No rotation. |
-| Workspace mount string builder | <RepoFile path="src/runtime/launch.rs" /> | Translates `MaterializedWorkspace` to `-v src:dst[:ro]`. `:ro` already enforced at the kernel layer. |
-| Per-instance metadata struct | <RepoFile path="src/instance/manifest.rs" /> | `InstanceManifest` (schema v1) carries `DockerResources { role_container, dind_container, network, certs_volume }` plus session history. Docker-shaped today; the [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) umbrella tracks the move to a backend-neutral shape. |
-| Operator env / `op://` resolution | <RepoFile path="src/operator_env.rs" /> | `resolve_operator_env` runs at launch only; resolved values become `-e` flags. No re-resolution on `hardline` or agent restart. |
-| Telemetry hook | <RepoFile path="src/tui/mod.rs" /> | `debug_log!(category, …)` macro, gated on `JACKIN_DEBUG=1`. There is no separate `clog!` macro yet; the hard-rule two-tier model in <RepoFile path="AGENTS.md" /> is met today through `debug_log!` alone. Any "profile chosen", "capability dropped", "AppArmor unavailable", etc. lines should emit through `debug_log!("launch", …)` until/unless a `clog!` tier is added. |
+| Role container `docker run` flag assembly | <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> | No `--cap-add` / `--cap-drop`, no `--security-opt seccomp=`, no `--security-opt apparmor=`, no `--security-opt no-new-privileges`, no `--read-only`, no `--tmpfs`, no `--pids-limit`, no `--memory*`. Docker defaults apply implicitly. |
+| DinD sidecar start | <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> | `--privileged`. TLS cert dir at `DOCKER_TLS_CERTDIR=/certs` with `DOCKER_TLS_SAN=DNS:<dind-name>`. Cert volume bound per launch. No rotation. |
+| Workspace mount string builder | <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> | Translates `MaterializedWorkspace` to `-v src:dst[:ro]`. `:ro` already enforced at the kernel layer. |
+| Per-instance metadata struct | <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs">crates/jackin-runtime/src/instance/manifest.rs</RepoFile> | `InstanceManifest` (schema v1) carries `DockerResources { role_container, dind_container, network, certs_volume }` plus session history. Docker-shaped today; the [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) umbrella tracks the move to a backend-neutral shape. |
+| Operator env / `op://` resolution | <RepoFile path="crates/jackin-env/src/resolve.rs">crates/jackin-env/src/resolve.rs</RepoFile> | `resolve_operator_env` runs at launch only; resolved values become `-e` flags. No re-resolution on `hardline` or agent restart. |
+| Telemetry hook | <RepoFile path="crates/jackin/src/tui.rs">crates/jackin/src/tui.rs</RepoFile> | `debug_log!(category, …)` macro, gated on `JACKIN_DEBUG=1`. There is no separate `clog!` macro yet; the hard-rule two-tier model in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> is met today through `debug_log!` alone. Any "profile chosen", "capability dropped", "AppArmor unavailable", etc. lines should emit through `debug_log!("launch", …)` until/unless a `clog!` tier is added. |
 | Backend selection CLI | (none) | No `--backend`, no `--docker-profile`, no `--sandbox-mode` flag exists today. This whole contract is the first introduction of those flags. |
 
 The pattern is consistent: jackin' inherits Docker defaults end-to-end. That is the starting baseline for every profile below — `compat` is "what already runs".
@@ -155,7 +155,7 @@ default_profile = "standard"
 profile = "hardened"
 ```
 
-The exact schema should be finalized with the broader runtime config design. If this touches `AppConfig`, `WorkspaceConfig`, or `RoleManifest`, the schema migration rules in <RepoFile path="AGENTS.md" /> apply.
+The exact schema should be finalized with the broader runtime config design. If this touches `AppConfig`, `WorkspaceConfig`, or `RoleManifest`, the schema migration rules in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> apply.
 
 ### `compat`
 
@@ -589,7 +589,7 @@ Host matrix:
 
 ## Telemetry Surface
 
-Every Docker hardening decision must emit `debug_log!("launch", …)` (the existing macro in <RepoFile path="src/tui/mod.rs" />) so the firehose under `JACKIN_DEBUG=1` lets an operator reconstruct what actually got applied. Minimum required lines:
+Every Docker hardening decision must emit `debug_log!("launch", …)` (the existing macro in <RepoFile path="crates/jackin/src/tui.rs">crates/jackin/src/tui.rs</RepoFile>) so the firehose under `JACKIN_DEBUG=1` lets an operator reconstruct what actually got applied. Minimum required lines:
 
 - `profile_selected profile=<name> source=<workspace|cli|role|default>`
 - `cap_drop_all` + `cap_add cap=<name> reason=<jackin-default|role-required|opt-in>`
@@ -614,7 +614,7 @@ Roles build their own images, today on the host Docker engine. The build phase i
 
 ## Schema Migration Footprint
 
-This contract introduces three new config surfaces. Per the rules in <RepoFile path="AGENTS.md" />, each lands with a `CURRENT_*_VERSION` bump:
+This contract introduces three new config surfaces. Per the rules in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>, each lands with a `CURRENT_*_VERSION` bump:
 
 | Surface | File kind | Type touched | Action |
 |---|---|---|---|
@@ -660,13 +660,13 @@ These need answers before Phase 1 code work begins:
 
 ## Related Files
 
-- <RepoFile path="src/runtime/launch.rs" /> - role container, DinD, network, and launch orchestration.
-- <RepoFile path="src/docker_client.rs" /> - typed Docker API boundary and container create host config.
-- <RepoFile path="src/docker.rs" /> - Docker CLI boundary for build/TTY cases.
-- <RepoFile path="src/manifest/mod.rs" /> - role manifest schema if runtime requirements move into roles.
-- <RepoFile path="src/config/mod.rs" /> - global/workspace config if profile defaults move into operator config.
-- <RepoFile path="docker/runtime/entrypoint.sh" /> - runtime startup and writable path assumptions.
-- <RepoFile path="docker/construct/Dockerfile" /> - base runtime image and user assumptions.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> - role container, DinD, network, and launch orchestration.
+- <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> - typed Docker API boundary and container create host config.
+- <RepoFile path="crates/jackin-docker/src/shell_runner.rs">crates/jackin-docker/src/shell_runner.rs</RepoFile> - Docker CLI boundary for build/TTY cases.
+- <RepoFile path="crates/jackin-manifest/src/manifest.rs">crates/jackin-manifest/src/manifest.rs</RepoFile> - role manifest schema if runtime requirements move into roles.
+- <RepoFile path="crates/jackin/src/config.rs">crates/jackin/src/config.rs</RepoFile> - global/workspace config if profile defaults move into operator config.
+- <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> - runtime startup and writable path assumptions.
+- <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> - base runtime image and user assumptions.
 
 ## Related Roadmap Items
 

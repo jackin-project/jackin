@@ -58,7 +58,7 @@ There are six mechanically distinct ways to get a coding agent's conversation ou
 | **C** | **Built-in OpenTelemetry** | Agent's own instrumentation emits OTLP logs/metrics/traces | Live | Semi — env-configured once, then passive | Yes |
 | **D** | **Wire interception** | The agent↔model HTTP boundary (base-URL redirect, fetch patch, MITM) | Live | Yes — operator controls env/proxy, agent unaware | Config blessed; capture-via-proxy operational |
 | **E** | **Headless stream-json** | Agent stdout in `--print` / `--output-format stream-json` mode | Live | No — you launch the run headless | Yes |
-| **F** | **Multiplexer screen scrape** | jackin's own `vt100` screen + scrollback for the pane | Live / post-hoc | Yes — jackin owns the PTY | n/a (jackin-internal) |
+| **F** | **Multiplexer screen scrape** | jackin's own `DamageGrid` screen + scrollback for the pane | Live / post-hoc | Yes — jackin owns the PTY | n/a (jackin-internal) |
 
 A seventh item is not a tap but the shared *schema* these converge on: the **OpenTelemetry GenAI semantic conventions** (`gen_ai.*` — `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`, token-usage and finish-reason attributes; the older opt-in `gen_ai.content.prompt`/`gen_ai.content.completion` events were deprecated in semconv v1.38.0). Where Déjà Vu needs a normalized on-the-wire vocabulary, this is the standard to align to.
 
@@ -188,10 +188,10 @@ Per-provider parsers normalize whichever source is used into one record shape, s
 
 jackin' owns the in-container PTY multiplexer (`jackin-capsule`), which gives it a capture vector SpecStory and the file-readers do not have: the rendered terminal itself. This is genuinely useful as a **last resort** — e.g. an Amp session started outside Déjà Vu's stream capture, or any agent whose session file is missing — but it is deliberately ranked below every structured vector, and the source confirms exactly why.
 
-What the multiplexer can actually see (validated in <RepoFile path="crates/jackin-capsule/src/session.rs" />):
+What the multiplexer can actually see (validated in <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>):
 
-- Capsule keeps one `vt100::Parser` per session; its `Screen` is the source of truth, exposed via `screen()`. Raw PTY bytes are read in a blocking reader loop and fed to the parser byte-by-byte, then **dropped** — there is no raw-byte or asciicast log retained by default.
-- It retains **`SCROLLBACK_LEN = 10_000`** lines of native `vt100` scrollback per session (the comment cites exactly this use case: "Operators need scrollback to read Codex / Claude responses that exceed one viewport"), plus a separate `inline_scrollback` buffer for Codex-style top-anchored scroll regions that `vt100` does not record as scrollback. The dirty-row renderer in <RepoFile path="crates/jackin-capsule/src/render.rs" /> already reads cells from the `Screen`.
+- Capsule keeps one `DamageGrid` per session; its `GridSnapshot`/`GridPatch` output is the source of truth for visible terminal state. Raw PTY bytes are read in a blocking reader loop and fed to the grid, then **dropped** — there is no raw-byte or asciicast log retained by default.
+- It retains bounded primary-screen scrollback in `DamageGrid` plus a separate inline-scrollback buffer for Codex-style top-anchored scroll regions. The pane renderer already reads cells from `GridSnapshot`/`GridPatch`.
 
 So jackin' can scrape the conversation as **rendered cells across ~10k lines of scrollback**, not just the 24-row viewport. But the caveats are real and disqualify it as a primary vector:
 
@@ -200,7 +200,7 @@ So jackin' can scrape the conversation as **rendered cells across ~10k lines of 
 - **~10k-line horizon.** Anything older than the retained scrollback is gone.
 - **Secrets.** Rendered terminal output can contain tokens, paths, and file contents; screen-scrape capture must be opt-in and redaction-aware, consistent with the recording stance in [terminal observation and automation](/reference/roadmap/terminal-observation-automation/).
 
-This fallback shares its substrate and its discipline with the [agent runtime status authority](/reference/roadmap/agent-runtime-status/) (the herdr-inspired status work), which already reads the `vt100::Screen` to detect agent state. That item's hard-won rule applies here verbatim: **read the current screen, never trust arbitrary scrollback as authority**, and prefer structured/reported signals over screen parsing. Déjà Vu's screen-scrape tier is the conversation-capture analogue of that status detector — same `vt100` source, same "structured first, screen last" ranking, same per-agent visible-chrome knowledge. Where the status authority asks *"is the agent working or blocked?"*, Déjà Vu's fallback asks *"what text was exchanged?"* — and both should reuse one screen-reading layer in Capsule rather than building two.
+This fallback shares its substrate and its discipline with the [agent runtime status authority](/reference/roadmap/agent-runtime-status/) (the herdr-inspired status work), which already reads the current terminal snapshot to detect agent state. That item's hard-won rule applies here verbatim: **read the current screen, never trust arbitrary scrollback as authority**, and prefer structured/reported signals over screen parsing. Déjà Vu's screen-scrape tier is the conversation-capture analogue of that status detector — same `DamageGrid` source, same "structured first, screen last" ranking, same per-agent visible-chrome knowledge. Where the status authority asks *"is the agent working or blocked?"*, Déjà Vu's fallback asks *"what text was exchanged?"* — and both should reuse one screen-reading layer in Capsule rather than building two.
 
 The framing to keep straight: Déjà Vu's **default** capture does not scrape the terminal (it reads native files); screen scraping is an explicit, gated, last-resort tier for sessions where no structured surface exists.
 
@@ -216,7 +216,7 @@ The operator's preference, and the right call, is a **compact binary canonical s
 
 Alongside the blobs, a small **SQLite index** powers browse and search (workspace, instance, date, agent, title, first prompt, turn count). This deliberately mirrors the [persistent storage layer](/reference/roadmap/persistent-storage-layer/) — Déjà Vu's index should live in, or beside, that layer rather than inventing a parallel one, and the canonical conversation blobs sit next to the index as content-addressed or id-named files.
 
-The library choice (`prost` vs `protobuf` for the schema; `sqlx` vs `rusqlite` for the index) should follow the same decision the persistent storage layer makes, and is worth an ADR (see [Architecture Decision Records](/reference/roadmap/architecture-decision-records/)). JSONL was considered as a simpler canonical format and remains the fallback if protobuf's build/codegen cost is judged not worth it for V1; the index and render-on-demand design hold either way.
+The library choice (`prost` vs `protobuf` for the schema; `sqlx` vs `rusqlite` for the index) should follow the same decision the persistent storage layer makes, and is worth an ADR (see [Architecture Decision Records](/reference/adrs/)). JSONL was considered as a simpler canonical format and remains the fallback if protobuf's build/codegen cost is judged not worth it for V1; the index and render-on-demand design hold either way.
 
 ### Host layout
 
@@ -245,7 +245,7 @@ The host-side capture runs at the moments that matter and never depends on the o
 
 Three surfaces over the same archive, in priority order for V1:
 
-- **TUI (`jackin deja-vu`, console-style).** The headline deliverable. A `jackin console`-shaped browser: pick a workspace, narrow by instance or date, pick a conversation, read the rendered thread top to bottom. Follows the [TUI design decisions](/reference/tui-design-decisions/) (W3C Tabs navigation, scrollable blocks via `jackin_tui::scroll`, the shared color palette).
+- **TUI (`jackin deja-vu`, console-style).** The headline deliverable. A `jackin console`-shaped browser: pick a workspace, narrow by instance or date, pick a conversation, read the rendered thread top to bottom. Follows the [TUI design decisions](/reference/tui//) (W3C Tabs navigation, scrollable blocks via `jackin_tui::scroll`, the shared color palette).
 - **CLI (`jackin deja-vu list | show | search | export`).** Scriptable and, importantly, the surface an *agent* can call from inside a session. `show` renders a conversation to Markdown/JSON; `export` writes it out.
 - **MCP server.** Exposes `list` / `read` / `search` as MCP tools so an agent — in any runtime — can pull a past conversation into its current context. This is the seed of the future cross-agent "go back to that conversation" experience and the orchestration use case, gated behind the same host-mediated MCP/host-bridge surface as other agent-facing capabilities (see [Host bridge](/reference/roadmap/host-bridge/)).
 
@@ -259,7 +259,7 @@ Three layers, mirroring how the rest of jackin' separates capsule / protocol / h
 | Archive + index | The canonical protobuf store, the SQLite index, capture timing, render-on-demand to Markdown/JSON | How any single agent encodes its own sessions |
 | Surfaces (TUI / CLI / MCP) | Operator and agent access: browse, search, show, export | Re-parsing native formats or writing native stores |
 
-The default capture path is host-side and read-only against agent state: it reads the per-instance homes jackin' already restores and runs read-only vendor exports/streams (`amp threads`/`--stream-json`). The screen-scrape fallback consumes Capsule's existing `vt100` screen layer. The only writes are into Déjà Vu's own `~/.jackin/data/deja-vu/` tree.
+The default capture path is host-side and read-only against agent state: it reads the per-instance homes jackin' already restores and runs read-only vendor exports/streams (`amp threads`/`--stream-json`). The screen-scrape fallback consumes Capsule's existing `DamageGrid` screen layer. The only writes are into Déjà Vu's own `~/.jackin/data/deja-vu/` tree.
 
 ## Host-side effects
 
@@ -293,7 +293,7 @@ Index-backed search (`jackin deja-vu search`), the MCP server exposing list/read
 
 ### Phase 5 — Optional deep-fidelity and fallback vectors
 
-Wire interception (D) for the exact system prompt / thinking where an operator wants it, and the multiplexer screen-scrape (F) last-resort tier sharing Capsule's `vt100` layer with the [agent runtime status authority](/reference/roadmap/agent-runtime-status/). Both opt-in and redaction-aware.
+Wire interception (D) for the exact system prompt / thinking where an operator wants it, and the multiplexer screen-scrape (F) last-resort tier sharing Capsule's `DamageGrid` layer with the [agent runtime status authority](/reference/roadmap/agent-runtime-status/). Both opt-in and redaction-aware.
 
 ## Non-goals for V1
 
@@ -317,14 +317,14 @@ Named so later work has a home and V1 stays small:
 | How is the Kimi `kimi-code` on-disk layout confirmed? | Verify live inside a running jackin' Kimi container (`ls ~/.kimi-code/sessions/…`); the shipped distribution may differ from both the documented `kimi-code` and the legacy Python `kimi-cli` trees. |
 | Capture on every eject by default, or opt-in? | Lean opt-in-but-default-on per workspace, surfaced in the launch summary, so the safety net is real without being a silent host write. |
 | Do we capture tool calls/diffs/thinking in V1? | Capture them when the native source provides them for free; never block the must-have (prompts + visible answers) on them. Thinking and the model-facing system prompt need vector D and are deferred to Phase 5. |
-| Should the screen-scrape fallback and the status authority share one screen-reading layer? | Yes — both read Capsule's `vt100::Screen`; build one reusable screen-extraction layer rather than two. |
+| Should the screen-scrape fallback and the status authority share one screen-reading layer? | Yes — both read Capsule's `GridSnapshot`; build one reusable screen-extraction layer rather than two. |
 
 ## Related roadmap items
 
 - [Session keep and resume](/reference/roadmap/session-keep-and-resume/) — the shipped mechanism that already restores agent conversation history onto the host; Déjà Vu's primary capture source.
 - [Persistent storage and workspace memory layer](/reference/roadmap/persistent-storage-layer/) — the index/DB home Déjà Vu should reuse, and the cross-agent memory direction it complements.
-- [Terminal observation and automation](/reference/roadmap/terminal-observation-automation/) — owns the PTY/`vt100` read APIs and opt-in recording the screen-scrape fallback would build on.
-- [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) — the herdr-inspired status work; shares Capsule's `vt100` screen-reading substrate and the "structured signals first, screen last, never trust scrollback as authority" discipline.
+- [Terminal observation and automation](/reference/roadmap/terminal-observation-automation/) — owns the PTY/`DamageGrid` read APIs and opt-in recording the screen-scrape fallback would build on.
+- [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) — the herdr-inspired status work; shares Capsule's screen-reading substrate and the "structured signals first, screen last, never trust scrollback as authority" discipline.
 - [Multi-runtime support](/reference/roadmap/multi-runtime-support/) — the five-runtime model whose per-agent extraction surfaces the providers normalize.
 - [Host bridge](/reference/roadmap/host-bridge/) — the host-mediated MCP surface the agent-facing read tools plug into.
 - [jackin' daemon](/reference/roadmap/jackin-daemon/) — the future long-running host process that could own periodic/live capture.

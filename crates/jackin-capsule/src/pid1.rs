@@ -1,3 +1,12 @@
+//! PID 1 responsibilities inside the container: reap orphaned child processes
+//! and forward signals to managed children.
+//!
+//! Not responsible for: spawning agent processes (see `session`) or daemon
+//! lifecycle (see `daemon`).
+//!
+//! Key invariant: every child registered via `register_managed_child` must
+//! be reaped; unregistered orphans are reaped without SIGCHLD delivery.
+
 /// PID 1 zombie reaping and signal forwarding.
 ///
 /// Linux: when a process whose parent has exited becomes an orphan, it is
@@ -73,10 +82,12 @@ pub fn install_sigchld_reaper() {
     // not start with a half-installed handler.
     let mut mask = SigSet::empty();
     mask.add(Signal::SIGCHLD);
-    mask.thread_block()
-        .expect("thread_block SIGCHLD on PID 1 main thread");
+    if let Err(error) = mask.thread_block() {
+        crate::clog!("failed to block SIGCHLD on PID 1 main thread: {error}");
+        return;
+    }
 
-    std::thread::Builder::new()
+    let reaper = std::thread::Builder::new()
         .name("zombie-reaper".into())
         .spawn(move || {
             let mut sigset = SigSet::empty();
@@ -92,12 +103,18 @@ pub fn install_sigchld_reaper() {
                     Err(nix::errno::Errno::EINTR) => {}
                     Err(e) => {
                         crate::clog!("zombie-reaper sigwait error: {e}; backing off 100ms");
+                        #[expect(
+                            clippy::disallowed_methods,
+                            reason = "zombie reaper owns its OS thread and is not the multiplexer render thread"
+                        )]
                         std::thread::sleep(std::time::Duration::from_millis(100));
                     }
                 }
             }
-        })
-        .expect("failed to spawn zombie-reaper thread");
+        });
+    if let Err(error) = reaper {
+        crate::clog!("failed to spawn zombie-reaper thread: {error}");
+    }
 }
 
 pub(crate) fn reap_zombies() {
@@ -139,7 +156,7 @@ fn reap_zombies_linux() {
                 }
                 match waitpid(pid, Some(WaitPidFlag::WNOHANG)) {
                     Ok(WaitStatus::StillAlive) => break,
-                    Ok(_) => continue,
+                    Ok(_) => {}
                     Err(nix::errno::Errno::ECHILD) => break,
                     Err(e) => {
                         crate::clog!(
@@ -169,7 +186,7 @@ fn reap_zombies_unfiltered() {
     loop {
         match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::StillAlive) => break,
-            Ok(_) => continue,
+            Ok(_) => {}
             Err(nix::errno::Errno::ECHILD) => break,
             Err(e) => {
                 crate::clog!(
@@ -183,61 +200,4 @@ fn reap_zombies_unfiltered() {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::process::{Command, Stdio};
-
-    #[test]
-    fn reap_zombies_returns_when_no_children() {
-        // No children, no zombie queue — reap_zombies must return
-        // quickly. If it spins or blocks, this test hangs and the
-        // CI runner kills it. Regression guard against a refactor
-        // that drops the WNOHANG flag from the loop.
-        reap_zombies();
-    }
-
-    #[test]
-    fn waitpid_wnohang_returns_exit_status_after_synchronous_wait() {
-        // Spawn /bin/true, wait synchronously, then re-`waitpid` with
-        // WNOHANG. The child is reaped by `Child::wait`, so WNOHANG
-        // returns ECHILD ("no such process"). This pins the kernel
-        // contract the reaper loop relies on: after a reap, WNOHANG
-        // sees no zombie and the inner `match` short-circuits.
-        let mut child = Command::new("true")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn /bin/true");
-        let pid = Pid::from_raw(child.id() as i32);
-        let status = child.wait().expect("wait /bin/true");
-        assert!(status.success());
-        let probe = waitpid(pid, Some(WaitPidFlag::WNOHANG));
-        // ECHILD is the kernel's "no zombie for this pid" response —
-        // identical to the `Err(_)` arm the reaper short-circuits on.
-        assert!(probe.is_err(), "expected ECHILD, got {probe:?}");
-    }
-
-    #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]
-    #[test]
-    fn reap_zombies_does_not_steal_registered_session_child() {
-        let mut child = Command::new("true")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn /bin/true");
-        let pid = Pid::from_raw(child.id() as i32);
-        register_managed_child(child.id());
-        waitid(Id::Pid(pid), WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT)
-            .expect("child should exit but remain waitable");
-
-        reap_zombies();
-
-        let status = child
-            .wait()
-            .expect("session owner should still be able to reap child");
-        unregister_managed_child(child.id());
-        assert!(status.success());
-    }
-}
+mod tests;

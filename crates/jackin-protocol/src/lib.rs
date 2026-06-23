@@ -8,6 +8,11 @@
 //! here too so the two binaries cannot drift.
 
 pub mod control;
+pub mod provider_adapter;
+pub mod snapshot;
+
+pub use provider_adapter::ProviderAdapter;
+pub use snapshot::InstanceSnapshot;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -27,12 +32,37 @@ pub struct CapsuleConfig {
     pub agents: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub models: BTreeMap<String, String>,
+    /// Per-(agent, provider) model overrides from the role manifest. Outer key
+    /// is the agent slug, inner key the provider's lowercase slug
+    /// ([`Provider::manifest_id`]). Selects the model the capsule uses when the
+    /// operator picks that provider for that agent, overriding the agent default.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub provider_models: BTreeMap<String, BTreeMap<String, String>>,
     /// When the operator picked a specific provider in the console's
     /// launch flow (before the container existed), this field tells the
     /// capsule's initial spawn to use that provider and env overrides
     /// instead of defaulting to Anthropic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial_provider: Option<InitialProvider>,
+    /// Claude plugin marketplaces declared by the role manifest. The capsule
+    /// registers them at container start — the agent binary is mounted, not
+    /// baked, so plugin setup moved out of the image build into runtime-setup.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub claude_marketplaces: Vec<ClaudeMarketplace>,
+    /// Claude plugins declared by the role manifest, installed at container
+    /// start by the capsule.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub claude_plugins: Vec<String>,
+}
+
+/// A Claude plugin marketplace the capsule registers at container start via
+/// `claude plugin marketplace add`. Mirrors the role manifest's
+/// `[[claude.marketplaces]]` without `jackin-protocol` depending on `jackin-core`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ClaudeMarketplace {
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sparse: Vec<String>,
 }
 
 /// Provider selection for the capsule's initial session spawn. Carries
@@ -46,45 +76,92 @@ pub struct InitialProvider {
 
 /// Z.AI's Anthropic-compatible API base URL.
 pub const ZAI_BASE_URL: &str = "https://api.z.ai/api/anthropic";
-
+/// Z.AI's OpenAI-compatible API base URL (Codex / `OpenCode`).
+pub const ZAI_OPENAI_BASE_URL: &str = "https://api.z.ai/api/coding/paas/v4";
 /// Z.AI default model mapping: Opus tier → GLM-5.1.
 pub const ZAI_DEFAULT_OPUS_MODEL: &str = "glm-5.1";
-
 /// Z.AI default model mapping: Sonnet tier → GLM-5-Turbo.
 pub const ZAI_DEFAULT_SONNET_MODEL: &str = "glm-5-turbo";
-
 /// Z.AI default model mapping: Haiku tier → GLM-4.5-Air.
 pub const ZAI_DEFAULT_HAIKU_MODEL: &str = "glm-4.5-air";
-
-/// Z.AI recommended API timeout (50 minutes) for long-running agent
-/// operations through the proxy.
+/// Z.AI recommended API timeout (50 minutes) for long-running agent operations through the proxy.
 pub const ZAI_API_TIMEOUT_MS: &str = "3000000";
+
+/// `MiniMax` Anthropic-compatible API base URL (Claude Code and `OpenCode`).
+pub const MINIMAX_BASE_URL: &str = "https://api.minimax.io/anthropic";
+/// `MiniMax` OpenAI-compatible API base URL (Codex Responses API).
+pub const MINIMAX_OPENAI_BASE_URL: &str = "https://api.minimax.io/v1";
+/// `MiniMax` Token Plan model — all three Claude tiers map to this single model.
+pub const MINIMAX_DEFAULT_MODEL: &str = "MiniMax-M3";
+/// `MiniMax-M3` context window (tokens). Codex ships no metadata for this custom
+/// model, so jackin' registers it via a Codex model catalog; the value cannot be
+/// raised through a profile-scoped `model_context_window` (Codex clamps that to
+/// the model's fallback cap).
+pub const MINIMAX_CONTEXT_WINDOW: u64 = 512_000;
+/// `MiniMax` recommended API timeout, matching the Z.AI value.
+pub const MINIMAX_API_TIMEOUT_MS: &str = "3000000";
+
+/// Kimi Code Anthropic-compatible API base URL (Claude Code and `OpenCode`).
+pub const KIMI_BASE_URL: &str = "https://api.kimi.com/coding";
+/// Kimi Code model — all three Claude tiers map to this single model.
+pub const KIMI_DEFAULT_MODEL: &str = "kimi-for-coding";
+/// Kimi Code recommended API timeout, matching the Z.AI value.
+pub const KIMI_API_TIMEOUT_MS: &str = "3000000";
 
 /// API provider a Claude-compatible agent can be routed through. The
 /// single source of truth for provider labels, endpoints, and env
 /// redirection — the host console, the wire (`InitialProvider` /
 /// `SpawnRequest::AgentWithProvider`), and the in-container daemon all
 /// match on this enum so the provider catalog cannot drift across sites.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Provider {
     /// The agent's own Anthropic auth — no env redirection.
     Anthropic,
+    /// The agent's own `OpenAI` auth — no env redirection. Native to Codex.
+    Openai,
     /// Z.AI (GLM Coding Plan) via its Anthropic-compatible endpoint.
     Zai,
+    /// `MiniMax` Token Plan via its Anthropic-compatible endpoint.
+    Minimax,
+    /// Kimi Code via its Anthropic-compatible endpoint.
+    /// Distinct from the `kimi` agent runtime — this is the provider backend.
+    Kimi,
 }
 
 impl Provider {
-    /// Every provider variant, in picker/display order.
-    pub const ALL: [Provider; 2] = [Provider::Anthropic, Provider::Zai];
+    /// Every provider variant, in picker/display order. Native providers
+    /// (Anthropic for `claude`, `OpenAI` for `codex`) lead the catalog.
+    pub const ALL: [Provider; 5] = [
+        Provider::Anthropic,
+        Provider::Openai,
+        Provider::Zai,
+        Provider::Minimax,
+        Provider::Kimi,
+    ];
+
+    /// The adapter for this provider. Single dispatch point for all
+    /// provider-specific behavior — adding a new provider requires one
+    /// adapter struct + one match arm here + one variant in `ALL`, not N
+    /// scattered match arms.
+    #[must_use]
+    pub fn adapter(self) -> &'static dyn ProviderAdapter {
+        use provider_adapter::{
+            AnthropicAdapter, KimiAdapter, MinimaxAdapter, OpenaiAdapter, ZaiAdapter,
+        };
+        match self {
+            Self::Anthropic => &AnthropicAdapter,
+            Self::Openai => &OpenaiAdapter,
+            Self::Zai => &ZaiAdapter,
+            Self::Minimax => &MinimaxAdapter,
+            Self::Kimi => &KimiAdapter,
+        }
+    }
 
     /// Display label, also used as the tab suffix and the string carried
     /// on the wire in `InitialProvider` / `AgentWithProvider`.
     #[must_use]
     pub fn label(self) -> &'static str {
-        match self {
-            Provider::Anthropic => "Anthropic",
-            Provider::Zai => "Z.AI",
-        }
+        self.adapter().label()
     }
 
     /// Inverse of [`Provider::label`], derived from the same labels so the
@@ -97,55 +174,78 @@ impl Provider {
             .find(|provider| provider.label() == label)
     }
 
-    /// Env overrides that redirect the agent to this provider. Anthropic
-    /// needs none. Z.AI sets the base URL, auth token (when present),
-    /// model mapping vars (so Claude Code maps its internal model tiers
-    /// to the correct GLM names), a generous API timeout, and a flag to
-    /// suppress non-essential Anthropic telemetry that would fail through
-    /// the proxy.
+    /// Stable lowercase slug used as the provider key in role manifests
+    /// (`[<agent>.providers.<id>]`) and the capsule provider-model map. Distinct
+    /// from [`Provider::label`] (the display/wire identifier) so the operator-
+    /// facing config key stays stable and lowercase.
     #[must_use]
-    pub fn env_overrides(self, token: Option<&str>) -> Vec<(String, String)> {
+    pub const fn manifest_id(self) -> &'static str {
         match self {
-            Provider::Anthropic => Vec::new(),
-            Provider::Zai => {
-                let mut env = Vec::with_capacity(7);
-                if let Some(token) = token.filter(|value| !value.is_empty()) {
-                    env.push(("ANTHROPIC_AUTH_TOKEN".to_string(), token.to_string()));
-                }
-                env.push(("ANTHROPIC_BASE_URL".to_string(), ZAI_BASE_URL.to_string()));
-                env.push((
-                    "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
-                    ZAI_DEFAULT_OPUS_MODEL.to_string(),
-                ));
-                env.push((
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
-                    ZAI_DEFAULT_SONNET_MODEL.to_string(),
-                ));
-                env.push((
-                    "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
-                    ZAI_DEFAULT_HAIKU_MODEL.to_string(),
-                ));
-                env.push(("API_TIMEOUT_MS".to_string(), ZAI_API_TIMEOUT_MS.to_string()));
-                env.push((
-                    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".to_string(),
-                    "1".to_string(),
-                ));
-                env
-            }
+            Self::Anthropic => "anthropic",
+            Self::Openai => "openai",
+            Self::Zai => "zai",
+            Self::Minimax => "minimax",
+            Self::Kimi => "kimi",
         }
     }
 
-    /// Providers selectable for `agent_slug`. Z.AI is offered only for
-    /// Claude (its endpoint is Anthropic-compatible) and only when a key
-    /// is available; every other case has one implicit provider and
-    /// returns an empty list, which callers read as "no picker step".
+    /// Env overrides that redirect Claude Code to this provider via the
+    /// Anthropic-compatible surface. Anthropic needs none. Each alt provider
+    /// sets the base URL, auth token (when present), model-tier mapping vars,
+    /// a generous API timeout, and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`.
+    /// Codex and `OpenCode` route via config files generated at runtime-setup,
+    /// not via this method.
     #[must_use]
-    pub fn available_for(agent_slug: &str, zai_key_available: bool) -> Vec<Provider> {
-        if agent_slug == "claude" && zai_key_available {
-            vec![Provider::Anthropic, Provider::Zai]
-        } else {
-            Vec::new()
+    pub fn env_overrides(self, token: Option<&str>) -> Vec<(String, String)> {
+        self.adapter().env_overrides(token)
+    }
+
+    /// Codex v2 profile name for this provider, or `None` if no profile is
+    /// needed (native `OpenAI` auth or provider unsupported for Codex).
+    #[must_use]
+    pub fn codex_profile(self) -> Option<&'static str> {
+        self.adapter().codex_profile()
+    }
+
+    /// Providers selectable for `(agent_slug, has_key)`. Returns an empty
+    /// list when no picker is needed (the agent's native auth is the
+    /// implicit choice).
+    ///
+    /// `has_key(p)` returns `true` when the operator has configured a key for
+    /// provider `p`. Each adapter's `needs_key_for_agent` + `supports_agent`
+    /// determine membership — no closed match required to add a new provider.
+    /// A non-native sole option (e.g. only `Zai` for `opencode`) is still
+    /// returned so the caller can auto-route through it without a picker.
+    #[must_use]
+    pub fn available_for(agent_slug: &str, has_key: impl Fn(Provider) -> bool) -> Vec<Provider> {
+        let providers: Vec<Provider> = Self::ALL
+            .iter()
+            .filter(|&&p| {
+                let a = p.adapter();
+                a.supports_agent(agent_slug) && (!a.needs_key_for_agent(agent_slug) || has_key(p))
+            })
+            .copied()
+            .collect();
+        match providers.as_slice() {
+            [] | [Provider::Anthropic | Provider::Openai] => Vec::new(),
+            _ => providers,
         }
+    }
+
+    /// Model string in `provider/model` format for `OpenCode`'s `-m` flag.
+    /// `None` for Anthropic (use `OpenCode`'s own default selection).
+    #[must_use]
+    pub fn opencode_model(self) -> Option<&'static str> {
+        self.adapter().opencode_model()
+    }
+
+    /// Env var that holds the API key for this provider, if any.
+    ///
+    /// Convenience wrapper around `self.adapter().key_env_var()` so callers
+    /// do not need to import the `ProviderAdapter` trait.
+    #[must_use]
+    pub fn key_env_var(self) -> Option<&'static str> {
+        self.adapter().key_env_var()
     }
 }
 
@@ -157,113 +257,18 @@ impl CapsuleConfig {
     pub fn model_for_agent(&self, agent: &str) -> Option<&str> {
         self.models.get(agent).map(String::as_str)
     }
-}
 
-/// Container-name grammar shared by the host launcher and the
-/// in-container capsule. The launcher constructs names of the shape
-/// `jk-<id>[-<workspace>]-<role>`; both binaries must agree on how
-/// to parse them.
-pub const CONTAINER_PREFIX: &str = "jk";
-
-/// Prefix with the trailing separator, used by [`instance_id_from_container_base`]
-/// to strip the family marker before splitting.
-pub const CONTAINER_PREFIX_DASH: &str = "jk-";
-
-/// Extract the instance-ID component from a container base name.
-///
-/// Returns `None` when the name does not start with `jk-` or has no
-/// `-` after the id component. Single parser shared by host
-/// manifest construction (`JACKIN_INSTANCE_ID` injection) and the
-/// capsule's status bar so the two surfaces cannot drift on what a
-/// `jk-…` name means.
-#[must_use]
-pub fn instance_id_from_container_base(container_base: &str) -> Option<&str> {
-    container_base
-        .strip_prefix(CONTAINER_PREFIX_DASH)?
-        .split_once('-')
-        .map(|(id, _)| id)
+    /// Model override for `(agent, provider_id)`, where `provider_id` is a
+    /// [`Provider::manifest_id`] slug. `None` when the role set no override for
+    /// that pair, leaving the caller's own default in force.
+    #[must_use]
+    pub fn provider_model(&self, agent: &str, provider_id: &str) -> Option<&str> {
+        self.provider_models
+            .get(agent)?
+            .get(provider_id)
+            .map(String::as_str)
+    }
 }
 
 #[cfg(test)]
-mod provider_tests {
-    use super::*;
-
-    #[test]
-    fn label_round_trips_through_from_label() {
-        for provider in Provider::ALL {
-            assert_eq!(Provider::from_label(provider.label()), Some(provider));
-        }
-        assert_eq!(Provider::from_label("Gemini"), None);
-    }
-
-    #[test]
-    fn anthropic_needs_no_env_overrides() {
-        assert!(Provider::Anthropic.env_overrides(Some("tok")).is_empty());
-    }
-
-    #[test]
-    fn zai_injects_token_only_when_present() {
-        assert_eq!(
-            Provider::Zai.env_overrides(Some("tok")),
-            vec![
-                ("ANTHROPIC_AUTH_TOKEN".to_string(), "tok".to_string()),
-                ("ANTHROPIC_BASE_URL".to_string(), ZAI_BASE_URL.to_string()),
-                (
-                    "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
-                    ZAI_DEFAULT_OPUS_MODEL.to_string()
-                ),
-                (
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
-                    ZAI_DEFAULT_SONNET_MODEL.to_string()
-                ),
-                (
-                    "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
-                    ZAI_DEFAULT_HAIKU_MODEL.to_string()
-                ),
-                ("API_TIMEOUT_MS".to_string(), ZAI_API_TIMEOUT_MS.to_string()),
-                (
-                    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".to_string(),
-                    "1".to_string()
-                ),
-            ]
-        );
-        // None and empty both mean "daemon backfills the token from env":
-        // emit the base-url redirect and model mapping but no token entry.
-        for absent in [None, Some("")] {
-            assert_eq!(
-                Provider::Zai.env_overrides(absent),
-                vec![
-                    ("ANTHROPIC_BASE_URL".to_string(), ZAI_BASE_URL.to_string()),
-                    (
-                        "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
-                        ZAI_DEFAULT_OPUS_MODEL.to_string()
-                    ),
-                    (
-                        "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
-                        ZAI_DEFAULT_SONNET_MODEL.to_string()
-                    ),
-                    (
-                        "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
-                        ZAI_DEFAULT_HAIKU_MODEL.to_string()
-                    ),
-                    ("API_TIMEOUT_MS".to_string(), ZAI_API_TIMEOUT_MS.to_string()),
-                    (
-                        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".to_string(),
-                        "1".to_string()
-                    ),
-                ]
-            );
-        }
-    }
-
-    #[test]
-    fn available_for_offers_zai_only_to_claude_with_key() {
-        assert_eq!(
-            Provider::available_for("claude", true),
-            vec![Provider::Anthropic, Provider::Zai]
-        );
-        assert!(Provider::available_for("claude", false).is_empty());
-        assert!(Provider::available_for("opencode", true).is_empty());
-        assert!(Provider::available_for("codex", true).is_empty());
-    }
-}
+mod tests;

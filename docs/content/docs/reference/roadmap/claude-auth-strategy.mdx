@@ -240,15 +240,15 @@ This proposal is about a better auth primitive, not about relaxing jackin' secur
 
 At minimum, this design would touch:
 
-- <RepoFile path="src/config/roles.rs" /> — auth mode resolution (`resolve_auth_forward_mode`, `set_agent_auth_forward`)
-- <RepoFile path="src/config/mod.rs" /> — `AuthForwardMode` enum, persistence types
-- <RepoFile path="src/cli/config.rs" /> — `config auth` subcommand help text and examples
-- <RepoFile path="src/app/mod.rs" /> — `config auth` command dispatch
-- <RepoFile path="src/instance/auth.rs" /> — auth provisioning semantics for the new mode
-- <RepoFile path="src/runtime/launch.rs" /> — runtime env injection and launch-time warnings
+- <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile> — auth mode resolution (`resolve_auth_forward_mode`, `set_agent_auth_forward`)
+- <RepoFile path="crates/jackin/src/config.rs">crates/jackin/src/config.rs</RepoFile> — `AuthForwardMode` enum, persistence types
+- <RepoFile path="crates/jackin/src/cli/config.rs">crates/jackin/src/cli/config.rs</RepoFile> — `config auth` subcommand help text and examples
+- <RepoFile path="crates/jackin/src/app.rs">crates/jackin/src/app.rs</RepoFile> — `config auth` command dispatch
+- <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile> — auth provisioning semantics for the new mode
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — runtime env injection and launch-time warnings
 - [Agent authentication](/guides/authentication/agents/) — explain concurrent-session tradeoffs and token mode
 - [config command](/commands/config/) — document setup and mode selection
-- [Configuration](/reference/configuration/) — config format updates
+- [Configuration](/reference/runtime/configuration/) — config format updates
 
 ## Follow-up Proposal
 
@@ -271,14 +271,18 @@ copy-paste flow. A follow-up design proposal addresses that:
 3. Is a token-only mode sufficient, or should jackin also support an operator-provided `apiKeyHelper` path for terminal-only workflows?
 4. Should jackin proactively detect likely-auth-drift conditions and recommend `purge` or `sync` before the operator hits a 401?
 
+## Related work
+
+- [Auth reliability and convenience program](/reference/roadmap/auth-reliability-program/) — umbrella program placing this item's design history in context; the concurrent-session concerns documented here are addressed across Phases 1–4 of that program.
+
 ## Related Files
 
-- <RepoFile path="src/config/mod.rs" /> — `AuthForwardMode` enum, persistence types
-- <RepoFile path="src/config/roles.rs" /> — auth mode resolution
-- <RepoFile path="src/cli/config.rs" /> — `jackin config auth` help text
-- <RepoFile path="src/app/mod.rs" /> — auth config command handlers
-- <RepoFile path="src/instance/auth.rs" /> — credential forwarding and state preparation
-- <RepoFile path="src/runtime/launch.rs" /> — launch-time env injection and notices
+- <RepoFile path="crates/jackin/src/config.rs">crates/jackin/src/config.rs</RepoFile> — `AuthForwardMode` enum, persistence types
+- <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile> — auth mode resolution
+- <RepoFile path="crates/jackin/src/cli/config.rs">crates/jackin/src/cli/config.rs</RepoFile> — `jackin config auth` help text
+- <RepoFile path="crates/jackin/src/app.rs">crates/jackin/src/app.rs</RepoFile> — auth config command handlers
+- <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile> — credential forwarding and state preparation
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — launch-time env injection and notices
 - [Agent authentication](/guides/authentication/agents/) — current forwarding model and troubleshooting
 - [config command](/commands/config/) — current operator auth commands
-- [Configuration](/reference/configuration/) — persisted config schema
+- [Configuration](/reference/runtime/configuration/) — persisted config schema

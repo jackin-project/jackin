@@ -149,14 +149,14 @@ async fn second_attach_takes_over_first() {
             // Drop the first stream by writing Shutdown to it when the
             // second arrives — mimicking the daemon's takeover path.
             if let Some(mut prev) = first_stream.take() {
-                prev.write_all(&encode_server(ServerFrame::Shutdown))
+                prev.write_all(&encode_server(ServerFrame::Shutdown { reason: None }))
                     .await
                     .unwrap();
             }
             // Consume the Hello from the new client.
             let mut t = [0u8; 1];
             stream.read_exact(&mut t).await.unwrap();
-            let _ = read_client_frame(&mut stream, t[0]).await.unwrap();
+            drop(read_client_frame(&mut stream, t[0]).await.unwrap());
             first_stream = Some(stream);
         }
     });
@@ -197,7 +197,7 @@ async fn second_attach_takes_over_first() {
     .expect("decoding Shutdown frame timed out")
     .unwrap()
     .unwrap();
-    assert_eq!(f, ServerFrame::Shutdown);
+    assert_eq!(f, ServerFrame::Shutdown { reason: None });
 
     tokio::time::timeout(std::time::Duration::from_secs(5), server)
         .await

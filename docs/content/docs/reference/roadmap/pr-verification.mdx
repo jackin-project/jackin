@@ -2,7 +2,7 @@
 title: "Workspace-Native PR Verification"
 ---
 
-**Status**: Open — design proposal, no implementation committed. This page is the source of truth for the feature. It describes the **experience and the flow** — what the operator sees, selects, and sets up — not the internal storage or code layout, which is expected to change as the console's state handling is reworked. The shape to preserve is the concept: PR verification is reached **from inside the console, anchored to an instance** that is working on a pull request, and runs **host-side** against an isolated checkout, with no separate maintainer CLI verb.
+**Status**: Open — current implementation target is the `jackin-dev` local PR sync CLI. The older console-native review-mode design remains useful product direction, but it is no longer part of the near-term implementation. This page is the source of truth for the immediate work: ship a developer binary that prepares a pull request checkout, isolated configuration, isolated runtime state, local binaries, and an environment file in one reclaimable bundle so PR bodies stop carrying copy-pasted setup blocks.
 
 ## Problem
 
@@ -16,9 +16,61 @@ Three things make the console the right home for this, anchored to the instance 
 
 ## Scope
 
-**First focus: verifying the pull request a running instance is working on, host-side. Nothing more.** Browsing a repo's pull requests with no instance, branches as a standalone target, role-repo PRs as a standalone target, merge-preview, coordinated multi-repo verification, and any scripted/non-interactive entry are explicitly deferred (see "Deferred"). The one branch-shaped capability kept in the first slices is **pinning a companion role to a branch while verifying a PR** — because that is a real need for PRs that pair a CLI change with a role change.
+**First focus: `jackin-dev pr sync <PR_NUMBER>` and the companion helper commands. Nothing else.** The command is Homebrew-installed and owns everything outside the repository checkout — choosing the PR test root, cloning or refreshing the repository, fetching the PR head, checking out a disposable local branch, preparing isolated configuration and state, building the local binary, writing the environment file, and reporting the next shell commands. Console-native review mode, recipe execution, documentation preview automation, companion role pinning, browsing pull requests from a workspace, branch targets, role-repo PRs, merge preview, coordinated multi-repo verification, and generic scripted command execution are deferred.
 
-## What you'll see and do
+## Phase 0 — `jackin-dev` local PR sync
+
+The first implementation creates a dedicated `crates/jackin-dev` crate that builds a `jackin-dev` binary. This binary is for contributor and maintainer workflows around testing jackin' locally. It is not a replacement for the product CLI; it is the host-side setup tool that turns the current PR-body shell recipe into a stable command. The crate starts at version `0.1.0`, and every future change that adds or changes shipped `jackin-dev` functionality bumps that crate version.
+
+The default checkout block becomes:
+
+```sh
+jackin-dev pr sync <PR_NUMBER>
+cd "$(jackin-dev pr path <PR_NUMBER>)/jackin"
+source "$(jackin-dev pr path <PR_NUMBER>)/env.sh"
+which jackin
+```
+
+`jackin-dev pr sync <PR_NUMBER>` replaces the repeated shell sequence that exported `JACKIN_PR_TEST_DIR`, created the directory, cloned the repository, fetched the pull request ref, checked out `pr-<PR_NUMBER>`, and ran `cargo xtask pr prepare`. It also fixes the current state-location bug: no generated PR verification state belongs directly under the operator's home directory or live config directory.
+
+Each pull request gets one self-contained bundle:
+
+```text
+~/Projects/jackin-project/test/pr-<PR_NUMBER>/
+  jackin/
+  env.sh
+  state/
+    config/
+    home/
+```
+
+`env.sh` exports `PATH` so the freshly built checkout binary wins, `JACKIN_CONFIG_DIR` pointing at `state/config`, and `JACKIN_HOME_DIR` pointing at `state/home`. That makes the whole verification root removable with one directory delete and prevents stale `~/.config/jackin-pr-*` or `~/.jackin-pr-*` folders from accumulating.
+
+`sync` defaults to the safe real-world profile: copy the operator's real jackin' configuration into the bundle, replace the prior copied config on each sync, and keep runtime state empty and bundle-local. If no real configuration exists, it creates an empty config directory. Clean-room verification stays available as an explicit `--config blank` override, but normal PR bodies stay flagless because `--config copy` is the default.
+
+`sync` also decides expensive prep from the pull request diff. If the pull request touches `crates/jackin-capsule/` or the shared protocol surface the capsule consumes, it builds and exports the PR's `jackin-capsule` binary into `env.sh`. If the pull request touches construct image inputs, it builds the local construct image and exports `JACKIN_CONSTRUCT_IMAGE`. Routine PR instructions stay flagless; the command explains what it auto-enabled and why.
+
+The first command set is:
+
+```sh
+jackin-dev pr sync <PR_NUMBER>
+jackin-dev pr clean <PR_NUMBER>
+jackin-dev pr env <PR_NUMBER>
+jackin-dev pr path <PR_NUMBER>
+jackin-dev pr status <PR_NUMBER>
+```
+
+`clean` removes the PR bundle. `env` prints the shell commands needed to enter the synced checkout and source its environment. `path` prints the bundle root for scripts and docs snippets. `status` reports whether the local checkout exists, which head SHA it has, which PR head SHA GitHub currently reports, whether the bundle is fresh or stale, and whether `env.sh` plus the state directories exist.
+
+Responsibility stays split cleanly: `jackin-dev` owns outside-the-repo orchestration, while `cargo xtask` remains for tasks that only make sense once a checkout already exists, such as construct build/publish helpers, docs/sidebar maintenance, schema checks, PTY fixture extraction, and PR body skeleton generation.
+
+Packaging is part of this work. `jackin-dev` is distributed through the `jackin-project/homebrew-tap` repository by a separate workflow named `jackin-dev`, dedicated to this binary, not by jackin's normal stable release workflow or preview workflow. When source inputs for this crate change, that dedicated workflow builds a new `jackin-dev` artifact for the crate's current version and updates the Homebrew tap formula so operators can install or upgrade it from the tap. If a PR does not touch `jackin-dev` inputs, the tap entry does not need to move. Operators reviewing jackin' PRs should be able to install or update from the tap and immediately run `jackin-dev pr sync` without a prior source checkout.
+
+## Deferred console-native flow
+
+The rest of this page records the richer product direction for later. It should not be treated as part of the `jackin-dev` implementation PR unless that work is explicitly brought back into scope.
+
+## What you'll see and do later
 
 The console already shows a **left sidebar** of workspaces, each expandable to its instances, with a **right detail block** for whatever row is selected. Verification reuses that layout — it is not a separate screen — and adds two things: pull request details in the detail block, and a review mode for the sidebar.
 
@@ -66,9 +118,9 @@ Select a command and run it: build, test, start the docs server, or any command 
 
 **Refresh to rebuild.** Refresh re-fetches the PR's latest pushed commits and hard-resets the local checkout to the new head — the right response to a force-pushed branch — so the next build runs against the updated code. The PR details (head commit, checks) update with it. Re-running the build set after a refresh is the local rebuild loop: pull the new commits in, rebuild, re-verify, without leaving the surface.
 
-**The live instance is never touched.** Selecting the instance only *identifies* the pull request. Running review checks that PR's head out into a separate, throwaway host-side checkout and runs the recipe there — including the shell — against an isolated configuration and state. The operator's running session keeps going undisturbed, and jackin' can verify a PR against its own code without risking the real setup. Because the review surface is rich, debug mode does not paint over it: the full firehose of every command and its output is captured to a diagnostics run file, per [Debug output never reaches a rich full-screen TUI](/reference/tui-design-decisions/#debug-output-never-reaches-a-rich-full-screen-tui). To triage a failed command, the operator shares the run id rather than pasting scrollback.
+**The live instance is never touched.** Selecting the instance only *identifies* the pull request. Running review checks that PR's head out into a separate, throwaway host-side checkout and runs the recipe there — including the shell — against an isolated configuration and state. The operator's running session keeps going undisturbed, and jackin' can verify a PR against its own code without risking the real setup. Because the review surface is rich, debug mode does not paint over it: the full firehose of every command and its output is captured to a diagnostics run file, per [Debug output never reaches a rich full-screen TUI](/reference/tui/navigation/#debug-output-never-reaches-a-rich-full-screen-tui). To triage a failed command, the operator shares the run id rather than pasting scrollback.
 
-## Setting up verification: the repo recipe
+## Deferred repo recipe
 
 What jackin' can build, run, and serve for a repo is declared in a verification recipe committed at the **root of the project repo**, so it versions with the code — a PR that changes how the project is built or verified updates the recipe in the same diff. There is **one command shape**; optional fields select behaviour rather than forking into separate kinds:
 
@@ -126,11 +178,11 @@ jackin' keeps two things separate: its **configuration** (workspaces, mounts, au
 
 The configuration is always **copied, never referenced**: a PR that bumps a configuration or workspace schema migrates files in place on load, and pointing a verification run at the live configuration would let it rewrite the operator's real workspace files to the PR's schema version. The copy is what makes a schema-bumping PR safe to verify.
 
-## Companion role pinning
+## Deferred companion role pinning
 
 A PR that pairs a CLI change with a role change needs jackin's inner launches to use a specific role at a specific branch. The companion-role setting records that pairing: any command that launches jackin' is invoked with the chosen role and, when a branch is given, that role checked out at that branch. With no companion role chosen, commands use whatever the isolated configuration would pick by default.
 
-## Documentation preview
+## Deferred documentation preview
 
 Some PRs change documentation, and the review need is "spin up the changed docs locally and open the pages this PR touched" — the PR template's documentation walk, automated. A command marked as a server is run like any other, but jackin' treats it specially: it starts the server, waits until it responds, then derives the URLs for the pages this PR changed (from the same changed-file list used for relevance) and opens each one. If none match, it opens the site root. The server stays up until the operator quits, then is shut down cleanly. The server command, port, and URL mapping are declared in the recipe, never hardcoded in jackin' — so a change of docs engine is a one-line edit to the recipe, not a jackin' code change. (This site's own move between docs frameworks changed exactly those values — the dev-server command and port — which is what the recipe absorbs.)
 
@@ -168,10 +220,14 @@ Per jackin's rule that it must never mutate the host machine silently, verificat
 
 ## Deferred
 
-Explicitly out of the first slices, recorded so the design stays coherent when they land:
+Explicitly out of the `jackin-dev pr sync` implementation, recorded so the design stays coherent when later slices land:
 
-- **Browsing a repo's PRs with no instance.** The first slices reach review only from an instance that is on a PR branch. Picking any open PR on a workspace's repo (creating a checkout on demand) is the natural next slice.
-- **Scripted / non-interactive entry.** The console is the only entry today, so CI and scripts cannot drive a verify. If that need arises, a thin non-interactive path over the same checkout-and-run core can be added without reshaping it.
+- **Console-native review mode.** The instance-anchored review surface, sidebar mode switch, command badges, shell handoff from the TUI, and rich command output view are deferred.
+- **Repo recipe execution.** Reading `jackin.tasks.toml`, resolving build sets, running named commands, and diff-driven command relevance are deferred.
+- **Documentation preview automation.** Starting the docs server, waiting for readiness, deriving changed page URLs, opening local docs pages, and cleaning up server processes are deferred.
+- **Companion role pinning.** Pinning a role and optional branch while verifying a CLI PR is deferred.
+- **Browsing a repo's PRs with no instance.** `jackin-dev pr sync` starts from an explicit PR number. Picking any open PR on a workspace's repo is a later slice.
+- **Scripted recipe execution beyond sync.** `jackin-dev pr sync` is the first non-interactive entry, but it only prepares the checkout bundle. Running arbitrary verification recipes non-interactively for CI or scripts remains deferred until the command runner core exists.
 - **Branches as a standalone target.** PRs only for now.
 - **Role-repo PRs as a standalone target.** Today roles enter only as the companion pin; verifying a role repo's own PR end-to-end is the same machinery and can be added later.
 - **Merge preview** — verify the post-merge-into-base state rather than the PR head.
@@ -199,11 +255,14 @@ No existing tool covers the host-side-verify + companion-role-branch + isolated-
 - Nx / Turborepo / Bazel / Buck2 — affected-target selective rebuild; prior art for diff-driven relevance, not PR-scoped review.
 - `just` / `mise` — repo-committed task runners; tasks but no PR checkout or isolation.
 
-The novel combination: host-side PR verification reached from the instance the operator is working in, with companion-role-branch pinning and an isolated jackin' configuration and state home so jackin' can verify itself safely.
+The near-term novel piece is a shipped developer binary that prepares a host-side PR checkout with isolated jackin' configuration and state so jackin' can verify itself safely. The later console-native flow adds instance anchoring, recipe execution, documentation preview, and companion-role-branch pinning.
 
-## Phased roadmap
+## Implementation now
 
-- **Phase 0 — Recipe + checkout bundle.** Read the repo recipe. Check a PR out into an isolated, reclaimable bundle with metadata; support refresh and a single-verify-at-a-time guard.
+Add `crates/jackin-dev` at version `0.1.0`; ship its `jackin-dev` binary through the Homebrew tap with a source-filtered workflow named `jackin-dev`; implement `jackin-dev pr sync`, `clean`, `env`, `path`, and `status`; replace PR-body checkout boilerplate with the `sync` flow; store checkout, copied config, empty state home, and env file under one isolated, reclaimable PR bundle; auto-enable capsule and construct prep from the pull request diff.
+
+## Future phases
+
 - **Phase 1 — PR details in the instance view.** Surface the pull request jackin-capsule already detects for an instance's branch in the right detail block: number, title, base/head, state, checks.
 - **Phase 2 — Review mode + run-all baseline.** The sidebar mode switch on a PR-bearing instance; the command list; check the PR head out host-side; run the whole build set against the freshly built binary, with a pass/fail summary.
 - **Phase 3 — In-surface verbs + relevance (the diff-driven spine).** Build / run-named / refresh / shell-into-checkout from review mode; refresh re-fetches the PR head and resets the checkout so a rebuild picks up new commits; map the PR's changed files to the relevant commands and list them first; suggestion-not-skip; de-selection logging.

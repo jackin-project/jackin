@@ -1,0 +1,86 @@
+//! Launch container-info dialog helpers.
+
+use jackin_tui::HintSpan;
+use jackin_tui::centered_rect;
+use jackin_tui::components::{
+    ContainerInfoState, DebugInfo, ModalBackdrop, bottom_chrome_areas,
+    container_info_required_height, debug_info_hint_spans, dialog_scroll_axes,
+    render_container_info, render_hint_bar,
+};
+use ratatui::Frame;
+use ratatui::layout::Rect;
+use ratatui::widgets::Clear;
+
+use crate::LaunchView;
+use crate::tui::components::footer::render_footer;
+
+#[must_use]
+pub fn launch_container_info_state(
+    view: &LaunchView,
+    run_id: &str,
+    run_log_path: &str,
+    debug_mode: bool,
+    jackin_version: &'static str,
+) -> ContainerInfoState {
+    let identity = view.identity.as_ref();
+    // The launch surface knows the container/role/agent/target on top of what
+    // the console already showed. Build from the shared accumulating model so
+    // row order, labels, and copy affordances match every other surface.
+    let info = DebugInfo {
+        jackin_version: Some(jackin_version.to_owned()),
+        container_id: Some(
+            identity
+                .and_then(|identity| identity.container.as_deref())
+                .unwrap_or("loading...")
+                .to_owned(),
+        ),
+        role: identity.map(|identity| identity.role.clone()),
+        agent: identity.map(|identity| identity.agent.clone()),
+        target: identity.map(|identity| identity.target_label.clone()),
+        run_id: debug_mode.then(|| run_id.to_owned()),
+        diagnostics_log_path: debug_mode.then(|| run_log_path.to_owned()),
+        capsule_version: None,
+    };
+    let mut state = info.into_state();
+    if let Some(row) = view.container_info_copied {
+        state.mark_copied(row);
+    }
+    state.set_hovered_row(view.container_info_hover);
+    state.scroll = view.container_info_scroll.clone();
+    state
+}
+
+pub fn render_launch_container_info(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    view: &LaunchView,
+    run_id: &str,
+    run_log_path: &str,
+    debug_mode: bool,
+    jackin_version: &'static str,
+) {
+    let chrome = bottom_chrome_areas(area);
+    let state = launch_container_info_state(view, run_id, run_log_path, debug_mode, jackin_version);
+    let rect = launch_container_info_rect(area, &state);
+    frame.render_widget(ModalBackdrop, chrome.body);
+    render_container_info(frame, rect, &state);
+    let axes = dialog_scroll_axes(state.content_width(), state.content_height(), rect);
+    let mut hint_spans = debug_info_hint_spans(axes);
+    hint_spans.push(HintSpan::GroupSep);
+    hint_spans.extend(crate::tui::keymap::cockpit_global_hint_spans());
+    render_hint_bar(frame, chrome.hint, &hint_spans);
+    frame.render_widget(Clear, chrome.spacer);
+    render_footer(frame, chrome.footer, view, run_id, debug_mode);
+}
+
+#[must_use]
+pub fn launch_container_info_rect(area: Rect, state: &ContainerInfoState) -> Rect {
+    // Structural exception: launch supplies surface width while shared Debug info owns row height and rendering.
+    let body = bottom_chrome_areas(area).body;
+    let width = (body.width.saturating_mul(3) / 5).clamp(40, body.width.max(40));
+    let height = container_info_required_height(state);
+    centered_rect(width, height.min(body.height), body)
+}
+
+#[cfg(test)]
+mod tests;

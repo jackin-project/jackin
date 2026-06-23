@@ -6,7 +6,7 @@ title: "Agent Runtime Status Authority"
 
 ## Problem
 
-jackin' needs to know what each in-container agent is actually doing: actively working, waiting on the operator, finished but unseen, idle and reviewed, crashed, or suspiciously stuck. The current multiplexer code has the protocol labels but not the authority behind them. In <RepoFile path="crates/jackin-capsule/src/session.rs" />, `Session::refresh_state` still reduces state to "output in the last few seconds means working; otherwise blocked." That is not good enough for a first-class agent orchestrator. A quiet agent can be thinking, waiting for network, running a long tool, sitting at an input box, or dead. Treating all quiet periods as `blocked` creates false notifications, noisy dashboards, bad queue dispatch, and weak operator trust.
+jackin' needs to know what each in-container agent is actually doing: actively working, waiting on the operator, finished but unseen, idle and reviewed, crashed, or suspiciously stuck. The current multiplexer code has the protocol labels but not the authority behind them. In <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>, `Session::refresh_state` still reduces state to "output in the last few seconds means working; otherwise blocked." That is not good enough for a first-class agent orchestrator. A quiet agent can be thinking, waiting for network, running a long tool, sitting at an input box, or dead. Treating all quiet periods as `blocked` creates false notifications, noisy dashboards, bad queue dispatch, and weak operator trust.
 
 The roadmap item is the state authority jackin' needs before agent attention prompts, autonomous task queues, Desktop Agent Hub, or cost/resource correlation can be reliable. It replaces timer-only inference with a layered model that is conservative by default and precise when the runtime exposes semantic events.
 
@@ -33,7 +33,7 @@ This design is based on a May 28, 2026 source review of [Herdr](https://github.c
 |---|---|---|---|
 | Herdr | `ogulcancelik/herdr` commit `2d8b4e2db4642dede084801c03516046f205626b`; latest release observed as `v0.6.4` on May 27, 2026. | AGPL-3.0-or-later | Process ownership, visible-screen fallback, socket reports, central arbitration, and `done` until viewed. |
 | multicode | `graemerocher/multicode` commit `4a9852b4a5ca62134e59bcc78a2dc0fb704d47b4`; pushed May 5, 2026. | Apache-2.0 | Codex app-server status, OpenCode SSE/session APIs, descendant session roll-up, and cooperative state files. |
-| jackin' | Current branch state in <RepoFile path="src/agent/mod.rs" />, <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />, and <RepoFile path="docker/runtime/entrypoint.sh" />. | Apache-2.0 | Built-in agents are Claude Code, Codex, Amp, Kimi, and OpenCode; Capsule already owns the PTY, parser, socket, and runtime-local setup path. |
+| jackin' | Current branch state in <RepoFile path="crates/jackin-core/src/agent.rs">crates/jackin-core/src/agent.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile>, and <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile>. | Apache-2.0 | Built-in agents are Claude Code, Codex, Amp, Kimi, and OpenCode; Capsule already owns the PTY, parser, socket, and runtime-local setup path. |
 
 Herdr is AGPL-3.0 and cannot be embedded in jackin' Apache-2.0 code. The implementation must be written from scratch. The value is the product shape and signal hierarchy, not source reuse.
 
@@ -135,9 +135,9 @@ This belongs in jackin' as a fallback/probe, not as the primary blocker detector
 
 ## Current jackin' Surface
 
-The built-in runtimes are exactly `claude`, `codex`, `amp`, `kimi`, and `opencode` in <RepoFile path="src/agent/mod.rs" />. Runtime setup already centralizes agent home seeding and credential copying in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />. Launch currently passes high-autonomy flags in <RepoFile path="docker/runtime/entrypoint.sh" />: Claude Code uses dangerous-skip-permissions, Codex uses dangerous bypass approvals/sandbox, Amp uses dangerous allow-all, Kimi uses yolo mode, and OpenCode gets permission allow config. These flags lower the number of tool-approval prompts but do not remove auth prompts, user questions, plan confirmation, model/account issues, runtime updates, or terminal-level failures.
+The built-in runtimes are exactly `claude`, `codex`, `amp`, `kimi`, and `opencode` in <RepoFile path="crates/jackin-core/src/agent.rs">crates/jackin-core/src/agent.rs</RepoFile>. Runtime setup already centralizes agent home seeding and credential copying in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile>. Launch currently passes high-autonomy flags in <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile>: Claude Code uses dangerous-skip-permissions, Codex uses dangerous bypass approvals/sandbox, Amp uses dangerous allow-all, Kimi uses yolo mode, and OpenCode gets permission allow config. These flags lower the number of tool-approval prompts but do not remove auth prompts, user questions, plan confirmation, model/account issues, runtime updates, or terminal-level failures.
 
-Capsule already owns the right implementation point: the PTY reader, `vt100` parser state, session lifecycle, 1Hz ticker, control socket at `/jackin/run/jackin.sock`, and in-container setup hooks. Host-side code should consume structured state events; it should not scrape terminal output through `docker exec`, `docker attach`, or a rendered preview.
+Capsule already owns the right implementation point: the PTY reader, jackin-term `DamageGrid` state, session lifecycle, 1Hz ticker, control socket at `/jackin/run/jackin.sock`, and in-container setup hooks. Host-side code should consume structured state events; it should not scrape terminal output through `docker exec`, `docker attach`, or a rendered preview.
 
 ## jackin' Design
 
@@ -159,7 +159,7 @@ This is the main architectural difference from Herdr, CCManager, ccmux, WezTerm 
 
 ### Implementation Surface
 
-The first implementation should add a dedicated status authority module inside `crates/jackin-capsule`, conceptually named `session_status` or `agent_status`. `Session` should store child PID, detected foreground agent, raw detector state, effective public status, `seen` acknowledgement state, current authority source, evidence metadata, revision, and last-seen revision. The protocol type in <RepoFile path="crates/jackin-protocol/src/control.rs" /> should grow `Unknown`; if wire compatibility is not important before release, replace the current enum shape directly rather than adding compatibility shims.
+The first implementation should add a dedicated status authority module inside `crates/jackin-capsule`, conceptually named `session_status` or `agent_status`. `Session` should store child PID, detected foreground agent, raw detector state, effective public status, `seen` acknowledgement state, current authority source, evidence metadata, revision, and last-seen revision. The protocol type in <RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile> should grow `Unknown`; if wire compatibility is not important before release, replace the current enum shape directly rather than adding compatibility shims.
 
 The raw detector state should stay separate from the public status. Raw states are `unknown`, `working`, `blocked`, and `idle`. Effective statuses are `unknown`, `working`, `blocked`, `done`, `idle`, and optional diagnostic overlays such as `stuck`. `done` is computed from raw idle plus the `seen` flag and should never be accepted from a hook as runtime truth.
 
@@ -180,7 +180,7 @@ The protocol should expose this model as structured JSON fields, not pre-rendere
 
 1. **Semantic reports.** Add a control-channel method for trusted in-container runtime integrations to report state: source, agent/runtime, raw state, optional message, optional custom status, sequence number, timestamp, and session reference. Reporters include Claude Code hooks, Codex structured status when available, OpenCode plugins/API bridges, Amp/Kimi equivalents when available, and wrapper hooks created by jackin' inside the container at launch. This is the preferred source when fresh and process-consistent.
 2. **Process ownership.** Track the child PID for each session, read Linux `/proc/<pid>/stat` to get the foreground terminal process group, scan `/proc` for that process group, and identify known agent binaries. Because jackin' runs inside Linux containers, this can be Linux-first and simpler than Herdr's cross-platform path. Process exit should clear hook authority for that agent and transition toward `idle` or `exited`, not leave a stale working/blocking state behind.
-3. **Visible screen detection.** Read the current `vt100::Screen` snapshot for the pane and match only strong, current-screen signals: approval prompts, explicit input-required prompts, visible idle input UI, and visible working chrome. Avoid treating arbitrary scrollback text as authority.
+3. **Visible screen detection.** Read the current `jackin-term` `GridSnapshot` for the pane and match only strong, current-screen signals: approval prompts, explicit input-required prompts, visible idle input UI, and visible working chrome. Avoid treating arbitrary scrollback text as authority.
 4. **Shell-integration markers.** Capture `OSC 133`, `OSC 633`, `OSC 7`, and related markers when shells emit them. Use them for shell prompt/execution boundaries and cwd/title enrichment.
 5. **Cursor-position probes.** Optionally probe `CSI 6n`/cursor position through the PTY for readiness/stuck diagnostics, with timeout and fallback. Never block the PTY reader, attach channel, or daemon event loop while waiting for a probe response.
 6. **Output activity.** Keep output timestamps, but demote them to a weak signal: recent output supports `working`; silence alone does not prove `blocked`.
@@ -229,7 +229,7 @@ This lets the console and Desktop Agent Hub route the operator to the pane that 
 
 All status assets that jackin' installs inside a role container should live under `/jackin/`: reporter binaries/scripts under `/jackin/runtime/agent-status/`, ephemeral sockets/pidfiles under `/jackin/run/`, and per-session status cache or sequence state under `/jackin/state/agent-status/`. The existing Capsule socket at `/jackin/run/jackin.sock` should remain the control-plane endpoint unless a measured throughput issue proves a separate socket is needed.
 
-Runtime setup belongs in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> and the launch scaffolding in <RepoFile path="docker/runtime/entrypoint.sh" />. The setup path should copy or generate:
+Runtime setup belongs in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> and the launch scaffolding in <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile>. The setup path should copy or generate:
 
 - `/jackin/runtime/agent-status/report` — small CLI or script that sends `report_agent_state`, `heartbeat`, and `clear_agent_authority` messages to the Capsule socket.
 - `/jackin/runtime/agent-status/wrap` — optional launch wrapper that stamps `JACKIN_SESSION_ID`, `JACKIN_AGENT_RUNTIME`, `JACKIN_STATUS_SOURCE`, and the child PID/process start/exit events before `exec`ing the real runtime.
@@ -378,11 +378,11 @@ Out of scope for the first implementation:
 
 ## Related Files
 
-- <RepoFile path="crates/jackin-capsule/src/session.rs" /> — current weak state timer; future PTY/process/screen signal source.
-- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — event loop, 1Hz state ticker, and session lifecycle.
-- <RepoFile path="crates/jackin-protocol/src/control.rs" /> — status/event protocol surface.
-- <RepoFile path="crates/jackin-capsule/src/socket.rs" /> — existing Capsule socket at `/jackin/run/jackin.sock`.
-- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — runtime-local setup path for container-owned hooks/plugins/API bridges.
-- <RepoFile path="docker/runtime/entrypoint.sh" /> — built-in agent launch commands and autonomy flags.
-- <RepoFile path="src/agent/mod.rs" /> — built-in runtime enum and slugs.
-- <RepoFile path="src/runtime/launch.rs" /> — host launch path that must pass only explicit/container-local state setup.
+- <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile> — current weak state timer; future PTY/process/screen signal source.
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile> — event loop, 1Hz state ticker, and session lifecycle.
+- <RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile> — status/event protocol surface.
+- <RepoFile path="crates/jackin-capsule/src/socket.rs">crates/jackin-capsule/src/socket.rs</RepoFile> — existing Capsule socket at `/jackin/run/jackin.sock`.
+- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> — runtime-local setup path for container-owned hooks/plugins/API bridges.
+- <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> — built-in agent launch commands and autonomy flags.
+- <RepoFile path="crates/jackin-core/src/agent.rs">crates/jackin-core/src/agent.rs</RepoFile> — built-in runtime enum and slugs.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — host launch path that must pass only explicit/container-local state setup.

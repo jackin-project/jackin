@@ -1,0 +1,33 @@
+---
+title: "op_picker — Behavioral Spec"
+---
+
+Behavioral invariant contract for the 1Password picker state machine spread across <RepoFile path="crates/jackin-console/src/tui/op_picker.rs">crates/jackin-console/src/tui/op_picker.rs</RepoFile> (root-console adapter) and <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs">crates/jackin-console/src/tui/components/op_picker.rs</RepoFile> (surface-local render/state helpers).
+
+## Purpose
+
+4-stage drill-down picker: `Accounts → Vaults → Items → Fields`. Each stage has a background loader (spawned with `std::thread::spawn`) and a key handler. Loaders post results via channel; `poll_load()` drains them before each render cycle.
+
+The field stage has an extra navigation layer: fields belonging to named 1Password sections are grouped under collapsible `SectionHeader` rows. Navigation (Up/Down), collapse (Left), and expand (Right/Enter-on-header) all operate on the full display-row list, not the underlying field slice.
+
+## Behavioral invariants
+
+| INV | Description | Verify by |
+|---|---|---|
+| INV-1 | Field selection commits `OpField::reference` verbatim when present; only fixtures missing `reference` use the synthesized `op://<vault>/<item>/<label>` fallback | Selection path returns `field.reference.clone()` first, then falls back to `format!("op://{}/{}/{}"...)` |
+| INV-2 | No secret values in the picker path — `RawOpField` has no `value` field; serde drops it silently | `grep value op_picker.rs`; exhaustive destructure test at `operator_env.rs` |
+| INV-3 | Loading is async (background worker + channel); key handlers stay synchronous and only advance UI state / `poll_load()` | Background loaders use `std::thread::spawn`; key handlers do not call the CLI directly |
+| INV-4 | `field_list_state.selected` indexes the *display* row list (returned by `build_field_display_rows()`), not `filtered_fields()` directly — section-header rows are navigable; Enter on a header toggles collapse rather than committing a field | Display rows built from `FieldDisplayRow` enum; collapse/expand via `collapsed_sections: HashSet<String>`; `reset_selection_for_filter` and Up/Down both use `build_field_display_rows().len()` |
+
+## State machine
+
+```
+Accounts
+  └─ Vaults (background load after account selected)
+       └─ Items (background load after vault selected)
+            └─ Fields (background load after item selected)
+                  collapsible SectionHeader rows
+                  Up/Down/Left/Right/Enter all operate on display list
+```
+
+Each stage: loader spawns thread → posts `Result<Vec<_>>` to channel → `poll_load()` drains → state advances to next stage or shows error.

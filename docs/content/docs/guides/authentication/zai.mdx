@@ -6,7 +6,7 @@ description: Use Z.AI's Anthropic-compatible endpoint as an alternative provider
 
 [Z.AI's GLM Coding Plan](https://z.ai/subscribe) provides an Anthropic-compatible API endpoint (`https://api.z.ai/api/anthropic`) backed by GLM models. Because the endpoint speaks the same protocol as Anthropic's API, Claude Code works against it without modification — jackin' injects the redirect at session-spawn time.
 
-When `ZAI_API_KEY` is configured, opening a new Claude tab presents a two-item provider picker — **Anthropic** or **Z.AI** — immediately after you select the agent. Single-provider operators (no `ZAI_API_KEY`) see no change: the picker is skipped and the session opens directly.
+When `ZAI_API_KEY` is configured, opening a new Claude tab presents a provider picker with **Z.AI** as one of the options, immediately after you select the agent. Operators without any alternative provider key see no change: the picker is skipped and the session opens directly. If you have keys for multiple providers (Z.AI, MiniMax, Kimi), all of them appear in the same picker.
 
 <Aside type="tip">
 Z.AI is configured in the **Auth** tab of `jackin console`, not by hand-editing any config file.
@@ -87,5 +87,7 @@ Your `ZAI_API_KEY` is never written to the logs, including `--debug` output.
 ## See also
 
 - [Authentication overview](/guides/authentication/) — the shared modes / scopes / defaults pattern jackin' applies across every auth axis.
-- [Agent Authentication](/guides/authentication/agents/) — agent-level auth forwarding for Claude Code, Codex, Amp, Kimi, and OpenCode.
+- [MiniMax (Token Plan)](/guides/authentication/minimax/) — the MiniMax Anthropic-compatible alternative provider.
+- [Kimi](/guides/authentication/kimi/) — Kimi's Anthropic-compatible coding endpoint.
+- [Agent Authentication](/guides/authentication/agents/) — agent-level auth forwarding for Claude Code, Codex, Amp, Kimi, OpenCode, and Grok.
 - [Environment Variables](/guides/environment-variables/) — how the operator env-vars model supplies credentials at global and per-workspace scope.

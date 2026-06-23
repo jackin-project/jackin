@@ -1,3 +1,14 @@
+//! Attach protocol handshake: initial capability negotiation and session-ID
+//! assignment when a client connects.
+//!
+//! Not responsible for: PTY lifecycle, input dispatch after attach completes,
+//! or control-channel framing (see `protocol::control`).
+//!
+//! Key invariant: every client → server tag is in `0x01..=0x7F`; every
+//! server → client tag has the top bit set (`0x80..=0xFF`). The first byte
+//! of a new connection lands in the daemon's protocol-disambiguator before
+//! this module sees it.
+
 /// Attach channel: tag-plus-length binary framing.
 ///
 /// Used by interactive clients: one persistent connection per attached
@@ -38,11 +49,11 @@ pub const MAX_HELLO_ENV: usize = 64;
 /// Per-entry cap on Hello env-value byte length. Operator-supplied env
 /// values in jackin' are short (slugs, booleans, file paths); cap at
 /// 8 KiB so a buggy or hostile client cannot smuggle a megabyte-sized
-/// env entry past MAX_HELLO_ENV (the count cap) into the spawned
+/// env entry past `MAX_HELLO_ENV` (the count cap) into the spawned
 /// session's environment block.
 pub const MAX_HELLO_ENV_VALUE: usize = 8 * 1024;
 /// Per-entry cap on Hello env-key byte length. Same shape as
-/// MAX_HELLO_ENV_VALUE; env-var names should be even shorter than
+/// `MAX_HELLO_ENV_VALUE`; env-var names should be even shorter than
 /// values, but the wire field is still u16-sized so we bound it.
 pub const MAX_HELLO_ENV_KEY: usize = 1024;
 /// Per terminal-identity field cap. These values come from the active
@@ -67,7 +78,7 @@ pub enum SpawnRequest {
     Agent(String),
     /// Agent spawn where the provider was already selected by the console
     /// before `docker exec`-ing. The daemon uses `provider_label` directly
-    /// as the tab suffix instead of showing the in-mux ProviderPicker dialog.
+    /// as the tab suffix instead of showing the in-mux `ProviderPicker` dialog.
     AgentWithProvider {
         slug: String,
         provider_label: String,
@@ -79,7 +90,7 @@ impl SpawnRequest {
     /// decode-side `decode_client` check so in-process callers cannot
     /// construct a degenerate `Agent("")` that would only be caught
     /// after a wire round-trip.
-    pub fn agent(slug: impl Into<String>) -> anyhow::Result<Self> {
+    pub fn agent(slug: impl Into<String>) -> Result<Self> {
         let slug = slug.into();
         if slug.is_empty() {
             anyhow::bail!("SpawnRequest::Agent slug must be non-empty");
@@ -101,6 +112,12 @@ pub struct ClientTerminal {
     pub term: Option<String>,
     pub term_program: Option<String>,
     pub colorterm: Option<String>,
+    /// Default foreground/background the client read from its terminal via
+    /// OSC 10/11 before the handshake. `None` when the terminal did not
+    /// answer. The daemon feeds these into every pane grid so agent OSC 10/11
+    /// queries are answered with the colors the operator actually sees.
+    pub default_fg: Option<(u8, u8, u8)>,
+    pub default_bg: Option<(u8, u8, u8)>,
 }
 
 impl ClientTerminal {
@@ -109,6 +126,8 @@ impl ClientTerminal {
             term: non_empty_env(TERM_LABEL),
             term_program: non_empty_env(TERM_PROGRAM_LABEL),
             colorterm: non_empty_env(COLORTERM_LABEL),
+            default_fg: None,
+            default_bg: None,
         }
     }
 
@@ -181,7 +200,7 @@ pub enum ServerFrame {
     Welcome { session_count: u32 },
     Output(Vec<u8>),
     SessionList(Vec<u8>),
-    Shutdown,
+    Shutdown { reason: Option<String> },
     Bell,
 }
 
@@ -200,7 +219,14 @@ pub fn encode_server(frame: ServerFrame) -> Vec<u8> {
         ServerFrame::Welcome { session_count } => encode(TAG_WELCOME, &session_count.to_be_bytes()),
         ServerFrame::Output(bytes) => encode(TAG_OUTPUT, &bytes),
         ServerFrame::SessionList(json) => encode(TAG_SESSION_LIST, &json),
-        ServerFrame::Shutdown => encode(TAG_SHUTDOWN, &[]),
+        // The wire payload is the reason bytes; an empty payload means "no
+        // reason". `Some("")` therefore round-trips back as `None` on decode —
+        // no caller emits an empty reason (all are non-empty or genuine
+        // `None`), so this normalization is safe, not lossy in practice.
+        ServerFrame::Shutdown { reason } => encode(
+            TAG_SHUTDOWN,
+            reason.as_deref().unwrap_or_default().as_bytes(),
+        ),
         ServerFrame::Bell => encode(TAG_BELL, &[]),
     }
 }
@@ -229,6 +255,8 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
             //   term_len(2) term_bytes
             //   term_program_len(2) term_program_bytes
             //   colorterm_len(2) colorterm_bytes
+            //   fg_present(1) [fg_r(1) fg_g(1) fg_b(1) if 1]
+            //   bg_present(1) [bg_r(1) bg_g(1) bg_b(1) if 1]
             let (spawn_kind, agent_bytes, provider_label_bytes): (u8, &[u8], &[u8]) =
                 match spawn.as_ref() {
                     None => (0, b"", b""),
@@ -312,6 +340,8 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
                 TERM_PROGRAM_LABEL,
             )?;
             write_terminal_field(&mut payload, terminal.colorterm.as_deref(), COLORTERM_LABEL)?;
+            write_color_field(&mut payload, terminal.default_fg);
+            write_color_field(&mut payload, terminal.default_bg);
             encode(TAG_HELLO, &payload)
         }
         ClientFrame::Resize { rows, cols } => {
@@ -352,6 +382,30 @@ fn read_terminal_field(cursor: &mut PayloadCursor<'_>, label: &str) -> Result<Op
     let value_label = format!("terminal {label}");
     let value = cursor.read_string(len, &value_label)?;
     Ok((!value.is_empty()).then_some(value))
+}
+
+fn write_color_field(payload: &mut Vec<u8>, color: Option<(u8, u8, u8)>) {
+    match color {
+        None => payload.push(0u8),
+        Some((r, g, b)) => {
+            payload.push(1u8);
+            payload.extend_from_slice(&[r, g, b]);
+        }
+    }
+}
+
+fn read_color_field(cursor: &mut PayloadCursor<'_>, label: &str) -> Result<Option<(u8, u8, u8)>> {
+    let kind_label = format!("{label} presence");
+    match cursor.read_u8(&kind_label)? {
+        0 => Ok(None),
+        1 => {
+            let r = cursor.read_u8(&format!("{label} r"))?;
+            let g = cursor.read_u8(&format!("{label} g"))?;
+            let b = cursor.read_u8(&format!("{label} b"))?;
+            Ok(Some((r, g, b)))
+        }
+        other => bail!("unknown hello {label} presence byte {other}"),
+    }
 }
 
 /// Read one length-prefixed payload from `stream` given the already-
@@ -508,6 +562,8 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 term: read_terminal_field(&mut cursor, TERM_LABEL)?,
                 term_program: read_terminal_field(&mut cursor, TERM_PROGRAM_LABEL)?,
                 colorterm: read_terminal_field(&mut cursor, COLORTERM_LABEL)?,
+                default_fg: read_color_field(&mut cursor, "default fg")?,
+                default_bg: read_color_field(&mut cursor, "default bg")?,
             };
             if !cursor.finished() {
                 bail!("hello payload has trailing bytes");
@@ -551,7 +607,14 @@ pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
         }
         TAG_OUTPUT => ServerFrame::Output(payload),
         TAG_SESSION_LIST => ServerFrame::SessionList(payload),
-        TAG_SHUTDOWN => ServerFrame::Shutdown,
+        TAG_SHUTDOWN => {
+            let reason = if payload.is_empty() {
+                None
+            } else {
+                Some(String::from_utf8(payload).context("shutdown reason is not UTF-8")?)
+            };
+            ServerFrame::Shutdown { reason }
+        }
         TAG_BELL => ServerFrame::Bell,
         other => bail!("unknown server attach tag {other:#04x}"),
     })
@@ -602,7 +665,7 @@ impl<'a> PayloadCursor<'a> {
         let bytes = self.read_bytes(len, field)?;
         let s = std::str::from_utf8(bytes)
             .map_err(|_| anyhow::anyhow!("hello {field} is not valid UTF-8"))?;
-        Ok(s.to_string())
+        Ok(s.to_owned())
     }
 
     fn read_bytes(&mut self, len: usize, field: &str) -> Result<&'a [u8]> {
@@ -623,579 +686,4 @@ impl<'a> PayloadCursor<'a> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn hot_path_output_avoids_base64_and_json() {
-        // Regression for the first attempt's `base64-inside-JSON` hot path:
-        // a 4 KiB chunk of raw PTY bytes must travel through the attach
-        // channel with only 5 bytes of overhead (tag + length).
-        let payload = vec![0xCDu8; 4096];
-        let frame = encode_server(ServerFrame::Output(payload.clone()));
-        assert_eq!(frame.len(), 5 + payload.len());
-        assert_eq!(frame[0], TAG_OUTPUT);
-        assert_eq!(&frame[1..5], &(payload.len() as u32).to_be_bytes());
-        assert_eq!(&frame[5..], &payload[..]);
-    }
-
-    #[test]
-    fn hello_roundtrips() {
-        let bytes = encode_client(ClientFrame::Hello {
-            rows: 42,
-            cols: 100,
-            spawn: None,
-            env: Vec::new(),
-            terminal: ClientTerminal::default(),
-            focus_session: None,
-        })
-        .unwrap();
-        // First byte is tag, never `0x00` (which is reserved for the
-        // control-channel JSON length high byte).
-        assert_eq!(bytes[0], TAG_HELLO);
-        assert_ne!(bytes[0], 0x00);
-    }
-
-    #[test]
-    fn hello_with_spawn_shell_roundtrips() {
-        let bytes = encode_client(ClientFrame::Hello {
-            rows: 50,
-            cols: 200,
-            spawn: Some(SpawnRequest::Shell),
-            env: Vec::new(),
-            terminal: ClientTerminal::default(),
-            focus_session: None,
-        })
-        .unwrap();
-        let payload = bytes[5..].to_vec();
-        let frame = decode_client(TAG_HELLO, payload).unwrap();
-        assert_eq!(
-            frame,
-            ClientFrame::Hello {
-                rows: 50,
-                cols: 200,
-                spawn: Some(SpawnRequest::Shell),
-                env: Vec::new(),
-                terminal: ClientTerminal::default(),
-                focus_session: None,
-            }
-        );
-    }
-
-    #[test]
-    fn hello_with_spawn_agent_and_env_roundtrips() {
-        let bytes = encode_client(ClientFrame::Hello {
-            rows: 50,
-            cols: 200,
-            spawn: Some(SpawnRequest::Agent("codex".to_string())),
-            env: vec![
-                ("JACKIN_GIT_COAUTHOR_TRAILER".to_string(), "1".to_string()),
-                ("JACKIN_GIT_DCO".to_string(), "1".to_string()),
-            ],
-            terminal: ClientTerminal::default(),
-            focus_session: None,
-        })
-        .unwrap();
-        // Decode skips the 4-byte length prefix that `encode_client` writes
-        // after the tag; reconstruct the payload to feed `decode_client`.
-        let payload = bytes[5..].to_vec();
-        let frame = decode_client(TAG_HELLO, payload).unwrap();
-        assert_eq!(
-            frame,
-            ClientFrame::Hello {
-                rows: 50,
-                cols: 200,
-                spawn: Some(SpawnRequest::Agent("codex".to_string())),
-                env: vec![
-                    ("JACKIN_GIT_COAUTHOR_TRAILER".to_string(), "1".to_string()),
-                    ("JACKIN_GIT_DCO".to_string(), "1".to_string()),
-                ],
-                terminal: ClientTerminal::default(),
-                focus_session: None,
-            }
-        );
-    }
-
-    #[test]
-    fn hello_with_agent_and_provider_roundtrips() {
-        // spawn_kind=3 carries both the slug and the provider label.
-        // A regression dropping the label bytes from the encoder while
-        // the decoder still reads them would only surface at a real
-        // console-initiated provider launch — pin the round-trip here.
-        let spawn = Some(SpawnRequest::AgentWithProvider {
-            slug: "claude".to_string(),
-            provider_label: "Z.AI".to_string(),
-        });
-        let bytes = encode_client(ClientFrame::Hello {
-            rows: 50,
-            cols: 200,
-            spawn: spawn.clone(),
-            env: Vec::new(),
-            terminal: ClientTerminal::default(),
-            focus_session: None,
-        })
-        .unwrap();
-        let payload = bytes[5..].to_vec();
-        match decode_client(TAG_HELLO, payload).unwrap() {
-            ClientFrame::Hello { spawn: out, .. } => assert_eq!(out, spawn),
-            other => panic!("expected Hello, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn hello_rejects_oversized_provider_label_at_encode() {
-        let err = encode_client(ClientFrame::Hello {
-            rows: 24,
-            cols: 80,
-            spawn: Some(SpawnRequest::AgentWithProvider {
-                slug: "claude".to_string(),
-                provider_label: "p".repeat(MAX_HELLO_PROVIDER_LABEL + 1),
-            }),
-            env: Vec::new(),
-            terminal: ClientTerminal::default(),
-            focus_session: None,
-        })
-        .expect_err("over-cap provider label must be rejected at encode");
-        let msg = format!("{err:#}");
-        assert!(msg.contains("provider label"), "got: {msg}");
-        assert!(
-            msg.contains(&MAX_HELLO_PROVIDER_LABEL.to_string()),
-            "got: {msg}"
-        );
-    }
-
-    #[test]
-    fn hello_rejects_empty_provider_label_at_decode() {
-        // spawn_kind=3, slug="claude", provider_label_len=0. The decoder
-        // must reject an AgentWithProvider frame with no label rather than
-        // construct one the daemon would route as an unknown provider.
-        let mut payload = vec![0, 24, 0, 80, 3, 0, 6];
-        payload.extend(b"claude");
-        payload.extend_from_slice(&0u16.to_be_bytes()); // provider_label_len = 0
-        assert!(decode_client(TAG_HELLO, payload).is_err());
-    }
-
-    #[test]
-    fn hello_rejects_oversized_agent_len() {
-        // spawn_kind=agent, agent_len=99 but payload only carries
-        // 12 bytes of "only-7-bytes".
-        // decode must bail rather than slice past the buffer.
-        let mut payload = vec![0, 42, 0, 100, 2, 0, 99];
-        payload.extend(b"only-7-bytes");
-        assert!(decode_client(TAG_HELLO, payload).is_err());
-    }
-
-    #[test]
-    fn hello_rejects_non_utf8_agent_bytes() {
-        let mut payload = vec![0, 42, 0, 100, 2, 0, 3];
-        payload.extend(&[0xFF, 0xFE, 0xFD]);
-        assert!(decode_client(TAG_HELLO, payload).is_err());
-    }
-
-    #[test]
-    fn hello_rejects_truncated_env_value() {
-        let mut payload = vec![0, 42, 0, 100, 0, 0, 0, 0, 1, 0, 3, 0, 0, 0, 99];
-        payload.extend(b"KEY");
-        payload.extend(b"short");
-        assert!(decode_client(TAG_HELLO, payload).is_err());
-    }
-
-    #[test]
-    fn hello_rejects_truncated_4_byte_payload() {
-        let payload = vec![0, 24, 0, 80];
-        assert!(decode_client(TAG_HELLO, payload).is_err());
-    }
-
-    #[test]
-    fn hello_shell_with_non_empty_agent_slug_rejected() {
-        // spawn_kind=1 (Shell), agent_len=5 ("claude"-ish bytes).
-        // Shell + slug is structurally invalid; decode must bail.
-        let mut payload = vec![0, 24, 0, 80, 1, 0, 5];
-        payload.extend(b"claud");
-        payload.extend(&[0, 0]);
-        payload.push(0);
-        assert!(decode_client(TAG_HELLO, payload).is_err());
-    }
-
-    #[test]
-    fn hello_with_trailing_bytes_rejected() {
-        // Extra byte after the focus_kind tail must fail rather than be
-        // tolerated — the wire format is closed, future fields go via a
-        // versioned schema bump.
-        let mut bytes = encode_client(ClientFrame::Hello {
-            rows: 24,
-            cols: 80,
-            spawn: None,
-            env: Vec::new(),
-            terminal: ClientTerminal::default(),
-            focus_session: None,
-        })
-        .expect("encode_client for a valid Hello must succeed");
-        bytes.push(0xFF);
-        let payload = bytes[5..].to_vec();
-        assert!(decode_client(TAG_HELLO, payload).is_err());
-    }
-
-    #[test]
-    fn welcome_decodes_session_count() {
-        let bytes = encode_server(ServerFrame::Welcome { session_count: 7 });
-        let payload = bytes[5..].to_vec();
-        let frame = decode_server(TAG_WELCOME, payload).unwrap();
-        assert_eq!(frame, ServerFrame::Welcome { session_count: 7 });
-    }
-
-    #[test]
-    fn welcome_rejects_truncated_payload() {
-        assert!(decode_server(TAG_WELCOME, vec![0, 0]).is_err());
-    }
-
-    #[test]
-    fn server_frames_roundtrip() {
-        for frame in [
-            ServerFrame::Output(b"raw bytes".to_vec()),
-            ServerFrame::SessionList(br#"[{"id":1}]"#.to_vec()),
-            ServerFrame::Shutdown,
-            ServerFrame::Bell,
-        ] {
-            let bytes = encode_server(frame.clone());
-            let tag = bytes[0];
-            let payload = bytes[5..].to_vec();
-            assert_eq!(decode_server(tag, payload).unwrap(), frame);
-        }
-    }
-
-    #[test]
-    fn unknown_server_tag_rejected() {
-        assert!(decode_server(0xFE, Vec::new()).is_err());
-    }
-
-    #[test]
-    fn read_client_frame_rejects_oversize() {
-        use tokio::io::AsyncWriteExt;
-        use tokio::net::UnixStream;
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        runtime.block_on(async {
-            let (mut a, mut b) = UnixStream::pair().unwrap();
-            let oversize_len = (MAX_FRAME_PAYLOAD + 1) as u32;
-            a.write_all(&oversize_len.to_be_bytes()).await.unwrap();
-            a.shutdown().await.unwrap();
-            let result = read_client_frame(&mut b, TAG_INPUT).await;
-            assert!(
-                result.is_err(),
-                "expected oversize rejection, got {result:?}"
-            );
-        });
-    }
-
-    #[test]
-    fn read_client_frame_accepts_exact_max_payload() {
-        // Boundary partner for `read_client_frame_rejects_oversize`: a
-        // refactor that swaps the inequality from `>` to `>=` in
-        // `read_framed_payload` would silently shrink the documented
-        // maximum by one byte. This test fails the moment that happens.
-        use tokio::io::AsyncWriteExt;
-        use tokio::net::UnixStream;
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        runtime.block_on(async {
-            let (mut a, mut b) = UnixStream::pair().unwrap();
-            let exact_len = MAX_FRAME_PAYLOAD as u32;
-            let write_task = tokio::spawn(async move {
-                a.write_all(&exact_len.to_be_bytes()).await.unwrap();
-                a.write_all(&vec![0x42u8; MAX_FRAME_PAYLOAD]).await.unwrap();
-                a.shutdown().await.unwrap();
-            });
-            let result = read_client_frame(&mut b, TAG_INPUT).await;
-            write_task.await.unwrap();
-            let frame = result
-                .expect("must not reject exact-max payload")
-                .expect("frame present");
-            match frame {
-                ClientFrame::Input(bytes) => assert_eq!(bytes.len(), MAX_FRAME_PAYLOAD),
-                other => panic!("expected Input, got {other:?}"),
-            }
-        });
-    }
-
-    #[test]
-    fn hello_env_count_over_cap_is_rejected_by_encoder() {
-        // Encoder gate must reject `MAX_HELLO_ENV + 1`. Without this the
-        // wire could carry an env list a future decoder gladly accepts,
-        // bypassing the documented cap.
-        let env: Vec<(String, String)> = (0..=MAX_HELLO_ENV)
-            .map(|i| (format!("K{i}"), "v".into()))
-            .collect();
-        let err = encode_client(ClientFrame::Hello {
-            rows: 24,
-            cols: 80,
-            spawn: None,
-            env,
-            terminal: ClientTerminal::default(),
-            focus_session: None,
-        })
-        .expect_err("over-cap env must be rejected at encode");
-        let msg = format!("{err:#}");
-        assert!(msg.contains("env count"), "got: {msg}");
-        assert!(msg.contains(&MAX_HELLO_ENV.to_string()), "got: {msg}");
-    }
-
-    #[test]
-    fn hello_env_count_over_cap_is_rejected_by_decoder() {
-        // Decoder must refuse a hand-crafted payload claiming
-        // `env_count = MAX_HELLO_ENV + 1`. This is the wire-level
-        // counterpart of the encoder guard: a buggy or hostile peer
-        // could otherwise force the daemon to pre-allocate an
-        // arbitrarily large env table.
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&24u16.to_be_bytes()); // rows
-        payload.extend_from_slice(&80u16.to_be_bytes()); // cols
-        payload.push(0u8); // spawn_kind = None
-        payload.extend_from_slice(&0u16.to_be_bytes()); // agent_len = 0
-        let bogus_count = u16::try_from(MAX_HELLO_ENV + 1).expect("fits u16");
-        payload.extend_from_slice(&bogus_count.to_be_bytes());
-        let err = decode_client(TAG_HELLO, payload)
-            .expect_err("over-cap env_count must be rejected at decode");
-        let msg = format!("{err:#}");
-        assert!(msg.contains("env_count"), "got: {msg}");
-        assert!(msg.contains(&MAX_HELLO_ENV.to_string()), "got: {msg}");
-    }
-
-    #[test]
-    fn hello_env_count_over_cap_is_rejected_by_decoder_with_full_payload() {
-        // Partner for `hello_env_count_over_cap_is_rejected_by_decoder`:
-        // that test crafts ONLY the env_count and stops, so the
-        // front-of-loop guard fires before the per-entry read runs. A
-        // refactor that moved the cap check below the per-entry loop
-        // (computing it from accumulated reads) would still pass that
-        // test. This variant supplies a fully-populated payload of
-        // `MAX_HELLO_ENV + 1` real entries so the boundary is verified
-        // after the per-entry read, not just at the count declaration.
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&24u16.to_be_bytes()); // rows
-        payload.extend_from_slice(&80u16.to_be_bytes()); // cols
-        payload.push(0u8); // spawn_kind = None
-        payload.extend_from_slice(&0u16.to_be_bytes()); // agent_len = 0
-        let bogus_count = u16::try_from(MAX_HELLO_ENV + 1).expect("fits u16");
-        payload.extend_from_slice(&bogus_count.to_be_bytes());
-        for i in 0..=MAX_HELLO_ENV {
-            let key = format!("K{i}");
-            let value = "v";
-            payload.extend_from_slice(&(key.len() as u16).to_be_bytes());
-            payload.extend_from_slice(&(value.len() as u32).to_be_bytes());
-            payload.extend_from_slice(key.as_bytes());
-            payload.extend_from_slice(value.as_bytes());
-        }
-        payload.push(0u8); // focus_kind = None
-        let err = decode_client(TAG_HELLO, payload)
-            .expect_err("fully-populated over-cap env_count must be rejected");
-        let msg = format!("{err:#}");
-        assert!(msg.contains("env_count"), "got: {msg}");
-        assert!(msg.contains(&MAX_HELLO_ENV.to_string()), "got: {msg}");
-    }
-
-    #[test]
-    fn hello_env_count_at_cap_round_trips() {
-        // Partner for `hello_env_count_over_cap_is_rejected_by_encoder`:
-        // a refactor that swaps `>` to `>=` in the encoder OR decoder
-        // would silently shrink the documented cap. Both sides must
-        // accept exactly `MAX_HELLO_ENV` entries.
-        let env: Vec<(String, String)> = (0..MAX_HELLO_ENV)
-            .map(|i| (format!("K{i}"), "v".into()))
-            .collect();
-        let bytes = encode_client(ClientFrame::Hello {
-            rows: 24,
-            cols: 80,
-            spawn: None,
-            env: env.clone(),
-            terminal: ClientTerminal::default(),
-            focus_session: None,
-        })
-        .expect("at-cap env must encode");
-        let payload = bytes[5..].to_vec();
-        let decoded = decode_client(TAG_HELLO, payload).expect("at-cap env must decode");
-        match decoded {
-            ClientFrame::Hello { env: out, .. } => assert_eq!(out, env),
-            other => panic!("expected Hello, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn hello_with_focus_session_round_trips() {
-        // The console preview-pane click path sets
-        // `focus_session: Some(<session_id>)`. A refactor that drops
-        // the trailing 8 bytes of session id from the encoder while
-        // the decoder still expects them would only fail at a real
-        // attach. Exercise the round-trip explicitly so the contract
-        // is pinned in the test suite.
-        let target = 0xDEAD_BEEF_CAFE_BABEu64;
-        let bytes = encode_client(ClientFrame::Hello {
-            rows: 24,
-            cols: 80,
-            spawn: None,
-            env: Vec::new(),
-            terminal: ClientTerminal::default(),
-            focus_session: Some(target),
-        })
-        .expect("focus_session encode");
-        let payload = bytes[5..].to_vec();
-        let decoded = decode_client(TAG_HELLO, payload).expect("focus_session decode");
-        match decoded {
-            ClientFrame::Hello { focus_session, .. } => {
-                assert_eq!(focus_session, Some(target));
-            }
-            other => panic!("expected Hello, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn hello_with_client_terminal_round_trips() {
-        let terminal = ClientTerminal {
-            term: Some("xterm-ghostty".to_string()),
-            term_program: Some("ghostty".to_string()),
-            colorterm: Some("truecolor".to_string()),
-        };
-        let bytes = encode_client(ClientFrame::Hello {
-            rows: 24,
-            cols: 80,
-            spawn: None,
-            env: Vec::new(),
-            terminal: terminal.clone(),
-            focus_session: None,
-        })
-        .expect("terminal identity encode");
-        let payload = bytes[5..].to_vec();
-        let decoded = decode_client(TAG_HELLO, payload).expect("terminal identity decode");
-        match decoded {
-            ClientFrame::Hello { terminal: out, .. } => assert_eq!(out, terminal),
-            other => panic!("expected Hello, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn client_terminal_detects_known_pointer_shape_support() {
-        let ghostty = ClientTerminal {
-            term: Some("xterm-ghostty".to_string()),
-            ..ClientTerminal::default()
-        };
-        let kitty = ClientTerminal {
-            term: Some("xterm-kitty".to_string()),
-            ..ClientTerminal::default()
-        };
-        let iterm = ClientTerminal {
-            term_program: Some("iTerm.app".to_string()),
-            ..ClientTerminal::default()
-        };
-        let warp = ClientTerminal {
-            term_program: Some("WarpTerminal".to_string()),
-            ..ClientTerminal::default()
-        };
-        let apple_terminal = ClientTerminal {
-            term: Some("xterm-256color".to_string()),
-            term_program: Some("Apple_Terminal".to_string()),
-            ..ClientTerminal::default()
-        };
-        let generic_xterm = ClientTerminal {
-            term: Some("xterm-256color".to_string()),
-            ..ClientTerminal::default()
-        };
-        let dumb = ClientTerminal {
-            term: Some("dumb".to_string()),
-            ..ClientTerminal::default()
-        };
-
-        assert!(ghostty.pointer_shapes_supported());
-        assert!(kitty.pointer_shapes_supported());
-        assert!(iterm.pointer_shapes_supported());
-        assert!(apple_terminal.pointer_shapes_supported());
-        assert!(!generic_xterm.pointer_shapes_supported());
-        assert!(!warp.pointer_shapes_supported());
-        assert!(!dumb.pointer_shapes_supported());
-    }
-
-    #[test]
-    fn hello_env_value_over_cap_rejected_by_encoder() {
-        // Encoder gate must reject a single env value larger than
-        // MAX_HELLO_ENV_VALUE so a buggy producer cannot smuggle a
-        // megabyte-sized env entry past MAX_HELLO_ENV.
-        let big = "v".repeat(MAX_HELLO_ENV_VALUE + 1);
-        let err = encode_client(ClientFrame::Hello {
-            rows: 24,
-            cols: 80,
-            spawn: None,
-            env: vec![("PWD".into(), big)],
-            terminal: ClientTerminal::default(),
-            focus_session: None,
-        })
-        .expect_err("over-cap env value must be rejected at encode");
-        let msg = format!("{err:#}");
-        assert!(msg.contains("env value"), "got: {msg}");
-        assert!(msg.contains(&MAX_HELLO_ENV_VALUE.to_string()), "got: {msg}");
-    }
-
-    #[test]
-    fn hello_env_value_over_cap_rejected_by_decoder() {
-        // Wire-level counterpart: a hand-crafted payload claiming
-        // value_len > MAX_HELLO_ENV_VALUE must be rejected before
-        // any read_string allocates the actual bytes.
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&24u16.to_be_bytes()); // rows
-        payload.extend_from_slice(&80u16.to_be_bytes()); // cols
-        payload.push(0u8); // spawn_kind = None
-        payload.extend_from_slice(&0u16.to_be_bytes()); // agent_len = 0
-        payload.extend_from_slice(&1u16.to_be_bytes()); // env_count = 1
-        payload.extend_from_slice(&3u16.to_be_bytes()); // key_len = 3
-        let bogus_value_len = u32::try_from(MAX_HELLO_ENV_VALUE + 1).expect("fits u32");
-        payload.extend_from_slice(&bogus_value_len.to_be_bytes());
-        payload.extend_from_slice(b"PWD");
-        // No need to supply the value bytes; the cap check fires before
-        // read_string reaches into the buffer.
-        let err = decode_client(TAG_HELLO, payload)
-            .expect_err("over-cap env value length must be rejected at decode");
-        let msg = format!("{err:#}");
-        assert!(msg.contains("env value"), "got: {msg}");
-        assert!(msg.contains(&MAX_HELLO_ENV_VALUE.to_string()), "got: {msg}");
-    }
-
-    #[test]
-    fn hello_env_key_over_cap_rejected_by_decoder() {
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&24u16.to_be_bytes());
-        payload.extend_from_slice(&80u16.to_be_bytes());
-        payload.push(0u8);
-        payload.extend_from_slice(&0u16.to_be_bytes());
-        payload.extend_from_slice(&1u16.to_be_bytes());
-        let bogus_key_len = u16::try_from(MAX_HELLO_ENV_KEY + 1).expect("fits u16");
-        payload.extend_from_slice(&bogus_key_len.to_be_bytes());
-        payload.extend_from_slice(&1u32.to_be_bytes());
-        let err = decode_client(TAG_HELLO, payload)
-            .expect_err("over-cap env key length must be rejected at decode");
-        let msg = format!("{err:#}");
-        assert!(msg.contains("env key"), "got: {msg}");
-        assert!(msg.contains(&MAX_HELLO_ENV_KEY.to_string()), "got: {msg}");
-    }
-
-    #[test]
-    fn read_client_frame_eof_after_tag_returns_none() {
-        use tokio::io::AsyncWriteExt;
-        use tokio::net::UnixStream;
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        runtime.block_on(async {
-            let (mut a, mut b) = UnixStream::pair().unwrap();
-            // Tag is treated as already-peeked; write nothing else, then
-            // close. The reader should hit EOF inside the length read
-            // and return Ok(None), not Err.
-            a.shutdown().await.unwrap();
-            drop(a);
-            let result = read_client_frame(&mut b, TAG_INPUT).await.unwrap();
-            assert!(result.is_none());
-        });
-    }
-}
+mod tests;

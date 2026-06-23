@@ -1,0 +1,4 @@
+from_version = "v1alpha4"
+target_version = "v1alpha5"
+target_version_shipped = "2026-06-10"
+summary = "Restamps role manifest as v1alpha5. Adds optional [<agent>.providers.<id>] tables for per-provider model overrides (Claude/Codex/OpenCode); additive, so the migration is a no-op restamp and existing manifests load unchanged."

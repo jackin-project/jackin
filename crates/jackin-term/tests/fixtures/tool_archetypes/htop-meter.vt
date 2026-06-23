@@ -1,0 +1,1 @@
+\x1b[2J\x1b[H\x1b[1;1HCPU[||||||||||||      42.0%]\r\nMem[||||||||          1.2G/4.0G]\r\n  PID USER     CPU% MEM% Command\r\n 1234 agent    12.0  3.1 jackin-capsule\x1b[4;1H 5678 agent     2.0  1.0 codex

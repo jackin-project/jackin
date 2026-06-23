@@ -65,7 +65,7 @@ Options for resolving the naming clash before this feature ships:
 Option A or B is preferable: they make the existing mode's actual
 behaviour visible from the name and reserve the unmodified `sync`
 for what operators expect. Pre-release breaking-change policy
-(see <RepoFile path="AGENTS.md" /> → "Project status: pre-release")
+(see <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> → "Project status: pre-release")
 makes a rename across `[github]` / `[claude]` / `[codex]`
 configurations cheap. The implementation PR for this roadmap item
 should rename in lockstep with the daemon's first ship; not
@@ -196,7 +196,7 @@ This live-sync item depends on `jackin daemon` Phase 1 (empty daemon — lifecyc
 
 ## Host-side effects
 
-Per <RepoFile path="AGENTS.md" /> "Never mutate the host machine
+Per <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> "Never mutate the host machine
 silently": the live-sync adapter writes to host-side state. Each
 write is opt-in via the workspace's chosen mode (`live` /
 `sync` / `forward` / `ignore`) and surfaces in the daemon's
@@ -243,6 +243,7 @@ series should land docs updates in lockstep with the daemon.
 
 ## Related work
 
+- [Auth reliability and convenience program](/reference/roadmap/auth-reliability-program/) — umbrella program that places live sync as Phase 4 in the complete auth fix sequence; read it for context on how this item connects to every other auth roadmap item.
 - [jackin' daemon](/reference/roadmap/jackin-daemon/) — umbrella item that introduces the long-running jackin' process this feature depends on. Lifecycle, install, control socket, security posture, log redaction are decided there.
 - [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/)
   — current `sync` mode lives here; "Bidirectional shared-store

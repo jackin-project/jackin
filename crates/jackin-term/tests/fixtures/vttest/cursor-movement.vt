@@ -1,0 +1,1 @@
+\x1b[2J\x1b[HVTTEST cursor movement\r\n\x1b[10;20Hrow10-col20\x1b[12;5Hdown-left\x1b[10A\x1b[15Ctop-shift\x1b[24;1Hbottom

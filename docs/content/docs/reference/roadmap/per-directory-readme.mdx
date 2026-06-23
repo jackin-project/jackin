@@ -14,9 +14,9 @@ AI coding agents (Claude Code, Copilot, Cursor) load `README.md` automatically w
 |---|---|
 | `src/` | Top-level module map + entry points (`load_agent`, `run_console`, `validate`). Link to PROJECT_STRUCTURE.md. |
 | `src/runtime/` | Container bootstrap pipeline. Entry: `load_agent()` in `launch.rs`. 4-step sequence. |
-| `src/console/` | Operator console TUI. Entry: `run_console()`. Two subsystems: `manager/` and `widgets/`. **Note: has 2 production dependencies on `runtime/`** (`register_agent_repo`, `RepoError`). |
-| `src/console/manager/` | Workspace manager TUI. 3-layer: `state.rs` (data), `input/` (dispatch), `render/` (drawing). |
-| `src/console/widgets/` | Reusable TUI widget library. Each widget is a self-contained state machine. |
+| `src/console/` | Operator console TUI. Entry: `run_console()`. Two subsystems: `tui/` and `services/`. **Note: has 2 production dependencies on `runtime/`** (`register_agent_repo`, `RepoError`). |
+| `src/console/tui/` | Workspace manager TUI. Root-dependent state, input, message/update, and render live under `src/console/tui/`. |
+| `src/console/tui/op_picker/` | Root-dependent 1Password picker adapter until the `operator_env` types move behind generic adapters. |
 | `src/config/` | Configuration loading, persistence, editing. TOML schema, migrations, workspace files. |
 | `src/instance/` | Per-instance state: container identity, auth provisioning, manifests. 5 agent-specific provision functions. |
 | `src/isolation/` | Mount isolation: materialize, finalize, cleanup, state records. |

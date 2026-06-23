@@ -1,0 +1,22 @@
+[package]
+name = "jackin-tui-lookbook"
+description = "Interactive component lookbook for jackin-tui"
+version = "0.6.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+license.workspace = true
+publish = false
+
+repository.workspace = true
+[[bin]]
+name = "tui-lookbook"
+path = "src/main.rs"
+
+[dependencies]
+jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
+ratatui = "0.30"
+crossterm = "0.29"
+
+[lints]
+workspace = true

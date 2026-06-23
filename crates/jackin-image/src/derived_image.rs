@@ -1,0 +1,636 @@
+//! Derived-image Dockerfile generation: renders the hook-copy section
+//! and other build-time additions layered on top of a role's base image.
+//!
+//! The caller (`runtime/image.rs`) provides a validated `RoleRepo` and an
+//! optional `HooksConfig`. This module writes a temporary build context
+//! (`DerivedBuildContext`) and returns the paths for `docker build`.
+//!
+//! Not responsible for: running `docker build` (`runtime/image.rs`), or the
+//! base-image Dockerfile authored by the role (lives in the role repo).
+
+use jackin_core::Agent;
+use jackin_core::manifest::HooksConfig;
+use jackin_manifest::ValidatedRoleRepo;
+use std::path::{Path, PathBuf};
+use tempfile::TempDir;
+
+const ENTRYPOINT_SH: &str = include_str!("../../../docker/runtime/entrypoint.sh");
+const ZSHENV_SOURCE_SHIM_PATH: &str = ".jackin-runtime/zshenv-source-shim";
+const ZSH_TITLE_SHIM_PATH: &str = ".jackin-runtime/zsh-title-shim";
+#[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
+const ZSHENV_SOURCE_SHIM: &str = "\
+if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\" ] && [ -f /jackin/runtime/hooks/source.sh ]; then
+  __jackin_rc=0
+  () {
+    setopt local_options local_traps
+    source /jackin/runtime/hooks/source.sh
+  } || __jackin_rc=$?
+  trap - ERR
+  if [ \"$__jackin_rc\" -ne 0 ]; then
+    print -u2 \"[zshenv] jackin source hook returned non-zero (exit $__jackin_rc); environment may be incomplete\"
+  else
+    export __JACKIN_ZSHENV_SOURCE_LOADED=1
+  fi
+  unset __jackin_rc
+fi
+";
+const ZSH_TITLE_SHIM: &str = r#"
+# jackin: source oh-my-zsh title hook when the active .zshrc did
+# not already do so. Brings OSC 0/2 (window title) and OSC 7 (cwd)
+# emit on every prompt for the multiplexer pane title.
+if [ -z "${__JACKIN_AUTO_TITLE_LOADED:-}" ] && [ -f "$HOME/.oh-my-zsh/lib/termsupport.zsh" ]; then
+    [ -f "$HOME/.oh-my-zsh/lib/functions.zsh" ] && source "$HOME/.oh-my-zsh/lib/functions.zsh"
+    source "$HOME/.oh-my-zsh/lib/termsupport.zsh"
+    export __JACKIN_AUTO_TITLE_LOADED=1
+fi
+"#;
+
+#[derive(Debug)]
+pub struct DerivedBuildContext {
+    pub temp_dir: TempDir,
+    pub context_dir: PathBuf,
+    pub dockerfile_path: PathBuf,
+}
+
+/// Caller must pass a `HooksConfig` whose paths have already passed
+/// `validate_role_repo` — paths are interpolated directly into Dockerfile
+/// `COPY` instructions with no further sanitization here.
+#[derive(Debug, Default)]
+struct HookRender {
+    copy_section: String,
+    final_commands: String,
+}
+
+fn render_hook_section(hooks: Option<&HooksConfig>) -> HookRender {
+    use std::fmt::Write as _;
+
+    let source_hook_declared = hooks.is_some_and(|h| h.source.is_some());
+    let entries = hooks
+        .into_iter()
+        .flat_map(HooksConfig::entries)
+        .collect::<Vec<_>>();
+    if entries.is_empty() {
+        return HookRender::default();
+    }
+
+    let mut copy_section = String::new();
+    // Agent writes setup markers under /jackin/state/hooks. Set ownership at
+    // directory creation time rather than walking /jackin/state recursively;
+    // /jackin/runtime/hooks gets per-file ownership from the COPY lines below.
+    let mut final_commands = String::from(
+        "install -d /jackin/runtime/hooks \\\n    && install -d -o agent -g agent /jackin/state /jackin/state/hooks",
+    );
+    for entry in &entries {
+        let _unused = writeln!(
+            copy_section,
+            "COPY --link --chown=agent:agent --chmod=0755 {src} /jackin/runtime/hooks/{dst}",
+            src = entry.path,
+            dst = entry.filename,
+        );
+    }
+    if source_hook_declared {
+        // `docker exec zsh` inherits the image ENV but none of PID 1's
+        // runtime exports, so operator shells miss the source-hook
+        // exports the entrypoint applied to the agent. The marker is
+        // namespaced and exported only after a successful source so a
+        // failed hook does not leave a sticky guard that hides
+        // re-source attempts from nested subshells (mirrors the rc
+        // capture + `trap - ERR` clear the entrypoint does at
+        // docker/runtime/entrypoint.sh:172-181). The outer
+        // `grep -q ... ||` keeps the file single-shimmed across
+        // derived-from-derived builds via `base_image_override`.
+        //
+        // The `source` runs inside an anonymous zsh function with
+        // `setopt local_options local_traps`: role hooks routinely
+        // ship `set -euo pipefail` (POSIX-sh idiom), which in zsh maps
+        // to `nounset`/`errexit`/`pipefail`. Without the local scope
+        // those flags leak into the same zsh that then loads
+        // `.zshrc` — `oh-my-zsh/lib/termsupport.zsh` and tirith's
+        // `zsh-hook.zsh` both read variables without `:-` defaults and
+        // error out under `nounset`, breaking every interactive Shell
+        // pane. The anonymous fn keeps option/trap changes scoped to
+        // the source call while still letting `export VAR=...` inside
+        // `source.sh` leak into the caller's env (which is the whole
+        // point of the shim).
+        let _unused = writeln!(
+            copy_section,
+            "COPY --link --chown=agent:agent --chmod=0644 {ZSHENV_SOURCE_SHIM_PATH} /jackin/runtime/zshenv-source-shim",
+        );
+        final_commands.push_str(" \\\n    && ");
+        final_commands.push_str(
+            "grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\\n    || cat /jackin/runtime/zshenv-source-shim >> /home/agent/.zshenv",
+        );
+    }
+    HookRender {
+        copy_section,
+        final_commands,
+    }
+}
+
+fn render_default_home_commands(agents: &[Agent]) -> String {
+    let mut dirs = agents
+        .iter()
+        .map(|agent| agent.runtime().state_paths().credential_dir)
+        .collect::<Vec<_>>();
+    dirs.sort_unstable();
+    dirs.dedup();
+
+    let mut commands = String::from("install -d -o agent -g agent /jackin/default-home");
+    for dir in &dirs {
+        commands.push(' ');
+        commands.push_str("/jackin/default-home/");
+        commands.push_str(dir);
+    }
+    if dirs.is_empty() {
+        return commands;
+    }
+    commands.push_str(" \\\n    && for dir in");
+    for dir in &dirs {
+        commands.push(' ');
+        commands.push_str(&shell_quote(dir));
+    }
+    commands.push_str(
+        "; do \\\n        if [ -d \"/home/agent/$dir\" ]; then \\\n            cp -a \"/home/agent/$dir/.\" \"/jackin/default-home/$dir/\"; \\\n        fi; \\\n    done",
+    );
+    commands
+}
+
+/// How an agent's CLI is installed into the derived image. `P` is the binary
+/// location: a host [`PathBuf`] before the build context is assembled, a
+/// context-relative [`String`] after [`copy_agent_binaries`] stages it. The one
+/// value per agent makes "prefetched binary XOR upstream installer" a type
+/// invariant rather than a convention split across two parallel collections;
+/// keying the surrounding map on [`Agent`] then makes per-agent uniqueness one too.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentInstall<P> {
+    /// Copy the prefetched binary at this location and install from it.
+    Prefetched(P),
+    /// Host prefetch failed; install from the agent's upstream installer at
+    /// build time.
+    ScriptFallback,
+}
+
+pub fn render_derived_dockerfile(
+    base_dockerfile: &str,
+    hooks: Option<&HooksConfig>,
+    supported: &[Agent],
+    jackin_capsule_bin: Option<&str>,
+) -> String {
+    let hook_section = render_hook_section(hooks);
+    let default_home_commands = render_default_home_commands(supported);
+    let hook_final_commands = (!hook_section.final_commands.is_empty())
+        .then(|| format!("{} \\\n    && ", hook_section.final_commands.trim_end()));
+
+    // Agent CLI binaries are NOT baked into the image — the host's prefetched
+    // binaries are bind-mounted read-only at `docker run` (see
+    // `agent_binary_mounts`), so an agent version bump no longer rebuilds the
+    // derived image. The overlay only stages jackin's own runtime assets; the
+    // ENV PATH below covers every agent's bin dir so the mounted binaries
+    // resolve. Claude plugin setup moves to capsule runtime-setup.
+    //
+    // PATH bin dirs are derived from each agent's `container_binary_paths()` (the
+    // same values the run-time mount targets), so the adapter is the single
+    // source of truth — adding an agent or moving its binary can't drift the PATH
+    // out of sync with the mount.
+    let mut agent_bin_dirs: Vec<&str> = Vec::new();
+    for agent in Agent::ALL {
+        for path in agent.runtime().container_binary_paths() {
+            if let Some((dir, _)) = path.rsplit_once('/')
+                && !agent_bin_dirs.contains(&dir)
+            {
+                agent_bin_dirs.push(dir);
+            }
+        }
+    }
+    let agent_path_segment = agent_bin_dirs.join(":");
+
+    // jackin-capsule binary (pre-downloaded by host, placed in .jackin-runtime/).
+    let jackin_capsule_section = jackin_capsule_bin.map_or_else(String::new, |src| {
+        format!("COPY --link --chmod=0755 {src} /jackin/runtime/jackin-capsule\n")
+    });
+
+    // Append an oh-my-zsh title-hook source to /home/agent/.zshrc when
+    // the construct image's zshrc did not already do so. The hook emits
+    // OSC 0/2 (`user@host:cwd`) and OSC 7 on every prompt — the
+    // jackin-capsule multiplexer reads both and renders the pane
+    // border title from them (matches zellij convention).
+    //
+    // Idempotent via the `__JACKIN_AUTO_TITLE_LOADED` marker: new
+    // construct images source oh-my-zsh natively and export the
+    // marker, so this fallback no-ops once the operator rebuilds
+    // construct. Derived-from-derived builds (`base_image_override`)
+    // also skip the second append because the first build added the
+    // marker line to /home/agent/.zshrc.
+    #[allow(clippy::items_after_statements)]
+    const SHELL_TITLE_AND_RUNTIME_DIR_COMMANDS: &str = "\
+( grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
+      || cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\
+    && install -d -o agent -g agent /jackin/run /jackin/state
+";
+    let shell_title_and_runtime_dir_commands = SHELL_TITLE_AND_RUNTIME_DIR_COMMANDS;
+
+    format!(
+        "\
+# syntax=docker/dockerfile:1.7
+{base_dockerfile}
+USER root
+{hook_copy_section}COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
+COPY --link --chown=agent:agent --chmod=0644 {zsh_title_shim_path} /jackin/runtime/zsh-title-shim
+{jackin_capsule_section}RUN {hook_final_commands}{default_home_commands} \\
+    && {shell_title_and_runtime_dir_commands}# Normalize /home/agent AND the /jackin/default-home seed to group 0 with
+# group==owner permissions so both are fully usable when the container runs as
+# an arbitrary host UID in group 0 (`docker run --user <host-uid>:0`).
+# /jackin/default-home must be included because runtime-setup copies it into
+# the agent's home on first launch, and it contains private 0600 files (e.g.
+# .claude backups) the arbitrary UID could otherwise not read. The image is
+# UID-agnostic (built once, shared); this is the OpenShift arbitrary-UID
+# pattern. Must be the last layer touching these trees so files added above are
+# covered.
+RUN chgrp -R 0 /home/agent /jackin/default-home && chmod -R g=u /home/agent /jackin/default-home
+# jackin-capsule plus every agent bin dir on PATH. The agent CLI binaries are
+# bind-mounted read-only at `docker run` (not baked), so this fixed PATH lets the
+# mounted binaries resolve without the image depending on which agents are baked.
+ENV PATH=\"/jackin/runtime:{agent_path_segment}:${{PATH}}\"
+USER agent
+ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]
+",
+        hook_copy_section = hook_section.copy_section,
+        hook_final_commands = hook_final_commands.unwrap_or_default(),
+        zsh_title_shim_path = ZSH_TITLE_SHIM_PATH,
+    )
+}
+
+/// Single-quote `value` for safe inclusion in a `/bin/sh -c` string. Embedded
+/// single quotes are escaped via the POSIX `'"'"'` idiom; an empty string
+/// becomes `''` so it survives shell word splitting.
+pub fn shell_quote(value: &str) -> String {
+    if value.is_empty() {
+        return "''".to_owned();
+    }
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('\'');
+    for ch in value.chars() {
+        if ch == '\'' {
+            quoted.push_str("'\"'\"'");
+        } else {
+            quoted.push(ch);
+        }
+    }
+    quoted.push('\'');
+    quoted
+}
+
+/// Validate that `value` looks like a Docker image reference and not
+/// arbitrary text. Operator-set `JACKIN_CONSTRUCT_IMAGE` flows through
+/// here before being interpolated into a `FROM` line; without this
+/// check a newline-containing value (e.g. from a poisoned `.envrc`)
+/// would inject arbitrary RUN instructions executed at image-build
+/// time. The accepted alphabet is the conservative subset that Docker
+/// itself accepts in references plus colons, slashes, `@`, and dots —
+/// everything else is rejected.
+fn looks_like_valid_image_ref(value: &str) -> bool {
+    if value.is_empty() || value.len() > 256 {
+        return false;
+    }
+    value.chars().all(|c| {
+        matches!(
+            c,
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | '_' | '-' | '/' | ':' | '@' | '+'
+        )
+    })
+}
+
+/// Replace `FROM projectjackin/construct:<tag>[@<digest>] [AS alias]` lines in
+/// `contents` with `FROM <override_image> [AS alias]`. Digest pins are dropped
+/// because a local override image has no matching digest.
+fn apply_construct_image_override(contents: &str, override_image: &str) -> String {
+    let construct_from_prefix = format!("FROM {}:", jackin_manifest::CONSTRUCT_REGISTRY_IMAGE);
+    let from_override = format!("FROM {override_image}");
+    let mut result = contents
+        .lines()
+        .map(|line| {
+            if line.starts_with(&construct_from_prefix) {
+                let after_prefix = &line[construct_from_prefix.len()..];
+                let alias = after_prefix
+                    .split_once(' ')
+                    .map_or(String::new(), |(_, rest)| format!(" {rest}"));
+                format!("{from_override}{alias}")
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if contents.ends_with('\n') {
+        result.push('\n');
+    }
+    result
+}
+
+pub fn create_derived_build_context(
+    repo_dir: &Path,
+    validated: &ValidatedRoleRepo,
+    // When Some, the DerivedDockerfile starts with `FROM <image>` rather than
+    // the workspace Dockerfile contents (pre-built image fast path).
+    base_image_override: Option<&str>,
+    // Path to the pre-downloaded jackin-capsule binary on the host.
+    // When Some, the binary is copied into the build context and baked into
+    // the derived image at /jackin/runtime/jackin-capsule.
+    jackin_capsule_host_path: Option<&str>,
+) -> anyhow::Result<DerivedBuildContext> {
+    let supported = validated.manifest.supported_agents();
+    create_derived_build_context_for_agents(
+        repo_dir,
+        validated,
+        base_image_override,
+        jackin_capsule_host_path,
+        &supported,
+    )
+}
+
+pub fn create_derived_build_context_for_agents(
+    repo_dir: &Path,
+    validated: &ValidatedRoleRepo,
+    // When Some, the DerivedDockerfile starts with `FROM <image>` rather than
+    // the workspace Dockerfile contents (pre-built image fast path).
+    base_image_override: Option<&str>,
+    // Path to the pre-downloaded jackin-capsule binary on the host.
+    // When Some, the binary is copied into the build context and baked into
+    // the derived image at /jackin/runtime/jackin-capsule.
+    jackin_capsule_host_path: Option<&str>,
+    agents_to_install: &[Agent],
+) -> anyhow::Result<DerivedBuildContext> {
+    let temp_dir = tempfile::tempdir()?;
+    let context_dir = temp_dir.path().join("context");
+    if base_image_override.is_some() {
+        std::fs::create_dir_all(&context_dir)?;
+        copy_declared_hook_files(repo_dir, &context_dir, validated.manifest.hooks.as_ref())?;
+    } else {
+        copy_dir_all(repo_dir, &context_dir)?;
+    }
+
+    let runtime_dir = context_dir.join(".jackin-runtime");
+    std::fs::create_dir_all(&runtime_dir)?;
+    std::fs::write(runtime_dir.join("entrypoint.sh"), ENTRYPOINT_SH)?;
+    std::fs::write(runtime_dir.join("zsh-title-shim"), ZSH_TITLE_SHIM)?;
+    if validated
+        .manifest
+        .hooks
+        .as_ref()
+        .is_some_and(|hooks| hooks.source.is_some())
+    {
+        std::fs::write(runtime_dir.join("zshenv-source-shim"), ZSHENV_SOURCE_SHIM)?;
+    }
+
+    // Copy jackin-capsule binary into the build context so the Dockerfile
+    // can COPY it into the image without a network fetch at build time.
+    let jackin_capsule_ctx_path = if let Some(host_path) = jackin_capsule_host_path {
+        let dst = runtime_dir.join("jackin-capsule");
+        std::fs::copy(host_path, &dst).map_err(|e| {
+            anyhow::anyhow!("failed to copy jackin-capsule binary into build context: {e}")
+        })?;
+        Some(".jackin-runtime/jackin-capsule".to_owned())
+    } else {
+        None
+    };
+
+    // Agent binaries are no longer staged into the build context — they are
+    // bind-mounted read-only at `docker run`.
+    let hooks = validated.manifest.hooks.as_ref();
+
+    // Validation policy by ingress channel — intentionally asymmetric:
+    //
+    // - `base_image_override` argument: hard error on invalid input.
+    //   The caller is jackin's own runtime code (or a future CLI flag
+    //   the operator typed explicitly). A typo / programmer bug is
+    //   worth failing the build loudly.
+    //
+    // - `JACKIN_CONSTRUCT_IMAGE` env var: warn to stderr and fall
+    //   back to the role's pinned image. The env var is operator-side
+    //   UX (often set in a shell rc / direnv); failing the build for
+    //   a stale value would surprise. Both paths share the same
+    //   `looks_like_valid_image_ref` allowlist so the bytes that
+    //   reach the Dockerfile FROM line are character-set-bounded
+    //   regardless of ingress.
+    let base_dockerfile = if let Some(image) = base_image_override {
+        anyhow::ensure!(
+            looks_like_valid_image_ref(image),
+            "base_image_override {image:?} is not a valid Docker image reference; refusing to interpolate into Dockerfile FROM line",
+        );
+        format!("FROM {image}\n")
+    } else {
+        let override_image = std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_default();
+        let override_trimmed = override_image.trim();
+        if override_trimmed.is_empty() {
+            validated.dockerfile.dockerfile_contents.clone()
+        } else if looks_like_valid_image_ref(override_trimmed) {
+            apply_construct_image_override(
+                &validated.dockerfile.dockerfile_contents,
+                override_trimmed,
+            )
+        } else {
+            jackin_diagnostics::emit_compact_line(
+                "warning",
+                &format!(
+                    "[jackin] ignoring invalid JACKIN_CONSTRUCT_IMAGE={override_image:?}; using role's pinned base image"
+                ),
+            );
+            validated.dockerfile.dockerfile_contents.clone()
+        }
+    };
+
+    let dockerfile_path = context_dir.join(".jackin-runtime/DerivedDockerfile");
+    std::fs::write(
+        &dockerfile_path,
+        render_derived_dockerfile(
+            &base_dockerfile,
+            hooks,
+            agents_to_install,
+            jackin_capsule_ctx_path.as_deref(),
+        ),
+    )?;
+    ensure_runtime_assets_are_included(&context_dir, hooks)?;
+
+    Ok(DerivedBuildContext {
+        temp_dir,
+        context_dir,
+        dockerfile_path,
+    })
+}
+
+/// Build context for the local role **base** image `jk_<role>__base:<sha>`, which
+/// the derived image is built `FROM`. The base is always materialized locally so
+/// the overlay never depends on the mutable published `:latest` tag:
+///
+/// - `published_base = Some(img)`: the Dockerfile is just `FROM <img>` — pull the
+///   published image and restamp it under the immutable local base name. Empty
+///   context.
+/// - `published_base = None`: the Dockerfile is the role's own Dockerfile (construct
+///   `FROM` overridden by `JACKIN_CONSTRUCT_IMAGE` when set), no jackin overlay.
+///   Context is the role repo so the role's `COPY` instructions resolve.
+pub fn create_role_base_build_context(
+    repo_dir: &Path,
+    validated: &ValidatedRoleRepo,
+    published_base: Option<&str>,
+) -> anyhow::Result<DerivedBuildContext> {
+    let temp_dir = tempfile::tempdir()?;
+    let context_dir = temp_dir.path().join("context");
+    let base_dockerfile = if let Some(image) = published_base {
+        anyhow::ensure!(
+            looks_like_valid_image_ref(image),
+            "published base {image:?} is not a valid Docker image reference; refusing to interpolate into Dockerfile FROM line",
+        );
+        std::fs::create_dir_all(&context_dir)?;
+        format!("FROM {image}\n")
+    } else {
+        copy_dir_all(repo_dir, &context_dir)?;
+        let override_image = std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_default();
+        let override_trimmed = override_image.trim();
+        if override_trimmed.is_empty() {
+            validated.dockerfile.dockerfile_contents.clone()
+        } else if looks_like_valid_image_ref(override_trimmed) {
+            apply_construct_image_override(
+                &validated.dockerfile.dockerfile_contents,
+                override_trimmed,
+            )
+        } else {
+            jackin_diagnostics::emit_compact_line(
+                "warning",
+                &format!(
+                    "[jackin] ignoring invalid JACKIN_CONSTRUCT_IMAGE={override_image:?}; using role's pinned base image"
+                ),
+            );
+            validated.dockerfile.dockerfile_contents.clone()
+        }
+    };
+    let runtime_dir = context_dir.join(".jackin-runtime");
+    std::fs::create_dir_all(&runtime_dir)?;
+    let dockerfile_path = runtime_dir.join("BaseDockerfile");
+    std::fs::write(&dockerfile_path, base_dockerfile)?;
+    Ok(DerivedBuildContext {
+        temp_dir,
+        context_dir,
+        dockerfile_path,
+    })
+}
+
+fn copy_declared_hook_files(
+    repo_dir: &Path,
+    context_dir: &Path,
+    hooks: Option<&HooksConfig>,
+) -> anyhow::Result<()> {
+    for entry in hooks.into_iter().flat_map(HooksConfig::entries) {
+        let src = repo_dir.join(entry.path);
+        let metadata = std::fs::symlink_metadata(&src).map_err(|e| {
+            anyhow::anyhow!(
+                "failed to inspect hook {} for derived build context: {e}",
+                entry.path
+            )
+        })?;
+        if metadata.file_type().is_symlink() {
+            anyhow::bail!(
+                "refusing to include symlink in build context: {}",
+                entry.path
+            );
+        }
+        if !metadata.is_file() {
+            anyhow::bail!("hook {} is not a regular file", entry.path);
+        }
+        let dst = context_dir.join(entry.path);
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(&src, &dst).map_err(|e| {
+            anyhow::anyhow!(
+                "failed to copy hook {} into derived build context: {e}",
+                entry.path
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn ensure_runtime_assets_are_included(
+    context_dir: &Path,
+    hooks: Option<&HooksConfig>,
+) -> anyhow::Result<()> {
+    let dockerignore_path = context_dir.join(".dockerignore");
+    let mut dockerignore = if dockerignore_path.exists() {
+        std::fs::read_to_string(&dockerignore_path)?
+    } else {
+        String::new()
+    };
+
+    let mut rules = vec![
+        "!.jackin-runtime/".to_owned(),
+        "!.jackin-runtime/entrypoint.sh".to_owned(),
+        "!.jackin-runtime/zsh-title-shim".to_owned(),
+        "!.jackin-runtime/DerivedDockerfile".to_owned(),
+    ];
+    if context_dir.join(ZSHENV_SOURCE_SHIM_PATH).exists() {
+        rules.push(format!("!{ZSHENV_SOURCE_SHIM_PATH}"));
+    }
+    if context_dir.join(".jackin-runtime/jackin-capsule").exists() {
+        rules.push("!.jackin-runtime/jackin-capsule".to_owned());
+    }
+    let staged_agent_binary_dir = context_dir.join(".jackin-runtime/agent-binaries");
+    if staged_agent_binary_dir.exists() {
+        rules.push("!.jackin-runtime/agent-binaries/".to_owned());
+        let mut staged_binaries = Vec::new();
+        for entry in std::fs::read_dir(&staged_agent_binary_dir)? {
+            let entry = entry?;
+            if entry.file_type()?.is_file() {
+                staged_binaries.push(entry.file_name().to_string_lossy().into_owned());
+            }
+        }
+        staged_binaries.sort();
+        for binary in staged_binaries {
+            rules.push(format!("!.jackin-runtime/agent-binaries/{binary}"));
+        }
+    }
+    for entry in hooks.into_iter().flat_map(HooksConfig::entries) {
+        rules.push(format!("!{}", entry.path));
+    }
+
+    for rule in &rules {
+        if !dockerignore.lines().any(|line| line == rule) {
+            if !dockerignore.is_empty() && !dockerignore.ends_with('\n') {
+                dockerignore.push('\n');
+            }
+            dockerignore.push_str(rule);
+            dockerignore.push('\n');
+        }
+    }
+
+    std::fs::write(dockerignore_path, dockerignore)?;
+    Ok(())
+}
+
+fn copy_dir_all(from: &Path, to: &Path) -> anyhow::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if name == ".git" || name == ".jackin-runtime" {
+            continue;
+        }
+        let file_type = entry.file_type()?;
+        let destination = to.join(entry.file_name());
+
+        if file_type.is_dir() {
+            copy_dir_all(&entry.path(), &destination)?;
+        } else if file_type.is_file() {
+            std::fs::copy(entry.path(), destination)?;
+        } else if file_type.is_symlink() {
+            anyhow::bail!(
+                "invalid role repo: derived build context does not support symlinks: {}",
+                entry.path().display()
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

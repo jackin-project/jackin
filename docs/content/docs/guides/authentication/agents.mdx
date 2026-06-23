@@ -1,6 +1,6 @@
 ---
 title: Agent Authentication
-description: Forward Claude Code, Codex, Amp, Kimi, and OpenCode credentials into agent containers
+description: Forward Claude Code, Codex, Amp, Kimi, OpenCode, and Grok credentials into agent containers
 ---
 
 
@@ -28,6 +28,7 @@ Which modes are available per agent, and which env vars or credential files are 
 - [Amp](/guides/authentication/agents/amp/) — `sync`, `api_key`, `ignore`
 - [Kimi](/guides/authentication/agents/kimi/) — `sync`, `api_key`, `ignore`
 - [OpenCode](/guides/authentication/agents/opencode/) — `sync`, `api_key`, `ignore`
+- [Grok](/guides/authentication/agents/grok/) — `sync`, `api_key`, `ignore`
 
 ## How sync works
 
@@ -38,6 +39,18 @@ Which modes are available per agent, and which env vars or credential files are 
 3. **Agent runs authenticated.** The agent inside the container sees the same account, subscription, and model access you have on the host.
 
 When the host's credentials are missing (e.g. you logged out), `sync` preserves the container's existing auth rather than wiping it. This prevents accidental de-authentication from a missing file.
+
+### Choosing a sync source folder
+
+For `sync` mode, each file-backed agent also has a **Source folder** row in the console Auth tab. Leave it unset to use the agent's default host folder, or set it when you keep multiple host logins for the same agent and want one workspace or role to use a different account. The folder is the agent's credential/config directory itself: for example a Claude `CLAUDE_CONFIG_DIR`, a Codex `CODEX_HOME`, an Amp data directory such as `$XDG_DATA_HOME/amp`, a Kimi `~/.kimi-code` directory, an OpenCode data directory containing `auth.json`, or a Grok `~/.grok` directory.
+
+The row is visible only while the agent is in `sync` mode. It is a preview row, not an inline editor: put the cursor on **Mode**, press `Enter` to open **Edit auth**, then press `Enter` on **Source folder** inside that dialog to browse. Hidden folders are visible there so default credential locations like `~/.claude` and `~/.codex` are reachable. Press `s` to select the current directory, choose **Save** in the dialog, then press `S` on the workspace editor and confirm the workspace save.
+
+The picker checks that the folder you select actually holds that agent's login before it accepts it. If you pick a folder without the right contents — for example the parent of an Amp data directory instead of the `amp` folder that holds the login — the picker rejects it with a short message explaining what is missing, and nothing is saved. This stops a workspace from silently launching unauthenticated or, for Claude, falling back to your default account.
+
+For a role-specific folder, expand that role in the Auth tab and open the role's **Mode** row. The role dialog follows the same flow and saves only when the workspace save is confirmed.
+
+The row label tells you which value is active: `default: <path>` means the built-in agent location, `inherited: <path>` means a broader scope already chose the folder, and a bare `<path>` means this workspace or role set an explicit folder.
 
 ## Scopes
 
@@ -65,7 +78,7 @@ Open `jackin console`, select the workspace, switch to the **Auth** tab. The tab
 
 For roles that support more than one agent, jackin provisions credentials for every supported agent at launch time — not just the one you selected for the initial session. You can start a second agent inside the same running container with `jackin hardline --new --agent codex` and it will not ask you to log in.
 
-The secondary agent's credentials were already placed in the container when Claude Code, Codex, Amp, Kimi, or OpenCode launched the first session. For the full workflow, see [Parallel Agents](/guides/parallel-agents/).
+The secondary agent's credentials were already placed in the container when any of the supported agents (Claude Code, Codex, Amp, Kimi, OpenCode, or Grok) launched the first session. For the full workflow, see [Parallel Agents](/guides/parallel-agents/).
 
 Each agent's auth mode is evaluated independently. A role can use `sync` for Claude and `ignore` for Codex in the same workspace — jackin provisions each agent's credential directory according to that agent's resolved mode.
 
@@ -73,7 +86,7 @@ Each agent's auth mode is evaluated independently. A role can use `sync` for Cla
 
 When jackin' resolves `auth_forward` for a launch, it verifies that any mode requiring a credential has one available in your env vars. If the credential is missing, the launch fails with an error that:
 
-- shows which scope chose which mode for `Claude`, `Codex`, `Amp`, `Kimi`, and `OpenCode`, and
+- shows which scope chose which mode for `Claude`, `Codex`, `Amp`, `Kimi`, `OpenCode`, and `Grok`, and
 - shows which scopes were checked for the missing env var.
 
 That makes it obvious whether the right mode is in effect and whether the credential is missing entirely or just set at the wrong scope.
@@ -85,7 +98,7 @@ That makes it obvious whether the right mode is in effect and whether the creden
 If the agent shows "Not logged in" or falls back to a different model tier (e.g. Sonnet instead of Opus), the credentials may not have been forwarded. Check:
 
 1. **What mode is effective?** Open the **Auth** tab in `jackin console` for that workspace, and look at the effective mode for the (role × agent) cell.
-2. **Does the host have credentials?** For `Claude` on macOS, check `security find-generic-password -s "Claude Code-credentials" -w`. On Linux, check `~/.claude/.credentials.json`. For `Codex`, check `~/.codex/auth.json`. For `Amp`, check `~/.local/share/amp/secrets.json` (the file the Amp CLI writes the `apiKey@https://ampcode.com/` token into; the XDG_CONFIG file `~/.config/amp/settings.json` is preferences only and never holds the token). For `Kimi`, check `~/.kimi-code/credentials/` for OAuth tokens, plus `~/.kimi-code/config.toml` for the OAuth-backed provider/model references created by Kimi login and `~/.kimi-code/device_id` for the device id Kimi sends in OAuth headers. For `OpenCode`, check `~/.local/share/opencode/auth.json` (the file the OpenCode CLI writes provider credentials into — for example, the Z.AI Coding Plan API key).
+2. **Does the host have credentials?** For `Claude` on macOS, check `security find-generic-password -s "Claude Code-credentials" -w`. On Linux, check `~/.claude/.credentials.json`. For `Codex`, check `~/.codex/auth.json`. For `Amp`, check `~/.local/share/amp/secrets.json` (the file the Amp CLI writes the `apiKey@https://ampcode.com/` token into; the XDG_CONFIG file `~/.config/amp/settings.json` is preferences only and never holds the token). For `Kimi`, check `~/.kimi-code/credentials/` for OAuth tokens, plus `~/.kimi-code/config.toml` for the OAuth-backed provider/model references created by Kimi login and `~/.kimi-code/device_id` for the device id Kimi sends in OAuth headers. For `OpenCode`, check `~/.local/share/opencode/auth.json` (the file the OpenCode CLI writes provider credentials into — for example, the Z.AI Coding Plan API key). For `Grok`, check `~/.grok/auth.json`. It is a map of scopes (e.g. `https://auth.x.ai::...`) to records containing the OIDC JWT under `"key"`, plus `"refresh_token"`, user profile, `team_id`, and `expires_at`. The Grok CLI reads it the same way on the host and inside the container. Deployment keys can also be supplied via the `GROK_DEPLOYMENT_KEY` environment variable.
 3. **Is this a pre-existing container?** In `sync` mode, host credentials are forwarded on every launch — but if the host has no credentials, the container's existing auth is preserved. If the container has stale auth and the host has fresh auth, restart the container (`jackin eject <role> && jackin load <role>`) or purge state (`jackin purge <role>`) to force a fresh sync.
 
 ### Revoking forwarded credentials
