@@ -627,13 +627,19 @@ async fn published_image_stale_when_sha_differs() {
 }
 
 #[tokio::test]
-async fn published_image_falls_back_to_construct_version_when_no_sha_label() {
-    // No SHA label; construct_version matches → fresh.
+async fn published_image_stale_when_sha_label_missing_and_sha_known() {
     let docker = make_docker([(LABEL_IMAGE_CONSTRUCT_VERSION.to_owned(), "0.1".to_owned())].into());
     let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
+    assert!(stale, "known role SHA requires a matching SHA label");
+}
+
+#[tokio::test]
+async fn published_image_falls_back_to_construct_version_when_sha_unknown() {
+    let docker = make_docker([(LABEL_IMAGE_CONSTRUCT_VERSION.to_owned(), "0.1".to_owned())].into());
+    let stale = published_image_is_stale("img:latest", "0.1", None, &docker).await;
     assert!(
         !stale,
-        "matching construct version should be fresh when no SHA label"
+        "matching construct version should be fresh before role SHA is known"
     );
 }
 
@@ -648,14 +654,10 @@ async fn published_image_stale_when_construct_version_differs() {
 }
 
 #[tokio::test]
-async fn published_image_fresh_when_no_labels_at_all() {
-    // No labels at all → backward-compat: fresh.
+async fn published_image_stale_when_no_labels_and_sha_known() {
     let docker = make_docker(HashMap::new());
     let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
-    assert!(
-        !stale,
-        "absent construct_version label should be treated as fresh (compat)"
-    );
+    assert!(stale, "known role SHA requires a matching SHA label");
 }
 
 #[tokio::test]
@@ -682,6 +684,34 @@ async fn published_image_stale_when_inspect_image_labels_fails() {
         stale,
         "inspect_image_labels failure should treat image as stale"
     );
+}
+
+#[test]
+fn local_role_base_reuse_accepts_sha_only_published_labels() {
+    let labels = HashMap::from([(LABEL_IMAGE_ROLE_GIT_SHA.to_owned(), "abc123".to_owned())]);
+    assert!(local_role_base_labels_match(
+        &labels,
+        "projectjackin/construct:trixie",
+        "0.1-trixie",
+        Some("abc123"),
+    ));
+}
+
+#[test]
+fn local_role_base_reuse_rejects_stale_construct_label() {
+    let labels = HashMap::from([
+        (LABEL_IMAGE_ROLE_GIT_SHA.to_owned(), "abc123".to_owned()),
+        (
+            LABEL_IMAGE_CONSTRUCT.to_owned(),
+            "projectjackin/construct:old".to_owned(),
+        ),
+    ]);
+    assert!(!local_role_base_labels_match(
+        &labels,
+        "projectjackin/construct:trixie",
+        "0.1-trixie",
+        Some("abc123"),
+    ));
 }
 
 fn validated_test_repo(

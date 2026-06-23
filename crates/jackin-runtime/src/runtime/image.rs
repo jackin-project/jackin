@@ -315,7 +315,7 @@ pub(super) async fn decide_role_image(
             let freshness = published_image_freshness(
                 published,
                 &validated_repo.dockerfile.construct_version,
-                None,
+                head_sha.as_deref(),
                 docker,
             )
             .await;
@@ -1603,13 +1603,15 @@ fn agent_binary_prepare_summary(
 /// that the derived overlay is built `FROM`.
 ///
 /// - `published_base = Some(img)` (the decision found a fresh published image):
-///   pull it and restamp it as the local base (`FROM <img>` + base labels).
+///   tag the already pulled and label-verified image as the local base.
 /// - `published_base = None`: build the role Dockerfile locally (construct `FROM`
 ///   overridden by `JACKIN_CONSTRUCT_IMAGE` when set), no overlay.
 ///
-/// Reused when `jk_<role>__base:<sha>` already exists and its `construct.image`
-/// label matches the current construct — so the heavy role layers are built once
-/// per (role commit, construct) and overlay rebuilds don't touch them.
+/// Reused when `jk_<role>__base:<sha>` already exists and its labels match the
+/// current role SHA plus either the local-build construct image label or the
+/// published-image construct version label — so the heavy role layers are built
+/// or tagged once per (role commit, construct) and overlay rebuilds don't touch
+/// them.
 #[expect(
     clippy::too_many_arguments,
     reason = "threads the same inputs as the build path"
@@ -1625,13 +1627,13 @@ async fn ensure_local_role_base(
     debug: bool,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
-    progress: Option<&mut LaunchProgress>,
+    mut progress: Option<&mut LaunchProgress>,
 ) -> anyhow::Result<String> {
     // The base is always materialized locally as `jk_<role>__base:<sha>` so the
     // derived overlay never depends on the mutable published `:latest` tag:
-    //   - published fresh -> pull it and restamp it under the local base name;
+    //   - published fresh -> tag the verified image under the local base name;
     //   - otherwise        -> build the role Dockerfile locally.
-    // Reused when the local base tag already exists and its construct matches.
+    // Reused when the local base tag already exists and its labels still match.
     let construct = jackin_manifest::repo_contract::construct_image();
     let base_name = role_base_image_name(selector, branch_override, head_sha);
 
@@ -1644,16 +1646,53 @@ async fn ensure_local_role_base(
             .inspect_image_labels(&base_name)
             .await
             .is_ok_and(|labels| {
-                labels.get(LABEL_IMAGE_CONSTRUCT).map(String::as_str) == Some(construct.as_str())
+                local_role_base_labels_match(
+                    &labels,
+                    &construct,
+                    &validated_repo.dockerfile.construct_version,
+                    head_sha,
+                )
             })
     {
         jackin_diagnostics::debug_log!("image", "reusing local role base {base_name}");
         return Ok(base_name);
     }
 
+    if let Some(published) = published_base {
+        jackin_diagnostics::active_timing_started(
+            "derived image",
+            "tag_role_base",
+            Some(&base_name),
+        );
+        if let Some(p) = progress.as_deref_mut() {
+            p.stage_progress(
+                LaunchStage::DerivedImage,
+                "Tagging published role base image",
+            );
+        }
+        let args = ["tag", published, base_name.as_str()];
+        let options = RunOptions {
+            capture_stderr: true,
+            capture_stdout: true,
+            null_stdin: true,
+            ..RunOptions::default()
+        };
+        let result = runner.run("docker", &args, None, &options).await;
+        jackin_diagnostics::active_timing_done(
+            "derived image",
+            "tag_role_base",
+            if result.is_ok() {
+                Some("tagged")
+            } else {
+                Some("error")
+            },
+        );
+        result?;
+        return Ok(base_name);
+    }
+
     jackin_diagnostics::active_timing_started("derived image", "build_role_base", Some(&base_name));
-    let build =
-        create_role_base_build_context(&cached_repo.repo_dir, validated_repo, published_base)?;
+    let build = create_role_base_build_context(&cached_repo.repo_dir, validated_repo, None)?;
     let dockerfile_path = build.dockerfile_path.display().to_string();
     let context_dir = build.context_dir.display().to_string();
     let role_sha_label = format!(
@@ -1664,9 +1703,9 @@ async fn ensure_local_role_base(
     let build_arg_role_git_sha = format!("ROLE_GIT_SHA={}", head_sha.unwrap_or("unknown"));
 
     let mut args: Vec<&str> = vec!["build"];
-    // Restamping a published image pulls it; a workspace rebuild refreshes the
-    // construct base. A plain workspace base build rides the local layer cache.
-    if published_base.is_some() || rebuild {
+    // A workspace rebuild refreshes the construct base. A plain workspace base
+    // build rides the local layer cache.
+    if rebuild {
         args.push("--pull");
     }
     args.extend(["--label", &role_sha_label, "--label", &construct_label]);
@@ -1696,7 +1735,6 @@ async fn ensure_local_role_base(
     // Surface the role-base build on the live build screen exactly like the
     // derived build: a stage header plus the captured output teed into the
     // build-log panel the cockpit shows on demand.
-    let mut progress = progress;
     if let Some(p) = progress.as_deref_mut() {
         p.stage_progress(LaunchStage::DerivedImage, "Building role base image");
     }
@@ -1773,11 +1811,12 @@ pub(super) async fn build_agent_image(
 
     let rebuild = rebuild || build_reason == ImageInvalidationReason::PublishedImageStale;
 
-    // Resolve the role base into a local `jk_<role>__base:<sha>` image — pulled +
-    // restamped from the published image when the decision found it fresh
-    // (`build_base_image_override`), or built from the role Dockerfile otherwise —
-    // then derive the overlay `FROM` it. The derived build below always uses a
-    // local base, so it never inlines the role Dockerfile and never `--pull`s.
+    // Resolve the role base into a local `jk_<role>__base:<sha>` image — tagged
+    // from the pulled, label-verified published image when the decision found it
+    // fresh (`build_base_image_override`), or built from the role Dockerfile
+    // otherwise — then derive the overlay `FROM` it. The derived build below
+    // always uses a local base, so it never inlines the role Dockerfile and
+    // never `--pull`s.
     let local_base = ensure_local_role_base(
         selector,
         branch_override,
@@ -2362,7 +2401,7 @@ fn compact_image_warning_line(message: &str) -> String {
 /// 1. `jackin.role.git.sha` label: if present and matches `head_sha`, the
 ///    image was built from the exact same commit — fresh, no rebuild needed.
 ///    If present and different, the image is stale.
-/// 2. Fallback for images predating role-git-sha tracking:
+/// 2. Fallback only when the current role SHA is not yet known:
 ///    `jackin.construct.version` label must match `dockerfile_version`.
 ///    Absent label is treated as fresh (backward compatibility).
 ///
@@ -2406,6 +2445,7 @@ async fn published_image_freshness(
         (None, Some(label_sha)) => {
             return PublishedImageFreshness::NeedsRoleSha(label_sha.clone());
         }
+        (Some(_), None) => return PublishedImageFreshness::Stale,
         _ => {}
     }
 
@@ -2430,6 +2470,33 @@ async fn published_image_is_stale(
         published_image_freshness(published, dockerfile_version, head_sha, docker).await,
         PublishedImageFreshness::Fresh
     )
+}
+
+fn local_role_base_labels_match(
+    labels: &HashMap<String, String>,
+    construct_image: &str,
+    dockerfile_construct_version: &str,
+    head_sha: Option<&str>,
+) -> bool {
+    let role_sha_matches = match head_sha {
+        Some(expected) => labels
+            .get(LABEL_IMAGE_ROLE_GIT_SHA)
+            .is_some_and(|stored| stored == expected),
+        None => true,
+    };
+    if !role_sha_matches {
+        return false;
+    }
+
+    if let Some(stored) = labels.get(LABEL_IMAGE_CONSTRUCT) {
+        return stored == construct_image;
+    }
+
+    if let Some(stored) = labels.get(LABEL_IMAGE_CONSTRUCT_VERSION) {
+        return stored == dockerfile_construct_version;
+    }
+
+    head_sha.is_some()
 }
 
 // Collapsed from a 5-arm match to AgentRuntime adapter dispatch.
