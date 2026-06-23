@@ -27,10 +27,15 @@ fn env_points_at_bundle_state() {
 
 #[test]
 fn auto_prep_detects_capsule_and_construct_inputs() {
-    let auto = auto_prep(&[
-        "crates/jackin-capsule/src/lib.rs".to_owned(),
-        "docker/construct/Dockerfile".to_owned(),
-    ]);
+    let repo = repo_root();
+    let auto = auto_prep(
+        &repo,
+        &[
+            "crates/jackin-capsule/src/lib.rs".to_owned(),
+            "docker/construct/Dockerfile".to_owned(),
+        ],
+    )
+    .unwrap();
 
     assert!(auto.capsule);
     assert!(auto.construct);
@@ -38,17 +43,41 @@ fn auto_prep_detects_capsule_and_construct_inputs() {
 
 #[test]
 fn auto_prep_ignores_docs_only_changes() {
-    let auto = auto_prep(&["docs/content/docs/reference/roadmap/pr-verification.mdx".to_owned()]);
+    let repo = repo_root();
+    let auto = auto_prep(
+        &repo,
+        &["docs/content/docs/reference/roadmap/pr-verification.mdx".to_owned()],
+    )
+    .unwrap();
+
+    assert!(!auto.capsule);
+    assert!(!auto.construct);
+}
+
+#[test]
+fn auto_prep_treats_protocol_change_as_capsule() {
+    let repo = repo_root();
+    let auto = auto_prep(&repo, &["crates/jackin-protocol/src/wire.rs".to_owned()]).unwrap();
 
     assert!(auto.capsule);
     assert!(!auto.construct);
 }
 
 #[test]
-fn auto_prep_treats_protocol_change_as_capsule() {
-    let auto = auto_prep(&["crates/jackin-protocol/src/wire.rs".to_owned()]);
+fn auto_prep_treats_tui_dependency_change_as_capsule() {
+    let repo = repo_root();
+    let auto = auto_prep(&repo, &["crates/jackin-tui/src/lib.rs".to_owned()]).unwrap();
 
     assert!(auto.capsule);
+    assert!(!auto.construct);
+}
+
+#[test]
+fn auto_prep_ignores_unrelated_workspace_package_change() {
+    let repo = repo_root();
+    let auto = auto_prep(&repo, &["crates/jackin-dev/src/main.rs".to_owned()]).unwrap();
+
+    assert!(!auto.capsule);
     assert!(!auto.construct);
 }
 
@@ -61,10 +90,18 @@ fn auto_prep_construct_triggers() {
         "crates/jackin-xtask/src/construct/image.rs",
     ] {
         assert!(
-            auto_prep(&[file.to_owned()]).construct,
+            construct_build_required(&[file.to_owned()]),
             "{file} should trigger a construct build"
         );
     }
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("crates/jackin-dev should live two levels below repo root")
+        .to_owned()
 }
 
 #[test]
@@ -94,18 +131,20 @@ fn shell_quote_quotes_shell_metachars() {
 #[test]
 fn parse_pr_info_filters_empty_and_non_string_paths() {
     let json = serde_json::json!({
+        "headRefName": "fix/example",
         "headRefOid": "abc123",
         "files": [{"path": "a.rs"}, {"path": ""}, {"additions": 1}, {"path": "b.rs"}],
     });
     let info = parse_pr_info(&json).unwrap();
 
+    assert_eq!(info.head_ref_name, "fix/example");
     assert_eq!(info.head_oid, "abc123");
     assert_eq!(info.changed_files, vec!["a.rs", "b.rs"]);
 }
 
 #[test]
 fn parse_pr_info_rejects_missing_files() {
-    let json = serde_json::json!({ "headRefOid": "abc123" });
+    let json = serde_json::json!({ "headRefName": "fix/example", "headRefOid": "abc123" });
 
     assert!(parse_pr_info(&json).is_err());
 }
