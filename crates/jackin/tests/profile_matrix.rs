@@ -85,11 +85,13 @@ fn docker_exec_output(container: &str, cmd: &[&str]) -> String {
 }
 
 fn docker_rm(name: &str) {
-    drop(Command::new("docker")
-        .args(["rm", "-f", name])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output());
+    drop(
+        Command::new("docker")
+            .args(["rm", "-f", name])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output(),
+    );
 }
 
 /// RAII guard that removes the container even if a test panics.
@@ -137,36 +139,57 @@ fn tier1_locked_posture() {
         name,
         &[
             "--read-only",
-            "--tmpfs", "/tmp:mode=1777",
-            "--tmpfs", "/run:exec",
+            "--tmpfs",
+            "/tmp:mode=1777",
+            "--tmpfs",
+            "/run:exec",
             "--cap-drop=ALL",
             // MINIMUM_CAPABILITIES (docker_profile.rs)
-            "--cap-add", "CHOWN",
-            "--cap-add", "DAC_OVERRIDE",
-            "--cap-add", "FOWNER",
-            "--cap-add", "FSETID",
-            "--cap-add", "SETUID",
-            "--cap-add", "SETGID",
-            "--cap-add", "SETFCAP",
-            "--cap-add", "KILL",
+            "--cap-add",
+            "CHOWN",
+            "--cap-add",
+            "DAC_OVERRIDE",
+            "--cap-add",
+            "FOWNER",
+            "--cap-add",
+            "FSETID",
+            "--cap-add",
+            "SETUID",
+            "--cap-add",
+            "SETGID",
+            "--cap-add",
+            "SETFCAP",
+            "--cap-add",
+            "KILL",
             // Implicit from Allowlist network (apply_implicit_grants)
-            "--cap-add", "NET_ADMIN",
-            "--cap-add", "NET_RAW",
-            "--security-opt", "no-new-privileges",
-            "--memory", "4294967296",  // 4 GiB
-            "--network", "none",
+            "--cap-add",
+            "NET_ADMIN",
+            "--cap-add",
+            "NET_RAW",
+            "--security-opt",
+            "no-new-privileges",
+            "--memory",
+            "4294967296", // 4 GiB
+            "--network",
+            "none",
         ],
     );
 
     // Root filesystem is read-only — writing to / must fail.
     assert!(
-        !docker_exec_ok(container_ref(name), &["sh", "-c", "touch /test-write-probe 2>/dev/null"]),
+        !docker_exec_ok(
+            container_ref(name),
+            &["sh", "-c", "touch /test-write-probe 2>/dev/null"]
+        ),
         "locked: / must be read-only"
     );
 
     // /tmp is writable via tmpfs.
     assert!(
-        docker_exec_ok(container_ref(name), &["sh", "-c", "touch /tmp/test-write-probe"]),
+        docker_exec_ok(
+            container_ref(name),
+            &["sh", "-c", "touch /tmp/test-write-probe"]
+        ),
         "locked: /tmp must be writable"
     );
 
@@ -204,35 +227,55 @@ fn tier1_hardened_posture() {
         name,
         &[
             "--read-only",
-            "--tmpfs", "/tmp:mode=1777",
-            "--tmpfs", "/run:exec",
+            "--tmpfs",
+            "/tmp:mode=1777",
+            "--tmpfs",
+            "/run:exec",
             "--cap-drop=ALL",
             // MINIMUM_CAPABILITIES (docker_profile.rs)
-            "--cap-add", "CHOWN",
-            "--cap-add", "DAC_OVERRIDE",
-            "--cap-add", "FOWNER",
-            "--cap-add", "FSETID",
-            "--cap-add", "SETUID",
-            "--cap-add", "SETGID",
-            "--cap-add", "SETFCAP",
-            "--cap-add", "KILL",
+            "--cap-add",
+            "CHOWN",
+            "--cap-add",
+            "DAC_OVERRIDE",
+            "--cap-add",
+            "FOWNER",
+            "--cap-add",
+            "FSETID",
+            "--cap-add",
+            "SETUID",
+            "--cap-add",
+            "SETGID",
+            "--cap-add",
+            "SETFCAP",
+            "--cap-add",
+            "KILL",
             // Implicit from Allowlist network (apply_implicit_grants)
-            "--cap-add", "NET_ADMIN",
-            "--cap-add", "NET_RAW",
-            "--security-opt", "no-new-privileges",
-            "--memory", "17179869184",  // 16 GiB
+            "--cap-add",
+            "NET_ADMIN",
+            "--cap-add",
+            "NET_RAW",
+            "--security-opt",
+            "no-new-privileges",
+            "--memory",
+            "17179869184", // 16 GiB
         ],
     );
 
     // Root filesystem is read-only.
     assert!(
-        !docker_exec_ok(container_ref(name), &["sh", "-c", "touch /test-write-probe 2>/dev/null"]),
+        !docker_exec_ok(
+            container_ref(name),
+            &["sh", "-c", "touch /test-write-probe 2>/dev/null"]
+        ),
         "hardened: / must be read-only"
     );
 
     // /tmp is writable.
     assert!(
-        docker_exec_ok(container_ref(name), &["sh", "-c", "touch /tmp/test-write-probe"]),
+        docker_exec_ok(
+            container_ref(name),
+            &["sh", "-c", "touch /tmp/test-write-probe"]
+        ),
         "hardened: /tmp must be writable"
     );
 
@@ -270,14 +313,19 @@ fn tier1_standard_posture() {
         name,
         &[
             // writable root, no --cap-drop
-            "--security-opt", "no-new-privileges",
-            "--memory", "17179869184",  // 16 GiB
+            "--security-opt",
+            "no-new-privileges",
+            "--memory",
+            "17179869184", // 16 GiB
         ],
     );
 
     // Root filesystem is writable.
     assert!(
-        docker_exec_ok(container_ref(name), &["sh", "-c", "touch /test-write-probe 2>/dev/null"]),
+        docker_exec_ok(
+            container_ref(name),
+            &["sh", "-c", "touch /test-write-probe 2>/dev/null"]
+        ),
         "standard: / must be writable"
     );
 
@@ -317,7 +365,10 @@ fn tier1_compat_posture() {
 
     // Root filesystem is writable.
     assert!(
-        docker_exec_ok(container_ref(name), &["sh", "-c", "touch /test-write-probe 2>/dev/null"]),
+        docker_exec_ok(
+            container_ref(name),
+            &["sh", "-c", "touch /test-write-probe 2>/dev/null"]
+        ),
         "compat: / must be writable"
     );
 

@@ -3,44 +3,26 @@
 //! Not responsible for worktree or branch lifecycle — those are in
 //! `cleanup.rs`. The file is the sole authority on whether a container has
 //! active isolation that must be preserved before purge.
+//!
+//! Pure data types `IsolationRecord`, `CleanupStatus`, and `DriftDetection`
+//! now live in `jackin-core` so that `jackin-console` can reference them
+//! without depending on `jackin-runtime`. Re-exported here for existing call
+//! sites in this crate and downstream consumers.
 
-use crate::isolation::MountIsolation;
 use anyhow::Context;
 use jackin_diagnostics::debug_log;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+// Re-export so test code using `use super::*` still finds it.
+pub use crate::isolation::MountIsolation;
+
+// Pure data types — now in jackin-core.
+pub use jackin_core::isolation_record::{CleanupStatus, IsolationRecord};
+
 const ISOLATION_FILE: &str = "isolation.json";
 const STATE_DIR: &str = ".jackin";
 const CURRENT_VERSION: u32 = 1;
-
-/// Persisted cleanup state written into `isolation.json`.
-///
-/// `PreservedDirty` and `PreservedUnpushed` map one-to-one to the
-/// `PreservedReason::Dirty` and `PreservedReason::Unpushed` variants in
-/// `finalize.rs`, which drive the transient prompt wording. When adding a
-/// new preservation cause, update both types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CleanupStatus {
-    Active,
-    PreservedDirty,
-    PreservedUnpushed,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct IsolationRecord {
-    pub workspace: String,
-    pub mount_dst: String,
-    pub original_src: String,
-    pub isolation: MountIsolation,
-    pub worktree_path: String,
-    pub scratch_branch: String,
-    pub base_commit: String,
-    pub selector_key: String,
-    pub container_name: String,
-    pub cleanup_status: CleanupStatus,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct IsolationFile {

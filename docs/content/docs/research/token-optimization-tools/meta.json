@@ -1,0 +1,19 @@
+{
+  "title": "Token-optimization tools",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "01-caveman-design",
+    "02-headroom-design",
+    "03-rtk-design",
+    "04-leanctx-design",
+    "05-head-to-head",
+    "06-combining",
+    "07-evidence-and-claims",
+    "08-records-ledger-and-unverified",
+    "09-gaps-open-questions-and-next-brief",
+    "10-first-party-measurements",
+    "11-extended-comparison-axes",
+    "12-implementation-comparison"
+  ]
+}

@@ -44,7 +44,7 @@ pub async fn list_running_agent_display_names(
         .map(|r| {
             let display_name = r
                 .labels
-                .get("jackin.display_name")
+                .get("jackin.display.name")
                 .map_or("", String::as_str);
             format_role_display(&r.name, display_name)
         })

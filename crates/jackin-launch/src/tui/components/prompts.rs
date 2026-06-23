@@ -1,9 +1,10 @@
 //! Launch prompt dialog rendering and geometry.
 
 use jackin_tui::components::{
-    ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_required_height,
-    confirm_width_pct, render_confirm_dialog, render_error_dialog_in, render_hint_bar,
-    render_select_list, render_text_input, required_height as error_dialog_required_height,
+    ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_hint_spans,
+    confirm_required_height, confirm_width_pct, error_popup_hint_spans, render_confirm_dialog,
+    render_error_dialog_in, render_hint_bar, render_select_list, render_text_input,
+    required_height as error_dialog_required_height, select_list_hint_spans,
     text_input_prompt_rect,
 };
 use jackin_tui::{HintSpan, centered_rect};
@@ -12,20 +13,6 @@ use ratatui::layout::Rect;
 use ratatui::text::Line;
 
 use crate::tui::components::dialog::dialog_backdrop;
-
-/// Footer-hint keys for the forced-choice launch picker.
-const PICKER_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↑/↓"),
-    HintSpan::Text("navigate"),
-    HintSpan::GroupSep,
-    HintSpan::Text("type to filter"),
-    HintSpan::GroupSep,
-    HintSpan::Key("↵"),
-    HintSpan::Text("select"),
-    HintSpan::GroupSep,
-    HintSpan::Key("Ctrl-C"),
-    HintSpan::Text("cancel"),
-];
 
 pub fn draw_select(
     frame: &mut Frame<'_>,
@@ -41,7 +28,7 @@ pub fn draw_select(
         title,
         context,
     );
-    render_hint_bar(frame, hint_area, PICKER_HINT);
+    render_hint_bar(frame, hint_area, &select_list_hint_spans());
 }
 
 pub fn draw_text_prompt(frame: &mut Frame<'_>, input: &TextInputState<'_>, skippable: bool) {
@@ -53,13 +40,13 @@ pub fn draw_text_prompt(frame: &mut Frame<'_>, input: &TextInputState<'_>, skipp
 pub fn draw_confirm(frame: &mut Frame<'_>, state: &ConfirmState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
     render_confirm_dialog(frame, confirm_rect(box_area, state), state);
-    render_hint_bar(frame, hint_area, CONFIRM_HINT);
+    render_hint_bar(frame, hint_area, &confirm_hint_spans());
 }
 
 pub fn draw_error_popup(frame: &mut Frame<'_>, state: &ErrorPopupState) {
     let (box_area, hint_area) = dialog_backdrop(frame, frame.area());
     render_error_dialog_in(frame, error_popup_rect(box_area, state), state);
-    render_hint_bar(frame, hint_area, ERROR_POPUP_HINT);
+    render_hint_bar(frame, hint_area, &error_popup_hint_spans());
 }
 
 fn picker_rect(area: Rect, picker: &SelectListState, context: &[Line<'_>]) -> Rect {
@@ -117,73 +104,28 @@ const fn text_prompt_hint(skippable: bool) -> &'static [HintSpan<'static>] {
 }
 
 const TEXT_PROMPT_HINT: &[HintSpan<'static>] = &[
+    // UNREGISTERABLE(text-prompt-no-keymap): Enter confirms the field inline; no TEXT_PROMPT_KEYMAP registered.
     HintSpan::Key("↵"),
     HintSpan::Text("save"),
     HintSpan::GroupSep,
-    HintSpan::Key("Ctrl-C"),
+    // UNREGISTERABLE(multi-key-display-group): combined Ctrl-C/Ctrl-Q/Esc cancel display.
+    HintSpan::Key("Ctrl-C/Ctrl-Q/Esc"),
     HintSpan::Text("cancel"),
 ];
 
 const TEXT_PROMPT_SKIP_HINT: &[HintSpan<'static>] = &[
+    // UNREGISTERABLE(text-prompt-no-keymap): Enter confirms the field inline; no TEXT_PROMPT_KEYMAP registered.
     HintSpan::Key("↵"),
     HintSpan::Text("save"),
     HintSpan::GroupSep,
+    // UNREGISTERABLE(dynamic-input-instruction): "empty" is a display label for the skip affordance, not a key.
     HintSpan::Key("empty"),
     HintSpan::Text("skip"),
     HintSpan::GroupSep,
-    HintSpan::Key("Ctrl-C"),
+    // UNREGISTERABLE(multi-key-display-group): combined Ctrl-C/Ctrl-Q/Esc cancel display.
+    HintSpan::Key("Ctrl-C/Ctrl-Q/Esc"),
     HintSpan::Text("cancel"),
 ];
 
-const CONFIRM_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Y"),
-    HintSpan::Text("yes"),
-    HintSpan::GroupSep,
-    HintSpan::Key("N/Esc"),
-    HintSpan::Text("no"),
-    HintSpan::GroupSep,
-    HintSpan::Key("⇥"),
-    HintSpan::Text("focus"),
-];
-
-const ERROR_POPUP_HINT: &[HintSpan<'static>] = &[HintSpan::Key("↵/Esc"), HintSpan::Text("dismiss")];
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
-
-    fn row_text(buf: &Buffer, row: u16, width: u16) -> String {
-        (0..width)
-            .map(|x| buf[(x, row)].symbol().to_owned())
-            .collect()
-    }
-
-    #[test]
-    fn text_prompt_uses_shared_bottom_chrome_rows() {
-        let area = Rect::new(0, 0, 80, 12);
-        let input = TextInputState::new_allow_empty("Context7 API key", "");
-        let backend = TestBackend::new(area.width, area.height);
-        let mut terminal = Terminal::new(backend).expect("test backend should initialize");
-
-        terminal
-            .draw(|frame| draw_text_prompt(frame, &input, true))
-            .expect("render should succeed");
-
-        let hint = row_text(terminal.backend().buffer(), area.height - 3, area.width);
-        let spacer = row_text(terminal.backend().buffer(), area.height - 2, area.width);
-        let footer = row_text(terminal.backend().buffer(), area.height - 1, area.width);
-        assert!(
-            hint.contains("empty") && hint.contains("skip"),
-            "prompt hint should render in the shared hint row: {hint:?}"
-        );
-        assert!(
-            !spacer.contains("skip") && !spacer.contains("Context7"),
-            "spacer row should stay separate from prompt hints: {spacer:?}"
-        );
-        assert!(
-            !footer.contains("skip") && !footer.contains("Context7"),
-            "footer row should remain reserved below prompt hints: {footer:?}"
-        );
-    }
-}
+mod tests;

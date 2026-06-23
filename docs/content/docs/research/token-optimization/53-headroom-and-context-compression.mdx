@@ -7,7 +7,7 @@ title: "53 — Headroom and the context-compression layer (vs the caveman ecosys
 Volume III deep-dive requested after the code-intelligence sweep (51) and the vector-database follow-up (52): analyze `chopratejas/headroom`, compare it in depth to the caveman ecosystem the operator already runs, re-sweep the internet for context-compression projects the dossier missed, and fold the result back into the dossier without editing the frozen Volume I/II files. Research conducted 2026-06-15; every external claim carries a source + access date in the ledger; headroom's product numbers are vendor self-reported and are tiered accordingly.
 
 <Aside type="note">
-The **canonical, deepest Caveman vs Headroom vs RTK head-to-head** now lives in its own folder: [Caveman vs Headroom vs RTK](/research/caveman-headroom-rtk/) — equal-depth design teardowns of all three, a feature has/lacks matrix, best-case-of-each, and the combinability verdict. This chapter remains the full headroom deep-dive and source ledger that comparison points back to.
+The **canonical, deepest cross-tool head-to-head** now lives in its own folder: [token-optimization tools](/research/token-optimization-tools/) — equal-depth design teardowns of caveman, headroom, RTK, and **lean-ctx**, a feature has/lacks matrix, best-case-of-each, and the combinability verdict. This chapter remains the full headroom deep-dive and source ledger that comparison points back to.
 </Aside>
 
 ## TL;DR
@@ -114,9 +114,9 @@ The whole-bill correction (the K1 move, applied to the input side): "60–95%" i
 
 The full side-by-side comparison — headroom vs the caveman ecosystem vs RTK, the axis-by-axis table, the cache-safety asymmetry (output brevity is cache-neutral; input compression is cache-breaking unless done at write-time on new content), the family-overlap mapping, and the memory either/or — is consolidated as a **single source of truth** in the dedicated folder, not duplicated here:
 
-- [Caveman vs Headroom vs RTK — overview + master comparison table](/research/caveman-headroom-rtk/)
-- [Head-to-head: the feature has/lacks matrix and best-case-of-each](/research/caveman-headroom-rtk/04-head-to-head/)
-- [Combining all three: the layered stack, the ecosystem overlap, and the memory either/or](/research/caveman-headroom-rtk/05-combining-the-three/)
+- [Token-optimization tools — overview + master comparison table](/research/token-optimization-tools/)
+- [Head-to-head: the feature has/lacks matrix and best-case-of-each](/research/token-optimization-tools/05-head-to-head/)
+- [Combining: the layered stack, the ecosystem overlap, and the memory either/or](/research/token-optimization-tools/06-combining/)
 
 The one structural point worth restating here because it drives headroom's whole design: **output brevity is cache-neutral, but input compression is cache-breaking unless it is done at write-time on new content** — which is exactly why headroom's live-zone / MCP path (compress a new observation before it is first cached) is cache-safe while its whole-prompt proxy in front of an already-caching Claude is not. The rest of this chapter is the dossier's **headroom record**: its typed compressors, the live-zone cache machinery, the H1–H4 technique records, the benchmarks, and the source ledger.
 
@@ -262,7 +262,7 @@ Per the dossier's standing rule: a per-payload compression ratio is not a banked
 
 All accessed 2026-06-15.
 
-> The **complete consolidated ledger** for all three tools together — plus the formal per-technique records and the unverified-claims register — is maintained in the hub: [Records, ledger & unverified](/research/caveman-headroom-rtk/07-records-ledger-and-unverified/). The chapter-specific citations are retained below as the original research record.
+> The **complete consolidated ledger** for all three tools together — plus the formal per-technique records and the unverified-claims register — is maintained in the hub: [Records, ledger & unverified](/research/token-optimization-tools/08-records-ledger-and-unverified/). The chapter-specific citations are retained below as the original research record.
 
 - headroom repo + README: [github.com/chopratejas/headroom](https://github.com/chopratejas/headroom)
 - headroom stats (28,185★ / 1,908 forks / 30 contributors / 268 issues / Apache-2.0 / created 2026-01-07 / v0.25.0): `gh api repos/chopratejas/headroom`

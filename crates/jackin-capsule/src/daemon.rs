@@ -427,6 +427,8 @@ impl Multiplexer {
             .collect();
 
         let input_bindings = crate::services::input_bindings::resolve_input_bindings();
+        let palette_glyph =
+            crate::services::input_bindings::palette_key_glyph(input_bindings.palette_key);
         let input_parser = InputParser::new(input_bindings.prefix, input_bindings.palette_key);
         let workdir = PathBuf::from(&launch_config.workdir);
         let workdir_context = WorkdirContext::resolve(&workdir);
@@ -444,6 +446,7 @@ impl Multiplexer {
             status_identity.instance_id,
         );
         status_bar.set_prefix_enabled(input_parser.prefix_enabled());
+        status_bar.palette_key_glyph = palette_glyph;
 
         let ratatui_terminal =
             ratatui::Terminal::new(crate::tui::socket_backend::SocketBackend::new(cols, rows))?;
@@ -1122,7 +1125,5 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
     }
 }
 
-#[cfg(test)]
-mod render_conformance_tests;
 #[cfg(test)]
 mod tests;

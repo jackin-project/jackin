@@ -9,8 +9,9 @@ use crate::docker_client::DockerApi;
 use crate::instance;
 use crate::paths::JackinPaths;
 use crate::runtime;
-use crate::selector::RoleSelector;
-use crate::workspace::{self, LoadWorkspaceInput, resolve_path};
+use crate::workspace::{self, resolve_path};
+use jackin_config::LoadWorkspaceInput;
+use jackin_core::RoleSelector;
 
 use crate::console;
 
@@ -24,7 +25,7 @@ pub(super) struct ConsoleInPlaceHandler {
     pub(super) debug: bool,
 }
 
-impl console::InstanceActionHandler for ConsoleInPlaceHandler {
+impl console::InstanceActionHandler<jackin_core::Agent> for ConsoleInPlaceHandler {
     async fn run_in_place(
         &mut self,
         container: &str,

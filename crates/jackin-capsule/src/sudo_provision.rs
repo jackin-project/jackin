@@ -14,9 +14,7 @@ const SUDOERS_PATH: &str = "/etc/sudoers.d/agent";
 const SUDOERS_ENTRY: &[u8] = b"agent ALL=(ALL) NOPASSWD:ALL\n";
 
 pub fn provision() -> Result<()> {
-    let granted = std::env::var(jackin_core::env_model::JACKIN_SUDO_ENV_NAME)
-        .as_deref()
-        == Ok("1");
+    let granted = std::env::var(jackin_core::env_model::JACKIN_SUDO_ENV_NAME).as_deref() == Ok("1");
     if granted {
         if !Path::new(SUDOERS_PATH).exists() {
             write_sudoers()?;

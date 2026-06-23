@@ -18,14 +18,14 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, Event, KeyEventKind},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use interactors::StoryInteraction;
 use jackin_tui::{
-    HintSpan,
     components::{
+        KeyBinding, KeyChord, Keymap, LogicalKey, Visibility,
         hint_bar::render_hint_bar,
         panel::{Panel, PanelFocus, panel_body_area},
         render_brand_header,
@@ -49,27 +49,130 @@ const USAGE: &str =
     "usage: tui-lookbook --terminal | tui-lookbook [out-dir] | tui-lookbook --check <dir>";
 const CHECK_USAGE: &str = "usage: tui-lookbook --check <docs/public/tui-lookbook>";
 
-const SIDEBAR_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("↑↓"),
-    HintSpan::Text("navigate"),
-    HintSpan::Sep,
-    HintSpan::Key("⇥"),
-    HintSpan::Text("focus preview"),
-    HintSpan::Sep,
-    HintSpan::Key("q/Esc"),
-    HintSpan::Text("quit"),
-];
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SidebarAction {
+    /// Up or Down (or j/k); direction resolved from the chord at the dispatch site.
+    Navigate,
+    /// Home or End; target (first/last) resolved from the chord at dispatch site.
+    GoToEdge,
+    FocusPreview,
+    Quit,
+}
 
-const PREVIEW_FOCUS_HINT: &[HintSpan<'static>] = &[
-    HintSpan::Key("Esc/⇥"),
-    HintSpan::Text("back to list"),
-    HintSpan::Sep,
-    HintSpan::Key("↑↓←→"),
-    HintSpan::Text("interact"),
-    HintSpan::Sep,
-    HintSpan::Key("J/K"),
-    HintSpan::Text("move preview"),
-];
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PreviewAction {
+    BackToList,
+    MovePreviewDown,
+    MovePreviewUp,
+    PageDown,
+    PageUp,
+    // Arrow keys and all other keys are forwarded to the active interactor.
+    Forward,
+}
+
+static SIDEBAR_KEYMAP: Keymap<SidebarAction> = Keymap::new(&[
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Down),
+            KeyChord::plain(LogicalKey::Up),
+        ],
+        action: SidebarAction::Navigate,
+        hint: Some("navigate"),
+        visibility: Visibility::Shown,
+        glyph: Some("↑↓"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('j')),
+            KeyChord::plain(LogicalKey::Char('k')),
+        ],
+        action: SidebarAction::Navigate,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Home),
+            KeyChord::plain(LogicalKey::End),
+        ],
+        action: SidebarAction::GoToEdge,
+        hint: Some("first/last"),
+        visibility: Visibility::Shown,
+        glyph: Some("Home/End"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Tab)],
+        action: SidebarAction::FocusPreview,
+        hint: Some("focus preview"),
+        visibility: Visibility::Shown,
+        glyph: Some("⇥"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('q')),
+            KeyChord::plain(LogicalKey::Esc),
+        ],
+        action: SidebarAction::Quit,
+        hint: Some("quit"),
+        visibility: Visibility::Shown,
+        glyph: Some("q/Esc"),
+    },
+]);
+
+static PREVIEW_KEYMAP: Keymap<PreviewAction> = Keymap::new(&[
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Esc),
+            KeyChord::plain(LogicalKey::Tab),
+            KeyChord::plain(LogicalKey::BackTab),
+        ],
+        action: PreviewAction::BackToList,
+        hint: Some("back to list"),
+        visibility: Visibility::Shown,
+        glyph: Some("Esc/⇥"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Up),
+            KeyChord::plain(LogicalKey::Down),
+            KeyChord::plain(LogicalKey::Left),
+            KeyChord::plain(LogicalKey::Right),
+        ],
+        action: PreviewAction::Forward,
+        hint: Some("interact"),
+        visibility: Visibility::Shown,
+        glyph: Some("↑↓←→"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::PageDown)],
+        action: PreviewAction::PageDown,
+        hint: Some("page"),
+        visibility: Visibility::Shown,
+        glyph: Some("PgUp/PgDn"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::PageUp)],
+        action: PreviewAction::PageUp,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('J'))],
+        action: PreviewAction::MovePreviewDown,
+        hint: Some("move preview"),
+        visibility: Visibility::Shown,
+        glyph: Some("J/K"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('K'))],
+        action: PreviewAction::MovePreviewUp,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+]);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Focus {
@@ -337,11 +440,11 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
             last_sidebar_inner_area = sidebar_inner;
 
             // ── Hint bar ──────────────────────────────────────────────────────
-            let hint = match focus {
-                Focus::Preview => PREVIEW_FOCUS_HINT,
-                Focus::Sidebar => SIDEBAR_HINT,
+            let hint_spans = match focus {
+                Focus::Preview => PREVIEW_KEYMAP.hint_spans(),
+                Focus::Sidebar => SIDEBAR_KEYMAP.hint_spans(),
             };
-            render_hint_bar(frame, hint_area, hint);
+            render_hint_bar(frame, hint_area, &hint_spans);
         })?;
 
         // event::poll returns false quickly when no event; avoids busy-loop.
@@ -439,86 +542,87 @@ fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
+                let chord = KeyChord::from(key);
                 match focus {
-                    Focus::Preview => match key.code {
-                        KeyCode::Esc | KeyCode::Tab | KeyCode::BackTab => {
-                            focus = Focus::Sidebar;
+                    Focus::Preview => {
+                        match PREVIEW_KEYMAP
+                            .dispatch(chord)
+                            .unwrap_or(PreviewAction::Forward)
+                        {
+                            PreviewAction::BackToList => {
+                                focus = Focus::Sidebar;
+                            }
+                            PreviewAction::MovePreviewDown => {
+                                scroll::apply_delta_u16(
+                                    preview_content_rows,
+                                    last_preview_viewport_rows,
+                                    &mut preview_scroll,
+                                    1,
+                                );
+                            }
+                            PreviewAction::MovePreviewUp => {
+                                scroll::apply_delta_u16(
+                                    preview_content_rows,
+                                    last_preview_viewport_rows,
+                                    &mut preview_scroll,
+                                    -1,
+                                );
+                            }
+                            PreviewAction::PageDown => {
+                                scroll::apply_delta_u16(
+                                    preview_content_rows,
+                                    last_preview_viewport_rows,
+                                    &mut preview_scroll,
+                                    last_preview_viewport_rows as isize,
+                                );
+                            }
+                            PreviewAction::PageUp => {
+                                scroll::apply_delta_u16(
+                                    preview_content_rows,
+                                    last_preview_viewport_rows,
+                                    &mut preview_scroll,
+                                    -(last_preview_viewport_rows as isize),
+                                );
+                            }
+                            PreviewAction::Forward => {
+                                interactor.handle_key(key);
+                            }
                         }
-                        // J/K scroll the preview when in preview focus.
-                        KeyCode::Char('J') => {
-                            scroll::apply_delta_u16(
-                                preview_content_rows,
-                                last_preview_viewport_rows,
-                                &mut preview_scroll,
-                                1,
-                            );
-                        }
-                        KeyCode::Char('K') => {
-                            scroll::apply_delta_u16(
-                                preview_content_rows,
-                                last_preview_viewport_rows,
-                                &mut preview_scroll,
-                                -1,
-                            );
-                        }
-                        KeyCode::PageDown => {
-                            scroll::apply_delta_u16(
-                                preview_content_rows,
-                                last_preview_viewport_rows,
-                                &mut preview_scroll,
-                                last_preview_viewport_rows as isize,
-                            );
-                        }
-                        KeyCode::PageUp => {
-                            scroll::apply_delta_u16(
-                                preview_content_rows,
-                                last_preview_viewport_rows,
-                                &mut preview_scroll,
-                                -(last_preview_viewport_rows as isize),
-                            );
-                        }
-                        _ => {
-                            interactor.handle_key(key);
-                        }
-                    },
-                    Focus::Sidebar => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => break,
-                        KeyCode::Tab => {
-                            focus = Focus::Preview;
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            let next = (selected + 1).min(stories.len().saturating_sub(1));
-                            if next != selected {
+                    }
+                    Focus::Sidebar => {
+                        // Navigate and GoToEdge are directional: two chords share
+                        // one action; direction resolved by inspecting chord.key.
+                        use LogicalKey::{Char, Down, Home};
+                        match SIDEBAR_KEYMAP.dispatch(chord) {
+                            Some(SidebarAction::Quit) => break,
+                            Some(SidebarAction::FocusPreview) => {
+                                focus = Focus::Preview;
+                            }
+                            Some(SidebarAction::Navigate) => {
+                                let down = matches!(chord.key, Down) || chord.key == Char('j');
+                                let next = if down {
+                                    (selected + 1).min(stories.len().saturating_sub(1))
+                                } else {
+                                    selected.saturating_sub(1)
+                                };
+                                if next != selected {
+                                    preview_scroll = 0;
+                                    interactor = stories[next].make_interactor();
+                                }
+                                selected = next;
+                            }
+                            Some(SidebarAction::GoToEdge) => {
+                                let last = stories.len().saturating_sub(1);
+                                let target = if matches!(chord.key, Home) { 0 } else { last };
+                                if selected != target {
+                                    interactor = stories[target].make_interactor();
+                                }
+                                selected = target;
                                 preview_scroll = 0;
-                                interactor = stories[next].make_interactor();
                             }
-                            selected = next;
+                            None => {}
                         }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            let next = selected.saturating_sub(1);
-                            if next != selected {
-                                preview_scroll = 0;
-                                interactor = stories[next].make_interactor();
-                            }
-                            selected = next;
-                        }
-                        KeyCode::Home => {
-                            if selected != 0 {
-                                interactor = stories[0].make_interactor();
-                            }
-                            selected = 0;
-                            preview_scroll = 0;
-                        }
-                        KeyCode::End => {
-                            let last = stories.len().saturating_sub(1);
-                            if selected != last {
-                                interactor = stories[last].make_interactor();
-                            }
-                            selected = last;
-                            preview_scroll = 0;
-                        }
-                        _ => {}
-                    },
+                    }
                 }
             }
             Event::Resize(_, _) => {
@@ -584,6 +688,9 @@ impl Drop for TerminalGuard {
         drop(self.terminal.show_cursor());
     }
 }
+
+#[cfg(test)]
+mod keymap_smoke;
 
 fn write_svgs(out_dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     for path in write_story_svgs(&out_dir)? {

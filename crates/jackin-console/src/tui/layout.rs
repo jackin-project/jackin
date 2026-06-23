@@ -146,6 +146,36 @@ pub fn scrollbar_drag_offset(
     ))
 }
 
+pub fn apply_scrollbar_drag(
+    axis: ScrollbarAxis,
+    value: &mut u16,
+    area: ratatui::layout::Rect,
+    content_len: usize,
+    pointer_col: u16,
+    pointer_row: u16,
+) -> bool {
+    let Some(offset) = scrollbar_drag_offset(axis, area, content_len, pointer_col, pointer_row)
+    else {
+        return false;
+    };
+    *value = offset;
+    true
+}
+
+pub fn scroll_selection_at_position(
+    area: ratatui::layout::Rect,
+    col: u16,
+    row: u16,
+    delta: i16,
+    mut scroll_selection: impl FnMut(i16) -> bool,
+) -> bool {
+    if !point_in_rect(col, row, area) {
+        return false;
+    }
+    let _changed = scroll_selection(delta);
+    true
+}
+
 #[must_use]
 pub const fn tabbed_content_area(
     term_size: ratatui::layout::Rect,
@@ -172,11 +202,60 @@ pub fn tab_cell_at_position(row: u16, col: u16, labels: &[&str]) -> Option<usize
 }
 
 #[must_use]
+pub fn tab_hover_index_at_position(row: u16, col: u16, labels: &[&str]) -> Option<usize> {
+    if row < SCREEN_HEADER_HEIGHT || row >= SCREEN_HEADER_HEIGHT.saturating_add(TAB_STRIP_HEIGHT) {
+        return None;
+    }
+    let cells: Vec<(&str, bool)> = labels.iter().map(|label| (*label, false)).collect();
+    let laid = jackin_tui::lay_out_tabs(&cells, 0);
+    let mut tracker = jackin_tui::components::HoverTracker::new();
+    for (idx, cell) in laid.iter().enumerate() {
+        tracker.register(
+            ratatui::layout::Rect {
+                x: cell.start_col,
+                y: SCREEN_HEADER_HEIGHT,
+                width: cell.cell_cols,
+                height: TAB_STRIP_HEIGHT,
+            },
+            idx,
+        );
+    }
+    tracker.hovered(col, row).copied()
+}
+
+#[must_use]
 pub const fn point_in_rect(col: u16, row: u16, area: ratatui::layout::Rect) -> bool {
     col >= area.x
         && col < area.x.saturating_add(area.width)
         && row >= area.y
         && row < area.y.saturating_add(area.height)
+}
+
+/// Map a pointer inside a bordered scrollable content block to the visual row
+/// exposed by that block's scrolled content.
+#[must_use]
+pub fn bordered_content_hit_at_position<T>(
+    area: ratatui::layout::Rect,
+    col: u16,
+    row: u16,
+    scroll_y: u16,
+    mut hit: impl FnMut(usize) -> Option<T>,
+) -> Option<T> {
+    let content_x = area.x.saturating_add(1);
+    let content_y = area.y.saturating_add(1);
+    let content_width = area.width.saturating_sub(2);
+    let content_height = area.height.saturating_sub(2);
+    if content_width == 0
+        || content_height == 0
+        || col < content_x
+        || col >= content_x.saturating_add(content_width)
+        || row < content_y
+        || row >= content_y.saturating_add(content_height)
+    {
+        return None;
+    }
+    let visual_row = usize::from(row.saturating_sub(content_y)) + usize::from(scroll_y);
+    hit(visual_row)
 }
 
 /// Apply a horizontal scroll delta, returning whether `value` actually moved
@@ -260,6 +339,8 @@ pub fn centered_rect_preferred(
         height: h,
     }
 }
+
+pub mod list;
 
 #[cfg(test)]
 mod tests;

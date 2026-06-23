@@ -23,11 +23,16 @@ pub mod tab_strip;
 pub mod text_input;
 pub mod toast;
 
+pub use super::keymap::{
+    KeyBinding, KeyChord, Keymap, LogicalKey, Mods, SCROLL_HINT_KEYMAP, ScrollHintAxis, Visibility,
+    chord_glyph, raw_bytes_to_chord,
+};
 pub use bottom_chrome::{BOTTOM_CHROME_ROWS, BottomChromeAreas, bottom_chrome_areas};
 pub use brand_header::{BrandHeader, brand_header_line, render_brand_header};
 pub use button_strip::{ButtonStrip, ButtonStripItem, button_strip_line, button_style};
 pub use confirm_dialog::{
-    ConfirmFocus, ConfirmKind, ConfirmState, render_confirm_dialog,
+    CONFIRM_KEYMAP, ConfirmAction, ConfirmFocus, ConfirmKind, ConfirmState, confirm_hint_spans,
+    exit_confirm_state, exit_confirm_state_with_data_loss, render_confirm_dialog,
     required_height as confirm_required_height, width_pct as confirm_width_pct,
 };
 pub use container_info::{
@@ -44,8 +49,8 @@ pub use dialog_layout::{
     render_scrollable_dialog_body, scroll_hint_spans,
 };
 pub use error_dialog::{
-    ErrorPopupState, estimated_message_rows, render_error_dialog, render_error_dialog_in,
-    required_height,
+    ERROR_POPUP_KEYMAP, ErrorPopupAction, ErrorPopupState, error_popup_hint_spans,
+    estimated_message_rows, render_error_dialog, render_error_dialog_in, required_height,
 };
 pub use filter_input::{FilterInput, filter_input_line, render_filter_input};
 pub use focus_owner::FocusOwner;
@@ -59,7 +64,8 @@ pub use panel::{
     Panel, PanelFocus, modal_block, modal_block_inactive, panel_body_area, unfocused_block,
 };
 pub use save_discard_dialog::{
-    SaveDiscardChoice, SaveDiscardFocus, SaveDiscardState, render_save_discard_dialog,
+    SAVE_DISCARD_KEYMAP, SaveDiscardAction, SaveDiscardChoice, SaveDiscardFocus, SaveDiscardState,
+    render_save_discard_dialog, save_discard_hint_spans,
 };
 pub use scrollable_panel::{
     SCROLLBAR_HORIZONTAL_THUMB, SCROLLBAR_TRACK, ScrollableList, ScrollbarStyle,
@@ -73,8 +79,8 @@ pub use scrollable_panel::{
     vertical_scrollbar_area, viewport_height, viewport_width,
 };
 pub use select_list::{
-    PickerRow, SelectList, SelectListState, render_picker_lines, render_picker_list,
-    render_select_list,
+    PickerRow, SELECT_LIST_KEYMAP, SelectList, SelectListAction, SelectListState,
+    render_picker_lines, render_picker_list, render_select_list, select_list_hint_spans,
 };
 pub use status_footer::{
     StatusFooter, StatusFooterHover, render_status_footer, status_footer_debug_chip_rect,
@@ -83,7 +89,8 @@ pub use status_footer::{
 pub use status_popup::{StatusPopupState, render_status_popup};
 pub use tab_strip::{TabStrip, tab_label_line, tab_underline_line};
 pub use text_input::{
-    BorderStyle, TextField, TextInput, TextInputState, render_labeled_text_input_dialog,
-    render_text_input, text_input_prompt_rect,
+    BorderStyle, TEXT_INPUT_KEYMAP, TextField, TextInput, TextInputAction, TextInputState,
+    render_labeled_text_input_dialog, render_text_input, text_input_hint_spans,
+    text_input_prompt_rect,
 };
 pub use toast::{Toast, render_toast, toast_rect};

@@ -6,7 +6,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::model::{AuthRow, EditorTab, SecretsEnterPlan, SecretsRow, SecretsScopeTag};
+use super::model::{
+    AuthRow, EditorHoverTarget, EditorTab, SecretsEnterPlan, SecretsRow, SecretsScopeTag,
+};
+use crate::tui::screens::editor::model::EditorMode;
+use crate::tui::screens::settings::model::AuthFormTarget;
+use jackin_config::MountConfig;
 
 #[must_use]
 pub const fn previous_editor_tab(tab: EditorTab) -> EditorTab {
@@ -44,6 +49,62 @@ pub struct EditorTabMovePlan {
 #[must_use]
 pub const fn editor_tab_bar_focus_plan(focused: bool) -> bool {
     focused
+}
+
+#[must_use]
+pub fn editor_tab_at_position(row: u16, col: u16) -> Option<EditorTab> {
+    let labels: Vec<&str> = EditorTab::ALL.iter().map(|tab| tab.label()).collect();
+    let idx = crate::tui::layout::tab_cell_at_position(row, col, &labels)?;
+    EditorTab::ALL.get(idx).copied()
+}
+
+#[must_use]
+pub fn editor_tab_hover_plan(row: u16, col: u16) -> Option<usize> {
+    let labels: Vec<&str> = EditorTab::ALL.iter().map(|tab| tab.label()).collect();
+    crate::tui::layout::tab_hover_index_at_position(row, col, &labels)
+}
+
+#[must_use]
+pub fn editor_tab_hover_target_plan(
+    modal_open: bool,
+    row: u16,
+    col: u16,
+) -> Option<EditorHoverTarget> {
+    (!modal_open)
+        .then(|| editor_tab_hover_plan(row, col).map(EditorHoverTarget::Tab))
+        .flatten()
+}
+
+#[must_use]
+pub fn editor_mount_index_at_position(
+    active_tab: EditorTab,
+    modal_open: bool,
+    area: ratatui::layout::Rect,
+    col: u16,
+    row: u16,
+    scroll_y: u16,
+    mounts: &[MountConfig],
+) -> Option<usize> {
+    if active_tab != EditorTab::Mounts || modal_open {
+        return None;
+    }
+    crate::tui::layout::bordered_content_hit_at_position(area, col, row, scroll_y, |visual_row| {
+        editor_mount_index_at_visual_row(mounts, visual_row)
+    })
+}
+
+#[must_use]
+pub fn editor_mount_hover_target_at_position(
+    active_tab: EditorTab,
+    modal_open: bool,
+    area: ratatui::layout::Rect,
+    col: u16,
+    row: u16,
+    scroll_y: u16,
+    mounts: &[MountConfig],
+) -> Option<EditorHoverTarget> {
+    editor_mount_index_at_position(active_tab, modal_open, area, col, row, scroll_y, mounts)
+        .map(EditorHoverTarget::MountRow)
 }
 
 #[must_use]
@@ -220,6 +281,36 @@ pub const fn editor_mount_row_select_plan(row: usize) -> EditorMountRowSelectPla
 }
 
 #[must_use]
+pub fn editor_mount_index_at_visual_row(mounts: &[MountConfig], row: usize) -> Option<usize> {
+    if row == 0 {
+        return None;
+    }
+
+    let mut visual = 1usize;
+    for (index, mount) in mounts.iter().enumerate() {
+        if row == visual {
+            return Some(index);
+        }
+        visual += 1;
+        if mount.src != mount.dst {
+            if row == visual {
+                return Some(index);
+            }
+            visual += 1;
+        }
+    }
+
+    if !mounts.is_empty() {
+        if row == visual {
+            return None;
+        }
+        visual += 1;
+    }
+
+    (row == visual).then_some(mounts.len())
+}
+
+#[must_use]
 pub fn editor_field_selection_plan(
     active_row: usize,
     delta: isize,
@@ -275,28 +366,131 @@ pub fn step_cursor_up(skipped_rows: &[usize], candidate: usize) -> usize {
     }
 }
 
-pub fn toggle_general_selected(
-    row: usize,
-    keep_awake_enabled: &mut bool,
-    git_pull_on_entry: &mut bool,
-) {
-    match row {
-        2 => *keep_awake_enabled = !*keep_awake_enabled,
-        3 => *git_pull_on_entry = !*git_pull_on_entry,
-        _ => {}
+#[must_use]
+pub fn secrets_skipped_rows(rows: &[SecretsRow]) -> Vec<usize> {
+    rows.iter()
+        .enumerate()
+        .filter_map(|(idx, row)| matches!(row, SecretsRow::SectionSpacer).then_some(idx))
+        .collect()
+}
+
+#[must_use]
+pub fn editor_secrets_selection_bounds(rows: &[SecretsRow]) -> (usize, Vec<usize>) {
+    (rows.len().saturating_sub(1), secrets_skipped_rows(rows))
+}
+
+#[must_use]
+pub fn auth_skipped_rows<K>(rows: &[AuthRow<K>]) -> Vec<usize> {
+    rows.iter()
+        .enumerate()
+        .filter_map(|(idx, row)| (!auth_row_is_focusable(row)).then_some(idx))
+        .collect()
+}
+
+#[must_use]
+pub fn editor_selection_bounds<K>(
+    tab: EditorTab,
+    mount_count: usize,
+    role_count: usize,
+    secrets_rows: &[SecretsRow],
+    auth_rows: &[AuthRow<K>],
+) -> (usize, Vec<usize>) {
+    match tab {
+        EditorTab::Secrets => editor_secrets_selection_bounds(secrets_rows),
+        EditorTab::Auth => (
+            editor_max_row_for_tab(tab, mount_count, role_count, 0, auth_rows.len()),
+            auth_skipped_rows(auth_rows),
+        ),
+        EditorTab::General | EditorTab::Mounts | EditorTab::Roles => (
+            editor_max_row_for_tab(tab, mount_count, role_count, 0, 0),
+            Vec::new(),
+        ),
     }
 }
 
-pub fn set_role_expanded(expanded_roles: &mut BTreeSet<String>, role: String, expanded: bool) {
-    if expanded {
-        expanded_roles.insert(role);
-    } else {
-        expanded_roles.remove(&role);
+#[must_use]
+pub const fn editor_max_row_for_tab(
+    tab: EditorTab,
+    mount_count: usize,
+    role_count: usize,
+    secrets_row_count: usize,
+    auth_row_count: usize,
+) -> usize {
+    match tab {
+        EditorTab::General => 3,
+        EditorTab::Mounts => mount_count,
+        EditorTab::Roles => role_count,
+        EditorTab::Secrets => secrets_row_count.saturating_sub(1),
+        EditorTab::Auth => auth_row_count.saturating_sub(1),
     }
 }
 
-pub fn toggle_mount_readonly(readonly: &mut bool) {
-    *readonly = !*readonly;
+#[must_use]
+pub const fn editor_mount_add_row_selected(selected_row: usize, mount_count: usize) -> bool {
+    selected_row == mount_count
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorGeneralFieldModalPlan {
+    RenameWorkspace,
+    PickWorkdir,
+    None,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditorAuthGenerateScopePlan {
+    Workspace(String),
+    WorkspaceRole { workspace: String, role: String },
+}
+
+#[must_use]
+pub fn editor_auth_generate_scope_plan<K>(
+    mode: &EditorMode,
+    target: &AuthFormTarget<K>,
+) -> Option<EditorAuthGenerateScopePlan> {
+    let EditorMode::Edit { name } = mode else {
+        return None;
+    };
+    Some(match target {
+        AuthFormTarget::Workspace { .. } => EditorAuthGenerateScopePlan::Workspace(name.clone()),
+        AuthFormTarget::WorkspaceRole { role, .. } => EditorAuthGenerateScopePlan::WorkspaceRole {
+            workspace: name.clone(),
+            role: role.clone(),
+        },
+    })
+}
+
+#[must_use]
+pub const fn editor_general_field_modal_plan(
+    active_tab: EditorTab,
+    selected_row: usize,
+    has_mounts: bool,
+) -> EditorGeneralFieldModalPlan {
+    if !matches!(active_tab, EditorTab::General) {
+        return EditorGeneralFieldModalPlan::None;
+    }
+    match selected_row {
+        0 => EditorGeneralFieldModalPlan::RenameWorkspace,
+        1 if has_mounts => EditorGeneralFieldModalPlan::PickWorkdir,
+        _ => EditorGeneralFieldModalPlan::None,
+    }
+}
+
+#[must_use]
+pub const fn editor_role_add_row_selected(selected_row: usize, role_count: usize) -> bool {
+    selected_row == role_count
+}
+
+pub fn cycle_mount_isolation_at(mounts: &mut [MountConfig], index: usize) {
+    use jackin_config::MountIsolation::{Clone, Shared, Worktree};
+
+    if let Some(mount) = mounts.get_mut(index) {
+        mount.isolation = match mount.isolation {
+            Shared => Worktree,
+            Worktree => Clone,
+            Clone => Shared,
+        };
+    }
 }
 
 pub fn toggle_allowed_role_at(
@@ -335,6 +529,24 @@ pub fn toggle_allowed_role_at(
     }
 }
 
+#[must_use]
+#[allow(unfulfilled_lint_expectations)]
+#[expect(
+    single_use_lifetimes,
+    reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
+)]
+pub fn add_role_to_workspace_editor<'a>(
+    allowed_roles: &mut Vec<String>,
+    mut role_names: impl Iterator<Item = &'a String>,
+    key: &str,
+) -> Option<usize> {
+    if !allowed_roles.is_empty() && !allowed_roles.iter().any(|role| role == key) {
+        allowed_roles.push(key.to_owned());
+    }
+
+    role_names.position(|role| role == key)
+}
+
 pub fn toggle_default_role_at(
     allowed_roles: &[String],
     default_role: &mut Option<String>,
@@ -354,17 +566,6 @@ pub fn toggle_default_role_at(
         allowed_roles.is_empty() || allowed_roles.iter().any(|allowed| allowed == role);
     if role_allowed {
         *default_role = Some(role.clone());
-    }
-}
-
-pub fn toggle_secret_mask(
-    unmasked_rows: &mut BTreeSet<(SecretsScopeTag, String)>,
-    scope: SecretsScopeTag,
-    key: String,
-) {
-    let entry = (scope, key);
-    if !unmasked_rows.remove(&entry) {
-        unmasked_rows.insert(entry);
     }
 }
 
@@ -641,6 +842,46 @@ pub const fn auth_row_is_focusable<K>(row: &AuthRow<K>) -> bool {
             | AuthRow::RoleHeader { .. }
             | AuthRow::AddSentinel { .. }
     )
+}
+
+#[must_use]
+pub fn auth_focusable_index_at_visual_row<K>(rows: &[AuthRow<K>], row: usize) -> Option<usize> {
+    rows.get(row)
+        .filter(|auth_row| auth_row_is_focusable(auth_row))?;
+    Some(row)
+}
+
+#[must_use]
+pub fn editor_auth_row_index_at_position<K>(
+    active_tab: EditorTab,
+    modal_open: bool,
+    area: ratatui::layout::Rect,
+    col: u16,
+    row: u16,
+    scroll_y: u16,
+    rows: &[AuthRow<K>],
+) -> Option<usize> {
+    if active_tab != EditorTab::Auth || modal_open {
+        return None;
+    }
+    crate::tui::layout::bordered_content_hit_at_position(area, col, row, scroll_y, |visual_row| {
+        auth_focusable_index_at_visual_row(rows, visual_row)
+    })
+}
+
+#[must_use]
+pub fn resolve_auth_form_target<K: Clone>(
+    rows: &[AuthRow<K>],
+    row: usize,
+) -> Option<AuthFormTarget<K>> {
+    match rows.get(row)? {
+        AuthRow::WorkspaceMode { kind } => Some(AuthFormTarget::Workspace { kind: kind.clone() }),
+        AuthRow::RoleMode { role, kind } => Some(AuthFormTarget::WorkspaceRole {
+            role: role.clone(),
+            kind: kind.clone(),
+        }),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

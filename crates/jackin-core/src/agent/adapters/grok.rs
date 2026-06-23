@@ -27,18 +27,18 @@ impl AgentRuntime for GrokRuntime {
             "\
 USER agent
 ARG JACKIN_CACHE_BUST=0
-RUN mkdir -p /home/agent/.grok/bin /home/agent/.local/bin
-COPY --chown=agent:agent {source} /home/agent/.grok/bin/grok
+COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.grok/bin/grok
+COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.grok/bin/agent
 ENV PATH=\"/home/agent/.grok/bin:/home/agent/.local/bin:${{PATH}}\"
 RUN set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
-    chmod 0755 \"${{HOME}}/.grok/bin/grok\" && \\
-    ln -sf \"${{HOME}}/.grok/bin/grok\" \"${{HOME}}/.grok/bin/agent\" && \\
-    ln -sf \"${{HOME}}/.grok/bin/grok\" \"${{HOME}}/.local/bin/grok\" && \\
-    ln -sf \"${{HOME}}/.grok/bin/grok\" \"${{HOME}}/.local/bin/agent\" && \\
     grok --version
 "
         )
+    }
+
+    fn container_binary_paths(&self) -> &'static [&'static str] {
+        &["/home/agent/.grok/bin/grok", "/home/agent/.grok/bin/agent"]
     }
 
     fn fallback_install_block(&self) -> String {
@@ -55,7 +55,7 @@ RUN set -euxo pipefail && \\
 
     fn required_env_var(&self, mode: AuthForwardMode) -> Option<&'static str> {
         match mode {
-            AuthForwardMode::ApiKey => Some("XAI_API_KEY"),
+            AuthForwardMode::ApiKey => Some(crate::env_model::XAI_API_KEY_ENV_NAME),
             AuthForwardMode::Sync | AuthForwardMode::Ignore | AuthForwardMode::OAuthToken => None,
         }
     }

@@ -17,6 +17,7 @@ pub mod logs;
 pub mod naming;
 pub mod progress;
 pub mod repo_cache;
+pub(crate) mod shared_runner;
 pub mod snapshot;
 pub mod universe;
 
@@ -42,7 +43,12 @@ pub use self::discovery::{
     list_managed_role_names, list_running_agent_display_names, list_running_agent_names,
 };
 pub use self::docker_profile::{DockerSecurityProfile, ProfileSource, resolve_profile};
-pub use self::launch::{LoadOptions, load_role};
+#[cfg(not(test))]
+pub use self::image::{ImagePrewarmStatus, RoleImagePrewarmRow, prewarm_role_images};
+pub use self::launch::{
+    DIND_IMAGE, DindSidecarPrewarm, LoadOptions, load_role, prewarm_dind_sidecar_container,
+    write_prewarmed_dind_state,
+};
 pub use self::naming::matching_family;
 pub use self::repo_cache::{RepoError, normalize_github_url};
 pub use self::universe::{

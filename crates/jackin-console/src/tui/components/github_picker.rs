@@ -17,6 +17,22 @@ pub struct GithubPickerState {
     pub list_state: ListState,
 }
 
+#[derive(Debug)]
+pub enum GithubOpenPlan {
+    Continue,
+    OpenUrl(String),
+    Pick(GithubPickerState),
+}
+
+#[must_use]
+pub fn github_open_plan(choices: Vec<GithubChoice>) -> GithubOpenPlan {
+    match choices.len() {
+        0 => GithubOpenPlan::Continue,
+        1 => GithubOpenPlan::OpenUrl(choices[0].url.clone()),
+        _ => GithubOpenPlan::Pick(GithubPickerState::new(choices)),
+    }
+}
+
 impl GithubPickerState {
     pub fn new(choices: Vec<GithubChoice>) -> Self {
         let list_state = crate::tui::components::list_helpers::list_state_for_count(choices.len());

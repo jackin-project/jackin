@@ -14,7 +14,7 @@
 )]
 
 use std::io::{Read, Write as _};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{
     Arc, Mutex,
@@ -32,11 +32,10 @@ const ROLE_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__agent-smith";
 const SENTINEL_ROLE_KEY: &str = "jackin-e2e/sentinel";
 const SENTINEL_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__sentinel";
 const CAPSULE_DETACH_KEYS: &str = "\u{2}d";
-
-#[derive(Clone, Copy)]
-enum PtyInputMode {
-    OnceAfter(Duration),
-}
+const BUILD_FAILED_MODAL_TEXT: &str = "Building the Docker container failed";
+const FAILURE_DIAGNOSTICS_LABEL: &str = "run diagnostics";
+const FAILURE_DISMISS_HINT: &str = "dismiss";
+const TESTCONTAINERS_SMOKE_OK: &str = "TESTCONTAINERS_SMOKE=ok";
 
 /// RAII cleanup so the test's Docker resources are removed even if an
 /// assertion or `script(1)` invocation panics. Without this, a flaky run
@@ -90,15 +89,7 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     // so the E2E build succeeds in CI while the Dockerfile stays correctly
     // pinned for validation purposes.
     let extra_env = [("JACKIN_CONSTRUCT_IMAGE", "projectjackin/construct:trixie")];
-    let output = run_in_pty_with_input(
-        &jackin,
-        &args,
-        &home,
-        &workspace_dir,
-        &extra_env,
-        CAPSULE_DETACH_KEYS,
-        PtyInputMode::OnceAfter(Duration::from_secs(2)),
-    );
+    let output = run_in_pty_until_agent_report(&jackin, &args, &home, &workspace_dir, &extra_env);
 
     // Agent prints its env + `docker ps` snapshot after a sentinel marker on
     // its stdout, which the PTY captures into `output.stdout`. Reading from
@@ -111,7 +102,8 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stdout.contains(REPORT_BEGIN),
-        "agent did not emit {REPORT_BEGIN} marker\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "agent did not emit {REPORT_BEGIN} marker\n{}",
+        e2e_failure_context(&home, stdout.as_ref(), stderr.as_ref())
     );
     // REPORT_END proves the report block completed. Without this check a
     // partial transcript (agent crashed mid-print, PTY truncation) would
@@ -119,7 +111,8 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     // happened to land before the cut.
     assert!(
         stdout.contains(REPORT_END),
-        "agent did not emit {REPORT_END} marker — report is truncated\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "agent did not emit {REPORT_END} marker — report is truncated\n{}",
+        e2e_failure_context(&home, stdout.as_ref(), stderr.as_ref())
     );
     let report = stdout.as_ref();
 
@@ -153,8 +146,9 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
         "agent's child container was not running\n{report}"
     );
     assert!(
-        report.contains("TESTCONTAINERS_SMOKE=ok"),
-        "agent's Java Testcontainers smoke did not pass\n{report}"
+        report.contains(TESTCONTAINERS_SMOKE_OK),
+        "agent's Java Testcontainers smoke did not pass\n{}",
+        e2e_failure_context(&home, stdout.as_ref(), stderr.as_ref())
     );
 }
 
@@ -174,6 +168,9 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
     let workspace_dir = temp.path().join("workspace");
     std::fs::create_dir_all(&config_dir).unwrap();
     std::fs::create_dir_all(&workspace_dir).unwrap();
+    // The container runs as the host (test-runner) UID via `--user` on docker
+    // run, so the agent writes its report into the test-owned workspace dir
+    // with no special permissions.
 
     seed_sentinel_role_repo(&role_source);
     write_sentinel_config(&config_dir.join("config.toml"), &role_source);
@@ -257,9 +254,12 @@ fn assert_sentinel_report(report: &str, stdout: &str, stderr: &str) {
 }
 
 fn assert_sentinel_build_output_routed_to_log(home: &Path, stdout: &str, stderr: &str) {
+    let raw_build_marker = "[internal] load build definition";
     assert!(
-        !stdout.contains("jackin-sentinel build layer")
-            && !stderr.contains("jackin-sentinel build layer"),
+        !stdout.contains(raw_build_marker)
+            && !stderr.contains(raw_build_marker)
+            && !stdout.contains("DerivedDockerfile")
+            && !stderr.contains("DerivedDockerfile"),
         "Docker build output leaked onto the rich screen\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
@@ -282,7 +282,9 @@ fn assert_sentinel_build_output_routed_to_log(home: &Path, stdout: &str, stderr:
         )
     });
     assert!(
-        build_log_contents.contains("jackin-sentinel build layer"),
+        build_log_contents.contains("command: docker build")
+            && build_log_contents.contains(raw_build_marker)
+            && build_log_contents.contains("DerivedDockerfile"),
         "Docker build output should be captured in the build log artifact {}\n{}",
         build_log.display(),
         build_log_contents
@@ -303,14 +305,21 @@ fn find_report_value<'a>(report: &'a str, key: &str) -> Option<&'a str> {
 }
 
 /// Hard-fail with an actionable message when the e2e prerequisites are
-/// missing. The `e2e` feature is opt-in (CI runs `cargo nextest run
-/// --all-features` on a Docker-equipped runner); silently skipping would
-/// turn a missing prereq into a green check.
+/// missing. These tests are excluded by the default nextest profile and only run
+/// when the operator asks for the real Docker smoke lane; silently skipping
+/// would turn a missing prereq into a green check.
 fn require_e2e_prereqs() {
+    require_capsule_binary_override();
     assert!(
         docker_available(),
         "e2e tests require a running Docker daemon (`docker info` failed). \
          Disable the `e2e` feature or start Docker."
+    );
+    assert!(
+        docker_buildx_available(),
+        "e2e tests require Docker Buildx (`docker buildx version` failed). \
+         Install the buildx CLI plugin or set DOCKER_CONFIG to a Docker config \
+         directory that contains cli-plugins/docker-buildx."
     );
     assert!(
         script_available(),
@@ -320,15 +329,95 @@ fn require_e2e_prereqs() {
     );
 }
 
+fn require_capsule_binary_override() {
+    let Some(path) = std::env::var_os("JACKIN_CAPSULE_BIN") else {
+        panic!(
+            "e2e tests require JACKIN_CAPSULE_BIN to point at a locally built \
+             Linux jackin-capsule binary. In PR checkouts, run \
+             `cargo xtask pr prepare <PR_NUMBER> --capsule` and source the \
+             generated env.sh first. Outside that flow, run \
+             `eval \"$(cargo run --bin build-jackin-capsule -- --export)\"`. \
+             The e2e harness must not fall back to the preview-release \
+             download verifier."
+        );
+    };
+    let path = PathBuf::from(path);
+    assert!(
+        path.is_file(),
+        "JACKIN_CAPSULE_BIN must point at a file, got {}",
+        path.display()
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(&path)
+            .unwrap_or_else(|error| panic!("failed to stat {}: {error}", path.display()))
+            .permissions()
+            .mode();
+        assert!(
+            mode & 0o111 != 0,
+            "JACKIN_CAPSULE_BIN must be executable, got {}",
+            path.display()
+        );
+    }
+    assert!(
+        is_elf_binary(&path),
+        "JACKIN_CAPSULE_BIN must point at a Linux jackin-capsule binary, got {}. \
+         Build/export a Linux capsule with \
+         `eval \"$(cargo run --bin build-jackin-capsule -- --export)\"` or \
+         `cargo xtask pr prepare <PR_NUMBER> --capsule`.",
+        path.display()
+    );
+}
+
+fn is_elf_binary(path: &Path) -> bool {
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut magic = [0_u8; 4];
+    file.read_exact(&mut magic).is_ok() && magic == [0x7f, b'E', b'L', b'F']
+}
+
 fn docker_available() -> bool {
     // Probe the same daemon jackin will drive: honor DOCKER_HOST (and the
     // active docker context when unset), exactly as the host-side client
     // does. Stripping DOCKER_HOST here would gate on a default-socket daemon
     // that jackin itself would bypass whenever the operator set one.
-    Command::new("docker")
+    let mut command = docker_command();
+    command
         .arg("info")
         .output()
         .is_ok_and(|output| output.status.success())
+}
+
+fn docker_buildx_available() -> bool {
+    let mut command = docker_command();
+    command
+        .args(["buildx", "version"])
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
+fn docker_command() -> Command {
+    let mut command = Command::new("docker");
+    apply_host_docker_config(&mut command);
+    command
+}
+
+fn apply_host_docker_config(command: &mut Command) {
+    if let Some(config) = host_docker_config() {
+        command.env("DOCKER_CONFIG", config);
+    }
+}
+
+fn host_docker_config() -> Option<PathBuf> {
+    std::env::var_os("DOCKER_CONFIG")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .map(|home| home.join(".docker"))
+        })
 }
 
 /// Probe `script(1)` via the canonical PATH lookup. The previous
@@ -351,37 +440,108 @@ fn e2e_serial_lock() -> std::fs::File {
     lock
 }
 
-fn run_in_pty_with_input(
+fn run_in_pty_until_agent_report(
     jackin: &str,
     args: &[&str],
     home: &Path,
     cwd: &Path,
     extra_env: &[(&str, &str)],
-    input: &str,
-    input_mode: PtyInputMode,
 ) -> std::process::Output {
-    let mut command = pty_command(jackin, args, home, cwd, extra_env, true);
-    if input.is_empty() {
-        command.stdin(Stdio::null());
-        return command.output().expect("script must spawn");
-    }
-
-    let mut child = command
+    let mut child = pty_command(jackin, args, home, cwd, extra_env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .expect("script must spawn");
     let mut stdin = child.stdin.take().expect("script stdin must be piped");
-    match input_mode {
-        PtyInputMode::OnceAfter(delay) => {
-            std::thread::sleep(delay);
-            stdin
-                .write_all(input.as_bytes())
-                .expect("script stdin write must succeed");
-            drop(stdin);
-            child.wait_with_output().expect("script must finish")
+    let stdout = child.stdout.take().expect("script stdout must be piped");
+    let stderr = child.stderr.take().expect("script stderr must be piped");
+    let done = Arc::new(AtomicBool::new(false));
+    let (stdout_buf, stdout_reader) = spawn_pipe_collector(stdout);
+    let (stderr_buf, stderr_reader) = spawn_pipe_collector(stderr);
+    let stdout_for_writer = Arc::clone(&stdout_buf);
+    let done_for_writer = Arc::clone(&done);
+    let stdin_writer = std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_mins(6);
+        while Instant::now() < deadline && !done_for_writer.load(Ordering::Relaxed) {
+            if transcript_contains(&stdout_for_writer, BUILD_FAILED_MODAL_TEXT) {
+                drop(stdin.write_all(b"\r"));
+                return;
+            }
+            if transcript_contains_all(
+                &stdout_for_writer,
+                &[FAILURE_DIAGNOSTICS_LABEL, FAILURE_DISMISS_HINT],
+            ) {
+                drop(stdin.write_all(b"\r"));
+                return;
+            }
+            if transcript_contains_all(
+                &stdout_for_writer,
+                &[REPORT_BEGIN, REPORT_END, TESTCONTAINERS_SMOKE_OK],
+            ) {
+                drop(stdin.write_all(CAPSULE_DETACH_KEYS.as_bytes()));
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
         }
+    });
+
+    let output = wait_for_collected_pty_output(
+        child,
+        home,
+        Duration::from_mins(6),
+        &stdout_buf,
+        stdout_reader,
+        &stderr_buf,
+        stderr_reader,
+    );
+    done.store(true, Ordering::Relaxed);
+    stdin_writer.join().expect("stdin writer must finish");
+    output
+}
+
+fn wait_for_collected_pty_output(
+    mut child: std::process::Child,
+    home: &Path,
+    timeout: Duration,
+    stdout_buf: &Arc<Mutex<Vec<u8>>>,
+    stdout_reader: std::thread::JoinHandle<()>,
+    stderr_buf: &Arc<Mutex<Vec<u8>>>,
+    stderr_reader: std::thread::JoinHandle<()>,
+) -> std::process::Output {
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        if let Some(status) = child.try_wait().expect("script status must be readable") {
+            stdout_reader.join().expect("stdout reader must finish");
+            stderr_reader.join().expect("stderr reader must finish");
+            return std::process::Output {
+                status,
+                stdout: buffer_bytes(stdout_buf),
+                stderr: buffer_bytes(stderr_buf),
+            };
+        }
+
+        if Instant::now() >= deadline {
+            drop(child.kill());
+            let status = child.wait().expect("script must finish");
+            stdout_reader.join().expect("stdout reader must finish");
+            stderr_reader.join().expect("stderr reader must finish");
+            let output = std::process::Output {
+                status,
+                stdout: buffer_bytes(stdout_buf),
+                stderr: buffer_bytes(stderr_buf),
+            };
+            panic!(
+                "timed out waiting for PTY command after {}s\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
+                timeout.as_secs(),
+                diagnostics_snapshot(home),
+                tail_text(&String::from_utf8_lossy(&output.stdout)),
+                tail_text(&String::from_utf8_lossy(&output.stderr)),
+            );
+        }
+
+        std::thread::sleep(Duration::from_millis(100));
     }
 }
 
@@ -391,15 +551,8 @@ fn pty_command(
     home: &Path,
     cwd: &Path,
     extra_env: &[(&str, &str)],
-    linux_timeout: bool,
 ) -> Command {
-    let mut command = if cfg!(target_os = "linux") && linux_timeout {
-        let mut command = Command::new("timeout");
-        command.args(["--kill-after=5s", "360s", "script"]);
-        command
-    } else {
-        Command::new("script")
-    };
+    let mut command = Command::new("script");
     // BSD `script` (macOS) takes the command as positional args after the
     // typescript file. util-linux `script` (most Linux distros) takes it
     // via `-c <shell-string>`. BusyBox `script` is closer to BSD; if
@@ -433,6 +586,7 @@ fn pty_command(
         // stays stripped so a host value can't bleed past jackin's reserved
         // per-container override into the in-container testcontainers smoke.
         .env_remove("TESTCONTAINERS_HOST_OVERRIDE");
+    apply_host_docker_config(&mut command);
     for (k, v) in extra_env {
         command.env(k, v);
     }
@@ -449,7 +603,7 @@ fn run_in_pty_until_file(
     script: &[PtyScriptStep],
     sentinel: PtyFileSentinel<'_>,
 ) -> std::process::Output {
-    let mut child = pty_command(jackin, args, home, cwd, extra_env, false)
+    let mut child = pty_command(jackin, args, home, cwd, extra_env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -639,11 +793,45 @@ fn transcript_contains(buffer: &Arc<Mutex<Vec<u8>>>, needle: &str) -> bool {
     .contains(needle)
 }
 
+fn transcript_contains_all(buffer: &Arc<Mutex<Vec<u8>>>, needles: &[&str]) -> bool {
+    let guard = buffer
+        .lock()
+        .expect("pty output buffer mutex must not be poisoned");
+    let contents = String::from_utf8_lossy(&guard);
+    needles.iter().all(|needle| contents.contains(needle))
+}
+
 fn buffer_bytes(buffer: &Arc<Mutex<Vec<u8>>>) -> Vec<u8> {
     buffer
         .lock()
         .expect("pty output buffer mutex must not be poisoned")
         .clone()
+}
+
+fn e2e_failure_context(home: &Path, stdout: &str, stderr: &str) -> String {
+    let mut out = String::new();
+    if let Some(path) = latest_docker_build_log(home) {
+        out.push_str("latest docker build log: ");
+        out.push_str(&path.display().to_string());
+        out.push('\n');
+        match std::fs::read_to_string(&path) {
+            Ok(contents) => append_tail_lines(&mut out, &contents),
+            Err(error) => {
+                out.push_str("failed to read docker build log: ");
+                out.push_str(&error.to_string());
+                out.push('\n');
+            }
+        }
+    } else {
+        out.push_str("no docker build log found\n");
+    }
+    out.push_str("diagnostics:\n");
+    out.push_str(&diagnostics_snapshot(home));
+    out.push_str("\nstdout tail:\n");
+    out.push_str(&tail_text(stdout));
+    out.push_str("\nstderr tail:\n");
+    out.push_str(&tail_text(stderr));
+    out
 }
 
 fn diagnostics_snapshot(home: &Path) -> String {
@@ -691,7 +879,7 @@ fn diagnostics_snapshot(home: &Path) -> String {
     out
 }
 
-fn latest_docker_build_log(home: &Path) -> Option<std::path::PathBuf> {
+fn latest_docker_build_log(home: &Path) -> Option<PathBuf> {
     let dir = home.join(".jackin/data/diagnostics/runs");
     let mut files = std::fs::read_dir(&dir)
         .ok()?
@@ -868,6 +1056,16 @@ trusted = true
 }
 
 const fn role_dockerfile() -> &'static str {
+    // The private 0600 .claude backup, owned by the image's baked agent
+    // (UID 1000), propagates into /jackin/default-home/.claude/backups via the
+    // derived default-home snapshot. runtime-setup copies default-home into the
+    // agent's home on first launch; when the container runs as an arbitrary
+    // host UID (docker run --user <host-uid>:0) that file is only readable if
+    // the derived image normalized /jackin/default-home to group 0. This
+    // reproduces the regression where only /home/agent was normalized, so the
+    // arbitrary UID could not read the seed backup and the capsule failed to
+    // attach. Keep the file private (0600) so the test fails closed if the
+    // normalization is dropped.
     r"FROM projectjackin/construct:0.1-trixie
 USER root
 RUN apt-get update && \
@@ -877,6 +1075,9 @@ RUN apt-get update && \
            /var/cache/apt/* \
            /tmp/*
 USER agent
+RUN install -d -m 0700 /home/agent/.claude/backups && \
+    printf 'seed' > /home/agent/.claude/backups/.claude.json.backup.e2e && \
+    chmod 0600 /home/agent/.claude/backups/.claude.json.backup.e2e
 "
 }
 
@@ -892,7 +1093,7 @@ fn seed_claude_installer_stub(home: &Path) {
 }
 
 fn seed_all_agent_stubs(home: &Path) {
-    for slug in ["claude", "amp", "kimi", "opencode"] {
+    for slug in ["claude", "amp", "kimi", "opencode", "grok"] {
         seed_agent_stub(home, slug, &agent_installer(slug, ""));
     }
     seed_agent_stub(
@@ -966,12 +1167,26 @@ fn chmod_executable(_path: &Path) {}
 /// truth; `${{...}}` in the body escapes the format string back to `${...}` for
 /// the embedded shell.
 fn fake_claude_installer() -> String {
+    let runtime = fake_claude_runtime_script();
     format!(
         r#"#!/bin/sh
 set -eu
-mkdir -p "$HOME/.local/bin"
-cat > "$HOME/.local/bin/claude" <<'CLAUDE'
-#!/bin/sh
+if [ "${{1:-}}" = "install" ]; then
+  mkdir -p "$HOME/.local/bin"
+  cat > "$HOME/.local/bin/claude" <<'CLAUDE'
+{runtime}
+CLAUDE
+  chmod 0755 "$HOME/.local/bin/claude"
+  exit 0
+fi
+{runtime}
+"#
+    )
+}
+
+fn fake_claude_runtime_script() -> String {
+    format!(
+        r#"#!/bin/sh
 set -eu
 if [ "${{1:-}}" = "--version" ]; then
   echo "claude 0.0.0-e2e"
@@ -1054,8 +1269,6 @@ JAVA
   mvn -q -DskipTests compile exec:java -Dexec.mainClass=JackinTestcontainersSmoke
 )
 rm -rf "$tmpdir"
-CLAUDE
-chmod +x "$HOME/.local/bin/claude"
 "#
     )
 }

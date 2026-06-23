@@ -1450,7 +1450,10 @@ mod tests {
     #[test]
     fn standard_profile_base_grants_sudo_off() {
         let grants = profile_base_grants(DockerSecurityProfile::Standard);
-        assert!(!grants.sudo, "standard base grants must have sudo=false (WP-SUDO)");
+        assert!(
+            !grants.sudo,
+            "standard base grants must have sudo=false (WP-SUDO)"
+        );
     }
 
     #[test]
@@ -1472,7 +1475,10 @@ mod tests {
             ..Default::default()
         };
         let grants = resolve_effective_grants(DockerSecurityProfile::Standard, Some(&config), None);
-        assert!(grants.sudo, "explicit sudo=true grant must override standard default");
+        assert!(
+            grants.sudo,
+            "explicit sudo=true grant must override standard default"
+        );
     }
 
     // ── WP-SUDO: no_new_privileges tied to !sudo ──────────────────────────────
@@ -1526,7 +1532,11 @@ mod tests {
     #[test]
     fn compat_profile_base_grants_dind_privileged() {
         let grants = profile_base_grants(DockerSecurityProfile::Compat);
-        assert_eq!(grants.dind, DindGrant::Privileged, "compat keeps privileged DinD");
+        assert_eq!(
+            grants.dind,
+            DindGrant::Privileged,
+            "compat keeps privileged DinD"
+        );
     }
 
     #[test]
@@ -1563,7 +1573,10 @@ mod tests {
     #[test]
     fn parse_apparmor_absent() {
         let (available, _layer) = parse_apparmor_from_docker_info("name=seccomp,profile=default");
-        assert!(!available, "should report unavailable when no apparmor token");
+        assert!(
+            !available,
+            "should report unavailable when no apparmor token"
+        );
     }
 
     #[test]
@@ -1583,7 +1596,10 @@ mod tests {
     #[test]
     fn validate_cgroup_standard_warns_on_v1() {
         let result = validate_cgroup_for_profile(DockerSecurityProfile::Standard, "v1");
-        assert!(result.is_ok(), "standard must not hard-fail on cgroup v1 (warn only)");
+        assert!(
+            result.is_ok(),
+            "standard must not hard-fail on cgroup v1 (warn only)"
+        );
     }
 
     #[test]
