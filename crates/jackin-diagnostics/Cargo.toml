@@ -75,7 +75,7 @@ opentelemetry_sdk = { version = "0.32", features = [
 opentelemetry-appender-tracing = { version = "0.32", optional = true }
 tracing-opentelemetry = { version = "0.33", optional = true }
 # Process metrics (CPU, memory) for the OTLP gauge callbacks.
-sysinfo = { version = "0.39", optional = true, default-features = false, features = ["system"] }
+sysinfo = { version = "0.38", optional = true, default-features = false, features = ["system"] }
 # `rt-multi-thread` powers the dedicated telemetry runtime (see
 # `observability::otlp::otel_runtime`); `Handle::metrics()` feeds the tokio
 # runtime gauges from the app's handle, captured at subscriber init.
