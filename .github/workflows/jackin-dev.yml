@@ -1,6 +1,7 @@
 name: jackin-dev
 
 on:
+  pull_request:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
@@ -15,6 +16,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate-version-bump:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Require jackin-dev version bump for artifact changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          diff_files=$(git diff --name-only "${BASE_SHA}...${HEAD_SHA}")
+          source_changed=false
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+            case "$path" in
+              Cargo.toml|Cargo.lock|crates/jackin-dev/**)
+                source_changed=true
+                ;;
+            esac
+          done <<< "$diff_files"
+
+          if [ "$source_changed" != true ]; then
+            exit 0
+          fi
+
+          base_version=$(
+            git show "${BASE_SHA}:crates/jackin-dev/Cargo.toml" |
+              sed -n 's/^version = "\(.*\)"/\1/p' |
+              head -1
+          )
+          head_version=$(
+            sed -n 's/^version = "\(.*\)"/\1/p' crates/jackin-dev/Cargo.toml |
+              head -1
+          )
+
+          if [ "$base_version" = "$head_version" ]; then
+            echo "::error::jackin-dev artifact inputs changed; bump crates/jackin-dev/Cargo.toml from ${head_version}"
+            exit 1
+          fi
+
   source-changed:
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
