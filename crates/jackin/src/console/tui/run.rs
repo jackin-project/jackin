@@ -28,7 +28,7 @@ use jackin_console::tui::prompts::{
     prompt_agent_for_launch,
 };
 use jackin_console::tui::run::{
-    ConsoleChromeHover, ConsoleModalMouseLayerFacts, QuitConfirmPlan, console_pointer_hand,
+    ConsoleChromeHover, ConsoleModalMouseLayerFacts, QuitConfirmPlan, console_pointer_shape,
     debug_chip_activation_allowed, debug_chip_row, debug_run_id_label,
     letter_input_state_for_console, modal_mouse_layer_plan, quit_confirm_area,
     quit_intercept_state_for_console, should_debug_log_mouse, should_open_quit_confirm,
@@ -202,10 +202,9 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
     let mut terminal = ratatui::Terminal::new(backend)?;
     let mut last_mouse_event_at: Option<std::time::Instant> = None;
-    // Tracks whether the terminal pointer is currently the hand/`pointer`
-    // shape, so OSC 22 is emitted only when the hover crosses a clickable
-    // boundary rather than on every motion event.
-    let mut pointer_is_hand = false;
+    // Tracks the terminal pointer shape so OSC 22 is emitted only when the
+    // hover crosses a clickable boundary rather than on every motion event.
+    let mut pointer_shape = jackin_tui::PointerShape::Default;
     // Async event source: yields to the Tokio reactor between events so
     // background tasks can progress instead of blocking for up to TICK_MS.
     let mut event_stream = crossterm::event::EventStream::new();
@@ -720,13 +719,11 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                             chrome_hover = None;
                             needs_redraw = true;
                         }
-                        if pointer_is_hand {
-                            pointer_is_hand = false;
+                        if pointer_shape != jackin_tui::PointerShape::Default {
+                            pointer_shape = jackin_tui::PointerShape::Default;
                             let mut out = std::io::stdout();
-                            let _unused = std::io::Write::write_all(
-                                &mut out,
-                                jackin_tui::ansi::POINTER_DEFAULT.as_bytes(),
-                            );
+                            let seq = jackin_tui::osc22_pointer_shape(pointer_shape);
+                            let _unused = std::io::Write::write_all(&mut out, seq.as_bytes());
                             drop(std::io::Write::flush(&mut out));
                         }
                     } else if let ConsoleStage::Manager(ms) = &mut state.stage {
@@ -785,7 +782,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                             chrome_hover = next_chrome_hover;
                             needs_redraw = true;
                         }
-                        let hand = console_pointer_hand(
+                        let next_pointer_shape = console_pointer_shape(
                             chrome_hover.is_some(),
                             crate::console::tui::input::clickable_at(
                                 ms,
@@ -794,13 +791,9 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                                 Some(&config),
                             ),
                         );
-                        if hand != pointer_is_hand {
-                            pointer_is_hand = hand;
-                            let seq = if hand {
-                                jackin_tui::ansi::POINTER_HAND
-                            } else {
-                                jackin_tui::ansi::POINTER_DEFAULT
-                            };
+                        if next_pointer_shape != pointer_shape {
+                            pointer_shape = next_pointer_shape;
+                            let seq = jackin_tui::osc22_pointer_shape(pointer_shape);
                             let mut out = std::io::stdout();
                             drop(std::io::Write::write_all(&mut out, seq.as_bytes()));
                             drop(std::io::Write::flush(&mut out));

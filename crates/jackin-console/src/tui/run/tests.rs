@@ -578,11 +578,23 @@ fn debug_chip_activation_requires_click_hover_and_run() {
 }
 
 #[test]
-fn console_pointer_hand_uses_chrome_or_base_clickability() {
-    assert!(!console_pointer_hand(false, false));
-    assert!(console_pointer_hand(true, false));
-    assert!(console_pointer_hand(false, true));
-    assert!(console_pointer_hand(true, true));
+fn console_pointer_shape_uses_chrome_or_base_clickability() {
+    assert_eq!(
+        console_pointer_shape(false, false),
+        jackin_tui::PointerShape::Default
+    );
+    assert_eq!(
+        console_pointer_shape(true, false),
+        jackin_tui::PointerShape::Pointer
+    );
+    assert_eq!(
+        console_pointer_shape(false, true),
+        jackin_tui::PointerShape::Pointer
+    );
+    assert_eq!(
+        console_pointer_shape(true, true),
+        jackin_tui::PointerShape::Pointer
+    );
 }
 
 #[test]

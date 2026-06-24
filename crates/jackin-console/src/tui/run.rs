@@ -404,8 +404,11 @@ pub const fn debug_chip_activation_allowed(
 }
 
 #[must_use]
-pub const fn console_pointer_hand(chrome_hovered: bool, base_clickable: bool) -> bool {
-    chrome_hovered || base_clickable
+pub const fn console_pointer_shape(
+    chrome_hovered: bool,
+    base_clickable: bool,
+) -> jackin_tui::PointerShape {
+    jackin_tui::clickable_pointer_shape(chrome_hovered || base_clickable)
 }
 
 const fn mouse_is_wheel(mouse: crossterm::event::MouseEvent) -> bool {
