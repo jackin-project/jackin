@@ -1321,7 +1321,7 @@ done vs outstanding in this roadmap item.
 - [x] TZ propagation investigated — mechanism decided (forward host `TZ` + tzdata, or offset fallback); implement at launch/attach
 
 **A. Architectural foundations**
-- [ ] Issue 1 — shared tab component (render + hover + per-tab hit-test + cursor); usage tabs wired through it
+- [x] Issue 1 — shared tab component (render + hover + per-tab hit-test + cursor); usage tabs wired through it — `25b2d988` + `e1cd613b` + `37917210` + `1a21fc36` + `13dd9f56` + `7b53575`
 - [ ] Issue 15 — unified status-bar component on every screen; display matrix; right-anchored progressive build
 - [ ] Issue 4 — no blocking work on the event/input/render loop (offload + concurrent probes; daemon-wide rule)
 - [ ] Tokio-everywhere audit — enumerate every data-load/I/O path in jackin', confirm each is off-loop + parallel; refactor any blocking/serial (HARDCORE rule)
