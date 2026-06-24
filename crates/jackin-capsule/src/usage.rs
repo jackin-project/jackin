@@ -3681,8 +3681,6 @@ struct MiniMaxModelRemain {
     current_interval_remaining_percent: Option<f64>,
     #[serde(rename = "current_interval_status")]
     current_interval_status: Option<i64>,
-    #[serde(rename = "start_time")]
-    start_time: Option<i64>,
     #[serde(rename = "end_time")]
     end_time: Option<i64>,
     #[serde(rename = "remains_time")]
@@ -3695,8 +3693,6 @@ struct MiniMaxModelRemain {
     current_weekly_remaining_percent: Option<f64>,
     #[serde(rename = "current_weekly_status")]
     current_weekly_status: Option<i64>,
-    #[serde(rename = "weekly_start_time")]
-    weekly_start_time: Option<i64>,
     #[serde(rename = "weekly_end_time")]
     weekly_end_time: Option<i64>,
     #[serde(rename = "weekly_remains_time")]
@@ -3733,7 +3729,6 @@ impl MiniMaxUsageResponse {
                 remain.current_interval_usage_count,
                 remain.current_interval_remaining_percent,
                 remain.current_interval_status,
-                remain.start_time,
                 remain.end_time,
                 remain.remains_time,
                 now,
@@ -3748,7 +3743,6 @@ impl MiniMaxUsageResponse {
                     remain.current_weekly_usage_count,
                     remain.current_weekly_remaining_percent,
                     remain.current_weekly_status,
-                    remain.weekly_start_time,
                     remain.weekly_end_time,
                     remain.weekly_remains_time,
                     now,
@@ -3802,7 +3796,6 @@ fn minimax_bucket(
     usage: Option<i64>,
     remaining_percent: Option<f64>,
     status: Option<i64>,
-    start: Option<i64>,
     end: Option<i64>,
     remains_time: Option<i64>,
     now: i64,
@@ -3828,7 +3821,7 @@ fn minimax_bucket(
     };
     let used_label = usage.map(|usage| compact_count(usage.max(0) as u64));
     let reset_epoch = minimax_reset_epoch(end, remains_time, now);
-    let pace = minimax_window_label(start, end).or_else(|| Some(minimax_window_name(window)));
+    let detail = minimax_usage_count_line(usage, total, remaining_percent);
     Some(bucket(
         &minimax_bucket_label(model_name, window),
         used_label,
@@ -3837,7 +3830,7 @@ fn minimax_bucket(
             .map(|value| compact_count(value.max(0) as u64)),
         remaining_percent,
         reset_epoch.map(|epoch| reset_label(epoch, now)),
-        pace.as_deref(),
+        detail.as_deref(),
         UsageSnapshotStatus::Fresh,
     ))
 }
@@ -3856,13 +3849,6 @@ fn minimax_bucket_label(model_name: &str, window: MiniMaxWindow) -> String {
     }
 }
 
-fn minimax_window_name(window: MiniMaxWindow) -> String {
-    match window {
-        MiniMaxWindow::Interval => "5 hours window".to_owned(),
-        MiniMaxWindow::Weekly => "Weekly".to_owned(),
-    }
-}
-
 fn titlecase_ascii(value: &str) -> String {
     let mut chars = value.chars();
     let Some(first) = chars.next() else {
@@ -3872,6 +3858,23 @@ fn titlecase_ascii(value: &str) -> String {
     out.extend(first.to_uppercase());
     out.push_str(chars.as_str());
     out
+}
+
+fn minimax_usage_count_line(
+    usage: Option<i64>,
+    total: Option<i64>,
+    remaining_percent: Option<u8>,
+) -> Option<String> {
+    let usage = usage?.max(0) as u64;
+    let total = total.filter(|value| *value > 0).map_or_else(
+        || remaining_percent.map(|_| 100),
+        |value| Some(value.max(0) as u64),
+    )?;
+    Some(format!(
+        "Usage: {} / {}",
+        compact_count(usage),
+        compact_count(total)
+    ))
 }
 
 fn fetch_minimax_usage(token: &str) -> Result<MiniMaxUsageResponse, String> {
@@ -3948,13 +3951,6 @@ fn minimax_remains_host(value: &str) -> String {
 fn minimax_reset_epoch(end: Option<i64>, remains_time: Option<i64>, now: i64) -> Option<i64> {
     end.map(epoch_seconds_from_maybe_ms)
         .or_else(|| remains_time.map(|seconds| now.saturating_add(seconds.max(0))))
-}
-
-fn minimax_window_label(start: Option<i64>, end: Option<i64>) -> Option<String> {
-    let start = start.map(epoch_seconds_from_maybe_ms)?;
-    let end = end.map(epoch_seconds_from_maybe_ms)?;
-    let minutes = end.saturating_sub(start) / 60;
-    window_minutes_label(minutes)
 }
 
 fn epoch_seconds_from_maybe_ms(value: i64) -> i64 {
@@ -6022,7 +6018,7 @@ mod tests {
         assert_eq!(buckets[0].used_label.as_deref(), Some("60"));
         assert_eq!(buckets[0].limit_label.as_deref(), Some("100"));
         assert_eq!(buckets[0].remaining_percent, Some(40));
-        assert_eq!(buckets[0].pace_label.as_deref(), Some("4 hours window"));
+        assert_eq!(buckets[0].pace_label.as_deref(), Some("Usage: 60 / 100"));
         assert_eq!(buckets.len(), 1);
     }
 
@@ -6067,12 +6063,18 @@ mod tests {
         assert_eq!(
             buckets
                 .iter()
-                .map(|bucket| (bucket.label.as_str(), bucket.remaining_percent))
+                .map(|bucket| {
+                    (
+                        bucket.label.as_str(),
+                        bucket.remaining_percent,
+                        bucket.pace_label.as_deref(),
+                    )
+                })
                 .collect::<Vec<_>>(),
             vec![
-                ("General · 5h", Some(100)),
-                ("General · Weekly", Some(99)),
-                ("Video", Some(100)),
+                ("General · 5h", Some(100), Some("Usage: 0 / 100")),
+                ("General · Weekly", Some(99), Some("Usage: 1 / 100")),
+                ("Video", Some(100), Some("Usage: 0 / 5")),
             ]
         );
     }

@@ -1092,9 +1092,19 @@ fn minimax_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
         None,
         "Updated 3m ago",
         vec![
-            quota_bucket("General · 5h", 100, Some("Resets 28m"), None),
-            quota_bucket("General · Weekly", 99, Some("Resets 4d"), None),
-            quota_bucket("Video", 100, Some("Resets 14h"), None),
+            quota_bucket(
+                "General · 5h",
+                100,
+                Some("Resets 28m"),
+                Some("Usage: 0 / 100"),
+            ),
+            quota_bucket(
+                "General · Weekly",
+                99,
+                Some("Resets 4d"),
+                Some("Usage: 1 / 100"),
+            ),
+            quota_bucket("Video", 100, Some("Resets 14h"), Some("Usage: 0 / 100")),
         ],
     )
 }
