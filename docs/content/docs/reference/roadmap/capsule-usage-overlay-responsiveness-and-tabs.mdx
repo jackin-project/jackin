@@ -1109,6 +1109,33 @@ fix against the preview.
 
 ---
 
+## Issue 18 — Meter bar empty cells must use `░` (light shade), not `·` (USAGE OVERLAY, all bars)
+
+**Operator report.** The quota bars must render the empty/unfilled portion with `░` (light shade
+block), matching CodexBar:
+
+```text
+██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   (want)
+████████······················································   (current)
+```
+
+**Verified root cause.** The empty cell glyph is hardcoded as `·` (middle dot) in the single bar
+builder, and several predicates detect a meter by `matches!(ch, '█' | '·')`, so the glyph must change
+in lockstep:
+- Build: `usage_full_width_meter` (`crates/jackin-capsule/src/tui/components/dialog_widgets.rs:911-912`)
+  = `"█".repeat(filled)` + **`"·".repeat(rest)`** → change the empty run to `"░"`.
+- Meter-detection predicates (treat a value as a bar): `dialog_widgets.rs:900, :1054, :1087, :1227`
+  all use `matches!(ch, '█' | '·')` → must accept `'░'` (switch to `'█' | '░'`).
+- Tests with literal meter strings: `dialog_widgets.rs:1172, :1176` use `·` → update to `░`.
+- **Verify the meter source:** if any upstream (snapshot/`usage.rs`) emits the `█`/`·` string that
+  these predicates parse, change it there too so the filled+empty glyphs are defined in one place.
+
+**Direction (root-cause, one definition).** Define the two meter glyphs (`█` filled, `░` empty) as
+single shared constants used by both the builder and every predicate/test, so the empty glyph can
+never drift again. Keep full-width remaining bars (binding design). Update snapshot/width tests.
+
+---
+
 ## Consolidated plan (ordering, to be detailed before we start)
 
 Architectural items first (they remove whole bug classes), then the shared per-provider data/spec
@@ -1177,7 +1204,7 @@ sub-tasks rather than silently expanding scope. This checklist is the source of 
 done vs outstanding in this roadmap item.
 
 **Collection / housekeeping**
-- [x] Issues 1–17 collected and verified against source (all tabs covered)
+- [x] Issues 1–18 collected and verified against source (all tabs covered)
 - [x] xAI/Grok tab collected (Issue 16; live jackin Grok screenshot still owed to pin deltas)
 - [x] Overview tab collected (Issue 17; binding preview captured; live jackin screenshot owed)
 - [x] File registered in roadmap `meta.json` + overview `index.mdx` (sidebar check passes)
@@ -1214,6 +1241,7 @@ done vs outstanding in this roadmap item.
 - [ ] Issue 17 — Overview — (after collection)
 
 **D. Layout + format (usage overlay)**
+- [ ] Issue 18 — meter empty cells use `░` (not `·`); glyphs as shared constants (builder + predicates + tests)
 - [ ] Issue 6 — one horizontal-padding policy (content padded both sides; separators full-bleed)
 - [ ] Issue 2 — anchor usage dialog top edge (Usage-only `box_rect` branch)
 - [ ] Issue 3 — center the usage tab strip
