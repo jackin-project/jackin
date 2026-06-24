@@ -2,1382 +2,412 @@
 title: "Capsule usage and quota overlay"
 ---
 
-**Status**: Partially implemented — Capsule/control/TUI surfaces, daemon cache, focused status chrome, safe provider adapters for Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax, Capsule-local structured account/sample storage, focused-agent and provider-tab daemon refresh scheduling, local-log usage sample ingestion, runtime-stream token-bearing JSON/SSE sample attribution, runtime sample instance-id stamping, Anthropic stream model-context retention, common snake_case/camelCase provider token event parsing, Grok API-key and deployment-key presence detection, conservative provider-specific API-rate cost estimates for verified Claude/Codex/OpenAI/xAI/GLM/Z.AI/Kimi/MiniMax models, exact-vs-estimated cost provenance in cached sample summaries, cached account/usage summary control APIs, the host `jackin usage` cache-inspection CLI, and explicit host-global account-cache seed/read paths have landed; control replies now shape from daemon-side cache in both control handler and daemon path, provider-switch/refresh dispatch is covered by daemon tests, stale bucket states are rendered as stale in the overlay, and the active-tab status label selects the most constrained quota bucket with account identity when available. When a provider refresh degrades from a fresh account snapshot to stale local data, the daemon now preserves the last successful quota buckets, marks them stale, keeps the account plan/identity, and shows those cached limits in the status chrome instead of dropping back to an empty stale label. The Capsule usage overlay now has the roadmap navigation shape: `Overview`, `Instance`, then provider tabs, rendered through a usage-specific Ratatui snapshot rather than the generic debug-info key/value renderer. `Overview` renders the focused account, most-constrained bucket, source, provider-tab statuses, provider-tab account identity and plan when the daemon cache has them, and provider diagnostic rows. Provider tabs now include a roadmap-style account header, account availability section, block-style quota meters, two-line account cost/token summary, read-only cost/subscription-utilization rows, status-page detail, usage-dashboard placeholder, disabled `Buy Credits` / `Add Account` parity rows when those flows cannot be handled safely inside Capsule, and daemon-refresh action text. The Capsule usage snapshot also carries a daemon-built instance block with instance age, active-agent time, workspace, roadmap-style instance-spend rows, today spend, since-start spend, latest-token sample, compact history bars, per-session/codename rows, tab/pane lineage, last-activity labels, closed-tab lifecycle state, per-provider/account rows, cached provider/account identity and plan where available, top-model aggregation, and exact/estimated/unpriced totals from cached runtime samples scoped to the Capsule instance id. The `Instance` renderer now lays out these cost/token/provenance rows as paired metric fields so "Tokens since start", "Latest tokens", "Exact", "Estimated", and "Unpriced" remain visible as distinct values instead of being flattened into one status sentence. The overlay keeps provider-account tabs separate from the `Instance` tab, so account quota/cost rows are not mixed with since-start jackin' instance rows. Long-running host-global account refresh daemon, bounded local-log-to-instance attribution, future model pricing coverage, and remaining provider-specific runtime event contracts remain open.
-
-**Correction (2026-06-19 host verification):** a live run on the operator host showed the shipped overlay does not yet match the previews in this item, and the Claude provider tab never authenticates in practice. Two defects dominate. First, the provider detail render still emits scaffold rows (`Cost row`, `Token row`, and standalone `Today cost` / `30d cost` / `30d tokens` / `Latest tokens` rows) on top of the real `Account cost and tokens` summary, and its fallback values embed their own label so the overlay shows doubled text such as `Today today unavailable` and `30d cost 30d cost unavailable` instead of the clean two-column grid, quota meters, sparkline, and `Source` / `Status` footer drawn in the previews below. Second, the Claude/Anthropic adapter reads OAuth credentials from the wrong source, so a synchronized Claude Max login still renders `account unavailable`. The "Verification Findings And Remaining Work" section records the live evidence, the CodexBar reference mapping, and a step-by-step remediation plan with explicit verification for each step. The status stays **Partially implemented** until those steps pass on-host verification.
-
-## Verification Findings And Remaining Work (2026-06-19)
-
-This section is the live-verified gap analysis between the previews in this item and the shipped implementation, plus the CodexBar reference mapping the implementation must follow. It was produced by running the real binary and credential stores on the operator host, not by reading code alone. CodexBar is the canonical reference project for this feature: jackin' deliberately mirrors CodexBar's data-extraction strategy and on-screen information architecture, so every adapter and render decision below is anchored to a specific CodexBar source.
-
-### Live Verification Performed On Host
-
-Performed 2026-06-19 on the operator macOS host with the operator's own synchronized agent logins. All probes were read-only GETs against provider usage endpoints; no tokens were written or printed.
-
-- **Claude / Anthropic — works when read from the right source.** The host has no `claudeAiOauth` block in `~/.claude.json` and no `~/.claude/.credentials.json` file; the real Claude Code OAuth token lives in the macOS Keychain item `Claude Code-credentials`. Reading the Keychain token and calling `GET https://api.anthropic.com/api/oauth/usage` with `anthropic-beta: oauth-2025-04-20` and `User-Agent: claude-code/2.1.0` returned **HTTP 200** with `subscriptionType: max`, `rateLimitTier: default_claude_max_20x`, and windows `five_hour` (27% utilization), `seven_day` (30%), `seven_day_sonnet` (13%), `seven_day_opus`, `seven_day_oauth_apps`, `seven_day_cowork`, `seven_day_omelette`, and `extra_usage`. The data is fully available; the adapter simply reads the wrong place.
-- **Codex / OpenAI — works.** `~/.codex/auth.json` holds `tokens.access_token`, `tokens.account_id`, `tokens.refresh_token`, and a top-level `OPENAI_API_KEY`. Calling `GET https://chatgpt.com/backend-api/wham/usage` with `Authorization: Bearer <access_token>` and `ChatGPT-Account-Id: <account_id>` returned **HTTP 200** with `plan_type: pro`, `rate_limit.primary_window` + `rate_limit.secondary_window`, and `additional_rate_limits` containing `GPT-5.3-Codex-Spark`. No token refresh was required for a recently-used login.
-- **Host credential inventory.** Codex `~/.codex/auth.json` present; Claude OAuth only in Keychain `Claude Code-credentials` (no `~/.claude/.credentials.json`); Amp `~/.local/share/amp/secrets.json` present; Grok `~/.grok/auth.json` present; Kimi `~/.kimi-code` + `~/.kimi` present; OpenCode `~/.local/share/opencode/auth.json` present and bound to `zai-coding-plan` (the healthy GLM/Z.AI pane). Agent CLIs are resolved through `PATH` entries in `~/.zshrc` (`~/.amp/bin`, `~/.kimi-code/bin`, `~/.grok/bin`), not shell aliases, so there is no alias indirection to resolve before probing a provider.
-
-### Per-Workspace / Multi-Account Auth Verification
-
-The operator runs two workspaces with different provider accounts: the jackin' workspace uses the default host logins, and the Scentbird workspace pins separate credential folders (`[claude] sync_source_dir = ~/.claude-scentbird`, `[codex] sync_source_dir = ~/.codex-scentbird`, `[amp] sync_source_dir = ~/.amp-scentbird/data/amp`). The 2026-06-19 host run confirmed per-workspace separation is supported at the forwarding layer:
-
-- **Codex and Amp** read file credentials directly from the workspace `sync_source_dir` (`~/.codex-scentbird/auth.json` and `~/.amp-scentbird/data/amp/secrets.json` both present with distinct accounts).
-- **Claude** is Keychain-backed on macOS and the token is single-slot per config dir, so the runtime derives a per-config-dir Keychain service. The default `~/.claude` config dir uses the bare service `Claude Code-credentials`; any other config dir uses `Claude Code-credentials-<first 8 hex of sha256(absolute config dir path)>`. For `~/.claude-scentbird` this resolves to `Claude Code-credentials-db49ea31`, which was verified to exist and hold the distinct Scentbird **enterprise** account (`subscriptionType: enterprise`), not the default Max account. The runtime deliberately never falls back to the default account for a workspace that pinned a source folder, so a company login cannot leak the personal Max account into the Scentbird container.
-- The runtime forwards whichever credential it resolved (file or Keychain) into the container at the standard path `~/.claude/.credentials.json`, so the in-container usage daemon sees the correct per-workspace account at one fixed path regardless of workspace. This is why the adapter fix (read `~/.claude/.credentials.json`) is sufficient for both workspaces at once.
-- **Honest-degradation caveat:** the Scentbird enterprise token returned **HTTP 401** from `api.anthropic.com/api/oauth/usage` on this run (stale/expired forwarded token, or an enterprise/`default_claude_zero` tier that may not expose the consumer OAuth usage surface), while the default Max account returned 200. The Claude tab must therefore degrade to `needs login` / `stale` for that account rather than show a fabricated value, and whether enterprise plans expose usage at all is an explicit open verification item.
-
-### Confirmed Defects
-
-1. **Claude OAuth credential source is wrong.** `claude_snapshot` loads OAuth from `~/.claude.json`. On macOS the token is in the Keychain item `Claude Code-credentials`; in a Linux/container home it is `~/.claude/.credentials.json`. CodexBar reads exactly those two sources. The adapter must read `~/.claude/.credentials.json` first and the Keychain item on macOS hosts, with `~/.claude.json` only as a last resort. This is the single reason a synchronized Claude Max login renders `account unavailable`.
-2. **Render diverges from the previews.** The provider detail builder pushes scaffold rows (`Cost row`, `Token row`, `Today cost`, `30d cost`, `30d tokens`, `Latest tokens`) in addition to the real `Account cost and tokens` row, and several fallback value strings include their own label (`"today unavailable"`, `"30d cost unavailable"`) which then gets a second label prefix at render time, producing doubled text. The detail view must instead render quota meters, a single two-column cost grid, the history sparkline, `Top model`, the provenance line, and a `Source` / `Status` footer exactly as the previews show.
-3. **Claude `User-Agent` differs from the verified-good value.** The adapter sends `User-Agent: jackin-capsule/usage`; the on-host 200 was obtained with `User-Agent: claude-code/2.1.0`. The OAuth usage endpoint may treat the client UA as significant, so the adapter should send a `claude-code/<version>` UA like CodexBar until a non-claude UA is proven to return 200.
-4. **Claude bucket coverage is incomplete.** The live response also returns `seven_day_opus`, `seven_day_oauth_apps`, `seven_day_cowork`, and `seven_day_omelette` windows. The previews show `Sonnet`, `Daily Routines`, and `Extra usage`; the adapter should map the windows it recognizes and ignore unknown promotional windows rather than dropping `Opus` when present.
-5. **Synchronized tokens can expire with no in-Capsule refresh.** Capsule deliberately never writes host credentials, so it cannot run CodexBar's refresh-token flow. When a forwarded token is expired, the tab must degrade to an honest `needs login` / `stale` state and the operator refreshes the token outside Capsule. This is a policy decision to keep, not a bug, but it must be documented in the tab state.
-
-### CodexBar Reference Mapping
-
-CodexBar (`github.com/steipete/CodexBar`) is the source of truth for how to extract and present this data. The exact behaviors jackin' mirrors:
-
-Claude / Anthropic:
-
-- Token sources, in order: CodexBar's own OAuth cache, then `~/.claude/.credentials.json` (`claudeAiOauth.accessToken`), then macOS Keychain service `Claude Code-credentials` (same `claudeAiOauth` JSON blob). Source: `Sources/CodexBarCore/Providers/Claude/ClaudeOAuth/ClaudeOAuthCredentials.swift` and `docs/claude.md`.
-- Usage call: `GET https://api.anthropic.com/api/oauth/usage`, headers `Authorization: Bearer`, `Accept: application/json`, `Content-Type: application/json`, `anthropic-beta: oauth-2025-04-20`, `User-Agent: claude-code/<version>`; no `anthropic-version` header. Source: `ClaudeOAuthUsageFetcher.swift`.
-- Window field to bucket: `five_hour` to `Session`, `seven_day` to `Weekly`, `seven_day_sonnet` to `Sonnet`, `seven_day_opus` to `Opus`, `seven_day_routines` to `Daily Routines`, `extra_usage` to `Extra usage` (with `monthly_limit`, `used_credits`, `utilization`, `currency`). Each window carries `utilization` (0-100) and `resets_at`. Source: `ClaudeOAuthUsageFetcher.swift`.
-- Plan/tier label: prefer `subscriptionType`, fall back to `rateLimitTier`. Source: `ClaudeCredentialRouting.swift`.
-
-Codex / OpenAI:
-
-- Token source: `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`), `tokens.access_token` and `tokens.account_id` (no JWT decode of `id_token`). Source: `Sources/CodexBarCore/Providers/Codex/CodexOAuth/CodexOAuthCredentials.swift`.
-- Usage call: `GET https://chatgpt.com/backend-api/wham/usage` (overridable via `config.toml`), headers `Authorization: Bearer`, `ChatGPT-Account-Id: <account_id>` (only if non-empty). Source: `CodexOAuthUsageFetcher.swift`. An alternate path launches `codex -s read-only -a untrusted app-server` and calls JSON-RPC `account/read` + `account/rateLimits/read`. Source: `docs/codex.md`.
-- Field to bucket: `rate_limit.primary_window` to `Session`, `rate_limit.secondary_window` to `Weekly` (each window has `used_percent`, `reset_at`, `limit_window_seconds`); `additional_rate_limits[]` entries with `spark` in `limit_name`/`metered_feature` to `Codex Spark 5-hour` / `Codex Spark Weekly`; `credits` (`has_credits`, `unlimited`, `balance`) to `Credits`; `plan_type` to plan label. Source: `CodexOAuthUsageFetcher.swift` and `CodexAdditionalRateLimitMapper.swift`.
-- Token refresh (not used in Capsule): `POST https://auth.openai.com/oauth/token`, client id `app_EMoamEEZ73f0CkXaXp7hrann`, when `last_refresh` is older than 8 days. Source: `CodexTokenRefresher.swift`.
-
-Pace / reserve labels (the `On pace` / `N% in reserve` / `N% in deficit` text in the previews): `delta = utilization - (elapsed_fraction_of_window * 100)`; `abs(delta) <= 2` renders `On pace`; `delta > 0` renders `N% in deficit`; `delta < 0` renders `N% in reserve`, where `N = round(abs(delta))`. Source: `Sources/CodexBarCore/UsagePace.swift` and `Sources/CodexBar/UsagePaceText.swift`.
-
-### Step-By-Step Remediation Plan With Verification
-
-Each step names the change and the exact verification that proves it on-host. Steps are ordered so the data path is correct before the render is polished.
-
-1. **Fix the Claude credential source.** Read `~/.claude/.credentials.json` (`claudeAiOauth.accessToken`) first; on macOS hosts read the Keychain item `Claude Code-credentials`; keep `~/.claude.json` only as a last-resort legacy read. *Verify:* on the host, the Claude provider tab shows `Max` and live `Session` / `Weekly` / `Sonnet` meters instead of `account unavailable`; `jackin-capsule usage` for the Claude surface returns `Fresh` with non-empty buckets.
-2. **Send a `claude-code/<version>` User-Agent for the Claude OAuth usage call.** *Verify:* the daemon log shows HTTP 200 from `api.anthropic.com/api/oauth/usage`; flipping the UA back to a non-claude value is recorded as pass/fail so the dependency is known rather than assumed.
-3. **Map the full live Claude window set.** Add `Opus` mapping and ignore unknown promotional windows safely. *Verify:* with a live 200, the tab shows every window the response carries that the previews list, and no panic/blank row on unexpected window keys.
-4. **Confirm the Codex path end to end inside the container.** Codex already works in isolation; verify the forwarded `~/.codex/auth.json` reaches the daemon and the tab renders `Pro`-class plan plus `Session` / `Weekly` / `Codex Spark` meters. *Verify:* live Codex tab matches the Codex preview's bucket set; daemon log shows 200 from `wham/usage`.
-5. **Remove the render scaffold rows and fix doubled labels.** Delete the `Cost row` / `Token row` / `Today cost` / `30d cost` / `30d tokens` / `Latest tokens` scaffold rows; make fallback values bare (`unavailable`) so no label is doubled. *Verify:* a snapshot/lookbook render of the detail view contains each label exactly once and no `Cost row` / `Token row` text.
-6. **Render the detail layout to match the previews.** Quota meters with `N% left`, reserve/deficit/`On pace`, and `Resets in …`; a two-column `Account cost and tokens` grid (`Today`, `30d cost`, `30d tokens`, `Latest tokens`); the history sparkline; `Top model`; the provenance line; and a `Source` / `Status` footer. *Verify:* side-by-side diff of the rendered overlay against the Codex and Claude previews in this item across the three responsive width bands.
-7. **Implement the pace/reserve label math from CodexBar.** *Verify:* for a window with known `utilization` and `resets_at`, the rendered pace label matches the CodexBar formula output for the same inputs.
-8. **Render the `Overview` and `Instance` tabs to match their previews.** Overview: focused-agent header, per-provider one-line rows, and `Most constrained`. Instance: instance header, instance-spend grid, `By agent codename`, and `By provider/account`. *Verify:* rendered Overview and Instance tabs match the previews; instance numbers are scoped to the current instance id.
-9. **Verify across two workspaces / accounts.** Start one jackin' instance in the jackin workspace and one in the sandbird workspace (its own John Docker agent role), and confirm each instance's overlay shows the correct synchronized account, plan, and live quota for the focused agent without cross-instance leakage. *Verify:* both overlays render correct provider identity and quota; the `Instance` tab in each shows only its own samples.
-10. **Honest degradation for expired/forwarded tokens.** *Verify:* with an intentionally expired token, the tab shows `needs login` / `stale` with the last-known buckets where available, never a fabricated percentage, and never writes host credentials.
-
-### Remediation Progress
-
-Landed and unit/snapshot-verified (`cargo test -p jackin-capsule` green, 592 tests):
-
-- Step 1 — Claude OAuth now reads `<config>/.credentials.json` first, then `~/.claude/.credentials.json`, then the legacy `~/.claude.json`. The runtime already forwards the host Keychain (default and per-config-dir) into that container path, so both the jackin' and Scentbird workspaces resolve the correct per-account token.
-- Step 2 — the Claude OAuth usage call sends `User-Agent: claude-code/2.1.0` (the value that returned 200 on-host).
-- Step 5 — the doubled labels and scaffold rows are gone: the provider-detail cost grid uses bare fallbacks, and the standalone `Today cost` / `30d cost` / `30d tokens` / `Latest tokens` rows are removed.
-- Step 6 (render) — quota meters show only `N% left · pace · Resets in …` (no stray `used / 100%`); the `Account cost and tokens` two-column grid, history sparkline, `Top model`, and bare provenance line match the previews; the account header right-aligns account/plan to the panel width.
-- Step 7 — pace labels use the CodexBar formula exactly: `On pace` within 2 points, else `N% in reserve` / `N% in deficit`.
-- Step 8 — Overview renders one quota-focused line per provider with a per-tab freshness · source tag (`Session 37% left · Resets in 1h 21m · fresh · provider`), backed by a new `source_label` field on `UsageProviderTab`. Instance renders the `Started … / Active agent time …` header on one right-aligned line, keeps the four-pair spend grid, and drops the rows the preview omits (`Token split`, duplicate provenance). The `Source` footer now reads `<source> · <confidence> · <freshness> · <updated>`.
-- Narrow `<64`-column list layout: each quota bucket renders `<label>  N% left · Resets in …` (pace dropped to fit).
-
-All four previews (Codex detail, Claude detail, Overview, Instance) were rendered from the snapshot path and diffed against the mockups in this item; the section set, ordering, right-aligned header/timeline, meters, two-column grids, sparkline, provenance, and Source/Status footer match.
-
-Verified live in-container (2026-06-19): the construct image was rebuilt with the fixed capsule (`cargo xtask construct build-local`), and inside a running jackin' container the forwarded `~/.claude/.credentials.json` (`claudeAiOauth` present, mode 600) was confirmed and used to call `api.anthropic.com/api/oauth/usage` with the adapter's headers — **HTTP 200** with live `five_hour` / `seven_day` / `seven_day_sonnet` / `extra_usage` windows. This proves the full path the fix enables end to end (host Keychain → forwarded container file → adapter reads `.credentials.json` → 200 quota); the old daemon rendered `account unavailable` only because it read `~/.claude.json`, which never carries the token.
-
-Still open after this pass:
-
-- Interactive overlay capture: driving `jackin load` and pressing `u` to screenshot the live overlay needs an operator TTY (the headless harness cannot attach). The render is verified through the Ratatui snapshot path and the in-container auth/extraction is verified above, so this is an operator confirmation step, not a code gap.
-- Enterprise Claude accounts: the Scentbird token returned 401 from the consumer OAuth usage endpoint — confirm whether enterprise/`default_claude_zero` plans expose usage at all, else keep the honest `stale` / `needs login` state (Step 10).
-- Narrow-layout polish: `Usage: <provider>` panel title and the compact `account · plan` / `source · updated` header need a width-aware title path (kept out of the wide view, which shows the bare `Usage` title per the previews).
-- Cosmetic: the `By agent codename` block renders three lines vs the preview's two, and the second cost-grid column starts after a variable-width first metric rather than a fixed column. The account-action rows (`Cost`, `Subscription Utilization`, `Buy Credits`, `Add Account`, `Usage Dashboard`, `Status Page`) are retained per the "Required account-tab fields" list above even though the compressed previews omit them.
-
-## CodexBar Parity And Non-Regression Principle
-
-CodexBar is the reference jackin' borrows this feature's data extraction and information architecture from. That makes a non-regression rule explicit and binding for this item:
-
-**jackin' must never present this information at lower quality than CodexBar does for any dimension it also covers. For every dimension below, jackin' targets parity-or-better: the same or richer detail, the same or higher data quality and provenance honesty, the same or better caching and refresh behaviour, and the same or better performance. A change that would make any covered dimension worse than CodexBar is a regression and must not ship without an explicitly recorded, operator-approved reason (for example, the deliberate read-only host-safety tradeoff below).** Where jackin' cannot match a CodexBar capability safely, it must say so honestly in the UI rather than degrade silently or fake data.
-
-The deliberate exceptions, where jackin' is intentionally less capable than CodexBar in exchange for a stronger guarantee, are explicit and limited:
-
-- jackin' never writes host credentials, so it does not run CodexBar's token-refresh-and-rewrite flow; an expired forwarded token degrades to an honest `needs login` / `stale` state instead of being silently refreshed.
-- jackin' never imports browser cookies, scrapes dashboards, reads the Keychain to repair accounts, or launches hidden provider CLIs in the background. Capsule is read-only and daemon-fed.
-
-Every other dimension must be parity-or-better.
-
-### Dimension-By-Dimension Comparison
-
-Comparison of CodexBar (`github.com/steipete/CodexBar`) against the jackin' Capsule usage overlay. "Current" is the shipped state as of the 2026-06-19 host run; "Target" is the parity-or-better bar this item commits to.
-
-| Dimension | CodexBar | jackin' current | jackin' target (parity-or-better) |
-|---|---|---|---|
-| Surface | macOS menu-bar popover, one focused account at a time | In-terminal multiplexer overlay, daemon-fed, focused-pane aware, keyboard-first, low-color safe | Parity for account view; better — adds in-terminal, focused-pane, and multi-instance context CodexBar has no equivalent for |
-| Provider coverage | Codex, Claude, Amp, OpenCode, and a few more | Claude, Codex, Amp, Grok Build, GLM/Z.AI, Kimi, MiniMax, OpenCode | Better — broader provider matrix; must not drop any provider CodexBar covers |
-| Credential sources | OAuth cache, `~/.claude/.credentials.json`, Keychain `Claude Code-credentials`, `~/.codex/auth.json` | Codex `~/.codex/auth.json` works; Claude reads wrong file (defect) | Parity — read the same sources (including container `.credentials.json` and host Keychain) so synchronized logins authenticate |
-| Usage endpoints / fields | `api.anthropic.com/api/oauth/usage`, `chatgpt.com/backend-api/wham/usage`, app-server RPC | Same endpoints and field maps; Claude bucket set partial | Parity — same endpoints, full bucket coverage including `Opus` |
-| Token refresh | Refreshes and rewrites auth files (8-day) | None, by design (read-only) | Intentionally less; honest `needs login` / `stale` degradation instead — recorded exception |
-| Caching | Per-app in-memory fetch with throttle | Daemon `UsageCache` (5-min TTL), last-known-good on stale, atomic `accounts.json` bridge, Turso `telemetry.db` | Better — persistent structured cache and stale-preservation beyond CodexBar's in-memory model |
-| Spend / history | Local provider-log spend scans, history bars, top model | Same plus exact/estimated/unpriced provenance separation and instance-scoped runtime-stream sampling | Better — stronger provenance honesty and runtime attribution; must keep the labels honest |
-| Instance accounting | None (account-scoped only) | `Instance` tab: since-start spend, per-codename and per-provider/account rows scoped to the instance id | Better — a view CodexBar does not provide; must not contaminate account tabs with instance numbers |
-| Pace / reserve labels | `On pace` / `N% in reserve` / `N% in deficit` from utilization-vs-elapsed delta | Pace labels present in bucket shape | Parity — same formula and thresholds |
-| Performance | Native Swift, periodic fetch | Rust daemon, incremental log scan keyed by path/mtime/size/offset, launch cooldowns, hard request timeouts, renderer never polls providers | Parity-or-better — bounded refresh and incremental scans; renderer must stay non-blocking |
-| Status / dashboard actions | Status badges, Buy Credits, Add Account, Usage Dashboard links (clickable, host-capable) | Read-only or disabled parity rows; explicit `unsupported` where unsafe | Honest parity — show the rows read-only/disabled with a clear reason rather than fake actionable controls |
-| Security posture | Reads Keychain, refreshes tokens, may scrape web/cookies | No host writes, no cookie import, no hidden CLIs, no account repair | Better — strictly safer; this is the guarantee that justifies the refresh exception |
-| Display fidelity | Polished native meters and cards | Behind: scaffold rows and doubled labels (defect) | Parity — must match the previews in this item across all three width bands |
-
-The two rows currently below parity — credential source (Claude) and display fidelity — are exactly the defects the remediation plan above closes. Once those steps pass on-host verification, every covered dimension is parity-or-better, and the deliberate exceptions remain the only places jackin' is intentionally less capable than CodexBar.
+**Status**: Partially implemented — the Capsule control channel, TUI overlay, daemon-cached focused snapshots, and provider quota adapters for all seven providers (OpenAI, Anthropic, Amp, xAI, Z.AI, Kimi, MiniMax) have landed, but the shipped overlay does not yet match the binding previews in this item and several provider adapters do not authenticate or render correctly in-container. This item is the single source of truth for the overlay's final design, how each provider's data is extracted, the implementation plan to reach that design, and the cleanup of features removed from scope (per-message cost/spend, history sparkline, top-model, the Instance ledger, and account-action rows).
 
 ## Problem
 
-jackin' can launch several expensive agent sessions in parallel, but the
-operator cannot see the focused agent's remaining account headroom from inside
-`jackin-capsule`. The operator has to remember provider dashboards, subscription
-windows, reset times, local token burn, and whether the current session is close
-to a limit while still working in the agent's terminal.
+jackin' can launch several expensive agent sessions in parallel, but the operator cannot see the focused agent's remaining account headroom from inside `jackin-capsule`. The operator has to remember provider dashboards, subscription windows, reset times, and whether the current session is close to a limit while still working in the agent's terminal.
 
-The same operator also needs a per-instance accounting view. Account quota answers
-"how much headroom does this provider account still have?" It does not answer
-"what did this particular jackin' instance burn since it started?" A long-running
-Capsule may contain several agent tabs sharing the same account, and the operator
-needs a clear session ledger for the instance lifetime: wall-clock age, active
-agent time, token totals, exact provider-reported spend when available,
-price-table estimates when exact cost is unavailable, top models, and per-agent
-breakdown from instance creation until now.
+The goal is not to clone CodexBar. CodexBar is a macOS menu-bar account dashboard; Capsule is an in-terminal multiplexer for a focused agent. jackin' borrows CodexBar's data-extraction strategy and quota vocabulary while preserving Capsule's constraints: read-only, daemon-fed, focused-pane aware, keyboard-first, and safe inside low-color terminals.
 
-The existing [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/)
-roadmap item owns the data plane: usage adapters, account snapshots, daemon
-cache, persistence, and CLI/daemon endpoints. This item owns the Capsule
-operator interface: what the multiplexer should show, how it should behave in a
-terminal, and which CodexBar-inspired information belongs in the focused-agent
-view.
+## Decided design (binding)
 
-The goal is not to clone CodexBar. CodexBar is a macOS menu-bar account
-dashboard; Capsule is an in-terminal multiplexer for a focused agent. jackin'
-should borrow the information architecture and quota vocabulary while preserving
-Capsule's constraints: read-only, daemon-fed, focused-pane aware, keyboard-first,
-and safe inside low-color terminals.
+These decisions are final and override any older description in this item.
 
-## Implementation Progress
+- **Two surfaces, one authenticated source.** (1) An always-on compact status signal in the branch context bar for the focused pane; (2) the usage overlay (`u` prefix or palette `Usage`). Both read the same daemon-cached focused snapshot under one canonical provider cache key — surfaces never recompute the snapshot independently, and a failed refresh must preserve the last good value rather than overwrite it with `needs login`.
+- **Provider-only tabs plus Overview.** Tab set and order: `Overview · OpenAI · Anthropic · Amp · xAI · Z.AI · Kimi · MiniMax`. There are no agent tabs and no Instance tab. Usage and quota are per-provider-account concepts; one agent (for example `claude`) can be routed through several providers (Anthropic, Z.AI, MiniMax, Kimi), so each tab is the provider/account and the focused pane maps to whichever provider it is routed through. Each provider tab shows the single forwarded account for that provider in the running instance.
+- **Use the shared tab component.** The overlay renders its tabs with <RepoFile path="crates/jackin-tui/src/components/tab_strip.rs" /> (the same `TabStrip` used by the settings and workspace-editor surfaces), not a hand-built strip. It adopts that component's focus model: a green underline marks the tab bar as focused and `Left`/`Right` switch provider; `Tab` moves focus into the content (the underline turns white) where the operator scrolls; `Tab` or `Esc` returns focus to the strip.
+- **No per-dialog footer.** The overlay does not draw its own key-hint line. It uses the standard hint bar (<RepoFile path="crates/jackin-tui/src/components/hint_bar.rs" /> with a usage keymap, the same mechanism as every other Capsule dialog), rendered below the modal.
+- **Meters show remaining, full width.** Every quota bar spans the full available width of the dialog and is filled in proportion to the quota that REMAINS, so a fully-available bucket is a full bar. This is deliberate: the filled length is the at-a-glance signal of how much is left. MiniMax (which the provider reports as percent-used) is normalized to remaining like every other provider — a `0% used` bucket renders as `100% left` with a full bar, never an empty one.
+- **Stacked meter lines.** Under each bar, `N% left` and `N% in reserve` are on separate lines on the left; the reset countdown and `Lasts until reset` are stacked on the right, matching CodexBar.
+- **Per-provider section sets.** A tab renders only the sections that provider actually has (for example Codex's Spark buckets, Limit Reset Credits, and Credits; Claude's Sonnet, Daily Routines, and conditional Extra usage; Z.AI's Tokens/MCP/5-hour; Amp's Credits balance). No uniform scaffold is drawn on tabs that lack a section.
+- **Removed from the overlay** (see Implementation plan → Cleanup): the per-message cost/spend grid (Today / 30d cost / 30d tokens / Latest tokens), the history sparkline, the `Top model` line, the spend provenance line, the Instance tab and its ledger, and the account-action rows (Buy Credits, Cost, Subscription Utilization, Add Account, Usage Dashboard, Status Page). The overlay shows account quota only.
+- **Headers carry provider and account identity.** Provider name on the left, account label on the right; the second line carries freshness (`Updated Nm ago`) on the left and plan on the right. Where account identity is unknown, render `account unavailable` rather than a blank.
+- **Read-only and honest.** Capsule never writes host credentials, imports cookies, scrapes dashboards, or refreshes-and-rewrites host auth files. A snapshot that cannot be trusted degrades to an explicit `stale`, `needs login`, `needs secret`, `unsupported`, or `usage unavailable` state — never a fabricated number.
 
-The first implementation pass has landed the read-only Capsule surface, normalized protocol shape, daemon cache, and provider adapters for every priority provider that currently has a safe non-browser extraction path. It is not yet the final persistent telemetry system described by this roadmap item.
+## Overlay previews (binding look-and-feel)
 
-Implemented:
+These previews are the canonical contract for what the overlay must render: the same sections in the same order, the same labels, full-width remaining bars, stacked meter lines, the shared tab bar, and the standard hint bar below the modal. Only the exact box-drawing characters are illustrative. A rendered overlay that does not read like these previews is not done. Numbers are representative.
 
-- `jackin-protocol` now has `UsageFocused` / `UsageRefreshFocused`,
-  `UsageAccountList`, `UsageWorkspace`, and `UsageSession` control messages.
-  It exposes normalized `FocusedUsageView`, `AccountUsageSnapshotView`, and
-  `UsageSummaryView` responses for Capsule and future surfaces.
-- `jackin-capsule` owns a daemon-side `UsageCache` with a five-minute TTL.
-  Capsule redraws render cached snapshots only; the TUI never polls provider
-  APIs directly.
-- The cache performs read-only local discovery for Claude Code, Codex, Amp,
-  Grok Build, Kimi, GLM/Z.AI, MiniMax, and OpenCode. It detects local auth
-  presence, provider API-key presence, account labels when they are available
-  without secrets in logs, and bounded local token totals from known session/log
-  directories.
-- Focused usage status labels include the account identity when the provider
-  adapter exposes one safely; unavailable identities render as
-  `account unavailable`.
-- The active-agent status bar compacts usage before it truncates away quota:
-  tight layouts drop branch/repository context before losing provider plus
-  remaining quota or lifecycle state.
-- Quota buckets expose reserve/deficit/run-out pace labels for Claude, Codex,
-  GLM/Z.AI, Kimi, and MiniMax windows when reset time and window duration are
-  known.
-- Capsule renders quota meters from the normalized bucket value shape, not only
-  from a fixed Codex/Claude label list. Provider-specific rows such as
-  `Token quota`, `Time / MCP quota`, `Amp Free`, Kimi rate-limit windows, and
-  MiniMax coding-plan model buckets keep the same meter/remaining/reset/pace
-  layout as CodexBar-style buckets.
-- Claude `Extra usage` renders as a CodexBar-style used-cap bucket: a used
-  meter, `Monthly cap: <used> / <limit>`, currency-code-first amounts such as
-  `SGD 78.49`, and the visible used percentage.
-- The daemon keeps CodexBar-style last-known-good account limits on stale
-  provider refreshes: fresh buckets are copied into the stale snapshot, marked
-  stale, and still feed the active-tab status label so transient network/API
-  failures do not erase visible quota context.
-- The generic Capsule usage dialog renders history bars plus an instance
-  accounting section: instance label, age, workspace, total spend/tokens/sample
-  provenance counts, per-codename rows, and per-provider/account rows. Those
-  provider/account rows keep exact, estimated, and unpriced samples separate so
-  unpriced traffic is never silently folded into estimated cost.
-- The `Instance` tab renders spend, token, latest-token, `Exact cost rows`,
-  `Estimated rows`, `Unpriced rows`, and `Top model` values as distinct paired
-  fields, matching the roadmap preview instead of compressing those values into
-  a single generic row.
-- The usage dialog separates provider/account tabs from an `Instance` tab.
-  Provider tabs remain account-wide CodexBar-style views; the `Instance` tab
-  shows since-start jackin' instance totals, per-codename rows, and
-  per-provider/account rows.
-- Provider tabs now follow the roadmap/CodexBar display order: `Codex`,
-  `Claude`, `Amp`, `Grok Build`, `GLM / Z.AI`, `Kimi`, then `MiniMax`. This is
-  only the visual order; it does not change the provider-adapter implementation
-  priority.
-- The `Overview` tab renders each provider as structured preview lines instead
-  of a flattened account/status sentence, keeping provider label, account
-  identity, plan, and status/quota summary visually separate.
-- The daemon records the session id on each agent codename, stamps closed/exited
-  lifecycle state, and keeps closed-tab codenames queryable in the usage
-  snapshot.
-- The `Instance` tab renders each agent codename as preview-style structured
-  lines: codename, provider, account identity, tab/pane lineage, last activity,
-  since-start tokens, since-start cost, top model, and lifecycle stay separate
-  instead of being parsed again from a flattened spend sentence.
-- The `Instance` tab also renders per-provider/account rows as structured
-  preview lines: provider, account identity, plan, since-start tokens,
-  since-start cost, top model, and exact-vs-estimated provenance stay visible
-  separately for each account touched by this jackin' instance.
-- Runtime usage samples stamp the safe account identity and plan label from the
-  daemon usage cache when available. The `Instance` tab prefers that sampled
-  identity for per-codename and per-provider/account rows, so old samples do not
-  silently follow a later account switch.
-- Claude Code / Anthropic reads `~/.claude.json` OAuth credentials and calls
-  the provider usage endpoint with hard timeouts. It maps session, weekly,
-  Sonnet, Opus, Daily Routines, and Extra usage buckets when the endpoint is
-  available, and degrades to stale local log estimates without refreshing or
-  writing host credentials. `jackin-capsule usage claude-cli` is an explicit
-  operator diagnostic fallback that runs `claude -p /usage` on demand and
-  returns the raw CLI output/status as JSON; daemon refreshes never use it.
-- Codex / OpenAI first probes `codex app-server` through daemon-owned JSON-RPC
-  with startup/request timeouts and a 30-minute launch-failure cooldown, then
-  falls back to `$CODEX_HOME/auth.json` or `~/.codex/auth.json` plus the OAuth
-  usage endpoint for session, weekly, Codex Spark, and credits buckets.
-  Refresh-token repair is deliberately outside Capsule because it would write
-  host-synced auth state.
-- Amp uses the managed one-shot `amp --no-color usage` command with a hard
-  timeout and child cleanup, then maps Amp Free and individual credits buckets.
-  Browser-cookie/settings scraping remains disabled in Capsule.
-- Grok Build detects local `~/.grok/auth.json`, `XAI_API_KEY`, or
-  `GROK_DEPLOYMENT_KEY`, then probes `grok agent stdio` through daemon-owned
-  ACP JSON-RPC with startup/request timeouts. It calls the `x.ai/billing`
-  extension method without slash escaping, and maps returned credits, included
-  usage, on-demand usage, reset windows, and billing caps. If the installed CLI
-  does not expose billing, Capsule falls back to local `~/.grok/sessions`
-  signals and reports an honest unsupported quota row. Browser-cookie billing
-  import remains disabled.
-- Managed provider child probes now share a launch cooldown gate, so repeated
-  Codex app-server or Grok ACP start/request failures back off for 30 minutes
-  instead of repeatedly spawning CLIs on every cache refresh.
-- GLM/Z.AI calls the API-token quota endpoint using `ZAI_API_KEY`,
-  `Z_AI_API_KEY`, or the jackin' provider key. Its usage probe accepts
-  `ZAI_QUOTA_URL` / `Z_AI_QUOTA_URL` full endpoint overrides or
-  `ZAI_API_HOST` / `Z_AI_API_HOST` host overrides, and strips Claude-compatible
-  path suffixes before building the quota URL. It maps short and long token
-  windows, time/MCP limits, reset times, and plan labels.
-- Kimi reads an explicit `KIMI_AUTH_TOKEN` / `kimi_auth_token`, a non-expired
-  local Kimi Code OAuth token, or the jackin' provider key, then calls the Kimi
-  For Coding billing endpoint for weekly quota and rate-limit buckets. Expired
-  local OAuth tokens are skipped instead of triggering avoidable 401 probes, and
-  browser-cookie import is not automatic.
-- MiniMax uses `MINIMAX_CODING_API_KEY`, a jackin' provider key, or
-  `MINIMAX_API_KEY` against the token-plan/coding-plan remains APIs. The usage
-  probe accepts `MINIMAX_API_HOST` / `MINIMAX_HOST` host overrides and strips
-  Claude/OpenAI-compatible path suffixes before building remains URLs. It maps
-  coding-plan windows, weekly windows, reset times, plan labels, and points
-  balance when returned.
-- Prefix `u`, the palette `Usage` command, and the refresh key inside the
-  overlay are wired through Capsule's dialog system. Refresh replaces the
-  dialog with a forced cache refresh; it does not launch unmanaged background
-  provider CLIs from the renderer.
-- The Usage overlay now renders usage-specific rows instead of generic debug
-  rows: focused agent/provider, account, plan, status, block-style quota meters,
-  reset/pace labels, provider tabs, today and 30-day spend, token totals,
-  provenance, provider status, and error detail. `Tab` / `Shift+Tab` switch the
-  visible provider by requesting the corresponding daemon-cached snapshot. At
-  `<64` columns the provider detail view switches to the roadmap list layout:
-  it hides the tab strip and history histogram, renders quota buckets as compact
-  text rows, and keeps account identity, plan, freshness, and headline quota
-  labels visible instead of clipping full-width meters.
-- The active-tab bottom chrome can show the focused agent's usage/status label
-  from the daemon cache. It selects the most constrained fresh quota bucket, so
-  a weekly window with less remaining headroom beats a healthier session
-  window. If no trustworthy quota percentage exists, it renders lifecycle text
-  such as `Codex cached`, `Amp login`, or `Kimi unsupported` instead of
-  inventing remaining quota.
-- The Capsule daemon materializes normalized cached usage snapshots to
-  `/jackin/run/usage/accounts.json` with tmp+rename atomicity. This is a
-  read-only bridge for future in-container consumers that can only read files;
-  Capsule remains the refresh owner and the bridge never stores prompts,
-  completions, provider tokens, or browser cookies.
-- The Capsule daemon also upserts normalized quota buckets into
-  `/jackin/state/usage/telemetry.db`, a Turso-backed structured cache with
-  the roadmap `account_usage_snapshots` and `usage_samples` schema,
-  schema-version metadata, and SHA-256 account-key hashes derived from
-  non-secret account identity labels. The current writer persists account quota
-  snapshots and local-log usage samples for the providers that already have
-  local spend scanners; raw prompts, completions, provider tokens, and browser
-  cookies are not stored.
-- The local-log scanner now emits normalized `usage_samples` rows from JSONL or
-  JSON records with token fields. Rows carry provider, model, token-input,
-  token-output, cache-read, cache-write, timestamp, optional exact USD cost when
-  the source record exposes an explicit USD field, and a SHA-256 source hash for
-  dedupe across bounded refreshes. The scanner also records file path, size,
-  mtime, byte offset, and line offset in `usage_scan_files`, so unchanged logs
-  are skipped and append-only logs read only complete new records.
-- The Capsule daemon now also inspects PTY output chunks for token-bearing JSON
-  and server-sent-event `data:` records emitted by launched agents. Matching
-  records are stored as `usage_samples` with the active session id, workspace
-  path, provider label, model, token split, optional exact USD cost when
-  present in the record or a conservative API-list-rate estimate for verified
-  Claude/Codex/OpenAI/xAI, GLM/Z.AI, Kimi, and MiniMax models, and a SHA-256
-  source hash. OpenAI Responses / Chat usage detail records with
-  `cached_tokens` are parsed as cached input without double-billing those tokens
-  in estimates. Anthropic streaming records retain the last observed stream
-  model from `message_start` so later `message_delta` usage rows without a model
-  can still price output tokens against the verified Claude model. The parser
-  also accepts common snake_case and camelCase token fields such as
-  `inputTokens`, `promptTokens`, `completionTokens`, `cachedInputTokens`,
-  `cacheReadInputTokens`, and `totalTokens`, plus model aliases such as
-  `modelName`, `model_id`, and `modelAlias`, so GLM/Z.AI, Kimi, and MiniMax
-  structured records can be attributed when their CLIs emit those shapes. The
-  focused usage overlay prefers those session-attributed samples for the
-  spend/tokens strip when present.
-- Runtime and local-log samples keep exact provider-reported USD fields ahead
-  of estimates. If no explicit cost exists, the daemon estimates only when it
-  has a verified first-party price table for the provider/model and a token
-  split that matches known input, output, cached-input, and cache-write rate
-  categories. Unknown model prices remain unset rather than invented. Amp
-  remains exact-cost-only unless the local source exposes a cost field, because
-  Amp's own pricing passes through upstream providers for individual/team plans
-  but enterprise usage can carry a 50% uplift that Capsule cannot infer from a
-  token sample alone. Cached usage summaries now carry exact-cost,
-  price-table-estimated, and unpriced sample counts so the overlay can label
-  which spend numbers came from provider-reported USD and which were computed.
-- A daemon-owned focused-usage refresh ticker keeps the cache, status chrome,
-  `/jackin/run/usage/accounts.json`, and `/jackin/state/usage/telemetry.db`
-  warm on a bounded cadence. Provider adapters still respect the cache TTL,
-  managed-CLI launch cooldowns, request timeouts, and stale/error states; the
-  renderer does not poll providers.
-- A separate daemon-owned account refresh ticker warms the supported provider
-  tabs for the focused Capsule daemon through the same cache path. This keeps
-  provider switching and the materialized account bridge closer to current
-  state without letting the renderer or dialog rows call provider APIs.
-- The Capsule control channel builds usage replies inside the daemon loop after
-  decoding the request. `UsageRefreshFocused` now forces the cache refresh path,
-  `UsageAccountList` returns cached account quota rows, and `UsageWorkspace` /
-  `UsageSession` return token/cost summaries from cached samples. These APIs are
-  cache reads; they do not let clients poll providers directly.
-- `jackin-capsule usage accounts`, `jackin-capsule usage workspace
-  [workspace] [--window-seconds N]`, and `jackin-capsule usage session
-  <session_id> [--window-seconds N]` expose those cached account and sample
-  summaries as JSON for diagnostics and future surfaces. `jackin-capsule usage
-  claude-cli` is separate from those cache reads because it explicitly launches
-  Claude Code for debugging missing OAuth snapshots.
-- The host `jackin usage <instance> accounts|workspace|session` command now
-  reads the same Capsule daemon cache through the existing host-to-Capsule
-  socket bridge, with Docker-exec fallback for Docker Desktop. It renders a
-  compact human diagnostic view or the shared protocol structs in a stable JSON
-  envelope. The host command does not poll providers, launch provider CLIs, or
-  mutate host credentials.
-- `jackin usage <instance> accounts --sync-host-cache` explicitly upserts the
-  returned account/quota rows into the Turso host-global cache at
-  `~/.jackin/data/daemon/accounts.db`. This is an operator-triggered bridge for
-  diagnostics and future host surfaces; automatic cross-instance provider
-  refresh still waits for the long-running host daemon.
-- `jackin usage cache accounts` reads that host-global account cache without a
-  running Capsule daemon. Missing cache files return an empty table instead of
-  creating host state, and cache reads never poll providers or launch provider
-  CLIs.
-- Unit coverage exists for the protocol round trip, prefix binding, local token
-  scanner, branch/status chrome usage text, and the existing Capsule snapshot
-  paths touched by the change.
-
-Still open:
-
-- Grok Build needs continued upstream monitoring. The safe ACP billing probe is
-  implemented, but a local redacted probe did not return usable billing data
-  from the installed CLI, and xAI's public docs currently document ACP for
-  Grok Build plus API-team rate-limit/management surfaces rather than a stable
-  consumer billing endpoint for Capsule to call directly.
-- The shared Token & Cost Telemetry data plane still needs future model-name
-  pricing coverage, any provider-specific structured runtime event contracts
-  beyond the common token fields now parsed for Claude/OpenAI/GLM/Z.AI/Kimi/
-  MiniMax-style records, and the host-global account refresh daemon. The Capsule cache,
-  `/jackin/run/usage/accounts.json` materialized file, and
-  `/jackin/state/usage/telemetry.db` account/sample store are conservative local
-  bridges, not the final host-global telemetry store.
-- The current overlay now uses a usage-specific Ratatui snapshot and rendered-line
-  geometry so CodexBar-style sections, block quota meters, history bars, and long
-  instance ledgers size and scroll from the actual visible lines.
-- CodexBar screenshot parity is still open for richer per-provider
-  status/dashboard action rows, provider-specific fields that have no safe
-  extractor yet, and any future high-fidelity meter styling. Account-wide
-  provider tabs and the since-start `Instance` tab already carry top model,
-  compact history bars, active-agent time, spend/tokens, account identity, and
-  exact/estimated/unpriced provenance where the daemon has data.
-- Runtime-stream samples are now stamped with the Capsule instance id and can be
-  queried by instance without mixing another jackin' run in the same workspace.
-  Local provider log samples remain account/workspace-level unless they can be
-  bounded safely to the current instance lifetime without double-counting
-  runtime stream samples.
-- Active-agent-time and top-model aggregation for the whole instance have landed
-  for cached runtime samples. The remaining accuracy gap is bounded attribution
-  for provider-local logs that do not carry a Capsule instance id.
-
-The current partial implementation preserves host safety: it does not write
-host files, does not import browser cookies, does not repair accounts from
-Capsule, and does not run hidden provider CLIs. Any future authoritative adapter
-that needs host-side credentials must keep those reads explicit and must surface
-write-capable repair paths outside Capsule.
-
-## References
-
-Primary references:
-
-- [CodexBar](https://github.com/steipete/CodexBar) — menu-bar provider quota
-  dashboard, reset windows, spend scans, status-page badges, and provider tabs.
-- [CodexBar provider source overview](https://github.com/steipete/CodexBar/blob/main/docs/providers.md)
-  — ordered fetch strategies for Codex, Claude, Amp, OpenCode, and other
-  providers.
-- [CodexBar Claude provider notes](https://github.com/steipete/CodexBar/blob/main/docs/claude.md)
-  — Claude OAuth credential source order (`~/.claude/.credentials.json`, Keychain
-  `Claude Code-credentials`), usage endpoint headers, and tier mapping. Verified
-  on-host 2026-06-19 against the live `api.anthropic.com/api/oauth/usage` 200
-  response (`five_hour`/`seven_day`/`seven_day_sonnet`/`extra_usage`).
-- [CodexBar Codex provider notes](https://github.com/steipete/CodexBar/blob/main/docs/codex.md)
-  and [CodexBar Codex OAuth notes](https://github.com/steipete/CodexBar/blob/main/docs/codex-oauth.md)
-  — Codex `app-server` JSON-RPC (`account/read`, `account/rateLimits/read`), the
-  `chatgpt.com/backend-api/wham/usage` OAuth path, `ChatGPT-Account-Id` header,
-  `additional_rate_limits` Spark mapping, and the refresh-token flow Capsule
-  deliberately does not run. Verified on-host 2026-06-19 against the live
-  `wham/usage` 200 response (`plan_type: pro`, `primary`/`secondary_window`,
-  `GPT-5.3-Codex-Spark`). The "Verification Findings And Remaining Work" section
-  records the full CodexBar source-file mapping (`ClaudeOAuthCredentials.swift`,
-  `ClaudeOAuthUsageFetcher.swift`, `CodexOAuthCredentials.swift`,
-  `CodexOAuthUsageFetcher.swift`, `CodexAdditionalRateLimitMapper.swift`,
-  `CodexTokenRefresher.swift`, `UsagePace.swift`).
-- [CodexBar provider authoring guide](https://github.com/steipete/CodexBar/blob/main/docs/provider.md)
-  — descriptor-driven provider architecture, capabilities, fetch strategies, and
-  identity boundaries.
-- [CodexBar releases](https://github.com/steipete/CodexBar/releases) — recent
-  provider-specific quota lane changes such as separate Codex Spark 5-hour and
-  weekly rows.
-- [xAI Grok Build getting started](https://docs.x.ai/build/overview) —
-  confirms Grok Build supports the interactive TUI, headless operation, and
-  Agent Client Protocol integration.
-- [xAI API rate limits](https://docs.x.ai/developers/rate-limits) and
-  [xAI Management API](https://docs.x.ai/developers/management-api-guide) —
-  current public API surfaces for API-team limits, keys, and management. These
-  are not a consumer Grok Build billing endpoint, so Capsule keeps browser/web
-  billing import behind future explicit opt-in.
-- [Z.AI Usage Query Plugin](https://docs.z.ai/devpack/extension/usage-query-plugin)
-  — official GLM Coding Plan usage plugin path that confirms quota/usage
-  querying belongs to the supported coding-tool surface.
-- [MiniMax Token Plan FAQ](https://platform.minimax.io/docs/token-plan/faq) —
-  confirms the token-plan remains endpoint, subscription-key separation from
-  pay-as-you-go API keys, and 5-hour/weekly quota windows used by the MiniMax
-  adapter.
-
-Existing jackin' roadmap inputs:
-
-- [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) — canonical
-  data model for `UsageSample`, `AccountUsageSnapshot`, source confidence,
-  snapshot status, daemon cache, and usage endpoints.
-- [jackin' Capsule control plane](/reference/roadmap/jackin-capsule/) — Capsule
-  status chrome, prefix-key vocabulary, attach/control protocol, and
-  multiplexer layout constraints.
-- [jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) —
-  broader macOS menu-bar and desktop account views. Desktop may show all
-  accounts by default; Capsule defaults to the focused pane.
-
-## Research Snapshot
-
-CodexBar already models the feature shape jackin' needs: each provider has a
-descriptor, one or more ordered fetch strategies, normalized quota buckets,
-local token/cost scans, provider status rows, and explicit stale/error states.
-The useful reference is the architecture and source mapping, not the Swift UI.
-
-Local non-secret probes on the operator machine confirm the implementation can
-start from real installed CLIs and read-only account/session locations:
-
-| Priority | Surface | Local evidence | First implementation source |
-|---|---|---|---|
-| 1 | Claude Code / Anthropic | `claude` CLI is installed; `~/.claude/projects` exists; `~/.claude.json` can hold OAuth usage credentials | Implemented: OAuth usage endpoint first, local Claude JSONL logs for workspace spend, explicit `jackin-capsule usage claude-cli` diagnostic fallback for `/usage` |
-| 2 | Codex / OpenAI | `codex` CLI is installed; `~/.codex/auth.json` and `~/.codex/sessions` exist; redacted local probe confirms `account/rateLimits/read` returns primary, secondary, credits, and plan fields | Implemented: `codex app-server` RPC first, OAuth usage endpoint fallback from Codex auth cache, plus local session spend |
-| 3 | Amp | `amp` CLI is installed; `~/.local/share/amp/secrets.json` and `threads/` exist | Implemented: one-shot `amp --no-color usage` under daemon timeout; local thread metadata for activity; web settings fallback disabled in Capsule |
-| 4 | Grok Build | `grok` CLI is installed; local `~/.grok/sessions/**/signals.json` files exist; public xAI docs confirm ACP support; local redacted billing probe did not return usable quota data | Implemented safe path: `~/.grok/auth.json`, `XAI_API_KEY`, or `GROK_DEPLOYMENT_KEY` presence gates `grok agent stdio` ACP billing first, then local identity/session signals fallback; web billing fallback disabled unless a future explicit opt-in is designed |
-| 5 | GLM / Z.AI | Provider exists in the jackin' provider registry as `Zai`; operator-provided API credentials verified the quota endpoint with a redacted one-shot probe | Implemented: API-token quota endpoint using `ZAI_API_KEY`, `Z_AI_API_KEY`, or the jackin' provider key; `ZAI_QUOTA_URL` / `Z_AI_QUOTA_URL` and `ZAI_API_HOST` / `Z_AI_API_HOST` override support for quota probes |
-| 6 | Kimi | `kimi` CLI is installed; `~/.kimi-code` and `~/.kimi` config directories expose OAuth token fields | Implemented: Kimi For Coding billing endpoint via explicit env token, non-expired local Kimi Code OAuth token, or jackin' provider key; no automatic browser-cookie import |
-| 7 | MiniMax | Provider exists in the jackin' provider registry as `Minimax`; operator-provided subscription-key credentials verified the token-plan remains endpoint with a redacted one-shot probe | Implemented: coding-plan API token first, provider key or standard MiniMax API token second; `MINIMAX_API_HOST` / `MINIMAX_HOST` host override support for remains probes; browser/web fallback disabled in Capsule |
-
-Local verification on June 12, 2026:
-
-- Claude Code `claude -p /usage` returned subscription-backed session, weekly
-  all-models, and Sonnet quota rows; the explicit `jackin-capsule usage
-  claude-cli` diagnostic captured the same raw output successfully on this
-  host.
-- Codex `codex -s read-only -a untrusted app-server` accepted the JSON-RPC
-  initialization flow and returned `account/rateLimits/read` rows with
-  `rateLimits` and `rateLimitsByLimitId` plus account metadata from
-  `account/read`; the redacted probe saw eight quota windows, matching the
-  adapter's app-server-first strategy.
-- Amp `amp --no-color usage` returned signed-in identity plus Amp Free and
-  individual-credit balances, matching the CLI parser.
-- Kimi Code has valid local config files, but both discovered local OAuth token
-  files are expired. The earlier redacted Kimi billing probe returned HTTP 401;
-  Capsule now skips expired local OAuth tokens, so authoritative quota still
-  needs a refreshed Kimi login/token or provider key before it can be verified
-  on this host.
-- Grok Build CLI is installed and `grok agent stdio` accepted the JSON-RPC
-  initialization flow, but the `x.ai/billing` method returned `Method not
-  found` on the installed CLI. Capsule can verify ACP reachability locally and
-  now treats local auth, `XAI_API_KEY`, and `GROK_DEPLOYMENT_KEY` as safe
-  non-secret credential presence signals, but still needs upstream
-  billing-method support before authoritative quota rows can be extracted.
-- GLM/Z.AI credentials from the operator's ChainArgos 1Password vault verified
-  the official quota endpoint with a redacted one-shot probe:
-  `GET https://api.z.ai/api/monitor/usage/quota/limit` returned HTTP 200,
-  `success: true`, `code: 200`, and a `data` object containing `level` and
-  `limits`. This confirms the adapter's `ZAI_API_KEY` /
-  `Z_AI_API_KEY` API-token path on this host.
-- MiniMax credentials from the operator's ChainArgos 1Password vault verified
-  the official token-plan endpoint with a redacted one-shot probe:
-  `GET https://api.minimax.io/v1/token_plan/remains` returned HTTP 200 with
-  `status_code: 0` and two `model_remains` rows. The coding-plan alias at
-  `https://api.minimax.io/v1/api/openplatform/coding_plan/remains` returned the
-  same success shape. The `api.minimaxi.com` aliases rejected the same key, so
-  the adapter's default `api.minimax.io` ordering is the verified path.
-
-The current jackin' provider matrix matters for the UI. Claude and OpenCode can
-run on Anthropic, GLM/Z.AI, MiniMax, and Kimi. Codex can run on OpenAI and
-MiniMax today; GLM/Z.AI and Kimi are not Codex-compatible in the current
-adapter matrix because their APIs do not expose the Responses surface Codex
-expects. Capsule must show those combinations as `unsupported` instead of
-pretending a quota exists.
-
-## Extraction And Caching Plan
-
-Telemetry extraction belongs in the host daemon and shared telemetry layer from
-[Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/). Capsule
-renders cached snapshots only.
-
-### Provider Strategy Order
-
-Each provider adapter should expose ordered candidates and a normalized failure
-reason so the daemon can show `needs login`, `needs secret`, `unsupported`, or
-`stale` without knowing provider internals:
-
-| Provider | Candidate order |
-|---|---|
-| Claude Code / Anthropic | Authoritative account API/OAuth snapshot -> local JSONL spend scanner -> CLI PTY `/usage` only when manually requested or debugging |
-| Codex / OpenAI | `codex app-server` account/rate-limit RPC -> OAuth usage endpoint from `~/.codex/auth.json`/`$CODEX_HOME/auth.json` -> optional web dashboard extras when explicitly enabled -> local JSONL spend scanner |
-| Amp | `amp usage` one-shot if stable -> Amp settings/web quota source when explicitly enabled -> local Amp thread/session metadata for activity only |
-| Grok Build | Read-only auth cache identity -> `grok agent stdio` ACP billing RPC -> local `~/.grok/sessions` signals -> web billing fallback when explicitly enabled |
-| GLM / Z.AI | API-token quota endpoint only; no browser-cookie fallback |
-| Kimi | Kimi For Coding billing endpoint from explicit auth token/cookie source -> local Kimi Code activity/spend scanner if a stable format is confirmed |
-| MiniMax | Coding-plan API token -> standard MiniMax API token -> web/session fallback when explicitly enabled -> billing-history endpoint for 30-day trend when available |
-
-Local scanners must be incremental. Cache by canonical file path, mtime, size,
-and parsed offset where the log format allows it. Recompute aggregate cost/token
-rollups from cached records, not by rescanning every JSONL file on each status
-bar redraw. A practical floor is one cost-scan refresh per minute; account quota
-refreshes should default to every five minutes unless a provider imposes a
-longer safe interval.
-
-### Refresh Policy
-
-- Default automatic refresh: `5m`.
-- Supported operator choices: manual-only, `1m`, `2m`, `5m`, `15m`, `30m`.
-- Manual refresh always schedules a provider refresh but immediately returns the
-  last cached snapshot to Capsule.
-- Failed background child launches cool down before retrying; use a `30m`
-  cooldown for Codex-style app-server launch failures unless provider evidence
-  says otherwise.
-- HTTP fetches need hard request/resource timeouts. CodexBar uses a `30s`
-  request timeout and `90s` resource timeout as a reasonable default; providers
-  with short RPC probes can use smaller timeouts such as Grok's billing probe.
-- Child processes started for probes must be killed on timeout or daemon
-  shutdown. Do not leave hidden CLIs running after Capsule closes.
-- Stale data remains visible with `stale` and `updated Xm ago` labels. Empty
-  data plus an error becomes a state row, not a blank meter.
-- Browser-cookie import, Keychain access, dashboard scraping, and account repair
-  are never background defaults. They require an explicit operator-controlled
-  action outside Capsule.
-
-### Provider Buckets
-
-Provider adapters should emit display-ready bucket labels, units, limits,
-remaining percentages, reset times, and provenance labels:
-
-| Provider | Target buckets and metadata |
-|---|---|
-| Claude Code / Anthropic | `Session`, `Weekly`, model buckets such as `Sonnet`/`Opus`, `Daily Routines`, `Extra usage`; account plan such as `Max`; spend from local Claude logs with API-rate estimate provenance |
-| Codex / OpenAI | `Session`, `Weekly`, `Codex Spark 5-hour`, `Codex Spark Weekly`, `Credits`; account plan such as `Pro 20x`; spend from local Codex sessions; optional web-only extras like code-review/credits history stay lower priority |
-| Amp | `Amp Free`, balance/credits, reset or time-to-full, and login/cookie state; spend only if the CLI exposes a stable source |
-| Grok Build | subscription credits/window, included quota, reset at billing period, local session tokens, top model, and status link for `status.x.ai` when status telemetry exists |
-| GLM / Z.AI | token quota, time/MCP quota, session/5-hour token limit, `usageDetails` model breakdown, and `nextResetTime`; API-token source only |
-| Kimi | Kimi For Coding weekly quota, 5-hour rate limit, membership/tier label when available, local activity if confirmed |
-| MiniMax | coding-plan remains, token-plan remains, window/reset, 30-day billing/token trend, top model/method when billing history is available |
-
-The `Overview` tab, if enabled, should order providers by operator priority for
-this feature: Claude, Codex, Amp, Grok, GLM/Z.AI, Kimi, MiniMax, then any future
-providers. The selected tab should still default to the focused pane's actual
-agent/provider, even if that means jumping into the middle of the list.
-
-## Product Shape
-
-Capsule gets two surfaces:
-
-1. **Always-visible active-agent status signal.** A short focused-provider
-   usage summary in the status chrome for the active tab/pane. When an agent is
-   active and daemon data is available, the operator must be able to see both
-   current usage and remaining quota without opening the overlay.
-2. **Usage overlay.** Prefix `u` and palette action `Usage` open a modal with
-   CodexBar-style quota buckets, reset windows, spend/tokens, provenance,
-   freshness, and provider status for the focused agent.
-
-The default modal view is **focused provider only**. An overview tab may exist,
-but opening the overlay while focused in a Codex pane must answer "can this
-Codex account keep working?" before it answers anything about Claude, Amp, Kimi,
-or OpenCode.
-
-### Active-Agent Status Signal
-
-The status chrome is the first-class surface for active-agent usage. The overlay
-is for detail; the status bar is where the operator notices "I am almost out"
-before sending another expensive prompt.
-
-When the focused pane belongs to an agent, the status line must show:
-
-- provider;
-- account identity when known, or `account unavailable` when it is not;
-- current window name when useful (`Session`, `Weekly`, or provider-provided
-  active bucket);
-- remaining quota;
-- current usage when known;
-- reset countdown when there is room;
-- lifecycle state when data is stale, missing, or requires login.
-
-Preferred full form:
+### Overview
 
 ```text
-Provider · account Window: used / limit · remaining left · resets countdown
+┌ Usage ────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                        │
+│  ━━━━━━━━                                                                                 │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ OpenAI      19% left   Resets 13h 6m (21:26)                                              │
+│ Anthropic   55% left   Resets 1d 22h (July 1 at 16:26)                                    │
+│ Amp         100% left  Resets now                                                         │
+│ xAI         18% left   Resets 6d 15h (June 30 at 22:00)                                   │
+│ Z.AI        99% left   Resets 3d (June 27 at 15:00)                                       │
+│ Kimi        100% left  Resets 2m (15:17)                                                  │
+│ MiniMax     99% left    Resets 4d (June 28 at 12:00)                                       │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Examples:
+### OpenAI
 
 ```text
- jackin'  [Codex ●] [Shell]       main · Codex · alexey@chainargos.com Session: 63% used · 37% left · resets 1h21m
- jackin'  [Claude ●] [Shell]      feature/auth · Claude · alexey@chainargos.com Session: 84% used · 16% left · resets 46m
- jackin'  [Codex ●] [Shell]       docs · Codex · alexey@chainargos.com Weekly: 90% used · 10% left · resets 3h52m
- jackin'  [Codex ●] [Shell]       docs · Codex · alexey@chainargos.com stale · last 37% left · updated 24m ago
- jackin'  [Amp ●] [Shell]         main · Amp · account unavailable login
+┌ Usage ─────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                         │
+│             ━━━━━━                                                                         │
+├────────────────────────────────────────────────────────────────────────────────────────────┤
+│ OpenAI                                                               alexey@chainargos.com │
+│ Updated 1m ago                                                                     Pro 20x │
+├────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Session                                                                                    │
+│ ████████████████████████████████████████████████████████████████████████████████████████···│
+│ 97% left                                                                      Resets 19:45 │
+│ 33% in reserve                                                           Lasts until reset │
+│                                                                                            │
+│ Weekly                                                                                     │
+│ █████████████████··········································································│
+│ 19% left                                                            Resets tomorrow, 04:18 │
+│ 12% in reserve                                                           Lasts until reset │
+│                                                                                            │
+│ Codex Spark 5-hour                                                                         │
+│ ███████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                                     Resets 21:31 │
+│                                                                                            │
+│ Codex Spark Weekly                                                                         │
+│ ███████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                            Resets Jul 1 at 16:31 │
+├────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Limit Reset Credits                                              2 manual resets available │
+│ Next expires Jul 12 at 08:14                                                               │
+├────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Credits                                                                                    │
+│ ···························································································│
+│ 0 left                                                                           1K tokens │
+└────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Compact forms when space is tight:
+### Anthropic
 
 ```text
-Codex 63% used · 37% left
-Codex 37% left
-Codex stale
+┌ Usage ─────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                         │
+│                      ━━━━━━━━━                                                             │
+├────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Anthropic                                                            alexey@chainargos.com │
+│ Updated 2m ago                                                                         Max │
+├────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Session                                                                                    │
+│ █████████████████████████████████████████████████████████████████████████████████··········│
+│ 89% left                                                                      Resets 19:19 │
+│ 34% in reserve                                                           Lasts until reset │
+│                                                                                            │
+│ Weekly                                                                                     │
+│ ██████████████████████████████████████████████████·········································│
+│ 55% left                                                            Resets Jun 26 at 13:59 │
+│ 28% in reserve                                                           Lasts until reset │
+│                                                                                            │
+│ Sonnet                                                                                     │
+│ █████████████████████████████████████████████████████████████████████████████··············│
+│ 85% left                                                            Resets Jun 26 at 13:59 │
+│                                                                                            │
+│ Daily Routines                                                                             │
+│ ███████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                                                  │
+└────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Amp
+
+```text
+┌ Usage ────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                        │
+│                                  ━━━                                                      │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Amp                                                                    alexey@zhokhov.com │
+│ Updated 4m ago                                                                   Amp Free │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Amp Free                                                                                  │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                                    Resets 16:31 │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Credits                                                                                   │
+│ Individual credits: $4.94                                                                 │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### xAI
+
+```text
+┌ Usage ────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                        │
+│                                        ━━━                                                │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ xAI                                                                 alexey@chainargos.com │
+│ Updated 4m ago                                                                  SuperGrok │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Weekly                                                                                    │
+│ ████████████████··········································································│
+│ 18% left                                                            Resets Jul 1 at 07:00 │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Z.AI
+
+```text
+┌ Usage ────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                        │
+│                                              ━━━━                                         │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Z.AI                                                                alexey@chainargos.com │
+│ Updated 2m ago                                                                            │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Tokens                                                                                    │
+│ █████████████████████████████████████████████████████████████████████████████████████████·│
+│ 99% left                                                           Resets Jun 27 at 15:27 │
+│                                                                                           │
+│ MCP                                                                                       │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                          Resets Jul 13 at 15:27 │
+│ 0 / 100 (100 remaining)                                                                   │
+│                                                                                           │
+│ 5-hour                                                                                    │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                           Resets 5 hours window │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Kimi
+
+```text
+┌ Usage ────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                        │
+│                                                     ━━━━                                  │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Kimi                                                                alexey@chainargos.com │
+│ Updated 4m ago                                                                            │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Weekly                                                                                    │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                           Resets Jul 1 at 15:17 │
+│                                                                                           │
+│ Rate Limit                                                                                │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                                    Resets 17:17 │
+│ 86% in reserve                                                          Lasts until reset │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### MiniMax
+
+```text
+┌ Usage ────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                        │
+│                                                            ━━━━━━━                        │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ MiniMax                                                             alexey@chainargos.com │
+│ Updated 3m ago                                                                            │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ General · 5h                                                                              │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                                      Resets 28m │
+│                                                                                           │
+│ General · Weekly                                                                          │
+│ █████████████████████████████████████████████████████████████████████████████████████████·│
+│ 99% left                                                                        Resets 4d │
+│                                                                                           │
+│ Video                                                                                     │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                                      Resets 14h │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Status bar / compact signal
+
+The always-on signal lives in the branch context bar. It follows the focused pane's provider and account, shows that provider's most-constrained bucket (lowest remaining), and prefers remaining quota. It degrades to a lifecycle word when no trustworthy percentage exists, and elides gracefully on narrow terminals.
+
+Full form:
+
+```text
+ Branch · feature/auth · Claude · alexey@chainargos.com  Weekly: 45% used · 55% left · resets 1d 22h         5vvkqps1
+ Branch · docs · Codex · alexey@chainargos.com  Weekly: 81% used · 19% left · resets 13h 6m                  5vvkqps1
+ Branch · main · GLM / Z.AI  Tokens: 1% used · 99% left · resets 3d                                          5vvkqps1
+ Branch · main · Grok · alexey@chainargos.com  Weekly: 82% used · 18% left · resets 6d 15h                   5vvkqps1
+ Branch · main · MiniMax  General · Weekly: 1% used · 99% left · resets 4 days                                5vvkqps1
+ Branch · main · Kimi  Weekly: 0% used · 100% left · resets 2m                                               5vvkqps1
+ Branch · main · Amp · alexey@zhokhov.com  Amp Free: 0% used · 100% left · resets now                        5vvkqps1
+```
+
+Lifecycle states:
+
+```text
+ Branch · docs · Codex · stale · last 19% left · updated 24m ago        5vvkqps1
+ Branch · main · Amp · needs login                                       5vvkqps1
+ Branch · main · Kimi · needs token                                      5vvkqps1
+ Branch · main · MiniMax · unsupported                                   5vvkqps1
+ Branch · main · Claude · usage unavailable   (daemon disconnected)      5vvkqps1
+```
+
+Compact / elision (drop in order: reset countdown, branch/repo detail, current usage, then quota detail; keep provider plus remaining or state as long as possible):
+
+```text
+Claude Weekly 55% left
+Claude 55% left
+Claude stale
+Codex 19% left
 Amp login
 ```
 
 Rules:
 
-- The signal follows the focused tab/pane's provider and account. It never shows
-  a global average or a sibling agent's quota.
-- When both values are known, show both current usage and remaining quota. If
-  only one value fits, prefer remaining quota (`37% left`) because that is the
-  faster operational decision.
-- When no trustworthy percentage exists, show lifecycle state: `login`,
-  `secret`, `stale`, `unsupported`, or `unavailable`.
-- Color is advisory only. Text/glyph state must remain clear in monochrome and
-  low-color terminals.
-- If the daemon is disconnected, show `usage unavailable` in the overlay and
-  avoid a misleading percentage in the status line.
-- The signal is secondary to the active tab label and repository/branch context.
-  On tight terminals, elide in this order: reset countdown, branch/repository
-  detail, current usage, then quota detail. Keep provider plus remaining/state as
-  long as possible.
-- Shell tabs with no active agent do not show provider usage unless a child
-  agent/session is explicitly associated with the pane.
+- The signal follows the focused tab/pane's provider and account; never a global average or a sibling agent's quota.
+- When both values fit, show current usage and remaining; if only one fits, prefer remaining (`37% left`) because that is the faster operational decision.
+- When no trustworthy percentage exists, show the lifecycle word: `login`, `secret`, `stale`, `unsupported`, or `unavailable`.
+- If the daemon is disconnected, show `usage unavailable`; do not show a misleading percentage.
+- Shell tabs with no active agent show no provider usage.
+- Color is advisory only; the text/glyph state must remain clear in monochrome and low-color terminals.
 
-### Modal Layout
+## Quota buckets and rendering
 
-The overlay is a centered modal drawn by the existing Capsule overlay system.
-The visual model is CodexBar's provider popover compressed into a terminal:
-tabs at the top, account header, quota buckets, account-level cost/token summary,
-provenance, provider status, then a short key-hint footer. The tab set must
-distinguish provider-account state from the current jackin' instance ledger:
-
-- `Overview`: cross-provider summary and most-constrained signal.
-- `Instance`: this Capsule instance from creation/start time until now.
-- Provider detail tabs are provider/account tabs, not app-instance tabs:
-  `OpenAI / Codex`, `Anthropic / Claude`, `Amp`, `xAI / Grok`,
-  `GLM / Z.AI`, `Kimi`, `MiniMax`, and future providers when configured.
-
-Provider tabs answer account/subscription availability and account-wide recent
-usage exactly like the CodexBar screenshots: they are not scoped to this jackin'
-instance or to one launched app process. `Codex` means the OpenAI/Codex account
-surface, `Claude` means the Anthropic/Claude account surface, and the same rule
-applies to every other provider. The `Instance` tab answers what this one jackin'
-instance has consumed across all agent tabs and accounts while it has been
-running. Both views are required because they answer different operator questions.
-
-#### Codex Detail Preview
-
-```text
-┌─ Usage ────────────────────────────────────────────────────────────────┐
-│  Overview    Instance    Codex    Claude    Amp                       │
-├───────────────────────────────────────────────────────────────────────┤
-│ Codex                                      alexey@chainargos.com       │
-│ Updated just now                                      Pro 20x          │
-├───────────────────────────────────────────────────────────────────────┤
-│ Account availability                                                  │
-│                                                                       │
-│ Session                                                               │
-│ ████████████████▏······························                      │
-│ 37% left        10% in reserve              Resets in 1h 21m          │
-│                                                                       │
-│ Weekly                                                                │
-│ ███▏··········································                       │
-│ 10% left        8% in reserve               Resets in 3h 52m          │
-│                                                                       │
-│ Codex Spark 5-hour                                                    │
-│ █████████████████████████████████████████████████                     │
-│ 100% left                                  Resets in 5h               │
-│                                                                       │
-│ Codex Spark Weekly                                                    │
-│ █████████████████████████████████████████████████                     │
-│ 100% left                                  Resets in 7d               │
-├───────────────────────────────────────────────────────────────────────┤
-│ Account cost and tokens                                               │
-│ Today              $339.22       30d cost          $1,040.82          │
-│ 30d tokens         1.4B          Latest tokens     470M               │
-│                                                                       │
-│ ▁▁▃▆▁▁▄                                                              │
-│ Top model: gpt-5.5                                                    │
-│ Estimated from local Codex logs for the selected account              │
-├───────────────────────────────────────────────────────────────────────┤
-│ Source: provider authoritative · fresh · fetched 12s ago              │
-│ Status: partial degradation · updated 30m ago                         │
-│                                                                       │
-│ r Refresh       Tab Switch provider       Esc Close                   │
-└───────────────────────────────────────────────────────────────────────┘
-```
-
-#### Claude Detail Preview
-
-```text
-┌─ Usage ────────────────────────────────────────────────────────────────┐
-│  Overview    Instance    Codex    Claude    Amp                       │
-├───────────────────────────────────────────────────────────────────────┤
-│ Claude                                                            Max  │
-│ Updated just now                                                       │
-├───────────────────────────────────────────────────────────────────────┤
-│ Account availability                                                  │
-│                                                                       │
-│ Session                                                               │
-│ ███████▏······································                       │
-│ 16% left        On pace                     Resets in 46m             │
-│                                                                       │
-│ Weekly                                                                │
-│ ██████████▏··································                        │
-│ 22% left        12% in reserve             Resets in 17h 26m          │
-│                                                                       │
-│ Sonnet                                                                │
-│ ████████████████████████████████████████████▏                         │
-│ 98% left                                    Resets in 17h 26m         │
-│                                                                       │
-│ Daily Routines                                                        │
-│ █████████████████████████████████████████████                         │
-│ 100% left                                                             │
-│                                                                       │
-│ Extra usage                                                           │
-│ ████████████▏································                        │
-│ Monthly cap: SGD 78.49 / SGD 260.00        30% used                   │
-├───────────────────────────────────────────────────────────────────────┤
-│ Account cost and tokens                                               │
-│ Today              $1,254.11     30d cost          $5,859.42          │
-│ 30d tokens         10B           Latest tokens     1B                 │
-│                                                                       │
-│ ▁▁▁▂▁▁▂▄▁▁▁▄▃▃▃▃▁▁▃▇                                                │
-│ Top model: claude-sonnet-4-6                                          │
-│ Estimated from local Claude logs at API rates; token totals are local │
-├───────────────────────────────────────────────────────────────────────┤
-│ Source: local estimate · fresh · fetched 8s ago                       │
-│ Status: ok                                                            │
-│                                                                       │
-│ r Refresh       Tab Switch provider       Esc Close                   │
-└───────────────────────────────────────────────────────────────────────┘
-```
-
-**The previews in this item are the binding look-and-feel contract.** They are the canonical source of truth for what the overlay must render: the same sections in the same order (account header with provider on the left and account/plan on the right; `Account availability` with block quota meters carrying `N% left`, reserve/deficit/`On pace`, and `Resets in …`; the two-column `Account cost and tokens` grid; the history sparkline; `Top model`; the provenance line; and the `Source` / `Status` footer), with the same labels, the same column layout, and the same information density. Only the exact box-drawing characters are illustrative — the implementation uses existing Capsule overlay/dialog components and fits narrow terminals by collapsing columns before dropping important labels, but it must not omit, reorder, rename, or visually degrade the sections and fields shown here. A rendered overlay that does not read like these previews is not done. The same rule applies to the `Overview` and `Instance` previews above.
-
-#### Overview Tab Preview
-
-The `Overview` tab is optional for V1, but when present it summarizes known
-provider states without becoming the default landing page:
-
-```text
-┌─ Usage ────────────────────────────────────────────────────────────────┐
-│  Overview    Instance    Codex    Claude    Amp                       │
-├───────────────────────────────────────────────────────────────────────┤
-│ Focused agent: Codex · alexey@chainargos.com · Pro 20x                │
-│                                                                       │
-│ Codex       37% left     resets 1h21m      fresh · provider           │
-│ Claude      16% left     resets 46m        fresh · local estimate     │
-│ Amp         needs login  no trusted quota   needs auth                │
-│ Kimi        needs token  local auth stale    Kimi billing             │
-│ OpenCode    stale        updated 2h ago     local estimate            │
-│                                                                       │
-│ Most constrained: Amp needs login                                     │
-│                                                                       │
-│ Enter Provider detail       r Refresh focused       Esc Close         │
-└───────────────────────────────────────────────────────────────────────┘
-```
-
-The overview never replaces the focused-provider detail. It is a quick way to
-understand why the compact signal chose a warning state and what other known
-accounts look like.
-
-Every preview in this roadmap includes the same top-level navigation model:
-`Overview` for cross-provider account status, `Instance` for since-start
-jackin' instance accounting, and then provider/account tabs for account-level
-CodexBar parity. Provider tabs must not silently switch to instance-scoped values
-or per-process app values; the operator chooses `Instance` when they want the
-current jackin' run.
-
-#### Instance Tab Preview
-
-The `Instance` tab is required for CodexBar-level usefulness inside Capsule. It
-shows instance-lifetime spend and token attribution from the moment this jackin'
-instance started until now. It is separate from account quota so the operator can
-see both the shared subscription limit and the burn caused by this specific
-workspace/session.
-
-```text
-┌─ Usage ────────────────────────────────────────────────────────────────┐
-│  Overview    Instance    Codex    Claude    Amp                       │
-├───────────────────────────────────────────────────────────────────────┤
-│ Instance: jk-chainargos-codexbar                                      │
-│ Started 6h 42m ago                         Active agent time 5h 58m   │
-│ Workspace /Users/donbeave/Projects/jackin-project/test/codexbar/jackin│
-├───────────────────────────────────────────────────────────────────────┤
-│ Instance spend                                                        │
-│ Today              $762.13       Since start       $762.13            │
-│ Tokens since start 1.8B          Latest tokens     514M               │
-│ Exact cost rows    14           Estimated rows    221                 │
-│ Unpriced rows      3            Top model         gpt-5.5             │
-│                                                                       │
-│ ▁▁▃▆▁▁▄▂▁▃                                                           │
-│ Captured from Capsule runtime streams plus local provider logs        │
-├───────────────────────────────────────────────────────────────────────┤
-│ By agent codename                                                     │
-│ falcon-codex  Codex  alexey@chainargos.com  tab 1 pane 7  1m ago    │
-│               514M  $358.52  gpt-5.5  active                       │
-│ ember-claude  Claude alexey@chainargos.com  closed tab pane 9  12m  │
-│               428M  $404.61  claude-fable-5  closed                 │
-│ slate-amp     Amp    account unavailable    no priced samples yet    │
-├───────────────────────────────────────────────────────────────────────┤
-│ By provider/account                                                   │
-│ OpenAI / Codex · alexey@chainargos.com  514M since start  $358.52    │
-│ Anthropic / Claude · alexey@chainargos.com · Max  428M start $404.61 │
-│                                                                       │
-│ r Refresh       Tab Switch view       Esc Close                       │
-└───────────────────────────────────────────────────────────────────────┘
-```
-
-The numbers must be scoped to the current instance id, not global host usage.
-If the same OpenAI or Anthropic account is used in another jackin' instance, those
-samples stay out of this tab unless the operator explicitly switches to a future
-host-global view. Rows must carry cost provenance so exact provider-reported USD,
-provider points/credits, and price-table estimates are never presented as the same
-kind of money.
-
-Closed agent tabs remain part of the `Instance` ledger. Closing a tab only changes
-that agent codename's lifecycle state to `closed` / `exited`; it must not delete
-its usage rows from the since-start analysis. The codename is the stable join key
-for per-agent accounting after tab labels, pane ids, or visible tabs disappear.
-Every row that names usage must also show the account identity when Capsule can
-obtain it safely: email, username, account label, or a provider-specific stable
-account id. This applies to provider/account rows, per-agent-codename rows, the
-active-tab status label when space allows, and detail headers. If the identity is
-not available, the UI must say `account unavailable` rather than omit the field,
-so the operator can see that attribution confidence is lower.
-
-### Account Tab Source Of Truth
-
-The provider detail tabs are CodexBar-parity account views. Their source of truth
-is the provider account plus provider/local-account logs, not the current jackin'
-instance and not one running app process. When the Codex tab says `30d tokens
-2.5B`, it means the OpenAI/Codex provider account. When the Claude tab says
-`Today $404.61`, it means the Anthropic/Claude provider account. Those numbers
-represent the selected account/provider usage surface shown in the screenshots,
-even if some of that usage happened outside the current Capsule.
-
-Required account-tab fields from the screenshots:
-
-- provider name, account identity, plan/tier, and freshness label;
-- quota buckets with remaining percent, reset countdown, reserve/deficit, and
-  run-out/lasts-until-reset text when enough timing data exists;
-- Codex buckets: `Session`, `Weekly`, `Codex Spark 5-hour`,
-  `Codex Spark Weekly`, and `Credits`;
-- Claude buckets: `Session`, `Weekly`, `Sonnet`, `Daily Routines`, and
-  `Extra usage`;
-- `Today`, `30d cost`, `30d tokens`, `Latest tokens`;
-- compact account-level history bars;
-- `Top model`;
-- provenance text such as `Estimated from local Codex logs for the selected
-  account`;
-- account actions/status rows such as `Cost`, `Subscription Utilization`,
-  `Buy Credits`, `Add Account`, `Usage Dashboard`, `Status Page`, and `Refresh`
-  where Capsule can expose them read-only, disabled, or route them through
-  explicit host/desktop actions without hidden host writes.
-
-The account tab may include local-log estimates because that is how CodexBar
-derives account cost/token history, but it must label those estimates clearly.
-It must not pretend account-level usage is scoped to the current jackin'
-instance.
-
-Provider parity is a hard requirement, but not every provider exposes every field
-through a safe API today. If a provider cannot supply a screenshot-level field
-without browser-cookie import, host writes, or undocumented high-risk polling, the
-adapter must expose an explicit `unsupported` / `unavailable` row for that field
-and the implementation PR must call out the decision needed from the operator.
-The UI must not hide the gap or synthesize fake account data.
-
-### Visual Rules
-
-- Use the existing Capsule palette: graphite/black background, bright active
-  focus, dim secondary text, and provider accent only for meters. Avoid a full
-  CodexBar-style macOS card inside the terminal.
-- Active tab is filled/high-contrast. Inactive tabs are plain text with an
-  optional short meter underline only when there is room.
-- Meters use a stable fixed width per layout mode. Text updates must not resize
-  the overlay.
-- History bars are a compact spark histogram. They are useful but lower
-  priority than quota buckets; hide them first in narrow layouts.
-- Long account labels, provenance text, model names, and status messages are
-  ellipsized with the full value available later through copy/details actions.
-- Provider-specific colors are optional accents only. Status words and labels
-  carry the meaning.
-
-### Responsive Layout
-
-Capsule should support three layout bands:
-
-| Width | Layout |
+| Provider | Buckets |
 |---|---|
-| `>= 88 cols` | Full layout: tabs, two-column stats, full meters, history bars, source/status footer. |
-| `64-87 cols` | Compact layout: tabs may shorten, stats become one row per metric, history bars shrink, footer keeps source/status. |
-| `< 64 cols` | List layout: no overview tabs unless focused, one headline quota, bucket rows as text, no history bars. |
+| OpenAI / Codex | `Session`, `Weekly`, `Codex Spark 5-hour`, `Codex Spark Weekly`, `Limit Reset Credits`, `Credits` |
+| Anthropic / Claude | `Session`, `Weekly`, `Sonnet`, `Daily Routines`, conditional `Opus` and `Extra usage` |
+| Amp | `Amp Free`, `Credits` (individual-credits balance) |
+| xAI | `Weekly` (subscription/included quota) |
+| Z.AI | `Tokens`, `MCP` (with `N / 100 (remaining)`), `5-hour` |
+| Kimi | `Weekly`, `Rate Limit` |
+| MiniMax | one bucket per model × window (`General · 5h`, `General · Weekly`, `Video`, …) |
 
-Narrow list layout example:
+For each bucket render: the label; a full-width remaining meter; remaining percent; reset countdown; pace/reserve label when known; and a lifecycle label when `NeedsLogin`, `Unsupported`, `Stale`, or `Error`. Conditional buckets (Opus, Extra usage, Spark, Credits) render only when the provider returns them. Each bucket may use a different unit (tokens, messages, requests, credits, plan units); the renderer never compares percentages across incompatible units.
 
-```text
-┌─ Usage: Codex ─────────────────────────────┐
-│ alexey@chainargos.com · Pro 20x            │
-│ fresh · provider · updated 12s ago         │
-│                                            │
-│ Session  37% left · resets 1h21m           │
-│ Weekly   10% left · resets 3h52m           │
-│ Spark    100% left · resets 5h             │
-│                                            │
-│ Today $339.22 · 470M latest tokens         │
-│ Top model gpt-5.5                          │
-│                                            │
-│ r Refresh                         Esc Close│
-└────────────────────────────────────────────┘
-```
+Reset format: provider detail tabs follow CodexBar's absolute style (`Resets 19:45` same-day, `Resets tomorrow, 04:18`, `Resets Jun 26 at 13:59`, `Resets Jul 1 at 16:31`). The Overview tab uses the compact `Resets <relative> (<absolute>)` form. `Resets now` shows no time. Pace/reserve text uses the CodexBar formula: `delta = utilization - (elapsed_fraction_of_window * 100)`; `abs(delta) <= 2` is `On pace`; `delta > 0` is `N% in deficit`; `delta < 0` is `N% in reserve`.
 
-## Data Model Expected By The TUI
-
-Capsule should render normalized daemon data, not provider-specific branches in
-the TUI. The daemon response for `usage/focused` should contain a shape close to:
-
-```rust
-pub struct FocusedUsageView {
-    pub focused_provider: Agent,
-    pub account: FocusedAccountHeader,
-    pub account_availability: AccountAvailabilityView,
-    pub workspace_spend: WorkspaceSpendView,
-    pub provider_status: Option<ProviderStatusView>,
-    pub tabs: Vec<UsageProviderTab>,
-}
-
-pub struct UsageProviderTab {
-    pub label: String,                 // "OpenAI / Codex", "Anthropic / Claude"
-    pub status_label: String,          // "Session 37% left · Resets in 1h 21m"
-    pub account_label: String,         // email/org/profile or "account unavailable"
-    pub plan_label: Option<String>,    // "Pro 20x", "Max"
-    pub active: bool,
-}
-
-pub struct FocusedAccountHeader {
-    pub provider_label: String,        // "OpenAI / Codex", "Anthropic / Claude"
-    pub account_label: String,         // email, org, profile, or "Personal"
-    pub plan_label: Option<String>,    // "Pro 20x", "Max"
-    pub updated_label: String,         // "Updated just now", "Stale 12m"
-}
-
-pub struct AccountAvailabilityView {
-    pub buckets: Vec<QuotaBucketView>,
-    pub source: UsageSource,
-    pub confidence: UsageConfidence,
-    pub status: UsageSnapshotStatus,
-    pub fetched_at_epoch: i64,
-    pub last_error: Option<String>,
-}
-
-pub struct QuotaBucketView {
-    pub label: String,                 // "Session", "Weekly", "Sonnet"
-    pub used: Option<UsageAmount>,
-    pub limit: Option<UsageAmount>,
-    pub remaining_percent: Option<u8>,
-    pub resets_at_epoch: Option<i64>,
-    pub reset_label: Option<String>,   // "Resets in 1h 21m"
-    pub pace_label: Option<String>,    // "10% in reserve", "On pace"
-    pub status: UsageSnapshotStatus,
-}
-
-pub struct WorkspaceSpendView {
-    pub today_cost_usd_micros: Option<u64>,
-    pub thirty_day_cost_usd_micros: Option<u64>,
-    pub thirty_day_tokens: Option<u64>,
-    pub latest_tokens: Option<u64>,
-    pub top_model: Option<String>,
-    pub history: Vec<UsageHistoryBar>,
-    pub provenance_label: String,
-}
-
-pub struct InstanceProviderUsageRow {
-    pub provider_label: String,        // "OpenAI / Codex", "Anthropic / Claude"
-    pub account_label: String,         // email/org/profile or "account unavailable"
-    pub plan_label: Option<String>,    // "Pro 20x", "Max"
-    pub spend: UsageSummaryView,       // tokens/cost since this instance started
-}
-```
-
-Names are proposal-level, not final API names. The important contract is that
-the TUI receives display-ready provider labels, quota bucket labels, reset
-labels, provenance, confidence, and status. Provider adapters own the messy
-source mapping; Capsule owns terminal rendering.
-
-## Quota Buckets
-
-The UI must render a list of quota buckets without hardcoding provider-specific
-rows. Known examples from the reference screenshots and current provider
-behavior:
-
-| Provider | Bucket examples |
-|---|---|
-| Codex | `Session`, `Weekly`, `Codex Spark 5-hour`, `Codex Spark Weekly`, `Credits` |
-| Claude | `Session`, `Weekly`, `Sonnet`, `Daily Routines`, `Extra usage` |
-| Amp | `Amp Free`, `Balance`, provider-specific plan/free-tier buckets when a stable source exists |
-| Grok Build | `Credits`, subscription/included quota, billing-window reset, local session tokens |
-| GLM / Z.AI | token quota, time/MCP quota, session or five-hour token limit, model usage details |
-| Kimi | Kimi For Coding weekly quota, five-hour rate limit, membership/tier quota |
-| MiniMax | coding-plan remains, token-plan remains, billing-window buckets, 30-day trend rows |
-| OpenCode | Workspace subscription window and backing-provider rows when available |
-
-Each bucket may have a different unit: tokens, messages, requests,
-USD-micros, credits, or provider-defined plan units. The renderer must never
-compare percentages across incompatible units. Cross-provider "most constrained"
-ranking remains owned by [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/#most-constrained-ordering).
-
-### Bucket Rendering
-
-For each bucket, render:
-
-- label;
-- horizontal meter when `used` and `limit` are known;
-- remaining percent when known;
-- reset countdown when known;
-- pace/reserve label when known;
-- lifecycle label when `NeedsLogin`, `Unsupported`, `Stale`, or `Error`.
-
-If no limit is known, show the amount and source label instead of inventing a
-percentage. `unsupported` is better than a blank row.
-
-## Account Spend And History
-
-The spend section inside provider tabs is account/provider attribution, matching
-the CodexBar screenshots. It is not the current jackin' instance ledger. It
-should show:
-
-- today cost;
-- last-30-days cost;
-- last-30-days tokens;
-- latest-token sample or current-session tokens;
-- top model;
-- compact history bars;
-- provenance text, for example `Estimated from local Codex logs for the
-  selected account`.
-
-This section must be labeled separately from provider quota. It can explain what
-the account burned over the displayed time window, but it must not be presented
-as the enforced subscription limit. The `Instance` tab is the only place where
-since-start jackin' instance totals are presented.
-
-## Instance Ledger
-
-The `Instance` tab owns lifetime accounting for one running Capsule instance.
-This is additional to the account/provider tabs and must not replace them. It
-must aggregate only samples whose provenance ties them to this instance:
-
-- runtime stream samples captured from PTY output chunks for panes in this
-  instance;
-- agent codenames plus agent/session ids created by this Capsule daemon;
-- provider account identity attached to each sample when safely available;
-- workspace path and instance id stamped when the sample is recorded;
-- local provider log samples only when they can be bounded to this workspace and
-  the instance lifetime window without double-counting runtime stream samples.
-
-Required instance totals:
-
-- instance id/name;
-- instance start time and age;
-- active agent time when the daemon can infer it from focused/running panes;
-- current workspace path;
-- all agent codenames created in this instance, including closed/exited tabs;
-- total tokens since instance start;
-- latest/current-session tokens;
-- spend since instance start;
-- today spend for the same instance;
-- exact-cost sample count;
-- estimated-cost sample count;
-- unpriced sample count;
-- top model for the instance;
-- compact history bars over the instance lifetime;
-- per-agent-codename rows with codename, provider/account, account identity,
-  tokens, spend, top model, active/idle/closed/exited state, tab/pane lineage
-  when available, and last activity;
-- per-provider/account rows so shared account usage caused by this instance is
-  visible without mixing in other instances. These rows must include the account
-  identity and plan label whenever the adapter can expose them without unsafe
-  host-side behavior.
-
-Retention rule: per-codename rows stay queryable for the lifetime of the jackin'
-instance even after the visible tab is closed. The daemon may compact raw render
-state, but it must keep enough normalized usage samples and lifecycle metadata to
-answer "what did codename X cost in this instance?" until the instance itself is
-destroyed or its telemetry cache is explicitly purged.
-
-Cost display rules:
-
-- Prefer provider-reported exact cost when a runtime event or local log exposes
-  it.
-- Use verified provider/model price tables only when exact cost is absent and the
-  token split is known.
-- Mark estimated totals visibly, for example `estimated at API rates`.
-- Keep unpriced token totals visible instead of dropping them.
-- Do not infer provider subscription dollars from quota depletion. Quota rows say
-  remaining availability; instance rows say observed token/cost attribution.
-
-The instance ledger must survive tab switches and overlay refreshes because it is
-read from daemon-owned cached samples. It should not require opening provider
-dashboards, importing browser cookies, or writing account state.
-
-## Provider Status
-
-When daemon telemetry includes provider health, the overlay should show a short
-status row:
-
-```text
-Status Page
-Partial System Degradation · Updated 30m ago
-```
-
-Capsule may expose a copy/open action later through the explicit host action
-path, but the first version can render the row read-only. Provider status should
-not block the overlay if unavailable.
-
-## Actions
-
-Capsule V1 actions:
-
-- `Refresh`: asks the daemon to schedule `account/refresh` and keeps showing the
-  cached snapshot immediately.
-- `Copy summary`: optional later action that copies the visible usage summary
-  through the existing terminal clipboard path if available.
-- `Open details`: optional later action routed through Desktop/console/host
-  bridge, not direct host mutation.
-
-Actions deliberately not owned by Capsule as mutating flows, even when a
-CodexBar-parity row is visible in the overlay:
-
-- `Buy Credits` should render as a disabled/read-only billing row unless a
-  future explicit host/desktop bridge owns the action;
-- `Add Account` should render as a disabled/read-only auth row unless a future
-  explicit host/desktop bridge owns the action;
-- `Settings`;
-- account login/repair flows;
-- hidden browser-cookie import;
-- provider config writes.
-
-Those belong in Desktop, `jackin console`, CLI, or host bridge because they may
-write host state or require richer approval UI.
-
-## States
-
-The overlay must have explicit states:
+## States and honest degradation
 
 | State | Required rendering |
 |---|---|
-| Fresh provider snapshot | Show quota buckets with confidence/source labels. |
-| Stale provider snapshot | Show stale label and last fetched time; keep prior data visible. |
-| Needs login / needs secret | Show account and repair action name; no hidden repair. |
-| Unsupported provider | Show `unsupported` with provider/source explanation. |
-| Daemon disconnected | Show `usage unavailable: daemon disconnected`; do not poll providers from Capsule. |
-| No focused agent | Show `usage unavailable: no focused agent session`. |
-| Narrow terminal | Collapse tabs/columns, keep provider, headline quota, reset, status, and provenance. |
+| Fresh provider snapshot | Quota buckets with confidence/source labels. |
+| Stale provider snapshot | `stale` plus `updated Xm ago`; keep prior data visible. |
+| Needs login / needs secret | Account and the repair action name; no hidden repair. |
+| Unsupported provider | `unsupported` with provider/source explanation. |
+| Daemon disconnected | `usage unavailable: daemon disconnected`; do not poll providers from Capsule. |
+| No focused agent | `usage unavailable: no focused agent session`. |
+| Narrow terminal | Collapse columns; keep provider, headline quota, reset, and status. |
 
-## Terminal Interaction
+Synchronized tokens can expire and Capsule deliberately never refreshes-and-rewrites host credentials, so an expired forwarded token degrades to an honest `needs login` / `stale` state and the operator re-authenticates outside Capsule. Enterprise/zero-tier accounts may not expose the consumer usage surface at all (an observed enterprise token returned HTTP 401 while the default account returned 200); the tab must show `stale` / `needs login` rather than a fabricated value.
 
-- Prefix `u` opens the overlay.
-- Palette action `Usage` opens the same overlay.
-- `Tab` / `Shift+Tab` move between provider tabs when tabs are visible.
-- `r` requests refresh while the overlay is open.
-- `Esc` closes.
-- Mouse clicks may select tabs and actions only where Capsule already supports
-  click regions; keyboard interaction is required.
+## Terminal interaction and host-side effects
 
-The overlay should preserve the existing Capsule redraw policy: no full-screen
-terminal erase when opening, tabbing, refreshing, or closing.
+- `u` (prefix) or palette `Usage` opens the overlay; `Left`/`Right` switch provider on the focused tab bar; `Tab`/`Shift+Tab` move focus between tab bar and content; `r` requests a refresh; `Esc` closes. Keys are surfaced through the standard hint bar, not an in-box footer.
+- The overlay preserves Capsule's redraw policy: no full-screen erase when opening, tabbing, refreshing, or closing.
+- Capsule is read-only. It must not write provider config, Keychain entries, browser profiles, host dotfiles, Git config, or repositories, and must not poll provider APIs directly from inside the container. A repair that would change host state is surfaced as a named action pointing at the responsible surface, never performed silently.
 
-## Host-Side Effects
+## CodexBar parity and non-regression principle
 
-Capsule is read-only. It must not write provider config, Keychain entries,
-browser profiles, host dotfiles, Git config, or user repositories. It must not
-poll provider APIs directly from inside the container.
+CodexBar (`github.com/steipete/CodexBar`) is the reference jackin' borrows this feature's data extraction and information architecture from. **jackin' must never present this information at lower quality than CodexBar for any dimension it also covers** — same or richer detail, same or higher provenance honesty, same or better caching and performance. A change that makes any covered dimension worse than CodexBar is a regression. Where jackin' cannot match a CodexBar capability safely, it says so honestly rather than degrading silently or faking data. The deliberate, limited exceptions are: jackin' never runs CodexBar's token-refresh-and-rewrite flow (expired tokens degrade honestly), and jackin' never imports browser cookies, scrapes dashboards, reads the Keychain to repair accounts, or launches hidden provider CLIs.
 
-Allowed writes are limited to existing Capsule UI/session state and the daemon's
-own host-side telemetry cache described in [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/#host-side-effects).
-If a repair action would change host state, Capsule shows the required action
-and points to the responsible surface.
+## How the data is extracted
 
-## Implementation Checklist
+Each provider adapter resolves a credential, calls the provider's usage endpoint, and maps the response to quota buckets. Credentials are the same accounts the operator is already logged into; the runtime forwards them into the container (see Credential delivery below). The per-provider recipes jackin' mirrors from CodexBar:
 
-Landed in the current implementation:
+**Anthropic / Claude.** Credential: `~/.claude/.credentials.json` (`claudeAiOauth.accessToken`), forwarded from the host macOS Keychain service `Claude Code-credentials` (per-config-dir variants use service `Claude Code-credentials-<first 8 hex of sha256(config dir path)>`). Call: `GET https://api.anthropic.com/api/oauth/usage` with `Authorization: Bearer`, `Accept: application/json`, `Content-Type: application/json`, `anthropic-beta: oauth-2025-04-20`, and `User-Agent: claude-code/<version>` (no `anthropic-version`). Windows: `five_hour`→Session, `seven_day`→Weekly, `seven_day_sonnet`→Sonnet, `seven_day_opus`→Opus, `seven_day_routines` (and aliases `seven_day_claude_routines`/`claude_routines`/`routines`/`seven_day_cowork`)→Daily Routines, `extra_usage`→Extra usage; each window carries `utilization` and `resets_at`. Plan label prefers `subscriptionType`, falls back to `rateLimitTier`.
+**OpenAI / Codex.** Credential: `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`), `tokens.access_token` + `tokens.account_id`. Call: `GET https://chatgpt.com/backend-api/wham/usage` with `Authorization: Bearer` and `ChatGPT-Account-Id: <account_id>` when present; an alternate authority launches `codex -s read-only -a untrusted app-server` and calls JSON-RPC `account/read` + `account/rateLimits/read`. Map: `rate_limit.primary_window`→Session, `secondary_window`→Weekly (`used_percent`/`reset_at`/`limit_window_seconds`); `additional_rate_limits[]` containing `spark`→Codex Spark 5-hour/Weekly; `credits`→Credits; `plan_type`→plan. Account identity comes from the app-server RPC or the `id_token` JWT, not from a `tokens.email` field (which is usually absent).
+**Amp.** Credential: `AMP_API_KEY`. Call: `POST https://ampcode.com/api/internal?userDisplayBalanceInfo` with body `{"method":"userDisplayBalanceInfo","params":{}}` and `Authorization: Bearer`; `amp --no-color usage` is a secondary source. Buckets: Amp Free plus an individual-credits balance.
+**xAI / Grok.** Credential: `~/.grok/auth.json` (the scope entry's `key`). Call: spawn `grok agent stdio` and issue JSON-RPC `x.ai/billing` (the method must stay slash-unescaped); fallback `POST https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig` (gRPC-web, `Authorization: Bearer`). Buckets: weekly/credits from `monthlyLimit`/`usage.totalUsed`/`billingCycle`.
+**Z.AI / GLM.** Credential: env `Z_AI_API_KEY` (no file, carried into the container regardless of mount mode — the reference pattern). Call: `GET https://api.z.ai/api/monitor/usage/quota/limit` with `Authorization: Bearer`. Map `TOKENS_LIMIT`/`TIME_LIMIT` entries to Tokens / MCP / 5-hour.
+**Kimi.** Credential: the Kimi-For-Coding API token (`KIMI_CODE_API_KEY` or `~/.kimi-code/credentials/kimi-code.json` `access_token`). Call: `GET https://api.kimi.com/coding/v1/usages` with `Authorization: Bearer`; the response is `usage` + `limits[]`, mapped to Weekly + Rate Limit. (The `kimi.com` web-cookie billing endpoint is a separate variant that requires a browser session JWT and is not used.)
+**MiniMax.** Credential: `MINIMAX_CODING_API_KEY` / `MINIMAX_API_KEY`. Call: `GET` the `/v1/token_plan/remains` and `/v1/api/openplatform/coding_plan/remains` paths on `api.minimax.io` then `api.minimaxi.com`, with `Authorization: Bearer` and `MM-API-Source`; transport errors fall through to the next host rather than aborting. `model_remains[]` yields one bucket per model × interval/weekly window, rendered as remaining.
 
-1. **Contract extraction.** `jackin-protocol` exposes typed focused/account,
-   workspace, session, and instance usage structs instead of TUI-specific string
-   blobs.
-2. **Static TUI fixture.** Capsule has fixture-backed tests for Codex, Claude,
-   Overview, `Instance`, status/error states, and narrow rendering through the
-   usage-specific Ratatui snapshot.
-3. **Status chrome signal.** The active tab can render focused-provider usage
-   from daemon cache only. Fresh labels include provider, account identity,
-   selected bucket, current usage, remaining quota, and reset text when present.
-4. **Daemon wiring.** `UsageFocused`, `UsageRefreshFocused`,
-   `UsageAccountList`, `UsageWorkspace`, and `UsageSession` replies are shaped
-   inside the daemon from cached snapshots and cached samples.
-5. **Refresh action.** Prefix `u`, palette `Usage`, `Tab` /
-   `Shift+Tab`, and `r Refresh` are wired through Capsule control dispatch.
-   Refresh forces the daemon cache path and the renderer keeps showing cached
-   data while the daemon updates.
-6. **Instance ledger tab.** The overlay has a first-class `Instance` tab backed
-   by daemon sample summaries scoped to the Capsule instance id. It renders
-   instance age, active-agent time, workspace, today/since-start spend, tokens,
-   latest-token sample, exact/estimated/unpriced counts, top model, history
-   bars, per-agent-codename rows, closed-tab lifecycle state, tab/pane lineage,
-   last activity, and per-provider/account rows.
-7. **CodexBar information parity.** Provider/account tabs now render the
-   screenshot-level account source of truth: account header, freshness,
-   plan/tier, quota buckets, reserve/deficit/pace labels, reset/run-out text,
-   account cost/token windows, compact history bars, top model, provenance,
-   provider status, read-only `Cost`, `Subscription Utilization`,
-   disabled/read-only `Buy Credits` and `Add Account` parity rows,
-   `Usage Dashboard` rows, plus daemon refresh text. Unsupported fields are
-   rendered as explicit unavailable/unsupported states instead of being hidden.
-8. **Host-safety guardrails.** Capsule remains read-only for provider accounts:
-   no browser-cookie import, account repair, hidden host writes, or unmanaged
-   background CLIs.
+### Credential delivery into the container
 
-Remaining work before retiring this roadmap item. These are explicit follow-ups,
-not blockers for the current operator-testable implementation:
+The capsule runs as PID 1 inside the Linux container and cannot read the host Keychain; the runtime reads the host credential (file or macOS Keychain) and forwards it into the container at a fixed path per provider (see <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" />). File-based providers (Claude, Codex, Grok, Amp) depend on that forwarding; env-key providers (Z.AI) are carried in regardless of mount mode, which is why Z.AI works reliably and is the template the others should move toward where a provider offers an env-key REST path.
 
-1. **Host-global account daemon.** Replace the explicit
-   `jackin usage <instance> accounts --sync-host-cache` bridge with a long-lived
-   host account refresh service that can warm provider account snapshots for
-   future Desktop/console views without asking each Capsule to poll providers.
-2. **Bounded local-log instance attribution.** Runtime stream samples are
-   instance-stamped today. Provider-local log samples remain
-   account/workspace-level unless they can be safely bounded to this instance
-   without double-counting runtime samples.
-3. **Provider-specific event contracts.** Keep adding verified token/cost event
-   shapes as provider CLIs expose stable structured runtime usage beyond the
-   common OpenAI/Anthropic-style fields already parsed.
-4. **Future model pricing.** Extend verified price tables only from first-party
-   provider documentation. Unknown models stay unpriced.
-5. **Custom meter widget polish.** The current renderer uses roadmap-style block
-   meters and history bars inside the existing dialog renderer. A later custom
-   widget can add provider accent ticks and reserve markers without changing the
-   daemon protocol.
+## Data model expected by the TUI
 
-## Scope V1
+The overlay consumes a quota-only `FocusedUsageView` from <RepoFile path="crates/jackin-protocol/src/control.rs" />: a `FocusedAccountHeader` (provider, account label, plan, freshness), a list of `QuotaBucketView` (label, used/limit when known, remaining percent, reset, pace, and per-bucket `UsageSnapshotStatus`/`UsageSource`/`UsageConfidence`), and `UsageProviderTab` entries for the tab strip and Overview. The `workspace_spend` and `instance` fields and the `WorkspaceSpendView`/`InstanceUsageView` types are removed (see Cleanup).
 
-- Focused-agent compact signal in Capsule status chrome.
-- Active-tab status bar summary that shows the focused agent's current usage
-  and remaining quota whenever daemon telemetry has both values.
-- Prefix `u` / palette `Usage` overlay.
-- Required `Overview` and `Instance` tabs, followed by provider/account tabs.
-- Provider tabs for Claude Code / Anthropic, Codex / OpenAI, Amp, Grok Build,
-  GLM/Z.AI, Kimi, and MiniMax when the daemon has a safe extraction path or an
-  explicit unsupported state.
-- Account-wide provider tabs that match the CodexBar screenshot information
-  level where safe data exists, and render unavailable/unsupported rows where it
-  does not.
-- Instance-lifetime ledger that is separate from account/provider tabs and
-  keeps all current and closed agent codenames visible until the instance ends.
-- Quota bucket list with reset/pace/source/status labels.
-- Spend summary with cost, tokens, top model, history bars, and provenance.
-- Provider status row when available.
-- Read-only refresh request through daemon.
-- Explicit disconnected/stale/needs-login/unsupported states.
-- Provider extraction research and normalized adapter plan for Claude Code,
-  Codex, Amp, Grok Build, GLM/Z.AI, Kimi, and MiniMax.
-- Tests for rendering, input dispatch, cache behavior, status labels, narrow
-  layout, and error states.
+## Implementation plan
+
+Each step lands with adapter unit/snapshot tests AND an in-container live check against the real forwarded credential — the previous regression came from trusting isolated fetch tests over the live overlay path. Build the data path first, then the render, then remove the cut features.
+
+### Already correct — keep
+
+The provider quota fetchers and `*_snapshot` builders, the daemon `UsageCache` and focused-snapshot path, the `UsageFocused`/`UsageRefreshFocused` control messages and the `r` refresh key path, the quota-bucket renderers, the status-bar most-constrained selection, and the runtime credential forwarding all stay. Z.AI is fully correct end to end and is the reference.
+
+### Phase 1 — Credential delivery (unblocks Claude, Codex, xAI, Amp)
+
+- Forward each provider's resolved credential into the container reliably on every launch and refresh a stale in-container copy when the host source is newer (today the Codex copy is gated on a first-launch marker and several are gated on `AuthForwardMode::Sync`). Surface per-provider forwarding outcome in the launch summary so `needs login` is explainable.
+- Do not gate the usage probe on local credential-file presence (xAI today short-circuits to `needs login` without running the probe). Run the probe and report the real error.
+- Prefer an env-key REST path where the provider offers one (Amp `AMP_API_KEY`→REST; Grok gRPC-web with the auth.json key) so a tab does not depend on a Sync-mounted file plus an in-container CLI.
+
+### Phase 2 — Adapter correctness
+
+- Anthropic: unify the status bar and overlay on one canonical provider cache key; preserve last-good quota when a refresh returns `NeedsLogin`/`Error`; do not force a live recompute on overlay open (only on explicit `r`); add the missing window aliases (`seven_day_oauth_apps`, the routines aliases); fall back to `rateLimitTier` for the plan; send a detected `claude-code/<version>` User-Agent.
+- OpenAI: derive the account identity from the `id_token` JWT or the app-server RPC instead of requiring `tokens.email`; a successful `wham/usage` fetch must lift the tab out of `needs login` even when the app-server RPC is on launch cooldown; refresh the in-container `auth.json` copy on relaunch.
+- Kimi: add the `GET https://api.kimi.com/coding/v1/usages` Bearer path and its `usage`+`limits` response shape; classify the credential and route Code-API tokens there (the current code sends every token to the web-cookie endpoint, which rejects the Code-API token even though the CLI authenticates with it).
+- MiniMax: render remaining (`% left`, full bar) not percent-used; continue to the next host on a transport error instead of aborting the URL loop; surface the real failure reason instead of a generic `endpoint unavailable`.
+- Decide and implement the token-refresh policy: refresh expired OAuth tokens (Claude, Codex) by writing only the container credential copy, never the host (open question below).
+
+### Phase 3 — Render to the binding previews
+
+- Render the tab strip with the shared `TabStrip` and its focus model; remove the synthesized `"Tabs"` row.
+- Render full-width remaining bars and stacked meter lines; apply the per-provider section sets and provider-org headers; apply the reset/pace formats above.
+- Wire a usage keymap into the standard hint bar and remove the in-box `"Actions"` footer row.
+- Make `Source`/`Status` (where any provenance is shown) reflect the snapshot's real `(source, confidence, status)`; never render `authoritative · fresh` on a failed fetch; surface fetch errors instead of swallowing them.
+
+### Phase 4 — Cleanup (remove stale code so the feature is exactly what ships)
+
+Removing the cut features is part of this work, not a follow-up: the workspace denies `dead_code`, so producers and their consumers must be removed together. In <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/components/dialog_widgets.rs" />, remove the cost/token grid, history sparkline, `Top model`, provenance, Instance view, account-action rows, the `Source`/`Provider status`/`Status Page` rows, the synthesized `"Tabs"` and `"Actions"` rows, and their now-dead helpers. In <RepoFile path="crates/jackin-capsule/src/usage.rs" />, remove the spend data plane (local-log scanning, runtime-stream sampling, spend/estimate helpers, pricing tables, token/cost parsing, history/top-model helpers) and set the snapshot builders' spend field to default. In <RepoFile path="crates/jackin-capsule/src/telemetry_store.rs" />, remove the `usage_samples`/`usage_scan_files` tables and their query helpers (keep `account_usage_snapshots` only if account persistence is retained — see open question). In <RepoFile path="crates/jackin-capsule/src/daemon/multiplexer_utils.rs" />, remove the instance-block builder (`attach_instance_usage` and its helpers). In <RepoFile path="crates/jackin-protocol/src/control.rs" />, remove `WorkspaceSpendView`, `InstanceUsageView`/`InstanceAgentUsageRow`/`InstanceProviderUsageRow`, `UsageSummaryView`, `ProviderStatusView`, and the `workspace_spend`/`instance` fields. Remove the now-unused control messages `UsageWorkspace`/`UsageSession`/`ServerMsg::UsageSummary` and their handlers in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, <RepoFile path="crates/jackin-capsule/src/socket.rs" />, and <RepoFile path="crates/jackin-capsule/src/client.rs" />, the `workspace`/`session` subcommands in <RepoFile path="crates/jackin-capsule/src/main.rs" />, the matching `jackin usage workspace|session` chain in <RepoFile path="crates/jackin/src/cli/usage.rs" />, and `fetch_usage_summary`/`UsageSummaryScope` in <RepoFile path="crates/jackin-runtime/src/runtime/snapshot.rs" />.
+
+### Detailed checklist
+
+- [ ] Forward Claude/Codex/Grok/Amp credentials into the container on every launch; refresh stale copies; show outcome in the launch summary.
+- [ ] Remove the credential-presence gate on the usage probe (xAI).
+- [ ] Add env-key REST paths for Amp (`AMP_API_KEY`) and Grok (gRPC-web with auth.json key).
+- [ ] Unify status-bar and overlay on one canonical provider cache key.
+- [ ] Preserve last-good quota on `NeedsLogin`/`Error`; stop force-refresh on overlay open.
+- [ ] Add Claude window aliases, `rateLimitTier` plan fallback, and detected User-Agent.
+- [ ] Derive Codex account identity from id_token JWT / RPC; decouple status from RPC cooldown; refresh in-container auth.json.
+- [ ] Add Kimi Code-API endpoint + response shape and credential-type routing.
+- [ ] Normalize MiniMax to remaining; continue URL loop on transport error; surface real errors.
+- [ ] Implement container-only token refresh (Claude, Codex) per the agreed policy.
+- [ ] Render tabs via the shared `TabStrip` with its focus model; drop the synthesized tabs row.
+- [ ] Render full-width remaining bars + stacked meter lines; apply per-provider section sets, provider-org headers, reset/pace formats.
+- [ ] Wire a usage keymap into the standard hint bar; remove the in-box actions footer.
+- [ ] Make provenance honest; surface fetch errors.
+- [ ] Remove the cost/spend/Instance/action-row render code and dead helpers.
+- [ ] Remove the spend data plane and pricing in usage.rs.
+- [ ] Remove usage_samples/scan tables and unused control messages, CLI subcommands, and snapshot summary path.
+- [ ] Confirm no `dead_code`/`unused` warnings; `cargo clippy --workspace --all-targets --all-features` clean.
+- [ ] Live in-container verification per provider + snapshot tests of the overlay path across the responsive width bands.
+
+## Scope (V1)
+
+- Focused-provider quota signal in the status chrome and the `u` overlay, daemon-fed, read-only.
+- Overview tab (cross-provider remaining + reset) and provider detail tabs for all seven providers.
+- Honest fresh/stale/needs-login/unsupported/daemon-disconnected/no-agent states.
+- All quota extraction parity-or-better than CodexBar for the dimensions covered.
 
 ## Defer
 
-- Full all-provider dashboard inside Capsule.
-- Account setup, add-account, buy-credits, settings, or login repair flows.
-- Direct browser-cookie import from Capsule.
-- Provider-specific bespoke Capsule layouts.
-- Budget enforcement or automatic agent pausing.
-- Opening external dashboards directly from the container.
-- Multi-operator/org-level spend rollups.
+- Per-message cost/spend tracking, history, and top-model — owned by [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/); not shown in this overlay.
+- A per-instance spend ledger (the dropped Instance tab). If revived later it must not be mixed into account tabs.
+- Account setup, add-account, buy-credits, settings, dashboard, status-page, and login-repair flows.
+- Browser-cookie / web-session sources (Kimi web, MiniMax web, Grok web) unless an operator explicitly opts in.
 
-## Settled Product Decisions
+## Open questions
 
-- `Overview` is visible in Capsule and stays separate from provider detail.
-- `Instance` is visible in Capsule and is the only since-start jackin' instance
-  ledger.
-- Provider tabs are account-wide provider/account views. They are not scoped to
-  one app process, one visible tab, or the current instance.
-- Account identity is required wherever usage is attributed. When it cannot be
-  extracted safely, render `account unavailable`.
-- The active status signal follows the focused tab/pane and elides reset text
-  first, then current usage, keeping provider plus remaining/state for as long
-  as space allows.
-- Amp V1 uses `amp --no-color usage` under daemon-managed timeout/cooldown.
-- Kimi and MiniMax Capsule adapters stay limited to explicit token/OAuth/API-key
-  paths. Browser/session fallbacks belong to a future explicit Desktop/host
-  approval flow, not background Capsule refresh.
+- **Token refresh vs read-only host.** Refreshing expired Claude/Codex tokens requires writing a credential; the proposal is to write only the in-container copy and never the host. Confirm, or keep the honest `needs login`/`stale` degradation and require the operator to re-authenticate on the host.
+- **Account persistence.** With cost/Instance gone, the live quota view can run off the in-memory daemon cache; the `account_usage_snapshots` persistence, the `jackin usage accounts` CLI, and `--sync-host-cache` may be removable. Confirm whether any consumer still needs them before deleting.
+- **Header naming.** Provider-org headers (`OpenAI`, `Anthropic`, `xAI`, `Z.AI`) match the tabs; CodexBar shows product names (`Codex`, `Claude`, `Grok`, `z.ai`). Provider-org is the current choice.
+- **Codex Limit Reset Credits + Credits sections.** Kept per CodexBar; confirm whether to retain or reduce Codex to quota meters only.
 
-## Related Files
+## Related files
 
-- <RepoFile path="crates/jackin-capsule/src/tui/components/status_bar.rs" /> —
-  status chrome signal.
-- <RepoFile path="crates/jackin-capsule/src/tui/components/palette.rs" /> —
-  palette action integration.
-- <RepoFile path="crates/jackin-capsule/src/tui/input.rs" /> — prefix `u`
-  binding.
-- <RepoFile path="crates/jackin-capsule/src/daemon/input_dispatch.rs" /> —
-  command dispatch.
-- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — multiplexer state
-  and daemon/cache integration until the daemon is further split.
-- Future telemetry module from [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/)
-  — `usage/focused` response and account snapshot mapping.
+- <RepoFile path="crates/jackin-capsule/src/usage.rs" /> — provider adapters, snapshot builders, daemon `UsageCache`.
+- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/components/dialog_widgets.rs" /> — overlay render.
+- <RepoFile path="crates/jackin-tui/src/components/tab_strip.rs" /> and <RepoFile path="crates/jackin-tui/src/components/hint_bar.rs" /> — shared tab bar and hint bar.
+- <RepoFile path="crates/jackin-protocol/src/control.rs" /> — `FocusedUsageView` and quota types.
+- <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> — host→container credential forwarding.
 
 ## See Also
 
-- [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/)
-- [jackin' Capsule control plane](/reference/roadmap/jackin-capsule/)
-- [jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/)
-- [Console Resource Panel](/reference/roadmap/console-resource-panel/)
+- [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) — the data plane (per-message cost/spend) this overlay deliberately does not display.
+- [Persistent storage layer](/reference/roadmap/persistent-storage-layer/) — account/sample storage.
