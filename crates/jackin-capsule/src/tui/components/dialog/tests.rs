@@ -840,6 +840,38 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 source_label: None,
                 active: false,
             },
+            jackin_protocol::control::UsageProviderTab {
+                label: "Grok Build".to_owned(),
+                status_label: "needs login".to_owned(),
+                account_label: "account unavailable".to_owned(),
+                plan_label: None,
+                source_label: Some("needs-login · provider".to_owned()),
+                active: false,
+            },
+            jackin_protocol::control::UsageProviderTab {
+                label: "GLM / Z.AI".to_owned(),
+                status_label: "Weekly 88% left · Resets in 4d".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("GLM Coding".to_owned()),
+                source_label: Some("fresh · provider".to_owned()),
+                active: false,
+            },
+            jackin_protocol::control::UsageProviderTab {
+                label: "Kimi".to_owned(),
+                status_label: "Daily 72% left · Resets in 13h".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("Moonshot".to_owned()),
+                source_label: Some("fresh · provider".to_owned()),
+                active: false,
+            },
+            jackin_protocol::control::UsageProviderTab {
+                label: "MiniMax".to_owned(),
+                status_label: "M1 Coding 100% left".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("M1 Coding".to_owned()),
+                source_label: Some("fresh · provider".to_owned()),
+                active: false,
+            },
         ],
         last_error: Some("local diagnostic detail".to_owned()),
     }
@@ -858,6 +890,32 @@ fn usage_status_bucket(
         pace_label: None,
         status,
     }
+}
+
+fn render_usage_dialog_snapshot(width: u16, height: u16, tab: UsageDialogTab) -> String {
+    let d = Dialog::new_usage_with_tab(usage_view_fixture(), tab);
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(height, width);
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    (0..height)
+        .map(|y| {
+            (0..width)
+                .map(|x| buf[(x, y)].symbol())
+                .collect::<String>()
+                .trim_end()
+                .to_owned()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[test]
@@ -1281,6 +1339,30 @@ fn usage_dialog_renders_inside_narrow_terminal() {
     assert!(
         rendered.contains("┃") || rendered.contains("·"),
         "{rendered}"
+    );
+}
+
+#[test]
+fn snapshot_usage_dialog_narrow_60x18() {
+    insta::assert_snapshot!(
+        "usage_dialog_narrow_60x18",
+        render_usage_dialog_snapshot(60, 18, UsageDialogTab::Provider)
+    );
+}
+
+#[test]
+fn snapshot_usage_dialog_medium_100x32_overview() {
+    insta::assert_snapshot!(
+        "usage_dialog_medium_100x32_overview",
+        render_usage_dialog_snapshot(100, 32, UsageDialogTab::Overview)
+    );
+}
+
+#[test]
+fn snapshot_usage_dialog_wide_120x40() {
+    insta::assert_snapshot!(
+        "usage_dialog_wide_120x40",
+        render_usage_dialog_snapshot(120, 40, UsageDialogTab::Provider)
     );
 }
 
