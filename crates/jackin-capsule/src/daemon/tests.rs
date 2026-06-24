@@ -5410,6 +5410,50 @@ fn vs16_emoji_stays_one_cluster() {
         Some("\u{2601}\u{fe0f}"),
         "VS16 emoji presentation must stay in the base cell"
     );
+    assert!(
+        view.cell(0, 0).expect("VS16 lead").is_wide,
+        "VS16 emoji presentation must occupy two model columns"
+    );
+    assert!(
+        view.cell(0, 1)
+            .expect("VS16 continuation")
+            .is_wide_continuation,
+        "VS16 emoji presentation must create a continuation cell"
+    );
+    assert_eq!(
+        view.cell(0, 2).map(Cell::contents),
+        Some("X"),
+        "next glyph must land after the grown VS16 cluster"
+    );
+}
+
+#[test]
+fn halfwidth_katakana_dakuten_width_echoes_to_client() {
+    let (mut mux, mut client, sid) = attached_single_pane();
+    feed_and_compose(&mut mux, &mut client, sid, "\u{ff76}\u{ff9e}X".as_bytes());
+    assert_frame_conformance(&mut mux, &client, "dakuten width echo-back");
+    let session = mux.sessions.get(&sid).unwrap();
+    let view = session.shadow_grid.scrollback_view(0, 1);
+    assert_eq!(
+        view.cell(0, 0).map(Cell::contents),
+        Some("\u{ff76}\u{ff9e}"),
+        "halfwidth katakana dakuten must stay in the base cell"
+    );
+    assert!(
+        view.cell(0, 0).expect("dakuten lead").is_wide,
+        "dakuten cluster must occupy two model columns"
+    );
+    assert!(
+        view.cell(0, 1)
+            .expect("dakuten continuation")
+            .is_wide_continuation,
+        "dakuten cluster must create a continuation cell"
+    );
+    assert_eq!(
+        view.cell(0, 2).map(Cell::contents),
+        Some("X"),
+        "next glyph must land after the grown dakuten cluster"
+    );
 }
 
 #[test]
@@ -5417,6 +5461,7 @@ fn zwj_family_emoji_stays_one_cluster() {
     let (mut mux, mut client, sid) = attached_single_pane();
     let family = "\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}";
     feed_and_compose(&mut mux, &mut client, sid, family.as_bytes());
+    assert_frame_conformance(&mut mux, &client, "ZWJ family width echo-back");
     let session = mux.sessions.get(&sid).unwrap();
     let view = session.shadow_grid.scrollback_view(0, 1);
     assert_eq!(
