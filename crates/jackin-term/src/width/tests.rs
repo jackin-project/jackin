@@ -1,4 +1,5 @@
 use super::*;
+use crate::{Attrs, Color, UnderlineStyle};
 use ratatui_core::buffer::CellWidth;
 
 #[test]
@@ -53,4 +54,33 @@ fn profile_width_stays_aligned_with_ratatui_cell_width() {
             "Ratatui width drift for {cluster:?}"
         );
     }
+}
+
+#[test]
+fn profile_owns_agent_visible_terminal_contract() {
+    let profile = VirtualTerminalProfile::default();
+
+    assert_eq!(profile.decrqm_status(2027), 0);
+    assert_eq!(profile.default_reported_color(10), Some((0xe6, 0xe6, 0xe6)));
+    assert_eq!(profile.default_reported_color(11), Some((0, 0, 0)));
+    assert_eq!(profile.agent_term, "xterm-256color");
+    assert_eq!(profile.agent_colorterm, "truecolor");
+    assert_eq!(profile.osc8_policy, OscPolicy::ModelMetadata);
+
+    let attrs = Attrs {
+        foreground: Color::Rgb(1, 2, 3),
+        background: Color::Idx(42),
+        underline_color: Color::Rgb(4, 5, 6),
+        underline_style: UnderlineStyle::Curly,
+        bold: true,
+        italic: true,
+        inverse: true,
+        dim: true,
+        strikethrough: true,
+        slow_blink: true,
+        rapid_blink: true,
+        conceal: true,
+        overline: true,
+    };
+    assert!(profile.attrs_supported(&attrs));
 }

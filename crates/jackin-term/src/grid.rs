@@ -198,13 +198,6 @@ impl std::fmt::Debug for DamageGrid {
 /// 64 is well past any real terminal program's nested keymap-mode depth.
 const KITTY_KB_STACK_CAP: usize = 64;
 
-/// Fallback OSC 10/11 colors when the attach client could not read the host
-/// terminal's real palette: assumes a typical dark terminal (near-white text
-/// on black). The capsule itself paints default cells with `Color::Reset`,
-/// so these values are a report to querying agents, not what gets rendered.
-const DEFAULT_REPORTED_FG: (u8, u8, u8) = (0xe6, 0xe6, 0xe6);
-const DEFAULT_REPORTED_BG: (u8, u8, u8) = (0x00, 0x00, 0x00);
-
 /// Ring-backed row storage.
 ///
 /// This borrows the core idea from Alacritty's `Storage` grid
@@ -433,8 +426,8 @@ impl DamageGrid {
             bracketed_paste: false,
             application_cursor: false,
             focus_events: false,
-            reported_fg: DEFAULT_REPORTED_FG,
-            reported_bg: DEFAULT_REPORTED_BG,
+            reported_fg: VirtualTerminalProfile::default().default_reported_fg,
+            reported_bg: VirtualTerminalProfile::default().default_reported_bg,
             current_attrs: Attrs::default(),
             active_hyperlink: None,
             scroll_top: 0,

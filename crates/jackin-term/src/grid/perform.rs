@@ -382,10 +382,11 @@ impl vte::Perform for DamageGrid {
             // DECRQM; `!p` (DECSTR soft reset) has no `$` and falls through.
             'p' if intermediates.contains(&b'$') => {
                 let dec = intermediates.contains(&b'?');
+                let status = self.profile.decrqm_status(p0);
                 let reply = if dec {
-                    format!("\x1b[?{p0};0$y")
+                    format!("\x1b[?{p0};{status}$y")
                 } else {
-                    format!("\x1b[{p0};0$y")
+                    format!("\x1b[{p0};{status}$y")
                 };
                 self.passthrough
                     .push(PassthroughEvent::Reply(reply.into_bytes()));
