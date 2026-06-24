@@ -36,17 +36,14 @@ pub fn render_launch_frame(
     // Quit confirmation supersedes every other surface (matching the console),
     // owning the screen behind its own backdrop until the operator answers.
     // `draw_confirm` lays out the dimmed backdrop, the centered dialog, and the
-    // hint row; render the status footer underneath so the bottom chrome stays
-    // intact — hint row, blank spacer, then the status bar at the very bottom.
+    // hint row. In debug mode, keep the status footer underneath so the bottom
+    // chrome stays intact — hint row, blank spacer, then the status bar at the
+    // very bottom. Non-debug dialogs do not show a status footer.
     if let Some(confirm) = &view.quit_confirm {
         draw_confirm(frame, confirm);
-        render_footer(
-            frame,
-            bottom_chrome_areas(area).footer,
-            view,
-            run_id,
-            debug_mode,
-        );
+        if debug_mode {
+            render_footer(frame, bottom_chrome_areas(area).footer, view, run_id, true);
+        }
         return;
     }
 
@@ -175,4 +172,84 @@ fn failure_popup_hyperlink_overlay_bytes(
         view.failure_copy_hover,
         view.failure_copied,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tui::app::{LaunchIdentity, LaunchTargetKind};
+    use crate::tui::update::initial_view;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+
+    fn row_text(buf: &Buffer, row: u16, width: u16) -> String {
+        (0..width)
+            .map(|x| buf[(x, row)].symbol().to_owned())
+            .collect()
+    }
+
+    fn quit_confirm_view() -> LaunchView {
+        let mut view = initial_view();
+        view.frame = 30;
+        view.status = "building docker image".to_owned();
+        view.identity = Some(LaunchIdentity {
+            role: "the-architect".to_owned(),
+            agent: "claude".to_owned(),
+            target_kind: LaunchTargetKind::Directory,
+            target_label: ".".to_owned(),
+            mounts: Vec::new(),
+            image: None,
+            container: Some("jk-2y0t4aw6-the-architect".to_owned()),
+        });
+        view.quit_confirm = Some(jackin_tui::components::exit_confirm_state());
+        view
+    }
+
+    fn render_quit_confirm(debug_mode: bool) -> Buffer {
+        let area = Rect::new(0, 0, 90, 18);
+        let view = quit_confirm_view();
+        let backend = TestBackend::new(area.width, area.height);
+        let mut terminal = Terminal::new(backend).expect("test backend should initialize");
+        terminal
+            .draw(|frame| {
+                render_launch_frame(
+                    frame,
+                    &view,
+                    "jk-run-c46709",
+                    "/tmp/jk-run-c46709.jsonl",
+                    true,
+                    None,
+                    debug_mode,
+                    "0.6.0-test",
+                );
+            })
+            .expect("render should succeed");
+        terminal.backend().buffer().clone()
+    }
+
+    #[test]
+    fn quit_confirm_keeps_status_footer_in_debug_mode() {
+        let area = Rect::new(0, 0, 90, 18);
+        let buffer = render_quit_confirm(true);
+        let footer = row_text(&buffer, area.height - 1, area.width);
+
+        assert!(
+            footer.contains("jk-run-c46709") && footer.contains("2y0t4aw6"),
+            "debug quit confirm should keep the status footer visible: {footer:?}"
+        );
+    }
+
+    #[test]
+    fn quit_confirm_hides_status_footer_when_debug_disabled() {
+        let area = Rect::new(0, 0, 90, 18);
+        let buffer = render_quit_confirm(false);
+        let footer = row_text(&buffer, area.height - 1, area.width);
+
+        assert!(
+            !footer.contains("jk-run-c46709") && !footer.contains("2y0t4aw6"),
+            "non-debug quit confirm must not render the status footer: {footer:?}"
+        );
+    }
 }
