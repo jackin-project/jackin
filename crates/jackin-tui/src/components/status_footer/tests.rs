@@ -122,6 +122,42 @@ fn right_group_renders_usage_container_then_run_id() {
 }
 
 #[test]
+fn right_group_layout_orders_usage_container_run_id() {
+    let layout = status_right_group_layout(
+        100,
+        StatusRightGroup {
+            usage: Some("Session 37%"),
+            container: "s9994y2n",
+            run_id: Some("jk-run-3d7e23"),
+        },
+    );
+
+    let usage = layout.usage.expect("usage chunk");
+    let container = layout.container.expect("container chunk");
+    let run_id = layout.run_id.expect("run id chunk");
+
+    assert!(usage.start < container.start);
+    assert!(container.start < run_id.start);
+    assert_eq!(run_id.end, 101);
+}
+
+#[test]
+fn right_group_layout_compacts_usage_before_dropping_it() {
+    let layout = status_right_group_layout(
+        44,
+        StatusRightGroup {
+            usage: Some("Session 37% · Weekly 10%"),
+            container: "jk-test-container",
+            run_id: None,
+        },
+    );
+
+    let usage = layout.usage.expect("usage chunk");
+    assert!(usage.text.contains("Session 37%"), "{usage:?}");
+    assert!(!usage.text.contains("Weekly 10%"), "{usage:?}");
+}
+
+#[test]
 fn compact_usage_status_label_keeps_quota_and_lifecycle_state() {
     assert_eq!(
         compact_usage_status_label("Codex · Session 37% · Weekly 10% · account login"),

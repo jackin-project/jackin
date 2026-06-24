@@ -85,7 +85,7 @@ pub use select_list::{
 pub use status_footer::{
     StatusFooter, StatusFooterHover, StatusRightGroup, compact_usage_status_label,
     render_status_footer, render_status_footer_right_group, status_footer_debug_chip_rect,
-    status_footer_right_chip_rect,
+    status_footer_right_chip_rect, status_right_group_layout,
 };
 pub use status_popup::{StatusPopupState, render_status_popup};
 pub use tab_strip::{TabStrip, tab_cell_style, tab_label_line, tab_underline_line};

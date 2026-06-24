@@ -6,6 +6,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph, Widget};
 
+use crate::display_cols;
 use crate::theme::{DANGER_RED, DEBUG_AMBER, LINK_BLUE, WHITE, faded};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -24,12 +25,113 @@ pub struct StatusRightGroup<'a> {
     pub run_id: Option<&'a str>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusRightChunk {
+    pub text: String,
+    /// One-based inclusive start column, matching terminal mouse coordinates.
+    pub start: u16,
+    /// One-based exclusive end column.
+    pub end: u16,
+}
+
+impl StatusRightChunk {
+    #[must_use]
+    pub const fn contains(&self, col: u16) -> bool {
+        col >= self.start && col < self.end
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StatusRightGroupLayout {
+    pub usage: Option<StatusRightChunk>,
+    pub container: Option<StatusRightChunk>,
+    pub run_id: Option<StatusRightChunk>,
+}
+
+impl StatusRightGroupLayout {
+    #[must_use]
+    pub fn start(&self, fallback: usize) -> usize {
+        self.usage
+            .as_ref()
+            .or(self.container.as_ref())
+            .or(self.run_id.as_ref())
+            .map_or(fallback, |chunk| usize::from(chunk.start))
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct StatusFooter<'a> {
     left: &'a str,
     right: StatusRightGroup<'a>,
     alpha: f32,
     hover: StatusFooterHover,
+}
+
+#[must_use]
+pub fn status_right_group_layout(
+    term_cols: u16,
+    right: StatusRightGroup<'_>,
+) -> StatusRightGroupLayout {
+    if term_cols == 0 {
+        return StatusRightGroupLayout::default();
+    }
+    let term_cols = usize::from(term_cols);
+    let mut cursor = term_cols.saturating_add(1);
+    let run_id = place_status_right_chunk(
+        &mut cursor,
+        term_cols,
+        right
+            .run_id
+            .filter(|run_id| !run_id.is_empty())
+            .map(|run_id| format!(" {run_id} ")),
+    );
+    let container = place_status_right_chunk(&mut cursor, term_cols, {
+        (!right.container.is_empty()).then(|| format!(" {} ", right.container))
+    });
+    let usage = place_usage_status_chunk(&mut cursor, term_cols, right.usage);
+    StatusRightGroupLayout {
+        usage,
+        container,
+        run_id,
+    }
+}
+
+fn place_usage_status_chunk(
+    cursor: &mut usize,
+    term_cols: usize,
+    usage: Option<&str>,
+) -> Option<StatusRightChunk> {
+    let usage = usage.filter(|usage| !usage.is_empty())?;
+    let full = format!(" {usage} ");
+    let compact_usage = compact_usage_status_label(usage);
+    let compact = format!(" {compact_usage} ");
+    if display_cols(&full) < cursor.saturating_sub(1) {
+        place_status_right_chunk(cursor, term_cols, Some(full))
+    } else if display_cols(&compact) < cursor.saturating_sub(1) {
+        place_status_right_chunk(cursor, term_cols, Some(compact))
+    } else {
+        None
+    }
+}
+
+fn place_status_right_chunk(
+    cursor: &mut usize,
+    term_cols: usize,
+    chunk: Option<String>,
+) -> Option<StatusRightChunk> {
+    let chunk = chunk?;
+    let cols = display_cols(&chunk);
+    if cols == 0 || cols + 2 >= term_cols || cols >= cursor.saturating_sub(1) {
+        return None;
+    }
+    let start = cursor.saturating_sub(cols);
+    let end = start.saturating_add(cols);
+    *cursor = start;
+    Some(StatusRightChunk {
+        text: chunk,
+        start: u16::try_from(start).unwrap_or(u16::MAX),
+        end: u16::try_from(end).unwrap_or(u16::MAX),
+    })
 }
 
 impl<'a> StatusFooter<'a> {

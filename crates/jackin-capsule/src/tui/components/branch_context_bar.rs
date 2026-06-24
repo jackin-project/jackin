@@ -8,7 +8,7 @@
 //! must reserve; rendering writes ANSI escape sequences directly into the
 //! caller-supplied `buf` using absolute cursor positions.
 
-use jackin_tui::components::compact_usage_status_label;
+use jackin_tui::components::{StatusRightGroup, status_right_group_layout};
 use jackin_tui::{display_cols, take_display_cols};
 
 use crate::pull_request::PullRequestInfo;
@@ -72,27 +72,16 @@ pub(crate) fn branch_context_bar_layout(
         (None, None) => (String::new(), false),
     };
     let term_cols_usize = usize::from(term_cols);
-    let mut cursor = term_cols_usize.saturating_add(1);
-    let (debug_chip, debug_chip_region) = place_right_chunk(
-        &mut cursor,
-        term_cols_usize,
-        debug_run_id
-            .filter(|id| !id.is_empty())
-            .map(|id| format!(" {id} · ")),
+    let right = status_right_group_layout(
+        term_cols,
+        StatusRightGroup {
+            usage: usage_status_label,
+            container: container_name,
+            run_id: debug_run_id,
+        },
     );
-    let (container, container_region) = place_right_chunk(&mut cursor, term_cols_usize, {
-        (!container_name.is_empty()).then(|| format!(" {container_name} "))
-    });
-    let usage_label = usage_status_label.filter(|s| !s.is_empty());
-    let (usage, usage_region) =
-        usage_right_chunk(&mut cursor, term_cols_usize, usage_label, debug_chip_region);
 
-    let right_start = usage_region
-        .or(debug_chip_region)
-        .or(container_region)
-        .map_or(term_cols_usize.saturating_add(1), |region| {
-            usize::from(region.start)
-        });
+    let right_start = right.start(term_cols_usize.saturating_add(1));
     let left_max_cols = right_start.saturating_sub(2);
     let left = context_left;
     let left = take_display_cols(&left, left_max_cols);
@@ -106,64 +95,31 @@ pub(crate) fn branch_context_bar_layout(
     Some(BranchContextBarLayout {
         left,
         left_region,
-        usage,
-        usage_region,
-        debug_chip,
-        debug_chip_region,
-        container,
-        container_region,
+        usage: right
+            .usage
+            .as_ref()
+            .map_or_else(String::new, |chunk| chunk.text.clone()),
+        usage_region: right
+            .usage
+            .as_ref()
+            .and_then(|chunk| ColRange::new(chunk.start, chunk.end)),
+        debug_chip: right
+            .run_id
+            .as_ref()
+            .map_or_else(String::new, |chunk| chunk.text.clone()),
+        debug_chip_region: right
+            .run_id
+            .as_ref()
+            .and_then(|chunk| ColRange::new(chunk.start, chunk.end)),
+        container: right
+            .container
+            .as_ref()
+            .map_or_else(String::new, |chunk| chunk.text.clone()),
+        container_region: right
+            .container
+            .as_ref()
+            .and_then(|chunk| ColRange::new(chunk.start, chunk.end)),
     })
-}
-
-fn place_right_chunk(
-    cursor: &mut usize,
-    term_cols: usize,
-    chunk: Option<String>,
-) -> (String, Option<ColRange>) {
-    let Some(chunk) = chunk else {
-        return (String::new(), None);
-    };
-    let cols = display_cols(&chunk);
-    if cols == 0 || cols + 2 >= term_cols || cols >= cursor.saturating_sub(1) {
-        return (String::new(), None);
-    }
-    let start = cursor.saturating_sub(cols);
-    let end = start.saturating_add(cols);
-    *cursor = start;
-    (
-        chunk,
-        ColRange::new(
-            u16::try_from(start).unwrap_or(u16::MAX),
-            u16::try_from(end).unwrap_or(u16::MAX),
-        ),
-    )
-}
-
-fn usage_right_chunk(
-    cursor: &mut usize,
-    term_cols: usize,
-    usage: Option<&str>,
-    debug_chip_region: Option<ColRange>,
-) -> (String, Option<ColRange>) {
-    let Some(usage) = usage else {
-        return (String::new(), None);
-    };
-    let separator = if debug_chip_region.is_some() {
-        "  "
-    } else {
-        " "
-    };
-    let full = format!(" {usage}{separator}");
-    let compact_usage = compact_usage_status_label(usage);
-    let compact = format!(" {compact_usage}{separator}");
-    let chunk = if display_cols(&full) < cursor.saturating_sub(1) {
-        full
-    } else if display_cols(&compact) < cursor.saturating_sub(1) {
-        compact
-    } else {
-        return (String::new(), None);
-    };
-    place_right_chunk(cursor, term_cols, Some(chunk))
 }
 
 pub(crate) fn debug_run_id_label() -> Option<String> {
