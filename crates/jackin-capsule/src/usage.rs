@@ -1419,14 +1419,13 @@ fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
 }
 
 fn status_bar_label(
-    _surface: UsageSurface,
+    surface: UsageSurface,
     _account_label: &str,
     status: UsageSnapshotStatus,
     buckets: &[QuotaBucketView],
 ) -> String {
-    let labels = status_bar_quota_labels(buckets);
-    if !labels.is_empty() {
-        return labels.join(" · ");
+    if let Some(headline) = status_bar_headline_for_surface(surface, buckets) {
+        return headline;
     }
     match status {
         UsageSnapshotStatus::Fresh => "usage cached".to_owned(),
@@ -1437,6 +1436,58 @@ fn status_bar_label(
         UsageSnapshotStatus::Unavailable => "usage unavailable".to_owned(),
         UsageSnapshotStatus::Error => "error".to_owned(),
     }
+}
+
+fn status_bar_headline_for_surface(
+    surface: UsageSurface,
+    buckets: &[QuotaBucketView],
+) -> Option<String> {
+    match surface {
+        UsageSurface::Amp => amp_status_bar_headline(buckets),
+        _ => {
+            let labels = status_bar_quota_labels(buckets);
+            (!labels.is_empty()).then(|| labels.join(" · "))
+        }
+    }
+}
+
+fn amp_status_bar_headline(buckets: &[QuotaBucketView]) -> Option<String> {
+    let free = buckets
+        .iter()
+        .find(|bucket| status_bar_fresh_or_stale(bucket) && bucket.label == "Amp Free")
+        .and_then(|bucket| {
+            bucket
+                .remaining_percent
+                .map(|remaining| format!("Free {remaining}%"))
+        });
+    let credits = buckets
+        .iter()
+        .find(|bucket| {
+            status_bar_fresh_or_stale(bucket)
+                && matches!(bucket.label.as_str(), "Individual credits" | "Credits")
+        })
+        .and_then(amp_credit_status_label);
+    match (free, credits) {
+        (Some(free), Some(credits)) => Some(format!("{free} · {credits}")),
+        (Some(free), None) => Some(free),
+        (None, Some(credits)) => Some(credits),
+        (None, None) => None,
+    }
+}
+
+fn amp_credit_status_label(bucket: &QuotaBucketView) -> Option<String> {
+    bucket
+        .limit_label
+        .as_deref()
+        .or_else(|| {
+            bucket
+                .pace_label
+                .as_deref()
+                .and_then(|label| label.strip_prefix("Individual credits: "))
+        })
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .map(str::to_owned)
 }
 
 fn status_bar_quota_labels(buckets: &[QuotaBucketView]) -> Vec<String> {
@@ -1455,11 +1506,15 @@ fn status_bar_quota_labels(buckets: &[QuotaBucketView]) -> Vec<String> {
         .collect()
 }
 
-fn status_bar_bucket_matches(target: &str, bucket: &QuotaBucketView) -> bool {
-    if !matches!(
+fn status_bar_fresh_or_stale(bucket: &QuotaBucketView) -> bool {
+    matches!(
         bucket.status,
         UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale
-    ) {
+    )
+}
+
+fn status_bar_bucket_matches(target: &str, bucket: &QuotaBucketView) -> bool {
+    if !status_bar_fresh_or_stale(bucket) {
         return false;
     }
     let label = bucket.label.to_ascii_lowercase();
@@ -4755,6 +4810,63 @@ mod tests {
                 &buckets
             ),
             "Session 1%"
+        );
+    }
+
+    #[test]
+    fn status_bar_label_uses_amp_free_and_credits() {
+        let buckets = vec![
+            QuotaBucketView {
+                label: "Amp Free".to_owned(),
+                used_label: Some("$5.24".to_owned()),
+                limit_label: Some("$10".to_owned()),
+                remaining_percent: Some(48),
+                reset_label: None,
+                pace_label: None,
+                status: UsageSnapshotStatus::Fresh,
+            },
+            QuotaBucketView {
+                label: "Individual credits".to_owned(),
+                used_label: None,
+                limit_label: Some("$4.76".to_owned()),
+                remaining_percent: None,
+                reset_label: None,
+                pace_label: Some("Individual credits: $4.76".to_owned()),
+                status: UsageSnapshotStatus::Fresh,
+            },
+        ];
+
+        assert_eq!(
+            status_bar_label(
+                UsageSurface::Amp,
+                "alexey@example.com",
+                UsageSnapshotStatus::Fresh,
+                &buckets
+            ),
+            "Free 48% · $4.76"
+        );
+    }
+
+    #[test]
+    fn status_bar_label_uses_stale_amp_cache() {
+        let buckets = vec![QuotaBucketView {
+            label: "Amp Free".to_owned(),
+            used_label: Some("$9.10".to_owned()),
+            limit_label: Some("$10".to_owned()),
+            remaining_percent: Some(9),
+            reset_label: None,
+            pace_label: None,
+            status: UsageSnapshotStatus::Stale,
+        }];
+
+        assert_eq!(
+            status_bar_label(
+                UsageSurface::Amp,
+                "alexey@example.com",
+                UsageSnapshotStatus::Stale,
+                &buckets
+            ),
+            "Free 9%"
         );
     }
 
