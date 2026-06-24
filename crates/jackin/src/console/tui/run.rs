@@ -357,12 +357,22 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                     {
                         chrome_hover_tracker.register(chip, ConsoleChromeHover::DebugChip);
                     }
-                    frame.render_widget(
-                        jackin_tui::components::StatusFooter::new("")
-                            .right_debug(Some(&run_id))
-                            .alpha(1.0)
-                            .right_debug_hover(chrome_hover == Some(ConsoleChromeHover::DebugChip)),
+                    jackin_tui::components::render_status_footer_right_group(
+                        frame,
                         chip_row,
+                        "",
+                        jackin_tui::components::StatusRightGroup {
+                            usage: None,
+                            container: "",
+                            run_id: Some(&run_id),
+                        },
+                        1.0,
+                        jackin_tui::components::StatusFooterHover {
+                            left: false,
+                            usage: false,
+                            right: false,
+                            right_debug: chrome_hover == Some(ConsoleChromeHover::DebugChip),
+                        },
                     );
                 }
             })?;

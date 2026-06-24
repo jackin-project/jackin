@@ -1,6 +1,6 @@
 //! Launch cockpit footer helpers.
 
-use jackin_tui::components::render_status_footer;
+use jackin_tui::components::{StatusRightGroup, render_status_footer_right_group};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 
@@ -40,12 +40,15 @@ pub fn render_footer(
     // gradually with the rain rather than popping in.
     #[allow(clippy::cast_precision_loss)]
     let alpha = (view.frame as f32 / 30.0).min(1.0);
-    render_status_footer(
+    render_status_footer_right_group(
         frame,
         area,
         &format_activity(&view.status),
-        &instance,
-        debug_chip,
+        StatusRightGroup {
+            usage: None,
+            container: &instance,
+            run_id: debug_chip,
+        },
         alpha,
         view.footer_hover,
     );
