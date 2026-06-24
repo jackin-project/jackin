@@ -5092,6 +5092,33 @@ mod tests {
     }
 
     #[test]
+    fn usage_refresh_schedule_skips_until_ttl_or_manual_refresh() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("OpenAI".to_owned()),
+        };
+        let mut schedule = UsageRefreshSchedule::default();
+        let now = Instant::now();
+        let view = FocusedUsageView::unavailable("fresh", now_epoch());
+
+        assert!(schedule.should_refresh_with_cooldown_dir(&target, now, dir.path()));
+        schedule.mark_refreshed_with_cooldown_dir(&target, now, &view, dir.path());
+        assert!(!schedule.should_refresh_with_cooldown_dir(
+            &target,
+            now + Duration::from_secs(30),
+            dir.path()
+        ));
+
+        schedule.mark_due(&target, now + Duration::from_secs(31));
+        assert!(schedule.should_refresh_with_cooldown_dir(
+            &target,
+            now + Duration::from_secs(31),
+            dir.path()
+        ));
+    }
+
+    #[test]
     fn usage_refresh_schedule_writes_and_honors_shared_rate_limit_cooldown() {
         let dir = tempfile::tempdir().expect("tempdir");
         let target = UsageRefreshTarget {
