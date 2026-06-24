@@ -220,48 +220,52 @@ These previews are the canonical contract for what the overlay must render: the 
 
 ## Status bar / compact signal
 
-The always-on signal lives in the branch context bar. It follows the focused pane's provider and account, shows that provider's most-constrained bucket (lowest remaining), and prefers remaining quota. It degrades to a lifecycle word when no trustworthy percentage exists, and elides gracefully on narrow terminals.
+The always-on signal lives in the right-hand segment of the bottom status bar, after the debug run id and the container id. It answers exactly one question — does the focused agent still have enough quota to keep working — so it shows only the REMAINING percentage for the session (5-hour) window and the weekly window of the focused pane's provider. No account label, provider name, plan, or reset countdown appears here; that detail lives in the overlay.
 
-Full form:
+Right-panel order, left to right: debug run id (only present in debug mode), container id, then the usage. The branch/repository context stays on the left.
 
 ```text
- Branch · feature/auth · Claude · alexey@chainargos.com  Weekly: 45% used · 55% left · resets 1d 22h         5vvkqps1
- Branch · docs · Codex · alexey@chainargos.com  Weekly: 81% used · 19% left · resets 13h 6m                  5vvkqps1
- Branch · main · GLM / Z.AI  Tokens: 1% used · 99% left · resets 3d                                          5vvkqps1
- Branch · main · Grok · alexey@chainargos.com  Weekly: 82% used · 18% left · resets 6d 15h                   5vvkqps1
- Branch · main · MiniMax  General · Weekly: 1% used · 99% left · resets 4 days                                5vvkqps1
- Branch · main · Kimi  Weekly: 0% used · 100% left · resets 2m                                               5vvkqps1
- Branch · main · Amp · alexey@zhokhov.com  Amp Free: 0% used · 100% left · resets now                        5vvkqps1
+ Branch · feature/auth                          18bbf3524d6cadd8 · 5vvkqps1 · Session 92% · Weekly 55%
 ```
 
-Lifecycle states:
+Session and weekly map to each provider's equivalent windows (session = the window of ~5 hours or less, weekly = the ~7-day window):
+
+| Provider | Session | Weekly |
+|---|---|---|
+| OpenAI / Codex | Session | Weekly |
+| Anthropic / Claude | Session | Weekly |
+| Z.AI | 5-hour | Tokens |
+| MiniMax | General · 5h | General · Weekly |
+| Kimi | Rate Limit | Weekly |
+| Amp | Amp Free | — |
+| xAI | — | Weekly |
+
+When a provider exposes only one of the two windows, show only that one:
 
 ```text
- Branch · docs · Codex · stale · last 19% left · updated 24m ago        5vvkqps1
- Branch · main · Amp · needs login                                       5vvkqps1
- Branch · main · Kimi · needs token                                      5vvkqps1
- Branch · main · MiniMax · unsupported                                   5vvkqps1
- Branch · main · Claude · usage unavailable   (daemon disconnected)      5vvkqps1
+Session 92% · Weekly 55%
+Weekly 18%
+Amp Free 100%
 ```
 
-Compact / elision (drop in order: reset countdown, branch/repo detail, current usage, then quota detail; keep provider plus remaining or state as long as possible):
+When no trustworthy percentage exists, show the lifecycle word in the same right-panel slot instead of a number:
 
 ```text
-Claude Weekly 55% left
-Claude 55% left
-Claude stale
-Codex 19% left
-Amp login
+ ... 18bbf3524d6cadd8 · 5vvkqps1 · needs login
+ ... 18bbf3524d6cadd8 · 5vvkqps1 · Session 92% · Weekly 55% (stale)
+ ... 18bbf3524d6cadd8 · 5vvkqps1 · usage unavailable
 ```
 
 Rules:
 
-- The signal follows the focused tab/pane's provider and account; never a global average or a sibling agent's quota.
-- When both values fit, show current usage and remaining; if only one fits, prefer remaining (`37% left`) because that is the faster operational decision.
-- When no trustworthy percentage exists, show the lifecycle word: `login`, `secret`, `stale`, `unsupported`, or `unavailable`.
-- If the daemon is disconnected, show `usage unavailable`; do not show a misleading percentage.
-- Shell tabs with no active agent show no provider usage.
-- Color is advisory only; the text/glyph state must remain clear in monochrome and low-color terminals.
+- Follows the focused pane's provider; never a global average or a sibling agent's quota.
+- Show remaining percentage only — no account, provider name, plan, or reset countdown.
+- Show session (5-hour) and weekly when both exist; otherwise whichever exists.
+- No trustworthy percentage → `needs login` / `needs secret` / `stale` / `unsupported` / `usage unavailable`; never a fabricated number.
+- Daemon disconnected → `usage unavailable`.
+- Shell tabs with no active agent show no usage.
+- On a narrow terminal, drop the weekly value before the session value; always keep the container id and at least the session percentage or the state word.
+- Color is advisory only; the value must read in monochrome.
 
 ## Quota buckets and rendering
 
@@ -329,7 +333,7 @@ Each step lands with adapter unit/snapshot tests AND an in-container live check 
 
 ### Already correct — keep
 
-The provider quota fetchers and `*_snapshot` builders, the daemon `UsageCache` and focused-snapshot path, the `UsageFocused`/`UsageRefreshFocused` control messages and the `r` refresh key path, the quota-bucket renderers, the status-bar most-constrained selection, and the runtime credential forwarding all stay. Z.AI is fully correct end to end and is the reference.
+The provider quota fetchers and `*_snapshot` builders, the daemon `UsageCache` and focused-snapshot path, the `UsageFocused`/`UsageRefreshFocused` control messages and the `r` refresh key path, the quota-bucket renderers, and the runtime credential forwarding all stay. Z.AI is fully correct end to end and is the reference.
 
 ### Phase 1 — Credential delivery (unblocks Claude, Codex, xAI, Amp)
 
@@ -351,6 +355,7 @@ The provider quota fetchers and `*_snapshot` builders, the daemon `UsageCache` a
 - Render full-width remaining bars and stacked meter lines; apply the per-provider section sets and provider-org headers; apply the reset/pace formats above.
 - Wire a usage keymap into the standard hint bar and remove the in-box `"Actions"` footer row.
 - Make `Source`/`Status` (where any provenance is shown) reflect the snapshot's real `(source, confidence, status)`; never render `authoritative · fresh` on a failed fetch; surface fetch errors instead of swallowing them.
+- Rework the status bar to the new contract: right-panel only (after debug run id and container id), showing session (5-hour) and weekly REMAINING percentages for the focused provider and nothing else — drop the account/provider/plan/reset text and the old most-constrained-bucket selection; degrade to the lifecycle word when no percentage is trustworthy.
 
 ### Phase 4 — Cleanup (remove stale code so the feature is exactly what ships)
 
@@ -371,6 +376,7 @@ Removing the cut features is part of this work, not a follow-up: the workspace d
 - [ ] Render tabs via the shared `TabStrip` with its focus model; drop the synthesized tabs row.
 - [ ] Render full-width remaining bars + stacked meter lines; apply per-provider section sets, provider-org headers, reset/pace formats.
 - [ ] Wire a usage keymap into the standard hint bar; remove the in-box actions footer.
+- [ ] Rework the status bar: right-panel session + weekly remaining only, after the debug/container ids; drop account/provider/plan/reset and most-constrained selection.
 - [ ] Make provenance honest; surface fetch errors.
 - [ ] Remove the cost/spend/Instance/action-row render code and dead helpers.
 - [ ] Remove the spend data plane and pricing in usage.rs.
