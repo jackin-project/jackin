@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -673,23 +673,33 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     } else {
         "needs Claude login".to_owned()
     };
-    let (quota, quota_error) = match oauth.as_ref() {
+    let (oauth_quota, oauth_error) = match oauth.as_ref() {
         Some(credentials) => match fetch_claude_oauth_usage(&credentials.access_token) {
             Ok(usage) => (Some(usage), None),
             Err(error) => (None, Some(error)),
         },
         None => (None, None),
     };
+    let (cli_usage, cli_error) = if oauth_quota.is_none() && oauth.is_some() {
+        match fetch_claude_cli_usage() {
+            Ok(usage) => (Some(usage), None),
+            Err(error) => (None, Some(error)),
+        }
+    } else {
+        (None, None)
+    };
+    let provider_error = oauth_error.as_ref().or(cli_error.as_ref()).cloned();
     let status = if account == "needs Claude login" {
         UsageSnapshotStatus::NeedsLogin
-    } else if quota.is_some() {
+    } else if oauth_quota.is_some() || cli_usage.is_some() {
         UsageSnapshotStatus::Fresh
     } else {
         UsageSnapshotStatus::Stale
     };
     let bucket_status = status;
-    let buckets = quota
+    let buckets = oauth_quota
         .map(|usage| usage.into_buckets(now))
+        .or_else(|| cli_usage.as_ref().map(ClaudeCliUsage::buckets))
         .filter(|buckets| !buckets.is_empty())
         .unwrap_or_else(|| {
             vec![
@@ -699,7 +709,7 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
                     None,
                     None,
                     None,
-                    quota_error.as_deref().or(Some("provider API pending")),
+                    provider_error.as_deref().or(Some("provider API pending")),
                     bucket_status,
                 ),
                 bucket(
@@ -708,7 +718,7 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
                     None,
                     None,
                     None,
-                    quota_error.as_deref().or(Some("provider API pending")),
+                    provider_error.as_deref().or(Some("provider API pending")),
                     bucket_status,
                 ),
                 bucket(
@@ -717,7 +727,7 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
                     None,
                     None,
                     None,
-                    quota_error.as_deref().or(Some("provider API pending")),
+                    provider_error.as_deref().or(Some("provider API pending")),
                     bucket_status,
                 ),
             ]
@@ -731,7 +741,11 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
         buckets,
         status,
         source: if status == UsageSnapshotStatus::Fresh {
-            UsageSource::ProviderApi
+            if cli_usage.is_some() {
+                UsageSource::Cli
+            } else {
+                UsageSource::ProviderApi
+            }
         } else {
             UsageSource::None
         },
@@ -745,7 +759,7 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
             UsageSnapshotStatus::NeedsLogin => {
                 Some("Claude credentials not available to Capsule".to_owned())
             }
-            UsageSnapshotStatus::Stale => Some(quota_error.unwrap_or_else(|| {
+            UsageSnapshotStatus::Stale => Some(provider_error.unwrap_or_else(|| {
                 "Claude provider usage unavailable; cached quota is stale".to_owned()
             })),
             _ => None,
@@ -1732,6 +1746,38 @@ struct ClaudeOAuthExtraUsage {
     used_credits: Option<f64>,
     utilization: Option<f64>,
     currency: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ClaudeCliUsage {
+    session_used: Option<f64>,
+    weekly_used: Option<f64>,
+    sonnet_used: Option<f64>,
+}
+
+impl ClaudeCliUsage {
+    fn buckets(&self) -> Vec<QuotaBucketView> {
+        let mut buckets = Vec::new();
+        push_claude_cli_bucket(&mut buckets, "Session", self.session_used);
+        push_claude_cli_bucket(&mut buckets, "Weekly", self.weekly_used);
+        push_claude_cli_bucket(&mut buckets, "Sonnet", self.sonnet_used);
+        buckets
+    }
+}
+
+fn push_claude_cli_bucket(buckets: &mut Vec<QuotaBucketView>, label: &str, used: Option<f64>) {
+    let Some(used) = used else {
+        return;
+    };
+    buckets.push(bucket(
+        label,
+        Some(used_percent_label(used)),
+        Some("100%".to_owned()),
+        remaining_from_fraction(used),
+        None,
+        None,
+        UsageSnapshotStatus::Fresh,
+    ));
 }
 
 impl ClaudeOAuthUsageResponse {
@@ -3793,6 +3839,18 @@ pub(crate) fn run_claude_usage_diagnostic() -> Result<ClaudeUsageDiagnostic, Str
     })
 }
 
+fn fetch_claude_cli_usage() -> Result<ClaudeCliUsage, String> {
+    let diagnostic = run_claude_usage_diagnostic()?;
+    if !diagnostic.success {
+        return Err(format!(
+            "Claude CLI usage exited with status {:?}",
+            diagnostic.exit_code
+        ));
+    }
+    parse_claude_usage_output(&diagnostic.stdout)
+        .ok_or_else(|| "Claude CLI usage output was not recognized".to_owned())
+}
+
 fn run_claude_usage_diagnostic_with<F>(mut runner: F) -> Result<ClaudeUsageDiagnostic, String>
 where
     F: FnMut(&str, &[&str], Duration) -> Result<CliOutput, String>,
@@ -3839,6 +3897,21 @@ fn parse_amp_usage_output(text: &str) -> Option<AmpCliUsage> {
     (usage.free_remaining.is_some() || usage.individual_credits.is_some()).then_some(usage)
 }
 
+fn parse_claude_usage_output(text: &str) -> Option<ClaudeCliUsage> {
+    let mut usage = ClaudeCliUsage::default();
+    for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        if line.starts_with("Current session:") {
+            usage.session_used = percent_before_used(line);
+        } else if line.starts_with("Current week (all models):") {
+            usage.weekly_used = percent_before_used(line);
+        } else if line.starts_with("Current week (Sonnet only):") {
+            usage.sonnet_used = percent_before_used(line);
+        }
+    }
+    (usage.session_used.is_some() || usage.weekly_used.is_some() || usage.sonnet_used.is_some())
+        .then_some(usage)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CliOutput {
     success: bool,
@@ -3871,20 +3944,29 @@ fn run_cli_with_timeout_full(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|err| format!("{command} failed to start: {err}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| format!("{command} stdout unavailable"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| format!("{command} stderr unavailable"))?;
+    let stdout_reader = thread::spawn(move || read_process_pipe(stdout));
+    let stderr_reader = thread::spawn(move || read_process_pipe(stderr));
     let started = Instant::now();
     loop {
         match child.try_wait() {
-            Ok(Some(_)) => {
-                let output = child
-                    .wait_with_output()
-                    .map_err(|err| format!("{command} output failed: {err}"))?;
-                let stdout = String::from_utf8(output.stdout)
-                    .map_err(|err| format!("{command} output was not UTF-8: {err}"));
-                let stderr = String::from_utf8(output.stderr)
-                    .map_err(|err| format!("{command} stderr was not UTF-8: {err}"));
+            Ok(Some(status)) => {
+                let stdout = stdout_reader
+                    .join()
+                    .map_err(|_| format!("{command} stdout reader panicked"))?;
+                let stderr = stderr_reader
+                    .join()
+                    .map_err(|_| format!("{command} stderr reader panicked"))?;
                 return Ok(CliOutput {
-                    success: output.status.success(),
-                    exit_code: output.status.code(),
+                    success: status.success(),
+                    exit_code: status.code(),
                     stdout: stdout?,
                     stderr: stderr?,
                 });
@@ -3904,6 +3986,13 @@ fn run_cli_with_timeout_full(
     }
 }
 
+fn read_process_pipe(mut pipe: impl Read) -> Result<String, String> {
+    let mut bytes = Vec::new();
+    pipe.read_to_end(&mut bytes)
+        .map_err(|err| format!("process output read failed: {err}"))?;
+    String::from_utf8(bytes).map_err(|err| format!("process output was not UTF-8: {err}"))
+}
+
 fn dollar_amounts(text: &str) -> Vec<f64> {
     let mut values = Vec::new();
     let mut rest = text;
@@ -3919,6 +4008,14 @@ fn dollar_amounts(text: &str) -> Vec<f64> {
         }
     }
     values
+}
+
+fn percent_before_used(text: &str) -> Option<f64> {
+    let before_used = text.split("% used").next()?;
+    let percent = before_used
+        .rsplit(|ch: char| !(ch.is_ascii_digit() || ch == '.'))
+        .find(|part| !part.is_empty())?;
+    percent.parse().ok()
 }
 
 fn format_currency(value: f64) -> String {
@@ -4601,6 +4698,27 @@ mod tests {
         assert!(!diagnostic.success);
         assert_eq!(diagnostic.exit_code, Some(1));
         assert_eq!(diagnostic.stderr, "not logged in");
+    }
+
+    #[test]
+    fn claude_cli_usage_output_maps_current_windows() {
+        let usage = parse_claude_usage_output(
+            "You are currently using your subscription to power your Claude Code usage\n\
+             \n\
+             Current session: 0% used\n\
+             Current week (all models): 46% used · resets Jun 26, 6:59am (UTC)\n\
+             Current week (Sonnet only): 15% used · resets Jun 26, 6:59am (UTC)\n",
+        )
+        .expect("usage output");
+
+        let buckets = usage.buckets();
+
+        assert_eq!(buckets[0].label, "Session");
+        assert_eq!(buckets[0].remaining_percent, Some(100));
+        assert_eq!(buckets[1].label, "Weekly");
+        assert_eq!(buckets[1].remaining_percent, Some(54));
+        assert_eq!(buckets[2].label, "Sonnet");
+        assert_eq!(buckets[2].remaining_percent, Some(85));
     }
 
     #[test]
