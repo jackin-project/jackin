@@ -82,6 +82,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         with:
+          token: ${{ secrets.GH_READONLY_TOKEN }}
           filters: |
             rust:
               - '.cargo/**'
@@ -264,7 +265,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "actionlint shellcheck"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - run: actionlint .github/workflows/*.yml
 
   fmt:
@@ -295,7 +296,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - run: rustup component add rustfmt
       - run: cargo fmt --check
 
@@ -327,7 +328,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
 
@@ -364,7 +365,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: ${{ runner.arch == 'X64' && 'rust sccache shellfirm' || 'rust sccache' }}
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -415,7 +416,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust sccache"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -480,7 +481,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust cargo-deny cargo-shear"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - run: cargo shear
@@ -518,7 +519,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust sccache"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -593,7 +594,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust sccache shellfirm"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -624,7 +625,7 @@ jobs:
         env:
           CACHE_FROM: |
             type=registry,ref=projectjackin/construct:buildcache-amd64
-            type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }}
+            type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ secrets.GH_READONLY_TOKEN }}
           CACHE_TO: type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }},mode=max
         run: |
           set -euo pipefail
@@ -683,7 +684,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust cargo-fuzz"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -737,7 +738,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -789,7 +790,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust@${{ steps.msrv.outputs.version }}"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -845,7 +846,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust cargo-audit"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - name: Run cargo audit

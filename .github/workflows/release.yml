@@ -79,7 +79,7 @@ jobs:
       - name: Determine version
         id: version
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_READONLY_TOKEN }}
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             version="${GITHUB_REF#refs/tags/v}"
@@ -145,7 +145,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust zig cargo-zigbuild cosign syft sccache"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -230,7 +230,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust zig cargo-zigbuild cosign syft sccache"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -310,7 +310,7 @@ jobs:
           version: ${{ needs.check-version.outputs.version }}
           arm64-sha: ${{ steps.shas.outputs.capsule_arm64_linux }}
           x86-sha: ${{ steps.shas.outputs.capsule_x86_linux }}
-          github-token: ${{ github.token }}
+          github-token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Create GitHub Release
         env:

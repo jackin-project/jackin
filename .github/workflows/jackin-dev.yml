@@ -52,7 +52,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - uses: ./.github/actions/cache-cargo-registry
 
       - name: Require jackin-dev version bump for artifact changes
@@ -174,7 +174,7 @@ jobs:
       - name: Assert jackin-dev version is unpublished
         if: github.ref == 'refs/heads/main'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_READONLY_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           if gh release view "jackin-dev-v${VERSION}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -229,7 +229,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust zig cargo-zigbuild cosign syft sccache"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
