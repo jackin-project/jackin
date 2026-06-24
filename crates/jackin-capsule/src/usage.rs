@@ -4139,10 +4139,8 @@ impl AmpApiUsage {
                 Some(format_currency(used)),
                 Some(format_currency(limit)),
                 remaining_percent,
+                amp_free_reset_label(remaining, limit, self.hourly_replenishment),
                 None,
-                self.hourly_replenishment
-                    .map(|value| format!("replenishes +{}/hour", format_currency(value)))
-                    .as_deref(),
                 UsageSnapshotStatus::Fresh,
             ));
         }
@@ -4153,7 +4151,7 @@ impl AmpApiUsage {
                 Some(format_currency(credits)),
                 None,
                 None,
-                Some("remaining"),
+                Some(&format!("Individual credits: {}", format_currency(credits))),
                 UsageSnapshotStatus::Fresh,
             ));
         }
@@ -4209,10 +4207,8 @@ impl AmpCliUsage {
                 Some(format_currency(used)),
                 Some(format_currency(limit)),
                 remaining_percent,
+                amp_free_reset_label(remaining, limit, self.hourly_replenishment),
                 None,
-                self.hourly_replenishment
-                    .map(|value| format!("replenishes +{}/hour", format_currency(value)))
-                    .as_deref(),
                 UsageSnapshotStatus::Fresh,
             ));
         }
@@ -4223,12 +4219,30 @@ impl AmpCliUsage {
                 Some(format_currency(credits)),
                 None,
                 None,
-                Some("remaining"),
+                Some(&format!("Individual credits: {}", format_currency(credits))),
                 UsageSnapshotStatus::Fresh,
             ));
         }
         buckets
     }
+}
+
+fn amp_free_reset_label(
+    remaining: f64,
+    limit: f64,
+    hourly_replenishment: Option<f64>,
+) -> Option<String> {
+    let hourly_replenishment = hourly_replenishment?;
+    if !remaining.is_finite()
+        || !limit.is_finite()
+        || !hourly_replenishment.is_finite()
+        || remaining >= limit
+        || hourly_replenishment <= 0.0
+    {
+        return None;
+    }
+    let seconds = (((limit - remaining).max(0.0) / hourly_replenishment) * 3_600.0).ceil() as i64;
+    Some(format!("Resets in {}", compact_duration_label(seconds)))
 }
 
 fn fetch_amp_cli_usage() -> Result<AmpCliUsage, String> {
@@ -5617,12 +5631,14 @@ mod tests {
         assert_eq!(buckets[0].used_label.as_deref(), Some("$7.58"));
         assert_eq!(buckets[0].limit_label.as_deref(), Some("$10"));
         assert_eq!(buckets[0].remaining_percent, Some(24));
-        assert_eq!(
-            buckets[0].pace_label.as_deref(),
-            Some("replenishes +$0.42/hour")
-        );
+        assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets in 18h 2m"));
+        assert_eq!(buckets[0].pace_label, None);
         assert_eq!(buckets[1].label, "Individual credits");
         assert_eq!(buckets[1].limit_label.as_deref(), Some("$0.33"));
+        assert_eq!(
+            buckets[1].pace_label.as_deref(),
+            Some("Individual credits: $0.33")
+        );
     }
 
     #[test]
@@ -5663,12 +5679,14 @@ mod tests {
         assert_eq!(buckets[0].used_label.as_deref(), Some("$5.06"));
         assert_eq!(buckets[0].limit_label.as_deref(), Some("$10"));
         assert_eq!(buckets[0].remaining_percent, Some(49));
-        assert_eq!(
-            buckets[0].pace_label.as_deref(),
-            Some("replenishes +$0.42/hour")
-        );
+        assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets in 12h 2m"));
+        assert_eq!(buckets[0].pace_label, None);
         assert_eq!(buckets[1].label, "Individual credits");
         assert_eq!(buckets[1].limit_label.as_deref(), Some("$1.25"));
+        assert_eq!(
+            buckets[1].pace_label.as_deref(),
+            Some("Individual credits: $1.25")
+        );
     }
 
     #[test]

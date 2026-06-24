@@ -710,10 +710,14 @@ impl Dialog {
             return parts.join(" · ");
         }
         if let Some(remaining) = bucket.remaining_percent {
-            parts.push(format!(
-                "{} {remaining}% left",
-                Self::usage_meter(remaining)
-            ));
+            if bucket.label == "Credits" && remaining == 0 && bucket.limit_label.is_some() {
+                parts.push(format!("{} 0 left", Self::usage_meter(remaining)));
+            } else {
+                parts.push(format!(
+                    "{} {remaining}% left",
+                    Self::usage_meter(remaining)
+                ));
+            }
         }
         // Normal buckets show only `N% left · pace · Resets in …` on the
         // stats line (the roadmap previews never put a used/limit token there;
@@ -723,6 +727,12 @@ impl Dialog {
         }
         if let Some(reset) = &bucket.reset_label {
             parts.push(reset.clone());
+        }
+        if bucket.label == "Credits"
+            && bucket.remaining_percent == Some(0)
+            && let Some(limit) = &bucket.limit_label
+        {
+            parts.push(limit.clone());
         }
         if parts.is_empty() || bucket.status != jackin_protocol::control::UsageSnapshotStatus::Fresh
         {
@@ -734,7 +744,11 @@ impl Dialog {
     fn usage_meter(remaining_percent: u8) -> String {
         const WIDTH: usize = 32;
         let remaining = usize::from(remaining_percent.min(100));
-        let filled = (remaining * WIDTH + 50) / 100;
+        let filled = if remaining >= 100 {
+            WIDTH
+        } else {
+            remaining * WIDTH / 100
+        };
         format!(
             "{}{}",
             "█".repeat(filled),

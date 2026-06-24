@@ -15,13 +15,13 @@ expression: "render_usage_dialog_snapshot(100, 32, UsageDialogTab::Overview)"
        ┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
        │ Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                  │
        │━━━━━━━━━━                                                                          │
-       │                                                                                    │
-       │  OpenAI 37% left · Resets in 1h 21m                                                │
-       │  Anthropic 16% left · Resets in 46m                                                │
-       │  Amp unsupported                                                                   │
-       │  xAI needs login                                                                   │
-       │  Z.AI 88% left · Resets in 4d                                                      │
-       │  Kimi 72% left · Resets in 13h                                                     │
-       │  MiniMax 100% left                                                                 │
+       │  ──────────────────────────────────────────────────────────────────────────────────│
+       │  OpenAI     37% left                                               Resets in 1h 21m│
+       │  Anthropic  16% left                                                  Resets in 46m│
+       │  Amp        unsupported                                                            │
+       │  xAI        needs login                                                            │
+       │  Z.AI       88% left                                                   Resets in 4d│
+       │  Kimi       72% left                                                  Resets in 13h│
+       │  MiniMax    100% left                                                              │
        │                                                                                    │
        └────────────────────────────────────────────────────────────────────────────────────┘

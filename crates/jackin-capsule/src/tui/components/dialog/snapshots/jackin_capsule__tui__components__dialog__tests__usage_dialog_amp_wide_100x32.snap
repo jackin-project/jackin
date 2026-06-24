@@ -1,0 +1,28 @@
+---
+source: crates/jackin-capsule/src/tui/components/dialog/tests.rs
+expression: "render_usage_dialog_snapshot_for_view(100, 32, UsageDialogTab::Provider,\namp_usage_view_fixture())"
+---
+
+
+
+
+
+
+
+
+
+       ┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
+       │ Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                  │
+       │                                ━━━━━                                               │
+       │  ──────────────────────────────────────────────────────────────────────────────────│
+       │  Amp                                                             alexey@zhokhov.com│
+       │  Updated just now                                                          Amp Free│
+       │  ──────────────────────────────────────────────────────────────────────────────────│
+       │  Amp Free                                                                          │
+       │  ██················································································│
+       │  4% left                                                          Resets in 22h 40m│
+       │  ──────────────────────────────────────────────────────────────────────────────────│
+       │  Credits                                                                           │
+       │  Individual credits: $4.76                                                         │
+       │                                                                                    │
+       └────────────────────────────────────────────────────────────────────────────────────┘
