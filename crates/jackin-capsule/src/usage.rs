@@ -3447,13 +3447,8 @@ impl KimiUsageResponse {
         };
         let mut buckets = vec![kimi_bucket("Weekly", detail, None, now)];
         if let Some(rate_limit) = limits.first() {
-            let label = rate_limit
-                .window
-                .as_ref()
-                .and_then(KimiWindow::label)
-                .unwrap_or_else(|| "5-hour rate limit".to_owned());
             buckets.push(kimi_bucket(
-                &label,
+                "Rate Limit",
                 &rate_limit.detail,
                 rate_limit.window.as_ref(),
                 now,
@@ -3501,37 +3496,17 @@ impl KimiWindow {
             .as_deref()
             .unwrap_or("hour")
             .to_ascii_lowercase();
-        if unit.starts_with("minute") {
+        if unit.contains("minute") {
             Some(duration * 60)
-        } else if unit.starts_with("hour") {
+        } else if unit.contains("hour") {
             Some(duration * 60 * 60)
-        } else if unit.starts_with("day") {
+        } else if unit.contains("day") {
             Some(duration * 24 * 60 * 60)
-        } else if unit.starts_with("week") {
+        } else if unit.contains("week") {
             Some(duration * 7 * 24 * 60 * 60)
         } else {
             None
         }
-    }
-
-    fn label(&self) -> Option<String> {
-        let duration = self.duration?;
-        let unit = self
-            .time_unit
-            .as_deref()
-            .unwrap_or("hour")
-            .to_ascii_lowercase();
-        let normalized = if unit.starts_with("hour") {
-            "hour"
-        } else if unit.starts_with("minute") {
-            "minute"
-        } else if unit.starts_with("day") {
-            "day"
-        } else {
-            unit.as_str()
-        };
-        let plural = if duration == 1 { "" } else { "s" };
-        Some(format!("{duration}-{normalized}{plural} rate limit"))
     }
 }
 
@@ -3566,9 +3541,9 @@ fn kimi_bucket(
 }
 
 fn kimi_window_seconds(label: &str, window: Option<&KimiWindow>) -> Option<i64> {
-    window
-        .and_then(KimiWindow::seconds)
-        .or_else(|| (label == "Weekly").then_some(7 * 24 * 60 * 60))
+    (label == "Rate Limit")
+        .then(|| window.and_then(KimiWindow::seconds))
+        .flatten()
 }
 
 fn fetch_kimi_usage(token: &str) -> Result<KimiUsageResponse, String> {
@@ -5929,7 +5904,7 @@ mod tests {
                     "resetTime": "2026-06-18T12:00:00Z"
                 },
                 "limits": [{
-                    "window": { "duration": 5, "timeUnit": "HOUR" },
+                    "window": { "duration": 300, "timeUnit": "TIME_UNIT_MINUTE" },
                     "detail": {
                         "limit": "200",
                         "remaining": "150",
@@ -5946,9 +5921,11 @@ mod tests {
         assert_eq!(buckets[0].used_label.as_deref(), Some("220"));
         assert_eq!(buckets[0].limit_label.as_deref(), Some("1.0K"));
         assert_eq!(buckets[0].remaining_percent, Some(78));
-        assert_eq!(buckets[1].label, "5-hours rate limit");
+        assert_eq!(buckets[0].pace_label, None);
+        assert_eq!(buckets[1].label, "Rate Limit");
         assert_eq!(buckets[1].used_label.as_deref(), Some("50"));
         assert_eq!(buckets[1].remaining_percent, Some(75));
+        assert_eq!(buckets[1].pace_label.as_deref(), Some("30% in reserve"));
     }
 
     #[test]
