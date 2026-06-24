@@ -473,6 +473,48 @@ meaningful:
   window makes the % wrong (this is the Kimi `300 TIME_UNIT_MINUTE` parse bug, Issue 14). Verify
   window length per provider when enabling pace.
 
+### Canonical per-provider section spec (AUTHORITATIVE — build the spec from this)
+
+This is the single source the per-provider section spec (plan item A5) must encode: per provider, the
+**ordered** sections and, per section, whether it shows a remaining-% bar, an **in-reserve** pace line,
+a **count line**, and a reset. Order is enforced at render (not DB order). Every bar is full-width
+remaining (`█`/`░`, "% left"). Every reset uses the Issue 13 format `Resets in <rel> (<local date,
+time>)`. Headers everywhere: provider name (left) · account label (right); line 2: `Updated …` (left)
+· plan (right); full-bleed separators; symmetric padding.
+
+| Provider | Ordered sections | bar (% left) | in-reserve | count line | reset | notes |
+|---|---|---|---|---|---|---|
+| **OpenAI / Codex** | Session | ✓ | ✓ | — | ✓ | |
+| | Weekly | ✓ | ✓ | — | ✓ | |
+| | Codex Spark 5-hour | ✓ | — | — | ✓ | |
+| | Codex Spark Weekly | ✓ | — | — | ✓ | |
+| | Limit Reset Credits | — | — | — | — | "N manual resets available" + "Next expires in <rel> (<local>)" |
+| | Credits | — | — | ✓ | — | "N left" + "NK tokens" (right) |
+| **Anthropic / Claude** | Session | ✓ | ✓ | — | ✓ | |
+| | Weekly | ✓ | ✓ | — | ✓ | |
+| | Sonnet | ✓ | — | — | ✓ | model weekly |
+| | Daily Routines | ✓ | — | — | — | remaining only |
+| **Amp** | Amp Free | ✓ | — | — | ✓ | reset = "Resets in …" time-to-full; status-bar headline `Free n% · $credits` (Issue 7) |
+| | Credits | — | — | — | — | "Individual credits: $X" (+ workspace credits) |
+| **Z.AI** | Tokens | ✓ | — | — | ✓ | |
+| | MCP | ✓ | — | ✓ | ✓ | count `used / limit (remaining)` e.g. `0 / 100 (100 remaining)` |
+| | 5-hour | ✓ | — | — | ✓ | |
+| **Kimi** | Weekly | ✓ | — | — | ✓ | request quota (tier) |
+| | Rate Limit | ✓ | ✓ | — | ✓ | label literally "Rate Limit" (humanized; never raw `TIME_UNIT_*`) |
+| **MiniMax** | General · 5h | ✓ | — | ✓ | ✓ | count `Usage: N / 100`; keep "% left" (not "% used") |
+| | General · Weekly | ✓ | — | ✓ | ✓ | |
+| | Video | ✓ | — | ✓ | ✓ | |
+| **xAI / Grok** | (single window) | ✓ | — | — | ✓ | label dynamic: Weekly / Monthly / Credits by `resetsAt` cycle |
+
+- **in-reserve gate:** show the pace line only once ≥3% of the window has elapsed (CodexBar
+  `UsagePaceText.swift:91`), and only if the window length is known/correct.
+- **Overview tab** (Issue 17): one row per provider in the tab order (OpenAI, Anthropic, Amp, xAI,
+  Z.AI, Kimi, MiniMax): `<provider>  <NN% left>  Resets <rel>  (<local date, time>)`, aligned columns.
+- **Status-bar headline** per provider (Issue 7): derive from each provider's primary metric (Codex/
+  Claude → Session·Weekly; Amp → `Free n% · $credits`; etc.) — never the generic `usage cached`.
+- Verify each row's data source + derivation against the CodexBar docs/source table above before
+  building (principle 5: confirm CodexBar is right / our data isn't fresher).
+
 ### CodexBar — Codex panel (reference, from screenshot)
 
 ```text
@@ -807,12 +849,26 @@ all providers become consistent at once. Update tests (`usage.rs:4953` asserts a
 `"Resets 15:12"`; `:4724, :4894` assert relative-only `"Resets in 3h 52m"` — both must adopt the new
 combined format).
 
-**Timezone (must resolve).** The capsule runs in a container that is typically UTC. To show the
-operator's **local** time, the operator's timezone must reach the formatter — forward `TZ` into the
-container / capsule, or carry a UTC offset, and format with `chrono` local/offset rather than `Utc`.
-Verify how the host TZ is (or can be) propagated to `jackin-capsule`; this is a prerequisite for the
-"(Jun 25, 17:31)" local-time requirement and is itself a root-cause item (UTC-only timestamps are a
-class bug: every date/time in the capsule would otherwise be wrong-zone).
+**Timezone — INVESTIGATED (mechanism decided).** There is **no timezone handling anywhere** in the
+codebase today: the only conversion is `…with_timezone(&Utc)` (`usage.rs:3944`), and `TZ` is **not**
+in `SESSION_ENV_PASSTHROUGH` (`crates/jackin-capsule/src/session.rs:50`). The capsule container is
+UTC. So local-time display needs **new plumbing** — this is a real prerequisite, not a guess.
+
+Mechanism (matches the existing pattern — container env is injected via `-e=` flags at launch/attach,
+e.g. `crates/jackin-runtime/src/runtime/attach.rs:505,509`, `runtime/launch/launch_dind.rs:175`):
+- **Recommended:** forward the host's IANA timezone as `-e=TZ=<host TZ>` into the capsule container
+  at launch/attach, **and ensure `tzdata` is present in the capsule image**, then format reset/expiry
+  with `chrono` `Local` (honors `TZ` on Unix, handles DST correctly). Read host TZ from the host
+  `TZ`/system at launch.
+- **Fallback (no tzdata):** carry a fixed UTC offset (host computes seconds-east-of-UTC) into the
+  capsule (env e.g. `JACKIN_TZ_OFFSET`, or over the control protocol) and format with
+  `chrono::FixedOffset`. Simpler, no image dependency, but does not shift across a DST boundary
+  during a long session — acceptable for reset-time display, IANA is better.
+- This is itself a **class** fix: once the capsule knows the local zone, every date/time in the
+  capsule (not just usage) can render correctly; today they would all be wrong-zone.
+- Change sites: add TZ/offset to the capsule launch env (runtime launch/attach + env-model), thread
+  it to the formatter, replace `DateTime::<Utc>` formatting in `reset_label` (`usage.rs:3947`) with
+  local/offset.
 
 ---
 
@@ -1138,6 +1194,10 @@ never drift again. Keep full-width remaining bars (binding design). Update snaps
 
 ## Consolidated plan (ordering, to be detailed before we start)
 
+**Execution: implement everything in THIS pull request** (`feature/capsule-usage-overlay-roadmap`) —
+one big PR, not split. Build order below is the recommended internal sequencing within that PR
+(foundations first so the per-provider/layout fixes fall out cheaply), not separate PRs.
+
 Architectural items first (they remove whole bug classes), then the shared per-provider data/spec
 work, then layout/format, then verify. Grouped by mechanism, not by report order.
 
@@ -1217,6 +1277,8 @@ done vs outstanding in this roadmap item.
 - [x] Reset granularity: precise two-unit always · MiniMax keeps "% left" · run ID always-on in debug
 - [x] Per-provider **in-reserve** gating verified — spec table added (Codex/Claude Session+Weekly, Kimi Rate Limit, others none); window-length accuracy verify owed at impl
 - [x] Container ID = always short form (`instance_id_label`); full name only in Debug/ContainerInfo dialog
+- [x] Canonical per-provider section spec table written (authoritative build source)
+- [x] TZ propagation investigated — mechanism decided (forward host `TZ` + tzdata, or offset fallback); implement at launch/attach
 
 **A. Architectural foundations**
 - [ ] Issue 1 — shared tab component (render + hover + per-tab hit-test + cursor); usage tabs wired through it
