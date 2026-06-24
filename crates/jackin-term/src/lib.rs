@@ -31,7 +31,7 @@ pub mod width;
 
 pub use cell::{Attrs, Cell, Color, Hyperlink, UnderlineStyle};
 pub use damage::{DirtySpans, DirtyTracker};
-pub use grid::{DamageGrid, MouseProtocolEncoding, MouseProtocolMode, RowArena, RowWrap};
+pub use grid::{DamageGrid, MouseProtocolEncoding, MouseProtocolMode, RowArena, RowWrap, ScrollOp};
 pub use passthrough::{PassthroughBuffer, PassthroughEvent};
 pub use snapshot::{GridPatch, GridSnapshot, GridView, SnapCell};
 pub use width::{VirtualTerminalProfile, display_width};

@@ -202,11 +202,11 @@ Keep this checklist as the working ledger during implementation. When a task is 
 - [x] Phase 5: Extend `Attrs`, snapshots, pane mapping, frame metadata, and `SocketBackend` emission for underline color, underline style, strikethrough, blink, conceal, and overline.
 - [x] Phase 5: Document any product-level suppression, such as recording blink but not emitting it.
 - [x] Phase 5: Add hyperlink transition tests, unsafe URI tests, SGR round-trip tests, and golden wire snapshots for the new visible attributes.
-- [ ] Phase 6: Record semantic `ScrollOp`s when `DamageGrid` mutates rows.
+- [x] Phase 6: Record semantic `ScrollOp`s when `DamageGrid` mutates rows.
 - [ ] Phase 6: Gate DECSTBM emission through geometry and attach capability.
 - [ ] Phase 6: Keep Ratatui buffers and physical screen state coherent when scroll-region output is used.
 - [ ] Phase 6: Adopt scroll-region output only if scroll-heavy fixtures prove a byte win and echo-back passes across primary, alternate, scrollback, chrome, dialogs, resize, and focus swaps.
-- [ ] Phase 6: Leave scroll-region output disabled/not shipped if parity, coherence, geometry, or byte-win gates fail.
+- [x] Phase 6: Leave scroll-region output disabled/not shipped if parity, coherence, geometry, or byte-win gates fail.
 - [ ] Phase 7: Run the full extended automated set, including conformance, echo-back, fuzz corpus coverage, allocation checks, and relevant benches.
 - [ ] Phase 7: Soak with real agents and Ghostty, iTerm2, WezTerm, Alacritty, Kitty, and SSH.
 - [ ] Phase 7: Update user-facing and contributor-facing docs for shipped behavior, then update this roadmap status to partially implemented or completed as appropriate.
@@ -301,6 +301,8 @@ Acceptance:
 - Gate DECSTBM emission through geometry and attach capability.
 - Keep Ratatui buffers and physical screen state coherent, using controlled buffer application where needed.
 - Adopt the optimization only if tests and byte counters prove it.
+
+Phase 6 implementation note: `DamageGrid` records source `ScrollOp::Up` / `ScrollOp::Down` events for line feed, delete-line, insert-line, and reverse-index row mutations. DECSTBM output remains disabled for this item because the geometry/capability/coherence/byte-win gates are not implemented; ordinary Ratatui diff output remains the shipped path.
 
 Acceptance:
 

@@ -37,6 +37,12 @@ pub enum RowWrap {
     Soft,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollOp {
+    Up { top: u16, bottom: u16, rows: u16 },
+    Down { top: u16, bottom: u16, rows: u16 },
+}
+
 /// Mouse protocol modes (DEC modes 1000/1002/1003).
 ///
 /// Variants preserve the public names used by the capsule input layer:
@@ -151,6 +157,7 @@ pub struct DamageGrid {
     // ── Scroll region ─────────────────────────────────────────────────────────
     scroll_top: u16,    // 0-based, inclusive
     scroll_bottom: u16, // 0-based, inclusive
+    scroll_ops: Vec<ScrollOp>,
 
     /// Kitty keyboard protocol stack pushed by the foreground program.
     /// Each `\x1b[>{flags}u` pushes; each `\x1b[<{n}u` pops `n` levels.
@@ -432,6 +439,7 @@ impl DamageGrid {
             active_hyperlink: None,
             scroll_top: 0,
             scroll_bottom: rows.saturating_sub(1),
+            scroll_ops: Vec::new(),
             kitty_kb_stack: Vec::new(),
             dirty: DirtyTracker::new(rows),
             passthrough: PassthroughBuffer::default(),
@@ -777,6 +785,10 @@ impl DamageGrid {
         self.scrollback_offset = 0;
     }
 
+    pub fn drain_scroll_ops(&mut self) -> Vec<ScrollOp> {
+        std::mem::take(&mut self.scroll_ops)
+    }
+
     /// Mouse protocol mode.
     pub fn mouse_protocol_mode(&self) -> MouseProtocolMode {
         self.mouse_mode
@@ -1026,6 +1038,13 @@ impl DamageGrid {
         let top = self.scroll_top as usize;
         let bottom = self.scroll_bottom as usize;
         let cols = self.cols;
+        if n > 0 {
+            self.scroll_ops.push(ScrollOp::Up {
+                top: self.scroll_top,
+                bottom: self.scroll_bottom,
+                rows: n,
+            });
+        }
         for _ in 0..n {
             let grid_len = self.active_grid().len();
             if bottom >= grid_len || top >= bottom {

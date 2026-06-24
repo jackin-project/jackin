@@ -1,5 +1,5 @@
 use super::{
-    Attrs, Cell, DamageGrid, KITTY_KB_STACK_CAP, PassthroughEvent, RowWrap, blank_row,
+    Attrs, Cell, DamageGrid, KITTY_KB_STACK_CAP, PassthroughEvent, RowWrap, ScrollOp, blank_row,
     make_blank_grid, reconstruct_csi,
 };
 use smallvec::SmallVec;
@@ -155,6 +155,13 @@ impl vte::Perform for DamageGrid {
                 let row = self.cursor_row as usize;
                 let bottom = self.scroll_bottom as usize;
                 let cols = self.cols;
+                if row <= bottom {
+                    self.scroll_ops.push(ScrollOp::Down {
+                        top: self.cursor_row,
+                        bottom: self.scroll_bottom,
+                        rows: p0.max(1),
+                    });
+                }
                 let grid = self.active_grid();
                 for _ in 0..n {
                     if bottom < grid.len() {
@@ -170,6 +177,13 @@ impl vte::Perform for DamageGrid {
                 let row = self.cursor_row as usize;
                 let bottom = self.scroll_bottom as usize;
                 let cols = self.cols;
+                if row <= bottom {
+                    self.scroll_ops.push(ScrollOp::Up {
+                        top: self.cursor_row,
+                        bottom: self.scroll_bottom,
+                        rows: p0.max(1),
+                    });
+                }
                 let grid = self.active_grid();
                 for _ in 0..n {
                     if row < grid.len() {
@@ -440,6 +454,11 @@ impl vte::Perform for DamageGrid {
                     let top = self.scroll_top as usize;
                     let bottom = self.scroll_bottom as usize;
                     let cols = self.cols;
+                    self.scroll_ops.push(ScrollOp::Down {
+                        top: self.scroll_top,
+                        bottom: self.scroll_bottom,
+                        rows: 1,
+                    });
                     let grid = self.active_grid();
                     if bottom < grid.len() {
                         grid.remove(bottom);

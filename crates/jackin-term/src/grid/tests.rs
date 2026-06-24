@@ -718,6 +718,67 @@ fn sgr_colon_rgb_preserves_foreground_and_background() {
 }
 
 #[test]
+fn scroll_ops_record_linefeed_scrolls() {
+    let mut g = DamageGrid::new(3, 10, 100);
+    g.process(b"one\r\ntwo\r\nthree\r\nfour");
+
+    assert_eq!(
+        g.drain_scroll_ops(),
+        vec![ScrollOp::Up {
+            top: 0,
+            bottom: 2,
+            rows: 1
+        }]
+    );
+    assert!(
+        g.drain_scroll_ops().is_empty(),
+        "drain_scroll_ops must clear recorded ops"
+    );
+}
+
+#[test]
+fn scroll_ops_record_decstbm_region_scrolls() {
+    let mut g = DamageGrid::new(5, 10, 100);
+    g.process(b"\x1b[2;4r\x1b[4;1H\n");
+
+    assert_eq!(
+        g.drain_scroll_ops(),
+        vec![ScrollOp::Up {
+            top: 1,
+            bottom: 3,
+            rows: 1
+        }]
+    );
+}
+
+#[test]
+fn scroll_ops_record_insert_delete_line_and_reverse_index() {
+    let mut g = DamageGrid::new(5, 10, 100);
+    g.process(b"\x1b[2;4r\x1b[3;1H\x1b[2L\x1b[1M\x1b[2;1H\x1bM");
+
+    assert_eq!(
+        g.drain_scroll_ops(),
+        vec![
+            ScrollOp::Down {
+                top: 2,
+                bottom: 3,
+                rows: 2
+            },
+            ScrollOp::Up {
+                top: 2,
+                bottom: 3,
+                rows: 1
+            },
+            ScrollOp::Down {
+                top: 1,
+                bottom: 3,
+                rows: 1
+            },
+        ]
+    );
+}
+
+#[test]
 fn zero_scrollback_limit_evicts_without_panic() {
     // scrollback_limit == 0 means "no scrollback"; rows that would be
     // preserved must be dropped, not pushed onto an empty buffer with a
