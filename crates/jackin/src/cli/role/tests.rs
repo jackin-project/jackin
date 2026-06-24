@@ -431,6 +431,45 @@ fn parses_role_construct_version_with_path() {
 }
 
 #[test]
+fn parses_role_published_image_repository_with_path() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "role",
+        "published-image-repository",
+        "/tmp/my-role",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Role(super::RoleCommand::PublishedImageRepository(
+            super::RoleRepoPathArgs { path: Some(ref p) }
+        ))) if p == std::path::Path::new("/tmp/my-role")
+    ));
+}
+
+#[test]
+fn parses_role_publish_labels_with_path() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "role",
+        "publish-labels",
+        "--role-git-sha",
+        "abc123",
+        "/tmp/my-role",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Role(super::RoleCommand::PublishLabels(
+            super::RolePublishLabelsArgs {
+                ref role_git_sha,
+                path: Some(ref p),
+            }
+        ))) if role_git_sha == "abc123" && p == std::path::Path::new("/tmp/my-role")
+    ));
+}
+
+#[test]
 fn parses_role_create_with_projects_dir() {
     let cli = Cli::try_parse_from(["jackin", "role", "create", "ChainArgos/Backend", "."]).unwrap();
     assert!(matches!(

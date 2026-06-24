@@ -3,10 +3,10 @@
     reason = "standalone role helper renders top-level errors"
 )]
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use std::process::ExitCode;
 
-use jackin::cli::role::{RoleCommand, RoleRepoPathArgs};
+use jackin::cli::role::RoleCommand;
 use jackin::role_authoring;
 
 /// Validate, migrate, and inspect jackin role repositories.
@@ -17,29 +17,12 @@ use jackin::role_authoring;
 #[command(name = "jackin-role", version = env!("JACKIN_VERSION"))]
 struct Cli {
     #[command(subcommand)]
-    command: Command,
-}
-
-#[derive(Subcommand)]
-enum Command {
-    /// Validate a role repository's manifest, Dockerfile, hooks, and env declarations
-    Validate(RoleRepoPathArgs),
-    /// Migrate a role manifest to the current schema version, then validate it
-    Migrate(RoleRepoPathArgs),
-    /// Print the construct image version tag pinned in the role Dockerfile
-    ConstructVersion(RoleRepoPathArgs),
-    /// Print the published Docker image declared in the role manifest
-    PublishedImage(RoleRepoPathArgs),
+    command: RoleCommand,
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let result = match cli.command {
-        Command::Validate(args) => role_authoring::run(RoleCommand::Validate(args)),
-        Command::Migrate(args) => role_authoring::run(RoleCommand::Migrate(args)),
-        Command::ConstructVersion(args) => role_authoring::run(RoleCommand::ConstructVersion(args)),
-        Command::PublishedImage(args) => role_authoring::run(RoleCommand::PublishedImage(args)),
-    };
+    let result = role_authoring::run(cli.command);
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

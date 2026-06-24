@@ -4,14 +4,16 @@ on:
   merge_group:
   schedule:
     - cron: "0 6 * * *"
-  push:
-    branches:
-      - main
   workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
 
 jobs:
   renovate:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
@@ -49,3 +51,18 @@ jobs:
       - name: Fix Renovate cache ownership for save
         if: always()
         run: sudo chown -R "$(whoami)" /tmp/renovate 2>/dev/null || true
+
+  timing-summary:
+    if: always()
+    needs: [renovate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Write workflow timing summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/workflow-timing-summary.sh Renovate

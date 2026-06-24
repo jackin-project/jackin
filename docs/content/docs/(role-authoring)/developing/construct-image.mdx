@@ -76,6 +76,8 @@ The construct source starts at <RepoFile path="docker/construct/Dockerfile">dock
 
 <RepoFile path="docker/construct/versions.env">docker/construct/versions.env</RepoFile> remains the source of truth for the pinned `tirith`, `shellfirm`, and `MISE_VERSION` build args used by <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile>. `mise` is installed with the official standalone installer during the Docker build, which downloads the pinned version's release asset from GitHub — where every version stays available, so the pin never goes stale. The pinned version gives Buildx a stable cache key, and Renovate bumps invalidate the mise install layer when upstream publishes a new release.
 
+The pinned `shellfirm` binary is prepared before Docker Buildx runs and staged at `docker/construct/prebuilt/shellfirm`. CI builds or restores that native binary per architecture from the GitHub Actions cache, then the Dockerfile copies it into the image. This keeps the heavy Rust compile out of the Docker build while upstream still lacks a Linux arm64 release artifact.
+
 ## Build workflow
 
 Use the `construct-*` mise tasks for day-to-day construct work. Docker Bake is the underlying build engine, but contributors should treat `mise run` as the supported command surface.
@@ -114,7 +116,7 @@ mise run construct-build-platform amd64
 mise run construct-build-platform arm64
 ```
 
-These commands work when your buildx builder supports the target platform natively or through emulation.
+These commands require a native host for the requested platform because the pinned `shellfirm` binary is staged before Docker Buildx runs.
 
 ### Advanced publish rehearsal
 
@@ -131,7 +133,7 @@ REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER mise run construct-publish-manifest
 </Aside>
 ### CI behavior
 
-GitHub Actions reuses the same `mise run` commands on native `ubuntu-24.04` and `ubuntu-24.04-arm` runners. Construct CI validates broad build plumbing when changes touch `docker/construct/**`, <RepoFile path="docker-bake.hcl">docker-bake.hcl</RepoFile>, the `crates/jackin-xtask/` task runner, or <RepoFile path=".github/workflows/construct.yml">.github/workflows/construct.yml</RepoFile>. It only treats a run as a construct-image publish candidate when changes touch inputs baked into the image itself: <RepoFile path="docker-bake.hcl">docker-bake.hcl</RepoFile>, <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile>, <RepoFile path="docker/construct/versions.env">docker/construct/versions.env</RepoFile>, <RepoFile path="docker/construct/zshrc">docker/construct/zshrc</RepoFile>, or <RepoFile path="docker/construct/fish-config.fish">docker/construct/fish-config.fish</RepoFile>.
+GitHub Actions reuses the same `mise run` commands on native `ubuntu-24.04` and `ubuntu-24.04-arm` runners. Each construct build first restores or builds the pinned `shellfirm` binary for the runner architecture and places it in the construct context. Construct CI validates broad build plumbing when changes touch `docker/construct/**`, <RepoFile path="docker-bake.hcl">docker-bake.hcl</RepoFile>, the `crates/jackin-xtask/` task runner, or <RepoFile path=".github/workflows/construct.yml">.github/workflows/construct.yml</RepoFile>. It only treats a run as a construct-image publish candidate when changes touch inputs baked into the image itself: <RepoFile path="docker-bake.hcl">docker-bake.hcl</RepoFile>, <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile>, <RepoFile path="docker/construct/versions.env">docker/construct/versions.env</RepoFile>, <RepoFile path="docker/construct/zshrc">docker/construct/zshrc</RepoFile>, or <RepoFile path="docker/construct/fish-config.fish">docker/construct/fish-config.fish</RepoFile>.
 
 Pull requests, plus manual workflow runs against non-`main` branches, build both architectures natively without pushing images. Those validation jobs use the GitHub Actions cache backend; the cache key includes the pinned `MISE_VERSION`, so a Renovate mise bump invalidates the mise install layer while unrelated earlier layers can still be reused. They still do not receive Docker Hub credentials.
 
