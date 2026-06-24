@@ -220,36 +220,22 @@ impl UsageCache {
         }
         let codex_rpc_gate = self.codex_rpc_gate.clone();
         let grok_rpc_gate = self.grok_rpc_gate.clone();
-        let results = thread::scope(|scope| {
-            due_targets
-                .into_iter()
-                .map(|target| {
-                    let mut codex_rpc_gate = codex_rpc_gate.clone();
-                    let mut grok_rpc_gate = grok_rpc_gate.clone();
-                    scope.spawn(move || {
-                        let view = build_snapshot(
-                            &target.agent,
-                            target.provider.as_deref(),
-                            provider_keys,
-                            &mut codex_rpc_gate,
-                            &mut grok_rpc_gate,
-                        );
-                        UsageRefreshResult {
-                            target,
-                            view,
-                            codex_rpc_gate,
-                            grok_rpc_gate,
-                        }
-                    })
-                })
-                .filter_map(|handle| match handle.join() {
-                    Ok(result) => Some(result),
-                    Err(_) => {
-                        crate::clog!("usage-refresh: provider probe panicked");
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
+        let results = collect_usage_refresh_results(due_targets, |target| {
+            let mut codex_rpc_gate = codex_rpc_gate.clone();
+            let mut grok_rpc_gate = grok_rpc_gate.clone();
+            let view = build_snapshot(
+                &target.agent,
+                target.provider.as_deref(),
+                provider_keys,
+                &mut codex_rpc_gate,
+                &mut grok_rpc_gate,
+            );
+            UsageRefreshResult {
+                target,
+                view,
+                codex_rpc_gate,
+                grok_rpc_gate,
+            }
         });
         let mut stored_views = Vec::new();
         for result in results {
@@ -304,6 +290,31 @@ impl UsageCache {
             snapshots,
         )
     }
+}
+
+fn collect_usage_refresh_results<F>(
+    due_targets: Vec<UsageRefreshTarget>,
+    probe: F,
+) -> Vec<UsageRefreshResult>
+where
+    F: Fn(UsageRefreshTarget) -> UsageRefreshResult + Sync,
+{
+    thread::scope(|scope| {
+        let handles = due_targets
+            .into_iter()
+            .map(|target| scope.spawn(|| probe(target)))
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .filter_map(|handle| match handle.join() {
+                Ok(result) => Some(result),
+                Err(_) => {
+                    crate::clog!("usage-refresh: provider probe panicked");
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+    })
 }
 
 impl Default for UsageCache {
@@ -5299,6 +5310,48 @@ mod tests {
                     provider: Some("Anthropic".to_owned()),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn usage_refresh_probes_are_spawned_before_any_join() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+
+        let targets = vec![
+            UsageRefreshTarget {
+                agent: "codex".to_owned(),
+                provider: Some("OpenAI".to_owned()),
+            },
+            UsageRefreshTarget {
+                agent: "claude".to_owned(),
+                provider: Some("Anthropic".to_owned()),
+            },
+        ];
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+
+        let results = collect_usage_refresh_results(targets, {
+            let active = Arc::clone(&active);
+            let max_active = Arc::clone(&max_active);
+            move |target| {
+                let now_active = active.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+                max_active.fetch_max(now_active, AtomicOrdering::SeqCst);
+                thread::sleep(Duration::from_millis(75));
+                active.fetch_sub(1, AtomicOrdering::SeqCst);
+                UsageRefreshResult {
+                    target,
+                    view: FocusedUsageView::unavailable("test", now_epoch()),
+                    codex_rpc_gate: ManagedCliLaunchGate::default(),
+                    grok_rpc_gate: ManagedCliLaunchGate::default(),
+                }
+            }
+        });
+
+        assert_eq!(results.len(), 2);
+        assert!(
+            max_active.load(AtomicOrdering::SeqCst) >= 2,
+            "refresh probes were joined serially instead of overlapping"
         );
     }
 
