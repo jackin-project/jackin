@@ -642,6 +642,22 @@ impl Dialog {
         crate::tui::components::dialog_widgets::usage_provider_display_label(label).to_owned()
     }
 
+    fn usage_tab_index_at(
+        view: &jackin_protocol::control::FocusedUsageView,
+        selected: UsageDialogTab,
+        area: ratatui::layout::Rect,
+        row: u16,
+        col: u16,
+    ) -> Option<usize> {
+        let inner = crate::tui::components::dialog_widgets::usage_dialog_inner_area(area);
+        let tabs = crate::tui::components::dialog_widgets::usage_tab_strip_labels(view, selected);
+        let tab_area = crate::tui::components::dialog_widgets::usage_tab_strip_area(inner, &tabs);
+        if row != tab_area.y {
+            return None;
+        }
+        crate::tui::components::dialog_widgets::usage_tab_strip_index_at(&tabs, tab_area, col)
+    }
+
     fn usage_provider_tab_target(&mut self, step: isize) -> Option<String> {
         let Self::Usage { view, selected, .. } = self else {
             return None;
@@ -1384,8 +1400,22 @@ impl Dialog {
                 _ => DialogAction::Consume,
             };
         }
-        if matches!(self, Self::Usage { .. }) {
-            return DialogAction::Consume;
+        if let Self::Usage { view, selected, .. } = self {
+            let tab = Self::usage_tab_index_at(view, *selected, area, row, col);
+            return match tab {
+                Some(0) => {
+                    *selected = UsageDialogTab::Overview;
+                    DialogAction::Redraw
+                }
+                Some(idx) => view
+                    .tabs
+                    .get(idx.saturating_sub(1))
+                    .map(|tab| DialogAction::SwitchUsageProvider {
+                        provider_label: tab.label.clone(),
+                    })
+                    .unwrap_or(DialogAction::Consume),
+                None => DialogAction::Consume,
+            };
         }
         // ConfirmAction: only the visible Yes/No button cells confirm
         // or dismiss; other inside-box clicks (title, explanation,
@@ -1560,6 +1590,12 @@ impl Dialog {
         github: Option<&GithubContextView<'_>>,
     ) -> bool {
         let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
+        let area = ratatui::layout::Rect {
+            x: box_col,
+            y: box_row,
+            width,
+            height,
+        };
         let inside_box =
             row >= box_row && row < box_row + height && col >= box_col && col < box_col + width;
         if !inside_box {
@@ -1591,7 +1627,9 @@ impl Dialog {
                         .is_some()
                 })
             }
-            Self::Usage { .. } => false,
+            Self::Usage { view, selected, .. } => {
+                Self::usage_tab_index_at(view, *selected, area, row, col).is_some()
+            }
             Self::ConfirmAction { .. } => true,
             Self::CommandPalette {
                 filter,

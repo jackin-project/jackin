@@ -48,11 +48,16 @@ impl<'a> TabStrip<'a> {
 
     #[must_use]
     pub fn paragraph(self) -> Paragraph<'static> {
-        let cells = lay_out_tabs(self.labels, 0);
+        let cells = self.cells(0);
         Paragraph::new(vec![
             tab_label_line(&cells, self.hovered),
             tab_underline_line(&cells, self.focused),
         ])
+    }
+
+    #[must_use]
+    pub fn cells(self, start_col: u16) -> Vec<TabCell<'a>> {
+        lay_out_tabs(self.labels, start_col)
     }
 }
 

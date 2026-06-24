@@ -1149,6 +1149,28 @@ fn render_usage_dialog_snapshot_for_view(
         .join("\n")
 }
 
+fn usage_tab_text_position(d: &Dialog, height: u16, width: u16, label: &str) -> (u16, u16) {
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(height, width);
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    for y in 0..height {
+        let line = (0..width).map(|x| buf[(x, y)].symbol()).collect::<String>();
+        if let Some(x) = line.find(label) {
+            return (y, u16::try_from(x).expect("tab label column fits u16"));
+        }
+    }
+    panic!("usage tab label {label:?} not rendered");
+}
+
 #[test]
 fn usage_dialog_renders_usage_status_rows_for_error_and_stale_states() {
     let mut values = Vec::new();
@@ -1264,6 +1286,32 @@ fn usage_dialog_renders_shared_provider_tab_strip_labels() {
     assert!(rendered.contains("OpenAI"), "{rendered}");
     assert!(rendered.contains("Anthropic"), "{rendered}");
     assert!(rendered.contains("Amp"), "{rendered}");
+}
+
+#[test]
+fn usage_dialog_provider_tabs_are_clickable() {
+    let mut d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Overview);
+    let (tab_row, tab_col) = usage_tab_text_position(&d, 32, 120, "Anthropic");
+
+    assert!(d.clickable_at(tab_row, tab_col, 32, 120, None));
+    match d.handle_click(tab_row, tab_col, 32, 120, None) {
+        DialogAction::SwitchUsageProvider { provider_label } => {
+            assert_eq!(provider_label, "Claude");
+        }
+        other => panic!("expected provider switch, got {other:?}"),
+    }
+}
+
+#[test]
+fn usage_dialog_overview_tab_click_selects_overview() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+    let (tab_row, tab_col) = usage_tab_text_position(&d, 32, 120, "Overview");
+
+    assert_eq!(
+        d.handle_click(tab_row, tab_col, 32, 120, None),
+        DialogAction::Redraw
+    );
+    assert_eq!(d.usage_selected_tab(), Some(UsageDialogTab::Overview));
 }
 
 #[test]

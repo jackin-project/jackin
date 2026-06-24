@@ -418,21 +418,7 @@ fn render_usage_info(
     if inner.height == 0 {
         return;
     }
-    let strip_width = usage_tab_strip_width(tabs)
-        .saturating_sub(usize::from(jackin_tui::TAB_GAP))
-        .min(usize::from(inner.width));
-    let strip_offset = usize::from(inner.width).saturating_sub(strip_width) / 2;
-    let tab_area = Rect {
-        x: inner
-            .x
-            .saturating_add(u16::try_from(strip_offset).unwrap_or(u16::MAX)),
-        y: inner.y,
-        width: u16::try_from(strip_width)
-            .unwrap_or(inner.width)
-            .max(1)
-            .min(inner.width),
-        height: inner.height.min(2),
-    };
+    let tab_area = usage_tab_strip_area(inner, tabs);
     let tab_refs = tabs
         .iter()
         .map(|(label, active)| (label.as_str(), *active))
@@ -452,7 +438,47 @@ fn render_usage_info(
     jackin_tui::components::render_scrollable_dialog_body(frame, area, body, &lines, &mut scroll);
 }
 
-fn usage_tab_strip_labels(
+pub(crate) fn usage_dialog_inner_area(area: Rect) -> Rect {
+    Rect {
+        x: area.x.saturating_add(1),
+        y: area.y.saturating_add(1),
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(2),
+    }
+}
+
+pub(crate) fn usage_tab_strip_area(inner: Rect, tabs: &[(String, bool)]) -> Rect {
+    let strip_width = usage_tab_strip_width(tabs)
+        .saturating_sub(usize::from(jackin_tui::TAB_GAP))
+        .min(usize::from(inner.width));
+    let strip_offset = usize::from(inner.width).saturating_sub(strip_width) / 2;
+    Rect {
+        x: inner
+            .x
+            .saturating_add(u16::try_from(strip_offset).unwrap_or(u16::MAX)),
+        y: inner.y,
+        width: u16::try_from(strip_width)
+            .unwrap_or(inner.width)
+            .max(1)
+            .min(inner.width),
+        height: inner.height.min(2),
+    }
+}
+
+pub(crate) fn usage_tab_strip_index_at(
+    tabs: &[(String, bool)],
+    tab_area: Rect,
+    col: u16,
+) -> Option<usize> {
+    let tab_refs = tabs
+        .iter()
+        .map(|(label, active)| (label.as_str(), *active))
+        .collect::<Vec<_>>();
+    let cells = TabStrip::new(&tab_refs).cells(tab_area.x);
+    jackin_tui::tab_at_column(&cells, col)
+}
+
+pub(crate) fn usage_tab_strip_labels(
     view: &jackin_protocol::control::FocusedUsageView,
     selected: crate::tui::components::dialog::UsageDialogTab,
 ) -> Vec<(String, bool)> {

@@ -33,3 +33,20 @@ fn tab_strip_exposes_two_rows() {
     assert_eq!(buffer[(0, 0)].symbol(), " ");
     assert_eq!(buffer[(0, 1)].symbol(), "━");
 }
+
+#[test]
+fn tab_strip_exposes_rendered_cells_for_hit_testing() {
+    let labels = [("General", true), ("Mounts", false)];
+    let cells = TabStrip::new(&labels).cells(8);
+    let expected = lay_out_tabs(&labels, 8);
+
+    assert_eq!(cells.len(), expected.len());
+    assert_eq!(cells[0].label, expected[0].label);
+    assert_eq!(cells[0].active, expected[0].active);
+    assert_eq!(cells[0].start_col, expected[0].start_col);
+    assert_eq!(cells[0].cell_cols, expected[0].cell_cols);
+    assert_eq!(cells[1].label, expected[1].label);
+    assert_eq!(cells[1].active, expected[1].active);
+    assert_eq!(cells[1].start_col, expected[1].start_col);
+    assert_eq!(cells[1].cell_cols, expected[1].cell_cols);
+}
