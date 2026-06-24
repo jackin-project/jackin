@@ -162,8 +162,6 @@ impl UsageCache {
         &mut self,
         focused_agent: Option<&str>,
         focused_provider: Option<&str>,
-        provider_keys: &BTreeMap<jackin_protocol::Provider, String>,
-        force_refresh: bool,
     ) -> FocusedUsageView {
         let Some(agent) = focused_agent else {
             if let Some(provider) = focused_provider {
@@ -171,36 +169,11 @@ impl UsageCache {
             }
             return FocusedUsageView::unavailable("no focused agent session", now_epoch());
         };
-        if !force_refresh {
-            let now = now_epoch();
-            if let Some(view) = self.cached_focused_usage_view(agent, focused_provider) {
-                return view;
-            }
-            return cached_unavailable_view(agent, focused_provider, now);
+        let now = now_epoch();
+        if let Some(view) = self.cached_focused_usage_view(agent, focused_provider) {
+            return view;
         }
-        let cache_key = canonical_usage_cache_key(agent, focused_provider);
-        let mut view = build_snapshot(
-            agent,
-            focused_provider,
-            provider_keys,
-            &mut self.codex_rpc_gate,
-            &mut self.grok_rpc_gate,
-        );
-        if let Some(cached) = self.snapshots.get(&cache_key) {
-            preserve_cached_quota_on_failed_refresh(&mut view, &cached.view);
-        }
-        enrich_provider_tabs(&mut view, &self.snapshots);
-        self.snapshots
-            .insert(cache_key, CachedUsage { view: view.clone() });
-        if let Err(error) = self.materialize_accounts(now_epoch()) {
-            crate::cdebug!("usage accounts materialization failed: {error}");
-        }
-        if let Err(error) =
-            crate::telemetry_store::store_usage_snapshot(&self.telemetry_store_path, &view)
-        {
-            crate::cdebug!("usage telemetry store write failed: {error}");
-        }
-        view
+        cached_unavailable_view(agent, focused_provider, now)
     }
 
     fn cached_focused_usage_view(
@@ -5049,8 +5022,7 @@ mod tests {
             CachedUsage { view },
         );
 
-        let snapshot =
-            cache.focused_snapshot(Some("codex"), Some("OpenAI"), &BTreeMap::new(), false);
+        let snapshot = cache.focused_snapshot(Some("codex"), Some("OpenAI"));
 
         assert_eq!(snapshot.status_bar_label, expected_label);
         assert_eq!(snapshot.account.account_label, "codex@example.com");
@@ -5086,8 +5058,7 @@ mod tests {
         let mut cache = UsageCache::default();
         cache.set_telemetry_store_path(db);
 
-        let snapshot =
-            cache.focused_snapshot(Some("codex"), Some("OpenAI"), &BTreeMap::new(), false);
+        let snapshot = cache.focused_snapshot(Some("codex"), Some("OpenAI"));
 
         assert_eq!(snapshot.status, UsageSnapshotStatus::Unavailable);
         assert_eq!(

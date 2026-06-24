@@ -1103,12 +1103,12 @@ fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg
             records: mux.agent_registry_snapshot(),
         },
         ClientMsg::UsageFocused => ServerMsg::UsageFocused {
-            usage: Box::new(mux.focused_usage_snapshot(false)),
+            usage: Box::new(mux.focused_usage_snapshot()),
         },
         ClientMsg::UsageRefreshFocused => {
             mux.request_usage_refresh_for_provider(None);
             ServerMsg::UsageFocused {
-                usage: Box::new(mux.focused_usage_snapshot(false)),
+                usage: Box::new(mux.focused_usage_snapshot()),
             }
         }
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {

@@ -147,7 +147,7 @@ impl Multiplexer {
                 self.request_usage_refresh_for_provider(None);
             }
             DialogAction::SwitchUsageProvider { provider_label } => {
-                let view = self.focused_usage_snapshot_for_provider(Some(&provider_label), false);
+                let view = self.focused_usage_snapshot_for_provider(Some(&provider_label));
                 if let Some(dialog) = self.dialog_top_mut() {
                     *dialog = Dialog::new_usage(view);
                 }
@@ -213,7 +213,7 @@ impl Multiplexer {
                 self.invalidate_for(&Action::OpenGithubContext);
             }
             Action::OpenUsage => {
-                let view = self.focused_usage_snapshot(false);
+                let view = self.focused_usage_snapshot();
                 self.dialog_push(Dialog::new_usage(view));
                 self.request_usage_refresh_for_provider(None);
                 self.invalidate_for(&Action::OpenUsage);
@@ -535,7 +535,7 @@ impl Multiplexer {
                 self.apply_action(action);
             }
             Action::BranchContextBarClick { row, col } => {
-                let usage_status_label = self.focused_usage_snapshot(false).status_bar_label;
+                let usage_status_label = self.focused_usage_snapshot().status_bar_label;
                 let hit = branch_context_bar_hit(
                     row + 1,
                     col + 1,
@@ -768,7 +768,7 @@ impl Multiplexer {
                 self.clear_focused_pane();
             }
             PaletteCommandRoute::OpenUsage => {
-                let view = self.focused_usage_snapshot(false);
+                let view = self.focused_usage_snapshot();
                 self.dialog_push(Dialog::new_usage(view));
                 self.request_usage_refresh_for_provider(None);
             }
