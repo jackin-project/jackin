@@ -81,7 +81,7 @@ pub fn render_launch_frame(
     render_footer(frame, chrome.footer, view, run_id, debug_mode);
 
     if let Some(failure) = &view.failure {
-        render_failure_popup(frame, area, view, failure, run_id);
+        render_failure_popup(frame, area, view, failure, run_id, debug_mode);
     } else if view.container_info_open {
         render_launch_container_info(
             frame,
@@ -130,7 +130,7 @@ pub fn launch_hyperlink_overlays(
     debug_mode: bool,
     jackin_version: &'static str,
 ) -> Vec<u8> {
-    let mut overlays = failure_popup_hyperlink_overlay_bytes(area, view, run_id);
+    let mut overlays = failure_popup_hyperlink_overlay_bytes(area, view, run_id, debug_mode);
     overlays.extend(launch_container_info_hyperlink_overlay_bytes(
         area,
         view,
@@ -154,11 +154,16 @@ fn launch_container_info_hyperlink_overlay_bytes(
         return Vec::new();
     }
     let state = launch_container_info_state(view, run_id, run_log_path, debug_mode, jackin_version);
-    let rect = launch_container_info_rect(area, &state);
+    let rect = launch_container_info_rect(area, &state, debug_mode);
     jackin_tui::components::container_info_hyperlink_overlay(rect, &state)
 }
 
-fn failure_popup_hyperlink_overlay_bytes(area: Rect, view: &LaunchView, run_id: &str) -> Vec<u8> {
+fn failure_popup_hyperlink_overlay_bytes(
+    area: Rect,
+    view: &LaunchView,
+    run_id: &str,
+    debug_mode: bool,
+) -> Vec<u8> {
     let Some(failure) = view.failure.as_ref() else {
         return Vec::new();
     };
@@ -166,6 +171,7 @@ fn failure_popup_hyperlink_overlay_bytes(area: Rect, view: &LaunchView, run_id: 
         area,
         failure,
         run_id,
+        debug_mode,
         view.failure_copy_hover,
         view.failure_copied,
     )

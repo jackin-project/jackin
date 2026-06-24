@@ -1,6 +1,8 @@
 //! Launch cockpit footer helpers.
 
-use jackin_tui::components::{StatusRightGroup, render_status_footer_right_group};
+use jackin_tui::components::{
+    BottomChromeAreas, StatusRightGroup, bottom_chrome_areas, render_status_footer_right_group,
+};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 
@@ -52,6 +54,37 @@ pub fn render_footer(
         alpha,
         view.footer_hover,
     );
+}
+
+#[must_use]
+pub const fn launch_overlay_chrome_areas(area: Rect, debug_mode: bool) -> BottomChromeAreas {
+    if debug_mode {
+        return bottom_chrome_areas(area);
+    }
+    BottomChromeAreas {
+        body: Rect {
+            height: area.height.saturating_sub(1),
+            ..area
+        },
+        hint: Rect {
+            x: area.x,
+            y: area.y + area.height.saturating_sub(1),
+            width: area.width,
+            height: if area.height >= 1 { 1 } else { 0 },
+        },
+        spacer: Rect {
+            x: area.x,
+            y: area.y + area.height,
+            width: area.width,
+            height: 0,
+        },
+        footer: Rect {
+            x: area.x,
+            y: area.y + area.height,
+            width: area.width,
+            height: 0,
+        },
+    }
 }
 
 /// The container's short instance id once the container is named, else empty.
