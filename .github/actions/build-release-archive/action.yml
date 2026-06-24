@@ -33,6 +33,10 @@ inputs:
     description: Optional step-summary heading for sccache stats.
     required: false
     default: ""
+  attest:
+    description: Whether to run GitHub artifact attestation for the archive.
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
@@ -50,6 +54,10 @@ runs:
         set -euo pipefail
 
         archive="${ARCHIVE_BASENAME}.tar.gz"
+        target_dir="${CARGO_TARGET_DIR:-target}"
+        export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/zig-global-cache}"
+        export ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/zig-local-cache}"
+        mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
         case "$PACKAGE" in
           jackin)
             cargo zigbuild --timings --release --locked --target "$ZIGBUILD_TARGET"
@@ -59,7 +67,7 @@ runs:
               --group=0 \
               --numeric-owner \
               -cf - \
-              -C "target/${TARGET}/release" \
+              -C "${target_dir}/${TARGET}/release" \
               jackin jackin-role |
               gzip -n > "$archive"
             ;;
@@ -71,7 +79,7 @@ runs:
               --group=0 \
               --numeric-owner \
               -cf - \
-              -C "target/${TARGET}/release" \
+              -C "${target_dir}/${TARGET}/release" \
               jackin-capsule |
               gzip -n > "$archive"
             ;;
@@ -80,6 +88,11 @@ runs:
             exit 1
             ;;
         esac
+
+        if [ "$target_dir" != "target" ] && [ -d "${target_dir}/cargo-timings" ]; then
+          mkdir -p target/cargo-timings
+          cp -a "${target_dir}/cargo-timings/." target/cargo-timings/
+        fi
 
         sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
         echo "archive=$archive" >> "$GITHUB_OUTPUT"
@@ -103,7 +116,11 @@ runs:
         set -euo pipefail
 
         stats_file="${SCCACHE_STATS_ARTIFACT_NAME}.txt"
-        sccache --show-stats | tee "$stats_file"
+        if ! command -v sccache >/dev/null 2>&1; then
+          echo "sccache not installed; skipping stats" | tee "$stats_file"
+        else
+          sccache --show-stats | tee "$stats_file"
+        fi
         {
           echo "### ${SCCACHE_STATS_HEADING:-$SCCACHE_STATS_ARTIFACT_NAME}"
           echo '```text'
@@ -124,6 +141,7 @@ runs:
       uses: ./.github/actions/sign-and-attest-archive
       with:
         archive: ${{ steps.package.outputs.archive }}
+        attest: ${{ inputs.attest }}
 
     - name: Upload archive artifact
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
