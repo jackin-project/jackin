@@ -186,7 +186,7 @@ impl UsageCache {
             &mut self.grok_rpc_gate,
         );
         if let Some(cached) = self.snapshots.get(&cache_key) {
-            preserve_cached_quota_on_stale_refresh(&mut view, &cached.view);
+            preserve_cached_quota_on_failed_refresh(&mut view, &cached.view);
         }
         enrich_provider_tabs(&mut view, &self.snapshots);
         self.snapshots
@@ -1283,14 +1283,20 @@ fn most_constrained_fresh_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBu
         .min_by_key(|bucket| bucket.remaining_percent.unwrap_or(u8::MAX))
 }
 
-fn preserve_cached_quota_on_stale_refresh(view: &mut FocusedUsageView, cached: &FocusedUsageView) {
-    if view.status != UsageSnapshotStatus::Stale
-        || cached.status != UsageSnapshotStatus::Fresh
+fn preserve_cached_quota_on_failed_refresh(view: &mut FocusedUsageView, cached: &FocusedUsageView) {
+    if !matches!(
+        view.status,
+        UsageSnapshotStatus::Stale | UsageSnapshotStatus::NeedsLogin | UsageSnapshotStatus::Error
+    ) || cached.status != UsageSnapshotStatus::Fresh
         || cached.buckets.is_empty()
     {
         return;
     }
 
+    view.status = UsageSnapshotStatus::Stale;
+    view.source = UsageSource::Cache;
+    view.confidence = cached.confidence;
+    view.updated_label = "Stale".to_owned();
     view.buckets = cached
         .buckets
         .iter()
@@ -4020,9 +4026,10 @@ mod tests {
     }
 
     #[test]
-    fn stale_refresh_preserves_last_fresh_quota_rows() {
+    fn failed_refresh_preserves_last_fresh_quota_rows_as_stale_cache() {
         let mut cached = FocusedUsageView::unavailable("seed", 123);
         cached.status = UsageSnapshotStatus::Fresh;
+        cached.confidence = UsageConfidence::Authoritative;
         cached.account = FocusedAccountHeader {
             provider_label: "OpenAI / Codex".to_owned(),
             account_label: "alexey@example.com".to_owned(),
@@ -4038,28 +4045,37 @@ mod tests {
             status: UsageSnapshotStatus::Fresh,
         }];
 
-        let mut view = FocusedUsageView::unavailable("seed", 124);
-        view.focused_agent = Some("codex".to_owned());
-        view.focused_provider = Some("Codex".to_owned());
-        view.status = UsageSnapshotStatus::Stale;
-        view.account = FocusedAccountHeader {
-            provider_label: "OpenAI / Codex".to_owned(),
-            account_label: "alexey@example.com".to_owned(),
-            plan_label: None,
-        };
-        view.last_error = Some("Codex provider usage unavailable".to_owned());
+        for failed_status in [
+            UsageSnapshotStatus::Stale,
+            UsageSnapshotStatus::NeedsLogin,
+            UsageSnapshotStatus::Error,
+        ] {
+            let mut view = FocusedUsageView::unavailable("seed", 124);
+            view.focused_agent = Some("codex".to_owned());
+            view.focused_provider = Some("Codex".to_owned());
+            view.status = failed_status;
+            view.account = FocusedAccountHeader {
+                provider_label: "OpenAI / Codex".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: None,
+            };
+            view.last_error = Some("Codex provider usage unavailable".to_owned());
 
-        preserve_cached_quota_on_stale_refresh(&mut view, &cached);
+            preserve_cached_quota_on_failed_refresh(&mut view, &cached);
 
-        assert_eq!(view.buckets.len(), 1);
-        assert_eq!(view.buckets[0].status, UsageSnapshotStatus::Stale);
-        assert_eq!(view.account.plan_label.as_deref(), Some("Pro 20x"));
-        assert_eq!(view.status_bar_label, "Weekly 10%");
-        assert!(
-            view.last_error
-                .as_deref()
-                .is_some_and(|error| error.contains("showing last cached quota"))
-        );
+            assert_eq!(view.status, UsageSnapshotStatus::Stale);
+            assert_eq!(view.source, UsageSource::Cache);
+            assert_eq!(view.confidence, UsageConfidence::Authoritative);
+            assert_eq!(view.buckets.len(), 1);
+            assert_eq!(view.buckets[0].status, UsageSnapshotStatus::Stale);
+            assert_eq!(view.account.plan_label.as_deref(), Some("Pro 20x"));
+            assert_eq!(view.status_bar_label, "Weekly 10%");
+            assert!(
+                view.last_error
+                    .as_deref()
+                    .is_some_and(|error| error.contains("showing last cached quota"))
+            );
+        }
     }
 
     #[test]
