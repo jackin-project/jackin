@@ -77,8 +77,10 @@ RUN --mount=type=cache,id=jackin-agent-prefetch-claude,target=/home/agent/.cache
         AgentStatePaths {
             // Claude stores credentials in ~/.claude/ (directory) + ~/.claude.json.
             credential_dir: ".claude",
+            config_dir: None,      // all durable state under ~/.claude
             credential_file: None, // directory-based: .credentials.json + ~/.claude.json
             folder_env_var: Some("CLAUDE_CONFIG_DIR"),
+            home_files: &[".claude.json"],
         }
     }
 

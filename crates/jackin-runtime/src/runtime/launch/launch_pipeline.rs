@@ -177,6 +177,9 @@ pub(crate) async fn load_role_with(
 
     let mut steps = super::StepCounter::new(&selector.name);
     if let Some(run) = jackin_diagnostics::active_run() {
+        #[cfg(test)]
+        let mut progress = crate::runtime::progress::LaunchProgress::for_test(run);
+        #[cfg(not(test))]
         let mut progress = crate::runtime::progress::LaunchProgress::new(
             run,
             std::env::var_os("JACKIN_NO_MOTION").is_some(),
@@ -243,16 +246,6 @@ pub(crate) async fn load_role_with(
             )
             .await?
             {
-                Some(super::RestoreResolution::AttachCurrentRole(container)) => {
-                    jackin_diagnostics::debug_log!(
-                        "restore",
-                        "attaching current running instance {container} before role repo, credentials, and image prep"
-                    );
-                    return restore_current_role_now(
-                        paths, &container, docker, runner, &mut steps, false,
-                    )
-                    .await;
-                }
                 Some(super::RestoreResolution::StartCurrentRole(container)) => {
                     jackin_diagnostics::debug_log!(
                         "restore",
@@ -283,19 +276,6 @@ pub(crate) async fn load_role_with(
             )
             .await?
             {
-                Some(super::UnselectedCurrentRestoreResolution {
-                    resolution: super::RestoreResolution::AttachCurrentRole(container),
-                    ..
-                }) => {
-                    jackin_diagnostics::debug_log!(
-                        "restore",
-                        "attaching single-agent current instance {container} before role repo, credentials, and image prep"
-                    );
-                    return restore_current_role_now(
-                        paths, &container, docker, runner, &mut steps, false,
-                    )
-                    .await;
-                }
                 Some(super::UnselectedCurrentRestoreResolution {
                     resolution: super::RestoreResolution::StartCurrentRole(container),
                     ..
@@ -524,6 +504,9 @@ pub(crate) async fn load_role_with(
         }
     }
 
+    // Pinned role SHA from the stored launch recipe (D7/Tier 3).  Set in the
+    // `RecreateCurrentRole` arm below when the manifest has a recorded SHA.
+    let mut restore_pinned_sha: Option<String> = None;
     let restore_container = if early_restore_container.is_some() {
         early_restore_container
     } else if let Some(container) = opts.restore_container_base.as_ref() {
@@ -532,7 +515,7 @@ pub(crate) async fn load_role_with(
         // `--rebuild` skips the early gate above (it is `&& !opts.rebuild`), so
         // a forced rebuild actually falls through to *this* resolution. Without
         // the same guard here, `resolve_restore_candidate` would still return
-        // `AttachCurrentRole`/`StartCurrentRole` and `return` straight into the
+        // `StartCurrentRole`/`RecreateCurrentRole` and `return` straight into the
         // existing container — silently skipping the build the operator asked
         // for. Leave `restore_container` `None` so the normal pipeline runs
         // `decide_agent_image` -> `ExplicitRebuild` and always rebuilds;
@@ -552,16 +535,6 @@ pub(crate) async fn load_role_with(
         .await?
         {
             super::RestoreResolution::StartFresh => None,
-            super::RestoreResolution::AttachCurrentRole(container) => {
-                jackin_diagnostics::debug_log!(
-                    "restore",
-                    "attaching current running instance {container} before credentials and image prep"
-                );
-                return restore_current_role_now(
-                    paths, &container, docker, runner, &mut steps, false,
-                )
-                .await;
-            }
             super::RestoreResolution::StartCurrentRole(container) => {
                 jackin_diagnostics::debug_log!(
                     "restore",
@@ -577,9 +550,22 @@ pub(crate) async fn load_role_with(
                     "restore",
                     "recreating missing current instance {container} with normal image decision"
                 );
+                // D7: extract pinned recipe so Tier 3 rebuild uses the original
+                // role SHA rather than current HEAD of the cached repo.
+                let container_state = paths.data_dir.join(&container);
+                if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
+                    restore_pinned_sha = stored.role_git_sha;
+                }
                 Some(container)
             }
-            super::RestoreResolution::RestoreCurrentRole(container) => Some(container),
+            super::RestoreResolution::RestoreCurrentRole(container) => {
+                // D7: same pinned-SHA extraction as RecreateCurrentRole.
+                let container_state = paths.data_dir.join(&container);
+                if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
+                    restore_pinned_sha = stored.role_git_sha;
+                }
+                Some(container)
+            }
             super::RestoreResolution::RecoverRelatedRole(container) => {
                 steps.finish_progress();
                 let load_result = hardline_agent(paths, &container, docker, runner)
@@ -622,10 +608,31 @@ pub(crate) async fn load_role_with(
                     }
                 }
             }
+            // D21: operator deleted a candidate from the launch dialog.
+            // Purge its state then fall through to StartFresh (None).
+            super::RestoreResolution::PurgeAndRestartFresh(container) => {
+                // Best-effort: a failed purge leaves stale state the next prune
+                // reaps, but trace it so a delete-then-launch that didn't clean
+                // up is diagnosable rather than silent.
+                if let Err(err) = crate::runtime::cleanup::purge_container_state(
+                    paths, &container, docker, runner,
+                )
+                .await
+                {
+                    jackin_diagnostics::debug_log!(
+                        "instance",
+                        "purge after launch-dialog delete failed for {container}: {err}; \
+                         state will be removed on next prune",
+                    );
+                }
+                None
+            }
         }
     };
 
-    if workspace.git_pull_on_entry {
+    // D7: skip git pull when restoring — restore replays the pinned recipe;
+    // pulling would advance the role repo past the pinned SHA.
+    if restore_container.is_none() && workspace.git_pull_on_entry {
         let sources = super::git_pull_sources(workspace);
         if let Some(progress) = steps.progress_mut() {
             if sources.is_empty() {
@@ -750,6 +757,7 @@ pub(crate) async fn load_role_with(
         &validated_repo,
         rebuild,
         opts.role_branch.as_deref(),
+        restore_pinned_sha.as_deref(),
         docker,
         runner,
     )
@@ -931,6 +939,10 @@ pub(crate) async fn load_role_with(
             "resolved",
         );
     }
+
+    // D7: capture recipe fields before image_decision is consumed by match below.
+    let recipe_role_git_sha = image_decision.role_git_sha();
+    let recipe_base_image_ref = image_decision.base_image_ref().map(ToOwned::to_owned);
 
     let selected_refresh_reason = match &image_decision {
         crate::runtime::image::ImageDecision::RefreshInBackground { reason, .. } => Some(*reason),
@@ -1144,6 +1156,11 @@ pub(crate) async fn load_role_with(
                 network: network.clone(),
                 certs_volume: certs_volume.clone(),
             },
+            // D7: pin the launch recipe for faithful restore.
+            role_git_sha: recipe_role_git_sha,
+            base_image_ref: recipe_base_image_ref,
+            base_image_digest: None, // D16: populated when Docker reports digest post-build
+            supported_agents: validated_repo.manifest.supported_agents(),
         });
         // `read_optional` already separates "manifest absent" (fall back
         // to `new_manifest` and re-record the recovered identity) from
@@ -1672,6 +1689,9 @@ pub(crate) async fn load_role_with(
         // role, then the safe cleanup is retried.
         let interactive_finalize = true;
         let mut prompt = crate::isolation::finalize::RichCleanupPrompt;
+        let dirty_exit_policy = config.resolve_dirty_exit_policy(
+            workspace_name.as_deref().and_then(|n| config.workspaces.get(n)),
+        );
         let outcome = super::inspect_attach_outcome(docker, &container_name).await?;
         super::write_instance_attach_outcome(paths, &container_state, &mut instance_manifest, outcome)?;
         let mut decision = crate::isolation::finalize::finalize_foreground_session(
@@ -1679,6 +1699,7 @@ pub(crate) async fn load_role_with(
             &paths.data_dir.join(&container_name),
             outcome,
             interactive_finalize,
+            dirty_exit_policy,
             &mut prompt,
             docker,
             runner,
@@ -1712,6 +1733,7 @@ pub(crate) async fn load_role_with(
                 &paths.data_dir.join(&container_name),
                 outcome2,
                 interactive_finalize,
+                dirty_exit_policy,
                 &mut prompt,
                 docker,
                 runner,
@@ -1793,13 +1815,17 @@ pub(crate) async fn load_role_with(
                 exit_code: 0,
                 oom_killed: false,
             } => {
-                super::write_instance_status(
+                cleanup.run(docker).await;
+                purge_or_mark_clean_exited(
                     paths,
+                    &container_name,
                     &container_state,
                     &mut instance_manifest,
-                    InstanceStatus::CleanExited,
-                )?;
-                cleanup.run(docker).await;
+                    docker,
+                    runner,
+                    "clean exit",
+                )
+                .await?;
             }
             ContainerState::Stopped { .. }
             | ContainerState::Created
@@ -1833,13 +1859,18 @@ pub(crate) async fn load_role_with(
                 cleanup.run(docker).await;
             }
             ContainerState::NotFound => {
-                super::write_instance_status(
+                cleanup.run(docker).await;
+                // D9: container already gone — purge local state inline.
+                purge_or_mark_clean_exited(
                     paths,
+                    &container_name,
                     &container_state,
                     &mut instance_manifest,
-                    InstanceStatus::CleanExited,
-                )?;
-                cleanup.run(docker).await;
+                    docker,
+                    runner,
+                    "NotFound clean exit",
+                )
+                .await?;
             }
         }
 
@@ -1931,4 +1962,30 @@ fn known_agent_credential_env(key: &str) -> bool {
                 .filter_map(move |mode| agent.required_env_var(*mode))
         })
         .any(|credential_key| credential_key == key)
+}
+
+/// D9: purge per-instance data, the name-claim lock, and the index row inline on
+/// a clean terminal outcome so no manual prune is needed. If the purge itself
+/// fails, fall back to stamping `CleanExited` so the next prune removes the row.
+/// Shared by the clean-exit and `NotFound` arms, which differ only in `context`.
+async fn purge_or_mark_clean_exited(
+    paths: &JackinPaths,
+    container_name: &str,
+    state_dir: &std::path::Path,
+    manifest: &mut InstanceManifest,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    context: &str,
+) -> anyhow::Result<()> {
+    if let Err(err) =
+        crate::runtime::cleanup::purge_container_state(paths, container_name, docker, runner).await
+    {
+        jackin_diagnostics::debug_log!(
+            "instance",
+            "inline cleanup after {context} failed for {container_name}: {err}; \
+             state will be removed on next prune",
+        );
+        super::write_instance_status(paths, state_dir, manifest, InstanceStatus::CleanExited)?;
+    }
+    Ok(())
 }

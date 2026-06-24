@@ -6,6 +6,7 @@ pub mod button_strip;
 pub mod confirm_dialog;
 pub mod container_info;
 pub mod dialog_layout;
+pub mod diff_view;
 pub mod error_dialog;
 pub mod filter_input;
 pub mod focus_owner;
@@ -48,6 +49,7 @@ pub use dialog_layout::{
     dialog_inner_height, dialog_scroll_axes, mouse_scroll_delta, render_dialog_shell,
     render_scrollable_dialog_body, scroll_hint_spans,
 };
+pub use diff_view::{DiffViewState, SinglePaneKind, diff_view_hint_spans, render_diff_view};
 pub use error_dialog::{
     ERROR_POPUP_KEYMAP, ErrorPopupAction, ErrorPopupState, error_popup_hint_spans,
     estimated_message_rows, render_error_dialog, render_error_dialog_in, required_height,

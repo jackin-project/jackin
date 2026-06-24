@@ -1040,6 +1040,7 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
         &validated_repo,
         false,
         None,
+        None,
         &docker,
         &mut runner,
     )
@@ -1136,6 +1137,7 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
             &validated_repo,
             false,
             None,
+            None,
             &docker,
             &mut runner,
         )
@@ -1196,6 +1198,7 @@ async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_l
         &cached_repo,
         &validated_repo,
         false,
+        None,
         None,
         &docker,
         &mut runner,
@@ -1264,6 +1267,7 @@ plugins = []
         &validated_repo,
         false,
         None,
+        None,
         &docker,
         &mut runner,
     )
@@ -1323,6 +1327,7 @@ plugins = []
         &cached_repo,
         &validated_repo,
         false,
+        None,
         None,
         &docker,
         &mut runner,
@@ -1403,6 +1408,7 @@ plugins = []
         &cached_repo,
         &validated_repo,
         false,
+        None,
         None,
         &docker,
         &mut runner,
@@ -1661,6 +1667,7 @@ preflight = "hooks/preflight.sh"
         &validated_repo,
         false,
         None,
+        None,
         &docker,
         &mut runner,
     )
@@ -1714,6 +1721,7 @@ async fn branch_override_uses_branch_tag_and_recipe_ref() {
         &validated_repo,
         false,
         Some(branch),
+        None,
         &docker,
         &mut runner,
     )
@@ -1763,6 +1771,7 @@ async fn decide_agent_image_rebuilds_when_construct_image_label_has_changed() {
         &cached_repo,
         &validated_repo,
         false,
+        None,
         None,
         &docker,
         &mut runner,
@@ -1821,6 +1830,7 @@ async fn decide_agent_image_rebuilds_when_role_git_sha_has_changed() {
         &validated_repo,
         false,
         None,
+        None,
         &docker,
         &mut runner,
     )
@@ -1871,6 +1881,7 @@ async fn decide_agent_image_rebuilds_when_role_source_ref_has_changed() {
         &validated_repo,
         false,
         Some("feature/instant-launch"),
+        None,
         &docker,
         &mut runner,
     )
@@ -1919,6 +1930,7 @@ async fn decide_agent_image_reuses_when_only_host_uid_has_changed() {
         &cached_repo,
         &validated_repo,
         false,
+        None,
         None,
         &docker,
         &mut runner,
@@ -2010,6 +2022,7 @@ async fn decide_agent_image_rebuild_reason_is_emitted_in_diagnostics() {
         &cached_repo,
         &validated_repo,
         false,
+        None,
         None,
         &docker,
         &mut runner,

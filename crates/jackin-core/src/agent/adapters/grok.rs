@@ -71,8 +71,10 @@ RUN set -euxo pipefail && \\
     fn state_paths(&self) -> AgentStatePaths {
         AgentStatePaths {
             credential_dir: ".grok",
+            config_dir: None, // all durable state under ~/.grok
             credential_file: Some(".grok/auth.json"),
             folder_env_var: None,
+            home_files: &[],
         }
     }
 

@@ -9,8 +9,9 @@
 //! base-image Dockerfile authored by the role (lives in the role repo).
 
 use jackin_core::Agent;
-use jackin_core::manifest::HooksConfig;
+use jackin_core::manifest::{ClaudeConfig, HooksConfig};
 use jackin_manifest::ValidatedRoleRepo;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
@@ -128,19 +129,25 @@ fn render_hook_section(hooks: Option<&HooksConfig>) -> HookRender {
 }
 
 fn render_default_home_commands(agents: &[Agent]) -> String {
-    let mut dirs = agents
-        .iter()
-        .map(|agent| agent.runtime().state_paths().credential_dir)
-        .collect::<Vec<_>>();
+    // D4: snapshot both the primary data root and the paired config root (when an
+    // agent persists one apart from its data root, e.g. Amp/OpenCode `.config/*`).
+    // Both roots share one lifecycle, so they move into /jackin/default-home and
+    // get recreated empty together.
+    // `extend` drains each agent's home_dirs() within the statement, so the
+    // borrowed temporary `state_paths()` lives long enough without a per-agent
+    // intermediate Vec.
+    let mut dirs: Vec<&'static str> = Vec::new();
+    for agent in agents {
+        dirs.extend(agent.runtime().state_paths().home_dirs());
+    }
     dirs.sort_unstable();
     dirs.dedup();
 
+    // Create ONLY the default-home root here, never the per-agent target dirs:
+    // pre-creating `/jackin/default-home/$dir` would make the `mv` below move the
+    // source *into* it (`…/.claude/.claude`) instead of renaming onto it. Each
+    // target's parent is created at mv time via `mkdir -p "$(dirname …)"`.
     let mut commands = String::from("install -d -o agent -g agent /jackin/default-home");
-    for dir in &dirs {
-        commands.push(' ');
-        commands.push_str("/jackin/default-home/");
-        commands.push_str(dir);
-    }
     if dirs.is_empty() {
         return commands;
     }
@@ -149,8 +156,13 @@ fn render_default_home_commands(agents: &[Agent]) -> String {
         commands.push(' ');
         commands.push_str(&shell_quote(dir));
     }
+    // D4: move the initialized home root to /jackin/default-home then recreate
+    // an empty placeholder. The mount at `docker run` overlays the placeholder
+    // with the durable bind-mounted home, and runtime-setup seeds it from
+    // /jackin/default-home on first launch (D5 empty-dir gate). `mkdir -p` on the
+    // target parent handles multi-segment roots like `.local/share/amp`.
     commands.push_str(
-        "; do \\\n        if [ -d \"/home/agent/$dir\" ]; then \\\n            cp -a \"/home/agent/$dir/.\" \"/jackin/default-home/$dir/\"; \\\n        fi; \\\n    done",
+        "; do \\\n        if [ -d \"/home/agent/$dir\" ]; then \\\n            mkdir -p \"$(dirname \"/jackin/default-home/$dir\")\" \\\n            && mv \"/home/agent/$dir\" \"/jackin/default-home/$dir\" \\\n            && mkdir -p \"/home/agent/$dir\"; \\\n        fi; \\\n    done",
     );
     commands
 }
@@ -170,28 +182,99 @@ pub enum AgentInstall<P> {
     ScriptFallback,
 }
 
+/// Generate the Claude marketplace/plugin install block for the derived
+/// Dockerfile. Empty when no plugins are configured. Runs at image build time so
+/// plugins are captured in the default-home snapshot (D2 bake plugins during
+/// Docker build).
+///
+/// Each marketplace and each plugin is its **own** `RUN` layer rather than one
+/// `&&`-chained command. This is deliberate: every step is independently
+/// Docker-cached, so adding or changing one plugin only rebuilds that step and
+/// the ones after it, and a failed install resumes from the failing step instead
+/// of replaying the whole chain. It also keeps the generated Dockerfile readable
+/// — one scannable line per "what was installed".
+fn render_claude_plugin_section(claude: Option<&ClaudeConfig>) -> String {
+    let Some(config) = claude else {
+        return String::new();
+    };
+    if config.marketplaces.is_empty() && config.plugins.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::from(
+        "\n# ── Claude plugins (D2: baked at build, captured in default-home) ──\n\
+         # One RUN per marketplace/plugin so each is a reusable, independently\n\
+         # cached layer and a failed install resumes mid-list, not from scratch.\n\
+         USER agent\n",
+    );
+    // Official marketplace — tolerate it already registered.
+    out.push_str("RUN claude plugin marketplace add anthropics/claude-plugins-official || true\n");
+    for marketplace in &config.marketplaces {
+        out.push_str("RUN claude plugin marketplace add ");
+        out.push_str(&shell_quote(&marketplace.source));
+        if !marketplace.sparse.is_empty() {
+            out.push_str(" --sparse");
+            for path in &marketplace.sparse {
+                out.push(' ');
+                out.push_str(&shell_quote(path));
+            }
+        }
+        out.push('\n');
+    }
+    for plugin in &config.plugins {
+        out.push_str("RUN claude plugin install ");
+        out.push_str(&shell_quote(plugin));
+        out.push('\n');
+    }
+    out.push_str("USER root\n");
+    out
+}
+
 pub fn render_derived_dockerfile(
     base_dockerfile: &str,
     hooks: Option<&HooksConfig>,
     supported: &[Agent],
     jackin_capsule_bin: Option<&str>,
+    agent_installs: &BTreeMap<Agent, AgentInstall<String>>,
+    claude_config: Option<&ClaudeConfig>,
 ) -> String {
     let hook_section = render_hook_section(hooks);
     let default_home_commands = render_default_home_commands(supported);
     let hook_final_commands = (!hook_section.final_commands.is_empty())
         .then(|| format!("{} \\\n    && ", hook_section.final_commands.trim_end()));
 
-    // Agent CLI binaries are NOT baked into the image — the host's prefetched
-    // binaries are bind-mounted read-only at `docker run` (see
-    // `agent_binary_mounts`), so an agent version bump no longer rebuilds the
-    // derived image. The overlay only stages jackin's own runtime assets; the
-    // ENV PATH below covers every agent's bin dir so the mounted binaries
-    // resolve. Claude plugin setup moves to capsule runtime-setup.
-    //
-    // PATH bin dirs are derived from each agent's `container_binary_paths()` (the
-    // same values the run-time mount targets), so the adapter is the single
-    // source of truth — adding an agent or moving its binary can't drift the PATH
-    // out of sync with the mount.
+    // Bake every supported agent into the derived image (D1). Each install_block()
+    // COPYs the pre-fetched binary and runs the agent's official installer, writing
+    // into /home/agent/. This runs before the default-home snapshot so the
+    // initialized state is captured. Each block sets USER agent; we restore root
+    // afterward for the snapshot and normalization layers.
+    let agent_install_sections = {
+        let mut s = String::new();
+        for agent in supported {
+            if let Some(install) = agent_installs.get(agent) {
+                let block = match install {
+                    AgentInstall::Prefetched(ctx_path) => agent.runtime().install_block(ctx_path),
+                    AgentInstall::ScriptFallback => agent.runtime().fallback_install_block(),
+                };
+                s.push_str(&block);
+            }
+        }
+        if !s.is_empty() {
+            s.push_str("USER root\n");
+        }
+        s
+    };
+
+    // Plugin install runs after install_block() bakes claude (D2 bake plugins
+    // at image build time). Runs as USER agent so claude has home-dir access.
+    // Placed before the mv/default-home snapshot so plugins are captured in it.
+    let claude_plugin_section = render_claude_plugin_section(claude_config);
+
+    // PATH: /jackin/runtime for jackin-capsule; each agent's install_block() also
+    // adds its own bin dir via ENV PATH. The segment below covers agent bins that
+    // do not emit their own ENV PATH (e.g. claude installs into .local/bin which
+    // may not be set by the construct image). Adapter container_binary_paths() is
+    // the single source of truth for these dirs.
     let mut agent_bin_dirs: Vec<&str> = Vec::new();
     for agent in Agent::ALL {
         for path in agent.runtime().container_binary_paths() {
@@ -234,22 +317,37 @@ pub fn render_derived_dockerfile(
 # syntax=docker/dockerfile:1.7
 {base_dockerfile}
 USER root
+# ─────────────────────────────────────────────────────────────────────────────
+# Derived role image, generated by jackin. Layered for readability and reuse:
+# each agent install, each Claude plugin, the default-home snapshot, runtime
+# finalization, and the arbitrary-UID normalization are separate, individually
+# cached steps. Editing one step only rebuilds it and the steps after it.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── jackin runtime payload (entrypoint, multiplexer, shell-title shim) ──
 {hook_copy_section}COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 COPY --link --chown=agent:agent --chmod=0644 {zsh_title_shim_path} /jackin/runtime/zsh-title-shim
-{jackin_capsule_section}RUN {hook_final_commands}{default_home_commands} \\
-    && {shell_title_and_runtime_dir_commands}# Normalize /home/agent AND the /jackin/default-home seed to group 0 with
+{jackin_capsule_section}
+# ── Agent CLIs (D1: each agent's binary baked from its install_block) ──
+{agent_install_sections}{claude_plugin_section}
+# ── Default-home snapshot (D4): move each baked agent home into the
+#    /jackin/default-home seed, leaving an empty home for the runtime mount.
+#    runtime-setup copies the seed into an empty durable home on first launch. ──
+RUN {default_home_commands}
+
+# ── Runtime finalization: shell-title shim into .zshrc + jackin runtime dirs ──
+RUN {hook_final_commands}{shell_title_and_runtime_dir_commands}
+# ── Arbitrary-UID normalization (must be the last layer touching these trees) ──
+# Normalize /home/agent AND the /jackin/default-home seed to group 0 with
 # group==owner permissions so both are fully usable when the container runs as
 # an arbitrary host UID in group 0 (`docker run --user <host-uid>:0`).
 # /jackin/default-home must be included because runtime-setup copies it into
 # the agent's home on first launch, and it contains private 0600 files (e.g.
 # .claude backups) the arbitrary UID could otherwise not read. The image is
-# UID-agnostic (built once, shared); this is the OpenShift arbitrary-UID
-# pattern. Must be the last layer touching these trees so files added above are
-# covered.
+# UID-agnostic (built once, shared); this is the OpenShift arbitrary-UID pattern.
 RUN chgrp -R 0 /home/agent /jackin/default-home && chmod -R g=u /home/agent /jackin/default-home
-# jackin-capsule plus every agent bin dir on PATH. The agent CLI binaries are
-# bind-mounted read-only at `docker run` (not baked), so this fixed PATH lets the
-# mounted binaries resolve without the image depending on which agents are baked.
+# /jackin/runtime for jackin-capsule; agent bin dirs so binaries baked by
+# install_block() resolve for sibling tabs that share the same container.
 ENV PATH=\"/jackin/runtime:{agent_path_segment}:${{PATH}}\"
 USER agent
 ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]
@@ -345,6 +443,7 @@ pub fn create_derived_build_context(
         base_image_override,
         jackin_capsule_host_path,
         &supported,
+        &BTreeMap::new(),
     )
 }
 
@@ -359,6 +458,8 @@ pub fn create_derived_build_context_for_agents(
     // the derived image at /jackin/runtime/jackin-capsule.
     jackin_capsule_host_path: Option<&str>,
     agents_to_install: &[Agent],
+    // Host-side binary paths (or ScriptFallback) for each agent to bake (D1).
+    agent_installs: &BTreeMap<Agent, AgentInstall<PathBuf>>,
 ) -> anyhow::Result<DerivedBuildContext> {
     let temp_dir = tempfile::tempdir()?;
     let context_dir = temp_dir.path().join("context");
@@ -394,8 +495,38 @@ pub fn create_derived_build_context_for_agents(
         None
     };
 
-    // Agent binaries are no longer staged into the build context — they are
-    // bind-mounted read-only at `docker run`.
+    // Stage agent binaries into the build context so install_block() can COPY
+    // them without a network fetch at build time (D1). ScriptFallback agents
+    // run their upstream installer directly at build time — no binary to stage.
+    // The agent-binaries dir is created only when at least one Prefetched agent
+    // exists; an empty dir would wrongly reopen the dockerignore allowlist.
+    let agent_bin_dir = runtime_dir.join("agent-binaries");
+    let mut ctx_agent_installs: BTreeMap<Agent, AgentInstall<String>> = BTreeMap::new();
+    let mut agent_bin_dir_created = false;
+    for agent in agents_to_install {
+        if let Some(install) = agent_installs.get(agent) {
+            let ctx_install = match install {
+                AgentInstall::Prefetched(host_path) => {
+                    if !agent_bin_dir_created {
+                        std::fs::create_dir_all(&agent_bin_dir)?;
+                        agent_bin_dir_created = true;
+                    }
+                    let ctx_path = format!(".jackin-runtime/agent-binaries/{}", agent.slug());
+                    let dst = agent_bin_dir.join(agent.slug());
+                    std::fs::copy(host_path, &dst).map_err(|e| {
+                        anyhow::anyhow!(
+                            "failed to copy {} binary into build context: {e}",
+                            agent.slug()
+                        )
+                    })?;
+                    AgentInstall::Prefetched(ctx_path)
+                }
+                AgentInstall::ScriptFallback => AgentInstall::ScriptFallback,
+            };
+            ctx_agent_installs.insert(*agent, ctx_install);
+        }
+    }
+
     let hooks = validated.manifest.hooks.as_ref();
 
     // Validation policy by ingress channel — intentionally asymmetric:
@@ -440,6 +571,7 @@ pub fn create_derived_build_context_for_agents(
     };
 
     let dockerfile_path = context_dir.join(".jackin-runtime/DerivedDockerfile");
+    let claude_config = validated.manifest.claude.as_ref();
     std::fs::write(
         &dockerfile_path,
         render_derived_dockerfile(
@@ -447,6 +579,8 @@ pub fn create_derived_build_context_for_agents(
             hooks,
             agents_to_install,
             jackin_capsule_ctx_path.as_deref(),
+            &ctx_agent_installs,
+            claude_config,
         ),
     )?;
     ensure_runtime_assets_are_included(&context_dir, hooks)?;

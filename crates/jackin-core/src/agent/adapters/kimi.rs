@@ -68,8 +68,10 @@ ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${{PATH}}\"
         AgentStatePaths {
             // Kimi stores credentials in ~/.kimi-code/ as a directory.
             credential_dir: ".kimi-code",
+            config_dir: None,      // all durable state under ~/.kimi-code
             credential_file: None, // directory-based provisioning
             folder_env_var: None,  // no standard folder env var
+            home_files: &[],
         }
     }
 

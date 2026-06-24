@@ -66,8 +66,10 @@ ENV PATH=\"/home/agent/.opencode/bin:${{PATH}}\"
     fn state_paths(&self) -> AgentStatePaths {
         AgentStatePaths {
             credential_dir: ".local/share/opencode",
+            config_dir: Some(".config/opencode"),
             credential_file: Some(".local/share/opencode/auth.json"),
             folder_env_var: Some("XDG_DATA_HOME"),
+            home_files: &[],
         }
     }
 

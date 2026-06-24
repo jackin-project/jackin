@@ -51,6 +51,8 @@ ratatui = "0.30"
 dhat = { version = "0.3.3", optional = true }
 # tui-term was evaluated for pane-body rendering (see ADR-004) but did not fit
 # the capsule's owned-grid model. The custom cell widget approach is used instead.
+# Atomic first-seed of agent home dirs (D6): copy to sibling temp then rename.
+tempfile = "=3.27.0"
 
 [build-dependencies]
 jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }

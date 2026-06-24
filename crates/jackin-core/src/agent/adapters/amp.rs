@@ -66,8 +66,10 @@ ENV PATH=\"/home/agent/.local/bin:/home/agent/.amp/bin:${{PATH}}\"
     fn state_paths(&self) -> AgentStatePaths {
         AgentStatePaths {
             credential_dir: ".local/share/amp",
+            config_dir: Some(".config/amp"),
             credential_file: Some(".local/share/amp/secrets.json"),
             folder_env_var: Some("XDG_DATA_HOME"),
+            home_files: &[],
         }
     }
 

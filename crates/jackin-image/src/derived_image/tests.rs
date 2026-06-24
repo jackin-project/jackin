@@ -11,10 +11,11 @@ fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
         None,
         &[Agent::Claude],
         None,
+        &BTreeMap::new(),
+        None,
     );
 
-    // Agent binaries are mounted read-only at run time, not baked — the overlay
-    // carries no agent COPY/install and no plugin block.
+    // No agent_installs → overlay carries no agent COPY/install blocks.
     assert!(!dockerfile.contains("agent-binaries"));
     assert!(!dockerfile.contains("claude plugin"));
     assert!(!dockerfile.contains("WORKDIR"));
@@ -35,6 +36,8 @@ fn renders_runtime_finalization_in_one_layer() {
         None,
         &[Agent::Claude],
         Some(".jackin-runtime/jackin-capsule"),
+        &BTreeMap::new(),
+        None,
     );
 
     assert!(dockerfile.contains(
@@ -44,12 +47,14 @@ fn renders_runtime_finalization_in_one_layer() {
         "COPY --link --chmod=0755 .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule"
     ));
     assert!(!dockerfile.contains("RUN chmod +x /jackin/runtime/"));
+    // The title shim + runtime-dir creation share one finalization RUN (separate
+    // from the now-standalone default-home snapshot for readability).
     assert_eq!(
         dockerfile
-            .matches("&& ( grep -q '__JACKIN_AUTO_TITLE_LOADED'")
+            .matches("( grep -q '__JACKIN_AUTO_TITLE_LOADED'")
             .count(),
         1,
-        "title shim should share the runtime finalization layer: {dockerfile}"
+        "title shim should be in exactly one finalization layer: {dockerfile}"
     );
     assert!(dockerfile.contains(
         "COPY --link --chown=agent:agent --chmod=0644 .jackin-runtime/zsh-title-shim /jackin/runtime/zsh-title-shim"
@@ -61,18 +66,29 @@ fn renders_runtime_finalization_in_one_layer() {
     );
     assert!(
         dockerfile.contains(
-            "RUN install -d -o agent -g agent /jackin/default-home /jackin/default-home/.claude \\\n    && for dir in '.claude'; do"
+            "RUN install -d -o agent -g agent /jackin/default-home \\\n    && for dir in '.claude'; do"
         ),
-        "default-home snapshot should share the runtime finalization layer: {dockerfile}"
+        "default-home snapshot creates only the root, never the per-agent targets (else mv nests): {dockerfile}"
+    );
+    // The mv target parent is made at mv time so `.claude` renames onto
+    // /jackin/default-home/.claude rather than moving into a pre-created dir.
+    assert!(
+        dockerfile.contains("mkdir -p \"$(dirname \"/jackin/default-home/$dir\")\""),
+        "mv must create the target parent, not pre-create the target: {dockerfile}"
+    );
+    assert!(
+        !dockerfile.contains("/jackin/default-home/.claude /jackin/default-home/.codex"),
+        "per-agent target dirs must not be pre-created in install -d: {dockerfile}"
     );
     assert_eq!(
-        dockerfile.matches("cp -a \"/home/agent/$dir/.\"").count(),
+        dockerfile.matches("mv \"/home/agent/$dir\"").count(),
         1,
-        "default-home snapshot should use one loop, not one copy command per agent: {dockerfile}"
+        "default-home snapshot should use one mv loop, not one copy command per agent: {dockerfile}"
     );
     assert!(!dockerfile.contains("chown -R agent:agent /jackin/default-home"));
     assert!(!dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
-    assert!(!dockerfile.contains("\nRUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED'"));
+    // Finalization is its own RUN now (default-home snapshot was pulled out).
+    assert!(dockerfile.contains("\nRUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED'"));
     assert!(!dockerfile.contains("\nRUN install -d -o agent -g agent /jackin/run /jackin/state"));
     assert_eq!(
         dockerfile
@@ -88,6 +104,8 @@ fn renders_derived_dockerfile_keeps_construct_agent_identity() {
         "FROM projectjackin/construct:0.1-trixie\n",
         None,
         &[Agent::Claude],
+        None,
+        &BTreeMap::new(),
         None,
     );
 
@@ -123,6 +141,8 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
             preflight: Some("hooks/preflight.sh".to_owned()),
         }),
         &[Agent::Claude],
+        None,
+        &BTreeMap::new(),
         None,
     );
 
@@ -189,6 +209,8 @@ fn renders_derived_dockerfile_without_runtime_hooks() {
         None,
         &[Agent::Claude],
         None,
+        &BTreeMap::new(),
+        None,
     );
 
     assert!(!dockerfile.contains("setup-once.sh"));
@@ -225,6 +247,7 @@ agents = ["kimi"]
         None,
         None,
         &[Agent::Kimi],
+        &BTreeMap::new(),
     )
     .unwrap();
     let dockerignore = std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
@@ -328,6 +351,8 @@ fn renders_codex_only_dockerfile_final_user_is_agent() {
         None,
         &[Agent::Codex],
         None,
+        &BTreeMap::new(),
+        None,
     );
     let last_user = dockerfile
         .lines()
@@ -342,6 +367,8 @@ fn renders_dockerfile_targets_agent_user_not_claude() {
         "FROM projectjackin/construct:0.1-trixie\n",
         None,
         &[Agent::Claude],
+        None,
+        &BTreeMap::new(),
         None,
     );
 
@@ -360,6 +387,8 @@ fn renders_dockerfile_does_not_set_jackin_agent_env() {
         "FROM projectjackin/construct:0.1-trixie\n",
         None,
         &[Agent::Claude, Agent::Codex],
+        None,
+        &BTreeMap::new(),
         None,
     );
 
@@ -497,21 +526,24 @@ fn derived_image_snapshots_agent_home_defaults() {
             Agent::Grok,
         ],
         None,
+        &BTreeMap::new(),
+        None,
     );
 
-    assert!(dockerfile.contains("/jackin/default-home/.claude"));
-    assert!(dockerfile.contains("/jackin/default-home/.codex"));
-    assert!(dockerfile.contains("/jackin/default-home/.local/share/amp"));
-    assert!(dockerfile.contains("/jackin/default-home/.kimi-code"));
-    assert!(dockerfile.contains("/jackin/default-home/.local/share/opencode"));
-    assert!(dockerfile.contains("/jackin/default-home/.grok"));
+    // The snapshot roots (data + paired config) are the `for dir in …` list,
+    // sorted, moved by one templated mv. Targets are NOT pre-created (so the mv
+    // renames onto them instead of nesting `.claude/.claude`).
     assert!(dockerfile.contains(
-        "for dir in '.claude' '.codex' '.grok' '.kimi-code' '.local/share/amp' '.local/share/opencode'; do"
+        "for dir in '.claude' '.codex' '.config/amp' '.config/opencode' '.grok' '.kimi-code' '.local/share/amp' '.local/share/opencode'; do"
     ));
+    assert!(
+        !dockerfile.contains("/jackin/default-home/.claude /jackin/default-home/.codex"),
+        "per-agent targets must not be pre-created in install -d: {dockerfile}"
+    );
     assert_eq!(
-        dockerfile.matches("cp -a \"/home/agent/$dir/.\"").count(),
+        dockerfile.matches("mv \"/home/agent/$dir\"").count(),
         1,
-        "default-home snapshot should not emit one copy command per agent: {dockerfile}"
+        "default-home snapshot should not emit one mv command per agent: {dockerfile}"
     );
 }
 
@@ -522,21 +554,64 @@ fn derived_image_snapshots_only_selected_agent_home_defaults() {
         None,
         &[Agent::Claude],
         None,
+        &BTreeMap::new(),
+        None,
     );
 
-    assert!(dockerfile.contains("/jackin/default-home/.claude"));
-    for path in [
-        "/jackin/default-home/.codex",
-        "/jackin/default-home/.local/share/amp",
-        "/jackin/default-home/.kimi-code",
-        "/jackin/default-home/.local/share/opencode",
-        "/jackin/default-home/.grok",
-    ] {
+    // Only Claude's root is in the snapshot loop; sibling roots are absent.
+    assert!(dockerfile.contains("for dir in '.claude'; do"));
+    for name in ["'.codex'", "'.local/share/amp'", "'.kimi-code'", "'.grok'"] {
         assert!(
-            !dockerfile.contains(path),
-            "selected Claude image should not snapshot sibling home {path}: {dockerfile}"
+            !dockerfile.contains(name),
+            "selected Claude image should not snapshot sibling home {name}: {dockerfile}"
         );
     }
+}
+
+#[test]
+fn claude_plugins_render_one_run_layer_each() {
+    let claude = ClaudeConfig {
+        model: None,
+        marketplaces: vec![jackin_core::manifest::ClaudeMarketplaceConfig {
+            source: "myorg/marketplace".to_owned(),
+            sparse: vec!["pkg/a".to_owned()],
+        }],
+        plugins: vec!["caveman".to_owned(), "rtk".to_owned()],
+        providers: BTreeMap::new(),
+    };
+    let dockerfile = render_derived_dockerfile(
+        "FROM projectjackin/construct:0.1-trixie\n",
+        None,
+        &[Agent::Claude],
+        None,
+        &BTreeMap::new(),
+        Some(&claude),
+    );
+
+    // One RUN layer per plugin (independently cached / resumable), not a single
+    // &&-chained command.
+    assert_eq!(
+        dockerfile.matches("RUN claude plugin install ").count(),
+        2,
+        "each plugin must be its own RUN: {dockerfile}"
+    );
+    assert!(dockerfile.contains("RUN claude plugin install 'caveman'"));
+    assert!(dockerfile.contains("RUN claude plugin install 'rtk'"));
+    // Official + configured marketplace, each its own RUN, with --sparse passed.
+    assert!(
+        dockerfile.contains(
+            "RUN claude plugin marketplace add anthropics/claude-plugins-official || true"
+        )
+    );
+    assert!(
+        dockerfile
+            .contains("RUN claude plugin marketplace add 'myorg/marketplace' --sparse 'pkg/a'")
+    );
+    // Not collapsed back into a single &&-chained command.
+    assert!(
+        !dockerfile.contains(" && claude plugin"),
+        "plugin steps must not be &&-chained into one layer: {dockerfile}"
+    );
 }
 
 #[test]
@@ -654,6 +729,8 @@ fn renders_derived_dockerfile_with_only_source_hook() {
         }),
         &[Agent::Claude],
         None,
+        &BTreeMap::new(),
+        None,
     );
 
     assert!(dockerfile.contains(
@@ -691,6 +768,8 @@ fn source_hook_zshenv_shim_is_not_rendered_for_non_source_hooks() {
             preflight: Some("hooks/preflight.sh".to_owned()),
         }),
         &[Agent::Claude],
+        None,
+        &BTreeMap::new(),
         None,
     );
 

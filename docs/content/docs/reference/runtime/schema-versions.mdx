@@ -24,13 +24,43 @@ The split-workspace layout described in [Configuration File](/reference/runtime/
 
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
-| `~/.config/jackin/config.toml` | `v1alpha6` | jackin | Automatic on startup |
-| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha6` | jackin | Automatic on startup |
+| `~/.config/jackin/config.toml` | `v1alpha7` | jackin | Automatic on startup |
+| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha7` | jackin | Automatic on startup |
 | `jackin.role.toml` | `v1alpha5` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
 
 ## Timeline
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="crates/jackin/tests/migration_fixtures.rs">crates/jackin/tests/migration_fixtures.rs</RepoFile> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+
+### `v1alpha7` — 2026-06-24
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml</RepoFile> |
+
+**Summary**: adds optional `dirty_exit_policy` to the global config and workspace config. The workspace value overrides the global value; absence at both layers resolves to the built-in `ask` behavior. This is additive with a `serde` default of `None`, so existing files round-trip cleanly and the migration is a no-op restamp.
+
+The policy controls the dirty/unpushed exit path for preserved instances: `ask` prompts, `keep` preserves without prompting, and `discard` deletes dirty/unpushed instance state without prompting. Clean and pushed exits still follow the normal automatic cleanup path.
+
+**Before** (v1alpha6 config):
+
+```toml
+version = "v1alpha6"
+```
+
+**After** (v1alpha7 — no change needed; dirty_exit_policy defaults to None):
+
+```toml
+version = "v1alpha7"
+```
+
+**Example with explicit policy**:
+
+```toml
+version = "v1alpha7"
+dirty_exit_policy = "keep"
+```
 
 ### Manifest `v1alpha5` — 2026-06-10
 
@@ -335,11 +365,12 @@ config, jackin migrates this automatically before parsing.
 
 The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs as a separate startup migration alongside the version stamp; see [Configuration File](/reference/runtime/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha6`
+### `v1alpha7`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha6` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha7` |
+| `dirty_exit_policy` | string | No | `v1alpha7` | `ask`, `keep`, or `discard`; global dirty/unpushed exit policy; omitted means built-in `ask` |
 | `[claude].auth_forward` | string | No | `legacy` | `sync`, `api_key`, `oauth_token`, or `ignore` |
 | `[claude].sync_source_dir` | string | No | `v1alpha6` | Host folder override for `sync` auth forwarding; omitted means use the per-agent default |
 | `[codex].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
@@ -383,17 +414,18 @@ a `[workspaces.<name>]` table embedded in legacy `config.toml`.
 
 Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per-workspace files by a separate startup migration; see [Configuration File](/reference/runtime/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha6`
+### `v1alpha7`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha6` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha7` |
 | `workdir` | string | Yes | `legacy` | Container working directory |
 | `allowed_roles` | string array | No | `legacy` | Roles allowed in this workspace |
 | `default_role` | string | No | `legacy` | Preferred role for new sessions |
 | `default_agent` | string | No | `legacy` | `claude`, `codex`, `amp`, `kimi`, or `opencode`; omitted lets launch resolution use the role manifest or prompt |
 | `last_role` | string | No | `legacy` | Last role selected by the operator |
 | `git_pull_on_entry` | bool | No | `legacy` | Pull mounted repositories on entry |
+| `dirty_exit_policy` | string | No | `v1alpha7` | `ask`, `keep`, or `discard`; workspace override for dirty/unpushed exit policy; omitted means inherit from global config |
 | `[env]` | table | No | `legacy` | Workspace operator env layer; each `op://` reference carries an optional `account` (the 1Password account it resolves against), since `v1alpha5` |
 | `[[mounts]]` | array of tables | No | `legacy` | Workspace mounts |
 | `[[mounts]].src` | string | Yes | `legacy` | Host path |

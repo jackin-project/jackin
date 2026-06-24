@@ -67,8 +67,10 @@ ENV PATH=\"/home/agent/.local/bin:${{PATH}}\"
     fn state_paths(&self) -> AgentStatePaths {
         AgentStatePaths {
             credential_dir: ".codex",
+            config_dir: None, // all durable state under ~/.codex
             credential_file: Some(".codex/auth.json"),
             folder_env_var: Some("CODEX_HOME"),
+            home_files: &[],
         }
     }
 

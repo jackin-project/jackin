@@ -16,7 +16,7 @@ use jackin_core::agent::Agent;
 use jackin_core::AuthForwardMode;
 
 use crate::auth::{AgentAuthConfig, GithubAuthConfig};
-use crate::schema::{DockerConfig, GitConfig, RoleSource, WorkspaceConfig};
+use crate::schema::{DirtyExitPolicy, DockerConfig, GitConfig, RoleSource, WorkspaceConfig};
 use crate::versions::CURRENT_CONFIG_VERSION;
 
 /// Top-level operator configuration (`~/.config/jackin/config.toml`).
@@ -51,6 +51,10 @@ pub struct AppConfig {
     pub git: GitConfig,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub workspaces: BTreeMap<String, WorkspaceConfig>,
+    /// Global dirty-exit policy (D8). Per-workspace `dirty_exit_policy`
+    /// overrides this. Defaults to `ask` when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dirty_exit_policy: Option<DirtyExitPolicy>,
 }
 
 impl AppConfig {
@@ -117,6 +121,20 @@ impl AppConfig {
             Agent::Grok => self.grok.as_ref().and_then(|c| c.sync_source_dir.clone()),
         }
     }
+
+    /// Resolved dirty-exit policy for a session.
+    ///
+    /// Per-workspace `dirty_exit_policy` wins over the global setting; both
+    /// fall back to the `Ask` built-in default (D8).
+    pub fn resolve_dirty_exit_policy(
+        &self,
+        workspace: Option<&WorkspaceConfig>,
+    ) -> DirtyExitPolicy {
+        workspace
+            .and_then(|w| w.dirty_exit_policy)
+            .or(self.dirty_exit_policy)
+            .unwrap_or_default()
+    }
 }
 
 impl Default for AppConfig {
@@ -135,6 +153,7 @@ impl Default for AppConfig {
             docker: DockerConfig::default(),
             git: GitConfig::default(),
             workspaces: BTreeMap::new(),
+            dirty_exit_policy: None,
         }
     }
 }

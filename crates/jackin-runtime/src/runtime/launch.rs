@@ -177,6 +177,22 @@ use progress_helpers::{
     sensitive_mount_prompt,
 };
 
+/// Emit the durable-home bind mounts for `agent`, derived from its
+/// [`AgentStatePaths`](jackin_core::agent::runtime::AgentStatePaths) so the
+/// per-agent home layout (data root, paired config root, standalone home files)
+/// lives only in the agent enum. Auth-handoff mounts are agent-specific and stay
+/// inline in [`agent_mounts`].
+fn push_agent_home_mounts(mounts: &mut Vec<String>, root: &Path, agent: jackin_core::Agent) {
+    let paths = agent.runtime().state_paths();
+    let home = root.join("home");
+    for entry in paths.home_dirs().chain(paths.home_files.iter().copied()) {
+        mounts.push(format!(
+            "{}:/home/agent/{entry}",
+            home.join(entry).display()
+        ));
+    }
+}
+
 /// Returns the per-agent mount strings in jackin's `src:dst[:ro]`
 /// idiom for `docker run -v`.
 ///
@@ -185,55 +201,15 @@ use progress_helpers::{
 /// foreground launch path provisions all manifest-supported agents so sibling
 /// tabs opened via `hardline --new --agent <other>` find their homes
 /// bind-mounted from the start.
-/// Read-only bind-mount specs (`host:container:ro`) for every agent CLI binary
-/// cached on the host. The agent binaries are mounted at `docker run` instead of
-/// baked into the derived image, so an agent version bump no longer rebuilds the
-/// image — the newest cached binary is mounted onto the PATH location the image's
-/// `ENV PATH` already covers. Agents with no cached binary are skipped.
-async fn agent_binary_mount_specs(paths: &JackinPaths, supported: &[String]) -> Vec<String> {
-    // Resolve straight from the authoritative supported-slug list (`FromStr`
-    // surfaces a junk slug as a skip, vs. scanning every `Agent::ALL` and string
-    // comparing). The per-agent cache lookup is blocking filesystem IO, so run the
-    // whole resolution off the async reactor.
-    let paths = paths.clone();
-    let agents: Vec<jackin_core::Agent> = supported.iter().filter_map(|s| s.parse().ok()).collect();
-    tokio::task::spawn_blocking(move || {
-        agents
-            .into_iter()
-            .filter_map(|agent| {
-                let host = jackin_image::agent_binary::runtime_mount_binary_path(&paths, agent)?
-                    .to_str()?
-                    .to_owned();
-                Some((agent, host))
-            })
-            .flat_map(|(agent, host)| {
-                agent
-                    .runtime()
-                    .container_binary_paths()
-                    .iter()
-                    .map(move |path| format!("{host}:{path}:ro"))
-            })
-            .collect()
-    })
-    .await
-    .unwrap_or_default()
-}
-
 fn agent_mounts(state: &RoleState) -> Vec<String> {
+    use jackin_core::Agent;
     let mut mounts = vec![format!(
         "{}:/jackin/state",
         state.root.join("state").display()
     )];
 
     if let Some(claude) = &state.auth.claude {
-        mounts.push(format!(
-            "{}:/home/agent/.claude",
-            state.root.join("home/.claude").display()
-        ));
-        mounts.push(format!(
-            "{}:/home/agent/.claude.json",
-            state.root.join("home/.claude.json").display()
-        ));
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Claude);
         // `forward_auth = true` for Sync (host-derived credentials) and
         // OAuthToken (the onboarding skeleton). ApiKey and Ignore set it
         // to false so a `{}` placeholder left behind by `wipe_claude_state`
@@ -257,20 +233,14 @@ fn agent_mounts(state: &RoleState) -> Vec<String> {
     }
 
     if let Some(codex) = &state.auth.codex {
-        mounts.push(format!(
-            "{}:/home/agent/.codex",
-            state.root.join("home/.codex").display()
-        ));
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Codex);
         if let Some(auth_json) = &codex.auth_json {
             mounts.push(format!("{}:/jackin/codex/auth.json", auth_json.display()));
         }
     }
 
     if let Some(amp) = &state.auth.amp {
-        mounts.push(format!(
-            "{}:/home/agent/.local/share/amp",
-            state.root.join("home/.local/share/amp").display()
-        ));
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Amp);
         // Bound RW at the docker level so future plumbing (symlink / bind
         // re-mount) for live bidirectional sync — see
         // `roadmap/live-auth-sync.mdx` — can rely on a writable target.
@@ -285,10 +255,7 @@ fn agent_mounts(state: &RoleState) -> Vec<String> {
     }
 
     if let Some(kimi) = &state.auth.kimi {
-        mounts.push(format!(
-            "{}:/home/agent/.kimi-code",
-            state.root.join("home/.kimi-code").display()
-        ));
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Kimi);
         if kimi.forward_auth {
             mounts.push(format!(
                 "{}:/jackin/kimi-code",
@@ -298,10 +265,7 @@ fn agent_mounts(state: &RoleState) -> Vec<String> {
     }
 
     if let Some(opencode) = &state.auth.opencode {
-        mounts.push(format!(
-            "{}:/home/agent/.local/share/opencode",
-            state.root.join("home/.local/share/opencode").display()
-        ));
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Opencode);
         if let Some(auth_json) = &opencode.auth_json {
             mounts.push(format!(
                 "{}:/jackin/opencode/auth.json",
@@ -311,10 +275,7 @@ fn agent_mounts(state: &RoleState) -> Vec<String> {
     }
 
     if let Some(grok) = &state.auth.grok {
-        mounts.push(format!(
-            "{}:/home/agent/.grok",
-            state.root.join("home/.grok").display()
-        ));
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Grok);
         if let Some(auth_json) = &grok.auth_json {
             mounts.push(format!("{}:/jackin/grok/auth.json", auth_json.display()));
         }
@@ -559,20 +520,6 @@ pub(super) fn capsule_config(
             provider_models.insert(agent.slug().to_owned(), inner);
         }
     }
-    let (claude_marketplaces, claude_plugins) = manifest.claude.as_ref().map_or_else(
-        || (Vec::new(), Vec::new()),
-        |claude| {
-            let marketplaces = claude
-                .marketplaces
-                .iter()
-                .map(|m| jackin_protocol::ClaudeMarketplace {
-                    source: m.source.clone(),
-                    sparse: m.sparse.clone(),
-                })
-                .collect();
-            (marketplaces, claude.plugins.clone())
-        },
-    );
     jackin_protocol::CapsuleConfig {
         role: selector.key(),
         workdir: workdir.to_owned(),
@@ -580,8 +527,8 @@ pub(super) fn capsule_config(
         models,
         provider_models,
         initial_provider,
-        claude_marketplaces,
-        claude_plugins,
+        claude_marketplaces: Vec::new(),
+        claude_plugins: Vec::new(),
     }
 }
 
@@ -670,7 +617,6 @@ pub(super) async fn launch_role_runtime(
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let agent_specific_mounts = agent_mounts(state);
-    let agent_binary_mounts = agent_binary_mount_specs(paths, &capsule_config.agents).await;
     let gh_config_mount = github_config_mount(state);
     let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
 
@@ -1027,12 +973,6 @@ pub(super) async fn launch_role_runtime(
     })?;
     let socket_mount = format!("{socket_dir_str}:/jackin/run");
     run_args.extend_from_slice(&["-v", &socket_mount]);
-    // Mount each cached agent CLI binary read-only onto its PATH location. The
-    // binaries are not baked into the image (see `render_derived_dockerfile`), so
-    // an agent version bump is picked up here without an image rebuild.
-    for mount in &agent_binary_mounts {
-        run_args.extend_from_slice(&["-v", mount]);
-    }
     // Mount the host-UID passwd line where libnss-extrausers reads it.
     let extrausers_mount = extrausers_line.as_ref().and_then(|_| {
         extrausers_passwd
@@ -1716,12 +1656,14 @@ pub(super) async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum RestoreResolution {
     StartFresh,
-    AttachCurrentRole(String),
     StartCurrentRole(String),
     RecreateCurrentRole(String),
     RestoreCurrentRole(String),
     RecoverRelatedRole(String),
     RebuildRelatedRole(Box<InstanceManifest>),
+    /// D21: operator deleted this instance from the launch dialog.
+    /// Caller must purge the state dir then proceed as `StartFresh`.
+    PurgeAndRestartFresh(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2037,7 +1979,6 @@ pub(super) async fn resolve_unselected_current_restore_candidate_with_agent_time
 
 fn current_restore_timing_detail(resolution: &RestoreResolution) -> &'static str {
     match resolution {
-        RestoreResolution::AttachCurrentRole(_) => "attach_existing",
         RestoreResolution::StartCurrentRole(_) => "start_stopped",
         RestoreResolution::RecreateCurrentRole(_) => "create_from_valid_image",
         _ => "other",
@@ -2053,10 +1994,13 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
     role_key: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<UnselectedCurrentRestoreResolution>> {
+    // D10: launch dialog shows only un-cleanly-terminated instances; live
+    // containers (Active/Running) are excluded because D13 means the launch
+    // path never re-attaches to a live instance.
     let candidates =
         matching_current_role_manifests(paths, workspace_name, workspace_label, workdir, role_key)?
             .into_iter()
-            .filter(InstanceManifest::is_restore_candidate)
+            .filter(InstanceManifest::is_launch_restore_candidate)
             .collect::<Vec<_>>();
 
     if candidates.is_empty() {
@@ -2095,10 +2039,16 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
         }
         match docker_state {
             ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-                runnable.push(UnselectedCurrentRestoreResolution {
-                    resolution: RestoreResolution::AttachCurrentRole(manifest.container_base),
-                    agent,
-                });
+                // D13: launch never reconnects to a live instance (ADR 0001).
+                // Running instances are reachable from the console via explicit
+                // instance selection (hardline); the launch path always creates
+                // a new container or restores an un-cleanly-terminated one.
+                emit_rejected_launch_plan(
+                    LaunchPlan::AttachExisting,
+                    "launch_never_reconnects_to_live_instance",
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
             }
             ContainerState::Stopped { .. } | ContainerState::Created => {
                 runnable.push(UnselectedCurrentRestoreResolution {
@@ -2160,26 +2110,6 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
     }
 
     match runnable.as_slice() {
-        [
-            UnselectedCurrentRestoreResolution {
-                resolution: RestoreResolution::AttachCurrentRole(container),
-                agent,
-            },
-        ] => {
-            emit_launch_plan(
-                LaunchPlan::AttachExisting,
-                if multiple_candidates {
-                    "only_viable_current_role_agent_container_running"
-                } else {
-                    "single_current_role_agent_container_running"
-                },
-                Some(container),
-            );
-            Ok(Some(UnselectedCurrentRestoreResolution {
-                resolution: RestoreResolution::AttachCurrentRole(container.clone()),
-                agent: *agent,
-            }))
-        }
         [
             UnselectedCurrentRestoreResolution {
                 resolution: RestoreResolution::StartCurrentRole(container),
@@ -2279,14 +2209,13 @@ pub(super) async fn resolve_current_restore_candidate(
         }
         match docker_state {
             ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-                emit_launch_plan(
+                // D13: launch never reconnects to a live instance (ADR 0001).
+                emit_rejected_launch_plan(
                     LaunchPlan::AttachExisting,
-                    "current_role_container_running",
+                    "launch_never_reconnects_to_live_instance",
                     Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
                 );
-                return Ok(Some(RestoreResolution::AttachCurrentRole(
-                    manifest.container_base.clone(),
-                )));
             }
             ContainerState::Stopped { .. } | ContainerState::Created => {
                 emit_launch_plan(

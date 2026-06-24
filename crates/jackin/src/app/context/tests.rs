@@ -147,6 +147,7 @@ fn resolve_agent_from_context_matches_workspace_from_nested_mount_path() {
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            dirty_exit_policy: None,
         },
     );
 
@@ -199,6 +200,7 @@ fn resolve_agent_from_context_matches_workspace_from_host_workdir_root() {
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            dirty_exit_policy: None,
         },
     );
 
@@ -250,6 +252,7 @@ fn resolve_agent_from_context_ignores_stale_last_agent() {
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            dirty_exit_policy: None,
         },
     );
 
@@ -309,6 +312,7 @@ fn config_with_workspace(
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            dirty_exit_policy: None,
         },
     );
     config
@@ -397,6 +401,10 @@ async fn resolve_running_container_from_context_uses_indexed_unique_instance() {
             network: "jk-k7p9m2xq-myapp-agentsmith-net".to_owned(),
             certs_volume: "jk-k7p9m2xq-myapp-agentsmith-dind-certs".to_owned(),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: Vec::new(),
     });
     let state_dir = paths.data_dir.join(&manifest.container_base);
     manifest.write(&state_dir).unwrap();
@@ -444,6 +452,10 @@ async fn resolve_running_container_from_context_uses_ad_hoc_indexed_instance() {
             network: "jk-k7p9m2xq-agentsmith-net".to_owned(),
             certs_volume: "jk-k7p9m2xq-agentsmith-dind-certs".to_owned(),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: Vec::new(),
     });
     let state_dir = paths.data_dir.join(&manifest.container_base);
     manifest.write(&state_dir).unwrap();
@@ -486,6 +498,10 @@ fn hardline_candidate_prompt_label_includes_manifest_and_docker_state() {
             network: format!("{container}-net"),
             certs_volume: format!("{container}-dind-certs"),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: Vec::new(),
     });
     manifest.mark_status(instance::InstanceStatus::RestoreAvailable);
     manifest.write(&paths.data_dir.join(container)).unwrap();
@@ -530,6 +546,10 @@ fn hardline_candidate_prompt_label_counts_running_agent_sessions() {
             network: format!("{container}-net"),
             certs_volume: format!("{container}-dind-certs"),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: Vec::new(),
     });
     manifest.write(&paths.data_dir.join(container)).unwrap();
     let candidate = HardlineCandidate {

@@ -98,6 +98,10 @@ fn refresh_instances_loads_rebuildable_index() {
             network: "jk-k7p9m2xq-demo-alpha-net".into(),
             certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: Vec::new(),
     });
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     manifest
@@ -135,6 +139,10 @@ fn live_running_overlay_makes_restore_available_instance_visible() {
             network: "jk-k7p9m2xq-demo-alpha-net".into(),
             certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: Vec::new(),
     });
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
@@ -172,6 +180,10 @@ fn live_running_overlay_backfills_manifest_missing_from_index() {
             network: "jk-k7p9m2xq-demo-alpha-net".into(),
             certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: Vec::new(),
     });
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     manifest
@@ -217,6 +229,10 @@ fn refresh_instances_throttles_within_interval() {
             network: "jk-k7p9m2xq-demo-alpha-net".into(),
             certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: Vec::new(),
     });
     manifest.mark_status(InstanceStatus::Active);
     manifest
@@ -817,6 +833,7 @@ fn editor_with_one_shared_mount() -> EditorState<'static> {
         grok: None,
         github: None,
         git_pull_on_entry: false,
+        dirty_exit_policy: None,
     };
     let mut e = EditorState::new_edit("ws".into(), ws);
     e.active_tab = EditorTab::Mounts;

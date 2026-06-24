@@ -144,6 +144,36 @@ pub fn standalone_error_popup(title: &str, message: &str) -> anyhow::Result<()> 
     )
 }
 
+/// D23/D24 standalone exit dialog with inspect support.
+pub fn standalone_exit_dialog_with_inspect(
+    title: &str,
+    context: &[PromptContextLine],
+    options: Vec<String>,
+    worktrees_per_record: &[Vec<jackin_launch::WorktreeInspect>],
+) -> anyhow::Result<usize> {
+    jackin_launch::progress::standalone_exit_dialog_with_inspect(
+        title,
+        context,
+        options,
+        worktrees_per_record,
+        host_terminal(),
+        env!("JACKIN_VERSION"),
+    )
+}
+
+/// D23/D21 standalone launch dialog with delete-in-place support.
+pub fn standalone_launch_dialog(
+    title: &str,
+    candidates: &[jackin_launch::LaunchCandidate],
+) -> anyhow::Result<jackin_launch::LaunchDialogResult> {
+    jackin_launch::progress::standalone_launch_dialog(
+        title,
+        candidates,
+        host_terminal(),
+        env!("JACKIN_VERSION"),
+    )
+}
+
 pub fn rich_terminal_supported() -> bool {
     jackin_launch::tui::terminal::rich_terminal_supported()
 }

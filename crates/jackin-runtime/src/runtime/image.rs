@@ -32,19 +32,18 @@ use jackin_manifest::repo::CachedRepo;
 use std::path::PathBuf;
 
 use super::naming::{
-    LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, LABEL_IMAGE_RECIPE_HASH,
-    LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, image_name, image_name_for_branch,
-    role_base_image_name, short_git_sha,
+    LABEL_IMAGE_AGENT_VERSION_PREFIX, LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION,
+    LABEL_IMAGE_RECIPE_HASH, LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, image_name,
+    image_name_for_branch, role_base_image_name, short_git_sha,
 };
 use super::progress::{LaunchProgress, LaunchStage};
 #[cfg(not(test))]
 use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
-// Recipe schema version. Bumped v2 -> v3 with the label overhaul: dotted keys,
-// short role SHA, `jackin.manifest.version`, per-agent `jackin.agent.*.version`
-// labels, and the dropped opaque `jackin.recipe.*` component labels. Old (v2)
-// images fail this gate and rebuild once.
-const IMAGE_RECIPE_VERSION: &str = "v4";
+// Recipe schema version. Bumped v4 -> v5: agent binaries are now baked into
+// the derived image via install_block() (D1) rather than bind-mounted at
+// `docker run`. All v4 images lack baked binaries and must rebuild once.
+const IMAGE_RECIPE_VERSION: &str = "v5";
 /// jackin-capsule version baked into the derived image.
 const LABEL_IMAGE_CAPSULE_VERSION: &str = "jackin.capsule.version";
 /// `jackin.role.toml` schema version (`version = "v1alpha4"`).
@@ -68,6 +67,8 @@ pub(super) enum ImageInvalidationReason {
     CapsuleVersionChanged,
     PublishedImageStale,
     InspectFailed,
+    /// D20: an agent CLI release is newer than the version baked into the image.
+    AgentVersionChanged,
 }
 
 impl ImageInvalidationReason {
@@ -85,6 +86,7 @@ impl ImageInvalidationReason {
             Self::CapsuleVersionChanged => "capsule_version_changed",
             Self::PublishedImageStale => "published_image_stale",
             Self::InspectFailed => "inspect_failed",
+            Self::AgentVersionChanged => "agent_version_changed",
         }
     }
 }
@@ -124,6 +126,9 @@ struct ImageRecipe {
     cache_bust: String,
     capsule_version: String,
     hooks_hash: String,
+    /// SHA-256 of the serialised Claude marketplaces + plugins list. Plugin
+    /// changes rebuild the image because plugins are now baked at build time (D2).
+    plugin_recipe_hash: String,
     host_identity_strategy: &'static str,
 }
 
@@ -131,6 +136,28 @@ impl ImageRecipe {
     fn hash(&self) -> anyhow::Result<String> {
         let bytes = serde_json::to_vec(self)?;
         Ok(sha256_hex(&bytes))
+    }
+}
+
+impl ImageDecision {
+    /// Role-repo commit SHA embedded in this decision — short SHA from the
+    /// image tag for Reuse/Refresh, or the value from Build* variants.
+    pub(super) fn role_git_sha(&self) -> Option<String> {
+        match self {
+            Self::Reuse { image } | Self::RefreshInBackground { image, .. } => {
+                image.split(':').next_back().map(ToOwned::to_owned)
+            }
+            Self::BuildFromWorkspace { role_git_sha, .. }
+            | Self::BuildFromPublished { role_git_sha, .. } => role_git_sha.clone(),
+        }
+    }
+
+    /// Base/construct image reference for this decision; `None` for Reuse/Refresh.
+    pub(super) fn base_image_ref(&self) -> Option<&str> {
+        match self {
+            Self::BuildFromPublished { base_image, .. } => Some(base_image.as_str()),
+            _ => None,
+        }
     }
 }
 
@@ -248,6 +275,7 @@ pub(super) async fn decide_role_image(
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     rebuild: bool,
     branch_override: Option<&str>,
+    pinned_sha: Option<&str>, // D7: skips git rev-parse HEAD when Some
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<ImageDecision> {
@@ -256,7 +284,7 @@ pub(super) async fn decide_role_image(
     // mutable `:latest`) and an input to the published-image staleness checks
     // below. The recipe-hash / construct labels still decide reuse-vs-rebuild
     // within a tag — only the name carries the SHA.
-    let head_sha = role_git_sha_for_recipe(cached_repo, None, runner).await;
+    let head_sha = role_git_sha_for_recipe(cached_repo, pinned_sha, runner).await;
     let image = branch_override.map_or_else(
         || image_name(selector, head_sha.as_deref()),
         |branch| image_name_for_branch(selector, branch, head_sha.as_deref()),
@@ -423,7 +451,54 @@ pub(super) async fn decide_role_image(
 
     match classify_image_labels(&labels, &expected_recipes) {
         None => {
-            if let Some(reason) = refresh_reason {
+            // D20: after recipe matches, check whether any baked agent CLI is
+            // outdated. Uses the file-based version cache written at build time;
+            // returns false when either cache entry is absent, so first-build
+            // never triggers a spurious background refresh.
+            let final_reason = if let Some(reason) = refresh_reason {
+                Some(reason)
+            } else {
+                let agents = validated_repo.manifest.supported_agents();
+                // The per-agent checks are independent async cache reads; run them
+                // concurrently rather than serializing one await per agent on the
+                // launch path.
+                let image_ref = &image;
+                let checks = agents.iter().map(|&agent| async move {
+                    (
+                        agent,
+                        version_check::needs_agent_update(paths, image_ref, agent).await,
+                    )
+                });
+                let results = futures_util::future::join_all(checks).await;
+                // Always-on warn for an undetermined check: a persistently
+                // unresolvable latest-version lookup would otherwise let agents
+                // drift behind with no launch-path signal (matches the sibling
+                // tag-lookup/label-inspect warns).
+                for (agent, check) in &results {
+                    if *check == version_check::AgentVersionCheck::Unknown {
+                        tracing::warn!(
+                            "derived image {image}: could not verify {} version; \
+                             staleness undetermined (latest release unresolvable)",
+                            agent.runtime().slug()
+                        );
+                    }
+                }
+                let stale_agent = results.into_iter().find_map(|(agent, check)| {
+                    (check == version_check::AgentVersionCheck::Stale).then_some(agent)
+                });
+                if let Some(agent) = stale_agent {
+                    jackin_diagnostics::debug_log!(
+                        "image",
+                        "derived image {image}: {} baked version is outdated",
+                        agent.runtime().slug()
+                    );
+                    Some(ImageInvalidationReason::AgentVersionChanged)
+                } else {
+                    None
+                }
+            };
+
+            if let Some(reason) = final_reason {
                 jackin_diagnostics::debug_log!(
                     "image",
                     "reusing derived image {image}; foreground recipe matches, background refresh needed: {}",
@@ -532,6 +607,7 @@ fn build_image_recipe_with_construct_image(
         // binaries, so CARGO_PKG_VERSION would reuse a stale capsule on dev builds.
         capsule_version: capsule_binary::REQUIRED_VERSION.to_owned(),
         hooks_hash: hooks_hash(&cached_repo.repo_dir, validated_repo)?,
+        plugin_recipe_hash: plugin_recipe_hash(validated_repo),
         host_identity_strategy: HOST_IDENTITY_STRATEGY,
     })
 }
@@ -560,6 +636,8 @@ fn render_runtime_dockerfile(
         validated_repo.manifest.hooks.as_ref(),
         &agents_to_install,
         Some(".jackin-runtime/jackin-capsule"),
+        &BTreeMap::new(),
+        validated_repo.manifest.claude.as_ref(),
     ))
 }
 
@@ -640,6 +718,23 @@ fn hooks_hash(
     }
     let bytes = serde_json::to_vec(&entries)?;
     Ok(sha256_hex(&bytes))
+}
+
+/// Hash the Claude marketplace + plugin list so changes force a rebuild (D2).
+/// Empty config → stable constant hash so the field never changes for
+/// roles without any Claude plugin config.
+fn plugin_recipe_hash(validated_repo: &jackin_manifest::repo::ValidatedRoleRepo) -> String {
+    let entry = validated_repo.manifest.claude.as_ref().map(|c| {
+        serde_json::json!({
+            "marketplaces": c.marketplaces.iter().map(|m| serde_json::json!({
+                "source": m.source,
+                "sparse": m.sparse,
+            })).collect::<Vec<_>>(),
+            "plugins": c.plugins,
+        })
+    });
+    let bytes = serde_json::to_vec(&entry).unwrap_or_default();
+    sha256_hex(&bytes)
 }
 
 fn classify_image_labels(
@@ -1346,6 +1441,7 @@ async fn prewarm_agent_image_from_validated_repo(
         validated_repo,
         false,
         branch_override,
+        None,
         docker,
         runner,
     )
@@ -1849,6 +1945,7 @@ pub(super) async fn build_agent_image(
         base_image_override,
         Some(&runtime_binaries.jackin_capsule_src),
         &agents_to_install,
+        &runtime_binaries.agent_installs,
     );
     let build = match build_result {
         Ok(build) => {
@@ -1979,6 +2076,22 @@ pub(super) async fn build_agent_image(
         build_args.extend(["--build-arg", &build_arg_role_git_sha]);
     }
     for label in &recipe_labels {
+        build_args.extend(["--label", label]);
+    }
+    // Stamp per-agent baked-binary versions as diagnostic labels (D3/D20).
+    // Not part of the recipe hash; used for observability and future
+    // version-comparison rebuild enforcement.
+    let agent_version_labels: Vec<String> = runtime_binaries
+        .prefetched_agent_versions
+        .iter()
+        .map(|(agent, version)| {
+            format!(
+                "{LABEL_IMAGE_AGENT_VERSION_PREFIX}.{}.version={version}",
+                agent.slug()
+            )
+        })
+        .collect();
+    for label in &agent_version_labels {
         build_args.extend(["--label", label]);
     }
     build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);

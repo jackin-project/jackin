@@ -158,6 +158,15 @@ pub(super) async fn handle_console(
     let (mut console_entry, startup_error) = match connect_docker() {
         Ok(docker) => {
             let claim = play_construct_intro_if_needed(&paths, &docker).await;
+            // D22: while the operator browses the console (off the attach path),
+            // refresh any stale baked workspace images in the background so a
+            // later launch hits the valid-image fast path. Reuses valid images;
+            // only rebuilds stale ones. Launch never waits on this.
+            runtime::spawn_background_image_prewarm(
+                &paths,
+                runtime::background_prewarm_targets(&config),
+                debug,
+            );
             (Some((docker, claim)), None)
         }
         Err(error) => (None, Some(docker_startup_error(&error))),

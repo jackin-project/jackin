@@ -28,6 +28,7 @@ use crate::isolation::cleanup::force_cleanup_isolated;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
 use crate::runtime::attach::JACKIN_STATUS_CMD;
 use crate::runtime::progress::PromptContextLine;
+use jackin_config::DirtyExitPolicy;
 use jackin_core::CommandRunner;
 use jackin_diagnostics::debug_log;
 use std::path::Path;
@@ -98,78 +99,134 @@ pub enum PreservedReason {
     Unpushed,
 }
 
+impl PreservedReason {
+    /// Full operator-facing description used in preserve/discard log lines.
+    /// One source of truth so the wording can't drift between the policy
+    /// branches that emit it.
+    fn describe(self) -> &'static str {
+        match self {
+            Self::Dirty => "uncommitted changes",
+            Self::Unpushed => "unpushed commits on a local branch",
+        }
+    }
+
+    /// Terser tag for the space-constrained exit-dialog per-record list, where
+    /// the worktree path already carries most of the context. Centralized here
+    /// so it can't drift from [`Self::describe`].
+    fn describe_terse(self) -> &'static str {
+        match self {
+            Self::Dirty => "uncommitted changes",
+            Self::Unpushed => "unpushed commits",
+        }
+    }
+}
+
+/// D23: exit dialog returns one of three choices for ALL preserved records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitDialogChoice {
+    /// Restart the container and let the operator address the dirty worktrees.
+    ReturnToRole,
+    /// Preserve all dirty/unpushed records and exit cleanly.
+    KeepAll,
+    /// Force-delete all preserved records and exit.
+    DiscardAll,
+}
+
 pub trait FinalizerPrompt {
-    fn ask_unsafe_cleanup(
+    /// D23: one-screen exit dialog covering all preserved records at once.
+    ///
+    /// Called when `dirty_exit_policy == Ask` and at least one worktree is
+    /// dirty/unpushed. The implementer shows all records in a single surface
+    /// and returns the operator's choice for the batch.
+    fn ask_exit_dialog(
         &mut self,
         container: &str,
-        worktree_path: &str,
-        reason: PreservedReason,
-    ) -> anyhow::Result<usize>;
+        records: &[(IsolationRecord, PreservedReason)],
+    ) -> anyhow::Result<ExitDialogChoice>;
 }
 
 #[derive(Debug)]
 pub struct RichCleanupPrompt;
 impl FinalizerPrompt for RichCleanupPrompt {
-    fn ask_unsafe_cleanup(
+    fn ask_exit_dialog(
         &mut self,
         container: &str,
-        worktree_path: &str,
-        reason: PreservedReason,
-    ) -> anyhow::Result<usize> {
-        Ok(rich_cleanup_prompt(container, worktree_path, reason))
+        records: &[(IsolationRecord, PreservedReason)],
+    ) -> anyhow::Result<ExitDialogChoice> {
+        Ok(rich_exit_dialog(container, records))
     }
 }
 
-/// Forced-choice worktree-cleanup picker, rendered through the shared launch
-/// dialog vocabulary (`standalone_select_with_context`) so it inherits the
-/// same backdrop, centering, hints, and key handling as every other launch
-/// dialog. Returns the option index: 0 = return to role, 1 = preserve,
-/// 2 = force-delete.
-fn rich_cleanup_prompt(container: &str, worktree_path: &str, reason: PreservedReason) -> usize {
-    let reason_line = match reason {
-        PreservedReason::Dirty => "has uncommitted changes",
-        PreservedReason::Unpushed => "has unpushed commits on a local branch",
-    };
-    let context = vec![
-        PromptContextLine::Emphasis(format!("Container {container} {reason_line}.")),
+/// D23/D24: one-screen exit dialog with `I`-key inspect support.
+/// Shows all preserved worktrees and offers three batch choices
+/// (Return | Keep all | Discard all). The operator can press `I` to open
+/// the D24 inspect surface (file list + diff) before confirming.
+fn rich_exit_dialog(
+    container: &str,
+    records: &[(IsolationRecord, PreservedReason)],
+) -> ExitDialogChoice {
+    // D24: pre-fetch changed-file lists for each preserved worktree.
+    let worktrees_per_record: Vec<Vec<jackin_launch::WorktreeInspect>> = records
+        .iter()
+        .map(|(rec, _)| {
+            vec![crate::isolation::git_inspect::worktree_inspect(
+                &rec.worktree_path,
+            )]
+        })
+        .collect();
+
+    let mut context = vec![
+        PromptContextLine::Emphasis(format!(
+            "Container {container} exited with unsaved isolated work."
+        )),
         PromptContextLine::Blank,
-        PromptContextLine::Path(worktree_path.to_owned()),
-        PromptContextLine::Blank,
-        PromptContextLine::Muted("Choose how jackin' should handle this worktree.".to_owned()),
     ];
+    for (rec, reason) in records {
+        let reason_tag = reason.describe_terse();
+        context.push(PromptContextLine::Path(rec.worktree_path.clone()));
+        context.push(PromptContextLine::Muted(format!("  ({reason_tag})")));
+    }
+    context.push(PromptContextLine::Blank);
+    context.push(PromptContextLine::Muted(
+        "Choose how jackin' should handle these worktrees. Press I to inspect changes.".to_owned(),
+    ));
+
     let options = vec![
         "Return to role to address it".to_owned(),
-        "Preserve worktree and exit".to_owned(),
-        "Force delete worktree and discard changes".to_owned(),
+        "Keep all and exit".to_owned(),
+        "Discard all and exit".to_owned(),
     ];
-    match crate::runtime::progress::standalone_select_with_context(
-        "Isolated Worktree",
+
+    match crate::runtime::progress::standalone_exit_dialog_with_inspect(
+        "Isolated Worktrees",
         &context,
         options,
+        &worktrees_per_record,
     ) {
-        Ok(choice) => choice,
+        Ok(0) => ExitDialogChoice::ReturnToRole,
+        Ok(2) => ExitDialogChoice::DiscardAll,
+        Ok(_) => ExitDialogChoice::KeepAll,
         Err(err) => {
-            let reason_str = match reason {
-                PreservedReason::Dirty => "uncommitted changes",
-                PreservedReason::Unpushed => "unpushed commits on a local branch",
-            };
             let message = format!(
-                "Container {container} {reason_str}.\n\n{worktree_path}\n\nCould not render the cleanup dialog:\n{err:#}\n\nThe worktree will be preserved."
+                "Container {container} has unsaved isolated work.\n\nCould not render the exit dialog:\n{err:#}\n\nAll worktrees will be preserved."
             );
-            let _unused = crate::runtime::progress::standalone_error_popup(
-                "Isolated Worktree Error",
-                &message,
-            );
-            1
+            let _unused =
+                crate::runtime::progress::standalone_error_popup("Exit Dialog Error", &message);
+            ExitDialogChoice::KeepAll
         }
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "session finalization inherently needs all of: name, path, outcome, interactive flag, policy, prompt, docker, runner"
+)]
 pub async fn finalize_foreground_session(
     container_name: &str,
     container_state_dir: &Path,
     outcome: AttachOutcome,
     is_interactive: bool,
+    dirty_exit_policy: DirtyExitPolicy,
     prompt: &mut impl FinalizerPrompt,
     docker: &impl jackin_docker::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
@@ -200,6 +257,7 @@ pub async fn finalize_foreground_session(
                 container_name,
                 container_state_dir,
                 is_interactive,
+                dirty_exit_policy,
                 prompt,
                 runner,
             )
@@ -216,6 +274,7 @@ pub async fn finalize_foreground_session(
         container_name,
         container_state_dir,
         is_interactive,
+        dirty_exit_policy,
         prompt,
         runner,
     )
@@ -267,6 +326,7 @@ async fn finalize_clean_exit(
     container_name: &str,
     container_state_dir: &Path,
     is_interactive: bool,
+    dirty_exit_policy: DirtyExitPolicy,
     prompt: &mut impl FinalizerPrompt,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<FinalizeDecision> {
@@ -274,9 +334,7 @@ async fn finalize_clean_exit(
     let mut preserved_records: Vec<(IsolationRecord, PreservedReason)> = Vec::new();
 
     // First pass: assess each record. Auto-clean safe ones; collect every
-    // preserved record so the prompt loop below can address them all (a
-    // workspace can have multiple isolated mounts on different host repos
-    // and each may need an independent decision).
+    // preserved record so the prompt loop below can address them all.
     for record in records {
         let assessment = assess_cleanup(&record, runner).await?;
         debug_log!(
@@ -309,16 +367,52 @@ async fn finalize_clean_exit(
         return Ok(FinalizeDecision::Cleaned);
     }
 
-    if !is_interactive {
-        // Non-interactive: print one warning per preserved record so the
-        // operator sees every worktree path that survived, not just the
-        // first one. Include the per-reason phrasing so the warning is
-        // actionable without having to inspect cleanup_status by hand.
-        for (rec, reason) in &preserved_records {
-            let reason_str = match reason {
-                PreservedReason::Dirty => "uncommitted changes",
-                PreservedReason::Unpushed => "unpushed commits on a local branch",
+    // D8: apply dirty_exit_policy before checking is_interactive.
+    // `discard` and `keep` skip all prompts and TUI.
+    match dirty_exit_policy {
+        DirtyExitPolicy::Discard => {
+            // D17: operator opted in to unconditional discard — no confirmation.
+            let mut any_failed = false;
+            for (rec, reason) in &preserved_records {
+                if let Err(e) = force_cleanup_isolated(rec, container_state_dir, runner).await {
+                    let reason_str = reason.describe();
+                    eprintln!(
+                        "[jackin] warning: discard-policy force-delete of `{wt}` failed ({reason_str}): {e}\n         re-run `jackin purge {short}` to retry",
+                        wt = rec.worktree_path,
+                        short = crate::instance::naming::instance_id_from_container_base(
+                            container_name
+                        )
+                        .unwrap_or(container_name),
+                    );
+                    any_failed = true;
+                }
+            }
+            return if any_failed {
+                Ok(FinalizeDecision::Preserved)
+            } else {
+                Ok(FinalizeDecision::Cleaned)
             };
+        }
+        DirtyExitPolicy::Keep => {
+            // Auto-preserve all without prompting.
+            for (rec, reason) in &preserved_records {
+                let reason_str = reason.describe();
+                eprintln!(
+                    "[jackin] preserved isolated worktree for {container_name} (keep policy):\n         {wt}\n         reason: {reason_str}",
+                    wt = rec.worktree_path,
+                );
+            }
+            return Ok(FinalizeDecision::Preserved);
+        }
+        DirtyExitPolicy::Ask => {
+            // Fall through to the interactive/non-interactive prompt logic.
+        }
+    }
+
+    if !is_interactive {
+        // Non-interactive + ask policy: warn and preserve.
+        for (rec, reason) in &preserved_records {
+            let reason_str = reason.describe();
             eprintln!(
                 "[jackin] preserved isolated worktree for {container_name}:\n         {wt}\n         reason: {reason_str}\n         run `jackin hardline {short}` to return, inspect the path above directly, or `jackin purge {short}` to discard",
                 wt = rec.worktree_path,
@@ -329,51 +423,34 @@ async fn finalize_clean_exit(
         return Ok(FinalizeDecision::Preserved);
     }
 
-    // Interactive: prompt for each preserved record. "Return to role"
-    // applies to the whole container (we restart it) so it short-circuits
-    // immediately. "Preserve" and "Force delete" are per-record decisions.
-    // The container teardown only happens (`Cleaned`) when *every*
-    // preserved record was force-deleted.
+    // Interactive + ask: D23 one-screen dialog covering all preserved records.
     //
-    // A `force_cleanup_isolated` failure (`bail!` from cleanup.rs's
-    // verify-and-bail flow) must not propagate as an `Err` from this
-    // function — that would leave the operator with a raw error from
-    // deep in the cleanup path, no `Preserved` signal to the caller,
-    // the container left running without an explicit teardown decision,
-    // and any subsequent records in the loop never prompted. Convert
-    // such failures to a per-record warning + `any_preserved_after_prompt`
-    // and continue. The caller treats the resulting `Preserved` as
-    // "container survives, run `jackin purge` later to retry."
-    let mut any_preserved_after_prompt = false;
-    for (rec, reason) in preserved_records {
-        match prompt.ask_unsafe_cleanup(container_name, &rec.worktree_path, reason)? {
-            0 => return Ok(FinalizeDecision::ReturnToAgent),
-            1 => {
-                // Already marked PreservedDirty / PreservedUnpushed above;
-                // nothing more to write.
-                any_preserved_after_prompt = true;
-            }
-            2 => {
+    // A `force_cleanup_isolated` failure must not propagate as `Err` from
+    // this function — convert to per-record warning and fall back to Preserved.
+    match prompt.ask_exit_dialog(container_name, &preserved_records)? {
+        ExitDialogChoice::ReturnToRole => Ok(FinalizeDecision::ReturnToAgent),
+        ExitDialogChoice::KeepAll => Ok(FinalizeDecision::Preserved),
+        ExitDialogChoice::DiscardAll => {
+            let mut any_failed = false;
+            for (rec, _reason) in preserved_records {
                 if let Err(e) = force_cleanup_isolated(&rec, container_state_dir, runner).await {
                     eprintln!(
-                        "[jackin] warning: force-delete of isolated worktree `{wt}` failed: {e}\n         record retained — re-run `jackin purge {short}` to retry after resolving the underlying issue",
+                        "[jackin] warning: force-delete of isolated worktree `{wt}` failed: {e}\n         record retained — re-run `jackin purge {short}` to retry",
                         wt = rec.worktree_path,
                         short = crate::instance::naming::instance_id_from_container_base(
                             container_name
                         )
                         .unwrap_or(container_name),
                     );
-                    any_preserved_after_prompt = true;
+                    any_failed = true;
                 }
             }
-            other => anyhow::bail!("unexpected prompt choice {other}"),
+            if any_failed {
+                Ok(FinalizeDecision::Preserved)
+            } else {
+                Ok(FinalizeDecision::Cleaned)
+            }
         }
-    }
-
-    if any_preserved_after_prompt {
-        Ok(FinalizeDecision::Preserved)
-    } else {
-        Ok(FinalizeDecision::Cleaned)
     }
 }
 

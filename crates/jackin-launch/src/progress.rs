@@ -357,3 +357,47 @@ pub fn standalone_error_popup(
     let mut renderer = RichRenderer::enter_dialog(false, host, jackin_version)?;
     renderer.error_popup(title, message)
 }
+
+/// D23/D24: exit dialog with `I`-key inspect support.
+///
+/// Shows the D23 three-way choice (Return/Keep/Discard) with each preserved
+/// worktree's file list reachable via `I`. `worktrees_per_record` maps 1:1
+/// to the context records — one `Vec<WorktreeInspect>` per preserved record.
+pub fn standalone_exit_dialog_with_inspect(
+    title: &str,
+    context: &[PromptContextLine],
+    options: Vec<String>,
+    worktrees_per_record: &[Vec<crate::WorktreeInspect>],
+    host: &'static dyn LaunchHostTerminal,
+    jackin_version: &'static str,
+) -> anyhow::Result<usize> {
+    let mut renderer = RichRenderer::enter_dialog(false, host, jackin_version)?;
+    renderer.exit_dialog_with_inspect(title, context, options, worktrees_per_record)
+}
+
+/// D23/D21: standalone launch dialog. Supports delete-in-place and D24 inspect.
+///
+/// Returns `LaunchDialogResult` which the caller processes (delete → purge,
+/// then call again; restore → connect; fresh → supersede old candidates).
+pub fn standalone_launch_dialog(
+    title: &str,
+    candidates: &[crate::LaunchCandidate],
+    host: &'static dyn LaunchHostTerminal,
+    jackin_version: &'static str,
+) -> anyhow::Result<crate::LaunchDialogResult> {
+    let mut renderer = RichRenderer::enter_dialog(false, host, jackin_version)?;
+    renderer.launch_dialog(title, candidates)
+}
+
+impl LaunchProgress {
+    /// D23 launch dialog through the live launch progress surface.
+    pub fn launch_dialog_progress(
+        &mut self,
+        title: &str,
+        candidates: &[crate::LaunchCandidate],
+    ) -> anyhow::Result<crate::LaunchDialogResult> {
+        self.with_rich_renderer("launch dialog", |renderer| {
+            renderer.launch_dialog(title, candidates)
+        })
+    }
+}

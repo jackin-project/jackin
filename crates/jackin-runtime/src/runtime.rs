@@ -14,6 +14,7 @@ pub mod image;
 pub mod launch;
 pub mod logs;
 pub mod naming;
+pub mod prewarm_trigger;
 pub mod progress;
 pub mod repo_cache;
 pub(crate) mod shared_runner;
@@ -48,6 +49,9 @@ pub use self::launch::{
     write_prewarmed_dind_state,
 };
 pub use self::naming::matching_family;
+pub use self::prewarm_trigger::{
+    BackgroundPrewarmTarget, background_prewarm_targets, spawn_background_image_prewarm,
+};
 pub use self::repo_cache::{RepoError, normalize_github_url};
 pub use self::universe::{
     EntryClaim, StartKind, claim_entry as claim_construct_entry, force_boundary_intro_enabled,

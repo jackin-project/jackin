@@ -84,6 +84,7 @@ pub(super) async fn handle(
                 grok: None,
                 github: None,
                 git_pull_on_entry: git_pull,
+                dirty_exit_policy: None,
             };
             let mut editor = crate::config::ConfigEditor::open(paths)?;
             editor.create_workspace(&name, ws)?;

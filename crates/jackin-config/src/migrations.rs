@@ -57,6 +57,13 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
     // Additive with serde default; no transformation needed.
     MigrationStep {
         from: "v1alpha5",
+        to: "v1alpha6",
+        migrate: noop_migration,
+    },
+    // v1alpha6 → v1alpha7: add optional `dirty_exit_policy` to AppConfig and
+    // WorkspaceConfig. Additive with serde default; no transformation needed.
+    MigrationStep {
+        from: "v1alpha6",
         to: CURRENT_CONFIG_VERSION,
         migrate: noop_migration,
     },
@@ -91,6 +98,13 @@ pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
     // Additive with serde default; no transformation needed.
     MigrationStep {
         from: "v1alpha5",
+        to: "v1alpha6",
+        migrate: noop_migration,
+    },
+    // v1alpha6 → v1alpha7: add optional `dirty_exit_policy` to WorkspaceConfig.
+    // Additive with serde default; no transformation needed.
+    MigrationStep {
+        from: "v1alpha6",
         to: CURRENT_WORKSPACE_VERSION,
         migrate: noop_migration,
     },
