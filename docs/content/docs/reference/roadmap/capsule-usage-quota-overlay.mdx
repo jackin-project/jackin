@@ -14,7 +14,7 @@ The goal is not to clone CodexBar. CodexBar is a macOS menu-bar account dashboar
 
 These decisions are final and override any older description in this item.
 
-- **Two surfaces, one authenticated source.** (1) An always-on compact status signal in the branch context bar for the focused pane; (2) the usage overlay (`u` prefix or palette `Usage`). Both read the same daemon-cached focused snapshot under one canonical provider cache key — surfaces never recompute the snapshot independently, and a failed refresh must preserve the last good value rather than overwrite it with `needs login`.
+- **Two surfaces, one source.** (1) An always-on status signal in the right of the bottom status bar for the focused pane; (2) the usage overlay (`u` prefix, palette `Usage`, or a status-bar click). Both read **exclusively from the Turso database** under one canonical provider key — neither ever calls a provider and neither recomputes a snapshot. A failed background refresh must preserve the last good value rather than overwrite it with `needs login`. Clicking the status bar opens the overlay on the focused pane's provider tab.
 - **Provider-only tabs plus Overview.** Tab set and order: `Overview · OpenAI · Anthropic · Amp · xAI · Z.AI · Kimi · MiniMax`. There are no agent tabs and no Instance tab. Usage and quota are per-provider-account concepts; one agent (for example `claude`) can be routed through several providers (Anthropic, Z.AI, MiniMax, Kimi), so each tab is the provider/account and the focused pane maps to whichever provider it is routed through. Each provider tab shows the single forwarded account for that provider in the running instance.
 - **Use the shared tab component.** The overlay renders its tabs with <RepoFile path="crates/jackin-tui/src/components/tab_strip.rs" /> (the same `TabStrip` used by the settings and workspace-editor surfaces), not a hand-built strip. It adopts that component's focus model: a green underline marks the tab bar as focused and `Left`/`Right` switch provider; `Tab` moves focus into the content (the underline turns white) where the operator scrolls; `Tab` or `Esc` returns focus to the strip.
 - **No per-dialog footer.** The overlay does not draw its own key-hint line. It uses the standard hint bar (<RepoFile path="crates/jackin-tui/src/components/hint_bar.rs" /> with a usage keymap, the same mechanism as every other Capsule dialog), rendered below the modal.
@@ -218,17 +218,23 @@ These previews are the canonical contract for what the overlay must render: the 
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Status bar / compact signal
+## Status bar
 
-The always-on signal lives in the right-hand segment of the bottom status bar, after the debug run id and the container id. It answers exactly one question — does the focused agent still have enough quota to keep working — so it shows only the REMAINING percentage for the session (5-hour) window and the weekly window of the focused pane's provider. No account label, provider name, plan, or reset countdown appears here; that detail lives in the overlay.
-
-Right-panel order, left to right: debug run id (only present in debug mode), container id, then the usage. The branch/repository context stays on the left.
+The status bar shows, for the focused pane's provider, only the remaining session (5-hour) and weekly percentages — the single signal of whether the agent still has enough quota to keep working. There is exactly one form (no separate full / compact / lifecycle layouts). Branch/repository context stays on the left; the usage and the ids sit on the right.
 
 ```text
- Branch · feature/auth                          18bbf3524d6cadd8 · 5vvkqps1 · Session 92% · Weekly 55%
+ Branch · feature/auth           Session 92% · Weekly 55%   18bbf3524d6cadd8 · 5vvkqps1
 ```
 
-Session and weekly map to each provider's equivalent windows (session = the window of ~5 hours or less, weekly = the ~7-day window):
+Right-hand order, left to right: the usage (`Session N% · Weekly N%`), the debug run id (only present in debug mode), then the container id (rightmost).
+
+- **Follows the focused pane.** A screen may hold several panes, each running a different agent routed through a different provider. The bar reflects whichever pane currently has focus and switches as focus moves between panes.
+- **Reads only from Turso.** The bar is built from the latest cached snapshot in the Turso database for the focused provider; it never calls a provider, so it never blocks.
+- **Session and weekly** map to each provider's equivalent windows (table below); show only the one(s) the provider exposes.
+- **Lifecycle fallback** in the same slot when no trustworthy percentage exists: `needs login`, `stale`, `unsupported`, or `usage unavailable` — never a fabricated number.
+- **Click opens the overlay** on the tab for the focused pane's provider (a focused Anthropic pane opens the overlay on the Anthropic tab).
+- **Narrow terminal:** drop the weekly value before the session value; always keep the container id and at least the session value or the lifecycle word.
+- Color is advisory only; the value must read in monochrome.
 
 | Provider | Session | Weekly |
 |---|---|---|
@@ -240,32 +246,28 @@ Session and weekly map to each provider's equivalent windows (session = the wind
 | Amp | Amp Free | — |
 | xAI | — | Weekly |
 
-When a provider exposes only one of the two windows, show only that one:
+## Data flow and refresh
 
-```text
-Session 92% · Weekly 55%
-Weekly 18%
-Amp Free 100%
-```
+Both surfaces — the status bar and the overlay — read **exclusively from the Turso database**. Nothing in the render path ever calls a provider. A single background refresher is the only component that calls provider endpoints (using the per-provider recipes in "How the data is extracted") and writes normalized account-quota snapshots into Turso (`account_usage_snapshots`). This keeps the UI instant and decouples how often providers are polled from how often the operator looks. Relative-time labels ("Updated 2m ago") are computed from each snapshot's `fetched_at`.
 
-When no trustworthy percentage exists, show the lifecycle word in the same right-panel slot instead of a number:
+### Refresh cadence (CodexBar-aligned)
 
-```text
- ... 18bbf3524d6cadd8 · 5vvkqps1 · needs login
- ... 18bbf3524d6cadd8 · 5vvkqps1 · Session 92% · Weekly 55% (stale)
- ... 18bbf3524d6cadd8 · 5vvkqps1 · usage unavailable
-```
+jackin' follows CodexBar's cadence model. CodexBar reference behaviour: one global automatic interval, **default 5 minutes**, refreshing all enabled providers off the main thread; opening the popover does NOT force a full refresh — it only retries providers that errored or have no snapshot, after a ~1.2s delay; server quota endpoints carry rate-limit gates (Anthropic `oauth/usage` uses a 5-minute or `Retry-After` cooldown on HTTP 429, bypassed only for a manual refresh); the expensive web scrape runs ~5× slower (~25 min); refreshes are single-flighted and coalesced; there is no periodic UI tick for the relative-time label (it updates when the menu is rebuilt).
 
-Rules:
+jackin' default: a conservative automatic interval targeting **~5 minutes per account** (with jitter), honoring `Retry-After` and backing off on HTTP 429, refreshing the focused provider first.
 
-- Follows the focused pane's provider; never a global average or a sibling agent's quota.
-- Show remaining percentage only — no account, provider name, plan, or reset countdown.
-- Show session (5-hour) and weekly when both exist; otherwise whichever exists.
-- No trustworthy percentage → `needs login` / `needs secret` / `stale` / `unsupported` / `usage unavailable`; never a fabricated number.
-- Daemon disconnected → `usage unavailable`.
-- Shell tabs with no active agent show no usage.
-- On a narrow terminal, drop the weekly value before the session value; always keep the container id and at least the session percentage or the state word.
-- Color is advisory only; the value must read in monochrome.
+### The multi-container rate-limit problem (design for it up front)
+
+Provider usage limits are **per account / per token / per IP, not per process**. jackin' can run N containers against the SAME provider account, so naive per-container polling multiplies request volume N× — a 5-minute cadence across 50 containers is one request every ~6 seconds to one account, enough to trip 429s a single CodexBar instance never sees. The design must therefore:
+
+- Coalesce to **one refresh per account**, fanned out to every container that shares it, rather than each container polling independently. The long-term home is the host-owned refresh daemon in [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/#host-owned-telemetry-cache); until it exists, the capsule-local refresher must use a conservative interval, add jitter to avoid thundering-herd alignment, and honor a **shared cooldown** so all containers respect a 429 / `Retry-After` seen by any one of them.
+- Server quota endpoints are never polled tighter than CodexBar's defaults. Exact per-provider intervals and the shared-cooldown mechanism are an explicit pre-ship decision (see Open questions); the starting point is ~5 min/account with `Retry-After` backoff.
+
+### Overlay open behaviour
+
+- Opening the overlay (including via a status-bar click) **proactively triggers a background refresh of the selected provider first**, then the others, without blocking the render — the cached Turso snapshot shows immediately.
+- While a provider is refreshing, its header says so in place: the freshness line reads e.g. `Updated 4m ago · refreshing…`, and updates to `Updated just now` when the refresh completes, so the operator always knows whether the numbers are current or being refreshed.
+- While the overlay is open, all relative times and computed values **tick every minute** so an open dialog never shows a frozen "Updated 2m ago". When the overlay is closed there is no UI tick; the background refresher continues on its cadence, prioritizing the active tab/provider.
 
 ## Quota buckets and rendering
 
@@ -309,12 +311,12 @@ CodexBar (`github.com/steipete/CodexBar`) is the reference jackin' borrows this 
 
 ## How the data is extracted
 
-Each provider adapter resolves a credential, calls the provider's usage endpoint, and maps the response to quota buckets. Credentials are the same accounts the operator is already logged into; the runtime forwards them into the container (see Credential delivery below). The per-provider recipes jackin' mirrors from CodexBar:
+This is what the **background refresher** does to populate the Turso store; the status bar and overlay render paths never call these endpoints. Each provider adapter resolves a credential, calls the provider's usage endpoint, and maps the response to quota buckets. Credentials are the same accounts the operator is already logged into; the runtime forwards them into the container (see Credential delivery below). The per-provider recipes jackin' mirrors from CodexBar:
 
 **Anthropic / Claude.** Credential: `~/.claude/.credentials.json` (`claudeAiOauth.accessToken`), forwarded from the host macOS Keychain service `Claude Code-credentials` (per-config-dir variants use service `Claude Code-credentials-<first 8 hex of sha256(config dir path)>`). Call: `GET https://api.anthropic.com/api/oauth/usage` with `Authorization: Bearer`, `Accept: application/json`, `Content-Type: application/json`, `anthropic-beta: oauth-2025-04-20`, and `User-Agent: claude-code/<version>` (no `anthropic-version`). Windows: `five_hour`→Session, `seven_day`→Weekly, `seven_day_sonnet`→Sonnet, `seven_day_opus`→Opus, `seven_day_routines` (and aliases `seven_day_claude_routines`/`claude_routines`/`routines`/`seven_day_cowork`)→Daily Routines, `extra_usage`→Extra usage; each window carries `utilization` and `resets_at`. Plan label prefers `subscriptionType`, falls back to `rateLimitTier`.
 **OpenAI / Codex.** Credential: `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`), `tokens.access_token` + `tokens.account_id`. Call: `GET https://chatgpt.com/backend-api/wham/usage` with `Authorization: Bearer` and `ChatGPT-Account-Id: <account_id>` when present; an alternate authority launches `codex -s read-only -a untrusted app-server` and calls JSON-RPC `account/read` + `account/rateLimits/read`. Map: `rate_limit.primary_window`→Session, `secondary_window`→Weekly (`used_percent`/`reset_at`/`limit_window_seconds`); `additional_rate_limits[]` containing `spark`→Codex Spark 5-hour/Weekly; `credits`→Credits; `plan_type`→plan. Account identity comes from the app-server RPC or the `id_token` JWT, not from a `tokens.email` field (which is usually absent).
 **Amp.** Credential: `AMP_API_KEY`. Call: `POST https://ampcode.com/api/internal?userDisplayBalanceInfo` with body `{"method":"userDisplayBalanceInfo","params":{}}` and `Authorization: Bearer`; `amp --no-color usage` is a secondary source. Buckets: Amp Free plus an individual-credits balance.
-**xAI / Grok.** Credential: `~/.grok/auth.json` (the scope entry's `key`). Call: spawn `grok agent stdio` and issue JSON-RPC `x.ai/billing` (the method must stay slash-unescaped); fallback `POST https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig` (gRPC-web, `Authorization: Bearer`). Buckets: weekly/credits from `monthlyLimit`/`usage.totalUsed`/`billingCycle`.
+**xAI / Grok.** Credential: `~/.grok/auth.json` (the scope entry's `key`). Call: spawn `grok agent stdio` and issue JSON-RPC `x.ai/billing` (the method must stay slash-unescaped). Buckets: weekly/credits from `monthlyLimit`/`usage.totalUsed`/`billingCycle`. The grok.com gRPC-web fallback is a web-session source and is out of scope.
 **Z.AI / GLM.** Credential: env `Z_AI_API_KEY` (no file, carried into the container regardless of mount mode — the reference pattern). Call: `GET https://api.z.ai/api/monitor/usage/quota/limit` with `Authorization: Bearer`. Map `TOKENS_LIMIT`/`TIME_LIMIT` entries to Tokens / MCP / 5-hour.
 **Kimi.** Credential: the Kimi-For-Coding API token (`KIMI_CODE_API_KEY` or `~/.kimi-code/credentials/kimi-code.json` `access_token`). Call: `GET https://api.kimi.com/coding/v1/usages` with `Authorization: Bearer`; the response is `usage` + `limits[]`, mapped to Weekly + Rate Limit. (The `kimi.com` web-cookie billing endpoint is a separate variant that requires a browser session JWT and is not used.)
 **MiniMax.** Credential: `MINIMAX_CODING_API_KEY` / `MINIMAX_API_KEY`. Call: `GET` the `/v1/token_plan/remains` and `/v1/api/openplatform/coding_plan/remains` paths on `api.minimax.io` then `api.minimaxi.com`, with `Authorization: Bearer` and `MM-API-Source`; transport errors fall through to the next host rather than aborting. `model_remains[]` yields one bucket per model × interval/weekly window, rendered as remaining.
@@ -339,7 +341,7 @@ The provider quota fetchers and `*_snapshot` builders, the daemon `UsageCache` a
 
 - Forward each provider's resolved credential into the container reliably on every launch and refresh a stale in-container copy when the host source is newer (today the Codex copy is gated on a first-launch marker and several are gated on `AuthForwardMode::Sync`). Surface per-provider forwarding outcome in the launch summary so `needs login` is explainable.
 - Do not gate the usage probe on local credential-file presence (xAI today short-circuits to `needs login` without running the probe). Run the probe and report the real error.
-- Prefer an env-key REST path where the provider offers one (Amp `AMP_API_KEY`→REST; Grok gRPC-web with the auth.json key) so a tab does not depend on a Sync-mounted file plus an in-container CLI.
+- Prefer an env-key / API-token path where the provider offers one (Amp `AMP_API_KEY` → `ampcode.com/api/internal`) so a tab does not depend on a Sync-mounted file plus an in-container CLI. Do not add browser-cookie / web-session fallbacks (Grok web, Kimi web, MiniMax web) — they are out of scope.
 
 ### Phase 2 — Adapter correctness
 
@@ -359,7 +361,7 @@ The provider quota fetchers and `*_snapshot` builders, the daemon `UsageCache` a
 
 ### Phase 4 — Cleanup (remove stale code so the feature is exactly what ships)
 
-Removing the cut features is part of this work, not a follow-up: the workspace denies `dead_code`, so producers and their consumers must be removed together. In <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/components/dialog_widgets.rs" />, remove the cost/token grid, history sparkline, `Top model`, provenance, Instance view, account-action rows, the `Source`/`Provider status`/`Status Page` rows, the synthesized `"Tabs"` and `"Actions"` rows, and their now-dead helpers. In <RepoFile path="crates/jackin-capsule/src/usage.rs" />, remove the spend data plane (local-log scanning, runtime-stream sampling, spend/estimate helpers, pricing tables, token/cost parsing, history/top-model helpers) and set the snapshot builders' spend field to default. In <RepoFile path="crates/jackin-capsule/src/telemetry_store.rs" />, remove the `usage_samples`/`usage_scan_files` tables and their query helpers (keep `account_usage_snapshots` only if account persistence is retained — see open question). In <RepoFile path="crates/jackin-capsule/src/daemon/multiplexer_utils.rs" />, remove the instance-block builder (`attach_instance_usage` and its helpers). In <RepoFile path="crates/jackin-protocol/src/control.rs" />, remove `WorkspaceSpendView`, `InstanceUsageView`/`InstanceAgentUsageRow`/`InstanceProviderUsageRow`, `UsageSummaryView`, `ProviderStatusView`, and the `workspace_spend`/`instance` fields. Remove the now-unused control messages `UsageWorkspace`/`UsageSession`/`ServerMsg::UsageSummary` and their handlers in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, <RepoFile path="crates/jackin-capsule/src/socket.rs" />, and <RepoFile path="crates/jackin-capsule/src/client.rs" />, the `workspace`/`session` subcommands in <RepoFile path="crates/jackin-capsule/src/main.rs" />, the matching `jackin usage workspace|session` chain in <RepoFile path="crates/jackin/src/cli/usage.rs" />, and `fetch_usage_summary`/`UsageSummaryScope` in <RepoFile path="crates/jackin-runtime/src/runtime/snapshot.rs" />.
+Removing the cut features is part of this work, not a follow-up: the workspace denies `dead_code`, so producers and their consumers must be removed together. In <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/components/dialog_widgets.rs" />, remove the cost/token grid, history sparkline, `Top model`, provenance, Instance view, account-action rows, the `Source`/`Provider status`/`Status Page` rows, the synthesized `"Tabs"` and `"Actions"` rows, and their now-dead helpers. In <RepoFile path="crates/jackin-capsule/src/usage.rs" />, remove the spend data plane (local-log scanning, runtime-stream sampling, spend/estimate helpers, pricing tables, token/cost parsing, history/top-model helpers) and set the snapshot builders' spend field to default. In <RepoFile path="crates/jackin-capsule/src/telemetry_store.rs" />, remove the `usage_samples`/`usage_scan_files` tables and their query helpers but **keep `account_usage_snapshots` and its helpers** — it is the Turso read source for both surfaces and is written only by the background refresher. Also remove every browser-cookie / web-session source (the MiniMax web/platform fallback, the Kimi `kimi.com` web-cookie path, and the Grok grok.com gRPC-web fallback) and any account-setup, add-account, buy-credits, settings, dashboard, status-page, or login-repair code — all out of scope. In <RepoFile path="crates/jackin-capsule/src/daemon/multiplexer_utils.rs" />, remove the instance-block builder (`attach_instance_usage` and its helpers). In <RepoFile path="crates/jackin-protocol/src/control.rs" />, remove `WorkspaceSpendView`, `InstanceUsageView`/`InstanceAgentUsageRow`/`InstanceProviderUsageRow`, `UsageSummaryView`, `ProviderStatusView`, and the `workspace_spend`/`instance` fields. Remove the now-unused control messages `UsageWorkspace`/`UsageSession`/`ServerMsg::UsageSummary` and their handlers in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, <RepoFile path="crates/jackin-capsule/src/socket.rs" />, and <RepoFile path="crates/jackin-capsule/src/client.rs" />, the `workspace`/`session` subcommands in <RepoFile path="crates/jackin-capsule/src/main.rs" />, the matching `jackin usage workspace|session` chain in <RepoFile path="crates/jackin/src/cli/usage.rs" />, and `fetch_usage_summary`/`UsageSummaryScope` in <RepoFile path="crates/jackin-runtime/src/runtime/snapshot.rs" />.
 
 ### Detailed checklist
 
@@ -377,6 +379,11 @@ Removing the cut features is part of this work, not a follow-up: the workspace d
 - [ ] Render full-width remaining bars + stacked meter lines; apply per-provider section sets, provider-org headers, reset/pace formats.
 - [ ] Wire a usage keymap into the standard hint bar; remove the in-box actions footer.
 - [ ] Rework the status bar: right-panel session + weekly remaining only, after the debug/container ids; drop account/provider/plan/reset and most-constrained selection.
+- [ ] Status bar and overlay read exclusively from Turso; render never calls a provider.
+- [ ] Status bar single form, follows the focused pane; click opens the overlay on that provider's tab.
+- [ ] Background refresher writes `account_usage_snapshots` to Turso on a rate-safe cadence (~5 min/account, jitter, `Retry-After` backoff, cross-container shared cooldown), focused provider first.
+- [ ] Overlay: proactive background refresh on open (selected provider first); header shows `refreshing…` and updates in place; tick relative times/values every minute while open.
+- [ ] Remove browser-cookie / web-session sources (Grok web, Kimi web, MiniMax web) and account-setup/add-account/buy-credits/settings/dashboard/status-page/login-repair code.
 - [ ] Make provenance honest; surface fetch errors.
 - [ ] Remove the cost/spend/Instance/action-row render code and dead helpers.
 - [ ] Remove the spend data plane and pricing in usage.rs.
@@ -386,22 +393,24 @@ Removing the cut features is part of this work, not a follow-up: the workspace d
 
 ## Scope (V1)
 
-- Focused-provider quota signal in the status chrome and the `u` overlay, daemon-fed, read-only.
-- Overview tab (cross-provider remaining + reset) and provider detail tabs for all seven providers.
-- Honest fresh/stale/needs-login/unsupported/daemon-disconnected/no-agent states.
-- All quota extraction parity-or-better than CodexBar for the dimensions covered.
+The only deliverables are the two surfaces and the Turso-backed data path that feeds them:
+
+- The **status bar** (focused-provider session + weekly remaining, read from Turso, click-to-overlay).
+- The **usage overlay** (Overview tab plus one tab per provider, matching the binding previews, read from Turso).
+- The **background refresher** that populates Turso from provider endpoints on a rate-safe cadence, with honest fresh / stale / needs-login / unsupported states.
+
+Nothing else is in scope. Account setup, add-account, buy-credits, settings, dashboard, status-page, and login-repair flows are NOT part of this feature, and browser-cookie / web-session sources are NOT used. Any existing code implementing those is removed (see Implementation plan → Cleanup).
 
 ## Defer
 
 - Per-message cost/spend tracking, history, and top-model — owned by [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/); not shown in this overlay.
 - A per-instance spend ledger (the dropped Instance tab). If revived later it must not be mixed into account tabs.
-- Account setup, add-account, buy-credits, settings, dashboard, status-page, and login-repair flows.
-- Browser-cookie / web-session sources (Kimi web, MiniMax web, Grok web) unless an operator explicitly opts in.
+- The host-owned, cross-container refresh daemon (one poller fanned out to all containers) — the target architecture for rate-safe refresh; tracked in [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/#host-owned-telemetry-cache).
 
 ## Open questions
 
-- **Token refresh vs read-only host.** Refreshing expired Claude/Codex tokens requires writing a credential; the proposal is to write only the in-container copy and never the host. Confirm, or keep the honest `needs login`/`stale` degradation and require the operator to re-authenticate on the host.
-- **Account persistence.** With cost/Instance gone, the live quota view can run off the in-memory daemon cache; the `account_usage_snapshots` persistence, the `jackin usage accounts` CLI, and `--sync-host-cache` may be removable. Confirm whether any consumer still needs them before deleting.
+- **Token refresh vs read-only host.** Refreshing expired Claude/Codex tokens requires writing a credential; the proposal is to write only the in-container copy and never the host. Confirm, or keep the honest `needs login` / `stale` degradation and require the operator to re-authenticate on the host.
+- **Refresh cadence and shared cooldown (rate-limit trade-off).** Confirm the exact per-provider automatic interval and the cross-container shared-cooldown mechanism before shipping. Starting point: ~5 min per account with jitter, `Retry-After` backoff, and server endpoints no tighter than CodexBar's. This must account for N containers sharing one account (see Data flow → multi-container rate-limit problem).
 - **Header naming.** Provider-org headers (`OpenAI`, `Anthropic`, `xAI`, `Z.AI`) match the tabs; CodexBar shows product names (`Codex`, `Claude`, `Grok`, `z.ai`). Provider-org is the current choice.
 - **Codex Limit Reset Credits + Credits sections.** Kept per CodexBar; confirm whether to retain or reduce Codex to quota meters only.
 
