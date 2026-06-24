@@ -64,11 +64,13 @@ impl UsageRefreshTarget {
 #[derive(Debug, Default)]
 struct UsageRefreshSchedule {
     next_due: HashMap<String, Instant>,
+    rate_limit_failures: HashMap<String, u32>,
     in_flight: bool,
 }
 
 const USAGE_REFRESH_BASE_INTERVAL: Duration = Duration::from_mins(5);
 const USAGE_REFRESH_JITTER: Duration = Duration::from_mins(1);
+const USAGE_REFRESH_BACKOFF_CAP: Duration = Duration::from_mins(30);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum UsageSurface {
@@ -226,13 +228,13 @@ impl UsageCache {
             if !self.refresh_schedule.should_refresh(&target, now) {
                 continue;
             }
-            drop(self.focused_snapshot(
+            let view = self.focused_snapshot(
                 Some(&target.agent),
                 target.provider.as_deref(),
                 provider_keys,
                 true,
-            ));
-            self.refresh_schedule.mark_refreshed(&target, now);
+            );
+            self.refresh_schedule.mark_refreshed(&target, now, &view);
         }
         self.refresh_schedule.in_flight = false;
     }
@@ -253,7 +255,19 @@ impl UsageCache {
 
 impl UsageRefreshSchedule {
     fn should_refresh(&mut self, target: &UsageRefreshTarget, now: Instant) -> bool {
+        self.should_refresh_with_cooldown_dir(target, now, &shared_usage_cooldown_dir())
+    }
+
+    fn should_refresh_with_cooldown_dir(
+        &mut self,
+        target: &UsageRefreshTarget,
+        now: Instant,
+        cooldown_dir: &Path,
+    ) -> bool {
         let key = target.cache_key();
+        if shared_usage_cooldown_active(cooldown_dir, &key, now_epoch()) {
+            return false;
+        }
         match self.next_due.get(&key).copied() {
             Some(due) if due > now => false,
             Some(_) => true,
@@ -264,10 +278,41 @@ impl UsageRefreshSchedule {
         }
     }
 
-    fn mark_refreshed(&mut self, target: &UsageRefreshTarget, now: Instant) {
+    fn mark_refreshed(
+        &mut self,
+        target: &UsageRefreshTarget,
+        now: Instant,
+        view: &FocusedUsageView,
+    ) {
+        self.mark_refreshed_with_cooldown_dir(target, now, view, &shared_usage_cooldown_dir());
+    }
+
+    fn mark_refreshed_with_cooldown_dir(
+        &mut self,
+        target: &UsageRefreshTarget,
+        now: Instant,
+        view: &FocusedUsageView,
+        cooldown_dir: &Path,
+    ) {
         let key = target.cache_key();
-        self.next_due
-            .insert(key.clone(), now + refresh_interval_for_key(&key));
+        if let Some(error) = view.last_error.as_deref()
+            && usage_error_is_rate_limited(error)
+        {
+            let failures = self
+                .rate_limit_failures
+                .entry(key.clone())
+                .and_modify(|count| *count = count.saturating_add(1))
+                .or_insert(1);
+            let delay = usage_rate_limit_delay(error, *failures);
+            let until_epoch =
+                now_epoch().saturating_add(i64::try_from(delay.as_secs()).unwrap_or(i64::MAX));
+            write_shared_usage_cooldown_marker(cooldown_dir, &key, until_epoch, error);
+            self.next_due.insert(key, now + delay);
+        } else {
+            self.rate_limit_failures.remove(&key);
+            self.next_due
+                .insert(key.clone(), now + refresh_interval_for_key(&key));
+        }
     }
 }
 
@@ -302,6 +347,86 @@ fn stable_usage_hash(value: &str) -> u64 {
     value.bytes().fold(0xcbf29ce484222325, |hash, byte| {
         (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
     })
+}
+
+fn shared_usage_cooldown_dir() -> PathBuf {
+    std::env::var("JACKIN_USAGE_COOLDOWN_DIR").map_or_else(
+        |_| home_path(".jackin/data/daemon/usage-cooldowns"),
+        PathBuf::from,
+    )
+}
+
+fn shared_usage_cooldown_marker_path(cooldown_dir: &Path, key: &str) -> PathBuf {
+    cooldown_dir.join(format!("usage-{:016x}.cooldown", stable_usage_hash(key)))
+}
+
+fn shared_usage_cooldown_active(cooldown_dir: &Path, key: &str, now_epoch: i64) -> bool {
+    let path = shared_usage_cooldown_marker_path(cooldown_dir, key);
+    let Ok(text) = fs::read_to_string(path) else {
+        return false;
+    };
+    let Some(first) = text.lines().next() else {
+        return false;
+    };
+    first
+        .trim()
+        .parse::<i64>()
+        .is_ok_and(|until_epoch| until_epoch > now_epoch)
+}
+
+fn write_shared_usage_cooldown_marker(
+    cooldown_dir: &Path,
+    key: &str,
+    until_epoch: i64,
+    reason: &str,
+) {
+    if fs::create_dir_all(cooldown_dir).is_err() {
+        return;
+    }
+    let path = shared_usage_cooldown_marker_path(cooldown_dir, key);
+    let reason = reason.replace('\n', " ");
+    drop(fs::write(path, format!("{until_epoch}\n{reason}\n")));
+}
+
+fn usage_error_is_rate_limited(error: &str) -> bool {
+    let lower = error.to_ascii_lowercase();
+    lower.contains("429")
+        || lower.contains("rate limit")
+        || lower.contains("retry-after")
+        || lower.contains("retry after")
+}
+
+fn usage_rate_limit_delay(error: &str, failures: u32) -> Duration {
+    let lower = error.to_ascii_lowercase();
+    parse_retry_after_seconds(&lower)
+        .map_or_else(
+            || usage_backoff_delay(USAGE_REFRESH_BASE_INTERVAL, failures),
+            Duration::from_secs,
+        )
+        .min(USAGE_REFRESH_BACKOFF_CAP)
+}
+
+fn parse_retry_after_seconds(error: &str) -> Option<u64> {
+    for marker in ["retry-after", "retry after"] {
+        let Some((_, tail)) = error.split_once(marker) else {
+            continue;
+        };
+        let digits = tail
+            .chars()
+            .skip_while(|ch| !ch.is_ascii_digit())
+            .take_while(char::is_ascii_digit)
+            .collect::<String>();
+        if let Ok(seconds) = digits.parse::<u64>() {
+            return Some(seconds);
+        }
+    }
+    None
+}
+
+fn usage_backoff_delay(base: Duration, failures: u32) -> Duration {
+    let shift = failures.saturating_sub(1).min(8);
+    let multiplier = 1u64.checked_shl(shift).unwrap_or(u64::MAX);
+    Duration::from_secs(base.as_secs().saturating_mul(multiplier)).min(USAGE_REFRESH_BACKOFF_CAP)
 }
 
 fn canonical_usage_cache_key(agent: &str, focused_provider: Option<&str>) -> String {
@@ -4105,6 +4230,48 @@ mod tests {
                 "{key}: {interval:?}"
             );
         }
+    }
+
+    #[test]
+    fn usage_rate_limit_delay_honors_retry_after_and_caps_backoff() {
+        assert_eq!(
+            usage_rate_limit_delay("provider HTTP 429 retry-after: 17", 1),
+            Duration::from_secs(17)
+        );
+        assert_eq!(
+            usage_rate_limit_delay("provider HTTP 429", 1),
+            USAGE_REFRESH_BASE_INTERVAL
+        );
+        assert_eq!(
+            usage_rate_limit_delay("provider HTTP 429", 20),
+            USAGE_REFRESH_BACKOFF_CAP
+        );
+        assert!(!usage_error_is_rate_limited("provider HTTP 500"));
+    }
+
+    #[test]
+    fn usage_refresh_schedule_writes_and_honors_shared_rate_limit_cooldown() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("OpenAI".to_owned()),
+        };
+        let mut schedule = UsageRefreshSchedule::default();
+        let now = Instant::now();
+
+        assert!(schedule.should_refresh_with_cooldown_dir(&target, now, dir.path()));
+
+        let mut view = FocusedUsageView::unavailable("rate limited", now_epoch());
+        view.last_error = Some("Codex usage HTTP 429 retry-after: 60".to_owned());
+        schedule.mark_refreshed_with_cooldown_dir(&target, now, &view, dir.path());
+
+        let key = target.cache_key();
+        assert!(shared_usage_cooldown_active(dir.path(), &key, now_epoch()));
+        assert!(!schedule.should_refresh_with_cooldown_dir(
+            &target,
+            now + Duration::from_secs(61),
+            dir.path()
+        ));
     }
 
     #[test]
