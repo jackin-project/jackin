@@ -1,5 +1,5 @@
 //! Tests for `tab_strip`.
-use super::{TabStrip, tab_underline_line};
+use super::{TabStrip, tab_cell_style, tab_underline_line};
 use crate::{components::HoverTracker, lay_out_tabs};
 use ratatui::layout::Rect;
 
@@ -84,4 +84,17 @@ fn tab_strip_registers_hover_targets_from_render_area() {
     assert_eq!(tracker.hovered(8, 3), Some(&0));
     assert_eq!(tracker.hovered(18, 4), Some(&1));
     assert_eq!(tracker.hovered(18, 5), None);
+}
+
+#[test]
+fn tab_cell_style_centralizes_hover_colours() {
+    assert_eq!(
+        tab_cell_style(false, true).bg,
+        Some(crate::theme::TAB_BG_INACTIVE_HOVER)
+    );
+    assert_eq!(
+        tab_cell_style(true, true).bg,
+        Some(crate::theme::TAB_BG_ACTIVE_HOVER)
+    );
+    assert_eq!(tab_cell_style(true, false).fg, Some(crate::theme::WHITE));
 }

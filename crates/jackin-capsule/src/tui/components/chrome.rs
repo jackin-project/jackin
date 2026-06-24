@@ -14,7 +14,7 @@ use ratatui::{
 
 use crate::tui::components::status_bar::{PrefixMode, StatusBarPlan, StatusTabCell, TabGlyph};
 
-use jackin_tui::components::{Panel, PanelFocus};
+use jackin_tui::components::{Panel, PanelFocus, tab_cell_style};
 
 // ── Status bar (row 0 + row 1) ────────────────────────────────────────────────
 
@@ -36,16 +36,8 @@ pub struct StatusBarWidget<'a> {
 impl StatusBarWidget<'_> {
     fn paint_tab(&self, cell: &StatusTabCell, idx: usize, area: Rect, buf: &mut Buffer) {
         let hovered = self.hovered_tab == Some(idx);
-        let bg = match (cell.active, hovered) {
-            (true, false) => jackin_tui::theme::TAB_BG_ACTIVE,
-            (true, true) => jackin_tui::theme::TAB_BG_ACTIVE_HOVER,
-            (false, false) => jackin_tui::theme::TAB_BG_INACTIVE,
-            (false, true) => jackin_tui::theme::TAB_BG_INACTIVE_HOVER,
-        };
-        let mut style = Style::default().bg(bg).fg(jackin_tui::theme::WHITE);
-        if cell.active {
-            style = style.add_modifier(Modifier::BOLD);
-        }
+        let style = tab_cell_style(cell.active, hovered);
+        let bg = style.bg.unwrap_or(Color::Reset);
         let glyph_char = match cell.glyph {
             TabGlyph::None => ' ',
             TabGlyph::Done => '○',

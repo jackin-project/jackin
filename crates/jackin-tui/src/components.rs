@@ -87,7 +87,7 @@ pub use status_footer::{
     status_footer_right_chip_rect,
 };
 pub use status_popup::{StatusPopupState, render_status_popup};
-pub use tab_strip::{TabStrip, tab_label_line, tab_underline_line};
+pub use tab_strip::{TabStrip, tab_cell_style, tab_label_line, tab_underline_line};
 pub use text_input::{
     BorderStyle, TEXT_INPUT_KEYMAP, TextField, TextInput, TextInputAction, TextInputState,
     render_labeled_text_input_dialog, render_text_input, text_input_hint_spans,

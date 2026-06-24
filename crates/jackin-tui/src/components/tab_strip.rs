@@ -115,24 +115,31 @@ impl<'a> TabStrip<'a> {
 pub fn tab_label_line(cells: &[TabCell<'_>], hovered: Option<usize>) -> Line<'static> {
     let mut spans = Vec::with_capacity(cells.len().saturating_mul(2));
     for (idx, cell) in cells.iter().enumerate() {
-        let bg = match (cell.active, hovered == Some(idx)) {
-            (true, true) => TAB_BG_ACTIVE_HOVER,
-            (true, false) => TAB_BG_ACTIVE,
-            (false, true) => TAB_BG_INACTIVE_HOVER,
-            (false, false) => TAB_BG_INACTIVE,
-        };
-        let style = if cell.active {
-            Style::default()
-                .bg(bg)
-                .fg(WHITE)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().bg(bg).fg(WHITE)
-        };
-        spans.push(Span::styled(format!(" {} ", cell.label), style));
+        spans.push(Span::styled(
+            format!(" {} ", cell.label),
+            tab_cell_style(cell.active, hovered == Some(idx)),
+        ));
         spans.push(Span::raw(" ".repeat(usize::from(crate::TAB_GAP))));
     }
     Line::from(spans)
+}
+
+#[must_use]
+pub fn tab_cell_style(active: bool, hovered: bool) -> Style {
+    let bg = match (active, hovered) {
+        (true, true) => TAB_BG_ACTIVE_HOVER,
+        (true, false) => TAB_BG_ACTIVE,
+        (false, true) => TAB_BG_INACTIVE_HOVER,
+        (false, false) => TAB_BG_INACTIVE,
+    };
+    if active {
+        Style::default()
+            .bg(bg)
+            .fg(WHITE)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().bg(bg).fg(WHITE)
+    }
 }
 
 #[must_use]
