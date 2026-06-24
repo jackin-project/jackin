@@ -7,7 +7,7 @@
     "../../deja-vu",
     "../../launch-progress-tui",
     "../../console-agent-session-control",
-    "../../session-keep-and-resume",
+    "../../instant-launch-architecture",
     "../../console-resource-panel",
     "../../agent-tag-protocol",
     "../../github-link-tracking",
