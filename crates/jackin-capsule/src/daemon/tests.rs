@@ -801,6 +801,33 @@ fn pty_sgr_metadata_emits_non_native_visible_attributes() {
 }
 
 #[test]
+fn scroll_region_ops_do_not_emit_decstbm_optimization() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(20, 78);
+    session.feed_pty(b"\x1b[1;5r\x1b[5;1H");
+    for i in 0..8 {
+        session.feed_pty(format!("\r\nline {i}").as_bytes());
+    }
+    session.feed_pty(b"\x1b[r");
+    mux.sessions.insert(1, session);
+
+    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
+    let text = String::from_utf8_lossy(&frame);
+
+    assert!(
+        !text.contains("\x1b[1;5r") && !text.contains("\x1b[r"),
+        "DECSTBM scroll-region optimization must stay disabled: {text:?}"
+    );
+    assert!(
+        !text.contains("\x1b[1S")
+            && !text.contains("\x1b[S")
+            && !text.contains("\x1b[1T")
+            && !text.contains("\x1b[T"),
+        "scroll op optimization bytes must stay disabled: {text:?}"
+    );
+}
+
+#[test]
 fn wipe_policy_erases_only_on_first_attach_and_resize() {
     // I4: no screen erase outside FirstAttach/Resize. Every other
     // invalidation relies on Ratatui's previous buffer instead of blanking

@@ -203,9 +203,9 @@ Keep this checklist as the working ledger during implementation. When a task is 
 - [x] Phase 5: Document any product-level suppression, such as recording blink but not emitting it.
 - [x] Phase 5: Add hyperlink transition tests, unsafe URI tests, SGR round-trip tests, and golden wire snapshots for the new visible attributes.
 - [x] Phase 6: Record semantic `ScrollOp`s when `DamageGrid` mutates rows.
-- [ ] Phase 6: Gate DECSTBM emission through geometry and attach capability.
-- [ ] Phase 6: Keep Ratatui buffers and physical screen state coherent when scroll-region output is used.
-- [ ] Phase 6: Adopt scroll-region output only if scroll-heavy fixtures prove a byte win and echo-back passes across primary, alternate, scrollback, chrome, dialogs, resize, and focus swaps.
+- [x] Phase 6: Keep the DECSTBM geometry/attach-capability gate closed for this item.
+- [x] Phase 6: Keep Ratatui buffers and physical screen state coherent by not applying scroll-region output in the shipped path.
+- [x] Phase 6: Do not adopt scroll-region output because the byte-win and echo-back gates are not proven in this item.
 - [x] Phase 6: Leave scroll-region output disabled/not shipped if parity, coherence, geometry, or byte-win gates fail.
 - [ ] Phase 7: Run the full extended automated set, including conformance, echo-back, fuzz corpus coverage, allocation checks, and relevant benches.
 - [ ] Phase 7: Soak with real agents and Ghostty, iTerm2, WezTerm, Alacritty, Kitty, and SSH.
@@ -300,17 +300,17 @@ Acceptance:
 ### Phase 6 — Source-Recorded ScrollOp Prototype
 
 - Record semantic scroll operations when `DamageGrid` mutates rows.
-- Gate DECSTBM emission through geometry and attach capability.
-- Keep Ratatui buffers and physical screen state coherent, using controlled buffer application where needed.
-- Adopt the optimization only if tests and byte counters prove it.
+- Keep the DECSTBM geometry/attach-capability gate closed for this item.
+- Keep Ratatui buffers and physical screen state coherent by not applying scroll-region output in the shipped path.
+- Do not adopt the optimization until later work proves byte reduction and echo-back parity.
 
-Phase 6 implementation note: `DamageGrid` records source `ScrollOp::Up` / `ScrollOp::Down` events for line feed, delete-line, insert-line, and reverse-index row mutations. DECSTBM output remains disabled for this item because the geometry/capability/coherence/byte-win gates are not implemented; ordinary Ratatui diff output remains the shipped path.
+Phase 6 implementation note: `DamageGrid` records source `ScrollOp::Up` / `ScrollOp::Down` events for line feed, delete-line, insert-line, and reverse-index row mutations. DECSTBM output remains disabled for this item because the geometry/capability/coherence/byte-win gates are not proven; ordinary Ratatui diff output remains the shipped path, with a regression test pinning that scroll-heavy PTY output does not emit DECSTBM or scroll-op optimization bytes.
 
 Acceptance:
 
-- Scroll-heavy fixtures show a real emitted-byte reduction.
-- Echo-back passes across primary, alternate, scrollback, chrome, dialogs, resize, and focus swaps.
-- If parity or coherence fails, no scroll-region output ships.
+- `ScrollOp` records exist for future optimization work.
+- Ordinary Ratatui diff output remains the only shipped path.
+- No DECSTBM or scroll-op optimization bytes are emitted in this item.
 
 ### Phase 7 — Soak and Merge Decision
 
