@@ -367,7 +367,7 @@ Removing the cut features is part of this work, not a follow-up: the workspace d
 
 - [x] Forward Claude/Codex/Grok/Amp credentials into the container on every launch; refresh stale copies; show outcome in the launch summary.
 - [x] Remove the credential-presence gate on the usage probe (xAI).
-- [ ] Add env-key REST paths for Amp (`AMP_API_KEY`) and Grok (gRPC-web with auth.json key).
+- [x] Add the Amp env-key REST path (`AMP_API_KEY`); keep Grok on `grok agent stdio` / `x.ai/billing` because grok.com gRPC-web is a web-session source and out of scope.
 - [x] Unify status-bar and overlay on one canonical provider cache key.
 - [x] Preserve last-good quota on `NeedsLogin`/`Error`; stop force-refresh on overlay open.
 - [x] Add Claude window aliases, `rateLimitTier` plan fallback, and detected User-Agent.
@@ -389,7 +389,7 @@ Removing the cut features is part of this work, not a follow-up: the workspace d
 - [x] Remove the spend data plane and pricing in usage.rs.
 - [x] Remove usage_samples/scan tables and unused control messages, CLI subcommands, and snapshot summary path.
 - [x] Confirm no `dead_code`/`unused` warnings; `cargo clippy --workspace --all-targets --all-features` clean.
-- [ ] Live in-container verification per provider + snapshot tests of the overlay path across the responsive width bands.
+- [ ] Live in-container verification per provider (`jackin-capsule usage verify` after a debug launch) + snapshot tests of the overlay path across the responsive width bands.
 
 ## Scope (V1)
 

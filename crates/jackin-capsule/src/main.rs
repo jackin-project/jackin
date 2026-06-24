@@ -55,6 +55,7 @@ SUBCOMMANDS:
     status                         Print daemon status to stdout
     snapshot                       Write a screen snapshot to stdout
     usage accounts                 Print cached account quota rows as JSON
+    usage verify                   Verify all provider quota rows are cached and trusted
     usage claude-cli               Explicitly run Claude Code /usage diagnostic
     --focus <session_id>           Connect and focus the given session
     runtime-setup                  First-boot environment setup (run by entrypoint)
@@ -129,7 +130,7 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, usage accounts, usage claude-cli, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, usage accounts, usage verify, usage claude-cli, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
@@ -139,9 +140,12 @@ connecting as a client.",
 async fn run_usage_subcommand(args: &[String]) -> Result<()> {
     match args.get(2).map(String::as_str) {
         Some("accounts") => client::run_usage_accounts().await,
+        Some("verify") => client::run_usage_verify().await,
         Some("claude-cli") => client::run_usage_claude_cli().await,
-        Some(other) => bail!("unknown usage subcommand {other:?} — known: accounts, claude-cli"),
-        None => bail!("usage requires a subcommand: accounts or claude-cli"),
+        Some(other) => {
+            bail!("unknown usage subcommand {other:?} — known: accounts, verify, claude-cli")
+        }
+        None => bail!("usage requires a subcommand: accounts, verify, or claude-cli"),
     }
 }
 
