@@ -238,7 +238,7 @@ impl vte::Perform for DamageGrid {
             // `>`-intermediate form (`CSI > 4 ; n m`, xterm modifyOtherKeys)
             // is not SGR and must fall through to the passthrough arm.
             'm' if intermediates.is_empty() => {
-                self.apply_sgr(&p);
+                self.apply_sgr_params(params);
             }
             // DEC Private Mode Set.
             'h' if intermediates == b"?" => {

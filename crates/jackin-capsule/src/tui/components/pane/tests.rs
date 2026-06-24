@@ -7,7 +7,7 @@ use ratatui::{
     backend::TestBackend,
     buffer::{Buffer, CellDiffOption},
     layout::Rect,
-    style::Color,
+    style::{Color, Modifier},
 };
 use std::num::NonZeroU16;
 
@@ -137,6 +137,27 @@ fn pane_widget_does_not_force_single_width_classes() {
             "{text:?} must stay ordinary width"
         );
     }
+}
+
+#[test]
+fn pane_widget_maps_extended_visible_sgr_modifiers() {
+    let mut grid = DamageGrid::new(3, 10, 100);
+    grid.process(b"\x1b[9;5;6;8mA");
+    let snap = grid.dump();
+
+    let backend = TestBackend::new(10, 3);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(PaneBodyWidget::new(&snap), frame.area());
+        })
+        .unwrap();
+
+    let modifier = terminal.backend().buffer()[(0, 0)].modifier;
+    assert!(modifier.contains(Modifier::CROSSED_OUT));
+    assert!(modifier.contains(Modifier::SLOW_BLINK));
+    assert!(modifier.contains(Modifier::RAPID_BLINK));
+    assert!(modifier.contains(Modifier::HIDDEN));
 }
 
 #[test]

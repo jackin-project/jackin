@@ -29,7 +29,7 @@ pub mod passthrough;
 pub mod snapshot;
 pub mod width;
 
-pub use cell::{Attrs, Cell, Color};
+pub use cell::{Attrs, Cell, Color, UnderlineStyle};
 pub use damage::{DirtySpans, DirtyTracker};
 pub use grid::{DamageGrid, MouseProtocolEncoding, MouseProtocolMode, RowArena, RowWrap};
 pub use passthrough::{PassthroughBuffer, PassthroughEvent};

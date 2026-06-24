@@ -285,6 +285,8 @@ Acceptance:
 - Extend `Attrs`, snapshots, pane mapping, frame metadata, and `SocketBackend` emission for the new visible SGR state.
 - Document any product-level suppression such as blink emission.
 
+Phase 5 partial progress: `Attrs`, snapshots, pane mapping, and `SocketBackend` now preserve SGR subparameters and carry strikethrough, blink, conceal, overline, underline style, and underline color through the model. Ratatui-native modifiers emit strikethrough, blink, and conceal. The Phase 5 checklist stays open until OSC 8 uses shared model/frame metadata and non-native underline style/color plus overline travel as frame metadata consumed by `SocketBackend`.
+
 Acceptance:
 
 - Link add/remove/retarget over unchanged text works.

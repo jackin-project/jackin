@@ -93,6 +93,25 @@ fn full_screen_clear_resets_style_before_erasing() {
 }
 
 #[test]
+fn backend_emits_extended_visible_sgr_modifiers() {
+    let mut backend = SocketBackend::new(10, 1);
+    backend.apply_style(CellStyle {
+        fg: Color::Reset,
+        bg: Color::Reset,
+        modifiers: Modifier::CROSSED_OUT
+            | Modifier::SLOW_BLINK
+            | Modifier::RAPID_BLINK
+            | Modifier::HIDDEN,
+    });
+
+    let output = backend.take_output();
+    let text = String::from_utf8_lossy(&output);
+    for sgr in ["\x1b[5m", "\x1b[6m", "\x1b[8m", "\x1b[9m"] {
+        assert!(text.contains(sgr), "missing {sgr:?} in {text:?}");
+    }
+}
+
+#[test]
 fn take_output_drains_buffer() {
     let backend = SocketBackend::new(10, 1);
     let terminal = Terminal::new(backend).unwrap();

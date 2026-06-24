@@ -125,8 +125,20 @@ impl SocketBackend {
         if style.modifiers.contains(Modifier::UNDERLINED) {
             self.output.extend_from_slice(b"\x1b[4m");
         }
+        if style.modifiers.contains(Modifier::SLOW_BLINK) {
+            self.output.extend_from_slice(b"\x1b[5m");
+        }
+        if style.modifiers.contains(Modifier::RAPID_BLINK) {
+            self.output.extend_from_slice(b"\x1b[6m");
+        }
         if style.modifiers.contains(Modifier::REVERSED) {
             self.output.extend_from_slice(b"\x1b[7m");
+        }
+        if style.modifiers.contains(Modifier::HIDDEN) {
+            self.output.extend_from_slice(b"\x1b[8m");
+        }
+        if style.modifiers.contains(Modifier::CROSSED_OUT) {
+            self.output.extend_from_slice(b"\x1b[9m");
         }
 
         // Foreground

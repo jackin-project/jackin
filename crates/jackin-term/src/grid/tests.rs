@@ -608,10 +608,76 @@ fn borrowed_scrollback_view_matches_owned_dump() {
             assert_eq!(borrowed_cell.bold(), owned_cell.bold);
             assert_eq!(borrowed_cell.italic(), owned_cell.italic);
             assert_eq!(borrowed_cell.underline(), owned_cell.underline);
+            assert_eq!(
+                borrowed_cell.attrs.underline_style,
+                owned_cell.underline_style
+            );
+            assert_eq!(
+                borrowed_cell.attrs.underline_color,
+                owned_cell.underline_color
+            );
             assert_eq!(borrowed_cell.inverse(), owned_cell.inverse);
             assert_eq!(borrowed_cell.dim(), owned_cell.dim);
+            assert_eq!(borrowed_cell.strikethrough(), owned_cell.strikethrough);
+            assert_eq!(borrowed_cell.slow_blink(), owned_cell.slow_blink);
+            assert_eq!(borrowed_cell.rapid_blink(), owned_cell.rapid_blink);
+            assert_eq!(borrowed_cell.conceal(), owned_cell.conceal);
+            assert_eq!(borrowed_cell.overline(), owned_cell.overline);
         }
     }
+}
+
+#[test]
+fn sgr_records_extended_visible_attributes() {
+    let mut g = DamageGrid::new(2, 20, 100);
+    g.process(b"\x1b[4:3;58:2:12:34:56;9;5;6;8;53mA");
+
+    let snap = g.dump();
+    let cell = snap.cell(0, 0).expect("styled cell");
+    assert_eq!(cell.underline_style, UnderlineStyle::Curly);
+    assert_eq!(cell.underline_color, Color::Rgb(12, 34, 56));
+    assert!(cell.strikethrough);
+    assert!(cell.slow_blink);
+    assert!(cell.rapid_blink);
+    assert!(cell.conceal);
+    assert!(cell.overline);
+}
+
+#[test]
+fn sgr_resets_extended_visible_attributes() {
+    let mut g = DamageGrid::new(2, 20, 100);
+    g.process(b"\x1b[4:5;58;5;123;9;5;6;8;53mA");
+    g.process(b"\x1b[24;25;28;29;55;59mB");
+
+    let snap = g.dump();
+    let first = snap.cell(0, 0).expect("first styled cell");
+    assert_eq!(first.underline_style, UnderlineStyle::Dashed);
+    assert_eq!(first.underline_color, Color::Idx(123));
+    assert!(first.strikethrough);
+    assert!(first.slow_blink);
+    assert!(first.rapid_blink);
+    assert!(first.conceal);
+    assert!(first.overline);
+
+    let second = snap.cell(0, 1).expect("reset cell");
+    assert_eq!(second.underline_style, UnderlineStyle::None);
+    assert_eq!(second.underline_color, Color::Default);
+    assert!(!second.strikethrough);
+    assert!(!second.slow_blink);
+    assert!(!second.rapid_blink);
+    assert!(!second.conceal);
+    assert!(!second.overline);
+}
+
+#[test]
+fn sgr_colon_rgb_preserves_foreground_and_background() {
+    let mut g = DamageGrid::new(2, 20, 100);
+    g.process(b"\x1b[38:2:1:2:3;48:2::4:5:6mA");
+
+    let snap = g.dump();
+    let cell = snap.cell(0, 0).expect("rgb cell");
+    assert_eq!(cell.fg, Color::Rgb(1, 2, 3));
+    assert_eq!(cell.bg, Color::Rgb(4, 5, 6));
 }
 
 #[test]

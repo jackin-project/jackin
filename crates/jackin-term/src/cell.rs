@@ -24,11 +24,28 @@ pub enum Color {
 pub struct Attrs {
     pub foreground: Color,
     pub background: Color,
+    pub underline_color: Color,
+    pub underline_style: UnderlineStyle,
     pub bold: bool,
     pub italic: bool,
-    pub underline: bool,
     pub inverse: bool,
     pub dim: bool,
+    pub strikethrough: bool,
+    pub slow_blink: bool,
+    pub rapid_blink: bool,
+    pub conceal: bool,
+    pub overline: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum UnderlineStyle {
+    #[default]
+    None,
+    Single,
+    Double,
+    Curly,
+    Dotted,
+    Dashed,
 }
 
 /// A single cell in the terminal grid.
@@ -82,7 +99,7 @@ impl Cell {
     }
 
     pub fn underline(&self) -> bool {
-        self.attrs.underline
+        self.attrs.underline_style != UnderlineStyle::None
     }
 
     pub fn inverse(&self) -> bool {
@@ -91,5 +108,25 @@ impl Cell {
 
     pub fn dim(&self) -> bool {
         self.attrs.dim
+    }
+
+    pub fn strikethrough(&self) -> bool {
+        self.attrs.strikethrough
+    }
+
+    pub fn slow_blink(&self) -> bool {
+        self.attrs.slow_blink
+    }
+
+    pub fn rapid_blink(&self) -> bool {
+        self.attrs.rapid_blink
+    }
+
+    pub fn conceal(&self) -> bool {
+        self.attrs.conceal
+    }
+
+    pub fn overline(&self) -> bool {
+        self.attrs.overline
     }
 }

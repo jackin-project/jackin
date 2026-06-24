@@ -100,6 +100,10 @@ trait PaneCell {
     fn underline(&self) -> bool;
     fn inverse(&self) -> bool;
     fn dim(&self) -> bool;
+    fn strikethrough(&self) -> bool;
+    fn slow_blink(&self) -> bool;
+    fn rapid_blink(&self) -> bool;
+    fn conceal(&self) -> bool;
 }
 
 impl PaneCell for SnapCell {
@@ -141,6 +145,22 @@ impl PaneCell for SnapCell {
 
     fn dim(&self) -> bool {
         self.dim
+    }
+
+    fn strikethrough(&self) -> bool {
+        self.strikethrough
+    }
+
+    fn slow_blink(&self) -> bool {
+        self.slow_blink
+    }
+
+    fn rapid_blink(&self) -> bool {
+        self.rapid_blink
+    }
+
+    fn conceal(&self) -> bool {
+        self.conceal
     }
 }
 
@@ -184,6 +204,22 @@ impl PaneCell for TermCell {
     fn dim(&self) -> bool {
         self.dim()
     }
+
+    fn strikethrough(&self) -> bool {
+        self.strikethrough()
+    }
+
+    fn slow_blink(&self) -> bool {
+        self.slow_blink()
+    }
+
+    fn rapid_blink(&self) -> bool {
+        self.rapid_blink()
+    }
+
+    fn conceal(&self) -> bool {
+        self.conceal()
+    }
 }
 
 fn render_cell(buf_cell: &mut ratatui::buffer::Cell, cell: &impl PaneCell) {
@@ -221,6 +257,18 @@ fn render_cell(buf_cell: &mut ratatui::buffer::Cell, cell: &impl PaneCell) {
     }
     if cell.dim() {
         modifier |= Modifier::DIM;
+    }
+    if cell.strikethrough() {
+        modifier |= Modifier::CROSSED_OUT;
+    }
+    if cell.slow_blink() {
+        modifier |= Modifier::SLOW_BLINK;
+    }
+    if cell.rapid_blink() {
+        modifier |= Modifier::RAPID_BLINK;
+    }
+    if cell.conceal() {
+        modifier |= Modifier::HIDDEN;
     }
     buf_cell.modifier = modifier;
 }

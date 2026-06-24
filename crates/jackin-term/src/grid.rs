@@ -22,7 +22,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, OnceLock},
 };
 
-use crate::cell::{Attrs, Cell, Color};
+use crate::cell::{Attrs, Cell, Color, UnderlineStyle};
 use crate::damage::{DirtySpans, DirtyTracker};
 use crate::passthrough::{PassthroughBuffer, PassthroughEvent};
 use crate::width::VirtualTerminalProfile;
@@ -1394,56 +1394,89 @@ mod perform;
 // ── SGR / DEC helpers ─────────────────────────────────────────────────────
 
 impl DamageGrid {
-    fn apply_sgr(&mut self, params: &[u16]) {
+    fn apply_sgr_params(&mut self, params: &vte::Params) {
+        if params.is_empty() {
+            self.current_attrs = Attrs::default();
+            return;
+        }
+        let params = params.iter().map(Vec::from).collect::<Vec<_>>();
+        self.apply_sgr(&params);
+    }
+
+    fn apply_sgr(&mut self, params: &[Vec<u16>]) {
         let mut i = 0;
         if params.is_empty() {
             self.current_attrs = Attrs::default();
             return;
         }
         while i < params.len() {
-            match params[i] {
+            let param = params[i].as_slice();
+            let code = param.first().copied().unwrap_or(0);
+            match code {
                 0 => {
                     self.current_attrs = Attrs::default();
                 }
                 1 => self.current_attrs.bold = true,
                 2 => self.current_attrs.dim = true,
                 3 => self.current_attrs.italic = true,
-                4 => self.current_attrs.underline = true,
+                4 => {
+                    self.current_attrs.underline_style =
+                        underline_style_from_sgr(param.get(1).copied().unwrap_or(1));
+                }
+                5 => self.current_attrs.slow_blink = true,
+                6 => self.current_attrs.rapid_blink = true,
                 7 => self.current_attrs.inverse = true,
+                8 => self.current_attrs.conceal = true,
+                9 => self.current_attrs.strikethrough = true,
+                21 => self.current_attrs.underline_style = UnderlineStyle::Double,
                 22 => {
                     self.current_attrs.bold = false;
                     self.current_attrs.dim = false;
                 }
                 23 => self.current_attrs.italic = false,
-                24 => self.current_attrs.underline = false,
+                24 => self.current_attrs.underline_style = UnderlineStyle::None,
+                25 => {
+                    self.current_attrs.slow_blink = false;
+                    self.current_attrs.rapid_blink = false;
+                }
                 27 => self.current_attrs.inverse = false,
+                28 => self.current_attrs.conceal = false,
+                29 => self.current_attrs.strikethrough = false,
                 // Standard 16 colors — foreground.
                 30..=37 => {
-                    self.current_attrs.foreground = Color::Idx(params[i] as u8 - 30);
+                    self.current_attrs.foreground = Color::Idx(code as u8 - 30);
                 }
                 38 => {
-                    if let Some(color) = parse_extended_color(params, &mut i) {
+                    if let Some(color) = parse_sgr_color(param, params, &mut i) {
                         self.current_attrs.foreground = color;
                     }
                 }
                 39 => self.current_attrs.foreground = Color::Default,
                 // Standard 16 colors — background.
                 40..=47 => {
-                    self.current_attrs.background = Color::Idx(params[i] as u8 - 40);
+                    self.current_attrs.background = Color::Idx(code as u8 - 40);
                 }
                 48 => {
-                    if let Some(color) = parse_extended_color(params, &mut i) {
+                    if let Some(color) = parse_sgr_color(param, params, &mut i) {
                         self.current_attrs.background = color;
                     }
                 }
                 49 => self.current_attrs.background = Color::Default,
+                53 => self.current_attrs.overline = true,
+                55 => self.current_attrs.overline = false,
+                58 => {
+                    if let Some(color) = parse_sgr_color(param, params, &mut i) {
+                        self.current_attrs.underline_color = color;
+                    }
+                }
+                59 => self.current_attrs.underline_color = Color::Default,
                 // Bright foreground (90-97).
                 90..=97 => {
-                    self.current_attrs.foreground = Color::Idx(params[i] as u8 - 90 + 8);
+                    self.current_attrs.foreground = Color::Idx(code as u8 - 90 + 8);
                 }
                 // Bright background (100-107).
                 100..=107 => {
-                    self.current_attrs.background = Color::Idx(params[i] as u8 - 100 + 8);
+                    self.current_attrs.background = Color::Idx(code as u8 - 100 + 8);
                 }
                 _ => {}
             }
@@ -1592,22 +1625,66 @@ fn reconstruct_csi(params: &vte::Params, intermediates: &[u8], final_byte: u8) -
 }
 
 /// Parse extended color from SGR params starting at `i`.
-/// Advances `i` past the color params consumed. Returns `None` for unknown.
-fn parse_extended_color(params: &[u16], i: &mut usize) -> Option<Color> {
-    match params.get(*i + 1).copied() {
-        Some(2) => {
-            // 38;2;r;g;b
-            let r = params.get(*i + 2).copied().unwrap_or(0) as u8;
-            let g = params.get(*i + 3).copied().unwrap_or(0) as u8;
-            let b = params.get(*i + 4).copied().unwrap_or(0) as u8;
-            *i += 4;
-            Some(Color::Rgb(r, g, b))
+fn underline_style_from_sgr(style: u16) -> UnderlineStyle {
+    match style {
+        0 => UnderlineStyle::None,
+        1 => UnderlineStyle::Single,
+        2 => UnderlineStyle::Double,
+        3 => UnderlineStyle::Curly,
+        4 => UnderlineStyle::Dotted,
+        5 => UnderlineStyle::Dashed,
+        _ => UnderlineStyle::Single,
+    }
+}
+
+/// Parse extended color from either colon subparameters (`38:2:r:g:b`) or
+/// semicolon parameters (`38;2;r;g;b`). Advances `i` for semicolon forms.
+fn parse_sgr_color(current: &[u16], params: &[Vec<u16>], i: &mut usize) -> Option<Color> {
+    if current.len() > 1 {
+        return parse_sgr_color_values(&current[1..]);
+    }
+    if *i + 1 >= params.len() {
+        return None;
+    }
+    let mode = params[*i + 1].first().copied().unwrap_or(0);
+    match mode {
+        5 => {
+            if *i + 2 < params.len() {
+                let idx = params[*i + 2].first().copied().unwrap_or(0).min(255) as u8;
+                *i += 2;
+                Some(Color::Idx(idx))
+            } else {
+                None
+            }
         }
-        Some(5) => {
-            // 38;5;n
-            let n = params.get(*i + 2).copied().unwrap_or(0) as u8;
-            *i += 2;
-            Some(Color::Idx(n))
+        2 => {
+            if *i + 4 < params.len() {
+                let r = params[*i + 2].first().copied().unwrap_or(0).min(255) as u8;
+                let g = params[*i + 3].first().copied().unwrap_or(0).min(255) as u8;
+                let b = params[*i + 4].first().copied().unwrap_or(0).min(255) as u8;
+                *i += 4;
+                Some(Color::Rgb(r, g, b))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn parse_sgr_color_values(values: &[u16]) -> Option<Color> {
+    match values.first().copied()? {
+        5 => values.get(1).map(|idx| Color::Idx((*idx).min(255) as u8)),
+        2 => {
+            let start = if values.len() >= 5 && values[1] == 0 {
+                2
+            } else {
+                1
+            };
+            let r = values.get(start).copied()?.min(255) as u8;
+            let g = values.get(start + 1).copied()?.min(255) as u8;
+            let b = values.get(start + 2).copied()?.min(255) as u8;
+            Some(Color::Rgb(r, g, b))
         }
         _ => None,
     }

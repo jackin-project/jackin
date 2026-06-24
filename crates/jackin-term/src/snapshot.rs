@@ -15,7 +15,7 @@
 use std::collections::vec_deque;
 
 use crate::{
-    cell::{Attrs, Cell, Color},
+    cell::{Attrs, Cell, Color, UnderlineStyle},
     damage::{DirtySpan, DirtySpans},
     grid::{RowStore, RowWrap},
 };
@@ -41,10 +41,24 @@ pub struct SnapCell {
     pub italic: bool,
     /// Underline.
     pub underline: bool,
+    /// Underline style.
+    pub underline_style: UnderlineStyle,
+    /// Underline color.
+    pub underline_color: Color,
     /// Reverse video.
     pub inverse: bool,
     /// Dim / faint.
     pub dim: bool,
+    /// Strikethrough.
+    pub strikethrough: bool,
+    /// Slow blink.
+    pub slow_blink: bool,
+    /// Rapid blink.
+    pub rapid_blink: bool,
+    /// Conceal / hidden.
+    pub conceal: bool,
+    /// Overline.
+    pub overline: bool,
 }
 
 impl SnapCell {
@@ -64,8 +78,15 @@ impl SnapCell {
             && !self.bold
             && !self.italic
             && !self.underline
+            && self.underline_style == UnderlineStyle::None
+            && self.underline_color == Color::Default
             && !self.inverse
             && !self.dim
+            && !self.strikethrough
+            && !self.slow_blink
+            && !self.rapid_blink
+            && !self.conceal
+            && !self.overline
     }
 }
 
@@ -80,8 +101,15 @@ impl From<&Cell> for SnapCell {
             bold: cell.bold(),
             italic: cell.italic(),
             underline: cell.underline(),
+            underline_style: cell.attrs.underline_style,
+            underline_color: cell.attrs.underline_color,
             inverse: cell.inverse(),
             dim: cell.dim(),
+            strikethrough: cell.strikethrough(),
+            slow_blink: cell.slow_blink(),
+            rapid_blink: cell.rapid_blink(),
+            conceal: cell.conceal(),
+            overline: cell.overline(),
         }
     }
 }
@@ -415,16 +443,40 @@ impl GridSnapshot {
 }
 
 /// Attrs snapshot helper — matches the `Attrs` struct coupling surface.
-impl From<&Attrs> for (Color, Color, bool, bool, bool, bool, bool) {
+impl From<&Attrs>
+    for (
+        Color,
+        Color,
+        Color,
+        UnderlineStyle,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+    )
+{
     fn from(a: &Attrs) -> Self {
         (
             a.foreground,
             a.background,
+            a.underline_color,
+            a.underline_style,
             a.bold,
             a.italic,
-            a.underline,
+            a.underline_style != UnderlineStyle::None,
             a.inverse,
             a.dim,
+            a.strikethrough,
+            a.slow_blink,
+            a.rapid_blink,
+            a.conceal,
+            a.overline,
         )
     }
 }
