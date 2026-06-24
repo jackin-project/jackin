@@ -289,10 +289,7 @@ impl Multiplexer {
                 self.invalidate_for(&Action::Detach);
             }
             Action::RefreshUsage => {
-                let view = self.focused_usage_snapshot(true);
-                if let Some(dialog) = self.dialog_top_mut() {
-                    *dialog = Dialog::new_usage(view);
-                }
+                self.request_usage_refresh_for_provider(None);
                 self.invalidate_for(&Action::RefreshUsage);
             }
             Action::Palette(cmd) => self.handle_palette_command(cmd),
