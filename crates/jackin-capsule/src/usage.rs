@@ -2540,8 +2540,11 @@ impl GrokBillingSnapshot {
 
 impl GrokWebBillingSnapshot {
     fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+        let label = self.reset_at_epoch.map_or("Credits", |reset_at| {
+            grok_cycle_label_from_reset(reset_at, now)
+        });
         vec![bucket(
-            "Weekly",
+            label,
             None,
             None,
             Some(100u8.saturating_sub(self.used_percent.round() as u8)),
@@ -2557,6 +2560,10 @@ impl GrokBillingResponse {
     fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
         if let Some(limit) = self.monthly_limit.as_ref().and_then(|amount| amount.val) {
+            let reset_at = self.billing_period_end_epoch();
+            let label = self
+                .billing_period_minutes()
+                .map_or("Credits", grok_cycle_label_from_minutes);
             let total_used = self
                 .usage
                 .as_ref()
@@ -2569,15 +2576,12 @@ impl GrokBillingResponse {
                 None
             };
             buckets.push(bucket(
-                "Credits",
+                label,
                 Some(format_cents(total_used)),
                 Some(format_cents(limit)),
                 used_percent.map(|used| 100u8.saturating_sub(used.round() as u8)),
-                self.billing_period_end_epoch()
-                    .map(|reset_at| reset_label(reset_at, now)),
-                self.billing_period_minutes()
-                    .and_then(window_minutes_label)
-                    .as_deref(),
+                reset_at.map(|reset_at| reset_label(reset_at, now)),
+                None,
                 UsageSnapshotStatus::Fresh,
             ));
         }
@@ -2627,6 +2631,28 @@ impl GrokBillingResponse {
         let start = parse_iso_epoch(cycle.billing_period_start.as_deref()?)?;
         let end = parse_iso_epoch(cycle.billing_period_end.as_deref()?)?;
         (end > start).then_some((end - start) / 60)
+    }
+}
+
+fn grok_cycle_label_from_minutes(minutes: i64) -> &'static str {
+    let days = minutes / (24 * 60);
+    if (6..=8).contains(&days) {
+        "Weekly"
+    } else if (28..=31).contains(&days) {
+        "Monthly"
+    } else {
+        "Credits"
+    }
+}
+
+fn grok_cycle_label_from_reset(reset_at: i64, now: i64) -> &'static str {
+    let days = reset_at.saturating_sub(now) / 86_400;
+    if days <= 8 {
+        "Weekly"
+    } else if days <= 35 {
+        "Monthly"
+    } else {
+        "Credits"
     }
 }
 
@@ -5300,7 +5326,7 @@ mod tests {
 
         let buckets = usage.buckets(1_780_315_200);
 
-        assert_eq!(buckets[0].label, "Credits");
+        assert_eq!(buckets[0].label, "Monthly");
         assert_eq!(buckets[0].used_label.as_deref(), Some("$18"));
         assert_eq!(buckets[0].limit_label.as_deref(), Some("$50"));
         assert_eq!(buckets[0].remaining_percent, Some(64));
@@ -5314,7 +5340,7 @@ mod tests {
                 .as_str()
             )
         );
-        assert_eq!(buckets[0].pace_label.as_deref(), Some("30 days window"));
+        assert_eq!(buckets[0].pace_label, None);
         assert!(buckets.iter().any(|bucket| bucket.label == "Included usage"
             && bucket.used_label.as_deref() == Some("$15")));
         assert!(
@@ -5395,7 +5421,7 @@ mod tests {
         assert_eq!(view.source, UsageSource::Cli);
         assert_eq!(view.confidence, UsageConfidence::Authoritative);
         assert_eq!(view.account.account_label, "needs Grok login");
-        assert_eq!(view.buckets[0].label, "Credits");
+        assert_eq!(view.buckets[0].label, "Monthly");
         assert_eq!(view.buckets[0].remaining_percent, Some(80));
         assert_eq!(view.last_error, None);
     }
@@ -5428,6 +5454,13 @@ mod tests {
                 .as_str()
             )
         );
+    }
+
+    #[test]
+    fn grok_cycle_label_falls_back_to_credits_for_irregular_cycles() {
+        assert_eq!(grok_cycle_label_from_minutes(7 * 24 * 60), "Weekly");
+        assert_eq!(grok_cycle_label_from_minutes(30 * 24 * 60), "Monthly");
+        assert_eq!(grok_cycle_label_from_minutes(13 * 24 * 60), "Credits");
     }
 
     #[test]
