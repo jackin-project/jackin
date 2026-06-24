@@ -128,19 +128,18 @@ impl UsageCache {
         focused_provider: Option<&str>,
     ) -> Option<String> {
         let agent = focused_agent?;
-        let now = now_epoch();
+        if let Some(view) = self.cached_focused_usage_view(agent, focused_provider) {
+            return Some(view.status_bar_label);
+        }
         if let Ok(Some(view)) = crate::telemetry_store::focused_usage_view(
             &self.telemetry_store_path,
             Some(agent),
             focused_provider,
-            now,
+            now_epoch(),
         ) {
             return Some(view.status_bar_label);
         }
-        let cache_key = canonical_usage_cache_key(agent, focused_provider);
-        self.snapshots
-            .get(&cache_key)
-            .map(|cached| cached.view.status_bar_label.clone())
+        None
     }
 
     pub(crate) fn focused_snapshot(
@@ -158,6 +157,9 @@ impl UsageCache {
         };
         if !force_refresh {
             let now = now_epoch();
+            if let Some(view) = self.cached_focused_usage_view(agent, focused_provider) {
+                return view;
+            }
             return match crate::telemetry_store::focused_usage_view(
                 &self.telemetry_store_path,
                 Some(agent),
@@ -213,6 +215,24 @@ impl UsageCache {
             return stored;
         }
         view
+    }
+
+    fn cached_focused_usage_view(
+        &self,
+        agent: &str,
+        focused_provider: Option<&str>,
+    ) -> Option<FocusedUsageView> {
+        let cache_key = canonical_usage_cache_key(agent, focused_provider);
+        let mut view = self.snapshots.get(&cache_key)?.view.clone();
+        if view.focused_agent.is_none() {
+            view.focused_agent = Some(agent.to_owned());
+        }
+        if view.focused_provider.is_none() {
+            view.focused_provider = focused_provider.map(str::to_owned);
+        }
+        enrich_provider_tabs(&mut view, &self.snapshots);
+        mark_active_tab(&mut view);
+        Some(view)
     }
 
     pub(crate) fn refresh_active_account_snapshots(
@@ -4857,6 +4877,73 @@ mod tests {
         assert_eq!(claude.account_label, "claude@example.com");
         assert_eq!(claude.plan_label.as_deref(), Some("Max"));
         assert_eq!(claude.status_label, "stale");
+    }
+
+    #[test]
+    fn usage_status_label_prefers_in_memory_cache_before_store() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut cache = UsageCache::default();
+        cache.set_telemetry_store_path(dir.path().join("missing").join("usage.sqlite3"));
+        let view = codex_cached_usage_view();
+        let expected = view.status_bar_label.clone();
+        cache.snapshots.insert(
+            canonical_usage_cache_key("codex", Some("OpenAI")),
+            CachedUsage { view },
+        );
+
+        assert_eq!(
+            cache.focused_status_bar_label(Some("codex"), Some("OpenAI")),
+            Some(expected)
+        );
+    }
+
+    #[test]
+    fn usage_snapshot_prefers_in_memory_cache_before_store() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut cache = UsageCache::default();
+        cache.set_telemetry_store_path(dir.path().join("missing").join("usage.sqlite3"));
+        let view = codex_cached_usage_view();
+        let expected_label = view.status_bar_label.clone();
+        cache.snapshots.insert(
+            canonical_usage_cache_key("codex", Some("OpenAI")),
+            CachedUsage { view },
+        );
+
+        let snapshot =
+            cache.focused_snapshot(Some("codex"), Some("OpenAI"), &BTreeMap::new(), false);
+
+        assert_eq!(snapshot.status_bar_label, expected_label);
+        assert_eq!(snapshot.account.account_label, "codex@example.com");
+        assert!(
+            snapshot
+                .tabs
+                .iter()
+                .any(|tab| tab.label == "Codex" && tab.active)
+        );
+    }
+
+    fn codex_cached_usage_view() -> FocusedUsageView {
+        usage_view(UsageViewInput {
+            agent: "codex",
+            provider: Some("OpenAI"),
+            surface: UsageSurface::Codex,
+            account_label: "codex@example.com".to_owned(),
+            plan_label: Some("Pro 20x".to_owned()),
+            buckets: vec![QuotaBucketView {
+                label: "Session".to_owned(),
+                used_label: Some("63% used".to_owned()),
+                limit_label: Some("100%".to_owned()),
+                remaining_percent: Some(37),
+                reset_label: Some("Resets in 2h".to_owned()),
+                pace_label: None,
+                status: UsageSnapshotStatus::Fresh,
+            }],
+            status: UsageSnapshotStatus::Fresh,
+            source: UsageSource::ProviderApi,
+            confidence: UsageConfidence::Authoritative,
+            now: 123,
+            last_error: None,
+        })
     }
 
     #[test]
