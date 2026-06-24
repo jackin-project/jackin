@@ -21,7 +21,7 @@ jackin load chainargos/agent-brown --agent amp
 
 ## Environment
 
-Versions pinned in `Dockerfile` ARGs (`RUST_VERSION`, `NODE_VERSION`, `JAVA_VERSION`, `PROTOC_VERSION`, `TESSL_VERSION`, `CAVEMAN_VERSION`); bump via `docker build --build-arg <NAME>=<value>`.
+Versions pinned in `Dockerfile` ARGs (`RUST_VERSION`, `NODE_VERSION`, `JAVA_VERSION`, `PROTOC_VERSION`, `CAVEMAN_VERSION`); bump via `docker build --build-arg <NAME>=<value>`.
 
 - **Node.js** (via mise)
 - **Rust** (via mise)
@@ -29,7 +29,6 @@ Versions pinned in `Dockerfile` ARGs (`RUST_VERSION`, `NODE_VERSION`, `JAVA_VERS
 - **Protobuf compiler** (via mise)
 - **GitHub CLI** (`gh`, from the digest-pinned construct base)
 - **Cargo tools:** cargo-nextest, ast-grep, rust-script, just, bottom
-- **Tessl CLI** (pinned)
 - **ctx7** (npm)
 - **Caveman** token-compression hooks + skills (claude + codex + amp profiles, pinned to a tagged release)
 
