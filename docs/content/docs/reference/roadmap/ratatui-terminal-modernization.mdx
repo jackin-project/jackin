@@ -119,6 +119,31 @@ The matrix must cover cursor row/col, cursor visibility, cursor shape, cursor co
 
 Reattach may update only host-adaptive rows.
 
+| State | Owner | Reattach behavior |
+|---|---|---|
+| Display width table, including dakuten/handakuten, VS16, emoji, ZWJ, combining marks, ambiguous width, and final-column wide behavior | profile-stable agent-visible state | Must not change |
+| DSR cursor replies | profile-stable agent-visible state | Must not change |
+| DECRQM mode-2027 answer | profile-stable agent-visible state | Must not change |
+| Agent-visible color model (`TERM=xterm-256color`, `COLORTERM=truecolor`, RGB stored in model) | profile-stable agent-visible state | Must not change |
+| OSC 10/11 reported palette values | host-adaptive attach capability feeding model query replies | May update when attach supplies colors; `None` keeps previous known values |
+| Supported SGR model state | profile-stable agent-visible state | Must not change |
+| Cursor row/col | frame-level reconciled output state | Must not change from attach capability |
+| Cursor visibility | frame-level reconciled output state | Must not change from attach capability |
+| Cursor shape (`DECSCUSR`) | frame-level reconciled output state | Must not change from attach capability |
+| Cursor color (`OSC 12`) | frame-level reconciled output state, pending Phase 5 audit | Must not change from attach capability until modeled |
+| Cursor blink | frame-level reconciled output state, pending Phase 5 audit | Must not change from attach capability until modeled |
+| Mouse mode | boundary-only out-of-band state | Reassert/reset at frame boundary only |
+| Focus reporting | boundary-only out-of-band state | Reassert/reset at frame boundary only |
+| Bracketed paste | boundary-only out-of-band state | Reassert/reset at frame boundary only |
+| Kitty keyboard / `modifyOtherKeys` | boundary-only out-of-band state | Reassert/reset at frame boundary only |
+| OSC 52 clipboard policy | host-adaptive attach capability plus product policy | May vary by host/policy; must not alter PTY grid semantics |
+| Title/CWD OSCs (`OSC 0/1/2/7`) | frame-level or boundary-only output state depending on source | May be reasserted at frame boundary; must not alter model width/DSR |
+| Color depth | host-adaptive attach capability | May change emitted bytes only after downsampling lands |
+| OSC 8 support | host-adaptive attach capability | May change emitted hyperlink bytes only after model metadata lands |
+| `?2026` synchronized output support | host-adaptive attach capability | May change frame bracketing/metrics only; unsupported hosts must not alter model |
+| Underline-style support | host-adaptive attach capability | May change emitted bytes only after SGR metadata lands |
+| Image-protocol support | host-adaptive attach capability | Unsupported for this item except explicit deny/strip policy |
+
 ### 7. Scroll optimization records source `ScrollOp`s only
 
 If scroll-region optimization ships in this item, it must be based on source-recorded scroll operations from `DamageGrid`, not inferred from final Ratatui buffers.
@@ -160,8 +185,8 @@ Keep this checklist as the working ledger during implementation. When a task is 
 - [x] Phase 1: Add soft/hard wrap provenance metadata while changing row geometry, and preserve it through scrollback, resize bookkeeping, and snapshots.
 - [ ] Phase 1: Add independent hard-coded width oracle tests, Ratatui cross-check tests, parser conformance fixtures, dirty-span tests, DSR tests, and echo-back fixtures.
 - [ ] Phase 2: Add backend-side attach-capability records populated from attach handshake data, terminfo where available, safe probes, user overrides, and denylist entries.
-- [ ] Phase 2: Add the terminal-state matrix documentation, classifying profile-stable, host-adaptive, frame-reconciled, and boundary-only out-of-band state.
-- [ ] Phase 2: Add reattach tests proving host-adaptive capability changes never alter profile-stable width, DSR, or agent-visible color semantics.
+- [x] Phase 2: Add the terminal-state matrix documentation, classifying profile-stable, host-adaptive, frame-reconciled, and boundary-only out-of-band state.
+- [x] Phase 2: Add reattach tests proving host-adaptive capability changes never alter profile-stable width, DSR, or agent-visible color semantics.
 - [ ] Phase 3: Inventory every byte writer outside Ratatui cell output and frame-state reconciliation.
 - [ ] Phase 3: Move legacy raw paint into Ratatui rendering or frame operations, leaving only boundary-safe out-of-band writes at frame boundaries.
 - [ ] Phase 3: Remove the sentinel fill/swap path from `compose_ratatui_frame()`.

@@ -120,6 +120,27 @@ pub struct ClientTerminal {
     pub default_bg: Option<(u8, u8, u8)>,
 }
 
+/// Backend-side capabilities for the currently attached terminal.
+///
+/// These are host-adaptive and may change on every attach. They must not
+/// change agent-visible `jackin-term` profile semantics.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AttachCapabilities {
+    pub pointer_shapes: bool,
+    pub truecolor: bool,
+    pub synchronized_output: bool,
+    pub osc8_hyperlinks: bool,
+    pub underline_style: bool,
+    pub image_protocol: ImageProtocolCapability,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ImageProtocolCapability {
+    #[default]
+    Unsupported,
+    Kitty,
+}
+
 impl ClientTerminal {
     pub fn from_env() -> Self {
         Self {
@@ -133,6 +154,11 @@ impl ClientTerminal {
 
     #[must_use]
     pub fn pointer_shapes_supported(&self) -> bool {
+        self.attach_capabilities().pointer_shapes
+    }
+
+    #[must_use]
+    pub fn attach_capabilities(&self) -> AttachCapabilities {
         let term = self.term.as_deref().unwrap_or("").to_ascii_lowercase();
         let term_program = self
             .term_program
@@ -140,18 +166,37 @@ impl ClientTerminal {
             .unwrap_or("")
             .to_ascii_lowercase();
 
-        if (term.is_empty() && term_program.is_empty()) || matches!(term.as_str(), "dumb" | "linux")
-        {
-            return false;
-        }
-        if term_program.contains("warp") {
-            return false;
-        }
+        let known_terminal = !(term.is_empty() && term_program.is_empty())
+            && !matches!(term.as_str(), "dumb" | "linux");
+        let warp = term_program.contains("warp");
+        let ghostty = term.contains("ghostty") || term_program.contains("ghostty");
+        let kitty = term.contains("kitty") || term_program.contains("kitty");
+        let wezterm = term.contains("wezterm") || term_program.contains("wezterm");
+        let iterm = term_program.contains("iterm");
+        let apple_terminal = term_program.contains("apple_terminal");
+        let truecolor = self.colorterm.as_deref().is_some_and(|value| {
+            matches!(value.to_ascii_lowercase().as_str(), "truecolor" | "24bit")
+        });
 
-        !term_program.is_empty()
-            || term.contains("ghostty")
-            || term.contains("kitty")
-            || term.contains("foot")
+        let pointer_shapes = known_terminal
+            && !warp
+            && (!term_program.is_empty()
+                || term.contains("ghostty")
+                || term.contains("kitty")
+                || term.contains("foot"));
+
+        AttachCapabilities {
+            pointer_shapes,
+            truecolor,
+            synchronized_output: known_terminal,
+            osc8_hyperlinks: known_terminal && !matches!(term.as_str(), "linux" | "dumb"),
+            underline_style: ghostty || kitty || wezterm || iterm || apple_terminal,
+            image_protocol: if kitty {
+                ImageProtocolCapability::Kitty
+            } else {
+                ImageProtocolCapability::Unsupported
+            },
+        }
     }
 }
 

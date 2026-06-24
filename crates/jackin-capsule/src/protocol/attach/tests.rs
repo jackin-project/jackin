@@ -498,6 +498,32 @@ fn client_terminal_detects_known_pointer_shape_support() {
 }
 
 #[test]
+fn client_terminal_derives_attach_capabilities() {
+    let kitty = ClientTerminal {
+        term: Some("xterm-kitty".to_owned()),
+        colorterm: Some("truecolor".to_owned()),
+        ..ClientTerminal::default()
+    };
+    let caps = kitty.attach_capabilities();
+    assert!(caps.pointer_shapes);
+    assert!(caps.truecolor);
+    assert!(caps.synchronized_output);
+    assert!(caps.osc8_hyperlinks);
+    assert!(caps.underline_style);
+    assert_eq!(caps.image_protocol, ImageProtocolCapability::Kitty);
+
+    let dumb = ClientTerminal {
+        term: Some("dumb".to_owned()),
+        ..ClientTerminal::default()
+    };
+    let caps = dumb.attach_capabilities();
+    assert!(!caps.pointer_shapes);
+    assert!(!caps.synchronized_output);
+    assert!(!caps.osc8_hyperlinks);
+    assert_eq!(caps.image_protocol, ImageProtocolCapability::Unsupported);
+}
+
+#[test]
 fn hello_env_value_over_cap_rejected_by_encoder() {
     // Encoder gate must reject a single env value larger than
     // MAX_HELLO_ENV_VALUE so a buggy producer cannot smuggle a

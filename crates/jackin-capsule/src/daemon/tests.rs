@@ -4895,6 +4895,55 @@ fn session_terminal_carries_the_attached_client_palette() {
     assert_eq!(terminal.default_bg, Some((4, 5, 6)));
 }
 
+#[test]
+fn reattach_updates_capabilities_without_resetting_model_palette() {
+    let mut mux = single_pane_tab_mux();
+    let (session, mut rx) = test_session(20, 78);
+    mux.sessions.insert(1, session);
+
+    let ghostty = ClientTerminal {
+        term: Some("xterm-ghostty".to_owned()),
+        colorterm: Some("truecolor".to_owned()),
+        default_fg: Some((1, 2, 3)),
+        default_bg: Some((4, 5, 6)),
+        ..ClientTerminal::default()
+    };
+    mux.attached_capabilities = ghostty.attach_capabilities();
+    mux.pointer_shapes_supported = mux.attached_capabilities.pointer_shapes;
+    mux.attached_terminal = ghostty;
+    mux.apply_client_colors_to_sessions();
+
+    let dumb = ClientTerminal {
+        term: Some("dumb".to_owned()),
+        ..ClientTerminal::default()
+    };
+    mux.attached_capabilities = dumb.attach_capabilities();
+    mux.pointer_shapes_supported = mux.attached_capabilities.pointer_shapes;
+    mux.attached_terminal = dumb;
+    mux.apply_client_colors_to_sessions();
+
+    assert!(!mux.attached_capabilities.pointer_shapes);
+    assert!(!mux.pointer_shapes_supported);
+
+    let session = mux.sessions.get_mut(&1).expect("session");
+    session.feed_pty(b"\x1b]10;?\x07\x1b]11;?\x07\x1b[6n");
+    drop(session.drain_passthrough());
+    let replies = vec![
+        rx.try_recv().expect("OSC 10 reply"),
+        rx.try_recv().expect("OSC 11 reply"),
+        rx.try_recv().expect("DSR reply"),
+    ];
+    assert_eq!(
+        replies,
+        [
+            b"\x1b]10;rgb:0101/0202/0303\x07".to_vec(),
+            b"\x1b]11;rgb:0404/0505/0606\x07".to_vec(),
+            b"\x1b[1;1R".to_vec(),
+        ],
+        "reattach without colors must not reset model palette or DSR semantics"
+    );
+}
+
 // Echo-back conformance harness — the I1 (screen == model) enforcer.
 //
 // Replays PTY bytes through the multiplexer, feeds every composed frame into
