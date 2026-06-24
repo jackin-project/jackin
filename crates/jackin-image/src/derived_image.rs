@@ -194,6 +194,18 @@ fn render_runtime_home_writable_commands(source_hook_declared: bool) -> String {
     // Runtime containers run as the host UID/GID while NSS maps that UID to
     // `agent`. They also keep supplementary group 0, so mutable image-baked
     // home paths have to be writable via group 0, not only by UID 1000.
+    let mutable_home_dirs = [
+        "/home/agent",
+        "/home/agent/.cache",
+        "/home/agent/.config",
+        "/home/agent/.config/git",
+        "/home/agent/.config/fish",
+        "/home/agent/.local",
+        "/home/agent/.local/bin",
+        "/home/agent/.local/share",
+        "/home/agent/.local/state",
+    ]
+    .join(" ");
     let mut mutable_shell_files = vec!["/home/agent/.zshrc"];
     if source_hook_declared {
         mutable_shell_files.push("/home/agent/.zshenv");
@@ -201,7 +213,7 @@ fn render_runtime_home_writable_commands(source_hook_declared: bool) -> String {
     mutable_shell_files.push("/home/agent/.config/fish/config.fish");
     let mutable_shell_files = mutable_shell_files.join(" ");
     format!(
-        "install -d -o agent -g 0 -m 0775 /home/agent /home/agent/.config /home/agent/.config/git /home/agent/.config/fish \\\n    && touch /home/agent/.gitconfig /home/agent/.config/git/config \\\n    && chown agent:0 /home/agent/.gitconfig /home/agent/.config/git/config \\\n    && chmod 0664 /home/agent/.gitconfig /home/agent/.config/git/config \\\n    && for path in {mutable_shell_files}; do \\\n        if [ -e \"$path\" ]; then chown agent:0 \"$path\" && chmod 0664 \"$path\"; fi; \\\n    done"
+        "install -d -o agent -g 0 -m 0775 {mutable_home_dirs} \\\n    && touch /home/agent/.gitconfig /home/agent/.config/git/config \\\n    && chown agent:0 /home/agent/.gitconfig /home/agent/.config/git/config \\\n    && chmod 0664 /home/agent/.gitconfig /home/agent/.config/git/config \\\n    && for path in {mutable_shell_files}; do \\\n        if [ -e \"$path\" ]; then chown agent:0 \"$path\" && chmod 0664 \"$path\"; fi; \\\n    done \\\n    && bad=\"$(find {mutable_home_dirs} -maxdepth 0 -type d ! -perm -0020 -print -quit)\" \\\n    && if [ -n \"$bad\" ]; then \\\n        echo \"jackin runtime home contains a non-group-writable mutable dir: $bad\" >&2; \\\n        exit 1; \\\n    fi"
     )
 }
 

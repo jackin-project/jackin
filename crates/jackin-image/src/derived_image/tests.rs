@@ -120,9 +120,9 @@ fn renders_runtime_finalization_in_one_layer() {
     );
     assert!(
         dockerfile.contains(
-            "RUN install -d -o agent -g 0 -m 0775 /home/agent /home/agent/.config /home/agent/.config/git /home/agent/.config/fish"
+            "RUN install -d -o agent -g 0 -m 0775 /home/agent /home/agent/.cache /home/agent/.config /home/agent/.config/git /home/agent/.config/fish /home/agent/.local /home/agent/.local/bin /home/agent/.local/share /home/agent/.local/state"
         ),
-        "runtime home config parents must be writable by supplementary group 0: {dockerfile}"
+        "runtime home mutable roots must be writable by supplementary group 0: {dockerfile}"
     );
     assert!(
         dockerfile.contains("touch /home/agent/.gitconfig /home/agent/.config/git/config"),
@@ -135,6 +135,10 @@ fn renders_runtime_finalization_in_one_layer() {
     assert!(
         dockerfile.contains("for path in /home/agent/.zshrc /home/agent/.config/fish/config.fish"),
         "runtime shell config files must be repaired after finalization: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("jackin runtime home contains a non-group-writable mutable dir: $bad"),
+        "runtime mutable home dirs should be guarded after permission repair: {dockerfile}"
     );
     let finalization_pos = dockerfile
         .find("cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc")
