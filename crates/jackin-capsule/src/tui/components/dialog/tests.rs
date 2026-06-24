@@ -986,14 +986,19 @@ fn anthropic_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView 
         Some("Max"),
         "Updated 2m ago",
         vec![
-            quota_bucket("Session", 89, Some("Resets 19:19"), Some("34% in reserve")),
+            quota_bucket(
+                "Session",
+                89,
+                Some("Resets in 2h 12m (Jun 17, 19:19)"),
+                Some("34% in reserve"),
+            ),
             quota_bucket(
                 "Weekly",
                 55,
-                Some("Resets Jun 26 at 13:59"),
+                Some("Resets in 1w 1d (Jun 26, 13:59)"),
                 Some("28% in reserve"),
             ),
-            quota_bucket("Sonnet", 85, Some("Resets Jun 26 at 13:59"), None),
+            quota_bucket("Sonnet", 85, Some("Resets in 1w 1d (Jun 26, 13:59)"), None),
             quota_bucket("Daily Routines", 100, None, None),
         ],
     )

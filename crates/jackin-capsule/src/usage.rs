@@ -1909,7 +1909,7 @@ fn push_claude_window(
 fn claude_window_seconds(label: &str) -> Option<i64> {
     match label {
         "Session" => Some(5 * 60 * 60),
-        "Weekly" | "Sonnet" | "Daily Routines" => Some(7 * 24 * 60 * 60),
+        "Weekly" => Some(7 * 24 * 60 * 60),
         _ => None,
     }
 }
@@ -5203,9 +5203,15 @@ mod tests {
         assert_eq!(buckets[1].label, "Weekly");
         assert_eq!(buckets[1].remaining_percent, Some(22));
         assert!(buckets.iter().any(|bucket| bucket.label == "Sonnet"));
-        assert!(buckets.iter().any(
-            |bucket| bucket.label == "Daily Routines" && bucket.remaining_percent == Some(100)
-        ));
+        assert!(
+            buckets
+                .iter()
+                .find(|bucket| bucket.label == "Sonnet")
+                .is_some_and(|bucket| bucket.pace_label.is_none())
+        );
+        assert!(buckets.iter().any(|bucket| bucket.label == "Daily Routines"
+            && bucket.remaining_percent == Some(100)
+            && bucket.pace_label.is_none()));
         let extra = buckets
             .iter()
             .find(|bucket| bucket.label == "Extra usage")
