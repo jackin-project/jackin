@@ -26,6 +26,8 @@ const PROVIDER_CLI_TIMEOUT: Duration = Duration::from_secs(10);
 const CODEX_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 const CODEX_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 const CODEX_RPC_LAUNCH_COOLDOWN: Duration = Duration::from_mins(30);
+const CLAUDE_VERSION_TIMEOUT: Duration = Duration::from_secs(2);
+const CLAUDE_CODE_USER_AGENT_FALLBACK: &str = "claude-code/2.1.0";
 const GROK_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 const GROK_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
 const MATERIALIZED_USAGE_ACCOUNTS_PATH: &str = "/jackin/run/usage/accounts.json";
@@ -1422,6 +1424,8 @@ fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> 
     let subscription_type = oauth
         .get("subscriptionType")
         .or_else(|| oauth.get("subscription_type"))
+        .or_else(|| oauth.get("rateLimitTier"))
+        .or_else(|| oauth.get("rate_limit_tier"))
         .and_then(serde_json::Value::as_str)
         .map(humanize_plan_label);
     Some(ClaudeOAuthCredentials {
@@ -1434,12 +1438,17 @@ fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> 
 struct ClaudeOAuthUsageResponse {
     #[serde(rename = "five_hour")]
     five_hour: Option<ClaudeOAuthUsageWindow>,
+    #[serde(alias = "seven_day_oauth_apps")]
     #[serde(rename = "seven_day")]
     seven_day: Option<ClaudeOAuthUsageWindow>,
     #[serde(rename = "seven_day_sonnet")]
     seven_day_sonnet: Option<ClaudeOAuthUsageWindow>,
     #[serde(rename = "seven_day_opus")]
     seven_day_opus: Option<ClaudeOAuthUsageWindow>,
+    #[serde(alias = "seven_day_claude_routines")]
+    #[serde(alias = "claude_routines")]
+    #[serde(alias = "routines")]
+    #[serde(alias = "seven_day_cowork")]
     #[serde(rename = "seven_day_routines")]
     seven_day_routines: Option<ClaudeOAuthUsageWindow>,
     #[serde(rename = "extra_usage")]
@@ -1532,6 +1541,7 @@ fn claude_window_seconds(label: &str) -> Option<i64> {
 
 fn fetch_claude_oauth_usage(access_token: &str) -> Result<ClaudeOAuthUsageResponse, String> {
     let client = provider_http_client()?;
+    let user_agent = claude_code_user_agent();
     let response = client
         .get("https://api.anthropic.com/api/oauth/usage")
         .bearer_auth(access_token)
@@ -1539,8 +1549,8 @@ fn fetch_claude_oauth_usage(access_token: &str) -> Result<ClaudeOAuthUsageRespon
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .header("anthropic-beta", "oauth-2025-04-20")
         // The OAuth usage endpoint is gated to the Claude Code client UA;
-        // a generic UA is rejected. Verified on-host: claude-code/2.1.0 -> 200.
-        .header(reqwest::header::USER_AGENT, "claude-code/2.1.0")
+        // a generic UA is rejected.
+        .header(reqwest::header::USER_AGENT, user_agent)
         .send()
         .map_err(|err| format!("Claude OAuth usage request failed: {err}"))?;
     let status = response.status();
@@ -1550,6 +1560,40 @@ fn fetch_claude_oauth_usage(access_token: &str) -> Result<ClaudeOAuthUsageRespon
     response
         .json()
         .map_err(|err| format!("Claude OAuth usage decode failed: {err}"))
+}
+
+fn claude_code_user_agent() -> String {
+    claude_code_user_agent_with(|command, args, timeout| {
+        run_cli_with_timeout_full(command, args, timeout)
+    })
+    .unwrap_or_else(|| CLAUDE_CODE_USER_AGENT_FALLBACK.to_owned())
+}
+
+fn claude_code_user_agent_with<F>(mut runner: F) -> Option<String>
+where
+    F: FnMut(&str, &[&str], Duration) -> Result<CliOutput, String>,
+{
+    let output = runner("claude", &["--version"], CLAUDE_VERSION_TIMEOUT).ok()?;
+    if !output.success {
+        return None;
+    }
+    let text = format!("{}\n{}", output.stdout, output.stderr);
+    claude_code_version_from_text(&text).map(|version| format!("claude-code/{version}"))
+}
+
+fn claude_code_version_from_text(text: &str) -> Option<String> {
+    text.split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '.' || ch == '-'))
+        .find(|part| {
+            let mut segments = part.split('.');
+            matches!(
+                (segments.next(), segments.next(), segments.next()),
+                (Some(major), Some(minor), Some(patch))
+                    if major.chars().all(|ch| ch.is_ascii_digit())
+                        && minor.chars().all(|ch| ch.is_ascii_digit())
+                        && patch.chars().all(|ch| ch.is_ascii_digit())
+            )
+        })
+        .map(str::to_owned)
 }
 
 #[derive(Debug, Clone)]
@@ -3866,6 +3910,9 @@ mod tests {
         assert_eq!(buckets[1].label, "Weekly");
         assert_eq!(buckets[1].remaining_percent, Some(22));
         assert!(buckets.iter().any(|bucket| bucket.label == "Sonnet"));
+        assert!(buckets.iter().any(
+            |bucket| bucket.label == "Daily Routines" && bucket.remaining_percent == Some(100)
+        ));
         let extra = buckets
             .iter()
             .find(|bucket| bucket.label == "Extra usage")
@@ -3873,6 +3920,30 @@ mod tests {
         assert_eq!(extra.remaining_percent, Some(70));
         assert_eq!(extra.used_label.as_deref(), Some("SGD 78.49"));
         assert_eq!(extra.limit_label.as_deref(), Some("SGD 260.00"));
+    }
+
+    #[test]
+    fn claude_oauth_response_accepts_window_aliases() {
+        let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+            "five_hour": { "utilization": 0.10 },
+            "seven_day_oauth_apps": { "utilization": 0.45 },
+            "seven_day_cowork": { "utilization": 0.25 }
+        }))
+        .expect("valid Claude OAuth usage aliases");
+
+        let buckets = usage.into_buckets(1_781_185_560);
+
+        assert!(
+            buckets
+                .iter()
+                .any(|bucket| bucket.label == "Weekly" && bucket.remaining_percent == Some(55))
+        );
+        assert!(
+            buckets
+                .iter()
+                .any(|bucket| bucket.label == "Daily Routines"
+                    && bucket.remaining_percent == Some(75))
+        );
     }
 
     #[test]
@@ -4177,6 +4248,51 @@ mod tests {
 
         assert_eq!(credentials.access_token, "access");
         assert_eq!(credentials.subscription_type.as_deref(), Some("Claude Max"));
+    }
+
+    #[test]
+    fn claude_oauth_credentials_fall_back_to_rate_limit_tier() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("claude.json");
+        fs::write(
+            &path,
+            serde_json::json!({
+                "claudeAiOauth": {
+                    "accessToken": "access",
+                    "rateLimitTier": "max"
+                }
+            })
+            .to_string(),
+        )
+        .expect("write auth");
+
+        let credentials = load_claude_oauth_credentials(&path).expect("credentials");
+
+        assert_eq!(credentials.access_token, "access");
+        assert_eq!(credentials.subscription_type.as_deref(), Some("Max"));
+    }
+
+    #[test]
+    fn claude_code_user_agent_parses_cli_version() {
+        assert_eq!(
+            claude_code_version_from_text("Claude Code 2.1.7\n").as_deref(),
+            Some("2.1.7")
+        );
+        assert_eq!(
+            claude_code_user_agent_with(|command, args, timeout| {
+                assert_eq!(command, "claude");
+                assert_eq!(args, ["--version"]);
+                assert_eq!(timeout, CLAUDE_VERSION_TIMEOUT);
+                Ok(CliOutput {
+                    success: true,
+                    exit_code: Some(0),
+                    stdout: "Claude Code 2.2.0".to_owned(),
+                    stderr: String::new(),
+                })
+            })
+            .as_deref(),
+            Some("claude-code/2.2.0")
+        );
     }
 
     #[test]
