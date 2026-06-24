@@ -418,10 +418,19 @@ fn render_usage_info(
     if inner.height == 0 {
         return;
     }
+    let strip_width = usage_tab_strip_width(tabs)
+        .saturating_sub(usize::from(jackin_tui::TAB_GAP))
+        .min(usize::from(inner.width));
+    let strip_offset = usize::from(inner.width).saturating_sub(strip_width) / 2;
     let tab_area = Rect {
-        x: inner.x,
+        x: inner
+            .x
+            .saturating_add(u16::try_from(strip_offset).unwrap_or(u16::MAX)),
         y: inner.y,
-        width: inner.width,
+        width: u16::try_from(strip_width)
+            .unwrap_or(inner.width)
+            .max(1)
+            .min(inner.width),
         height: inner.height.min(2),
     };
     let tab_refs = tabs
@@ -557,6 +566,28 @@ struct UsageLineContext<'a> {
     width: usize,
 }
 
+const USAGE_CONTENT_PAD_LEFT: usize = 2;
+const USAGE_CONTENT_PAD_RIGHT: usize = 2;
+const USAGE_METER_FILLED: char = '█';
+const USAGE_METER_EMPTY: char = '░';
+
+fn usage_content_width(width: usize) -> usize {
+    if width == 0 {
+        return 0;
+    }
+    width
+        .saturating_sub(USAGE_CONTENT_PAD_LEFT + USAGE_CONTENT_PAD_RIGHT)
+        .max(1)
+}
+
+fn usage_content_indent() -> Span<'static> {
+    Span::raw(" ".repeat(USAGE_CONTENT_PAD_LEFT))
+}
+
+fn usage_meter_char(ch: char) -> bool {
+    matches!(ch, USAGE_METER_FILLED | USAGE_METER_EMPTY | '·')
+}
+
 fn usage_row_value<'a>(
     state: &'a jackin_tui::components::ContainerInfoState,
     label: &str,
@@ -594,7 +625,7 @@ fn usage_lines_for_row(
         }
         "Focused agent" | "Focused account" => {
             lines.push(Line::from(vec![
-                Span::raw("  "),
+                usage_content_indent(),
                 Span::styled(
                     value.to_owned(),
                     Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
@@ -644,7 +675,7 @@ fn usage_legacy_overview_provider_lines(label: &str, value: &str, lines: &mut Ve
     let plan = parts[1];
     let status = parts[2];
     lines.push(Line::from(vec![
-        Span::raw("  "),
+        usage_content_indent(),
         Span::styled(
             label.to_owned(),
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
@@ -655,7 +686,7 @@ fn usage_legacy_overview_provider_lines(label: &str, value: &str, lines: &mut Ve
         Span::styled(plan.to_owned(), DIM),
     ]));
     lines.push(Line::from(vec![
-        Span::raw("    "),
+        Span::raw(" ".repeat(USAGE_CONTENT_PAD_LEFT + 2)),
         Span::styled(status.to_owned(), DIM),
     ]));
 }
@@ -721,14 +752,16 @@ fn usage_header_two_column(
     right_style: Style,
     width: usize,
 ) -> Line<'static> {
-    const INDENT: usize = 2;
     let left_cols = jackin_tui::display_cols(left);
     let right_cols = jackin_tui::display_cols(right);
     let gap = width
-        .checked_sub(INDENT + left_cols + right_cols)
+        .checked_sub(USAGE_CONTENT_PAD_LEFT + USAGE_CONTENT_PAD_RIGHT + left_cols + right_cols)
         .filter(|gap| *gap >= 1)
         .unwrap_or(3);
-    let mut spans = vec![Span::raw("  "), Span::styled(left.to_owned(), left_style)];
+    let mut spans = vec![
+        usage_content_indent(),
+        Span::styled(left.to_owned(), left_style),
+    ];
     if !right.is_empty() {
         spans.push(Span::raw(" ".repeat(gap)));
         spans.push(Span::styled(right.to_owned(), right_style));
@@ -754,7 +787,7 @@ fn usage_quota_bucket_lines(
         push_usage_section_gap(lines);
     }
     lines.push(Line::from(vec![
-        Span::raw("  "),
+        usage_content_indent(),
         Span::styled(
             display_label,
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
@@ -779,7 +812,7 @@ fn usage_quota_bucket_lines(
 
     let meter = usage_full_width_meter(meter, width);
     lines.push(Line::from(vec![
-        Span::raw("  "),
+        usage_content_indent(),
         Span::styled(meter, Style::default().fg(PHOSPHOR_GREEN)),
     ]));
 
@@ -872,8 +905,8 @@ fn push_usage_separator(lines: &mut Vec<Line<'static>>, width: usize) {
 }
 
 fn usage_separator_line(width: usize) -> Line<'static> {
-    let target = width.saturating_sub(2).max(1);
-    Line::from(vec![Span::raw("  "), Span::styled("─".repeat(target), DIM)])
+    let target = width.max(1);
+    Line::from(vec![Span::styled("─".repeat(target), DIM)])
 }
 
 fn usage_line_is_blank(line: &Line<'_>) -> bool {
@@ -893,11 +926,11 @@ fn usage_line_is_separator(line: &Line<'_>) -> bool {
 }
 
 fn usage_full_width_meter(meter: &str, width: usize) -> String {
-    let target = width.saturating_sub(2).max(1);
-    let filled = meter.chars().filter(|ch| *ch == '█').count();
+    let target = usage_content_width(width).max(1);
+    let filled = meter.chars().filter(|ch| *ch == USAGE_METER_FILLED).count();
     let total = meter
         .chars()
-        .filter(|ch| matches!(*ch, '█' | '·'))
+        .filter(|ch| usage_meter_char(*ch))
         .count()
         .max(1);
     let filled_cols = if filled >= total {
@@ -908,8 +941,10 @@ fn usage_full_width_meter(meter: &str, width: usize) -> String {
     let filled_cols = filled_cols.min(target);
     format!(
         "{}{}",
-        "█".repeat(filled_cols),
-        "·".repeat(target.saturating_sub(filled_cols))
+        USAGE_METER_FILLED.to_string().repeat(filled_cols),
+        USAGE_METER_EMPTY
+            .to_string()
+            .repeat(target.saturating_sub(filled_cols))
     )
 }
 
@@ -976,7 +1011,7 @@ fn usage_quota_bucket_compact_lines(
     };
     let detail = compact_bucket_detail_for_width(label, &detail, width);
     lines.push(Line::from(vec![
-        Span::raw("  "),
+        usage_content_indent(),
         Span::styled(
             label.to_owned(),
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
@@ -1051,7 +1086,7 @@ fn usage_extra_usage_details(details: Vec<String>) -> Vec<String> {
 fn usage_meter_parts(value: &str) -> (&str, Option<&str>) {
     value
         .split_once(' ')
-        .filter(|(meter, _)| meter.chars().all(|ch| matches!(ch, '█' | '·')))
+        .filter(|(meter, _)| meter.chars().all(usage_meter_char))
         .map_or((value, None), |(meter, label)| (meter, Some(label)))
 }
 
@@ -1084,7 +1119,7 @@ fn is_known_quota_bucket(label: &str) -> bool {
 fn quota_value_has_meter(value: &str) -> bool {
     value
         .split_once(' ')
-        .is_some_and(|(meter, _)| meter.chars().all(|ch| matches!(ch, '█' | '·')))
+        .is_some_and(|(meter, _)| meter.chars().all(usage_meter_char))
 }
 
 fn render_filter_picker(
@@ -1224,13 +1259,13 @@ mod tests {
             .iter()
             .find(|line| {
                 let trimmed = line.trim();
-                !trimmed.is_empty() && trimmed.chars().all(|ch| matches!(ch, '█' | '·'))
+                !trimmed.is_empty() && trimmed.chars().all(|ch| matches!(ch, '█' | '░'))
             })
             .expect("full-width quota meter");
         assert_eq!(
             jackin_tui::display_cols(meter.trim()),
-            usize::from(width).saturating_sub(2),
-            "meter should span the dialog body width: {meter:?}"
+            usage_content_width(usize::from(width)),
+            "meter should span the padded dialog body width: {meter:?}"
         );
     }
 

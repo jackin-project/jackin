@@ -1709,8 +1709,12 @@ impl Dialog {
             .saturating_sub(1)
             .max(3);
         let height = natural_height.min(max_height);
-        let row = crate::tui::components::status_bar::STATUS_BAR_ROWS
-            + (max_height.saturating_sub(height)) / 2;
+        let top_row = crate::tui::components::status_bar::STATUS_BAR_ROWS;
+        let row = if matches!(self, Self::Usage { .. }) {
+            top_row.saturating_add(1)
+        } else {
+            top_row + (max_height.saturating_sub(height)) / 2
+        };
         let col = (term_cols.saturating_sub(width)) / 2;
         (row, col, height, width)
     }
