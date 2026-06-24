@@ -2,7 +2,9 @@
 title: "Ratatui terminal modernization"
 ---
 
-**Status**: Open — research complete, re-verified against the tree, and extended with a skeptical review pass. The implementation branch is allowed to refactor broadly before merge. The work is no longer "upgrade Ratatui"; the tree is already on Ratatui 0.30.2. The work is to (a) exploit Ratatui 0.30 buffer/diff/width APIs that are available through the dependency but unused by jackin', (b) close concrete first-party fidelity gaps in `jackin-term` and the Capsule emit path that no upstream crate will ever fix for us, and (c) verify competing implementation approaches where the current roadmap and the skeptical pass disagree.
+**Status**: Open — research complete, re-verified against the tree, extended with a skeptical review pass, and extended again with a contract-level skeptical pass that re-verified every load-bearing claim against the working tree and the pinned upstream source in the cargo registry. The implementation branch is allowed to refactor broadly before merge. The work is no longer "upgrade Ratatui"; the tree is already on Ratatui 0.30.2. The work is to (a) exploit Ratatui 0.30 buffer/diff/width APIs that are available through the dependency but unused by jackin', (b) close concrete first-party fidelity gaps in `jackin-term` and the Capsule emit path that no upstream crate will ever fix for us, (c) verify competing implementation approaches where the current roadmap and the skeptical pass disagree, and (d) settle the underlying terminal-emulator *contract* (what kind of terminal jackin' promises to be) before optimizing how its frames diff, because several width and fidelity decisions are undecidable until that contract is written down.
+
+This document deliberately records **more than one opinion**. Where a later review pass disagreed with an earlier recommendation, the disagreement is preserved as two named directions with the benefit of each, not collapsed into a single answer. The implementation branch is expected to do its own deep research, build the smallest proof that distinguishes the directions, and only then commit. Treat every "Existing roadmap view" / "Extended view" pairing below as a research task, not a settled decision.
 
 ## Problem
 
@@ -42,6 +44,40 @@ PTY bytes
 
 Ratatui does not replace that model. Ratatui's `Buffer` is a compositor buffer, not a PTY emulator: it does not own scrollback retention, application cursor mode, bracketed paste mode, Kitty keyboard stack depth, OSC 10/11 replies, DA/DSR replies, focus-event passthrough, or the distinction between bytes that update the pane grid and bytes returned to the agent PTY. Termina does not replace it either: Termina is a low-level terminal I/O and typed-escape library with event parsing, not a screen grid, damage tracker, scrollback store, or frame diff. The modernization target is therefore the *seam*: make the model's display-width contract explicit, feed Ratatui enough cell-width and protocol-visibility information to diff correctly, stop dropping terminal-visible SGR state at parse time, and evaluate Termina only at the raw terminal I/O boundary.
 
+## The terminal-emulator contract — virtual-terminal profile vs attach capability (contract-level pass)
+
+This section was added by the contract-level skeptical pass. It does not override the recommendations below; it reframes the foundation several of them stand on, and it introduces the single correction the later pass disagreed with most strongly. Read it before Recommendation 1, because Recommendation 1 cannot be implemented correctly without taking a position here.
+
+**The width problem has more than two authorities.** The recommendations below mostly frame width as a negotiation between three things: jackin's model, Ratatui's `CellWidth`, and the host terminal. Reading the tree shows there are at least four authorities, and two of them are easy to forget:
+
+1. **The agent application inside the PTY**, which computes its own cursor advancement from its own `wcwidth`/`unicode-width` assumptions and relies on jackin-term's DSR replies. jackin-term deliberately declines DECRQM mode 2027 (grapheme-cluster-width) in <RepoFile path="crates/jackin-term/src/grid/perform.rs" /> precisely so the agent's width baseline stays predictable.
+2. **jackin-term's model**, which both stores cells and answers DSR cursor queries to the agent from its own grid cursor — so the model's width rule is also the *agent-visible* width rule.
+3. **Ratatui's diff**, whose `CellWidth` adds the `+1` halfwidth-katakana compensation.
+4. **The physical host terminal**, whose own glyph engine decides how many columns a cluster actually occupies when the composed bytes land.
+
+`ForcedWidth` (Recommendation 2) only changes authority 3 — Ratatui's diff bookkeeping. It cannot change authority 4: the host still advances its cursor by its own rendering of the bytes `SocketBackend` emits via `set_symbol`. So for any cluster where the agent's `wcwidth` and the host's glyph width genuinely disagree (the proven `U+FF9E`/`U+FF9F` case is exactly this), **no `ForcedWidth` and no model change can make all four authorities agree at once.** This is the same unavoidable tension every terminal emulator has; jackin' just sits in the middle of it, re-emitting.
+
+**The correction: do not let the attached host define agent-visible semantics.** Recommendation 1's phrasing — "port Ratatui's `+1` compensation into the model where the target host terminals match it" — quietly makes the currently-attached terminal the tiebreaker. That is wrong for jackin' specifically, because a Capsule session can be detached and reattached from a *different* terminal, while the agent keeps running. The agent is always launched with a fixed `TERM=xterm-256color` and `COLORTERM=truecolor` independent of the attach host (see the env setup in <RepoFile path="crates/jackin-capsule/src/session.rs" />). If width or DSR semantics flexed to whatever terminal happens to be attached, detaching from one terminal and reattaching from another with a different width rule would silently change the agent's cursor arithmetic mid-session — a poison failure that is invisible until output corrupts.
+
+The contract-level pass therefore recommends splitting the single fuzzy "host" authority into two explicit layers:
+
+- **A stable per-session virtual-terminal profile, owned by `jackin-term`.** It is the source of truth for: the display-width table (including the `U+FF9E`/`U+FF9F` decision), the Unicode version, the mode-2027 answer, the ambiguous-width stance, VS16/ZWJ/emoji cluster rules, the supported SGR set, the color model advertised to the agent, and the OSC/passthrough policy. It is chosen once per session from a documented target-host consensus plus a conformance matrix, and it does **not** change when the operator reattaches from a different terminal. This is what keeps authorities 1 and 2 in agreement for the whole life of the agent.
+- **An attach-capability adapter, owned by the backend.** It maps the stable profile to whatever terminal is *currently* attached, or declares that terminal degraded/unsupported. Color-depth downsampling, OSC 8 support, `?2026` support, underline-style support, and image-protocol support all belong here, because they legitimately vary per attached terminal without changing what the agent believes about its own screen.
+
+```text
+                 PTY                          composed frame
+ ┌────────────┐ ◀────▶ ┌───────────────────────────┐ ────────▶ ┌──────────────────┐
+ │ Agent app  │  DSR   │ jackin-term VIRTUAL-TERM   │           │ attach-capability│ ──▶ host
+ │ own wcwidth│        │ PROFILE (stable / session) │           │ adapter (backend)│
+ └────────────┘        └───────────────────────────┘           └──────────────────┘
+   authority 1            authority 2 + (drives 3)                 authority 4 (host)
+        ▲ must NOT change on reattach ▲                   ▲ may vary per attached terminal ▲
+```
+
+Under this split, `ForcedWidth` aligns Ratatui (authority 3) to the *model/profile* (authority 2), never to the host (authority 4). Where the profile and a given host disagree on physical glyph width, that is surfaced as a known degradation of that host, not papered over by mutating the agent-visible model. Today there is no attach-capability layer at all — the fixed `TERM`/`COLORTERM` is a virtual-terminal *claim* with no host adapter behind it — so this is genuinely new structure, not a rename of existing code.
+
+This reframing is why the contract-level pass also argues for reordering (Recommendation 1 before Recommendation 0) and for a host-conformance harness that does not share jackin-term's width code; both are recorded as debates below.
+
 ## Decision principles
 
 - **Prefer upstream Ratatui when it owns the exact problem.** If Ratatui 0.30's diff iterator, `CellDiffOption`, or `CellWidth` solves a compositor problem better than local code, switch even if the refactor is large.
@@ -50,6 +86,7 @@ Ratatui does not replace that model. Ratatui's `Buffer` is a compositor buffer, 
 - **Test branch, not feature flag.** The branch may break internal APIs, reshape the Capsule render path, or replace dependencies. It merges only after automated and manual validation prove the new shape is strictly better.
 - **One physical writer remains mandatory.** Direct `GridPatch` ANSI emission was retired because it could desync Ratatui's previous buffer from the outer terminal. Modernization must not reintroduce parallel writers. Damage is an invalidation and observation signal; committed output remains one composed frame written by `ClientWriter` in <RepoFile path="crates/jackin-capsule/src/client_writer.rs" />.
 - **Measure before claiming performance.** Record only real wins: allocation profiles, frame timings, emitted bytes, and echo-back conformance.
+- **Agent-visible semantics are stable per session; host capability is adaptive (contract-level pass).** What the agent believes about its own screen — width, DSR replies, advertised modes and color — must not change when the operator detaches and reattaches from a different terminal. Per-host differences belong in the attach-capability adapter, never in the model. This principle was added by the contract-level pass and is in tension with any recommendation that lets the attached host drive model width; resolve the tension explicitly, do not assume either default.
 
 ## What is explicitly NOT the work (padding removed)
 
@@ -70,7 +107,12 @@ The roadmap intentionally keeps multiple opinions where the code does not yet pr
 | OSC 8 hyperlinks | Fix backend frame hyperlink regions by forcing updates when link membership changes over unchanged glyphs. | Model OSC 8 as cell/frame metadata in `DamageGrid` so PTY hyperlinks and UI hyperlinks share one rendering path instead of split passthrough + backend-region behavior. | Compare both on PTY OSC 8 open/text/close, UI dialog links, link target changes over unchanged text, wide-cell boundaries, safety filtering, and synchronized-frame ordering. |
 | Unsupported SGR state | Extend `Attrs`, map what Ratatui supports, and emit the rest if needed. | Ratatui `Cell` cannot carry underline styles or overline; a parallel metadata grid may be required for perfect fidelity. | Split Ratatui-native attrs from sidecar/backend-only attrs, then prove round-trip parse → snapshot → frame emit for each SGR class. |
 | Scroll optimization | Prototype first-party DECSTBM emission in `SocketBackend` after geometry/capability checks. | Source-record scroll operations inside `DamageGrid` when parser mutations happen; do not infer scrolls from final Ratatui buffers. | Prototype `ScrollOp` recording and compare against buffer-diff inference on scroll-heavy fixtures, pane chrome, resize, alternate screen, and scrollback view. |
-| Termina migration | Evaluate Termina at raw terminal I/O boundary only. | Same direction, but avoid calling Termina a full capability-probing framework; treat it as typed protocol/event/query tooling until proven broader. | Build parity tests for raw mode, alternate screen, input events, resize, mouse/focus/bracketed paste/Kitty keyboard, cleanup, and protocol queries. |
+| Termina migration | Evaluate Termina at raw terminal I/O boundary only. | Same direction, but avoid calling Termina a full capability-probing framework; treat it as typed protocol/event/query tooling until proven broader. The contract-level pass is more skeptical still: Crossterm 0.29 is mature and the only concrete Termina win is typed protocol query/response, which `jackin-term` already partly owns — keep this last and do not sweep. | Build parity tests for raw mode, alternate screen, input events, resize, mouse/focus/bracketed paste/Kitty keyboard, cleanup, and protocol queries. |
+| Width authority resolution (contract-level pass) | Port Ratatui's `+1` halfwidth-katakana compensation into the model "where the target host terminals match it," letting host consensus settle the contract. | The attached host must never define agent-visible width, because sessions detach and reattach from different terminals. Own a stable per-session virtual-terminal profile; `ForcedWidth` aligns Ratatui to that profile, not to the host; per-host glyph disagreement is surfaced as a known degradation, not absorbed into the model. | Decide the profile from a documented target-host consensus + conformance matrix once; prove with an *independent* width oracle (not jackin-term's own code) that the profile's emitted bytes advance a real host the same way the profile predicts, across detach/reattach between terminals with different width rules. |
+| Phase ordering: width vs sentinel (contract-level pass) | Retire the sentinel full-frame repaint first (Recommendation 0), then do the width contract (Recommendation 1), because later diff/byte measurement depends on a trusted previous buffer. | The width divergence is a *live correctness bug shipping today*: it corrupts cluster→cell mapping, cursor advancement, dirty spans, and DSR replies independent of the sentinel, which only forces re-emission of already-wrong cells. Recommendation 1 has no dependency on Recommendation 0. Correctness-first ordering does width first or in parallel; the sentinel is a prerequisite only for *byte-win measurement*. | Confirm by tracing whether the width path runs before the diff (it does — it is parse-time and mapping-time). Land Recommendation 1 with the independent width oracle, then remove the sentinel when true-diff byte counts become measurable. |
+| Host-fidelity validation (contract-level pass) | Echo-back into a second `DamageGrid`, plus an optional recorded host capture, proves emit-path fidelity. | Echo-back is *structurally blind* to any width/render rule shared by both grids: the VirtualClient replay uses the same jackin-term width code as the source, so a contract that is internally self-consistent but wrong for a real host will false-pass. Real closure is a first-class host-conformance program, not a parenthetical. | Add (1) an independent hard-coded width oracle in CI, (2) real-terminal `DSR 6n` cursor-advance probes per glyph class, and (3) real-terminal visual captures on a Ghostty/iTerm2/WezTerm/Kitty/Alacritty matrix. Keep echo-back as a regression net for "bytes recreate jackin's own model," not as proof of host match. |
+| Cluster-width mutation on append (contract-level pass) | Treated inside Recommendation 1 as a "correctness decision point" to revisit in `append_to_previous_cluster`. | This is the actual hard core of the width work, not a sub-point: if any cluster's canonical width can grow or shrink when a mark/VS16/ZWJ joins, the model must mutate the lead width, create or clear a continuation cell, extend the dirty span, and fix cursor/pending-wrap/DSR at the right edge — and reconcile all of that with the declined mode-2027 baseline. | Build fixtures where appending changes width (halfwidth base + `U+FF9E`, base + VS16, ZWJ growth) and assert lead width, continuation cells, dirty span, cursor column, and the DSR reply after each append. |
+| Primary-scrollback reflow on resize (contract-level pass) | Not addressed; resize appears only in test coverage. | Modern terminals rewrap soft-wrapped logical lines on width change; jackin' does not, and this is a larger fidelity gap than inline images. Even if reflow ships later, the soft/hard wrap metadata it needs must be tracked *now*, because retrofitting wrap provenance into existing scrollback is brutal. | Decide whether to track per-row soft/hard wrap metadata in this branch; prototype primary-screen reflow (never alt-screen) with logical-line reconstruction and attr/grapheme preservation; measure against a hard-truncate baseline on resize-heavy fixtures. |
 
 ## Recommendations
 
@@ -101,6 +143,13 @@ Ranked by correctness value. Each one states why it matters, what it improves, t
 - Revisit `append_to_previous_cluster` in <RepoFile path="crates/jackin-term/src/grid.rs" />. Today cluster width stays the base width when VS16, combining marks, ZWJ, or subsequent ZWJ content joins the previous cell. If the canonical cluster width can grow or shrink after append, the implementation must update the lead width, add/remove continuation cells, dirty the affected span, and adjust cursor/pending-wrap semantics at the right edge. This is a correctness decision point, not an implementation detail to defer.
 
 **Acceptance coverage** (added to <RepoFile path="crates/jackin-term/tests/conformance.rs" /> and the echo-back fixtures): CJK overwrite, CJK delete, CJK erase, emoji with VS16, emoji without VS16, ZWJ emoji clusters, combining marks after a base character, combining marks at column zero, halfwidth katakana dakuten and handakuten (the proven divergence), wide character in the final column, normal-width overwrite of a wide lead, normal-width overwrite of a wide continuation, right-edge deferred wrap plus SGR before the next printable, DSR cursor reply while wrap is pending, and scrollback snapshots containing all of the above.
+
+**Competing view (contract-level pass).** The "How to implement" guidance above says to "port that behavior into the model" where target hosts match Ratatui's `+1`. The contract-level pass disagrees with letting the *attached* host settle this, for the reattach reason in [the terminal-emulator contract section](#the-terminal-emulator-contract--virtual-terminal-profile-vs-attach-capability-contract-level-pass). The two directions to research:
+
+- **Existing view — model adopts host-consensus width.** Make the model's width match what the target host terminals actually render (including the dakuten `+1`), so the model and the host agree and emitted bytes land where the model expects. Benefit: simplest mental model when the agent, model, and host all use the same Unicode/width rules; the emitted frame is visually correct on conforming hosts with no extra adapter layer.
+- **Extended view — stable virtual-terminal profile + attach adapter.** The model owns one fixed width contract for the whole session; `ForcedWidth` aligns Ratatui to that contract; per-host glyph disagreement is reported as a known degradation by the attach-capability adapter rather than changed in the model. Benefit: agent-visible cursor math never shifts across detach/reattach between different terminals, which is the failure mode the existing view cannot prevent; the cost is building the new profile + adapter structure that does not exist today.
+
+Both views still require the cluster-width-mutation work in `append_to_previous_cluster` (now tracked as its own debate). Decide between them with the independent width oracle and a detach/reattach test across terminals with different width rules, not with the shared-code echo-back harness alone.
 
 ### 2. Map `jackin-term` cells to Ratatui cells with `CellDiffOption`, instead of blanking continuation cells
 
@@ -181,7 +230,61 @@ Keep this a small, commented mapping layer. The Ratatui pane conversion lives in
 - Add a **true-diff baseline property** once Recommendation 0 lands: repeated rendering of an unchanged frame must not produce a full-screen diff, and any forced update must be explainable by metadata changes (hyperlink, cursor/state, external protocol coverage) rather than sentinel repaint.
 - Keep the existing fuzz target in <RepoFile path="crates/jackin-term/fuzz/src/damage_grid_process.rs" /> and extend its corpus with the new cluster classes.
 
-**Acceptance coverage**: the full extended automated set is green, including the well-formedness property over fuzzed inputs.
+**Competing/extended view (contract-level pass): echo-back cannot prove host fidelity.** The contract-level pass agrees the harness should be extended, but argues the extension above is *necessary but not sufficient*. Because the VirtualClient replay grid uses the same jackin-term width/render code as the source, any contract that is internally self-consistent but wrong for a real host will false-pass — the "width fixtures change emitted bytes" mitigation does not close it, since both grids share the wrong world. The branch should therefore add a first-class host-conformance program, layered so each layer catches what the one above cannot:
+
+- **Independent width oracle in CI.** A hard-coded expected width table for every glyph class (dakuten/handakuten, VS16, emoji, ZWJ, ambiguous-width, combining-at-col-0, final-column wide), authored by hand and *not* computed from jackin-term or from `ratatui_core::buffer::CellWidth`. This is the only layer that can catch a width rule that is wrong but self-consistent.
+- **Real-terminal cursor-advance probes.** Emit each glyph class followed by `DSR 6n`, read the real terminal's reported cursor column, and assert it matches the profile's predicted advance. Scriptable per terminal without screenshots; closes the width-advance question against real hardware.
+- **Real-terminal visual captures.** Screenshot or terminal-API captures on a Ghostty/iTerm2/WezTerm/Kitty/Alacritty matrix for the things probes cannot see: stale tails, background fills, underline styles, OSC 8 rendering, and (later) images. Run nightly or per-terminal in CI where the runner allows it.
+
+Keep the echo-back harness as a fast regression net for "emitted bytes recreate jackin's own model," and stop treating it as proof that the model matches a host.
+
+**Acceptance coverage**: the full extended automated set is green, including the well-formedness property over fuzzed inputs, the independent width oracle, and (where the CI runner allows) the real-terminal cursor-advance probes.
+
+## Additional recommendations from the contract-level skeptical pass
+
+These were not in the earlier passes. They are additive scope, not corrections, and they fit the "quality over cost, hard refactors welcome, only technical infeasibility is a blocker" mandate. They are numbered separately (A–E) so the earlier ranked list 0–9 is preserved unchanged. Each records the value, the feasibility, and where the contract-level pass thinks it ranks against the existing recommendations.
+
+### A. Build the attach-capability negotiation layer (the backend half of the contract)
+
+**Why this matters.** The fixed `TERM=xterm-256color` / `COLORTERM=truecolor` handed to the agent in <RepoFile path="crates/jackin-capsule/src/session.rs" /> is a virtual-terminal *claim* with no host adapter behind it. There is currently no place that records what the *attached* terminal can actually do. Every per-host fidelity decision below (color depth, OSC 8, `?2026`, underline style, images) needs this layer to exist.
+
+**What it improves.** One owned description of the attached terminal's capabilities, separate from the stable virtual-terminal profile, so the backend can adapt the same composed frame to different hosts and explicitly mark a host as degraded instead of corrupting output.
+
+**How to implement.** Define a capability record populated from `TERM`/`COLORTERM`, terminfo where available, and active protocol probes (DA1/DA2, DECRPM for `?2026`, the Kitty keyboard query, OSC 8 / image-protocol probes) at attach time, refreshed on reattach. Keep it strictly on the backend side of the seam; it must never flow back into agent-visible state. A user override and a per-terminal denylist are part of this, because detection from a bare `TERM` is unreliable.
+
+**Acceptance coverage**: capability record is correct for the target terminal matrix; reattaching from a different terminal updates capabilities without changing any agent-visible mode/width/DSR; an unsupported terminal is reported degraded rather than producing corrupt frames.
+
+### B. Primary-scrollback reflow on resize
+
+**Why this matters.** Modern terminals rewrap soft-wrapped logical lines when the width changes; jackin' does not. The contract-level pass rates this a larger fidelity gap than inline images, and it is the one item with a hard "do it now or pay later" cost: the soft/hard wrap provenance reflow needs must be tracked as rows are produced, and retrofitting it into existing scrollback later is brutal.
+
+**How to implement (two directions to compare).** The minimal direction tracks a per-row "this row was a soft wrap of the previous logical line" flag now, and defers actual reflow to a later branch — cheap insurance that keeps the option open. The full direction implements reflow this branch: reconstruct logical lines from wrap metadata, rewrap to the new width, preserve attributes and grapheme clusters, and apply it to the **primary screen only** (never the alternate screen, which is owned by full-screen apps that redraw themselves). The decision hinges on whether the branch has the budget to validate reflow thoroughly; the metadata-only insurance should be taken regardless.
+
+**Acceptance coverage**: resize-heavy fixtures with long wrapped lines, CJK/emoji at wrap boundaries, styled runs across a wrap, and scrollback; compare reflow output and emitted bytes against the current hard-truncate behavior; assert alt-screen is never reflowed.
+
+### C. Color-depth downsampling at the attach boundary
+
+**Why this matters.** The agent is always told `COLORTERM=truecolor`, but the attached host may support only 256 or 16 colors. The model can keep RGB; the backend must map RGB down to the host's depth when the capability layer (Recommendation A) says so. Without this, truecolor output on a 256-color host is at the mercy of the host's own (often poor) downsampling, or is wrong.
+
+**How to implement.** A backend-side perceptual RGB→256/16/mono mapping selected by the attach-capability record. The model and the agent-visible color stay truecolor; only the emitted bytes are downsampled per host. Lower priority than width/attrs/OSC 8 because most target terminals already do truecolor, but cheap once Recommendation A exists.
+
+**Acceptance coverage**: golden emit snapshots for the same frame at truecolor, 256, and 16-color host profiles; perceptual-distance checks on the mapping; no change to agent-visible color.
+
+### D. Inline image protocols as a modeled media layer (not passthrough)
+
+**Why this matters.** Coding agents increasingly emit inline images (plots, diagrams, screenshots) via the Kitty graphics protocol, Sixel, or iTerm2's protocol. jackin' has no model for these today. Raw passthrough is not an option: it would violate the one-writer invariant and break under scroll, resize, and detach/reattach.
+
+**How to implement (ranked, feasibility-gated).** Model images as a `PaneMedia` layer anchored to cells, composed into the frame plan, and emitted by `ClientWriter` at the frame boundary like every other committed output. Kitty graphics first — it has image IDs and placements, so it can be anchored, clipped per pane, deleted, and replaced cleanly. Sixel is harder (a pixel-bitmap stream with ugly scroll/resize/replay semantics) and iTerm2's protocol is terminal-specific; both come later. Security is mandatory: size and memory caps, no host file reads, no arbitrary file links, and scroll/resize invalidation. The contract-level pass recommends starting with an explicit deny/strip path plus tests, then a minimal Kitty implementation — and ranks the whole item after width, attributes, OSC 8, and reflow.
+
+**Acceptance coverage**: deny/strip path proven first; then Kitty image place/scroll/resize/delete/replace, pane clipping, detach/reattach, memory caps, and one-writer ordering.
+
+### E. Turn Recommendation 5 into a real terminal-state and capability matrix
+
+**Why this matters.** Recommendation 5 audits cursor position/visibility/shape. The contract-level pass argues "frame-terminal state" is broader and should become an explicit matrix: cursor color (`OSC 12`) and blink, mouse mode, focus reporting, bracketed paste, Kitty keyboard / `modifyOtherKeys` depth, OSC 52 clipboard policy, and title/CWD (`OSC 0/1/2/7`) semantics. Each entry records whether it is agent-visible model state (stable per session) or attach-capability state (adaptive), which is exactly the split this pass introduced.
+
+**How to implement.** Extend the cursor audit in <RepoFile path="crates/jackin-capsule/src/daemon/compositor.rs" /> into a documented table that classifies every terminal-visible state item as profile-stable or host-adaptive, and add tests for any gap found. This is an audit plus targeted fixes, not a rewrite, and it directly supports Recommendations A and 5.
+
+**Acceptance coverage**: the state table is complete and each row is classified; tests cover any newly modeled state; reattach changes only host-adaptive rows, never profile-stable ones.
 
 ### 8. Prototype Termina at the raw terminal I/O boundary only (separate, lower priority)
 
@@ -244,6 +347,15 @@ Run the branch for normal work before merge, watching for flicker, stale cells, 
 5. **Termina prototype.** Compare Termina and Crossterm at the I/O boundary (Recommendation 8); adopt only where clearly better.
 6. **Dependency boundary and ergonomics sweep.** Keep `jackin-term` minimal, cross-check width against `ratatui-core` in tests, and apply widget ergonomics where they remove local code (Recommendation 9).
 7. **Soak and merge decision.** Run the full extended automated set, benchmark before/after with the byte counters, then perform manual operator soak long enough to catch flicker, stale cells, hyperlink and reset issues, and real-agent behavior. Merge only after the new path is the desired default.
+
+### Alternative ordering and placement (contract-level pass)
+
+The phase list above is one valid sequence; the contract-level pass proposes a different ordering and is recorded here rather than overwriting it, so the branch can choose deliberately:
+
+- **Settle the contract first.** Decide the virtual-terminal profile vs attach-capability split and the width authority resolution (the [contract section](#the-terminal-emulator-contract--virtual-terminal-profile-vs-attach-capability-contract-level-pass) and the new debate rows) before any code, because Recommendation 1's implementation depends on it.
+- **Width before sentinel.** Land Recommendation 1 (with the independent width oracle from Recommendation 7's extended view) before Recommendation 0, because the width divergence is a live correctness bug that does not depend on the sentinel, whereas the sentinel is only a prerequisite for byte-win *measurement*. The existing phase list does Recommendation 0 first; both orderings are legitimate and the choice is a correctness-first vs measurement-first tradeoff to make explicitly.
+- **Track reflow metadata early.** If primary-scrollback reflow (Recommendation B) is wanted ever, take the soft/hard wrap-metadata insurance during the width/model work, even if reflow itself ships later.
+- **Capability layer unlocks the rest.** Build the attach-capability layer (Recommendation A) before color downsampling (C), images (D), and the host-adaptive half of the state matrix (E); those depend on it. Termina (Recommendation 8) and `?2026` detection remain last and lowest: unsupported terminals already ignore unknown private modes, so `?2026` detection is a denylist/metrics signal, not a redesign.
 
 ## Related work
 
