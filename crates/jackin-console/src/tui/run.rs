@@ -480,8 +480,12 @@ pub fn debug_chip_row(bar: Rect) -> Rect {
 }
 
 #[must_use]
-pub fn debug_run_id_label(run_id: Option<&str>) -> String {
-    run_id.unwrap_or_default().to_owned()
+pub fn debug_run_id_label(active_run_id: Option<&str>, env_run_id: Option<&str>) -> String {
+    active_run_id
+        .filter(|run_id| !run_id.is_empty())
+        .or_else(|| env_run_id.filter(|run_id| !run_id.is_empty()))
+        .unwrap_or_default()
+        .to_owned()
 }
 
 #[must_use]

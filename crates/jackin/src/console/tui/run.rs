@@ -344,7 +344,11 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                 chrome_hover_tracker.clear();
                 if let Some(bar_area) = debug_bar_area {
                     let active_run = crate::diagnostics::active_run();
-                    let run_id = debug_run_id_label(active_run.as_ref().map(|r| r.run_id()));
+                    let env_run_id = std::env::var("JACKIN_RUN_ID").ok();
+                    let run_id = debug_run_id_label(
+                        active_run.as_ref().map(|r| r.run_id()),
+                        env_run_id.as_deref(),
+                    );
                     // Use only the bottom row of the 2-row bar for the chip;
                     // the top row is the blank spacer (Defect 39).
                     let chip_row = debug_chip_row(bar_area);

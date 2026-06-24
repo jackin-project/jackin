@@ -275,9 +275,14 @@ fn token_generate_status_message_names_target_scope() {
 }
 
 #[test]
-fn debug_run_id_label_uses_empty_fallback() {
-    assert_eq!(debug_run_id_label(Some("run-1")), "run-1");
-    assert_eq!(debug_run_id_label(None), "");
+fn debug_run_id_label_prefers_active_run_then_env() {
+    assert_eq!(
+        debug_run_id_label(Some("run-active"), Some("run-env")),
+        "run-active"
+    );
+    assert_eq!(debug_run_id_label(None, Some("run-env")), "run-env");
+    assert_eq!(debug_run_id_label(Some(""), Some("run-env")), "run-env");
+    assert_eq!(debug_run_id_label(None, None), "");
 }
 
 #[test]
