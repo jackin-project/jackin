@@ -118,6 +118,7 @@ pub struct ClientTerminal {
     /// queries are answered with the colors the operator actually sees.
     pub default_fg: Option<(u8, u8, u8)>,
     pub default_bg: Option<(u8, u8, u8)>,
+    pub capability_overrides: AttachCapabilityOverrides,
 }
 
 /// Backend-side capabilities for the currently attached terminal.
@@ -132,6 +133,26 @@ pub struct AttachCapabilities {
     pub osc8_hyperlinks: bool,
     pub underline_style: bool,
     pub image_protocol: ImageProtocolCapability,
+    pub sources: AttachCapabilitySources,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AttachCapabilitySources {
+    pub handshake_identity: bool,
+    pub terminfo_name: bool,
+    pub safe_color_probe: bool,
+    pub user_override: bool,
+    pub denylist: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AttachCapabilityOverrides {
+    pub pointer_shapes: Option<bool>,
+    pub truecolor: Option<bool>,
+    pub synchronized_output: Option<bool>,
+    pub osc8_hyperlinks: Option<bool>,
+    pub underline_style: Option<bool>,
+    pub image_protocol: Option<ImageProtocolCapability>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -149,6 +170,7 @@ impl ClientTerminal {
             colorterm: non_empty_env(COLORTERM_LABEL),
             default_fg: None,
             default_bg: None,
+            capability_overrides: AttachCapabilityOverrides::from_env(),
         }
     }
 
@@ -185,7 +207,15 @@ impl ClientTerminal {
                 || term.contains("kitty")
                 || term.contains("foot"));
 
-        AttachCapabilities {
+        let denylist = !known_terminal || warp || matches!(term.as_str(), "dumb" | "linux");
+        let sources = AttachCapabilitySources {
+            handshake_identity: known_terminal,
+            terminfo_name: !term.is_empty(),
+            safe_color_probe: self.default_fg.is_some() || self.default_bg.is_some(),
+            user_override: self.capability_overrides.any(),
+            denylist,
+        };
+        let mut caps = AttachCapabilities {
             pointer_shapes,
             truecolor,
             synchronized_output: known_terminal,
@@ -196,12 +226,76 @@ impl ClientTerminal {
             } else {
                 ImageProtocolCapability::Unsupported
             },
+            sources,
+        };
+        self.capability_overrides.apply_to(&mut caps);
+        caps
+    }
+}
+
+impl AttachCapabilityOverrides {
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self {
+            pointer_shapes: env_bool("JACKIN_ATTACH_POINTER_SHAPES"),
+            truecolor: env_bool("JACKIN_ATTACH_TRUECOLOR"),
+            synchronized_output: env_bool("JACKIN_ATTACH_SYNC"),
+            osc8_hyperlinks: env_bool("JACKIN_ATTACH_OSC8"),
+            underline_style: env_bool("JACKIN_ATTACH_UNDERLINE_STYLE"),
+            image_protocol: env_image_protocol("JACKIN_ATTACH_IMAGE_PROTOCOL"),
+        }
+    }
+
+    #[must_use]
+    pub const fn any(self) -> bool {
+        self.pointer_shapes.is_some()
+            || self.truecolor.is_some()
+            || self.synchronized_output.is_some()
+            || self.osc8_hyperlinks.is_some()
+            || self.underline_style.is_some()
+            || self.image_protocol.is_some()
+    }
+
+    fn apply_to(self, caps: &mut AttachCapabilities) {
+        if let Some(value) = self.pointer_shapes {
+            caps.pointer_shapes = value;
+        }
+        if let Some(value) = self.truecolor {
+            caps.truecolor = value;
+        }
+        if let Some(value) = self.synchronized_output {
+            caps.synchronized_output = value;
+        }
+        if let Some(value) = self.osc8_hyperlinks {
+            caps.osc8_hyperlinks = value;
+        }
+        if let Some(value) = self.underline_style {
+            caps.underline_style = value;
+        }
+        if let Some(value) = self.image_protocol {
+            caps.image_protocol = value;
         }
     }
 }
 
 fn non_empty_env(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|value| !value.is_empty())
+}
+
+fn env_bool(key: &str) -> Option<bool> {
+    match std::env::var(key).as_deref() {
+        Ok("1" | "true" | "yes" | "on") => Some(true),
+        Ok("0" | "false" | "no" | "off" | "deny") => Some(false),
+        _ => None,
+    }
+}
+
+fn env_image_protocol(key: &str) -> Option<ImageProtocolCapability> {
+    match std::env::var(key).as_deref() {
+        Ok("kitty") => Some(ImageProtocolCapability::Kitty),
+        Ok("unsupported" | "none" | "off" | "deny") => Some(ImageProtocolCapability::Unsupported),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -387,6 +481,7 @@ pub fn encode_client(frame: ClientFrame) -> Result<Vec<u8>> {
             write_terminal_field(&mut payload, terminal.colorterm.as_deref(), COLORTERM_LABEL)?;
             write_color_field(&mut payload, terminal.default_fg);
             write_color_field(&mut payload, terminal.default_bg);
+            write_capability_overrides(&mut payload, terminal.capability_overrides);
             encode(TAG_HELLO, &payload)
         }
         ClientFrame::Resize { rows, cols } => {
@@ -450,6 +545,61 @@ fn read_color_field(cursor: &mut PayloadCursor<'_>, label: &str) -> Result<Optio
             Ok(Some((r, g, b)))
         }
         other => bail!("unknown hello {label} presence byte {other}"),
+    }
+}
+
+fn write_capability_overrides(payload: &mut Vec<u8>, overrides: AttachCapabilityOverrides) {
+    for value in [
+        overrides.pointer_shapes,
+        overrides.truecolor,
+        overrides.synchronized_output,
+        overrides.osc8_hyperlinks,
+        overrides.underline_style,
+    ] {
+        payload.push(match value {
+            None => 0,
+            Some(false) => 1,
+            Some(true) => 2,
+        });
+    }
+    payload.push(match overrides.image_protocol {
+        None => 0,
+        Some(ImageProtocolCapability::Unsupported) => 1,
+        Some(ImageProtocolCapability::Kitty) => 2,
+    });
+}
+
+fn read_capability_overrides(cursor: &mut PayloadCursor<'_>) -> Result<AttachCapabilityOverrides> {
+    if cursor.finished() {
+        return Ok(AttachCapabilityOverrides::default());
+    }
+    let pointer_shapes = read_override_bool(cursor, "pointer shapes override")?;
+    let truecolor = read_override_bool(cursor, "truecolor override")?;
+    let synchronized_output = read_override_bool(cursor, "sync override")?;
+    let osc8_hyperlinks = read_override_bool(cursor, "osc8 override")?;
+    let underline_style = read_override_bool(cursor, "underline style override")?;
+    let image_protocol = match cursor.read_u8("image protocol override")? {
+        0 => None,
+        1 => Some(ImageProtocolCapability::Unsupported),
+        2 => Some(ImageProtocolCapability::Kitty),
+        other => bail!("unknown image protocol override byte {other}"),
+    };
+    Ok(AttachCapabilityOverrides {
+        pointer_shapes,
+        truecolor,
+        synchronized_output,
+        osc8_hyperlinks,
+        underline_style,
+        image_protocol,
+    })
+}
+
+fn read_override_bool(cursor: &mut PayloadCursor<'_>, label: &str) -> Result<Option<bool>> {
+    match cursor.read_u8(label)? {
+        0 => Ok(None),
+        1 => Ok(Some(false)),
+        2 => Ok(Some(true)),
+        other => bail!("unknown {label} byte {other}"),
     }
 }
 
@@ -603,13 +753,15 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 1 => Some(cursor.read_u64("focus session id")?),
                 other => bail!("unknown hello focus kind {other}"),
             };
-            let terminal = ClientTerminal {
+            let mut terminal = ClientTerminal {
                 term: read_terminal_field(&mut cursor, TERM_LABEL)?,
                 term_program: read_terminal_field(&mut cursor, TERM_PROGRAM_LABEL)?,
                 colorterm: read_terminal_field(&mut cursor, COLORTERM_LABEL)?,
                 default_fg: read_color_field(&mut cursor, "default fg")?,
                 default_bg: read_color_field(&mut cursor, "default bg")?,
+                capability_overrides: AttachCapabilityOverrides::default(),
             };
+            terminal.capability_overrides = read_capability_overrides(&mut cursor)?;
             if !cursor.finished() {
                 bail!("hello payload has trailing bytes");
             }

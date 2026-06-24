@@ -184,7 +184,7 @@ Keep this checklist as the working ledger during implementation. When a task is 
 - [x] Phase 1: Fix `append_to_previous_cluster` so width growth/shrink updates lead width, continuation cells, dirty span, cursor state, pending wrap, and DSR behavior.
 - [x] Phase 1: Add soft/hard wrap provenance metadata while changing row geometry, and preserve it through scrollback, resize bookkeeping, and snapshots.
 - [x] Phase 1: Add independent hard-coded width oracle tests, Ratatui cross-check tests, parser conformance fixtures, dirty-span tests, DSR tests, and echo-back fixtures.
-- [ ] Phase 2: Add backend-side attach-capability records populated from attach handshake data, terminfo where available, safe probes, user overrides, and denylist entries.
+- [x] Phase 2: Add backend-side attach-capability records populated from attach handshake data, terminfo where available, safe probes, user overrides, and denylist entries.
 - [x] Phase 2: Add the terminal-state matrix documentation, classifying profile-stable, host-adaptive, frame-reconciled, and boundary-only out-of-band state.
 - [x] Phase 2: Add reattach tests proving host-adaptive capability changes never alter profile-stable width, DSR, or agent-visible color semantics.
 - [x] Phase 3: Inventory every byte writer outside Ratatui cell output and frame-state reconciliation.
@@ -231,6 +231,8 @@ Acceptance:
 - Add backend-side attach capability records populated from attach handshake data, terminfo where available, explicit probes where safe, user overrides, and denylist entries.
 - Add the terminal-state matrix documentation.
 - Ensure reattach updates host-adaptive capability only, never profile-stable state.
+
+Phase 2 implementation note: `ClientTerminal` now carries backend-only attach capability derivation plus source records. Sources cover Hello terminal identity, TERM/terminfo-name family, OSC 10/11 safe color probe presence, explicit `JACKIN_ATTACH_*` user overrides sent in Hello, and denylist decisions such as `dumb`, `linux`, or Warp. These values stay host-adaptive and feed only backend emission policy.
 
 Acceptance:
 
