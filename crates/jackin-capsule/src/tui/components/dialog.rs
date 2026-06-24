@@ -653,10 +653,20 @@ impl Dialog {
         let inner = crate::tui::components::dialog_widgets::usage_dialog_inner_area(area);
         let tabs = crate::tui::components::dialog_widgets::usage_tab_strip_labels(view, selected);
         let tab_area = crate::tui::components::dialog_widgets::usage_tab_strip_area(inner, &tabs);
-        if row != tab_area.y {
+        let row0 = if row == tab_area.y.saturating_add(1) {
+            row.saturating_sub(1)
+        } else {
+            row
+        };
+        let col0 = if col >= tab_area.x.saturating_add(1) {
+            col.saturating_sub(1)
+        } else {
+            col
+        };
+        if row0 != tab_area.y {
             return None;
         }
-        crate::tui::components::dialog_widgets::usage_tab_strip_index_at(&tabs, tab_area, col)
+        crate::tui::components::dialog_widgets::usage_tab_strip_index_at(&tabs, tab_area, col0)
     }
 
     fn usage_provider_tab_target(&mut self, step: isize) -> Option<String> {

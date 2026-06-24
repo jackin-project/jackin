@@ -3127,6 +3127,45 @@ fn pointer_shape_updates_for_clickable_dialog_copy_target() {
 }
 
 #[test]
+fn pointer_shape_updates_for_usage_dialog_tabs() {
+    let mut mux = single_pane_tab_mux();
+    mux.pointer_shapes_supported = true;
+    let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
+    view.focused_provider = Some("OpenAI".to_owned());
+    view.tabs = vec![jackin_protocol::control::UsageProviderTab {
+        label: "OpenAI".to_owned(),
+        status_label: "usage unavailable".to_owned(),
+        account_label: "seed".to_owned(),
+        plan_label: None,
+        source_label: None,
+        active: true,
+    }];
+    mux.dialog_push(Dialog::new_usage(view.clone()));
+    let dialog = mux.dialog_top().expect("usage dialog should open");
+    let (row, col, rows, cols) = dialog.box_rect(mux.term_rows, mux.term_cols);
+    let area = ratatui::layout::Rect {
+        x: col,
+        y: row,
+        width: cols,
+        height: rows,
+    };
+    let inner = crate::tui::components::dialog_widgets::usage_dialog_inner_area(area);
+    let tabs = crate::tui::components::dialog_widgets::usage_tab_strip_labels(
+        &view,
+        crate::tui::components::dialog::UsageDialogTab::Provider,
+    );
+    let tab_area = crate::tui::components::dialog_widgets::usage_tab_strip_area(inner, &tabs);
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    mux.update_pointer_shape_for_mouse(tab_area.y, tab_area.x, SGR_NO_BUTTON_MOTION);
+    mux.client.flush_out_of_band();
+
+    let shape = rx.try_recv().expect("usage tab pointer-shape update");
+    assert!(shape.ends_with(b"\x1b]22;pointer\x1b\\"));
+}
+
+#[test]
 fn dialog_copy_hover_uses_overlay_frame_without_screen_erase() {
     let mut mux = single_pane_tab_mux_with_size(32, 100);
     mux.pointer_shapes_supported = false;
