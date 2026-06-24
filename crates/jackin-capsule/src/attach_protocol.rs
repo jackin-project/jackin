@@ -144,11 +144,12 @@ pub(crate) async fn drain_and_exit_with_reason(mux: &mut Multiplexer, reason: Op
     if let Some(reason) = reason.as_deref() {
         mux.send_out_of_band(format!("\r\n[jackin-capsule] {reason}\r\n").into_bytes());
     }
-    detach_attached_task_with_reason(mux, "drain_and_exit", reason.as_deref()).await;
+    gracefully_detach_attached_task_with_reason(mux, "drain_and_exit", reason.as_deref()).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 }
 
 const ATTACH_SHUTDOWN_FLUSH_GRACE_MS: u64 = 50;
+const ATTACH_SHUTDOWN_CLOSE_GRACE_MS: u64 = 1000;
 
 pub(crate) fn send_attached_shutdown(
     mux: &mut Multiplexer,
@@ -198,6 +199,36 @@ async fn detach_attached_task_with_reason(
     }
     if let Some(handle) = mux.attached_task.take() {
         handle.abort();
+    }
+}
+
+async fn gracefully_detach_attached_task_with_reason(
+    mux: &mut Multiplexer,
+    context: &str,
+    reason: Option<&str>,
+) {
+    let had_sender = send_attached_shutdown(mux, context, reason);
+    let Some(mut handle) = mux.attached_task.take() else {
+        return;
+    };
+    if !had_sender {
+        handle.abort();
+        return;
+    }
+    tokio::select! {
+        result = &mut handle => {
+            if let Err(err) = result
+                && !err.is_cancelled()
+            {
+                crate::clog!("{context}: attach task ended with join error: {err}");
+            }
+        }
+        () = tokio::time::sleep(Duration::from_millis(ATTACH_SHUTDOWN_CLOSE_GRACE_MS)) => {
+            crate::clog!(
+                "{context}: attach client did not close after Shutdown within {ATTACH_SHUTDOWN_CLOSE_GRACE_MS}ms; aborting"
+            );
+            handle.abort();
+        }
     }
 }
 

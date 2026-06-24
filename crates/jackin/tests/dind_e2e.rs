@@ -171,9 +171,9 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
     let workspace_dir = temp.path().join("workspace");
     std::fs::create_dir_all(&config_dir).unwrap();
     std::fs::create_dir_all(&workspace_dir).unwrap();
-    // The container runs as the host (test-runner) UID via `--user` on docker
-    // run, so the agent writes its report into the test-owned workspace dir
-    // with no special permissions.
+    // The container runs as the host (test-runner) UID/GID via `--user` on
+    // docker run, so the agent writes its report into the test-owned workspace
+    // dir with no special permissions.
 
     seed_sentinel_role_repo(&role_source);
     write_sentinel_config(&config_dir.join("config.toml"), &role_source);
@@ -1380,7 +1380,7 @@ const fn role_dockerfile() -> &'static str {
     // The baked Claude seed propagates into /jackin/default-home/.claude/backups
     // via the derived default-home snapshot. runtime-setup copies default-home
     // into the agent's home on first launch; when the container runs as an
-    // arbitrary host UID (`docker run --user <host-uid>:0`) the seed is readable
+    // arbitrary host UID/GID with supplementary group 0, the seed is readable
     // only if role-baked files are born group-0 + group-readable. Keep the file
     // non-world-readable so the test still exercises the group-0 contract after
     // the recursive derived chmod pass was removed.

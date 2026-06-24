@@ -666,15 +666,23 @@ pub(super) async fn launch_role_runtime(
         run_args.extend_from_slice(&["--label", LABEL_KEEP_AWAKE]);
     }
 
-    // Run the container as the host operator's UID (group 0). The image is
-    // UID-agnostic (built once, shared); matching the host UID at runtime is
-    // what makes every host-owned bind-mount transparently read/write for the
-    // `agent` user — see `identity::host_run_as_user`. `HOME` is set
-    // explicitly so shells and the agent CLIs resolve the bind-mounted home
-    // even before any passwd lookup.
+    // Run the container as the host operator's UID/GID, plus supplementary
+    // group 0 for image-baked shared paths. The image is UID/GID-agnostic
+    // (built once, shared); matching the host identity at runtime is what makes
+    // host-owned bind-mounts transparently read/write for the `agent` user —
+    // see `identity::host_run_as_user`. `HOME` is set explicitly so shells and
+    // the agent CLIs resolve the bind-mounted home even before any passwd
+    // lookup.
     let run_as_user = crate::runtime::identity::host_run_as_user();
     if let Some(ref user) = run_as_user {
-        run_args.extend_from_slice(&["--user", user.as_str(), "-e", "HOME=/home/agent"]);
+        run_args.extend_from_slice(&[
+            "--user",
+            user.as_str(),
+            "--group-add",
+            "0",
+            "-e",
+            "HOME=/home/agent",
+        ]);
     }
 
     run_args.extend_from_slice(&[
@@ -881,25 +889,36 @@ pub(super) async fn launch_role_runtime(
     // Host-side bind-mount of the daemon's socket directory. Pre-create
     // host-side so Docker does not materialise the target itself as
     // root:root 0755. The dir is owned by the host operator (this process)
-    // and the container runs as that same UID (`--user`), so the `agent`
+    // and the container runs as that same UID/GID (`--user`), so the `agent`
     // user creates jackin.sock with no special directory mode. The socket
     // file itself gets 0o600 from inside the capsule. The same directory
     // carries Capsule's normalized launch config.
     let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
     let capsule_config_contents = toml::to_string(capsule_config)
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
-    // Runtime passwd entry for the host UID so `getpwuid`/`$HOME` resolve to
-    // the `agent` user inside the container even though the image only bakes
-    // UID 1000. Consumed via `libnss-extrausers` (see docker/construct). One
-    // shared file, content depends only on the host UID; written atomically
-    // (per-container temp + rename) so a concurrent launch can't read a torn
-    // file at mount time, and only when the bytes actually change (see the
-    // no-churn guard below) so the rename can't swap the inode out from under
-    // a live `:ro` bind mount in an already-running container.
+    // Runtime passwd/group entries for the host UID/GID so `getpwuid`/`$HOME`
+    // resolve to the `agent` user inside the container even though the image
+    // only bakes UID 1000. Consumed via `libnss-extrausers` (see
+    // docker/construct). Shared files depend only on the host UID/GID; written
+    // atomically (per-container temp + rename) so a concurrent launch can't
+    // read torn files at mount time, and only when the bytes actually change
+    // so the rename can't swap the inode out from under a live `:ro` bind
+    // mount in an already-running container.
     let extrausers_passwd = paths.jackin_home.join("extrausers").join("passwd");
-    let extrausers_line = crate::runtime::identity::host_uid()
-        .map(|uid| format!("agent:x:{uid}:0:agent:/home/agent:/bin/zsh\n"));
+    let extrausers_group = paths.jackin_home.join("extrausers").join("group");
+    let extrausers_entries = match (
+        crate::runtime::identity::host_uid(),
+        crate::runtime::identity::host_gid(),
+    ) {
+        (Some(uid), Some(gid)) => Some((
+            format!("agent:x:{uid}:{gid}:agent:/home/agent:/bin/zsh\n"),
+            format!("agent-host:x:{gid}:agent\n"),
+        )),
+        _ => None,
+    };
     let extrausers_tmp = extrausers_passwd.with_file_name(format!("passwd.{container_name}.tmp"));
+    let extrausers_group_tmp =
+        extrausers_group.with_file_name(format!("group.{container_name}.tmp"));
     // Run the filesystem syscalls on the blocking pool — the tokio
     // runtime is built without the `fs` feature here, and blocking on
     // a slow / NFS host parks the worker driving the docker-run RPC
@@ -907,7 +926,8 @@ pub(super) async fn launch_role_runtime(
     let socket_dir_for_mkdir = socket_dir.clone();
     let capsule_config_contents_for_write = capsule_config_contents.clone();
     let extrausers_passwd_for_write = extrausers_passwd.clone();
-    let extrausers_line_for_write = extrausers_line.clone();
+    let extrausers_group_for_write = extrausers_group.clone();
+    let extrausers_entries_for_write = extrausers_entries.clone();
     jackin_diagnostics::active_timing_started(
         "capsule",
         "prepare_socket_dir",
@@ -919,26 +939,20 @@ pub(super) async fn launch_role_runtime(
             socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
             capsule_config_contents_for_write,
         )?;
-        if let Some(line) = extrausers_line_for_write {
+        if let Some((passwd_line, group_line)) = extrausers_entries_for_write {
             if let Some(parent) = extrausers_passwd_for_write.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            // No-churn guard: this shared passwd file is bind-mounted `:ro`
-            // into every running container. Its content depends only on the
-            // host UID, so a concurrent launch produces identical bytes — but
-            // the temp+rename below replaces the inode, which on macOS
-            // invalidates the live single-file bind mount in containers that
-            // are already running, breaking `getpwuid`/`$HOME` for the agent.
-            // Skip the rename when the bytes already match. Byte compare (not
-            // `read_to_string`) so a transient non-UTF-8 read can't silently
-            // fall through to the inode-swapping rewrite. Mirrors the auth
-            // provisioner's no-churn guard (see `instance::auth`).
-            let unchanged = std::fs::read(&extrausers_passwd_for_write)
-                .is_ok_and(|existing| existing == line.as_bytes());
-            if !unchanged {
-                std::fs::write(&extrausers_tmp, &line)?;
-                std::fs::rename(&extrausers_tmp, &extrausers_passwd_for_write)?;
-            }
+            write_if_changed_atomic(
+                &extrausers_passwd_for_write,
+                &extrausers_tmp,
+                passwd_line.as_bytes(),
+            )?;
+            write_if_changed_atomic(
+                &extrausers_group_for_write,
+                &extrausers_group_tmp,
+                group_line.as_bytes(),
+            )?;
         }
         Ok(())
     })
@@ -973,14 +987,20 @@ pub(super) async fn launch_role_runtime(
     })?;
     let socket_mount = format!("{socket_dir_str}:/jackin/run");
     run_args.extend_from_slice(&["-v", &socket_mount]);
-    // Mount the host-UID passwd line where libnss-extrausers reads it.
-    let extrausers_mount = extrausers_line.as_ref().and_then(|_| {
-        extrausers_passwd
+    // Mount the host UID/GID entries where libnss-extrausers reads them.
+    let extrausers_mounts = if extrausers_entries.is_some() {
+        let passwd_mount = extrausers_passwd
             .to_str()
-            .map(|p| format!("{p}:/var/lib/extrausers/passwd:ro"))
-    });
-    if let Some(ref mount) = extrausers_mount {
-        run_args.extend_from_slice(&["-v", mount]);
+            .map(|p| format!("{p}:/var/lib/extrausers/passwd:ro"));
+        let group_mount = extrausers_group
+            .to_str()
+            .map(|p| format!("{p}:/var/lib/extrausers/group:ro"));
+        passwd_mount.into_iter().chain(group_mount).collect()
+    } else {
+        Vec::new()
+    };
+    for mount in &extrausers_mounts {
+        run_args.extend_from_slice(&["-v", mount.as_str()]);
     }
     jackin_diagnostics::debug_log!(
         "launch",
@@ -2294,6 +2314,19 @@ use auth_error::{
 use auth_error::{LaunchError, append_no_proxy_host};
 #[cfg(not(test))]
 use auth_error::{LaunchError, append_no_proxy_host};
+
+fn write_if_changed_atomic(path: &Path, tmp: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    // Single-file bind mounts keep the original inode alive in running
+    // containers. Skip the temp+rename when the content already matches so a
+    // concurrent launch cannot invalidate getpwuid/getgrgid lookups in an
+    // already-running container.
+    let unchanged = std::fs::read(path).is_ok_and(|existing| existing == bytes);
+    if !unchanged {
+        std::fs::write(tmp, bytes)?;
+        std::fs::rename(tmp, path)?;
+    }
+    Ok(())
+}
 
 pub(super) struct LoadCleanup {
     container_name: String,

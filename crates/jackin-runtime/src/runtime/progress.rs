@@ -75,6 +75,11 @@ impl LaunchHostTerminal for HostTerminal {
         tracing::info!(kind, "{line}");
     }
 
+    fn emit_debug_line(&self, category: &str, line: &str) {
+        jackin_diagnostics::emit_debug_line(category, line);
+        tracing::debug!(category, "{line}");
+    }
+
     fn set_pointer_shape(&self, pointer: bool) {
         let seq = if pointer {
             jackin_tui::ansi::POINTER_HAND

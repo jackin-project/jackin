@@ -159,6 +159,9 @@ fn launch_container_info_hyperlink_overlay_bytes(
 }
 
 fn failure_popup_hyperlink_overlay_bytes(area: Rect, view: &LaunchView, run_id: &str) -> Vec<u8> {
+    if view.build_log_open {
+        return Vec::new();
+    }
     let Some(failure) = view.failure.as_ref() else {
         return Vec::new();
     };
@@ -169,4 +172,47 @@ fn failure_popup_hyperlink_overlay_bytes(area: Rect, view: &LaunchView, run_id: 
         view.failure_copy_hover,
         view.failure_copied,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use ratatui::layout::Rect;
+
+    use super::launch_hyperlink_overlays;
+    use crate::tui::update::initial_view;
+    use crate::{LaunchStage, tui::app::LaunchFailure};
+
+    #[test]
+    fn build_log_open_suppresses_failure_hyperlink_overlay() {
+        let mut view = initial_view();
+        view.build_log_open = true;
+        view.failure = Some(LaunchFailure {
+            title: "Docker build failed".to_owned(),
+            summary: "build failed".to_owned(),
+            detail: None,
+            next_step: None,
+            stage: LaunchStage::DerivedImage,
+            diagnostics_path: Some(PathBuf::from(
+                "/Users/donbeave/Projects/jackin-project/test/pr-641/state/home/data/diagnostics/runs/18bc0fd1093b23b0.jsonl",
+            )),
+            command_output_path: None,
+        });
+
+        let overlay = launch_hyperlink_overlays(
+            Rect::new(0, 0, 120, 40),
+            &view,
+            "18bc0fd1093b23b0",
+            "/Users/donbeave/Projects/jackin-project/test/pr-641/state/home/data/diagnostics/runs/18bc0fd1093b23b0.jsonl",
+            true,
+            "0.6.0-test",
+        );
+
+        assert!(
+            overlay.is_empty(),
+            "build-log overlay owns the screen; failure hyperlinks must not render over it: {:?}",
+            String::from_utf8_lossy(&overlay)
+        );
+    }
 }

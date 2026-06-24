@@ -14,10 +14,10 @@ fn test_paths() -> (TempDir, JackinPaths) {
 
 #[test]
 fn insert_run_as_user_places_flag_immediately_after_exec() {
-    let user = Some("1001:0".to_owned());
+    let user = Some("1001:20".to_owned());
     let mut args = vec!["exec", "-it", "ctr", "cmd"];
     insert_run_as_user(&mut args, user.as_deref());
-    assert_eq!(args, vec!["exec", "--user", "1001:0", "-it", "ctr", "cmd"]);
+    assert_eq!(args, vec!["exec", "--user", "1001:20", "-it", "ctr", "cmd"]);
 }
 
 #[test]

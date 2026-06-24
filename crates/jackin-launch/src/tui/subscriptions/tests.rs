@@ -5,8 +5,8 @@ use ratatui::layout::Rect;
 
 use super::{
     BUILD_LOG_SCROLL_STEP, CockpitContext, QuitConfirmOutcome, apply_quit_confirm_key,
-    cockpit_outcome_for_quit_confirm, handle_cockpit_mouse_down, is_ctrl_c,
-    update_build_log_mouse_scroll,
+    cockpit_outcome_for_quit_confirm, emit_dialog_mouse_debug_telemetry, handle_cockpit_mouse_down,
+    is_ctrl_c, update_build_log_mouse_scroll,
 };
 use crate::LaunchHostTerminal;
 use crate::tui::components::container_info_dialog::{
@@ -15,17 +15,29 @@ use crate::tui::components::container_info_dialog::{
 
 struct RecordingTerminal {
     copied: Mutex<Vec<String>>,
+    compact: Mutex<Vec<(String, String)>>,
+    debug: Mutex<Vec<(String, String)>>,
 }
 
 impl RecordingTerminal {
     const fn new() -> Self {
         Self {
             copied: Mutex::new(Vec::new()),
+            compact: Mutex::new(Vec::new()),
+            debug: Mutex::new(Vec::new()),
         }
     }
 
     fn copied(&self) -> Vec<String> {
         self.copied.lock().expect("test clipboard lock").clone()
+    }
+
+    fn compact(&self) -> Vec<(String, String)> {
+        self.compact.lock().expect("test compact lock").clone()
+    }
+
+    fn debug(&self) -> Vec<(String, String)> {
+        self.debug.lock().expect("test debug lock").clone()
     }
 }
 
@@ -37,7 +49,18 @@ impl LaunchHostTerminal for RecordingTerminal {
     fn is_debug_mode(&self) -> bool {
         true
     }
-    fn emit_compact_line(&self, _kind: &str, _line: &str) {}
+    fn emit_compact_line(&self, kind: &str, line: &str) {
+        self.compact
+            .lock()
+            .expect("test compact lock")
+            .push((kind.to_owned(), line.to_owned()));
+    }
+    fn emit_debug_line(&self, category: &str, line: &str) {
+        self.debug
+            .lock()
+            .expect("test debug lock")
+            .push((category.to_owned(), line.to_owned()));
+    }
     fn set_pointer_shape(&self, _pointer: bool) {}
     fn copy_to_clipboard(&self, payload: &str) -> bool {
         self.copied
@@ -102,6 +125,33 @@ fn build_log_mouse_wheel_ignores_axes_without_visible_scrollbar() {
     ));
 
     assert_eq!(view.build_log_scroll.offset(), 0);
+}
+
+#[test]
+fn build_log_mouse_debug_telemetry_does_not_escape_to_compact_output() {
+    let terminal = RecordingTerminal::new();
+    let mut view = crate::tui::update::initial_view();
+    view.build_log_open = true;
+
+    emit_dialog_mouse_debug_telemetry(
+        &terminal,
+        &view,
+        crossterm::event::MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 10,
+            row: 10,
+            modifiers: KeyModifiers::NONE,
+        },
+    );
+
+    assert!(
+        terminal.compact().is_empty(),
+        "mouse telemetry must not write operator-visible compact lines"
+    );
+    let debug = terminal.debug();
+    assert_eq!(debug.len(), 1);
+    assert_eq!(debug[0].0, "cockpit-dialog-mouse");
+    assert!(debug[0].1.contains("build_log_open=true"));
 }
 
 #[test]

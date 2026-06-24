@@ -48,14 +48,14 @@ RUN apt-get update && \
            /var/cache/apt/* \
            /tmp/*
 
-# Resolve the `agent` user by its runtime host UID. The image bakes `agent` at
-# UID 1000, but containers run as the host operator's UID (`docker run --user`)
-# so host-owned bind-mounts are transparently writable. libnss-extrausers reads
-# an extra passwd file (bind-mounted at runtime) so `getpwuid(host_uid)` still
-# resolves to `agent` with HOME=/home/agent — keeping shells, git, and the
-# Node-based agent CLIs (which call getpwuid) happy. See
+# Resolve the `agent` user/group by the runtime host UID/GID. The image bakes
+# `agent` at UID 1000, but containers run as the host operator's UID/GID
+# (`docker run --user`) so host-owned bind-mounts are transparently writable.
+# libnss-extrausers reads extra passwd/group files (bind-mounted at runtime) so
+# `getpwuid(host_uid)` resolves to `agent` with HOME=/home/agent and host GIDs
+# can resolve when the base image has no matching group. See
 # /reference/roadmap/construct-user-creation/.
-RUN sed -ri 's/^(passwd:.*)$/\1 extrausers/' /etc/nsswitch.conf && \
+RUN sed -ri 's/^(passwd:.*)$/\1 extrausers/; s/^(group:.*)$/\1 extrausers/' /etc/nsswitch.conf && \
     install -d -m 0755 /var/lib/extrausers && \
     : > /var/lib/extrausers/passwd && \
     : > /var/lib/extrausers/group
@@ -142,10 +142,10 @@ RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master
 # Install starship prompt
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
-COPY --chown=agent:0 zshrc /home/agent/.zshrc
+COPY --chown=agent:0 --chmod=0664 zshrc /home/agent/.zshrc
 
 # Fish config — opt-in alternative shell. Same Starship prompt and
 # auto-title behaviour as zsh so the operator's pane border title
 # does not regress when switching shells.
-RUN mkdir -p /home/agent/.config/fish
-COPY --chown=agent:0 fish-config.fish /home/agent/.config/fish/config.fish
+RUN install -d -o agent -g 0 -m 0775 /home/agent/.config/fish
+COPY --chown=agent:0 --chmod=0664 fish-config.fish /home/agent/.config/fish/config.fish

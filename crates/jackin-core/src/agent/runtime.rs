@@ -109,6 +109,13 @@ pub trait AgentRuntime: Send + Sync + 'static + private::Sealed {
     /// credentials into the role-state directory.
     fn state_paths(&self) -> AgentStatePaths;
 
+    /// Non-durable paths under `/home/agent` that installers may create inside
+    /// durable home roots but that must not be captured in the default-home
+    /// image seed. These are scratch/rollback artifacts, not user state.
+    fn default_home_exclude_paths(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     /// Extract a bare semver string from the raw output of `<agent> --version`.
     ///
     /// Returns a subslice of `raw` that looks like a version token, or `None`

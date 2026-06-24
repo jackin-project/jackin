@@ -75,6 +75,10 @@ RUN set -euxo pipefail && \\
         }
     }
 
+    fn default_home_exclude_paths(&self) -> &'static [&'static str] {
+        &[".config/opencode/opencode.json"]
+    }
+
     fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {
         // `opencode --version` returns e.g. "1.14.48" or "v1.14.48".
         let trimmed = raw.trim();

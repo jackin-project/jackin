@@ -5,8 +5,10 @@ use std::io;
 use std::sync::{Arc, Mutex};
 
 use crate::pr_context::{command_output_or_lookup_error, command_stdout_trimmed};
+use crate::protocol::attach::read_server_frame;
 use crate::tui::components::dialog::PullRequestStatus;
 use portable_pty::{ChildKiller, MasterPty, PtySize};
+use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
 struct NullChildKiller;
@@ -2866,6 +2868,35 @@ fn pointer_shape_updates_only_when_shape_changes() {
     mux.update_pointer_shape_for_mouse(23, hit.start, SGR_NO_BUTTON_MOTION);
     mux.client.flush_out_of_band();
     assert!(rx.try_recv().is_err(), "unchanged shape should not re-emit");
+}
+
+#[tokio::test]
+async fn drain_and_exit_delivers_shutdown_before_closing_attach_socket() {
+    let mut mux = test_mux(24, 80);
+    let (daemon_stream, mut client_stream) = tokio::net::UnixStream::pair().unwrap();
+    let (out_tx, out_rx) = mpsc::unbounded_channel();
+    let (cmd_tx, _cmd_rx) = mpsc::unbounded_channel();
+    mux.client.attach(out_tx);
+    mux.attached_task = Some(tokio::spawn(handle_attach_client(
+        daemon_stream,
+        out_rx,
+        cmd_tx,
+    )));
+
+    let read_shutdown = async {
+        let mut tag = [0u8; 1];
+        client_stream
+            .read_exact(&mut tag)
+            .await
+            .expect("shutdown tag should be readable");
+        read_server_frame(&mut client_stream, tag[0])
+            .await
+            .expect("shutdown frame should decode")
+            .expect("shutdown frame should be present")
+    };
+
+    let ((), frame) = tokio::join!(drain_and_exit(&mut mux), read_shutdown);
+    assert_eq!(frame, ServerFrame::Shutdown { reason: None });
 }
 
 #[test]

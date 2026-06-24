@@ -154,9 +154,8 @@ fn fetch_snapshot_via_docker_exec(container_name: &str) -> Result<Option<Instanc
 
 fn run_docker_exec_snapshot(container_name: &str) -> Result<std::process::Output> {
     let script = snapshot_exec_script();
-    // Match the container's run-time UID (`--user` on docker run) so the
-    // snapshot exec reads host-UID-owned state, not as the image's baked
-    // UID 1000.
+    // Match the container's run-time UID/GID (`--user` on docker run) so the
+    // snapshot exec reads host-owned state, not as the image's baked UID 1000.
     let run_as_user = crate::runtime::identity::host_run_as_user();
     let mut args: Vec<&str> = vec!["exec"];
     if let Some(ref user) = run_as_user {

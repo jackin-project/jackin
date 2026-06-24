@@ -2931,6 +2931,35 @@ plugins = []
             .contains(&("DOCKER_BUILDKIT".to_owned(), "1".to_owned())),
         "Docker builds must use BuildKit even when no GitHub token secret is requested"
     );
+
+    let run_call = runner
+        .recorded
+        .iter()
+        .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
+        .unwrap();
+    if let Some(run_as_user) = crate::runtime::identity::host_run_as_user() {
+        assert!(
+            run_call.contains(&format!("--user {run_as_user} --group-add 0")),
+            "role docker run must use host UID/GID plus supplementary group 0: {run_call}"
+        );
+        assert!(
+            run_call.contains("/var/lib/extrausers/passwd:ro"),
+            "role docker run must mount runtime passwd entry: {run_call}"
+        );
+        assert!(
+            run_call.contains("/var/lib/extrausers/group:ro"),
+            "role docker run must mount runtime group entry: {run_call}"
+        );
+
+        let passwd = std::fs::read_to_string(paths.jackin_home.join("extrausers/passwd")).unwrap();
+        let group = std::fs::read_to_string(paths.jackin_home.join("extrausers/group")).unwrap();
+        let (uid, gid) = run_as_user.split_once(':').unwrap();
+        assert_eq!(
+            passwd,
+            format!("agent:x:{uid}:{gid}:agent:/home/agent:/bin/zsh\n")
+        );
+        assert_eq!(group, format!("agent-host:x:{gid}:agent\n"));
+    }
 }
 
 #[tokio::test]

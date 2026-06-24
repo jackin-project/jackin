@@ -66,7 +66,7 @@ fn renders_runtime_finalization_in_one_layer() {
     );
     assert!(
         dockerfile.contains(
-            "RUN install -d -o agent -g 0 /jackin/default-home \\\n    && for dir in '.claude'; do"
+            "RUN install -d -o agent -g 0 /jackin/default-home \\\n    && rm -rf '/home/agent/.claude/backups' \\\n    && for dir in '.claude'; do"
         ),
         "default-home snapshot creates only the root, never the per-agent targets (else mv nests): {dockerfile}"
     );
@@ -84,6 +84,18 @@ fn renders_runtime_finalization_in_one_layer() {
         dockerfile.matches("mv \"/home/agent/$dir\"").count(),
         1,
         "default-home snapshot should use one mv loop, not one copy command per agent: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("install -d -o agent -g 0 -m 0775 \"/home/agent/$dir\""),
+        "live-home placeholders must be writable by runtime supplementary group 0: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("find /jackin/default-home -type d -exec chmod g+rx {} +"),
+        "default-home snapshot should normalize directory group readability before the guard: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("find /jackin/default-home -type f -exec chmod g+r {} +"),
+        "default-home snapshot should normalize file group readability before the guard: {dockerfile}"
     );
     assert!(!dockerfile.contains("chown -R agent:agent /jackin/default-home"));
     assert!(!dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
@@ -105,6 +117,34 @@ fn renders_runtime_finalization_in_one_layer() {
     assert!(
         dockerfile.contains("jackin default-home contains a non-group-readable path: $bad"),
         "default-home guard should explain the unreadable seed path: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains(
+            "RUN install -d -o agent -g 0 -m 0775 /home/agent /home/agent/.config /home/agent/.config/git /home/agent/.config/fish"
+        ),
+        "runtime home config parents must be writable by supplementary group 0: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("touch /home/agent/.gitconfig /home/agent/.config/git/config"),
+        "runtime Git config files must exist before permission repair: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("chmod 0664 /home/agent/.gitconfig /home/agent/.config/git/config"),
+        "runtime Git config files must be writable by supplementary group 0: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("for path in /home/agent/.zshrc /home/agent/.config/fish/config.fish"),
+        "runtime shell config files must be repaired after finalization: {dockerfile}"
+    );
+    let finalization_pos = dockerfile
+        .find("cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc")
+        .expect("runtime finalization");
+    let writable_pos = dockerfile
+        .find("Runtime home mutability")
+        .expect("runtime home mutability");
+    assert!(
+        finalization_pos < writable_pos,
+        "runtime home mutability repair must run after finalization creates/appends shell files: {dockerfile}"
     );
 }
 
@@ -173,6 +213,9 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
         "COPY --link --chown=agent:0 --chmod=0644 .jackin-runtime/zshenv-source-shim /jackin/runtime/zshenv-source-shim"
     ));
     assert!(dockerfile.contains("cat /jackin/runtime/zshenv-source-shim >> /home/agent/.zshenv"));
+    assert!(dockerfile.contains(
+        "for path in /home/agent/.zshrc /home/agent/.zshenv /home/agent/.config/fish/config.fish"
+    ));
     // Structural shape: the four load-bearing fragments must appear
     // in order — guard test, rc capture, source call, success-only
     // export, file append. A regression that drops the guard, the rc
@@ -360,6 +403,57 @@ fn renders_codex_only_dockerfile_final_user_is_agent() {
         .rfind(|l| l.starts_with("USER "))
         .unwrap();
     assert_eq!(last_user, "USER agent");
+    let cleanup_pos = dockerfile
+        .find("rm -rf '/home/agent/.codex/tmp'")
+        .expect("codex temp cleanup");
+    let snapshot_pos = dockerfile
+        .find("mv \"/home/agent/$dir\" \"/jackin/default-home/$dir\"")
+        .expect("default-home snapshot move");
+    assert!(
+        cleanup_pos < snapshot_pos,
+        "Codex scratch files must be removed before default-home snapshot: {dockerfile}"
+    );
+}
+
+#[test]
+fn default_home_snapshot_removes_agent_generated_private_files_before_move() {
+    let dockerfile = render_derived_dockerfile(
+        "FROM projectjackin/construct:0.1-trixie\n",
+        None,
+        &[Agent::Claude, Agent::Codex, Agent::Opencode],
+        None,
+        &BTreeMap::new(),
+        None,
+    );
+
+    let cleanup_pos = dockerfile.find("rm -rf").expect("cleanup command");
+    let snapshot_pos = dockerfile
+        .find("mv \"/home/agent/$dir\" \"/jackin/default-home/$dir\"")
+        .expect("default-home snapshot move");
+    let chmod_pos = dockerfile
+        .find("find /jackin/default-home -type f -exec chmod g+r {} +")
+        .expect("default-home chmod");
+    let guard_pos = dockerfile
+        .find("jackin default-home contains a non-group-readable path")
+        .expect("default-home guard");
+    for path in [
+        "'/home/agent/.claude/backups'",
+        "'/home/agent/.codex/tmp'",
+        "'/home/agent/.config/opencode/opencode.json'",
+    ] {
+        assert!(
+            dockerfile.contains(path),
+            "missing generated private-file cleanup for {path}: {dockerfile}"
+        );
+    }
+    assert!(
+        cleanup_pos < snapshot_pos,
+        "generated private files must be removed before default-home snapshot: {dockerfile}"
+    );
+    assert!(
+        snapshot_pos < chmod_pos && chmod_pos < guard_pos,
+        "remaining durable seed files must be normalized before the guard: {dockerfile}"
+    );
 }
 
 #[test]

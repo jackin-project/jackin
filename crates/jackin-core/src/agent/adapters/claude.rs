@@ -84,6 +84,10 @@ RUN --mount=type=cache,id=jackin-agent-prefetch-claude,target=/home/agent/.cache
         }
     }
 
+    fn default_home_exclude_paths(&self) -> &'static [&'static str] {
+        &[".claude/backups"]
+    }
+
     fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {
         // `claude --version` returns e.g. "2.1.96 (Claude Code)"; take the first token.
         let token = raw.split_whitespace().next()?;

@@ -76,6 +76,10 @@ RUN set -euxo pipefail && \\
         }
     }
 
+    fn default_home_exclude_paths(&self) -> &'static [&'static str] {
+        &[".codex/tmp"]
+    }
+
     fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {
         raw.split_whitespace()
             .find(|token| looks_like_version(token))

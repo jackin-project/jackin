@@ -362,6 +362,22 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
     }
 }
 
+fn emit_dialog_mouse_debug_telemetry(
+    terminal: &dyn LaunchHostTerminal,
+    v: &LaunchView,
+    m: event::MouseEvent,
+) {
+    if terminal.is_debug_mode() && (v.container_info_open || v.build_log_open) {
+        terminal.emit_debug_line(
+            "cockpit-dialog-mouse",
+            &format!(
+                "kind={:?} modifiers={:?} col={} row={} container_info_open={} build_log_open={}",
+                m.kind, m.modifiers, m.column, m.row, v.container_info_open, v.build_log_open
+            ),
+        );
+    }
+}
+
 /// Drain queued terminal input and fold it into the build-log overlay / failure
 /// state.
 ///
@@ -430,15 +446,7 @@ pub fn handle_cockpit_input(
                 // for a dialog mouse event so a `--debug` run reveals whether a
                 // horizontal-scroll gesture even reaches the cockpit (and as what
                 // kind/modifiers), instead of guessing at the mapping.
-                if terminal.is_debug_mode() && (v.container_info_open || v.build_log_open) {
-                    terminal.emit_compact_line(
-                      "cockpit-dialog-mouse",
-                      &format!(
-                          "kind={:?} modifiers={:?} col={} row={} container_info_open={} build_log_open={}",
-                          m.kind, m.modifiers, m.column, m.row, v.container_info_open, v.build_log_open
-                      ),
-                  );
-                }
+                emit_dialog_mouse_debug_telemetry(terminal, &v, m);
                 match m.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
                         handle_cockpit_mouse_down(&mut v, ctx, m.column, m.row);

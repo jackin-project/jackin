@@ -142,12 +142,25 @@ fn render_default_home_commands(agents: &[Agent]) -> String {
     }
     dirs.sort_unstable();
     dirs.dedup();
+    let mut exclude_paths: Vec<&'static str> = Vec::new();
+    for agent in agents {
+        exclude_paths.extend(agent.runtime().default_home_exclude_paths());
+    }
+    exclude_paths.sort_unstable();
+    exclude_paths.dedup();
 
     // Create ONLY the default-home root here, never the per-agent target dirs:
     // pre-creating `/jackin/default-home/$dir` would make the `mv` below move the
     // source *into* it (`…/.claude/.claude`) instead of renaming onto it. Each
     // target's parent is created at mv time via `mkdir -p "$(dirname …)"`.
     let mut commands = String::from("install -d -o agent -g 0 /jackin/default-home");
+    if !exclude_paths.is_empty() {
+        commands.push_str(" \\\n    && rm -rf");
+        for path in &exclude_paths {
+            commands.push(' ');
+            commands.push_str(&shell_quote(&format!("/home/agent/{path}")));
+        }
+    }
     if dirs.is_empty() {
         return commands;
     }
@@ -160,15 +173,36 @@ fn render_default_home_commands(agents: &[Agent]) -> String {
     // an empty placeholder. The mount at `docker run` overlays the placeholder
     // with the durable bind-mounted home, and runtime-setup seeds it from
     // /jackin/default-home on first launch (D5 empty-dir gate). `mkdir -p` on the
-    // target parent handles multi-segment roots like `.local/share/amp`.
+    // target parent handles multi-segment default-home roots like
+    // `.local/share/amp`; the recreated live-home placeholder is born writable
+    // by group 0 because runtime processes keep group 0 as a supplementary
+    // group while their primary identity matches the host UID/GID.
     commands.push_str(
-        "; do \\\n        if [ -d \"/home/agent/$dir\" ]; then \\\n            mkdir -p \"$(dirname \"/jackin/default-home/$dir\")\" \\\n            && mv \"/home/agent/$dir\" \"/jackin/default-home/$dir\" \\\n            && mkdir -p \"/home/agent/$dir\"; \\\n        fi; \\\n    done",
+        "; do \\\n        if [ -d \"/home/agent/$dir\" ]; then \\\n            mkdir -p \"$(dirname \"/jackin/default-home/$dir\")\" \\\n            && mv \"/home/agent/$dir\" \"/jackin/default-home/$dir\" \\\n            && install -d -o agent -g 0 -m 0775 \"/home/agent/$dir\"; \\\n        fi; \\\n    done",
+    );
+    commands.push_str(
+        " \\\n    && find /jackin/default-home -type d -exec chmod g+rx {} + \\\n    && find /jackin/default-home -type f -exec chmod g+r {} +",
     );
     commands
 }
 
 fn render_default_home_guard() -> &'static str {
     "bad=\"$(find /jackin/default-home \\( -type d ! -perm -0050 -o -type f ! -perm -0040 \\) -print -quit)\" \\\n    && if [ -n \"$bad\" ]; then \\\n        echo \"jackin default-home contains a non-group-readable path: $bad\" >&2; \\\n        exit 1; \\\n    fi"
+}
+
+fn render_runtime_home_writable_commands(source_hook_declared: bool) -> String {
+    // Runtime containers run as the host UID/GID while NSS maps that UID to
+    // `agent`. They also keep supplementary group 0, so mutable image-baked
+    // home paths have to be writable via group 0, not only by UID 1000.
+    let mut mutable_shell_files = vec!["/home/agent/.zshrc"];
+    if source_hook_declared {
+        mutable_shell_files.push("/home/agent/.zshenv");
+    }
+    mutable_shell_files.push("/home/agent/.config/fish/config.fish");
+    let mutable_shell_files = mutable_shell_files.join(" ");
+    format!(
+        "install -d -o agent -g 0 -m 0775 /home/agent /home/agent/.config /home/agent/.config/git /home/agent/.config/fish \\\n    && touch /home/agent/.gitconfig /home/agent/.config/git/config \\\n    && chown agent:0 /home/agent/.gitconfig /home/agent/.config/git/config \\\n    && chmod 0664 /home/agent/.gitconfig /home/agent/.config/git/config \\\n    && for path in {mutable_shell_files}; do \\\n        if [ -e \"$path\" ]; then chown agent:0 \"$path\" && chmod 0664 \"$path\"; fi; \\\n    done"
+    )
 }
 
 /// How an agent's CLI is installed into the derived image. `P` is the binary
@@ -244,11 +278,14 @@ pub fn render_derived_dockerfile(
     agent_installs: &BTreeMap<Agent, AgentInstall<String>>,
     claude_config: Option<&ClaudeConfig>,
 ) -> String {
+    let source_hook_declared = hooks.is_some_and(|h| h.source.is_some());
     let hook_section = render_hook_section(hooks);
     let default_home_commands = render_default_home_commands(supported);
     let default_home_guard = render_default_home_guard();
     let hook_final_commands = (!hook_section.final_commands.is_empty())
         .then(|| format!("{} \\\n    && ", hook_section.final_commands.trim_end()));
+    let runtime_home_writable_commands =
+        render_runtime_home_writable_commands(source_hook_declared);
 
     // Bake every supported agent into the derived image (D1). Each install_block()
     // COPYs the pre-fetched binary and runs the agent's official installer, writing
@@ -345,6 +382,10 @@ RUN {default_home_guard}
 
 # ── Runtime finalization: shell-title shim into .zshrc + jackin runtime dirs ──
 RUN {hook_final_commands}{shell_title_and_runtime_dir_commands}
+
+# ── Runtime home mutability: PID 1 runs as host UID/GID but resolves as agent. ──
+RUN {runtime_home_writable_commands}
+
 # /jackin/runtime for jackin-capsule; agent bin dirs so binaries baked by
 # install_block() resolve for sibling tabs that share the same container.
 ENV PATH=\"/jackin/runtime:{agent_path_segment}:${{PATH}}\"

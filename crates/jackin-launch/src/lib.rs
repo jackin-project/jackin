@@ -131,6 +131,7 @@ pub trait LaunchHostTerminal: Send + Sync {
     fn host_screen_owned(&self) -> bool;
     fn is_debug_mode(&self) -> bool;
     fn emit_compact_line(&self, kind: &str, line: &str);
+    fn emit_debug_line(&self, category: &str, line: &str);
     fn set_pointer_shape(&self, pointer: bool);
     fn copy_to_clipboard(&self, payload: &str) -> bool;
 }
@@ -149,6 +150,7 @@ mod test_support {
             false
         }
         fn emit_compact_line(&self, _kind: &str, _line: &str) {}
+        fn emit_debug_line(&self, _category: &str, _line: &str) {}
         fn set_pointer_shape(&self, _pointer: bool) {}
         fn copy_to_clipboard(&self, _payload: &str) -> bool {
             true
