@@ -1023,6 +1023,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // path; Capsule renderers read the last Turso snapshot.
             _ = usage_account_ticker.tick() => {
                 mux.refresh_active_usage_account_snapshots(Instant::now());
+                if mux.refresh_open_usage_dialog_from_cache() {
+                    mux.invalidate(dialog_change_redraw_reason());
+                }
             }
 
             // Periodic state refresh: re-render the status bar so the tab
@@ -1057,6 +1060,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 }
                 if mux.expire_selection_copy_feedback(Instant::now()) {
                     mux.invalidate(selection_change_redraw_reason());
+                    continue;
+                }
+                if mux.refresh_open_usage_dialog_from_cache() {
+                    mux.invalidate(dialog_change_redraw_reason());
                     continue;
                 }
                 // A modal owns the whole screen behind an opaque backdrop;

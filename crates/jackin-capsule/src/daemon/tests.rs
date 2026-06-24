@@ -247,6 +247,14 @@ fn apply_action_open_usage_queues_focused_provider_refresh() {
     mux.apply_action(Action::OpenUsage);
 
     assert!(matches!(mux.dialog_top(), Some(Dialog::Usage { .. })));
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog open") else {
+        panic!("usage dialog expected");
+    };
+    assert!(
+        view.updated_label.contains("refreshing"),
+        "{:?}",
+        view.updated_label
+    );
     assert_eq!(
         mux.pending_usage_refresh,
         Some(crate::usage::UsageRefreshTarget {
@@ -254,6 +262,21 @@ fn apply_action_open_usage_queues_focused_provider_refresh() {
             provider: Some("OpenAI".to_owned())
         })
     );
+}
+
+#[test]
+fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
+    let mut mux = single_pane_tab_mux();
+    let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
+    view.updated_label = "Updated just now".to_owned();
+    mux.dialog_push(Dialog::new_usage(view));
+
+    assert!(mux.refresh_open_usage_dialog_from_cache());
+
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog open") else {
+        panic!("usage dialog expected");
+    };
+    assert_ne!(view.updated_label, "Updated just now");
 }
 
 fn pull_request_fixture(number: u64) -> PullRequestInfo {

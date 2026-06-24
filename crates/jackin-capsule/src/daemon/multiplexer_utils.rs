@@ -262,6 +262,7 @@ impl Multiplexer {
             self.usage_cache
                 .request_account_refresh(target, Instant::now());
         }
+        self.decorate_open_usage_dialog_refreshing();
     }
 
     fn usage_refresh_target_for_provider(
@@ -323,6 +324,54 @@ impl Multiplexer {
             &self.provider_keys,
             now,
         );
+    }
+
+    pub(super) fn refresh_open_usage_dialog_from_cache(&mut self) -> bool {
+        let Some((selected, provider_label)) = self.open_usage_dialog_selection() else {
+            return false;
+        };
+        let mut view = self.focused_usage_snapshot_for_provider(provider_label.as_deref(), false);
+        if self.pending_usage_refresh.is_some() {
+            decorate_usage_view_refreshing(&mut view);
+        }
+        if let Some(Dialog::Usage {
+            view: current,
+            selected: current_selected,
+            ..
+        }) = self.dialog_top_mut()
+        {
+            if **current == view && *current_selected == selected {
+                return false;
+            }
+            **current = view;
+            *current_selected = selected;
+            return true;
+        }
+        false
+    }
+
+    fn decorate_open_usage_dialog_refreshing(&mut self) {
+        if self.pending_usage_refresh.is_none() {
+            return;
+        }
+        if let Some(Dialog::Usage { view, .. }) = self.dialog_top_mut() {
+            decorate_usage_view_refreshing(view);
+        }
+    }
+
+    fn open_usage_dialog_selection(
+        &self,
+    ) -> Option<(
+        crate::tui::components::dialog::UsageDialogTab,
+        Option<String>,
+    )> {
+        let Dialog::Usage { view, selected, .. } = self.dialog_top()? else {
+            return None;
+        };
+        let provider = (*selected == crate::tui::components::dialog::UsageDialogTab::Provider)
+            .then(|| view.focused_provider.clone())
+            .flatten();
+        Some((*selected, provider))
     }
 
     pub(super) fn session_infos(&self) -> Vec<SessionInfo> {
@@ -404,5 +453,11 @@ impl Multiplexer {
                 is_self: false,
             })
             .collect()
+    }
+}
+
+fn decorate_usage_view_refreshing(view: &mut jackin_protocol::control::FocusedUsageView) {
+    if !view.updated_label.contains("refreshing") {
+        view.updated_label.push_str(" · refreshing...");
     }
 }

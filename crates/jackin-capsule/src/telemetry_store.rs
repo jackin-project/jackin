@@ -492,7 +492,11 @@ pub(crate) fn focused_usage_view(
         source,
         confidence,
         fetched_at_epoch: fetched_at,
-        updated_label: if first.updated_label.trim().is_empty() {
+        updated_label: if matches!(
+            status,
+            UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale
+        ) || first.updated_label.trim().is_empty()
+        {
             relative_updated_label(fetched_at, now_epoch)
         } else {
             first.updated_label.clone()
@@ -879,7 +883,21 @@ mod tests {
         assert_eq!(view.buckets[0].label, "Credits");
         assert_eq!(view.buckets[1].label, "Session");
         assert_eq!(view.buckets[1].remaining_percent, Some(37));
+        assert_eq!(view.updated_label, "Updated just now");
         assert_eq!(view.status_bar_label, "Codex Session: 63% used · 37% left");
+    }
+
+    #[test]
+    fn focused_usage_view_ticks_relative_updated_label_from_fetch_time() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("usage.db");
+        store_usage_snapshot(&db, &usage_view()).expect("store snapshot");
+
+        let view = focused_usage_view(&db, Some("codex"), Some("Codex"), 1_781_185_680)
+            .expect("read focused usage")
+            .expect("stored usage view");
+
+        assert_eq!(view.updated_label, "Updated 2m ago");
     }
 
     #[test]
