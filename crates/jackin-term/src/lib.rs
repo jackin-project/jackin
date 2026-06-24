@@ -27,9 +27,11 @@ pub mod damage;
 pub mod grid;
 pub mod passthrough;
 pub mod snapshot;
+pub mod width;
 
 pub use cell::{Attrs, Cell, Color};
 pub use damage::{DirtySpans, DirtyTracker};
 pub use grid::{DamageGrid, MouseProtocolEncoding, MouseProtocolMode, RowArena};
 pub use passthrough::{PassthroughBuffer, PassthroughEvent};
 pub use snapshot::{GridPatch, GridSnapshot, GridView, SnapCell};
+pub use width::{VirtualTerminalProfile, display_width};

@@ -243,12 +243,109 @@ fn vs16_and_zwj_sequences_stay_one_cluster() {
     let mut grid = DamageGrid::new(5, 20, 10);
     grid.process("\u{2601}\u{fe0f}X".as_bytes());
     assert_eq!(cell_text(&grid, 0, 0), "\u{2601}\u{fe0f}");
-    assert_eq!(cell_text(&grid, 0, 1), "X");
+    assert!(
+        grid.cell(0, 0).expect("cloud lead").is_wide,
+        "VS16 emoji presentation must grow the lead to two columns"
+    );
+    assert!(
+        grid.cell(0, 1)
+            .expect("cloud continuation")
+            .is_wide_continuation,
+        "VS16 growth must create a continuation cell"
+    );
+    assert_eq!(cell_text(&grid, 0, 2), "X");
 
     let mut grid = DamageGrid::new(5, 20, 10);
     let family = "\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}";
     grid.process(family.as_bytes());
     assert_eq!(cell_text(&grid, 0, 0), family);
+    assert!(
+        grid.cell(0, 0).expect("family lead").is_wide,
+        "ZWJ emoji cluster stays two columns"
+    );
+    assert!(
+        grid.cell(0, 1)
+            .expect("family continuation")
+            .is_wide_continuation,
+        "ZWJ emoji cluster keeps a continuation cell"
+    );
+}
+
+#[test]
+fn halfwidth_katakana_voicing_mark_grows_cluster_width() {
+    let mut grid = DamageGrid::new(5, 20, 10);
+    grid.process("\u{ff76}\u{ff9e}X".as_bytes());
+
+    assert_eq!(cell_text(&grid, 0, 0), "\u{ff76}\u{ff9e}");
+    assert!(
+        grid.cell(0, 0).expect("dakuten lead").is_wide,
+        "dakuten cluster must grow to two columns"
+    );
+    assert!(
+        grid.cell(0, 1)
+            .expect("dakuten continuation")
+            .is_wide_continuation,
+        "dakuten growth must create a continuation cell"
+    );
+    assert_eq!(
+        cell_text(&grid, 0, 2),
+        "X",
+        "next printable must use the grown cursor column"
+    );
+}
+
+#[test]
+fn dsr_reports_cursor_after_cluster_width_growth() {
+    let mut grid = DamageGrid::new(5, 20, 10);
+    grid.process("\u{ff76}\u{ff9e}".as_bytes());
+    grid.process(b"\x1b[6n");
+    let reply = first_reply(&mut grid);
+    assert_eq!(
+        reply, b"\x1b[1;3R",
+        "DSR must report the cursor after the grown two-column cluster"
+    );
+}
+
+#[test]
+fn cluster_width_growth_marks_the_grown_span_dirty() {
+    let mut grid = DamageGrid::new(5, 20, 10);
+    grid.process("\u{ff76}".as_bytes());
+    drop(grid.dirty_spans());
+
+    grid.process("\u{ff9e}".as_bytes());
+    let spans = grid.dirty_spans();
+    let DirtySpans::Rows(rows) = spans else {
+        panic!("expected row-span dirty tracking, got {spans:?}");
+    };
+    assert_eq!(
+        rows.as_slice(),
+        [crate::damage::DirtySpan {
+            row: 0,
+            start_col: 0,
+            end_col: 2,
+        }],
+        "dakuten growth must dirty both the lead and new continuation"
+    );
+}
+
+#[test]
+fn final_column_cluster_growth_keeps_deferred_wrap_contract() {
+    let mut grid = DamageGrid::new(5, 5, 10);
+    grid.process(b"\x1b[1;5H");
+    grid.process("\u{ff76}\u{ff9e}".as_bytes());
+    grid.process(b"\x1b[6n");
+    assert_eq!(
+        first_reply(&mut grid),
+        b"\x1b[1;5R",
+        "DSR must clamp final-column cluster growth to the last real column"
+    );
+
+    grid.process(b"Z");
+    assert_eq!(
+        cell_text(&grid, 1, 0),
+        "Z",
+        "next printable after final-column growth must consume deferred wrap"
+    );
 }
 
 #[test]

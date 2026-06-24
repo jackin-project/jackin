@@ -22,11 +22,10 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, OnceLock},
 };
 
-use unicode_width::UnicodeWidthChar;
-
 use crate::cell::{Attrs, Cell, Color};
 use crate::damage::{DirtySpans, DirtyTracker};
 use crate::passthrough::{PassthroughBuffer, PassthroughEvent};
+use crate::width::VirtualTerminalProfile;
 
 /// Mouse protocol modes (DEC modes 1000/1002/1003).
 ///
@@ -76,6 +75,7 @@ pub struct DamageGrid {
     // sequences split across PTY read() boundaries to be silently dropped.
     parser: vte::Parser,
     pending_utf8: Vec<u8>,
+    profile: VirtualTerminalProfile,
 
     // ── Grid state ────────────────────────────────────────────────────────────
     rows: u16,
@@ -360,6 +360,7 @@ impl DamageGrid {
         Self {
             parser: vte::Parser::new(),
             pending_utf8: Vec::new(),
+            profile: VirtualTerminalProfile::default(),
             rows,
             cols,
             primary: blank.clone(),
@@ -789,17 +790,7 @@ impl DamageGrid {
 
     /// Write a character at the current cursor position, advance cursor.
     fn write_char_at_cursor(&mut self, ch: char) {
-        // DECAWM deferred wrap: a previous last-column write parked here. Now
-        // that another printable has arrived, perform the wrap before writing.
-        if self.pending_wrap {
-            self.pending_wrap = false;
-            self.cursor_col = 0;
-            self.newline_action();
-        }
-        if self.cursor_row >= self.rows || self.cursor_col >= self.cols {
-            return;
-        }
-        let width = UnicodeWidthChar::width(ch).unwrap_or(1) as u16;
+        let width = self.profile.char_width(ch);
         self.mutated_since_preserve = true;
 
         // Grapheme clustering: zero-width input (combining marks, variation
@@ -808,6 +799,18 @@ impl DamageGrid {
         // cluster. Cluster width stays the base width — DECRQM declines mode
         // 2027, so the outer terminal advances by `unicode_width` too.
         if self.append_to_previous_cluster(ch, width) {
+            return;
+        }
+
+        // DECAWM deferred wrap: a previous last-column write parked here. Now
+        // that a new printable (not a cluster continuation) has arrived,
+        // perform the wrap before writing.
+        if self.pending_wrap {
+            self.pending_wrap = false;
+            self.cursor_col = 0;
+            self.newline_action();
+        }
+        if self.cursor_row >= self.rows || self.cursor_col >= self.cols {
             return;
         }
         let row = self.cursor_row as usize;
@@ -839,14 +842,14 @@ impl DamageGrid {
         let cell = Cell {
             // Phase 4: CompactString stores ch inline (no heap alloc for ASCII + most Unicode).
             contents: compact_str::format_compact!("{ch}"),
-            is_wide: width == 2,
+            is_wide: width > 1,
             is_wide_continuation: false,
             attrs: attrs.clone(),
         };
         {
             let grid = self.active_grid();
             grid[row][col] = cell;
-            if width == 2 && col + 1 < cols as usize && col + 1 < grid[row].len() {
+            if width > 1 && col + 1 < cols as usize && col + 1 < grid[row].len() {
                 grid[row][col + 1] = Cell {
                     contents: compact_str::CompactString::new(""),
                     is_wide: false,
@@ -909,17 +912,48 @@ impl DamageGrid {
         if !zero_width && !continues_zwj {
             return false;
         }
-        let grid = self.active_grid();
-        if grid[row][col].contents.is_empty() && zero_width {
-            // Nothing to join — drop the orphan mark.
-            return true;
-        }
-        let mut joined = compact_str::CompactString::new(&grid[row][col].contents);
+        let old_width = {
+            let grid = self.active_grid();
+            if grid[row][col].contents.is_empty() && zero_width {
+                // Nothing to join — drop the orphan mark.
+                return true;
+            }
+            cell_width(&grid[row][col])
+        };
+        let attrs = {
+            let grid = self.active_grid();
+            grid[row][col].attrs.clone()
+        };
+        let old_cursor_end = col as u16 + old_width;
+        let mut joined = {
+            let grid = self.active_grid();
+            compact_str::CompactString::new(&grid[row][col].contents)
+        };
         joined.push(ch);
-        grid[row][col].contents = joined;
+        let new_width = self.profile.cluster_width(joined.as_str()).min(2);
+        {
+            let cols = self.cols as usize;
+            let grid = self.active_grid();
+            grid[row][col].contents = joined;
+            set_cell_width(&mut grid[row], col, new_width, attrs, cols);
+        }
+        if self.cursor_row == row as u16
+            && self.cursor_col == old_cursor_end
+            && self.cursor_col < self.cols
+        {
+            self.cursor_col = (col as u16 + new_width).min(self.cols);
+        }
+        if self.cursor_row == row as u16
+            && (self.pending_wrap || self.cursor_col >= self.cols)
+            && col as u16 == self.cols.saturating_sub(1)
+            && new_width > old_width
+        {
+            self.cursor_col = self.cols;
+            self.pending_wrap = true;
+        }
         let mark_start = col as u16;
-        self.dirty
-            .mark_range(self.cursor_row, mark_start, mark_start.saturating_add(2));
+        let mark_end = mark_start.saturating_add(old_width.max(new_width).max(1));
+        self.dirty.mark_range(self.cursor_row, mark_start, mark_end);
         true
     }
 
@@ -1502,6 +1536,34 @@ fn parse_extended_color(params: &[u16], i: &mut usize) -> Option<Color> {
             Some(Color::Idx(n))
         }
         _ => None,
+    }
+}
+
+fn cell_width(cell: &Cell) -> u16 {
+    if cell.is_wide {
+        2
+    } else if cell.is_wide_continuation || cell.contents.is_empty() {
+        0
+    } else {
+        1
+    }
+}
+
+fn set_cell_width(row: &mut [Cell], col: usize, width: u16, attrs: Attrs, cols: usize) {
+    row[col].is_wide = width > 1;
+    row[col].is_wide_continuation = false;
+
+    if col + 1 < cols && col + 1 < row.len() {
+        if width > 1 {
+            row[col + 1] = Cell {
+                contents: compact_str::CompactString::new(""),
+                is_wide: false,
+                is_wide_continuation: true,
+                attrs,
+            };
+        } else if row[col + 1].is_wide_continuation {
+            row[col + 1] = Cell::default();
+        }
     }
 }
 
