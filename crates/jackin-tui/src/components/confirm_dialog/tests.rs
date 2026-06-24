@@ -198,3 +198,31 @@ fn default_dialog_has_symmetric_vertical_padding() {
         "last inner row must be the trailing spacer (blank): {trailing_inner:?}"
     );
 }
+
+#[test]
+fn default_dialog_renders_followup_lines_as_dim_explanation() {
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Modifier};
+
+    let s = ConfirmState::new("Purge instance?\nRemoves recovery state.");
+    let height = required_height(&s);
+    let area = Rect::new(0, 0, 60, height);
+    let backend = TestBackend::new(area.width, area.height);
+    let mut term = Terminal::new(backend).unwrap();
+    term.draw(|f| render_confirm_dialog(f, area, &s)).unwrap();
+    let buf = term.backend().buffer();
+
+    let first_symbol_cell = |row: u16, needle: &str| {
+        (0..area.width)
+            .map(|x| (x, buf[(x, row)].clone()))
+            .find(|(_, cell)| cell.symbol() == needle)
+            .unwrap_or_else(|| panic!("missing {needle:?} on row {row}"))
+    };
+
+    let (_, question_cell) = first_symbol_cell(2, "P");
+    assert_eq!(question_cell.fg, crate::theme::WHITE);
+    assert!(question_cell.modifier.contains(Modifier::BOLD));
+
+    let (_, explanation_cell) = first_symbol_cell(3, "R");
+    assert_eq!(explanation_cell.fg, crate::theme::PHOSPHOR_DIM);
+    assert!(!explanation_cell.modifier.contains(Modifier::BOLD));
+}

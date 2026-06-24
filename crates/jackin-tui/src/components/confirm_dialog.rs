@@ -300,7 +300,15 @@ pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmS
 
     let prompt_lines_vec: Vec<Line<'_>> = prompt
         .lines()
-        .map(|l| Line::from(Span::styled(l.to_owned(), crate::theme::BOLD_WHITE)))
+        .enumerate()
+        .map(|(idx, line)| {
+            let style = if idx == 0 {
+                crate::theme::BOLD_WHITE
+            } else {
+                crate::theme::DIM
+            };
+            Line::from(Span::styled(line.to_owned(), style))
+        })
         .collect();
     frame.render_widget(
         Paragraph::new(prompt_lines_vec).alignment(Alignment::Center),
