@@ -254,14 +254,14 @@ Both surfaces — the status bar and the overlay — read **exclusively from the
 
 jackin' follows CodexBar's cadence model. CodexBar reference behaviour: one global automatic interval, **default 5 minutes**, refreshing all enabled providers off the main thread; opening the popover does NOT force a full refresh — it only retries providers that errored or have no snapshot, after a ~1.2s delay; server quota endpoints carry rate-limit gates (Anthropic `oauth/usage` uses a 5-minute or `Retry-After` cooldown on HTTP 429, bypassed only for a manual refresh); the expensive web scrape runs ~5× slower (~25 min); refreshes are single-flighted and coalesced; there is no periodic UI tick for the relative-time label (it updates when the menu is rebuilt).
 
-jackin' default: a conservative automatic interval targeting **~5 minutes per account** (with jitter), honoring `Retry-After` and backing off on HTTP 429, refreshing the focused provider first.
+jackin' default: poll every **~5 minutes per account** with ±60s jitter; only providers that have an active agent pane in the container are polled; the focused provider refreshes first and on overlay open; honor `Retry-After` with exponential backoff on repeated HTTP 429 capped at ~30 min; single-flight per provider. jackin' performs no OAuth refresh of its own — the refresher re-reads the in-container credential file each cycle (the agent CLI keeps it current) and degrades to `needs login` / `stale` when no fresh token is available.
 
 ### The multi-container rate-limit problem (design for it up front)
 
 Provider usage limits are **per account / per token / per IP, not per process**. jackin' can run N containers against the SAME provider account, so naive per-container polling multiplies request volume N× — a 5-minute cadence across 50 containers is one request every ~6 seconds to one account, enough to trip 429s a single CodexBar instance never sees. The design must therefore:
 
-- Coalesce to **one refresh per account**, fanned out to every container that shares it, rather than each container polling independently. The long-term home is the host-owned refresh daemon in [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/#host-owned-telemetry-cache); until it exists, the capsule-local refresher must use a conservative interval, add jitter to avoid thundering-herd alignment, and honor a **shared cooldown** so all containers respect a 429 / `Retry-After` seen by any one of them.
-- Server quota endpoints are never polled tighter than CodexBar's defaults. Exact per-provider intervals and the shared-cooldown mechanism are an explicit pre-ship decision (see Open questions); the starting point is ~5 min/account with `Retry-After` backoff.
+- Coalesce to **one refresh per account**, fanned out to every container that shares it, rather than each container polling independently. The long-term home is the host-owned refresh daemon in [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/#host-owned-telemetry-cache); until it exists, the capsule-local refresher uses the ~5-min interval with jitter and honors a **host-shared cooldown marker keyed by account** (a small file/db under `~/.jackin/data/daemon/`): a 429 / `Retry-After` seen by any container pauses polling for that account in every container.
+- Server quota endpoints are never polled tighter than CodexBar's defaults.
 
 ### Overlay open behaviour
 
@@ -349,7 +349,7 @@ The provider quota fetchers and `*_snapshot` builders, the daemon `UsageCache` a
 - OpenAI: derive the account identity from the `id_token` JWT or the app-server RPC instead of requiring `tokens.email`; a successful `wham/usage` fetch must lift the tab out of `needs login` even when the app-server RPC is on launch cooldown; refresh the in-container `auth.json` copy on relaunch.
 - Kimi: add the `GET https://api.kimi.com/coding/v1/usages` Bearer path and its `usage`+`limits` response shape; classify the credential and route Code-API tokens there (the current code sends every token to the web-cookie endpoint, which rejects the Code-API token even though the CLI authenticates with it).
 - MiniMax: render remaining (`% left`, full bar) not percent-used; continue to the next host on a transport error instead of aborting the URL loop; surface the real failure reason instead of a generic `endpoint unavailable`.
-- Decide and implement the token-refresh policy: refresh expired OAuth tokens (Claude, Codex) by writing only the container credential copy, never the host (open question below).
+- Token freshness: re-read the in-container credential file each refresh cycle (no jackin OAuth refresh — the agent CLI keeps the file current); degrade to `needs login` / `stale` when no fresh token is available.
 
 ### Phase 3 — Render to the binding previews
 
@@ -374,14 +374,14 @@ Removing the cut features is part of this work, not a follow-up: the workspace d
 - [ ] Derive Codex account identity from id_token JWT / RPC; decouple status from RPC cooldown; refresh in-container auth.json.
 - [ ] Add Kimi Code-API endpoint + response shape and credential-type routing.
 - [ ] Normalize MiniMax to remaining; continue URL loop on transport error; surface real errors.
-- [ ] Implement container-only token refresh (Claude, Codex) per the agreed policy.
+- [ ] Re-read the in-container credential file each refresh cycle (no OAuth refresh); honest degradation when no fresh token.
 - [ ] Render tabs via the shared `TabStrip` with its focus model; drop the synthesized tabs row.
 - [ ] Render full-width remaining bars + stacked meter lines; apply per-provider section sets, provider-org headers, reset/pace formats.
 - [ ] Wire a usage keymap into the standard hint bar; remove the in-box actions footer.
 - [ ] Rework the status bar: right-panel session + weekly remaining only, after the debug/container ids; drop account/provider/plan/reset and most-constrained selection.
 - [ ] Status bar and overlay read exclusively from Turso; render never calls a provider.
 - [ ] Status bar single form, follows the focused pane; click opens the overlay on that provider's tab.
-- [ ] Background refresher writes `account_usage_snapshots` to Turso on a rate-safe cadence (~5 min/account, jitter, `Retry-After` backoff, cross-container shared cooldown), focused provider first.
+- [ ] Background refresher writes `account_usage_snapshots` to Turso: ~5 min/account + ±60s jitter, active-providers-only, focused-first, `Retry-After`/backoff (cap 30 min), single-flight, and a host-shared per-account cooldown marker all containers honor.
 - [ ] Overlay: proactive background refresh on open (selected provider first); header shows `refreshing…` and updates in place; tick relative times/values every minute while open.
 - [ ] Remove browser-cookie / web-session sources (Grok web, Kimi web, MiniMax web) and account-setup/add-account/buy-credits/settings/dashboard/status-page/login-repair code.
 - [ ] Make provenance honest; surface fetch errors.
@@ -407,12 +407,13 @@ Nothing else is in scope. Account setup, add-account, buy-credits, settings, das
 - A per-instance spend ledger (the dropped Instance tab). If revived later it must not be mixed into account tabs.
 - The host-owned, cross-container refresh daemon (one poller fanned out to all containers) — the target architecture for rate-safe refresh; tracked in [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/#host-owned-telemetry-cache).
 
-## Open questions
+## Settled decisions
 
-- **Token refresh vs read-only host.** Refreshing expired Claude/Codex tokens requires writing a credential; the proposal is to write only the in-container copy and never the host. Confirm, or keep the honest `needs login` / `stale` degradation and require the operator to re-authenticate on the host.
-- **Refresh cadence and shared cooldown (rate-limit trade-off).** Confirm the exact per-provider automatic interval and the cross-container shared-cooldown mechanism before shipping. Starting point: ~5 min per account with jitter, `Retry-After` backoff, and server endpoints no tighter than CodexBar's. This must account for N containers sharing one account (see Data flow → multi-container rate-limit problem).
-- **Header naming.** Provider-org headers (`OpenAI`, `Anthropic`, `xAI`, `Z.AI`) match the tabs; CodexBar shows product names (`Codex`, `Claude`, `Grok`, `z.ai`). Provider-org is the current choice.
-- **Codex Limit Reset Credits + Credits sections.** Kept per CodexBar; confirm whether to retain or reduce Codex to quota meters only.
+- **Token freshness without host writes.** jackin' runs no OAuth refresh. The refresher re-reads the in-container credential file each cycle; the agent CLI (Claude Code, Codex) refreshes and rewrites that file itself, so jackin' always reads a current token without writing host or implementing refresh. When no fresh token is available it degrades to honest `needs login` / `stale`.
+- **Refresh cadence.** ~5 minutes per account with ±60s jitter; only providers with an active agent pane are polled; focused provider first and on overlay open; honor `Retry-After` with exponential backoff on repeated 429 (cap ~30 min); single-flight per provider.
+- **Cross-container rate-limit safety.** Each container polls on its own cadence but all containers honor a host-shared cooldown marker keyed by account (a small file/db under `~/.jackin/data/daemon/`): a 429 / `Retry-After` seen by any container pauses that account everywhere. The single-poll-per-account host daemon ([Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/#host-owned-telemetry-cache)) supersedes this later.
+- **Header naming.** Provider-org labels (`OpenAI`, `Anthropic`, `Amp`, `xAI`, `Z.AI`, `Kimi`, `MiniMax`) on both the tab strip and the in-tab header.
+- **Codex sections.** The OpenAI tab keeps the read-only `Limit Reset Credits` and `Credits` sections (CodexBar parity, quota-relevant, no actions).
 
 ## Related files
 
