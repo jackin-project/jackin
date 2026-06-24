@@ -17,6 +17,10 @@ exclude = [
   # GitHub issue-list links are remapped to the API during static docs checks;
   # the API endpoint can return 403 from GitHub Actions even for public repos.
   "https://api\\.github\\.com/repos/jackin-project/jackin/issues",
+  # External GitHub blob/tree references are browser-visible source citations.
+  # The package script remaps them to the Contents API so lychee can validate
+  # paths, but broad docs scans regularly trip GitHub's secondary 403 limit.
+  "https://api\\.github\\.com/repos/[^/]+/[^/]+/contents/",
   # ACM DOI pages are public in browsers/search but return 403 to lychee in CI.
   "https://dl\\.acm\\.org/doi/10\\.1145/3735636",
   # Milvus pages below loop through redirects infinitely (verified locally:
@@ -28,10 +32,9 @@ exclude = [
   "https://grok\\.com/supergrok",
   # Medium returns 403 to all automated clients for this page.
   "https://paul-hackenberger\\.medium\\.com/the-ultimate-token-saving-stack-rtk-caveman-and-tokensave-163badadd9ec",
-  # graemerocher/multicode has many blob links (≥48) that remap to GitHub
-  # Contents API calls; the volume triggers GitHub's secondary rate limit
-  # (403) even with the api.github.com host throttle below.
-  "https://api\\.github\\.com/repos/graemerocher/multicode/",
+  # handler.dev is a browser-visible research reference, but CI lychee
+  # intermittently fails to connect to the site.
+  "https://handler\\.dev/",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]

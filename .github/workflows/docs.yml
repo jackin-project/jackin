@@ -85,7 +85,7 @@ jobs:
           cache_key_prefix: "mise-v2"
           working_directory: docs
           install_args: "bun node"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
 
       - name: Cache bun modules
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
@@ -122,7 +122,7 @@ jobs:
           cache_key_prefix: "mise-v2"
           working_directory: docs
           install_args: "bun node lychee"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
 
       - name: Cache bun modules
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
@@ -186,7 +186,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "codebook-lsp"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
 
       - name: Run Codebook docs spell check
         shell: bash
@@ -232,7 +232,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "codebook-lsp"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
 
       - name: Run Codebook source spell check
         shell: bash
@@ -298,7 +298,7 @@ jobs:
           sitemap-url: ${{ steps.sitemap.outputs.url }}
           edit-url: ${{ env.JACKIN_REPO_EDIT_URL }}
           blob-url: ${{ env.JACKIN_REPO_BLOB_URL }}
-          github-token: ${{ secrets.GH_READONLY_TOKEN }}
+          github-token: ${{ github.token }}
           external-links: "false"
 
   check-deployed:
@@ -321,7 +321,7 @@ jobs:
           sitemap-url: ${{ env.DOCS_SITE_URL }}/sitemap.xml
           edit-url: ${{ env.JACKIN_REPO_EDIT_URL }}
           blob-url: ${{ env.JACKIN_REPO_BLOB_URL }}
-          github-token: ${{ secrets.GH_READONLY_TOKEN }}
+          github-token: ${{ github.token }}
 
   # Skip on schedule because schedule runs only `check-deployed` and a
   # one-job aggregator on schedule has no value.

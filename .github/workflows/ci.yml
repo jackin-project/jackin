@@ -264,7 +264,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "actionlint shellcheck"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - run: actionlint .github/workflows/*.yml
 
   fmt:
@@ -295,7 +295,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - run: rustup component add rustfmt
       - run: cargo fmt --check
 
@@ -327,7 +327,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
 
@@ -342,7 +342,12 @@ jobs:
     timeout-minutes: 60
     name: schema-check (${{ matrix.config.lane }})
     env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_NET_OFFLINE: "true"
       CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
@@ -358,20 +363,21 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: ${{ runner.arch == 'X64' && 'rust shellfirm' || 'rust' }}
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          install_args: ${{ runner.arch == 'X64' && 'rust sccache shellfirm' || 'rust sccache' }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-default-dev-workspace-v2
+          shared-key: ci-schema-check-dev-workspace-v2
           cache-all-crates: "true"
           cache-workspace-crates: "true"
-          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
-          # and each branch also writes its own small pruned (deps-only) cache so
-          # reruns skip recompiling unchanged dependencies.
+          # and schema-check owns a small dev-binary cache because `cargo run`
+          # needs executable artifacts that the shared clippy/check cache does
+          # not contain.
       - name: Fetch base branch
         run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
       - run: cargo run -p jackin-xtask --locked -- schema-check --base origin/main
@@ -409,7 +415,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust sccache"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -424,6 +430,14 @@ jobs:
           # reruns skip recompiling unchanged dependencies.
       - run: rustup component add clippy
       - run: cargo clippy --timings --workspace --all-targets --all-features --locked -- -D warnings
+      - name: Stage cargo timings
+        if: always()
+        run: |
+          target_dir="${CARGO_TARGET_DIR:-target}"
+          if [ "$target_dir" != "target" ] && [ -d "${target_dir}/cargo-timings" ]; then
+            mkdir -p target/cargo-timings
+            cp -a "${target_dir}/cargo-timings/." target/cargo-timings/
+          fi
       - name: Upload cargo timings
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -432,6 +446,12 @@ jobs:
           path: target/cargo-timings/*.html
           if-no-files-found: ignore
           retention-days: 7
+      - name: Capture sccache stats
+        if: always()
+        uses: ./.github/actions/sccache-stats
+        with:
+          artifact-name: sccache-stats-ci-clippy-${{ matrix.config.lane }}
+          heading: sccache ci clippy (${{ matrix.config.lane }})
   dependency-policy:
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
@@ -460,7 +480,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust cargo-deny cargo-shear"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - run: cargo shear
@@ -498,7 +518,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust sccache"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -512,6 +532,14 @@ jobs:
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
       - run: cargo check --timings --workspace --all-targets --locked
+      - name: Stage cargo timings
+        if: always()
+        run: |
+          target_dir="${CARGO_TARGET_DIR:-target}"
+          if [ "$target_dir" != "target" ] && [ -d "${target_dir}/cargo-timings" ]; then
+            mkdir -p target/cargo-timings
+            cp -a "${target_dir}/cargo-timings/." target/cargo-timings/
+          fi
       - name: Upload cargo timings
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -520,29 +548,12 @@ jobs:
           path: target/cargo-timings/*.html
           if-no-files-found: ignore
           retention-days: 7
-      - name: Write sccache stats
-        if: always() && matrix.config.lane == 'Velnor'
-        run: |
-          if ! command -v sccache >/dev/null 2>&1; then
-            echo "sccache not installed; skipping stats"
-            exit 0
-          fi
-          stats_file="sccache-stats-ci-check-default-${{ matrix.config.lane }}.txt"
-          sccache --show-stats | tee "$stats_file"
-          {
-            echo "### sccache ci check-default (${{ matrix.config.lane }})"
-            echo '```text'
-            cat "$stats_file"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload sccache stats
-        if: always() && matrix.config.lane == 'Velnor'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Capture sccache stats
+        if: always()
+        uses: ./.github/actions/sccache-stats
         with:
-          name: sccache-stats-ci-check-default-${{ matrix.config.lane }}
-          path: sccache-stats-ci-check-default-${{ matrix.config.lane }}.txt
-          if-no-files-found: ignore
-          retention-days: 7
+          artifact-name: sccache-stats-ci-check-default-${{ matrix.config.lane }}
+          heading: sccache ci check-default (${{ matrix.config.lane }})
   construct-e2e-image:
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.construct_image == 'true'
@@ -582,7 +593,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust sccache shellfirm"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -624,6 +635,12 @@ jobs:
           name: construct-trixie-image-${{ matrix.config.lane }}
           path: construct-trixie.tar
           retention-days: 1
+      - name: Capture sccache stats
+        if: always()
+        uses: ./.github/actions/sccache-stats
+        with:
+          artifact-name: sccache-stats-ci-construct-e2e-image-${{ matrix.config.lane }}
+          heading: sccache ci construct-e2e-image (${{ matrix.config.lane }})
 
   test:
     needs: [changes, construct-e2e-image, matrix-setup, cargo-registry-warmup]
@@ -633,6 +650,7 @@ jobs:
       runner-configs-json: ${{ needs.matrix-setup.outputs.configs }}
       all-features: true
       cache-shared-key: ci-all-features-dev-workspace-v2
+      save-target-cache: false
       construct-image-changed: ${{ needs.changes.outputs.construct_image == 'true' }}
       docker-e2e: ${{ needs.changes.outputs.docker_e2e == 'true' }}
     secrets: inherit
@@ -665,15 +683,18 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust cargo-fuzz"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ci-fuzz-workspace-v2
+          shared-key: ci-fuzz-workspace-v3
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+          workspaces: |
+            . -> target
+            crates/jackin-term/fuzz -> target
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
@@ -716,7 +737,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -768,7 +789,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust@${{ steps.msrv.outputs.version }}"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -824,7 +845,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust cargo-audit"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          github_token: ${{ github.token }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - name: Run cargo audit
