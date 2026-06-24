@@ -1562,7 +1562,10 @@ fn usage_dialog_left_arrow_from_first_provider_switches_to_overview() {
     assert_eq!(d.handle_key(b"\x1b[D", None), DialogAction::Redraw);
     let state = d.usage_state().expect("usage state");
     assert_eq!(state.rows()[0].label(), "OpenAI");
-    assert_eq!(state.rows()[0].value(), "37% left · Resets in 1h 21m");
+    assert_eq!(
+        state.rows()[0].value(),
+        "37% left · Resets in 1h 21m (Jun 17, 23:15)"
+    );
 }
 
 #[test]

@@ -807,7 +807,11 @@ fn codex_snapshot(
     let rpc_quota = rpc_usage.as_ref().map(|usage| &usage.response);
     let (oauth_quota, oauth_error) = match credentials.as_ref() {
         Some(credentials) => match fetch_codex_oauth_usage(credentials, &codex_home) {
-            Ok(usage) => (Some(usage), None),
+            Ok(mut usage) => {
+                usage.reset_credits =
+                    fetch_codex_oauth_reset_credits(credentials, &codex_home).ok();
+                (Some(usage), None)
+            }
             Err(error) => (None, Some(error)),
         },
         None => (None, None),
@@ -2048,6 +2052,8 @@ struct CodexUsageResponse {
     credits: Option<CodexCreditDetails>,
     #[serde(rename = "additional_rate_limits")]
     additional_rate_limits: Option<Vec<CodexAdditionalRateLimit>>,
+    #[serde(skip)]
+    reset_credits: Option<CodexResetCredits>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2234,6 +2240,7 @@ impl CodexRpcUsage {
             }),
             credits: rate_limits.credits.map(CodexCreditDetails::from_rpc),
             additional_rate_limits: None,
+            reset_credits: None,
         };
         Self {
             response,
@@ -2280,6 +2287,20 @@ impl CodexUsageResponse {
                 );
             }
         }
+        if let Some(reset_credits) = &self.reset_credits
+            && reset_credits.available_count > 0
+        {
+            let detail = reset_credits.detail_label(now);
+            buckets.push(bucket(
+                "Limit Reset Credits",
+                None,
+                None,
+                None,
+                None,
+                Some(detail.as_str()),
+                UsageSnapshotStatus::Fresh,
+            ));
+        }
         if let Some(credits) = &self.credits
             && credits.has_credits.unwrap_or(false)
         {
@@ -2296,6 +2317,48 @@ impl CodexUsageResponse {
         }
         buckets
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexResetCredits {
+    credits: Vec<CodexResetCredit>,
+    #[serde(rename = "available_count")]
+    available_count: i64,
+}
+
+impl CodexResetCredits {
+    fn detail_label(&self, now: i64) -> String {
+        let count = if self.available_count == 1 {
+            "1 manual reset available".to_owned()
+        } else {
+            format!("{} manual resets available", self.available_count)
+        };
+        let Some(expires_at) = self.next_expiring_available_epoch(now) else {
+            return count;
+        };
+        format!("{count} · Next expires {}", expiry_label(expires_at, now))
+    }
+
+    fn next_expiring_available_epoch(&self, now: i64) -> Option<i64> {
+        self.credits
+            .iter()
+            .filter(|credit| credit.status.as_deref() == Some("available"))
+            .filter_map(|credit| {
+                credit
+                    .expires_at
+                    .as_deref()
+                    .and_then(parse_iso_epoch)
+                    .filter(|epoch| *epoch > now)
+            })
+            .min()
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexResetCredit {
+    status: Option<String>,
+    #[serde(rename = "expires_at")]
+    expires_at: Option<String>,
 }
 
 fn push_codex_window(
@@ -3155,7 +3218,55 @@ fn fetch_codex_oauth_usage(
         .map_err(|err| format!("Codex OAuth usage decode failed: {err}"))
 }
 
+fn fetch_codex_oauth_reset_credits(
+    credentials: &CodexOAuthCredentials,
+    codex_home: &Path,
+) -> Result<CodexResetCredits, String> {
+    let client = provider_http_client()?;
+    let mut request = client
+        .get(resolve_codex_reset_credits_url(codex_home))
+        .bearer_auth(&credentials.access_token)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .header(reqwest::header::USER_AGENT, "jackin-capsule/usage")
+        .header("OpenAI-Beta", "codex-1")
+        .header("originator", "Codex Desktop");
+    if let Some(account_id) = &credentials.account_id {
+        request = request.header("ChatGPT-Account-Id", account_id);
+    }
+    let response = request
+        .send()
+        .map_err(|err| format!("Codex reset credits request failed: {err}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("Codex reset credits HTTP {status}"));
+    }
+    let credits = response
+        .json::<CodexResetCredits>()
+        .map_err(|err| format!("Codex reset credits decode failed: {err}"))?;
+    if credits.available_count < 0 {
+        return Err("Codex reset credits invalid available count".to_owned());
+    }
+    Ok(credits)
+}
+
 fn resolve_codex_usage_url(codex_home: &Path) -> String {
+    let normalized = resolve_codex_base_url(codex_home);
+    let path = if normalized.contains("/backend-api") {
+        "/wham/usage"
+    } else {
+        "/api/codex/usage"
+    };
+    format!("{normalized}{path}")
+}
+
+fn resolve_codex_reset_credits_url(codex_home: &Path) -> String {
+    format!(
+        "{}/wham/rate-limit-reset-credits",
+        resolve_codex_base_url(codex_home)
+    )
+}
+
+fn resolve_codex_base_url(codex_home: &Path) -> String {
     let base = fs::read_to_string(codex_home.join("config.toml"))
         .ok()
         .and_then(|contents| parse_chatgpt_base_url(&contents))
@@ -3170,12 +3281,7 @@ fn resolve_codex_usage_url(codex_home: &Path) -> String {
     {
         normalized.push_str("/backend-api");
     }
-    let path = if normalized.contains("/backend-api") {
-        "/wham/usage"
-    } else {
-        "/api/codex/usage"
-    };
-    format!("{normalized}{path}")
+    normalized
 }
 
 fn parse_chatgpt_base_url(contents: &str) -> Option<String> {
@@ -4021,6 +4127,17 @@ fn reset_label(reset_at: i64, now: i64) -> String {
         "Resets in {} ({})",
         compact_duration_label(reset_at.saturating_sub(now).max(0)),
         local_timestamp_label(reset_at)
+    )
+}
+
+fn expiry_label(expires_at: i64, now: i64) -> String {
+    if expires_at <= now {
+        return "now".to_owned();
+    }
+    format!(
+        "in {} ({})",
+        compact_duration_label(expires_at.saturating_sub(now).max(0)),
+        local_timestamp_label(expires_at)
     )
 }
 
@@ -5124,7 +5241,7 @@ mod tests {
 
     #[test]
     fn codex_oauth_response_maps_primary_weekly_spark_and_credits() {
-        let usage: CodexUsageResponse = serde_json::from_value(serde_json::json!({
+        let mut usage: CodexUsageResponse = serde_json::from_value(serde_json::json!({
             "plan_type": "pro",
             "rate_limit": {
                 "primary_window": {
@@ -5160,6 +5277,23 @@ mod tests {
             }
         }))
         .expect("valid Codex usage");
+        usage.reset_credits = Some(CodexResetCredits {
+            available_count: 2,
+            credits: vec![
+                CodexResetCredit {
+                    status: Some("available".to_owned()),
+                    expires_at: Some("2026-06-10T00:00:00Z".to_owned()),
+                },
+                CodexResetCredit {
+                    status: Some("available".to_owned()),
+                    expires_at: Some("2026-06-18T00:00:00Z".to_owned()),
+                },
+                CodexResetCredit {
+                    status: Some("redeemed".to_owned()),
+                    expires_at: Some("2026-06-17T00:00:00Z".to_owned()),
+                },
+            ],
+        });
 
         let buckets = usage.buckets(1_781_185_560);
 
@@ -5173,11 +5307,28 @@ mod tests {
                 .any(|bucket| bucket.label == "Codex Spark 5-hour"
                     && bucket.remaining_percent == Some(100))
         );
+        let reset_credits = buckets
+            .iter()
+            .position(|bucket| bucket.label == "Limit Reset Credits")
+            .expect("reset credits bucket");
+        let reset_credit_label = format!(
+            "2 manual resets available · Next expires {}",
+            expiry_label(
+                parse_iso_epoch("2026-06-18T00:00:00Z").expect("expiry epoch"),
+                1_781_185_560
+            )
+        );
+        assert_eq!(
+            buckets[reset_credits].pace_label.as_deref(),
+            Some(reset_credit_label.as_str())
+        );
         let credits = buckets
             .iter()
-            .find(|bucket| bucket.label == "Credits")
+            .enumerate()
+            .find(|(_, bucket)| bucket.label == "Credits")
             .expect("credits bucket");
-        assert_eq!(credits.limit_label.as_deref(), Some("12.50 credits"));
+        assert!(reset_credits < credits.0);
+        assert_eq!(credits.1.limit_label.as_deref(), Some("12.50 credits"));
     }
 
     #[test]
