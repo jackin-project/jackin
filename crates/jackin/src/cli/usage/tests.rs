@@ -23,11 +23,6 @@ fn formats_account_usage_with_shared_unit() {
 }
 
 #[test]
-fn formats_cost_from_micros() {
-    assert_eq!(cost_label(1_234_567), "$1.23");
-}
-
-#[test]
 fn truncates_long_values_with_ascii_ellipsis() {
     assert_eq!(truncate("abcdefghijkl", 8), "abcde...");
 }

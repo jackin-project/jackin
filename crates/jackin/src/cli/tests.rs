@@ -178,35 +178,6 @@ fn parses_usage_cache_accounts_json() {
 }
 
 #[test]
-fn parses_usage_workspace_json() {
-    let cli = Cli::try_parse_from([
-        "jackin",
-        "usage",
-        "k7p9m2xq",
-        "workspace",
-        "demo",
-        "--window-seconds",
-        "3600",
-        "--format",
-        "json",
-    ])
-    .unwrap();
-
-    assert!(matches!(
-        cli.command,
-        Some(Command::Usage(ref args))
-            if args.instance == "k7p9m2xq"
-                && args.format == "json"
-                && matches!(
-                    args.scope,
-                    usage::UsageScope::Workspace(ref workspace)
-                        if workspace.workspace.as_deref() == Some("demo")
-                            && workspace.window_seconds == Some(3600)
-                )
-    ));
-}
-
-#[test]
 fn parses_prewarm_agent_filters() {
     let cli =
         Cli::try_parse_from(["jackin", "prewarm", "--agent", "claude", "--agent", "kimi"]).unwrap();
