@@ -298,9 +298,11 @@ fn run_slow_exit_load_until_quick_exit(input: &str) -> std::process::Output {
         &home,
         &workspace_dir,
         &extra_env,
-        "Building role base image",
-        input,
-        Duration::from_secs(1),
+        PtyQuickExit {
+            wait_for: "Building role base image",
+            input,
+            max_exit_after_input: Duration::from_secs(1),
+        },
     )
 }
 
@@ -344,9 +346,11 @@ fn jackin_load_double_ctrl_c_exits_launch_prompt_quickly() {
         &home,
         &workspace_dir,
         &extra_env,
-        "Choose launch agent",
-        "\x03\x03",
-        Duration::from_secs(1),
+        PtyQuickExit {
+            wait_for: "Choose launch agent",
+            input: "\x03\x03",
+            max_exit_after_input: Duration::from_secs(1),
+        },
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -849,9 +853,7 @@ fn run_in_pty_until_quick_exit_after_input(
     home: &Path,
     cwd: &Path,
     extra_env: &[(&str, &str)],
-    wait_for: &str,
-    input: &str,
-    max_exit_after_input: Duration,
+    exit: PtyQuickExit<'_>,
 ) -> std::process::Output {
     let mut child = pty_command(jackin, args, home, cwd, extra_env)
         .stdin(Stdio::piped())
@@ -865,12 +867,13 @@ fn run_in_pty_until_quick_exit_after_input(
     let (stdout_buf, stdout_reader) = spawn_pipe_collector(stdout);
     let (stderr_buf, stderr_reader) = spawn_pipe_collector(stderr);
     let wait_deadline = Instant::now() + Duration::from_mins(3);
-    while !transcript_contains(&stdout_buf, wait_for) {
+    while !transcript_contains(&stdout_buf, exit.wait_for) {
         if let Some(status) = child.try_wait().expect("script status must be readable") {
             stdout_reader.join().expect("stdout reader must finish");
             stderr_reader.join().expect("stderr reader must finish");
             panic!(
-                "PTY command exited before transcript reached {wait_for:?} with status {status}\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
+                "PTY command exited before transcript reached {:?} with status {status}\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
+                exit.wait_for,
                 diagnostics_snapshot(home),
                 tail_text(&String::from_utf8_lossy(&buffer_bytes(&stdout_buf))),
                 tail_text(&String::from_utf8_lossy(&buffer_bytes(&stderr_buf))),
@@ -882,7 +885,8 @@ fn run_in_pty_until_quick_exit_after_input(
             stdout_reader.join().expect("stdout reader must finish");
             stderr_reader.join().expect("stderr reader must finish");
             panic!(
-                "PTY transcript never reached {wait_for:?}\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
+                "PTY transcript never reached {:?}\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
+                exit.wait_for,
                 diagnostics_snapshot(home),
                 tail_text(&String::from_utf8_lossy(&buffer_bytes(&stdout_buf))),
                 tail_text(&String::from_utf8_lossy(&buffer_bytes(&stderr_buf))),
@@ -892,11 +896,11 @@ fn run_in_pty_until_quick_exit_after_input(
     }
 
     stdin
-        .write_all(input.as_bytes())
+        .write_all(exit.input.as_bytes())
         .expect("exit input must write");
     stdin.flush().expect("exit input must flush");
 
-    let deadline = Instant::now() + max_exit_after_input;
+    let deadline = Instant::now() + exit.max_exit_after_input;
     while Instant::now() < deadline {
         if let Some(status) = child.try_wait().expect("script status must be readable") {
             stdout_reader.join().expect("stdout reader must finish");
@@ -923,10 +927,17 @@ fn run_in_pty_until_quick_exit_after_input(
     };
     panic!(
         "PTY command did not exit within {}ms after input\nstdout tail:\n{}\nstderr tail:\n{}",
-        max_exit_after_input.as_millis(),
+        exit.max_exit_after_input.as_millis(),
         tail_text(&String::from_utf8_lossy(&output.stdout)),
         tail_text(&String::from_utf8_lossy(&output.stderr)),
     );
+}
+
+#[derive(Clone, Copy)]
+struct PtyQuickExit<'a> {
+    wait_for: &'a str,
+    input: &'a str,
+    max_exit_after_input: Duration,
 }
 
 fn assert_restored_terminal(output: &std::process::Output) {
