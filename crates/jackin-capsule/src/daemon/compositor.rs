@@ -357,6 +357,10 @@ impl Multiplexer {
         self.ratatui_terminal
             .backend_mut()
             .set_hyperlink_regions(hyperlink_regions);
+        let sgr_regions = pane_sgr_regions(&panes, &pane_screens);
+        self.ratatui_terminal
+            .backend_mut()
+            .set_sgr_regions(sgr_regions);
 
         let result = self.ratatui_terminal.draw(|frame| {
             render_capsule_ratatui_frame(
@@ -563,4 +567,65 @@ fn pane_hyperlink_regions(
         }
     }
     regions
+}
+
+fn pane_sgr_regions(
+    panes: &[crate::tui::app::VisiblePane],
+    pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
+) -> Vec<(
+    ratatui::layout::Rect,
+    crate::tui::socket_backend::SgrMetadata,
+)> {
+    let mut regions = Vec::new();
+    for pane in panes {
+        let Some((_, crate::tui::view::PaneScreen::View(view))) =
+            pane_screens.iter().find(|(id, _)| *id == pane.id)
+        else {
+            continue;
+        };
+        for row in 0..pane.inner.rows.min(view.rows) {
+            let mut col = 0;
+            while col < pane.inner.cols.min(view.cols) {
+                let metadata = view
+                    .cell(row, col)
+                    .map(cell_sgr_metadata)
+                    .filter(|metadata| *metadata != Default::default());
+                let Some(metadata) = metadata else {
+                    col += 1;
+                    continue;
+                };
+                let start = col;
+                col += 1;
+                while col < pane.inner.cols.min(view.cols)
+                    && view
+                        .cell(row, col)
+                        .map(cell_sgr_metadata)
+                        .is_some_and(|next| next == metadata)
+                {
+                    col += 1;
+                }
+                regions.push((
+                    ratatui::layout::Rect {
+                        x: pane.inner.col + start,
+                        y: pane.inner.row + row,
+                        width: col - start,
+                        height: 1,
+                    },
+                    metadata,
+                ));
+            }
+        }
+    }
+    regions
+}
+
+fn cell_sgr_metadata(cell: &jackin_term::Cell) -> crate::tui::socket_backend::SgrMetadata {
+    crate::tui::socket_backend::SgrMetadata {
+        underline_style: match cell.attrs.underline_style {
+            jackin_term::UnderlineStyle::Single => jackin_term::UnderlineStyle::None,
+            other => other,
+        },
+        underline_color: cell.attrs.underline_color,
+        overline: cell.attrs.overline,
+    }
 }

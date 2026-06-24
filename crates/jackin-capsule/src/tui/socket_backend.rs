@@ -11,7 +11,7 @@
 
 use std::io;
 
-use jackin_term::Color as TermColor;
+use jackin_term::{Color as TermColor, UnderlineStyle};
 use ratatui::{
     backend::{Backend, ClearType},
     buffer::Cell,
@@ -29,10 +29,12 @@ pub struct SocketBackend {
     /// Tracks the style applied at the cursor position so adjacent cells
     /// with the same style don't re-emit SGR sequences.
     current_style: CellStyle,
+    current_metadata: SgrMetadata,
     /// Hyperlinked cell rects for the current frame: the encoder emits
     /// `OSC 8` open/close brackets around exactly these cells during cell
     /// emission (§3.4 — no raw overlay writes). Consumed by the next `draw`.
     hyperlink_regions: Vec<(ratatui::layout::Rect, String)>,
+    sgr_regions: Vec<(ratatui::layout::Rect, SgrMetadata)>,
     /// One-shot: swallow the screen-erase escape on the next
     /// `clear_region(ClearType::All)`. `Terminal::clear()` is the only way to
     /// reset Ratatui's diff baseline, but it unconditionally routes through
@@ -67,7 +69,9 @@ impl SocketBackend {
             size: (cols, rows),
             output: Vec::with_capacity(65536),
             current_style: CellStyle::default(),
+            current_metadata: SgrMetadata::default(),
             hyperlink_regions: Vec::new(),
+            sgr_regions: Vec::new(),
             suppress_next_clear_escape: false,
         }
     }
@@ -75,6 +79,10 @@ impl SocketBackend {
     /// Set the frame's hyperlinked cell rects; consumed by the next `draw`.
     pub fn set_hyperlink_regions(&mut self, regions: Vec<(ratatui::layout::Rect, String)>) {
         self.hyperlink_regions = regions;
+    }
+
+    pub(crate) fn set_sgr_regions(&mut self, regions: Vec<(ratatui::layout::Rect, SgrMetadata)>) {
+        self.sgr_regions = regions;
     }
 
     /// Arm the one-shot erase suppression consumed by the next
@@ -89,6 +97,7 @@ impl SocketBackend {
     pub fn resize(&mut self, cols: u16, rows: u16) {
         self.size = (cols, rows);
         self.current_style = CellStyle::default();
+        self.current_metadata = SgrMetadata::default();
     }
 
     /// Take the accumulated output, leaving the buffer empty.
@@ -104,8 +113,8 @@ impl SocketBackend {
     }
 
     /// Write the SGR sequence for `style` if it differs from the last one emitted.
-    fn apply_style(&mut self, style: CellStyle) {
-        if style == self.current_style {
+    fn apply_style(&mut self, style: CellStyle, metadata: SgrMetadata) {
+        if style == self.current_style && metadata == self.current_metadata {
             return;
         }
         // Full reset then re-apply rather than tracking incremental changes.
@@ -146,9 +155,18 @@ impl SocketBackend {
 
         // Background
         write_color_sgr(&mut self.output, style.bg, true);
+        write_sgr_metadata(&mut self.output, metadata);
 
         self.current_style = style;
+        self.current_metadata = metadata;
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct SgrMetadata {
+    pub(crate) underline_style: UnderlineStyle,
+    pub(crate) underline_color: TermColor,
+    pub(crate) overline: bool,
 }
 
 pub(crate) const fn term_color(color: TermColor) -> Color {
@@ -202,6 +220,43 @@ fn write_color_sgr(buf: &mut Vec<u8>, color: Color, is_bg: bool) {
     }
 }
 
+fn write_sgr_metadata(buf: &mut Vec<u8>, metadata: SgrMetadata) {
+    match metadata.underline_style {
+        UnderlineStyle::None => {}
+        UnderlineStyle::Single => buf.extend_from_slice(b"\x1b[4m"),
+        UnderlineStyle::Double => buf.extend_from_slice(b"\x1b[4:2m"),
+        UnderlineStyle::Curly => buf.extend_from_slice(b"\x1b[4:3m"),
+        UnderlineStyle::Dotted => buf.extend_from_slice(b"\x1b[4:4m"),
+        UnderlineStyle::Dashed => buf.extend_from_slice(b"\x1b[4:5m"),
+    }
+    match metadata.underline_color {
+        TermColor::Default => {}
+        _ => {
+            buf.extend_from_slice(b"\x1b[58;");
+            match metadata.underline_color {
+                TermColor::Default => {}
+                TermColor::Idx(idx) => {
+                    buf.extend_from_slice(b"5;");
+                    push_number(buf, u32::from(idx));
+                    buf.push(b'm');
+                }
+                TermColor::Rgb(r, g, b) => {
+                    buf.extend_from_slice(b"2;");
+                    push_number(buf, u32::from(r));
+                    buf.push(b';');
+                    push_number(buf, u32::from(g));
+                    buf.push(b';');
+                    push_number(buf, u32::from(b));
+                    buf.push(b'm');
+                }
+            }
+        }
+    }
+    if metadata.overline {
+        buf.extend_from_slice(b"\x1b[53m");
+    }
+}
+
 fn push_sgr(buf: &mut Vec<u8>, code: u8) {
     buf.extend_from_slice(b"\x1b[");
     push_number(buf, u32::from(code));
@@ -240,6 +295,7 @@ impl Backend for SocketBackend {
         let mut cursor_row: Option<u16> = None;
         let mut cursor_col: Option<u16> = None;
         let regions = std::mem::take(&mut self.hyperlink_regions);
+        let sgr_regions = std::mem::take(&mut self.sgr_regions);
         let mut open_link: Option<usize> = None;
 
         for (x, y, cell) in content {
@@ -261,6 +317,10 @@ impl Backend for SocketBackend {
                 }
                 open_link = desired_link;
             }
+            let metadata = sgr_regions
+                .iter()
+                .find_map(|(rect, metadata)| rect.contains(Position { x, y }).then_some(*metadata))
+                .unwrap_or_default();
 
             // Emit cursor position only when we are not already there.
             // After writing a single-column cell at (col, row) the terminal
@@ -276,7 +336,7 @@ impl Backend for SocketBackend {
                 cursor_row = Some(row);
             }
 
-            self.apply_style(CellStyle::from_cell(cell));
+            self.apply_style(CellStyle::from_cell(cell), metadata);
             let sym = cell.symbol();
             self.output.extend_from_slice(sym.as_bytes());
 
@@ -334,6 +394,7 @@ impl Backend for SocketBackend {
         // compositor today; reset style tracking and emit nothing so any
         // future caller still cannot blank the client screen.
         self.current_style = CellStyle::default();
+        self.current_metadata = SgrMetadata::default();
         Ok(())
     }
 
@@ -341,6 +402,7 @@ impl Backend for SocketBackend {
         let seq: &[u8] = match clear_type {
             ClearType::All => {
                 self.current_style = CellStyle::default();
+                self.current_metadata = SgrMetadata::default();
                 if self.suppress_next_clear_escape {
                     // One-shot baseline-reset mode: Terminal::clear() wants the
                     // diff baseline reset without a visible wipe.

@@ -8,7 +8,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::{CellStyle, SocketBackend};
+use super::{CellStyle, SgrMetadata, SocketBackend};
 
 #[test]
 fn backend_renders_text_to_output_buffer() {
@@ -95,18 +95,46 @@ fn full_screen_clear_resets_style_before_erasing() {
 #[test]
 fn backend_emits_extended_visible_sgr_modifiers() {
     let mut backend = SocketBackend::new(10, 1);
-    backend.apply_style(CellStyle {
-        fg: Color::Reset,
-        bg: Color::Reset,
-        modifiers: Modifier::CROSSED_OUT
-            | Modifier::SLOW_BLINK
-            | Modifier::RAPID_BLINK
-            | Modifier::HIDDEN,
-    });
+    backend.apply_style(
+        CellStyle {
+            fg: Color::Reset,
+            bg: Color::Reset,
+            modifiers: Modifier::CROSSED_OUT
+                | Modifier::SLOW_BLINK
+                | Modifier::RAPID_BLINK
+                | Modifier::HIDDEN,
+        },
+        SgrMetadata::default(),
+    );
 
     let output = backend.take_output();
     let text = String::from_utf8_lossy(&output);
     for sgr in ["\x1b[5m", "\x1b[6m", "\x1b[8m", "\x1b[9m"] {
+        assert!(text.contains(sgr), "missing {sgr:?} in {text:?}");
+    }
+}
+
+#[test]
+fn backend_emits_frame_sgr_metadata() {
+    let backend = SocketBackend::new(10, 1);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.backend_mut().set_sgr_regions(vec![(
+        Rect::new(0, 0, 1, 1),
+        SgrMetadata {
+            underline_style: jackin_term::UnderlineStyle::Curly,
+            underline_color: jackin_term::Color::Rgb(12, 34, 56),
+            overline: true,
+        },
+    )]);
+    terminal
+        .draw(|frame| {
+            frame.render_widget(Paragraph::new(Span::raw("x")), frame.area());
+        })
+        .unwrap();
+
+    let output = terminal.backend_mut().take_output();
+    let text = String::from_utf8_lossy(&output);
+    for sgr in ["\x1b[4:3m", "\x1b[58;2;12;34;56m", "\x1b[53m"] {
         assert!(text.contains(sgr), "missing {sgr:?} in {text:?}");
     }
 }

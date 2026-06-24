@@ -783,6 +783,24 @@ fn unsafe_pty_osc8_hyperlink_is_not_emitted_from_frame_metadata() {
 }
 
 #[test]
+fn pty_sgr_metadata_emits_non_native_visible_attributes() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(20, 78);
+    session.feed_pty(b"\x1b[4:3;58:2:12:34:56;53mstyled");
+    mux.sessions.insert(1, session);
+
+    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
+    let text = String::from_utf8_lossy(&frame);
+
+    for sgr in ["\x1b[4:3m", "\x1b[58;2;12;34;56m", "\x1b[53m"] {
+        assert!(
+            text.contains(sgr),
+            "SGR metadata {sgr:?} must be emitted in frame: {text:?}"
+        );
+    }
+}
+
+#[test]
 fn wipe_policy_erases_only_on_first_attach_and_resize() {
     // I4: no screen erase outside FirstAttach/Resize. Every other
     // invalidation relies on Ratatui's previous buffer instead of blanking
