@@ -999,7 +999,7 @@ fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> 
     let has_auth = auth.exists();
     let has_xai_api_key = env_value("XAI_API_KEY").is_some();
     let has_deployment_key = env_value("GROK_DEPLOYMENT_KEY").is_some();
-    let rpc_result = fetch_grok_rpc_billing(rpc_gate);
+    let billing_result = fetch_grok_billing(&auth, now, rpc_gate);
     grok_snapshot_from_rpc_result(
         agent,
         now,
@@ -1007,7 +1007,7 @@ fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> 
         has_auth,
         has_xai_api_key,
         has_deployment_key,
-        rpc_result,
+        billing_result,
     )
 }
 
@@ -1018,23 +1018,23 @@ fn grok_snapshot_from_rpc_result(
     has_auth: bool,
     has_xai_api_key: bool,
     has_deployment_key: bool,
-    rpc_result: Result<GrokBillingResponse, String>,
+    billing_result: Result<GrokBillingSnapshot, String>,
 ) -> FocusedUsageView {
     let has_credentials = has_auth || has_xai_api_key || has_deployment_key;
-    let (rpc_usage, rpc_error) = match rpc_result {
+    let (billing_usage, billing_error) = match billing_result {
         Ok(usage) => (Some(usage), None),
         Err(error) => (None, Some(error)),
     };
     let account =
         grok_account_label_or_presence(auth, has_auth, has_xai_api_key, has_deployment_key);
-    let status = if rpc_usage.is_some() {
+    let status = if billing_usage.is_some() {
         UsageSnapshotStatus::Fresh
     } else if has_credentials {
         UsageSnapshotStatus::Error
     } else {
         UsageSnapshotStatus::NeedsLogin
     };
-    let buckets = rpc_usage
+    let buckets = billing_usage
         .as_ref()
         .map(|usage| usage.buckets(now))
         .filter(|buckets| !buckets.is_empty())
@@ -1054,15 +1054,13 @@ fn grok_snapshot_from_rpc_result(
         provider: None,
         surface: UsageSurface::Grok,
         account_label: account,
-        plan_label: None,
+        plan_label: grok_plan_label(auth),
         buckets,
         status,
-        source: if rpc_usage.is_some() {
-            UsageSource::Cli
-        } else {
-            UsageSource::None
-        },
-        confidence: if rpc_usage.is_some() {
+        source: billing_usage
+            .as_ref()
+            .map_or(UsageSource::None, GrokBillingSnapshot::source),
+        confidence: if billing_usage.is_some() {
             UsageConfidence::Authoritative
         } else if has_credentials {
             UsageConfidence::PresenceOnly
@@ -1071,11 +1069,11 @@ fn grok_snapshot_from_rpc_result(
         },
         now,
         last_error: match status {
-            UsageSnapshotStatus::NeedsLogin => {
-                Some(rpc_error.unwrap_or_else(|| "Grok auth not available to Capsule".to_owned()))
-            }
+            UsageSnapshotStatus::NeedsLogin => Some(
+                billing_error.unwrap_or_else(|| "Grok auth not available to Capsule".to_owned()),
+            ),
             UsageSnapshotStatus::Error => {
-                rpc_error.or_else(|| Some("Grok ACP billing unavailable to Capsule".to_owned()))
+                billing_error.or_else(|| Some("Grok billing unavailable to Capsule".to_owned()))
             }
             _ => None,
         },
@@ -2449,6 +2447,49 @@ struct GrokCent {
     val: Option<i64>,
 }
 
+#[derive(Debug)]
+enum GrokBillingSnapshot {
+    Rpc(GrokBillingResponse),
+    Web(GrokWebBillingSnapshot),
+}
+
+#[derive(Debug)]
+struct GrokWebBillingSnapshot {
+    used_percent: f64,
+    reset_at_epoch: Option<i64>,
+}
+
+impl GrokBillingSnapshot {
+    fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+        match self {
+            Self::Rpc(response) => response.buckets(now),
+            Self::Web(snapshot) => snapshot.buckets(now),
+        }
+    }
+
+    fn source(&self) -> UsageSource {
+        match self {
+            Self::Rpc(_) => UsageSource::Cli,
+            Self::Web(_) => UsageSource::ProviderApi,
+        }
+    }
+}
+
+impl GrokWebBillingSnapshot {
+    fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
+        vec![bucket(
+            "Weekly",
+            None,
+            None,
+            Some(100u8.saturating_sub(self.used_percent.round() as u8)),
+            self.reset_at_epoch
+                .map(|reset_at| reset_label(reset_at, now)),
+            None,
+            UsageSnapshotStatus::Fresh,
+        )]
+    }
+}
+
 impl GrokBillingResponse {
     fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
@@ -2526,9 +2567,29 @@ impl GrokBillingResponse {
     }
 }
 
+fn fetch_grok_billing(
+    auth_path: &Path,
+    now: i64,
+    gate: &mut ManagedCliLaunchGate,
+) -> Result<GrokBillingSnapshot, String> {
+    match fetch_grok_rpc_billing(gate) {
+        Ok(response) => Ok(GrokBillingSnapshot::Rpc(response)),
+        Err(rpc_error) => match fetch_grok_web_billing(auth_path, now) {
+            Ok(snapshot) => {
+                gate.record_success();
+                Ok(GrokBillingSnapshot::Web(snapshot))
+            }
+            Err(web_error) => Err(format!(
+                "{rpc_error}; Grok bearer billing failed: {web_error}"
+            )),
+        },
+    }
+}
+
 fn fetch_grok_rpc_billing(gate: &mut ManagedCliLaunchGate) -> Result<GrokBillingResponse, String> {
     gate.can_launch("Grok ACP billing", Instant::now())?;
-    let mut child = match Command::new("grok")
+    let executable = grok_binary_path();
+    let mut child = match Command::new(&executable)
         .args(["agent", "stdio"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -2537,7 +2598,10 @@ fn fetch_grok_rpc_billing(gate: &mut ManagedCliLaunchGate) -> Result<GrokBilling
     {
         Ok(child) => child,
         Err(err) => {
-            let message = format!("grok agent stdio failed to start: {err}");
+            let message = format!(
+                "{} agent stdio failed to start: {err}",
+                executable.display()
+            );
             gate.record_launch_failure(message.clone());
             return Err(message);
         }
@@ -2600,6 +2664,312 @@ fn fetch_grok_rpc_billing(gate: &mut ManagedCliLaunchGate) -> Result<GrokBilling
         gate.record_launch_failure(message.clone());
     }
     result
+}
+
+fn grok_binary_path() -> PathBuf {
+    let home_bin = home_path(".grok/bin/grok");
+    if home_bin.is_file() {
+        home_bin
+    } else {
+        PathBuf::from("grok")
+    }
+}
+
+fn fetch_grok_web_billing(auth_path: &Path, now: i64) -> Result<GrokWebBillingSnapshot, String> {
+    let token = grok_bearer_token(auth_path, now)?;
+    let client = provider_http_client()?;
+    let response = client
+        .post("https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig")
+        .bearer_auth(token)
+        .header(reqwest::header::ORIGIN, "https://grok.com")
+        .header(reqwest::header::REFERER, "https://grok.com/?_s=usage")
+        .header(reqwest::header::ACCEPT, "*/*")
+        .header(reqwest::header::CONTENT_TYPE, "application/grpc-web+proto")
+        .header("x-grpc-web", "1")
+        .header("x-user-agent", "connect-es/2.1.1")
+        .header(reqwest::header::USER_AGENT, "jackin-capsule")
+        .body(vec![0, 0, 0, 0, 0])
+        .send()
+        .map_err(|err| format!("request failed: {err}"))?;
+    let status = response.status();
+    let grpc_status = response
+        .headers()
+        .get("grpc-status")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let grpc_message = response
+        .headers()
+        .get("grpc-message")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let body = response
+        .bytes()
+        .map_err(|err| format!("body read failed: {err}"))?;
+    if !status.is_success() {
+        return Err(format!("HTTP {status}"));
+    }
+    if let Some(grpc_status) = grpc_status
+        && grpc_status != "0"
+    {
+        return Err(format!(
+            "gRPC status {grpc_status}: {}",
+            grpc_message.unwrap_or_else(|| "unknown".to_owned())
+        ));
+    }
+    parse_grok_web_billing_response(&body, now)
+}
+
+fn grok_bearer_token(auth_path: &Path, now: i64) -> Result<String, String> {
+    let text = fs::read_to_string(auth_path).map_err(|err| format!("auth read failed: {err}"))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|err| format!("auth decode failed: {err}"))?;
+    let Some(entries) = value.as_object() else {
+        return Err("auth.json root is not an object".to_owned());
+    };
+    let mut legacy: Option<(&str, &serde_json::Value)> = None;
+    for (scope, entry) in entries {
+        let is_oidc = scope.starts_with("https://auth.x.ai::");
+        let is_legacy = scope == "https://accounts.x.ai/sign-in" || scope.contains("/sign-in");
+        if is_legacy {
+            legacy = Some((scope, entry));
+        }
+        if is_oidc && let Some(token) = grok_bearer_token_from_entry(entry, now)? {
+            return Ok(token);
+        }
+    }
+    if let Some((_, entry)) = legacy
+        && let Some(token) = grok_bearer_token_from_entry(entry, now)?
+    {
+        return Ok(token);
+    }
+    Err("no fresh Grok bearer token in auth.json".to_owned())
+}
+
+fn grok_bearer_token_from_entry(
+    entry: &serde_json::Value,
+    now: i64,
+) -> Result<Option<String>, String> {
+    let Some(token) = entry.get("key").and_then(serde_json::Value::as_str) else {
+        return Ok(None);
+    };
+    if token.is_empty() {
+        return Ok(None);
+    }
+    if let Some(expires_at) = entry.get("expires_at").and_then(serde_json::Value::as_str)
+        && let Some(epoch) = parse_iso_epoch(expires_at)
+        && epoch <= now
+    {
+        return Err("Grok bearer token is expired".to_owned());
+    }
+    Ok(Some(token.to_owned()))
+}
+
+fn parse_grok_web_billing_response(
+    data: &[u8],
+    now: i64,
+) -> Result<GrokWebBillingSnapshot, String> {
+    let mut payloads = grpc_web_data_frames(data);
+    if payloads.is_empty() && looks_like_protobuf_payload(data) {
+        payloads.push(data.to_vec());
+    }
+    if payloads.is_empty() {
+        return Err("empty gRPC-web payload".to_owned());
+    }
+    let mut scan = ProtobufScan::default();
+    for payload in payloads {
+        scan.merge(scan_protobuf(&payload, 0, Vec::new(), &mut 0));
+    }
+    let used_percent = scan
+        .fixed32_fields
+        .iter()
+        .filter(|field| {
+            field.path.last() == Some(&1)
+                && field.value.is_finite()
+                && field.value >= 0.0
+                && field.value <= 100.0
+        })
+        .min_by(|left, right| {
+            left.path
+                .len()
+                .cmp(&right.path.len())
+                .then_with(|| left.order.cmp(&right.order))
+        })
+        .map(|field| f64::from(field.value))
+        .ok_or_else(|| "usage percent not found in Grok billing protobuf".to_owned())?;
+    let reset_at_epoch = scan
+        .varint_fields
+        .iter()
+        .filter(|field| field.value >= 1_700_000_000 && field.value <= 2_100_000_000)
+        .filter_map(|field| i64::try_from(field.value).ok().map(|epoch| (field, epoch)))
+        .filter(|(_, epoch)| *epoch > now)
+        .min_by_key(|(field, epoch)| {
+            let preferred = i32::from(field.path != [1, 5, 1]);
+            (preferred, *epoch)
+        })
+        .map(|(_, epoch)| epoch);
+    Ok(GrokWebBillingSnapshot {
+        used_percent,
+        reset_at_epoch,
+    })
+}
+
+#[derive(Debug, Default)]
+struct ProtobufScan {
+    fixed32_fields: Vec<Fixed32Field>,
+    varint_fields: Vec<VarintField>,
+}
+
+#[derive(Debug)]
+struct Fixed32Field {
+    path: Vec<u64>,
+    value: f32,
+    order: usize,
+}
+
+#[derive(Debug)]
+struct VarintField {
+    path: Vec<u64>,
+    value: u64,
+}
+
+impl ProtobufScan {
+    fn merge(&mut self, other: Self) {
+        self.fixed32_fields.extend(other.fixed32_fields);
+        self.varint_fields.extend(other.varint_fields);
+    }
+}
+
+fn grpc_web_data_frames(data: &[u8]) -> Vec<Vec<u8>> {
+    let mut frames = Vec::new();
+    let mut index = 0;
+    while index < data.len() {
+        if index + 5 > data.len() {
+            break;
+        }
+        let flags = data[index];
+        let length = (usize::from(data[index + 1]) << 24)
+            | (usize::from(data[index + 2]) << 16)
+            | (usize::from(data[index + 3]) << 8)
+            | usize::from(data[index + 4]);
+        let start = index + 5;
+        let end = start.saturating_add(length);
+        if end > data.len() {
+            break;
+        }
+        if flags & 0x80 == 0 {
+            frames.push(data[start..end].to_vec());
+        }
+        index = end;
+    }
+    frames
+}
+
+fn looks_like_protobuf_payload(data: &[u8]) -> bool {
+    let Some(first) = data.first() else {
+        return false;
+    };
+    let field_number = first >> 3;
+    let wire_type = first & 0x07;
+    field_number > 0 && matches!(wire_type, 0 | 1 | 2 | 5)
+}
+
+fn scan_protobuf(data: &[u8], depth: usize, path: Vec<u64>, order: &mut usize) -> ProtobufScan {
+    let mut scan = ProtobufScan::default();
+    let mut index = 0;
+    while index < data.len() {
+        let field_start = index;
+        let Some(key) = read_varint(data, &mut index) else {
+            index = field_start.saturating_add(1);
+            continue;
+        };
+        if key == 0 {
+            index = field_start.saturating_add(1);
+            continue;
+        }
+        let field_number = key >> 3;
+        let wire_type = key & 0x07;
+        let field_path = {
+            let mut next = path.clone();
+            next.push(field_number);
+            next
+        };
+        match wire_type {
+            0 => {
+                if let Some(value) = read_varint(data, &mut index) {
+                    scan.varint_fields.push(VarintField {
+                        path: field_path,
+                        value,
+                    });
+                } else {
+                    index = field_start.saturating_add(1);
+                }
+            }
+            1 => {
+                index = index.saturating_add(8).min(data.len());
+            }
+            2 => {
+                let Some(length) =
+                    read_varint(data, &mut index).and_then(|v| usize::try_from(v).ok())
+                else {
+                    index = field_start.saturating_add(1);
+                    continue;
+                };
+                let start = index;
+                let end = start.saturating_add(length);
+                if end > data.len() {
+                    break;
+                }
+                if depth < 4 {
+                    scan.merge(scan_protobuf(
+                        &data[start..end],
+                        depth + 1,
+                        field_path,
+                        order,
+                    ));
+                }
+                index = end;
+            }
+            5 => {
+                if index + 4 > data.len() {
+                    break;
+                }
+                let bytes = [
+                    data[index],
+                    data[index + 1],
+                    data[index + 2],
+                    data[index + 3],
+                ];
+                index += 4;
+                let value = f32::from_le_bytes(bytes);
+                let current_order = *order;
+                *order = order.saturating_add(1);
+                scan.fixed32_fields.push(Fixed32Field {
+                    path: field_path,
+                    value,
+                    order: current_order,
+                });
+            }
+            _ => {
+                index = field_start.saturating_add(1);
+            }
+        }
+    }
+    scan
+}
+
+fn read_varint(data: &[u8], index: &mut usize) -> Option<u64> {
+    let mut value = 0u64;
+    let mut shift = 0u32;
+    while *index < data.len() && shift < 64 {
+        let byte = data[*index];
+        *index += 1;
+        value |= u64::from(byte & 0x7f) << shift;
+        if byte & 0x80 == 0 {
+            return Some(value);
+        }
+        shift += 7;
+    }
+    None
 }
 
 fn grok_rpc_request(
@@ -4069,6 +4439,18 @@ fn grok_account_label(path: &Path) -> Option<String> {
         .or_else(|| first_string_key(&value, "team_id"))
 }
 
+fn grok_plan_label(path: &Path) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    first_string_key(&value, "auth_mode").map(|mode| {
+        if mode.eq_ignore_ascii_case("oidc") {
+            "SuperGrok".to_owned()
+        } else {
+            mode
+        }
+    })
+}
+
 fn grok_account_label_or_presence(
     auth_path: &Path,
     has_auth: bool,
@@ -4839,7 +5221,7 @@ mod tests {
             false,
             false,
             false,
-            Ok(billing),
+            Ok(GrokBillingSnapshot::Rpc(billing)),
         );
 
         assert_eq!(view.status, UsageSnapshotStatus::Fresh);
@@ -4849,6 +5231,30 @@ mod tests {
         assert_eq!(view.buckets[0].label, "Credits");
         assert_eq!(view.buckets[0].remaining_percent, Some(80));
         assert_eq!(view.last_error, None);
+    }
+
+    #[test]
+    fn grok_web_billing_response_maps_weekly_usage() {
+        let data = [
+            0x00, 0x00, 0x00, 0x00, 0x3c, 0x0a, 0x3a, 0x0d, 0x9c, 0x7d, 0xac, 0x42, 0x12, 0x00,
+            0x1a, 0x00, 0x22, 0x06, 0x08, 0x80, 0x97, 0xf3, 0xd0, 0x06, 0x2a, 0x06, 0x08, 0x80,
+            0xb1, 0x91, 0xd2, 0x06, 0x3a, 0x07, 0x08, 0x02, 0x15, 0x12, 0x03, 0xa5, 0x42, 0x42,
+            0x12, 0x08, 0x01, 0x12, 0x06, 0x08, 0x80, 0x97, 0xf3, 0xd0, 0x06, 0x1a, 0x06, 0x08,
+            0x80, 0xb1, 0x91, 0xd2, 0x06, 0x62, 0x00, 0x68, 0x01, 0x72, 0x00, 0x7a, 0x00, 0x82,
+            0x01, 0x00, 0x8a, 0x01, 0x00, 0x92, 0x01, 0x00, 0x9a, 0x01, 0x00, 0xa2, 0x01, 0x00,
+            0xaa, 0x01, 0x00,
+        ];
+
+        let snapshot =
+            parse_grok_web_billing_response(&data, 1_782_318_000).expect("parse grok billing");
+        let buckets = snapshot.buckets(1_782_318_000);
+
+        assert_eq!(buckets[0].label, "Weekly");
+        assert_eq!(buckets[0].remaining_percent, Some(14));
+        assert_eq!(
+            buckets[0].reset_label.as_deref(),
+            Some("Resets Jul 1 at 00:00")
+        );
     }
 
     #[test]
