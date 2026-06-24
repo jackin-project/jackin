@@ -795,7 +795,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 used_label: Some("63% used".to_owned()),
                 limit_label: Some("100%".to_owned()),
                 remaining_percent: Some(37),
-                reset_label: Some("Resets in 1h 21m".to_owned()),
+                reset_label: Some("Resets 15:07".to_owned()),
                 pace_label: Some("10% in reserve".to_owned()),
                 status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
             },
@@ -938,7 +938,7 @@ fn usage_dialog_rows_render_provider_quota_snapshot() {
         value.starts_with("████████████····")
             && value.contains("37% left")
             && value.contains("10% in reserve")
-            && value.contains("Resets in 1h 21m")
+            && value.contains("Resets 15:07")
             && !value.contains("used / 100%")
     }));
     assert!(values.contains(&"ACP billing unavailable · unsupported"));
@@ -986,7 +986,7 @@ fn usage_dialog_renders_deficit_and_runout_quota_labels() {
             used_label: Some("40% used".to_owned()),
             limit_label: Some("100%".to_owned()),
             remaining_percent: Some(60),
-            reset_label: Some("Resets in 6d 9h".to_owned()),
+            reset_label: Some("Resets Jun 17 at 23:15".to_owned()),
             pace_label: Some("31% in deficit · Runs out in 21h 45m".to_owned()),
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         });
@@ -1002,7 +1002,7 @@ fn usage_dialog_renders_deficit_and_runout_quota_labels() {
         value.contains("60% left")
             && value.contains("31% in deficit")
             && value.contains("Runs out in 21h 45m")
-            && value.contains("Resets in 6d 9h")
+            && value.contains("Resets Jun 17 at 23:15")
     }));
 
     let snapshot = d.to_ratatui_snapshot(None);
@@ -1025,6 +1025,7 @@ fn usage_dialog_renders_deficit_and_runout_quota_labels() {
     assert!(rendered.contains("Weekly"), "{rendered}");
     assert!(rendered.contains("31% in deficit"), "{rendered}");
     assert!(rendered.contains("Runs out in 21h 45m"), "{rendered}");
+    assert!(rendered.contains("Lasts until reset"), "{rendered}");
 }
 
 #[test]
@@ -1036,7 +1037,7 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
             used_label: Some("400M".to_owned()),
             limit_label: Some("1B".to_owned()),
             remaining_percent: Some(60),
-            reset_label: Some("Resets in 6d 9h".to_owned()),
+            reset_label: Some("Resets Jun 17 at 23:15".to_owned()),
             pace_label: Some("31% in deficit · Runs out in 21h 45m".to_owned()),
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         },
@@ -1045,7 +1046,7 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
             used_label: Some("2h".to_owned()),
             limit_label: Some("5h".to_owned()),
             remaining_percent: Some(60),
-            reset_label: Some("Resets in 4h".to_owned()),
+            reset_label: Some("Resets 18:00".to_owned()),
             pace_label: Some("5 hours window".to_owned()),
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         },
@@ -1063,7 +1064,7 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
             used_label: Some("12K".to_owned()),
             limit_label: Some("100K".to_owned()),
             remaining_percent: Some(88),
-            reset_label: Some("Resets in 12h".to_owned()),
+            reset_label: Some("Resets tomorrow, 02:00".to_owned()),
             pace_label: Some("Coding plan".to_owned()),
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         },
@@ -1266,7 +1267,8 @@ fn usage_dialog_renders_inside_narrow_terminal() {
         .join("\n");
 
     assert!(rendered.contains("Usage"), "{rendered}");
-    assert!(rendered.contains("OpenAI / Codex"), "{rendered}");
+    assert!(rendered.contains("OpenAI"), "{rendered}");
+    assert!(!rendered.contains("OpenAI / Codex"), "{rendered}");
     assert!(rendered.contains("alexey@example.com"), "{rendered}");
     assert!(rendered.contains("Pro 20x"), "{rendered}");
     assert!(rendered.contains("Updated just now"), "{rendered}");
@@ -1291,7 +1293,7 @@ fn usage_dialog_geometry_counts_rendered_section_lines() {
             used_label: Some("100K".to_owned()),
             limit_label: Some("1M".to_owned()),
             remaining_percent: Some(90),
-            reset_label: Some("Resets in 6d".to_owned()),
+            reset_label: Some("Resets Jun 17 at 14:00".to_owned()),
             pace_label: Some("20% in reserve".to_owned()),
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         },
@@ -1300,7 +1302,7 @@ fn usage_dialog_geometry_counts_rendered_section_lines() {
             used_label: Some("2".to_owned()),
             limit_label: Some("100".to_owned()),
             remaining_percent: Some(98),
-            reset_label: Some("Resets in 20d".to_owned()),
+            reset_label: Some("Resets Jul 1 at 14:00".to_owned()),
             pace_label: Some("2 / 100 (98 remaining)".to_owned()),
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         },

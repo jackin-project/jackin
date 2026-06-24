@@ -763,6 +763,7 @@ fn usage_stacked_bucket_detail_rows(
 ) -> Vec<(String, String)> {
     let mut left = Vec::new();
     let mut right = Vec::new();
+    let mut lasts_until_reset = false;
     if let Some(label) = remaining_label {
         left.push(label);
     }
@@ -770,10 +771,18 @@ fn usage_stacked_bucket_detail_rows(
         if detail.starts_with("Resets") || detail.starts_with("Runs out") {
             right.push(detail.clone());
         } else if !left.iter().any(|existing| existing == detail) {
+            if detail == "On pace" || detail.ends_with(" in reserve") {
+                lasts_until_reset = true;
+            }
             left.push(detail.clone());
         }
     }
-    if right.is_empty() && left.len() > 1 {
+    if lasts_until_reset
+        && right.iter().any(|detail| detail.starts_with("Resets"))
+        && !right.iter().any(|detail| detail.starts_with("Runs out"))
+    {
+        right.push("Lasts until reset".to_owned());
+    } else if right.is_empty() && left.len() > 1 {
         right.push(String::new());
     }
     let len = left.len().max(right.len());

@@ -550,7 +550,7 @@ impl Dialog {
             ),
             jackin_tui::components::ContainerInfoRow::new(
                 "Header",
-                view.account.provider_label.clone(),
+                Self::usage_provider_header_label(&view.account.provider_label),
             ),
             jackin_tui::components::ContainerInfoRow::new(
                 "Provider",
@@ -673,6 +673,17 @@ impl Dialog {
             Some(plan) => format!("{} · {} · {plan}", view.account.provider_label, account),
             None => format!("{} · {}", view.account.provider_label, account),
         }
+    }
+
+    fn usage_provider_header_label(label: &str) -> String {
+        match label {
+            "Codex" | "OpenAI / Codex" => "OpenAI",
+            "Claude" | "Anthropic / Claude" => "Anthropic",
+            "Grok Build" | "xAI / Grok" => "xAI",
+            "GLM / Z.AI" => "Z.AI",
+            other => other,
+        }
+        .to_owned()
     }
 
     fn usage_provider_tab_target(&mut self, step: isize) -> Option<String> {
