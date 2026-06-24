@@ -985,6 +985,12 @@ relative+local reset format (Issue 13). Verify against
 (`GET https://api.kimi.com/coding/v1/usages`: weekly request quota + 5-hour rate limit, `window`
 `{duration, timeUnit}`, `remaining`, `resetTime`).
 
+**Implementation verification.** Commit `24caec6` verified Kimi against CodexBar `docs/kimi.md` and
+`Sources/CodexBarCore/Providers/Kimi/`: CodexBar maps `usage` to Weekly and the first
+`limits[].window`/`detail` entry to a fixed 300-minute rate-limit window. jackin' now renders that
+section literally as `Rate Limit`, parses raw `TIME_UNIT_MINUTE`, suppresses Weekly pace, and keeps
+pace only on the 5-hour rate-limit bucket.
+
 ---
 
 ## Issue 15 — Status bar is inconsistent across screens; unify it (ARCHITECTURAL)
@@ -1326,7 +1332,7 @@ done vs outstanding in this roadmap item.
 - [x] Issue 10 — status-bar click opens the focused pane's provider — `ed98924`
 - [x] Issue 11 — Z.AI: order Tokens·MCP·5-hour + MCP count line + in-reserve per spec — `324cf2f`
 - [x] Issue 12 — MiniMax: `Usage: N/100` count line + order (keep "% left") — `1e91c01`
-- [ ] Issue 14 — Kimi: humanize "Rate Limit" label + order + in-reserve on right bucket + window-duration parse
+- [x] Issue 14 — Kimi: humanize "Rate Limit" label + order + in-reserve on right bucket + window-duration parse — `24caec6`
 - [ ] Issue 16 — Grok: dynamic window label (Weekly/Monthly/Credits) + single percent bar + reset/in-reserve per spec
 - [ ] Issue 17 — Overview — (after collection)
 
