@@ -178,8 +178,15 @@ fn control_reply_for_request_shapes_usage_variants() {
 }
 
 #[test]
-fn apply_dialog_action_refresh_usage_replaces_usage_dialog() {
+fn apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog() {
     let mut mux = single_pane_tab_mux();
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "test");
     let mut stale = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
     stale.updated_label = "seed".to_owned();
     stale.status_bar_label = "seed".to_owned();
@@ -190,8 +197,19 @@ fn apply_dialog_action_refresh_usage_replaces_usage_dialog() {
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
         panic!("refresh usage action must keep usage dialog open");
     };
-    assert_ne!(view.updated_label, "seed");
-    assert_eq!(view.status_bar_label, "usage unavailable");
+    assert!(
+        view.updated_label.contains("refreshing"),
+        "{:?}",
+        view.updated_label
+    );
+    assert_eq!(view.status_bar_label, "seed");
+    assert_eq!(
+        mux.pending_usage_refresh,
+        Some(crate::usage::UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("OpenAI".to_owned())
+        })
+    );
 }
 
 #[test]

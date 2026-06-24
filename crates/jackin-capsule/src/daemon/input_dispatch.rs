@@ -144,15 +144,7 @@ impl Multiplexer {
                     Some(Instant::now() + DIALOG_COPY_FEEDBACK_DURATION);
             }
             DialogAction::RefreshUsage => {
-                let selected = self.dialog_top().and_then(Dialog::usage_selected_tab);
-                let view = self.focused_usage_snapshot(true);
-                if let Some(dialog) = self.dialog_top_mut() {
-                    *dialog = Dialog::new_usage_with_tab(
-                        view,
-                        selected
-                            .unwrap_or(crate::tui::components::dialog::UsageDialogTab::Provider),
-                    );
-                }
+                self.request_usage_refresh_for_provider(None);
             }
             DialogAction::SwitchUsageProvider { provider_label } => {
                 let view = self.focused_usage_snapshot_for_provider(Some(&provider_label), false);

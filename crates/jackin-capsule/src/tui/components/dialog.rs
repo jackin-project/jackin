@@ -692,6 +692,7 @@ impl Dialog {
         Some(view.tabs[next].label.clone())
     }
 
+    #[cfg(test)]
     pub(crate) fn usage_selected_tab(&self) -> Option<UsageDialogTab> {
         let Self::Usage { selected, .. } = self else {
             return None;
