@@ -1149,6 +1149,12 @@ extraction + the dynamic-label rule against
 source (`Providers/Grok/`). Live jackin render confirmed (above) — deltas are small (reset format +
 dynamic label).
 
+**Implementation verification.** Commit `aa26f42` verified Grok against CodexBar `docs/grok.md` and
+`Sources/CodexBarCore/Providers/Grok/`: CodexBar derives the primary usage window from credit usage
+vs subscription/included limit, resets at the billing-cycle end, and labels the live bar Weekly or
+Monthly for common cycles with Credits as the fallback. jackin' now applies the same dynamic label to
+both RPC and web-billing snapshots and leaves in-reserve disabled for Grok.
+
 ---
 
 ## Issue 17 — Overview tab layout is wrong; match the binding preview (USAGE OVERLAY)
@@ -1333,7 +1339,7 @@ done vs outstanding in this roadmap item.
 - [x] Issue 11 — Z.AI: order Tokens·MCP·5-hour + MCP count line + in-reserve per spec — `324cf2f`
 - [x] Issue 12 — MiniMax: `Usage: N/100` count line + order (keep "% left") — `1e91c01`
 - [x] Issue 14 — Kimi: humanize "Rate Limit" label + order + in-reserve on right bucket + window-duration parse — `24caec6`
-- [ ] Issue 16 — Grok: dynamic window label (Weekly/Monthly/Credits) + single percent bar + reset/in-reserve per spec
+- [x] Issue 16 — Grok: dynamic window label (Weekly/Monthly/Credits) + single percent bar + reset/in-reserve per spec — `aa26f42`
 - [ ] Issue 17 — Overview — (after collection)
 
 **D. Layout + format (usage overlay)**
