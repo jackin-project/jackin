@@ -72,9 +72,6 @@ pub(crate) fn branch_context_bar_layout(
     };
     let term_cols_usize = usize::from(term_cols);
     let mut cursor = term_cols_usize.saturating_add(1);
-    let (container, container_region) = place_right_chunk(&mut cursor, term_cols_usize, {
-        (!container_name.is_empty()).then(|| format!(" {container_name} "))
-    });
     let (debug_chip, debug_chip_region) = place_right_chunk(
         &mut cursor,
         term_cols_usize,
@@ -82,6 +79,9 @@ pub(crate) fn branch_context_bar_layout(
             .filter(|id| !id.is_empty())
             .map(|id| format!(" {id} · ")),
     );
+    let (container, container_region) = place_right_chunk(&mut cursor, term_cols_usize, {
+        (!container_name.is_empty()).then(|| format!(" {container_name} "))
+    });
     let usage_label = usage_status_label.filter(|s| !s.is_empty());
     let (usage, usage_region) =
         usage_right_chunk(&mut cursor, term_cols_usize, usage_label, debug_chip_region);

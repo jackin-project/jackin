@@ -174,6 +174,34 @@ fn narrow_usage_signal_keeps_state_when_no_quota_exists() {
 }
 
 #[test]
+fn right_chunks_order_usage_container_run_id() {
+    let layout = branch_context_bar_layout(
+        24,
+        100,
+        Some("feature/status"),
+        Some("Session 37%"),
+        None,
+        false,
+        Some("18bc138751b01628"),
+        "sx02yp2x",
+    )
+    .expect("layout");
+
+    let usage = layout.usage_region.expect("usage region");
+    let container = layout.container_region.expect("container region");
+    let run = layout.debug_chip_region.expect("run id region");
+
+    assert!(
+        usage.start < container.start,
+        "usage should render left of container"
+    );
+    assert!(
+        container.start < run.start,
+        "container should render left of run id"
+    );
+}
+
+#[test]
 fn layout_returns_none_for_zero_dimensions() {
     let pr = pull_request_fixture(1);
     assert!(
