@@ -2,7 +2,7 @@
 title: "Ratatui terminal modernization"
 ---
 
-**Status**: Open — implementation decisions finalized. This item is no longer an upgrade task: jackin' already depends on Ratatui 0.30.2. The work is to make the `jackin-term` model, Ratatui buffer mapping, and Capsule emit path share one explicit terminal contract, then remove the current full-frame repaint stopgap and use Ratatui's modern buffer/diff APIs correctly.
+**Status**: Partially implemented — automated implementation gates passed; real-terminal soak remains before completion. This item is no longer an upgrade task: jackin' already depends on Ratatui 0.30.2. The work is to make the `jackin-term` model, Ratatui buffer mapping, and Capsule emit path share one explicit terminal contract, then remove the current full-frame repaint stopgap and use Ratatui's modern buffer/diff APIs correctly.
 
 **Implementation scope**: complete this roadmap item in one implementation branch and one large pull request. Do not split phases into separate PRs unless the operator explicitly changes this rule. Use the checklist below as the PR ledger and update completed boxes as work lands.
 
@@ -207,9 +207,9 @@ Keep this checklist as the working ledger during implementation. When a task is 
 - [x] Phase 6: Keep Ratatui buffers and physical screen state coherent by not applying scroll-region output in the shipped path.
 - [x] Phase 6: Do not adopt scroll-region output because the byte-win and echo-back gates are not proven in this item.
 - [x] Phase 6: Leave scroll-region output disabled/not shipped if parity, coherence, geometry, or byte-win gates fail.
-- [ ] Phase 7: Run the full extended automated set, including conformance, echo-back, fuzz corpus coverage, allocation checks, and relevant benches.
+- [x] Phase 7: Run the full extended automated set, including conformance, echo-back, fuzz corpus coverage, allocation checks, and relevant benches.
 - [ ] Phase 7: Soak with real agents and Ghostty, iTerm2, WezTerm, Alacritty, Kitty, and SSH.
-- [ ] Phase 7: Update user-facing and contributor-facing docs for shipped behavior, then update this roadmap status to partially implemented or completed as appropriate.
+- [x] Phase 7: Update user-facing and contributor-facing docs for shipped behavior, then update this roadmap status to partially implemented or completed as appropriate.
 
 ### Phase 1 — Profile and Width Contract
 
@@ -318,6 +318,8 @@ Acceptance:
 - Run allocation and performance checks before/after.
 - Soak with real agents and terminals: Ghostty, iTerm2, WezTerm, Alacritty, Kitty, and SSH.
 - Merge only when the new path is the desired default.
+
+Phase 7 automated-gate note: `cargo nextest run`, `cargo nextest run --all-features`, native `cargo fuzz run --sanitizer none damage_grid_process -- -max_total_time=60`, `cargo nextest run -p jackin-term --features dhat-heap --test allocation`, and short Criterion runs for `present_frame`, `scroll_throughput`, and `pane_body` passed. The Linux-target fuzz command from CI could not run on this macOS checkout because `x86_64-linux-gnu-g++` is not installed; native fuzz coverage passed instead. Real-terminal soak remains open and keeps the item at partially implemented status.
 
 ## Testing Strategy
 
