@@ -785,6 +785,8 @@ fn row_opt_string(row: &Row, idx: usize, name: &str) -> Result<Option<String>, S
 
 #[cfg(test)]
 mod tests {
+    use crate::tui::components::dialog::Dialog;
+
     use jackin_protocol::control::{
         FocusedAccountHeader, FocusedUsageView, QuotaBucketView, UsageConfidence,
         UsageSnapshotStatus, UsageSource,
@@ -827,6 +829,42 @@ mod tests {
             fetched_at_epoch: 1_781_185_560,
             updated_label: "Updated just now".to_owned(),
             status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
+            tabs: Vec::new(),
+            last_error: None,
+        }
+    }
+
+    fn provider_usage_view(
+        provider: &str,
+        account: &str,
+        plan: Option<&str>,
+        bucket: &str,
+        remaining: u8,
+        fetched_at_epoch: i64,
+    ) -> FocusedUsageView {
+        FocusedUsageView {
+            focused_agent: Some("codex".to_owned()),
+            focused_provider: Some(provider.to_owned()),
+            account: FocusedAccountHeader {
+                provider_label: provider.to_owned(),
+                account_label: account.to_owned(),
+                plan_label: plan.map(str::to_owned),
+            },
+            buckets: vec![QuotaBucketView {
+                label: bucket.to_owned(),
+                used_label: Some(format!("{}% used", 100_u8.saturating_sub(remaining))),
+                limit_label: Some("100%".to_owned()),
+                remaining_percent: Some(remaining),
+                reset_label: Some("Resets at 15:00 UTC".to_owned()),
+                pace_label: Some("On pace".to_owned()),
+                status: UsageSnapshotStatus::Fresh,
+            }],
+            status: UsageSnapshotStatus::Fresh,
+            source: UsageSource::ProviderApi,
+            confidence: UsageConfidence::Authoritative,
+            fetched_at_epoch,
+            updated_label: "Updated just now".to_owned(),
+            status_bar_label: format!("{bucket} {remaining}%"),
             tabs: Vec::new(),
             last_error: None,
         }
@@ -898,6 +936,99 @@ mod tests {
             .expect("stored usage view");
 
         assert_eq!(view.updated_label, "Updated 2m ago");
+    }
+
+    #[test]
+    fn all_provider_snapshots_round_trip_from_turso_to_usage_overlay_rows() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("usage.db");
+        let now = 1_781_185_680;
+        let providers = [
+            (
+                "Codex",
+                "OpenAI",
+                "codex@example.com",
+                Some("Pro 20x"),
+                "Session",
+                37,
+            ),
+            (
+                "Claude",
+                "Anthropic",
+                "claude@example.com",
+                Some("Max"),
+                "Weekly",
+                42,
+            ),
+            (
+                "Amp",
+                "Amp",
+                "amp@example.com",
+                Some("Amp Free"),
+                "Amp Free",
+                55,
+            ),
+            ("Grok Build", "xAI", "local Grok auth", None, "Credits", 61),
+            (
+                "GLM / Z.AI",
+                "Z.AI",
+                "zai@example.com",
+                Some("GLM Coding"),
+                "Tokens",
+                72,
+            ),
+            (
+                "Kimi",
+                "Kimi",
+                "kimi@example.com",
+                Some("K2"),
+                "5-hour rate limit",
+                83,
+            ),
+            (
+                "MiniMax",
+                "MiniMax",
+                "minimax@example.com",
+                Some("MiniMax Pro"),
+                "MiniMax Text Coding plan",
+                94,
+            ),
+        ];
+
+        for (provider, _tab_label, account, plan, bucket, remaining) in providers {
+            store_usage_snapshot(
+                &db,
+                &provider_usage_view(provider, account, plan, bucket, remaining, now - 120),
+            )
+            .expect("store provider snapshot");
+        }
+
+        for (provider, tab_label, account, plan, bucket, remaining) in providers {
+            let view = focused_usage_view(&db, Some("codex"), Some(tab_label), now)
+                .expect("read focused usage")
+                .expect("stored provider usage");
+            assert_eq!(view.account.provider_label, provider);
+            assert_eq!(view.account.account_label, account);
+            assert_eq!(view.account.plan_label.as_deref(), plan);
+            assert_eq!(view.buckets.len(), 1);
+            assert_eq!(view.buckets[0].label, bucket);
+            assert_eq!(view.buckets[0].remaining_percent, Some(remaining));
+            assert_eq!(view.updated_label, "Updated 2m ago");
+            assert_eq!(view.tabs.len(), 7);
+
+            let state = Dialog::new_usage(view).usage_state().expect("usage state");
+            let rows = state.rows();
+            assert!(
+                rows.iter()
+                    .any(|row| row.label() == "Header" && row.value() == tab_label),
+                "provider header row missing for {provider}: {rows:?}"
+            );
+            assert!(
+                rows.iter()
+                    .any(|row| row.label() == bucket && row.value().contains("left")),
+                "bucket row missing for {provider}/{bucket}: {rows:?}"
+            );
+        }
     }
 
     #[test]
