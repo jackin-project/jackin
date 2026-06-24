@@ -1,0 +1,1238 @@
+---
+title: "Capsule usage overlay — responsiveness, tabs, and layout fixes"
+---
+
+**Status**: Collected — not yet started. This item collects operator-reported defects and
+improvements for the in-container usage overlay, each verified against the source. We will
+address them later as one goal. Companion to
+<RepoFile path="docs/content/docs/reference/roadmap/capsule-usage-quota-overlay.mdx" />
+(the binding design for the overlay itself).
+
+> **Why this file exists.** The operator reported these issues in conversation. They are
+> captured here verbatim-in-intent so nothing is lost, then extended with the verified root
+> cause and exact change points from the source. Treat this as the single source of truth for
+> the work; extend it as new findings arrive.
+
+## Guiding principles (binding for every item here)
+
+1. **Correctness over ROI.** Judge each item by whether it *should* be done — is the current
+   state wrong or inconsistent — never by cost/effort/"is it worth it." The only reason to stop
+   short is a *proven* impossibility, not a hard or large change.
+2. **Root-cause, architectural fixes.** A correct architecture has no bugs; every bug is
+   evidence the architecture *permits* it. Before fixing, diagnose why the structure allowed it
+   and whether it is one instance of a whole *class*. Prefer removing the structural condition
+   over a symptom patch.
+3. **Reuse, never copy-paste.** Recurring concerns (tab hover, cursor, blocking I/O) must be
+   fixed once as a shared mechanism applied *everywhere*, so the same defect cannot reappear and
+   the operator never has to re-explain the fix.
+4. **Never block — tokio everywhere, loads in parallel (HARDCORE rule).** Everything must stay
+   responsive. Blocking work (network, subprocess, DB, file I/O) must **never** run on the
+   event/input/render task — use tokio / `spawn_blocking` / workers. Every data load is async; when
+   independent, run them **in parallel** (join), never serially. Applies to **all of jackin'**, not
+   just the usage overlay. Audit every load path and refactor any that blocks or runs serially.
+5. **CodexBar is a reference to verify, not gospel.** Mirror CodexBar by default, but for every
+   decision verify whether *our* data is more accurate or more up-to-date. CodexBar can have bugs or
+   stale logic; if jackin' has the better/fresher data, display the correct thing and document why we
+   diverge. Never copy a CodexBar behavior we cannot explain — first understand what a value means,
+   how it is derived, and what it represents, then decide.
+
+---
+
+## Issue 1 — Tabs must show hover color + change the mouse cursor, everywhere (ARCHITECTURAL)
+
+**Operator report.** Tabs should always respond to hover: hovering a tab must change its color,
+and the mouse cursor must change too (pointer/hand). This must work the same on every surface
+that has tabs. Do not fix it only for the usage overlay — fix it as an architectural issue so
+the same behavior is applied to every tab surface, now and for anything built later, by reusing
+one shared mechanism instead of copy-pasting. This is the first thing to plan.
+
+**Verified root cause (it is a duplication / missing-wiring problem).**
+
+- The shared widget <RepoFile path="crates/jackin-tui/src/components/tab_strip.rs" /> (`TabStrip`)
+  is **render-only**. It accepts a precomputed `hovered: Option<usize>` and paints the matching
+  background (`tab_strip.rs:63`, colors `crates/jackin-tui/src/theme.rs:47-50`), but it does
+  **not** own hover state, does **not** expose per-tab click/hit regions (it calls
+  `lay_out_tabs(labels, 0)` internally and discards the cells — `tab_strip.rs:51`), and does
+  **not** decide or emit any cursor shape.
+- Because hit-testing and cursor are not part of the shared widget, every surface re-does them:
+  - Capsule status bar **hand-rolls its own tab painter** (`StatusBarWidget::paint_tab`,
+    `crates/jackin-capsule/src/tui/components/chrome.rs:37`) with a **duplicated**
+    `(active, hovered) → background` 4-state match (`chrome.rs:38-44` vs `tab_strip.rs:63`) and a
+    duplicated underline (`chrome.rs:144` vs `tab_strip.rs:84`). Its click regions are computed
+    separately (`status_bar.rs:168` `set_click_regions_from_plan`, `:155` `tab_at_col`).
+  - Console editor/settings tabs use the shared `TabStrip` to paint but re-derive columns for
+    hit-testing in `crates/jackin-console/src/tui/layout.rs:195` (`tab_cell_at_position`) and
+    `:205` (`tab_hover_index_at_position`).
+  - Hover state storage differs per surface: capsule `chrome_target: Option<HoverTarget>`
+    (`crates/jackin-capsule/src/tui/app.rs:79`, enum `:112`) vs console per-screen `hovered_tab()`
+    (`crates/jackin-console/src/tui/screens/settings/model.rs:195`).
+  - Cursor (OSC 22) is decided/emitted two unrelated ways: capsule `PointerShape` enum
+    (`app.rs:52`, `:86` `pointer_shape_for_state`, emit `tui/terminal.rs:73`,
+    `daemon/mouse_input.rs:42`) vs console `console_pointer_hand` bool + direct stdout write of
+    `POINTER_HAND`/`POINTER_DEFAULT` (`crates/jackin-tui/src/lib.rs:235-236`,
+    `crates/jackin-console/src/tui/run.rs:407`, `crates/jackin/src/console/tui/run.rs:788-807`).
+- **The usage overlay tabs are the odd one out: hover + hit-test + cursor are entirely absent.**
+  - Rendered render-only via `TabStrip::new(..).focused(..).render(..)` —
+    `.hovered()` is **never called** (`crates/jackin-capsule/src/tui/components/dialog_widgets.rs:431`),
+    so the hover branch is dead for this surface.
+  - The usage dialog returns no clickable area: `Self::Usage { .. } => false` in `clickable_at`
+    (`crates/jackin-capsule/src/tui/components/dialog.rs:1594`), so tabs are never registered with
+    any `HoverTracker` and `pointer_shape_for_state` yields the default arrow.
+  - Tab switching is keyboard-only (`dialog.rs:645` `usage_provider_tab_target`,
+    key handling `dialog.rs:966-1004`). No mouse path at all.
+
+**What already exists and should be reused** (do not reinvent): `HoverTracker<K>`
+(<RepoFile path="crates/jackin-tui/src/components/hover_tracker.rs" />), tab geometry
+`lay_out_tabs` + `tab_at_column` (`crates/jackin-tui/src/geometry.rs:306`, `:330`), hover color
+constants (`theme.rs:47-50`), OSC-22 escapes (`lib.rs:235-236`).
+
+**Direction (architectural, to be planned first).** Make `TabStrip` the single tab component that
+owns render **+** hover **+** per-tab hit regions **+** cursor declaration, so any surface that
+renders tabs gets hover color and pointer cursor for free and cannot regress:
+- Expose the laid-out cells / a `click_regions()` (hit-test) from `TabStrip` so callers stop
+  re-deriving columns (`status_bar.rs:168`, `layout.rs:195-223`).
+- Unify the cursor decision: one mechanism that lets a tab/clickable region declare "pointer"
+  (reconcile capsule `PointerShape` with console `POINTER_HAND`).
+- Fold the status bar's extras (state glyphs ○/●, brand pill, right menu button, overflow `›`,
+  green/white focus underline) into `TabStrip` options so the status bar can drop its hand-rolled
+  painter, OR factor the shared hover/cursor/hit-test out so even the hand-rolled painter consumes
+  it. Either way: **one** definition of tab hover + cursor, consumed everywhere including the
+  usage overlay.
+- Then wire the usage overlay tabs through it: add click regions + hover + cursor + mouse switch.
+
+**Scope:** cross-cutting — `jackin-tui` (shared), capsule status bar + usage overlay, console
+editor/settings. This is the architectural item; the others below are usage-overlay-specific.
+
+---
+
+## Issue 2 — Usage dialog "jumps" vertically when switching tabs (USAGE DIALOG ONLY)
+
+**Operator report.** Changing the size per tab is fine; the problem is the dialog *jumps* on
+screen — middle, then up, then middle — every time a tab changes. Use the macOS approach: stick
+the dialog to a fixed **top** position. The top line and the tab strip must **never move**. Only
+the content inside adjusts: the **height** grows/shrinks downward to fit the selected tab's
+content. (Width may adapt to content, but position stays anchored at the top.)
+
+**Verified root cause.** The dialog is **vertically centered**, and the center is recomputed from
+the per-tab height, so a changing height re-centers the box → it appears to jump.
+
+- `box_rect` (`crates/jackin-capsule/src/tui/components/dialog.rs:1643`) computes the y origin at
+  `dialog.rs:1712-1713`:
+  ```rust
+  let row = crate::tui::components::status_bar::STATUS_BAR_ROWS
+      + (max_height.saturating_sub(height)) / 2;   // (available - height)/2  → recenters every height change
+  ```
+- The Usage height varies per tab: `natural_height` for `Self::Usage` comes from
+  `usage_info_required_height` (`dialog.rs:1691-1693` →
+  `crates/jackin-capsule/src/tui/components/dialog_widgets.rs:495-502`,
+  `= usage_info_lines(state).len() + 5`), and `state` is rebuilt per selected tab (Overview is
+  short, provider tabs are tall).
+- The `row`/`col` centering at `dialog.rs:1712-1714` runs **unconditionally for every dialog
+  variant** (`CommandPalette`, pickers, `ContainerInfo`, `GitHubContext`, `Usage`,
+  `ConfirmAction`, …). `box_rect` currently branches per-variant only for `width`
+  (`:1644-1660`) and `natural_height` (`:1665-1706`) — there is **no per-variant positioning
+  hook**.
+
+**Direction (scoped to Usage only) — DECIDED: fixed top offset.** Add a per-variant branch at the
+`row` computation (`dialog.rs:1712-1713`) so `Self::Usage` anchors its top edge at a **constant top
+row** (a fixed offset near the top); content grows straight down; the top edge + tab strip never
+move. (Not centered-on-max-height — operator chose the fixed top offset.) All other variants keep
+current centering. Because `box_rect` is the single geometry source for both render and hit-testing
+(`dialog.rs:808, 862, 1330, 1562` + hover/pointer paths), the anchored `row` **must** be returned
+from `box_rect` itself — do not compute a separate top offset only in the render helper, or render
+and pointer math will disagree.
+
+**Leak risk to avoid:** editing the shared `row =` line without a `Self::Usage` guard would shift
+*every* dialog. Must be guarded.
+
+---
+
+## Issue 3 — Usage tab bar must be center-aligned (USAGE DIALOG ONLY)
+
+**Operator report.** On this dialog specifically, the tab bar should be centered, not aligned to
+the left.
+
+**Verified root cause.** The strip is left-aligned to the dialog interior, and the shared
+`TabStrip` always paints from col 0 of the rect it is given.
+
+- Tab rect built at `crates/jackin-capsule/src/tui/components/dialog_widgets.rs:421-426` with
+  `x: inner.x` and full `width: inner.width` → starts at the left interior column.
+- `TabStrip` has no alignment option; `paragraph` lays out from `start_col = 0`
+  (`tab_strip.rs:50-56`, `lay_out_tabs(labels, 0)`).
+
+**Direction (scoped to Usage only).** Compute a centered x-offset in `render_usage_info` and pass
+a centered rect to `TabStrip`:
+`strip_w = usage_tab_strip_width(tabs)` (already exists, `dialog_widgets.rs:471-476`; it includes
+a trailing `TAB_GAP` per cell, so subtract one trailing `TAB_GAP` for true visual centering),
+`x_offset = (inner.width - strip_w) / 2` (saturating, clamp to 0), build `tab_area` at
+`x: inner.x + x_offset`. Confined to `dialog_widgets.rs:421-426`.
+
+**Do NOT** add centering to the shared `TabStrip`: the console/status strips rely on
+`tab_at_column` assuming `start_col = 0` for click/hover hit-testing, so a shared centering mode
+would break their mouse mapping. The usage strip is keyboard-only today, so shifting its x-origin
+via the rect breaks nothing. *(Note: when Issue 1 wires mouse hit-testing into the usage strip,
+its centered x-offset must be threaded into the new hit-test too — coordinate Issues 1 and 3.)*
+
+---
+
+## Issue 4 — Tab switching feels blocked / unresponsive while data refreshes (ROOT CAUSE: blocking work on the event loop)
+
+**Operator report.** Switching tabs feels like a blocking operation — pressing left/right
+sometimes does nothing, especially while data is refreshing/downloading; the whole thing feels
+buggy and stuck. We must never block. Everything must be responsive — use tokio / tokio tasks
+(spawn_blocking) as much as possible, always.
+
+**Verified root cause (CONFIRMED).** The usage refresh runs **synchronously, inline inside the
+daemon `tokio::select!` loop**, on the same single task that processes input and renders. While a
+refresh tick runs, the loop cannot poll the input branch, so arrow-key bytes sit unread until it
+returns — exactly the reported symptom.
+
+- Daemon loop: `tokio::select!` at `crates/jackin-capsule/src/daemon.rs:655`. The usage ticker
+  branch (`daemon.rs:1024-1029`) calls `mux.refresh_active_usage_account_snapshots(Instant::now())`
+  at **`daemon.rs:1025` with no `.await`, no `spawn_blocking`, no worker** — a plain synchronous
+  call. (Contrast: git-branch / PR-context lookups in the same loop ARE offloaded via
+  `maybe_spawn_*`, `daemon.rs:1019, 1043` — the pattern exists but was not applied here.)
+- The work it triggers is blocking and **sequential per target**:
+  `refresh_active_usage_account_snapshots` (`multiplexer_utils.rs:273`) → `refresh_active_account_snapshots`
+  (`usage.rs:218`) → `for target in targets` (`usage.rs:233`) → `focused_snapshot(force=true)`
+  (`usage.rs:237`) → `build_snapshot` (`usage.rs:567`):
+  - `reqwest::blocking` client, `PROVIDER_HTTP_TIMEOUT = 10s` (`usage.rs:25`, client
+    `usage.rs:3114-3117`).
+  - Blocking CLI subprocess poll loop with `thread::sleep(50ms)`, `PROVIDER_CLI_TIMEOUT = 10s`
+    (`usage.rs:26`, `run_cli_with_timeout_full` `usage.rs:4364-4408`; amp `:4249`, claude CLI `:4288`).
+  - Codex RPC subprocess: 8s init + 3s + 3s ≈ **14s** (`usage.rs:2265`, timeouts `:27,:28`).
+  - Grok RPC subprocess: 8s init + 12s ≈ **20s** (`usage.rs:2592`, timeouts `:32,:33`).
+  - Worst case per tick = **sum** of per-target ceilings (tens of seconds). Subprocess launches
+    are rate-gated by a 30-min `ManagedCliLaunchGate` cooldown (`usage.rs:2062-2090`), so the
+    14–20s subprocess cost is not paid every tick, but the HTTP path still parks the loop up to
+    10s on a slow/hung network.
+- Manual refresh (`r`/`R`) is even worse: `DialogAction::RefreshUsage` →
+  `focused_usage_snapshot(true)` runs the **full blocking `build_snapshot` directly on the
+  input-handling task** (`crates/jackin-capsule/src/daemon/input_dispatch.rs:146-155`).
+- Synchronous DB bridge: `run_store` (`crates/jackin-capsule/src/telemetry_store.rs:59-74`) does
+  `thread::spawn` + a fresh `new_current_thread` tokio runtime + reopen DB + re-run
+  `initialize_schema` (`:76-91`) + `join()` **per call**. A tab switch does 1 such read
+  (`input_dispatch.rs:158` → `usage.rs:161`, `force_refresh=false`); a mouse/resize event does 1
+  (`input_dispatch.rs:682`); each forced refresh target does 2 (`usage.rs:202`, `:206`) plus the
+  `materialize_accounts` file write (`usage.rs:198`).
+
+**Already non-blocking (do not over-claim):** tab switch itself does *not* force a network fetch
+(`force_refresh=false`); keyboard `Data` events do not call `focused_usage_status_label` (only
+mouse/non-data do). The structural defect is that the periodic ticker and manual refresh execute
+synchronously on the task that owns input + render.
+
+**Direction (architectural).** No blocking work on the event/input/render task — ever:
+- Offload the provider fetch (`refresh_active_account_snapshots` / `build_snapshot`) to a
+  `tokio::task::spawn_blocking` or a dedicated worker, feeding results back via a channel and
+  invalidating for redraw on completion — mirror `maybe_spawn_*` (`daemon.rs:1019, 1043`).
+- Move the manual `r` refresh onto the same offloaded path.
+- Run provider probes **concurrently** (join), not sequentially, so total latency is the slowest
+  provider, not the sum.
+- Take the synchronous telemetry-store bridge off the input/render path: read from the in-memory
+  `UsageCache` for the status label / tab switch instead of a per-event DB reopen; if DB access is
+  needed, hold one long-lived connection and run it off-task. (Pairs with the
+  `focused_usage_view` double-read already removed in commit `402bbfa0`.)
+- This is a *class* fix: the rule "blocking I/O never on the event loop" should be enforced for
+  all daemon-loop work, not just usage.
+
+**HARDCORE RULE (operator, always-apply).** Use tokio everywhere; every data load runs async and, when
+there are independent loads, **in parallel** (join), never sequentially. **No operation ever blocks**
+the event/input/render task. This is non-negotiable and applies to all of jackin', not just the usage
+overlay.
+- **Verification owed (audit across jackin'):** enumerate **every** data-load / I/O path (provider
+  fetches, telemetry-store reads/writes, git/branch/PR context, image/build steps surfaced to the UI,
+  any subprocess or network or file I/O reachable from a render/input task) and confirm each is off
+  the event loop (spawn_blocking / worker + channel / async) and that independent loads are joined,
+  not serial. Refactor any that block or run serially. The repo already disallows blocking calls on
+  render/runtime threads via clippy (`Command::output`, `thread::sleep`, `File::open`,
+  `OpenOptions::open` are `disallowed_methods` per `crates/AGENTS.md`) — treat any
+  `#[expect(clippy::disallowed_methods)]` on a UI-reachable path as a finding to fix, not accept.
+- Concretely for usage: the blocking `reqwest::blocking` client and the `thread::sleep` CLI poll loop
+  (`usage.rs:3114, 4364-4408`) and the per-call telemetry-store thread+runtime bridge
+  (`telemetry_store.rs:59-74`) are all on UI-reachable paths today and must move off-loop and run
+  provider probes concurrently.
+
+---
+
+## Issue 5 — Stop over-refreshing while the overlay is open (rate-limit risk) (USAGE OVERLAY)
+
+**Operator report.** It looks like we re-refresh every time a tab is opened/changed — too often.
+If a provider's data was already loaded, keep it for a while instead of immediately refreshing.
+While the dialog is open the operator is not using the agent, so the data cannot go stale; there
+is no reason to keep refreshing. Aggressive refresh risks hitting provider rate limiters, which
+has consequences we must avoid.
+
+**Verified mechanism (to confirm precisely during implementation).** Switching a tab calls
+`request_usage_refresh_for_provider` (`multiplexer_utils.rs:253`), which marks a target as
+pending/due; the periodic `usage_account_ticker` (`daemon.rs:1024`) then performs the refresh.
+There is a refresh schedule with `should_refresh` / cooldown logic
+(`usage.rs:225` `in_flight`, `:234` `should_refresh`, launch cooldown `:2062-2090`), but the
+effective cadence still re-fetches on tab interaction / open more often than the operator wants.
+
+**Direction — DECIDED: no re-fetch while the overlay is open.** Once a provider's snapshot has been
+loaded, do **not** re-fetch that provider again while the overlay stays open — the operator is idle
+(not using the agent) so the data cannot go stale, and re-fetching risks provider rate limits. Serve
+the cached value on tab open/switch and from the ticker for already-loaded providers. Manual `r`
+stays the explicit override (force refresh). (Implement as a per-provider freshness gate; "while open"
+effectively means an open-session cache — confirm whether a long TTL also applies when the overlay is
+closed, but the binding rule is: no auto-refetch of a loaded provider while open.)
+
+**Relationship:** pairs with Issue 4 — once refresh is offloaded and TTL-gated, the overlay is
+both responsive and quiet. Verify the exact current trigger points (open vs switch vs ticker)
+before choosing where the TTL gate lives.
+
+---
+
+## Issue 6 — Wrong horizontal padding: content lacks right padding; separator has a (wrong) left padding (USAGE OVERLAY, all tabs)
+
+**Operator report.** Look at the overlay (seen on every provider tab, not just one). The padding
+is wrong:
+- **Content blocks** (header rows, the two-column lines, the meter bars) have padding on the
+  **left** but **none on the right** — wrong. Content should always have padding on **both** the
+  left and the right.
+- **The separator line** (the horizontal `─` rule): its **right** side is correct (it reaches the
+  edge, no padding), but its **left** side has a padding for some unknown reason — wrong. The
+  separator should **not** use padding at all (full width, both sides).
+
+So: content = padded both sides; separator = full-bleed, no padding either side. Today it is
+inverted (content padded only left; separator padded left, full-bleed right).
+
+**Verified root cause.** There is **no single padding policy** — every line builder in
+<RepoFile path="crates/jackin-capsule/src/tui/components/dialog_widgets.rs" /> hand-codes a
+2-space left indent (`Span::raw("  ")`) and sizes its content as `width - 2`, which accounts only
+for the left indent and lets the content run to the right edge. The separator wrongly reuses the
+same left indent.
+
+- **Separator** (`usage_separator_line`, `dialog_widgets.rs:874-877`):
+  ```rust
+  let target = width.saturating_sub(2).max(1);
+  Line::from(vec![Span::raw("  "), Span::styled("─".repeat(target), DIM)])
+  ```
+  → 2-space **left** pad (wrong) + `─` to the right edge (right is full-bleed). Operator wants
+  full-bleed both sides: `"─".repeat(width)`, no leading `"  "`. (Wrapper `push_usage_separator`,
+  `:868-872`.)
+- **Two-column content rows** (`usage_header_two_column`, `:724-737`): `INDENT = 2` left
+  (`Span::raw("  ")`), then `gap = width - (INDENT + left_cols + right_cols)`, so the right value
+  ends at column `width` — the right edge, **no right padding**. Used by headers, detail rows,
+  Limit Reset Credits (`:770, :793, :826, :834`).
+- **Meter bars** (`usage_quota_bucket_lines` `:780-784` + `usage_full_width_meter` `:895-913`):
+  `target = width - 2`, line = `"  "` + bar of `width - 2` → bar fills to the right edge, **no
+  right padding**.
+- **Section labels** and other rows all start with `Span::raw("  ")` (`:597, :620, :647-654,
+  :731, :757, :782, :979`) — same left-only indent.
+- This is why it is wrong on **all** provider tabs: every tab renders through these same shared
+  builders. (`width` here is `body.width` = the dialog interior, passed from `render_usage_info`
+  via `usage_info_lines_for_width(state, body.width)`, `dialog_widgets.rs:441`.)
+
+**Direction (root-cause, one policy).** Define a single horizontal-padding policy for the usage
+body instead of per-builder magic numbers:
+- **Content** gets symmetric padding (e.g. 2 left **and** 2 right): content builders size to
+  `width - (PAD_LEFT + PAD_RIGHT)`, two-column right values stop `PAD_RIGHT` columns before the
+  edge, meter bars become `width - PAD_LEFT - PAD_RIGHT`.
+- **Separators** are full-bleed: `"─".repeat(width)`, no indent.
+- Prefer computing a single padded content sub-rect / a shared `content_width` + indent helper
+  that all builders consume, so the padding is defined **once** and a new section cannot
+  reintroduce the asymmetry. Update the snapshot tests
+  (`crates/jackin-capsule/src/tui/components/dialog_widgets/tests.rs` and width snapshots) to lock
+  the new padding.
+
+**Scope:** the usage overlay body renderer (all tabs). Verify whether the same builders or the
+generic `render_scrollable_dialog_body` are reused by other dialogs (ContainerInfo / GitHubContext)
+before changing, so the symmetric-padding policy lands where intended and the separator full-bleed
+change does not regress a surface that wants the current look.
+
+---
+
+## Issue 7 — Amp status-bar signal is wrong: must show Free % + credits (per-provider headline)
+
+**Operator report.** For Amp, the status-bar signal shows the wrong thing. When there is no
+subscription data, the status bar must show how much **Amp Free** is left **and** how many
+**credits** are available — e.g. `Free 9% · $4.76` (the 9% free remaining and the $4.76 credit
+balance). Today the bottom-right shows a generic `usage cached` for Amp instead.
+
+**Verified root cause.** The status-bar headline is hardcoded to Claude/Codex vocabulary
+(Session / Weekly) and has no per-provider notion of what each provider's headline metric is.
+
+- `status_bar_label` (`crates/jackin-capsule/src/usage.rs:1421-1440`) calls
+  `status_bar_quota_labels`, and if that is empty falls through to a status word —
+  `UsageSnapshotStatus::Fresh => "usage cached"` (`usage.rs:1432`).
+- `status_bar_quota_labels` (`usage.rs:1442-1456`) only looks for buckets named **"Session"** or
+  **"Weekly"** (`status_bar_bucket_matches`, `:1458-1473` matches `session`/`5-hour`/`weekly`).
+- Amp's snapshot (`amp_snapshot`, `usage.rs:902`) produces buckets **"Amp Free"** (with the 9%
+  `remaining_percent`) and **"Credits"** (`Individual credits: $4.76`) — neither matches
+  Session/Weekly, so `status_bar_quota_labels` returns empty and Amp falls through to
+  `"usage cached"`.
+- Note `status_bar_label`'s first parameter is `_surface: UsageSurface` — **already passed but
+  unused**: the per-provider hook was anticipated but never implemented. This is the same
+  per-provider special-casing class flagged in the earlier altitude review (provider vocabulary
+  hardcoded in multiple disjoint sites).
+
+**Direction (root-cause, per-provider headline).** Make the status-bar headline provider-aware:
+derive it from each provider's own primary metric(s) rather than a fixed Session/Weekly lookup —
+use the `surface`/provider the function already receives. For Amp specifically: compose
+`Free {n}% · ${credits}` from the "Amp Free" bucket's `remaining_percent` and the "Credits"
+balance. Prefer a single place that maps a provider → its status-bar headline (a table/trait keyed
+by `UsageSurface`), so each provider's headline is defined once and no provider can fall through to
+a meaningless `"usage cached"`. This pairs with the broader provider-generalization noted in the
+earlier altitude review.
+
+**Scope:** `usage.rs` status-bar label derivation (Amp now; structured so every provider gets a
+correct headline). Verify the other providers' current headlines stay correct (Claude/Codex
+Session·Weekly) when the lookup becomes provider-driven. Update the status-bar label tests
+(`usage.rs:4708`, `:4742`, `:4923`).
+
+---
+
+## CodexBar reference (binding visual + data spec)
+
+The operator's reference is the CodexBar macOS app. Each provider tab in our overlay must show the
+same sections, in the same order, with the same per-bucket detail lines (remaining %, in-reserve,
+reset countdown, "Lasts until reset") as CodexBar — quota only (we drop CodexBar's cost/spend grid,
+sparkline, Top model, and account-action rows per the binding design in
+<RepoFile path="docs/content/docs/reference/roadmap/capsule-usage-quota-overlay.mdx" />).
+
+**MANDATORY RESEARCH BEFORE IMPLEMENTATION.** Always verify against the CodexBar application **and
+its source code** to confirm exactly how each datum is obtained (which API/CLI/file, which field,
+how reset countdowns, in-reserve, and Limit Reset Credits are computed). Do not guess. Cite the
+extraction path for each field per provider. This applies to every provider tab, not only
+Codex/Claude.
+
+- **Source:** [github.com/steipete/codexbar](https://github.com/steipete/codexbar) (Swift / macOS).
+- **Per-provider extraction** lives in `Sources/CodexBarCore/Providers/<Provider>/` with a
+  consistent shape: `<Provider>UsageFetcher.swift` (how data is obtained), `<Provider>UsageParser.swift`,
+  `<Provider>UsageSnapshot.swift` (the model), `<Provider>ProviderDescriptor.swift`. Our providers
+  map directly: OpenAI/Codex → `Providers/Codex/` + `Providers/OpenAI/` (+
+  `Sources/CodexBar/Providers/Codex/CodexProviderImplementation.swift`), Anthropic → `Providers/Claude/`,
+  Amp → `Providers/Amp/`, Z.AI → `Providers/Zai/`, Kimi → `Providers/Kimi/` (+ `KimiK2/`, `Moonshot/`),
+  MiniMax → `Providers/MiniMax/`, xAI → `Providers/Grok/`.
+- **Display/derivation of the detail lines** (remaining %, **in reserve**, **Lasts until reset**,
+  reset countdown, Limit Reset Credits "N manual resets available" / "Next expires in …", the MCP
+  `used / limit (remaining)` count line) lives in `Sources/CodexBar/MenuCardView*.swift` (e.g.
+  `MenuCardView.swift`, `MenuCardView+CodexResetCredits.swift`) and `Sources/CodexBar/UsageStore+*.swift`.
+- When implementing each provider fix below, open the matching CodexBar files first and mirror the
+  extraction + derivation; cite the file/function in the implementing PR.
+
+### Per-provider data-extraction sources (CodexBar docs — authoritative)
+
+CodexBar publishes per-provider extraction docs. These are the canonical "where the data comes from"
+references and **must** be cited when implementing each provider. The implementing PR must record,
+per provider, which CodexBar doc + endpoint/field it mirrors (this is the "where did we get the
+source of information" record the operator asked for).
+
+| Provider | CodexBar doc | How the data is obtained (summary) |
+|---|---|---|
+| OpenAI / Codex | [docs/codex.md](https://github.com/steipete/CodexBar/blob/main/docs/codex.md), [docs/codex-oauth.md](https://github.com/steipete/CodexBar/blob/main/docs/codex-oauth.md), [docs/openai.md](https://github.com/steipete/CodexBar/blob/main/docs/openai.md) | OAuth: `~/.codex/auth.json` → `GET https://chatgpt.com/backend-api/wham/usage` (Bearer). `rate_limit.primary_window`/`secondary_window` → Session/Weekly; `additional_rate_limits[]` (id `codex-spark`) → Codex Spark windows. CLI RPC: `codex -s read-only -a untrusted app-server` JSON-RPC `account/read` + `account/rateLimits/read` → windows w/ reset timestamps + credits (balance/hasCredits/unlimited). Credits/Limit-Reset-Credits from `account/rateLimits/read`. |
+| Anthropic / Claude | [docs/claude.md](https://github.com/steipete/CodexBar/blob/main/docs/claude.md) | OAuth: creds from keychain or `~/.claude/.credentials.json` (needs `user:profile` scope) → `GET https://api.anthropic.com/api/oauth/usage` (Bearer). Field map: `five_hour`→Session, `seven_day`→Weekly, `seven_day_sonnet`/`seven_day_opus`→model weekly (Sonnet), `seven_day_routines`/`seven_day_cowork`→**Daily Routines**. Plan from `subscriptionType` (fallback `rate_limit_tier`). (Web cookie path `claude.ai/api/organizations/{org}/usage`; Admin API for spend — optional.) |
+| Amp | [docs/amp.md](https://github.com/steipete/CodexBar/blob/main/docs/amp.md) | Prefer Amp CLI, then `AMP_API_KEY` → `POST https://ampcode.com/api/internal?userDisplayBalanceInfo`, then browser cookie. Yields Amp Free usage + time-to-full reset ("Resets in …"), **individual credits** + workspace credits. |
+| Z.AI | [docs/zai.md](https://github.com/steipete/CodexBar/blob/main/docs/zai.md) | API token (`Z_AI_API_KEY` or config `providers[].apiKey`) → `GET https://api.z.ai/api/monitor/usage/quota/limit` (Bearer; BigModel host `open.bigmodel.cn`, override `Z_AI_QUOTA_URL`). `data[]`: `TOKENS_LIMIT`→Tokens window, `TIME_LIMIT`→MCP/time window; plan from `data.planName`. MCP count line from used/limit/remaining. |
+| MiniMax | [docs/minimax.md](https://github.com/steipete/CodexBar/blob/main/docs/minimax.md) | Coding Plan API token (`MINIMAX_CODING_API_KEY` > `MINIMAX_API_KEY`) → `/v1/api/openplatform/coding_plan/remains` (web-session/cookie fallback). Per-service quota: percent, **used/limit/remaining**, reset metadata, unlimited (General·5h, General·Weekly, Video). |
+| Kimi | [docs/kimi.md](https://github.com/steipete/CodexBar/blob/main/docs/kimi.md), [docs/kimi-k2.md](https://github.com/steipete/CodexBar/blob/main/docs/kimi-k2.md) | API key (`KIMI_CODE_API_KEY`) → `GET https://api.kimi.com/coding/v1/usages` (Bearer); or cookie `kimi-auth` → `POST https://www.kimi.com/apiv2/kimi.gateway.billing.v1.BillingService/GetUsages`. Weekly request quota (tier) + 5-hour rate limit (`window.duration 300 TIME_UNIT_MINUTE`), `remaining`, `resetTime`. |
+| Kimi API / Moonshot | [docs/moonshot.md](https://github.com/steipete/CodexBar/blob/main/docs/moonshot.md) | `MOONSHOT_API_KEY` → `GET https://api.moonshot.ai/v1/users/me/balance` (Bearer; `.cn` for China). Balance only — no session/weekly windows. |
+| xAI / Grok | [docs/grok.md](https://github.com/steipete/CodexBar/blob/main/docs/grok.md) | `~/.grok/auth.json` (bearer, `GROK_HOME` override) primary; ACP JSON-RPC; grok.com billing gRPC-web `GrokBuildBilling/GetGrokCreditsConfig` fallback (browser session). Primary window = credit usage vs limit; `resetsAt` = `billingCycle.billingPeriodEnd`; label dynamic Weekly/Monthly/Credits. Local `~/.grok/sessions/.../signals.json` informational. |
+
+**Recurring "count line" pattern.** Several providers render a raw `used / limit (remaining)` count
+line under the bar: Z.AI **MCP** (`0 / 100 (100 remaining)`), MiniMax (`Usage: N / 100`), Codex
+**Credits**. jackin currently omits these (shows a "N window" subtitle instead). The per-provider
+section spec (Issue 8) must model an optional count line.
+
+### In-reserve (pace) — per-provider spec (VERIFIED, all 7 providers)
+
+"In reserve" = `quota_remaining% − time_remaining%` (a pace buffer; see the explanation under
+Issue 14). Researched against the CodexBar screenshots + source (`UsagePace`, `UsagePaceText`,
+`MenuCardView`). CodexBar attaches the pace line (in-reserve / deficit / "Lasts until reset") **only**
+to the primary subscription **burn** windows, and only once enough of the window has elapsed to be
+meaningful:
+
+| Provider | In-reserve shown on | Not on |
+|---|---|---|
+| OpenAI / Codex | **Session, Weekly** | Codex Spark 5-hour, Codex Spark Weekly, Limit Reset Credits, Credits |
+| Anthropic / Claude | **Session, Weekly** | Sonnet, Daily Routines |
+| xAI / Grok | — none | (single Weekly/credit window: % + reset only) |
+| Z.AI | — none | Tokens, MCP, 5-hour (CodexBar uses detail text, not pace) |
+| Kimi | **Rate Limit** (the 5-hour window) | Weekly (request-quota, count-based) |
+| MiniMax | — none | General·5h, General·Weekly, Video (count-based `Usage: N/100`) |
+| Amp | — none | Amp Free (time-to-full), Credits |
+
+- **Gate:** CodexBar only shows pace once `expectedUsedPercent >= 3` (`UsagePaceText.swift:91`) — i.e.
+  it suppresses pace on a freshly-reset / near-full window so you don't see a misleading "100% in
+  reserve". jackin must adopt the same elapsed-threshold guard.
+- **Why this set (verified, not mimicry):** pace is `remaining% − time%`, meaningful only on a
+  time-windowed burn against a quota. It is omitted on count buckets (MCP, MiniMax `N/100`, Credits),
+  on bonus allowances (Codex Spark), and on model/static sub-windows (Sonnet, Daily Routines) where a
+  burn-vs-time buffer doesn't represent anything. CodexBar's set is internally consistent.
+- **jackin bug = OVER-application:** jackin currently shows in-reserve where it shouldn't — e.g. Z.AI
+  5-hour/Tokens (`48% / 62% in reserve`, Issue 11) and Kimi **Weekly** (Issue 14). The fix restricts
+  pace to the table above via the per-provider section spec.
+- **Principle 5 check (is CodexBar right / could we do better?):** in-reserve needs no extra data
+  (just used%, window length, reset) so this is a *display-choice*, not a data-accuracy, question.
+  CodexBar's set is the correct, coherent choice; **mirror it**. Optional future enhancement (NOT
+  parity, flag before doing): jackin *could* also show pace on other genuine burn windows (Z.AI
+  5-hour, Grok weekly, MiniMax 5h) since it is mathematically meaningful — but only if the window
+  length is reliably known (ties to the Kimi window-duration parse bug). Default: match CodexBar.
+- **Accuracy caveat:** the reserve % is only correct if the **window length** is correct — a wrong
+  window makes the % wrong (this is the Kimi `300 TIME_UNIT_MINUTE` parse bug, Issue 14). Verify
+  window length per provider when enabling pace.
+
+### CodexBar — Codex panel (reference, from screenshot)
+
+```text
+Codex                                   alexey@chainargos.com
+Updated 3m ago                                       Pro 20x
+─────────────────────────────────────────────────────────────
+Session
+█████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+58% left                                       Resets in 7m
+56% in reserve                              Lasts until reset
+
+Weekly
+█░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+6% left                                     Resets in 3h 39m
+4% in reserve                               Lasts until reset
+
+Codex Spark 5-hour
+████████████████████████████████████████████████████████████
+100% left                                   Resets in 4h 57m
+
+Codex Spark Weekly
+████████████████████████████████████████████████████████████
+100% left                                   Resets in 6d 23h
+
+Limit Reset Credits        2 manual resets available
+Next expires in 17d 7h
+```
+
+Order: **Session · Weekly · Codex Spark 5-hour · Codex Spark Weekly · Limit Reset Credits**.
+Reset is a **relative countdown** ("Resets in 4h 57m"), not an absolute clock time.
+
+### CodexBar — Claude panel (reference, from screenshot)
+
+```text
+Claude
+Updated 2m ago                                           Max
+─────────────────────────────────────────────────────────────
+Session
+████████████████████████████████████████████████████░░░░░░░░
+92% left                                     Resets in 1h 22m
+65% in reserve                              Lasts until reset
+
+Weekly
+██████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+52% left                                     Resets in 1d 13h
+30% in reserve                              Lasts until reset
+
+Sonnet
+███████████████████████████████████████████████░░░░░░░░░░░░░
+83% left                                     Resets in 1d 13h
+
+Daily Routines
+████████████████████████████████████████████████████████████
+100% left
+```
+
+Order: **Session · Weekly · Sonnet · Daily Routines**. Session and Weekly carry an in-reserve line
+and "Lasts until reset"; Sonnet carries a reset countdown; Daily Routines shows only remaining.
+
+---
+
+## Issue 8 — OpenAI/Codex tab: wrong section order and CodexBar-mismatched detail (USAGE OVERLAY)
+
+**Operator report.** The Codex tab displays sections in the wrong order. It must be: **Session,
+then Weekly, then Codex Spark 5-hour, then Codex Spark Weekly** (then Limit Reset Credits, per the
+CodexBar reference above). Today it renders Codex Spark 5-hour, Codex Spark Weekly, Session, Weekly
+(Spark first — inverted). Detail also diverges from CodexBar: jackin shows "Resets 22:39" (absolute)
++ a "5 hours window" subtitle, where CodexBar shows "Resets in 4h 57m" (relative countdown) and no
+window subtitle.
+
+**Verified root cause.** The section order is **not canonical** — it depends on the order rows come
+back from Turso, which has **no `ORDER BY`**, so it does not match the intended spec.
+
+- `codex_snapshot` (`crates/jackin-capsule/src/usage.rs:774`) actually pushes buckets in the
+  **correct** order: Session (`:826`), Weekly (`:837`), Codex Spark 5-hour (`:848`), Codex Spark
+  Weekly (`:857`). So the builder is right.
+- But the overlay reads buckets back from the store, and the read path has no ordering: queries in
+  <RepoFile path="crates/jackin-capsule/src/telemetry_store.rs" /> (`stored_account_snapshots`
+  `:668`, `focused_usage_view` builds buckets from `rows` `:464-477`) contain **no `ORDER BY`**, and
+  `select_provider_rows` (`:515`) only filters by latest `fetched_at` — it never re-imposes the
+  section order. The persisted/returned row order therefore drives the display and diverges from
+  `codex_snapshot`'s push order.
+- Same structural cause as Issue 7: there is no single per-provider section spec that defines order
+  (and which detail lines each bucket shows). The order lives implicitly in the builder and is then
+  lost across the DB round-trip.
+
+**Required Codex sections (full set, in order).** Session, Weekly, Codex Spark 5-hour, Codex Spark
+Weekly, **Limit Reset Credits**, **Credits**:
+- **Limit Reset Credits** must show "N manual resets available" and "Next expires in …" (e.g.
+  "2 manual resets available" / "Next expires in 17d 7h").
+- **Credits** must show the credit balance, e.g. "0 left" with "1K tokens" on the right. The
+  operator stressed credits is important information on OpenAI/Codex and must be displayed.
+
+(A `usage_limit_reset_credit_lines` builder already exists at
+`crates/jackin-capsule/src/tui/components/dialog_widgets.rs:819`, and the `codex_snapshot` may emit
+these — verify they survive the snapshot → store → render path and appear in the correct order.)
+
+**Direction (root-cause).** Define a canonical per-provider section order/spec and enforce it at
+render (or via a deterministic `ORDER BY`/sort keyed to that spec on read-back), so the displayed
+order cannot drift from the spec regardless of storage order. Ensure Limit Reset Credits and Credits
+are populated and shown. Align Codex detail with CodexBar: relative reset countdowns, in-reserve
+lines, drop the "N window" subtitle; verify the exact fields against CodexBar source. This is the
+same per-provider-spec mechanism as Issues 7 and 9.
+
+---
+
+## Issue 9 — Anthropic/Claude tab: missing Weekly reserve, reset details, Daily Routines; wrong order (USAGE OVERLAY)
+
+**Operator report.** The Claude tab is missing important information and must match the CodexBar
+Claude panel exactly (see reference above): show **Session, Weekly, Sonnet, Daily Routines** in that
+order, and for each the same details — remaining %, in-reserve %, reset countdown, "Lasts until
+reset" — exactly as CodexBar. Today jackin shows Session, Sonnet, Weekly (wrong order; Sonnet before
+Weekly), with **no reset countdowns, no in-reserve lines, no "Lasts until reset", and no Daily
+Routines section at all**. Get this data the way CodexBar does (consult its source).
+
+**Verified root cause (two parts).**
+1. **Missing data in the snapshot.** The Claude OAuth path does not populate reset/in-reserve and
+   does not emit a Daily Routines bucket, so the renderer has nothing to show. Bucket builders:
+   `crates/jackin-capsule/src/usage.rs` CLI path `push_claude_cli_bucket` (`:1763-1765`: Session,
+   Weekly, Sonnet — no Daily Routines) and window path `push_claude_window` (`:1788-1789`); the
+   OAuth `buckets()` (`:1761`) needs the additional fields/sections CodexBar derives. The
+   `reset_label` / `pace_label` / in-reserve fields exist on the bucket type (`usage.rs:1666-1676`)
+   but are not filled for Claude. The Daily Routines section name exists in the codebase
+   (`usage.rs:729`) but is not produced on the Claude tab.
+2. **Order not canonical.** Same as Issue 8 — section order comes from unordered DB read-back, so
+   Session/Weekly/Sonnet land in the wrong order.
+
+**Direction (root-cause).** (a) Extend the Claude snapshot to extract reset countdown, in-reserve,
+"Lasts until reset", and the Daily Routines section, sourced **exactly as CodexBar does it** (verify
+against CodexBar source — do not invent the derivation). (b) Apply the same canonical per-provider
+section spec/order from Issue 8 so Session · Weekly · Sonnet · Daily Routines render in order. Update
+the Claude snapshot tests.
+
+---
+
+## Issue 10 — Status-bar click opens the wrong provider tab (must open the focused pane's provider) (USAGE OVERLAY)
+
+**Operator report.** Focused on the Amp pane, clicking the status bar opens the usage overlay but
+it is selected on **OpenAI**, not Amp. The overlay must always open on the provider of the pane the
+operator is focused on / clicked from — Amp in this case.
+
+**Verified root cause.** When the focused pane's provider cannot be resolved, the overlay falls back
+to "match everything, pick the most recently refreshed provider" instead of the focused one.
+
+- Status-bar click → `branch_context_bar_click_action(hit)` →`Action::OpenUsage`
+  (`crates/jackin-capsule/src/daemon/input_dispatch.rs:548-565, :223-227`).
+- `Action::OpenUsage` builds the view from `focused_usage_snapshot(false)` and opens
+  `Dialog::new_usage(view)` (`input_dispatch.rs:224-225`), which selects
+  `UsageDialogTab::Provider` showing `view.focused_provider` (`dialog.rs:772-773`).
+- `focused_usage_snapshot` → `focused_usage_snapshot_for_provider(None, false)` →
+  `focused_agent_provider()` (`multiplexer_utils.rs`) → `focused_snapshot(agent, provider, …)` →
+  (force=false) `telemetry_store::focused_usage_view(path, Some(agent), focused_provider, …)`
+  (`usage.rs:159-183`).
+- The Amp pane has agent `amp` with **no alt-provider label**, so `focused_provider` is `None`. In
+  `select_provider_rows` (`crates/jackin-capsule/src/telemetry_store.rs:515-528`):
+  ```rust
+  let focused = focused_provider.unwrap_or_default();          // "" when None
+  let mut matches = rows.into_iter()
+      .filter(|row| provider_matches(focused, &row.provider))  // "" is contained in EVERY provider → matches all
+      .collect::<Vec<_>>();
+  let latest = matches.iter().map(|row| row.fetched_at).max()?;
+  matches.retain(|row| row.fetched_at == latest);              // picks whichever provider refreshed most recently
+  ```
+  Empty focused matches **all** providers, then it keeps the latest-`fetched_at` one → OpenAI/Codex
+  here. The focused **agent** (`amp`) is passed but never used to pick the provider.
+- Structural cause: the focused-pane → provider mapping is unreliable (no agent→provider resolution
+  when the pane carries no explicit provider label), and the empty-provider fallback silently
+  resolves to the wrong provider instead of the focused pane's. Same agent↔provider taxonomy gap as
+  Issue 7.
+
+**Direction (root-cause).** Resolve the focused pane's provider deterministically before opening
+the overlay: map the focused agent → its provider (shared resolver, see Issue 7), and pass that as
+the explicit `focused_provider` so the overlay opens on the correct tab. Fix the empty-provider
+fallback in `select_provider_rows` so an unresolved provider does not silently match-all-and-pick-
+latest (it should use the focused agent's provider, or show that pane's provider explicitly). Cover
+with a test: clicking the status bar on each provider's focused pane opens that provider's tab.
+
+---
+
+## Issue 11 — Z.AI tab: MCP must show the count line, wrong order, window subtitle (USAGE OVERLAY)
+
+**Operator report.** On the Z.AI tab the MCP section differs from CodexBar: we don't display the
+"100 remaining" the way CodexBar does. CodexBar shows the raw MCP count line.
+
+### CodexBar — z.ai panel (reference, from screenshot)
+
+```text
+z.ai
+Updated just now
+─────────────────────────────────────────────────────────────
+Tokens
+████████████████████████████████████████████████████████████
+99% left                                     Resets in 2d 14h
+
+MCP
+████████████████████████████████████████████████████████████
+100% left                                   Resets in 18d 14h
+0 / 100 (100 remaining)
+
+5-hour
+████████████████████████████████████████████████████████████
+99% left                                     Resets in 2h 33m
+```
+
+Order: **Tokens · MCP · 5-hour**. MCP carries a count subtitle **`0 / 100 (100 remaining)`** under
+the bar. Resets are **relative countdowns**. Note CodexBar's Z.AI buckets do **not** show an
+"in reserve" line.
+
+**Observed (jackin, from screenshot) and deltas vs CodexBar.** jackin Z.AI sections render as
+**5-hour, MCP, Tokens** — reversed order.
+- **MCP** (the flagged issue): jackin shows `100% left` + a `1 minute window` subtitle; CodexBar
+  shows `100% left` + the count line `0 / 100 (100 remaining)`. Fix: render the MCP raw-count line
+  (`used / limit (remaining)`), drop the "N window" subtitle.
+- **Order**: must be Tokens · MCP · 5-hour (same canonical-order root cause as Issues 8/9 — no
+  `ORDER BY` on read-back).
+- **Reset format**: jackin shows absolute (`Resets Jun 27 at 08:27`); CodexBar shows relative
+  (`Resets in 2d 14h`) — same cross-provider delta.
+- **In reserve**: jackin shows `48% in reserve` / `62% in reserve` on 5-hour / Tokens; CodexBar's
+  Z.AI panel shows none. Verify against CodexBar source whether Z.AI should carry in-reserve at all
+  (this is the inverse of Issue 9, where Claude is *missing* in-reserve) — confirms in-reserve is a
+  per-provider section property, not a uniform one.
+
+**Direction (root-cause).** Same canonical per-provider section spec (Issue 8): defines Z.AI order
+(Tokens, MCP, 5-hour), which buckets carry in-reserve, and that MCP shows the count line. Verify the
+MCP count derivation against CodexBar source.
+
+---
+
+## Issue 12 — MiniMax tab: missing the per-bucket usage count line (USAGE OVERLAY)
+
+**Operator report.** Comparing MiniMax to CodexBar, we miss important information: the usage count
+line — "Usage: 1 / 100", "Usage: 0 / 100" — shown under each bucket in CodexBar.
+
+### CodexBar — MiniMax panel (reference, from screenshot)
+
+```text
+MiniMax
+Updated just now
+─────────────────────────────────────────────────────────────
+General · 5h
+████████████████████████████████████████████████████████████
+0% used                                      Resets in 2 hours
+Usage: 0 / 100
+
+General · Weekly
+█░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+1% used                                       Resets in 4 days
+Usage: 1 / 100
+
+Video
+████████████████████████████████████████████████████████████
+0% used                                      Resets in 6 hours
+Usage: 0 / 100
+```
+
+Order: **General · 5h, General · Weekly, Video**. Each bucket carries a **`Usage: N / 100`** count
+line under the bar. Resets are relative countdowns.
+
+**Observed (jackin) and deltas.**
+- **Missing the count line** (the flagged issue): jackin shows a "5 hours window" / "1 week window" /
+  "1 day window" subtitle where CodexBar shows `Usage: N / 100`. Add the count line; drop the "N
+  window" subtitle. Same count-line pattern as Z.AI MCP (Issue 11) and Codex Credits (Issue 8).
+- **Reset format**: jackin absolute (`Resets 20:00`, `Resets Jun 29 at 00:00`, `Resets tomorrow,
+  00:00`); CodexBar relative (`Resets in 2 hours`) — same cross-provider delta.
+- **% used vs % left — DECIDED: keep "% left" everywhere.** CodexBar shows MiniMax as "0% used"; we
+  keep the binding design's remaining-normalization ("100% left", full bar) across **all** providers
+  for consistency (operator decision). So for MiniMax we only **add the count line** and fix order +
+  reset format; we do **not** switch to "% used". (A deliberate, documented divergence from CodexBar
+  per guiding principle 5.)
+
+**Direction (root-cause).** Same per-provider section spec (Issue 8): MiniMax order (General·5h,
+General·Weekly, Video), each with a `Usage: N / 100` count line; relative resets. Extraction per
+[docs/minimax.md](https://github.com/steipete/CodexBar/blob/main/docs/minimax.md)
+(`/v1/api/openplatform/coding_plan/remains`: used/limit/remaining per service).
+
+---
+
+## Issue 13 — Reset time format: always relative countdown (CodexBar-style), everywhere (USAGE OVERLAY, cross-provider)
+
+**Operator report.** The way we display reset timing is wrong and not intuitive. Use this exact
+format **everywhere** a reset/expiry time is shown — a relative countdown **plus** the exact local
+date and time in parentheses:
+
+```text
+Resets in 4h 58m (Jun 25, 17:31)
+Next expires in 17d 7h (Aug 17, 23:04)
+```
+
+Rules (binding):
+- **Relative countdown** for at-a-glance reading: **precise two-unit always** (operator decision) —
+  `<d>d <h>h` / `<h>h <m>m`; when under an hour, minutes only (e.g. "Resets in 5m"). Do **not** adopt
+  CodexBar's occasional rounding ("in 4 days" / "in 2 hours"); always show the precise two-unit form
+  like `6d 23h`, `4h 58m`.
+- **Plus the exact absolute date and time in parens, always** — so the operator knows the real day
+  and clock time, not just a fuzzy "in a few days".
+- The absolute date+time must be the **operator's LOCAL date and LOCAL time** (format `Mon D, HH:MM`
+  24-hour, e.g. `Jun 25, 17:31`), not UTC.
+- Applies to **every** place that displays a reset or expiry: all provider bucket resets **and**
+  Limit Reset Credits "Next expires …" — audit all date/time displays.
+
+**Verified root cause (single point + timezone bug).** `reset_label`
+(`crates/jackin-capsule/src/usage.rs:3947`) (a) mixes relative and absolute formats by horizon and
+(b) formats in **UTC**, not local time (`DateTime::<Utc>::from_timestamp` + `reset.format("%H:%M")`
+at `usage.rs:3951, 3958, 3963, 3968, 3970`). So today neither requirement is met: long horizons show
+absolute-only, and the absolute time shown is UTC.
+```rust
+fn reset_label(reset_at: i64, now: i64) -> String {
+    // "Resets now"                                      (at/after reset)
+    // format!("Resets in {}", …)                        (near-term → RELATIVE)   usage.rs:3953
+    // format!("Resets {}", reset.format("%b %-d at %H:%M"))   (far → ABSOLUTE)   usage.rs:3958
+    // format!("Resets {}", reset.format("%H:%M"))             (today → ABSOLUTE) usage.rs:3963
+    // format!("Resets tomorrow, {}", …)                       (tomorrow)         usage.rs:3968
+    // format!("Resets {}", reset.format("%b %-d at %H:%M"))   (else → ABSOLUTE)  usage.rs:3970
+}
+```
+The absolute branches produce the non-intuitive "Resets Jul 1 at 17:42" / "Resets tomorrow, 00:00" /
+"Resets 20:00" seen on the Codex/Z.AI/MiniMax tabs. CodexBar always shows a relative countdown.
+
+This is one function feeding **every** provider bucket (called at `usage.rs:1836, 2257, 2486, 2514,
+3265, 3490, 3767`), so fixing it once fixes **all** providers (operator confirmed: apply to all, not
+one). The relative formatter already exists: `amp_free_reset_label` (`usage.rs:4245`) uses
+`format!("Resets in {}", compact_duration_label(seconds))` — `compact_duration_label` is the reusable
+relative building block; `amp_free_reset_label` must also gain the absolute-local parens.
+
+**Direction (root-cause, reuse, all providers).** Rewrite `reset_label` to always emit
+`"Resets in <compact_duration_label(secs)> (<local Mon D, HH:MM>)"` — relative countdown via the
+existing `compact_duration_label`, plus the exact **local** date+time in parens. Remove the
+horizon-based absolute-only branches. Convert the timestamp to the operator's local timezone (not
+`Utc`); see timezone note below. Use the same combined formatter for Limit Reset Credits "Next
+expires …" and any other date/time display. Because `reset_label` is the single shared formatter,
+all providers become consistent at once. Update tests (`usage.rs:4953` asserts absolute
+`"Resets 15:12"`; `:4724, :4894` assert relative-only `"Resets in 3h 52m"` — both must adopt the new
+combined format).
+
+**Timezone (must resolve).** The capsule runs in a container that is typically UTC. To show the
+operator's **local** time, the operator's timezone must reach the formatter — forward `TZ` into the
+container / capsule, or carry a UTC offset, and format with `chrono` local/offset rather than `Utc`.
+Verify how the host TZ is (or can be) propagated to `jackin-capsule`; this is a prerequisite for the
+"(Jun 25, 17:31)" local-time requirement and is itself a root-cause item (UTC-only timestamps are a
+class bug: every date/time in the capsule would otherwise be wrong-zone).
+
+---
+
+## Issue 14 — Kimi tab: raw window label, wrong order, in-reserve on wrong bucket (USAGE OVERLAY)
+
+**Operator report.** Kimi is not displayed like CodexBar.
+
+### CodexBar — Kimi panel (reference, from screenshot)
+
+```text
+Kimi
+Updated 1m ago
+─────────────────────────────────────────────────────────────
+Weekly
+████████████████████████████████████████████████████████████
+100% left                                     Resets in 6d 14h
+
+Rate Limit
+████████████████████████████████████████████████████████████
+100% left                                     Resets in 2h 20m
+54% in reserve                              Lasts until reset
+```
+
+Order: **Weekly · Rate Limit**. The second section is named **"Rate Limit"**. In-reserve +
+"Lasts until reset" are on **Rate Limit**, not Weekly.
+
+**Observed (jackin) and deltas.**
+- **Raw label leak** (flagged): jackin shows **`300-time_unit_minutes rate limit`** — the raw API
+  `window.duration=300` + `timeUnit=TIME_UNIT_MINUTE` rendered verbatim. CodexBar shows just
+  **"Rate Limit"**. Root cause: the Kimi window label is built from the raw duration/timeUnit on at
+  least one path instead of a humanized name. Note `kimi_snapshot`
+  (`crates/jackin-capsule/src/usage.rs:1083`) has a literal `"5-hour rate limit"` (`:1118`) and a
+  `window_minutes_label` helper exists (`usage.rs:2024`), yet the raw string still reaches the UI —
+  one code path bypasses humanization. Fix: label the rate-limit window "Rate Limit" (humanize;
+  never emit `TIME_UNIT_*`).
+- **Wrong order**: jackin renders rate-limit then Weekly; CodexBar is Weekly then Rate Limit (same
+  canonical-order root cause as Issue 8).
+- **In-reserve on the wrong bucket (NOT a math error — verified).** jackin shows "6% in reserve" on
+  **Weekly**; CodexBar shows in-reserve (**54%**) + "Lasts until reset" on **Rate Limit** and none on
+  Weekly. The operator asked which number is correct. **Both are correct for their own bucket — the
+  formula is identical between the two apps:**
+  - CodexBar `UsagePace.weekly` (`Sources/CodexBarCore/UsagePace.swift:68-74`):
+    `expected = (elapsed/duration)*100` (= 100 − time-left%), `actual = usedPercent`,
+    `delta = actual − expected`; "in reserve" = `expected − actual` (when behind pace).
+  - jackin `quota_pace_label` (`crates/jackin-capsule/src/usage.rs:3993`):
+    `delta = remaining_percent − time_left_percent`; "in reserve" when `delta > 0`.
+  - These are algebraically the same: `expected − actual = (100 − time_left%) − (100 − remaining%) =
+    remaining% − time_left%`. Worked example (Kimi Rate Limit, 100% left, window 5h, reset in 2h20m):
+    time-left = 8400/18000 = 46.7% → reserve ≈ **53%** (CodexBar shows 54%, rounding). Weekly
+    (100% left, ~6d14h left of 7d): time-left ≈ 94% → reserve ≈ **6%**. So jackin's 6% is the correct
+    *Weekly* reserve and CodexBar's 54% is the correct *Rate Limit* reserve.
+  - **The real bug:** jackin attaches the pace line to the wrong window — it shows reserve on Weekly
+    and **omits it on Rate Limit**. Likely the same root cause as the raw-label leak: the Rate Limit
+    window's duration isn't parsed (the `300 TIME_UNIT_MINUTE` → 18000s conversion fails), so
+    `quota_pace_label`'s `reset_in <= window_seconds` guard (`usage.rs:3983`) misfires and suppresses
+    the Rate Limit pace while Weekly still gets one. Fix the window-duration parse and the per-bucket
+    pace attachment together.
+  - **Note CodexBar gates pace per provider:** `sessionPace` only runs for codex/claude/ollama
+    (`Sources/CodexBar/UsagePaceText.swift:87`) with `expectedUsedPercent >= 3`
+    (`UsagePaceText.swift:91`); other providers get pace via `weeklyDetail`/`UsagePace.weekly`. The
+    per-provider section spec should decide which buckets show pace.
+
+**What "in reserve" means (explained — operator asked).** It is a **pace** signal, not a raw quota
+number. For a time-windowed burn bucket: `reserve% = quota_remaining% − time_remaining%` (where
+time_remaining% = seconds left in the window ÷ window length). Example: Kimi Rate Limit has 100%
+quota left but only 47% of the 5h window's time left → **53% in reserve** = you have 53 points more
+quota than a steady linear burn would have left by now (a buffer ahead of pace). Negative →
+"in deficit" (burning faster than the clock). "Lasts until reset" → at the current burn you will not
+run out before the window resets. It is only meaningful on time-windowed burn buckets
+(Session/Weekly/Rate-Limit), not on count buckets (MCP) or already-full/static ones.
+
+**In-reserve gating — DECISION (mirror CodexBar, but VERIFY first; CodexBar may be wrong).** Default
+to CodexBar's per-provider gating, but per guiding principle 5 we must first **verify**, during
+implementation, for each provider: (a) exactly which buckets CodexBar shows pace on and why; (b)
+whether jackin's underlying data (used%, window length, reset time) is more accurate/fresher than
+CodexBar's — if so, compute and show pace where it is correct even if CodexBar omits it (or hide it
+where CodexBar's is misleading); (c) that the window length we use is right (ties to the Kimi
+window-duration parse bug above — a wrong window makes the reserve % wrong). Record the per-provider
+verified decision back into this file before implementing. Do not blindly copy CodexBar's gating.
+- **Reset format**: jackin absolute (`Resets 20:17`, `Resets Jul 1 at 08:17`); → Issue 13.
+
+**Direction (root-cause).** Humanize the Kimi window label (no raw `TIME_UNIT_*`); apply the
+canonical per-provider section spec (order Weekly · Rate Limit; in-reserve on Rate Limit only);
+relative+local reset format (Issue 13). Verify against
+[docs/kimi.md](https://github.com/steipete/CodexBar/blob/main/docs/kimi.md)
+(`GET https://api.kimi.com/coding/v1/usages`: weekly request quota + 5-hour rate limit, `window`
+`{duration, timeUnit}`, `remaining`, `resetTime`).
+
+---
+
+## Issue 15 — Status bar is inconsistent across screens; unify it (ARCHITECTURAL)
+
+**Operator report.** The status bar looks random across screens — different screens show different
+elements in different orders. Make it **consistent on every screen in jackin'**, always rendered
+when debug mode is enabled, with the same elements in the same order and the same approach
+everywhere. This needs a refactor of how the status bar is built/displayed, not a per-screen patch.
+
+Two concrete requirements:
+
+1. **Right-side element order** (left→right): **usage status → container ID → run ID**. Example
+   (capsule):
+   ```text
+   Session 99%  sx02yp2x  18bc138751b01628
+               └ usage    └ container ID   └ run ID
+   ```
+   (Container ID is **always the short form** `sx02yp2x` in the status bar — that is the
+   `instance_id_label` short instance id, `status_bar.rs:77,126`. The full role-container name
+   `jk-<short>-<workspace>-<role>` = `jk-sx02yp2x-jackin-thearchitect` is `identity_label`
+   (`status_bar.rs:74`) and appears only in the Debug-info / ContainerInfo dialog, never in the status
+   bar. The full run ID `18bc138751b01628` likewise appears in full in the Debug-info dialog.)
+   - Today a Claude Code pane shows `Session 99%   18bc138751b01628 ·  sx02yp2x` — usage, **run ID,
+     container ID** (run ID/container ID swapped).
+   - **Run ID always shows** (operator decision), as part of the right-side group.
+
+2. **Always present in debug mode + progressive right-anchored build.** When debug mode is enabled,
+   the status bar is **constantly displayed on every screen and every dialog**, without exception —
+   never hidden by a dialog. It is built from the **right**, anchored by run ID, and enhanced
+   leftward as data becomes available:
+   - **Run ID** — the right-corner anchor; **always present in debug mode** (this is *why* the bar is
+     always shown — run ID is always available).
+   - **+ Container ID** — added to its left **when the container ID is known** for that screen.
+   - **+ Usage status** — added further left **when usage data is known**.
+
+   So the right group fills in as `[usage] [container] [run ID]` (left→right), but lower screens may
+   legitimately show only `[run ID]` or `[container] [run ID]` when the other data isn't available —
+   the invariant is: run ID always (debug), then add container, then usage, anchored at the right
+   corner, identically on every screen.
+
+   **Consistency.** Today this is inconsistent: e.g. the **Debug-info dialog** footer shows only
+   `Session 99%  sx02yp2x` (no run ID) — exactly backwards (it drops the always-on anchor while
+   keeping usage). Every screen must follow the same right-anchored progressive rule.
+
+3. **Non-debug mode — only two screens show the status bar.** When debug mode is **off**, the status
+   bar appears on **exactly two** screens: the **launch screen** and the **capsule screen** — nowhere
+   else (no dialogs, no other screens).
+   - **Launch screen (non-debug):** LEFT = the current step / progress, unchanged from today
+     ("resolving role identity", "building Docker image", …). RIGHT = **container ID only**, nothing
+     else, and only **once the container ID is known** (when the container is assigned for this
+     session/iteration); before that, nothing on the right.
+   - **Capsule screen (non-debug):** RIGHT = **container ID** (same rule — only when known). LEFT =
+     branch details / GitHub PR details, **unchanged from today**.
+   - The LEFT side never changes from current behavior in any mode.
+
+**Consolidated status-bar spec (authoritative).**
+
+| Mode | Screen | Status bar shown? | LEFT | RIGHT (built right→left) |
+|---|---|---|---|---|
+| non-debug | launch | yes | current build/launch step (unchanged) | container ID (only when known) |
+| non-debug | capsule | yes | branch / PR details (unchanged) | usage status + container ID (when known) |
+| non-debug | any other screen/dialog | **no** | — | — |
+| debug | **every** screen/dialog | **yes, always** | screen's left content (if any) | run ID (always) ← + container ID (when known) ← + usage (when known) |
+
+- **Run ID** appears only in debug mode (the always-on right anchor there).
+- **Container ID** appears in both modes, but only once the container is known.
+- Right group order remains left→right `[usage] [container] [run ID]`; elements are present per the
+  matrix.
+
+**Usage status in non-debug — DECIDED.** In **non-debug capsule**, the right side shows the usage
+status signal **and** container ID (keeps the binding design's always-on usage signal). The **launch**
+screen non-debug right stays container-ID-only. Matrix above reflects this.
+
+**Verified root cause.** `branch_context_bar_layout`
+(`crates/jackin-capsule/src/tui/components/branch_context_bar.rs:52`) places the right chunks
+right-to-left via a moving `cursor` (`place_right_chunk`, `:117`), in this call order: **container**
+first → rightmost (`:75`), then **run ID** / debug chip (`:78`), then **usage** (`:87`). That yields
+display order (left→right) **usage · run ID · container** — run ID and container are reversed vs the
+operator's spec. To get **usage · container · run ID**, place run ID first (rightmost), then
+container, then usage.
+
+- Run ID is currently debug-gated: `debug_run_id_label` (`branch_context_bar.rs:209`) only returns a
+  value when `JACKIN_DEBUG`/`JACKIN_RUN_ID` is set, which is why most panes show no run ID. **DECIDED:
+  run ID always shows** (when debug mode is on, per the "always rendered when debug enabled" rule).
+- The element order is passed positionally from several call sites (`compositor.rs:406-413`,
+  `input_dispatch.rs:556-560, :694-698`, `mouse_input.rs:133-137`); the ordering lives in
+  `branch_context_bar_layout`, so the order can be fixed there, but the hit-test regions must move in
+  lockstep.
+
+**Root cause of the inconsistency.** There is no single status-bar component that every screen
+renders. The right-side bar is assembled by `branch_context_bar_layout` for capsule panes, but
+dialogs/screens (e.g. the Debug-info dialog) render their own footer and pass a different/partial set
+of elements, so what appears varies by screen. This is the same class as Issue 1 (a shared concern
+re-implemented per surface). The host console (`src/console/tui` / `crates/jackin-console`) has its
+own status-bar assembly too.
+
+**Direction (architectural refactor — reuse, don't copy-paste).** Make one shared status-bar
+mechanism that every screen/dialog in jackin' renders (capsule panes, every dialog, host console),
+with a single definition of: which elements appear, their order (right group: usage · container ·
+run ID), and the always-on-in-debug rule. No screen builds its own status bar ad hoc. Reorder the
+right-side placement + hit-test regions in the one layout function, route every screen through it,
+and verify capsule and console render identically. Update status-bar layout tests
+(`daemon/tests.rs:3009+`). Audit every dialog/screen footer for compliance.
+
+---
+
+## Issue 16 — xAI/Grok tab: single dynamic-labeled window; align with CodexBar (USAGE OVERLAY)
+
+**Reference.** CodexBar Grok panel (from screenshot):
+
+```text
+Grok                                    alexey@chainargos.com
+Updated just now                                    SuperGrok
+─────────────────────────────────────────────────────────────
+Weekly
+██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+14% left                                      Resets in 6d 5h
+```
+
+One section only, labeled **Weekly** here (per grok.md the label is **dynamic**: "Weekly" or
+"Monthly" when `resetsAt` matches a common cycle, else "Credits"). Shows remaining % + reset; account
+email on the header right; plan **SuperGrok**. No in-reserve line.
+
+**Observed (jackin, LIVE screenshot — xAI tab).** jackin already renders close to CodexBar:
+
+```text
+xAI                                       alexey@chainargos.com
+Updated 39m ago · refreshing...                       SuperGrok
+──────────────────────────────────────────────────────────────
+Weekly
+████████······················································
+14% left                                 Resets Jul 1 at 00:00
+```
+
+Single **Weekly** bar, 14% left, account email, SuperGrok plan, no in-reserve — matches CodexBar's
+shape. (Tab/header reads **"xAI"** not "Grok" — intentional: our tab set uses the provider name "xAI"
+per the binding design; not a delta.) The render comes from `grok_snapshot` (`usage.rs:996`); the
+active path here is the web/auth billing path (`GrokWebBillingSnapshot::buckets`, `usage.rs:2479-2490`)
+which emits a **hardcoded "Weekly"** bucket. (The RPC path `GrokBillingResponse::buckets`
+(`usage.rs:2494+`) can emit a cents **"Credits"** bucket — verify it isn't reached in normal use.)
+
+**Deltas to fix (small).**
+- **Reset format** (the main one): jackin shows absolute `Resets Jul 1 at 00:00`; CodexBar shows
+  relative `Resets in 6d 5h`. → Issue 13 (relative + local), fixed globally by the shared formatter.
+- **Dynamic section label**: jackin hardcodes "Weekly" (coincidentally correct here); use CodexBar's
+  dynamic rule (Weekly / Monthly / Credits by `resetsAt` cycle, per grok.md) so it stays correct when
+  the cycle isn't weekly. Verify the cents "Credits" RPC path collapses to the same single percent
+  window (don't show a divergent cents row).
+- **In-reserve**: none (matches CodexBar) — keep none per Issue 14's gating decision (verify).
+- Header (account email + SuperGrok plan) already correct.
+
+**Direction (root-cause).** Fold Grok into the canonical per-provider section spec: one window whose
+label is derived from the billing cycle, remaining %, relative+local reset, no in-reserve. Verify the
+extraction + the dynamic-label rule against
+[docs/grok.md](https://github.com/steipete/CodexBar/blob/main/docs/grok.md) and CodexBar's Grok
+source (`Providers/Grok/`). Live jackin render confirmed (above) — deltas are small (reset format +
+dynamic label).
+
+---
+
+## Issue 17 — Overview tab layout is wrong; match the binding preview (USAGE OVERLAY)
+
+**Operator report.** The Overview tab now looks completely different from what it should. Match this
+preview exactly (operator-confirmed correct):
+
+```text
+┌ Usage ────────────────────────────────────────────────────────────────────────────────────┐
+│          Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                │
+│          ━━━━━━━━                                                                         │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ OpenAI      19%  left     Resets 13h 6m    (June 31, 21:26)                               │
+│ Anthropic   55%  left     Resets 1d 22h    (July  1, 16:26)                               │
+│ Amp         100% left     Resets now       (June 31, 22:00)                               │
+│ xAI         18%  left     Resets 6d 15h    (June 30, 22:00)                               │
+│ Z.AI        99%  left     Resets 3d        (June 27, 15:00)                               │
+│ Kimi        100% left     Resets 2m        (June 31, 15:17)                               │
+│ MiniMax     99%  left     Resets 4d        (June 28, 12:00)                               │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Binding layout: one row per provider, **aligned columns** — provider name | `NN% left`
+(right-aligned number, "left" aligned) | `Resets <relative>` | `(<local date, time>)`. Row order =
+the tab order: OpenAI, Anthropic, Amp, xAI, Z.AI, Kimi, MiniMax. (Numbers/dates illustrative; note
+"June 31" is just a placeholder.)
+
+**Verified current rendering and deltas.** `usage_overview_provider_lines`
+(`crates/jackin-capsule/src/tui/components/dialog_widgets.rs:663-679`) builds
+`left = format!("{label:<11}{summary}")` (provider padded to 11 + the summary) and puts the reset on
+the **right** via `usage_header_two_column` — a two-column "summary left / reset right" layout, not
+the preview's four aligned columns. Deltas:
+- **Column layout**: need aligned columns provider · `NN% left` · `Resets <rel>` · `(date, time)`,
+  not "provider+summary left, reset far-right". Right-align the percent so the numbers line up.
+- **Reset format**: must be the Issue 13 format — relative **+ local** `(Mon D, HH:MM)`. The preview
+  shows `Resets 13h 6m (June 31, 21:26)`; use the canonical Issue 13 form (relative + local absolute
+  in parens). Minor wording to confirm: preview omits "in" ("Resets 13h 6m") and uses full month
+  ("June"); Issue 13's pinned form is "Resets in 4h 58m (Jun 25, 17:31)". **Default to the Issue 13
+  form for consistency across all tabs** unless the operator wants the Overview to differ.
+- **Row order**: canonical provider order (Issue 8 spec), not DB/storage order.
+- **Padding** per Issue 6; **centered tab strip / top anchor / hover** per Issues 1/2/3 apply here too.
+
+**Direction (root-cause).** Render the Overview from the canonical per-provider spec (same order +
+the shared reset formatter), with a dedicated aligned-column layout matching the preview. The
+per-provider summary value source (the `summary` + reset split at `dialog_widgets.rs:670`) must carry
+the Issue 13 relative+local reset. **TODO:** capture a live jackin Overview screenshot to confirm the
+fix against the preview.
+
+---
+
+## Consolidated plan (ordering, to be detailed before we start)
+
+Architectural items first (they remove whole bug classes), then the shared per-provider data/spec
+work, then layout/format, then verify. Grouped by mechanism, not by report order.
+
+**A. Architectural foundations (build first — each kills a class of bugs)**
+1. **Issue 1 — shared tab component** (render + hover + per-tab hit-test + cursor) consumed by every
+   tab surface incl. the usage overlay; reuse `HoverTracker`/`lay_out_tabs`/theme constants.
+2. **Issue 15 — unified status-bar component** rendered identically by every screen/dialog (capsule
+   + host console): one definition of elements, order (usage · container · run ID), run-ID always-on
+   in debug mode. No per-screen ad-hoc footer.
+3. **Issue 4 — never block the event loop.** Offload provider fetch + DB I/O off the input/render
+   task (spawn_blocking / worker + channel), concurrent probes; enforce daemon-wide.
+4. **Issue 13 timezone prerequisite — propagate host `TZ` into the capsule** (UTC-only timestamps
+   are a class bug affecting every date/time).
+5. **Canonical per-provider section spec** (the shared root cause behind Issues 7, 8, 9, 10, 11, 12,
+   14): one definition per provider of section order, which sections exist, which detail lines each
+   bucket carries (in-reserve? count line? reset?), and the status-bar headline — plus an
+   agent→provider resolver. Enforce order at render (deterministic sort), not via DB row order
+   (`ORDER BY` / store order is not authoritative).
+
+**B. Refresh behavior**
+5. **Issue 5 — refresh TTL.** Gate all refresh triggers by per-provider freshness; serve cache while
+   fresh; `r` forces. Builds on #2.
+
+**C. Per-provider data + display (all verified against CodexBar source per the table above)**
+6. **Issue 7 — Amp status-bar headline** `Free n% · $credits` (per-provider headline via the spec).
+7. **Issue 8 — Codex tab** order + Limit Reset Credits + Credits + relative resets, drop "N window".
+8. **Issue 9 — Claude tab** add reset/in-reserve/"Lasts until reset"/Daily Routines; correct order.
+9. **Issue 10 — status-bar click** opens the focused pane's provider (agent→provider resolver; fix
+   the empty-provider match-all fallback).
+10. **Issue 11 — Z.AI** order Tokens·MCP·5-hour; MCP count line; in-reserve per spec.
+11. **Issue 12 — MiniMax** `Usage: N / 100` count line; order; (decision: %used vs %left).
+12. **Issue 14 — Kimi** humanize "Rate Limit" label (no raw `TIME_UNIT_*`); order Weekly·Rate Limit;
+    in-reserve on Rate Limit (fix window-duration parse so pace attaches to the right bucket).
+
+**D. Layout + format (usage overlay)**
+13. **Issue 6 — padding policy** (content padded both sides; separators full-bleed; one policy).
+14. **Issue 2 — anchor usage dialog top edge** (per-variant `row` branch in `box_rect`).
+15. **Issue 3 — center the usage tab strip** (thread x-offset into Issue 1's hit-testing).
+16. **Issue 13 — reset/expiry format** `Resets in <rel> (<local Mon D, HH:MM>)` via the single shared
+    formatter, all providers.
+
+**F. Verify** end-to-end in-container: hover color + pointer on every tab surface; no vertical jump
+on tab switch; centered strip; correct padding; left/right instant even mid-refresh; no repeated
+provider calls within the TTL; each provider tab matches its CodexBar reference (sections, order,
+detail lines, count lines, in-reserve on the right buckets); all resets show `relative (local
+date+time)`; status-bar click opens the focused provider; Amp headline correct.
+
+> **Still to collect:** xAI/Grok and Overview tabs (no screenshots captured yet).
+>
+> **Decisions made (operator):** MiniMax keeps "% left" (not "% used"); reset granularity is precise
+> two-unit always (no CodexBar rounding); run ID always shows in debug mode; in-reserve defaults to
+> CodexBar's gating **but** must be verified per provider during implementation (CodexBar may be wrong
+> / our data may be more accurate — guiding principle 5).
+>
+> **Verification owed during implementation (per provider):** confirm each value's meaning + source
+> against the CodexBar docs/source, and whether jackin' data is more accurate; record the verified
+> per-provider decision (sections, order, in-reserve buckets, count lines) back into this file.
+
+## Progress checklist
+
+**For agents:** when you ship a fix, check its box here in the **same PR**, and append the commit/PR
+ref after the item. Do not check a parent until all its sub-items are done. Add newly discovered
+sub-tasks rather than silently expanding scope. This checklist is the source of truth for what is
+done vs outstanding in this roadmap item.
+
+**Collection / housekeeping**
+- [x] Issues 1–17 collected and verified against source (all tabs covered)
+- [x] xAI/Grok tab collected (Issue 16; live jackin Grok screenshot still owed to pin deltas)
+- [x] Overview tab collected (Issue 17; binding preview captured; live jackin screenshot owed)
+- [x] File registered in roadmap `meta.json` + overview `index.mdx` (sidebar check passes)
+- [ ] Hard-wrapped prose unwrapped to one-line-per-paragraph (repo convention) — housekeeping follow-up
+
+**Open decisions**
+- [x] Usage in **non-debug capsule**: shown (usage + container ID); launch = container ID only
+- [x] Refresh **TTL**: no re-fetch of a loaded provider while the overlay is open; `r` forces
+- [x] Issue 2 anchor: fixed top offset
+- [x] Reset granularity: precise two-unit always · MiniMax keeps "% left" · run ID always-on in debug
+- [x] Per-provider **in-reserve** gating verified — spec table added (Codex/Claude Session+Weekly, Kimi Rate Limit, others none); window-length accuracy verify owed at impl
+- [x] Container ID = always short form (`instance_id_label`); full name only in Debug/ContainerInfo dialog
+
+**A. Architectural foundations**
+- [ ] Issue 1 — shared tab component (render + hover + per-tab hit-test + cursor); usage tabs wired through it
+- [ ] Issue 15 — unified status-bar component on every screen; display matrix; right-anchored progressive build
+- [ ] Issue 4 — no blocking work on the event/input/render loop (offload + concurrent probes; daemon-wide rule)
+- [ ] Tokio-everywhere audit — enumerate every data-load/I/O path in jackin', confirm each is off-loop + parallel; refactor any blocking/serial (HARDCORE rule)
+- [ ] Issue 13 (prereq) — propagate host `TZ` into the capsule (kill UTC-only timestamps class bug)
+- [ ] Canonical per-provider section spec + agent→provider resolver (root cause behind 7/8/9/10/11/12/14)
+
+**B. Refresh behavior**
+- [ ] Issue 5 — per-provider freshness TTL gating all refresh triggers; `r` forces
+
+**C. Per-provider data + display** (verify each against CodexBar docs/source per principle 5)
+- [ ] Issue 7 — Amp status-bar headline `Free n% · $credits`
+- [ ] Issue 8 — Codex: order, Limit Reset Credits, Credits, detail lines
+- [ ] Issue 9 — Claude: reset + in-reserve + "Lasts until reset" + Daily Routines + order
+- [ ] Issue 10 — status-bar click opens the focused pane's provider
+- [ ] Issue 11 — Z.AI: order Tokens·MCP·5-hour + MCP count line + in-reserve per spec
+- [ ] Issue 12 — MiniMax: `Usage: N/100` count line + order (keep "% left")
+- [ ] Issue 14 — Kimi: humanize "Rate Limit" label + order + in-reserve on right bucket + window-duration parse
+- [ ] Issue 16 — Grok: dynamic window label (Weekly/Monthly/Credits) + single percent bar + reset/in-reserve per spec
+- [ ] Issue 17 — Overview — (after collection)
+
+**D. Layout + format (usage overlay)**
+- [ ] Issue 6 — one horizontal-padding policy (content padded both sides; separators full-bleed)
+- [ ] Issue 2 — anchor usage dialog top edge (Usage-only `box_rect` branch)
+- [ ] Issue 3 — center the usage tab strip
+- [ ] Issue 13 — reset/expiry format `Resets in <rel> (<local Mon D, HH:MM>)`, all providers, via one formatter
+
+**F. Final verification (end-to-end, in-container)**
+- [ ] Hover color + pointer cursor on every tab surface (status bar, console, usage overlay)
+- [ ] Status bar consistent on every screen per the display matrix (debug + non-debug)
+- [ ] No vertical jump on usage tab switch; centered strip; correct padding
+- [ ] Left/right tab switch instant even mid-refresh; no repeated provider calls within the TTL
+- [ ] Each provider tab matches its CodexBar reference (sections, order, detail lines, count lines, in-reserve on the right buckets)
+- [ ] All resets/expiries show `relative (local date+time)`; status-bar click opens the focused provider; Amp headline correct
+
+## Cross-references
+
+- Binding overlay design:
+  <RepoFile path="docs/content/docs/reference/roadmap/capsule-usage-quota-overlay.mdx" />
+- Shared tab widget: <RepoFile path="crates/jackin-tui/src/components/tab_strip.rs" />
+- Hover infra: <RepoFile path="crates/jackin-tui/src/components/hover_tracker.rs" />
+- Dialog geometry: <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />
+- Usage cache / probes: <RepoFile path="crates/jackin-capsule/src/usage.rs" />
+- Daemon loop: <RepoFile path="crates/jackin-capsule/src/daemon.rs" />

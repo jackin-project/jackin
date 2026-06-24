@@ -9,6 +9,7 @@
     "../../console-agent-session-control",
     "../../session-keep-and-resume",
     "../../capsule-usage-quota-overlay",
+    "../../capsule-usage-overlay-responsiveness-and-tabs",
     "../../console-resource-panel",
     "../../agent-tag-protocol",
     "../../github-link-tracking",
