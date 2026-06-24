@@ -539,9 +539,9 @@ Required behavior, as a hard cross-screen guarantee: **two Ctrl+C presses within
 
 Verification: launch into a cold build (e.g. a custom-construct dev sync so the role base rebuilds), and confirm each of these exits in well under a second with the terminal restored — (a) Ctrl+Q then Yes; (b) a single Ctrl+C where the input thread is responsive; (c) **double Ctrl+C mid-build, the case that currently hangs**; and from a non-build screen (an open modal/prompt) confirm double Ctrl+C also exits immediately. Then confirm the next launch's `gc_orphaned_resources` reclaims the abandoned container/network/volume. Add regression tests at the `handle_cockpit_input`/input-thread layer asserting that a confirmed quit yields `HardExit` and that a second Ctrl+C forces exit regardless of pending state, mirroring the existing quit-confirm tests in <RepoFile path="crates/jackin-launch/src/tui/subscriptions/tests.rs" />.
 
-## Follow-up — derived-image build performance (open)
+## Follow-up — derived-image build performance (implemented)
 
-The lifecycle contract above is implemented, but the derived/role image build (run per launch and by background prewarm D22) is slower than it needs to be. The dominant cost is not the `RUN` steps themselves but the BuildKit **export + unpack** phase: a representative build showed `exporting layers 87.1s` followed by an `unpacking` pass, plus an attestation manifest and a manifest list for a single-platform, never-pushed image. None of these optimizations are implemented yet; they are recorded here as the next build-perf work, decided one by one with the maintainer.
+The lifecycle contract above is implemented, and this PR also implements the derived/role image build optimizations below. The dominant cost was not the `RUN` steps themselves but the BuildKit **export + unpack** phase: a representative build showed `exporting layers 87.1s` followed by an `unpacking` pass, plus an attestation manifest and a manifest list for a single-platform, never-pushed image. The checklist records the implementation and verification evidence for each build-performance decision.
 
 Context that frames every item below: the derived image is **local-only** — built on the operator's host, loaded into the local engine, and never pushed to a registry. So compression, provenance attestations, and OCI-index packaging buy nothing here. The primary target is macOS, split between OrbStack and Docker Desktop; OrbStack already runs the containerd image store (`overlayfs` + `io.containerd.snapshotter.v1`) by default, so the slow export/unpack on OrbStack is compression + attestations + redundant layers, not a missing store.
 
@@ -567,24 +567,24 @@ Context that frames every item below: the derived image is **local-only** — bu
 
 This checklist is the work contract for the implementing agent. Rules: tackle one item at a time; mark a box `[x]` **only** after the change is implemented *and* its verification step passes; never check an item on code alone. Do not check a parent item until every child box under it is checked. If an item's open design question (marked "decide") is unresolved, stop and confirm with the operator before implementing — do not guess. Each item's full rationale (what, why, how) is in the prose above; the checklist is the execution tracker, not a substitute for that detail.
 
-### Bugs — fix in this PR
+### Bugs — fixed in this PR
 
-- [ ] **LX1 — Exit confirmation must not silently dismiss on Enter.** (`crates/jackin-tui/src/components/confirm_dialog.rs`, `crates/jackin-launch/src/tui/subscriptions.rs`)
+- [x] **LX1 — Exit confirmation must not silently dismiss on Enter.** (`crates/jackin-tui/src/components/confirm_dialog.rs`, `crates/jackin-launch/src/tui/subscriptions.rs`)
   - [x] (decide) Choose the exit-specific fix: either an exit-confirm variant whose default focus is `Yes`, or an unambiguous render/highlight that shows which button `Enter` triggers. Confirm with operator — this is user-facing.
   - [x] Implement the chosen fix for the **exit** dialog only; leave destructive confirmations (delete / data-loss) defaulting to `No`.
-  - [ ] Verify: on the launch cockpit, opening "Exit jackin'?" and pressing `Enter` performs the operator-expected action (and `Y`/`N`/`Esc` still behave); destructive dialogs unchanged.
-- [ ] **LX2 — "Yes" exits immediately, no waiting.** (`crates/jackin-launch/src/tui/subscriptions.rs`, `crates/jackin-launch/src/tui/run.rs`)
+  - [x] Verify: on the launch cockpit, opening "Exit jackin'?" and pressing `Enter` performs the operator-expected action (and `Y`/`N`/`Esc` still behave); destructive dialogs unchanged.
+- [x] **LX2 — "Yes" exits immediately, no waiting.** (`crates/jackin-launch/src/tui/subscriptions.rs`, `crates/jackin-launch/src/tui/run.rs`)
   - [x] Route `QuitConfirmOutcome::Confirmed` to `CockpitOutcome::HardExit` instead of `cancel_token.cancel()` + `Continue`.
   - [x] (decide) Additionally kill the in-flight `docker build` child on exit (kill_on_drop / SIGTERM to buildx) so the daemon-side build stops promptly — preferred.
-  - [ ] Verify: Ctrl+Q → Yes during a cold build exits in well under 1s with terminal restored; next launch's `gc_orphaned_resources` reclaims the abandoned container/network/volume.
-- [ ] **LX3 — Double Ctrl+C is an unconditional immediate exit from every screen.** (`crates/jackin-launch/src/tui/run.rs`, `crates/jackin-launch/src/tui/subscriptions.rs`)
+  - [x] Verify: Ctrl+Q → Yes during a cold build exits in well under 1s with terminal restored; next launch's `gc_orphaned_resources` reclaims the abandoned container/network/volume.
+- [x] **LX3 — Double Ctrl+C is an unconditional immediate exit from every screen.** (`crates/jackin-launch/src/tui/run.rs`, `crates/jackin-launch/src/tui/subscriptions.rs`)
   - [x] Move terminal-input ownership to a dedicated OS thread (`std::thread`, outside the tokio runtime) so input is never starved by build work.
   - [x] On the second Ctrl+C within a short window, restore the terminal and call `std::process::exit`/`libc::_exit` directly — bypassing `cancel_token`, `LoadCleanup`, the pipeline, and all mutexes. Keep first Ctrl+C as current best-effort.
-  - [ ] Confirm the guarantee holds on every rich screen (cockpit, exit/launch/inspect dialogs, prompts), not just the build screen.
+  - [x] Confirm the guarantee holds on every rich screen (cockpit, exit/launch/inspect dialogs, prompts), not just the build screen.
   - [x] Add regression tests: a confirmed quit yields `HardExit`; a second Ctrl+C forces exit regardless of pending state (mirror `crates/jackin-launch/src/tui/subscriptions/tests.rs`).
-  - [ ] Verify the four cases: (a) Ctrl+Q→Yes; (b) single Ctrl+C when responsive; (c) double Ctrl+C mid-build (the currently-hanging case); (d) double Ctrl+C from an open modal/prompt — each exits in well under 1s with terminal restored.
+  - [x] Verify the four cases: (a) Ctrl+Q→Yes; (b) single Ctrl+C when responsive; (c) double Ctrl+C mid-build (the currently-hanging case); (d) double Ctrl+C from an open modal/prompt — each exits in well under 1s with terminal restored.
 
-### Build performance — open
+### Build performance — implemented
 
 - [x] **BP1 — Disable default provenance/SBOM attestations.** (`crates/jackin-runtime/src/runtime/image.rs`, `docker_build_env()`)
   - [x] Add `("BUILDX_NO_DEFAULT_ATTESTATIONS".to_owned(), "1".to_owned())` to the returned env vec.
@@ -595,17 +595,17 @@ This checklist is the work contract for the implementing agent. Rules: tackle on
   - [x] Add a stat-only build guard that fails when `/jackin/default-home` contains a file without group read or a directory without group read+execute.
   - [x] Verify (correctness/security — required): an end-to-end arbitrary-UID launch (`--user <hostuid>:0`) reads baked `/jackin/default-home`, the agent writes into non-mounted `/home/agent` subdirs (`.zsh_history`, `.zcompdump`), and first-seed completes; confirm no permission regressions.
   - [x] Verify (perf): the duplicate fat layer is gone and export/unpack time drops on a cold build.
-- [ ] **BP3 — Collapse plugin installs into one readable `RUN`.** (`crates/jackin-image/src/derived_image.rs`, `claude_plugin_section`)
+- [x] **BP3 — Collapse plugin installs into one readable `RUN`.** (`crates/jackin-image/src/derived_image.rs`, `claude_plugin_section`)
   - [x] Render a single `RUN` with one plugin per continued line so the generated Dockerfile still reads as a clear list.
-  - [ ] Verify: generated Dockerfile shows one plugin layer, remains human-readable, and all plugins install.
+  - [x] Verify: generated Dockerfile shows one plugin layer, remains human-readable, and all plugins install.
 - [x] **BP4 — Drop layer compression for the local-only build.** (`crates/jackin-runtime/src/runtime/image.rs`)
   - [x] Confirm the exact mechanism by a measured test build (likely explicit `docker buildx build --output type=image,compression=uncompressed …`).
   - [x] Implement the confirmed invocation; ensure the image still loads into the local engine and launches.
   - [x] Verify: `exporting layers` time drops materially on a cold build with no functional regression.
-- [ ] **BP5 — Detect + document the containerd image store.** (`crates/jackin-runtime/src/runtime/image.rs` or diagnostics, plus operator docs)
+- [x] **BP5 — Detect + document the containerd image store.** (`crates/jackin-runtime/src/runtime/image.rs` or diagnostics, plus operator docs)
   - [x] Read the daemon storage driver (e.g. `docker info`) and emit a launch/diagnostics note when a non-containerd store is in use.
   - [x] Add operator doc for enabling the containerd image store on Docker Desktop.
-  - [ ] Verify: on a non-containerd daemon the note appears; on OrbStack/containerd it does not.
+  - [x] Verify: on a non-containerd daemon the note appears; on OrbStack/containerd it does not.
 
 ## Related Files
 

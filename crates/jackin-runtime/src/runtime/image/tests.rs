@@ -85,6 +85,53 @@ fn docker_info_store_parser_detects_containerd_snapshotter() {
 }
 
 #[tokio::test]
+async fn non_containerd_image_store_note_emits_diagnostic() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let mut runner = FakeRunner::with_capture_queue(["overlay2\n[]".to_owned()]);
+
+    emit_non_containerd_image_store_note(&mut runner).await;
+
+    assert_eq!(
+        runner.recorded,
+        vec!["docker info --format {{.Driver}}\n{{json .DriverStatus}}".to_owned()]
+    );
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        diagnostics.contains("\"kind\":\"docker_image_store\"")
+            && diagnostics.contains("Docker daemon is not using the containerd image store")
+            && diagnostics.contains("\\\"containerd_image_store\\\":false")
+            && diagnostics.contains("overlay2"),
+        "non-containerd image store note missing: {diagnostics}"
+    );
+}
+
+#[tokio::test]
+async fn containerd_image_store_note_is_suppressed() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let mut runner = FakeRunner::with_capture_queue([concat!(
+        "overlayfs\n",
+        "[[\"driver-type\",\"io.containerd.snapshotter.v1\"]]"
+    )
+    .to_owned()]);
+
+    emit_non_containerd_image_store_note(&mut runner).await;
+
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        !diagnostics.contains("docker_image_store"),
+        "containerd-backed daemon should not emit slow-store note: {diagnostics}"
+    );
+}
+
+#[tokio::test]
 async fn role_git_sha_for_recipe_uses_known_sha_without_git_capture() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();

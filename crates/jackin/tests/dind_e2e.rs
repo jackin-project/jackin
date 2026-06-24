@@ -31,6 +31,8 @@ const ROLE_KEY: &str = "jackin-e2e/agent-smith";
 const ROLE_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__agent-smith";
 const SENTINEL_ROLE_KEY: &str = "jackin-e2e/sentinel";
 const SENTINEL_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__sentinel";
+const SLOW_EXIT_ROLE_KEY: &str = "jackin-e2e/slow-exit";
+const SLOW_EXIT_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__slow-exit";
 const CAPSULE_DETACH_KEYS: &str = "\u{2}d";
 const BUILD_FAILED_MODAL_TEXT: &str = "Building the Docker container failed";
 const FAILURE_DIAGNOSTICS_LABEL: &str = "run diagnostics";
@@ -216,6 +218,143 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
     });
     assert_sentinel_report(&report, &stdout, &stderr);
     assert_sentinel_build_output_routed_to_log(&home, &stdout, &stderr);
+}
+
+#[test]
+fn jackin_load_ctrl_q_yes_exits_cold_build_quickly() {
+    let output = run_slow_exit_load_until_quick_exit("\x11\r");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Ctrl+Q then Enter should hard-exit successfully during a cold build\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("Exit jackin'?"),
+        "exit confirmation did not render before quick exit\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn jackin_load_double_ctrl_c_exits_cold_build_quickly() {
+    let output = run_slow_exit_load_until_quick_exit("\x03\x03");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "double Ctrl+C should hard-exit successfully during a cold build\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn jackin_load_single_ctrl_c_exits_responsive_cold_build_quickly() {
+    let output = run_slow_exit_load_until_quick_exit("\x03");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "single Ctrl+C should hard-exit successfully during a responsive cold build\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+}
+
+fn run_slow_exit_load_until_quick_exit(input: &str) -> std::process::Output {
+    require_e2e_prereqs();
+    let _serial = e2e_serial_lock();
+    let _cleanup = E2eRoleCleanup {
+        role_key: SLOW_EXIT_ROLE_KEY,
+        container_prefix: SLOW_EXIT_CONTAINER_PREFIX,
+    };
+
+    let temp = tempdir().unwrap();
+    let home = temp.path().join("home");
+    let config_dir = home.join(".config/jackin");
+    let role_source = temp.path().join("slow-exit-source");
+    let workspace_dir = temp.path().join("workspace");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&workspace_dir).unwrap();
+
+    seed_slow_exit_role_repo(&role_source);
+    write_slow_exit_config(&config_dir.join("config.toml"), &role_source);
+    seed_claude_installer_stub(&home);
+
+    let jackin = std::env::var("CARGO_BIN_EXE_jackin").unwrap_or_else(|_| {
+        std::env::current_dir()
+            .unwrap()
+            .join("target/debug/jackin")
+            .display()
+            .to_string()
+    });
+
+    let target = format!("{}:/workspace", workspace_dir.display());
+    let args = ["load", SLOW_EXIT_ROLE_KEY, &target, "--agent", "claude"];
+    let construct_image = e2e_construct_image();
+    let extra_env = [("JACKIN_CONSTRUCT_IMAGE", construct_image.as_str())];
+    run_in_pty_until_quick_exit_after_input(
+        &jackin,
+        &args,
+        &home,
+        &workspace_dir,
+        &extra_env,
+        "Building role base image",
+        input,
+        Duration::from_secs(1),
+    )
+}
+
+#[test]
+fn jackin_load_double_ctrl_c_exits_launch_prompt_quickly() {
+    require_e2e_prereqs();
+    let _serial = e2e_serial_lock();
+    let _cleanup = E2eRoleCleanup {
+        role_key: SENTINEL_ROLE_KEY,
+        container_prefix: SENTINEL_CONTAINER_PREFIX,
+    };
+
+    let temp = tempdir().unwrap();
+    let home = temp.path().join("home");
+    let config_dir = home.join(".config/jackin");
+    let role_source = temp.path().join("sentinel-source");
+    let workspace_dir = temp.path().join("workspace");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&workspace_dir).unwrap();
+
+    seed_sentinel_role_repo(&role_source);
+    write_sentinel_config(&config_dir.join("config.toml"), &role_source);
+    seed_all_agent_stubs(&home);
+    seed_existing_construct_entry(&home);
+
+    let jackin = std::env::var("CARGO_BIN_EXE_jackin").unwrap_or_else(|_| {
+        std::env::current_dir()
+            .unwrap()
+            .join("target/debug/jackin")
+            .display()
+            .to_string()
+    });
+
+    let target = format!("{}:/workspace", workspace_dir.display());
+    let args = ["load", SENTINEL_ROLE_KEY, &target];
+    let construct_image = e2e_construct_image();
+    let extra_env = [("JACKIN_CONSTRUCT_IMAGE", construct_image.as_str())];
+    let output = run_in_pty_until_quick_exit_after_input(
+        &jackin,
+        &args,
+        &home,
+        &workspace_dir,
+        &extra_env,
+        "Choose launch agent",
+        "\x03\x03",
+        Duration::from_secs(1),
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "double Ctrl+C should hard-exit successfully from the launch prompt\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
 }
 
 fn assert_sentinel_report(report: &str, stdout: &str, stderr: &str) {
@@ -704,6 +843,103 @@ fn run_in_pty_until_file(
     );
 }
 
+fn run_in_pty_until_quick_exit_after_input(
+    jackin: &str,
+    args: &[&str],
+    home: &Path,
+    cwd: &Path,
+    extra_env: &[(&str, &str)],
+    wait_for: &str,
+    input: &str,
+    max_exit_after_input: Duration,
+) -> std::process::Output {
+    let mut child = pty_command(jackin, args, home, cwd, extra_env)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("script must spawn");
+    let mut stdin = child.stdin.take().expect("script stdin must be piped");
+    let stdout = child.stdout.take().expect("script stdout must be piped");
+    let stderr = child.stderr.take().expect("script stderr must be piped");
+    let (stdout_buf, stdout_reader) = spawn_pipe_collector(stdout);
+    let (stderr_buf, stderr_reader) = spawn_pipe_collector(stderr);
+    let wait_deadline = Instant::now() + Duration::from_mins(3);
+    while !transcript_contains(&stdout_buf, wait_for) {
+        if let Some(status) = child.try_wait().expect("script status must be readable") {
+            stdout_reader.join().expect("stdout reader must finish");
+            stderr_reader.join().expect("stderr reader must finish");
+            panic!(
+                "PTY command exited before transcript reached {wait_for:?} with status {status}\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
+                diagnostics_snapshot(home),
+                tail_text(&String::from_utf8_lossy(&buffer_bytes(&stdout_buf))),
+                tail_text(&String::from_utf8_lossy(&buffer_bytes(&stderr_buf))),
+            );
+        }
+        if Instant::now() >= wait_deadline {
+            drop(child.kill());
+            let _status = child.wait().expect("script must finish");
+            stdout_reader.join().expect("stdout reader must finish");
+            stderr_reader.join().expect("stderr reader must finish");
+            panic!(
+                "PTY transcript never reached {wait_for:?}\ndiagnostics:\n{}\nstdout tail:\n{}\nstderr tail:\n{}",
+                diagnostics_snapshot(home),
+                tail_text(&String::from_utf8_lossy(&buffer_bytes(&stdout_buf))),
+                tail_text(&String::from_utf8_lossy(&buffer_bytes(&stderr_buf))),
+            );
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    stdin
+        .write_all(input.as_bytes())
+        .expect("exit input must write");
+    stdin.flush().expect("exit input must flush");
+
+    let deadline = Instant::now() + max_exit_after_input;
+    while Instant::now() < deadline {
+        if let Some(status) = child.try_wait().expect("script status must be readable") {
+            stdout_reader.join().expect("stdout reader must finish");
+            stderr_reader.join().expect("stderr reader must finish");
+            let output = std::process::Output {
+                status,
+                stdout: buffer_bytes(&stdout_buf),
+                stderr: buffer_bytes(&stderr_buf),
+            };
+            assert_restored_terminal(&output);
+            return output;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    drop(child.kill());
+    let status = child.wait().expect("script must finish");
+    stdout_reader.join().expect("stdout reader must finish");
+    stderr_reader.join().expect("stderr reader must finish");
+    let output = std::process::Output {
+        status,
+        stdout: buffer_bytes(&stdout_buf),
+        stderr: buffer_bytes(&stderr_buf),
+    };
+    panic!(
+        "PTY command did not exit within {}ms after input\nstdout tail:\n{}\nstderr tail:\n{}",
+        max_exit_after_input.as_millis(),
+        tail_text(&String::from_utf8_lossy(&output.stdout)),
+        tail_text(&String::from_utf8_lossy(&output.stderr)),
+    );
+}
+
+fn assert_restored_terminal(output: &std::process::Output) {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stdout.contains("\x1b[?1049l") && stdout.contains("\x1b[?25h"),
+        "hard exit did not visibly restore the terminal\nstdout tail:\n{}\nstderr tail:\n{}",
+        tail_text(stdout.as_ref()),
+        tail_text(stderr.as_ref()),
+    );
+}
+
 #[derive(Clone, Copy)]
 struct PtyScriptStep {
     wait_for: &'static str,
@@ -952,7 +1188,11 @@ agents = ["claude"]
 name = "Agent Smith"
 
 [claude]
-plugins = []
+plugins = ["caveman@jackin-e2e", "rtk@jackin-e2e"]
+
+[[claude.marketplaces]]
+source = "jackin/e2e-marketplace"
+sparse = ["plugins"]
 "#,
     )
     .unwrap();
@@ -1060,6 +1300,69 @@ trusted = true
         ),
     )
     .unwrap();
+}
+
+fn seed_slow_exit_role_repo(path: &Path) {
+    std::fs::create_dir_all(path).unwrap();
+    std::fs::write(path.join("Dockerfile"), slow_exit_role_dockerfile()).unwrap();
+    std::fs::write(path.join("slow-marker"), format!("{:?}", Instant::now())).unwrap();
+    std::fs::write(
+        path.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["claude"]
+
+[identity]
+name = "Slow Exit"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    run("git", &["init"], Some(path));
+    run("git", &["add", "."], Some(path));
+    run(
+        "git",
+        &[
+            "-c",
+            "user.name=Jackin E2E",
+            "-c",
+            "user.email=e2e@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-m",
+            "Seed slow exit e2e role",
+        ],
+        Some(path),
+    );
+}
+
+fn write_slow_exit_config(path: &Path, role_source: &Path) {
+    std::fs::write(
+        path,
+        format!(
+            r#"version = "v1alpha5"
+
+[roles."{SLOW_EXIT_ROLE_KEY}"]
+git = "{}"
+trusted = true
+"#,
+            role_source.display()
+        ),
+    )
+    .unwrap();
+}
+
+const fn slow_exit_role_dockerfile() -> &'static str {
+    r"FROM projectjackin/construct:0.1-trixie
+USER root
+COPY slow-marker /tmp/jackin-slow-exit-marker
+RUN sleep 20
+USER agent
+"
 }
 
 const fn role_dockerfile() -> &'static str {
@@ -1194,6 +1497,9 @@ fn fake_claude_runtime_script() -> String {
 set -eu
 if [ "${{1:-}}" = "--version" ]; then
   echo "claude 0.0.0-e2e"
+  exit 0
+fi
+if [ "${{1:-}}" = "plugin" ]; then
   exit 0
 fi
 echo "{REPORT_BEGIN}"
