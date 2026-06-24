@@ -699,6 +699,12 @@ fallback in `select_provider_rows` so an unresolved provider does not silently m
 latest (it should use the focused agent's provider, or show that pane's provider explicitly). Cover
 with a test: clicking the status bar on each provider's focused pane opens that provider's tab.
 
+**Implementation verification.** Commit `ed98924` exposes jackin's existing agent/provider resolver
+to the Turso read path, resolves a missing focused provider from the focused agent before selecting
+stored rows, and changes empty-provider matching from "match all" to "match none." Tests cover an
+Amp-focused pane with no provider label selecting Amp rows and an unresolved agent not selecting the
+newest unrelated provider.
+
 ---
 
 ## Issue 11 — Z.AI tab: MCP must show the count line, wrong order, window subtitle (USAGE OVERLAY)
@@ -1302,7 +1308,7 @@ done vs outstanding in this roadmap item.
 - [x] Issue 7 — Amp status-bar headline `Free n% · $credits` — `0f810e0`
 - [ ] Issue 8 — Codex: order, Limit Reset Credits, Credits, detail lines
 - [ ] Issue 9 — Claude: reset + in-reserve + "Lasts until reset" + Daily Routines + order
-- [ ] Issue 10 — status-bar click opens the focused pane's provider
+- [x] Issue 10 — status-bar click opens the focused pane's provider — `ed98924`
 - [ ] Issue 11 — Z.AI: order Tokens·MCP·5-hour + MCP count line + in-reserve per spec
 - [ ] Issue 12 — MiniMax: `Usage: N/100` count line + order (keep "% left")
 - [ ] Issue 14 — Kimi: humanize "Rate Limit" label + order + in-reserve on right bucket + window-duration parse
