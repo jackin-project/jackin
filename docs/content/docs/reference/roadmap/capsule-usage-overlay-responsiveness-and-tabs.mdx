@@ -811,6 +811,13 @@ General·Weekly, Video), each with a `Usage: N / 100` count line; relative reset
 [docs/minimax.md](https://github.com/steipete/CodexBar/blob/main/docs/minimax.md)
 (`/v1/api/openplatform/coding_plan/remains`: used/limit/remaining per service).
 
+**Implementation verification.** Commit `1e91c01` verified MiniMax against CodexBar
+`docs/minimax.md` and `Sources/CodexBarCore/Providers/MiniMax/`: CodexBar's Coding Plan remains
+path exposes per-service percentages plus used/limit/remaining/reset metadata, and its diagnostic
+surface records those same non-secret used/limit values. jackin' now keeps the binding `% left`
+normalization while rendering the per-bucket `Usage: N / limit` count line instead of window
+subtitles.
+
 ---
 
 ## Issue 13 — Reset time format: always relative countdown (CodexBar-style), everywhere (USAGE OVERLAY, cross-provider)
@@ -1318,7 +1325,7 @@ done vs outstanding in this roadmap item.
 - [ ] Issue 9 — Claude: reset + in-reserve + "Lasts until reset" + Daily Routines + order
 - [x] Issue 10 — status-bar click opens the focused pane's provider — `ed98924`
 - [x] Issue 11 — Z.AI: order Tokens·MCP·5-hour + MCP count line + in-reserve per spec — `324cf2f`
-- [ ] Issue 12 — MiniMax: `Usage: N/100` count line + order (keep "% left")
+- [x] Issue 12 — MiniMax: `Usage: N/100` count line + order (keep "% left") — `1e91c01`
 - [ ] Issue 14 — Kimi: humanize "Rate Limit" label + order + in-reserve on right bucket + window-duration parse
 - [ ] Issue 16 — Grok: dynamic window label (Weekly/Monthly/Credits) + single percent bar + reset/in-reserve per spec
 - [ ] Issue 17 — Overview — (after collection)
