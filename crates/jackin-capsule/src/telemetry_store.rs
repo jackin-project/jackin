@@ -7,7 +7,6 @@
 
 use std::future::Future;
 use std::path::Path;
-use std::thread;
 
 use jackin_protocol::control::{
     FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
@@ -46,30 +45,32 @@ pub(crate) struct StoredAccountUsageSnapshot {
     pub status_bar_label: String,
 }
 
+#[cfg(test)]
 pub(crate) fn store_usage_snapshot(path: &Path, view: &FocusedUsageView) -> Result<(), String> {
+    store_usage_snapshots(path, std::slice::from_ref(view))
+}
+
+pub(crate) fn store_usage_snapshots(path: &Path, views: &[FocusedUsageView]) -> Result<(), String> {
     let path = path.to_path_buf();
-    let rows = account_snapshot_rows(view);
-    run_store(move || async move {
+    let rows = views
+        .iter()
+        .flat_map(account_snapshot_rows)
+        .collect::<Vec<_>>();
+    block_on_store(async move {
         let conn = open_store(&path).await?;
         upsert_account_snapshot_rows(&conn, rows).await
     })
 }
 
-fn run_store<T, F, Fut>(f: F) -> Result<T, String>
+fn block_on_store<T, Fut>(future: Fut) -> Result<T, String>
 where
-    T: Send + 'static,
-    F: FnOnce() -> Fut + Send + 'static,
-    Fut: Future<Output = Result<T, String>> + 'static,
+    Fut: Future<Output = Result<T, String>>,
 {
-    thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .map_err(|err| format!("create telemetry store runtime failed: {err}"))?;
-        runtime.block_on(f())
-    })
-    .join()
-    .map_err(|_| "telemetry store thread panicked".to_owned())?
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .map_err(|err| format!("create telemetry store runtime failed: {err}"))?;
+    runtime.block_on(future)
 }
 
 async fn open_store(path: &Path) -> Result<Connection, String> {
@@ -680,7 +681,7 @@ fn lifecycle_status_bar_label(status: UsageSnapshotStatus) -> String {
 #[cfg(test)]
 fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapshot>, String> {
     let path = path.to_path_buf();
-    run_store(move || async move {
+    block_on_store(async move {
         let conn = open_store(&path).await?;
         let mut rows = conn
             .query(
@@ -759,7 +760,7 @@ fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapsho
 #[cfg(test)]
 pub(crate) fn schema_version(path: &Path) -> Result<Option<String>, String> {
     let path = path.to_path_buf();
-    run_store(move || async move {
+    block_on_store(async move {
         let conn = open_store(&path).await?;
         let mut rows = conn
             .query("SELECT value FROM _meta WHERE key = 'schema_version'", ())

@@ -251,6 +251,7 @@ impl UsageCache {
                 })
                 .collect::<Vec<_>>()
         });
+        let mut stored_views = Vec::new();
         for result in results {
             let UsageRefreshResult {
                 target,
@@ -271,9 +272,13 @@ impl UsageCache {
                 _ => {}
             }
             self.refresh_schedule.mark_refreshed(&target, now, &view);
-            if let Err(error) =
-                crate::telemetry_store::store_usage_snapshot(&self.telemetry_store_path, &view)
-            {
+            stored_views.push(view);
+        }
+        if !stored_views.is_empty() {
+            if let Err(error) = crate::telemetry_store::store_usage_snapshots(
+                &self.telemetry_store_path,
+                &stored_views,
+            ) {
                 crate::cdebug!("usage telemetry store write failed: {error}");
             }
         }
