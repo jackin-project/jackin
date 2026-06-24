@@ -77,38 +77,3 @@ fn usage_account_list_roundtrips() {
         other => panic!("unexpected variant {other:?}"),
     }
 }
-
-#[test]
-fn usage_summary_roundtrips() {
-    let request = ClientMsg::UsageWorkspace {
-        workspace: Some("work".to_owned()),
-        window_seconds: Some(86_400),
-    };
-    let json = serde_json::to_string(&request).unwrap();
-    let decoded: ClientMsg = serde_json::from_str(&json).unwrap();
-    assert!(matches!(
-        decoded,
-        ClientMsg::UsageWorkspace {
-            workspace: Some(_),
-            window_seconds: Some(86_400)
-        }
-    ));
-
-    let summary = UsageSummaryView {
-        workspace: Some("work".to_owned()),
-        window_seconds: Some(86_400),
-        sample_count: 2,
-        token_input: 10,
-        token_output: 20,
-        ..UsageSummaryView::default()
-    };
-    let json = serde_json::to_string(&ServerMsg::UsageSummary {
-        summary: summary.clone(),
-    })
-    .unwrap();
-    let decoded: ServerMsg = serde_json::from_str(&json).unwrap();
-    match decoded {
-        ServerMsg::UsageSummary { summary: decoded } => assert_eq!(decoded, summary),
-        other => panic!("unexpected variant {other:?}"),
-    }
-}

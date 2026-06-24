@@ -7,7 +7,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -17,12 +16,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, Utc};
 use jackin_protocol::control::{
-    AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, ProviderStatusView,
-    QuotaBucketView, UsageConfidence, UsageProviderTab, UsageSnapshotStatus, UsageSource,
-    UsageSummaryView, WorkspaceSpendView,
+    AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, QuotaBucketView,
+    UsageConfidence, UsageProviderTab, UsageSnapshotStatus, UsageSource,
 };
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 const QUOTA_REFRESH_TTL: Duration = Duration::from_mins(5);
 const PROVIDER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -32,9 +29,6 @@ const CODEX_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 const CODEX_RPC_LAUNCH_COOLDOWN: Duration = Duration::from_mins(30);
 const GROK_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 const GROK_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
-const MAX_SCAN_FILES: usize = 200;
-const MAX_SCAN_BYTES: u64 = 5 * 1024 * 1024;
-const MAX_RUNTIME_USAGE_RECORDS_PER_CHUNK: usize = 16;
 const MATERIALIZED_USAGE_ACCOUNTS_PATH: &str = "/jackin/run/usage/accounts.json";
 pub(crate) const TELEMETRY_STORE_PATH: &str = "/jackin/state/usage/telemetry.db";
 
@@ -155,25 +149,6 @@ impl UsageCache {
         view
     }
 
-    pub(crate) fn account_identity_for_provider(
-        &self,
-        provider: &str,
-    ) -> Option<(String, String, Option<String>)> {
-        self.snapshots
-            .values()
-            .filter(|cached| {
-                provider_matches_usage_label(provider, &cached.view.account.provider_label)
-            })
-            .max_by_key(|cached| cached.view.fetched_at_epoch)
-            .map(|cached| {
-                (
-                    compact_account_identity(&cached.view.account.account_label).to_owned(),
-                    cached.view.account.provider_label.clone(),
-                    cached.view.account.plan_label.clone(),
-                )
-            })
-    }
-
     pub(crate) fn warm_account_snapshots(
         &mut self,
         focused_agent: Option<&str>,
@@ -214,88 +189,6 @@ pub(crate) fn cached_account_snapshots() -> Vec<AccountUsageSnapshotView> {
             Vec::new()
         },
     )
-}
-
-pub(crate) fn cached_usage_summary(
-    workspace: Option<&str>,
-    session_id: Option<i64>,
-    window_seconds: Option<i64>,
-) -> UsageSummaryView {
-    cached_usage_summary_for_instance(None, workspace, session_id, window_seconds)
-}
-
-pub(crate) fn cached_usage_summary_for_instance(
-    instance_id: Option<&str>,
-    workspace: Option<&str>,
-    session_id: Option<i64>,
-    window_seconds: Option<i64>,
-) -> UsageSummaryView {
-    crate::telemetry_store::usage_summary(
-        Path::new(TELEMETRY_STORE_PATH),
-        instance_id,
-        workspace,
-        session_id,
-        window_seconds,
-        now_epoch(),
-    )
-    .unwrap_or_else(|error| {
-        crate::cdebug!("usage summary read failed: {error}");
-        UsageSummaryView {
-            workspace: workspace.map(str::to_owned),
-            session_id,
-            window_seconds,
-            ..UsageSummaryView::default()
-        }
-    })
-}
-
-pub(crate) fn apply_cached_session_spend(view: &mut FocusedUsageView, session_id: u64) {
-    let Ok(session_id) = i64::try_from(session_id) else {
-        return;
-    };
-    let summary = cached_usage_summary(None, Some(session_id), Some(30 * 24 * 60 * 60));
-    let Some(spend) =
-        workspace_spend_from_summary(&summary, "Captured from Capsule runtime stream")
-    else {
-        return;
-    };
-    view.workspace_spend = spend;
-}
-
-pub(crate) fn ingest_runtime_usage_output(
-    instance_id: Option<&str>,
-    session_id: u64,
-    workspace: &Path,
-    provider: Option<&str>,
-    account_label: Option<&str>,
-    plan_label: Option<&str>,
-    data: &[u8],
-) {
-    let Ok(session_id) = i64::try_from(session_id) else {
-        return;
-    };
-    let Ok(text) = std::str::from_utf8(data) else {
-        return;
-    };
-    let provider = provider.unwrap_or("Usage");
-    let workspace = workspace.to_string_lossy().into_owned();
-    let rows = runtime_usage_samples_from_text(
-        instance_id,
-        session_id,
-        &workspace,
-        provider,
-        account_label,
-        plan_label,
-        text,
-    );
-    if rows.is_empty() {
-        return;
-    }
-    if let Err(error) =
-        crate::telemetry_store::store_usage_samples(Path::new(TELEMETRY_STORE_PATH), &rows)
-    {
-        crate::cdebug!("usage runtime sample write failed: {error}");
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -471,10 +364,6 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     } else {
         "needs Claude login".to_owned()
     };
-    let scan = scan_usage_dirs(
-        UsageSurface::Claude.label(),
-        &[config.join("projects"), home_path(".claude/projects")],
-    );
     let quota = oauth
         .as_ref()
         .and_then(|credentials| fetch_claude_oauth_usage(&credentials.access_token).ok());
@@ -527,19 +416,14 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
         account_label: account,
         plan_label: oauth.and_then(|credentials| credentials.subscription_type),
         buckets,
-        spend: spend_from_estimate(scan.estimate, "Estimated from local Claude logs"),
         status,
         source: if status == UsageSnapshotStatus::Fresh {
             UsageSource::ProviderApi
-        } else if status == UsageSnapshotStatus::Stale {
-            UsageSource::LocalLogs
         } else {
             UsageSource::None
         },
         confidence: if status == UsageSnapshotStatus::Fresh {
             UsageConfidence::Authoritative
-        } else if status == UsageSnapshotStatus::Stale {
-            UsageConfidence::Estimated
         } else {
             UsageConfidence::None
         },
@@ -549,7 +433,7 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
                 Some("Claude credentials not available to Capsule".to_owned())
             }
             UsageSnapshotStatus::Stale => {
-                Some("Claude provider usage unavailable; showing local estimate".to_owned())
+                Some("Claude provider usage unavailable; cached quota is stale".to_owned())
             }
             _ => None,
         },
@@ -573,13 +457,6 @@ fn codex_snapshot(
             "needs Codex login".to_owned()
         }
     });
-    let scan = scan_usage_dirs(
-        UsageSurface::Codex.label(),
-        &[
-            codex_home.join("sessions"),
-            codex_home.join("archived_sessions"),
-        ],
-    );
     let rpc_usage = fetch_codex_rpc_usage(rpc_gate).ok();
     let rpc_quota = rpc_usage.as_ref().map(|usage| &usage.response);
     let oauth_quota = credentials
@@ -647,7 +524,6 @@ fn codex_snapshot(
         account_label: account,
         plan_label: quota.and_then(|usage| usage.plan_type.clone()),
         buckets,
-        spend: spend_from_estimate(scan.estimate, "Estimated from local Codex logs"),
         status,
         source: if status == UsageSnapshotStatus::Fresh {
             if rpc_quota.is_some() {
@@ -655,15 +531,11 @@ fn codex_snapshot(
             } else {
                 UsageSource::ProviderApi
             }
-        } else if status == UsageSnapshotStatus::Stale {
-            UsageSource::LocalLogs
         } else {
             UsageSource::None
         },
         confidence: if status == UsageSnapshotStatus::Fresh {
             UsageConfidence::Authoritative
-        } else if status == UsageSnapshotStatus::Stale {
-            UsageConfidence::Estimated
         } else {
             UsageConfidence::None
         },
@@ -673,7 +545,7 @@ fn codex_snapshot(
                 Some("Codex auth not available to Capsule".to_owned())
             }
             UsageSnapshotStatus::Stale => {
-                Some("Codex provider usage unavailable; showing local estimate".to_owned())
+                Some("Codex provider usage unavailable; cached quota is stale".to_owned())
             }
             _ => None,
         },
@@ -692,7 +564,6 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     } else {
         UsageSnapshotStatus::NeedsLogin
     };
-    let scan = scan_usage_dirs(UsageSurface::Amp.label(), &[data.join("threads")]);
     let account_label = cli_usage
         .as_ref()
         .and_then(|usage| usage.account_label.clone())
@@ -725,12 +596,9 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
         account_label,
         plan_label: None,
         buckets,
-        spend: spend_from_estimate(scan.estimate, "Estimated from local Amp thread data"),
         status,
         source: if cli_usage.is_some() {
             UsageSource::Cli
-        } else if has_auth {
-            UsageSource::LocalLogs
         } else {
             UsageSource::None
         },
@@ -744,9 +612,9 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
         now,
         last_error: match status {
             UsageSnapshotStatus::NeedsLogin => Some("Amp auth not available to Capsule".to_owned()),
-            UsageSnapshotStatus::Unsupported => Some(
-                "Amp CLI usage unavailable; web-cookie fallback is disabled in Capsule".to_owned(),
-            ),
+            UsageSnapshotStatus::Unsupported => {
+                Some("Amp CLI usage unavailable to Capsule".to_owned())
+            }
             _ => None,
         },
     })
@@ -764,7 +632,6 @@ fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> 
         .and_then(Result::ok);
     let account =
         grok_account_label_or_presence(&auth, has_auth, has_xai_api_key, has_deployment_key);
-    let scan = scan_usage_dirs(UsageSurface::Grok.label(), &[data.join("sessions")]);
     let status = if rpc_usage.is_some() {
         UsageSnapshotStatus::Fresh
     } else if has_credentials {
@@ -794,12 +661,9 @@ fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> 
         account_label: account,
         plan_label: None,
         buckets,
-        spend: spend_from_estimate(scan.estimate, "Estimated from local Grok session data"),
         status,
         source: if rpc_usage.is_some() {
             UsageSource::Cli
-        } else if has_credentials {
-            UsageSource::LocalLogs
         } else {
             UsageSource::None
         },
@@ -815,10 +679,9 @@ fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> 
             UsageSnapshotStatus::NeedsLogin => {
                 Some("Grok auth not available to Capsule".to_owned())
             }
-            UsageSnapshotStatus::Unsupported => Some(
-                "Grok ACP billing unavailable; browser-cookie fallback is disabled in Capsule"
-                    .to_owned(),
-            ),
+            UsageSnapshotStatus::Unsupported => {
+                Some("Grok ACP billing unavailable to Capsule".to_owned())
+            }
             _ => None,
         },
     })
@@ -875,15 +738,9 @@ fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView
         .to_owned(),
         plan_label: None,
         buckets,
-        spend: {
-            let scan = scan_usage_dirs(UsageSurface::Kimi.label(), &[home_path(".kimi-code")]);
-            spend_from_estimate(scan.estimate, "Estimated from local Kimi data")
-        },
         status,
         source: if provider_usage.is_some() {
             UsageSource::ProviderApi
-        } else if has_token || has_local {
-            UsageSource::LocalLogs
         } else {
             UsageSource::None
         },
@@ -942,19 +799,10 @@ fn minimax_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageV
             "needs MINIMAX_CODING_API_KEY"
         }
         .to_owned(),
-        plan_label: provider_usage.as_ref().and_then(MiniMaxUsageResponse::plan_name),
+        plan_label: provider_usage
+            .as_ref()
+            .and_then(MiniMaxUsageResponse::plan_name),
         buckets,
-        spend: provider_usage.as_ref().and_then(MiniMaxUsageResponse::points_label).map_or_else(
-            || WorkspaceSpendView {
-                provenance_label: "MiniMax billing history is not imported by Capsule".to_owned(),
-                ..WorkspaceSpendView::default()
-            },
-            |points| WorkspaceSpendView {
-                today_cost_label: Some(points),
-                provenance_label: "MiniMax points balance from coding-plan API".to_owned(),
-                ..WorkspaceSpendView::default()
-            },
-        ),
         status,
         source: if provider_usage.is_some() || has_token {
             UsageSource::ProviderApi
@@ -970,14 +818,12 @@ fn minimax_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageV
         },
         now,
         last_error: match status {
-            UsageSnapshotStatus::NeedsSecret => Some(
-                "MiniMax API token is not available to Capsule; web-cookie import is disabled"
-                    .to_owned(),
-            ),
-            UsageSnapshotStatus::Unsupported => Some(
-                "MiniMax API-token endpoint unavailable; web-cookie fallback is disabled in Capsule"
-                    .to_owned(),
-            ),
+            UsageSnapshotStatus::NeedsSecret => {
+                Some("MiniMax API token is not available to Capsule".to_owned())
+            }
+            UsageSnapshotStatus::Unsupported => {
+                Some("MiniMax API-token endpoint unavailable to Capsule".to_owned())
+            }
             _ => None,
         },
     })
@@ -1030,10 +876,6 @@ fn provider_key_snapshot(
             .as_ref()
             .and_then(ZaiQuotaResponse::plan_name),
         buckets,
-        spend: WorkspaceSpendView {
-            provenance_label: "No local provider spend scanner yet".to_owned(),
-            ..WorkspaceSpendView::default()
-        },
         status,
         source: if provider_quota.is_some() || has_key {
             UsageSource::ProviderApi
@@ -1077,10 +919,6 @@ fn opencode_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUs
             Some("opencode stats adapter pending"),
             UsageSnapshotStatus::Unsupported,
         )],
-        spend: WorkspaceSpendView {
-            provenance_label: "No OpenCode scanner yet".to_owned(),
-            ..WorkspaceSpendView::default()
-        },
         status: UsageSnapshotStatus::Unsupported,
         source: UsageSource::None,
         confidence: UsageConfidence::None,
@@ -1099,7 +937,6 @@ fn unsupported_snapshot(agent: &str, provider: Option<&str>, now: i64) -> Focuse
         account_label: "unsupported focused agent".to_owned(),
         plan_label: None,
         buckets: Vec::new(),
-        spend: WorkspaceSpendView::default(),
         status: UsageSnapshotStatus::Unsupported,
         source: UsageSource::None,
         confidence: UsageConfidence::None,
@@ -1115,7 +952,6 @@ struct UsageViewInput<'a> {
     account_label: String,
     plan_label: Option<String>,
     buckets: Vec<QuotaBucketView>,
-    spend: WorkspaceSpendView,
     status: UsageSnapshotStatus,
     source: UsageSource,
     confidence: UsageConfidence,
@@ -1142,7 +978,6 @@ fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
             plan_label: input.plan_label,
         },
         buckets: input.buckets,
-        workspace_spend: input.spend,
         status: input.status,
         source: input.source,
         confidence: input.confidence,
@@ -1158,62 +993,62 @@ fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
         }
         .to_owned(),
         status_bar_label: headline,
-        provider_status: Some(ProviderStatusView {
-            label: "Usage source".to_owned(),
-            detail: format!("{:?} · {:?}", input.source, input.confidence),
-            updated_label: Some("cached by capsule daemon".to_owned()),
-        }),
         tabs: provider_tabs(input.surface),
-        instance: None,
         last_error: input.last_error,
     }
 }
 
 fn status_bar_label(
-    surface: UsageSurface,
-    account_label: &str,
+    _surface: UsageSurface,
+    _account_label: &str,
     status: UsageSnapshotStatus,
     buckets: &[QuotaBucketView],
 ) -> String {
-    let account = compact_account_identity(account_label);
-    if let Some(bucket) = most_constrained_status_bar_bucket(status, buckets) {
-        let remaining = bucket.remaining_percent.unwrap_or_default();
-        let used = 100u8.saturating_sub(remaining);
-        let usage = match (&bucket.used_label, &bucket.limit_label) {
-            (Some(used_label), Some(limit_label)) => {
-                format!("{used_label} / {limit_label}")
-            }
-            (Some(used_label), None) => used_label.clone(),
-            (None, Some(limit_label)) => format!("{used}% used / {limit_label}"),
-            (None, None) => format!("{used}% used"),
-        };
-        let mut label = format!(
-            "{} · {} {}: {} · {}% left",
-            surface.label(),
-            account,
-            bucket.label,
-            usage,
-            remaining
-        );
-        if let Some(reset) = &bucket.reset_label {
-            label.push_str(" · ");
-            label.push_str(reset);
-        }
-        if status == UsageSnapshotStatus::Stale {
-            label.push_str(" · stale");
-        }
-        return label;
+    let labels = status_bar_quota_labels(buckets);
+    if !labels.is_empty() {
+        return labels.join(" · ");
     }
     match status {
-        UsageSnapshotStatus::Fresh => format!("{} · {} usage cached", surface.label(), account),
-        UsageSnapshotStatus::Stale => format!("{} · {} stale", surface.label(), account),
-        UsageSnapshotStatus::NeedsLogin => format!("{} · {} login", surface.label(), account),
-        UsageSnapshotStatus::NeedsSecret => format!("{} · {} secret", surface.label(), account),
-        UsageSnapshotStatus::Unsupported => {
-            format!("{} · {} unsupported", surface.label(), account)
-        }
+        UsageSnapshotStatus::Fresh => "usage cached".to_owned(),
+        UsageSnapshotStatus::Stale => "stale".to_owned(),
+        UsageSnapshotStatus::NeedsLogin => "login".to_owned(),
+        UsageSnapshotStatus::NeedsSecret => "secret".to_owned(),
+        UsageSnapshotStatus::Unsupported => "unsupported".to_owned(),
         UsageSnapshotStatus::Unavailable => "usage unavailable".to_owned(),
-        UsageSnapshotStatus::Error => format!("{} · {} error", surface.label(), account),
+        UsageSnapshotStatus::Error => "error".to_owned(),
+    }
+}
+
+fn status_bar_quota_labels(buckets: &[QuotaBucketView]) -> Vec<String> {
+    ["Session", "Weekly"]
+        .into_iter()
+        .filter_map(|target| {
+            buckets
+                .iter()
+                .find(|bucket| status_bar_bucket_matches(target, bucket))
+                .and_then(|bucket| {
+                    bucket
+                        .remaining_percent
+                        .map(|remaining| format!("{target} {remaining}% left"))
+                })
+        })
+        .collect()
+}
+
+fn status_bar_bucket_matches(target: &str, bucket: &QuotaBucketView) -> bool {
+    if !matches!(
+        bucket.status,
+        UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale
+    ) {
+        return false;
+    }
+    let label = bucket.label.to_ascii_lowercase();
+    match target {
+        "Session" => {
+            label.contains("session") || label.contains("5-hour") || label.contains("5 hour")
+        }
+        "Weekly" => label.contains("weekly") || label.contains("week"),
+        _ => false,
     }
 }
 
@@ -1255,22 +1090,6 @@ fn most_constrained_fresh_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBu
         .filter(|bucket| bucket.status == UsageSnapshotStatus::Fresh)
         .filter(|bucket| bucket.remaining_percent.is_some())
         .min_by_key(|bucket| bucket.remaining_percent.unwrap_or(u8::MAX))
-}
-
-fn most_constrained_status_bar_bucket(
-    status: UsageSnapshotStatus,
-    buckets: &[QuotaBucketView],
-) -> Option<&QuotaBucketView> {
-    most_constrained_fresh_bucket(buckets).or_else(|| {
-        if status != UsageSnapshotStatus::Stale {
-            return None;
-        }
-        buckets
-            .iter()
-            .filter(|bucket| bucket.status == UsageSnapshotStatus::Stale)
-            .filter(|bucket| bucket.remaining_percent.is_some())
-            .min_by_key(|bucket| bucket.remaining_percent.unwrap_or(u8::MAX))
-    })
 }
 
 fn preserve_cached_quota_on_stale_refresh(view: &mut FocusedUsageView, cached: &FocusedUsageView) {
@@ -2603,6 +2422,9 @@ fn zai_quota_host(value: &str) -> String {
 struct KimiUsageResponse {
     #[serde(default)]
     usages: Vec<KimiUsageItem>,
+    usage: Option<KimiUsageDetail>,
+    #[serde(default)]
+    limits: Vec<KimiRateLimit>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2637,16 +2459,20 @@ struct KimiWindow {
 
 impl KimiUsageResponse {
     fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
-        let usage = self
+        let (detail, limits) = if let Some(detail) = &self.usage {
+            (detail, self.limits.as_slice())
+        } else if let Some(usage) = self
             .usages
             .iter()
             .find(|usage| usage.scope.as_deref() == Some("FEATURE_CODING"))
-            .or_else(|| self.usages.first());
-        let Some(usage) = usage else {
+            .or_else(|| self.usages.first())
+        {
+            (&usage.detail, usage.limits.as_slice())
+        } else {
             return Vec::new();
         };
-        let mut buckets = vec![kimi_bucket("Weekly", &usage.detail, None, now)];
-        if let Some(rate_limit) = usage.limits.first() {
+        let mut buckets = vec![kimi_bucket("Weekly", detail, None, now)];
+        if let Some(rate_limit) = limits.first() {
             let label = rate_limit
                 .window
                 .as_ref()
@@ -2774,19 +2600,10 @@ fn kimi_window_seconds(label: &str, window: Option<&KimiWindow>) -> Option<i64> 
 fn fetch_kimi_usage(token: &str) -> Result<KimiUsageResponse, String> {
     let client = provider_http_client()?;
     let response = client
-        .post("https://www.kimi.com/apiv2/kimi.gateway.billing.v1.BillingService/GetUsages")
+        .get("https://api.kimi.com/coding/v1/usages")
         .bearer_auth(token)
         .header(reqwest::header::ACCEPT, "application/json")
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .header(reqwest::header::COOKIE, format!("kimi-auth={token}"))
-        .header(reqwest::header::ORIGIN, "https://www.kimi.com")
-        .header(reqwest::header::REFERER, "https://www.kimi.com/")
         .header(reqwest::header::USER_AGENT, "jackin-capsule/usage")
-        .header("connect-protocol-version", "1")
-        .header("x-language", "en-US")
-        .header("x-msh-platform", "web")
-        .header("r-timezone", "Asia/Ho_Chi_Minh")
-        .json(&serde_json::json!({ "scope": ["FEATURE_CODING"] }))
         .send()
         .map_err(|err| format!("Kimi usage request failed: {err}"))?;
     let status = response.status();
@@ -2865,14 +2682,6 @@ struct MiniMaxUsageData {
     current_plan_title: Option<String>,
     #[serde(rename = "current_combo_card")]
     current_combo_card: Option<MiniMaxComboCard>,
-    #[serde(
-        rename = "points_balance",
-        alias = "point_balance",
-        alias = "credits_balance",
-        alias = "credit_balance",
-        alias = "balance"
-    )]
-    points_balance: Option<serde_json::Value>,
     #[serde(rename = "model_remains", default)]
     model_remains: Vec<MiniMaxModelRemain>,
 }
@@ -2996,14 +2805,6 @@ impl MiniMaxUsageResponse {
             return data.model_remains.iter().collect();
         }
         self.root_model_remains.iter().collect()
-    }
-
-    fn points_label(&self) -> Option<String> {
-        self.data
-            .as_ref()
-            .and_then(|data| data.points_balance.as_ref())
-            .and_then(json_number)
-            .map(|value| format_amount_with_unit(value, "points"))
     }
 }
 
@@ -3525,958 +3326,6 @@ fn format_cents(value: i64) -> String {
     format_currency(value as f64 / 100.0)
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct TokenEstimate {
-    total_tokens: u64,
-    latest_tokens: u64,
-    files_scanned: usize,
-}
-
-#[derive(Debug, Clone, Default)]
-struct UsageLogScan {
-    estimate: TokenEstimate,
-    samples: Vec<ScannedUsageSample>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ScannedUsageSample {
-    occurred_at: i64,
-    model: String,
-    token_input: Option<i64>,
-    token_output: Option<i64>,
-    token_cache_read: Option<i64>,
-    token_cache_write: Option<i64>,
-    cost_usd_micros: Option<i64>,
-    cost_source: Option<String>,
-    source_hash: String,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct TokenComponents {
-    input: u64,
-    output: u64,
-    cache_read: u64,
-    cache_write: u64,
-    total_only: u64,
-    cache_read_included_in_input: bool,
-}
-
-fn spend_from_estimate(estimate: TokenEstimate, provenance: &str) -> WorkspaceSpendView {
-    WorkspaceSpendView {
-        today_cost_label: None,
-        thirty_day_cost_label: None,
-        thirty_day_tokens_label: (estimate.total_tokens > 0)
-            .then(|| compact_count(estimate.total_tokens)),
-        latest_tokens_label: (estimate.latest_tokens > 0)
-            .then(|| compact_count(estimate.latest_tokens)),
-        top_model: None,
-        history: (estimate.total_tokens > 0)
-            .then_some(estimate.total_tokens)
-            .into_iter()
-            .collect(),
-        provenance_label: if estimate.files_scanned > 0 {
-            format!("{provenance}; scanned {} files", estimate.files_scanned)
-        } else {
-            format!("{provenance}; no local usage files found")
-        },
-    }
-}
-
-fn workspace_spend_from_summary(
-    summary: &UsageSummaryView,
-    provenance: &str,
-) -> Option<WorkspaceSpendView> {
-    if summary.sample_count == 0 {
-        return None;
-    }
-    let total_tokens = summary
-        .token_input
-        .saturating_add(summary.token_output)
-        .saturating_add(summary.token_cache_read)
-        .saturating_add(summary.token_cache_write);
-    let cost_label = (summary.cost_usd_micros > 0)
-        .then(|| format_currency(summary.cost_usd_micros as f64 / 1_000_000.0));
-    let mut provenance_parts = vec![format!("{provenance}; {} samples", summary.sample_count)];
-    if summary.exact_cost_sample_count > 0 {
-        provenance_parts.push(format!("{} exact cost", summary.exact_cost_sample_count));
-    }
-    if summary.estimated_cost_sample_count > 0 {
-        provenance_parts.push(format!(
-            "{} price-table estimates",
-            summary.estimated_cost_sample_count
-        ));
-    }
-    if summary.unpriced_sample_count > 0 {
-        provenance_parts.push(format!("{} unpriced", summary.unpriced_sample_count));
-    }
-    Some(WorkspaceSpendView {
-        today_cost_label: cost_label.clone(),
-        thirty_day_cost_label: cost_label,
-        thirty_day_tokens_label: (total_tokens > 0).then(|| compact_count(total_tokens)),
-        latest_tokens_label: (total_tokens > 0).then(|| compact_count(total_tokens)),
-        top_model: None,
-        history: (total_tokens > 0)
-            .then_some(total_tokens)
-            .into_iter()
-            .collect(),
-        provenance_label: provenance_parts.join("; "),
-    })
-}
-
-fn scan_usage_dirs(provider: &str, paths: &[PathBuf]) -> UsageLogScan {
-    scan_usage_dirs_with_store(provider, paths, Path::new(TELEMETRY_STORE_PATH))
-}
-
-fn scan_usage_dirs_with_store(
-    provider: &str,
-    paths: &[PathBuf],
-    store_path: &Path,
-) -> UsageLogScan {
-    let mut scan = UsageLogScan::default();
-    let mut files = Vec::new();
-    for path in paths {
-        collect_candidate_files(path, &mut files);
-        if files.len() >= MAX_SCAN_FILES {
-            break;
-        }
-    }
-    files.sort_by_key(|path| fs::metadata(path).and_then(|m| m.modified()).ok());
-    for path in files.into_iter().rev().take(MAX_SCAN_FILES) {
-        let Ok(meta) = fs::metadata(&path) else {
-            continue;
-        };
-        if !meta.is_file() || meta.len() > MAX_SCAN_BYTES {
-            continue;
-        }
-        let file_modified = file_modified_epoch(&meta).unwrap_or_else(now_epoch);
-        let prior = crate::telemetry_store::usage_scan_file_state(store_path, provider, &path)
-            .ok()
-            .flatten();
-        if prior.is_some_and(|state| {
-            state.bytes_read == meta.len()
-                && state.size_bytes == meta.len()
-                && state.mtime_epoch == file_modified
-        }) {
-            continue;
-        }
-        let scan_start = prior.map_or(0, |state| {
-            if meta.len() > state.bytes_read && state.bytes_read <= state.size_bytes {
-                state.bytes_read
-            } else {
-                0
-            }
-        });
-        if scan_start == meta.len() && prior.is_some_and(|state| state.mtime_epoch == file_modified)
-        {
-            continue;
-        }
-        let Ok((text, bytes_read, lines_read)) = read_usage_file_delta(&path, scan_start) else {
-            continue;
-        };
-        if text.is_empty() {
-            store_scan_file_state(
-                store_path,
-                provider,
-                &path,
-                bytes_read,
-                scan_start,
-                lines_read,
-                meta.len(),
-                file_modified,
-            );
-            continue;
-        }
-        let before = scan.estimate.total_tokens;
-        let mut parsed_lines = false;
-        let first_line = prior
-            .filter(|_| scan_start > 0)
-            .map_or(0, |state| state.lines_read as usize);
-        let mut file_samples = Vec::new();
-        for (line_index, line) in text.lines().enumerate() {
-            let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-                continue;
-            };
-            parsed_lines = true;
-            scan.estimate.total_tokens = scan
-                .estimate
-                .total_tokens
-                .saturating_add(sum_token_fields(&value));
-            if let Some(sample) = sample_from_json(
-                provider,
-                &value,
-                file_modified,
-                &source_hash_for_record(&path, first_line + line_index, line),
-            ) {
-                file_samples.push(sample);
-            }
-        }
-        if !parsed_lines && let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
-            scan.estimate.total_tokens = scan
-                .estimate
-                .total_tokens
-                .saturating_add(sum_token_fields(&value));
-            if let Some(sample) = sample_from_json(
-                provider,
-                &value,
-                file_modified,
-                &source_hash_for_record(&path, first_line, &text),
-            ) {
-                file_samples.push(sample);
-            }
-        }
-        if scan.estimate.total_tokens > before {
-            scan.estimate.latest_tokens = scan.estimate.total_tokens - before;
-        }
-        scan.estimate.files_scanned += 1;
-        persist_scanned_usage_samples(store_path, provider, &file_samples);
-        scan.samples.extend(file_samples);
-        store_scan_file_state(
-            store_path,
-            provider,
-            &path,
-            bytes_read,
-            scan_start,
-            lines_read,
-            meta.len(),
-            file_modified,
-        );
-    }
-    scan
-}
-
-#[allow(clippy::disallowed_methods)]
-fn read_usage_file_delta(path: &Path, offset: u64) -> Result<(String, u64, u64), String> {
-    let mut file = fs::File::open(path).map_err(|err| format!("open usage file failed: {err}"))?;
-    file.seek(SeekFrom::Start(offset))
-        .map_err(|err| format!("seek usage file failed: {err}"))?;
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
-        .map_err(|err| format!("read usage file failed: {err}"))?;
-    let mut bytes_read = offset.saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
-    if offset > 0 {
-        let Some(last_newline) = bytes.iter().rposition(|byte| *byte == b'\n') else {
-            return Ok((String::new(), offset, 0));
-        };
-        bytes.truncate(last_newline + 1);
-        bytes_read = offset.saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
-    }
-    let text = String::from_utf8(bytes).map_err(|err| format!("usage file utf8 failed: {err}"))?;
-    let lines_read = text.lines().count() as u64;
-    Ok((text, bytes_read, lines_read))
-}
-
-#[allow(clippy::too_many_arguments)]
-fn store_scan_file_state(
-    store_path: &Path,
-    provider: &str,
-    path: &Path,
-    bytes_read: u64,
-    scan_start: u64,
-    delta_lines: u64,
-    size_bytes: u64,
-    mtime_epoch: i64,
-) {
-    let prior = crate::telemetry_store::usage_scan_file_state(store_path, provider, path)
-        .ok()
-        .flatten();
-    let lines_read = prior
-        .filter(|state| scan_start > 0 && state.size_bytes <= size_bytes)
-        .map_or(delta_lines, |state| {
-            state.lines_read.saturating_add(delta_lines)
-        });
-    let state = crate::telemetry_store::UsageScanFileState {
-        bytes_read,
-        lines_read,
-        size_bytes,
-        mtime_epoch,
-    };
-    if let Err(error) =
-        crate::telemetry_store::store_usage_scan_file_state(store_path, provider, path, state)
-    {
-        crate::cdebug!("usage scan file state write failed: {error}");
-    }
-}
-
-fn persist_scanned_usage_samples(
-    store_path: &Path,
-    provider: &str,
-    samples: &[ScannedUsageSample],
-) {
-    if samples.is_empty() {
-        return;
-    }
-    let rows = samples
-        .iter()
-        .map(|sample| crate::telemetry_store::StoredUsageSample {
-            occurred_at: sample.occurred_at,
-            instance_id: None,
-            session_id: None,
-            workspace: None,
-            provider: provider.to_owned(),
-            account_label: None,
-            plan_label: None,
-            model: sample.model.clone(),
-            token_input: sample.token_input,
-            token_output: sample.token_output,
-            token_cache_read: sample.token_cache_read,
-            token_cache_write: sample.token_cache_write,
-            cost_usd_micros: sample.cost_usd_micros,
-            cost_source: sample.cost_source.clone(),
-            source_hash: sample.source_hash.clone(),
-        })
-        .collect::<Vec<_>>();
-    if let Err(error) = crate::telemetry_store::store_usage_samples(store_path, &rows) {
-        crate::cdebug!("usage telemetry sample write failed: {error}");
-    }
-}
-
-fn runtime_usage_samples_from_text(
-    instance_id: Option<&str>,
-    session_id: i64,
-    workspace: &str,
-    provider: &str,
-    account_label: Option<&str>,
-    plan_label: Option<&str>,
-    text: &str,
-) -> Vec<crate::telemetry_store::StoredUsageSample> {
-    let mut rows = Vec::new();
-    let mut model_context = None::<String>;
-    for (line_index, line) in text.lines().enumerate() {
-        if rows.len() >= MAX_RUNTIME_USAGE_RECORDS_PER_CHUNK {
-            break;
-        }
-        if !line.contains('{')
-            || (!line.contains("token") && !line.contains("usage") && !line.contains("model"))
-        {
-            continue;
-        }
-        let Some(value) = runtime_usage_json_value(line) else {
-            continue;
-        };
-        if let Some(model) = first_model_name(&value)
-            && !model.trim().is_empty()
-        {
-            model_context = Some(model);
-        }
-        let components = token_components(&value);
-        let Some(mut sample) = sample_from_json(
-            provider,
-            &value,
-            now_epoch(),
-            &source_hash_for_runtime_record(instance_id, session_id, provider, line_index, line),
-        ) else {
-            continue;
-        };
-        if sample.model == "unknown"
-            && let Some(model) = model_context.as_ref()
-        {
-            sample.model = model.clone();
-            if sample.cost_usd_micros.is_none() {
-                sample.cost_usd_micros = estimated_cost_usd_micros(provider, model, components);
-                if sample.cost_usd_micros.is_some() {
-                    sample.cost_source = Some("price_table".to_owned());
-                }
-            }
-        }
-        rows.push(crate::telemetry_store::StoredUsageSample {
-            occurred_at: sample.occurred_at,
-            instance_id: instance_id.map(str::to_owned),
-            session_id: Some(session_id),
-            workspace: Some(workspace.to_owned()),
-            provider: provider.to_owned(),
-            account_label: account_label
-                .filter(|label| !label.trim().is_empty())
-                .map(str::to_owned),
-            plan_label: plan_label
-                .filter(|label| !label.trim().is_empty())
-                .map(str::to_owned),
-            model: sample.model,
-            token_input: sample.token_input,
-            token_output: sample.token_output,
-            token_cache_read: sample.token_cache_read,
-            token_cache_write: sample.token_cache_write,
-            cost_usd_micros: sample.cost_usd_micros,
-            cost_source: sample.cost_source,
-            source_hash: sample.source_hash,
-        });
-    }
-    rows
-}
-
-fn runtime_usage_json_value(line: &str) -> Option<serde_json::Value> {
-    let trimmed = line.trim();
-    if let Ok(value) = serde_json::from_str(trimmed) {
-        return Some(value);
-    }
-    let start = trimmed.find('{')?;
-    let end = trimmed.rfind('}')?;
-    if end <= start {
-        return None;
-    }
-    serde_json::from_str(&trimmed[start..=end]).ok()
-}
-
-fn collect_candidate_files(path: &Path, out: &mut Vec<PathBuf>) {
-    if out.len() >= MAX_SCAN_FILES || !path.exists() {
-        return;
-    }
-    let Ok(meta) = fs::metadata(path) else {
-        return;
-    };
-    if meta.is_file() {
-        out.push(path.to_path_buf());
-        return;
-    }
-    let Ok(entries) = fs::read_dir(path) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        if out.len() >= MAX_SCAN_FILES {
-            return;
-        }
-        collect_candidate_files(&entry.path(), out);
-    }
-}
-
-fn sample_from_json(
-    provider: &str,
-    value: &serde_json::Value,
-    fallback_occurred_at: i64,
-    source_hash: &str,
-) -> Option<ScannedUsageSample> {
-    let components = token_components(value);
-    let has_split_tokens = components.input > 0
-        || components.output > 0
-        || components.cache_read > 0
-        || components.cache_write > 0;
-    if !has_split_tokens && components.total_only == 0 {
-        return None;
-    }
-    let explicit_cost = cost_usd_micros_value(value);
-    let model = first_model_name(value).unwrap_or_else(|| "unknown".to_owned());
-    let estimated_cost = estimated_cost_usd_micros(provider, &model, components);
-    let (cost_usd_micros, cost_source) = match (explicit_cost, estimated_cost) {
-        (Some(cost), _) => (Some(cost), Some("explicit_usd".to_owned())),
-        (None, Some(cost)) => (Some(cost), Some("price_table".to_owned())),
-        (None, None) => (None, None),
-    };
-    Some(ScannedUsageSample {
-        occurred_at: first_epoch_value(value).unwrap_or(fallback_occurred_at),
-        model: model.clone(),
-        token_input: optional_i64(if has_split_tokens {
-            components.input
-        } else {
-            components.total_only
-        }),
-        token_output: optional_i64(components.output),
-        token_cache_read: optional_i64(components.cache_read),
-        token_cache_write: optional_i64(components.cache_write),
-        cost_usd_micros,
-        cost_source,
-        source_hash: source_hash.to_owned(),
-    })
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ModelPricingMicrosPerMtok {
-    input: u64,
-    output: u64,
-    cache_read: Option<u64>,
-    cache_write: Option<u64>,
-}
-
-fn estimated_cost_usd_micros(
-    provider: &str,
-    model: &str,
-    components: TokenComponents,
-) -> Option<i64> {
-    if components.input == 0
-        && components.output == 0
-        && components.cache_read == 0
-        && components.cache_write == 0
-    {
-        return None;
-    }
-    let pricing = model_pricing(provider, model)?;
-    let mut total = 0u128;
-    let billable_input = if components.cache_read_included_in_input {
-        components.input.saturating_sub(components.cache_read)
-    } else {
-        components.input
-    };
-    total = total.saturating_add(cost_component_micros(billable_input, pricing.input));
-    total = total.saturating_add(cost_component_micros(components.output, pricing.output));
-    if components.cache_read > 0 {
-        total = total.saturating_add(cost_component_micros(
-            components.cache_read,
-            pricing.cache_read?,
-        ));
-    }
-    if components.cache_write > 0 {
-        total = total.saturating_add(cost_component_micros(
-            components.cache_write,
-            pricing.cache_write?,
-        ));
-    }
-    i64::try_from(total).ok()
-}
-
-fn cost_component_micros(tokens: u64, micros_per_mtok: u64) -> u128 {
-    let product = u128::from(tokens).saturating_mul(u128::from(micros_per_mtok));
-    product.saturating_add(500_000) / 1_000_000
-}
-
-fn model_pricing(provider: &str, model: &str) -> Option<ModelPricingMicrosPerMtok> {
-    let provider = provider.to_ascii_lowercase();
-    let model = model.to_ascii_lowercase();
-    if provider.contains("codex") || provider.contains("openai") {
-        return openai_model_pricing(&model);
-    }
-    if provider.contains("claude") || provider.contains("anthropic") {
-        return anthropic_model_pricing(&model);
-    }
-    if provider.contains("grok") || provider.contains("xai") || provider.contains("x.ai") {
-        return xai_model_pricing(&model);
-    }
-    if provider.contains("z.ai") || provider.contains("zai") || provider.contains("glm") {
-        return zai_model_pricing(&model);
-    }
-    if provider.contains("kimi") || provider.contains("moonshot") {
-        return kimi_model_pricing(&model);
-    }
-    if provider.contains("minimax") {
-        return minimax_model_pricing(&model);
-    }
-    None
-}
-
-fn openai_model_pricing(model: &str) -> Option<ModelPricingMicrosPerMtok> {
-    let rates = if model.starts_with("gpt-5.5-pro") {
-        (30_000_000, None, 180_000_000)
-    } else if model.starts_with("gpt-5.5") {
-        (5_000_000, Some(500_000), 30_000_000)
-    } else if model.starts_with("gpt-5.4-pro") {
-        (30_000_000, None, 180_000_000)
-    } else if model.starts_with("gpt-5.4-mini") {
-        (750_000, Some(75_000), 4_500_000)
-    } else if model.starts_with("gpt-5.4-nano") {
-        (200_000, Some(20_000), 1_250_000)
-    } else if model.starts_with("gpt-5.4") {
-        (2_500_000, Some(250_000), 15_000_000)
-    } else if model.starts_with("gpt-5.3-codex") {
-        (1_750_000, Some(175_000), 14_000_000)
-    } else {
-        return None;
-    };
-    Some(ModelPricingMicrosPerMtok {
-        input: rates.0,
-        cache_read: rates.1,
-        output: rates.2,
-        cache_write: None,
-    })
-}
-
-fn anthropic_model_pricing(model: &str) -> Option<ModelPricingMicrosPerMtok> {
-    let (input, output) = if model.contains("fable-5") || model.contains("mythos-5") {
-        (10_000_000, 50_000_000)
-    } else if model.contains("opus-4-8")
-        || model.contains("opus-4-7")
-        || model.contains("opus-4-6")
-        || model.contains("opus-4-5")
-    {
-        (5_000_000, 25_000_000)
-    } else if model.contains("opus-4-1") || model.contains("opus-4") {
-        (15_000_000, 75_000_000)
-    } else if model.contains("sonnet-4-6")
-        || model.contains("sonnet-4-5")
-        || model.contains("sonnet-4")
-    {
-        (3_000_000, 15_000_000)
-    } else if model.contains("haiku-4-5") {
-        (1_000_000, 5_000_000)
-    } else if model.contains("haiku-3-5") {
-        (800_000, 4_000_000)
-    } else {
-        return None;
-    };
-    Some(ModelPricingMicrosPerMtok {
-        input,
-        cache_read: Some(input / 10),
-        cache_write: Some(input + input / 4),
-        output,
-    })
-}
-
-fn xai_model_pricing(model: &str) -> Option<ModelPricingMicrosPerMtok> {
-    if model.contains("grok-build-0.1") || model.contains("grok-build") {
-        return Some(ModelPricingMicrosPerMtok {
-            input: 1_000_000,
-            cache_read: None,
-            cache_write: None,
-            output: 2_000_000,
-        });
-    }
-    if model.contains("grok-code-fast-1") {
-        return Some(ModelPricingMicrosPerMtok {
-            input: 200_000,
-            cache_read: Some(20_000),
-            cache_write: None,
-            output: 1_500_000,
-        });
-    }
-    None
-}
-
-fn zai_model_pricing(model: &str) -> Option<ModelPricingMicrosPerMtok> {
-    let rates = if model.contains("glm-5.1") {
-        (1_400_000, Some(260_000), 4_400_000)
-    } else if model.contains("glm-5-turbo") || model.contains("glm-5v-turbo") {
-        (1_200_000, Some(240_000), 4_000_000)
-    } else if model.contains("glm-5") {
-        (1_000_000, Some(200_000), 3_200_000)
-    } else if model.contains("glm-4.7-flashx") {
-        (70_000, Some(10_000), 400_000)
-    } else if model.contains("glm-4.6v-flashx") {
-        (40_000, Some(4_000), 400_000)
-    } else if model.contains("glm-4.7-flash")
-        || model.contains("glm-4.6v-flash")
-        || model.contains("glm-4.5-flash")
-    {
-        (0, Some(0), 0)
-    } else if model.contains("glm-4.7") || model.contains("glm-4.6") || model.contains("glm-4.5") {
-        if model.contains("glm-4.5-airx") {
-            (1_100_000, Some(220_000), 4_500_000)
-        } else if model.contains("glm-4.5-air") {
-            (200_000, Some(30_000), 1_100_000)
-        } else if model.contains("glm-4.5-x") {
-            (2_200_000, Some(450_000), 8_900_000)
-        } else if model.contains("glm-4.6v") {
-            (300_000, Some(50_000), 900_000)
-        } else if model.contains("glm-4.5v") {
-            (600_000, Some(110_000), 1_800_000)
-        } else {
-            (600_000, Some(110_000), 2_200_000)
-        }
-    } else if model.contains("glm-4-32b-0414-128k") {
-        (100_000, None, 100_000)
-    } else {
-        return None;
-    };
-    Some(ModelPricingMicrosPerMtok {
-        input: rates.0,
-        cache_read: rates.1,
-        output: rates.2,
-        cache_write: None,
-    })
-}
-
-fn kimi_model_pricing(model: &str) -> Option<ModelPricingMicrosPerMtok> {
-    let rates = if model.contains("kimi-k2.6") || model.contains("k2.6") {
-        (950_000, Some(160_000), 4_000_000)
-    } else if model.contains("kimi-k2.5") || model.contains("k2.5") {
-        (600_000, Some(100_000), 3_000_000)
-    } else if model.contains("moonshot-v1") || model.contains("moonshot-v1-") {
-        (2_000_000, None, 5_000_000)
-    } else {
-        return None;
-    };
-    Some(ModelPricingMicrosPerMtok {
-        input: rates.0,
-        cache_read: rates.1,
-        output: rates.2,
-        cache_write: None,
-    })
-}
-
-fn minimax_model_pricing(model: &str) -> Option<ModelPricingMicrosPerMtok> {
-    let rates = if model.contains("minimax-m3") {
-        (300_000, Some(60_000), 1_200_000, None)
-    } else if model.contains("minimax-m2.7-highspeed") {
-        (600_000, Some(60_000), 2_400_000, Some(375_000))
-    } else if model.contains("minimax-m2.7") {
-        (300_000, Some(60_000), 1_200_000, Some(375_000))
-    } else if model.contains("minimax-m2.5-highspeed") || model.contains("minimax-m2.1-highspeed") {
-        (600_000, Some(30_000), 2_400_000, Some(375_000))
-    } else if model.contains("minimax-m2.5")
-        || model.contains("minimax-m2.1")
-        || model.contains("minimax-m2")
-    {
-        (300_000, Some(30_000), 1_200_000, Some(375_000))
-    } else {
-        return None;
-    };
-    Some(ModelPricingMicrosPerMtok {
-        input: rates.0,
-        cache_read: rates.1,
-        output: rates.2,
-        cache_write: rates.3,
-    })
-}
-
-fn token_components(value: &serde_json::Value) -> TokenComponents {
-    match value {
-        serde_json::Value::Object(map) => {
-            map.iter()
-                .fold(TokenComponents::default(), |mut acc, (key, value)| {
-                    let amount = token_amount_value(value);
-                    match key.as_str() {
-                        "input_tokens" | "inputTokens" | "inputTokenCount" | "prompt_tokens"
-                        | "promptTokens" | "promptTokenCount" | "tokens_in" => {
-                            acc.input = acc.input.saturating_add(amount);
-                        }
-                        "output_tokens"
-                        | "outputTokens"
-                        | "outputTokenCount"
-                        | "completion_tokens"
-                        | "completionTokens"
-                        | "completionTokenCount"
-                        | "tokens_out" => {
-                            acc.output = acc.output.saturating_add(amount);
-                        }
-                        "cached_input_tokens"
-                        | "cachedInputTokens"
-                        | "cache_read_input_tokens"
-                        | "cacheReadInputTokens" => {
-                            acc.cache_read = acc.cache_read.saturating_add(amount);
-                        }
-                        "cached_tokens" | "cachedTokens" => {
-                            acc.cache_read = acc.cache_read.saturating_add(amount);
-                            acc.cache_read_included_in_input = true;
-                        }
-                        "cache_creation_input_tokens"
-                        | "cacheCreationInputTokens"
-                        | "cache_write_input_tokens"
-                        | "cacheWriteInputTokens" => {
-                            acc.cache_write = acc.cache_write.saturating_add(amount);
-                        }
-                        "total_tokens"
-                        | "totalTokens"
-                        | "totalTokenCount"
-                        | "totalTokensBeforeCompaction"
-                        | "contextTokensUsed"
-                        | "tokens" => {
-                            acc.total_only = acc.total_only.saturating_add(amount);
-                        }
-                        _ => {}
-                    }
-                    let nested = token_components(value);
-                    acc.input = acc.input.saturating_add(nested.input);
-                    acc.output = acc.output.saturating_add(nested.output);
-                    acc.cache_read = acc.cache_read.saturating_add(nested.cache_read);
-                    acc.cache_write = acc.cache_write.saturating_add(nested.cache_write);
-                    acc.total_only = acc.total_only.saturating_add(nested.total_only);
-                    acc.cache_read_included_in_input |= nested.cache_read_included_in_input;
-                    acc
-                })
-        }
-        serde_json::Value::Array(values) => {
-            values
-                .iter()
-                .fold(TokenComponents::default(), |mut acc, value| {
-                    let nested = token_components(value);
-                    acc.input = acc.input.saturating_add(nested.input);
-                    acc.output = acc.output.saturating_add(nested.output);
-                    acc.cache_read = acc.cache_read.saturating_add(nested.cache_read);
-                    acc.cache_write = acc.cache_write.saturating_add(nested.cache_write);
-                    acc.total_only = acc.total_only.saturating_add(nested.total_only);
-                    acc.cache_read_included_in_input |= nested.cache_read_included_in_input;
-                    acc
-                })
-        }
-        _ => TokenComponents::default(),
-    }
-}
-
-fn token_amount_value(value: &serde_json::Value) -> u64 {
-    value
-        .as_u64()
-        .or_else(|| value.as_str()?.trim().parse::<u64>().ok())
-        .unwrap_or(0)
-}
-
-fn first_epoch_value(value: &serde_json::Value) -> Option<i64> {
-    match value {
-        serde_json::Value::Object(map) => {
-            for key in ["timestamp", "created_at", "createdAt", "time", "date"] {
-                if let Some(found) = map.get(key).and_then(epoch_from_value) {
-                    return Some(found);
-                }
-            }
-            map.values().find_map(first_epoch_value)
-        }
-        serde_json::Value::Array(values) => values.iter().find_map(first_epoch_value),
-        _ => None,
-    }
-}
-
-fn cost_usd_micros_value(value: &serde_json::Value) -> Option<i64> {
-    match value {
-        serde_json::Value::Object(map) => {
-            for key in [
-                "cost_usd_micros",
-                "costUsdMicros",
-                "cost_usd",
-                "costUsd",
-                "total_cost_usd",
-                "totalCostUsd",
-                "amount_usd",
-                "amountUsd",
-            ] {
-                if let Some(found) = map.get(key).and_then(|value| {
-                    cost_usd_micros_from_value(
-                        value,
-                        key.contains("Micros") || key.contains("micros"),
-                    )
-                }) {
-                    return Some(found);
-                }
-            }
-            map.values().find_map(cost_usd_micros_value)
-        }
-        serde_json::Value::Array(values) => values.iter().find_map(cost_usd_micros_value),
-        _ => None,
-    }
-}
-
-fn cost_usd_micros_from_value(value: &serde_json::Value, already_micros: bool) -> Option<i64> {
-    match value {
-        serde_json::Value::Number(number) => {
-            if already_micros {
-                return number.as_i64();
-            }
-            number
-                .as_f64()
-                .and_then(|usd| i64::try_from((usd * 1_000_000.0).round() as i128).ok())
-        }
-        serde_json::Value::String(text) => {
-            let text = text.trim().trim_start_matches('$');
-            if already_micros {
-                text.parse::<i64>().ok()
-            } else {
-                text.parse::<f64>()
-                    .ok()
-                    .and_then(|usd| i64::try_from((usd * 1_000_000.0).round() as i128).ok())
-            }
-        }
-        _ => None,
-    }
-}
-
-fn epoch_from_value(value: &serde_json::Value) -> Option<i64> {
-    if let Some(seconds) = value.as_i64() {
-        return normalize_epoch_seconds(seconds);
-    }
-    let text = value.as_str()?;
-    DateTime::parse_from_rfc3339(text)
-        .ok()
-        .map(|timestamp| timestamp.timestamp())
-        .or_else(|| text.parse::<i64>().ok().and_then(normalize_epoch_seconds))
-}
-
-fn normalize_epoch_seconds(value: i64) -> Option<i64> {
-    if value > 1_000_000_000_000 {
-        Some(value / 1000)
-    } else if value > 1_000_000_000 {
-        Some(value)
-    } else {
-        None
-    }
-}
-
-fn file_modified_epoch(meta: &fs::Metadata) -> Option<i64> {
-    meta.modified()
-        .ok()?
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|duration| i64::try_from(duration.as_secs()).ok())
-}
-
-fn optional_i64(value: u64) -> Option<i64> {
-    (value > 0).then(|| i64::try_from(value).unwrap_or(i64::MAX))
-}
-
-fn source_hash_for_record(path: &Path, line_index: usize, record: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(path.to_string_lossy().as_bytes());
-    hasher.update([0]);
-    hasher.update(line_index.to_le_bytes());
-    hasher.update([0]);
-    hasher.update(record.as_bytes());
-    format!("sha256:{}", hex_lower(&hasher.finalize()))
-}
-
-fn source_hash_for_runtime_record(
-    instance_id: Option<&str>,
-    session_id: i64,
-    provider: &str,
-    line_index: usize,
-    record: &str,
-) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(b"runtime");
-    hasher.update([0]);
-    if let Some(instance_id) = instance_id {
-        hasher.update(instance_id.as_bytes());
-    }
-    hasher.update([0]);
-    hasher.update(session_id.to_le_bytes());
-    hasher.update([0]);
-    hasher.update(provider.as_bytes());
-    hasher.update([0]);
-    hasher.update(line_index.to_le_bytes());
-    hasher.update([0]);
-    hasher.update(record.as_bytes());
-    format!("sha256:{}", hex_lower(&hasher.finalize()))
-}
-
-fn hex_lower(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        out.push(char::from(HEX[usize::from(byte >> 4)]));
-        out.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    out
-}
-
-fn sum_token_fields(value: &serde_json::Value) -> u64 {
-    match value {
-        serde_json::Value::Object(map) => map
-            .iter()
-            .map(|(key, value)| {
-                let own = if token_field_name(key) {
-                    token_amount_value(value)
-                } else {
-                    0
-                };
-                own.saturating_add(sum_token_fields(value))
-            })
-            .sum(),
-        serde_json::Value::Array(values) => values.iter().map(sum_token_fields).sum(),
-        _ => 0,
-    }
-}
-
-fn token_field_name(key: &str) -> bool {
-    matches!(
-        key,
-        "input_tokens"
-            | "output_tokens"
-            | "inputTokens"
-            | "outputTokens"
-            | "cached_input_tokens"
-            | "cachedInputTokens"
-            | "cache_creation_input_tokens"
-            | "cacheCreationInputTokens"
-            | "cache_read_input_tokens"
-            | "cacheReadInputTokens"
-            | "total_tokens"
-            | "totalTokens"
-            | "totalTokensBeforeCompaction"
-            | "contextTokensUsed"
-    )
-}
-
 fn codex_account_label(path: &Path) -> Option<String> {
     let text = fs::read_to_string(path).ok()?;
     let value: serde_json::Value = serde_json::from_str(&text).ok()?;
@@ -4532,20 +3381,6 @@ fn first_string_key(value: &serde_json::Value, needle: &str) -> Option<String> {
     }
 }
 
-fn first_model_name(value: &serde_json::Value) -> Option<String> {
-    [
-        "model",
-        "model_name",
-        "modelName",
-        "model_id",
-        "modelId",
-        "model_alias",
-        "modelAlias",
-    ]
-    .into_iter()
-    .find_map(|key| first_string_key(value, key))
-}
-
 fn home_path(rel: &str) -> PathBuf {
     let rel = rel.trim_start_matches('/');
     std::env::var("HOME")
@@ -4574,503 +3409,6 @@ fn compact_count(value: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn token_scan_sums_nested_usage_fields() {
-        let value: serde_json::Value = serde_json::json!({
-            "message": { "usage": { "input_tokens": 10, "output_tokens": 15 } },
-            "contextTokensUsed": 7,
-            "not_tokens": 999
-        });
-        assert_eq!(sum_token_fields(&value), 32);
-    }
-
-    #[test]
-    fn token_scan_emits_usage_samples_from_jsonl_records() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("session.jsonl");
-        fs::write(
-            &path,
-            r#"{"timestamp":"2026-06-11T15:12:00Z","model":"claude-sonnet-4-5","message":{"usage":{"input_tokens":10,"output_tokens":15,"cache_read_input_tokens":3,"cache_creation_input_tokens":4}}}"#
-                .to_owned()
-                + "\n"
-                + r#"{"timestamp":1781187722,"model":"gpt-5.5","usage":{"total_tokens":12}}"#,
-        )
-        .expect("write jsonl");
-
-        let db = dir.path().join("usage.db");
-        let scan = scan_usage_dirs_with_store("Claude", &[dir.path().to_path_buf()], db.as_path());
-
-        assert_eq!(scan.estimate.total_tokens, 44);
-        assert_eq!(scan.estimate.latest_tokens, 44);
-        assert_eq!(scan.estimate.files_scanned, 1);
-        assert_eq!(scan.samples.len(), 2);
-        assert_eq!(scan.samples[0].occurred_at, 1_781_190_720);
-        assert_eq!(scan.samples[0].model, "claude-sonnet-4-5");
-        assert_eq!(scan.samples[0].token_input, Some(10));
-        assert_eq!(scan.samples[0].token_output, Some(15));
-        assert_eq!(scan.samples[0].token_cache_read, Some(3));
-        assert_eq!(scan.samples[0].token_cache_write, Some(4));
-        assert_eq!(scan.samples[0].cost_usd_micros, Some(271));
-        assert_eq!(scan.samples[1].model, "gpt-5.5");
-        assert_eq!(scan.samples[1].token_input, Some(12));
-        assert!(scan.samples[0].source_hash.starts_with("sha256:"));
-    }
-
-    #[test]
-    fn token_scan_reads_only_new_complete_lines_after_first_scan() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let db = dir.path().join("usage.db");
-        let path = dir.path().join("session.jsonl");
-        fs::write(
-            &path,
-            r#"{"timestamp":1781187722,"model":"gpt-5.5","usage":{"total_tokens":12}}"#.to_owned()
-                + "\n",
-        )
-        .expect("write first jsonl");
-
-        let first = scan_usage_dirs_with_store("Codex", &[dir.path().to_path_buf()], db.as_path());
-        let second = scan_usage_dirs_with_store("Codex", &[dir.path().to_path_buf()], db.as_path());
-        fs::write(
-            &path,
-            fs::read_to_string(&path).expect("read first jsonl")
-                + r#"{"timestamp":1781187723,"model":"gpt-5.5","usage":{"total_tokens":5}}"#,
-        )
-        .expect("append partial jsonl");
-        let partial =
-            scan_usage_dirs_with_store("Codex", &[dir.path().to_path_buf()], db.as_path());
-        fs::write(
-            &path,
-            fs::read_to_string(&path).expect("read partial jsonl") + "\n",
-        )
-        .expect("complete jsonl");
-        let appended =
-            scan_usage_dirs_with_store("Codex", &[dir.path().to_path_buf()], db.as_path());
-
-        assert_eq!(first.estimate.total_tokens, 12);
-        assert_eq!(first.estimate.files_scanned, 1);
-        assert_eq!(second.estimate.files_scanned, 0);
-        assert_eq!(partial.estimate.files_scanned, 0);
-        assert_eq!(appended.estimate.total_tokens, 5);
-        assert_eq!(appended.estimate.files_scanned, 1);
-
-        let summary =
-            crate::telemetry_store::usage_summary(&db, None, None, None, None, 1_781_187_800)
-                .expect("usage summary");
-        assert_eq!(summary.sample_count, 2);
-        assert_eq!(summary.token_input, 17);
-    }
-
-    #[test]
-    fn runtime_usage_output_samples_are_attributed_to_session_and_workspace() {
-        let rows = runtime_usage_samples_from_text(
-            Some("instance-test"),
-            42,
-            "/workspace/jackin",
-            "Claude",
-            Some("alexey@example.com"),
-            Some("Max"),
-            "noise\nusage {\"timestamp\":\"2026-06-11T16:00:00Z\",\"model\":\"claude-sonnet-4-6\",\"usage\":{\"input_tokens\":11,\"output_tokens\":7,\"cache_read_input_tokens\":3,\"cache_creation_input_tokens\":2}}\n",
-        );
-
-        assert_eq!(rows.len(), 1);
-        let row = &rows[0];
-        assert_eq!(row.occurred_at, 1_781_193_600);
-        assert_eq!(row.instance_id.as_deref(), Some("instance-test"));
-        assert_eq!(row.session_id, Some(42));
-        assert_eq!(row.workspace.as_deref(), Some("/workspace/jackin"));
-        assert_eq!(row.provider, "Claude");
-        assert_eq!(row.account_label.as_deref(), Some("alexey@example.com"));
-        assert_eq!(row.plan_label.as_deref(), Some("Max"));
-        assert_eq!(row.model, "claude-sonnet-4-6");
-        assert_eq!(row.token_input, Some(11));
-        assert_eq!(row.token_output, Some(7));
-        assert_eq!(row.token_cache_read, Some(3));
-        assert_eq!(row.token_cache_write, Some(2));
-        assert_eq!(row.cost_usd_micros, Some(147));
-        assert!(row.source_hash.starts_with("sha256:"));
-    }
-
-    #[test]
-    fn runtime_usage_output_reads_openai_responses_sse_usage_details() {
-        let rows = runtime_usage_samples_from_text(
-            Some("instance-test"),
-            42,
-            "/workspace/jackin",
-            "Codex",
-            None,
-            None,
-            "event: response.completed\n\
-             data: {\"type\":\"response.completed\",\"response\":{\"model\":\"gpt-5.5\",\"usage\":{\"input_tokens\":1000000,\"input_tokens_details\":{\"cached_tokens\":250000},\"output_tokens\":100000,\"output_tokens_details\":{\"reasoning_tokens\":25000},\"total_tokens\":1100000}}}\n\
-             data: [DONE]\n",
-        );
-
-        assert_eq!(rows.len(), 1);
-        let row = &rows[0];
-        assert_eq!(row.model, "gpt-5.5");
-        assert_eq!(row.token_input, Some(1_000_000));
-        assert_eq!(row.token_output, Some(100_000));
-        assert_eq!(row.token_cache_read, Some(250_000));
-        assert_eq!(row.cost_usd_micros, Some(6_875_000));
-    }
-
-    #[test]
-    fn runtime_usage_output_reads_openai_chat_usage_details() {
-        let rows = runtime_usage_samples_from_text(
-            Some("instance-test"),
-            43,
-            "/workspace/jackin",
-            "OpenAI",
-            None,
-            None,
-            "{\"model\":\"gpt-5.4-mini\",\"usage\":{\"prompt_tokens\":500000,\"prompt_tokens_details\":{\"cached_tokens\":100000},\"completion_tokens\":50000,\"total_tokens\":550000}}\n",
-        );
-
-        assert_eq!(rows.len(), 1);
-        let row = &rows[0];
-        assert_eq!(row.model, "gpt-5.4-mini");
-        assert_eq!(row.token_input, Some(500_000));
-        assert_eq!(row.token_output, Some(50_000));
-        assert_eq!(row.token_cache_read, Some(100_000));
-        assert_eq!(row.cost_usd_micros, Some(532_500));
-    }
-
-    #[test]
-    fn runtime_usage_output_inherits_anthropic_stream_model_context() {
-        let rows = runtime_usage_samples_from_text(
-            Some("instance-test"),
-            44,
-            "/workspace/jackin",
-            "Claude",
-            None,
-            None,
-            "event: message_start\n\
-             data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-sonnet-4-6\",\"usage\":{\"input_tokens\":1000000,\"output_tokens\":1,\"cache_read_input_tokens\":250000,\"cache_creation_input_tokens\":500000}}}\n\
-             event: message_delta\n\
-             data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":100000}}\n",
-        );
-
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].model, "claude-sonnet-4-6");
-        assert_eq!(rows[0].token_input, Some(1_000_000));
-        assert_eq!(rows[0].token_output, Some(1));
-        assert_eq!(rows[0].token_cache_read, Some(250_000));
-        assert_eq!(rows[0].token_cache_write, Some(500_000));
-        assert_eq!(rows[0].cost_usd_micros, Some(4_950_015));
-        assert_eq!(rows[0].cost_source.as_deref(), Some("price_table"));
-        assert_eq!(rows[1].model, "claude-sonnet-4-6");
-        assert_eq!(rows[1].token_input, None);
-        assert_eq!(rows[1].token_output, Some(100_000));
-        assert_eq!(rows[1].cost_usd_micros, Some(1_500_000));
-        assert_eq!(rows[1].cost_source.as_deref(), Some("price_table"));
-    }
-
-    #[test]
-    fn runtime_usage_output_reads_camel_case_provider_usage_records() {
-        let kimi = runtime_usage_samples_from_text(
-            Some("instance-test"),
-            45,
-            "/workspace/jackin",
-            "Kimi",
-            None,
-            None,
-            "{\"modelName\":\"kimi-k2.6\",\"usage\":{\"inputTokens\":\"1000000\",\"outputTokens\":1000000,\"cachedInputTokens\":250000}}\n",
-        );
-        let minimax = runtime_usage_samples_from_text(
-            Some("instance-test"),
-            46,
-            "/workspace/jackin",
-            "MiniMax",
-            None,
-            None,
-            "{\"model_id\":\"minimax-m2.7\",\"usage\":{\"promptTokens\":1000000,\"completionTokens\":\"1000000\",\"cacheReadInputTokens\":250000,\"cacheCreationInputTokens\":500000}}\n",
-        );
-        let zai = runtime_usage_samples_from_text(
-            Some("instance-test"),
-            47,
-            "/workspace/jackin",
-            "GLM / Z.AI",
-            None,
-            None,
-            "{\"modelAlias\":\"glm-5.1\",\"tokenUsage\":{\"totalTokens\":42}}\n",
-        );
-
-        assert_eq!(kimi.len(), 1);
-        assert_eq!(kimi[0].model, "kimi-k2.6");
-        assert_eq!(kimi[0].token_input, Some(1_000_000));
-        assert_eq!(kimi[0].token_output, Some(1_000_000));
-        assert_eq!(kimi[0].token_cache_read, Some(250_000));
-        assert_eq!(kimi[0].cost_source.as_deref(), Some("price_table"));
-
-        assert_eq!(minimax.len(), 1);
-        assert_eq!(minimax[0].model, "minimax-m2.7");
-        assert_eq!(minimax[0].token_input, Some(1_000_000));
-        assert_eq!(minimax[0].token_output, Some(1_000_000));
-        assert_eq!(minimax[0].token_cache_read, Some(250_000));
-        assert_eq!(minimax[0].token_cache_write, Some(500_000));
-        assert_eq!(minimax[0].cost_source.as_deref(), Some("price_table"));
-
-        assert_eq!(zai.len(), 1);
-        assert_eq!(zai[0].model, "glm-5.1");
-        assert_eq!(zai[0].token_input, Some(42));
-    }
-
-    #[test]
-    fn usage_sample_cost_keeps_explicit_usd_over_estimate() {
-        let dollars = sample_from_json(
-            "Codex",
-            &serde_json::json!({
-                "usage": { "input_tokens": 10 },
-                "cost_usd": "1.25"
-            }),
-            1_781_193_600,
-            "source",
-        )
-        .expect("dollar cost sample");
-        let micros = sample_from_json(
-            "Codex",
-            &serde_json::json!({
-                "usage": { "input_tokens": 10 },
-                "cost_usd_micros": 1_250_000
-            }),
-            1_781_193_600,
-            "source",
-        )
-        .expect("micros cost sample");
-        let generic = sample_from_json(
-            "Codex",
-            &serde_json::json!({
-                "usage": { "input_tokens": 10 },
-                "cost": 1.25
-            }),
-            1_781_193_600,
-            "source",
-        )
-        .expect("generic cost sample");
-
-        assert_eq!(dollars.cost_usd_micros, Some(1_250_000));
-        assert_eq!(dollars.cost_source.as_deref(), Some("explicit_usd"));
-        assert_eq!(micros.cost_usd_micros, Some(1_250_000));
-        assert_eq!(micros.cost_source.as_deref(), Some("explicit_usd"));
-        assert_eq!(generic.cost_usd_micros, None);
-        assert_eq!(generic.cost_source, None);
-    }
-
-    #[test]
-    fn usage_sample_cost_estimates_verified_provider_rates() {
-        let openai = sample_from_json(
-            "Codex",
-            &serde_json::json!({
-                "model": "gpt-5.3-codex",
-                "usage": {
-                    "input_tokens": 1_000_000,
-                    "cached_input_tokens": 1_000_000,
-                    "output_tokens": 1_000_000
-                }
-            }),
-            1_781_193_600,
-            "source",
-        )
-        .expect("openai cost sample");
-        let anthropic = sample_from_json(
-            "Claude",
-            &serde_json::json!({
-                "model": "claude-sonnet-4-6-20260601",
-                "usage": {
-                    "input_tokens": 1_000_000,
-                    "output_tokens": 1_000_000,
-                    "cache_read_input_tokens": 1_000_000,
-                    "cache_creation_input_tokens": 1_000_000
-                }
-            }),
-            1_781_193_600,
-            "source",
-        )
-        .expect("anthropic cost sample");
-        let xai = sample_from_json(
-            "Grok Build",
-            &serde_json::json!({
-                "model": "grok-build-0.1",
-                "usage": {
-                    "input_tokens": 1_000_000,
-                    "output_tokens": 1_000_000
-                }
-            }),
-            1_781_193_600,
-            "source",
-        )
-        .expect("xai cost sample");
-
-        assert_eq!(openai.cost_usd_micros, Some(15_925_000));
-        assert_eq!(openai.cost_source.as_deref(), Some("price_table"));
-        assert_eq!(anthropic.cost_usd_micros, Some(22_050_000));
-        assert_eq!(anthropic.cost_source.as_deref(), Some("price_table"));
-        assert_eq!(xai.cost_usd_micros, Some(3_000_000));
-        assert_eq!(xai.cost_source.as_deref(), Some("price_table"));
-    }
-
-    #[test]
-    fn usage_sample_cost_estimates_additional_verified_provider_rates() {
-        let zai = sample_from_json(
-            "GLM / Z.AI",
-            &serde_json::json!({
-                "model": "glm-5.1",
-                "usage": {
-                    "input_tokens": 1_000_000,
-                    "cached_input_tokens": 1_000_000,
-                    "output_tokens": 1_000_000
-                }
-            }),
-            1_781_193_600,
-            "source",
-        )
-        .expect("zai cost sample");
-        let kimi = sample_from_json(
-            "Kimi",
-            &serde_json::json!({
-                "model": "kimi-k2.6",
-                "usage": {
-                    "input_tokens": 1_000_000,
-                    "cached_input_tokens": 1_000_000,
-                    "output_tokens": 1_000_000
-                }
-            }),
-            1_781_193_600,
-            "source",
-        )
-        .expect("kimi cost sample");
-        let minimax = sample_from_json(
-            "MiniMax",
-            &serde_json::json!({
-                "model": "minimax-m2.7",
-                "usage": {
-                    "input_tokens": 1_000_000,
-                    "cached_input_tokens": 1_000_000,
-                    "cache_creation_input_tokens": 1_000_000,
-                    "output_tokens": 1_000_000
-                }
-            }),
-            1_781_193_600,
-            "source",
-        )
-        .expect("minimax cost sample");
-        let free_zai = sample_from_json(
-            "GLM / Z.AI",
-            &serde_json::json!({
-                "model": "glm-4.7-flash",
-                "usage": {
-                    "input_tokens": 1_000_000,
-                    "cached_input_tokens": 1_000_000,
-                    "output_tokens": 1_000_000
-                }
-            }),
-            1_781_193_600,
-            "source",
-        )
-        .expect("free zai cost sample");
-
-        assert_eq!(zai.cost_usd_micros, Some(6_060_000));
-        assert_eq!(kimi.cost_usd_micros, Some(5_110_000));
-        assert_eq!(minimax.cost_usd_micros, Some(1_935_000));
-        assert_eq!(free_zai.cost_usd_micros, Some(0));
-        assert_eq!(zai.cost_source.as_deref(), Some("price_table"));
-        assert_eq!(kimi.cost_source.as_deref(), Some("price_table"));
-        assert_eq!(minimax.cost_source.as_deref(), Some("price_table"));
-        assert_eq!(free_zai.cost_source.as_deref(), Some("price_table"));
-    }
-
-    #[test]
-    fn usage_sample_cost_leaves_amp_unpriced_without_explicit_cost() {
-        let amp = sample_from_json(
-            "Amp",
-            &serde_json::json!({
-                "model": "claude-sonnet-4-6",
-                "usage": {
-                    "input_tokens": 1_000_000,
-                    "output_tokens": 1_000_000
-                }
-            }),
-            1_781_193_600,
-            "source",
-        )
-        .expect("amp usage sample");
-
-        assert_eq!(amp.cost_usd_micros, None);
-        assert_eq!(amp.cost_source, None);
-        let amp_exact = sample_from_json(
-            "Amp",
-            &serde_json::json!({
-                "model": "claude-sonnet-4-6",
-                "usage": { "input_tokens": 1_000_000 },
-                "cost_usd": "2.50"
-            }),
-            1_781_193_600,
-            "source",
-        )
-        .expect("amp exact usage sample");
-        assert_eq!(amp_exact.cost_usd_micros, Some(2_500_000));
-        assert_eq!(amp_exact.cost_source.as_deref(), Some("explicit_usd"));
-    }
-
-    #[test]
-    fn usage_sample_cost_leaves_unknown_models_unpriced() {
-        let unknown = sample_from_json(
-            "Kimi",
-            &serde_json::json!({
-                "model": "moonshot-unknown",
-                "usage": {
-                    "input_tokens": 1_000_000,
-                    "output_tokens": 1_000_000
-                }
-            }),
-            1_781_193_600,
-            "source",
-        )
-        .expect("unknown cost sample");
-        let total_only = sample_from_json(
-            "Codex",
-            &serde_json::json!({
-                "model": "gpt-5.5",
-                "usage": { "total_tokens": 1_000_000 }
-            }),
-            1_781_193_600,
-            "source",
-        )
-        .expect("total-only sample");
-
-        assert_eq!(unknown.cost_usd_micros, None);
-        assert_eq!(unknown.cost_source, None);
-        assert_eq!(total_only.cost_usd_micros, None);
-        assert_eq!(total_only.cost_source, None);
-    }
-
-    #[test]
-    fn workspace_spend_from_summary_formats_runtime_tokens() {
-        let spend = workspace_spend_from_summary(
-            &UsageSummaryView {
-                sample_count: 2,
-                token_input: 1_000,
-                token_output: 250,
-                token_cache_read: 50,
-                token_cache_write: 10,
-                cost_usd_micros: 1_250_000,
-                exact_cost_sample_count: 1,
-                estimated_cost_sample_count: 1,
-                ..UsageSummaryView::default()
-            },
-            "Captured from Capsule runtime stream",
-        )
-        .expect("spend");
-
-        assert_eq!(spend.today_cost_label.as_deref(), Some("$1.25"));
-        assert_eq!(spend.thirty_day_cost_label.as_deref(), Some("$1.25"));
-        assert_eq!(spend.thirty_day_tokens_label.as_deref(), Some("1.3K"));
-        assert_eq!(spend.latest_tokens_label.as_deref(), Some("1.3K"));
-        assert_eq!(
-            spend.provenance_label,
-            "Captured from Capsule runtime stream; 2 samples; 1 exact cost; 1 price-table estimates"
-        );
-    }
 
     #[test]
     fn compact_count_uses_token_suffixes() {
@@ -5203,7 +3541,7 @@ mod tests {
     }
 
     #[test]
-    fn status_bar_label_uses_most_constrained_fresh_bucket() {
+    fn status_bar_label_uses_session_and_weekly_remaining() {
         let buckets = vec![
             QuotaBucketView {
                 label: "Session".to_owned(),
@@ -5232,7 +3570,7 @@ mod tests {
                 UsageSnapshotStatus::Fresh,
                 &buckets
             ),
-            "Codex · alexey@example.com Weekly: 90% used / 100% · 10% left · Resets in 3h 52m"
+            "Session 37% left · Weekly 10% left"
         );
     }
 
@@ -5255,7 +3593,7 @@ mod tests {
                 UsageSnapshotStatus::Stale,
                 &buckets
             ),
-            "Claude · alexey@example.com Session: 99% used / 100% · 1% left · stale"
+            "Session 1% left"
         );
     }
 
@@ -5294,10 +3632,7 @@ mod tests {
         assert_eq!(view.buckets.len(), 1);
         assert_eq!(view.buckets[0].status, UsageSnapshotStatus::Stale);
         assert_eq!(view.account.plan_label.as_deref(), Some("Pro 20x"));
-        assert_eq!(
-            view.status_bar_label,
-            "Codex · alexey@example.com Weekly: 90% used / 100% · 10% left · Resets in 3h 52m · stale"
-        );
+        assert_eq!(view.status_bar_label, "Weekly 10% left");
         assert!(
             view.last_error
                 .as_deref()
@@ -5818,12 +4153,11 @@ mod tests {
     }
 
     #[test]
-    fn minimax_usage_response_maps_model_remains_and_points() {
+    fn minimax_usage_response_maps_model_remains() {
         let usage: MiniMaxUsageResponse = serde_json::from_value(serde_json::json!({
             "base_resp": { "status_code": 0 },
             "data": {
                 "current_subscribe_title": "MiniMax Pro",
-                "points_balance": "42.5",
                 "model_remains": [{
                     "model_name": "MiniMax Text",
                     "current_interval_total_count": 100,
@@ -5845,7 +4179,6 @@ mod tests {
         let buckets = usage.buckets(1_781_185_560);
 
         assert_eq!(usage.plan_name().as_deref(), Some("MiniMax Pro"));
-        assert_eq!(usage.points_label().as_deref(), Some("42.50 points"));
         assert_eq!(buckets[0].label, "MiniMax Text Coding plan");
         assert_eq!(buckets[0].used_label.as_deref(), Some("40"));
         assert_eq!(buckets[0].limit_label.as_deref(), Some("100"));

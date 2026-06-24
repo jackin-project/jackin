@@ -11,7 +11,7 @@ use std::thread;
 
 use jackin_protocol::control::{
     AccountUsageSnapshotView, FocusedUsageView, QuotaBucketView, UsageConfidence,
-    UsageSnapshotStatus, UsageSource, UsageSummaryView,
+    UsageSnapshotStatus, UsageSource,
 };
 use sha2::{Digest, Sha256};
 use turso::{Connection, Row, params};
@@ -37,136 +37,12 @@ pub(crate) struct StoredAccountUsageSnapshot {
     pub last_error: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct StoredUsageSample {
-    pub occurred_at: i64,
-    pub instance_id: Option<String>,
-    pub session_id: Option<i64>,
-    pub workspace: Option<String>,
-    pub provider: String,
-    pub account_label: Option<String>,
-    pub plan_label: Option<String>,
-    pub model: String,
-    pub token_input: Option<i64>,
-    pub token_output: Option<i64>,
-    pub token_cache_read: Option<i64>,
-    pub token_cache_write: Option<i64>,
-    pub cost_usd_micros: Option<i64>,
-    pub cost_source: Option<String>,
-    pub source_hash: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct UsageScanFileState {
-    pub bytes_read: u64,
-    pub lines_read: u64,
-    pub size_bytes: u64,
-    pub mtime_epoch: i64,
-}
-
 pub(crate) fn store_usage_snapshot(path: &Path, view: &FocusedUsageView) -> Result<(), String> {
     let path = path.to_path_buf();
     let rows = account_snapshot_rows(view);
     run_store(move || async move {
         let conn = open_store(&path).await?;
         upsert_account_snapshot_rows(&conn, rows).await
-    })
-}
-
-pub(crate) fn store_usage_samples(
-    path: &Path,
-    samples: &[StoredUsageSample],
-) -> Result<(), String> {
-    if samples.is_empty() {
-        return Ok(());
-    }
-    let path = path.to_path_buf();
-    let samples = samples.to_vec();
-    run_store(move || async move {
-        let conn = open_store(&path).await?;
-        insert_usage_sample_rows(&conn, &samples).await
-    })
-}
-
-pub(crate) fn usage_scan_file_state(
-    path: &Path,
-    provider: &str,
-    source_path: &Path,
-) -> Result<Option<UsageScanFileState>, String> {
-    let path = path.to_path_buf();
-    let provider = provider.to_owned();
-    let source_path = source_path.to_string_lossy().into_owned();
-    run_store(move || async move {
-        let conn = open_store(&path).await?;
-        let mut rows = conn
-            .query(
-                "
-                SELECT bytes_read, lines_read, size_bytes, mtime_epoch
-                FROM usage_scan_files
-                WHERE provider = ?1 AND source_path = ?2
-                ",
-                params![provider, source_path],
-            )
-            .await
-            .map_err(|err| format!("read usage scan file state failed: {err}"))?;
-        match rows
-            .next()
-            .await
-            .map_err(|err| format!("read usage scan file state row failed: {err}"))?
-        {
-            Some(row) => Ok(Some(UsageScanFileState {
-                bytes_read: row_i64(&row, 0, "bytes_read")?.try_into().unwrap_or(0),
-                lines_read: row_i64(&row, 1, "lines_read")?.try_into().unwrap_or(0),
-                size_bytes: row_i64(&row, 2, "size_bytes")?.try_into().unwrap_or(0),
-                mtime_epoch: row_i64(&row, 3, "mtime_epoch")?,
-            })),
-            None => Ok(None),
-        }
-    })
-}
-
-pub(crate) fn store_usage_scan_file_state(
-    path: &Path,
-    provider: &str,
-    source_path: &Path,
-    state: UsageScanFileState,
-) -> Result<(), String> {
-    let path = path.to_path_buf();
-    let provider = provider.to_owned();
-    let source_path = source_path.to_string_lossy().into_owned();
-    run_store(move || async move {
-        let conn = open_store(&path).await?;
-        conn.execute(
-            "
-            INSERT INTO usage_scan_files (
-                provider,
-                source_path,
-                bytes_read,
-                lines_read,
-                size_bytes,
-                mtime_epoch,
-                scanned_at
-            )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%s', 'now'))
-            ON CONFLICT(provider, source_path) DO UPDATE SET
-                bytes_read = excluded.bytes_read,
-                lines_read = excluded.lines_read,
-                size_bytes = excluded.size_bytes,
-                mtime_epoch = excluded.mtime_epoch,
-                scanned_at = excluded.scanned_at
-            ",
-            params![
-                provider,
-                source_path,
-                i64::try_from(state.bytes_read).unwrap_or(i64::MAX),
-                i64::try_from(state.lines_read).unwrap_or(i64::MAX),
-                i64::try_from(state.size_bytes).unwrap_or(i64::MAX),
-                state.mtime_epoch,
-            ],
-        )
-        .await
-        .map_err(|err| format!("store usage scan file state failed: {err}"))?;
-        Ok(())
     })
 }
 
@@ -220,33 +96,6 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
             value TEXT NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS usage_samples (
-            id INTEGER PRIMARY KEY,
-            occurred_at INTEGER NOT NULL,
-            instance_id TEXT,
-            session_id INTEGER,
-            workspace TEXT,
-            provider TEXT NOT NULL,
-            account_label TEXT,
-            plan_label TEXT,
-            model TEXT NOT NULL,
-            token_input INTEGER,
-            token_output INTEGER,
-            token_cache_read INTEGER,
-            token_cache_write INTEGER,
-            cost_usd_micros INTEGER,
-            cost_source TEXT,
-            source_hash TEXT
-        );
-        CREATE INDEX IF NOT EXISTS usage_samples_by_time
-            ON usage_samples (occurred_at);
-        CREATE INDEX IF NOT EXISTS usage_samples_by_session
-            ON usage_samples (session_id, occurred_at);
-        CREATE INDEX IF NOT EXISTS usage_samples_by_instance
-            ON usage_samples (instance_id, occurred_at);
-        CREATE INDEX IF NOT EXISTS usage_samples_by_workspace
-            ON usage_samples (workspace, occurred_at);
-
         CREATE TABLE IF NOT EXISTS account_usage_snapshots (
             id INTEGER PRIMARY KEY,
             provider TEXT NOT NULL,
@@ -267,33 +116,10 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
             UNIQUE(provider, account_key_hash, source, window_kind)
         );
 
-        CREATE TABLE IF NOT EXISTS usage_scan_files (
-            provider TEXT NOT NULL,
-            source_path TEXT NOT NULL,
-            bytes_read INTEGER NOT NULL,
-            lines_read INTEGER NOT NULL,
-            size_bytes INTEGER NOT NULL,
-            mtime_epoch INTEGER NOT NULL,
-            scanned_at INTEGER NOT NULL,
-            PRIMARY KEY(provider, source_path)
-        );
         ",
     )
     .await
     .map_err(|err| format!("initialize telemetry store schema failed: {err}"))?;
-    ensure_usage_samples_column(conn, "source_hash", "TEXT").await?;
-    ensure_usage_samples_column(conn, "cost_source", "TEXT").await?;
-    ensure_usage_samples_column(conn, "instance_id", "TEXT").await?;
-    ensure_usage_samples_column(conn, "account_label", "TEXT").await?;
-    ensure_usage_samples_column(conn, "plan_label", "TEXT").await?;
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS usage_samples_by_source_hash
-         ON usage_samples (source_hash)
-         WHERE source_hash IS NOT NULL",
-        (),
-    )
-    .await
-    .map_err(|err| format!("initialize telemetry sample dedupe index failed: {err}"))?;
     conn.execute(
         "INSERT INTO _meta (key, value) VALUES ('schema_version', ?1)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -301,84 +127,6 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
     )
     .await
     .map_err(|err| format!("record telemetry store schema version failed: {err}"))?;
-    Ok(())
-}
-
-async fn ensure_usage_samples_column(
-    conn: &Connection,
-    column_name: &str,
-    column_type: &str,
-) -> Result<(), String> {
-    let mut rows = conn
-        .query("PRAGMA table_info(usage_samples)", ())
-        .await
-        .map_err(|err| format!("inspect usage sample schema failed: {err}"))?;
-    let mut columns = Vec::new();
-    while let Some(row) = rows
-        .next()
-        .await
-        .map_err(|err| format!("read usage sample schema failed: {err}"))?
-    {
-        columns.push(row_string(&row, 1, "column_name")?);
-    }
-    if !columns.iter().any(|column| column == column_name) {
-        conn.execute(
-            &format!("ALTER TABLE usage_samples ADD COLUMN {column_name} {column_type}"),
-            (),
-        )
-        .await
-        .map_err(|err| format!("add usage sample {column_name} column failed: {err}"))?;
-    }
-    Ok(())
-}
-
-async fn insert_usage_sample_rows(
-    conn: &Connection,
-    samples: &[StoredUsageSample],
-) -> Result<(), String> {
-    for sample in samples {
-        conn.execute(
-            "
-            INSERT OR IGNORE INTO usage_samples (
-                occurred_at,
-                instance_id,
-                session_id,
-                workspace,
-                provider,
-                account_label,
-                plan_label,
-                model,
-                token_input,
-                token_output,
-                token_cache_read,
-                token_cache_write,
-                cost_usd_micros,
-                cost_source,
-                source_hash
-            )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
-            ",
-            params![
-                sample.occurred_at,
-                sample.instance_id.clone(),
-                sample.session_id,
-                sample.workspace.clone(),
-                sample.provider.clone(),
-                sample.account_label.clone(),
-                sample.plan_label.clone(),
-                sample.model.clone(),
-                sample.token_input,
-                sample.token_output,
-                sample.token_cache_read,
-                sample.token_cache_write,
-                sample.cost_usd_micros,
-                sample.cost_source.clone(),
-                sample.source_hash.clone(),
-            ],
-        )
-        .await
-        .map_err(|err| format!("insert telemetry usage sample failed: {err}"))?;
-    }
     Ok(())
 }
 
@@ -571,291 +319,6 @@ pub(crate) fn account_snapshot_views(path: &Path) -> Result<Vec<AccountUsageSnap
     })
 }
 
-pub(crate) fn usage_summary(
-    path: &Path,
-    instance_id: Option<&str>,
-    workspace: Option<&str>,
-    session_id: Option<i64>,
-    window_seconds: Option<i64>,
-    now_epoch: i64,
-) -> Result<UsageSummaryView, String> {
-    let path = path.to_path_buf();
-    let instance_id_param = instance_id.map(str::to_owned);
-    let workspace_param = workspace.map(str::to_owned);
-    let workspace_view = workspace.map(str::to_owned);
-    let since = window_seconds.map(|window| now_epoch.saturating_sub(window.max(0)));
-    run_store(move || async move {
-        let conn = open_store(&path).await?;
-        let mut rows = conn
-            .query(
-                "
-                SELECT
-                    COUNT(*),
-                    COALESCE(SUM(token_input), 0),
-                    COALESCE(SUM(token_output), 0),
-                    COALESCE(SUM(token_cache_read), 0),
-                    COALESCE(SUM(token_cache_write), 0),
-                    COALESCE(SUM(cost_usd_micros), 0),
-                    COALESCE(SUM(CASE WHEN cost_source = 'explicit_usd' AND cost_usd_micros IS NOT NULL THEN 1 ELSE 0 END), 0),
-                    COALESCE(SUM(CASE WHEN cost_source = 'price_table' AND cost_usd_micros IS NOT NULL THEN 1 ELSE 0 END), 0),
-                    COALESCE(SUM(CASE WHEN cost_usd_micros IS NULL THEN 1 ELSE 0 END), 0),
-                    MIN(occurred_at),
-                    MAX(occurred_at)
-                FROM usage_samples
-                WHERE (?1 IS NULL OR instance_id = ?1)
-                  AND (?2 IS NULL OR workspace = ?2)
-                  AND (?3 IS NULL OR session_id = ?3)
-                  AND (?4 IS NULL OR occurred_at >= ?4)
-                ",
-                params![
-                    instance_id_param.clone(),
-                    workspace_param.clone(),
-                    session_id,
-                    since
-                ],
-            )
-            .await
-            .map_err(|err| format!("query telemetry usage summary failed: {err}"))?;
-        let row = rows
-            .next()
-            .await
-            .map_err(|err| format!("read telemetry usage summary row failed: {err}"))?
-            .ok_or_else(|| "telemetry usage summary returned no row".to_owned())?;
-        let sample_count = row_i64(&row, 0, "sample_count")?;
-        let token_input = row_i64(&row, 1, "token_input")?;
-        let token_output = row_i64(&row, 2, "token_output")?;
-        let token_cache_read = row_i64(&row, 3, "token_cache_read")?;
-        let token_cache_write = row_i64(&row, 4, "token_cache_write")?;
-        let cost_usd_micros = row_i64(&row, 5, "cost_usd_micros")?;
-        let exact_cost_sample_count = row_i64(&row, 6, "exact_cost_sample_count")?;
-        let estimated_cost_sample_count = row_i64(&row, 7, "estimated_cost_sample_count")?;
-        let unpriced_sample_count = row_i64(&row, 8, "unpriced_sample_count")?;
-        let top_model = top_usage_model(
-            &conn,
-            instance_id_param.clone(),
-            workspace_param.clone(),
-            session_id,
-            since,
-        )
-        .await?;
-        let latest_tokens = latest_usage_tokens(
-            &conn,
-            instance_id_param.clone(),
-            workspace_param.clone(),
-            session_id,
-            since,
-        )
-        .await?;
-        let first_occurred_at = row_opt_i64(&row, 9, "first_occurred_at")?;
-        let last_occurred_at = row_opt_i64(&row, 10, "last_occurred_at")?;
-        let history = usage_history_buckets(
-            &conn,
-            instance_id_param,
-            workspace_param,
-            session_id,
-            since,
-            first_occurred_at,
-            now_epoch,
-        )
-        .await?;
-        Ok(UsageSummaryView {
-            workspace: workspace_view,
-            session_id,
-            window_seconds,
-            sample_count: u64::try_from(sample_count).unwrap_or(0),
-            latest_tokens,
-            history,
-            token_input: u64::try_from(token_input).unwrap_or(0),
-            token_output: u64::try_from(token_output).unwrap_or(0),
-            token_cache_read: u64::try_from(token_cache_read).unwrap_or(0),
-            token_cache_write: u64::try_from(token_cache_write).unwrap_or(0),
-            cost_usd_micros: u64::try_from(cost_usd_micros).unwrap_or(0),
-            exact_cost_sample_count: u64::try_from(exact_cost_sample_count).unwrap_or(0),
-            estimated_cost_sample_count: u64::try_from(estimated_cost_sample_count).unwrap_or(0),
-            unpriced_sample_count: u64::try_from(unpriced_sample_count).unwrap_or(0),
-            first_occurred_at,
-            last_occurred_at,
-            top_model,
-        })
-    })
-}
-
-pub(crate) fn usage_sample_account_identity(
-    path: &Path,
-    instance_id: Option<&str>,
-    session_id: Option<i64>,
-) -> Result<Option<(String, Option<String>)>, String> {
-    let path = path.to_path_buf();
-    let instance_id = instance_id.map(str::to_owned);
-    run_store(move || async move {
-        let conn = open_store(&path).await?;
-        let mut rows = conn
-            .query(
-                "
-                SELECT account_label, plan_label
-                FROM usage_samples
-                WHERE (?1 IS NULL OR instance_id = ?1)
-                  AND (?2 IS NULL OR session_id = ?2)
-                  AND account_label IS NOT NULL
-                  AND account_label != ''
-                ORDER BY occurred_at DESC, source_hash DESC
-                LIMIT 1
-                ",
-                params![instance_id, session_id],
-            )
-            .await
-            .map_err(|err| format!("query telemetry usage account identity failed: {err}"))?;
-        let Some(row) = rows
-            .next()
-            .await
-            .map_err(|err| format!("read telemetry usage account identity row failed: {err}"))?
-        else {
-            return Ok(None);
-        };
-        Ok(Some((
-            row_string(&row, 0, "account_label")?,
-            row_opt_string(&row, 1, "plan_label")?,
-        )))
-    })
-}
-
-async fn latest_usage_tokens(
-    conn: &Connection,
-    instance_id: Option<String>,
-    workspace: Option<String>,
-    session_id: Option<i64>,
-    since: Option<i64>,
-) -> Result<Option<u64>, String> {
-    let mut rows = conn
-        .query(
-            "
-            SELECT
-              COALESCE(token_input, 0)
-                + COALESCE(token_output, 0)
-                + COALESCE(token_cache_read, 0)
-                + COALESCE(token_cache_write, 0)
-            FROM usage_samples
-            WHERE (?1 IS NULL OR instance_id = ?1)
-              AND (?2 IS NULL OR workspace = ?2)
-              AND (?3 IS NULL OR session_id = ?3)
-              AND (?4 IS NULL OR occurred_at >= ?4)
-            ORDER BY occurred_at DESC, source_hash DESC
-            LIMIT 1
-            ",
-            params![instance_id, workspace, session_id, since],
-        )
-        .await
-        .map_err(|err| format!("query telemetry latest usage tokens failed: {err}"))?;
-    let Some(row) = rows
-        .next()
-        .await
-        .map_err(|err| format!("read telemetry latest usage tokens row failed: {err}"))?
-    else {
-        return Ok(None);
-    };
-    row_i64(&row, 0, "latest_tokens").map(|value| Some(u64::try_from(value).unwrap_or(0)))
-}
-
-async fn usage_history_buckets(
-    conn: &Connection,
-    instance_id: Option<String>,
-    workspace: Option<String>,
-    session_id: Option<i64>,
-    since: Option<i64>,
-    first_occurred_at: Option<i64>,
-    now_epoch: i64,
-) -> Result<Vec<u64>, String> {
-    const BUCKETS: usize = 12;
-    let Some(first) = first_occurred_at else {
-        return Ok(Vec::new());
-    };
-    let window_start = since.unwrap_or(first).min(now_epoch);
-    let span = now_epoch.saturating_sub(window_start).max(1);
-    let bucket_width = ((span + BUCKETS as i64 - 1) / BUCKETS as i64).max(1);
-    let mut rows = conn
-        .query(
-            "
-            SELECT
-              CAST((occurred_at - ?5) / ?6 AS INTEGER) AS bucket,
-              COALESCE(SUM(token_input), 0)
-                + COALESCE(SUM(token_output), 0)
-                + COALESCE(SUM(token_cache_read), 0)
-                + COALESCE(SUM(token_cache_write), 0)
-            FROM usage_samples
-            WHERE (?1 IS NULL OR instance_id = ?1)
-              AND (?2 IS NULL OR workspace = ?2)
-              AND (?3 IS NULL OR session_id = ?3)
-              AND (?4 IS NULL OR occurred_at >= ?4)
-            GROUP BY bucket
-            ORDER BY bucket
-            ",
-            params![
-                instance_id,
-                workspace,
-                session_id,
-                since,
-                window_start,
-                bucket_width
-            ],
-        )
-        .await
-        .map_err(|err| format!("query telemetry usage history failed: {err}"))?;
-    let mut history = vec![0_u64; BUCKETS];
-    while let Some(row) = rows
-        .next()
-        .await
-        .map_err(|err| format!("read telemetry usage history row failed: {err}"))?
-    {
-        let bucket = row_i64(&row, 0, "history_bucket")?;
-        let tokens = row_i64(&row, 1, "history_tokens")?;
-        let index = usize::try_from(bucket)
-            .unwrap_or(0)
-            .min(BUCKETS.saturating_sub(1));
-        history[index] = history[index].saturating_add(u64::try_from(tokens).unwrap_or(0));
-    }
-    Ok(history)
-}
-
-async fn top_usage_model(
-    conn: &Connection,
-    instance_id: Option<String>,
-    workspace: Option<String>,
-    session_id: Option<i64>,
-    since: Option<i64>,
-) -> Result<Option<String>, String> {
-    let mut rows = conn
-        .query(
-            "
-            SELECT model
-            FROM usage_samples
-            WHERE (?1 IS NULL OR instance_id = ?1)
-              AND (?2 IS NULL OR workspace = ?2)
-              AND (?3 IS NULL OR session_id = ?3)
-              AND (?4 IS NULL OR occurred_at >= ?4)
-            GROUP BY model
-            ORDER BY
-              COALESCE(SUM(token_input), 0)
-                + COALESCE(SUM(token_output), 0)
-                + COALESCE(SUM(token_cache_read), 0)
-                + COALESCE(SUM(token_cache_write), 0) DESC,
-              COUNT(*) DESC,
-              model ASC
-            LIMIT 1
-            ",
-            params![instance_id, workspace, session_id, since],
-        )
-        .await
-        .map_err(|err| format!("query telemetry top usage model failed: {err}"))?;
-    let Some(row) = rows
-        .next()
-        .await
-        .map_err(|err| format!("read telemetry top usage model row failed: {err}"))?
-    else {
-        return Ok(None);
-    };
-    row_string(&row, 0, "model").map(Some)
-}
-
 fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapshot>, String> {
     let path = path.to_path_buf();
     run_store(move || async move {
@@ -915,65 +378,6 @@ fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapsho
 }
 
 #[cfg(test)]
-fn stored_usage_samples(path: &Path) -> Result<Vec<StoredUsageSample>, String> {
-    let path = path.to_path_buf();
-    run_store(move || async move {
-        let conn = open_store(&path).await?;
-        let mut rows = conn
-            .query(
-                "
-                SELECT
-                    occurred_at,
-                    instance_id,
-                    session_id,
-                    workspace,
-                    provider,
-                    account_label,
-                    plan_label,
-                    model,
-                    token_input,
-                    token_output,
-                    token_cache_read,
-                    token_cache_write,
-                    cost_usd_micros,
-                    cost_source,
-                    source_hash
-                FROM usage_samples
-                ORDER BY occurred_at, provider, model, source_hash
-                ",
-                (),
-            )
-            .await
-            .map_err(|err| format!("query telemetry usage samples failed: {err}"))?;
-        let mut samples = Vec::new();
-        while let Some(row) = rows
-            .next()
-            .await
-            .map_err(|err| format!("read telemetry usage sample row failed: {err}"))?
-        {
-            samples.push(StoredUsageSample {
-                occurred_at: row_i64(&row, 0, "occurred_at")?,
-                instance_id: row_opt_string(&row, 1, "instance_id")?,
-                session_id: row_opt_i64(&row, 2, "session_id")?,
-                workspace: row_opt_string(&row, 3, "workspace")?,
-                provider: row_string(&row, 4, "provider")?,
-                account_label: row_opt_string(&row, 5, "account_label")?,
-                plan_label: row_opt_string(&row, 6, "plan_label")?,
-                model: row_string(&row, 7, "model")?,
-                token_input: row_opt_i64(&row, 8, "token_input")?,
-                token_output: row_opt_i64(&row, 9, "token_output")?,
-                token_cache_read: row_opt_i64(&row, 10, "token_cache_read")?,
-                token_cache_write: row_opt_i64(&row, 11, "token_cache_write")?,
-                cost_usd_micros: row_opt_i64(&row, 12, "cost_usd_micros")?,
-                cost_source: row_opt_string(&row, 13, "cost_source")?,
-                source_hash: row_string(&row, 14, "source_hash")?,
-            });
-        }
-        Ok(samples)
-    })
-}
-
-#[cfg(test)]
 pub(crate) fn schema_version(path: &Path) -> Result<Option<String>, String> {
     let path = path.to_path_buf();
     run_store(move || async move {
@@ -1014,7 +418,7 @@ fn row_opt_string(row: &Row, idx: usize, name: &str) -> Result<Option<String>, S
 mod tests {
     use jackin_protocol::control::{
         FocusedAccountHeader, FocusedUsageView, QuotaBucketView, UsageConfidence,
-        UsageSnapshotStatus, UsageSource, WorkspaceSpendView,
+        UsageSnapshotStatus, UsageSource,
     };
 
     use super::*;
@@ -1048,24 +452,13 @@ mod tests {
                     status: UsageSnapshotStatus::Unsupported,
                 },
             ],
-            workspace_spend: WorkspaceSpendView {
-                today_cost_label: None,
-                thirty_day_cost_label: None,
-                thirty_day_tokens_label: None,
-                latest_tokens_label: None,
-                top_model: None,
-                history: Vec::new(),
-                provenance_label: "none".to_owned(),
-            },
             status: UsageSnapshotStatus::Fresh,
             source: UsageSource::Cli,
             confidence: UsageConfidence::Authoritative,
             fetched_at_epoch: 1_781_185_560,
             updated_label: "Updated just now".to_owned(),
             status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
-            provider_status: None,
             tabs: Vec::new(),
-            instance: None,
             last_error: None,
         }
     }
@@ -1109,167 +502,5 @@ mod tests {
             schema_version(&db).expect("schema version").as_deref(),
             Some("3")
         );
-    }
-
-    #[test]
-    fn usage_scan_file_state_roundtrips() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let db = dir.path().join("usage.db");
-        let source = dir.path().join("session.jsonl");
-        let state = UsageScanFileState {
-            bytes_read: 128,
-            lines_read: 3,
-            size_bytes: 256,
-            mtime_epoch: 1_781_185_560,
-        };
-
-        store_usage_scan_file_state(&db, "Codex", &source, state).expect("store scan state");
-
-        assert_eq!(
-            usage_scan_file_state(&db, "Codex", &source).expect("read scan state"),
-            Some(state)
-        );
-        assert_eq!(
-            usage_scan_file_state(&db, "Claude", &source).expect("read other provider"),
-            None
-        );
-    }
-
-    #[test]
-    fn usage_samples_are_inserted_once_by_source_hash() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let db = dir.path().join("usage.db");
-        let sample = StoredUsageSample {
-            occurred_at: 1_781_185_560,
-            instance_id: Some("instance-a".to_owned()),
-            session_id: Some(7),
-            workspace: Some("capsule".to_owned()),
-            provider: "Claude".to_owned(),
-            account_label: Some("alexey@example.com".to_owned()),
-            plan_label: Some("Max".to_owned()),
-            model: "claude-sonnet-4-5".to_owned(),
-            token_input: Some(10),
-            token_output: Some(20),
-            token_cache_read: Some(3),
-            token_cache_write: Some(4),
-            cost_usd_micros: Some(0),
-            cost_source: Some("explicit_usd".to_owned()),
-            source_hash: "sha256:sample".to_owned(),
-        };
-
-        store_usage_samples(&db, std::slice::from_ref(&sample)).expect("store sample");
-        store_usage_samples(&db, &[sample]).expect("dedupe sample");
-
-        let rows = stored_usage_samples(&db).expect("read samples");
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].provider, "Claude");
-        assert_eq!(rows[0].account_label.as_deref(), Some("alexey@example.com"));
-        assert_eq!(rows[0].plan_label.as_deref(), Some("Max"));
-        assert_eq!(rows[0].model, "claude-sonnet-4-5");
-        assert_eq!(rows[0].token_input, Some(10));
-        assert_eq!(rows[0].token_output, Some(20));
-        assert_eq!(rows[0].token_cache_read, Some(3));
-        assert_eq!(rows[0].token_cache_write, Some(4));
-        assert_eq!(rows[0].cost_source.as_deref(), Some("explicit_usd"));
-    }
-
-    #[test]
-    fn usage_summary_filters_samples() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let db = dir.path().join("usage.db");
-        let samples = vec![
-            StoredUsageSample {
-                occurred_at: 1_781_185_500,
-                instance_id: Some("instance-a".to_owned()),
-                session_id: Some(7),
-                workspace: Some("capsule".to_owned()),
-                provider: "Codex".to_owned(),
-                account_label: Some("codex@example.com".to_owned()),
-                plan_label: Some("Pro 20x".to_owned()),
-                model: "gpt-5.5".to_owned(),
-                token_input: Some(10),
-                token_output: Some(20),
-                token_cache_read: Some(3),
-                token_cache_write: Some(4),
-                cost_usd_micros: Some(50),
-                cost_source: Some("price_table".to_owned()),
-                source_hash: "sha256:a".to_owned(),
-            },
-            StoredUsageSample {
-                occurred_at: 1_781_185_560,
-                instance_id: Some("instance-b".to_owned()),
-                session_id: Some(8),
-                workspace: Some("capsule".to_owned()),
-                provider: "Claude".to_owned(),
-                account_label: Some("claude@example.com".to_owned()),
-                plan_label: Some("Max".to_owned()),
-                model: "claude-sonnet-4-5".to_owned(),
-                token_input: Some(100),
-                token_output: Some(200),
-                token_cache_read: None,
-                token_cache_write: None,
-                cost_usd_micros: None,
-                cost_source: None,
-                source_hash: "sha256:b".to_owned(),
-            },
-        ];
-
-        store_usage_samples(&db, &samples).expect("store samples");
-
-        let workspace_summary =
-            usage_summary(&db, None, Some("capsule"), None, Some(120), 1_781_185_600)
-                .expect("workspace summary");
-        assert_eq!(workspace_summary.sample_count, 2);
-        assert_eq!(workspace_summary.token_input, 110);
-        assert_eq!(workspace_summary.token_output, 220);
-        assert_eq!(workspace_summary.token_cache_read, 3);
-        assert_eq!(workspace_summary.token_cache_write, 4);
-        assert_eq!(workspace_summary.cost_usd_micros, 50);
-        assert_eq!(workspace_summary.estimated_cost_sample_count, 1);
-        assert_eq!(workspace_summary.exact_cost_sample_count, 0);
-        assert_eq!(workspace_summary.unpriced_sample_count, 1);
-        assert_eq!(workspace_summary.first_occurred_at, Some(1_781_185_500));
-        assert_eq!(workspace_summary.last_occurred_at, Some(1_781_185_560));
-        assert_eq!(
-            workspace_summary.top_model.as_deref(),
-            Some("claude-sonnet-4-5")
-        );
-        assert_eq!(workspace_summary.latest_tokens, Some(300));
-        assert_eq!(workspace_summary.history.len(), 12);
-        assert_eq!(workspace_summary.history[2], 37);
-        assert_eq!(workspace_summary.history[8], 300);
-
-        let session_summary =
-            usage_summary(&db, None, None, Some(8), None, 1_781_185_600).expect("session summary");
-        assert_eq!(session_summary.sample_count, 1);
-        assert_eq!(session_summary.token_input, 100);
-        assert_eq!(session_summary.unpriced_sample_count, 1);
-        assert_eq!(session_summary.session_id, Some(8));
-        assert_eq!(
-            usage_sample_account_identity(&db, Some("instance-b"), Some(8))
-                .expect("sample account identity"),
-            Some(("claude@example.com".to_owned(), Some("Max".to_owned())))
-        );
-
-        let instance_summary =
-            usage_summary(&db, Some("instance-a"), None, None, None, 1_781_185_600)
-                .expect("instance summary");
-        assert_eq!(instance_summary.sample_count, 1);
-        assert_eq!(instance_summary.token_input, 10);
-        assert_eq!(instance_summary.latest_tokens, Some(37));
-        assert_eq!(instance_summary.history.len(), 12);
-        assert_eq!(instance_summary.history[0], 37);
-
-        let instance_workspace_summary = usage_summary(
-            &db,
-            Some("instance-a"),
-            Some("capsule"),
-            None,
-            None,
-            1_781_185_600,
-        )
-        .expect("instance workspace summary");
-        assert_eq!(instance_workspace_summary.sample_count, 1);
-        assert_eq!(instance_workspace_summary.token_input, 10);
     }
 }

@@ -288,18 +288,6 @@ pub async fn handle_control_request(
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
             accounts: crate::usage::cached_account_snapshots(),
         },
-        ClientMsg::UsageWorkspace {
-            workspace,
-            window_seconds,
-        } => ServerMsg::UsageSummary {
-            summary: crate::usage::cached_usage_summary(workspace.as_deref(), None, window_seconds),
-        },
-        ClientMsg::UsageSession {
-            session_id,
-            window_seconds,
-        } => ServerMsg::UsageSummary {
-            summary: crate::usage::cached_usage_summary(None, Some(session_id), window_seconds),
-        },
         ClientMsg::Unknown => {
             // Reply with `Unknown` so the peer's `read_exact` returns
             // immediately rather than hanging until SOCKET_TIMEOUT.

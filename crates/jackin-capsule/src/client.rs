@@ -47,9 +47,6 @@ pub async fn run_status() -> Result<()> {
         ServerMsg::UsageAccounts { .. } => {
             anyhow::bail!("daemon replied with UsageAccounts for Status request")
         }
-        ServerMsg::UsageSummary { .. } => {
-            anyhow::bail!("daemon replied with UsageSummary for Status request")
-        }
     };
     crate::output::stdout_line(format_args!("Sessions: {}", sessions.len()));
     for s in &sessions {
@@ -91,9 +88,6 @@ pub async fn run_snapshot() -> Result<()> {
         ServerMsg::UsageAccounts { .. } => {
             anyhow::bail!("daemon replied with UsageAccounts for Snapshot request")
         }
-        ServerMsg::UsageSummary { .. } => {
-            anyhow::bail!("daemon replied with UsageSummary for Snapshot request")
-        }
     };
     let payload = serde_json::json!({
         "tabs": tabs,
@@ -134,9 +128,6 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
         }
         ServerMsg::UsageAccounts { .. } => {
             anyhow::bail!("daemon replied with UsageAccounts for Agents request")
-        }
-        ServerMsg::UsageSummary { .. } => {
-            anyhow::bail!("daemon replied with UsageSummary for Agents request")
         }
     };
 
@@ -213,27 +204,6 @@ pub async fn run_usage_accounts() -> Result<()> {
     Ok(())
 }
 
-pub async fn run_usage_workspace(
-    workspace: Option<String>,
-    window_seconds: Option<i64>,
-) -> Result<()> {
-    let msg = request_control(&ClientMsg::UsageWorkspace {
-        workspace,
-        window_seconds,
-    })
-    .await?;
-    print_usage_summary(msg, "UsageWorkspace")
-}
-
-pub async fn run_usage_session(session_id: i64, window_seconds: Option<i64>) -> Result<()> {
-    let msg = request_control(&ClientMsg::UsageSession {
-        session_id,
-        window_seconds,
-    })
-    .await?;
-    print_usage_summary(msg, "UsageSession")
-}
-
 pub async fn run_usage_claude_cli() -> Result<()> {
     let diagnostic = crate::usage::run_claude_usage_diagnostic()
         .map_err(|error| anyhow::anyhow!("Claude CLI usage diagnostic failed: {error}"))?;
@@ -241,18 +211,6 @@ pub async fn run_usage_claude_cli() -> Result<()> {
         "{}",
         serde_json::to_string_pretty(&diagnostic)?
     ));
-    Ok(())
-}
-
-fn print_usage_summary(msg: ServerMsg, request_name: &str) -> Result<()> {
-    let summary = match msg {
-        ServerMsg::UsageSummary { summary } => summary,
-        other => anyhow::bail!(
-            "daemon replied with {} for {request_name} request",
-            msg_kind(&other)
-        ),
-    };
-    crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&summary)?));
     Ok(())
 }
 
@@ -287,7 +245,6 @@ fn msg_kind(msg: &ServerMsg) -> &'static str {
         ServerMsg::AgentRegistry { .. } => "AgentRegistry",
         ServerMsg::UsageFocused { .. } => "UsageFocused",
         ServerMsg::UsageAccounts { .. } => "UsageAccounts",
-        ServerMsg::UsageSummary { .. } => "UsageSummary",
         ServerMsg::Unknown => "Unknown",
     }
 }

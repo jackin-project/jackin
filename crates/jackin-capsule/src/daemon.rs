@@ -280,9 +280,6 @@ pub struct Multiplexer {
     /// so the operator's panes open in the workspace they configured
     /// instead of `$HOME` (`portable_pty`'s `CommandBuilder` default).
     workdir: PathBuf,
-    /// Stable identifier for this running Capsule daemon, used to stamp usage
-    /// samples so instance accounting does not blend same-workspace runs.
-    instance_id: String,
     /// API keys captured from the operator env at construction, keyed by the
     /// provider that consumes them. A provider is present only when its
     /// [`key_env_var`](jackin_protocol::Provider::key_env_var) was set and
@@ -449,11 +446,6 @@ impl Multiplexer {
             workdir_context.default_branch
         );
         let status_identity = crate::container_context::resolve_status_identity();
-        let instance_id = if status_identity.instance_id.is_empty() {
-            format!("capsule-{}", std::process::id())
-        } else {
-            status_identity.instance_id.clone()
-        };
         let mut status_bar = StatusBar::new_with_role_labels(
             launch_config.role.clone(),
             status_identity.container_name,
@@ -510,7 +502,6 @@ impl Multiplexer {
             pull_request_lookup: LookupState::default(),
             pull_request_context_cache: HashMap::new(),
             workdir,
-            instance_id,
             workdir_context,
             provider_keys,
             ratatui_terminal,
@@ -867,29 +858,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     SessionEvent::Output { session_id, data } => {
                         let focused_id = mux.active_focused_id();
                         let is_focused = Some(session_id) == focused_id;
-                        let usage_provider = mux.sessions.get(&session_id).and_then(|session| {
-                            session
-                                .provider
-                                .as_ref()
-                                .map(|provider| provider.label.clone())
-                                .or_else(|| session.agent.clone())
-                        });
-                        let usage_identity = usage_provider.as_deref().and_then(|provider| {
-                            mux.usage_cache.account_identity_for_provider(provider)
-                        });
-                        crate::usage::ingest_runtime_usage_output(
-                            Some(&mux.instance_id),
-                            session_id,
-                            &mux.workdir,
-                            usage_provider.as_deref(),
-                            usage_identity
-                                .as_ref()
-                                .map(|(account, _provider, _plan)| account.as_str()),
-                            usage_identity
-                                .as_ref()
-                                .and_then(|(_account, _provider, plan)| plan.as_deref()),
-                            &data,
-                        );
                         // Collect any focused-pane output into local
                         // vecs so the `&mut Session` borrow ends before
                         // `mux.send_output` (which takes `&mut Multiplexer`).
@@ -1132,18 +1100,6 @@ fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg
         },
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
             accounts: crate::usage::cached_account_snapshots(),
-        },
-        ClientMsg::UsageWorkspace {
-            workspace,
-            window_seconds,
-        } => ServerMsg::UsageSummary {
-            summary: crate::usage::cached_usage_summary(workspace.as_deref(), None, window_seconds),
-        },
-        ClientMsg::UsageSession {
-            session_id,
-            window_seconds,
-        } => ServerMsg::UsageSummary {
-            summary: crate::usage::cached_usage_summary(None, Some(session_id), window_seconds),
         },
         ClientMsg::Unknown => {
             crate::clog!("control: ignoring unknown ClientMsg variant from peer");

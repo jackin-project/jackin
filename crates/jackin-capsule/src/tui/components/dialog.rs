@@ -338,7 +338,6 @@ pub enum DialogAction {
 pub enum UsageDialogTab {
     Overview,
     Provider,
-    Instance,
 }
 
 /// Items in the `SplitDirectionPicker` sub-dialog. Prefer the common
@@ -541,13 +540,7 @@ impl Dialog {
         if *selected == UsageDialogTab::Overview {
             return Some(Self::usage_overview_state(view, scroll.clone()));
         }
-        if *selected == UsageDialogTab::Instance {
-            return Some(Self::usage_instance_state(view, scroll.clone()));
-        }
         let mut rows = Vec::new();
-        if let Some(tabs) = Self::usage_tabs_label(view) {
-            rows.push(jackin_tui::components::ContainerInfoRow::new("Tabs", tabs));
-        }
         rows.extend([
             jackin_tui::components::ContainerInfoRow::new(
                 "Focused",
@@ -587,111 +580,6 @@ impl Dialog {
                 Self::usage_bucket_value(bucket),
             ));
         }
-        let spend = &view.workspace_spend;
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "Account cost and tokens",
-            Self::usage_account_cost_line(spend),
-        ));
-        // Two grid rows under the "Account cost and tokens" header, matching
-        // the roadmap preview: `Today <v>   30d cost <v>` then
-        // `30d tokens <v>   Latest tokens <v>`. Fallback values are bare
-        // ("unavailable") because `usage_metric_pair` derives the column
-        // label by splitting off the last token; embedding the label in the
-        // value would double it (e.g. "Today today unavailable").
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "Cost row",
-            format!(
-                "Today {} · 30d cost {}",
-                spend.today_cost_label.as_deref().unwrap_or("unavailable"),
-                spend
-                    .thirty_day_cost_label
-                    .as_deref()
-                    .unwrap_or("unavailable")
-            ),
-        ));
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "Token row",
-            format!(
-                "30d tokens {} · Latest tokens {}",
-                spend
-                    .thirty_day_tokens_label
-                    .as_deref()
-                    .unwrap_or("unavailable"),
-                spend
-                    .latest_tokens_label
-                    .as_deref()
-                    .unwrap_or("unavailable")
-            ),
-        ));
-        if let Some(model) = &spend.top_model {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "Top model",
-                model.clone(),
-            ));
-        }
-        if !spend.history.is_empty() {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "History",
-                Self::usage_history_bars(&spend.history),
-            ));
-        }
-        // Source footer matches the preview shape:
-        // "<source> · <confidence> · <freshness> · <updated>".
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "Source",
-            format!(
-                "{} · {} · {}",
-                Self::usage_source_label(view.source, view.confidence),
-                Self::usage_status_label(view.status),
-                view.updated_label,
-            ),
-        ));
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "Provenance",
-            spend.provenance_label.clone(),
-        ));
-        if let Some(status) = &view.provider_status {
-            let status_detail = status.updated_label.as_ref().map_or_else(
-                || status.detail.clone(),
-                |updated| format!("{} · {updated}", status.detail),
-            );
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "Provider status",
-                status_detail.clone(),
-            ));
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "Status Page",
-                status_detail,
-            ));
-        }
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "Cost",
-            Self::usage_account_cost_line(spend),
-        ));
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "Subscription Utilization",
-            Self::usage_most_constrained_label(view),
-        ));
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "Buy Credits",
-            Self::usage_buy_credits_label(view),
-        ));
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "Add Account",
-            "disabled in Capsule; configure provider auth outside jackin'",
-        ));
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "Usage Dashboard",
-            "read-only provider account summary",
-        ));
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "Refresh",
-            "press r to refresh focused usage through daemon cache",
-        ));
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "Actions",
-            "r Refresh   Tab Switch provider   Esc Close",
-        ));
         if let Some(error) = &view.last_error {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 "Detail",
@@ -703,190 +591,11 @@ impl Dialog {
         Some(state)
     }
 
-    fn usage_instance_state(
-        view: &jackin_protocol::control::FocusedUsageView,
-        scroll: jackin_tui::components::DialogBodyScroll,
-    ) -> jackin_tui::components::ContainerInfoState {
-        let mut rows = vec![jackin_tui::components::ContainerInfoRow::new(
-            "Tabs",
-            Self::usage_tabs_label_for(view, UsageDialogTab::Instance)
-                .unwrap_or_else(|| "[Instance]".to_owned()),
-        )];
-        let Some(instance) = &view.instance else {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "Instance",
-                "usage unavailable",
-            ));
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "Actions",
-                "r Refresh   Tab Switch view   Esc Close",
-            ));
-            let mut state =
-                jackin_tui::components::ContainerInfoState::new("Usage: Instance", rows);
-            state.scroll = scroll;
-            return state;
-        };
-        rows.extend([
-            jackin_tui::components::ContainerInfoRow::new(
-                "Instance",
-                instance.instance_label.clone(),
-            ),
-            // Started flush-left, active-agent-time flush-right on one line,
-            // matching the Instance preview header.
-            jackin_tui::components::ContainerInfoRow::new(
-                "Instance timeline",
-                format!(
-                    "Started {} ago || Active agent time {}",
-                    instance.age_label,
-                    instance
-                        .active_agent_time_label
-                        .clone()
-                        .unwrap_or_else(|| "unavailable".to_owned())
-                ),
-            ),
-            jackin_tui::components::ContainerInfoRow::new("Workspace", instance.workspace.clone()),
-            jackin_tui::components::ContainerInfoRow::new("Instance spend", "since start"),
-            jackin_tui::components::ContainerInfoRow::new(
-                "Today",
-                Self::usage_summary_label(&instance.today),
-            ),
-            jackin_tui::components::ContainerInfoRow::new(
-                "Since start",
-                Self::usage_summary_label(&instance.total),
-            ),
-            jackin_tui::components::ContainerInfoRow::new(
-                "Spend row",
-                format!(
-                    "Today {} · Since start {}",
-                    Self::usage_cost_label(&instance.today),
-                    Self::usage_cost_label(&instance.total)
-                ),
-            ),
-            jackin_tui::components::ContainerInfoRow::new(
-                "Tokens since start",
-                Self::usage_compact_count(Self::usage_total_tokens(&instance.total)),
-            ),
-            jackin_tui::components::ContainerInfoRow::new(
-                "Latest tokens",
-                instance
-                    .total
-                    .latest_tokens
-                    .map_or_else(|| "unavailable".to_owned(), Self::usage_compact_count),
-            ),
-            jackin_tui::components::ContainerInfoRow::new(
-                "Cost rows",
-                format!(
-                    "Exact cost rows {} · Estimated rows {} · Unpriced rows {} · Top model {}",
-                    instance.total.exact_cost_sample_count,
-                    instance.total.estimated_cost_sample_count,
-                    instance.total.unpriced_sample_count,
-                    instance
-                        .total
-                        .top_model
-                        .clone()
-                        .unwrap_or_else(|| "unavailable".to_owned())
-                ),
-            ),
-            jackin_tui::components::ContainerInfoRow::new(
-                "History",
-                Self::usage_history_bars(&instance.total.history),
-            ),
-            jackin_tui::components::ContainerInfoRow::new(
-                "Captured",
-                Self::usage_instance_capture_label(instance),
-            ),
-            // The Instance preview ends the spend block at the capture line; the
-            // exact/estimated/unpriced counts and top model are already in the
-            // "Cost rows" grid, so no separate Token-split or Provenance row.
-        ]);
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "By agent codename",
-            format!("{} rows", instance.agent_rows.len()),
-        ));
-        for row in &instance.agent_rows {
-            let token_label = Self::usage_compact_count(Self::usage_total_tokens(&row.spend));
-            let cost_label = Self::usage_cost_label(&row.spend);
-            let top_model = row
-                .spend
-                .top_model
-                .clone()
-                .unwrap_or_else(|| "unavailable".to_owned());
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                row.codename.clone(),
-                format!(
-                    "{} || {} || {} || {} || {} || {} || {} || {} || {} || {} || {}",
-                    row.agent_label,
-                    row.provider_label,
-                    row.account_label,
-                    row.plan_label
-                        .clone()
-                        .unwrap_or_else(|| "plan unavailable".to_owned()),
-                    row.tab_label
-                        .clone()
-                        .unwrap_or_else(|| "closed tab".to_owned()),
-                    row.pane_label
-                        .clone()
-                        .unwrap_or_else(|| format!("session {}", row.session_id)),
-                    row.last_activity_label
-                        .clone()
-                        .unwrap_or_else(|| "last activity unavailable".to_owned()),
-                    token_label,
-                    cost_label,
-                    top_model,
-                    row.lifecycle_label
-                ),
-            ));
-        }
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "By provider/account",
-            format!("{} rows", instance.provider_rows.len()),
-        ));
-        for row in &instance.provider_rows {
-            let plan_label = row
-                .plan_label
-                .clone()
-                .unwrap_or_else(|| "plan unavailable".to_owned());
-            let token_label = Self::usage_compact_count(Self::usage_total_tokens(&row.spend));
-            let cost_label = Self::usage_cost_label(&row.spend);
-            let top_model = row
-                .spend
-                .top_model
-                .clone()
-                .unwrap_or_else(|| "unavailable".to_owned());
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                row.provider_label.clone(),
-                format!(
-                    "{} || {} || {} || {} || {} || {} || {} || {}",
-                    row.account_label,
-                    plan_label,
-                    token_label,
-                    cost_label,
-                    top_model,
-                    row.spend.exact_cost_sample_count,
-                    row.spend.estimated_cost_sample_count,
-                    row.spend.unpriced_sample_count
-                ),
-            ));
-        }
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "Actions",
-            "r Refresh   Tab Switch view   Esc Close",
-        ));
-        let mut state = jackin_tui::components::ContainerInfoState::new("Usage: Instance", rows);
-        state.scroll = scroll;
-        state
-    }
-
     fn usage_overview_state(
         view: &jackin_protocol::control::FocusedUsageView,
         scroll: jackin_tui::components::DialogBodyScroll,
     ) -> jackin_tui::components::ContainerInfoState {
         let mut rows = vec![
-            jackin_tui::components::ContainerInfoRow::new(
-                "Tabs",
-                Self::usage_tabs_label_for(view, UsageDialogTab::Overview)
-                    .unwrap_or_else(|| "[Overview]".to_owned()),
-            ),
             jackin_tui::components::ContainerInfoRow::new(
                 "Focused agent",
                 Self::usage_focused_label(view),
@@ -894,14 +603,6 @@ impl Dialog {
             jackin_tui::components::ContainerInfoRow::new(
                 "Focused account",
                 Self::usage_account_header_label(view),
-            ),
-            jackin_tui::components::ContainerInfoRow::new(
-                "Most constrained",
-                Self::usage_most_constrained_label(view),
-            ),
-            jackin_tui::components::ContainerInfoRow::new(
-                "Source",
-                Self::usage_source_label(view.source, view.confidence),
             ),
         ];
         if view.tabs.is_empty() {
@@ -937,22 +638,12 @@ impl Dialog {
                 ));
             }
         }
-        if let Some(status) = &view.provider_status {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                status.label.clone(),
-                status.detail.clone(),
-            ));
-        }
         if let Some(error) = &view.last_error {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 "Detail",
                 error.clone(),
             ));
         }
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "Actions",
-            "Enter Provider detail   r Refresh focused   Esc Close",
-        ));
         let mut state = jackin_tui::components::ContainerInfoState::new("Usage: Overview", rows);
         state.scroll = scroll;
         state
@@ -986,96 +677,6 @@ impl Dialog {
         }
     }
 
-    fn usage_account_cost_line(spend: &jackin_protocol::control::WorkspaceSpendView) -> String {
-        let today = spend.today_cost_label.as_deref().unwrap_or("unavailable");
-        let thirty_day = spend
-            .thirty_day_cost_label
-            .as_deref()
-            .unwrap_or("unavailable");
-        let tokens = spend
-            .thirty_day_tokens_label
-            .as_deref()
-            .unwrap_or("unavailable");
-        let latest = spend
-            .latest_tokens_label
-            .as_deref()
-            .unwrap_or("unavailable");
-        format!("Today {today} · 30d {thirty_day} · 30d tokens {tokens} · latest {latest}")
-    }
-
-    fn usage_most_constrained_label(view: &jackin_protocol::control::FocusedUsageView) -> String {
-        let mut fresh = view
-            .buckets
-            .iter()
-            .filter(|bucket| {
-                bucket.status == jackin_protocol::control::UsageSnapshotStatus::Fresh
-                    && bucket.remaining_percent.is_some()
-            })
-            .collect::<Vec<_>>();
-        fresh.sort_by_key(|bucket| bucket.remaining_percent.unwrap_or(100));
-        if let Some(bucket) = fresh.first() {
-            let remaining = bucket.remaining_percent.unwrap_or_default();
-            let mut label = format!("{} · {remaining}% left", bucket.label);
-            if let Some(reset) = &bucket.reset_label {
-                label.push_str(" · ");
-                label.push_str(reset);
-            }
-            return label;
-        }
-        match view.status {
-            jackin_protocol::control::UsageSnapshotStatus::Fresh => "fresh".to_owned(),
-            status => Self::usage_status_label(status),
-        }
-    }
-
-    fn usage_buy_credits_label(view: &jackin_protocol::control::FocusedUsageView) -> String {
-        view.buckets
-            .iter()
-            .find(|bucket| bucket.label == "Credits")
-            .map_or_else(
-                || "provider billing action unavailable in Capsule".to_owned(),
-                |bucket| {
-                    let value = Self::usage_bucket_value(bucket);
-                    if value.trim().is_empty() {
-                        "provider billing action unavailable in Capsule".to_owned()
-                    } else {
-                        format!("{value}; provider billing action unavailable in Capsule")
-                    }
-                },
-            )
-    }
-
-    fn usage_tabs_label(view: &jackin_protocol::control::FocusedUsageView) -> Option<String> {
-        Self::usage_tabs_label_for(view, UsageDialogTab::Provider)
-    }
-
-    fn usage_tabs_label_for(
-        view: &jackin_protocol::control::FocusedUsageView,
-        selected: UsageDialogTab,
-    ) -> Option<String> {
-        if view.tabs.is_empty() {
-            return None;
-        }
-        let mut labels = vec![if selected == UsageDialogTab::Overview {
-            "[Overview]".to_owned()
-        } else {
-            "Overview".to_owned()
-        }];
-        labels.push(if selected == UsageDialogTab::Instance {
-            "[Instance]".to_owned()
-        } else {
-            "Instance".to_owned()
-        });
-        labels.extend(view.tabs.iter().map(|tab| {
-            if selected == UsageDialogTab::Provider && tab.active {
-                format!("[{}]", tab.label)
-            } else {
-                tab.label.clone()
-            }
-        }));
-        Some(labels.join("  "))
-    }
-
     fn usage_provider_tab_target(&mut self, step: isize) -> Option<String> {
         let Self::Usage { view, selected, .. } = self else {
             return None;
@@ -1085,26 +686,17 @@ impl Dialog {
         }
         if *selected == UsageDialogTab::Overview {
             if step >= 0 {
-                *selected = UsageDialogTab::Instance;
+                return view.tabs.first().map(|tab| tab.label.clone());
             } else if let Some(target) = view.tabs.last() {
                 return Some(target.label.clone());
             } else {
-                *selected = UsageDialogTab::Instance;
+                *selected = UsageDialogTab::Provider;
             }
             return None;
         }
-        if *selected == UsageDialogTab::Instance {
-            let target = if step >= 0 {
-                view.tabs.first()
-            } else {
-                *selected = UsageDialogTab::Overview;
-                return None;
-            };
-            return target.map(|tab| tab.label.clone());
-        }
         let current = view.tabs.iter().position(|tab| tab.active).unwrap_or(0);
         if step < 0 && current == 0 {
-            *selected = UsageDialogTab::Instance;
+            *selected = UsageDialogTab::Overview;
             return None;
         }
         let next = if step >= 0 && current + 1 >= view.tabs.len() {
@@ -1167,90 +759,6 @@ impl Dialog {
         parts.join(" · ")
     }
 
-    fn usage_history_bars(history: &[u64]) -> String {
-        const BARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-        let max = history.iter().copied().max().unwrap_or(0);
-        if max == 0 {
-            return "no samples".to_owned();
-        }
-        history
-            .iter()
-            .map(|value| {
-                let index = if *value == 0 {
-                    0
-                } else {
-                    ((*value * (BARS.len() as u64 - 1)) + (max / 2)) / max
-                };
-                BARS[index as usize]
-            })
-            .collect()
-    }
-
-    fn usage_total_tokens(summary: &jackin_protocol::control::UsageSummaryView) -> u64 {
-        summary
-            .token_input
-            .saturating_add(summary.token_output)
-            .saturating_add(summary.token_cache_read)
-            .saturating_add(summary.token_cache_write)
-    }
-
-    fn usage_cost_label(summary: &jackin_protocol::control::UsageSummaryView) -> String {
-        if summary.cost_usd_micros > 0 {
-            format!("${:.2}", summary.cost_usd_micros as f64 / 1_000_000.0)
-        } else {
-            "$0.00".to_owned()
-        }
-    }
-
-    fn usage_instance_capture_label(
-        instance: &jackin_protocol::control::InstanceUsageView,
-    ) -> String {
-        if instance.total.sample_count == 0 {
-            "No cached runtime/provider-log samples captured for this instance yet".to_owned()
-        } else if instance.total.unpriced_sample_count > 0 {
-            "Captured from Capsule runtime streams plus local provider logs; some rows unpriced"
-                .to_owned()
-        } else {
-            "Captured from Capsule runtime streams plus local provider logs".to_owned()
-        }
-    }
-
-    fn usage_summary_label(summary: &jackin_protocol::control::UsageSummaryView) -> String {
-        let tokens = Self::usage_total_tokens(summary);
-        let token_label = if tokens > 0 {
-            Self::usage_compact_count(tokens)
-        } else {
-            "0 tokens".to_owned()
-        };
-        let cost_label = Self::usage_cost_label(summary);
-        let mut label = format!(
-            "{} · {} · {} samples · {} exact · {} estimated · {} unpriced",
-            token_label,
-            cost_label,
-            summary.sample_count,
-            summary.exact_cost_sample_count,
-            summary.estimated_cost_sample_count,
-            summary.unpriced_sample_count
-        );
-        if let Some(model) = &summary.top_model {
-            label.push_str(" · top ");
-            label.push_str(model);
-        }
-        label
-    }
-
-    fn usage_compact_count(value: u64) -> String {
-        if value >= 1_000_000_000 {
-            format!("{:.1}B tokens", value as f64 / 1_000_000_000.0)
-        } else if value >= 1_000_000 {
-            format!("{:.1}M tokens", value as f64 / 1_000_000.0)
-        } else if value >= 1_000 {
-            format!("{:.1}K tokens", value as f64 / 1_000.0)
-        } else {
-            format!("{value} tokens")
-        }
-    }
-
     fn usage_meter(remaining_percent: u8) -> String {
         const WIDTH: usize = 32;
         let remaining = usize::from(remaining_percent.min(100));
@@ -1273,28 +781,6 @@ impl Dialog {
             jackin_protocol::control::UsageSnapshotStatus::Error => "error",
         }
         .to_owned()
-    }
-
-    fn usage_source_label(
-        source: jackin_protocol::control::UsageSource,
-        confidence: jackin_protocol::control::UsageConfidence,
-    ) -> String {
-        format!(
-            "{} · {}",
-            match source {
-                jackin_protocol::control::UsageSource::ProviderApi => "provider API",
-                jackin_protocol::control::UsageSource::Cli => "managed CLI",
-                jackin_protocol::control::UsageSource::LocalLogs => "local logs",
-                jackin_protocol::control::UsageSource::Cache => "daemon cache",
-                jackin_protocol::control::UsageSource::None => "none",
-            },
-            match confidence {
-                jackin_protocol::control::UsageConfidence::Authoritative => "authoritative",
-                jackin_protocol::control::UsageConfidence::Estimated => "estimated",
-                jackin_protocol::control::UsageConfidence::PresenceOnly => "presence only",
-                jackin_protocol::control::UsageConfidence::None => "no confidence",
-            }
-        )
     }
 
     pub fn new_github_context() -> Self {

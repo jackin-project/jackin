@@ -23,16 +23,6 @@ pub enum ClientMsg {
     UsageRefreshFocused,
     /// Return every account/quota snapshot currently known to the daemon cache.
     UsageAccountList,
-    /// Return local usage attribution for a workspace from cached samples.
-    UsageWorkspace {
-        workspace: Option<String>,
-        window_seconds: Option<i64>,
-    },
-    /// Return local usage attribution for one Capsule session from cached samples.
-    UsageSession {
-        session_id: i64,
-        window_seconds: Option<i64>,
-    },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
@@ -60,8 +50,6 @@ pub enum ServerMsg {
     UsageAccounts {
         accounts: Vec<AccountUsageSnapshotView>,
     },
-    /// Local token/cost summary from cached usage samples.
-    UsageSummary { summary: UsageSummaryView },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
@@ -85,43 +73,19 @@ pub struct AccountUsageSnapshotView {
     pub last_error: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct UsageSummaryView {
-    pub workspace: Option<String>,
-    pub session_id: Option<i64>,
-    pub window_seconds: Option<i64>,
-    pub sample_count: u64,
-    pub latest_tokens: Option<u64>,
-    pub history: Vec<u64>,
-    pub token_input: u64,
-    pub token_output: u64,
-    pub token_cache_read: u64,
-    pub token_cache_write: u64,
-    pub cost_usd_micros: u64,
-    pub exact_cost_sample_count: u64,
-    pub estimated_cost_sample_count: u64,
-    pub unpriced_sample_count: u64,
-    pub first_occurred_at: Option<i64>,
-    pub last_occurred_at: Option<i64>,
-    pub top_model: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FocusedUsageView {
     pub focused_agent: Option<String>,
     pub focused_provider: Option<String>,
     pub account: FocusedAccountHeader,
     pub buckets: Vec<QuotaBucketView>,
-    pub workspace_spend: WorkspaceSpendView,
     pub status: UsageSnapshotStatus,
     pub source: UsageSource,
     pub confidence: UsageConfidence,
     pub fetched_at_epoch: i64,
     pub updated_label: String,
     pub status_bar_label: String,
-    pub provider_status: Option<ProviderStatusView>,
     pub tabs: Vec<UsageProviderTab>,
-    pub instance: Option<InstanceUsageView>,
     pub last_error: Option<String>,
 }
 
@@ -138,58 +102,16 @@ impl FocusedUsageView {
                 plan_label: None,
             },
             buckets: Vec::new(),
-            workspace_spend: WorkspaceSpendView::default(),
             status: UsageSnapshotStatus::Unavailable,
             source: UsageSource::None,
             confidence: UsageConfidence::None,
             fetched_at_epoch: now_epoch,
             updated_label: "Unavailable".to_owned(),
             status_bar_label: "usage unavailable".to_owned(),
-            provider_status: None,
             tabs: Vec::new(),
-            instance: None,
             last_error: Some(reason),
         }
     }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct InstanceUsageView {
-    pub instance_label: String,
-    pub started_at_epoch: Option<i64>,
-    pub age_label: String,
-    pub active_agent_time_label: Option<String>,
-    pub workspace: String,
-    pub today: UsageSummaryView,
-    pub total: UsageSummaryView,
-    pub agent_rows: Vec<InstanceAgentUsageRow>,
-    pub provider_rows: Vec<InstanceProviderUsageRow>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct InstanceAgentUsageRow {
-    pub codename: String,
-    pub session_id: u64,
-    pub agent_label: String,
-    pub provider_label: String,
-    pub account_label: String,
-    pub plan_label: Option<String>,
-    pub lifecycle_label: String,
-    pub tab_label: Option<String>,
-    pub pane_label: Option<String>,
-    pub started_at_epoch: Option<i64>,
-    pub exited_at_epoch: Option<i64>,
-    pub last_activity_epoch: Option<i64>,
-    pub last_activity_label: Option<String>,
-    pub spend: UsageSummaryView,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct InstanceProviderUsageRow {
-    pub provider_label: String,
-    pub account_label: String,
-    pub plan_label: Option<String>,
-    pub spend: UsageSummaryView,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -208,24 +130,6 @@ pub struct QuotaBucketView {
     pub reset_label: Option<String>,
     pub pace_label: Option<String>,
     pub status: UsageSnapshotStatus,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct WorkspaceSpendView {
-    pub today_cost_label: Option<String>,
-    pub thirty_day_cost_label: Option<String>,
-    pub thirty_day_tokens_label: Option<String>,
-    pub latest_tokens_label: Option<String>,
-    pub top_model: Option<String>,
-    pub history: Vec<u64>,
-    pub provenance_label: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ProviderStatusView {
-    pub label: String,
-    pub detail: String,
-    pub updated_label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

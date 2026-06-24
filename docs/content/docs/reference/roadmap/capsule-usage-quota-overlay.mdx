@@ -372,22 +372,22 @@ Removing the cut features is part of this work, not a follow-up: the workspace d
 - [ ] Preserve last-good quota on `NeedsLogin`/`Error`; stop force-refresh on overlay open.
 - [ ] Add Claude window aliases, `rateLimitTier` plan fallback, and detected User-Agent.
 - [ ] Derive Codex account identity from id_token JWT / RPC; decouple status from RPC cooldown; refresh in-container auth.json.
-- [ ] Add Kimi Code-API endpoint + response shape and credential-type routing.
+- [x] Add Kimi Code-API endpoint + response shape and credential-type routing.
 - [ ] Normalize MiniMax to remaining; continue URL loop on transport error; surface real errors.
 - [ ] Re-read the in-container credential file each refresh cycle (no OAuth refresh); honest degradation when no fresh token.
 - [ ] Render tabs via the shared `TabStrip` with its focus model; drop the synthesized tabs row.
 - [ ] Render full-width remaining bars + stacked meter lines; apply per-provider section sets, provider-org headers, reset/pace formats.
 - [ ] Wire a usage keymap into the standard hint bar; remove the in-box actions footer.
-- [ ] Rework the status bar: right-panel session + weekly remaining only, after the debug/container ids; drop account/provider/plan/reset and most-constrained selection.
+- [x] Rework the status bar: right-panel session + weekly remaining only, after the debug/container ids; drop account/provider/plan/reset and most-constrained selection.
 - [ ] Status bar and overlay read exclusively from Turso; render never calls a provider.
 - [ ] Status bar single form, follows the focused pane; click opens the overlay on that provider's tab.
 - [ ] Background refresher writes `account_usage_snapshots` to Turso: ~5 min/account + ±60s jitter, active-providers-only, focused-first, `Retry-After`/backoff (cap 30 min), single-flight, and a host-shared per-account cooldown marker all containers honor.
 - [ ] Overlay: proactive background refresh on open (selected provider first); header shows `refreshing…` and updates in place; tick relative times/values every minute while open.
-- [ ] Remove browser-cookie / web-session sources (Grok web, Kimi web, MiniMax web) and account-setup/add-account/buy-credits/settings/dashboard/status-page/login-repair code.
+- [x] Remove browser-cookie / web-session sources (Grok web, Kimi web, MiniMax web) and account-setup/add-account/buy-credits/settings/dashboard/status-page/login-repair code.
 - [ ] Make provenance honest; surface fetch errors.
-- [ ] Remove the cost/spend/Instance/action-row render code and dead helpers.
-- [ ] Remove the spend data plane and pricing in usage.rs.
-- [ ] Remove usage_samples/scan tables and unused control messages, CLI subcommands, and snapshot summary path.
+- [x] Remove the cost/spend/Instance/action-row render code and dead helpers.
+- [x] Remove the spend data plane and pricing in usage.rs.
+- [x] Remove usage_samples/scan tables and unused control messages, CLI subcommands, and snapshot summary path.
 - [ ] Confirm no `dead_code`/`unused` warnings; `cargo clippy --workspace --all-targets --all-features` clean.
 - [ ] Live in-container verification per provider + snapshot tests of the overlay path across the responsive width bands.
 

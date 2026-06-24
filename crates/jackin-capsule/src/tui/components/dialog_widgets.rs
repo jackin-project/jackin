@@ -459,7 +459,6 @@ fn usage_info_lines_impl(
         updated: usage_row_value(state, "Updated"),
         account: usage_row_value(state, "Account"),
         plan: usage_row_value(state, "Plan"),
-        latest_tokens: usage_row_value(state, "Latest tokens"),
         list_layout,
         width: width as usize,
     };
@@ -467,9 +466,6 @@ fn usage_info_lines_impl(
     lines.push(Line::from(""));
     for row in state.rows() {
         if !show_tabs && row.label() == "Tabs" {
-            continue;
-        }
-        if list_layout && row.label() == "History" {
             continue;
         }
         usage_lines_for_row(row.label(), row.value(), context, &mut lines);
@@ -482,7 +478,6 @@ struct UsageLineContext<'a> {
     updated: Option<&'a str>,
     account: Option<&'a str>,
     plan: Option<&'a str>,
-    latest_tokens: Option<&'a str>,
     list_layout: bool,
     /// Panel inner width for right-aligned header fields; 0 disables alignment.
     width: usize,
@@ -513,10 +508,6 @@ fn usage_lines_for_row(
     lines: &mut Vec<Line<'static>>,
 ) {
     match label {
-        "Tabs" => lines.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled(value.to_owned(), BOLD_GREEN),
-        ])),
         "Header" => {
             usage_header_lines(
                 value,
@@ -527,7 +518,7 @@ fn usage_lines_for_row(
                 lines,
             );
         }
-        "Focused agent" | "Focused account" | "Instance" => {
+        "Focused agent" | "Focused account" => {
             lines.push(Line::from(vec![
                 Span::raw("  "),
                 Span::styled(
@@ -536,100 +527,15 @@ fn usage_lines_for_row(
                 ),
             ]));
         }
-        "Instance timeline" => {
-            let (left, right) = value.split_once(" || ").unwrap_or((value, ""));
-            lines.push(usage_header_two_column(
-                left,
-                Style::default().fg(WHITE),
-                right,
-                DIM,
-                context.width,
-            ));
-        }
-        "Account availability"
-        | "Account cost and tokens"
-        | "Instance spend"
-        | "By agent codename"
-        | "By provider/account" => {
+        "Account availability" => {
             lines.push(Line::from(""));
             lines.push(Line::from(vec![
                 Span::raw("  "),
                 Span::styled(label.to_owned(), BOLD_GREEN),
             ]));
         }
-        "Cost row" | "Token row" | "Spend row" | "Cost rows" => {
-            usage_metric_pair_lines(value, lines);
-        }
-        "Tokens since start" => {
-            let mut details = format!("Tokens since start {value}");
-            if let Some(latest) = context
-                .latest_tokens
-                .filter(|value| !value.trim().is_empty())
-            {
-                details.push_str(" · Latest tokens ");
-                details.push_str(latest);
-            }
-            usage_metric_pair_lines(&details, lines);
-        }
-        "History" => {
-            lines.push(Line::from(""));
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(value.to_owned(), Style::default().fg(PHOSPHOR_GREEN)),
-            ]));
-        }
-        "Top model" => lines.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled("Top model: ", DIM),
-            Span::styled(value.to_owned(), Style::default().fg(WHITE)),
-        ])),
-        // Provenance renders as a bare sentence (no "Provenance:" prefix) to
-        // match the previews, e.g. "Estimated from local Codex logs …".
-        "Provenance" | "Captured" => {
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(value.to_owned(), DIM),
-            ]));
-        }
-        "Source" | "Refresh" => {
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(format!("{label}: "), DIM),
-                Span::styled(value.to_owned(), Style::default().fg(WHITE)),
-            ]));
-        }
-        "Provider status" => {
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled("Status: ", DIM),
-                Span::styled(value.to_owned(), Style::default().fg(WHITE)),
-            ]));
-        }
-        "Actions" => {
-            lines.push(Line::from(""));
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(value.to_owned(), DIM),
-            ]));
-        }
-        "Cost"
-        | "Subscription Utilization"
-        | "Buy Credits"
-        | "Add Account"
-        | "Usage Dashboard"
-        | "Status Page" => usage_menu_row(label, value, lines),
         "Provider" | "Account" | "Plan" | "Status" | "Updated" | "Focused" | "Started"
-        | "Today" | "Since start" | "Today cost" | "30d cost" | "30d tokens" | "Latest tokens" => {}
-        "Age" => lines.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled("Started ", DIM),
-            Span::styled(format!("{value} ago"), Style::default().fg(WHITE)),
-        ])),
-        "Active agent time" => lines.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled("Active agent time ", DIM),
-            Span::styled(value.to_owned(), Style::default().fg(WHITE)),
-        ])),
+        | "Today" | "Since start" => {}
         bucket if is_quota_bucket_row(bucket, value) => {
             if context.list_layout {
                 usage_quota_bucket_compact_lines(bucket, value, lines);
@@ -638,10 +544,6 @@ fn usage_lines_for_row(
             }
         }
         _ if is_overview_provider_row(value) => usage_overview_provider_lines(label, value, lines),
-        _ if is_instance_agent_row(value) => usage_instance_agent_lines(label, value, lines),
-        _ if is_instance_provider_account_row(value) => {
-            usage_instance_provider_account_lines(label, value, lines);
-        }
         _ => lines.push(Line::from(vec![
             Span::raw("  "),
             Span::styled(format!("{label} "), DIM),
@@ -676,153 +578,6 @@ fn usage_overview_provider_lines(label: &str, value: &str, lines: &mut Vec<Line<
     lines.push(Line::from(vec![
         Span::raw("    "),
         Span::styled(status.to_owned(), DIM),
-    ]));
-}
-
-fn usage_menu_row(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
-    lines.push(Line::from(vec![
-        Span::raw("  "),
-        Span::styled(label.to_owned(), Style::default().fg(WHITE)),
-        Span::styled("  ", DIM),
-        Span::styled(value.to_owned(), DIM),
-        Span::styled("  >", DIM),
-    ]));
-}
-
-fn usage_metric_pair_lines(value: &str, lines: &mut Vec<Line<'static>>) {
-    let pairs = value
-        .split(" · ")
-        .filter_map(usage_metric_pair)
-        .collect::<Vec<_>>();
-    if pairs.is_empty() {
-        lines.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled(value.to_owned(), Style::default().fg(WHITE)),
-        ]));
-        return;
-    }
-
-    for chunk in pairs.chunks(2) {
-        let mut spans = vec![Span::raw("  ")];
-        for (index, (label, metric)) in chunk.iter().enumerate() {
-            if index > 0 {
-                spans.push(Span::raw("    "));
-            }
-            spans.push(Span::styled(format!("{label:<20}"), DIM));
-            spans.push(Span::styled(metric.to_owned(), Style::default().fg(WHITE)));
-        }
-        lines.push(Line::from(spans));
-    }
-}
-
-fn usage_metric_pair(part: &str) -> Option<(&str, String)> {
-    if let Some(prefix) = part.strip_suffix(" tokens")
-        && let Some((label, count)) = prefix.rsplit_once(' ')
-    {
-        return Some((label, format!("{count} tokens")));
-    }
-    part.rsplit_once(' ')
-        .map(|(label, metric)| (label, metric.to_owned()))
-}
-
-fn is_instance_provider_account_row(value: &str) -> bool {
-    value.split(" || ").count() == 8
-}
-
-fn usage_instance_provider_account_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
-    let parts = value.split(" || ").collect::<Vec<_>>();
-    if parts.len() != 8 {
-        return;
-    }
-    let account = parts[0];
-    let plan = parts[1];
-    let tokens = parts[2];
-    let cost = parts[3];
-    let top_model = parts[4];
-    let exact_rows = parts[5];
-    let estimated_rows = parts[6];
-    let unpriced_rows = parts[7];
-    lines.push(Line::from(vec![
-        Span::raw("  "),
-        Span::styled(
-            label.to_owned(),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("  "),
-        Span::styled(account.to_owned(), Style::default().fg(WHITE)),
-        Span::raw("  "),
-        Span::styled(plan.to_owned(), DIM),
-    ]));
-    lines.push(Line::from(vec![
-        Span::raw("    "),
-        Span::styled(format!("{tokens} since start"), Style::default().fg(WHITE)),
-        Span::raw("  "),
-        Span::styled(cost.to_owned(), Style::default().fg(WHITE)),
-        Span::raw("  "),
-        Span::styled(format!("top {top_model}"), DIM),
-        Span::raw("  "),
-        Span::styled(
-            format!("{exact_rows} exact / {estimated_rows} estimated / {unpriced_rows} unpriced"),
-            DIM,
-        ),
-    ]));
-}
-
-fn is_instance_agent_row(value: &str) -> bool {
-    value.split(" || ").count() == 11
-}
-
-fn usage_instance_agent_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
-    let parts = value.split(" || ").collect::<Vec<_>>();
-    if parts.len() != 11 {
-        return;
-    }
-    let agent = parts[0];
-    let provider = parts[1];
-    let account = parts[2];
-    let plan = parts[3];
-    let tab = parts[4];
-    let pane = parts[5];
-    let activity = parts[6];
-    let tokens = parts[7];
-    let cost = parts[8];
-    let top_model = parts[9];
-    let lifecycle = parts[10];
-    // Three lines (identity / lineage / spend): merging identity and lineage
-    // overflows the panel at narrow-to-medium widths and clips the trailing
-    // activity, so the lineage keeps its own line to stay lossless.
-    lines.push(Line::from(vec![
-        Span::raw("  "),
-        Span::styled(
-            label.to_owned(),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("  "),
-        Span::styled(agent.to_owned(), Style::default().fg(WHITE)),
-        Span::raw("  "),
-        Span::styled(provider.to_owned(), DIM),
-        Span::raw("  "),
-        Span::styled(account.to_owned(), Style::default().fg(WHITE)),
-        Span::raw("  "),
-        Span::styled(plan.to_owned(), DIM),
-    ]));
-    lines.push(Line::from(vec![
-        Span::raw("    "),
-        Span::styled(tab.to_owned(), DIM),
-        Span::raw("  "),
-        Span::styled(pane.to_owned(), DIM),
-        Span::raw("  "),
-        Span::styled(activity.to_owned(), DIM),
-    ]));
-    lines.push(Line::from(vec![
-        Span::raw("    "),
-        Span::styled(tokens.to_owned(), Style::default().fg(WHITE)),
-        Span::raw("  "),
-        Span::styled(cost.to_owned(), Style::default().fg(WHITE)),
-        Span::raw("  "),
-        Span::styled(top_model.to_owned(), DIM),
-        Span::raw("  "),
-        Span::styled(lifecycle.to_owned(), DIM),
     ]));
 }
 

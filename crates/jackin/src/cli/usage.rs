@@ -1,13 +1,13 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use jackin_protocol::control::{AccountUsageSnapshotView, UsageSummaryView};
+use jackin_protocol::control::AccountUsageSnapshotView;
 use serde::Serialize;
 
 use crate::cli::format::{OutputEnvelope, OutputFormat};
 use crate::cli::{BANNER, HELP_STYLES};
 use crate::instance::{InstanceIndex, InstanceStatus};
 use crate::paths::JackinPaths;
-use crate::runtime::snapshot::{self, UsageSummaryScope};
+use crate::runtime::snapshot;
 
 mod store;
 
@@ -18,7 +18,7 @@ mod store;
     long_about = "Read cached usage and quota data from a running Capsule daemon.\n\n\
         This command never polls providers itself. It talks to the selected\n\
         instance's jackin-capsule daemon and renders the daemon-cached account\n\
-        and token/cost snapshots that Capsule uses for the status bar and overlay.\n\n\
+        snapshots that Capsule uses for the status bar and overlay.\n\n\
         Use `jackin usage cache accounts` to read the explicit host-global\n\
         account cache seeded by `accounts --sync-host-cache`."
 )]
@@ -37,12 +37,6 @@ pub enum UsageScope {
     /// Show cached provider account/quota buckets
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Accounts(UsageAccountsArgs),
-    /// Show cached workspace token/cost attribution
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
-    Workspace(UsageWorkspaceArgs),
-    /// Show cached session token/cost attribution
-    #[command(before_help = BANNER, styles = HELP_STYLES)]
-    Session(UsageSessionArgs),
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -55,36 +49,12 @@ pub struct UsageAccountsArgs {
     pub sync_host_cache: bool,
 }
 
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct UsageWorkspaceArgs {
-    /// Workspace name. Defaults to the selected instance's workspace.
-    pub workspace: Option<String>,
-    /// Limit attribution to a recent window.
-    #[arg(long, value_name = "SECONDS")]
-    pub window_seconds: Option<i64>,
-}
-
-#[derive(Debug, Args, PartialEq, Eq)]
-pub struct UsageSessionArgs {
-    /// Capsule session id
-    pub session_id: i64,
-    /// Limit attribution to a recent window.
-    #[arg(long, value_name = "SECONDS")]
-    pub window_seconds: Option<i64>,
-}
-
 #[derive(Debug, Serialize)]
 struct UsageAccountsOutput {
     container: String,
     accounts: Vec<AccountUsageSnapshotView>,
     synced_host_cache_path: Option<String>,
     host_cache_path: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct UsageSummaryOutput {
-    container: String,
-    summary: UsageSummaryView,
 }
 
 impl UsageArgs {
@@ -100,8 +70,6 @@ pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
     let target = resolve_usage_target(paths, &args.instance)?;
     match &args.scope {
         UsageScope::Accounts(scope_args) => run_accounts(args, paths, &target, scope_args).await,
-        UsageScope::Workspace(scope_args) => run_workspace(args, paths, &target, scope_args),
-        UsageScope::Session(scope_args) => run_session(args, paths, &target, scope_args),
     }
 }
 
@@ -129,9 +97,6 @@ async fn run_cache(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
             println!("  cache {}", path.display());
             render_accounts_table(&accounts);
             Ok(())
-        }
-        UsageScope::Workspace(_) | UsageScope::Session(_) => {
-            anyhow::bail!("`jackin usage cache` only supports the `accounts` scope")
         }
     }
 }
@@ -203,90 +168,10 @@ fn render_accounts_table(accounts: &[AccountUsageSnapshotView]) {
     }
 }
 
-fn run_workspace(
-    args: &UsageArgs,
-    paths: &JackinPaths,
-    target: &UsageTarget,
-    scope_args: &UsageWorkspaceArgs,
-) -> Result<()> {
-    let workspace = scope_args
-        .workspace
-        .as_deref()
-        .or(target.workspace_name.as_deref());
-    let summary = snapshot::fetch_usage_summary(
-        paths,
-        &target.container,
-        UsageSummaryScope::Workspace {
-            workspace,
-            window_seconds: scope_args.window_seconds,
-        },
-    )?
-    .unwrap_or_default();
-    render_summary(args, target, summary)
-}
-
-fn run_session(
-    args: &UsageArgs,
-    paths: &JackinPaths,
-    target: &UsageTarget,
-    scope_args: &UsageSessionArgs,
-) -> Result<()> {
-    let summary = snapshot::fetch_usage_summary(
-        paths,
-        &target.container,
-        UsageSummaryScope::Session {
-            session_id: scope_args.session_id,
-            window_seconds: scope_args.window_seconds,
-        },
-    )?
-    .unwrap_or_default();
-    render_summary(args, target, summary)
-}
-
-fn render_summary(args: &UsageArgs, target: &UsageTarget, summary: UsageSummaryView) -> Result<()> {
-    if args.output_format() == OutputFormat::Json {
-        let envelope = OutputEnvelope::v1(UsageSummaryOutput {
-            container: target.container.clone(),
-            summary,
-        });
-        println!("{}", serde_json::to_string_pretty(&envelope)?);
-        return Ok(());
-    }
-
-    print!("{BANNER}");
-    println!("usage summary for {}\n", target.display_label());
-    println!("  samples          {}", summary.sample_count);
-    println!(
-        "  tokens           input={} output={} cache_read={} cache_write={}",
-        summary.token_input,
-        summary.token_output,
-        summary.token_cache_read,
-        summary.token_cache_write
-    );
-    println!("  cost             {}", cost_label(summary.cost_usd_micros));
-    println!(
-        "  provenance       exact={} estimated={} unpriced={}",
-        summary.exact_cost_sample_count,
-        summary.estimated_cost_sample_count,
-        summary.unpriced_sample_count
-    );
-    if let Some(workspace) = summary.workspace.as_deref() {
-        println!("  workspace        {workspace}");
-    }
-    if let Some(session_id) = summary.session_id {
-        println!("  session          {session_id}");
-    }
-    if let Some(window_seconds) = summary.window_seconds {
-        println!("  window           {window_seconds}s");
-    }
-    Ok(())
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct UsageTarget {
     container: String,
     instance_id: Option<String>,
-    workspace_name: Option<String>,
 }
 
 impl UsageTarget {
@@ -309,7 +194,6 @@ fn resolve_usage_target(paths: &JackinPaths, input: &str) -> Result<UsageTarget>
             matches.push(UsageTarget {
                 container: entry.container_base,
                 instance_id: Some(entry.instance_id),
-                workspace_name: entry.workspace_name.or(Some(entry.workspace_label)),
             });
         }
     }
@@ -320,7 +204,6 @@ fn resolve_usage_target(paths: &JackinPaths, input: &str) -> Result<UsageTarget>
         [] => Ok(UsageTarget {
             container: input.to_owned(),
             instance_id: None,
-            workspace_name: None,
         }),
         [target] => Ok(target.clone()),
         _ => anyhow::bail!(
@@ -343,10 +226,6 @@ fn usage_amount_label(account: &AccountUsageSnapshotView) -> String {
         (_, _, Some(limit), Some(unit)) => format!("limit {limit} {unit}"),
         _ => "unknown".to_owned(),
     }
-}
-
-fn cost_label(micros: u64) -> String {
-    format!("${:.2}", micros as f64 / 1_000_000.0)
 }
 
 fn truncate(value: &str, max: usize) -> String {
