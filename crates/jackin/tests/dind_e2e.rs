@@ -88,7 +88,8 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     // build runs after this PR lands. Override with the published floating tag
     // so the E2E build succeeds in CI while the Dockerfile stays correctly
     // pinned for validation purposes.
-    let extra_env = [("JACKIN_CONSTRUCT_IMAGE", "projectjackin/construct:trixie")];
+    let construct_image = e2e_construct_image();
+    let extra_env = [("JACKIN_CONSTRUCT_IMAGE", construct_image.as_str())];
     let output = run_in_pty_until_agent_report(&jackin, &args, &home, &workspace_dir, &extra_env);
 
     // Agent prints its env + `docker ps` snapshot after a sentinel marker on
@@ -187,7 +188,8 @@ fn jackin_load_sentinel_role_runs_hooks_and_keeps_build_output_off_screen() {
 
     let target = format!("{}:/workspace", workspace_dir.display());
     let args = ["load", SENTINEL_ROLE_KEY, &target];
-    let extra_env = [("JACKIN_CONSTRUCT_IMAGE", "projectjackin/construct:trixie")];
+    let construct_image = e2e_construct_image();
+    let extra_env = [("JACKIN_CONSTRUCT_IMAGE", construct_image.as_str())];
     let report_path = workspace_dir.join("jackin-sentinel-report.txt");
     let script = scripted_sentinel_launch_input();
     let output = run_in_pty_until_file(
@@ -438,6 +440,11 @@ fn e2e_serial_lock() -> std::fs::File {
     lock.lock_exclusive()
         .expect("e2e lock file must be lockable");
     lock
+}
+
+fn e2e_construct_image() -> String {
+    std::env::var("JACKIN_E2E_CONSTRUCT_IMAGE")
+        .unwrap_or_else(|_| "projectjackin/construct:trixie".to_owned())
 }
 
 fn run_in_pty_until_agent_report(
@@ -1056,16 +1063,13 @@ trusted = true
 }
 
 const fn role_dockerfile() -> &'static str {
-    // The private 0600 .claude backup, owned by the image's baked agent
-    // (UID 1000), propagates into /jackin/default-home/.claude/backups via the
-    // derived default-home snapshot. runtime-setup copies default-home into the
-    // agent's home on first launch; when the container runs as an arbitrary
-    // host UID (docker run --user <host-uid>:0) that file is only readable if
-    // the derived image normalized /jackin/default-home to group 0. This
-    // reproduces the regression where only /home/agent was normalized, so the
-    // arbitrary UID could not read the seed backup and the capsule failed to
-    // attach. Keep the file private (0600) so the test fails closed if the
-    // normalization is dropped.
+    // The baked Claude seed propagates into /jackin/default-home/.claude/backups
+    // via the derived default-home snapshot. runtime-setup copies default-home
+    // into the agent's home on first launch; when the container runs as an
+    // arbitrary host UID (`docker run --user <host-uid>:0`) the seed is readable
+    // only if role-baked files are born group-0 + group-readable. Keep the file
+    // non-world-readable so the test still exercises the group-0 contract after
+    // the recursive derived chmod pass was removed.
     r"FROM projectjackin/construct:0.1-trixie
 USER root
 RUN apt-get update && \
@@ -1075,9 +1079,9 @@ RUN apt-get update && \
            /var/cache/apt/* \
            /tmp/*
 USER agent
-RUN install -d -m 0700 /home/agent/.claude/backups && \
+RUN install -d -m 0750 /home/agent/.claude/backups && \
     printf 'seed' > /home/agent/.claude/backups/.claude.json.backup.e2e && \
-    chmod 0600 /home/agent/.claude/backups/.claude.json.backup.e2e
+    chmod 0640 /home/agent/.claude/backups/.claude.json.backup.e2e
 "
 }
 

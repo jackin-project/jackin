@@ -26,7 +26,7 @@ impl AgentRuntime for OpencodeRuntime {
         format!(
             "\
 USER agent
-COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.opencode/bin/opencode
+COPY --link --chown=agent:0 --chmod=0755 {source} /home/agent/.opencode/bin/opencode
 ENV PATH=\"/home/agent/.opencode/bin:${{PATH}}\"
 "
         )

@@ -27,7 +27,7 @@ impl AgentRuntime for CodexRuntime {
         format!(
             "\
 USER agent
-COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.local/bin/codex
+COPY --link --chown=agent:0 --chmod=0755 {source} /home/agent/.local/bin/codex
 ENV PATH=\"/home/agent/.local/bin:${{PATH}}\"
 "
         )

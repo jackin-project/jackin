@@ -96,6 +96,16 @@ fn renders_runtime_finalization_in_one_layer() {
             .count(),
         1
     );
+    assert!(
+        dockerfile.contains(
+            "RUN bad=\"$(find /jackin/default-home \\( -type d ! -perm -0050 -o -type f ! -perm -0040 \\) -print -quit)\""
+        ),
+        "default-home snapshot should fail fast when a build-time installer bakes unreadable seed files: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("jackin default-home contains a non-group-readable path: $bad"),
+        "default-home guard should explain the unreadable seed path: {dockerfile}"
+    );
 }
 
 #[test]
@@ -118,6 +128,7 @@ fn renders_derived_dockerfile_keeps_construct_agent_identity() {
     assert!(!dockerfile.contains("chmod -R g=u /home/agent"));
     assert!(dockerfile.contains("COPY --link --chown=agent:0"));
     assert!(dockerfile.contains("install -d -o agent -g 0 /jackin/default-home"));
+    assert!(dockerfile.contains("-type f ! -perm -0040"));
     assert!(dockerfile.contains("USER agent"));
 }
 

@@ -167,6 +167,10 @@ fn render_default_home_commands(agents: &[Agent]) -> String {
     commands
 }
 
+fn render_default_home_guard() -> &'static str {
+    "bad=\"$(find /jackin/default-home \\( -type d ! -perm -0050 -o -type f ! -perm -0040 \\) -print -quit)\" \\\n    && if [ -n \"$bad\" ]; then \\\n        echo \"jackin default-home contains a non-group-readable path: $bad\" >&2; \\\n        exit 1; \\\n    fi"
+}
+
 /// How an agent's CLI is installed into the derived image. `P` is the binary
 /// location: a host [`PathBuf`] before the build context is assembled, a
 /// context-relative [`String`] after [`copy_agent_binaries`] stages it. The one
@@ -237,6 +241,7 @@ pub fn render_derived_dockerfile(
 ) -> String {
     let hook_section = render_hook_section(hooks);
     let default_home_commands = render_default_home_commands(supported);
+    let default_home_guard = render_default_home_guard();
     let hook_final_commands = (!hook_section.final_commands.is_empty())
         .then(|| format!("{} \\\n    && ", hook_section.final_commands.trim_end()));
 
@@ -331,6 +336,7 @@ COPY --link --chown=agent:0 --chmod=0644 {zsh_title_shim_path} /jackin/runtime/z
 #    /jackin/default-home seed, leaving an empty home for the runtime mount.
 #    runtime-setup copies the seed into an empty durable home on first launch. ──
 RUN {default_home_commands}
+RUN {default_home_guard}
 
 # ── Runtime finalization: shell-title shim into .zshrc + jackin runtime dirs ──
 RUN {hook_final_commands}{shell_title_and_runtime_dir_commands}

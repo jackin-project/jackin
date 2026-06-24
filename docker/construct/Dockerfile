@@ -120,7 +120,8 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # Create runtime user
 RUN useradd -m -u "$UID" -g 0 -s /bin/zsh agent && \
     echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent && \
-    install -d -o agent -g 0 /home/agent/.claude /home/agent/.codex /home/agent/.jackin
+    chmod 0775 /home/agent && \
+    install -d -m 0775 -o agent -g 0 /home/agent/.claude /home/agent/.codex /home/agent/.jackin
 
 RUN printf 'umask 0002\n' > /etc/jackin-build-env
 ENV BASH_ENV=/etc/jackin-build-env
