@@ -17,7 +17,7 @@ use std::collections::vec_deque;
 use crate::{
     cell::{Attrs, Cell, Color},
     damage::{DirtySpan, DirtySpans},
-    grid::RowStore,
+    grid::{RowStore, RowWrap},
 };
 
 /// A snapshot of a single cell at dump time.
@@ -102,6 +102,8 @@ pub struct GridSnapshot {
     pub alternate_screen: bool,
     /// The cell grid in row-major order.
     pub cells: Vec<Vec<SnapCell>>,
+    /// Row wrap provenance in row-major order.
+    pub row_wraps: Vec<RowWrap>,
 }
 
 /// Borrowed terminal view for render paths that do not need an owned snapshot.
@@ -152,6 +154,19 @@ impl<'a> GridView<'a> {
         self.screen
             .get(row_idx - self.scrollback_prefix)
             .and_then(|r| r.get(col_idx))
+    }
+
+    /// Return row wrap provenance for a visible row.
+    #[must_use]
+    pub fn row_wrap(&self, row: u16) -> Option<RowWrap> {
+        if row >= self.rows {
+            return None;
+        }
+        let row_idx = usize::from(row);
+        if row_idx < self.scrollback_prefix {
+            return self.scrollback.wrap(self.scrollback_start + row_idx);
+        }
+        self.screen.wrap(row_idx - self.scrollback_prefix)
     }
 }
 

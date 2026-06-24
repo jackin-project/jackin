@@ -157,7 +157,7 @@ Keep this checklist as the working ledger during implementation. When a task is 
 - [x] Phase 1: Add the `jackin-term` width module and define the profile width table for dakuten/handakuten, VS16, emoji, ZWJ, combining marks, ambiguous-width, and final-column wide cases.
 - [x] Phase 1: Derive `Cell::is_wide` and `Cell::is_wide_continuation` from the width module instead of ad hoc width logic.
 - [x] Phase 1: Fix `append_to_previous_cluster` so width growth/shrink updates lead width, continuation cells, dirty span, cursor state, pending wrap, and DSR behavior.
-- [ ] Phase 1: Add soft/hard wrap provenance metadata while changing row geometry, and preserve it through scrollback, resize bookkeeping, and snapshots.
+- [x] Phase 1: Add soft/hard wrap provenance metadata while changing row geometry, and preserve it through scrollback, resize bookkeeping, and snapshots.
 - [ ] Phase 1: Add independent hard-coded width oracle tests, Ratatui cross-check tests, parser conformance fixtures, dirty-span tests, DSR tests, and echo-back fixtures.
 - [ ] Phase 2: Add backend-side attach-capability records populated from attach handshake data, terminfo where available, safe probes, user overrides, and denylist entries.
 - [ ] Phase 2: Add the terminal-state matrix documentation, classifying profile-stable, host-adaptive, frame-reconciled, and boundary-only out-of-band state.

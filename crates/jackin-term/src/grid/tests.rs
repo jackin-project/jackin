@@ -349,6 +349,48 @@ fn final_column_cluster_growth_keeps_deferred_wrap_contract() {
 }
 
 #[test]
+fn deferred_wrap_records_soft_row_provenance() {
+    let mut grid = DamageGrid::new(3, 5, 10);
+    grid.process(b"abcdeZ");
+    let snap = grid.dump();
+
+    assert_eq!(snap.row_wraps[0], RowWrap::Hard);
+    assert_eq!(snap.row_wraps[1], RowWrap::Soft);
+    assert_eq!(cell_text(&grid, 1, 0), "Z");
+}
+
+#[test]
+fn explicit_line_feed_records_hard_row_provenance() {
+    let mut grid = DamageGrid::new(3, 5, 10);
+    grid.process(b"abc\nZ");
+    let snap = grid.dump();
+
+    assert_eq!(snap.row_wraps[1], RowWrap::Hard);
+    assert_eq!(cell_text(&grid, 1, 3), "Z");
+}
+
+#[test]
+fn wrap_provenance_survives_scrollback_view_and_resize() {
+    let mut grid = DamageGrid::new(2, 5, 10);
+    grid.process(b"abcdeZ\nY");
+
+    let view = grid.scrollback_view(1, 2);
+    assert_eq!(view.row_wrap(0), Some(RowWrap::Hard));
+    assert_eq!(view.row_wrap(1), Some(RowWrap::Soft));
+
+    let snap = grid.dump_scrollback_view(1, 2);
+    assert_eq!(snap.row_wraps, [RowWrap::Hard, RowWrap::Soft]);
+
+    grid.set_size(3, 5);
+    let resized = grid.dump();
+    assert_eq!(
+        resized.row_wraps[0],
+        RowWrap::Soft,
+        "visible soft-wrap provenance must survive resize"
+    );
+}
+
+#[test]
 fn overwriting_a_wide_lead_blanks_the_continuation() {
     let mut grid = DamageGrid::new(5, 20, 10);
     grid.process("\u{4f60}".as_bytes());

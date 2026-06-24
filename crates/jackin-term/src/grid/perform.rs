@@ -1,6 +1,6 @@
 use super::{
-    Attrs, Cell, DamageGrid, KITTY_KB_STACK_CAP, PassthroughEvent, blank_row, make_blank_grid,
-    reconstruct_csi,
+    Attrs, Cell, DamageGrid, KITTY_KB_STACK_CAP, PassthroughEvent, RowWrap, blank_row,
+    make_blank_grid, reconstruct_csi,
 };
 use smallvec::SmallVec;
 // ── vte::Perform implementation ────────────────────────────────────────────
@@ -200,7 +200,7 @@ impl vte::Perform for DamageGrid {
             // Scroll Up.
             'S' => {
                 let n = p0.max(1);
-                self.scroll_up(n);
+                self.scroll_up(n, RowWrap::Hard);
             }
             // Scroll Down. Inserted blanks use the DEFAULT background (not BCE).
             'T' => {

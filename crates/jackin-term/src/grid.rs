@@ -27,6 +27,16 @@ use crate::damage::{DirtySpans, DirtyTracker};
 use crate::passthrough::{PassthroughBuffer, PassthroughEvent};
 use crate::width::VirtualTerminalProfile;
 
+/// Provenance for one physical grid row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RowWrap {
+    /// Row starts a logical line or came from an explicit line break/edit op.
+    #[default]
+    Hard,
+    /// Row continues the previous logical line because DECAWM soft-wrapped.
+    Soft,
+}
+
 /// Mouse protocol modes (DEC modes 1000/1002/1003).
 ///
 /// Variants preserve the public names used by the capsule input layer:
@@ -197,6 +207,7 @@ const DEFAULT_REPORTED_BG: (u8, u8, u8) = (0x00, 0x00, 0x00);
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RowStore {
     rows: VecDeque<Vec<Cell>>,
+    wraps: VecDeque<RowWrap>,
     arena: RowArena,
 }
 
@@ -204,6 +215,7 @@ impl RowStore {
     fn blank(rows: u16, cols: u16, arena: RowArena) -> Self {
         Self {
             rows: (0..rows).map(|_| arena.blank_row(cols)).collect(),
+            wraps: (0..rows).map(|_| RowWrap::Hard).collect(),
             arena,
         }
     }
@@ -220,10 +232,15 @@ impl RowStore {
         for row in self.rows.drain(..) {
             self.arena.recycle(row);
         }
+        self.wraps.clear();
     }
 
     pub(crate) fn get(&self, row: usize) -> Option<&Vec<Cell>> {
         self.rows.get(row)
+    }
+
+    pub(crate) fn wrap(&self, row: usize) -> Option<RowWrap> {
+        self.wraps.get(row).copied()
     }
 
     pub(crate) fn iter(&self) -> vec_deque::Iter<'_, Vec<Cell>> {
@@ -235,19 +252,40 @@ impl RowStore {
     }
 
     fn insert(&mut self, index: usize, row: Vec<Cell>) {
-        self.rows.insert(index.min(self.rows.len()), row);
+        self.insert_with_wrap(index, row, RowWrap::Hard);
+    }
+
+    fn insert_with_wrap(&mut self, index: usize, row: Vec<Cell>, wrap: RowWrap) {
+        let index = index.min(self.rows.len());
+        self.rows.insert(index, row);
+        self.wraps.insert(index, wrap);
     }
 
     fn remove(&mut self, index: usize) -> Option<Vec<Cell>> {
-        self.rows.remove(index)
+        let row = self.rows.remove(index);
+        if row.is_some() {
+            let _ = self.wraps.remove(index);
+        }
+        row
     }
 
     fn push_back(&mut self, row: Vec<Cell>) {
+        self.push_back_with_wrap(row, RowWrap::Hard);
+    }
+
+    fn push_back_with_wrap(&mut self, row: Vec<Cell>, wrap: RowWrap) {
         self.rows.push_back(row);
+        self.wraps.push_back(wrap);
     }
 
     fn pop_front(&mut self) -> Option<Vec<Cell>> {
-        self.rows.pop_front()
+        self.pop_front_with_wrap().map(|(row, _wrap)| row)
+    }
+
+    fn pop_front_with_wrap(&mut self) -> Option<(Vec<Cell>, RowWrap)> {
+        let row = self.rows.pop_front()?;
+        let wrap = self.wraps.pop_front().unwrap_or_default();
+        Some((row, wrap))
     }
 
     fn recycle_front(&mut self) {
@@ -368,6 +406,7 @@ impl DamageGrid {
             alt_screen: false,
             scrollback: RowStore {
                 rows: VecDeque::new(),
+                wraps: VecDeque::new(),
                 arena: row_arena,
             },
             scrollback_limit,
@@ -495,12 +534,16 @@ impl DamageGrid {
             .iter()
             .map(|row| row.iter().map(crate::snapshot::SnapCell::from).collect())
             .collect();
+        let row_wraps = (0..screen.len())
+            .map(|idx| screen.wrap(idx).unwrap_or_default())
+            .collect();
         crate::snapshot::GridSnapshot {
             rows: self.rows,
             cols: self.cols,
             cursor: (self.cursor_row, self.cursor_col),
             alternate_screen: self.alt_screen,
             cells,
+            row_wraps,
         }
     }
 
@@ -599,12 +642,25 @@ impl DamageGrid {
         for live_row in live.cells.iter().take(rows_to_draw as usize - prefix) {
             cells.push(live_row.clone());
         }
+        let mut row_wraps = Vec::with_capacity(rows_to_draw as usize);
+        let clamped = offset.min(self.scrollback.len());
+        let start = self.scrollback.len().saturating_sub(clamped);
+        for idx in start..start + prefix {
+            row_wraps.push(self.scrollback.wrap(idx).unwrap_or_default());
+        }
+        row_wraps.extend(
+            live.row_wraps
+                .iter()
+                .copied()
+                .take(rows_to_draw as usize - prefix),
+        );
         crate::snapshot::GridSnapshot {
             rows: rows_to_draw,
             cols: self.cols,
             cursor: live.cursor,
             alternate_screen: live.alternate_screen,
             cells,
+            row_wraps,
         }
     }
 
@@ -808,7 +864,7 @@ impl DamageGrid {
         if self.pending_wrap {
             self.pending_wrap = false;
             self.cursor_col = 0;
-            self.newline_action();
+            self.newline_action_with_wrap(RowWrap::Soft);
         }
         if self.cursor_row >= self.rows || self.cursor_col >= self.cols {
             return;
@@ -958,7 +1014,7 @@ impl DamageGrid {
     }
 
     /// Scroll the active scroll region up by `n` rows, pushing content to scrollback.
-    fn scroll_up(&mut self, n: u16) {
+    fn scroll_up(&mut self, n: u16, inserted_wrap: RowWrap) {
         self.mutated_since_preserve = true;
         let top = self.scroll_top as usize;
         let bottom = self.scroll_bottom as usize;
@@ -980,34 +1036,39 @@ impl DamageGrid {
                 // scrollback (no intermediate clone) or is recycled; the new
                 // bottom row is drawn from the arena recycle pool.
                 let blank = self.active_grid().arena.blank_row(cols);
-                let evicted = self.active_grid().pop_front();
-                if let Some(row) = evicted {
+                let evicted = self.active_grid().pop_front_with_wrap();
+                if let Some((row, wrap)) = evicted {
                     if to_scrollback {
                         if self.scrollback.len() >= self.scrollback_limit {
                             self.scrollback.recycle_front();
                         }
-                        self.scrollback.push_back(row);
+                        self.scrollback.push_back_with_wrap(row, wrap);
                     } else {
                         self.active_grid().arena.recycle(row);
                     }
                 }
-                self.active_grid().push_back(blank);
+                self.active_grid().push_back_with_wrap(blank, inserted_wrap);
             } else {
                 // Partial scroll region (DECSTBM margins) or a non-zero top:
                 // the ring cannot rotate without disturbing rows outside the
                 // region, so shift within range.
                 if to_scrollback {
                     let row = self.primary[0].clone();
+                    let wrap = self.primary.wrap(0).unwrap_or_default();
                     if self.scrollback.len() >= self.scrollback_limit {
                         self.scrollback.recycle_front();
                     }
-                    self.scrollback.push_back(row);
+                    self.scrollback.push_back_with_wrap(row, wrap);
                 }
                 let grid = self.active_grid();
                 for r in top..bottom {
                     grid[r] = grid[r + 1].clone();
+                    if let Some(next_wrap) = grid.wrap(r + 1) {
+                        grid.wraps[r] = next_wrap;
+                    }
                 }
                 grid[bottom] = blank_row(cols);
+                grid.wraps[bottom] = inserted_wrap;
             }
         }
         for r in top as u16..=bottom as u16 {
@@ -1078,11 +1139,24 @@ impl DamageGrid {
 
     /// Newline action: move down or scroll.
     fn newline_action(&mut self) {
+        self.newline_action_with_wrap(RowWrap::Hard);
+    }
+
+    fn newline_action_with_wrap(&mut self, wrap: RowWrap) {
         if self.cursor_row == self.scroll_bottom {
-            self.scroll_up(1);
+            self.scroll_up(1, wrap);
         } else {
             self.cursor_row =
                 Self::add_cursor_offset(self.cursor_row, 1, self.rows.saturating_sub(1));
+            self.set_active_row_wrap(self.cursor_row, wrap);
+        }
+    }
+
+    fn set_active_row_wrap(&mut self, row: u16, wrap: RowWrap) {
+        let idx = usize::from(row);
+        let grid = self.active_grid();
+        if let Some(row_wrap) = grid.wraps.get_mut(idx) {
+            *row_wrap = wrap;
         }
     }
 
@@ -1583,6 +1657,7 @@ fn resize_grid(grid: &RowStore, rows: u16, cols: u16) -> RowStore {
         if r >= rows as usize {
             break;
         }
+        new.wraps[r] = grid.wrap(r).unwrap_or_default();
         for (c, cell) in row.iter().enumerate() {
             if c < cols as usize {
                 new[r][c] = cell.clone();
