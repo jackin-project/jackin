@@ -998,21 +998,7 @@ fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> 
     let auth = data.join("auth.json");
     let has_auth = auth.exists();
     let has_xai_api_key = env_value("XAI_API_KEY").is_some();
-    let xai_management_key = env_value("XAI_MANAGEMENT_API_KEY");
-    let xai_team_id = env_value("XAI_TEAM_ID").or_else(|| env_value("XAI_TEAMID"));
     let has_deployment_key = env_value("GROK_DEPLOYMENT_KEY").is_some();
-    if let Some(management_key) = xai_management_key.as_deref() {
-        let management_result = match xai_team_id.as_deref() {
-            Some(team_id) => fetch_xai_management_billing(management_key, team_id),
-            None => Err("XAI_TEAM_ID not available for xAI Management API billing".to_owned()),
-        };
-        return grok_snapshot_from_xai_management_result(
-            agent,
-            now,
-            xai_team_id,
-            management_result,
-        );
-    }
     let rpc_result = fetch_grok_rpc_billing(rpc_gate);
     grok_snapshot_from_rpc_result(
         agent,
@@ -1023,67 +1009,6 @@ fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> 
         has_deployment_key,
         rpc_result,
     )
-}
-
-fn grok_snapshot_from_xai_management_result(
-    agent: &str,
-    now: i64,
-    team_id: Option<String>,
-    management_result: Result<XaiManagementBilling, String>,
-) -> FocusedUsageView {
-    let (management_usage, management_error) = match management_result {
-        Ok(usage) => (Some(usage), None),
-        Err(error) => (None, Some(error)),
-    };
-    let status = if management_usage.is_some() {
-        UsageSnapshotStatus::Fresh
-    } else {
-        UsageSnapshotStatus::Error
-    };
-    let buckets = management_usage
-        .as_ref()
-        .map(XaiManagementBilling::buckets)
-        .filter(|buckets| !buckets.is_empty())
-        .unwrap_or_else(|| {
-            vec![bucket(
-                "Prepaid credits",
-                None,
-                None,
-                None,
-                None,
-                management_error.as_deref(),
-                status,
-            )]
-        });
-    usage_view(UsageViewInput {
-        agent,
-        provider: None,
-        surface: UsageSurface::Grok,
-        account_label: team_id.map_or_else(
-            || "xAI management key".to_owned(),
-            |id| format!("xAI team {id}"),
-        ),
-        plan_label: management_usage
-            .is_some()
-            .then_some("xAI API credits".to_owned()),
-        buckets,
-        status,
-        source: if management_usage.is_some() {
-            UsageSource::ProviderApi
-        } else {
-            UsageSource::None
-        },
-        confidence: if management_usage.is_some() {
-            UsageConfidence::Authoritative
-        } else {
-            UsageConfidence::PresenceOnly
-        },
-        now,
-        last_error: match status {
-            UsageSnapshotStatus::Error => management_error,
-            _ => None,
-        },
-    })
 }
 
 fn grok_snapshot_from_rpc_result(
@@ -2524,44 +2449,6 @@ struct GrokCent {
     val: Option<i64>,
 }
 
-#[derive(Debug, Deserialize)]
-struct XaiManagementBilling {
-    total: Option<XaiCentValue>,
-}
-
-#[derive(Debug, Deserialize)]
-struct XaiCentValue {
-    val: Option<serde_json::Value>,
-}
-
-impl XaiManagementBilling {
-    fn buckets(&self) -> Vec<QuotaBucketView> {
-        let mut buckets = Vec::new();
-        if let Some(balance) = self.total.as_ref().and_then(XaiCentValue::cents) {
-            buckets.push(bucket(
-                "Prepaid credits",
-                None,
-                Some(format_cents(balance.abs())),
-                Some(100),
-                None,
-                Some("remaining"),
-                UsageSnapshotStatus::Fresh,
-            ));
-        }
-        buckets
-    }
-}
-
-impl XaiCentValue {
-    fn cents(&self) -> Option<i64> {
-        match self.val.as_ref()? {
-            serde_json::Value::Number(number) => number.as_i64(),
-            serde_json::Value::String(value) => value.parse().ok(),
-            _ => None,
-        }
-    }
-}
-
 impl GrokBillingResponse {
     fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
@@ -2637,34 +2524,6 @@ impl GrokBillingResponse {
         let end = parse_iso_epoch(cycle.billing_period_end.as_deref()?)?;
         (end > start).then_some((end - start) / 60)
     }
-}
-
-fn fetch_xai_management_billing(
-    management_key: &str,
-    team_id: &str,
-) -> Result<XaiManagementBilling, String> {
-    if !team_id
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
-    {
-        return Err("XAI_TEAM_ID contains unsupported characters".to_owned());
-    }
-    let client = provider_http_client()?;
-    let response = client
-        .get(format!(
-            "https://management-api.x.ai/v1/billing/teams/{team_id}/prepaid/balance"
-        ))
-        .bearer_auth(management_key)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .send()
-        .map_err(|err| format!("xAI Management prepaid balance request failed: {err}"))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!("xAI Management prepaid balance HTTP {status}"));
-    }
-    response
-        .json()
-        .map_err(|err| format!("xAI Management prepaid balance decode failed: {err}"))
 }
 
 fn fetch_grok_rpc_billing(gate: &mut ManagedCliLaunchGate) -> Result<GrokBillingResponse, String> {
@@ -4915,64 +4774,6 @@ mod tests {
                 .any(|bucket| bucket.label == "On-demand usage"
                     && bucket.used_label.as_deref() == Some("$3")
                     && bucket.limit_label.as_deref() == Some("$25"))
-        );
-    }
-
-    #[test]
-    fn xai_management_billing_maps_prepaid_balance() {
-        let usage: XaiManagementBilling = serde_json::from_value(serde_json::json!({
-            "changes": [],
-            "total": { "val": "-1000" }
-        }))
-        .expect("valid xAI billing response");
-
-        let buckets = usage.buckets();
-
-        assert_eq!(buckets[0].label, "Prepaid credits");
-        assert_eq!(buckets[0].limit_label.as_deref(), Some("$10"));
-        assert_eq!(buckets[0].remaining_percent, Some(100));
-        assert_eq!(buckets[0].pace_label.as_deref(), Some("remaining"));
-    }
-
-    #[test]
-    fn grok_snapshot_uses_xai_management_success() {
-        let billing: XaiManagementBilling = serde_json::from_value(serde_json::json!({
-            "total": { "val": "-2500" }
-        }))
-        .expect("valid xAI billing response");
-
-        let view = grok_snapshot_from_xai_management_result(
-            "grok",
-            1_780_315_200,
-            Some("team-123".to_owned()),
-            Ok(billing),
-        );
-
-        assert_eq!(view.status, UsageSnapshotStatus::Fresh);
-        assert_eq!(view.source, UsageSource::ProviderApi);
-        assert_eq!(view.confidence, UsageConfidence::Authoritative);
-        assert_eq!(view.account.account_label, "xAI team team-123");
-        assert_eq!(view.account.plan_label.as_deref(), Some("xAI API credits"));
-        assert_eq!(view.buckets[0].limit_label.as_deref(), Some("$25"));
-        assert_eq!(view.last_error, None);
-    }
-
-    #[test]
-    fn grok_snapshot_reports_xai_management_error() {
-        let view = grok_snapshot_from_xai_management_result(
-            "grok",
-            1_780_315_200,
-            None,
-            Err("XAI_TEAM_ID not available for xAI Management API billing".to_owned()),
-        );
-
-        assert_eq!(view.status, UsageSnapshotStatus::Error);
-        assert_eq!(view.source, UsageSource::None);
-        assert_eq!(view.confidence, UsageConfidence::PresenceOnly);
-        assert_eq!(view.account.account_label, "xAI management key");
-        assert_eq!(
-            view.last_error.as_deref(),
-            Some("XAI_TEAM_ID not available for xAI Management API billing")
         );
     }
 
