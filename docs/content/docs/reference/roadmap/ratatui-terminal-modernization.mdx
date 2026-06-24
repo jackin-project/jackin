@@ -2,364 +2,280 @@
 title: "Ratatui terminal modernization"
 ---
 
-**Status**: Open — research complete, re-verified against the tree, extended with a skeptical review pass, and extended again with a contract-level skeptical pass that re-verified every load-bearing claim against the working tree and the pinned upstream source in the cargo registry. The implementation branch is allowed to refactor broadly before merge. The work is no longer "upgrade Ratatui"; the tree is already on Ratatui 0.30.2. The work is to (a) exploit Ratatui 0.30 buffer/diff/width APIs that are available through the dependency but unused by jackin', (b) close concrete first-party fidelity gaps in `jackin-term` and the Capsule emit path that no upstream crate will ever fix for us, (c) verify competing implementation approaches where the current roadmap and the skeptical pass disagree, and (d) settle the underlying terminal-emulator *contract* (what kind of terminal jackin' promises to be) before optimizing how its frames diff, because several width and fidelity decisions are undecidable until that contract is written down.
-
-This document deliberately records **more than one opinion**. Where a later review pass disagreed with an earlier recommendation, the disagreement is preserved as two named directions with the benefit of each, not collapsed into a single answer. The implementation branch is expected to do its own deep research, build the smallest proof that distinguishes the directions, and only then commit. Treat every "Existing roadmap view" / "Extended view" pairing below as a research task, not a settled decision.
+**Status**: Open — implementation decisions finalized. This item is no longer an upgrade task: jackin' already depends on Ratatui 0.30.2. The work is to make the `jackin-term` model, Ratatui buffer mapping, and Capsule emit path share one explicit terminal contract, then remove the current full-frame repaint stopgap and use Ratatui's modern buffer/diff APIs correctly.
 
 ## Problem
 
-jackin' depends on Ratatui for every rich terminal surface and on `jackin-term` for the Capsule PTY terminal model. The original framing of this item assumed `jackin-term` predated the Ratatui 0.26–0.30.2 work and that adopting it was a future dependency bump. That framing is now stale and has been corrected by reading the tree: the dependency bump already happened. The remaining work is narrower, deeper, and entirely first-party at the seam between jackin's owned model and Ratatui's compositor.
+jackin' depends on Ratatui for rich terminal surfaces and on `jackin-term` for the Capsule PTY terminal model. Ratatui's `Buffer` is a compositor buffer, not a PTY emulator: it does not own scrollback, terminal modes, DSR replies, OSC/CSI policy, or the distinction between bytes that update the pane grid and bytes returned to the agent PTY. `jackin-term` remains the owned terminal model.
 
-The goal is not compatibility preservation. jackin' is pre-1.0, and quality is more important than avoiding hard refactors. If Ratatui now owns a capability better than jackin's local implementation, prefer upstream Ratatui and reshape jackin' around it. If jackin's model is still stronger because it owns PTY state, passthrough policy, scrollback, or source-recorded damage, keep that local ownership and borrow only the proven idea. Where this document records competing views, the implementation branch should treat them as research hypotheses: build the smallest proof that can distinguish them, compare correctness and emitted bytes, then commit to the better design. The implementation should happen on a dedicated branch and merge only after the existing automated harnesses (extended with new fixtures) plus manual operator soak prove the new shape is strictly better. No runtime feature flag is required for the intended direction.
-
-## Baseline reality — what is already true in the tree (verified)
-
-This section exists to stop the roadmap from re-crediting work jackin' already gets for free. Every claim here was verified by reading the tree and the pinned upstream source in the cargo registry.
-
-- **The tree is already on Ratatui 0.30.2.** `ratatui = "0.30"` is declared in <RepoFile path="crates/jackin-capsule/Cargo.toml" />, <RepoFile path="crates/jackin-tui/Cargo.toml" />, <RepoFile path="crates/jackin-console/Cargo.toml" />, <RepoFile path="crates/jackin-launch/Cargo.toml" />, <RepoFile path="crates/jackin-runtime/Cargo.toml" />, and <RepoFile path="crates/jackin/Cargo.toml" />. The lockfile resolves `ratatui 0.30.2`, `ratatui-core 0.1.2`, `ratatui-widgets 0.3.2`, `crossterm 0.29.0`. `termina 0.3.3` and `ratatui-termina 0.1.0` appear in the lockfile only as the Ratatui meta-crate's *optional* backend dependencies; the default feature set is `crossterm`, so Termina is not compiled into any jackin' binary today.
-- **The custom backend is already on the modern Backend contract.** `SocketBackend` in <RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs" /> already declares `type Error = io::Error`, already implements `clear_region` for every `ClearType` variant, and its `draw` already consumes Ratatui's changed-cell iterator and builds no intermediate `Vec`. There is no per-frame changed-cell allocation to remove.
-- **Ratatui's flush is already zero-allocation.** `ratatui_core` 0.1.2 `Terminal::flush` walks `previous_buffer.diff_iter(current_buffer)` — a zero-allocation `BufferDiff` iterator that already handles multi-width characters and VS16 trailing cells — and passes it straight to `Backend::draw`. jackin' receives that iterator unchanged.
-- **The echo-back render conformance harness already exists.** Every frame the Capsule composes is replayed into a second `DamageGrid` standing in for the operator's outer terminal, asserting cell-exact equality (grapheme, attrs, wide flags) plus the frame-model cursor contract. The harness and its `VirtualClient` live in <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs" />. Parser-side conformance lives in <RepoFile path="crates/jackin-term/tests/conformance.rs" />, allocation regression in <RepoFile path="crates/jackin-term/tests/allocation.rs" />, the fuzz target in <RepoFile path="crates/jackin-term/fuzz/src/damage_grid_process.rs" />, and benches in <RepoFile path="crates/jackin-term/benches/present_frame.rs" />, <RepoFile path="crates/jackin-term/benches/scroll_throughput.rs" />, and <RepoFile path="crates/jackin-capsule/benches/pane_body.rs" />. The modernization branch *extends* these; it does not build them.
-- **Cursor position, visibility, and shape are already frame-level state.** The grid tracks the program-requested DECSCUSR cursor style (`CSI {n} SP q`) in <RepoFile path="crates/jackin-term/src/grid.rs" /> (set in <RepoFile path="crates/jackin-term/src/grid/perform.rs" />), and the compositor in <RepoFile path="crates/jackin-capsule/src/daemon/compositor.rs" /> reconciles cursor style per frame, emitting the escape only when it changes from the last asserted value. Cursor work in this item is a completeness audit, not a from-scratch build.
-- **The new Ratatui 0.30 buffer APIs exist upstream but are unused by jackin'.** `ratatui_core::buffer::CellWidth`, `ratatui_core::buffer::CellDiffOption` (`None`, `Skip`, `AlwaysUpdate`, `ForcedWidth(NonZeroU16)`), the public `BufferDiff` iterator, and `Terminal::apply_buffer()` / `apply_buffer_with_cursor()` are all present in `ratatui-core` 0.1.2. A tree-wide search finds zero uses of `set_skip`, `set_diff_option`, `CellDiffOption`, `ForcedWidth`, `AlwaysUpdate`, or `apply_buffer` in jackin'. This unexploited surface is the real opportunity, but it is not enough by itself while the current compositor deliberately forces every cell to repaint.
-- **The Capsule currently forces full-frame repaint every frame.** `compose_ratatui_frame()` in <RepoFile path="crates/jackin-capsule/src/daemon/compositor.rs" /> fills Ratatui's current buffer with a private-use sentinel (`U+E001`) and swaps buffers before every draw, so Ratatui sees every composed cell as changed. This is a deliberate convergence stopgap: the comments explain that until extra writers are deleted, Ratatui's previous buffer cannot be trusted as the client model. The consequence is important: Ratatui's `diff_iter` is zero-allocation, but jackin' does not currently get minimal changed-cell output. Any recommendation about `CellDiffOption`, `AlwaysUpdate`, hyperlink invalidation, or emitted-byte wins must be verified again after this sentinel path is removed.
-- **There are two hyperlink paths today, not one.** UI/dialog hyperlinks flow through `SocketBackend::set_hyperlink_regions()` and are emitted only for diffed cells. Agent PTY OSC 8 hyperlinks are parsed in `jackin-term` as `PassthroughEvent::Hyperlink`, safety-filtered by the Capsule session, and queued as out-of-band bytes through `ClientWriter`. The roadmap therefore has two valid implementation hypotheses: keep UI hyperlinks as backend frame regions and make their diff invalidation precise, or unify PTY and UI hyperlinks as cell/frame metadata in the terminal model and render pipeline. The implementation branch should compare these instead of assuming the current split is final.
-
-## Current jackin' model — keep it, modernize the seam
-
-The architecture is sound and is not being discarded. The full engineering record is in <RepoFile path="crates/jackin-term/README.md" /> and the durable reference is [Capsule Terminal Model](/reference/capsule/terminal-model/).
+The current gap is at the seam:
 
 ```text
 PTY bytes
   -> vte::Parser
-  -> jackin_term::DamageGrid            (parser state machine + cell grid + scrollback + damage)
-  -> GridView / GridSnapshot / SnapCell (observation APIs)
-  -> PaneBodyWidget                     (blits model cells into a Ratatui Buffer)
-  -> ratatui::Terminal (Fullscreen)     (owns double-buffer + zero-alloc diff_iter)
-  -> SocketBackend                      (encodes the changed-cell iterator to ANSI)
-  -> ClientWriter                       (one socket writer; ?2026 synchronized frame brackets)
+  -> jackin_term::DamageGrid
+  -> GridView / GridSnapshot / SnapCell
+  -> PaneBodyWidget
+  -> ratatui::Terminal
+  -> SocketBackend
+  -> ClientWriter
 ```
 
-`jackin-term` owns the PTY terminal model: parser state, primary and alternate screen, scrollback, cursor state, modes, source-recorded dirty rows, default-color replies, Kitty keyboard state, OSC/CSI passthrough policy, and snapshots. The load-bearing files are <RepoFile path="crates/jackin-term/src/lib.rs" />, <RepoFile path="crates/jackin-term/src/grid.rs" />, <RepoFile path="crates/jackin-term/src/grid/perform.rs" />, <RepoFile path="crates/jackin-term/src/damage.rs" />, <RepoFile path="crates/jackin-term/src/cell.rs" />, <RepoFile path="crates/jackin-term/src/snapshot.rs" />, and <RepoFile path="crates/jackin-term/src/passthrough.rs" />.
+Today that seam has three concrete problems:
 
-Ratatui does not replace that model. Ratatui's `Buffer` is a compositor buffer, not a PTY emulator: it does not own scrollback retention, application cursor mode, bracketed paste mode, Kitty keyboard stack depth, OSC 10/11 replies, DA/DSR replies, focus-event passthrough, or the distinction between bytes that update the pane grid and bytes returned to the agent PTY. Termina does not replace it either: Termina is a low-level terminal I/O and typed-escape library with event parsing, not a screen grid, damage tracker, scrollback store, or frame diff. The modernization target is therefore the *seam*: make the model's display-width contract explicit, feed Ratatui enough cell-width and protocol-visibility information to diff correctly, stop dropping terminal-visible SGR state at parse time, and evaluate Termina only at the raw terminal I/O boundary.
+- Width is not a written contract. `jackin-term` uses `unicode-width`, while Ratatui 0.30's buffer width logic has additional terminal-compatibility behavior, including the halfwidth-katakana dakuten/handakuten case. A self-consistent but wrong width rule corrupts cursor math, continuation cells, dirty spans, and DSR replies.
+- The Capsule forces a full-frame repaint every frame by filling Ratatui's current buffer with a private-use sentinel before swapping buffers. This hides true diff behavior and prevents meaningful byte-count measurements.
+- Terminal-visible metadata is split or dropped: OSC 8 hyperlinks are split between backend regions and PTY passthrough, several SGR attributes are discarded at parse time, and attach-terminal capabilities are not represented as a separate backend concern.
 
-## The terminal-emulator contract — virtual-terminal profile vs attach capability (contract-level pass)
+## Baseline
 
-This section was added by the contract-level skeptical pass. It does not override the recommendations below; it reframes the foundation several of them stand on, and it introduces the single correction the later pass disagreed with most strongly. Read it before Recommendation 1, because Recommendation 1 cannot be implemented correctly without taking a position here.
+Verified facts this implementation must preserve:
 
-**The width problem has more than two authorities.** The recommendations below mostly frame width as a negotiation between three things: jackin's model, Ratatui's `CellWidth`, and the host terminal. Reading the tree shows there are at least four authorities, and two of them are easy to forget:
+- The workspace is already on Ratatui 0.30.2 through `ratatui = "0.30"`. `termina` and `ratatui-termina` appear only as optional Ratatui dependencies and are not compiled into jackin' binaries today.
+- `SocketBackend` already implements the modern Ratatui backend trait shape, including `type Error = io::Error` and all `clear_region` variants.
+- Ratatui's flush path already uses a zero-allocation diff iterator. jackin' currently defeats the practical byte savings with the sentinel full-frame repaint.
+- Existing conformance infrastructure must be extended, not replaced: parser conformance in <RepoFile path="crates/jackin-term/tests/conformance.rs" />, allocation regression in <RepoFile path="crates/jackin-term/tests/allocation.rs" />, fuzzing in <RepoFile path="crates/jackin-term/fuzz/src/damage_grid_process.rs" />, echo-back render conformance in <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs" />, and benches in <RepoFile path="crates/jackin-term/benches/present_frame.rs" />, <RepoFile path="crates/jackin-term/benches/scroll_throughput.rs" />, and <RepoFile path="crates/jackin-capsule/benches/pane_body.rs" />.
+- Cursor position, visibility, and DECSCUSR shape are already frame-level state. This work audits and completes that model; it does not rebuild cursor handling from scratch.
+- Ratatui 0.30 APIs to use are already available but unused: `CellWidth`, `CellDiffOption`, public `BufferDiff`, and `Terminal::apply_buffer()` / `apply_buffer_with_cursor()`.
 
-1. **The agent application inside the PTY**, which computes its own cursor advancement from its own `wcwidth`/`unicode-width` assumptions and relies on jackin-term's DSR replies. jackin-term deliberately declines DECRQM mode 2027 (grapheme-cluster-width) in <RepoFile path="crates/jackin-term/src/grid/perform.rs" /> precisely so the agent's width baseline stays predictable. **Verified:** the DECRQM handler answers `0` ("mode not recognized") for *every* mode, with an inline comment stating that enabling 2027 would make the agent advance by grapheme while the grid advances by `unicode_width`, desyncing every wide/combining glyph — so the agent is held to a `unicode-width` baseline by construction.
-2. **jackin-term's model**, which both stores cells and answers DSR cursor queries to the agent from its own grid cursor — so the model's width rule is also the *agent-visible* width rule. **Verified:** the `DSR 6n` reply in <RepoFile path="crates/jackin-term/src/grid/perform.rs" /> is built from `cursor_row`/`cursor_col` (the grid's own cursor, never the host's), with the DECAWM phantom column clamped to the last real column; an inline comment records that forwarding `6n` to the host previously returned the *outer* terminal's cursor and corrupted the agent's layout math. That is the concrete proof that the model's width rule is what the agent sees.
-3. **Ratatui's diff**, whose `CellWidth` adds the `+1` halfwidth-katakana compensation.
-4. **The physical host terminal**, whose own glyph engine decides how many columns a cluster actually occupies when the composed bytes land.
+## Final Decisions
 
-`ForcedWidth` (Recommendation 2) only changes authority 3 — Ratatui's diff bookkeeping. It cannot change authority 4: the host still advances its cursor by its own rendering of the bytes `SocketBackend` emits via `set_symbol`. So for any cluster where the agent's `wcwidth` and the host's glyph width genuinely disagree (the proven `U+FF9E`/`U+FF9F` case is exactly this), **no `ForcedWidth` and no model change can make all four authorities agree at once.** This is the same unavoidable tension every terminal emulator has; jackin' just sits in the middle of it, re-emitting.
+### 1. Stable virtual-terminal profile, not host-defined semantics
 
-**The correction: do not let the attached host define agent-visible semantics.** Recommendation 1's phrasing — "port Ratatui's `+1` compensation into the model where the target host terminals match it" — quietly makes the currently-attached terminal the tiebreaker. That is wrong for jackin' specifically, because a Capsule session can be detached and reattached from a *different* terminal, while the agent keeps running. The agent is always launched with a fixed `TERM=xterm-256color` and `COLORTERM=truecolor` independent of the attach host (see the env setup in <RepoFile path="crates/jackin-capsule/src/session.rs" />). If width or DSR semantics flexed to whatever terminal happens to be attached, detaching from one terminal and reattaching from another with a different width rule would silently change the agent's cursor arithmetic mid-session — a poison failure that is invisible until output corrupts.
+The agent-visible terminal contract is stable for the life of a session. The attached host terminal must not define model width, DSR replies, advertised modes, or color semantics, because an agent can keep running while the operator detaches from one terminal and reattaches from another.
 
-The contract-level pass therefore recommends splitting the single fuzzy "host" authority into two explicit layers:
+Implement a `jackin-term` virtual-terminal profile as the source of truth for:
 
-- **A stable per-session virtual-terminal profile, owned by `jackin-term`.** It is the source of truth for: the display-width table (including the `U+FF9E`/`U+FF9F` decision), the Unicode version, the mode-2027 answer, the ambiguous-width stance, VS16/ZWJ/emoji cluster rules, the supported SGR set, the color model advertised to the agent, and the OSC/passthrough policy. It is chosen once per session from a documented target-host consensus plus a conformance matrix, and it does **not** change when the operator reattaches from a different terminal. This is what keeps authorities 1 and 2 in agreement for the whole life of the agent.
-- **An attach-capability adapter, owned by the backend.** It maps the stable profile to whatever terminal is *currently* attached, or declares that terminal degraded/unsupported. Color-depth downsampling, OSC 8 support, `?2026` support, underline-style support, and image-protocol support all belong here, because they legitimately vary per attached terminal without changing what the agent believes about its own screen.
+- Unicode/display-width table, including dakuten/handakuten, VS16, emoji, ZWJ clusters, combining marks, ambiguous-width code points, and final-column wide behavior.
+- The Unicode version implied by that table.
+- DECRQM mode-2027 stance.
+- DSR cursor replies.
+- Agent-visible color model.
+- Supported SGR set.
+- OSC/passthrough policy.
 
-```text
-                 PTY                          composed frame
- ┌────────────┐ ◀────▶ ┌───────────────────────────┐ ────────▶ ┌──────────────────┐
- │ Agent app  │  DSR   │ jackin-term VIRTUAL-TERM   │           │ attach-capability│ ──▶ host
- │ own wcwidth│        │ PROFILE (stable / session) │           │ adapter (backend)│
- └────────────┘        └───────────────────────────┘           └──────────────────┘
-   authority 1            authority 2 + (drives 3)                 authority 4 (host)
-        ▲ must NOT change on reattach ▲                   ▲ may vary per attached terminal ▲
-```
+Implement a separate attach-capability adapter in the backend. It adapts the stable frame to the currently attached terminal or marks the host degraded. Capability information may vary on reattach; it must never flow back into the `jackin-term` model.
 
-Under this split, `ForcedWidth` aligns Ratatui (authority 3) to the *model/profile* (authority 2), never to the host (authority 4). Where the profile and a given host disagree on physical glyph width, that is surfaced as a known degradation of that host, not papered over by mutating the agent-visible model. Today there is no attach-capability layer at all — the fixed `TERM`/`COLORTERM` is a virtual-terminal *claim* with no host adapter behind it — so this is genuinely new structure, not a rename of existing code.
+### 2. Width work lands before sentinel removal
 
-This reframing is why the contract-level pass also argues for reordering (Recommendation 1 before Recommendation 0) and for a host-conformance harness that does not share jackin-term's width code; both are recorded as debates below.
+Width is a correctness bug today; the sentinel only affects diff measurement. Implement the profile-owned width contract first, then retire the sentinel full-frame repaint. Byte-win claims start only after the sentinel is gone.
 
-## Decision principles
+The width implementation must:
 
-- **Prefer upstream Ratatui when it owns the exact problem.** If Ratatui 0.30's diff iterator, `CellDiffOption`, or `CellWidth` solves a compositor problem better than local code, switch even if the refactor is large.
-- **Keep first-party ownership where jackin's problem is different.** `DamageGrid` exists because the Capsule needs a PTY terminal model with scrollback, passthrough policy, query replies, and source-recorded damage. Ratatui and Termina do not provide that complete model.
-- **Record competing designs instead of prematurely collapsing them.** When two directions are plausible — e.g. Ratatui-only cell options vs a parallel metadata grid, backend hyperlink regions vs model-owned OSC 8 cells, inferred scrolls vs source-recorded scroll ops — the branch should preserve both as explicit hypotheses until fixtures, echo-back, emitted bytes, and terminal soak choose one.
-- **Test branch, not feature flag.** The branch may break internal APIs, reshape the Capsule render path, or replace dependencies. It merges only after automated and manual validation prove the new shape is strictly better.
-- **One physical writer remains mandatory.** Direct `GridPatch` ANSI emission was retired because it could desync Ratatui's previous buffer from the outer terminal. Modernization must not reintroduce parallel writers. Damage is an invalidation and observation signal; committed output remains one composed frame written by `ClientWriter` in <RepoFile path="crates/jackin-capsule/src/client_writer.rs" />.
-- **Measure before claiming performance.** Record only real wins: allocation profiles, frame timings, emitted bytes, and echo-back conformance.
-- **Agent-visible semantics are stable per session; host capability is adaptive (contract-level pass).** What the agent believes about its own screen — width, DSR replies, advertised modes and color — must not change when the operator detaches and reattaches from a different terminal. Per-host differences belong in the attach-capability adapter, never in the model. This principle was added by the contract-level pass and is in tension with any recommendation that lets the attached host drive model width; resolve the tension explicitly, do not assume either default.
+- Add one narrow width module owned by `jackin-term`.
+- Derive `Cell::is_wide` and `Cell::is_wide_continuation` from that module.
+- Fix `append_to_previous_cluster` so cluster-width mutations update lead width, continuation cells, dirty span, cursor state, pending wrap, and DSR behavior.
+- Add an independent hard-coded width oracle in CI. Do not compute the expected table from `jackin-term` or Ratatui.
+- Cross-check against Ratatui's `CellWidth` in tests so drift is visible, but keep `jackin-term` free of a runtime Ratatui dependency.
 
-## What is explicitly NOT the work (padding removed)
+### 3. Ratatui mapping uses `ForcedWidth`, not ordinary continuation `Skip`
 
-These were listed as future work in the first draft of this item. They are already satisfied by the version jackin' is on. Do not spend the branch's budget here:
+Pane rendering must declare model-known width to Ratatui instead of relying on Ratatui to infer width from the symbol.
 
-- **Do not "implement the associated `Error` type and `clear_region`."** `SocketBackend` already does both. The only backend audit worth doing is the *semantic* one in Recommendation 3, not the trait-shape one.
-- **Do not "remove the per-frame changed-cell `Vec`."** Both Ratatui's flush and `SocketBackend::draw` are already iterator-based and allocation-free on the diff path.
-- **Do not "adopt Ratatui's `scrolling-regions` feature" for the Capsule.** That feature only affects `Terminal::insert_before` on an Inline viewport. The Capsule uses a Fullscreen viewport via `Terminal::new`, and the tree has zero `insert_before` calls and zero Inline viewports. The feature is inert for the Capsule re-emit path. The genuinely valuable idea hiding inside the old recommendation — emitting scroll regions in `SocketBackend` to cut bytes — is first-party work and is captured separately in Recommendation 6.
+Mapping rule:
 
-## Open implementation debates to preserve during the branch
+- Lead cells with model width greater than one use `CellDiffOption::ForcedWidth`.
+- Ordinary continuation cells stay blank/default and do not use `CellDiffOption::Skip`.
+- `Skip` is reserved only for deliberately invisible protocol-only cells after a test proves no stale clear can be hidden.
+- `AlwaysUpdate` is reserved for metadata transitions, especially hyperlink boundary changes. It must never be applied broadly.
 
-The roadmap intentionally keeps multiple opinions where the code does not yet prove one design. This is not indecision; it is a research checklist for the future implementation branch.
+Add a buffer well-formedness property before diff: every continuation has a matching lead, no visible cell sits inside a lead's effective width span, a final-column wide glyph is handled explicitly, every `ForcedWidth` equals model width, and no stale continuation survives overwrite/delete/erase/resize.
 
-| Debate | Existing roadmap view | Skeptical review view | How to decide |
-|---|---|---|---|
-| Ratatui diff modernization | Ratatui 0.30 `diff_iter`, `CellDiffOption`, and `CellWidth` are ready to exploit at the pane mapping seam. | The compositor currently forces full-frame repaint, so true diff behavior is hidden; restoring a trusted previous buffer must come first. | Add emitted-byte tests for unchanged frames before and after sentinel removal. Only then evaluate `ForcedWidth`, `AlwaysUpdate`, `Skip`, and scroll-region wins. |
-| Wide continuation cells | Use `ForcedWidth` on lead cells and consider `Skip` on continuation cells after fixtures prove stale clears are safe. | Do not use `Skip` for ordinary wide continuations by default; Ratatui already skips covered trailing cells, and `Skip` can suppress needed wide-to-narrow cleanup. | Build mapping tests for wide→narrow overwrite, delete, erase, resize, and styled trailing cells. Accept `Skip` only for cases where echo-back and buffer well-formedness prove no stale cell can survive. |
-| OSC 8 hyperlinks | Fix backend frame hyperlink regions by forcing updates when link membership changes over unchanged glyphs. | Model OSC 8 as cell/frame metadata in `DamageGrid` so PTY hyperlinks and UI hyperlinks share one rendering path instead of split passthrough + backend-region behavior. | Compare both on PTY OSC 8 open/text/close, UI dialog links, link target changes over unchanged text, wide-cell boundaries, safety filtering, and synchronized-frame ordering. |
-| Unsupported SGR state | Extend `Attrs`, map what Ratatui supports, and emit the rest if needed. | Ratatui `Cell` cannot carry underline styles or overline; a parallel metadata grid may be required for perfect fidelity. | Split Ratatui-native attrs from sidecar/backend-only attrs, then prove round-trip parse → snapshot → frame emit for each SGR class. |
-| Scroll optimization | Prototype first-party DECSTBM emission in `SocketBackend` after geometry/capability checks. | Source-record scroll operations inside `DamageGrid` when parser mutations happen; do not infer scrolls from final Ratatui buffers. | Prototype `ScrollOp` recording and compare against buffer-diff inference on scroll-heavy fixtures, pane chrome, resize, alternate screen, and scrollback view. |
-| Termina migration | Evaluate Termina at raw terminal I/O boundary only. | Same direction, but avoid calling Termina a full capability-probing framework; treat it as typed protocol/event/query tooling until proven broader. The contract-level pass is more skeptical still: Crossterm 0.29 is mature and the only concrete Termina win is typed protocol query/response, which `jackin-term` already partly owns — keep this last and do not sweep. | Build parity tests for raw mode, alternate screen, input events, resize, mouse/focus/bracketed paste/Kitty keyboard, cleanup, and protocol queries. |
-| Width authority resolution (contract-level pass) | Port Ratatui's `+1` halfwidth-katakana compensation into the model "where the target host terminals match it," letting host consensus settle the contract. | The attached host must never define agent-visible width, because sessions detach and reattach from different terminals. Own a stable per-session virtual-terminal profile; `ForcedWidth` aligns Ratatui to that profile, not to the host; per-host glyph disagreement is surfaced as a known degradation, not absorbed into the model. | Decide the profile from a documented target-host consensus + conformance matrix once; prove with an *independent* width oracle (not jackin-term's own code) that the profile's emitted bytes advance a real host the same way the profile predicts, across detach/reattach between terminals with different width rules. |
-| Phase ordering: width vs sentinel (contract-level pass) | Retire the sentinel full-frame repaint first (Recommendation 0), then do the width contract (Recommendation 1), because later diff/byte measurement depends on a trusted previous buffer. | The width divergence is a *live correctness bug shipping today*: it corrupts cluster→cell mapping, cursor advancement, dirty spans, and DSR replies independent of the sentinel, which only forces re-emission of already-wrong cells. Recommendation 1 has no dependency on Recommendation 0. Correctness-first ordering does width first or in parallel; the sentinel is a prerequisite only for *byte-win measurement*. | Confirm by tracing whether the width path runs before the diff (it does — it is parse-time and mapping-time). Land Recommendation 1 with the independent width oracle, then remove the sentinel when true-diff byte counts become measurable. |
-| Host-fidelity validation (contract-level pass) | Echo-back into a second `DamageGrid`, plus an optional recorded host capture, proves emit-path fidelity. | Echo-back is *structurally blind* to any width/render rule shared by both grids: the VirtualClient replay uses the same jackin-term width code as the source, so a contract that is internally self-consistent but wrong for a real host will false-pass. Real closure is a first-class host-conformance program, not a parenthetical. | Add (1) an independent hard-coded width oracle in CI, (2) real-terminal `DSR 6n` cursor-advance probes per glyph class, and (3) real-terminal visual captures on a Ghostty/iTerm2/WezTerm/Kitty/Alacritty matrix. Keep echo-back as a regression net for "bytes recreate jackin's own model," not as proof of host match. |
-| Cluster-width mutation on append (contract-level pass) | Treated inside Recommendation 1 as a "correctness decision point" to revisit in `append_to_previous_cluster`. | This is the actual hard core of the width work, not a sub-point: if any cluster's canonical width can grow or shrink when a mark/VS16/ZWJ joins, the model must mutate the lead width, create or clear a continuation cell, extend the dirty span, and fix cursor/pending-wrap/DSR at the right edge — and reconcile all of that with the declined mode-2027 baseline. | Build fixtures where appending changes width (halfwidth base + `U+FF9E`, base + VS16, ZWJ growth) and assert lead width, continuation cells, dirty span, cursor column, and the DSR reply after each append. |
-| Primary-scrollback reflow on resize (contract-level pass) | Not addressed; resize appears only in test coverage. | Modern terminals rewrap soft-wrapped logical lines on width change; jackin' does not, and this is a larger fidelity gap than inline images. Even if reflow ships later, the soft/hard wrap metadata it needs must be tracked *now*, because retrofitting wrap provenance into existing scrollback is brutal. | Decide whether to track per-row soft/hard wrap metadata in this branch; prototype primary-screen reflow (never alt-screen) with logical-line reconstruction and attr/grapheme preservation; measure against a hard-truncate baseline on resize-heavy fixtures. |
+### 4. OSC 8 hyperlinks become model/frame metadata
 
-## Recommendations
+Use one hyperlink model for PTY OSC 8 links and jackin-owned UI links. Do not keep the current split where PTY links pass through out of band and UI links live only as backend regions.
 
-Ranked by correctness value. Each one states why it matters, what it improves, the concrete implementation, and the acceptance coverage the branch must add before merge.
+Implementation shape:
 
-### 0. Restore a trustworthy Ratatui diff baseline by retiring the sentinel full-frame repaint
+- `DamageGrid` tracks active PTY OSC 8 hyperlink state.
+- Printed cells capture the active link metadata.
+- Snapshots carry link metadata.
+- UI/dialog links use the same frame metadata shape.
+- `SocketBackend` emits OSC 8 open/close transitions from frame metadata.
+- Link metadata changes over unchanged glyphs force only the affected boundary cells with `AlwaysUpdate`.
 
-**Why this matters.** The current compositor intentionally fills Ratatui's current buffer with a sentinel and swaps buffers before every draw so every cell differs. That was a safe convergence stopgap while raw appenders and extra terminal-state writers could desynchronize Ratatui's previous buffer from the physical client screen. It is now the highest-leverage modernization blocker: it hides true Ratatui diff behavior, dominates emitted bytes, makes `AlwaysUpdate` meaningless in practice, and prevents reliable measurement of `CellDiffOption` and scroll-region improvements.
+### 5. SGR state is parsed completely enough for visible fidelity
 
-**What it improves.** Ratatui's previous buffer becomes the trusted physical-screen model again. Unchanged frames emit near-zero cell bytes, changed frames scale with actual damage, and every later recommendation can be judged against the real diff path instead of the forced repaint path.
+Stop dropping terminal-visible SGR state at parse time. Extend `Attrs` and snapshots for underline color, underline style, strikethrough, blink, conceal, and overline, including resets. Preserve SGR subparameters so colon forms such as `4:2`, `38:2:r:g:b`, and `58:2:r:g:b` parse correctly.
 
-**Two implementation views to compare.** The conservative view is to delete or model every extra writer that can mutate the client screen behind Ratatui, then remove the sentinel swap and rely on Ratatui's normal previous/current buffer diff. The more ambitious view is to introduce an explicit frame plan that commits every terminal-visible operation — cells, cursor state, hyperlinks, scroll ops, reset/wipe operations — through one ordered writer and updates Ratatui/physical state together. The first path is smaller and may be enough; the second path may be the cleaner long-term architecture if scroll ops, OSC 8 metadata, and backend-only SGR state all need first-class representation.
+Mapping rule:
 
-**How to implement.** Start by inventorying every path that writes bytes outside `SocketBackend::draw` and cursor/state reconciliation: title updates, out-of-band passthrough, mode prefaces, detach cleanup, dialog/chrome leftovers, and any raw appenders called from the compositor. Classify each as (a) not part of the cell model and safe at frame boundary, (b) terminal state that must be reconciled per frame, or (c) legacy raw paint that must move into Ratatui rendering or a frame operation. Once class (c) is gone, remove the sentinel fill/swap, keep real wipes only for first attach/resize/reset, and add diagnostics that fail or alert when an unchanged frame emits a full screen of cells.
+- Ratatui-native fields map into Ratatui cells directly.
+- Attributes Ratatui cannot represent, such as underline style variants and overline, travel as frame metadata consumed by `SocketBackend`.
+- Product policy may suppress emission for a visible attribute, such as blink, only if the model still records the state and the docs name the suppression explicitly.
 
-**Acceptance coverage**: unchanged steady-state frame emits no cell body bytes or a tiny bounded amount; opening/closing dialogs clears all residue without sentinel repaint; selection highlight, scrollback view, focus swap, tab switch, resize, and detach/reset still converge; echo-back harness passes with sentinel disabled; emitted-byte counters show the expected drop for idle, typing, and small updates.
+### 6. Terminal state and capabilities get one matrix
 
-### 1. Define and enforce one display-width contract across `DamageGrid`, the Ratatui mapping, and the host terminal
+Create a documented state matrix that classifies terminal-visible state as one of:
 
-**Why this matters.** This is the highest-priority correctness work and the one concrete divergence already proven in the tree. `jackin-term`'s cell width derives from `unicode-width` 0.2 with no special-casing (see <RepoFile path="crates/jackin-term/src/cell.rs" /> and the wide-handling in <RepoFile path="crates/jackin-term/src/grid/perform.rs" />). Ratatui 0.30's `ratatui_core::buffer::CellWidth` derives width from the same `unicode-width` 0.2 **plus** a terminal-compatibility adjustment: it adds `+1` for halfwidth katakana voiced/semi-voiced sound marks (`U+FF9E` / `U+FF9F`), which `unicode-width` reports as zero-width because they carry `Grapheme_Extend`. So for exactly those clusters, the model believes a cell is width 1 while Ratatui's buffer machinery believes it is width 2. When the model then writes the next cell at what it thinks is the adjacent column, Ratatui's diff — which assumes well-formed multi-width buffers — can compute a trailing-cell cleanup that the model never intended, producing stale tails, cursor drift, or right-edge corruption in a re-emitting multiplexer. This is precisely the class of bug that is invisible in unit tests and brutal to diagnose from logs.
+- profile-stable agent-visible state,
+- host-adaptive attach capability,
+- frame-level reconciled output state,
+- boundary-only out-of-band state.
 
-**What it improves.** A single authoritative width per accepted grapheme cluster, shared by the parser, the model, the Ratatui mapping, and the bytes emitted to the host. No silent disagreement at the seam.
+The matrix must cover cursor row/col, cursor visibility, cursor shape, cursor color, cursor blink, mouse mode, focus reporting, bracketed paste, Kitty keyboard / `modifyOtherKeys`, OSC 52 policy, title/CWD OSCs, color depth, OSC 8 support, `?2026`, underline-style support, and image-protocol support.
 
-**How to implement.**
-- Introduce a narrow width module owned by `jackin-term` (e.g. a `width` submodule, or a tiny internal crate if a second consumer appears) that is the single source of truth for "how many columns does this cluster occupy." Do not pull all of Ratatui into `jackin-term` for this; depend on `unicode-width` as today and, in tests only, cross-check the local function against `ratatui_core::buffer::CellWidth` so the two cannot drift.
-- Decide the contract for each class deliberately and write it down: halfwidth katakana + dakuten/handakuten, VS16 emoji, emoji without VS16, ZWJ clusters, combining marks after a base, combining marks at column zero, wide glyph in the final column, and ambiguous-width code points. Where the target host terminals match Ratatui's compensation (the `+1` for `U+FF9E`/`U+FF9F`), port that behavior into the model so the model and the emitted bytes agree. Where jackin' intentionally diverges for emulator correctness, keep it local but record the divergence and test it.
-- Wire `Cell::is_wide` / `Cell::is_wide_continuation` (already present in <RepoFile path="crates/jackin-term/src/cell.rs" />) to be derived from this one width function at parse time in <RepoFile path="crates/jackin-term/src/grid/perform.rs" />, so the model's wide flags and the width function can never disagree.
-- Revisit `append_to_previous_cluster` in <RepoFile path="crates/jackin-term/src/grid.rs" />. Today cluster width stays the base width when VS16, combining marks, ZWJ, or subsequent ZWJ content joins the previous cell. If the canonical cluster width can grow or shrink after append, the implementation must update the lead width, add/remove continuation cells, dirty the affected span, and adjust cursor/pending-wrap semantics at the right edge. This is a correctness decision point, not an implementation detail to defer. **Verified against the tree (contract-level pass):** the function appends the joined character to the lead cell's `contents` `CompactString` and does nothing else to geometry — it never re-reads the cluster width, never updates `is_wide`/`is_wide_continuation`, and never creates or clears a continuation cell. It also unconditionally dirties a fixed two-column span (`mark_range(row, col, col + 2)`) regardless of the cluster's real width. So for the proven `U+FF9E`/`U+FF9F` case the lead cell ends up with two-column *content* (`ｶﾞ`, which `ratatui_core` measures as width 2) while the model still records it as a width-1 non-wide cell, and the next printable is placed at `cursor_col + 1`. This is the exact mechanism by which the model and Ratatui disagree, now confirmed end to end rather than inferred.
+Reattach may update only host-adaptive rows.
 
-**Acceptance coverage** (added to <RepoFile path="crates/jackin-term/tests/conformance.rs" /> and the echo-back fixtures): CJK overwrite, CJK delete, CJK erase, emoji with VS16, emoji without VS16, ZWJ emoji clusters, combining marks after a base character, combining marks at column zero, halfwidth katakana dakuten and handakuten (the proven divergence), wide character in the final column, normal-width overwrite of a wide lead, normal-width overwrite of a wide continuation, right-edge deferred wrap plus SGR before the next printable, DSR cursor reply while wrap is pending, and scrollback snapshots containing all of the above.
+### 7. Scroll optimization records source `ScrollOp`s only
 
-**Competing view (contract-level pass).** The "How to implement" guidance above says to "port that behavior into the model" where target hosts match Ratatui's `+1`. The contract-level pass disagrees with letting the *attached* host settle this, for the reattach reason in [the terminal-emulator contract section](#the-terminal-emulator-contract--virtual-terminal-profile-vs-attach-capability-contract-level-pass). The two directions to research:
+If scroll-region optimization ships in this item, it must be based on source-recorded scroll operations from `DamageGrid`, not inferred from final Ratatui buffers.
 
-- **Existing view — model adopts host-consensus width.** Make the model's width match what the target host terminals actually render (including the dakuten `+1`), so the model and the host agree and emitted bytes land where the model expects. Benefit: simplest mental model when the agent, model, and host all use the same Unicode/width rules; the emitted frame is visually correct on conforming hosts with no extra adapter layer.
-- **Extended view — stable virtual-terminal profile + attach adapter.** The model owns one fixed width contract for the whole session; `ForcedWidth` aligns Ratatui to that contract; per-host glyph disagreement is reported as a known degradation by the attach-capability adapter rather than changed in the model. Benefit: agent-visible cursor math never shifts across detach/reattach between different terminals, which is the failure mode the existing view cannot prevent; the cost is building the new profile + adapter structure that does not exist today.
+Adopt DECSTBM emission only when all gates pass:
 
-Both views still require the cluster-width-mutation work in `append_to_previous_cluster` (now tracked as its own debate). Decide between them with the independent width oracle and a detach/reattach test across terminals with different width rules, not with the shared-code echo-back harness alone.
+- Scroll rect is safe for the physical terminal geometry.
+- Capability adapter says the host supports the needed behavior.
+- Ratatui's previous/current buffers and physical screen state remain coherent.
+- Echo-back conformance passes across pane chrome, dialogs, scrollback view, primary screen, alternate screen, resize, and focus swaps.
+- Emitted-byte counters prove a real win on scroll-heavy fixtures.
 
-### 2. Map `jackin-term` cells to Ratatui cells with `CellDiffOption`, instead of blanking continuation cells
+If any gate fails, leave scroll-region emission out and keep ordinary Ratatui diff output.
 
-**Why this matters.** Today the pane renderer in <RepoFile path="crates/jackin-capsule/src/tui/components/pane.rs" /> handles a wide character by writing the 2-column glyph into the lead Ratatui cell via `set_symbol`, and handling the continuation column with `buf_cell.reset()` — a literal blank space. That is only correct while the model and Ratatui agree on the lead glyph's width. Ratatui 0.30 added `CellDiffOption` precisely because the bytes stored in a buffer cell are not always what is visible: a cell may be model-known wide, a continuation that must not independently diff, or covered by protocol bytes such as an OSC 8 hyperlink. jackin' uses none of this and instead relies on width inference matching, which Recommendation 1 just proved is fragile.
+### 8. Track soft/hard wrap metadata now; defer full reflow
 
-**What it improves.** The mapping declares intent to Ratatui's diff rather than hoping inference agrees. The lead cell carries its model-known width; continuation and protocol-only cells are explicitly excluded from independent diffing; and the diff iterator's trailing-cleanup logic operates on correct widths.
+This item must add row wrap provenance needed for future primary-scrollback reflow. It does not need to implement full reflow.
 
-**How to implement.** In the `render_cell` path of <RepoFile path="crates/jackin-capsule/src/tui/components/pane.rs" />, replace the implicit width handling with explicit `CellDiffOption` on the Ratatui `Cell`:
-- Lead wide cell: set the symbol and style, then set `CellDiffOption::ForcedWidth(NonZeroU16::new(2)?)` so Ratatui treats it as two columns regardless of how its own width inference classifies the glyph.
-- Continuation cell: keep it blank. The roadmap's first view allows `CellDiffOption::Skip` **only after** the new fixtures prove that wide-overwrite, wide-delete, and wide-erase still clear stale trailing background and style. The skeptical view is stricter: do not use `Skip` for ordinary wide continuations at all, because Ratatui already advances across a lead cell's effective width and `Skip` can hide a trailing clear after wide-to-narrow replacement. The branch should start with blank/default continuation cells, add `ForcedWidth` to the lead, then prove whether any `Skip` case is both necessary and safe.
-- Protocol-only cells (e.g. cells that exist solely to carry an OSC 8 boundary, see Recommendation 3): `Skip` or `ForcedWidth` depending on their visible width.
-- `CellDiffOption::AlwaysUpdate` is reserved for the side-channel state changes in Recommendation 3 and must be justified by the echo-back harness, never applied broadly. Forcing updates everywhere would mask equality bugs and inflate bytes per frame — the wrong outcome.
+Track whether each row is a soft wrap of the previous logical line. Preserve that metadata through scrollback, resize bookkeeping, snapshots, and tests. Full primary-screen reflow on resize is a separate follow-up once metadata exists. Alternate-screen reflow remains out of scope.
 
-Keep this a small, commented mapping layer. The Ratatui pane conversion lives in `render_cell` in <RepoFile path="crates/jackin-capsule/src/tui/components/pane.rs" />. `snapshot_damagegrid_cells` in <RepoFile path="crates/jackin-capsule/src/tui/render.rs" /> is a selection/content snapshot rather than the Ratatui mapping path, but it still must agree on width and continuation semantics so copy/selection/snapshot behavior matches visible rendering.
+### 9. Keep Crossterm and defer Termina
 
-**Acceptance coverage**: mapping tests from `jackin_term::Cell` / `SnapCell` to the Ratatui `Cell` for every cluster class in Recommendation 1, asserting the resulting `CellDiffOption`, plus a buffer well-formedness property (Recommendation 7) checked before diff.
+Do not migrate to Termina in this item. Crossterm 0.29 remains the raw terminal I/O backend. Termina can be evaluated later as a separate I/O-boundary prototype; it is not part of this implementation plan and never replaces `jackin-term`.
 
-### 3. Make OSC 8 hyperlink emission survive Ratatui's diff (latent bug, not in the first draft)
+### 10. Inline images are out of scope
 
-**Why this matters.** The hyperlink layer in <RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs" /> is a side channel: `set_hyperlink_regions` stores the frame's linked rects, and `draw` brackets linked cells with `emit_osc8_open` / `emit_osc8_close` (from the `ansi` module in <RepoFile path="crates/jackin-tui/src/lib.rs" />) **only for the cells Ratatui's diff actually yields**. If a link is added, removed, or retargeted over text whose glyph and style did not change, Ratatui's diff yields no cells for that region, so the OSC 8 state is never updated on the wire. The link silently fails to appear or fails to clear. Recommendation 2's `Skip` on continuation cells makes this worse, because cells covered by a wide glyph or by protocol bytes may never enter the diff at all.
+Do not implement Kitty, Sixel, or iTerm2 image rendering in this item. Add only the policy needed to avoid unsafe raw passthrough: image protocol bytes are either ignored/stripped or recorded as unsupported media without violating the one-writer invariant. Full modeled media rendering belongs in a separate roadmap item.
 
-**What it improves.** Hyperlink open/close boundaries become a tracked frame-level transition, correct independent of whether the underlying glyphs changed.
+## Implementation Phases
 
-**How to implement.** There are two viable approaches, and the branch should compare them. The incremental approach tracks previous-frame and current-frame UI hyperlink membership at the backend or compositor level. When a cell's link membership or target changes between frames, force that cell into the diff by setting `CellDiffOption::AlwaysUpdate` on it in the mapping layer (Recommendation 2), so the `draw` loop re-emits the correct OSC 8 boundary. Keep the `AlwaysUpdate` set to exactly the boundary-changed cells — never all linked cells every frame — and measure the resulting bytes per frame. The more complete approach models OSC 8 as cell/frame metadata in `DamageGrid`: PTY OSC 8 open/close changes active hyperlink state, printed cells capture the active link, snapshots carry it, UI/dialog hyperlinks use the same metadata grid, and `SocketBackend` emits OSC 8 transitions from metadata rather than passthrough bytes. This unifies agent hyperlinks and jackin UI hyperlinks, but requires a broader model/snapshot/render change.
+### Phase 1 — Profile and Width Contract
 
-**Acceptance coverage**: link added over unchanged text; link removed over unchanged text; link target changed with unchanged text; PTY OSC 8 open/text/close in one batch; PTY OSC 8 spanning multiple writes; unsafe URI filtered without leaving an open link; link beginning and ending adjacent to wide/CJK/emoji cells; and an echo-back assertion (or recorded host capture) that the OSC 8 open/close sequence is correct after each transition. Re-run this after Recommendation 0 because the current sentinel full-frame repaint masks unchanged-cell invalidation bugs.
+- Add the virtual-terminal profile type and width module in `jackin-term`.
+- Define the width table for dakuten/handakuten, VS16, emoji, ZWJ, combining marks, ambiguous-width, and final-column wide cases.
+- Fix `append_to_previous_cluster` geometry mutation.
+- Add width oracle tests, Ratatui cross-check tests, parser conformance fixtures, dirty-span tests, DSR tests, and echo-back fixtures.
+- Add soft/hard wrap provenance metadata while touching row geometry.
 
-### 4. Stop dropping terminal-visible SGR state at parse time (attribute completeness)
+Acceptance:
 
-**Why this matters.** The model's attribute set in <RepoFile path="crates/jackin-term/src/cell.rs" /> (`Attrs`) carries only foreground, background, bold, italic, underline, inverse, and dim. The encoder `apply_style` in <RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs" /> emits only those. Everything else an agent or program sets is dropped at parse time and can never reach the screen: **underline color** (`SGR 58`/`59`, which Ratatui's `underline-color` feature already models), underline styles (curly/dotted/dashed via `SGR 4:2`–`4:5`), strikethrough (`SGR 9`), blink (`SGR 5`/`6`), conceal (`SGR 8`), and overline (`SGR 53`). Modern coding agents and tools (e.g. error squiggles via colored curly underlines, diff strikethrough) use these. Given the quality-over-cost stance, dropping them is a fidelity regression, not a reasonable simplification.
+- `jackin-term` and Ratatui mapping agree on every modeled width class.
+- DSR cursor replies match the profile.
+- Echo-back still passes.
+- Independent oracle catches width drift without using `jackin-term` or Ratatui as its source.
 
-**Verified against the tree (contract-level pass), with the exact opcode inventory.** `apply_sgr` in <RepoFile path="crates/jackin-term/src/grid.rs" /> handles only this set: `0` (reset), `1` (bold), `2` (dim), `3` (italic), `4` (underline on), `7` (inverse), `22`/`23`/`24`/`27` (the matching offs), `30`–`37` and `90`–`97` (foreground), `40`–`47` and `100`–`107` (background), and `38`/`39`/`48`/`49` (extended/default fg/bg). Every other parameter falls through a literal `_ => {}` and is silently lost — this includes not just the visible attributes above but also their resets (`25` blink off, `28` reveal, `29` strikethrough off, `54` overline off, `55`), so even a program that toggles an unsupported attribute off cannot be reasoned about. There is also a **concrete, separate, proven bug in extended color parsing**: `parse_extended_color` in <RepoFile path="crates/jackin-term/src/grid.rs" /> reads `38;2;r;g;b` and `38;5;n` from the *flattened semicolon* parameter array, but because `csi_dispatch` collapses every `vte::Params` entry to its first subparameter, the ITU **colon** forms `CSI 38:2:r:g:b m`, `CSI 38:5:n m` (and the `48:` background equivalents) flatten to a single `[38]`/`[48]` parameter, so `parse_extended_color` finds no type byte and returns `None` — the truecolor or 256-color value is **dropped entirely**, not merely "possibly lost." Colon-form SGR color is emitted by some modern tools, so this is a live fidelity bug independent of the new-attribute work, and it must be fixed by the same subparameter-preservation change Recommendation 4 already calls for.
+### Phase 2 — Attach-Capability Adapter and State Matrix
 
-**What it improves.** The Capsule faithfully reproduces what the agent's program actually rendered, instead of a lossy subset.
+- Add backend-side attach capability records populated from attach handshake data, terminfo where available, explicit probes where safe, user overrides, and denylist entries.
+- Add the terminal-state matrix documentation.
+- Ensure reattach updates host-adaptive capability only, never profile-stable state.
 
-**How to implement.**
-- Extend `Attrs` in <RepoFile path="crates/jackin-term/src/cell.rs" /> to carry the additional state. Underline color needs its own color field (default / indexed / RGB) since it is independent of foreground; the others are flags or a small underline-style enum.
-- Preserve SGR subparameters before parsing the new cases. `csi_dispatch` in <RepoFile path="crates/jackin-term/src/grid/perform.rs" /> currently flattens every `vte::Params` entry to its first subparameter, which loses colon forms such as `SGR 4:2` and can lose colon-based color forms. The branch must keep enough structured SGR params for underline style and underline color to be parsed deliberately.
-- Parse the additional SGR parameters in <RepoFile path="crates/jackin-term/src/grid/perform.rs" />, including the colon-subparameter form for underline style and `SGR 58`/`59` for underline color.
-- Carry the new attributes through `SnapCell` in <RepoFile path="crates/jackin-term/src/snapshot.rs" /> and the `PaneCell` trait + `render_cell` in <RepoFile path="crates/jackin-capsule/src/tui/components/pane.rs" />. Ratatui's `Cell` already has `modifier` bits for `CROSSED_OUT`, `SLOW_BLINK`, `RAPID_BLINK`, and `HIDDEN`, and an `underline_color` field under the `underline-color` feature (enabled by default in the Ratatui meta-crate), so those can map to existing Ratatui fields. Ratatui `Cell` does not carry underline style variants or overline today; for those, compare two approaches: add a parallel render metadata grid consulted by `SocketBackend`, or deliberately keep them first-party/backend-only until upstream Ratatui gains native support.
-- Emit the new state in `apply_style` in <RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs" />. Note that `apply_style` currently does a full `SGR 0` reset then re-applies; extend that re-apply set rather than adding incremental tracking, to keep it correct across cell runs.
-- Decide and document one explicit non-goal if any attribute is intentionally excluded (for example, if blink is deliberately suppressed for the "no blinking" product value, model it but choose not to emit it, and write that down).
+Acceptance:
 
-**Acceptance coverage**: parser round-trip for each new SGR (set, reset, and the colon-subparameter underline-style form); echo-back equality including the new attrs; and a golden wire-emit snapshot for a frame containing underline color + strikethrough.
+- Tests prove reattaching from a different terminal does not change width, DSR, or agent-visible color semantics.
+- Unsupported or degraded terminal capability is reported rather than silently changing model behavior.
 
-### 5. Audit cursor and frame-terminal state for completeness
+### Phase 3 — Remove Sentinel Full-Frame Repaint
 
-**Why this matters.** Cursor position, visibility, and DECSCUSR shape are already reconciled as frame-level state by the compositor in <RepoFile path="crates/jackin-capsule/src/daemon/compositor.rs" /> (a real strength — see Baseline reality). But "frame-level terminal state" is broader than the cursor glyph, and the branch should confirm nothing else is being emitted as scattered render bytes or dropped entirely.
+- Inventory every byte writer outside Ratatui cell output and frame-state reconciliation.
+- Move legacy raw paint into Ratatui rendering or frame operations.
+- Keep boundary-only out-of-band mode/passthrough writes at frame boundaries.
+- Remove the sentinel fill/swap path from `compose_ratatui_frame()`.
+- Add emitted-byte counters for total bytes, cursor moves, SGR resets, OSC 8 opens/closes, full-screen erases, and full-frame repaint detection.
 
-**What it improves.** A single, auditable list of all terminal state that is reconciled per frame rather than written ad hoc, which is what keeps the one-writer invariant honest.
+Acceptance:
 
-**How to implement.** Enumerate, in the compositor, every piece of state that must be diffed per frame: cursor row/col, cursor visibility, cursor shape (DECSCUSR), and evaluate whether cursor color (`OSC 12`) and cursor blink need modeling. Confirm that mouse mode, focus reporting, bracketed paste, and Kitty keyboard state remain reconciled as out-of-band sequences through `ClientWriter::enqueue_out_of_band` (see <RepoFile path="crates/jackin-capsule/src/client_writer.rs" />) and are never written mid-frame. The output is a documented state table plus tests for any gap found, not a rewrite of the working cursor path.
+- Repeated unchanged frames emit no full-screen cell body.
+- Dialog open/close, selection, scrollback, focus swap, tab switch, resize, detach/reset, and title updates converge without sentinel repaint.
+- Echo-back passes with sentinel disabled.
 
-**Acceptance coverage**: extend the existing cursor tests in <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs" /> (which already include a DECSCUSR case) to cover any newly modeled state. Assert the more precise invariant: Ratatui cell output and frame cursor reconciliation bytes are inside the `?2026` synchronized frame; out-of-band mode/passthrough bytes may remain outside the brackets only at frame boundaries and in the same socket write, never interleaved mid-frame.
+### Phase 4 — Ratatui Cell Mapping
 
-### 6. Research first-party scroll-region (DECSTBM) emission to cut bytes — not upstream `scrolling-regions`
+- Apply `CellDiffOption::ForcedWidth` to model-wide lead cells.
+- Keep ordinary continuations blank/default.
+- Add the buffer well-formedness property before diff.
+- Reserve `AlwaysUpdate` for metadata transitions.
 
-**Why this matters.** The Capsule repeatedly displays full-screen programs and agent output where large regions scroll. Re-emitting every changed cell of a scrolled region is bandwidth-expensive on SSH links, where low bandwidth is a core product value. Emitting a scroll-region escape (DECSTBM `CSI t;b r` plus index/reverse-index) can scroll the host's own screen and let the diff repaint only the newly exposed line. This is the real idea that the old "adopt Ratatui scrolling-regions" recommendation gestured at — but it is jackin-owned work, because Ratatui's feature only optimizes `insert_before`, which the Capsule does not use.
+Acceptance:
 
-**What it improves.** Fewer emitted bytes for scroll-heavy output, with no visible flicker, on exactly the remote links where it matters most.
+- Mapping tests cover every width class.
+- Wide-to-narrow overwrite, delete, erase, resize, and styled continuation cases leave no stale tails.
+- Byte counters show forced updates only where justified.
 
-**How to implement (research-first, high-risk).** This is genuinely hard and must be proven, not assumed:
-- Prefer source-recorded scroll operations over inferred buffer diffs. `DamageGrid` already owns DECSTBM, line feed at region bottom, insert/delete lines, CSI S/T, alternate screen, and scrollback mutation. Recording a semantic `ScrollOp` when the parser mutates rows gives the compositor exact intent (`rect`, direction, count, screen, reason) before Ratatui flattens the final frame. Inferring scroll from two completed buffers is possible, but likely more fragile and harder to prove around chrome, panes, wide cells, resize, and scrollback.
-- The hard constraint is geometry. DECSTBM vertical margins scroll the **full terminal width** between the top and bottom margins. If a pane body does not span the full width, or shares rows with chrome (borders, status row, tab strip) or another pane, a scroll region will corrupt that chrome. DECSLRM left/right margins can restrict columns but are far less portable and carry their own mode state. So this optimization is only safe when the scroll rect spans the full terminal width, or when DECSLRM support is probed and reset safely.
-- The second hard constraint is keeping Ratatui's previous buffer coherent. If the physical screen scrolls but Ratatui's previous buffer still describes the old rows, the next diff will corrupt or needlessly repaint. The branch must either mutate Ratatui's previous/current buffers to match the scroll (potentially via `Terminal::apply_buffer` for a controlled commit), or implement the scroll op below Ratatui with its own physical-state model. The latter risks reintroducing the parallel-writer desync the model deliberately retired — so it must stay inside the one-writer frame.
-- Treat this as a candidate, not a default. Prototype it, measure emitted bytes against the current full-cell path on scroll-heavy fixtures, and adopt only if the bytes win is real and the echo-back harness still passes.
+### Phase 5 — Hyperlink and SGR Fidelity
 
-**Acceptance criterion (hard gate)**: after every candidate scroll-region change, the echo-back harness in <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs" /> must still replay emitted bytes into the second `DamageGrid` and match the pane model inside the pane rect plus the cursor contract, across pane borders, status rows, tab strip, dialogs, scrollback view, alternate screen, primary screen, resize, and focus swaps. If parity cannot be proven, do not adopt scroll-region output.
+- Move PTY OSC 8 and UI hyperlinks into shared model/frame metadata.
+- Preserve SGR subparameters.
+- Extend `Attrs`, snapshots, pane mapping, frame metadata, and `SocketBackend` emission for the new visible SGR state.
+- Document any product-level suppression such as blink emission.
 
-### 7. Extend (do not rebuild) the conformance and echo-back harnesses, and add a buffer well-formedness invariant
+Acceptance:
 
-**Why this matters.** The harnesses already exist (see Baseline reality). The risk is not their absence; it is fixture coverage and one missing structural invariant. A subtle trap: the echo-back harness replays emitted bytes into a *second `DamageGrid`*, which uses the same `jackin-term` width code as the source model. If both share a width bug, the harness false-passes. The width fixtures from Recommendation 1 are what make the harness able to catch emit-path width errors, because a wrong width changes the *emitted bytes*, which then misplace content when replayed.
+- Link add/remove/retarget over unchanged text works.
+- PTY OSC 8 spanning writes works.
+- Unsafe URI filtering cannot leave an open link.
+- SGR parser round-trips set/reset and colon forms.
+- Golden wire snapshots cover underline color, underline style, strikethrough, overline, and hidden/conceal behavior.
 
-**What it improves.** The existing safety net actually exercises the new failure modes (width classes, hyperlink transitions, new SGR), and a new property test catches malformed model→Ratatui buffers before they ever reach the diff.
+### Phase 6 — Source-Recorded ScrollOp Prototype
 
-**How to implement.**
-- Add the width-class, hyperlink-transition, and SGR fixtures from Recommendations 1, 3, and 4 to <RepoFile path="crates/jackin-term/tests/conformance.rs" /> and the echo-back cases in <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs" />.
-- Add real recorded PTY fixtures (Claude Code, Codex, Amp, Kimi, OpenCode, `vim`, `tmux`, `htop`, shell prompts, `yes`, long `seq`, redraw storms) extracted from `--debug` run logs via the existing `jackin-xtask` PTY-fixture tool in <RepoFile path="crates/jackin-xtask/src/pty_fixture.rs" /> into the Capsule fixtures directory.
-- Add a **buffer well-formedness property test** asserted on the Ratatui buffer *before* diff: every continuation has a matching lead; no non-blank cell sits inside a lead's effective width span; a wide glyph in the final column is handled explicitly; any `ForcedWidth` equals the model's physical width; and no stale continuation survives an overwrite/delete/erase/resize. This is independent of the backend's emitted bytes and catches mapping bugs at their source.
-- Add a **true-diff baseline property** once Recommendation 0 lands: repeated rendering of an unchanged frame must not produce a full-screen diff, and any forced update must be explainable by metadata changes (hyperlink, cursor/state, external protocol coverage) rather than sentinel repaint.
-- Keep the existing fuzz target in <RepoFile path="crates/jackin-term/fuzz/src/damage_grid_process.rs" /> and extend its corpus with the new cluster classes.
+- Record semantic scroll operations when `DamageGrid` mutates rows.
+- Gate DECSTBM emission through geometry and attach capability.
+- Keep Ratatui buffers and physical screen state coherent, using controlled buffer application where needed.
+- Adopt the optimization only if tests and byte counters prove it.
 
-**Competing/extended view (contract-level pass): echo-back cannot prove host fidelity.** The contract-level pass agrees the harness should be extended, but argues the extension above is *necessary but not sufficient*. Because the VirtualClient replay grid uses the same jackin-term width/render code as the source, any contract that is internally self-consistent but wrong for a real host will false-pass — the "width fixtures change emitted bytes" mitigation does not close it, since both grids share the wrong world. The branch should therefore add a first-class host-conformance program, layered so each layer catches what the one above cannot:
+Acceptance:
 
-- **Independent width oracle in CI.** A hard-coded expected width table for every glyph class (dakuten/handakuten, VS16, emoji, ZWJ, ambiguous-width, combining-at-col-0, final-column wide), authored by hand and *not* computed from jackin-term or from `ratatui_core::buffer::CellWidth`. This is the only layer that can catch a width rule that is wrong but self-consistent.
-- **Real-terminal cursor-advance probes.** Emit each glyph class followed by `DSR 6n`, read the real terminal's reported cursor column, and assert it matches the profile's predicted advance. Scriptable per terminal without screenshots; closes the width-advance question against real hardware.
-- **Real-terminal visual captures.** Screenshot or terminal-API captures on a Ghostty/iTerm2/WezTerm/Kitty/Alacritty matrix for the things probes cannot see: stale tails, background fills, underline styles, OSC 8 rendering, and (later) images. Run nightly or per-terminal in CI where the runner allows it.
+- Scroll-heavy fixtures show a real emitted-byte reduction.
+- Echo-back passes across primary, alternate, scrollback, chrome, dialogs, resize, and focus swaps.
+- If parity or coherence fails, no scroll-region output ships.
 
-Keep the echo-back harness as a fast regression net for "emitted bytes recreate jackin's own model," and stop treating it as proof that the model matches a host.
+### Phase 7 — Soak and Merge Decision
 
-**Acceptance coverage**: the full extended automated set is green, including the well-formedness property over fuzzed inputs, the independent width oracle, and (where the CI runner allows) the real-terminal cursor-advance probes.
+- Run the full extended automated set.
+- Run allocation and performance checks before/after.
+- Soak with real agents and terminals: Ghostty, iTerm2, WezTerm, Alacritty, Kitty, and SSH.
+- Merge only when the new path is the desired default.
 
-## Additional recommendations from the contract-level skeptical pass
+## Testing Strategy
 
-These were not in the earlier passes. They are additive scope, not corrections, and they fit the "quality over cost, hard refactors welcome, only technical infeasibility is a blocker" mandate. They are numbered separately (A–E) so the earlier ranked list 0–9 is preserved unchanged. Each records the value, the feasibility, and where the contract-level pass thinks it ranks against the existing recommendations.
+Unit tests:
 
-### A. Build the attach-capability negotiation layer (the backend half of the contract)
+- Width oracle and Ratatui cross-checks.
+- `append_to_previous_cluster` width mutation, dirty span, cursor, pending-wrap, and DSR behavior.
+- Mapping tests from `jackin_term::Cell` / `SnapCell` to Ratatui `Cell` + `CellDiffOption`.
+- Parser round-trips for SGR set/reset and colon-subparameter forms.
+- State matrix tests for profile-stable vs host-adaptive behavior.
 
-**Why this matters.** The fixed `TERM=xterm-256color` / `COLORTERM=truecolor` handed to the agent in <RepoFile path="crates/jackin-capsule/src/session.rs" /> is a virtual-terminal *claim* with no host adapter behind it. There is currently no place that records what the *attached* terminal can actually do. Every per-host fidelity decision below (color depth, OSC 8, `?2026`, underline style, images) needs this layer to exist.
+Integration and conformance tests:
 
-**What it improves.** One owned description of the attached terminal's capabilities, separate from the stable virtual-terminal profile, so the backend can adapt the same composed frame to different hosts and explicitly mark a host as degraded instead of corrupting output.
+- Extend parser conformance with width, SGR, hyperlink, and wrap-provenance fixtures.
+- Extend the fuzz corpus with the new cluster classes.
+- Extend Capsule echo-back tests with width, hyperlink, SGR, sentinel removal, and scroll-op cases.
+- Add real PTY fixtures through <RepoFile path="crates/jackin-xtask/src/pty_fixture.rs" />.
 
-**How to implement.** Define a capability record populated from `TERM`/`COLORTERM`, terminfo where available, and active protocol probes (DA1/DA2, DECRPM for `?2026`, the Kitty keyboard query, OSC 8 / image-protocol probes) at attach time, refreshed on reattach. Keep it strictly on the backend side of the seam; it must never flow back into agent-visible state. A user override and a per-terminal denylist are part of this, because detection from a bare `TERM` is unreliable.
+Performance and allocation checks:
 
-**Acceptance coverage**: capability record is correct for the target terminal matrix; reattaching from a different terminal updates capabilities without changing any agent-visible mode/width/DSR; an unsupported terminal is reported degraded rather than producing corrupt frames.
+- Run <RepoFile path="crates/jackin-term/benches/present_frame.rs" />, <RepoFile path="crates/jackin-term/benches/scroll_throughput.rs" />, and <RepoFile path="crates/jackin-capsule/benches/pane_body.rs" /> before and after.
+- Run <RepoFile path="crates/jackin-term/tests/allocation.rs" />.
+- Track emitted bytes, cursor moves, `SGR 0` resets, OSC 8 transitions, and erases per frame.
 
-### B. Primary-scrollback reflow on resize
+Manual soak:
 
-**Why this matters.** Modern terminals rewrap soft-wrapped logical lines when the width changes; jackin' does not. The contract-level pass rates this a larger fidelity gap than inline images, and it is the one item with a hard "do it now or pay later" cost: the soft/hard wrap provenance reflow needs must be tracked as rows are produced, and retrofitting it into existing scrollback later is brutal.
+- Verify no flicker, stale cells, wrong cursor shape/position, mouse/focus breakage, paste regression, scrollback corruption, dialog residue, hyperlink breakage, or terminal reset issue.
+- Cover detach/reattach between different terminal programs.
 
-**How to implement (two directions to compare).** The minimal direction tracks a per-row "this row was a soft wrap of the previous logical line" flag now, and defers actual reflow to a later branch — cheap insurance that keeps the option open. The full direction implements reflow this branch: reconstruct logical lines from wrap metadata, rewrap to the new width, preserve attributes and grapheme clusters, and apply it to the **primary screen only** (never the alternate screen, which is owned by full-screen apps that redraw themselves). The decision hinges on whether the branch has the budget to validate reflow thoroughly; the metadata-only insurance should be taken regardless.
+## Explicit Non-Goals
 
-**Acceptance coverage**: resize-heavy fixtures with long wrapped lines, CJK/emoji at wrap boundaries, styled runs across a wrap, and scrollback; compare reflow output and emitted bytes against the current hard-truncate behavior; assert alt-screen is never reflowed.
+- Do not replace `DamageGrid` with Ratatui `Buffer` or Termina.
+- Do not revive direct `GridPatch` ANSI emission.
+- Do not adopt Ratatui's `scrolling-regions` feature for the Capsule; it only affects `Terminal::insert_before`, which this path does not use.
+- Do not use `CellDiffOption::Skip` for ordinary wide continuations.
+- Do not apply `CellDiffOption::AlwaysUpdate` broadly.
+- Do not migrate from Crossterm to Termina.
+- Do not implement inline image rendering.
+- Do not implement full primary-scrollback reflow in this item.
+- Do not add a runtime feature flag as the validation strategy.
 
-### C. Color-depth downsampling at the attach boundary
-
-**Why this matters.** The agent is always told `COLORTERM=truecolor`, but the attached host may support only 256 or 16 colors. The model can keep RGB; the backend must map RGB down to the host's depth when the capability layer (Recommendation A) says so. Without this, truecolor output on a 256-color host is at the mercy of the host's own (often poor) downsampling, or is wrong.
-
-**How to implement.** A backend-side perceptual RGB→256/16/mono mapping selected by the attach-capability record. The model and the agent-visible color stay truecolor; only the emitted bytes are downsampled per host. Lower priority than width/attrs/OSC 8 because most target terminals already do truecolor, but cheap once Recommendation A exists.
-
-**Acceptance coverage**: golden emit snapshots for the same frame at truecolor, 256, and 16-color host profiles; perceptual-distance checks on the mapping; no change to agent-visible color.
-
-### D. Inline image protocols as a modeled media layer (not passthrough)
-
-**Why this matters.** Coding agents increasingly emit inline images (plots, diagrams, screenshots) via the Kitty graphics protocol, Sixel, or iTerm2's protocol. jackin' has no model for these today. Raw passthrough is not an option: it would violate the one-writer invariant and break under scroll, resize, and detach/reattach.
-
-**How to implement (ranked, feasibility-gated).** Model images as a `PaneMedia` layer anchored to cells, composed into the frame plan, and emitted by `ClientWriter` at the frame boundary like every other committed output. Kitty graphics first — it has image IDs and placements, so it can be anchored, clipped per pane, deleted, and replaced cleanly. Sixel is harder (a pixel-bitmap stream with ugly scroll/resize/replay semantics) and iTerm2's protocol is terminal-specific; both come later. Security is mandatory: size and memory caps, no host file reads, no arbitrary file links, and scroll/resize invalidation. The contract-level pass recommends starting with an explicit deny/strip path plus tests, then a minimal Kitty implementation — and ranks the whole item after width, attributes, OSC 8, and reflow.
-
-**Acceptance coverage**: deny/strip path proven first; then Kitty image place/scroll/resize/delete/replace, pane clipping, detach/reattach, memory caps, and one-writer ordering.
-
-### E. Turn Recommendation 5 into a real terminal-state and capability matrix
-
-**Why this matters.** Recommendation 5 audits cursor position/visibility/shape. The contract-level pass argues "frame-terminal state" is broader and should become an explicit matrix: cursor color (`OSC 12`) and blink, mouse mode, focus reporting, bracketed paste, Kitty keyboard / `modifyOtherKeys` depth, OSC 52 clipboard policy, and title/CWD (`OSC 0/1/2/7`) semantics. Each entry records whether it is agent-visible model state (stable per session) or attach-capability state (adaptive), which is exactly the split this pass introduced.
-
-**How to implement.** Extend the cursor audit in <RepoFile path="crates/jackin-capsule/src/daemon/compositor.rs" /> into a documented table that classifies every terminal-visible state item as profile-stable or host-adaptive, and add tests for any gap found. This is an audit plus targeted fixes, not a rewrite, and it directly supports Recommendations A and 5.
-
-**Acceptance coverage**: the state table is complete and each row is classified; tests cover any newly modeled state; reattach changes only host-adaptive rows, never profile-stable ones.
-
-### 8. Prototype Termina at the raw terminal I/O boundary only (separate, lower priority)
-
-**Why this matters.** Termina exposes terminal protocol details (typed CSI/OSC/DCS builders, raw/cooked mode, size queries, event parsing, and typed protocol queries/responses) more directly than Crossterm, and now has a Ratatui backend (`ratatui-termina`). It is promising for the host-side raw I/O and escape construction, but it is early (0.3.x), lower-level (no grid, diff, scrollback, or automatic application setup), and orthogonal to the model/diff correctness work above. It is not a replacement for `jackin-term` or for Ratatui.
-
-**What it improves (if adopted).** Safer, typed reset/mode sequences and clearer protocol-reply handling at the boundary where jackin' currently uses Crossterm (`crossterm = "0.29"` in <RepoFile path="crates/jackin/Cargo.toml" />, <RepoFile path="crates/jackin-capsule/Cargo.toml" />, <RepoFile path="crates/jackin-console/Cargo.toml" />, <RepoFile path="crates/jackin-env/Cargo.toml" />, <RepoFile path="crates/jackin-diagnostics/Cargo.toml" />).
-
-**How to implement.** Build a small `TerminalIo` abstraction and compare Crossterm and Termina for jackin's real surfaces: host console raw mode / alternate screen / mouse capture / event drain; launch TUI typed protocol queries/responses and size handling; Capsule attach raw mode, size reporting, reset, mouse/focus/bracketed-paste modes, and detach cleanup; and Kitty keyboard, SGR mouse, bracketed paste, focus events, OSC queries, and resize parity. Confirm whether `ratatui-termina` can preserve jackin's one-writer synchronized frame model and echo-back conformance. Adopt Termina only where it is clearly better for jackin's platform scope; otherwise keep Crossterm and borrow only Termina's explicit protocol style. Do not migrate all Crossterm usage in one unmeasured sweep.
-
-**Acceptance coverage**: parity tests for every input/protocol surface above between the two backends before any swap.
-
-### 9. Tighten the Ratatui dependency boundary and sweep widget ergonomics (secondary)
-
-**Why this matters.** Ratatui 0.30 split into `ratatui-core`, `ratatui-widgets`, and backend crates. Keeping `jackin-term` free of a full Ratatui dependency (it depends only on `vte`, `unicode-width`, `compact_str`, `smallvec`) is correct and should be preserved; only the render crates need full Ratatui. Widget ergonomics (`Rect::layout`, centering helpers, layout cache, `Flex`, merged borders, `Table`/`List` selection, improved `TestBackend`) can simplify the TUI surfaces but are not terminal-model risks.
-
-**How to implement.** Keep `jackin-term` on its current minimal deps; in tests only, cross-check the width module against `ratatui_core::buffer::CellWidth`. Opportunistically audit the console/launch/Capsule view code for widget sugar that removes local code or fixes UX, but do not let it distract from Recommendations 1–4. This is the last phase, not the first.
-
-## Testing strategy for the implementation branch
-
-The work is allowed to be a broad refactor, but terminal regressions are highly visible and hard to diagnose, so the bar is stricter than normal. The strategy is to extend existing infrastructure, not invent parallel infrastructure.
-
-### Unit tests
-- True-diff baseline tests after sentinel removal: unchanged frame emits no full-screen repaint, and any forced update has a recorded cause.
-- Width-contract tests in `jackin-term` for every cluster class in Recommendation 1, cross-checked against `ratatui_core::buffer::CellWidth`.
-- Mapping tests from `jackin_term::Cell` / `SnapCell` to Ratatui `Cell` + `CellDiffOption`, including continuation and forced-width cells.
-- Parser round-trip tests for the new SGR attributes (Recommendation 4).
-- Dirty-span tests proving wide overwrite, erase, delete, scroll, and resize mark the minimal correct spans or deliberately mark all when safer (extends <RepoFile path="crates/jackin-term/src/damage.rs" /> coverage).
-
-### Integration and conformance tests
-- Extend the parser conformance replay in <RepoFile path="crates/jackin-term/tests/conformance.rs" /> (one-shot vs byte-split determinism) with the new fixtures.
-- Extend the fuzz target in <RepoFile path="crates/jackin-term/fuzz/src/damage_grid_process.rs" /> with the new cluster classes.
-- Extend the Capsule echo-back harness in <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs" /> with width, hyperlink-transition, and SGR cases, plus the buffer well-formedness property.
-- Add real-PTY fixtures via <RepoFile path="crates/jackin-xtask/src/pty_fixture.rs" />.
-
-### Performance and allocation checks
-- Run <RepoFile path="crates/jackin-term/benches/present_frame.rs" />, <RepoFile path="crates/jackin-term/benches/scroll_throughput.rs" />, and <RepoFile path="crates/jackin-capsule/benches/pane_body.rs" /> before and after, plus the allocation regression in <RepoFile path="crates/jackin-term/tests/allocation.rs" />.
-- Track concrete emitted-byte counters per frame, not just timings: total bytes, absolute cursor moves (`CSI H`), `SGR 0` reset count, OSC 8 open/close count, and full-screen erase count. The diagnostic scanner `scan_emitted_frame` in <RepoFile path="crates/jackin-capsule/src/client_writer.rs" /> already computes cursor-move, max-row/col, and erase counts behind the debug flag and is the right place to extend with SGR-reset and OSC 8 counters.
-- Report frame timing p50/p95/p99 for idle, typing, streaming output, full-screen redraw, resize, scrollback view, and a scroll-heavy fixture, with a remote/high-latency profile where possible.
-
-### Manual soak testing
-Run the branch for normal work before merge, watching for flicker, stale cells, wrong cursor position/shape, mouse/focus breakage, paste behavior, scrollback correctness, resize behavior, dialog overlay cleanup, hyperlink rendering, and terminal reset after detach. Cover Ghostty, iTerm2, WezTerm, Alacritty, Kitty, and an SSH session, because the core product value includes no blinking, no flickering, and low bandwidth over remote links.
-
-## Explicit non-goals
-
-- Do not replace `DamageGrid` with Termina or with Ratatui's `Buffer`. Neither owns scrollback, query replies, passthrough policy, or terminal modes.
-- Do not revive direct `GridPatch` ANSI emission as the live optimization path. It breaks the one-writer invariant and can desync Ratatui's previous buffer.
-- Do not adopt Ratatui's `scrolling-regions` feature for the Capsule; it only affects `Terminal::insert_before`, which the Capsule does not use. Pursue first-party DECSTBM emission (Recommendation 6) instead.
-- Do not rebuild the echo-back, conformance, fuzz, allocation, or bench harnesses; they exist. Extend them.
-- Do not introduce a runtime feature flag as the primary validation mechanism. Validation is a branch with exhaustive tests plus manual soak, followed by replacing the old implementation if the new one is better.
-- Do not apply `CellDiffOption::AlwaysUpdate` broadly or chase widget ergonomics before width/diff/output correctness lands.
-- Do not migrate all Crossterm usage to Termina in one unmeasured sweep.
-
-## Implementation phases
-
-0. **True diff baseline.** Retire the sentinel full-frame repaint once every extra writer is modeled, moved into Ratatui rendering, or classified as safe boundary-only out-of-band state (Recommendation 0). Add unchanged-frame emitted-byte gates before judging later diff work.
-1. **Width contract.** Implement the single display-width module (Recommendation 1), reconcile the proven halfwidth-katakana divergence, revisit cluster-width reflow in `append_to_previous_cluster`, and add the width fixtures to the existing conformance and echo-back harnesses.
-2. **Ratatui cell mapping.** Replace implicit continuation blanking with explicit `CellDiffOption` (`ForcedWidth`, and `Skip` only if proven safe) in the pane mapping (Recommendation 2), and add the buffer well-formedness property test (Recommendation 7).
-3. **Protocol-visible and attribute fidelity.** Compare backend-region OSC 8 invalidation with model-owned hyperlink metadata (Recommendation 3), preserve SGR subparameters, extend the SGR attribute set including underline color and backend-only attrs (Recommendation 4), and audit cursor/frame state for gaps (Recommendation 5).
-4. **Scroll-op research.** Prototype source-recorded scroll operations and measure first-party DECSTBM emission under strict geometry/capability gating (Recommendation 6); adopt only on a proven byte win with echo-back parity and coherent Ratatui/physical buffer state.
-5. **Termina prototype.** Compare Termina and Crossterm at the I/O boundary (Recommendation 8); adopt only where clearly better.
-6. **Dependency boundary and ergonomics sweep.** Keep `jackin-term` minimal, cross-check width against `ratatui-core` in tests, and apply widget ergonomics where they remove local code (Recommendation 9).
-7. **Soak and merge decision.** Run the full extended automated set, benchmark before/after with the byte counters, then perform manual operator soak long enough to catch flicker, stale cells, hyperlink and reset issues, and real-agent behavior. Merge only after the new path is the desired default.
-
-### Alternative ordering and placement (contract-level pass)
-
-The phase list above is one valid sequence; the contract-level pass proposes a different ordering and is recorded here rather than overwriting it, so the branch can choose deliberately:
-
-- **Settle the contract first.** Decide the virtual-terminal profile vs attach-capability split and the width authority resolution (the [contract section](#the-terminal-emulator-contract--virtual-terminal-profile-vs-attach-capability-contract-level-pass) and the new debate rows) before any code, because Recommendation 1's implementation depends on it.
-- **Width before sentinel.** Land Recommendation 1 (with the independent width oracle from Recommendation 7's extended view) before Recommendation 0, because the width divergence is a live correctness bug that does not depend on the sentinel, whereas the sentinel is only a prerequisite for byte-win *measurement*. The existing phase list does Recommendation 0 first; both orderings are legitimate and the choice is a correctness-first vs measurement-first tradeoff to make explicitly.
-- **Track reflow metadata early.** If primary-scrollback reflow (Recommendation B) is wanted ever, take the soft/hard wrap-metadata insurance during the width/model work, even if reflow itself ships later.
-- **Capability layer unlocks the rest.** Build the attach-capability layer (Recommendation A) before color downsampling (C), images (D), and the host-adaptive half of the state matrix (E); those depend on it. Termina (Recommendation 8) and `?2026` detection remain last and lowest: unsupported terminals already ignore unknown private modes, so `?2026` detection is a denylist/metrics signal, not a redesign.
-
-## Related work
+## Related Work
 
 - [Capsule Terminal Model](/reference/capsule/terminal-model/) — current architecture and invariants this item modernizes without discarding the model.
 - [jackin' Capsule control plane](/reference/roadmap/jackin-capsule/) — broader Capsule roadmap that consumes the terminal model.
