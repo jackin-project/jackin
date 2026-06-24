@@ -120,7 +120,7 @@ fn renders_runtime_finalization_in_one_layer() {
     );
     assert!(
         dockerfile.contains(
-            "RUN install -d -o agent -g 0 -m 0775 /home/agent /home/agent/.cache /home/agent/.config /home/agent/.config/git /home/agent/.config/fish /home/agent/.local /home/agent/.local/bin /home/agent/.local/share /home/agent/.local/state"
+            "RUN install -d -o agent -g 0 -m 0775 /home/agent /home/agent/.cache /home/agent/.cache/mise /home/agent/.config /home/agent/.config/git /home/agent/.config/fish /home/agent/.config/mise /home/agent/.local /home/agent/.local/bin /home/agent/.local/share /home/agent/.local/share/mise /home/agent/.local/share/mise/installs /home/agent/.local/share/mise/plugins /home/agent/.local/share/mise/shims /home/agent/.local/state /home/agent/.local/state/mise /home/agent/.local/state/mise/tracked-configs"
         ),
         "runtime home mutable roots must be writable by supplementary group 0: {dockerfile}"
     );

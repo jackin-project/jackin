@@ -197,13 +197,21 @@ fn render_runtime_home_writable_commands(source_hook_declared: bool) -> String {
     let mutable_home_dirs = [
         "/home/agent",
         "/home/agent/.cache",
+        "/home/agent/.cache/mise",
         "/home/agent/.config",
         "/home/agent/.config/git",
         "/home/agent/.config/fish",
+        "/home/agent/.config/mise",
         "/home/agent/.local",
         "/home/agent/.local/bin",
         "/home/agent/.local/share",
+        "/home/agent/.local/share/mise",
+        "/home/agent/.local/share/mise/installs",
+        "/home/agent/.local/share/mise/plugins",
+        "/home/agent/.local/share/mise/shims",
         "/home/agent/.local/state",
+        "/home/agent/.local/state/mise",
+        "/home/agent/.local/state/mise/tracked-configs",
     ]
     .join(" ");
     let mut mutable_shell_files = vec!["/home/agent/.zshrc"];

@@ -40,10 +40,10 @@ use super::progress::{LaunchProgress, LaunchStage};
 #[cfg(not(test))]
 use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
-// Recipe schema version. Bumped v4 -> v5: agent binaries are now baked into
-// the derived image via install_block() (D1) rather than bind-mounted at
-// `docker run`. All v4 images lack baked binaries and must rebuild once.
-const IMAGE_RECIPE_VERSION: &str = "v5";
+// Recipe schema version. Bumped v5 -> v6: the arbitrary-host-UID runtime home
+// contract now explicitly creates mise data/cache/state subroots as group-0
+// writable, so v5 images may fail runtime tool installs under `--user UID:GID`.
+const IMAGE_RECIPE_VERSION: &str = "v6";
 /// jackin-capsule version baked into the derived image.
 const LABEL_IMAGE_CAPSULE_VERSION: &str = "jackin.capsule.version";
 /// `jackin.role.toml` schema version (`version = "v1alpha4"`).
@@ -51,7 +51,7 @@ const LABEL_IMAGE_MANIFEST_VERSION: &str = "jackin.manifest.version";
 /// Prefix for per-agent baked-binary version labels: `jackin.agent.<slug>.version`.
 /// Records the version of each agent binary jackin downloaded/cached locally and
 /// baked into the image. Diagnostic — not part of the recipe hash.
-const HOST_IDENTITY_STRATEGY: &str = "construct-agent-user-v1";
+const HOST_IDENTITY_STRATEGY: &str = "construct-agent-user-mise-roots-v2";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ImageInvalidationReason {
