@@ -699,14 +699,50 @@ fn usage_overview_provider_lines(
 ) {
     let value = value.trim();
     let (summary, reset) = value.split_once(" · ").unwrap_or((value, ""));
-    let left = format!("{label:<11}{summary}");
-    lines.push(usage_header_two_column(
-        &left,
-        Style::default().fg(WHITE),
-        reset,
-        DIM,
-        width,
-    ));
+    let left = if summary.ends_with("% left") {
+        format!("{label:<11}{summary:>9}")
+    } else {
+        format!("{label:<11}{summary}")
+    };
+    let (reset, local_timestamp) = usage_overview_reset_columns(reset);
+    let Some(local_timestamp) = local_timestamp else {
+        lines.push(usage_header_two_column(
+            &left,
+            Style::default().fg(WHITE),
+            reset,
+            DIM,
+            width,
+        ));
+        return;
+    };
+    let left_cols = jackin_tui::display_cols(&left);
+    let reset_cols = jackin_tui::display_cols(reset);
+    let local_cols = jackin_tui::display_cols(local_timestamp);
+    let available = width.saturating_sub(USAGE_CONTENT_PAD_LEFT + USAGE_CONTENT_PAD_RIGHT);
+    let left_gap = 3;
+    let right_gap = available
+        .checked_sub(left_cols + left_gap + reset_cols + local_cols)
+        .filter(|gap| *gap >= 1)
+        .unwrap_or(3);
+    lines.push(Line::from(vec![
+        usage_content_indent(),
+        Span::styled(left, Style::default().fg(WHITE)),
+        Span::raw(" ".repeat(left_gap)),
+        Span::styled(reset.to_owned(), DIM),
+        Span::raw(" ".repeat(right_gap)),
+        Span::styled(local_timestamp.to_owned(), DIM),
+    ]));
+}
+
+fn usage_overview_reset_columns(reset: &str) -> (&str, Option<&str>) {
+    let reset = reset.trim();
+    if let Some((prefix, suffix)) = reset.rsplit_once(" (")
+        && suffix.ends_with(')')
+    {
+        let timestamp = &reset[reset.len() - suffix.len() - 2..];
+        return (prefix.trim(), Some(timestamp));
+    }
+    (reset, None)
 }
 
 fn usage_header_lines(

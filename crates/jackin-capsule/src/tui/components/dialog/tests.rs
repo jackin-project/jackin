@@ -818,7 +818,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
         tabs: vec![
             jackin_protocol::control::UsageProviderTab {
                 label: "Codex".to_owned(),
-                status_label: "37% left · Resets in 1h 21m".to_owned(),
+                status_label: "37% left · Resets in 1h 21m (Jun 17, 23:15)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
                 plan_label: Some("Pro 20x".to_owned()),
                 source_label: Some("fresh · provider".to_owned()),
@@ -826,7 +826,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             },
             jackin_protocol::control::UsageProviderTab {
                 label: "Claude".to_owned(),
-                status_label: "16% left · Resets in 46m".to_owned(),
+                status_label: "16% left · Resets in 46m (Jun 17, 22:40)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
                 plan_label: Some("Max".to_owned()),
                 source_label: Some("stale · provider".to_owned()),
@@ -850,7 +850,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             },
             jackin_protocol::control::UsageProviderTab {
                 label: "GLM / Z.AI".to_owned(),
-                status_label: "88% left · Resets in 4d".to_owned(),
+                status_label: "88% left · Resets in 4d (Jun 21, 00:00)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
                 plan_label: Some("GLM Coding".to_owned()),
                 source_label: Some("fresh · provider".to_owned()),
@@ -858,7 +858,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             },
             jackin_protocol::control::UsageProviderTab {
                 label: "Kimi".to_owned(),
-                status_label: "72% left · Resets in 13h".to_owned(),
+                status_label: "72% left · Resets in 13h (Jun 18, 11:00)".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
                 plan_label: Some("Moonshot".to_owned()),
                 source_label: Some("fresh · provider".to_owned()),
@@ -1462,8 +1462,8 @@ fn usage_dialog_overview_tab_renders_cross_provider_summary() {
     assert!(rows_debug.contains("Anthropic"));
     assert!(rows_debug.contains("xAI"));
     assert!(rows_debug.contains("Z.AI"));
-    assert!(values.contains(&"37% left · Resets in 1h 21m"));
-    assert!(values.contains(&"16% left · Resets in 46m"));
+    assert!(values.contains(&"37% left · Resets in 1h 21m (Jun 17, 23:15)"));
+    assert!(values.contains(&"16% left · Resets in 46m (Jun 17, 22:40)"));
     assert!(values.contains(&"unsupported"));
     assert!(!rows_debug.contains("fresh · provider"));
     assert!(!rows_debug.contains("stale · provider"));
@@ -1485,8 +1485,10 @@ fn usage_dialog_overview_tab_renders_cross_provider_summary() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert!(rendered.contains("OpenAI     37% left"), "{rendered}");
-    assert!(rendered.contains("Anthropic  16% left"), "{rendered}");
+    assert!(rendered.contains("OpenAI      37% left"), "{rendered}");
+    assert!(rendered.contains("Anthropic   16% left"), "{rendered}");
+    assert!(rendered.contains("Resets in 1h 21m"), "{rendered}");
+    assert!(rendered.contains("(Jun 17, 23:15)"), "{rendered}");
     assert!(rendered.contains("xAI        needs login"), "{rendered}");
     assert!(!rendered.contains("alexey@example.com"), "{rendered}");
     assert!(!rendered.contains("Pro 20x"), "{rendered}");
