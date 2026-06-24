@@ -1326,7 +1326,7 @@ done vs outstanding in this roadmap item.
 - [ ] Issue 4 — no blocking work on the event/input/render loop (offload + concurrent probes; daemon-wide rule)
 - [ ] Tokio-everywhere audit — enumerate every data-load/I/O path in jackin', confirm each is off-loop + parallel; refactor any blocking/serial (HARDCORE rule)
 - [x] Issue 13 (prereq) — propagate host `TZ` into the capsule (kill UTC-only timestamps class bug) — `d832930`
-- [ ] Canonical per-provider section spec + agent→provider resolver (root cause behind 7/8/9/10/11/12/14)
+- [x] Canonical per-provider section spec + agent→provider resolver (root cause behind 7/8/9/10/11/12/14) — `ed98924` + provider commits
 
 **B. Refresh behavior**
 - [x] Issue 5 — per-provider freshness TTL gating all refresh triggers; `r` forces — `970b9d2`
