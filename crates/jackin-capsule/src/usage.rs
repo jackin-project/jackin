@@ -14,6 +14,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use base64::Engine as _;
 use chrono::{DateTime, Utc};
 use jackin_protocol::control::{
     AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, QuotaBucketView,
@@ -600,13 +601,17 @@ fn codex_snapshot(
         std::env::var("CODEX_HOME").map_or_else(|_| home_path(".codex"), PathBuf::from);
     let auth_path = codex_home.join("auth.json");
     let credentials = load_codex_oauth_credentials(&auth_path);
-    let auth_account = codex_account_label(&auth_path).unwrap_or_else(|| {
-        if std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.is_empty()) {
-            "OPENAI_API_KEY".to_owned()
-        } else {
-            "needs Codex login".to_owned()
-        }
-    });
+    let auth_account = credentials
+        .as_ref()
+        .and_then(|credentials| credentials.account_label.clone())
+        .or_else(|| codex_account_label(&auth_path))
+        .unwrap_or_else(|| {
+            if std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.is_empty()) {
+                "OPENAI_API_KEY".to_owned()
+            } else {
+                "needs Codex login".to_owned()
+            }
+        });
     let rpc_usage = fetch_codex_rpc_usage(rpc_gate).ok();
     let rpc_quota = rpc_usage.as_ref().map(|usage| &usage.response);
     let oauth_quota = credentials
@@ -1600,6 +1605,7 @@ fn claude_code_version_from_text(text: &str) -> Option<String> {
 struct CodexOAuthCredentials {
     access_token: String,
     account_id: Option<String>,
+    account_label: Option<String>,
 }
 
 fn load_codex_oauth_credentials(path: &Path) -> Option<CodexOAuthCredentials> {
@@ -1613,6 +1619,7 @@ fn load_codex_oauth_credentials(path: &Path) -> Option<CodexOAuthCredentials> {
         return Some(CodexOAuthCredentials {
             access_token: api_key.trim().to_owned(),
             account_id: None,
+            account_label: Some("OPENAI_API_KEY".to_owned()),
         });
     }
     let tokens = value.get("tokens")?;
@@ -1632,10 +1639,38 @@ fn load_codex_oauth_credentials(path: &Path) -> Option<CodexOAuthCredentials> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned);
+    let account_label = tokens
+        .get("id_token")
+        .or_else(|| tokens.get("idToken"))
+        .and_then(serde_json::Value::as_str)
+        .and_then(codex_account_label_from_id_token)
+        .or_else(|| {
+            tokens
+                .get("account_id")
+                .or_else(|| tokens.get("accountId"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+        });
     Some(CodexOAuthCredentials {
         access_token,
         account_id,
+        account_label,
     })
+}
+
+fn codex_account_label_from_id_token(token: &str) -> Option<String> {
+    let payload = token.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(payload))
+        .ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    first_string_key(&value, "email")
+        .or_else(|| first_string_key(&value, "preferred_username"))
+        .or_else(|| first_string_key(&value, "name"))
+        .or_else(|| first_string_key(&value, "sub").map(|sub| format!("ChatGPT account {sub}")))
 }
 
 #[derive(Debug, Deserialize)]
@@ -4192,13 +4227,18 @@ mod tests {
     fn codex_oauth_credentials_parse_nested_tokens() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("auth.json");
+        let id_token = test_jwt(serde_json::json!({
+            "email": "person@example.com",
+            "sub": "acct-sub"
+        }));
         fs::write(
             &path,
             serde_json::json!({
                 "tokens": {
                     "access_token": "access",
                     "refresh_token": "refresh",
-                    "account_id": "acct"
+                    "account_id": "acct",
+                    "id_token": id_token
                 }
             })
             .to_string(),
@@ -4209,6 +4249,28 @@ mod tests {
 
         assert_eq!(credentials.access_token, "access");
         assert_eq!(credentials.account_id.as_deref(), Some("acct"));
+        assert_eq!(
+            credentials.account_label.as_deref(),
+            Some("person@example.com")
+        );
+    }
+
+    #[test]
+    fn codex_id_token_identity_falls_back_to_subject() {
+        let id_token = test_jwt(serde_json::json!({
+            "sub": "user-123"
+        }));
+
+        assert_eq!(
+            codex_account_label_from_id_token(&id_token).as_deref(),
+            Some("ChatGPT account user-123")
+        );
+    }
+
+    fn test_jwt(payload: serde_json::Value) -> String {
+        let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode("{}");
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string());
+        format!("{header}.{payload}.signature")
     }
 
     #[test]

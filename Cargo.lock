@@ -2726,6 +2726,7 @@ name = "jackin-capsule"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "criterion",
  "crossterm",
