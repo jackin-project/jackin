@@ -143,10 +143,10 @@ fn debug_dialog_keeps_status_bar_visible() {
     }
     .into_state();
     let snapshot = (DialogRatatuiSnapshot::DebugInfo(state), (3, 8, 10, 64));
-    let backend = TestBackend::new(90, 24);
+    let backend = TestBackend::new(120, 24);
     let mut terminal = Terminal::new(backend).unwrap();
     let status_plan = crate::tui::components::status_bar::status_bar_plan(
-        90,
+        120,
         &tabs,
         0,
         &[],
@@ -161,7 +161,7 @@ fn debug_dialog_keeps_status_bar_visible() {
                 CapsuleRatatuiFrame {
                     tabs: &tabs,
                     status_plan: &status_plan,
-                    term_cols: 90,
+                    term_cols: 120,
                     term_rows: 24,
                     panes: &[],
                     pane_titles: &[],
@@ -177,14 +177,14 @@ fn debug_dialog_keeps_status_bar_visible() {
                     selection_copied: false,
                     scrollbars: &[],
                     branch: None,
-                    usage_status_label: None,
+                    usage_status_label: Some("Session 99%"),
                     pull_request: None,
                     pull_request_loading: false,
                     instance_id_label: "jk-test",
                     hover_target: None,
                     scrollback_active: false,
                     main_scroll_axes: jackin_tui::components::ScrollAxes::default(),
-                    debug_run_id: None,
+                    debug_run_id: Some("jk-run-test"),
                     dialog_hint_spans: None,
                     spawn_failure: None,
                     palette_key: 0x1C,
@@ -206,6 +206,20 @@ fn debug_dialog_keeps_status_bar_visible() {
     assert!(
         dialog_title.contains("Debug info"),
         "debug dialog missing: {dialog_title:?}"
+    );
+    let footer = row_text(buf, 23);
+    let usage_col = footer
+        .find("Session 99%")
+        .unwrap_or_else(|| panic!("usage status missing from footer: {footer:?}"));
+    let container_col = footer
+        .find("jk-test")
+        .unwrap_or_else(|| panic!("container id missing from footer: {footer:?}"));
+    let run_id_col = footer
+        .find("jk-run-test")
+        .unwrap_or_else(|| panic!("run id missing from footer: {footer:?}"));
+    assert!(
+        usage_col < container_col && container_col < run_id_col,
+        "footer right group must be usage, container, run ID: {footer:?}"
     );
 }
 

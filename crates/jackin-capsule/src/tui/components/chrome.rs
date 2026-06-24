@@ -235,6 +235,7 @@ pub(crate) struct DialogBottomChromeWidget<'a> {
     pub(crate) usage_status_label: Option<&'a str>,
     pub(crate) pull_request: Option<&'a crate::pull_request::PullRequestInfo>,
     pub(crate) pull_request_loading: bool,
+    pub(crate) debug_run_id: Option<&'a str>,
     pub(crate) instance_id_label: &'a str,
     pub(crate) hint_spans: Option<&'a [jackin_tui::HintSpan<'a>]>,
 }
@@ -248,7 +249,7 @@ impl Widget for DialogBottomChromeWidget<'_> {
             self.usage_status_label,
             self.pull_request,
             self.pull_request_loading,
-            None,
+            self.debug_run_id,
             self.instance_id_label,
             None,
         );

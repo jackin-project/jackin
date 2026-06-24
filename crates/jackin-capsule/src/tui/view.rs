@@ -189,6 +189,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
                 usage_status_label: view.usage_status_label,
                 pull_request: view.pull_request,
                 pull_request_loading: view.pull_request_loading,
+                debug_run_id: view.debug_run_id,
                 instance_id_label: view.instance_id_label,
                 hint_spans: view.dialog_hint_spans,
             },
