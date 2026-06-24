@@ -351,6 +351,7 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         });
     let hover = StatusFooterHover {
         left: activity_hovering,
+        usage: false,
         right: container_hovering,
         right_debug: debug_chip_hovering,
     };

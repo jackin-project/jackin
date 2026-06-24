@@ -15,6 +15,19 @@ fn dump(left: &str, right: &str, width: u16) -> String {
         .collect()
 }
 
+fn dump_group(left: &str, right: StatusRightGroup<'_>, width: u16) -> String {
+    let backend = TestBackend::new(width, 1);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(StatusFooter::new(left).right_group(right), frame.area());
+        })
+        .unwrap();
+    (0..width)
+        .map(|x| terminal.backend().buffer()[(x, 0)].symbol().to_owned())
+        .collect()
+}
+
 #[test]
 fn renders_activity_on_the_left_and_chip_on_the_right() {
     let row = dump("Building Docker image", "k7p9m2xq", 60);
@@ -77,6 +90,46 @@ fn debug_chip_renders_in_amber_to_the_right_of_the_instance_chip() {
     assert!(
         (0..60).any(|x| buffer[(x, 0)].bg == DANGER_RED),
         "run-id chip must use DANGER_RED background"
+    );
+}
+
+#[test]
+fn right_group_renders_usage_container_then_run_id() {
+    let row = dump_group(
+        "building",
+        StatusRightGroup {
+            usage: Some("Session 37%"),
+            container: "s9994y2n",
+            run_id: Some("jk-run-3d7e23"),
+        },
+        80,
+    );
+
+    assert!(row.contains("Session 37%"), "usage missing: {row:?}");
+    assert!(row.contains("s9994y2n"), "container missing: {row:?}");
+    assert!(
+        row.contains("jk-run-3d7e23"),
+        "debug run id missing: {row:?}"
+    );
+    assert!(
+        row.find("Session 37%").unwrap() < row.find("s9994y2n").unwrap(),
+        "usage must render left of container: {row:?}"
+    );
+    assert!(
+        row.find("s9994y2n").unwrap() < row.find("jk-run-3d7e23").unwrap(),
+        "container must render left of run id: {row:?}"
+    );
+}
+
+#[test]
+fn compact_usage_status_label_keeps_quota_and_lifecycle_state() {
+    assert_eq!(
+        compact_usage_status_label("Codex · Session 37% · Weekly 10% · account login"),
+        "Session 37% · login"
+    );
+    assert_eq!(
+        compact_usage_status_label("Amp · account unavailable login"),
+        "login"
     );
 }
 

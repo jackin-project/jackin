@@ -11,16 +11,23 @@ use crate::theme::{DANGER_RED, DEBUG_AMBER, LINK_BLUE, WHITE, faded};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StatusFooterHover {
     pub left: bool,
+    pub usage: bool,
     pub right: bool,
     /// Whether the pointer is over the debug chip (inverts chip colors on hover).
     pub right_debug: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StatusRightGroup<'a> {
+    pub usage: Option<&'a str>,
+    pub container: &'a str,
+    pub run_id: Option<&'a str>,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct StatusFooter<'a> {
     left: &'a str,
-    right: &'a str,
-    right_debug: Option<&'a str>,
+    right: StatusRightGroup<'a>,
     alpha: f32,
     hover: StatusFooterHover,
 }
@@ -30,11 +37,15 @@ impl<'a> StatusFooter<'a> {
     pub const fn new(left: &'a str) -> Self {
         Self {
             left,
-            right: "",
-            right_debug: None,
+            right: StatusRightGroup {
+                usage: None,
+                container: "",
+                run_id: None,
+            },
             alpha: 1.0,
             hover: StatusFooterHover {
                 left: false,
+                usage: false,
                 right: false,
                 right_debug: false,
             },
@@ -43,13 +54,19 @@ impl<'a> StatusFooter<'a> {
 
     #[must_use]
     pub const fn right(mut self, right: &'a str) -> Self {
-        self.right = right;
+        self.right.container = right;
         self
     }
 
     #[must_use]
     pub const fn right_debug(mut self, right_debug: Option<&'a str>) -> Self {
-        self.right_debug = right_debug;
+        self.right.run_id = right_debug;
+        self
+    }
+
+    #[must_use]
+    pub const fn right_group(mut self, right: StatusRightGroup<'a>) -> Self {
+        self.right = right;
         self
     }
 
@@ -72,6 +89,12 @@ impl<'a> StatusFooter<'a> {
     }
 
     #[must_use]
+    pub const fn usage_hover(mut self, hovered: bool) -> Self {
+        self.hover.usage = hovered;
+        self
+    }
+
+    #[must_use]
     pub const fn right_debug_hover(mut self, hovered: bool) -> Self {
         self.hover.right_debug = hovered;
         self
@@ -89,9 +112,25 @@ impl Widget for StatusFooter<'_> {
             .render(area, buf);
 
         let mut right_spans: Vec<Span<'static>> = Vec::new();
-        if !self.right.is_empty() {
+        if let Some(usage) = self.right.usage.filter(|usage| !usage.is_empty()) {
             right_spans.push(Span::styled(
-                format!(" {} ", self.right),
+                format!(" {usage} "),
+                Style::default()
+                    .bg(faded(WHITE, self.alpha))
+                    .fg(faded(
+                        if self.hover.usage {
+                            DEBUG_AMBER
+                        } else {
+                            Color::Black
+                        },
+                        self.alpha,
+                    ))
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+        if !self.right.container.is_empty() {
+            right_spans.push(Span::styled(
+                format!(" {} ", self.right.container),
                 Style::default()
                     .bg(faded(WHITE, self.alpha))
                     .fg(faded(
@@ -105,7 +144,7 @@ impl Widget for StatusFooter<'_> {
                     .add_modifier(Modifier::BOLD),
             ));
         }
-        if let Some(debug) = self.right_debug.filter(|debug| !debug.is_empty()) {
+        if let Some(debug) = self.right.run_id.filter(|debug| !debug.is_empty()) {
             // Canonical debug chip: DANGER_RED background, white text — identical to
             // the console's render_debug_bar so the operator sees the same chip on
             // every surface. Inverted on hover (white bg, red text) for clickability cue.
@@ -176,10 +215,73 @@ pub fn render_status_footer(
             .right_debug(right_debug)
             .alpha(alpha)
             .left_hover(hover.left)
+            .usage_hover(hover.usage)
             .right_hover(hover.right)
             .right_debug_hover(hover.right_debug),
         area,
     );
+}
+
+pub fn render_status_footer_right_group(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    left: &str,
+    right: StatusRightGroup<'_>,
+    alpha: f32,
+    hover: StatusFooterHover,
+) {
+    frame.render_widget(
+        StatusFooter::new(left)
+            .right_group(right)
+            .alpha(alpha)
+            .left_hover(hover.left)
+            .usage_hover(hover.usage)
+            .right_hover(hover.right)
+            .right_debug_hover(hover.right_debug),
+        area,
+    );
+}
+
+#[must_use]
+pub fn compact_usage_status_label(label: &str) -> String {
+    let parts = label
+        .split(" · ")
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    let remaining = parts
+        .iter()
+        .find(|part| part.starts_with("Session ") || part.starts_with("5-hour "))
+        .or_else(|| parts.iter().find(|part| part.contains('%')))
+        .map(|part| (*part).to_owned());
+    let state = parts
+        .iter()
+        .rev()
+        .find_map(|part| usage_lifecycle_word(part));
+    match (remaining, state) {
+        (Some(remaining), Some(state)) => format!("{remaining} · {state}"),
+        (Some(remaining), None) => remaining,
+        (None, Some(state)) => state.to_owned(),
+        (None, None) => label
+            .split_whitespace()
+            .next()
+            .unwrap_or("usage")
+            .to_owned(),
+    }
+}
+
+fn usage_lifecycle_word(part: &str) -> Option<&'static str> {
+    let lower = part.to_ascii_lowercase();
+    [
+        "login",
+        "secret",
+        "stale",
+        "unsupported",
+        "unavailable",
+        "error",
+    ]
+    .into_iter()
+    .find(|word| lower.contains(word))
 }
 
 #[must_use]

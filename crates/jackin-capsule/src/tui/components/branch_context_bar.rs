@@ -8,6 +8,7 @@
 //! must reserve; rendering writes ANSI escape sequences directly into the
 //! caller-supplied `buf` using absolute cursor positions.
 
+use jackin_tui::components::compact_usage_status_label;
 use jackin_tui::{display_cols, take_display_cols};
 
 use crate::pull_request::PullRequestInfo;
@@ -163,47 +164,6 @@ fn usage_right_chunk(
         return (String::new(), None);
     };
     place_right_chunk(cursor, term_cols, Some(chunk))
-}
-
-fn compact_usage_status_label(label: &str) -> String {
-    let parts = label
-        .split(" · ")
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>();
-    let remaining = parts
-        .iter()
-        .find(|part| part.starts_with("Session ") || part.starts_with("5-hour "))
-        .or_else(|| parts.iter().find(|part| part.contains('%')))
-        .map(|part| (*part).to_owned());
-    let state = parts
-        .iter()
-        .rev()
-        .find_map(|part| usage_lifecycle_word(part));
-    match (remaining, state) {
-        (Some(remaining), Some(state)) => format!("{remaining} · {state}"),
-        (Some(remaining), None) => remaining,
-        (None, Some(state)) => state.to_owned(),
-        (None, None) => label
-            .split_whitespace()
-            .next()
-            .unwrap_or("usage")
-            .to_owned(),
-    }
-}
-
-fn usage_lifecycle_word(part: &str) -> Option<&'static str> {
-    let lower = part.to_ascii_lowercase();
-    [
-        "login",
-        "secret",
-        "stale",
-        "unsupported",
-        "unavailable",
-        "error",
-    ]
-    .into_iter()
-    .find(|word| lower.contains(word))
 }
 
 pub(crate) fn debug_run_id_label() -> Option<String> {
