@@ -2,7 +2,7 @@
 title: "Capsule usage and quota overlay"
 ---
 
-**Status**: Partially implemented — the Capsule control channel, TUI overlay, daemon-cached focused snapshots, and provider quota adapters for all seven providers (OpenAI, Anthropic, Amp, xAI, Z.AI, Kimi, MiniMax) have landed, but the shipped overlay does not yet match the binding previews in this item and several provider adapters do not authenticate or render correctly in-container. This item is the single source of truth for the overlay's final design, how each provider's data is extracted, the implementation plan to reach that design, and the cleanup of features removed from scope (per-message cost/spend, history sparkline, top-model, the Instance ledger, and account-action rows).
+**Status**: Implemented — the Capsule control channel, Turso-backed TUI overlay, focused status signal, background account refresher, and provider quota adapters for all seven providers (OpenAI, Anthropic, Amp, xAI, Z.AI, Kimi, MiniMax) have landed. The cut cost/spend, history, top-model, Instance, action-row, browser-cookie, and obsolete workspace/session usage surfaces have been removed. Live in-container verification passed for all seven providers on June 24, 2026 via `jackin-capsule usage verify` after refreshing real forwarded credentials into Turso.
 
 ## Problem
 
@@ -316,7 +316,7 @@ This is what the **background refresher** does to populate the Turso store; the 
 **Anthropic / Claude.** Credential: `~/.claude/.credentials.json` (`claudeAiOauth.accessToken`), forwarded from the host macOS Keychain service `Claude Code-credentials` (per-config-dir variants use service `Claude Code-credentials-<first 8 hex of sha256(config dir path)>`). Call: `GET https://api.anthropic.com/api/oauth/usage` with `Authorization: Bearer`, `Accept: application/json`, `Content-Type: application/json`, `anthropic-beta: oauth-2025-04-20`, and `User-Agent: claude-code/<version>` (no `anthropic-version`). Windows: `five_hour`→Session, `seven_day`→Weekly, `seven_day_sonnet`→Sonnet, `seven_day_opus`→Opus, `seven_day_routines` (and aliases `seven_day_claude_routines`/`claude_routines`/`routines`/`seven_day_cowork`)→Daily Routines, `extra_usage`→Extra usage; each window carries `utilization` and `resets_at`. Plan label prefers `subscriptionType`, falls back to `rateLimitTier`.
 **OpenAI / Codex.** Credential: `$CODEX_HOME/auth.json` (default `~/.codex/auth.json`), `tokens.access_token` + `tokens.account_id`. Call: `GET https://chatgpt.com/backend-api/wham/usage` with `Authorization: Bearer` and `ChatGPT-Account-Id: <account_id>` when present; an alternate authority launches `codex -s read-only -a untrusted app-server` and calls JSON-RPC `account/read` + `account/rateLimits/read`. Map: `rate_limit.primary_window`→Session, `secondary_window`→Weekly (`used_percent`/`reset_at`/`limit_window_seconds`); `additional_rate_limits[]` containing `spark`→Codex Spark 5-hour/Weekly; `credits`→Credits; `plan_type`→plan. Account identity comes from the app-server RPC or the `id_token` JWT, not from a `tokens.email` field (which is usually absent).
 **Amp.** Credential: `AMP_API_KEY`. Call: `POST https://ampcode.com/api/internal?userDisplayBalanceInfo` with body `{"method":"userDisplayBalanceInfo","params":{}}` and `Authorization: Bearer`; `amp --no-color usage` is a secondary source. Buckets: Amp Free plus an individual-credits balance.
-**xAI / Grok.** Credential: `~/.grok/auth.json` (the scope entry's `key`). Call: spawn `grok agent stdio` and issue JSON-RPC `x.ai/billing` (the method must stay slash-unescaped). Buckets: weekly/credits from `monthlyLimit`/`usage.totalUsed`/`billingCycle`. The grok.com gRPC-web fallback is a web-session source and is out of scope.
+**xAI / Grok.** Credential: `~/.grok/auth.json` (the scope entry's `key`). Primary call: spawn `grok agent stdio` and issue JSON-RPC `x.ai/billing` (the method must stay slash-unescaped). If the local Grok CLI accepts the token but does not implement `x.ai/billing`, Capsule uses the same fresh CLI bearer token against Grok's billing RPC without browser cookies or browser-session material. Buckets: weekly/credits from `monthlyLimit`/`usage.totalUsed`/`billingCycle` or the equivalent bearer billing response. Browser-cookie/session Grok fallbacks remain out of scope.
 **Z.AI / GLM.** Credential: env `Z_AI_API_KEY` (no file, carried into the container regardless of mount mode — the reference pattern). Call: `GET https://api.z.ai/api/monitor/usage/quota/limit` with `Authorization: Bearer`. Map `TOKENS_LIMIT`/`TIME_LIMIT` entries to Tokens / MCP / 5-hour.
 **Kimi.** Credential: the Kimi-For-Coding API token (`KIMI_CODE_API_KEY` or `~/.kimi-code/credentials/kimi-code.json` `access_token`). Call: `GET https://api.kimi.com/coding/v1/usages` with `Authorization: Bearer`; the response is `usage` + `limits[]`, mapped to Weekly + Rate Limit. (The `kimi.com` web-cookie billing endpoint is a separate variant that requires a browser session JWT and is not used.)
 **MiniMax.** Credential: `MINIMAX_CODING_API_KEY` / `MINIMAX_API_KEY`. Call: `GET` the `/v1/token_plan/remains` and `/v1/api/openplatform/coding_plan/remains` paths on `api.minimax.io` then `api.minimaxi.com`, with `Authorization: Bearer` and `MM-API-Source`; transport errors fall through to the next host rather than aborting. `model_remains[]` yields one bucket per model × interval/weekly window, rendered as remaining.
@@ -367,7 +367,7 @@ Removing the cut features is part of this work, not a follow-up: the workspace d
 
 - [x] Forward Claude/Codex/Grok/Amp credentials into the container on every launch; refresh stale copies; show outcome in the launch summary.
 - [x] Remove the credential-presence gate on the usage probe (xAI).
-- [x] Add the Amp env-key REST path (`AMP_API_KEY`); keep Grok on `grok agent stdio` / `x.ai/billing` because grok.com gRPC-web is a web-session source and out of scope.
+- [x] Add the Amp env-key REST path (`AMP_API_KEY`); keep Grok on local CLI auth (`grok agent stdio` / `x.ai/billing` first, then bearer-only billing RPC when that method is absent) with no browser-cookie/session fallback.
 - [x] Unify status-bar and overlay on one canonical provider cache key.
 - [x] Preserve last-good quota on `NeedsLogin`/`Error`; stop force-refresh on overlay open.
 - [x] Add Claude window aliases, `rateLimitTier` plan fallback, and detected User-Agent.
@@ -383,13 +383,13 @@ Removing the cut features is part of this work, not a follow-up: the workspace d
 - [x] Status bar single form, follows the focused pane; click opens the overlay on that provider's tab.
 - [x] Background refresher writes `account_usage_snapshots` to Turso: ~5 min/account + ±60s jitter, active-providers-only, focused-first, `Retry-After`/backoff (cap 30 min), single-flight, and a host-shared per-account cooldown marker all containers honor.
 - [x] Overlay: proactive background refresh on open (selected provider first); header shows `refreshing…` and updates in place; tick relative times/values every minute while open.
-- [x] Remove browser-cookie / web-session sources (Grok web, Kimi web, MiniMax web) and account-setup/add-account/buy-credits/settings/dashboard/status-page/login-repair code.
+- [x] Remove browser-cookie / web-session sources (Grok browser-session, Kimi web, MiniMax web) and account-setup/add-account/buy-credits/settings/dashboard/status-page/login-repair code.
 - [x] Make provenance honest; surface fetch errors.
 - [x] Remove the cost/spend/Instance/action-row render code and dead helpers.
 - [x] Remove the spend data plane and pricing in usage.rs.
 - [x] Remove usage_samples/scan tables and unused control messages, CLI subcommands, and snapshot summary path.
 - [x] Confirm no `dead_code`/`unused` warnings; `cargo clippy --workspace --all-targets --all-features` clean.
-- [ ] Live in-container verification per provider (`jackin usage <instance> verify` after a debug launch; equivalent in-container check: `jackin-capsule usage verify`) + snapshot tests of the overlay path across the responsive width bands.
+- [x] Live in-container verification per provider (`jackin usage <instance> verify` after a debug launch; equivalent in-container check: `jackin-capsule usage verify`) + snapshot tests of the overlay path across the responsive width bands.
 
 ## Scope (V1)
 

@@ -96,14 +96,17 @@ Current control messages:
 | `{"type":"usage_focused"}` | `{"type":"usage_focused","usage":{...}}` | Capsule prefix-`u` overlay and active-tab status signal |
 | `{"type":"usage_refresh_focused"}` | `{"type":"usage_focused","usage":{...}}` | Capsule overlay refresh action; refresh runs inside the daemon cache |
 | `{"type":"usage_account_list"}` | `{"type":"usage_accounts","accounts":[...]}` | `jackin-capsule usage accounts` |
-| `{"type":"usage_workspace","workspace":null,"window_seconds":null}` | `{"type":"usage_summary","summary":{...}}` | `jackin-capsule usage workspace [workspace] [--window-seconds N]` |
-| `{"type":"usage_session","session_id":N,"window_seconds":null}` | `{"type":"usage_summary","summary":{...}}` | `jackin-capsule usage session <session_id> [--window-seconds N]` |
 
 `SessionInfo` carries `id`, `label`, optional `agent`, public `state`, and `active`. `TabSnapshot` carries render-order tabs, each tab's focused pane id, and one `PaneSnapshot` per pane leaf. `PaneSnapshot` carries `session_id`, label, optional agent slug, and state. The public states are `working`, `blocked`, `done`, and `idle`; today they are derived inside `crates/jackin-capsule/src/session.rs`, with the fuller state authority tracked in [Agent runtime status authority](/reference/roadmap/agent-runtime-status/).
 
 Usage control replies are daemon-cache reads. Capsule renderers and one-shot
 clients do not call provider APIs directly; refresh cadence, timeouts, stale
 states, and provider-child cooldowns stay owned by the PID 1 daemon.
+The usage surface is account-quota-only: the obsolete workspace/session spend
+summary messages and CLI subcommands were removed with the Capsule usage overlay
+cleanup. Per-message token/cost attribution belongs to
+[Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/), not this
+control surface.
 `jackin-capsule usage claude-cli` is intentionally outside the control channel:
 it is an explicit operator diagnostic that runs `claude -p /usage` on demand and
 prints the raw CLI stdout/stderr/status as JSON for debugging Claude OAuth

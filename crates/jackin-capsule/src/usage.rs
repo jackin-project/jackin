@@ -1640,7 +1640,7 @@ fn usage_tab_status_label(view: &FocusedUsageView) -> String {
         && let Some(bucket) = most_constrained_fresh_bucket(&view.buckets)
         && let Some(remaining) = bucket.remaining_percent
     {
-        let mut label = format!("{} {remaining}% left", bucket.label);
+        let mut label = format!("{remaining}% left");
         if let Some(reset) = &bucket.reset_label {
             label.push_str(" · ");
             label.push_str(reset);
@@ -3656,7 +3656,7 @@ impl MiniMaxUsageResponse {
         for remain in self.model_remains() {
             if let Some(bucket) = minimax_bucket(
                 remain.model_name.as_deref().unwrap_or("MiniMax model"),
-                "Coding plan",
+                MiniMaxWindow::Interval,
                 remain.current_interval_total_count,
                 remain.current_interval_usage_count,
                 remain.current_interval_remaining_percent,
@@ -3668,18 +3668,20 @@ impl MiniMaxUsageResponse {
             ) {
                 buckets.push(bucket);
             }
-            if let Some(bucket) = minimax_bucket(
-                remain.model_name.as_deref().unwrap_or("MiniMax model"),
-                "Weekly",
-                remain.current_weekly_total_count,
-                remain.current_weekly_usage_count,
-                remain.current_weekly_remaining_percent,
-                remain.current_weekly_status,
-                remain.weekly_start_time,
-                remain.weekly_end_time,
-                remain.weekly_remains_time,
-                now,
-            ) {
+            if minimax_is_general_model(remain.model_name.as_deref())
+                && let Some(bucket) = minimax_bucket(
+                    remain.model_name.as_deref().unwrap_or("MiniMax model"),
+                    MiniMaxWindow::Weekly,
+                    remain.current_weekly_total_count,
+                    remain.current_weekly_usage_count,
+                    remain.current_weekly_remaining_percent,
+                    remain.current_weekly_status,
+                    remain.weekly_start_time,
+                    remain.weekly_end_time,
+                    remain.weekly_remains_time,
+                    now,
+                )
+            {
                 buckets.push(bucket);
             }
         }
@@ -3714,12 +3716,18 @@ impl MiniMaxUsageResponse {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum MiniMaxWindow {
+    Interval,
+    Weekly,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn minimax_bucket(
     model_name: &str,
-    window: &str,
+    window: MiniMaxWindow,
     total: Option<i64>,
-    remaining: Option<i64>,
+    usage: Option<i64>,
     remaining_percent: Option<f64>,
     status: Option<i64>,
     start: Option<i64>,
@@ -3727,38 +3735,71 @@ fn minimax_bucket(
     remains_time: Option<i64>,
     now: i64,
 ) -> Option<QuotaBucketView> {
-    if matches!(status, Some(value) if value != 0) {
+    if matches!(status, Some(value) if !matches!(value, 0 | 1)) {
         return None;
     }
-    if total.is_none() && remaining.is_none() && remaining_percent.is_none() {
+    if total.is_none() && usage.is_none() && remaining_percent.is_none() {
         return None;
     }
-    let used_percent = if let Some(remaining_percent) = remaining_percent {
-        Some((100.0 - remaining_percent).round().clamp(0.0, 100.0) as u8)
+    let remaining_percent = if let Some(remaining_percent) = remaining_percent {
+        Some(remaining_percent.round().clamp(0.0, 100.0) as u8)
     } else {
         let total = total?;
         if total <= 0 {
             None
         } else {
-            let remaining = remaining?;
-            let used = total.saturating_sub(remaining);
-            Some(((used.clamp(0, total) as f64 / total as f64) * 100.0).round() as u8)
+            let usage = usage?;
+            Some(100u8.saturating_sub(
+                ((usage.clamp(0, total) as f64 / total as f64) * 100.0).round() as u8,
+            ))
         }
     };
-    let used_label = total.and_then(|total| {
-        remaining.map(|remaining| compact_count(total.saturating_sub(remaining).max(0) as u64))
-    });
+    let used_label = usage.map(|usage| compact_count(usage.max(0) as u64));
     let reset_epoch = minimax_reset_epoch(end, remains_time, now);
-    let pace = minimax_window_label(start, end).or_else(|| Some(window.to_owned()));
+    let pace = minimax_window_label(start, end).or_else(|| Some(minimax_window_name(window)));
     Some(bucket(
-        &format!("{model_name} {window}"),
+        &minimax_bucket_label(model_name, window),
         used_label,
-        total.map(|value| compact_count(value.max(0) as u64)),
-        used_percent.map(|used| 100u8.saturating_sub(used)),
+        total
+            .filter(|value| *value > 0)
+            .map(|value| compact_count(value.max(0) as u64)),
+        remaining_percent,
         reset_epoch.map(|epoch| reset_label(epoch, now)),
         pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     ))
+}
+
+fn minimax_is_general_model(model_name: Option<&str>) -> bool {
+    model_name.is_some_and(|value| value.eq_ignore_ascii_case("general"))
+}
+
+fn minimax_bucket_label(model_name: &str, window: MiniMaxWindow) -> String {
+    let model = titlecase_ascii(model_name);
+    match (minimax_is_general_model(Some(model_name)), window) {
+        (true, MiniMaxWindow::Interval) => "General · 5h".to_owned(),
+        (true, MiniMaxWindow::Weekly) => "General · Weekly".to_owned(),
+        (false, MiniMaxWindow::Interval) => model,
+        (false, MiniMaxWindow::Weekly) => format!("{model} · Weekly"),
+    }
+}
+
+fn minimax_window_name(window: MiniMaxWindow) -> String {
+    match window {
+        MiniMaxWindow::Interval => "5 hours window".to_owned(),
+        MiniMaxWindow::Weekly => "Weekly".to_owned(),
+    }
+}
+
+fn titlecase_ascii(value: &str) -> String {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+    let mut out = String::new();
+    out.extend(first.to_uppercase());
+    out.push_str(chars.as_str());
+    out
 }
 
 fn fetch_minimax_usage(token: &str) -> Result<MiniMaxUsageResponse, String> {
@@ -5805,13 +5846,63 @@ mod tests {
         let buckets = usage.buckets(1_781_185_560);
 
         assert_eq!(usage.plan_name().as_deref(), Some("MiniMax Pro"));
-        assert_eq!(buckets[0].label, "MiniMax Text Coding plan");
-        assert_eq!(buckets[0].used_label.as_deref(), Some("40"));
+        assert_eq!(buckets[0].label, "MiniMax Text");
+        assert_eq!(buckets[0].used_label.as_deref(), Some("60"));
         assert_eq!(buckets[0].limit_label.as_deref(), Some("100"));
-        assert_eq!(buckets[0].remaining_percent, Some(60));
+        assert_eq!(buckets[0].remaining_percent, Some(40));
         assert_eq!(buckets[0].pace_label.as_deref(), Some("4 hours window"));
-        assert_eq!(buckets[1].label, "MiniMax Text Weekly");
-        assert_eq!(buckets[1].remaining_percent, Some(90));
+        assert_eq!(buckets.len(), 1);
+    }
+
+    #[test]
+    fn minimax_usage_response_maps_live_root_model_remains() {
+        let usage: MiniMaxUsageResponse = serde_json::from_value(serde_json::json!({
+            "model_remains": [
+                {
+                    "model_name": "general",
+                    "current_interval_total_count": 0,
+                    "current_interval_usage_count": 0,
+                    "current_interval_remaining_percent": 100,
+                    "current_interval_status": 1,
+                    "remains_time": 14_400_000,
+                    "current_weekly_total_count": 0,
+                    "current_weekly_usage_count": 1,
+                    "current_weekly_remaining_percent": 99,
+                    "current_weekly_status": 1,
+                    "weekly_remains_time": 345_600_000
+                },
+                {
+                    "model_name": "video",
+                    "current_interval_total_count": 5,
+                    "current_interval_usage_count": 0,
+                    "current_interval_remaining_percent": 100,
+                    "current_interval_status": 1,
+                    "remains_time": 28_800_000,
+                    "current_weekly_total_count": 35,
+                    "current_weekly_usage_count": 0,
+                    "current_weekly_remaining_percent": 100,
+                    "current_weekly_status": 1,
+                    "weekly_remains_time": 345_600_000
+                }
+            ],
+            "base_resp": { "status_code": 0, "status_msg": "success" }
+        }))
+        .expect("valid MiniMax usage");
+
+        usage.validate().expect("valid quota response");
+        let buckets = usage.buckets(1_782_315_600);
+
+        assert_eq!(
+            buckets
+                .iter()
+                .map(|bucket| (bucket.label.as_str(), bucket.remaining_percent))
+                .collect::<Vec<_>>(),
+            vec![
+                ("General · 5h", Some(100)),
+                ("General · Weekly", Some(99)),
+                ("Video", Some(100)),
+            ]
+        );
     }
 
     #[test]

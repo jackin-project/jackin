@@ -4,12 +4,13 @@ title: "Token & Cost Telemetry"
 
 **Status**: Open — design proposal (Phase 3, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
 
-**Implementation note**: The Capsule usage overlay work has landed the first
-Capsule-local Turso cache for this design: `usage_samples` rows now carry
-`source_hash` for idempotent log/runtime ingestion plus `cost_source` so
-summaries can distinguish provider-reported exact USD costs from price-table
-estimates and unpriced samples. This remains a local bridge, not the final
-host-global telemetry daemon.
+**Implementation note**: The Capsule usage overlay work has landed the
+account-quota side of this design: a Capsule-local Turso
+`account_usage_snapshots` cache feeds the focused status signal and provider
+overlay. It deliberately removed the earlier local `usage_samples` bridge,
+workspace/session summaries, price-table estimates, and cost grids. The
+per-message token/cost plane described below remains open and still belongs to
+the final host-global telemetry daemon.
 
 ## Problem
 
@@ -272,14 +273,13 @@ Daemon-owned account usage endpoints land before any UI polish. The naming follo
 These can live in the daemon protocol first. Capsule should consume a narrow read path later: focused provider/account summary in, no provider polling out. If a file bridge is needed for agents that can only read files, the daemon writes a read-only materialized JSON file under `/jackin/run/usage/` inside the container; containers never write back to the host telemetry cache.
 
 Capsule-local implementation note: the `jackin-capsule` control channel now has
-`UsageFocused` / `UsageRefreshFocused`, `UsageAccountList`, `UsageWorkspace`,
-and `UsageSession` message variants. These read the Capsule daemon cache and
-`/jackin/state/usage/telemetry.db`. The Capsule daemon persists account quota
-buckets, local-log samples, and token-bearing runtime-stream JSON samples with
-session/workspace attribution; samples keep exact USD cost only when the source
-record exposes an explicit USD cost field, and otherwise report token totals
-without invented pricing. These APIs are not yet the host-global daemon API or
-final `account/list` / `account/refresh` / `usage/*` CLI surface.
+`UsageFocused` / `UsageRefreshFocused` and `UsageAccountList` message variants.
+These read the Capsule daemon cache and `/jackin/state/usage/telemetry.db`.
+The Capsule daemon persists account quota buckets only. It no longer persists
+local-log samples, token-bearing runtime-stream JSON samples, workspace
+summaries, session summaries, or invented price-table estimates. These APIs are
+not yet the host-global daemon API or final `account/list` / `account/refresh`
+/ `usage/*` CLI surface.
 
 ### Implementation sequence
 
@@ -289,13 +289,14 @@ final `account/list` / `account/refresh` / `usage/*` CLI surface.
 4. **Shared daemon endpoints.** Expose account list, refresh, workspace summary, and session summary; include source, confidence, freshness, and last-error fields in every response.
 5. **CLI.** Ship `jackin usage --json` and a compact human view before the Desktop/Capsule work so the data contract can be tested without a native UI.
 6. **Console and Desktop surfaces.** Add compact badges, then account/detail panels. Badges must carry both axes — `UsageConfidence` for provenance and `UsageSnapshotStatus` for lifecycle — before shipping percentage-only displays.
-7. **Capsule focused signal.** The first Capsule/control/TUI bridge has landed:
+7. **Capsule focused signal.** The Capsule/control/TUI bridge has landed:
    Capsule can request a normalized focused usage view, render a compact
-   focused-agent status label, and open the read-only prefix `u` overlay from a
-   daemon-owned cache. The remaining work is to replace the conservative local
-   cache with the canonical account snapshot service, provider-authoritative
-   quota adapters, and scheduled refresh/backoff described above. Rendering
-   contract lives in [Capsule usage and quota overlay](/reference/roadmap/capsule-usage-quota-overlay/).
+   focused-provider status label, and open the read-only prefix `u` overlay from
+   a daemon-owned account snapshot cache. Provider-authoritative quota adapters
+   and scheduled refresh/backoff for the in-container overlay have shipped. The
+   remaining work is to replace the Capsule-local account cache with the final
+   host-global account snapshot service described above. Rendering contract
+   lives in [Capsule usage and quota overlay](/reference/roadmap/capsule-usage-quota-overlay/).
 8. **Amp/Kimi/OpenCode research adapters.** Add provider rows only after each runtime has a non-interactive source contract or an explicit fallback UX. Until then, render honest unsupported/local-estimate states.
 
 ### Surface contract

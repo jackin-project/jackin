@@ -818,7 +818,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
         tabs: vec![
             jackin_protocol::control::UsageProviderTab {
                 label: "Codex".to_owned(),
-                status_label: "Session 37% left · Resets in 1h 21m".to_owned(),
+                status_label: "37% left · Resets in 1h 21m".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
                 plan_label: Some("Pro 20x".to_owned()),
                 source_label: Some("fresh · provider".to_owned()),
@@ -850,7 +850,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             },
             jackin_protocol::control::UsageProviderTab {
                 label: "GLM / Z.AI".to_owned(),
-                status_label: "Weekly 88% left · Resets in 4d".to_owned(),
+                status_label: "88% left · Resets in 4d".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
                 plan_label: Some("GLM Coding".to_owned()),
                 source_label: Some("fresh · provider".to_owned()),
@@ -858,7 +858,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             },
             jackin_protocol::control::UsageProviderTab {
                 label: "Kimi".to_owned(),
-                status_label: "Daily 72% left · Resets in 13h".to_owned(),
+                status_label: "72% left · Resets in 13h".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
                 plan_label: Some("Moonshot".to_owned()),
                 source_label: Some("fresh · provider".to_owned()),
@@ -866,7 +866,7 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
             },
             jackin_protocol::control::UsageProviderTab {
                 label: "MiniMax".to_owned(),
-                status_label: "M1 Coding 100% left".to_owned(),
+                status_label: "100% left".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
                 plan_label: Some("M1 Coding".to_owned()),
                 source_label: Some("fresh · provider".to_owned()),
@@ -1230,16 +1230,17 @@ fn usage_dialog_overview_tab_renders_cross_provider_summary() {
         .collect();
     let rows_debug = format!("{:?}", state.rows());
 
-    assert!(values.contains(&"codex · OpenAI · alexey@example.com"));
-    assert!(values.contains(&"OpenAI / Codex · alexey@example.com · Pro 20x"));
-    // Provider rows are one quota-focused line each: the quota summary plus a
-    // freshness · source tag, with account identity carried by the header.
-    assert!(values.contains(&"Session 37% left · Resets in 1h 21m · fresh · provider"));
-    assert!(values.contains(&"16% left · Resets in 46m · stale · provider"));
+    assert!(!rows_debug.contains("Focused agent"));
+    assert!(!rows_debug.contains("Focused account"));
+    assert!(rows_debug.contains("OpenAI"));
+    assert!(rows_debug.contains("Anthropic"));
+    assert!(rows_debug.contains("xAI"));
+    assert!(rows_debug.contains("Z.AI"));
+    assert!(values.contains(&"37% left · Resets in 1h 21m"));
+    assert!(values.contains(&"16% left · Resets in 46m"));
     assert!(values.contains(&"unsupported"));
-    assert!(rows_debug.contains("Codex focused"));
-    assert!(rows_debug.contains("Claude"));
-    assert!(rows_debug.contains("stale"));
+    assert!(!rows_debug.contains("fresh · provider"));
+    assert!(!rows_debug.contains("stale · provider"));
 
     let snapshot = d.to_ratatui_snapshot(None);
     let rect = d.box_rect(32, 100);
@@ -1258,11 +1259,12 @@ fn usage_dialog_overview_tab_renders_cross_provider_summary() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert!(rendered.contains("Codex focused"), "{rendered}");
-    assert!(rendered.contains("alexey@example.com"), "{rendered}");
-    assert!(rendered.contains("Pro 20x"), "{rendered}");
-    assert!(rendered.contains("fresh"), "{rendered}");
-    assert!(rendered.contains("Claude"), "{rendered}");
+    assert!(rendered.contains("OpenAI 37% left"), "{rendered}");
+    assert!(rendered.contains("Anthropic 16% left"), "{rendered}");
+    assert!(rendered.contains("xAI needs login"), "{rendered}");
+    assert!(!rendered.contains("alexey@example.com"), "{rendered}");
+    assert!(!rendered.contains("Pro 20x"), "{rendered}");
+    assert!(!rendered.contains("fresh"), "{rendered}");
     assert!(rendered.contains("unsupported"), "{rendered}");
 }
 
@@ -1298,10 +1300,8 @@ fn usage_dialog_left_arrow_from_first_provider_switches_to_overview() {
 
     assert_eq!(d.handle_key(b"\x1b[D", None), DialogAction::Redraw);
     let state = d.usage_state().expect("usage state");
-    assert_eq!(
-        state.rows()[0].value(),
-        "codex · OpenAI · alexey@example.com"
-    );
+    assert_eq!(state.rows()[0].label(), "OpenAI");
+    assert_eq!(state.rows()[0].value(), "37% left · Resets in 1h 21m");
 }
 
 #[test]

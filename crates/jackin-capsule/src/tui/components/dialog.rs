@@ -593,16 +593,7 @@ impl Dialog {
         view: &jackin_protocol::control::FocusedUsageView,
         scroll: jackin_tui::components::DialogBodyScroll,
     ) -> jackin_tui::components::ContainerInfoState {
-        let mut rows = vec![
-            jackin_tui::components::ContainerInfoRow::new(
-                "Focused agent",
-                Self::usage_focused_label(view),
-            ),
-            jackin_tui::components::ContainerInfoRow::new(
-                "Focused account",
-                Self::usage_account_header_label(view),
-            ),
-        ];
+        let mut rows = Vec::new();
         if view.tabs.is_empty() {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 "Providers",
@@ -620,29 +611,14 @@ impl Dialog {
                 } else {
                     tab.status_label.trim()
                 };
-                let value = match tab.source_label.as_deref() {
-                    Some(source) if !source.trim().is_empty() => {
-                        format!("{quota} · {}", source.trim())
-                    }
-                    _ => quota.to_owned(),
-                };
+                let value = quota.to_owned();
                 rows.push(jackin_tui::components::ContainerInfoRow::new(
-                    if tab.active {
-                        format!("{} focused", tab.label)
-                    } else {
-                        tab.label.clone()
-                    },
+                    Self::usage_provider_header_label(&tab.label),
                     value,
                 ));
             }
         }
-        if let Some(error) = &view.last_error {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
-                "Detail",
-                error.clone(),
-            ));
-        }
-        let mut state = jackin_tui::components::ContainerInfoState::new("Usage: Overview", rows);
+        let mut state = jackin_tui::components::ContainerInfoState::new("Usage", rows);
         state.scroll = scroll;
         state
     }
@@ -659,19 +635,6 @@ impl Dialog {
             (Some(agent), None) => format!("{agent} · {account}"),
             (None, Some(provider)) => format!("{provider} · {account}"),
             (None, None) => format!("no focused agent · {account}"),
-        }
-    }
-
-    fn usage_account_header_label(view: &jackin_protocol::control::FocusedUsageView) -> String {
-        let account = view.account.account_label.trim();
-        let account = if account.is_empty() {
-            "account unavailable"
-        } else {
-            account
-        };
-        match &view.account.plan_label {
-            Some(plan) => format!("{} · {} · {plan}", view.account.provider_label, account),
-            None => format!("{} · {}", view.account.provider_label, account),
         }
     }
 

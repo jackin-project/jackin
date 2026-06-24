@@ -10,19 +10,18 @@ expression: "render_usage_dialog_snapshot(100, 32, UsageDialogTab::Overview)"
 
 
 
-       ┌ Usage: Overview ───────────────────────────────────────────────────────────────────┐
+
+
+       ┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
        │ Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                  │
        │━━━━━━━━━━                                                                          │
        │                                                                                    │
-       │  codex · OpenAI · alexey@example.com                                               │
-       │  OpenAI / Codex · alexey@example.com · Pro 20x                                     │
-       │  Codex focused Session 37% left · Resets in 1h 21m · fresh · provider              │
-       │  Claude 16% left · Resets in 46m · stale · provider                                │
+       │  OpenAI 37% left · Resets in 1h 21m                                                │
+       │  Anthropic 16% left · Resets in 46m                                                │
        │  Amp unsupported                                                                   │
-       │  Grok Build needs login · needs-login · provider                                   │
-       │  GLM / Z.AI Weekly 88% left · Resets in 4d · fresh · provider                      │
-       │  Kimi Daily 72% left · Resets in 13h · fresh · provider                            │
-       │  MiniMax M1 Coding 100% left · fresh · provider                                    │
-       │  Detail local diagnostic detail                                                    │
+       │  xAI needs login                                                                   │
+       │  Z.AI 88% left · Resets in 4d                                                      │
+       │  Kimi 72% left · Resets in 13h                                                     │
+       │  MiniMax 100% left                                                                 │
        │                                                                                    │
        └────────────────────────────────────────────────────────────────────────────────────┘
