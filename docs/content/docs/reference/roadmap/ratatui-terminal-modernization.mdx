@@ -4,6 +4,8 @@ title: "Ratatui terminal modernization"
 
 **Status**: Open — implementation decisions finalized. This item is no longer an upgrade task: jackin' already depends on Ratatui 0.30.2. The work is to make the `jackin-term` model, Ratatui buffer mapping, and Capsule emit path share one explicit terminal contract, then remove the current full-frame repaint stopgap and use Ratatui's modern buffer/diff APIs correctly.
 
+**Implementation scope**: complete this roadmap item in one implementation branch and one large pull request. Do not split phases into separate PRs unless the operator explicitly changes this rule. Use the checklist below as the PR ledger and update completed boxes as work lands.
+
 ## Problem
 
 jackin' depends on Ratatui for rich terminal surfaces and on `jackin-term` for the Capsule PTY terminal model. Ratatui's `Buffer` is a compositor buffer, not a PTY emulator: it does not own scrollback, terminal modes, DSR replies, OSC/CSI policy, or the distinction between bytes that update the pane grid and bytes returned to the agent PTY. `jackin-term` remains the owned terminal model.
@@ -146,6 +148,43 @@ Do not migrate to Termina in this item. Crossterm 0.29 remains the raw terminal 
 Do not implement Kitty, Sixel, or iTerm2 image rendering in this item. Add only the policy needed to avoid unsafe raw passthrough: image protocol bytes are either ignored/stripped or recorded as unsupported media without violating the one-writer invariant. Full modeled media rendering belongs in a separate roadmap item.
 
 ## Implementation Phases
+
+## Implementation Checklist
+
+Keep this checklist as the working ledger during implementation. When a task is fully implemented, tested, and documented, change its box to `[x]` in the same PR/commit that completes it. Do not mark a phase complete while acceptance bullets remain unproven.
+
+- [ ] Phase 1: Add the `jackin-term` virtual-terminal profile type and make it the owner of agent-visible width, DSR, SGR, color, mode-2027, and OSC/passthrough policy.
+- [ ] Phase 1: Add the `jackin-term` width module and define the profile width table for dakuten/handakuten, VS16, emoji, ZWJ, combining marks, ambiguous-width, and final-column wide cases.
+- [ ] Phase 1: Derive `Cell::is_wide` and `Cell::is_wide_continuation` from the width module instead of ad hoc width logic.
+- [ ] Phase 1: Fix `append_to_previous_cluster` so width growth/shrink updates lead width, continuation cells, dirty span, cursor state, pending wrap, and DSR behavior.
+- [ ] Phase 1: Add soft/hard wrap provenance metadata while changing row geometry, and preserve it through scrollback, resize bookkeeping, and snapshots.
+- [ ] Phase 1: Add independent hard-coded width oracle tests, Ratatui cross-check tests, parser conformance fixtures, dirty-span tests, DSR tests, and echo-back fixtures.
+- [ ] Phase 2: Add backend-side attach-capability records populated from attach handshake data, terminfo where available, safe probes, user overrides, and denylist entries.
+- [ ] Phase 2: Add the terminal-state matrix documentation, classifying profile-stable, host-adaptive, frame-reconciled, and boundary-only out-of-band state.
+- [ ] Phase 2: Add reattach tests proving host-adaptive capability changes never alter profile-stable width, DSR, or agent-visible color semantics.
+- [ ] Phase 3: Inventory every byte writer outside Ratatui cell output and frame-state reconciliation.
+- [ ] Phase 3: Move legacy raw paint into Ratatui rendering or frame operations, leaving only boundary-safe out-of-band writes at frame boundaries.
+- [ ] Phase 3: Remove the sentinel fill/swap path from `compose_ratatui_frame()`.
+- [ ] Phase 3: Add emitted-byte counters for total bytes, cursor moves, SGR resets, OSC 8 opens/closes, full-screen erases, and full-frame repaint detection.
+- [ ] Phase 3: Add sentinel-disabled convergence tests for unchanged frames, dialogs, selection, scrollback, focus swaps, tab switches, resize, detach/reset, and title updates.
+- [ ] Phase 4: Apply `CellDiffOption::ForcedWidth` to model-wide lead cells in pane rendering.
+- [ ] Phase 4: Keep ordinary continuations blank/default and do not use `CellDiffOption::Skip` for them.
+- [ ] Phase 4: Add the pre-diff buffer well-formedness property.
+- [ ] Phase 4: Add mapping tests for all width classes and stale-tail cases, proving forced updates are used only when justified.
+- [ ] Phase 5: Move PTY OSC 8 and UI hyperlinks into shared model/frame metadata.
+- [ ] Phase 5: Emit OSC 8 open/close transitions from frame metadata and force only affected boundary cells with `AlwaysUpdate`.
+- [ ] Phase 5: Preserve SGR subparameters, including colon forms such as `4:2`, `38:2:r:g:b`, and `58:2:r:g:b`.
+- [ ] Phase 5: Extend `Attrs`, snapshots, pane mapping, frame metadata, and `SocketBackend` emission for underline color, underline style, strikethrough, blink, conceal, and overline.
+- [ ] Phase 5: Document any product-level suppression, such as recording blink but not emitting it.
+- [ ] Phase 5: Add hyperlink transition tests, unsafe URI tests, SGR round-trip tests, and golden wire snapshots for the new visible attributes.
+- [ ] Phase 6: Record semantic `ScrollOp`s when `DamageGrid` mutates rows.
+- [ ] Phase 6: Gate DECSTBM emission through geometry and attach capability.
+- [ ] Phase 6: Keep Ratatui buffers and physical screen state coherent when scroll-region output is used.
+- [ ] Phase 6: Adopt scroll-region output only if scroll-heavy fixtures prove a byte win and echo-back passes across primary, alternate, scrollback, chrome, dialogs, resize, and focus swaps.
+- [ ] Phase 6: Leave scroll-region output disabled/not shipped if parity, coherence, geometry, or byte-win gates fail.
+- [ ] Phase 7: Run the full extended automated set, including conformance, echo-back, fuzz corpus coverage, allocation checks, and relevant benches.
+- [ ] Phase 7: Soak with real agents and Ghostty, iTerm2, WezTerm, Alacritty, Kitty, and SSH.
+- [ ] Phase 7: Update user-facing and contributor-facing docs for shipped behavior, then update this roadmap status to partially implemented or completed as appropriate.
 
 ### Phase 1 — Profile and Width Contract
 
