@@ -15,6 +15,8 @@ use tempfile::{TempDir, tempdir};
 struct Env {
     _temp: TempDir,
     home: std::path::PathBuf,
+    config_dir: std::path::PathBuf,
+    jackin_home: std::path::PathBuf,
     proj_alpha: std::path::PathBuf,
     sub_a: std::path::PathBuf,
     sub_b: std::path::PathBuf,
@@ -23,6 +25,8 @@ struct Env {
 fn setup_env() -> Env {
     let temp = tempdir().unwrap();
     let home = temp.path().join("home");
+    let config_dir = temp.path().join("config");
+    let jackin_home = home.join(".jackin");
     fs::create_dir_all(&home).unwrap();
     let proj_alpha = home.join("Projects").join("proj-alpha");
     let sub_a = proj_alpha.join("sub-a");
@@ -32,6 +36,8 @@ fn setup_env() -> Env {
     Env {
         _temp: temp,
         home,
+        config_dir,
+        jackin_home,
         proj_alpha,
         sub_a,
         sub_b,
@@ -41,6 +47,8 @@ fn setup_env() -> Env {
 fn jackin(env: &Env) -> Command {
     let mut cmd = Command::cargo_bin("jackin").unwrap();
     cmd.env("HOME", &env.home);
+    cmd.env("JACKIN_CONFIG_DIR", &env.config_dir);
+    cmd.env("JACKIN_HOME_DIR", &env.jackin_home);
     cmd
 }
 
@@ -321,7 +329,7 @@ fn workspace_edit_non_tty_without_yes_bails() {
 }
 
 fn seed_legacy_config_with_violation(env: &Env) {
-    let config_path = env.home.join(".config/jackin/config.toml");
+    let config_path = env.config_dir.join("config.toml");
     fs::create_dir_all(config_path.parent().unwrap()).unwrap();
     let proj = env.proj_alpha.to_str().unwrap();
     let sub_a = env.sub_a.to_str().unwrap();
