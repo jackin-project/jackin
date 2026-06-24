@@ -204,10 +204,15 @@ fn fetch_usage_accounts_via_docker_exec(
 ) -> Result<Option<Vec<AccountUsageSnapshotView>>> {
     let output = run_docker_exec_capsule(container_name, usage_accounts_exec_script())?;
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        if let Some(message) = stale_usage_subcommand_hint(container_name, stderr) {
+            bail!("{message}");
+        }
         bail!(
             "docker exec usage accounts failed with status {}: {}",
             output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
+            stderr
         );
     }
     let stdout = String::from_utf8(output.stdout).context("usage accounts stdout is not UTF-8")?;
@@ -215,6 +220,15 @@ fn fetch_usage_accounts_via_docker_exec(
         return Ok(None);
     }
     usage_accounts_from_cli_stdout(&stdout).map(Some)
+}
+
+fn stale_usage_subcommand_hint(container_name: &str, stderr: &str) -> Option<String> {
+    if stderr.contains("unknown jackin-capsule subcommand") && stderr.contains("\"usage\"") {
+        return Some(format!(
+            "docker exec usage accounts failed because container {container_name} is running a stale jackin-capsule binary without usage support; rerun `jackin-dev pr sync <PR_NUMBER>`, source the generated env.sh, relaunch the instance, then retry `jackin usage {container_name} verify`: {stderr}"
+        ));
+    }
+    None
 }
 
 fn run_docker_exec_capsule(container_name: &str, script: &str) -> Result<std::process::Output> {

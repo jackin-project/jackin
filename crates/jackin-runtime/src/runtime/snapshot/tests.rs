@@ -63,3 +63,16 @@ fn parses_usage_accounts_cli_stdout() {
     assert_eq!(accounts[0].provider, "codex");
     assert_eq!(accounts[0].used_amount, Some(37));
 }
+
+#[test]
+fn stale_usage_subcommand_error_names_pr_capsule_prepare() {
+    let hint = stale_usage_subcommand_hint(
+        "jk-demo",
+        r#"Error: unknown jackin-capsule subcommand "usage" — known: status, snapshot"#,
+    )
+    .expect("stale usage subcommand hint");
+
+    assert!(hint.contains("stale jackin-capsule binary"), "{hint}");
+    assert!(hint.contains("jackin-dev pr sync <PR_NUMBER>"), "{hint}");
+    assert!(hint.contains("jackin usage jk-demo verify"), "{hint}");
+}
