@@ -952,6 +952,32 @@ fn usage_dialog_rows_render_provider_quota_snapshot() {
 }
 
 #[test]
+fn usage_dialog_renders_shared_provider_tab_strip_labels() {
+    let d = Dialog::new_usage(usage_view_fixture());
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(32, 120);
+    let backend = TestBackend::new(120, 32);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..32)
+        .map(|y| (0..120).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Overview"), "{rendered}");
+    assert!(rendered.contains("OpenAI"), "{rendered}");
+    assert!(rendered.contains("Anthropic"), "{rendered}");
+    assert!(rendered.contains("Amp"), "{rendered}");
+}
+
+#[test]
 fn usage_dialog_renders_deficit_and_runout_quota_labels() {
     let mut view = usage_view_fixture();
     view.buckets
@@ -1176,11 +1202,11 @@ fn usage_dialog_overview_tab_renders_cross_provider_summary() {
 }
 
 #[test]
-fn usage_dialog_tab_key_switches_to_next_provider() {
+fn usage_dialog_right_arrow_switches_to_next_provider() {
     let mut d = Dialog::new_usage(usage_view_fixture());
 
     assert_eq!(
-        d.handle_key(b"\t", None),
+        d.handle_key(b"\x1b[C", None),
         DialogAction::SwitchUsageProvider {
             provider_label: "Claude".to_owned()
         }
@@ -1188,10 +1214,24 @@ fn usage_dialog_tab_key_switches_to_next_provider() {
 }
 
 #[test]
-fn usage_dialog_shift_tab_switches_to_previous_provider() {
+fn usage_dialog_tab_key_moves_focus_to_content() {
     let mut d = Dialog::new_usage(usage_view_fixture());
 
-    assert_eq!(d.handle_key(b"\x1b[Z", None), DialogAction::Redraw);
+    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
+    let Dialog::Usage {
+        tab_bar_focused, ..
+    } = d
+    else {
+        panic!("usage dialog");
+    };
+    assert!(!tab_bar_focused);
+}
+
+#[test]
+fn usage_dialog_left_arrow_from_first_provider_switches_to_overview() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+
+    assert_eq!(d.handle_key(b"\x1b[D", None), DialogAction::Redraw);
     let state = d.usage_state().expect("usage state");
     assert_eq!(
         state.rows()[0].value(),

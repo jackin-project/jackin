@@ -91,7 +91,7 @@ mod hint;
 pub(crate) use hint::main_view_hint;
 use hint::{
     confirm_hint, info_dialog_hint, palette_hint, picker_hint, provider_hint, read_only_hint,
-    rename_hint,
+    rename_hint, usage_hint,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,6 +215,7 @@ pub enum Dialog {
     Usage {
         view: Box<jackin_protocol::control::FocusedUsageView>,
         selected: UsageDialogTab,
+        tab_bar_focused: bool,
         scroll: jackin_tui::components::DialogBodyScroll,
     },
     /// Direction sub-dialog opened when the operator picks "Split pane"
@@ -533,6 +534,7 @@ impl Dialog {
             view,
             selected,
             scroll,
+            ..
         } = self
         else {
             return None;
@@ -801,6 +803,7 @@ impl Dialog {
         Self::Usage {
             view: Box::new(view),
             selected,
+            tab_bar_focused: true,
             scroll: jackin_tui::components::DialogBodyScroll::new(),
         }
     }
@@ -977,9 +980,70 @@ impl Dialog {
         // so the next render's "Copied!" indicator confirms the OSC 52
         // fired. The dialog stays open until dismissed so the feedback
         // is actually visible.
+        if matches!(self, Self::Usage { .. }) {
+            if matches!(key, b"r" | b"R") {
+                return DialogAction::RefreshUsage;
+            }
+            if matches!(key, b"\t" | b"\x1b[Z") {
+                if let Self::Usage {
+                    tab_bar_focused, ..
+                } = self
+                {
+                    *tab_bar_focused = !*tab_bar_focused;
+                }
+                return DialogAction::Redraw;
+            }
+            let tab_bar_focused = matches!(
+                self,
+                Self::Usage {
+                    tab_bar_focused: true,
+                    ..
+                }
+            );
+            if tab_bar_focused {
+                if raw_bytes_to_chord(key)
+                    .and_then(|chord| READ_ONLY_DISMISS_KEYMAP.dispatch(chord))
+                    .is_some()
+                {
+                    return DialogAction::Dismiss;
+                }
+                if let Some(provider_label) = match key {
+                    b"\x1b[C" => self.usage_provider_tab_target(1),
+                    b"\x1b[D" => self.usage_provider_tab_target(-1),
+                    _ => None,
+                } {
+                    return DialogAction::SwitchUsageProvider { provider_label };
+                }
+                return DialogAction::Redraw;
+            }
+            if raw_bytes_to_chord(key)
+                .and_then(|chord| READ_ONLY_DISMISS_KEYMAP.dispatch(chord))
+                .is_some()
+            {
+                if let Self::Usage {
+                    tab_bar_focused, ..
+                } = self
+                {
+                    *tab_bar_focused = true;
+                }
+                return DialogAction::Redraw;
+            }
+            if let Self::Usage { scroll, .. } = self
+                && scroll.handle_raw_key_for_axes(
+                    key,
+                    jackin_tui::components::ScrollAxes {
+                        vertical: true,
+                        horizontal: true,
+                    },
+                )
+            {
+                return DialogAction::Redraw;
+            }
+            return DialogAction::Redraw;
+        }
         if matches!(
             self,
-            Self::ContainerInfo { .. } | Self::GitHubContext { .. } | Self::Usage { .. }
+            Self::ContainerInfo { .. } | Self::GitHubContext { .. }
         ) {
             if raw_bytes_to_chord(key)
                 .and_then(|chord| READ_ONLY_DISMISS_KEYMAP.dispatch(chord))
@@ -987,23 +1051,13 @@ impl Dialog {
             {
                 return DialogAction::Dismiss;
             }
-            if matches!(self, Self::Usage { .. }) && matches!(key, b"r" | b"R") {
-                return DialogAction::RefreshUsage;
-            }
-            if let Some(provider_label) = match key {
-                b"\t" => self.usage_provider_tab_target(1),
-                b"\x1b[Z" => self.usage_provider_tab_target(-1),
-                _ => None,
-            } {
-                return DialogAction::SwitchUsageProvider { provider_label };
-            }
             // Scroll the read-only body (offsets clamp at render time): Up/Down +
             // k/j vertical, Left/Right + h/l horizontal. The shared state is
             // rebuilt each frame, so the offset lives on the dialog enum.
             let body_scroll = match self {
-                Self::ContainerInfo { scroll, .. }
-                | Self::GitHubContext { scroll, .. }
-                | Self::Usage { scroll, .. } => Some(scroll),
+                Self::ContainerInfo { scroll, .. } | Self::GitHubContext { scroll, .. } => {
+                    Some(scroll)
+                }
                 _ => None,
             };
             if let Some(scroll) = body_scroll
@@ -1712,7 +1766,7 @@ impl Dialog {
                     read_only_hint()
                 }
             }
-            Self::Usage { .. } => info_dialog_hint("refresh", axes),
+            Self::Usage { .. } => usage_hint(axes),
             Self::ConfirmAction { .. } => confirm_hint(),
         }
     }

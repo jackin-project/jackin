@@ -15,6 +15,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Widget};
 
+use jackin_tui::components::TabStrip;
 use jackin_tui::components::confirm_dialog::{ConfirmState, render_confirm_dialog};
 use jackin_tui::components::filter_input::render_filter_input;
 use jackin_tui::theme::{BOLD_GREEN, DIM, PHOSPHOR_GREEN, WHITE};
@@ -75,7 +76,11 @@ pub(crate) enum DialogRatatuiSnapshot {
     /// Usage overlay, rendered from the same scrollable row model as `DebugInfo`
     /// but laid out as CodexBar-style sections instead of generic key/value
     /// diagnostics.
-    UsageInfo(jackin_tui::components::ContainerInfoState),
+    UsageInfo {
+        state: jackin_tui::components::ContainerInfoState,
+        tabs: Vec<(String, bool)>,
+        tab_bar_focused: bool,
+    },
 }
 
 impl Dialog {
@@ -266,9 +271,16 @@ impl Dialog {
                     .expect("github_context_state is Some for GitHubContext"),
             ),
 
-            Dialog::Usage { .. } => DialogRatatuiSnapshot::UsageInfo(
-                self.usage_state().expect("usage_state is Some for Usage"),
-            ),
+            Dialog::Usage {
+                view,
+                selected,
+                tab_bar_focused,
+                ..
+            } => DialogRatatuiSnapshot::UsageInfo {
+                state: self.usage_state().expect("usage_state is Some for Usage"),
+                tabs: usage_tab_strip_labels(view, *selected),
+                tab_bar_focused: *tab_bar_focused,
+            },
         }
     }
 }
@@ -281,16 +293,17 @@ impl DialogRatatuiSnapshot {
     /// drawn — the hint and the scrollbar never disagree.
     pub(crate) fn scroll_axes(&self, block_area: Rect) -> jackin_tui::components::ScrollAxes {
         match self {
-            Self::DebugInfo(state) | Self::UsageInfo(state) => {
-                if matches!(self, Self::UsageInfo(_)) {
-                    let (width, height) = usage_info_content_size(state);
-                    return jackin_tui::components::dialog_scroll_axes(width, height, block_area);
-                }
-                jackin_tui::components::dialog_scroll_axes(
-                    state.content_width(),
-                    state.content_height(),
-                    block_area,
-                )
+            Self::DebugInfo(state) => jackin_tui::components::dialog_scroll_axes(
+                state.content_width(),
+                state.content_height(),
+                block_area,
+            ),
+            Self::UsageInfo { state, tabs, .. } => {
+                let (width, height) = usage_info_content_size(state);
+                let tab_width = usage_tab_strip_width(tabs);
+                let width = width.max(tab_width);
+                let height = height.saturating_add(2);
+                jackin_tui::components::dialog_scroll_axes(width, height, block_area)
             }
             _ => jackin_tui::components::ScrollAxes::none(),
         }
@@ -358,8 +371,12 @@ pub(crate) fn render_dialog_ratatui(
         DialogRatatuiSnapshot::DebugInfo(state) => {
             jackin_tui::components::render_container_info(frame, area, state);
         }
-        DialogRatatuiSnapshot::UsageInfo(state) => {
-            render_usage_info(frame, area, state);
+        DialogRatatuiSnapshot::UsageInfo {
+            state,
+            tabs,
+            tab_bar_focused,
+        } => {
+            render_usage_info(frame, area, state, tabs, *tab_bar_focused);
         }
     }
 }
@@ -393,12 +410,69 @@ fn render_usage_info(
     frame: &mut Frame<'_>,
     area: Rect,
     state: &jackin_tui::components::ContainerInfoState,
+    tabs: &[(String, bool)],
+    tab_bar_focused: bool,
 ) {
     let title = usage_panel_title(state, area.width);
     let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(title.as_str()));
-    let lines = usage_info_lines_for_width(state, inner.width);
+    if inner.height == 0 {
+        return;
+    }
+    let tab_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: inner.height.min(2),
+    };
+    let tab_refs = tabs
+        .iter()
+        .map(|(label, active)| (label.as_str(), *active))
+        .collect::<Vec<_>>();
+    TabStrip::new(&tab_refs)
+        .focused(tab_bar_focused)
+        .render(frame, tab_area);
+    let body_y = inner.y.saturating_add(tab_area.height);
+    let body = Rect {
+        x: inner.x,
+        y: body_y,
+        width: inner.width,
+        height: inner.height.saturating_sub(tab_area.height),
+    };
+    let lines = usage_info_lines_for_width(state, body.width);
     let mut scroll = state.scroll.clone();
-    jackin_tui::components::render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
+    jackin_tui::components::render_scrollable_dialog_body(frame, area, body, &lines, &mut scroll);
+}
+
+fn usage_tab_strip_labels(
+    view: &jackin_protocol::control::FocusedUsageView,
+    selected: crate::tui::components::dialog::UsageDialogTab,
+) -> Vec<(String, bool)> {
+    let overview_active = selected == crate::tui::components::dialog::UsageDialogTab::Overview;
+    let mut tabs = vec![("Overview".to_owned(), overview_active)];
+    tabs.extend(view.tabs.iter().map(|tab| {
+        (
+            usage_provider_display_label(&tab.label).to_owned(),
+            !overview_active && tab.active,
+        )
+    }));
+    tabs
+}
+
+fn usage_provider_display_label(label: &str) -> &str {
+    match label {
+        "Codex" | "OpenAI / Codex" => "OpenAI",
+        "Claude" | "Anthropic / Claude" => "Anthropic",
+        "Grok Build" | "xAI / Grok" => "xAI",
+        "GLM / Z.AI" => "Z.AI",
+        other => other,
+    }
+}
+
+fn usage_tab_strip_width(tabs: &[(String, bool)]) -> usize {
+    let gap = usize::from(jackin_tui::TAB_GAP);
+    tabs.iter()
+        .map(|(label, _)| jackin_tui::display_cols(label) + 2 + gap)
+        .sum()
 }
 
 /// Panel title. In the narrow list layout the provider-detail panel reads
@@ -423,7 +497,7 @@ pub(crate) fn usage_info_required_height(
 ) -> u16 {
     u16::try_from(usage_info_lines(state).len())
         .unwrap_or(u16::MAX)
-        .saturating_add(3)
+        .saturating_add(5)
         .max(7)
 }
 
@@ -462,12 +536,8 @@ fn usage_info_lines_impl(
         list_layout,
         width: width as usize,
     };
-    let show_tabs = !list_layout || state.title() == "Usage: Overview";
     lines.push(Line::from(""));
     for row in state.rows() {
-        if !show_tabs && row.label() == "Tabs" {
-            continue;
-        }
         usage_lines_for_row(row.label(), row.value(), context, &mut lines);
     }
     lines
