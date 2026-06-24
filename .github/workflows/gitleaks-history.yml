@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 0
       - name: Cache gitleaks
         id: cache-gitleaks
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6
         with:
           path: ~/.local/bin/gitleaks
           key: gitleaks-${{ env.GITLEAKS_VERSION }}-linux-x64
