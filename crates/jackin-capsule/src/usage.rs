@@ -239,6 +239,10 @@ impl UsageCache {
         self.refresh_schedule.in_flight = false;
     }
 
+    pub(crate) fn request_account_refresh(&mut self, target: &UsageRefreshTarget, now: Instant) {
+        self.refresh_schedule.mark_due(target, now);
+    }
+
     fn materialize_accounts(&self, generated_at_epoch: i64) -> Result<(), String> {
         let snapshots = self
             .snapshots
@@ -254,6 +258,10 @@ impl UsageCache {
 }
 
 impl UsageRefreshSchedule {
+    fn mark_due(&mut self, target: &UsageRefreshTarget, now: Instant) {
+        self.next_due.insert(target.cache_key(), now);
+    }
+
     fn should_refresh(&mut self, target: &UsageRefreshTarget, now: Instant) -> bool {
         self.should_refresh_with_cooldown_dir(target, now, &shared_usage_cooldown_dir())
     }

@@ -256,6 +256,34 @@ impl Multiplexer {
         )
     }
 
+    pub(super) fn request_usage_refresh_for_provider(&mut self, provider_label: Option<&str>) {
+        self.pending_usage_refresh = self.usage_refresh_target_for_provider(provider_label);
+        if let Some(target) = &self.pending_usage_refresh {
+            self.usage_cache
+                .request_account_refresh(target, Instant::now());
+        }
+    }
+
+    fn usage_refresh_target_for_provider(
+        &self,
+        provider_label: Option<&str>,
+    ) -> Option<crate::usage::UsageRefreshTarget> {
+        let focused_id = self.active_focused_id();
+        let (agent, provider) =
+            focused_id
+                .and_then(|id| self.sessions.get(&id))
+                .map_or((None, None), |session| {
+                    (
+                        session.agent.clone(),
+                        session.provider.as_ref().map(|p| p.label.clone()),
+                    )
+                });
+        let provider = provider_label
+            .map(str::to_owned)
+            .or_else(|| provider.as_ref().map(ToOwned::to_owned));
+        agent.map(|agent| crate::usage::UsageRefreshTarget { agent, provider })
+    }
+
     pub(super) fn refresh_active_usage_account_snapshots(&mut self, now: Instant) {
         let active_targets = self
             .sessions
@@ -288,6 +316,7 @@ impl Multiplexer {
                             .map(|provider| provider.label.clone()),
                     })
             });
+        let focused = self.pending_usage_refresh.take().or(focused);
         self.usage_cache.refresh_active_account_snapshots(
             &active_targets,
             focused,

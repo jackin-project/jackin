@@ -221,6 +221,39 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
     };
     assert_eq!(view.focused_provider.as_deref(), Some("Claude"));
     assert_eq!(view.account.provider_label, "Anthropic / Claude");
+    assert_eq!(
+        mux.pending_usage_refresh,
+        Some(crate::usage::UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("Claude".to_owned())
+        })
+    );
+
+    mux.refresh_active_usage_account_snapshots(Instant::now());
+    assert_eq!(mux.pending_usage_refresh, None);
+}
+
+#[test]
+fn apply_action_open_usage_queues_focused_provider_refresh() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "test");
+
+    mux.apply_action(Action::OpenUsage);
+
+    assert!(matches!(mux.dialog_top(), Some(Dialog::Usage { .. })));
+    assert_eq!(
+        mux.pending_usage_refresh,
+        Some(crate::usage::UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("OpenAI".to_owned())
+        })
+    );
 }
 
 fn pull_request_fixture(number: u64) -> PullRequestInfo {

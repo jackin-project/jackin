@@ -159,6 +159,7 @@ impl Multiplexer {
                 if let Some(dialog) = self.dialog_top_mut() {
                     *dialog = Dialog::new_usage(view);
                 }
+                self.request_usage_refresh_for_provider(Some(&provider_label));
             }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
@@ -222,6 +223,7 @@ impl Multiplexer {
             Action::OpenUsage => {
                 let view = self.focused_usage_snapshot(false);
                 self.dialog_push(Dialog::new_usage(view));
+                self.request_usage_refresh_for_provider(None);
                 self.invalidate_for(&Action::OpenUsage);
             }
             Action::OpenRenameTab(idx) => {
@@ -779,6 +781,7 @@ impl Multiplexer {
             PaletteCommandRoute::OpenUsage => {
                 let view = self.focused_usage_snapshot(false);
                 self.dialog_push(Dialog::new_usage(view));
+                self.request_usage_refresh_for_provider(None);
             }
         }
         self.invalidate(palette_route_frame_plan(route).reason());

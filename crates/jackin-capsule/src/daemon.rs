@@ -318,6 +318,10 @@ pub struct Multiplexer {
     /// Daemon-owned focused usage/quota cache. Capsule UI renders this cache;
     /// it does not poll providers from render code.
     usage_cache: UsageCache,
+    /// Provider tab requested by the usage overlay. The normal usage refresh
+    /// ticker consumes this as a focused-first target so opening/switching tabs
+    /// stays non-blocking but the selected provider refreshes next.
+    pending_usage_refresh: Option<crate::usage::UsageRefreshTarget>,
     /// Offset into the wordlist for the next codename pick, seeded once at
     /// daemon construction from the current time subsecond nanos.
     wordlist_offset: usize,
@@ -511,6 +515,7 @@ impl Multiplexer {
             agent_history: Vec::new(),
             resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
             usage_cache: UsageCache::default(),
+            pending_usage_refresh: None,
             wordlist_offset: {
                 use std::time::{SystemTime, UNIX_EPOCH};
                 SystemTime::now()
