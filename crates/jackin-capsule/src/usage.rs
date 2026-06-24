@@ -57,11 +57,7 @@ pub(crate) struct UsageRefreshTarget {
 
 impl UsageRefreshTarget {
     fn cache_key(&self) -> String {
-        format!(
-            "{}:{}",
-            self.agent,
-            self.provider.as_deref().unwrap_or_default()
-        )
+        canonical_usage_cache_key(&self.agent, self.provider.as_deref())
     }
 }
 
@@ -133,7 +129,7 @@ impl UsageCache {
         ) {
             return Some(view.status_bar_label);
         }
-        let cache_key = format!("{agent}:{}", focused_provider.unwrap_or_default());
+        let cache_key = canonical_usage_cache_key(agent, focused_provider);
         self.snapshots
             .get(&cache_key)
             .map(|cached| cached.view.status_bar_label.clone())
@@ -177,7 +173,7 @@ impl UsageCache {
                 }
             };
         }
-        let cache_key = format!("{agent}:{}", focused_provider.unwrap_or_default());
+        let cache_key = canonical_usage_cache_key(agent, focused_provider);
         let mut view = build_snapshot(
             agent,
             focused_provider,
@@ -306,6 +302,14 @@ fn stable_usage_hash(value: &str) -> u64 {
     value.bytes().fold(0xcbf29ce484222325, |hash, byte| {
         (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
     })
+}
+
+fn canonical_usage_cache_key(agent: &str, focused_provider: Option<&str>) -> String {
+    let surface = resolve_surface(agent, focused_provider);
+    if surface == UsageSurface::Unsupported {
+        return format!("{agent}:{}", focused_provider.unwrap_or_default());
+    }
+    surface.label().to_owned()
 }
 
 fn cached_unavailable_view(
@@ -455,16 +459,19 @@ fn build_snapshot(
 }
 
 fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurface {
-    if matches!(provider, Some("Claude" | "Claude Code" | "Anthropic")) {
+    if matches!(
+        provider,
+        Some("Claude" | "Claude Code" | "Anthropic" | "Anthropic / Claude")
+    ) {
         return UsageSurface::Claude;
     }
-    if matches!(provider, Some("Codex" | "OpenAI")) {
+    if matches!(provider, Some("Codex" | "OpenAI" | "OpenAI / Codex")) {
         return UsageSurface::Codex;
     }
     if matches!(provider, Some("Amp")) {
         return UsageSurface::Amp;
     }
-    if matches!(provider, Some("Grok" | "Grok Build" | "xAI")) {
+    if matches!(provider, Some("Grok" | "Grok Build" | "xAI" | "xAI / Grok")) {
         return UsageSurface::Grok;
     }
     if matches!(provider, Some("Z.AI" | "GLM" | "GLM / Z.AI")) {
@@ -3985,7 +3992,7 @@ mod tests {
             },
             UsageRefreshTarget {
                 agent: "claude".to_owned(),
-                provider: Some("Anthropic".to_owned()),
+                provider: Some("Anthropic / Claude".to_owned()),
             },
         ];
         let focused = UsageRefreshTarget {
@@ -4011,8 +4018,28 @@ mod tests {
     }
 
     #[test]
+    fn usage_cache_key_canonicalizes_provider_aliases() {
+        assert_eq!(
+            canonical_usage_cache_key("claude", Some("Anthropic")),
+            canonical_usage_cache_key("claude", Some("Anthropic / Claude"))
+        );
+        assert_eq!(
+            canonical_usage_cache_key("codex", Some("OpenAI")),
+            canonical_usage_cache_key("codex", Some("OpenAI / Codex"))
+        );
+        assert_eq!(
+            canonical_usage_cache_key("claude", Some("Z.AI")),
+            canonical_usage_cache_key("glm", Some("GLM / Z.AI"))
+        );
+        assert_ne!(
+            canonical_usage_cache_key("claude", Some("Anthropic")),
+            canonical_usage_cache_key("claude", Some("Z.AI"))
+        );
+    }
+
+    #[test]
     fn usage_refresh_interval_stays_within_jitter_bounds() {
-        for key in ["codex:OpenAI", "claude:Anthropic", "glm:GLM / Z.AI"] {
+        for key in ["Codex", "Claude", "GLM / Z.AI"] {
             let interval = refresh_interval_for_key(key);
             assert!(
                 interval >= USAGE_REFRESH_BASE_INTERVAL.saturating_sub(USAGE_REFRESH_JITTER),
