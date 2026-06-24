@@ -249,7 +249,7 @@ pub mod ansi {
     /// Multi-line `jackin --version` splash for an interactive terminal: the
     /// green-block `jackin❯` pill, the version string, and the `by tailrocks`
     /// byline. Stays under six lines and is brand-aligned — the mark is the
-    /// terminal pill, never figlet/illustration art. Piped output gets clap's
+    /// terminal pill, never large ASCII or illustration art. Piped output gets clap's
     /// plain `jackin <version>` instead.
     #[must_use]
     pub fn version_splash(version: &str) -> String {

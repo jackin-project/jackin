@@ -158,7 +158,7 @@ pub(super) async fn handle(
                     })
                     .collect();
                 let mut table = Table::new(rows);
-                table.with(Style::modern_rounded());
+                table.with(Style::modern());
                 println!("{table}");
                 println!();
                 tui::hint("Run ", "jackin workspace show <name>", " for details.");

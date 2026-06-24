@@ -449,7 +449,7 @@ html.theme-init *::after {
 .landing-install {
   background: var(--landing-panel);
   border: 0;
-  border-radius: 10px;
+  border-radius: 0;
   padding: 24px 28px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 13px;
@@ -482,7 +482,7 @@ html.theme-init *::after {
   font-family: 'Inter', sans-serif;
   font-size: 14px;
   font-weight: 600;
-  border-radius: 5px;
+  border-radius: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -574,7 +574,7 @@ html.theme-init *::after {
 .landing-pills { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .landing-pill-card {
   padding: 34px 30px 30px;
-  border: 1px solid var(--landing-ui); border-radius: 10px;
+  border: 1px solid var(--landing-ui); border-radius: 0;
   background: var(--landing-panel); position: relative;
   transition:
     transform 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94),
@@ -617,7 +617,7 @@ html.theme-init *::after {
 .landing-pill-visual {
   width: 96px; height: 36px;
   display: flex;
-  border-radius: 1000px;
+  border-radius: 0;
   overflow: hidden;
   margin-bottom: 20px;
   position: relative;
@@ -626,13 +626,13 @@ html.theme-init *::after {
 .landing-pill-visual .landing-pill-color::after {
   content: ""; position: absolute; top: 4px; left: 12%; right: 12%; height: 6px;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
-  border-radius: 50%; pointer-events: none;
+  border-radius: 0; pointer-events: none;
 }
 .landing-pill-visual .landing-pill-white { flex: 1; height: 100%; background: linear-gradient(135deg, #edf0ed 0%, #b8bcb8 100%); box-shadow: inset 0 -3px 6px rgba(0,0,0,0.22); position: relative; }
 .landing-pill-visual .landing-pill-white::after {
   content: ""; position: absolute; top: 4px; left: 12%; right: 12%; height: 6px;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent);
-  border-radius: 50%; pointer-events: none;
+  border-radius: 0; pointer-events: none;
 }
 .landing-pill-card.blue .landing-pill-visual .landing-pill-color { background: linear-gradient(135deg, #5a9bff 0%, #1f5de0 100%); box-shadow: inset 0 -3px 6px rgba(0,0,0,0.28); }
 .landing-pill-card.red  .landing-pill-visual .landing-pill-color { background: linear-gradient(135deg, #ff5a78 0%, #cc1f3e 100%); box-shadow: inset 0 -3px 6px rgba(0,0,0,0.28); }
@@ -656,8 +656,8 @@ html.theme-init *::after {
 .landing-choice-lines { list-style: none; padding: 0; margin: 0 0 22px; display: flex; flex-direction: column; gap: 10px; }
 .landing-choice-lines li { color: var(--landing-text-dim); font-size: 15px; line-height: 1.55; padding-left: 22px; position: relative; }
 .landing-choice-lines li::before { content: "\2715"; position: absolute; left: 0; top: 0; color: var(--landing-danger); font-family: 'JetBrains Mono', monospace; font-weight: 700; }
-.landing-choice-lines li code { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--landing-text); background: var(--landing-chip-bg); padding: 1px 6px; border-radius: 3px; }
-.landing-choice-verdict { padding: 10px 14px; background: rgba(255, 94, 122, 0.08); border: 1px solid rgba(255, 94, 122, 0.28); border-radius: 5px; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--landing-danger); text-align: center; font-weight: 600; }
+.landing-choice-lines li code { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--landing-text); background: var(--landing-chip-bg); padding: 1px 6px; border-radius: 0; }
+.landing-choice-verdict { padding: 10px 14px; background: rgba(255, 94, 122, 0.08); border: 1px solid rgba(255, 94, 122, 0.28); border-radius: 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--landing-danger); text-align: center; font-weight: 600; }
 .landing-pill-card.blue .landing-choice-lines li::before { color: var(--landing-pill-blue-text); }
 .landing-pill-card.blue .landing-choice-verdict { background: rgba(90, 155, 255, 0.08); border-color: rgba(90, 155, 255, 0.3); color: var(--landing-pill-blue-text); }
 .landing-choice-transition { margin-top: 48px; text-align: center; font-family: 'Fraunces', serif; font-style: italic; font-size: clamp(20px, 2.4vw, 28px); color: var(--landing-text); letter-spacing: -0.01em; }
@@ -674,7 +674,7 @@ html.theme-init *::after {
 .landing-builder {
   background: var(--landing-bg-deep);
   border: 0;
-  border-radius: 6px;
+  border-radius: 0;
   overflow: hidden;
   margin: 18px 0 22px;
   font-family: 'JetBrains Mono', monospace;
@@ -687,11 +687,11 @@ html.theme-init *::after {
   box-shadow: inset 0 -1px rgba(255, 255, 255, 0.06);
   font-size: 10.5px; color: var(--landing-text-ghost); letter-spacing: 0.04em;
 }
-.landing-builder-head .landing-dot { width: 10px; height: 10px; border-radius: 50%; }
+.landing-builder-head .landing-dot { width: 10px; height: 10px; border-radius: 0; }
 .landing-builder-head .landing-dot.r { background: #ff5f57; }
 .landing-builder-head .landing-dot.y { background: #febc2e; }
 .landing-builder-head .landing-dot.g { background: #28c840; }
-.landing-builder-tag { padding: 3px 8px; border-radius: 3px; font-size: 9px; letter-spacing: 0.18em; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
+.landing-builder-tag { padding: 3px 8px; border-radius: 0; font-size: 9px; letter-spacing: 0.18em; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
 .landing-tag-published { color: var(--landing-accent); background: rgb(var(--landing-accent-rgb) / 0.08); border: 1px solid rgb(var(--landing-accent-rgb) / 0.3); }
 .landing-tag-built     { color: var(--landing-accent); background: rgb(var(--landing-accent-rgb) / 0.1); border: 1px solid rgb(var(--landing-accent-rgb) / 0.35); }
 .landing-builder-body {
@@ -714,7 +714,7 @@ html.theme-init *::after {
 /* Tabbed builder (manifest + Dockerfile) */
 .landing-builder-tabs { display: flex; gap: 4px; margin-left: 4px; flex: 1; }
 .landing-builder-tab {
-  padding: 5px 10px; border-radius: 4px;
+  padding: 5px 10px; border-radius: 0;
   color: var(--landing-text-ghost); font-size: 11px;
   font-family: 'JetBrains Mono', monospace;
   letter-spacing: 0.04em;
@@ -730,7 +730,7 @@ html.theme-init *::after {
 .landing-approach-card {
   padding: 32px 32px 30px;
   border: 1px solid rgb(var(--landing-accent-rgb) / 0.35);
-  border-radius: 10px;
+  border-radius: 0;
   /* Dark panel base with a subtle green wash layered on top — two
      backgrounds stacked. The semi-transparent green reads as a tint
      over the dark card in both modes; the dark base means the card
@@ -758,7 +758,7 @@ html.theme-init *::after {
 .landing-approach-card h3 { font-family: 'Inter', sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: var(--landing-text); margin: 0 0 14px; }
 .landing-approach-card p { color: var(--landing-text-dim); font-size: 15px; line-height: 1.6; margin: 0 0 22px; }
 .landing-approach-card p em { color: var(--landing-text); font-style: normal; font-weight: 500; }
-.landing-approach-cmd { display: inline-flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--landing-accent); background: rgb(var(--landing-accent-rgb) / 0.1); border: 1px solid rgb(var(--landing-accent-rgb) / 0.3); padding: 9px 14px; border-radius: 5px; }
+.landing-approach-cmd { display: inline-flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--landing-accent); background: rgb(var(--landing-accent-rgb) / 0.1); border: 1px solid rgb(var(--landing-accent-rgb) / 0.3); padding: 9px 14px; border-radius: 0; }
 .landing-approach-cmd .lbl { color: var(--landing-text-ghost); text-transform: uppercase; font-size: 10px; letter-spacing: 0.15em; }
 .landing-approach-repo { display: inline-flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--landing-text-ghost); padding: 4px 0 0 4px; margin-top: 8px; }
 .landing-approach-repo .lbl { text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.18em; }
@@ -777,7 +777,7 @@ html.theme-init *::after {
   background: var(--landing-toolset-chip-bg);
   border: 1px solid var(--landing-toolset-chip-border);
   padding: 5px 10px;
-  border-radius: 4px;
+  border-radius: 0;
 }
 .landing-toolset-chip.chip-plugin { color: var(--landing-accent); background: rgb(var(--landing-accent-rgb) / 0.08); border-color: rgb(var(--landing-accent-rgb) / 0.3); }
 .landing-approach-note { color: var(--landing-text-dim); font-size: 13.5px; font-style: italic; margin: 0 0 22px; }
@@ -815,7 +815,7 @@ html.theme-init *::after {
 }
 .landing-agent-card {
   border: 1px solid var(--landing-ui);
-  border-radius: 10px;
+  border-radius: 0;
   padding: 22px;
   background: var(--landing-panel);
   transition: border-color 0.2s, transform 0.2s;
@@ -828,7 +828,7 @@ html.theme-init *::after {
 }
 .landing-avatar {
   width: 44px; height: 44px;
-  border-radius: 6px;
+  border-radius: 0;
   background: linear-gradient(135deg, rgb(var(--landing-accent-rgb) / 0.18), rgb(var(--landing-accent-rgb) / 0.03));
   border: 1px solid var(--landing-ui-strong);
   display: flex;
@@ -873,7 +873,7 @@ html.theme-init *::after {
   align-items: center;
   padding: 26px 30px;
   border: 1px dashed rgb(var(--landing-accent-rgb) / 0.5);
-  border-radius: 10px;
+  border-radius: 0;
   /* Dark card base + green wash layered on top — same pattern as the
      approach cards; the hardcoded green-rgba bg would have left the
      white page showing through in light mode. */
@@ -890,7 +890,7 @@ html.theme-init *::after {
 }
 .landing-invite-avatar {
   width: 52px; height: 52px;
-  border-radius: 8px;
+  border-radius: 0;
   border: 1px dashed rgb(var(--landing-accent-rgb) / 0.55);
   background: transparent;
   display: flex; align-items: center; justify-content: center;
@@ -920,7 +920,7 @@ html.theme-init *::after {
   font-size: 13px; font-weight: 500;
   text-decoration: none; letter-spacing: 0.02em;
   border: 1px solid rgb(var(--landing-accent-rgb) / 0.45);
-  padding: 10px 16px; border-radius: 5px;
+  padding: 10px 16px; border-radius: 0;
   transition: gap 0.2s ease-out, border-color 0.2s, background 0.2s;
   white-space: nowrap;
 }
@@ -943,7 +943,7 @@ html.theme-init *::after {
 .landing-org-tab .at { color: var(--landing-text-ghost); margin-right: 2px; }
 
 .landing-machine { margin-top: 12px; display: grid; grid-template-columns: 1fr 36px 1fr 36px 1.35fr; gap: 0; align-items: stretch; }
-.landing-machine-panel { border: 1px solid var(--landing-ui); border-radius: 10px; background: var(--landing-panel); padding: 22px 24px; display: flex; flex-direction: column; }
+.landing-machine-panel { border: 1px solid var(--landing-ui); border-radius: 0; background: var(--landing-panel); padding: 22px 24px; display: flex; flex-direction: column; }
 .landing-machine-panel.preview {
   border-color: rgb(var(--landing-accent-rgb) / 0.35);
   /* Layer the green wash over the dark panel bg instead of replacing
@@ -957,10 +957,10 @@ html.theme-init *::after {
 .landing-machine-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--landing-accent); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 4px; }
 .landing-machine-sublabel { font-family: 'Inter', sans-serif; font-size: 13px; color: var(--landing-text-dim); margin-bottom: 18px; }
 .landing-machine-options { display: flex; flex-direction: column; gap: 8px; }
-.landing-machine-opt { display: flex; align-items: center; gap: 12px; padding: 11px 13px; border: 1px solid var(--landing-ui); border-radius: 6px; cursor: pointer; transition: all 0.15s; background: var(--landing-machine-opt-bg); font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--landing-text); text-align: left; width: 100%; }
+.landing-machine-opt { display: flex; align-items: center; gap: 12px; padding: 11px 13px; border: 1px solid var(--landing-ui); border-radius: 0; cursor: pointer; transition: all 0.15s; background: var(--landing-machine-opt-bg); font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--landing-text); text-align: left; width: 100%; }
 .landing-machine-opt:hover { border-color: var(--landing-ui-strong); background: var(--landing-surface-hover-2); }
 .landing-machine-opt.active { border-color: var(--landing-accent); background: rgb(var(--landing-accent-rgb) / 0.08); box-shadow: 0 0 14px rgb(var(--landing-accent-rgb) / 0.12); }
-.landing-machine-opt .landing-radio { width: 11px; height: 11px; border-radius: 50%; border: 1px solid var(--landing-ui-strong); flex-shrink: 0; transition: all 0.15s; }
+.landing-machine-opt .landing-radio { width: 11px; height: 11px; border-radius: 0; border: 1px solid var(--landing-ui-strong); flex-shrink: 0; transition: all 0.15s; }
 .landing-machine-opt.active .landing-radio { background: var(--landing-accent); border-color: var(--landing-accent); box-shadow: 0 0 8px rgb(var(--landing-accent-rgb) / 0.7); }
 
 .landing-preview { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--landing-text); line-height: 1.65; }
@@ -969,7 +969,7 @@ html.theme-init *::after {
 .landing-preview-row .k { color: var(--landing-text-ghost); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; flex: 0 0 74px; padding-top: 3px; }
 .landing-preview-row .v { color: var(--landing-text); font-size: 13px; flex: 1; line-height: 1.55; }
 .landing-preview-row .v .hl { color: var(--landing-accent); }
-.landing-preview-denied { padding: 16px 18px; border: 1px dashed var(--landing-danger); border-radius: 6px; color: var(--landing-danger); font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.65; background: rgba(255,94,122,0.04); }
+.landing-preview-denied { padding: 16px 18px; border: 1px dashed var(--landing-danger); border-radius: 0; color: var(--landing-danger); font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.65; background: rgba(255,94,122,0.04); }
 .landing-preview-denied .label { color: var(--landing-danger); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 8px; display: block; font-weight: 600; }
 .landing-preview-denied code { font-family: inherit; font-size: inherit; background: transparent; padding: 0; }
 
@@ -978,12 +978,12 @@ html.theme-init *::after {
 .landing-mount-item .src { color: var(--landing-text); word-break: break-all; }
 .landing-mount-item .arrow { color: var(--landing-text-ghost); font-size: 10px; }
 .landing-mount-item .dst { color: var(--landing-text-dim); word-break: break-all; font-size: 11.5px; }
-.landing-mount-item .perm { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--landing-ui-strong); border-radius: 3px; color: var(--landing-text-ghost); flex-shrink: 0; }
+.landing-mount-item .perm { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--landing-ui-strong); border-radius: 0; color: var(--landing-text-ghost); flex-shrink: 0; }
 .landing-mount-item .perm.rw { color: var(--landing-accent); border-color: rgb(var(--landing-accent-rgb) / 0.4); }
 
 /* FocusCallout (Section 06) */
 .landing-focus-callout { margin-top: 44px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.landing-focus-card { padding: 22px 24px; border: 1px solid var(--landing-ui); border-radius: 10px; background: var(--landing-panel); }
+.landing-focus-card { padding: 22px 24px; border: 1px solid var(--landing-ui); border-radius: 0; background: var(--landing-panel); }
 .landing-focus-card.focus-role {
   border-color: rgb(var(--landing-accent-rgb) / 0.4);
   /* Dark base + green wash — same pattern as approach cards + cast
@@ -1022,7 +1022,7 @@ section.landing-section.landing-voc-scroll-section {
   grid-template-columns: 320px 1fr;
   gap: 0;
   border: 1px solid var(--landing-ui);
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--landing-panel);
   overflow: hidden;
   margin-top: 36px;
@@ -1086,7 +1086,7 @@ section.landing-section.landing-voc-scroll-section {
   color: var(--landing-accent);
   background: rgb(var(--landing-accent-rgb) / 0.09);
   border: 1px solid rgb(var(--landing-accent-rgb) / 0.3);
-  padding: 10px 14px; border-radius: 5px;
+  padding: 10px 14px; border-radius: 0;
   display: inline-flex; align-items: center; gap: 10px;
   margin-top: 2px;
 }
@@ -1189,7 +1189,7 @@ section.landing-section.landing-voc-scroll-section {
      near-black it's meant to be. */
   background: var(--landing-bg-deep);
   border: 0;
-  border-radius: 8px;
+  border-radius: 0;
   overflow: hidden;
   box-shadow: var(--landing-term-shadow);
   font-family: 'JetBrains Mono', monospace;
@@ -1200,7 +1200,7 @@ section.landing-section.landing-voc-scroll-section {
   background: var(--landing-surface-chrome-bar);
   box-shadow: inset 0 -1px rgba(255, 255, 255, 0.06);
 }
-.landing-loop-term-bar .landing-dot { width: 10px; height: 10px; border-radius: 50%; }
+.landing-loop-term-bar .landing-dot { width: 10px; height: 10px; border-radius: 0; }
 .landing-loop-term-bar .landing-dot.r { background: #ff5f57; }
 .landing-loop-term-bar .landing-dot.y { background: #febc2e; }
 .landing-loop-term-bar .landing-dot.g { background: #28c840; }
@@ -1235,7 +1235,7 @@ section.landing-section.landing-voc-scroll-section {
 /* Hero CodePanel — always-dark terminal block */
 .landing-code-panel {
   border: 0;
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--landing-panel);
   overflow: hidden;
   box-shadow: var(--landing-hero-codepanel-shadow);
@@ -1254,7 +1254,7 @@ section.landing-section.landing-voc-scroll-section {
 .landing-code-tab {
   background: transparent; border: 0;
   font-family: inherit;
-  padding: 5px 10px; border-radius: 4px;
+  padding: 5px 10px; border-radius: 0;
   color: var(--landing-text-ghost);
   font-size: 11px; cursor: pointer;
   transition: all 0.15s;
@@ -1319,7 +1319,7 @@ nav.landing-topnav .landing-star {
 .landing-star {
   padding: 7px 14px;
   border: 1px solid var(--landing-ui-strong);
-  border-radius: 4px;
+  border-radius: 0;
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   color: var(--landing-text);
@@ -1354,7 +1354,7 @@ nav.landing-topnav .landing-star {
   gap: 0;
   padding: 2px;
   border: 1px solid var(--landing-ui-strong);
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--landing-panel);
 }
 .landing-theme-toggle button {
@@ -1365,7 +1365,7 @@ nav.landing-topnav .landing-star {
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
   color: var(--landing-text-ghost);
   cursor: pointer;
@@ -1444,7 +1444,7 @@ nav.landing-topnav .landing-star {
   margin: 0 0 42px;
   padding: 18px 20px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 0;
   background: #2a1a07;
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18);
   color: #fff7ed;

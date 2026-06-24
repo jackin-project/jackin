@@ -10,11 +10,11 @@ export const Route = createRootRoute({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: "jackin❯ - Jack your AI coding agents in" },
+      { title: 'jackin❯ - isolated AI coding agent containers' },
       {
         name: 'description',
         content:
-          "Jack your AI coding agents in. Isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.",
+          'Run AI coding agents at full speed inside isolated containers: scoped access, per-agent state, and host boundaries that stay visible.',
       },
       { name: 'theme-color', content: '#0a0a0a', media: '(prefers-color-scheme: dark)' },
       { name: 'theme-color', content: '#ffffff', media: '(prefers-color-scheme: light)' },

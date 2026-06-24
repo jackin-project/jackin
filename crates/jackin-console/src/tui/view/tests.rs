@@ -436,7 +436,7 @@ fn list_vertical_clamp_uses_rendered_sidebar_height() {
 }
 
 #[test]
-fn tui_header_uses_lowercase_jackin_with_apostrophe() {
+fn tui_header_uses_canonical_brand_wordmark() {
     use ratatui::layout::Rect;
 
     let backend = TestBackend::new(40, 1);
@@ -453,7 +453,7 @@ fn tui_header_uses_lowercase_jackin_with_apostrophe() {
 
     assert!(
         dump.contains("jackin❯"),
-        "header must render 'jackin❯' (lowercase + trailing apostrophe); got {dump:?}"
+        "header must render 'jackin❯' (lowercase + chevron wordmark); got {dump:?}"
     );
     assert!(
         !dump.contains("JACKIN"),

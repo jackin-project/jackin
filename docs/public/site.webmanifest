@@ -1,7 +1,7 @@
 {
   "name": "jackin❯",
   "short_name": "j❯",
-  "description": "Jack your AI coding agents in. Isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.",
+  "description": "Run AI coding agents at full speed inside isolated containers: scoped access, per-agent state, and host boundaries that stay visible.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0a",

@@ -255,13 +255,7 @@ fn intro_phrases(host_screen_owned: bool) {
     if type_centered("Stand up, operator...", WHITE, 60, 950, host_screen_owned) {
         return;
     }
-    if type_centered(
-        "They're already inside...",
-        WHITE,
-        55,
-        950,
-        host_screen_owned,
-    ) {
+    if type_centered("Host stays outside...", WHITE, 55, 950, host_screen_owned) {
         return;
     }
     if type_centered("Follow the green.", WHITE, 50, 850, host_screen_owned) {

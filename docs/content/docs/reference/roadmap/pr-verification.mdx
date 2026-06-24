@@ -20,7 +20,7 @@ Three things make the console the right home for this, anchored to the instance 
 
 ## Phase 0 — `jackin-dev` local PR sync
 
-The first implementation creates a dedicated `crates/jackin-dev` crate that builds a `jackin-dev` binary. This binary is for contributor and maintainer workflows around testing jackin' locally. It is not a replacement for the product CLI; it is the host-side setup tool that turns the current PR-body shell recipe into a stable command. The crate starts at version `0.1.0`, and every future change that adds or changes shipped `jackin-dev` functionality bumps that crate version.
+The first implementation creates a dedicated `crates/jackin-dev` crate that builds a `jackin-dev` binary. This binary is for contributor and maintainer workflows around testing jackin❯ locally. It is not a replacement for the product CLI; it is the host-side setup tool that turns the current PR-body shell recipe into a stable command. The crate starts at version `0.1.0`, and every future change that adds or changes shipped `jackin-dev` functionality bumps that crate version.
 
 The default checkout block becomes:
 
@@ -46,7 +46,7 @@ Each pull request gets one self-contained bundle:
 
 `env.sh` exports `PATH` so the freshly built checkout binary wins, `JACKIN_CONFIG_DIR` pointing at `state/config`, and `JACKIN_HOME_DIR` pointing at `state/home`. That makes the whole verification root removable with one directory delete and prevents stale `~/.config/jackin-pr-*` or `~/.jackin-pr-*` folders from accumulating.
 
-`sync` defaults to the safe real-world profile: copy the operator's real jackin' configuration into the bundle, replace the prior copied config on each sync, and keep runtime state empty and bundle-local. If no real configuration exists, it creates an empty config directory. Clean-room verification stays available as an explicit `--config blank` override, but normal PR bodies stay flagless because `--config copy` is the default.
+`sync` defaults to the safe real-world profile: copy the operator's real jackin❯ configuration into the bundle, replace the prior copied config on each sync, and keep runtime state empty and bundle-local. If no real configuration exists, it creates an empty config directory. Clean-room verification stays available as an explicit `--config blank` override, but normal PR bodies stay flagless because `--config copy` is the default.
 
 `sync` also decides expensive prep from the pull request diff. If the pull request touches `crates/jackin-capsule/` or the shared protocol surface the capsule consumes, it builds and exports the PR's `jackin-capsule` binary into `env.sh`. If the pull request touches construct image inputs, it builds the local construct image and exports `JACKIN_CONSTRUCT_IMAGE`. Routine PR instructions stay flagless; the command explains what it auto-enabled and why.
 
@@ -64,7 +64,7 @@ jackin-dev pr status <PR_NUMBER>
 
 Responsibility stays split cleanly: `jackin-dev` owns outside-the-repo orchestration, while `cargo xtask` remains for tasks that only make sense once a checkout already exists, such as construct build/publish helpers, docs/sidebar maintenance, schema checks, PTY fixture extraction, and PR body skeleton generation.
 
-Packaging is part of this work. `jackin-dev` is distributed through the `jackin-project/homebrew-tap` repository by a separate workflow named `jackin-dev`, dedicated to this binary, not by jackin's normal stable release workflow or preview workflow. When source inputs for this crate change, that dedicated workflow builds a new `jackin-dev` artifact for the crate's current version and updates the Homebrew tap formula so operators can install or upgrade it from the tap. If a PR does not touch `jackin-dev` inputs, the tap entry does not need to move. Operators reviewing jackin' PRs should be able to install or update from the tap and immediately run `jackin-dev pr sync` without a prior source checkout.
+Packaging is part of this work. `jackin-dev` is distributed through the `jackin-project/homebrew-tap` repository by a separate workflow named `jackin-dev`, dedicated to this binary, not by the normal jackin release or preview workflows. When source inputs for this crate change, that dedicated workflow builds a new `jackin-dev` artifact for the crate's current version and updates the Homebrew tap formula so operators can install or upgrade it from the tap. If a PR does not touch `jackin-dev` inputs, the tap entry does not need to move. Operators reviewing jackin❯ PRs should be able to install or update from the tap and immediately run `jackin-dev pr sync` without a prior source checkout.
 
 ## Deferred console-native flow
 

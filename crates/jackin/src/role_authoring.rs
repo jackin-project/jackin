@@ -180,7 +180,7 @@ fn readme_contents(selector: &RoleSelector) -> String {
     format!(
         r"# {}
 
-Jackin role repository for `{role}`.
+jackin❯ role repository for `{role}`.
 
 ## Validate
 

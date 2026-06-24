@@ -113,7 +113,7 @@ fn non_console_subcommand_passes_through_even_without_tty() {
 fn console_requires_tty_error_mentions_tty_and_size() {
     assert!(CONSOLE_REQUIRES_TTY_ERROR.contains("TTY"));
     assert!(CONSOLE_REQUIRES_TTY_ERROR.contains("40x15"));
-    // The jackin❯ apostrophe naming rule applies to user-visible strings.
+    // The jackin❯ brand spelling rule applies to user-visible strings.
     assert!(CONSOLE_REQUIRES_TTY_ERROR.contains("jackin❯"));
 }
 

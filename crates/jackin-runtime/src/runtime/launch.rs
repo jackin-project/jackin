@@ -1624,7 +1624,7 @@ pub(super) fn launch_failure_cli_error(
     ])
     .build();
     table
-        .with(tabled::settings::Style::modern_rounded())
+        .with(tabled::settings::Style::modern())
         .with(tabled::settings::Remove::row(
             tabled::settings::object::Rows::first(),
         ));
