@@ -709,19 +709,30 @@ fn codex_snapshot(
 
 fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let data = home_path(".local/share/amp");
-    let has_auth = std::env::var("AMP_API_KEY").is_ok_and(|v| !v.is_empty())
-        || data.join("secrets.json").exists();
-    let cli_usage = fetch_amp_cli_usage().ok();
-    let status = if cli_usage.is_some() {
+    let amp_api_key = env_value("AMP_API_KEY");
+    let api_usage = amp_api_key
+        .as_deref()
+        .and_then(|token| fetch_amp_api_usage(token).ok());
+    let cli_usage = api_usage
+        .is_none()
+        .then(fetch_amp_cli_usage)
+        .and_then(Result::ok);
+    let has_auth = amp_api_key.is_some() || data.join("secrets.json").exists();
+    let status = if api_usage.is_some() || cli_usage.is_some() {
         UsageSnapshotStatus::Fresh
     } else if has_auth {
         UsageSnapshotStatus::Unsupported
     } else {
         UsageSnapshotStatus::NeedsLogin
     };
-    let account_label = cli_usage
+    let account_label = api_usage
         .as_ref()
         .and_then(|usage| usage.account_label.clone())
+        .or_else(|| {
+            cli_usage
+                .as_ref()
+                .and_then(|usage| usage.account_label.clone())
+        })
         .unwrap_or_else(|| {
             if has_auth {
                 "local Amp auth".to_owned()
@@ -729,9 +740,10 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
                 "needs Amp login".to_owned()
             }
         });
-    let buckets = cli_usage
+    let buckets = api_usage
         .as_ref()
-        .map(AmpCliUsage::buckets)
+        .map(AmpApiUsage::buckets)
+        .or_else(|| cli_usage.as_ref().map(AmpCliUsage::buckets))
         .filter(|buckets| !buckets.is_empty())
         .unwrap_or_else(|| {
             vec![bucket(
@@ -749,15 +761,17 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
         provider: None,
         surface: UsageSurface::Amp,
         account_label,
-        plan_label: None,
+        plan_label: (api_usage.is_some() || cli_usage.is_some()).then_some("Amp Free".to_owned()),
         buckets,
         status,
-        source: if cli_usage.is_some() {
+        source: if api_usage.is_some() {
+            UsageSource::ProviderApi
+        } else if cli_usage.is_some() {
             UsageSource::Cli
         } else {
             UsageSource::None
         },
-        confidence: if cli_usage.is_some() {
+        confidence: if api_usage.is_some() || cli_usage.is_some() {
             UsageConfidence::Authoritative
         } else if has_auth {
             UsageConfidence::PresenceOnly
@@ -768,7 +782,7 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
         last_error: match status {
             UsageSnapshotStatus::NeedsLogin => Some("Amp auth not available to Capsule".to_owned()),
             UsageSnapshotStatus::Unsupported => {
-                Some("Amp CLI usage unavailable to Capsule".to_owned())
+                Some("Amp API/CLI usage unavailable to Capsule".to_owned())
             }
             _ => None,
         },
@@ -3351,6 +3365,99 @@ fn format_extra_usage_amount(value: f64, unit: &str) -> String {
 }
 
 #[derive(Debug, Clone, Default)]
+struct AmpApiUsage {
+    account_label: Option<String>,
+    free_remaining: Option<f64>,
+    free_limit: Option<f64>,
+    hourly_replenishment: Option<f64>,
+    individual_credits: Option<f64>,
+}
+
+impl AmpApiUsage {
+    fn from_value(value: serde_json::Value) -> Option<Self> {
+        let root = value.get("result").unwrap_or(&value);
+        let usage = Self {
+            account_label: first_string_key(root, "email")
+                .or_else(|| first_string_key(root, "accountEmail"))
+                .or_else(|| first_string_key(root, "userEmail")),
+            free_remaining: first_number_key(root, "ampFreeRemaining")
+                .or_else(|| first_number_key(root, "freeRemaining"))
+                .or_else(|| first_number_key(root, "remainingBalance")),
+            free_limit: first_number_key(root, "ampFreeLimit")
+                .or_else(|| first_number_key(root, "freeLimit"))
+                .or_else(|| first_number_key(root, "limitBalance")),
+            hourly_replenishment: first_number_key(root, "hourlyReplenishment")
+                .or_else(|| first_number_key(root, "replenishmentRate")),
+            individual_credits: first_number_key(root, "individualCredits")
+                .or_else(|| first_number_key(root, "individualBalance")),
+        };
+        (usage.free_remaining.is_some()
+            || usage.free_limit.is_some()
+            || usage.individual_credits.is_some())
+        .then_some(usage)
+    }
+
+    fn buckets(&self) -> Vec<QuotaBucketView> {
+        let mut buckets = Vec::new();
+        if let (Some(remaining), Some(limit)) = (self.free_remaining, self.free_limit) {
+            let used = (limit - remaining).max(0.0);
+            let remaining_percent = if limit > 0.0 {
+                Some(((remaining / limit) * 100.0).round().clamp(0.0, 100.0) as u8)
+            } else {
+                None
+            };
+            buckets.push(bucket(
+                "Amp Free",
+                Some(format_currency(used)),
+                Some(format_currency(limit)),
+                remaining_percent,
+                None,
+                self.hourly_replenishment
+                    .map(|value| format!("replenishes +{}/hour", format_currency(value)))
+                    .as_deref(),
+                UsageSnapshotStatus::Fresh,
+            ));
+        }
+        if let Some(credits) = self.individual_credits {
+            buckets.push(bucket(
+                "Individual credits",
+                None,
+                Some(format_currency(credits)),
+                None,
+                None,
+                Some("remaining"),
+                UsageSnapshotStatus::Fresh,
+            ));
+        }
+        buckets
+    }
+}
+
+fn fetch_amp_api_usage(token: &str) -> Result<AmpApiUsage, String> {
+    let client = provider_http_client()?;
+    let response = client
+        .post("https://ampcode.com/api/internal?userDisplayBalanceInfo")
+        .bearer_auth(token)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .json(&serde_json::json!({
+            "method": "userDisplayBalanceInfo",
+            "params": {}
+        }))
+        .send()
+        .map_err(|err| format!("Amp usage request failed: {err}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("Amp usage HTTP {status}"));
+    }
+    let value = response
+        .json::<serde_json::Value>()
+        .map_err(|err| format!("Amp usage decode failed: {err}"))?;
+    AmpApiUsage::from_value(value)
+        .ok_or_else(|| "Amp usage response did not include balance info".to_owned())
+}
+
+#[derive(Debug, Clone, Default)]
 struct AmpCliUsage {
     account_label: Option<String>,
     free_remaining: Option<f64>,
@@ -3610,6 +3717,19 @@ fn first_string_key(value: &serde_json::Value, needle: &str) -> Option<String> {
             map.values().find_map(|v| first_string_key(v, needle))
         }
         serde_json::Value::Array(values) => values.iter().find_map(|v| first_string_key(v, needle)),
+        _ => None,
+    }
+}
+
+fn first_number_key(value: &serde_json::Value, needle: &str) -> Option<f64> {
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(found) = map.get(needle).and_then(json_number) {
+                return Some(found);
+            }
+            map.values().find_map(|v| first_number_key(v, needle))
+        }
+        serde_json::Value::Array(values) => values.iter().find_map(|v| first_number_key(v, needle)),
         _ => None,
     }
 }
@@ -4381,6 +4501,37 @@ mod tests {
         );
         assert_eq!(buckets[1].label, "Individual credits");
         assert_eq!(buckets[1].limit_label.as_deref(), Some("$0.33"));
+    }
+
+    #[test]
+    fn amp_api_usage_maps_display_balance_info() {
+        let usage = AmpApiUsage::from_value(serde_json::json!({
+            "result": {
+                "user": { "email": "person@example.com" },
+                "ampFree": {
+                    "ampFreeRemaining": 4.94,
+                    "ampFreeLimit": 10.0,
+                    "hourlyReplenishment": 0.42
+                },
+                "credits": {
+                    "individualCredits": 1.25
+                }
+            }
+        }))
+        .expect("Amp API usage");
+
+        assert_eq!(usage.account_label.as_deref(), Some("person@example.com"));
+        let buckets = usage.buckets();
+        assert_eq!(buckets[0].label, "Amp Free");
+        assert_eq!(buckets[0].used_label.as_deref(), Some("$5.06"));
+        assert_eq!(buckets[0].limit_label.as_deref(), Some("$10"));
+        assert_eq!(buckets[0].remaining_percent, Some(49));
+        assert_eq!(
+            buckets[0].pace_label.as_deref(),
+            Some("replenishes +$0.42/hour")
+        );
+        assert_eq!(buckets[1].label, "Individual credits");
+        assert_eq!(buckets[1].limit_label.as_deref(), Some("$1.25"));
     }
 
     #[test]
