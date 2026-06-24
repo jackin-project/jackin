@@ -16,7 +16,7 @@ use jackin_protocol::control::{
 use sha2::{Digest, Sha256};
 use turso::{Connection, Row, params};
 
-const SCHEMA_VERSION: &str = "3";
+const SCHEMA_VERSION: &str = "4";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StoredAccountUsageSnapshot {
@@ -35,6 +35,16 @@ pub(crate) struct StoredAccountUsageSnapshot {
     pub expires_at: Option<i64>,
     pub status: String,
     pub last_error: Option<String>,
+    pub focused_provider: Option<String>,
+    pub plan_label: Option<String>,
+    pub remaining_percent: Option<i64>,
+    pub used_label: Option<String>,
+    pub limit_label: Option<String>,
+    pub reset_label: Option<String>,
+    pub pace_label: Option<String>,
+    pub view_status: String,
+    pub updated_label: String,
+    pub status_bar_label: String,
 }
 
 pub(crate) fn store_usage_snapshot(path: &Path, view: &FocusedUsageView) -> Result<(), String> {
@@ -113,6 +123,16 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
             expires_at INTEGER,
             status TEXT NOT NULL,
             last_error TEXT,
+            focused_provider TEXT,
+            plan_label TEXT,
+            remaining_percent INTEGER,
+            used_label TEXT,
+            limit_label TEXT,
+            reset_label TEXT,
+            pace_label TEXT,
+            view_status TEXT NOT NULL DEFAULT 'unavailable',
+            updated_label TEXT NOT NULL DEFAULT 'Unavailable',
+            status_bar_label TEXT NOT NULL DEFAULT 'usage unavailable',
             UNIQUE(provider, account_key_hash, source, window_kind)
         );
 
@@ -120,6 +140,7 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
     )
     .await
     .map_err(|err| format!("initialize telemetry store schema failed: {err}"))?;
+    ensure_account_snapshot_columns(conn).await?;
     conn.execute(
         "INSERT INTO _meta (key, value) VALUES ('schema_version', ?1)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -127,6 +148,70 @@ async fn initialize_schema(conn: &Connection) -> Result<(), String> {
     )
     .await
     .map_err(|err| format!("record telemetry store schema version failed: {err}"))?;
+    Ok(())
+}
+
+async fn ensure_account_snapshot_columns(conn: &Connection) -> Result<(), String> {
+    let mut rows = conn
+        .query("PRAGMA table_info(account_usage_snapshots)", ())
+        .await
+        .map_err(|err| format!("inspect telemetry snapshot schema failed: {err}"))?;
+    let mut columns = std::collections::HashSet::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|err| format!("read telemetry snapshot schema failed: {err}"))?
+    {
+        columns.insert(row_string(&row, 1, "column_name")?);
+    }
+    for (name, ddl) in [
+        (
+            "focused_provider",
+            "ALTER TABLE account_usage_snapshots ADD COLUMN focused_provider TEXT",
+        ),
+        (
+            "plan_label",
+            "ALTER TABLE account_usage_snapshots ADD COLUMN plan_label TEXT",
+        ),
+        (
+            "remaining_percent",
+            "ALTER TABLE account_usage_snapshots ADD COLUMN remaining_percent INTEGER",
+        ),
+        (
+            "used_label",
+            "ALTER TABLE account_usage_snapshots ADD COLUMN used_label TEXT",
+        ),
+        (
+            "limit_label",
+            "ALTER TABLE account_usage_snapshots ADD COLUMN limit_label TEXT",
+        ),
+        (
+            "reset_label",
+            "ALTER TABLE account_usage_snapshots ADD COLUMN reset_label TEXT",
+        ),
+        (
+            "pace_label",
+            "ALTER TABLE account_usage_snapshots ADD COLUMN pace_label TEXT",
+        ),
+        (
+            "view_status",
+            "ALTER TABLE account_usage_snapshots ADD COLUMN view_status TEXT NOT NULL DEFAULT 'unavailable'",
+        ),
+        (
+            "updated_label",
+            "ALTER TABLE account_usage_snapshots ADD COLUMN updated_label TEXT NOT NULL DEFAULT 'Unavailable'",
+        ),
+        (
+            "status_bar_label",
+            "ALTER TABLE account_usage_snapshots ADD COLUMN status_bar_label TEXT NOT NULL DEFAULT 'usage unavailable'",
+        ),
+    ] {
+        if !columns.contains(name) {
+            conn.execute(ddl, ())
+                .await
+                .map_err(|err| format!("upgrade telemetry snapshot schema failed: {err}"))?;
+        }
+    }
     Ok(())
 }
 
@@ -152,9 +237,19 @@ async fn upsert_account_snapshot_rows(
                 fetched_at,
                 expires_at,
                 status,
-                last_error
+                last_error,
+                focused_provider,
+                plan_label,
+                remaining_percent,
+                used_label,
+                limit_label,
+                reset_label,
+                pace_label,
+                view_status,
+                updated_label,
+                status_bar_label
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
             ON CONFLICT(provider, account_key_hash, source, window_kind) DO UPDATE SET
                 account_label = excluded.account_label,
                 confidence = excluded.confidence,
@@ -166,7 +261,17 @@ async fn upsert_account_snapshot_rows(
                 fetched_at = excluded.fetched_at,
                 expires_at = excluded.expires_at,
                 status = excluded.status,
-                last_error = excluded.last_error
+                last_error = excluded.last_error,
+                focused_provider = excluded.focused_provider,
+                plan_label = excluded.plan_label,
+                remaining_percent = excluded.remaining_percent,
+                used_label = excluded.used_label,
+                limit_label = excluded.limit_label,
+                reset_label = excluded.reset_label,
+                pace_label = excluded.pace_label,
+                view_status = excluded.view_status,
+                updated_label = excluded.updated_label,
+                status_bar_label = excluded.status_bar_label
             ",
             params![
                 row.provider,
@@ -184,6 +289,16 @@ async fn upsert_account_snapshot_rows(
                 row.expires_at,
                 row.status,
                 row.last_error,
+                row.focused_provider,
+                row.plan_label,
+                row.remaining_percent,
+                row.used_label,
+                row.limit_label,
+                row.reset_label,
+                row.pace_label,
+                row.view_status,
+                row.updated_label,
+                row.status_bar_label,
             ],
         )
         .await
@@ -220,6 +335,16 @@ fn account_snapshot_rows(view: &FocusedUsageView) -> Vec<StoredAccountUsageSnaps
                 expires_at: None,
                 status: status_label(bucket.status).to_owned(),
                 last_error: last_error.clone(),
+                focused_provider: view.focused_provider.clone(),
+                plan_label: view.account.plan_label.clone(),
+                remaining_percent: bucket.remaining_percent.map(i64::from),
+                used_label: bucket.used_label.clone(),
+                limit_label: bucket.limit_label.clone(),
+                reset_label: bucket.reset_label.clone(),
+                pace_label: bucket.pace_label.clone(),
+                view_status: status_label(view.status).to_owned(),
+                updated_label: view.updated_label.clone(),
+                status_bar_label: view.status_bar_label.clone(),
             }
         })
         .collect()
@@ -319,6 +444,225 @@ pub(crate) fn account_snapshot_views(path: &Path) -> Result<Vec<AccountUsageSnap
     })
 }
 
+pub(crate) fn focused_usage_view(
+    path: &Path,
+    focused_agent: Option<&str>,
+    focused_provider: Option<&str>,
+    now_epoch: i64,
+) -> Result<Option<FocusedUsageView>, String> {
+    let rows = stored_account_snapshots(path)?;
+    let Some((provider, rows)) = select_provider_rows(rows, focused_provider) else {
+        return Ok(None);
+    };
+    let Some(first) = rows.first() else {
+        return Ok(None);
+    };
+    let status = usage_status_from_label(&first.view_status);
+    let source = usage_source_from_label(&first.source);
+    let confidence = usage_confidence_from_label(&first.confidence);
+    let fetched_at = rows.iter().map(|row| row.fetched_at).max().unwrap_or(0);
+    let buckets = rows
+        .iter()
+        .map(|row| QuotaBucketView {
+            label: row.window_kind.clone(),
+            used_label: row.used_label.clone(),
+            limit_label: row.limit_label.clone(),
+            remaining_percent: row
+                .remaining_percent
+                .and_then(|value| u8::try_from(value.clamp(0, 100)).ok()),
+            reset_label: row.reset_label.clone(),
+            pace_label: row.pace_label.clone(),
+            status: usage_status_from_label(&row.status),
+        })
+        .collect::<Vec<_>>();
+    Ok(Some(FocusedUsageView {
+        focused_agent: focused_agent.map(str::to_owned),
+        focused_provider: first
+            .focused_provider
+            .clone()
+            .or_else(|| focused_provider.map(str::to_owned))
+            .or_else(|| Some(provider.clone())),
+        account: jackin_protocol::control::FocusedAccountHeader {
+            provider_label: provider,
+            account_label: first.account_label.clone(),
+            plan_label: first.plan_label.clone(),
+        },
+        buckets,
+        status,
+        source,
+        confidence,
+        fetched_at_epoch: fetched_at,
+        updated_label: if first.updated_label.trim().is_empty() {
+            relative_updated_label(fetched_at, now_epoch)
+        } else {
+            first.updated_label.clone()
+        },
+        status_bar_label: if first.status_bar_label.trim().is_empty() {
+            lifecycle_status_bar_label(status)
+        } else {
+            first.status_bar_label.clone()
+        },
+        tabs: usage_provider_tabs_from_rows(&rows_for_tabs(path)?),
+        last_error: first.last_error.clone(),
+    }))
+}
+
+fn rows_for_tabs(path: &Path) -> Result<Vec<StoredAccountUsageSnapshot>, String> {
+    stored_account_snapshots(path)
+}
+
+fn select_provider_rows(
+    rows: Vec<StoredAccountUsageSnapshot>,
+    focused_provider: Option<&str>,
+) -> Option<(String, Vec<StoredAccountUsageSnapshot>)> {
+    let focused = focused_provider.unwrap_or_default();
+    let mut matches = rows
+        .into_iter()
+        .filter(|row| provider_matches(focused, &row.provider))
+        .collect::<Vec<_>>();
+    if matches.is_empty() {
+        return None;
+    }
+    let latest = matches.iter().map(|row| row.fetched_at).max()?;
+    matches.retain(|row| row.fetched_at == latest);
+    let provider = matches.first()?.provider.clone();
+    Some((provider, matches))
+}
+
+fn provider_matches(needle: &str, provider: &str) -> bool {
+    if needle.trim().is_empty() {
+        return true;
+    }
+    let needle = normalize_provider_label(needle);
+    let provider = normalize_provider_label(provider);
+    provider.contains(&needle)
+        || needle.contains(&provider)
+        || (needle.contains("openai") && provider.contains("codex"))
+        || (needle.contains("codex") && provider.contains("openai"))
+        || (needle.contains("anthropic") && provider.contains("claude"))
+        || (needle.contains("claude") && provider.contains("anthropic"))
+        || (needle.contains("xai") && provider.contains("grok"))
+        || (needle.contains("grok") && provider.contains("xai"))
+        || (needle.contains("zai") && provider.contains("glm"))
+        || (needle.contains("glm") && provider.contains("zai"))
+}
+
+fn normalize_provider_label(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase()
+}
+
+fn usage_provider_tabs_from_rows(
+    rows: &[StoredAccountUsageSnapshot],
+) -> Vec<jackin_protocol::control::UsageProviderTab> {
+    [
+        "Codex",
+        "Claude",
+        "Amp",
+        "Grok Build",
+        "GLM / Z.AI",
+        "Kimi",
+        "MiniMax",
+    ]
+    .into_iter()
+    .map(|label| {
+        let latest = rows
+            .iter()
+            .filter(|row| provider_matches(label, &row.provider))
+            .max_by_key(|row| row.fetched_at);
+        jackin_protocol::control::UsageProviderTab {
+            label: label.to_owned(),
+            status_label: latest.map_or_else(
+                || "not cached".to_owned(),
+                |row| tab_status_label(row, rows),
+            ),
+            account_label: latest
+                .map(|row| row.account_label.clone())
+                .unwrap_or_else(|| "account unavailable".to_owned()),
+            plan_label: latest.and_then(|row| row.plan_label.clone()),
+            source_label: latest.map(|row| format!("{} · {}", row.view_status, row.source)),
+            active: false,
+        }
+    })
+    .collect()
+}
+
+fn tab_status_label(
+    row: &StoredAccountUsageSnapshot,
+    rows: &[StoredAccountUsageSnapshot],
+) -> String {
+    rows.iter()
+        .filter(|candidate| {
+            candidate.provider == row.provider
+                && candidate.account_key_hash == row.account_key_hash
+                && candidate.fetched_at == row.fetched_at
+        })
+        .find_map(|candidate| {
+            candidate
+                .remaining_percent
+                .map(|remaining| format!("{} {remaining}% left", candidate.window_kind))
+        })
+        .unwrap_or_else(|| row.view_status.clone())
+}
+
+fn usage_status_from_label(label: &str) -> UsageSnapshotStatus {
+    match label {
+        "fresh" => UsageSnapshotStatus::Fresh,
+        "stale" => UsageSnapshotStatus::Stale,
+        "needs_login" => UsageSnapshotStatus::NeedsLogin,
+        "needs_secret" => UsageSnapshotStatus::NeedsSecret,
+        "unsupported" => UsageSnapshotStatus::Unsupported,
+        "error" => UsageSnapshotStatus::Error,
+        _ => UsageSnapshotStatus::Unavailable,
+    }
+}
+
+fn usage_source_from_label(label: &str) -> UsageSource {
+    match label {
+        "provider_api" => UsageSource::ProviderApi,
+        "cli" => UsageSource::Cli,
+        "local_logs" => UsageSource::LocalLogs,
+        "cache" => UsageSource::Cache,
+        _ => UsageSource::None,
+    }
+}
+
+fn usage_confidence_from_label(label: &str) -> UsageConfidence {
+    match label {
+        "authoritative" => UsageConfidence::Authoritative,
+        "estimated" => UsageConfidence::Estimated,
+        "presence_only" => UsageConfidence::PresenceOnly,
+        _ => UsageConfidence::None,
+    }
+}
+
+fn relative_updated_label(fetched_at: i64, now_epoch: i64) -> String {
+    let age = now_epoch.saturating_sub(fetched_at).max(0);
+    if age < 60 {
+        "Updated just now".to_owned()
+    } else if age < 3_600 {
+        format!("Updated {}m ago", age / 60)
+    } else {
+        format!("Updated {}h ago", age / 3_600)
+    }
+}
+
+fn lifecycle_status_bar_label(status: UsageSnapshotStatus) -> String {
+    match status {
+        UsageSnapshotStatus::Fresh => "usage cached",
+        UsageSnapshotStatus::Stale => "stale",
+        UsageSnapshotStatus::NeedsLogin => "needs login",
+        UsageSnapshotStatus::NeedsSecret => "needs secret",
+        UsageSnapshotStatus::Unsupported => "unsupported",
+        UsageSnapshotStatus::Unavailable => "usage unavailable",
+        UsageSnapshotStatus::Error => "error",
+    }
+    .to_owned()
+}
+
 fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapshot>, String> {
     let path = path.to_path_buf();
     run_store(move || async move {
@@ -341,7 +685,17 @@ fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapsho
                     fetched_at,
                     expires_at,
                     status,
-                    last_error
+                    last_error,
+                    focused_provider,
+                    plan_label,
+                    remaining_percent,
+                    used_label,
+                    limit_label,
+                    reset_label,
+                    pace_label,
+                    view_status,
+                    updated_label,
+                    status_bar_label
                 FROM account_usage_snapshots
                 ORDER BY provider, account_key_hash, source, window_kind
                 ",
@@ -371,6 +725,16 @@ fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapsho
                 expires_at: row_opt_i64(&row, 12, "expires_at")?,
                 status: row_string(&row, 13, "status")?,
                 last_error: row_opt_string(&row, 14, "last_error")?,
+                focused_provider: row_opt_string(&row, 15, "focused_provider")?,
+                plan_label: row_opt_string(&row, 16, "plan_label")?,
+                remaining_percent: row_opt_i64(&row, 17, "remaining_percent")?,
+                used_label: row_opt_string(&row, 18, "used_label")?,
+                limit_label: row_opt_string(&row, 19, "limit_label")?,
+                reset_label: row_opt_string(&row, 20, "reset_label")?,
+                pace_label: row_opt_string(&row, 21, "pace_label")?,
+                view_status: row_string(&row, 22, "view_status")?,
+                updated_label: row_string(&row, 23, "updated_label")?,
+                status_bar_label: row_string(&row, 24, "status_bar_label")?,
             });
         }
         Ok(snapshots)
@@ -489,6 +853,32 @@ mod tests {
         assert_eq!(session.limit_amount, Some(100));
         assert_eq!(session.status, "fresh");
         assert_eq!(session.fetched_at, 1_781_185_620);
+        assert_eq!(session.remaining_percent, Some(25));
+        assert_eq!(session.used_label.as_deref(), Some("63% used"));
+        assert_eq!(session.limit_label.as_deref(), Some("100%"));
+        assert_eq!(session.plan_label.as_deref(), Some("Pro 20x"));
+    }
+
+    #[test]
+    fn focused_usage_view_rebuilds_snapshot_from_account_rows() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("usage.db");
+        store_usage_snapshot(&db, &usage_view()).expect("store snapshot");
+
+        let view = focused_usage_view(&db, Some("codex"), Some("Codex"), 1_781_185_590)
+            .expect("read focused usage")
+            .expect("stored usage view");
+
+        assert_eq!(view.focused_agent.as_deref(), Some("codex"));
+        assert_eq!(view.focused_provider.as_deref(), Some("OpenAI"));
+        assert_eq!(view.account.provider_label, "Codex");
+        assert_eq!(view.account.account_label, "alexey@example.com");
+        assert_eq!(view.account.plan_label.as_deref(), Some("Pro 20x"));
+        assert_eq!(view.buckets.len(), 2);
+        assert_eq!(view.buckets[0].label, "Credits");
+        assert_eq!(view.buckets[1].label, "Session");
+        assert_eq!(view.buckets[1].remaining_percent, Some(37));
+        assert_eq!(view.status_bar_label, "Codex Session: 63% used · 37% left");
     }
 
     #[test]
@@ -500,7 +890,7 @@ mod tests {
 
         assert_eq!(
             schema_version(&db).expect("schema version").as_deref(),
-            Some("3")
+            Some("4")
         );
     }
 }

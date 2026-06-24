@@ -16,11 +16,10 @@ pub(crate) const PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL: std::time::Duration =
 /// and conservative pull-request context refresh.
 pub(crate) const STATE_TICK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// Daemon-owned usage refresh cadence. The provider cache keeps its own TTL and
-/// per-provider launch cooldowns; this ticker only keeps focused account state
-/// warm for status chrome and materialized snapshots.
+/// Daemon-owned usage refresh cadence. Renderers read the Turso snapshot; this
+/// ticker is the provider-calling path that keeps focused account state warm.
 pub(crate) const USAGE_REFRESH_POLL_INTERVAL: std::time::Duration =
-    std::time::Duration::from_mins(1);
+    std::time::Duration::from_mins(5);
 
 /// Daemon-owned provider account refresh cadence. This warms all supported
 /// provider tabs through the same cache/TTL/cooldown path as focused usage

@@ -1015,18 +1015,17 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 mux.maybe_spawn_git_branch_context_lookup(Instant::now());
             }
 
-            // Daemon-owned usage refresh cadence. The cache enforces provider
-            // TTL and managed-CLI cooldowns, so this keeps status chrome and
-            // materialized account snapshots warm without renderer polling.
+            // Daemon-owned usage refresh cadence. This is the provider-calling
+            // path; render/status paths read the last Turso snapshot.
             _ = usage_ticker.tick() => {
-                drop(mux.focused_usage_snapshot(false));
+                drop(mux.focused_usage_snapshot(true));
             }
 
             // Broader account cache warming for the provider tabs/account
-            // bridge. This remains daemon-owned and flows through the provider
-            // cache TTLs/cooldowns; Capsule renderers never call providers.
+            // bridge. This remains daemon-owned; Capsule renderers never call
+            // providers.
             _ = usage_account_ticker.tick() => {
-                mux.warm_usage_account_snapshots(false);
+                mux.warm_usage_account_snapshots(true);
             }
 
             // Periodic state refresh: re-render the status bar so the tab

@@ -379,7 +379,7 @@ Removing the cut features is part of this work, not a follow-up: the workspace d
 - [ ] Render full-width remaining bars + stacked meter lines; apply per-provider section sets, provider-org headers, reset/pace formats.
 - [ ] Wire a usage keymap into the standard hint bar; remove the in-box actions footer.
 - [x] Rework the status bar: right-panel session + weekly remaining only, after the debug/container ids; drop account/provider/plan/reset and most-constrained selection.
-- [ ] Status bar and overlay read exclusively from Turso; render never calls a provider.
+- [x] Status bar and overlay read exclusively from Turso; render never calls a provider.
 - [ ] Status bar single form, follows the focused pane; click opens the overlay on that provider's tab.
 - [ ] Background refresher writes `account_usage_snapshots` to Turso: ~5 min/account + ±60s jitter, active-providers-only, focused-first, `Retry-After`/backoff (cap 30 min), single-flight, and a host-shared per-account cooldown marker all containers honor.
 - [ ] Overlay: proactive background refresh on open (selected provider first); header shows `refreshing…` and updates in place; tick relative times/values every minute while open.

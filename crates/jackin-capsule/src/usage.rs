@@ -21,7 +21,6 @@ use jackin_protocol::control::{
 };
 use serde::{Deserialize, Serialize};
 
-const QUOTA_REFRESH_TTL: Duration = Duration::from_mins(5);
 const PROVIDER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 const PROVIDER_CLI_TIMEOUT: Duration = Duration::from_secs(10);
 const CODEX_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
@@ -43,7 +42,6 @@ pub(crate) struct UsageCache {
 
 #[derive(Debug, Clone)]
 struct CachedUsage {
-    fetched_at: Instant,
     view: FocusedUsageView,
 }
 
@@ -111,15 +109,37 @@ impl UsageCache {
         force_refresh: bool,
     ) -> FocusedUsageView {
         let Some(agent) = focused_agent else {
+            if let Some(provider) = focused_provider {
+                return cached_unavailable_view("usage", Some(provider), now_epoch());
+            }
             return FocusedUsageView::unavailable("no focused agent session", now_epoch());
         };
-        let cache_key = format!("{agent}:{}", focused_provider.unwrap_or_default());
-        if !force_refresh
-            && let Some(cached) = self.snapshots.get(&cache_key)
-            && cached.fetched_at.elapsed() < QUOTA_REFRESH_TTL
-        {
-            return cached.view.clone();
+        if !force_refresh {
+            let now = now_epoch();
+            return match crate::telemetry_store::focused_usage_view(
+                Path::new(TELEMETRY_STORE_PATH),
+                Some(agent),
+                focused_provider,
+                now,
+            ) {
+                Ok(Some(mut view)) => {
+                    if view.focused_provider.is_none() {
+                        view.focused_provider = focused_provider.map(str::to_owned);
+                    }
+                    mark_active_tab(&mut view);
+                    view
+                }
+                Ok(None) => cached_unavailable_view(agent, focused_provider, now),
+                Err(error) => {
+                    let mut view = cached_unavailable_view(agent, focused_provider, now);
+                    view.last_error = Some(format!(
+                        "usage unavailable: telemetry store read failed: {error}"
+                    ));
+                    view
+                }
+            };
         }
+        let cache_key = format!("{agent}:{}", focused_provider.unwrap_or_default());
         let mut view = build_snapshot(
             agent,
             focused_provider,
@@ -131,13 +151,8 @@ impl UsageCache {
             preserve_cached_quota_on_stale_refresh(&mut view, &cached.view);
         }
         enrich_provider_tabs(&mut view, &self.snapshots);
-        self.snapshots.insert(
-            cache_key,
-            CachedUsage {
-                fetched_at: Instant::now(),
-                view: view.clone(),
-            },
-        );
+        self.snapshots
+            .insert(cache_key, CachedUsage { view: view.clone() });
         if let Err(error) = self.materialize_accounts(now_epoch()) {
             crate::cdebug!("usage accounts materialization failed: {error}");
         }
@@ -145,6 +160,15 @@ impl UsageCache {
             crate::telemetry_store::store_usage_snapshot(Path::new(TELEMETRY_STORE_PATH), &view)
         {
             crate::cdebug!("usage telemetry store write failed: {error}");
+        }
+        if let Ok(Some(mut stored)) = crate::telemetry_store::focused_usage_view(
+            Path::new(TELEMETRY_STORE_PATH),
+            Some(agent),
+            focused_provider,
+            now_epoch(),
+        ) {
+            mark_active_tab(&mut stored);
+            return stored;
         }
         view
     }
@@ -179,6 +203,31 @@ impl UsageCache {
             generated_at_epoch,
             snapshots,
         )
+    }
+}
+
+fn cached_unavailable_view(
+    agent: &str,
+    focused_provider: Option<&str>,
+    now: i64,
+) -> FocusedUsageView {
+    let surface = resolve_surface(agent, focused_provider);
+    let mut view =
+        FocusedUsageView::unavailable("usage unavailable: no cached provider snapshot", now);
+    view.focused_agent = Some(agent.to_owned());
+    view.focused_provider = focused_provider
+        .map(str::to_owned)
+        .or_else(|| Some(surface.label().to_owned()));
+    view.account.provider_label = surface.account_label().to_owned();
+    view.tabs = provider_tabs(surface);
+    view
+}
+
+fn mark_active_tab(view: &mut FocusedUsageView) {
+    let provider = view.focused_provider.as_deref().unwrap_or_default();
+    for tab in &mut view.tabs {
+        tab.active = provider_matches_usage_label(&tab.label, provider)
+            || provider_matches_usage_label(&tab.label, &view.account.provider_label);
     }
 }
 
@@ -3484,13 +3533,7 @@ mod tests {
         claude.status = UsageSnapshotStatus::Stale;
 
         let mut snapshots = HashMap::new();
-        snapshots.insert(
-            "claude:Claude".to_owned(),
-            CachedUsage {
-                fetched_at: Instant::now(),
-                view: claude,
-            },
-        );
+        snapshots.insert("claude:Claude".to_owned(), CachedUsage { view: claude });
 
         enrich_provider_tabs(&mut view, &snapshots);
 
