@@ -21,7 +21,7 @@ fn recorded_docker_build(runner: &FakeRunner) -> &str {
     runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker build "))
+        .find(|call| call.contains("docker build ") || call.contains("docker buildx build "))
         .map(String::as_str)
         .expect("docker build should run")
 }
