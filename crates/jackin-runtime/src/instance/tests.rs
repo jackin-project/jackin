@@ -526,4 +526,19 @@ plugins = []
     assert!(state.auth.kimi.is_some());
     assert!(state.auth.opencode.is_some());
     assert!(state.auth.grok.is_some());
+    for agent in [
+        jackin_core::agent::Agent::Claude,
+        jackin_core::agent::Agent::Codex,
+        jackin_core::agent::Agent::Amp,
+        jackin_core::agent::Agent::Kimi,
+        jackin_core::agent::Agent::Opencode,
+        jackin_core::agent::Agent::Grok,
+    ] {
+        assert_eq!(
+            state.auth_outcomes.get(&agent),
+            Some(&AuthProvisionOutcome::Skipped),
+            "{} auth outcome missing from launch summary state",
+            agent.slug()
+        );
+    }
 }
