@@ -527,7 +527,6 @@ Section order, top to bottom:
 10. Provenance: `Estimated from local Codex logs for the selected acco…`.
 11. **Credits** meter — `0 left` (left) · `1K tokens` (right).
 12. Action rows (clean, single line, chevron where expandable): `⊕ Buy Credits…`, `Cost ›`, `Subscription Utilization ›`, `+ Add Account…`, `▫ Usage Dashboard`, `⌁ Status Page` → **`Partial System Degradation — Updated 13h ago`** (real provider status-page health).
-13. Footer: `↻ Refresh`, `⚙ Settings… ⌘,`, `ⓘ About CodexBar`, `⊠ Quit ⌘Q` (jackin uses `r Refresh · Tab Switch provider · Esc Close` instead — keep jackin's keybind footer).
 
 **What this resolves / proves:**
 - **F5 contradiction resolved:** the account-action rows (`Buy Credits`, `Cost`, `Subscription Utilization`, `Add Account`, `Usage Dashboard`, `Status Page`) ARE real CodexBar UI → **keep them** (line 94 wins). Step 5's "remove scaffold" applies only to jackin's *doubled/flattened junk* (`Cost  Today unavailable · 30d unavailable …`, duplicate `Status`/`Status Page` showing snapshot provenance). Render each action row as a single clean label with a `›` chevron, exactly like CodexBar.
@@ -627,6 +626,8 @@ Convention: `█` filled / `·` empty meter; `[Tab]` = active; `›` = expandabl
 - **Tab set + order:** `Overview · OpenAI · Anthropic · Amp · xAI · Z.AI · Kimi · MiniMax` (provider-org labels, no slashes; order adjustable). Each = the single forwarded account for that provider in this instance (same auth as the docker instance).
 - **Default selected tab** = the focused pane's provider.
 - **Reuse the shared `jackin_tui::components::TabStrip`** (the settings / workspace-editor widget) — NOT a custom strip. Adopt its focus model: GREEN underline = tab bar focused → `←/→` switch provider; `Tab` → focus moves into content (underline turns WHITE) → scroll/iterate content; `Tab`/`Esc` returns focus to the strip. Same behavior as settings tabs.
+- **No per-dialog footer / hint bar.** The overlay does NOT draw its own `r Refresh … Esc` line. It uses jackin's **standard hint bar** (`jackin_tui::components::hint_bar` + a usage keymap, exactly like `dialog/hint.rs` `info_dialog_hint`/`read_only_hint`), rendered **below the modal** like every other dialog. Spans derive from the keymap, e.g.: `←→ provider · Tab focus · ↑↓/h/l scroll · r refresh · Esc dismiss`.
+- **Reset format.** Provider detail tabs follow CodexBar exactly — absolute: `Resets 19:45` (same-day), `Resets tomorrow, 04:18`, `Resets Jun 26 at 13:59` / `Resets Jul 1 at 16:31` (dated). Overview uses the compact `Resets <rel> (<abs>)` form (operator preference). `Resets now` shows no time.
 - **Dropped:** Instance (per-container ledger). Overview kept. **Open consequence:** per-instance spend (today/since-start/by-codename) loses its home — decide later whether it surfaces in the status bar, a CLI view, or a future tab. Roadmap `:122` forbids mixing instance numbers into account tabs.
 
 > All preview blocks below use this shared tab bar (label line + `━` underline under
@@ -636,127 +637,99 @@ Convention: `█` filled / `·` empty meter; `[Tab]` = active; `›` = expandabl
 ### Overview
 
 ```text
-┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
-│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                 │
-│  ━━━━━━━━                                                                          │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Focused provider: Anthropic · alexey@chainargos.com · Max                          │
-│                                                                                    │
-│ OpenAI      19% left    Resets 13h 6m   fresh · provider                           │
-│ Anthropic   55% left    Resets 1d 22h   fresh · provider                           │
-│ Amp         100% left   Resets now      fresh · provider                           │
-│ xAI         18% left    Resets 6d 15h   fresh · provider                           │
-│ Z.AI        99% left    Resets 3d       fresh · provider                           │
-│ Kimi        100% left   Resets 2m       fresh · provider                           │
-│ MiniMax     1% used     Resets 4d       fresh · provider                           │
-│                                                                                    │
-│ Most constrained: xAI 18% left                                                     │
-│                                                                                    │
-│ Enter Provider detail    r Refresh focused    Esc Close                            │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌ Usage ────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                        │
+│  ━━━━━━━━                                                                                 │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ OpenAI      19% left   Resets 13h 6m (21:26)                                              │
+│ Anthropic   55% left   Resets 1d 22h (July 1 at 16:26)                                    │
+│ Amp         100% left  Resets now                                                         │
+│ xAI         18% left   Resets 6d 15h (June 30 at 22:00)                                   │
+│ Z.AI        99% left   Resets 3d (June 27 at 15:00)                                       │
+│ Kimi        100% left  Resets 2m (15:17)                                                  │
+│ MiniMax     99% left    Resets 4d (June 28 at 12:00)                                       │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### OpenAI
 
 ```text
-┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
-│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                   │
-│             ━━━━━━                                                                   │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Codex                                                      alexey@chainargos.com      │
-│ Updated 2m ago                                                              Pro 20x    │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Account availability                                                                   │
-│                                                                                        │
-│ Session                                                                                │
-│ ██████████████████████████████████████████████████████·                                │
-│ 97% left   6% in reserve                            Resets in 4h 33m · Lasts until reset│
-│                                                                                        │
-│ Weekly                                                                                  │
-│ ██████████·············································                                   │
-│ 19% left   11% in reserve                           Resets in 13h 6m · Lasts until reset│
-│                                                                                        │
-│ Codex Spark 5-hour                                                                      │
-│ ███████████████████████████████████████████████████████                                │
-│ 100% left                                                          Resets in 4h 58m     │
-│                                                                                        │
-│ Codex Spark Weekly                                                                      │
-│ ███████████████████████████████████████████████████████                                │
-│ 100% left                                                          Resets in 6d 23h     │
-│                                                                                        │
-│ Limit Reset Credits                              2 manual resets · Next expires 17d 17h │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Account cost and tokens                                                                 │
-│ Today              $186.32        30d cost          $3,544.59                           │
-│ 30d tokens         5B             Latest tokens     243M                                │
-│                                                                                        │
-│ ▁▁▂▃▂▁▄▆█▂▁▁▁▃▄▃▂                                                                       │
-│ Top model: gpt-5.5                                                                      │
-│ Estimated from local Codex logs at API rates; token totals are local                   │
-│                                                                                        │
-│ Credits                                          0 left · 1K tokens                     │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Buy Credits         provider billing action — opens outside Capsule                  › │
-│ Cost                today / 30d / tokens breakdown                                    › │
-│ Subscription Utilization   Weekly 19% left · Resets in 13h 6m                         › │
-│ Add Account         configure provider auth outside jackin'                           › │
-│ Usage Dashboard     read-only provider account summary                               › │
-│ Status Page         Partial System Degradation — Updated 13h ago                     › │
-│                                                                                        │
-│ Source: provider API · authoritative · fresh · Updated 2m ago                          │
-│ Status: ok                                                                             │
-│                                                                                        │
-│ r Refresh    Tab Switch provider    Esc Close                                          │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌ Usage ────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                        │
+│             ━━━━━━                                                                        │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ OpenAI                                                              alexey@chainargos.com │
+│ Updated 1m ago                                                                    Pro 20x │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Session                                                                                   │
+│ ███████████████████████████████████████████████████████████████████████████████████████···│
+│ 97% left                                                                     Resets 19:45 │
+│ 33% in reserve                                                          Lasts until reset │
+│                                                                                           │
+│ Weekly                                                                                    │
+│ █████████████████·········································································│
+│ 19% left                                                           Resets tomorrow, 04:18 │
+│ 12% in reserve                                                          Lasts until reset │
+│                                                                                           │
+│ Codex Spark 5-hour                                                                        │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                                    Resets 21:31 │
+│                                                                                           │
+│ Codex Spark Weekly                                                                        │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                           Resets Jul 1 at 16:31 │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Limit Reset Credits                                             2 manual resets available │
+│ Next expires Jul 12 at 08:14                                                              │
+│                                                                                           │
+│ Today        $189.15      30d cost       $3,547.42                                        │
+│ 30d tokens   5B           Latest tokens  247M                                             │
+│                                                                                           │
+│ ▁▁▂▃▂▁▄▆█▂▁▁▁▃▄▃▂                                                                         │
+│ Top model: gpt-5.5                                                                        │
+│ Estimated from local Codex logs for the selected account                                  │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Credits                                                                                   │
+│ ··························································································│
+│ 0 left                                                                          1K tokens │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Anthropic
 
 ```text
-┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
-│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                    │
-│                      ━━━━━━━━━                                                        │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Claude                                                                          Max    │
-│ Updated just now                                                                        │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Account availability                                                                   │
-│                                                                                        │
-│ Session                                                                                │
-│ ███████████████████████████████████████████████████·····                               │
-│ 92% left   10% in reserve                            Resets in 4h 5m · Lasts until reset│
-│                                                                                        │
-│ Weekly                                                                                  │
-│ ██████████████████████████████·························                                  │
-│ 55% left   27% in reserve                           Resets in 1d 22h · Lasts until reset│
-│                                                                                        │
-│ Sonnet                                                                                  │
-│ ███████████████████████████████████████████████·······                                 │
-│ 85% left                                                           Resets in 1d 22h     │
-│                                                                                        │
-│ Daily Routines                                                                          │
-│ ███████████████████████████████████████████████████████                                │
-│ 100% left                                                                               │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Account cost and tokens                                                                 │
-│ Today              $266.63        30d cost          $7,231.50                           │
-│ 30d tokens         11B            Latest tokens     425M                                │
-│                                                                                        │
-│ ▁▂▁▃▂▂▃▃▂▁▁▃█▅▁▁▂▂▃                                                                     │
-│ Top model: claude-opus-4-8                                                              │
-│ Estimated from local Claude logs at API rates; token totals are local                  │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Cost                today / 30d / tokens breakdown                                    › │
-│ Subscription Utilization   Weekly 55% left · Resets in 1d 22h                         › │
-│ Add Account         configure provider auth outside jackin'                           › │
-│ Usage Dashboard     read-only provider account summary                               › │
-│ Status Page         All systems operational — Updated 5m ago                          › │
-│                                                                                        │
-│ Source: provider API · authoritative · fresh · Updated just now                        │
-│ Status: ok                                                                             │
-│                                                                                        │
-│ r Refresh    Tab Switch provider    Esc Close                                          │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌ Usage ────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                        │
+│                      ━━━━━━━━━                                                            │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Anthropic                                                           alexey@chainargos.com │
+│ Updated 2m ago                                                                        Max │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Session                                                                                   │
+│ ████████████████████████████████████████████████████████████████████████████████··········│
+│ 89% left                                                                     Resets 19:19 │
+│ 34% in reserve                                                          Lasts until reset │
+│                                                                                           │
+│ Weekly                                                                                    │
+│ ██████████████████████████████████████████████████········································│
+│ 55% left                                                           Resets Jun 26 at 13:59 │
+│ 28% in reserve                                                          Lasts until reset │
+│                                                                                           │
+│ Sonnet                                                                                    │
+│ ████████████████████████████████████████████████████████████████████████████··············│
+│ 85% left                                                           Resets Jun 26 at 13:59 │
+│                                                                                           │
+│ Daily Routines                                                                            │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                                                 │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Today        $282.68      30d cost       $7,247.56                                        │
+│ 30d tokens   11B          Latest tokens  444M                                             │
+│                                                                                           │
+│ ▁▂▁▃▂▂▃▃▂▁▁▃█▅▁▁▂▂▃                                                                       │
+│ Top model: claude-opus-4-8                                                                │
+│ Estimated from local Claude logs at API rates; token totals are local                     │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 > Note: `Extra usage` and `Opus` buckets render here **only when the API returns them** (this account showed neither). When present, `Extra usage` shows `Monthly cap: <currency> X / Y · N% used`.
@@ -764,68 +737,50 @@ Convention: `█` filled / `·` empty meter; `[Tab]` = active; `›` = expandabl
 ### Z.AI
 
 ```text
-┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
-│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                    │
-│                                              ━━━━                                     │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ GLM / Z.AI                                                                     GLM Pro │
-│ Updated just now                                                                        │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Account availability                                                                   │
-│                                                                                        │
-│ Tokens                                                                                  │
-│ ██████████████████████████████████████████████████████·                                │
-│ 99% left                                                              Resets in 3d      │
-│                                                                                        │
-│ MCP                                                                                     │
-│ ███████████████████████████████████████████████████████                                │
-│ 100% left   0 / 100 (100 remaining)                                  Resets in 19d      │
-│                                                                                        │
-│ 5-hour                                                                                  │
-│ ███████████████████████████████████████████████████████                                │
-│ 100% left                                                       Resets 5 hours window   │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Hourly Usage        recent hourly token breakdown                                    › │
-│ Usage Dashboard     read-only provider account summary                               › │
-│                                                                                        │
-│ Source: provider API · authoritative · fresh · Updated just now                        │
-│ Status: ok                                                                             │
-│                                                                                        │
-│ r Refresh    Tab Switch provider    Esc Close                                          │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌ Usage ────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                        │
+│                                              ━━━━                                         │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Z.AI                                                                alexey@chainargos.com │
+│ Updated 2m ago                                                                            │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Tokens                                                                                    │
+│ █████████████████████████████████████████████████████████████████████████████████████████·│
+│ 99% left                                                           Resets Jun 27 at 15:27 │
+│                                                                                           │
+│ MCP                                                                                       │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                          Resets Jul 13 at 15:27 │
+│ 0 / 100 (100 remaining)                                                                   │
+│                                                                                           │
+│ 5-hour                                                                                    │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                           Resets 5 hours window │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### MiniMax
 
 ```text
-┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
-│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                    │
-│                                                            ━━━━━━━                    │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ MiniMax                                                                   Coding Plan  │
-│ Updated just now                                                                        │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Account availability                                                                   │
-│                                                                                        │
-│ General · 5h                                                                            │
-│ ·······················································                                   │
-│ 0% used   Usage: 0 / 100                                              Resets in 1 hour  │
-│                                                                                        │
-│ General · Weekly                                                                        │
-│ █······················································                                   │
-│ 1% used   Usage: 1 / 100                                              Resets in 4 days  │
-│                                                                                        │
-│ Video                                                                                   │
-│ ·······················································                                   │
-│ 0% used   Usage: 0 / 100                                             Resets in 15 hours │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Usage Dashboard     read-only provider account summary                               › │
-│                                                                                        │
-│ Source: provider API · authoritative · fresh · Updated just now                        │
-│ Status: ok                                                                             │
-│                                                                                        │
-│ r Refresh    Tab Switch provider    Esc Close                                          │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌ Usage ────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                        │
+│                                                            ━━━━━━━                        │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ MiniMax                                                             alexey@chainargos.com │
+│ Updated 3m ago                                                                            │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ General · 5h                                                                              │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                                      Resets 28m │
+│                                                                                           │
+│ General · Weekly                                                                          │
+│ █████████████████████████████████████████████████████████████████████████████████████████·│
+│ 99% left                                                                        Resets 4d │
+│                                                                                           │
+│ Video                                                                                     │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                                      Resets 14h │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 > MiniMax uses **`% used`** (not `% left`) and a `Usage: N / 100` count line; one bucket per `model_remains[]` entry × window (`<model> · <window>`).
@@ -833,30 +788,22 @@ Convention: `█` filled / `·` empty meter; `[Tab]` = active; `›` = expandabl
 ### Kimi
 
 ```text
-┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
-│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                    │
-│                                                     ━━━━                              │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Kimi                                                                  Kimi For Coding  │
-│ Updated just now                                                                        │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Account availability                                                                   │
-│                                                                                        │
-│ Weekly                                                                                  │
-│ ███████████████████████████████████████████████████████                                │
-│ 100% left                                                              Resets in 2m     │
-│                                                                                        │
-│ Rate Limit                                                                              │
-│ ███████████████████████████████████████████████████████                                │
-│ 100% left   60% in reserve                          Resets in 2h 2m · Lasts until reset │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Usage Dashboard     read-only provider account summary                               › │
-│                                                                                        │
-│ Source: provider API · authoritative · fresh · Updated just now                        │
-│ Status: ok                                                                             │
-│                                                                                        │
-│ r Refresh    Tab Switch provider    Esc Close                                          │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌ Usage ────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                        │
+│                                                     ━━━━                                  │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Kimi                                                                alexey@chainargos.com │
+│ Updated 4m ago                                                                            │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Weekly                                                                                    │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                           Resets Jul 1 at 15:17 │
+│                                                                                           │
+│ Rate Limit                                                                                │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                                    Resets 17:17 │
+│ 86% in reserve                                                          Lasts until reset │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 > Data comes from the Kimi Code API endpoint `GET https://api.kimi.com/coding/v1/usages` (Bearer) — the F4 fix path.
@@ -864,28 +811,20 @@ Convention: `█` filled / `·` empty meter; `[Tab]` = active; `›` = expandabl
 ### Amp
 
 ```text
-┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
-│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                    │
-│                                  ━━━                                                  │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Amp                                                          alexey@zhokhov.com        │
-│ Updated 1m ago                                                            Amp Free     │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Account availability                                                                   │
-│                                                                                        │
-│ Amp Free                                                                                │
-│ ███████████████████████████████████████████████████████                                │
-│ 100% left                                                              Resets now       │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Credits                                              Individual credits: $4.94          │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Usage Dashboard     read-only provider account summary                               › │
-│                                                                                        │
-│ Source: provider API · authoritative · fresh · Updated 1m ago                          │
-│ Status: ok                                                                             │
-│                                                                                        │
-│ r Refresh    Tab Switch provider    Esc Close                                          │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌ Usage ────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                        │
+│                                  ━━━                                                      │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Amp                                                                    alexey@zhokhov.com │
+│ Updated 4m ago                                                                   Amp Free │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Amp Free                                                                                  │
+│ ██████████████████████████████████████████████████████████████████████████████████████████│
+│ 100% left                                                                    Resets 16:31 │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Credits                                                                                   │
+│ Individual credits: $4.94                                                                 │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 > Data via `POST https://ampcode.com/api/internal?userDisplayBalanceInfo` with `AMP_API_KEY` (Bearer) — the F7 fix path.
@@ -893,33 +832,22 @@ Convention: `█` filled / `·` empty meter; `[Tab]` = active; `›` = expandabl
 ### xAI
 
 ```text
-┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
-│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                    │
-│                                        ━━━                                            │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Grok                                                        alexey@chainargos.com      │
-│ Updated 1m ago                                                            SuperGrok     │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Account availability                                                                   │
-│                                                                                        │
-│ Weekly                                                                                  │
-│ ██████████·············································                                   │
-│ 18% left                                                              Resets in 6d 15h  │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│ Usage Dashboard     read-only provider account summary                               › │
-│ Status Page         All systems operational — Updated 1h ago                          › │
-│                                                                                        │
-│ Source: provider API · authoritative · fresh · Updated 1m ago                          │
-│ Status: ok                                                                             │
-│                                                                                        │
-│ r Refresh    Tab Switch provider    Esc Close                                          │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌ Usage ────────────────────────────────────────────────────────────────────────────────────┐
+│  Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax                        │
+│                                        ━━━                                                │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ xAI                                                                 alexey@chainargos.com │
+│ Updated 4m ago                                                                  SuperGrok │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│ Weekly                                                                                    │
+│ ████████████████··········································································│
+│ 18% left                                                            Resets Jul 1 at 07:00 │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 > Data via Grok ACP RPC `x.ai/billing` (gRPC-web `GetGrokCreditsConfig` fallback) — the F8 fix path.
 
 **Open design questions for these previews:**
-- Account-action rows (`Cost`/`Subscription Utilization`/`Buy Credits`/`Add Account`/`Usage Dashboard`/`Status Page`): keep CodexBar's set per provider as drawn? Or trim further for a terminal?
 - `Source`/`Status` footer: keep two lines as in the roadmap preview (`Source: …` / `Status: ok`), or collapse to one?
 - Sparkline + `Top model` + cost grid: keep on every provider that has local spend, or only when local logs exist (else hide the section vs show `unavailable`)?
 - Bucket label alignment to CodexBar (`Tokens`/`MCP`/`5-hour` for z.ai; `Rate Limit` for Kimi; `<model> · <window>` for MiniMax) — confirm.
@@ -992,7 +920,6 @@ Cross-cutting display decisions (these become the binding contract synced to the
 - **Honest provenance everywhere** — `Source: <source> · <confidence> · <status> · <updated>` reflects the real fetch; `Status Page` shows real provider incident health; availability vs spend labeled separately; surface real errors (no `.ok()` swallowing). Fixes F6.
 - **% left vs % used** per provider native convention; pace line (`On pace`/`N% in reserve`/`N% in deficit`) where the provider exposes utilization+window.
 - **Conditional buckets** (Opus, Extra usage, Spark, Credits) render only when present.
-- **Keyboard footer** stays jackin-native (`r Refresh · Tab Switch provider · Esc Close`), not CodexBar's menu footer.
 - **One authenticated source** — status bar and overlay read the same daemon cache key; a failed refresh preserves last-good (fixes F1).
 
 What does NOT change: the `C-\` menu, tab strip behavior, branch/repo context precedence. The overlay reuses the existing Capsule dialog component; the status signal extends the existing branch context bar segment.
