@@ -452,7 +452,10 @@ pub(crate) fn focused_usage_view(
 ) -> Result<Option<FocusedUsageView>, String> {
     let rows = stored_account_snapshots(path)?;
     let tabs = usage_provider_tabs_from_rows(&rows);
-    let Some((provider, rows)) = select_provider_rows(rows, focused_provider) else {
+    let resolved_provider = focused_provider.or_else(|| {
+        focused_agent.and_then(|agent| crate::usage::resolved_usage_provider_label(agent, None))
+    });
+    let Some((provider, rows)) = select_provider_rows(rows, resolved_provider) else {
         return Ok(None);
     };
     let Some(first) = rows.first() else {
@@ -481,7 +484,7 @@ pub(crate) fn focused_usage_view(
         focused_provider: first
             .focused_provider
             .clone()
-            .or_else(|| focused_provider.map(str::to_owned))
+            .or_else(|| resolved_provider.map(str::to_owned))
             .or_else(|| Some(provider.clone())),
         account: jackin_protocol::control::FocusedAccountHeader {
             provider_label: provider,
@@ -532,7 +535,7 @@ fn select_provider_rows(
 
 fn provider_matches(needle: &str, provider: &str) -> bool {
     if needle.trim().is_empty() {
-        return true;
+        return false;
     }
     let needle = normalize_provider_label(needle);
     let provider = normalize_provider_label(provider);
@@ -933,6 +936,60 @@ mod tests {
             .expect("stored usage view");
 
         assert_eq!(view.updated_label, "Updated 2m ago");
+    }
+
+    #[test]
+    fn focused_usage_view_resolves_provider_from_agent_when_missing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("usage.db");
+        let now = 1_781_185_680;
+        store_usage_snapshot(
+            &db,
+            &provider_usage_view(
+                "Codex",
+                "codex@example.com",
+                Some("Pro 20x"),
+                "Session",
+                37,
+                now,
+            ),
+        )
+        .expect("store codex snapshot");
+        store_usage_snapshot(
+            &db,
+            &provider_usage_view(
+                "Amp",
+                "amp@example.com",
+                Some("Amp Free"),
+                "Amp Free",
+                9,
+                now,
+            ),
+        )
+        .expect("store amp snapshot");
+
+        let view = focused_usage_view(&db, Some("amp"), None, now)
+            .expect("read focused usage")
+            .expect("stored provider usage");
+
+        assert_eq!(view.focused_agent.as_deref(), Some("amp"));
+        assert_eq!(view.focused_provider.as_deref(), Some("Amp"));
+        assert_eq!(view.account.provider_label, "Amp");
+        assert_eq!(view.account.account_label, "amp@example.com");
+        assert_eq!(view.buckets[0].label, "Amp Free");
+        assert_eq!(view.buckets[0].remaining_percent, Some(9));
+    }
+
+    #[test]
+    fn focused_usage_view_without_resolved_provider_does_not_match_all() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("usage.db");
+        store_usage_snapshot(&db, &usage_view()).expect("store snapshot");
+
+        let view = focused_usage_view(&db, Some("unknown-agent"), None, 1_781_185_680)
+            .expect("read focused usage");
+
+        assert!(view.is_none());
     }
 
     #[test]

@@ -463,6 +463,14 @@ fn canonical_usage_cache_key(agent: &str, focused_provider: Option<&str>) -> Str
     surface.label().to_owned()
 }
 
+pub(crate) fn resolved_usage_provider_label(
+    agent: &str,
+    focused_provider: Option<&str>,
+) -> Option<&'static str> {
+    let surface = resolve_surface(agent, focused_provider);
+    (surface != UsageSurface::Unsupported).then_some(surface.label())
+}
+
 fn cached_unavailable_view(
     agent: &str,
     focused_provider: Option<&str>,
