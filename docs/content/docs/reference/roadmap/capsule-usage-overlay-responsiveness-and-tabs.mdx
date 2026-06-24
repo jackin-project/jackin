@@ -376,6 +376,13 @@ by `UsageSurface`), so each provider's headline is defined once and no provider 
 a meaningless `"usage cached"`. This pairs with the broader provider-generalization noted in the
 earlier altitude review.
 
+**Implementation verification.** Commit `0f810e0` verified Amp against CodexBar
+`docs/amp.md` and `Sources/CodexBarCore/Providers/Amp/`: CodexBar obtains Amp Free plus individual
+credits from `amp usage`/`AMP_API_KEY` via `POST https://ampcode.com/api/internal?userDisplayBalanceInfo`,
+parses `Amp Free` and `Individual credits`, and computes the time-to-full reset from hourly
+replenishment. jackin' mirrors the same Free + individual-credit headline while intentionally
+omitting CodexBar's browser-cookie fallback per the binding design.
+
 **Scope:** `usage.rs` status-bar label derivation (Amp now; structured so every provider gets a
 correct headline). Verify the other providers' current headlines stay correct (Claude/Codex
 Session·Weekly) when the lookup becomes provider-driven. Update the status-bar label tests
@@ -1292,7 +1299,7 @@ done vs outstanding in this roadmap item.
 - [ ] Issue 5 — per-provider freshness TTL gating all refresh triggers; `r` forces
 
 **C. Per-provider data + display** (verify each against CodexBar docs/source per principle 5)
-- [ ] Issue 7 — Amp status-bar headline `Free n% · $credits`
+- [x] Issue 7 — Amp status-bar headline `Free n% · $credits` — `0f810e0`
 - [ ] Issue 8 — Codex: order, Limit Reset Credits, Credits, detail lines
 - [ ] Issue 9 — Claude: reset + in-reserve + "Lasts until reset" + Daily Routines + order
 - [ ] Issue 10 — status-bar click opens the focused pane's provider
