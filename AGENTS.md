@@ -12,8 +12,12 @@ Threat surface for this image:
 
 1. **Plugin breadth.** Each plugin in `jackin.role.toml` has its own update cadence; a compromised plugin runs with the agent's full capability inside `/workspace`. Two trust anchors live outside `@claude-plugins-official`: `rust-best-practices@tailrocks-marketplace` and `caveman@caveman` (source [`JuliusBrussee/caveman`](https://github.com/JuliusBrussee/caveman), pinned in the Dockerfile via `CAVEMAN_VERSION`). Trust is anchored in operator vetting of the maintainer, not in source audit.
 2. **GitHub credential adjacency.** An operator running this image against `ChainArgos/*` exports `GITHUB_TOKEN` (or a `gh` device-flow session) into the shell. Anything the agent does (any plugin, any skill) can see that token via `/proc/*/environ`.
-3. **Multi-ecosystem supply chain.** Each ecosystem (mise's plugin registry plus the per-runtime upstreams it fetches from, crates.io via `mise use -g cargo:<tool>`, npm via `npm install -g ctx7`, the pinned caveman GitHub ref) brings its own trust root.
+3. **Supply chain.** mise, cargo, npm, GitHub refs.
 4. **Context7 MCP.** Optional `CONTEXT7_API_KEY` configures a third-party MCP server with read access to the agent's docs corpus. Treat the key like any other credential — do not commit, do not bake into the image.
+
+## Token tools
+
+- **RTK** (shell), **Headroom** (MCP), **Caveman** (verbosity).
 
 ## Hard rules (do not break these)
 

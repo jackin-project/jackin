@@ -30,7 +30,7 @@ Versions pinned in `Dockerfile` ARGs (`RUST_VERSION`, `NODE_VERSION`, `JAVA_VERS
 - **GitHub CLI** (`gh`, from the digest-pinned construct base)
 - **Cargo tools:** cargo-nextest, ast-grep, rust-script, just, bottom
 - **ctx7** (npm)
-- **Caveman** token-compression hooks + skills (claude + codex + amp profiles, pinned to a tagged release)
+- **Caveman** + **RTK** + **Headroom** (token stack)
 
 Shared shell/runtime tools come from the digest-pinned construct base.
 
@@ -49,12 +49,12 @@ Two hooks run before the agent CLI starts:
 
 `hooks/source.sh` is sourced into the entrypoint shell so its exports propagate to the agent:
 
-1. **PostgreSQL host** — sets `POSTGRESQL_DB_HOST` from jackin's runtime-managed `JACKIN_DIND_HOSTNAME` so Gradle can reach the docker-compose Postgres. Hard-fails if `JACKIN_DIND_HOSTNAME` is unset, since that means the role is being launched outside the jackin runtime contract.
+1. **PostgreSQL host** — from `JACKIN_DIND_HOSTNAME`.
 
 `hooks/preflight.sh` runs as a child process for per-start validation and MCP setup:
 
-1. **Context7 MCP** — configures the MCP server if `CONTEXT7_API_KEY` is provided (prompted at launch, skippable)
-2. **caveman-shrink MCP** — registers caveman-shrink as a Claude MCP middleware (claude agent only, idempotent; fails launch if the claude CLI is missing — see hook header for the contract)
-3. **Codex caveman skills check** — fails launch if `~/.agents/skills/caveman/SKILL.md` is missing (codex agent only); a missing file means the image was built wrong
+1. **Context7** (non-interactive).
+2. **Caveman** flag/statusline.
+3. **RTK** + **Headroom** MCP/hook.
 
 Agent Brown requires a jackin runtime that sets `JACKIN_DIND_HOSTNAME`.

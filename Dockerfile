@@ -2,10 +2,7 @@ FROM projectjackin/construct:0.16-trixie@sha256:cb5dde6e034e173723aacf5d116c70aa
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# CAVEMAN_VERSION must be a release tag from
-# https://github.com/JuliusBrussee/caveman/releases — never `main`,
-# never a raw commit SHA. The `skills` CLI's shallow git-clone fetch
-# resolves tags but not arbitrary SHAs.
+# CAVEMAN_VERSION: tagged release.
 ARG RUST_VERSION=1.96.0
 ARG NODE_VERSION=24.18.0
 ARG JAVA_VERSION=oracle-graalvm-25.0.1
@@ -13,9 +10,11 @@ ARG PROTOC_VERSION=34.1
 ARG CARGO_BINSTALL_VERSION=1.20.1
 ARG CTX7_VERSION=0.5.3
 ARG CAVEMAN_VERSION=1.9.0
+ARG RTK_VERSION=0.42.4
+ARG UV_VERSION=0.11.24
+ARG HEADROOM_VERSION=0.27.0
 
-# `libclang-dev` is required by Rust crates with `bindgen` build-deps
-# (rdkafka-sys et al.) used in the ChainArgos monorepo.
+# libclang-dev required for some Rust crates.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     sudo apt-get update && \
@@ -31,14 +30,11 @@ USER agent
 
 ENV MISE_TRUSTED_CONFIG_PATHS=/workspace
 
-# Testcontainers needs Docker API 1.44 to talk to Docker 29.x.
+# Docker API 1.44 needed for testcontainers.
 RUN echo "api.version=1.44" > /home/agent/.docker-java.properties && \
     mkdir -p /home/agent/.gradle "${HOME}/.cache/mise"
 
-# Per-tool RUNs are deliberate: bumping one ARG only invalidates that
-# tool's layer. Trips hadolint DL3059; the cache reuse is worth it.
-# Ordered slowest-to-download / most-stable first so a Rust or Node bump
-# does not re-download the large Java runtime.
+# Separate RUN per tool (layer caching).
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     --mount=type=cache,target=/home/agent/.cache/mise,uid=1000 \
     GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
@@ -71,8 +67,7 @@ RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     mise install "cargo-binstall@${CARGO_BINSTALL_VERSION}" && \
     mise use -g --pin "cargo-binstall@${CARGO_BINSTALL_VERSION}"
 
-# cargo-binstall downloads prebuilt binaries — avoids compiling from source.
-# Cache mounts preserve the crate registry across layer rebuilds on persistent runners.
+# cargo-binstall + cache mounts.
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     --mount=type=cache,target=/home/agent/.cargo/registry,uid=1000 \
     --mount=type=cache,target=/home/agent/.cargo/git,uid=1000 \
@@ -84,29 +79,48 @@ RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
     mise exec "node@${NODE_VERSION}" -- npm install -g "ctx7@${CTX7_VERSION}"
 
-# Caveman ≥1.8.0 native opencode plugin needs repoRoot (a local clone);
-# curl-pipe can't do it. Shallow-clone at the pinned tag, run bin/install.js.
-#
-# Agent CLIs aren't on PATH at build time (jackin injects them per-container),
-# so auto-detection finds nothing — `--only` forces each target. `--no-mcp-shrink`
-# skips registration that needs the claude CLI; preflight.sh re-runs it at
-# container start.
-#
-# Caveman 1.9+ installs Claude hooks through the Claude plugin manifest instead
-# of copying standalone files to ~/.claude/hooks. Rely on the installer exit
-# status for Claude registration. Codex and Amp still use explicit
-# `skills add --global` so the canonical tree exists at
-# `${HOME}/.agents/skills/caveman/`, which is the path
-# `hooks/preflight.sh::verify_codex_caveman_skills` checks.
+# Caveman install.
 RUN . ~/.profile && \
-    mkdir -p "${HOME}/.claude" "${HOME}/.codex" && \
+    mkdir -p "${HOME}/.claude" "${HOME}/.codex" "${HOME}/.grok" && \
     git clone --depth 1 --branch "v${CAVEMAN_VERSION}" https://github.com/JuliusBrussee/caveman.git /tmp/caveman && \
-    node /tmp/caveman/bin/install.js --only claude --only opencode --no-mcp-shrink && \
+    node /tmp/caveman/bin/install.js --only opencode --no-mcp-shrink && \
     test -f "${HOME}/.config/opencode/plugins/caveman/plugin.js" && \
     npx -y skills add "JuliusBrussee/caveman#v${CAVEMAN_VERSION}" -a codex --yes --global && \
     npx -y skills add "JuliusBrussee/caveman#v${CAVEMAN_VERSION}" -a amp --yes --global && \
     test -f "${HOME}/.agents/skills/caveman/SKILL.md" && \
     rm -rf /tmp/caveman
+
+# Token opt: RTK + caveman + headroom.
+RUN --mount=type=secret,id=github_token,uid=1000,required=false \
+    --mount=type=cache,target=/home/agent/.cache/mise,uid=1000 \
+    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
+    mise install "rtk@${RTK_VERSION}" && \
+    mise use -g --pin "rtk@${RTK_VERSION}" && \
+    mise exec -- rtk --version
+
+ENV RTK_TELEMETRY_DISABLED=1
+
+# Codex AGENTS as file (not symlink) for RTK.
+RUN printf '@/home/agent/AGENTS.md\n' > /home/agent/.codex/AGENTS.md || true
+ln -sf /home/agent/AGENTS.md /home/agent/.grok/AGENTS.md || true
+
+# RTK init for codex/opencode.
+RUN . ~/.profile && \
+    rtk init -g --codex && \
+    test -f /home/agent/.codex/RTK.md || true && \
+    rtk init -g --opencode && \
+    test -f /home/agent/.config/opencode/plugins/rtk.ts || true
+
+# Headroom install.
+RUN --mount=type=secret,id=github_token,uid=1000,required=false \
+    --mount=type=cache,target=/home/agent/.cache/mise,uid=1000 \
+    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
+    mise install "uv@${UV_VERSION}" && \
+    mise use -g --pin "uv@${UV_VERSION}"
+
+RUN . ~/.profile && uv tool install "headroom-ai[mcp]==${HEADROOM_VERSION}"
+
+ENV PATH="/home/agent/.local/bin:/home/agent/.local/share/mise/shims:${PATH}"
 
 COPY --chown=agent:agent zshrc.d/docker-helpers.zsh /home/agent/.zshrc.d/docker-helpers.zsh
 RUN echo 'source /home/agent/.zshrc.d/docker-helpers.zsh' >> /home/agent/.zshrc
