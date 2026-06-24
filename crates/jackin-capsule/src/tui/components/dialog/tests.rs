@@ -1097,6 +1097,12 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
     assert!(rendered.contains("MiniMax M1 Coding plan"), "{rendered}");
     assert!(rendered.contains("88% left"), "{rendered}");
     assert!(rendered.contains("████"), "{rendered}");
+    assert!(
+        rendered
+            .lines()
+            .any(|line| line.chars().filter(|ch| matches!(*ch, '█' | '·')).count() >= 70),
+        "quota meters must span the available dialog width: {rendered}"
+    );
 }
 
 #[test]
@@ -1151,7 +1157,7 @@ fn usage_dialog_renders_extra_usage_monthly_cap() {
         .find("Monthly cap: SGD 78.49 / SGD 260.00")
         .expect("monthly cap");
     let used = rendered.find("30% used").expect("used percent");
-    assert!(monthly < used, "{rendered}");
+    assert!(used < monthly, "{rendered}");
 }
 
 #[test]

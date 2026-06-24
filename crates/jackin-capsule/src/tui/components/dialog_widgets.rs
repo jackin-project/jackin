@@ -610,7 +610,7 @@ fn usage_lines_for_row(
             if context.list_layout {
                 usage_quota_bucket_compact_lines(bucket, value, lines);
             } else {
-                usage_quota_bucket_lines(bucket, value, lines);
+                usage_quota_bucket_lines(bucket, value, context.width, lines);
             }
         }
         _ if is_overview_provider_row(value) => usage_overview_provider_lines(label, value, lines),
@@ -708,7 +708,12 @@ fn usage_header_two_column(
     Line::from(spans)
 }
 
-fn usage_quota_bucket_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
+fn usage_quota_bucket_lines(
+    label: &str,
+    value: &str,
+    width: usize,
+    lines: &mut Vec<Line<'static>>,
+) {
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::raw("  "),
@@ -722,18 +727,72 @@ fn usage_quota_bucket_lines(label: &str, value: &str, lines: &mut Vec<Line<'stat
         return;
     };
 
-    let (meter, _) = usage_meter_parts(first);
+    let (meter, remaining_label) = usage_meter_parts(first);
+    let meter = usage_full_width_meter(meter, width);
     lines.push(Line::from(vec![
         Span::raw("  "),
-        Span::styled(meter.to_owned(), Style::default().fg(PHOSPHOR_GREEN)),
+        Span::styled(meter, Style::default().fg(PHOSPHOR_GREEN)),
     ]));
+
     let details = usage_quota_bucket_detail_parts(label, value);
-    if !details.is_empty() {
-        lines.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled(details.join("   "), Style::default().fg(WHITE)),
-        ]));
+    let rows = usage_stacked_bucket_detail_rows(remaining_label.map(str::to_owned), &details);
+    for (left, right) in rows {
+        lines.push(usage_header_two_column(
+            &left,
+            Style::default().fg(WHITE),
+            &right,
+            DIM,
+            width,
+        ));
     }
+}
+
+fn usage_full_width_meter(meter: &str, width: usize) -> String {
+    let target = width.saturating_sub(2).max(1);
+    let filled = meter.chars().filter(|ch| *ch == '█').count();
+    let total = meter
+        .chars()
+        .filter(|ch| matches!(*ch, '█' | '·'))
+        .count()
+        .max(1);
+    let filled_cols = ((filled as f64 / total as f64) * target as f64).round() as usize;
+    let filled_cols = filled_cols.min(target);
+    format!(
+        "{}{}",
+        "█".repeat(filled_cols),
+        "·".repeat(target.saturating_sub(filled_cols))
+    )
+}
+
+fn usage_stacked_bucket_detail_rows(
+    remaining_label: Option<String>,
+    details: &[String],
+) -> Vec<(String, String)> {
+    let mut left = Vec::new();
+    let mut right = Vec::new();
+    if let Some(label) = remaining_label {
+        left.push(label);
+    }
+    for detail in details {
+        if detail.starts_with("Resets") || detail.starts_with("Runs out") {
+            right.push(detail.clone());
+        } else if !left.iter().any(|existing| existing == detail) {
+            left.push(detail.clone());
+        }
+    }
+    if right.is_empty() && left.len() > 1 {
+        right.push(String::new());
+    }
+    let len = left.len().max(right.len());
+    (0..len)
+        .map(|index| {
+            (
+                left.get(index).cloned().unwrap_or_default(),
+                right.get(index).cloned().unwrap_or_default(),
+            )
+        })
+        .filter(|(left, right)| !left.is_empty() || !right.is_empty())
+        .collect()
 }
 
 fn usage_quota_bucket_compact_lines(label: &str, value: &str, lines: &mut Vec<Line<'static>>) {
@@ -797,8 +856,8 @@ fn usage_extra_usage_details(details: Vec<String>) -> Vec<String> {
             rest.push(detail);
         }
     }
-    rest.extend(used);
-    rest
+    used.extend(rest);
+    used
 }
 
 fn usage_meter_parts(value: &str) -> (&str, Option<&str>) {
