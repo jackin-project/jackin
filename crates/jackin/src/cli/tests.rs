@@ -150,6 +150,7 @@ fn all_subcommand_help_pages_show_banner() {
         vec!["jackin", "usage", "--help"],
         vec!["jackin", "usage", "cache", "accounts", "--help"],
         vec!["jackin", "usage", "jk-demo-role", "accounts", "--help"],
+        vec!["jackin", "usage", "jk-demo-role", "verify", "--help"],
     ];
     for args in &subcommands {
         let help = help_text(args);
@@ -172,6 +173,18 @@ fn parses_usage_cache_accounts_json() {
             if args.instance == "cache"
                 && args.format == "json"
                 && matches!(args.scope, usage::UsageScope::Accounts(_))
+    ));
+}
+
+#[test]
+fn parses_usage_verify() {
+    let cli = Cli::try_parse_from(["jackin", "usage", "jk-demo-role", "verify"]).unwrap();
+
+    assert!(matches!(
+        cli.command,
+        Some(Command::Usage(ref args))
+            if args.instance == "jk-demo-role"
+                && matches!(args.scope, usage::UsageScope::Verify)
     ));
 }
 

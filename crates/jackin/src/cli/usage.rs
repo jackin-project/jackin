@@ -37,6 +37,9 @@ pub enum UsageScope {
     /// Show cached provider account/quota buckets
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Accounts(UsageAccountsArgs),
+    /// Verify all provider quota rows are present and trusted
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Verify,
 }
 
 #[derive(Debug, Args, PartialEq, Eq)]
@@ -70,6 +73,7 @@ pub async fn run(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
     let target = resolve_usage_target(paths, &args.instance)?;
     match &args.scope {
         UsageScope::Accounts(scope_args) => run_accounts(args, paths, &target, scope_args).await,
+        UsageScope::Verify => run_verify(paths, &target).await,
     }
 }
 
@@ -97,6 +101,11 @@ async fn run_cache(args: &UsageArgs, paths: &JackinPaths) -> Result<()> {
             println!("  cache {}", path.display());
             render_accounts_table(&accounts);
             Ok(())
+        }
+        UsageScope::Verify => {
+            anyhow::bail!(
+                "`jackin usage cache verify` is invalid; verification must query a running Capsule daemon"
+            )
         }
     }
 }
@@ -145,6 +154,30 @@ async fn run_accounts(
     Ok(())
 }
 
+async fn run_verify(paths: &JackinPaths, target: &UsageTarget) -> Result<()> {
+    let accounts = snapshot::fetch_usage_accounts(paths, &target.container)?.unwrap_or_default();
+    let checks = verify_usage_accounts(&accounts);
+    print!("{BANNER}");
+    println!("usage verification for {}\n", target.display_label());
+    for check in &checks {
+        println!(
+            "  {:<9} {}",
+            check.label,
+            check.detail.as_deref().unwrap_or(check.status)
+        );
+    }
+    let failures = checks
+        .iter()
+        .filter(|check| check.status != "ok")
+        .map(|check| format!("{}: {}", check.label, check.status))
+        .collect::<Vec<_>>();
+    if !failures.is_empty() {
+        anyhow::bail!("usage verification failed: {}", failures.join(", "));
+    }
+    println!("\n  usage verification passed");
+    Ok(())
+}
+
 fn render_accounts_table(accounts: &[AccountUsageSnapshotView]) {
     if accounts.is_empty() {
         println!("  no cached usage accounts");
@@ -166,6 +199,117 @@ fn render_accounts_table(accounts: &[AccountUsageSnapshotView]) {
             truncate(&account.source, 24),
         );
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct UsageVerifyCheck {
+    label: &'static str,
+    status: &'static str,
+    detail: Option<String>,
+}
+
+fn verify_usage_accounts(accounts: &[AccountUsageSnapshotView]) -> Vec<UsageVerifyCheck> {
+    usage_verify_provider_aliases()
+        .iter()
+        .map(|(label, aliases)| verify_usage_provider(label, aliases, accounts))
+        .collect()
+}
+
+fn usage_verify_provider_aliases() -> &'static [(&'static str, &'static [&'static str])] {
+    &[
+        ("OpenAI", &["Codex", "OpenAI / Codex"]),
+        ("Anthropic", &["Claude", "Anthropic / Claude"]),
+        ("Amp", &["Amp"]),
+        ("xAI", &["Grok Build", "xAI / Grok"]),
+        ("Z.AI", &["GLM / Z.AI"]),
+        ("Kimi", &["Kimi"]),
+        ("MiniMax", &["MiniMax"]),
+    ]
+}
+
+fn verify_usage_provider(
+    label: &'static str,
+    aliases: &[&str],
+    accounts: &[AccountUsageSnapshotView],
+) -> UsageVerifyCheck {
+    let rows = accounts
+        .iter()
+        .filter(|account| {
+            aliases
+                .iter()
+                .any(|alias| usage_provider_matches(alias, &account.provider))
+        })
+        .collect::<Vec<_>>();
+    if rows.is_empty() {
+        return UsageVerifyCheck {
+            label,
+            status: "missing",
+            detail: None,
+        };
+    }
+    let Some(latest) = rows.iter().max_by_key(|row| row.fetched_at) else {
+        return UsageVerifyCheck {
+            label,
+            status: "missing",
+            detail: None,
+        };
+    };
+    if rows.iter().any(|row| usage_row_proves_live_quota(row)) {
+        return UsageVerifyCheck {
+            label,
+            status: "ok",
+            detail: Some(format!(
+                "ok: {} {} {} {} row(s)",
+                latest.status,
+                latest.source,
+                latest.confidence,
+                rows.len()
+            )),
+        };
+    }
+    UsageVerifyCheck {
+        label,
+        status: "untrusted",
+        detail: Some(format!(
+            "untrusted: latest status={} source={} confidence={} error={}",
+            latest.status,
+            latest.source,
+            latest.confidence,
+            latest.last_error.as_deref().unwrap_or("none")
+        )),
+    }
+}
+
+fn usage_row_proves_live_quota(row: &AccountUsageSnapshotView) -> bool {
+    row.status == "fresh"
+        && row.confidence == "authoritative"
+        && matches!(row.source.as_str(), "provider_api" | "cli")
+        && !row.window_kind.trim().is_empty()
+        && !row.account_label.trim().is_empty()
+        && !row.account_label.to_ascii_lowercase().contains("needs")
+}
+
+fn usage_provider_matches(needle: &str, provider: &str) -> bool {
+    let needle = normalize_usage_provider_label(needle);
+    let provider = normalize_usage_provider_label(provider);
+    provider.contains(&needle)
+        || needle.contains(&provider)
+        || (needle.contains("openai") && provider.contains("codex"))
+        || (needle.contains("codex") && provider.contains("openai"))
+        || (needle.contains("anthropic") && provider.contains("claude"))
+        || (needle.contains("claude") && provider.contains("anthropic"))
+        || (needle.contains("xai") && provider.contains("grok"))
+        || (needle.contains("grok") && provider.contains("xai"))
+        || (needle.contains("zai") && provider.contains("glm"))
+        || (needle.contains("glm") && provider.contains("zai"))
+}
+
+fn normalize_usage_provider_label(value: &str) -> String {
+    value
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect::<String>()
+        .to_ascii_lowercase()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
