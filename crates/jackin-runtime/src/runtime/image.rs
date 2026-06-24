@@ -1798,7 +1798,7 @@ async fn ensure_local_role_base(
     let construct_label = format!("{LABEL_IMAGE_CONSTRUCT}={construct}");
     let build_arg_role_git_sha = format!("ROLE_GIT_SHA={}", head_sha.unwrap_or("unknown"));
 
-    let mut args: Vec<&str> = vec!["build"];
+    let mut args: Vec<&str> = vec!["buildx", "build"];
     // A workspace rebuild refreshes the construct base. A plain workspace base
     // build rides the local layer cache.
     if rebuild {
@@ -1826,7 +1826,14 @@ async fn ensure_local_role_base(
     if let Some(ref s) = secret_arg {
         args.extend(["--secret", s.as_str()]);
     }
-    args.extend(["-t", &base_name, "-f", &dockerfile_path, &context_dir]);
+    let output_arg = local_image_output_arg(&base_name);
+    args.extend([
+        "--output",
+        &output_arg,
+        "-f",
+        &dockerfile_path,
+        &context_dir,
+    ]);
 
     // Surface the role-base build on the live build screen exactly like the
     // derived build: a stage header plus the captured output teed into the
@@ -1834,6 +1841,7 @@ async fn ensure_local_role_base(
     if let Some(p) = progress.as_deref_mut() {
         p.stage_progress(LaunchStage::DerivedImage, "Building role base image");
     }
+    emit_non_containerd_image_store_note(runner).await;
     jackin_launch::build_log::begin();
     let build_options = RunOptions {
         capture_stderr: true,
@@ -2058,7 +2066,7 @@ pub(super) async fn build_agent_image(
     let recipe_hash = recipe.hash()?;
     let recipe_labels = recipe_labels(&recipe, &recipe_hash);
 
-    let mut build_args: Vec<&str> = vec!["build"];
+    let mut build_args: Vec<&str> = vec!["buildx", "build"];
 
     // --pull semantics:
     //
@@ -2094,7 +2102,14 @@ pub(super) async fn build_agent_image(
     for label in &agent_version_labels {
         build_args.extend(["--label", label]);
     }
-    build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);
+    let output_arg = local_image_output_arg(&image);
+    build_args.extend([
+        "--output",
+        &output_arg,
+        "-f",
+        &dockerfile_path,
+        &context_dir,
+    ]);
 
     jackin_diagnostics::active_timing_started("derived image", "resolve_github_token", None);
     let github_token = if requests_github_token {
@@ -2145,6 +2160,7 @@ pub(super) async fn build_agent_image(
     if let Some(ref mut p) = progress {
         p.stage_progress(LaunchStage::DerivedImage, "Building Docker image");
     }
+    emit_non_containerd_image_store_note(runner).await;
 
     // Tee the build's captured output into the live build-log sink so the
     // loading cockpit can show it on demand (the build is the slowest step).
@@ -2230,6 +2246,48 @@ fn should_stream_build_output(debug: bool) -> bool {
     !debug && !jackin_diagnostics::rich_terminal_owned()
 }
 
+fn local_image_output_arg(image: &str) -> String {
+    format!("type=docker,name={image},compression=uncompressed")
+}
+
+async fn emit_non_containerd_image_store_note(runner: &mut impl CommandRunner) {
+    let Ok(info) = runner
+        .capture(
+            "docker",
+            &["info", "--format", "{{.Driver}}\n{{json .DriverStatus}}"],
+            None,
+        )
+        .await
+    else {
+        return;
+    };
+    if docker_info_uses_containerd_store(&info) != Some(false) {
+        return;
+    }
+    let detail = serde_json::json!({
+        "containerd_image_store": false,
+        "docker_info": info.trim(),
+    })
+    .to_string();
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.stage(
+            "docker_image_store",
+            "derived image",
+            "Docker daemon is not using the containerd image store; local image export/unpack may be slower",
+            Some(&detail),
+        );
+    }
+}
+
+fn docker_info_uses_containerd_store(info: &str) -> Option<bool> {
+    let info = info.trim();
+    if info.is_empty() {
+        return None;
+    }
+    let lowered = info.to_ascii_lowercase();
+    Some(lowered.contains("io.containerd.snapshotter") || lowered.contains("containerd"))
+}
+
 fn docker_build_env() -> Vec<(String, String)> {
     // BuildKit is required, not optional: the generated Dockerfiles use
     // `COPY --link --chmod=` and `--mount=type=secret`, all BuildKit-only.
@@ -2239,6 +2297,7 @@ fn docker_build_env() -> Vec<(String, String)> {
     vec![
         ("DOCKER_BUILDKIT".to_owned(), "1".to_owned()),
         ("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned()),
+        ("BUILDX_NO_DEFAULT_ATTESTATIONS".to_owned(), "1".to_owned()),
     ]
 }
 

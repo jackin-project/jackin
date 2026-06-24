@@ -5,7 +5,8 @@ use ratatui::layout::Rect;
 
 use super::{
     BUILD_LOG_SCROLL_STEP, CockpitContext, QuitConfirmOutcome, apply_quit_confirm_key,
-    handle_cockpit_mouse_down, is_ctrl_c, update_build_log_mouse_scroll,
+    cockpit_outcome_for_quit_confirm, handle_cockpit_mouse_down, is_ctrl_c,
+    update_build_log_mouse_scroll,
 };
 use crate::LaunchHostTerminal;
 use crate::tui::components::container_info_dialog::{
@@ -194,6 +195,14 @@ fn quit_confirm_yes_confirms_and_closes() {
 }
 
 #[test]
+fn confirmed_quit_maps_to_hard_exit() {
+    assert_eq!(
+        cockpit_outcome_for_quit_confirm(QuitConfirmOutcome::Confirmed),
+        super::CockpitOutcome::HardExit
+    );
+}
+
+#[test]
 fn quit_confirm_esc_dismisses_and_closes() {
     let mut view = quit_confirm_view();
     let out = apply_quit_confirm_key(&mut view, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
@@ -202,11 +211,12 @@ fn quit_confirm_esc_dismisses_and_closes() {
 }
 
 #[test]
-fn quit_confirm_enter_defaults_to_no() {
-    // Default focus is No, so a bare Enter dismisses rather than quits.
+fn quit_confirm_enter_confirms_exit_prompt() {
+    // The exit confirmation is the one Confirm variant whose default focus is
+    // Yes; destructive confirmations still default to No.
     let mut view = quit_confirm_view();
     let out = apply_quit_confirm_key(&mut view, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    assert_eq!(out, QuitConfirmOutcome::Dismissed);
+    assert_eq!(out, QuitConfirmOutcome::Confirmed);
 }
 
 #[test]
@@ -215,7 +225,7 @@ fn quit_confirm_focus_toggle_keeps_dialog_open() {
     let out = apply_quit_confirm_key(&mut view, KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     assert_eq!(out, QuitConfirmOutcome::Pending);
     assert!(view.quit_confirm.is_some(), "Tab only toggles focus");
-    // After toggling to Yes, Enter now confirms.
+    // After toggling away from the exit prompt's focused Yes, Enter dismisses.
     let out = apply_quit_confirm_key(&mut view, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    assert_eq!(out, QuitConfirmOutcome::Confirmed);
+    assert_eq!(out, QuitConfirmOutcome::Dismissed);
 }

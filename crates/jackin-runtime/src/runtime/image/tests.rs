@@ -64,8 +64,24 @@ fn docker_build_env_always_enables_buildkit_with_plain_progress() {
         vec![
             ("DOCKER_BUILDKIT".to_owned(), "1".to_owned()),
             ("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned()),
+            ("BUILDX_NO_DEFAULT_ATTESTATIONS".to_owned(), "1".to_owned(),),
         ]
     );
+}
+
+#[test]
+fn docker_info_store_parser_detects_containerd_snapshotter() {
+    assert_eq!(
+        docker_info_uses_containerd_store(
+            "overlayfs\n[[\"driver-type\",\"io.containerd.snapshotter.v1\"]]"
+        ),
+        Some(true)
+    );
+    assert_eq!(
+        docker_info_uses_containerd_store("overlay2\n[]"),
+        Some(false)
+    );
+    assert_eq!(docker_info_uses_containerd_store(""), None);
 }
 
 #[tokio::test]
@@ -544,7 +560,7 @@ fn parse_docker_build_steps_extracts_completed_buildkit_lines() {
     let steps = parse_docker_build_steps(
         r#"
 run: jk-run-test
-command: docker build .
+command: docker buildx build .
 
 ----- stdout -----
 #0 building with "orbstack" instance using docker driver
@@ -1489,7 +1505,7 @@ async fn prewarm_reuse_emits_prewarm_launch_plan_and_skips_build() {
     assert_eq!(row.image, image);
     let recorded = runner.recorded.join("\n");
     assert!(
-        !recorded.contains("docker build "),
+        !recorded.contains("docker buildx build "),
         "valid prewarm image should skip expensive build path; recorded:\n{recorded}"
     );
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
@@ -1583,7 +1599,7 @@ plugins = []
     assert_eq!(row.image, image);
     let recorded = runner.recorded.join("\n");
     assert!(
-        recorded.contains("docker build "),
+        recorded.contains("docker buildx build "),
         "explicit/background prewarm should rebuild refresh decisions; recorded:\n{recorded}"
     );
     assert!(

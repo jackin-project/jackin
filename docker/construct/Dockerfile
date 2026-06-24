@@ -18,7 +18,6 @@ RUN chmod 0755 /usr/local/bin/shellfirm && \
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG UID=1000
-ARG GID=1000
 
 # Install core system packages. zsh is the default login shell for
 # the `agent` user; fish is installed alongside as an opt-in
@@ -119,10 +118,12 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
            /tmp/*
 
 # Create runtime user
-RUN groupadd -g "$GID" agent && \
-    useradd -m -u "$UID" -g "$GID" -s /bin/zsh agent && \
+RUN useradd -m -u "$UID" -g 0 -s /bin/zsh agent && \
     echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent && \
-    install -d -o agent -g agent /home/agent/.claude /home/agent/.codex /home/agent/.jackin
+    install -d -o agent -g 0 /home/agent/.claude /home/agent/.codex /home/agent/.jackin
+
+RUN printf 'umask 0002\n' > /etc/jackin-build-env
+ENV BASH_ENV=/etc/jackin-build-env
 
 # Default to a UTF-8 locale so shell prompts and CLI output render correctly,
 # including `docker exec` sessions that bypass jackin's runtime entrypoint.
@@ -140,10 +141,10 @@ RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master
 # Install starship prompt
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
-COPY --chown=agent:agent zshrc /home/agent/.zshrc
+COPY --chown=agent:0 zshrc /home/agent/.zshrc
 
 # Fish config — opt-in alternative shell. Same Starship prompt and
 # auto-title behaviour as zsh so the operator's pane border title
 # does not regress when switching shells.
 RUN mkdir -p /home/agent/.config/fish
-COPY --chown=agent:agent fish-config.fish /home/agent/.config/fish/config.fish
+COPY --chown=agent:0 fish-config.fish /home/agent/.config/fish/config.fish

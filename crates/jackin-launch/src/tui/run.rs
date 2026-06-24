@@ -4,7 +4,7 @@ use std::io::Write;
 
 use anyhow::Context;
 use crossterm::ExecutableCommand;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use jackin_tui::ModalOutcome;
 use jackin_tui::components::{ConfirmState, ErrorPopupState, SelectListState, TextInputState};
@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 use crate::tui::components::prompts::{
     draw_confirm, draw_error_popup, draw_select, draw_text_prompt,
 };
+use crate::tui::input::LaunchInput;
 use crate::tui::message::LaunchMessage;
 use crate::tui::subscriptions::{CockpitOutcome, SharedView, handle_cockpit_input};
 use crate::tui::terminal::current_terminal_area;
@@ -45,6 +46,7 @@ pub struct RichRenderer {
     rain: Option<crate::tui::components::rain::RainState>,
     host: &'static dyn LaunchHostTerminal,
     jackin_version: &'static str,
+    input: LaunchInput,
 }
 
 /// Owns the background render task that ticks the cockpit independently of
@@ -93,6 +95,7 @@ impl RichDriver {
                         host,
                         jackin_version,
                         &cancel_token,
+                        &rr.input,
                     );
                     // Ctrl+C — immediate hard stop. Restore the terminal, then
                     // exit the process at once: no graceful teardown, no waiting
@@ -104,11 +107,9 @@ impl RichDriver {
                         rr.restore_terminal();
                         std::process::exit(0);
                     }
-                    // Ctrl+Q (graceful) calls `cancel_token.cancel()`. Restoring
-                    // here — before any `.await` — makes the screen disappear
-                    // before the pipeline task resumes and runs cleanup. No tokio
-                    // yield between the cancel and this check, so the pipeline
-                    // cannot preempt until after restore.
+                    // Other cancellation sources can still ask the launch
+                    // pipeline to unwind gracefully. Operator quit from the
+                    // cockpit uses the HardExit arm above.
                     if cancel_token.is_cancelled() {
                         rr.restore_terminal();
                         break;
@@ -169,11 +170,9 @@ impl RichDriver {
     }
 }
 
-fn read_pressed_key(context: &'static str) -> anyhow::Result<KeyEvent> {
+fn read_pressed_key(input: &LaunchInput, context: &'static str) -> anyhow::Result<KeyEvent> {
     loop {
-        let Event::Key(key) = crossterm::event::read().context(context)? else {
-            continue;
-        };
+        let key = input.recv_key(context)?;
         if key.kind != KeyEventKind::Press {
             continue;
         }
@@ -326,6 +325,7 @@ impl RichRenderer {
             rain: None,
             host,
             jackin_version,
+            input: LaunchInput::spawn(),
         })
     }
 
@@ -465,7 +465,10 @@ impl RichRenderer {
                 .context("rendering launch picker")?;
             if let Some(index) = update_forced_select(
                 &mut picker,
-                SelectLoopMessage::Key(read_pressed_key("reading launch picker input")?),
+                SelectLoopMessage::Key(read_pressed_key(
+                    &self.input,
+                    "reading launch picker input",
+                )?),
             ) {
                 return Ok(index);
             }
@@ -501,7 +504,10 @@ impl RichRenderer {
             if let Some(result) = update_text_prompt(
                 &mut input,
                 skippable,
-                TextPromptMessage::Key(read_pressed_key("reading launch env prompt input")?),
+                TextPromptMessage::Key(read_pressed_key(
+                    &self.input,
+                    "reading launch env prompt input",
+                )?),
             ) {
                 return result;
             }
@@ -545,7 +551,10 @@ impl RichRenderer {
                 &mut picker,
                 options,
                 skippable,
-                SelectPromptMessage::Key(read_pressed_key("reading launch env select input")?),
+                SelectPromptMessage::Key(read_pressed_key(
+                    &self.input,
+                    "reading launch env select input",
+                )?),
             ) {
                 return result;
             }
@@ -577,7 +586,10 @@ impl RichRenderer {
                 .context("rendering launch confirmation")?;
             if let Some(result) = update_confirm_prompt(
                 state,
-                ConfirmPromptMessage::Key(read_pressed_key("reading launch confirmation input")?),
+                ConfirmPromptMessage::Key(read_pressed_key(
+                    &self.input,
+                    "reading launch confirmation input",
+                )?),
             ) {
                 return Ok(result);
             }
@@ -592,7 +604,10 @@ impl RichRenderer {
                 .context("rendering launch error popup")?;
             if update_error_prompt(
                 &state,
-                ErrorPromptMessage::Key(read_pressed_key("reading error popup input")?),
+                ErrorPromptMessage::Key(read_pressed_key(
+                    &self.input,
+                    "reading error popup input",
+                )?),
             )
             .is_some()
             {
@@ -675,7 +690,7 @@ impl RichRenderer {
                         })
                         .context("rendering launch dialog")?;
 
-                    let key = read_pressed_key("reading launch dialog input")?;
+                    let key = read_pressed_key(&self.input, "reading launch dialog input")?;
                     // Check for I (inspect) or Del before passing to picker.
                     let sel = picker.selected_index();
                     if key.code == KeyCode::Char('i') || key.code == KeyCode::Char('I') {
@@ -730,7 +745,7 @@ impl RichRenderer {
                             render_hint_bar(frame, hint_area, &confirm_hint_spans());
                         })
                         .context("rendering delete confirm")?;
-                    let key = read_pressed_key("reading delete confirm input")?;
+                    let key = read_pressed_key(&self.input, "reading delete confirm input")?;
                     match update_confirm_prompt(&mut confirm, ConfirmPromptMessage::Key(key)) {
                         Some(true) => return Ok(crate::LaunchDialogResult::Delete(ci)),
                         Some(false) => mode = Mode::Picker,
@@ -877,7 +892,7 @@ impl RichRenderer {
                 })
                 .context("rendering inspect surface")?;
 
-            let key = read_pressed_key("reading inspect surface input")?;
+            let key = read_pressed_key(&self.input, "reading inspect surface input")?;
             match key.code {
                 KeyCode::Esc => return Ok(()),
                 KeyCode::Tab => {
@@ -988,7 +1003,7 @@ impl RichRenderer {
                 })
                 .context("rendering exit dialog")?;
 
-            let key = read_pressed_key("reading exit dialog input")?;
+            let key = read_pressed_key(&self.input, "reading exit dialog input")?;
 
             // Intercept I before passing to picker.
             if key.code == KeyCode::Char('i') || key.code == KeyCode::Char('I') {

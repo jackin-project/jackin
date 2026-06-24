@@ -63,6 +63,15 @@ fn default_focus_is_no() {
 }
 
 #[test]
+fn plain_exit_confirmation_focuses_yes_without_changing_destructive_default() {
+    let exit = exit_confirm_state();
+    let delete = ConfirmState::new("Delete?");
+
+    assert_eq!(exit.focus, ConfirmFocus::Yes);
+    assert_eq!(delete.focus, ConfirmFocus::No);
+}
+
+#[test]
 fn tab_cycles_focus() {
     let mut s = ConfirmState::new("Delete?");
     assert_eq!(s.focus, ConfirmFocus::No);

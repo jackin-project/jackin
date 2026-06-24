@@ -79,12 +79,12 @@ fn render_hook_section(hooks: Option<&HooksConfig>) -> HookRender {
     // directory creation time rather than walking /jackin/state recursively;
     // /jackin/runtime/hooks gets per-file ownership from the COPY lines below.
     let mut final_commands = String::from(
-        "install -d /jackin/runtime/hooks \\\n    && install -d -o agent -g agent /jackin/state /jackin/state/hooks",
+        "install -d /jackin/runtime/hooks \\\n    && install -d -o agent -g 0 /jackin/state /jackin/state/hooks",
     );
     for entry in &entries {
         let _unused = writeln!(
             copy_section,
-            "COPY --link --chown=agent:agent --chmod=0755 {src} /jackin/runtime/hooks/{dst}",
+            "COPY --link --chown=agent:0 --chmod=0755 {src} /jackin/runtime/hooks/{dst}",
             src = entry.path,
             dst = entry.filename,
         );
@@ -115,7 +115,7 @@ fn render_hook_section(hooks: Option<&HooksConfig>) -> HookRender {
         // point of the shim).
         let _unused = writeln!(
             copy_section,
-            "COPY --link --chown=agent:agent --chmod=0644 {ZSHENV_SOURCE_SHIM_PATH} /jackin/runtime/zshenv-source-shim",
+            "COPY --link --chown=agent:0 --chmod=0644 {ZSHENV_SOURCE_SHIM_PATH} /jackin/runtime/zshenv-source-shim",
         );
         final_commands.push_str(" \\\n    && ");
         final_commands.push_str(
@@ -147,7 +147,7 @@ fn render_default_home_commands(agents: &[Agent]) -> String {
     // pre-creating `/jackin/default-home/$dir` would make the `mv` below move the
     // source *into* it (`…/.claude/.claude`) instead of renaming onto it. Each
     // target's parent is created at mv time via `mkdir -p "$(dirname …)"`.
-    let mut commands = String::from("install -d -o agent -g agent /jackin/default-home");
+    let mut commands = String::from("install -d -o agent -g 0 /jackin/default-home");
     if dirs.is_empty() {
         return commands;
     }
@@ -187,12 +187,9 @@ pub enum AgentInstall<P> {
 /// plugins are captured in the default-home snapshot (D2 bake plugins during
 /// Docker build).
 ///
-/// Each marketplace and each plugin is its **own** `RUN` layer rather than one
-/// `&&`-chained command. This is deliberate: every step is independently
-/// Docker-cached, so adding or changing one plugin only rebuilds that step and
-/// the ones after it, and a failed install resumes from the failing step instead
-/// of replaying the whole chain. It also keeps the generated Dockerfile readable
-/// — one scannable line per "what was installed".
+/// Marketplaces and plugins share one `RUN` layer because the plugin store moves
+/// as one recipe unit. Keep the generated Dockerfile readable: one continued
+/// command per installed marketplace/plugin.
 fn render_claude_plugin_section(claude: Option<&ClaudeConfig>) -> String {
     let Some(config) = claude else {
         return String::new();
@@ -203,14 +200,15 @@ fn render_claude_plugin_section(claude: Option<&ClaudeConfig>) -> String {
 
     let mut out = String::from(
         "\n# ── Claude plugins (D2: baked at build, captured in default-home) ──\n\
-         # One RUN per marketplace/plugin so each is a reusable, independently\n\
-         # cached layer and a failed install resumes mid-list, not from scratch.\n\
+         # One RUN keeps the node-heavy plugin store in a single layer while\n\
+         # preserving one readable line per marketplace/plugin.\n\
          USER agent\n",
     );
+    out.push_str("RUN set -eu; \\\n");
     // Official marketplace — tolerate it already registered.
-    out.push_str("RUN claude plugin marketplace add anthropics/claude-plugins-official || true\n");
+    out.push_str("    (claude plugin marketplace add anthropics/claude-plugins-official || true)");
     for marketplace in &config.marketplaces {
-        out.push_str("RUN claude plugin marketplace add ");
+        out.push_str("; \\\n    claude plugin marketplace add ");
         out.push_str(&shell_quote(&marketplace.source));
         if !marketplace.sparse.is_empty() {
             out.push_str(" --sparse");
@@ -219,13 +217,12 @@ fn render_claude_plugin_section(claude: Option<&ClaudeConfig>) -> String {
                 out.push_str(&shell_quote(path));
             }
         }
-        out.push('\n');
     }
     for plugin in &config.plugins {
-        out.push_str("RUN claude plugin install ");
+        out.push_str("; \\\n    claude plugin install ");
         out.push_str(&shell_quote(plugin));
-        out.push('\n');
     }
+    out.push('\n');
     out.push_str("USER root\n");
     out
 }
@@ -308,7 +305,7 @@ pub fn render_derived_dockerfile(
     const SHELL_TITLE_AND_RUNTIME_DIR_COMMANDS: &str = "\
 ( grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
       || cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\
-    && install -d -o agent -g agent /jackin/run /jackin/state
+    && install -d -o agent -g 0 /jackin/run /jackin/state
 ";
     let shell_title_and_runtime_dir_commands = SHELL_TITLE_AND_RUNTIME_DIR_COMMANDS;
 
@@ -319,14 +316,14 @@ pub fn render_derived_dockerfile(
 USER root
 # ─────────────────────────────────────────────────────────────────────────────
 # Derived role image, generated by jackin. Layered for readability and reuse:
-# each agent install, each Claude plugin, the default-home snapshot, runtime
-# finalization, and the arbitrary-UID normalization are separate, individually
-# cached steps. Editing one step only rebuilds it and the steps after it.
+# each agent install, the Claude plugin bundle, the default-home snapshot, and
+# runtime finalization are separate, individually cached steps. Editing one step
+# only rebuilds it and the steps after it.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── jackin runtime payload (entrypoint, multiplexer, shell-title shim) ──
 {hook_copy_section}COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
-COPY --link --chown=agent:agent --chmod=0644 {zsh_title_shim_path} /jackin/runtime/zsh-title-shim
+COPY --link --chown=agent:0 --chmod=0644 {zsh_title_shim_path} /jackin/runtime/zsh-title-shim
 {jackin_capsule_section}
 # ── Agent CLIs (D1: each agent's binary baked from its install_block) ──
 {agent_install_sections}{claude_plugin_section}
@@ -337,15 +334,6 @@ RUN {default_home_commands}
 
 # ── Runtime finalization: shell-title shim into .zshrc + jackin runtime dirs ──
 RUN {hook_final_commands}{shell_title_and_runtime_dir_commands}
-# ── Arbitrary-UID normalization (must be the last layer touching these trees) ──
-# Normalize /home/agent AND the /jackin/default-home seed to group 0 with
-# group==owner permissions so both are fully usable when the container runs as
-# an arbitrary host UID in group 0 (`docker run --user <host-uid>:0`).
-# /jackin/default-home must be included because runtime-setup copies it into
-# the agent's home on first launch, and it contains private 0600 files (e.g.
-# .claude backups) the arbitrary UID could otherwise not read. The image is
-# UID-agnostic (built once, shared); this is the OpenShift arbitrary-UID pattern.
-RUN chgrp -R 0 /home/agent /jackin/default-home && chmod -R g=u /home/agent /jackin/default-home
 # /jackin/runtime for jackin-capsule; agent bin dirs so binaries baked by
 # install_block() resolve for sibling tabs that share the same container.
 ENV PATH=\"/jackin/runtime:{agent_path_segment}:${{PATH}}\"
