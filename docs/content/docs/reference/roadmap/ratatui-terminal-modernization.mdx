@@ -2,194 +2,214 @@
 title: "Ratatui terminal modernization"
 ---
 
-**Status**: Open — research complete, implementation branch should be allowed to refactor broadly before merge
+**Status**: Open — research complete and re-verified against the tree. The implementation branch is allowed to refactor broadly before merge. The work is no longer "upgrade Ratatui"; the tree is already on Ratatui 0.30.2. The work is to (a) exploit the new Ratatui 0.30 buffer/diff/width APIs that jackin' currently imports but never calls, and (b) close concrete first-party fidelity gaps in `jackin-term` and the Capsule emit path that no upstream crate will ever fix for us.
 
 ## Problem
 
-jackin' depends heavily on Ratatui for every rich terminal surface and on `jackin-term` for the Capsule PTY terminal model. `jackin-term` was built before the Ratatui 0.26 through 0.30.2 series landed its major terminal-buffer, backend, layout, and width-semantics work. That series changes the baseline for what jackin' should trust to upstream Ratatui versus what should remain first-party because the Capsule is a re-emitting PTY multiplexer, not only a widget application.
+jackin' depends on Ratatui for every rich terminal surface and on `jackin-term` for the Capsule PTY terminal model. The original framing of this item assumed `jackin-term` predated the Ratatui 0.26–0.30.2 work and that adopting it was a future dependency bump. That framing is now stale and has been corrected by reading the tree: the dependency bump already happened. The remaining work is narrower, deeper, and entirely first-party at the seam between jackin's owned model and Ratatui's compositor.
 
-The goal of this item is not compatibility preservation. jackin' is pre-1.0, and quality is more important than avoiding hard refactors. If Ratatui now owns a capability better than jackin's local implementation, prefer upstream Ratatui and reshape jackin' around it. If jackin's model is still stronger because it owns PTY state, passthrough policy, scrollback, or source-recorded damage, keep that local ownership and borrow only the proven idea. The implementation should happen on a dedicated branch with unit tests, integration tests, echo-back render conformance, and manual soak testing before merge; no runtime feature flag is required for the intended direction.
+The goal is not compatibility preservation. jackin' is pre-1.0, and quality is more important than avoiding hard refactors. If Ratatui now owns a capability better than jackin's local implementation, prefer upstream Ratatui and reshape jackin' around it. If jackin's model is still stronger because it owns PTY state, passthrough policy, scrollback, or source-recorded damage, keep that local ownership and borrow only the proven idea. The implementation should happen on a dedicated branch and merge only after the existing automated harnesses (extended with new fixtures) plus manual operator soak prove the new shape is strictly better. No runtime feature flag is required for the intended direction.
 
-## Research inputs
+## Baseline reality — what is already true in the tree (verified)
 
-This pass reviewed the Ratatui release highlights from v0.26.0, v0.26.2, v0.26.3, v0.27.0, v0.28.0, v0.29.0, v0.30.0, v0.30.1, and v0.30.2, plus the Termina repository now exposed through Ratatui's `ratatui-termina` backend. The reviewed upstream changes that matter to jackin' cluster into five areas:
+This section exists to stop the roadmap from re-crediting work jackin' already gets for free. Every claim here was verified by reading the tree and the pinned upstream source in the cargo registry.
 
-- **Cell width and buffer correctness** — `CompactString` cells, wide-cell cleanup, VS16 / emoji clearing, `CellWidth`, `CellDiffOption`, halfwidth katakana dakuten/handakuten compatibility, safer buffer indexing, and fixes for trailing-cell style changes.
-- **Diff and flush performance** — Ratatui's iterator-based `BufferDiff` avoids building a temporary changed-cell `Vec` per frame, `Terminal::apply_buffer()` exposes explicit buffer commits, and backend contracts now have an associated error type plus required `clear_region`.
-- **Viewport and flicker reduction** — the `scrolling-regions` feature makes `Terminal::insert_before` avoid flicker by using terminal scroll regions, and resize/inline viewport clearing fixes landed around v0.29/v0.30.
-- **Backend modularity and I/O** — Ratatui split into `ratatui-core`, `ratatui-widgets`, and backend crates; v0.30.2 added `ratatui-termina`, and Termina provides typed VT escape values, raw/cooked mode, size queries, event parsing, protocol replies, and explicit modern-terminal capability probing.
-- **TUI ergonomics** — layout cache, `Flex`, `Rect::layout`, centering helpers, merged borders, shadows, filled widgets, table/list navigation, and improved `TestBackend` APIs. These are useful across jackin's TUI surfaces but are not the core risk for `jackin-term`.
+- **The tree is already on Ratatui 0.30.2.** `ratatui = "0.30"` is declared in <RepoFile path="crates/jackin-capsule/Cargo.toml" />, <RepoFile path="crates/jackin-tui/Cargo.toml" />, <RepoFile path="crates/jackin-console/Cargo.toml" />, <RepoFile path="crates/jackin-launch/Cargo.toml" />, <RepoFile path="crates/jackin-runtime/Cargo.toml" />, and <RepoFile path="crates/jackin/Cargo.toml" />. The lockfile resolves `ratatui 0.30.2`, `ratatui-core 0.1.2`, `ratatui-widgets 0.3.2`, `crossterm 0.29.0`. `termina 0.3.3` and `ratatui-termina 0.1.0` appear in the lockfile only as the Ratatui meta-crate's *optional* backend dependencies; the default feature set is `crossterm`, so Termina is not compiled into any jackin' binary today.
+- **The custom backend is already on the modern Backend contract.** `SocketBackend` in <RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs" /> already declares `type Error = io::Error`, already implements `clear_region` for every `ClearType` variant, and its `draw` already consumes Ratatui's changed-cell iterator and builds no intermediate `Vec`. There is no per-frame changed-cell allocation to remove.
+- **Ratatui's flush is already zero-allocation.** `ratatui_core` 0.1.2 `Terminal::flush` walks `previous_buffer.diff_iter(current_buffer)` — a zero-allocation `BufferDiff` iterator that already handles multi-width characters and VS16 trailing cells — and passes it straight to `Backend::draw`. jackin' receives that iterator unchanged.
+- **The echo-back render conformance harness already exists.** Every frame the Capsule composes is replayed into a second `DamageGrid` standing in for the operator's outer terminal, asserting cell-exact equality (grapheme, attrs, wide flags) plus the frame-model cursor contract. The harness and its `VirtualClient` live in <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs" />. Parser-side conformance lives in <RepoFile path="crates/jackin-term/tests/conformance.rs" />, allocation regression in <RepoFile path="crates/jackin-term/tests/allocation.rs" />, the fuzz target in <RepoFile path="crates/jackin-term/fuzz/src/damage_grid_process.rs" />, and benches in <RepoFile path="crates/jackin-term/benches/present_frame.rs" />, <RepoFile path="crates/jackin-term/benches/scroll_throughput.rs" />, and <RepoFile path="crates/jackin-capsule/benches/pane_body.rs" />. The modernization branch *extends* these; it does not build them.
+- **Cursor position, visibility, and shape are already frame-level state.** The grid tracks the program-requested DECSCUSR cursor style (`CSI {n} SP q`) in <RepoFile path="crates/jackin-term/src/grid.rs" /> (set in <RepoFile path="crates/jackin-term/src/grid/perform.rs" />), and the compositor in <RepoFile path="crates/jackin-capsule/src/daemon/compositor.rs" /> reconciles cursor style per frame, emitting the escape only when it changes from the last asserted value. Cursor work in this item is a completeness audit, not a from-scratch build.
+- **The new Ratatui 0.30 buffer APIs exist upstream but are unused by jackin'.** `ratatui_core::buffer::CellWidth`, `ratatui_core::buffer::CellDiffOption` (`None`, `Skip`, `AlwaysUpdate`, `ForcedWidth(NonZeroU16)`), the public `BufferDiff` iterator, and `Terminal::apply_buffer()` / `apply_buffer_with_cursor()` are all present in `ratatui-core` 0.1.2. A tree-wide search finds zero uses of `set_skip`, `set_diff_option`, `CellDiffOption`, `ForcedWidth`, `AlwaysUpdate`, or `apply_buffer` in jackin'. This unexploited surface is the real opportunity.
 
-## Current jackin' model
+## Current jackin' model — keep it, modernize the seam
 
-The current architecture is still fundamentally sound:
+The architecture is sound and is not being discarded. The full engineering record is in <RepoFile path="crates/jackin-term/README.md" /> and the durable reference is [Capsule Terminal Model](/reference/capsule/terminal-model/).
 
 ```text
 PTY bytes
   -> vte::Parser
-  -> jackin_term::DamageGrid
-  -> GridView / GridSnapshot observation APIs
-  -> PaneBodyWidget + Ratatui full widget tree
-  -> SocketBackend ANSI encoder
-  -> ClientWriter synchronized frame
+  -> jackin_term::DamageGrid            (parser state machine + cell grid + scrollback + damage)
+  -> GridView / GridSnapshot / SnapCell (observation APIs)
+  -> PaneBodyWidget                     (blits model cells into a Ratatui Buffer)
+  -> ratatui::Terminal (Fullscreen)     (owns double-buffer + zero-alloc diff_iter)
+  -> SocketBackend                      (encodes the changed-cell iterator to ANSI)
+  -> ClientWriter                       (one socket writer; ?2026 synchronized frame brackets)
 ```
 
-`jackin-term` owns the PTY terminal model: parser state, primary and alternate screen, scrollback, cursor state, modes, source-recorded dirty rows, default-color replies, Kitty keyboard state, OSC/CSI passthrough policy, and snapshots. The important files are <RepoFile path="crates/jackin-term/src/lib.rs">crates/jackin-term/src/lib.rs</RepoFile>, <RepoFile path="crates/jackin-term/src/grid.rs">crates/jackin-term/src/grid.rs</RepoFile>, <RepoFile path="crates/jackin-term/src/grid/perform.rs">crates/jackin-term/src/grid/perform.rs</RepoFile>, <RepoFile path="crates/jackin-term/src/damage.rs">crates/jackin-term/src/damage.rs</RepoFile>, <RepoFile path="crates/jackin-term/src/cell.rs">crates/jackin-term/src/cell.rs</RepoFile>, <RepoFile path="crates/jackin-term/src/passthrough.rs">crates/jackin-term/src/passthrough.rs</RepoFile>, and the durable explanation in [Capsule Terminal Model](/reference/capsule/terminal-model/).
+`jackin-term` owns the PTY terminal model: parser state, primary and alternate screen, scrollback, cursor state, modes, source-recorded dirty rows, default-color replies, Kitty keyboard state, OSC/CSI passthrough policy, and snapshots. The load-bearing files are <RepoFile path="crates/jackin-term/src/lib.rs" />, <RepoFile path="crates/jackin-term/src/grid.rs" />, <RepoFile path="crates/jackin-term/src/grid/perform.rs" />, <RepoFile path="crates/jackin-term/src/damage.rs" />, <RepoFile path="crates/jackin-term/src/cell.rs" />, <RepoFile path="crates/jackin-term/src/snapshot.rs" />, and <RepoFile path="crates/jackin-term/src/passthrough.rs" />.
 
-Ratatui does not replace that model. Ratatui's `Buffer` is a compositor buffer, not a PTY emulator. It does not own scrollback retention, application cursor mode, bracketed paste mode, Kitty keyboard stack depth, OSC 10/11 replies, DA/DSR replies, focus-event passthrough, or the distinction between bytes that should update the pane grid and bytes that should be returned to the agent PTY. Termina also does not replace it: Termina is a low-level terminal I/O and typed-escape library with event parsing, not a screen grid, damage tracker, scrollback store, or Ratatui frame diff.
-
-The modernization target is therefore the seam between jackin's model and Ratatui's output system: make the model's display-width contract explicit, feed Ratatui enough cell-width information to diff correctly, remove any local output work Ratatui now does better, and evaluate whether Termina should replace selected Crossterm/raw-byte responsibilities at the terminal I/O boundary.
+Ratatui does not replace that model. Ratatui's `Buffer` is a compositor buffer, not a PTY emulator: it does not own scrollback retention, application cursor mode, bracketed paste mode, Kitty keyboard stack depth, OSC 10/11 replies, DA/DSR replies, focus-event passthrough, or the distinction between bytes that update the pane grid and bytes returned to the agent PTY. Termina does not replace it either: Termina is a low-level terminal I/O and typed-escape library with event parsing, not a screen grid, damage tracker, scrollback store, or frame diff. The modernization target is therefore the *seam*: make the model's display-width contract explicit, feed Ratatui enough cell-width and protocol-visibility information to diff correctly, stop dropping terminal-visible SGR state at parse time, and evaluate Termina only at the raw terminal I/O boundary.
 
 ## Decision principles
 
-- **Prefer upstream Ratatui when it owns the exact problem.** If Ratatui 0.30's diff iterator, `clear_region`, `CellDiffOption`, width helpers, or backend crates solve an output/compositor problem better than local code, switch to Ratatui even if the refactor is large.
-- **Keep first-party ownership where jackin's problem is different.** `DamageGrid` exists because Capsule needs a PTY terminal model with scrollback, passthrough policy, query replies, and source-recorded damage. Ratatui and Termina do not provide that complete model.
-- **Test branch, not feature flag.** Experimental implementation lives on a branch. The branch may break internal APIs, reshape the Capsule render path, or replace dependencies. It merges only after automated and manual validation prove the new shape is better.
-- **One physical writer remains mandatory.** Direct `GridPatch` ANSI emission was retired because it could desync Ratatui's previous buffer from the outer terminal. Modernization must not reintroduce parallel writers. Damage is an invalidation signal and observation signal; committed output remains one composed frame written by the client writer.
-- **Measure before claiming performance.** Ratatui's changes point to likely wins, but jackin' records only real wins: allocation profiles, frame timings, emitted bytes, and echo-back conformance.
+- **Prefer upstream Ratatui when it owns the exact problem.** If Ratatui 0.30's diff iterator, `CellDiffOption`, or `CellWidth` solves a compositor problem better than local code, switch even if the refactor is large.
+- **Keep first-party ownership where jackin's problem is different.** `DamageGrid` exists because the Capsule needs a PTY terminal model with scrollback, passthrough policy, query replies, and source-recorded damage. Ratatui and Termina do not provide that complete model.
+- **Test branch, not feature flag.** The branch may break internal APIs, reshape the Capsule render path, or replace dependencies. It merges only after automated and manual validation prove the new shape is strictly better.
+- **One physical writer remains mandatory.** Direct `GridPatch` ANSI emission was retired because it could desync Ratatui's previous buffer from the outer terminal. Modernization must not reintroduce parallel writers. Damage is an invalidation and observation signal; committed output remains one composed frame written by `ClientWriter` in <RepoFile path="crates/jackin-capsule/src/client_writer.rs" />.
+- **Measure before claiming performance.** Record only real wins: allocation profiles, frame timings, emitted bytes, and echo-back conformance.
+
+## What is explicitly NOT the work (padding removed)
+
+These were listed as future work in the first draft of this item. They are already satisfied by the version jackin' is on. Do not spend the branch's budget here:
+
+- **Do not "implement the associated `Error` type and `clear_region`."** `SocketBackend` already does both. The only backend audit worth doing is the *semantic* one in Recommendation 3, not the trait-shape one.
+- **Do not "remove the per-frame changed-cell `Vec`."** Both Ratatui's flush and `SocketBackend::draw` are already iterator-based and allocation-free on the diff path.
+- **Do not "adopt Ratatui's `scrolling-regions` feature" for the Capsule.** That feature only affects `Terminal::insert_before` on an Inline viewport. The Capsule uses a Fullscreen viewport via `Terminal::new`, and the tree has zero `insert_before` calls and zero Inline viewports. The feature is inert for the Capsule re-emit path. The genuinely valuable idea hiding inside the old recommendation — emitting scroll regions in `SocketBackend` to cut bytes — is first-party work and is captured separately in Recommendation 6.
 
 ## Recommendations
 
-### 1. Define one display-width contract across `DamageGrid`, Ratatui buffers, and the host terminal
+Ranked by correctness value. Each one states why it matters, what it improves, the concrete implementation, and the acceptance coverage the branch must add before merge.
 
-This is the highest-priority correctness work. Ratatui v0.30.1 introduced `CellWidth` and `CellDiffOption`, and v0.30.2 fixed cleanup for cells uncovered when a wide character is replaced by normal-width content. Ratatui also includes compatibility fixes around VS16 emoji and halfwidth katakana dakuten/handakuten. Those are exactly the class of bugs that cause stale cells, cursor drift, apparent flicker, or right-edge corruption in a re-emitting multiplexer.
+### 1. Define and enforce one display-width contract across `DamageGrid`, the Ratatui mapping, and the host terminal
 
-`jackin-term` already stores `Cell::is_wide` and `Cell::is_wide_continuation` and handles deferred wrap, combining marks, variation selectors, and ZWJ continuation. The modernization branch should turn that into a documented contract:
+**Why this matters.** This is the highest-priority correctness work and the one concrete divergence already proven in the tree. `jackin-term`'s cell width derives from `unicode-width` 0.2 with no special-casing (see <RepoFile path="crates/jackin-term/src/cell.rs" /> and the wide-handling in <RepoFile path="crates/jackin-term/src/grid/perform.rs" />). Ratatui 0.30's `ratatui_core::buffer::CellWidth` derives width from the same `unicode-width` 0.2 **plus** a terminal-compatibility adjustment: it adds `+1` for halfwidth katakana voiced/semi-voiced sound marks (`U+FF9E` / `U+FF9F`), which `unicode-width` reports as zero-width because they carry `Grapheme_Extend`. So for exactly those clusters, the model believes a cell is width 1 while Ratatui's buffer machinery believes it is width 2. When the model then writes the next cell at what it thinks is the adjacent column, Ratatui's diff — which assumes well-formed multi-width buffers — can compute a trailing-cell cleanup that the model never intended, producing stale tails, cursor drift, or right-edge corruption in a re-emitting multiplexer. This is precisely the class of bug that is invisible in unit tests and brutal to diagnose from logs.
 
-- what width each accepted cluster occupies;
-- when zero-width code points join the previous cell;
-- how VS16 and emoji sequences are classified;
-- how halfwidth katakana dakuten/handakuten are treated;
-- how a wide lead, wide continuation, and overwritten wide tail are represented;
-- how model width is translated into Ratatui buffer cells;
-- when Ratatui should recompute width from text and when jackin' should force width from the model.
+**What it improves.** A single authoritative width per accepted grapheme cluster, shared by the parser, the model, the Ratatui mapping, and the bytes emitted to the host. No silent disagreement at the seam.
 
-The branch should compare the current `unicode-width` usage against Ratatui's `CellWidth` semantics. If Ratatui's semantics are better, use them or port the behavior into a narrow `jackin-term` width module. If `jackin-term` needs a stricter emulator-specific behavior, keep it local but write the divergence down and test it.
+**How to implement.**
+- Introduce a narrow width module owned by `jackin-term` (e.g. a `width` submodule, or a tiny internal crate if a second consumer appears) that is the single source of truth for "how many columns does this cluster occupy." Do not pull all of Ratatui into `jackin-term` for this; depend on `unicode-width` as today and, in tests only, cross-check the local function against `ratatui_core::buffer::CellWidth` so the two cannot drift.
+- Decide the contract for each class deliberately and write it down: halfwidth katakana + dakuten/handakuten, VS16 emoji, emoji without VS16, ZWJ clusters, combining marks after a base, combining marks at column zero, wide glyph in the final column, and ambiguous-width code points. Where the target host terminals match Ratatui's compensation (the `+1` for `U+FF9E`/`U+FF9F`), port that behavior into the model so the model and the emitted bytes agree. Where jackin' intentionally diverges for emulator correctness, keep it local but record the divergence and test it.
+- Wire `Cell::is_wide` / `Cell::is_wide_continuation` (already present in <RepoFile path="crates/jackin-term/src/cell.rs" />) to be derived from this one width function at parse time in <RepoFile path="crates/jackin-term/src/grid/perform.rs" />, so the model's wide flags and the width function can never disagree.
 
-Acceptance coverage should include CJK overwrite, CJK delete, CJK erase, emoji with VS16, emoji without VS16, ZWJ emoji clusters, combining marks after a base character, combining marks at column zero, halfwidth katakana dakuten/handakuten, wide character in the final column, normal-width overwrite of a wide lead, normal-width overwrite of a wide continuation, right-edge deferred wrap plus SGR before the next printable, DSR cursor reply while wrap is pending, and scrollback snapshots containing all of the above.
+**Acceptance coverage** (added to <RepoFile path="crates/jackin-term/tests/conformance.rs" /> and the echo-back fixtures): CJK overwrite, CJK delete, CJK erase, emoji with VS16, emoji without VS16, ZWJ emoji clusters, combining marks after a base character, combining marks at column zero, halfwidth katakana dakuten and handakuten (the proven divergence), wide character in the final column, normal-width overwrite of a wide lead, normal-width overwrite of a wide continuation, right-edge deferred wrap plus SGR before the next printable, DSR cursor reply while wrap is pending, and scrollback snapshots containing all of the above.
 
-### 2. Use Ratatui `CellDiffOption` for model-known cell width and protocol-visible cells
+### 2. Map `jackin-term` cells to Ratatui cells with `CellDiffOption`, instead of blanking continuation cells
 
-Ratatui's `CellDiffOption` exists because the bytes stored in a buffer cell are not always the same as what is visible on the terminal. That maps directly to Capsule output: a cell may be associated with OSC 8 hyperlink bytes, model-known wide state, or a continuation that must not independently display content.
+**Why this matters.** Today the pane renderer in <RepoFile path="crates/jackin-capsule/src/tui/components/pane.rs" /> handles a wide character by writing the 2-column glyph into the lead Ratatui cell via `set_symbol`, and handling the continuation column with `buf_cell.reset()` — a literal blank space. That is only correct while the model and Ratatui agree on the lead glyph's width. Ratatui 0.30 added `CellDiffOption` precisely because the bytes stored in a buffer cell are not always what is visible: a cell may be model-known wide, a continuation that must not independently diff, or covered by protocol bytes such as an OSC 8 hyperlink. jackin' uses none of this and instead relies on width inference matching, which Recommendation 1 just proved is fragile.
 
-The implementation should audit the pane-body rendering code and the custom backend path. Where `DamageGrid` knows the visible width, that information should survive into Ratatui's diff. Candidate uses:
+**What it improves.** The mapping declares intent to Ratatui's diff rather than hoping inference agrees. The lead cell carries its model-known width; continuation and protocol-only cells are explicitly excluded from independent diffing; and the diff iterator's trailing-cleanup logic operates on correct widths.
 
-- `ForcedWidth(2)` for cells where the model declares a two-column glyph and Ratatui might infer differently;
-- `Skip` for continuation cells or protocol-only cells that should not become independently diffed visible content;
-- narrow use of `AlwaysUpdate` only where terminal state changes without an ordinary cell equality change and the echo-back harness proves it is necessary.
+**How to implement.** In the `render_cell` path of <RepoFile path="crates/jackin-capsule/src/tui/components/pane.rs" />, replace the implicit width handling with explicit `CellDiffOption` on the Ratatui `Cell`:
+- Lead wide cell: set the symbol and style, then set `CellDiffOption::ForcedWidth(NonZeroU16::new(2)?)` so Ratatui treats it as two columns regardless of how its own width inference classifies the glyph.
+- Continuation cell: keep it blank, and set `CellDiffOption::Skip` **only after** the new fixtures prove that wide-overwrite, wide-delete, and wide-erase still clear stale trailing background and style. `Skip` is not a free optimization; a wrong `Skip` hides a needed trailing clear.
+- Protocol-only cells (e.g. cells that exist solely to carry an OSC 8 boundary, see Recommendation 3): `Skip` or `ForcedWidth` depending on their visible width.
+- `CellDiffOption::AlwaysUpdate` is reserved for the side-channel state changes in Recommendation 3 and must be justified by the echo-back harness, never applied broadly. Forcing updates everywhere would mask equality bugs and inflate bytes per frame — the wrong outcome.
 
-This must not become a broad workaround. The preferred result is a small mapping layer from `jackin-term::Cell` to Ratatui buffer cells, with comments explaining each forced width or skip. The wrong implementation would be to force updates everywhere, which would hide equality bugs and increase bytes per frame.
+Keep this a small, commented mapping layer. The conversion currently spans `render_cell` in <RepoFile path="crates/jackin-capsule/src/tui/components/pane.rs" /> and `snapshot_damagegrid_cells` in <RepoFile path="crates/jackin-capsule/src/tui/render.rs" />; both must agree on the same width and skip semantics.
 
-### 3. Audit and simplify the Capsule `SocketBackend` / output path against Ratatui 0.30's backend model
+**Acceptance coverage**: mapping tests from `jackin_term::Cell` / `SnapCell` to the Ratatui `Cell` for every cluster class in Recommendation 1, asserting the resulting `CellDiffOption`, plus a buffer well-formedness property (Recommendation 7) checked before diff.
 
-Ratatui 0.30's backend contract and diff internals are more mature than the version jackin's output path was originally designed around. The modernization branch should inspect the Capsule backend and client writer for local code that Ratatui now does better.
+### 3. Make OSC 8 hyperlink emission survive Ratatui's diff (latent bug, not in the first draft)
 
-Work items:
+**Why this matters.** The hyperlink layer in <RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs" /> is a side channel: `set_hyperlink_regions` stores the frame's linked rects, and `draw` brackets linked cells with `emit_osc8_open` / `emit_osc8_close` (from the `ansi` module in <RepoFile path="crates/jackin-tui/src/lib.rs" />) **only for the cells Ratatui's diff actually yields**. If a link is added, removed, or retargeted over text whose glyph and style did not change, Ratatui's diff yields no cells for that region, so the OSC 8 state is never updated on the wire. The link silently fails to appear or fails to clear. Recommendation 2's `Skip` on continuation cells makes this worse, because cells covered by a wide glyph or by protocol bytes may never enter the diff at all.
 
-- ensure custom backends implement the current associated `Error` type and `clear_region` semantics cleanly;
-- remove any per-frame allocation of changed-cell vectors if Ratatui's `BufferDiff` iterator can replace it;
-- prefer Ratatui's current diff behavior for wide-cell cleanup rather than local ad hoc clearing;
-- verify resize/full-clear handling against Ratatui's inline viewport clearing fixes;
-- preserve synchronized-output bracketing as a client-writer responsibility around the composed frame;
-- keep cursor position, cursor style, mouse/focus/bracketed-paste state, Kitty keyboard state, and hyperlink span emission reconciled as frame-level terminal state, not random byte writes scattered through render code.
+**What it improves.** Hyperlink open/close boundaries become a tracked frame-level transition, correct independent of whether the underlying glyphs changed.
 
-The expected end state is not necessarily less code; it is less locally duplicated logic at the Ratatui seam. If Ratatui now owns a safer backend clear/diff primitive, jackin' should call it instead of maintaining a parallel implementation.
+**How to implement.** Track previous-frame and current-frame hyperlink membership at the backend or compositor level. When a cell's link membership or target changes between frames, force that cell into the diff by setting `CellDiffOption::AlwaysUpdate` on it in the mapping layer (Recommendation 2), so the `draw` loop re-emits the correct OSC 8 boundary. Keep the `AlwaysUpdate` set to exactly the boundary-changed cells — never all linked cells every frame — and measure the resulting bytes per frame. Verify that link open/close ordering is correct when a link begins or ends adjacent to a wide cell, where the continuation column may be `Skip`-ped.
 
-### 4. Re-evaluate terminal scroll-region usage for flicker and byte reduction, with no runtime flag as the desired end state
+**Acceptance coverage**: link added over unchanged text; link removed over unchanged text; link target changed with unchanged text; link beginning and ending adjacent to wide/CJK/emoji cells; and an echo-back assertion (or recorded host capture) that the OSC 8 open/close sequence is correct after each transition.
 
-Ratatui v0.29 introduced a `scrolling-regions` capability to avoid flicker in `Terminal::insert_before`. Scroll regions are relevant because Capsule repeatedly displays full-screen TUIs and agent screens where line insertion, command output, and alternate-screen programs can scroll large areas.
+### 4. Stop dropping terminal-visible SGR state at parse time (attribute completeness)
 
-This should be researched in the implementation branch as a real candidate, not a permanently gated option. The branch should try the approach, measure it, and either make it the default because it is better or remove it because it is not. The critical risk is that scroll regions mutate the physical terminal state and can corrupt chrome if applied across the wrong rect. Tests must cover pane borders, status rows, tab strip, dialogs, scrollback view, alternate screen, primary screen, resize, and focus swaps.
+**Why this matters.** The model's attribute set in <RepoFile path="crates/jackin-term/src/cell.rs" /> (`Attrs`) carries only foreground, background, bold, italic, underline, inverse, and dim. The encoder `apply_style` in <RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs" /> emits only those. Everything else an agent or program sets is dropped at parse time and can never reach the screen: **underline color** (`SGR 58`/`59`, which Ratatui's `underline-color` feature already models), underline styles (curly/dotted/dashed via `SGR 4:2`–`4:5`), strikethrough (`SGR 9`), blink (`SGR 5`/`6`), conceal (`SGR 8`), and overline (`SGR 53`). Modern coding agents and tools (e.g. error squiggles via colored curly underlines, diff strikethrough) use these. Given the quality-over-cost stance, dropping them is a fidelity regression, not a reasonable simplification.
 
-Acceptance criterion: after every candidate scroll-region optimization, the echo-back harness must still replay emitted bytes into a second `DamageGrid` and match the pane model inside the pane rect plus the frame-model cursor contract. If this cannot be proven, do not adopt scroll-region output.
+**What it improves.** The Capsule faithfully reproduces what the agent's program actually rendered, instead of a lossy subset.
 
-### 5. Prototype Termina as a replacement candidate for selected Crossterm/hand-written terminal I/O responsibilities
+**How to implement.**
+- Extend `Attrs` in <RepoFile path="crates/jackin-term/src/cell.rs" /> to carry the additional state. Underline color needs its own color field (default / indexed / RGB) since it is independent of foreground; the others are flags or a small underline-style enum.
+- Parse the additional SGR parameters in <RepoFile path="crates/jackin-term/src/grid/perform.rs" />, including the colon-subparameter form for underline style and `SGR 58`/`59` for underline color.
+- Carry the new attributes through `SnapCell` in <RepoFile path="crates/jackin-term/src/snapshot.rs" /> and the `PaneCell` trait + `render_cell` in <RepoFile path="crates/jackin-capsule/src/tui/components/pane.rs" />. Ratatui's `Cell` already has `modifier` bits for `CROSSED_OUT`, `SLOW_BLINK`, `RAPID_BLINK`, and `HIDDEN`, and an `underline_color` field under the `underline-color` feature (enabled by default in the Ratatui meta-crate), so most of this maps to existing Ratatui fields.
+- Emit the new state in `apply_style` in <RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs" />. Note that `apply_style` currently does a full `SGR 0` reset then re-applies; extend that re-apply set rather than adding incremental tracking, to keep it correct across cell runs.
+- Decide and document one explicit non-goal if any attribute is intentionally excluded (for example, if blink is deliberately suppressed for the "no blinking" product value, model it but choose not to emit it, and write that down).
 
-Termina is promising because it exposes terminal protocol details more directly than Crossterm and now has a Ratatui backend. It provides raw/cooked mode, platform terminal handles, event readers, resize events, focus/paste/key/mouse parsing, protocol responses as events, and typed CSI/OSC/DCS builders. It is also early and intentionally lower-level: it has no screen grid, no diff renderer, no scrollback, no terminfo database, and no automatic application setup for alternate screen, bracketed paste, mouse modes, focus events, or synchronized output.
+**Acceptance coverage**: parser round-trip for each new SGR (set, reset, and the colon-subparameter underline-style form); echo-back equality including the new attrs; and a golden wire-emit snapshot for a frame containing underline color + strikethrough.
 
-The branch should build a small `TerminalIo` abstraction or prototype path that compares Crossterm and Termina for jackin's real surfaces:
+### 5. Audit cursor and frame-terminal state for completeness
 
-- console raw mode, alternate screen, mouse capture, event drain, and input queue flushing;
-- launch TUI terminal capability checks and size handling;
-- capsule attach raw mode, size reporting, reset sequence, mouse/focus/bracketed-paste modes, and detach cleanup;
-- Windows behavior if the project later expands support, especially Termina's VTE-vs-legacy tradeoff;
-- Kitty keyboard, SGR mouse, bracketed paste, focus events, OSC queries, and terminal resize parity;
-- whether `ratatui-termina` can preserve jackin's synchronized writer model and echo-back conformance.
+**Why this matters.** Cursor position, visibility, and DECSCUSR shape are already reconciled as frame-level state by the compositor in <RepoFile path="crates/jackin-capsule/src/daemon/compositor.rs" /> (a real strength — see Baseline reality). But "frame-level terminal state" is broader than the cursor glyph, and the branch should confirm nothing else is being emitted as scattered render bytes or dropped entirely.
 
-If Termina's typed escape builders make the reset/mode code safer and its event model improves protocol visibility, prefer it. If Crossterm remains more mature for jackin's current platform scope, keep Crossterm and borrow only Termina's explicit protocol style. Termina is not a replacement for `jackin-term`; it is a candidate replacement for parts of raw terminal I/O and escape construction.
+**What it improves.** A single, auditable list of all terminal state that is reconciled per frame rather than written ad hoc, which is what keeps the one-writer invariant honest.
 
-### 6. Reuse Ratatui's modular crate split deliberately
+**How to implement.** Enumerate, in the compositor, every piece of state that must be diffed per frame: cursor row/col, cursor visibility, cursor shape (DECSCUSR), and evaluate whether cursor color (`OSC 12`) and cursor blink need modeling. Confirm that mouse mode, focus reporting, bracketed paste, and Kitty keyboard state remain reconciled as out-of-band sequences through `ClientWriter::enqueue_out_of_band` (see <RepoFile path="crates/jackin-capsule/src/client_writer.rs" />) and are never written mid-frame. The output is a documented state table plus tests for any gap found, not a rewrite of the working cursor path.
 
-Ratatui v0.30 split core types from widgets and backends. jackin should use that split to keep boundaries honest. `jackin-term` should not casually depend on all of Ratatui if it only needs a width concept or test comparison. Candidate directions:
+**Acceptance coverage**: extend the existing cursor tests in <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs" /> (which already include a DECSCUSR case) to cover any newly modeled state, and assert that no frame emits cursor/mode bytes outside the `?2026` brackets.
 
-- `jackin-term` keeps depending on `vte`, `unicode-width`, and local types, while tests compare behavior against Ratatui width APIs;
-- a narrow compatibility module depends on `ratatui-core` only if the model truly needs shared types;
-- render crates (`jackin-tui`, `jackin-console`, `jackin-launch`, `jackin-capsule`) continue using full Ratatui widgets/backends;
-- custom widgets or shared components can depend on `ratatui-core` where that lowers churn for third-party/widget-style code.
+### 6. Research first-party scroll-region (DECSTBM) emission to cut bytes — not upstream `scrolling-regions`
 
-The implementation should choose the smallest dependency boundary that avoids drift. The wrong shape is importing all of Ratatui into `jackin-term` just to borrow a helper; the right shape is either a small local width contract tested against Ratatui, or a narrow `ratatui-core` dependency if sharing the upstream type removes real complexity.
+**Why this matters.** The Capsule repeatedly displays full-screen programs and agent output where large regions scroll. Re-emitting every changed cell of a scrolled region is bandwidth-expensive on SSH links, where low bandwidth is a core product value. Emitting a scroll-region escape (DECSTBM `CSI t;b r` plus index/reverse-index) can scroll the host's own screen and let the diff repaint only the newly exposed line. This is the real idea that the old "adopt Ratatui scrolling-regions" recommendation gestured at — but it is jackin-owned work, because Ratatui's feature only optimizes `insert_before`, which the Capsule does not use.
 
-### 7. Sweep TUI surfaces for Ratatui 0.30 ergonomics only where they remove local code or fix UX
+**What it improves.** Fewer emitted bytes for scroll-heavy output, with no visible flicker, on exactly the remote links where it matters most.
 
-Most Ratatui widget changes are not terminal-model risks, but they can still simplify or improve jackin's TUI surfaces. The branch should opportunistically audit:
+**How to implement (research-first, high-risk).** This is genuinely hard and must be proven, not assumed:
+- The hard constraint is geometry. DECSTBM vertical margins scroll the **full terminal width** between the top and bottom margins. If a pane body does not span the full width, or shares rows with chrome (borders, status row, tab strip) or another pane, a scroll region will corrupt that chrome. DECSLRM left/right margins can restrict columns but are far less portable and carry their own mode state. So this optimization is only safe when the scroll rect spans the full terminal width, or when DECSLRM support is probed and reset safely.
+- The second hard constraint is keeping Ratatui's previous buffer coherent. If the physical screen scrolls but Ratatui's previous buffer still describes the old rows, the next diff will corrupt or needlessly repaint. The branch must either mutate Ratatui's previous/current buffers to match the scroll (potentially via `Terminal::apply_buffer` for a controlled commit), or implement the scroll op below Ratatui with its own physical-state model. The latter risks reintroducing the parallel-writer desync the model deliberately retired — so it must stay inside the one-writer frame.
+- Treat this as a candidate, not a default. Prototype it, measure emitted bytes against the current full-cell path on scroll-heavy fixtures, and adopt only if the bytes win is real and the echo-back harness still passes.
 
-- `Rect::layout`, `try_layout`, centering helpers, and layout cache usage in console, launch, and capsule view code;
-- `Fill` for modal backdrops or area clears if it removes custom loops;
-- `Block` merged borders and shadows only if they improve visible clarity without violating the TUI design language;
-- `Table` column/cell selection if it removes local selection machinery in table-like panes;
-- `List`/`Table` scroll convenience methods where they replace duplicated scroll math;
-- improved `TestBackend` assertions for render tests.
+**Acceptance criterion (hard gate)**: after every candidate scroll-region change, the echo-back harness in <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs" /> must still replay emitted bytes into the second `DamageGrid` and match the pane model inside the pane rect plus the cursor contract, across pane borders, status rows, tab strip, dialogs, scrollback view, alternate screen, primary screen, resize, and focus swaps. If parity cannot be proven, do not adopt scroll-region output.
 
-This sweep is secondary. Do not let widget sugar distract from width/diff/output correctness.
+### 7. Extend (do not rebuild) the conformance and echo-back harnesses, and add a buffer well-formedness invariant
+
+**Why this matters.** The harnesses already exist (see Baseline reality). The risk is not their absence; it is fixture coverage and one missing structural invariant. A subtle trap: the echo-back harness replays emitted bytes into a *second `DamageGrid`*, which uses the same `jackin-term` width code as the source model. If both share a width bug, the harness false-passes. The width fixtures from Recommendation 1 are what make the harness able to catch emit-path width errors, because a wrong width changes the *emitted bytes*, which then misplace content when replayed.
+
+**What it improves.** The existing safety net actually exercises the new failure modes (width classes, hyperlink transitions, new SGR), and a new property test catches malformed model→Ratatui buffers before they ever reach the diff.
+
+**How to implement.**
+- Add the width-class, hyperlink-transition, and SGR fixtures from Recommendations 1, 3, and 4 to <RepoFile path="crates/jackin-term/tests/conformance.rs" /> and the echo-back cases in <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs" />.
+- Add real recorded PTY fixtures (Claude Code, Codex, Amp, Kimi, OpenCode, `vim`, `tmux`, `htop`, shell prompts, `yes`, long `seq`, redraw storms) extracted from `--debug` run logs via the existing `jackin-xtask` PTY-fixture tool in <RepoFile path="crates/jackin-xtask/src/pty_fixture.rs" /> into the Capsule fixtures directory.
+- Add a **buffer well-formedness property test** asserted on the Ratatui buffer *before* diff: every continuation has a matching lead; no non-blank cell sits inside a lead's effective width span; a wide glyph in the final column is handled explicitly; any `ForcedWidth` equals the model's physical width; and no stale continuation survives an overwrite/delete/erase/resize. This is independent of the backend's emitted bytes and catches mapping bugs at their source.
+- Keep the existing fuzz target in <RepoFile path="crates/jackin-term/fuzz/src/damage_grid_process.rs" /> and extend its corpus with the new cluster classes.
+
+**Acceptance coverage**: the full extended automated set is green, including the well-formedness property over fuzzed inputs.
+
+### 8. Prototype Termina at the raw terminal I/O boundary only (separate, lower priority)
+
+**Why this matters.** Termina exposes terminal protocol details (typed CSI/OSC/DCS builders, raw/cooked mode, size queries, event parsing, protocol replies, capability probing) more directly than Crossterm, and now has a Ratatui backend (`ratatui-termina`). It is promising for the host-side raw I/O and escape construction, but it is early (0.3.x), lower-level (no grid, diff, scrollback, or automatic application setup), and orthogonal to the model/diff correctness work above. It is not a replacement for `jackin-term` or for Ratatui.
+
+**What it improves (if adopted).** Safer, typed reset/mode sequences and clearer protocol-reply handling at the boundary where jackin' currently uses Crossterm (`crossterm = "0.29"` in <RepoFile path="crates/jackin/Cargo.toml" />, <RepoFile path="crates/jackin-capsule/Cargo.toml" />, <RepoFile path="crates/jackin-console/Cargo.toml" />, <RepoFile path="crates/jackin-env/Cargo.toml" />, <RepoFile path="crates/jackin-diagnostics/Cargo.toml" />).
+
+**How to implement.** Build a small `TerminalIo` abstraction and compare Crossterm and Termina for jackin's real surfaces: host console raw mode / alternate screen / mouse capture / event drain; launch TUI capability checks and size handling; Capsule attach raw mode, size reporting, reset, mouse/focus/bracketed-paste modes, and detach cleanup; and Kitty keyboard, SGR mouse, bracketed paste, focus events, OSC queries, and resize parity. Confirm whether `ratatui-termina` can preserve jackin's one-writer synchronized frame model and echo-back conformance. Adopt Termina only where it is clearly better for jackin's platform scope; otherwise keep Crossterm and borrow only Termina's explicit protocol style. Do not migrate all Crossterm usage in one unmeasured sweep.
+
+**Acceptance coverage**: parity tests for every input/protocol surface above between the two backends before any swap.
+
+### 9. Tighten the Ratatui dependency boundary and sweep widget ergonomics (secondary)
+
+**Why this matters.** Ratatui 0.30 split into `ratatui-core`, `ratatui-widgets`, and backend crates. Keeping `jackin-term` free of a full Ratatui dependency (it depends only on `vte`, `unicode-width`, `compact_str`, `smallvec`) is correct and should be preserved; only the render crates need full Ratatui. Widget ergonomics (`Rect::layout`, centering helpers, layout cache, `Flex`, merged borders, `Table`/`List` selection, improved `TestBackend`) can simplify the TUI surfaces but are not terminal-model risks.
+
+**How to implement.** Keep `jackin-term` on its current minimal deps; in tests only, cross-check the width module against `ratatui_core::buffer::CellWidth`. Opportunistically audit the console/launch/Capsule view code for widget sugar that removes local code or fixes UX, but do not let it distract from Recommendations 1–4. This is the last phase, not the first.
 
 ## Testing strategy for the implementation branch
 
-This work is allowed to be a broad refactor, but it must be proven before merge. The testing plan should be stricter than normal because terminal regressions are highly visible and hard to diagnose from text logs alone.
+The work is allowed to be a broad refactor, but terminal regressions are highly visible and hard to diagnose, so the bar is stricter than normal. The strategy is to extend existing infrastructure, not invent parallel infrastructure.
 
 ### Unit tests
-
-- Width contract tests in `jackin-term` for every cluster class listed above.
-- Dirty-span tests proving wide overwrite, erase, delete, scroll, and resize mark the minimal correct rows/spans or deliberately mark all when safer.
-- Passthrough tests for OSC 8, OSC 10/11, OSC 52, Kitty keyboard push/pop/query, bracketed paste, focus events, and DA/DSR replies.
-- Mapping tests from `jackin-term::Cell` to Ratatui cell/diff options, including continuation cells and forced-width cells.
+- Width-contract tests in `jackin-term` for every cluster class in Recommendation 1, cross-checked against `ratatui_core::buffer::CellWidth`.
+- Mapping tests from `jackin_term::Cell` / `SnapCell` to Ratatui `Cell` + `CellDiffOption`, including continuation and forced-width cells.
+- Parser round-trip tests for the new SGR attributes (Recommendation 4).
+- Dirty-span tests proving wide overwrite, erase, delete, scroll, and resize mark the minimal correct spans or deliberately mark all when safer (extends <RepoFile path="crates/jackin-term/src/damage.rs" /> coverage).
 
 ### Integration and conformance tests
-
-- Existing `jackin-term` conformance replay in one chunk and byte-by-byte.
-- Existing fuzz target for arbitrary bytes and one-shot vs byte-split determinism.
-- Capsule echo-back render conformance: emitted frames replay through a second `DamageGrid` and match model state.
-- New Ratatui 0.30 regression fixtures for wide-cell cleanup, forced-width display, and resize clears.
-- Real PTY fixtures for Claude Code, Codex, Amp, Kimi, OpenCode, `vim`, `tmux`, `htop`, shell prompts, `yes`, long `seq`, and redraw storms.
+- Extend the parser conformance replay in <RepoFile path="crates/jackin-term/tests/conformance.rs" /> (one-shot vs byte-split determinism) with the new fixtures.
+- Extend the fuzz target in <RepoFile path="crates/jackin-term/fuzz/src/damage_grid_process.rs" /> with the new cluster classes.
+- Extend the Capsule echo-back harness in <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs" /> with width, hyperlink-transition, and SGR cases, plus the buffer well-formedness property.
+- Add real-PTY fixtures via <RepoFile path="crates/jackin-xtask/src/pty_fixture.rs" />.
 
 ### Performance and allocation checks
-
-- Focused-pane frame allocation profile before/after.
-- `present_frame` and `scroll_throughput` benchmarks before/after.
-- Emitted bytes per frame for representative screens.
-- Frame timing p50/p95/p99 for idle, typing, streaming output, full-screen redraw, resize, and scrollback view.
-- CPU and allocation behavior with multiple panes.
+- Run <RepoFile path="crates/jackin-term/benches/present_frame.rs" />, <RepoFile path="crates/jackin-term/benches/scroll_throughput.rs" />, and <RepoFile path="crates/jackin-capsule/benches/pane_body.rs" /> before and after, plus the allocation regression in <RepoFile path="crates/jackin-term/tests/allocation.rs" />.
+- Track concrete emitted-byte counters per frame, not just timings: total bytes, absolute cursor moves (`CSI H`), `SGR 0` reset count, OSC 8 open/close count, and full-screen erase count. The diagnostic scanner `scan_emitted_frame` in <RepoFile path="crates/jackin-capsule/src/client_writer.rs" /> already computes cursor-move, max-row/col, and erase counts behind the debug flag and is the right place to extend with SGR-reset and OSC 8 counters.
+- Report frame timing p50/p95/p99 for idle, typing, streaming output, full-screen redraw, resize, scrollback view, and a scroll-heavy fixture, with a remote/high-latency profile where possible.
 
 ### Manual soak testing
-
-The operator should run the branch for normal work before merge, specifically watching for flicker, stale cells, wrong cursor position, mouse/focus breakage, paste behavior, scrollback correctness, resize behavior, dialog overlay cleanup, and terminal reset after detach. Manual coverage should include Ghostty, iTerm2, WezTerm, Alacritty, Kitty, and an SSH session where possible because the core product value includes no blinking, no flickering, and low bandwidth over remote links.
+Run the branch for normal work before merge, watching for flicker, stale cells, wrong cursor position/shape, mouse/focus breakage, paste behavior, scrollback correctness, resize behavior, dialog overlay cleanup, hyperlink rendering, and terminal reset after detach. Cover Ghostty, iTerm2, WezTerm, Alacritty, Kitty, and an SSH session, because the core product value includes no blinking, no flickering, and low bandwidth over remote links.
 
 ## Explicit non-goals
 
-- Do not replace `DamageGrid` with Termina. Termina has no grid, damage tracking, scrollback, or passthrough model.
-- Do not replace `DamageGrid` with Ratatui `Buffer`. Ratatui's buffer is not a PTY emulator and does not own query replies or terminal modes.
+- Do not replace `DamageGrid` with Termina or with Ratatui's `Buffer`. Neither owns scrollback, query replies, passthrough policy, or terminal modes.
 - Do not revive direct `GridPatch` ANSI emission as the live optimization path. It breaks the one-writer invariant and can desync Ratatui's previous buffer.
-- Do not introduce a runtime feature flag as the primary validation mechanism. The validation mechanism is a branch with exhaustive tests and manual soak, followed by replacing the old implementation if the new one is better.
-- Do not chase generic widget improvements before solving width/diff/output correctness.
-- Do not migrate all Crossterm usage to Termina in one unmeasured sweep. Prototype, compare, then keep the better path.
+- Do not adopt Ratatui's `scrolling-regions` feature for the Capsule; it only affects `Terminal::insert_before`, which the Capsule does not use. Pursue first-party DECSTBM emission (Recommendation 6) instead.
+- Do not rebuild the echo-back, conformance, fuzz, allocation, or bench harnesses; they exist. Extend them.
+- Do not introduce a runtime feature flag as the primary validation mechanism. Validation is a branch with exhaustive tests plus manual soak, followed by replacing the old implementation if the new one is better.
+- Do not apply `CellDiffOption::AlwaysUpdate` broadly or chase widget ergonomics before width/diff/output correctness lands.
+- Do not migrate all Crossterm usage to Termina in one unmeasured sweep.
 
 ## Implementation phases
 
-1. **Audit and baselines.** Record current Ratatui version, dependency features, backend implementations, emitted-byte behavior, benchmark numbers, and conformance pass set. Write down all local output logic that overlaps with Ratatui 0.30 APIs.
-2. **Width contract.** Implement the explicit display-width contract, add fixtures, and decide whether to use Ratatui semantics directly, port them locally, or keep a documented emulator-specific divergence.
-3. **Ratatui diff/backend alignment.** Update the pane-to-Ratatui mapping and custom backend output path to use Ratatui's current diff/clear semantics where they are better. Preserve one-writer synchronized output.
-4. **Termina prototype.** Compare Termina and Crossterm for raw mode, event handling, typed escapes, mode setup, reset cleanup, and Ratatui backend compatibility. Adopt Termina only where it is clearly better for jackin's platform and terminal protocol needs.
-5. **Broader TUI cleanup.** Apply Ratatui 0.30 layout/widget/test ergonomics where they remove local code or improve UX without weakening the terminal model.
-6. **Soak and merge decision.** Run the full automated test set, benchmark before/after, then perform manual operator testing long enough to catch flicker, stale cells, reset issues, and real-agent behavior. Merge only after the new path is the desired default.
+1. **Width contract.** Implement the single display-width module (Recommendation 1), reconcile the proven halfwidth-katakana divergence, and add the width fixtures to the existing conformance and echo-back harnesses.
+2. **Ratatui cell mapping.** Replace implicit continuation blanking with explicit `CellDiffOption` (`ForcedWidth`, narrow `Skip`) in the pane mapping (Recommendation 2), and add the buffer well-formedness property test (Recommendation 7).
+3. **Protocol-visible and attribute fidelity.** Fix OSC 8 invalidation (Recommendation 3) and extend the SGR attribute set including underline color (Recommendation 4); audit cursor/frame state for gaps (Recommendation 5).
+4. **Scroll-op research.** Prototype and measure first-party DECSTBM emission under strict geometry/capability gating (Recommendation 6); adopt only on a proven byte win with echo-back parity.
+5. **Termina prototype.** Compare Termina and Crossterm at the I/O boundary (Recommendation 8); adopt only where clearly better.
+6. **Dependency boundary and ergonomics sweep.** Keep `jackin-term` minimal, cross-check width against `ratatui-core` in tests, and apply widget ergonomics where they remove local code (Recommendation 9).
+7. **Soak and merge decision.** Run the full extended automated set, benchmark before/after with the byte counters, then perform manual operator soak long enough to catch flicker, stale cells, hyperlink and reset issues, and real-agent behavior. Merge only after the new path is the desired default.
 
 ## Related work
 
