@@ -3233,19 +3233,23 @@ impl ZaiQuotaResponse {
             .collect::<Vec<_>>();
         let time_limit = limits.iter().find(|limit| limit.limit_type == "TIME_LIMIT");
         let mut buckets = Vec::new();
+        let mut session_token_limit = None;
+        let mut primary_token_limit = None;
         if token_limits.len() >= 2 {
             token_limits.sort_by_key(|limit| limit.window_minutes().unwrap_or(i64::MAX));
-            if let Some(short) = token_limits.first() {
-                buckets.push(zai_bucket("5-hour", short, now));
-            }
-            if let Some(long) = token_limits.last() {
-                buckets.push(zai_bucket("Tokens", long, now));
-            }
+            session_token_limit = token_limits.first().copied();
+            primary_token_limit = token_limits.last().copied();
         } else if let Some(limit) = token_limits.first() {
+            primary_token_limit = Some(*limit);
+        }
+        if let Some(limit) = primary_token_limit {
             buckets.push(zai_bucket("Tokens", limit, now));
         }
         if let Some(limit) = time_limit {
             buckets.push(zai_bucket("MCP", limit, now));
+        }
+        if let Some(limit) = session_token_limit {
+            buckets.push(zai_bucket("5-hour", limit, now));
         }
         buckets
     }
@@ -3292,32 +3296,17 @@ impl ZaiLimitRaw {
             _ => None,
         }
     }
-
-    fn window_label(&self) -> Option<String> {
-        let number = self.number?;
-        let unit = match self.unit {
-            Some(5) => "minute",
-            Some(3) => "hour",
-            Some(1) => "day",
-            Some(6) => "week",
-            _ => return None,
-        };
-        let suffix = if number == 1 {
-            unit.to_owned()
-        } else {
-            format!("{unit}s")
-        };
-        Some(format!("{number} {suffix} window"))
-    }
 }
 
 fn zai_bucket(label: &str, limit: &ZaiLimitRaw, now: i64) -> QuotaBucketView {
     let used_percent = limit.used_percent();
     let remaining = used_percent.map(|used| 100u8.saturating_sub(used));
     let reset_at = limit.next_reset_time.map(|epoch_ms| epoch_ms / 1000);
-    let window_seconds = limit.window_minutes().map(|minutes| minutes * 60);
-    let pace =
-        quota_pace_label(remaining, reset_at, window_seconds, now).or_else(|| limit.window_label());
+    let detail = if label == "MCP" {
+        zai_count_line(limit)
+    } else {
+        None
+    };
     bucket(
         label,
         limit
@@ -3326,9 +3315,29 @@ fn zai_bucket(label: &str, limit: &ZaiLimitRaw, now: i64) -> QuotaBucketView {
         limit.usage.map(|value| compact_count(value.max(0) as u64)),
         remaining,
         reset_at.map(|epoch| reset_label(epoch, now)),
-        pace.as_deref(),
+        detail.as_deref(),
         UsageSnapshotStatus::Fresh,
     )
+}
+
+fn zai_count_line(limit: &ZaiLimitRaw) -> Option<String> {
+    let total = limit.usage.filter(|value| *value > 0)?;
+    let used = if let Some(remaining) = limit.remaining {
+        let from_remaining = total.saturating_sub(remaining);
+        limit
+            .current_value
+            .map_or(from_remaining, |current| from_remaining.max(current))
+    } else {
+        limit.current_value?
+    }
+    .clamp(0, total);
+    let remaining = total.saturating_sub(used);
+    Some(format!(
+        "{} / {} ({} remaining)",
+        compact_count(used as u64),
+        compact_count(total as u64),
+        compact_count(remaining as u64)
+    ))
 }
 
 fn fetch_zai_usage(token: &str) -> Result<ZaiQuotaResponse, String> {
@@ -5875,13 +5884,18 @@ mod tests {
         let buckets = quota.buckets(1_781_185_560);
 
         assert_eq!(quota.plan_name().as_deref(), Some("Coding Pro"));
-        assert_eq!(buckets[0].label, "5-hour");
-        assert_eq!(buckets[0].remaining_percent, Some(75));
-        assert_eq!(buckets[0].pace_label.as_deref(), Some("53% in reserve"));
-        assert_eq!(buckets[1].label, "Tokens");
-        assert_eq!(buckets[1].remaining_percent, Some(10));
-        assert_eq!(buckets[2].label, "MCP");
+        assert_eq!(buckets[0].label, "Tokens");
+        assert_eq!(buckets[0].remaining_percent, Some(10));
+        assert_eq!(buckets[0].pace_label, None);
+        assert_eq!(buckets[1].label, "MCP");
+        assert_eq!(buckets[1].remaining_percent, Some(75));
+        assert_eq!(
+            buckets[1].pace_label.as_deref(),
+            Some("30 / 120 (90 remaining)")
+        );
+        assert_eq!(buckets[2].label, "5-hour");
         assert_eq!(buckets[2].remaining_percent, Some(75));
+        assert_eq!(buckets[2].pace_label, None);
     }
 
     #[test]

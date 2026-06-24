@@ -465,7 +465,7 @@ pub(crate) fn focused_usage_view(
     let source = usage_source_from_label(&first.source);
     let confidence = usage_confidence_from_label(&first.confidence);
     let fetched_at = rows.iter().map(|row| row.fetched_at).max().unwrap_or(0);
-    let buckets = rows
+    let mut buckets = rows
         .iter()
         .map(|row| QuotaBucketView {
             label: row.window_kind.clone(),
@@ -479,6 +479,7 @@ pub(crate) fn focused_usage_view(
             status: usage_status_from_label(&row.status),
         })
         .collect::<Vec<_>>();
+    buckets.sort_by_key(|bucket| usage_bucket_order(&provider, &bucket.label));
     Ok(Some(FocusedUsageView {
         focused_agent: focused_agent.map(str::to_owned),
         focused_provider: first
@@ -513,6 +514,38 @@ pub(crate) fn focused_usage_view(
         tabs,
         last_error: first.last_error.clone(),
     }))
+}
+
+fn usage_bucket_order(provider: &str, label: &str) -> usize {
+    let provider = normalize_provider_label(provider);
+    let order: &[&str] = if provider_matches("openai", &provider)
+        || provider_matches("codex", &provider)
+    {
+        &[
+            "Session",
+            "Weekly",
+            "Codex Spark 5-hour",
+            "Codex Spark Weekly",
+            "Limit Reset Credits",
+            "Credits",
+        ]
+    } else if provider_matches("anthropic", &provider) || provider_matches("claude", &provider) {
+        &["Session", "Weekly", "Sonnet", "Daily Routines"]
+    } else if provider_matches("amp", &provider) {
+        &["Amp Free", "Credits", "Individual credits"]
+    } else if provider_matches("zai", &provider) || provider_matches("glm", &provider) {
+        &["Tokens", "MCP", "5-hour"]
+    } else if provider_matches("kimi", &provider) {
+        &["Weekly", "Rate Limit"]
+    } else if provider_matches("minimax", &provider) {
+        &["General · 5h", "General · Weekly", "Video"]
+    } else {
+        &[]
+    };
+    order
+        .iter()
+        .position(|entry| provider_matches(entry, label))
+        .unwrap_or(order.len())
 }
 
 fn select_provider_rows(
@@ -918,9 +951,9 @@ mod tests {
         assert_eq!(view.account.account_label, "alexey@example.com");
         assert_eq!(view.account.plan_label.as_deref(), Some("Pro 20x"));
         assert_eq!(view.buckets.len(), 2);
-        assert_eq!(view.buckets[0].label, "Credits");
-        assert_eq!(view.buckets[1].label, "Session");
-        assert_eq!(view.buckets[1].remaining_percent, Some(37));
+        assert_eq!(view.buckets[0].label, "Session");
+        assert_eq!(view.buckets[0].remaining_percent, Some(37));
+        assert_eq!(view.buckets[1].label, "Credits");
         assert_eq!(view.updated_label, "Updated just now");
         assert_eq!(view.status_bar_label, "Codex Session: 63% used · 37% left");
     }
@@ -990,6 +1023,48 @@ mod tests {
             .expect("read focused usage");
 
         assert!(view.is_none());
+    }
+
+    #[test]
+    fn focused_usage_view_sorts_provider_buckets_canonically() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("usage.db");
+        let now = 1_781_185_680;
+        let mut view = provider_usage_view(
+            "GLM / Z.AI",
+            "zai@example.com",
+            Some("Coding Pro"),
+            "5-hour",
+            100,
+            now,
+        );
+        let base_bucket = view.buckets[0].clone();
+        view.buckets.extend([
+            QuotaBucketView {
+                label: "MCP".to_owned(),
+                remaining_percent: Some(100),
+                pace_label: Some("0 / 100 (100 remaining)".to_owned()),
+                ..base_bucket.clone()
+            },
+            QuotaBucketView {
+                label: "Tokens".to_owned(),
+                remaining_percent: Some(99),
+                ..base_bucket
+            },
+        ]);
+        store_usage_snapshot(&db, &view).expect("store snapshot");
+
+        let view = focused_usage_view(&db, Some("codex"), Some("Z.AI"), now)
+            .expect("read focused usage")
+            .expect("stored provider usage");
+
+        assert_eq!(
+            view.buckets
+                .iter()
+                .map(|bucket| bucket.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Tokens", "MCP", "5-hour"]
+        );
     }
 
     #[test]
