@@ -101,8 +101,8 @@ RUN --mount=type=secret,id=github_token,uid=1000,required=false \
 ENV RTK_TELEMETRY_DISABLED=1
 
 # Codex AGENTS as file (not symlink) for RTK.
-RUN printf '@/home/agent/AGENTS.md\n' > /home/agent/.codex/AGENTS.md || true
-ln -sf /home/agent/AGENTS.md /home/agent/.grok/AGENTS.md || true
+RUN printf '@/home/agent/AGENTS.md\n' > /home/agent/.codex/AGENTS.md || true && \
+    ln -sf /home/agent/AGENTS.md /home/agent/.grok/AGENTS.md || true
 
 # RTK init for codex/opencode.
 RUN . ~/.profile && \
