@@ -215,7 +215,6 @@ pub(crate) struct BottomChromeWidget<'a> {
 
 impl Widget for BottomChromeWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        use crate::tui::app::HoverTarget;
         render_branch_bar_row(
             buf,
             area,
@@ -223,27 +222,10 @@ impl Widget for BottomChromeWidget<'_> {
             self.usage_status_label,
             self.pull_request,
             self.pull_request_loading,
+            self.debug_run_id,
             self.instance_id_label,
             self.hover_target,
         );
-        if let Some(run_id) = self.debug_run_id.filter(|r| !r.is_empty()) {
-            let chip = format!(" {run_id} ");
-            let chip_cols = jackin_tui::display_cols(&chip) as u16;
-            let bar_y = area.height.saturating_sub(1);
-            let x = area.width.saturating_sub(chip_cols);
-            let style = if self.hover_target == Some(HoverTarget::DebugChip) {
-                Style::default()
-                    .bg(color(jackin_tui::WHITE))
-                    .fg(color(jackin_tui::DANGER_RED))
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-                    .bg(color(jackin_tui::DANGER_RED))
-                    .fg(color(jackin_tui::WHITE))
-                    .add_modifier(Modifier::BOLD)
-            };
-            buf.set_string(x, bar_y, &chip, style);
-        }
         let spans = crate::tui::components::dialog::main_view_hint(
             self.scrollback_active,
             self.palette_key,
@@ -274,6 +256,7 @@ impl Widget for DialogBottomChromeWidget<'_> {
             self.usage_status_label,
             self.pull_request,
             self.pull_request_loading,
+            None,
             self.instance_id_label,
             None,
         );
@@ -312,6 +295,7 @@ fn render_branch_bar_row(
     usage_status_label: Option<&str>,
     pull_request: Option<&crate::pull_request::PullRequestInfo>,
     pull_request_loading: bool,
+    debug_run_id: Option<&str>,
     instance_id_label: &str,
     hover_target: Option<crate::tui::app::HoverTarget>,
 ) {
@@ -324,6 +308,7 @@ fn render_branch_bar_row(
         usage_status_label,
         pull_request,
         pull_request_loading,
+        debug_run_id,
         instance_id_label,
     ) else {
         return;
@@ -344,6 +329,36 @@ fn render_branch_bar_row(
             bar_y,
             &layout.container,
             container_style,
+        );
+    }
+    if let Some(region) = layout.debug_chip_region {
+        let debug_hovered = hover_target == Some(HoverTarget::DebugChip);
+        let debug_style = if debug_hovered {
+            Style::default()
+                .bg(BAR_BG)
+                .fg(color(jackin_tui::DANGER_RED))
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .bg(color(jackin_tui::DANGER_RED))
+                .fg(color(jackin_tui::WHITE))
+                .add_modifier(Modifier::BOLD)
+        };
+        buf.set_string(
+            area.x + region.start.saturating_sub(1),
+            bar_y,
+            &layout.debug_chip,
+            debug_style,
+        );
+    }
+    if let Some(region) = layout.usage_region {
+        let usage_hovered = hover_target == Some(HoverTarget::UsageStatus);
+        let usage_style = chunk_style(usage_hovered, BAR_FG, false);
+        buf.set_string(
+            area.x + region.start.saturating_sub(1),
+            bar_y,
+            &layout.usage,
+            usage_style,
         );
     }
 }

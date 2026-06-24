@@ -215,6 +215,21 @@ impl Multiplexer {
         self.focused_usage_snapshot_for_provider(None, force_refresh)
     }
 
+    pub(super) fn focused_usage_status_label(&self) -> Option<String> {
+        let focused_id = self.active_focused_id();
+        let (agent, provider) =
+            focused_id
+                .and_then(|id| self.sessions.get(&id))
+                .map_or((None, None), |session| {
+                    (
+                        session.agent.clone(),
+                        session.provider.as_ref().map(|p| p.label.clone()),
+                    )
+                });
+        self.usage_cache
+            .focused_status_bar_label(agent.as_deref(), provider.as_deref())
+    }
+
     pub(super) fn focused_usage_snapshot_for_provider(
         &mut self,
         provider_label: Option<&str>,

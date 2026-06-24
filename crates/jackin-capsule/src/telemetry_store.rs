@@ -550,7 +550,7 @@ fn provider_matches(needle: &str, provider: &str) -> bool {
 fn normalize_provider_label(value: &str) -> String {
     value
         .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric())
+        .filter(char::is_ascii_alphanumeric)
         .collect::<String>()
         .to_ascii_lowercase()
 }
@@ -579,9 +579,10 @@ fn usage_provider_tabs_from_rows(
                 || "not cached".to_owned(),
                 |row| tab_status_label(row, rows),
             ),
-            account_label: latest
-                .map(|row| row.account_label.clone())
-                .unwrap_or_else(|| "account unavailable".to_owned()),
+            account_label: latest.map_or_else(
+                || "account unavailable".to_owned(),
+                |row| row.account_label.clone(),
+            ),
             plan_label: latest.and_then(|row| row.plan_label.clone()),
             source_label: latest.map(|row| format!("{} · {}", row.view_status, row.source)),
             active: false,

@@ -689,11 +689,11 @@ impl Dialog {
         if *selected == UsageDialogTab::Overview {
             if step >= 0 {
                 return view.tabs.first().map(|tab| tab.label.clone());
-            } else if let Some(target) = view.tabs.last() {
-                return Some(target.label.clone());
-            } else {
-                *selected = UsageDialogTab::Provider;
             }
+            if let Some(target) = view.tabs.last() {
+                return Some(target.label.clone());
+            }
+            *selected = UsageDialogTab::Provider;
             return None;
         }
         let current = view.tabs.iter().position(|tab| tab.active).unwrap_or(0);

@@ -2913,6 +2913,7 @@ fn pointer_shape_updates_only_when_shape_changes() {
         None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
+        None,
         mux.status_bar.instance_id_label(),
     )
     .and_then(|layout| layout.left_region)
@@ -3098,6 +3099,7 @@ fn bottom_container_click_opens_container_info_without_copying() {
         None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
+        None,
         mux.status_bar.instance_id_label(),
     )
     .and_then(|layout| layout.container_region)
@@ -3149,6 +3151,7 @@ fn bottom_context_click_opens_github_context_dialog() {
         None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
+        None,
         mux.status_bar.instance_id_label(),
     )
     .and_then(|layout| layout.left_region)
@@ -3473,6 +3476,7 @@ fn apply_action_branch_context_bar_click_opens_container_info() {
         None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
+        None,
         mux.status_bar.instance_id_label(),
     )
     .and_then(|layout| layout.container_region)

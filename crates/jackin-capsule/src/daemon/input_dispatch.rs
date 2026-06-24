@@ -1,6 +1,6 @@
 //! Input dispatch methods for the Multiplexer.
 
-use crate::tui::components::branch_context_bar::branch_context_bar_hit;
+use crate::tui::components::branch_context_bar::{branch_context_bar_hit, debug_run_id_label};
 use crate::tui::input::TAB_DOUBLE_CLICK_WINDOW;
 use crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION;
 use crate::tui::update::action_frame_plan;
@@ -544,14 +544,17 @@ impl Multiplexer {
                 self.apply_action(action);
             }
             Action::BranchContextBarClick { row, col } => {
+                let usage_status_label = self.focused_usage_snapshot(false).status_bar_label;
                 let hit = branch_context_bar_hit(
                     row + 1,
                     col + 1,
                     self.term_rows,
                     self.term_cols,
                     self.context_bar_branch(),
+                    Some(&usage_status_label),
                     self.pull_request_context.as_deref(),
                     self.pull_request_context_loading(),
+                    debug_run_id_label().as_deref(),
                     self.status_bar.instance_id_label(),
                 );
                 let Some(action) = branch_context_bar_click_action(hit) else {
@@ -674,6 +677,7 @@ impl Multiplexer {
                 self.apply_action(Action::PaneData(bytes));
             }
         } else {
+            let usage_status_label = self.focused_usage_status_label();
             let branch_context_hit = match &event {
                 InputEvent::MousePress {
                     row,
@@ -685,8 +689,10 @@ impl Multiplexer {
                     self.term_rows,
                     self.term_cols,
                     self.context_bar_branch(),
+                    usage_status_label.as_deref(),
                     self.pull_request_context.as_deref(),
                     self.pull_request_context_loading(),
+                    debug_run_id_label().as_deref(),
                     self.status_bar.instance_id_label(),
                 )
                 .is_some(),

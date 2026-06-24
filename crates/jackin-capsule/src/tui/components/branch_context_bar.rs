@@ -36,16 +36,19 @@ impl ColRange {
 pub(crate) struct BranchContextBarLayout {
     pub(crate) left: String,
     pub(crate) left_region: Option<ColRange>,
+    pub(crate) usage: String,
+    pub(crate) usage_region: Option<ColRange>,
+    pub(crate) debug_chip: String,
+    pub(crate) debug_chip_region: Option<ColRange>,
     pub(crate) container: String,
     pub(crate) container_region: Option<ColRange>,
-    /// Click region for the debug run-id chip (rightmost, only when debug is active).
-    pub(crate) debug_chip_region: Option<ColRange>,
 }
 
 pub(crate) fn visible_branch(branch: Option<&str>, is_default_branch: bool) -> Option<&str> {
     branch.filter(|_| !is_default_branch)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn branch_context_bar_layout(
     term_rows: u16,
     term_cols: u16,
@@ -53,6 +56,7 @@ pub(crate) fn branch_context_bar_layout(
     usage_status_label: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     pull_request_loading: bool,
+    debug_run_id: Option<&str>,
     container_name: &str,
 ) -> Option<BranchContextBarLayout> {
     if term_rows == 0 || term_cols == 0 {
@@ -60,37 +64,36 @@ pub(crate) fn branch_context_bar_layout(
     }
     // `branch` is the post-filter visible branch. Trust the input here so
     // renderer / layout / hit-test helpers stay default-branch-agnostic.
-    let (context_left, mut left_clickable) = match (pull_request, branch) {
+    let (context_left, left_clickable) = match (pull_request, branch) {
         (Some(pr), _) => (format!(" PR {} · {} ", pr.number_label(), pr.title), true),
         (None, Some(b)) if pull_request_loading => (format!(" Resolving PR · {b} "), true),
         (None, Some(b)) => (format!(" Branch · {b} "), true),
         (None, None) => (String::new(), false),
     };
-    let container = if container_name.is_empty() {
-        String::new()
-    } else {
-        format!(" {container_name} ")
-    };
     let term_cols_usize = usize::from(term_cols);
-    let container_cols = display_cols(&container);
-    let container_fits = container_cols > 0 && container_cols + 2 < term_cols_usize;
-    let left_max_cols = if container_fits {
-        term_cols_usize.saturating_sub(container_cols + 1)
-    } else {
-        term_cols_usize
-    };
-    let usage = usage_status_label.filter(|s| !s.is_empty());
-    let mut left = branch_context_left_label(&context_left, usage);
-    if let Some(usage) = usage
-        && display_cols(&left) > left_max_cols
-    {
-        let compact_usage = compact_usage_status_label(usage);
-        left = branch_context_left_label(&context_left, Some(&compact_usage));
-        if !context_left.is_empty() && display_cols(&left) > left_max_cols {
-            left = branch_context_left_label("", Some(&compact_usage));
-            left_clickable = false;
-        }
-    }
+    let mut cursor = term_cols_usize.saturating_add(1);
+    let (container, container_region) = place_right_chunk(&mut cursor, term_cols_usize, {
+        (!container_name.is_empty()).then(|| format!(" {container_name} "))
+    });
+    let (debug_chip, debug_chip_region) = place_right_chunk(
+        &mut cursor,
+        term_cols_usize,
+        debug_run_id
+            .filter(|id| !id.is_empty())
+            .map(|id| format!(" {id} · ")),
+    );
+    let usage_label = usage_status_label.filter(|s| !s.is_empty());
+    let (usage, usage_region) =
+        usage_right_chunk(&mut cursor, term_cols_usize, usage_label, debug_chip_region);
+
+    let right_start = usage_region
+        .or(debug_chip_region)
+        .or(container_region)
+        .map_or(term_cols_usize.saturating_add(1), |region| {
+            usize::from(region.start)
+        });
+    let left_max_cols = right_start.saturating_sub(2);
+    let left = context_left;
     let left = take_display_cols(&left, left_max_cols);
     let left_cols = display_cols(&left);
     let left_region = if left_clickable && left_cols > 0 {
@@ -99,42 +102,70 @@ pub(crate) fn branch_context_bar_layout(
     } else {
         None
     };
-    let container_region = if container_fits {
-        let start = term_cols_usize
-            .saturating_sub(container_cols)
-            .saturating_add(1);
-        let end = start.saturating_add(container_cols);
-        ColRange::new(
-            u16::try_from(start).unwrap_or(u16::MAX),
-            u16::try_from(end).unwrap_or(u16::MAX),
-        )
-    } else {
-        None
-    };
     Some(BranchContextBarLayout {
         left,
         left_region,
+        usage,
+        usage_region,
+        debug_chip,
+        debug_chip_region,
         container,
         container_region,
-        debug_chip_region: debug_chip_range(term_cols),
     })
 }
 
-fn branch_context_left_label(context_left: &str, usage: Option<&str>) -> String {
-    match (context_left.is_empty(), usage) {
-        (true, Some(usage)) => format!(" {usage} "),
-        (false, Some(usage)) => format!("{} · {usage} ", context_left.trim_end()),
-        (false, None) => context_left.to_owned(),
-        (true, None) => String::new(),
+fn place_right_chunk(
+    cursor: &mut usize,
+    term_cols: usize,
+    chunk: Option<String>,
+) -> (String, Option<ColRange>) {
+    let Some(chunk) = chunk else {
+        return (String::new(), None);
+    };
+    let cols = display_cols(&chunk);
+    if cols == 0 || cols + 2 >= term_cols || cols >= cursor.saturating_sub(1) {
+        return (String::new(), None);
     }
+    let start = cursor.saturating_sub(cols);
+    let end = start.saturating_add(cols);
+    *cursor = start;
+    (
+        chunk,
+        ColRange::new(
+            u16::try_from(start).unwrap_or(u16::MAX),
+            u16::try_from(end).unwrap_or(u16::MAX),
+        ),
+    )
+}
+
+fn usage_right_chunk(
+    cursor: &mut usize,
+    term_cols: usize,
+    usage: Option<&str>,
+    debug_chip_region: Option<ColRange>,
+) -> (String, Option<ColRange>) {
+    let Some(usage) = usage else {
+        return (String::new(), None);
+    };
+    let separator = if debug_chip_region.is_some() {
+        "  "
+    } else {
+        " "
+    };
+    let full = format!(" {usage}{separator}");
+    let compact_usage = compact_usage_status_label(usage);
+    let compact = format!(" {compact_usage}{separator}");
+    let chunk = if display_cols(&full) < cursor.saturating_sub(1) {
+        full
+    } else if display_cols(&compact) < cursor.saturating_sub(1) {
+        compact
+    } else {
+        return (String::new(), None);
+    };
+    place_right_chunk(cursor, term_cols, Some(chunk))
 }
 
 fn compact_usage_status_label(label: &str) -> String {
-    let provider = label
-        .split(" · ")
-        .next()
-        .and_then(|head| head.split_whitespace().next())
-        .unwrap_or("Usage");
     let parts = label
         .split(" · ")
         .map(str::trim)
@@ -142,17 +173,22 @@ fn compact_usage_status_label(label: &str) -> String {
         .collect::<Vec<_>>();
     let remaining = parts
         .iter()
-        .find(|part| part.contains("% left"))
+        .find(|part| part.starts_with("Session ") || part.starts_with("5-hour "))
+        .or_else(|| parts.iter().find(|part| part.contains('%')))
         .map(|part| (*part).to_owned());
     let state = parts
         .iter()
         .rev()
         .find_map(|part| usage_lifecycle_word(part));
     match (remaining, state) {
-        (Some(remaining), Some(state)) => format!("{provider} {remaining} · {state}"),
-        (Some(remaining), None) => format!("{provider} {remaining}"),
-        (None, Some(state)) => format!("{provider} {state}"),
-        (None, None) => provider.to_owned(),
+        (Some(remaining), Some(state)) => format!("{remaining} · {state}"),
+        (Some(remaining), None) => remaining,
+        (None, Some(state)) => state.to_owned(),
+        (None, None) => label
+            .split_whitespace()
+            .next()
+            .unwrap_or("usage")
+            .to_owned(),
     }
 }
 
@@ -170,25 +206,19 @@ fn usage_lifecycle_word(part: &str) -> Option<&'static str> {
     .find(|word| lower.contains(word))
 }
 
-pub(crate) fn debug_chip_range(term_cols: u16) -> Option<ColRange> {
+pub(crate) fn debug_run_id_label() -> Option<String> {
     if !crate::logging::debug_enabled() {
         return None;
     }
-    let Ok(run_id) = std::env::var("JACKIN_RUN_ID") else {
-        return None;
-    };
-    if run_id.is_empty() {
-        return None;
-    }
-    let chip = format!(" {run_id} ");
-    let chip_cols = u16::try_from(display_cols(&chip)).unwrap_or(u16::MAX);
-    let chip_start = term_cols.saturating_sub(chip_cols).saturating_add(1);
-    ColRange::new(chip_start, term_cols.saturating_add(1))
+    std::env::var("JACKIN_RUN_ID")
+        .ok()
+        .filter(|id| !id.is_empty())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BranchContextBarHit {
     Context,
+    UsageStatus,
     Container,
     /// Click on the debug run-id chip (only shown when `--debug` is active).
     DebugChip,
@@ -201,8 +231,10 @@ pub(crate) fn branch_context_bar_hit(
     term_rows: u16,
     term_cols: u16,
     branch: Option<&str>,
+    usage_status_label: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     pull_request_loading: bool,
+    debug_run_id: Option<&str>,
     container_name: &str,
 ) -> Option<BranchContextBarHit> {
     if row != term_rows {
@@ -212,9 +244,10 @@ pub(crate) fn branch_context_bar_hit(
         term_rows,
         term_cols,
         branch,
-        None,
+        usage_status_label,
         pull_request,
         pull_request_loading,
+        debug_run_id,
         container_name,
     )?;
     if layout.debug_chip_region.is_some_and(|r| r.contains(col)) {
@@ -222,6 +255,9 @@ pub(crate) fn branch_context_bar_hit(
     }
     if layout.container_region.is_some_and(|r| r.contains(col)) {
         return Some(BranchContextBarHit::Container);
+    }
+    if layout.usage_region.is_some_and(|r| r.contains(col)) {
+        return Some(BranchContextBarHit::UsageStatus);
     }
     if layout.left_region.is_some_and(|r| r.contains(col)) {
         return Some(BranchContextBarHit::Context);

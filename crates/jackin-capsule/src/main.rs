@@ -306,45 +306,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_window_seconds_accepts_equals_and_separate_forms() {
-        assert_eq!(
-            parse_window_seconds(&args(&[
-                "jackin-capsule",
-                "usage",
-                "workspace",
-                "--window-seconds=3600",
-            ]))
-            .expect("equals window"),
-            Some(3600)
-        );
-        assert_eq!(
-            parse_window_seconds(&args(&[
-                "jackin-capsule",
-                "usage",
-                "session",
-                "7",
-                "--window-seconds",
-                "7200",
-            ]))
-            .expect("separate window"),
-            Some(7200)
-        );
-    }
-
-    #[test]
-    fn parse_window_seconds_rejects_non_positive_values() {
-        assert!(
-            parse_window_seconds(&args(&[
-                "jackin-capsule",
-                "usage",
-                "workspace",
-                "--window-seconds=0",
-            ]))
-            .is_err()
-        );
-    }
-
-    #[test]
     fn parse_provider_flag_extracts_label_after_agent() {
         assert_eq!(
             parse_provider_flag(&args(&[

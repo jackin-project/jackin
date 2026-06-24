@@ -101,6 +101,27 @@ impl UsageSurface {
 }
 
 impl UsageCache {
+    pub(crate) fn focused_status_bar_label(
+        &self,
+        focused_agent: Option<&str>,
+        focused_provider: Option<&str>,
+    ) -> Option<String> {
+        let agent = focused_agent?;
+        let now = now_epoch();
+        if let Ok(Some(view)) = crate::telemetry_store::focused_usage_view(
+            Path::new(TELEMETRY_STORE_PATH),
+            Some(agent),
+            focused_provider,
+            now,
+        ) {
+            return Some(view.status_bar_label);
+        }
+        let cache_key = format!("{agent}:{}", focused_provider.unwrap_or_default());
+        self.snapshots
+            .get(&cache_key)
+            .map(|cached| cached.view.status_bar_label.clone())
+    }
+
     pub(crate) fn focused_snapshot(
         &mut self,
         focused_agent: Option<&str>,
@@ -1078,7 +1099,7 @@ fn status_bar_quota_labels(buckets: &[QuotaBucketView]) -> Vec<String> {
                 .and_then(|bucket| {
                     bucket
                         .remaining_percent
-                        .map(|remaining| format!("{target} {remaining}% left"))
+                        .map(|remaining| format!("{target} {remaining}%"))
                 })
         })
         .collect()
@@ -3613,7 +3634,7 @@ mod tests {
                 UsageSnapshotStatus::Fresh,
                 &buckets
             ),
-            "Session 37% left · Weekly 10% left"
+            "Session 37% · Weekly 10%"
         );
     }
 
@@ -3636,7 +3657,7 @@ mod tests {
                 UsageSnapshotStatus::Stale,
                 &buckets
             ),
-            "Session 1% left"
+            "Session 1%"
         );
     }
 
@@ -3675,7 +3696,7 @@ mod tests {
         assert_eq!(view.buckets.len(), 1);
         assert_eq!(view.buckets[0].status, UsageSnapshotStatus::Stale);
         assert_eq!(view.account.plan_label.as_deref(), Some("Pro 20x"));
-        assert_eq!(view.status_bar_label, "Weekly 10% left");
+        assert_eq!(view.status_bar_label, "Weekly 10%");
         assert!(
             view.last_error
                 .as_deref()

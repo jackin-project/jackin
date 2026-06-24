@@ -134,21 +134,26 @@ fn renders_usage_signal_with_branch_context() {
     );
     assert!(text.contains("Branch · feature/usage"));
     assert!(text.contains("Codex Session: 63% used · 37% left"));
+    assert!(
+        text.find("Branch · feature/usage") < text.find("Codex Session: 63% used · 37% left"),
+        "{text:?}"
+    );
 }
 
 #[test]
-fn narrow_usage_signal_keeps_remaining_quota_before_branch() {
+fn narrow_usage_signal_keeps_session_quota_before_weekly() {
     let (text, _) = widget_bar(
-        54,
+        44,
         Some("feature/very-long-branch-name"),
-        Some("Codex · alexey@example.com Weekly: 90% used / 100% · 10% left · Resets in 3h52m"),
+        Some("Session 37% · Weekly 10%"),
         None,
         false,
         "jk-test-container",
         None,
     );
 
-    assert!(text.contains("Codex 10% left"), "{text:?}");
+    assert!(text.contains("Session 37%"), "{text:?}");
+    assert!(!text.contains("Weekly 10%"), "{text:?}");
     assert!(!text.contains("feature/very-long-branch-name"), "{text:?}");
 }
 
@@ -164,7 +169,7 @@ fn narrow_usage_signal_keeps_state_when_no_quota_exists() {
         None,
     );
 
-    assert!(text.contains("Amp login"), "{text:?}");
+    assert!(text.contains("login"), "{text:?}");
     assert!(!text.contains("feature/very-long-branch-name"), "{text:?}");
 }
 
@@ -172,12 +177,30 @@ fn narrow_usage_signal_keeps_state_when_no_quota_exists() {
 fn layout_returns_none_for_zero_dimensions() {
     let pr = pull_request_fixture(1);
     assert!(
-        branch_context_bar_layout(0, 80, Some("feature/x"), None, Some(&pr), false, "jk-test")
-            .is_none()
+        branch_context_bar_layout(
+            0,
+            80,
+            Some("feature/x"),
+            None,
+            Some(&pr),
+            false,
+            None,
+            "jk-test"
+        )
+        .is_none()
     );
     assert!(
-        branch_context_bar_layout(24, 0, Some("feature/x"), None, Some(&pr), false, "jk-test")
-            .is_none()
+        branch_context_bar_layout(
+            24,
+            0,
+            Some("feature/x"),
+            None,
+            Some(&pr),
+            false,
+            None,
+            "jk-test"
+        )
+        .is_none()
     );
 }
 
@@ -191,6 +214,7 @@ fn hit_rejects_columns_outside_region() {
         None,
         Some(&pr),
         false,
+        None,
         "jk-test",
     )
     .expect("layout fits");
@@ -204,8 +228,10 @@ fn hit_rejects_columns_outside_region() {
             24,
             120,
             Some("feature/x"),
+            None,
             Some(&pr),
             false,
+            None,
             "jk-test"
         ),
         Some(BranchContextBarHit::Context)
@@ -217,8 +243,10 @@ fn hit_rejects_columns_outside_region() {
             24,
             120,
             Some("feature/x"),
+            None,
             Some(&pr),
             false,
+            None,
             "jk-test"
         ),
         Some(BranchContextBarHit::Context)
@@ -229,8 +257,10 @@ fn hit_rejects_columns_outside_region() {
         24,
         120,
         Some("feature/x"),
+        None,
         Some(&pr),
         false,
+        None,
         "jk-test",
     );
     assert!(matches!(
@@ -244,8 +274,10 @@ fn hit_rejects_columns_outside_region() {
             24,
             120,
             Some("feature/x"),
+            None,
             Some(&pr),
             false,
+            None,
             "jk-test"
         ),
         None
@@ -283,6 +315,22 @@ fn hover_highlights_click_targets() {
         hover_bg,
         "hovered container chunk lifts"
     );
+
+    let (text, usage) = widget_bar(
+        120,
+        Some("asa/pr-context"),
+        Some("Session 37% · Weekly 10%"),
+        Some(&pr),
+        false,
+        "jk-test-container",
+        Some(crate::tui::app::HoverTarget::UsageStatus),
+    );
+    let chunk_x = text.find("Session 37%").expect("usage chunk") as u16;
+    assert_eq!(
+        usage[(chunk_x, 23)].bg,
+        hover_bg,
+        "hovered usage chunk lifts"
+    );
 }
 
 #[test]
@@ -294,7 +342,18 @@ fn leaves_left_side_empty_when_branch_filtered_out() {
     assert!(!text.contains("Resolving PR"));
     assert!(!text.contains("PR #"));
     assert_eq!(
-        branch_context_bar_hit(24, 2, 24, 80, None, None, false, "jk-test-container"),
+        branch_context_bar_hit(
+            24,
+            2,
+            24,
+            80,
+            None,
+            None,
+            None,
+            false,
+            None,
+            "jk-test-container"
+        ),
         None
     );
 }
