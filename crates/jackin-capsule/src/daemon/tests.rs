@@ -260,8 +260,8 @@ fn apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog() {
     );
 }
 
-#[tokio::test]
-async fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
+#[test]
+fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
     let mut mux = single_pane_tab_mux();
     let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
     mux.sessions.insert(1, session);
@@ -294,19 +294,6 @@ async fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
             provider: Some("Claude".to_owned())
         })
     );
-
-    assert!(mux.spawn_active_usage_account_refresh(Instant::now()));
-    for _ in 0..400 {
-        if mux
-            .finish_usage_account_refresh_if_ready(Instant::now())
-            .await
-        {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
-    assert!(mux.usage_refresh_task.is_none());
-    assert_eq!(mux.pending_usage_refresh, None);
 }
 
 #[test]
@@ -343,9 +330,6 @@ fn apply_action_open_usage_queues_focused_provider_refresh() {
 #[test]
 fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
     let mut mux = single_pane_tab_mux();
-    let dir = tempfile::tempdir().expect("tempdir");
-    let db = dir.path().join("usage.db");
-    mux.usage_cache.set_telemetry_store_path(db.clone());
     let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
     session.provider = Some(crate::session::SessionProvider {
         label: "OpenAI".to_owned(),
@@ -357,36 +341,34 @@ fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system time after epoch")
         .as_secs() as i64;
-    crate::telemetry_store::store_usage_snapshot(
-        &db,
-        &jackin_protocol::control::FocusedUsageView {
-            focused_agent: Some("codex".to_owned()),
-            focused_provider: Some("OpenAI".to_owned()),
-            account: jackin_protocol::control::FocusedAccountHeader {
-                provider_label: "Codex".to_owned(),
-                account_label: "alexey@example.com".to_owned(),
-                plan_label: Some("Pro 20x".to_owned()),
-            },
-            buckets: vec![jackin_protocol::control::QuotaBucketView {
-                label: "Session".to_owned(),
-                used_label: Some("63% used".to_owned()),
-                limit_label: Some("100%".to_owned()),
-                remaining_percent: Some(37),
-                reset_label: Some("Resets at 15:00 UTC".to_owned()),
-                pace_label: None,
-                status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-            }],
-            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
-            source: jackin_protocol::control::UsageSource::Cli,
-            confidence: jackin_protocol::control::UsageConfidence::Authoritative,
-            fetched_at_epoch: now_epoch - 120,
-            updated_label: "Updated just now".to_owned(),
-            status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
-            tabs: Vec::new(),
-            last_error: None,
+    let cached = jackin_protocol::control::FocusedUsageView {
+        focused_agent: Some("codex".to_owned()),
+        focused_provider: Some("OpenAI".to_owned()),
+        account: jackin_protocol::control::FocusedAccountHeader {
+            provider_label: "Codex".to_owned(),
+            account_label: "alexey@example.com".to_owned(),
+            plan_label: Some("Pro 20x".to_owned()),
         },
-    )
-    .expect("store usage snapshot");
+        buckets: vec![jackin_protocol::control::QuotaBucketView {
+            label: "Session".to_owned(),
+            used_label: Some("63% used".to_owned()),
+            limit_label: Some("100%".to_owned()),
+            remaining_percent: Some(37),
+            reset_label: Some("Resets at 15:00 UTC".to_owned()),
+            pace_label: None,
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        }],
+        status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        source: jackin_protocol::control::UsageSource::Cli,
+        confidence: jackin_protocol::control::UsageConfidence::Authoritative,
+        fetched_at_epoch: now_epoch - 120,
+        updated_label: "Updated just now".to_owned(),
+        status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
+        tabs: Vec::new(),
+        last_error: None,
+    };
+    mux.usage_cache
+        .insert_snapshot_for_test("codex", Some("OpenAI"), cached);
     let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
     view.updated_label = "Updated just now".to_owned();
     mux.dialog_push(Dialog::new_usage(view));

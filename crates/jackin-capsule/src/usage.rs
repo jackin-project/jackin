@@ -144,14 +144,6 @@ impl UsageCache {
         if let Some(view) = self.cached_focused_usage_view(agent, focused_provider) {
             return Some(view.status_bar_label);
         }
-        if let Ok(Some(view)) = crate::telemetry_store::focused_usage_view(
-            &self.telemetry_store_path,
-            Some(agent),
-            focused_provider,
-            now_epoch(),
-        ) {
-            return Some(view.status_bar_label);
-        }
         None
     }
 
@@ -177,28 +169,7 @@ impl UsageCache {
             if let Some(view) = self.cached_focused_usage_view(agent, focused_provider) {
                 return view;
             }
-            return match crate::telemetry_store::focused_usage_view(
-                &self.telemetry_store_path,
-                Some(agent),
-                focused_provider,
-                now,
-            ) {
-                Ok(Some(mut view)) => {
-                    if view.focused_provider.is_none() {
-                        view.focused_provider = focused_provider.map(str::to_owned);
-                    }
-                    mark_active_tab(&mut view);
-                    view
-                }
-                Ok(None) => cached_unavailable_view(agent, focused_provider, now),
-                Err(error) => {
-                    let mut view = cached_unavailable_view(agent, focused_provider, now);
-                    view.last_error = Some(format!(
-                        "usage unavailable: telemetry store read failed: {error}"
-                    ));
-                    view
-                }
-            };
+            return cached_unavailable_view(agent, focused_provider, now);
         }
         let cache_key = canonical_usage_cache_key(agent, focused_provider);
         let mut view = build_snapshot(
@@ -222,15 +193,6 @@ impl UsageCache {
         {
             crate::cdebug!("usage telemetry store write failed: {error}");
         }
-        if let Ok(Some(mut stored)) = crate::telemetry_store::focused_usage_view(
-            &self.telemetry_store_path,
-            Some(agent),
-            focused_provider,
-            now_epoch(),
-        ) {
-            mark_active_tab(&mut stored);
-            return stored;
-        }
         view
     }
 
@@ -241,6 +203,7 @@ impl UsageCache {
     ) -> Option<FocusedUsageView> {
         let cache_key = canonical_usage_cache_key(agent, focused_provider);
         let mut view = self.snapshots.get(&cache_key)?.view.clone();
+        refresh_cached_updated_label(&mut view, now_epoch());
         if view.focused_agent.is_none() {
             view.focused_agent = Some(agent.to_owned());
         }
@@ -500,6 +463,7 @@ fn canonical_usage_cache_key(agent: &str, focused_provider: Option<&str>) -> Str
     surface.label().to_owned()
 }
 
+#[cfg(test)]
 pub(crate) fn resolved_usage_provider_label(
     agent: &str,
     focused_provider: Option<&str>,
@@ -4857,6 +4821,27 @@ fn now_epoch() -> i64 {
         .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
 }
 
+pub(crate) fn relative_updated_label(fetched_at: i64, now_epoch: i64) -> String {
+    let age = now_epoch.saturating_sub(fetched_at).max(0);
+    if age < 60 {
+        "Updated just now".to_owned()
+    } else if age < 3_600 {
+        format!("Updated {}m ago", age / 60)
+    } else {
+        format!("Updated {}h ago", age / 3_600)
+    }
+}
+
+fn refresh_cached_updated_label(view: &mut FocusedUsageView, now_epoch: i64) {
+    if matches!(
+        view.status,
+        UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale
+    ) || view.updated_label.trim().is_empty()
+    {
+        view.updated_label = relative_updated_label(view.fetched_at_epoch, now_epoch);
+    }
+}
+
 fn compact_count(value: u64) -> String {
     if value >= 1_000_000_000 {
         format!("{:.1}B", value as f64 / 1_000_000_000.0)
@@ -5009,6 +4994,40 @@ mod tests {
                 .tabs
                 .iter()
                 .any(|tab| tab.label == "Codex" && tab.active)
+        );
+    }
+
+    #[test]
+    fn usage_status_label_does_not_read_store_on_cache_miss() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("usage.sqlite3");
+        crate::telemetry_store::store_usage_snapshot(&db, &codex_cached_usage_view())
+            .expect("store usage snapshot");
+        let mut cache = UsageCache::default();
+        cache.set_telemetry_store_path(db);
+
+        assert_eq!(
+            cache.focused_status_bar_label(Some("codex"), Some("OpenAI")),
+            None
+        );
+    }
+
+    #[test]
+    fn usage_snapshot_does_not_read_store_on_cache_miss() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = dir.path().join("usage.sqlite3");
+        crate::telemetry_store::store_usage_snapshot(&db, &codex_cached_usage_view())
+            .expect("store usage snapshot");
+        let mut cache = UsageCache::default();
+        cache.set_telemetry_store_path(db);
+
+        let snapshot =
+            cache.focused_snapshot(Some("codex"), Some("OpenAI"), &BTreeMap::new(), false);
+
+        assert_eq!(snapshot.status, UsageSnapshotStatus::Unavailable);
+        assert_eq!(
+            snapshot.last_error.as_deref(),
+            Some("usage unavailable: no cached provider snapshot")
         );
     }
 

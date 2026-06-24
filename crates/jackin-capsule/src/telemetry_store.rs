@@ -420,6 +420,7 @@ fn status_label(status: UsageSnapshotStatus) -> &'static str {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn focused_usage_view(
     path: &Path,
     focused_agent: Option<&str>,
@@ -478,7 +479,7 @@ pub(crate) fn focused_usage_view(
             UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale
         ) || first.updated_label.trim().is_empty()
         {
-            relative_updated_label(fetched_at, now_epoch)
+            crate::usage::relative_updated_label(fetched_at, now_epoch)
         } else {
             first.updated_label.clone()
         },
@@ -492,6 +493,7 @@ pub(crate) fn focused_usage_view(
     }))
 }
 
+#[cfg(test)]
 fn usage_bucket_order(provider: &str, label: &str) -> usize {
     let provider = normalize_provider_label(provider);
     let order: &[&str] = if provider_matches("openai", &provider)
@@ -524,6 +526,7 @@ fn usage_bucket_order(provider: &str, label: &str) -> usize {
         .unwrap_or(order.len())
 }
 
+#[cfg(test)]
 fn select_provider_rows(
     rows: Vec<StoredAccountUsageSnapshot>,
     focused_provider: Option<&str>,
@@ -542,6 +545,7 @@ fn select_provider_rows(
     Some((provider, matches))
 }
 
+#[cfg(test)]
 fn provider_matches(needle: &str, provider: &str) -> bool {
     if needle.trim().is_empty() {
         return false;
@@ -560,6 +564,7 @@ fn provider_matches(needle: &str, provider: &str) -> bool {
         || (needle.contains("glm") && provider.contains("zai"))
 }
 
+#[cfg(test)]
 fn normalize_provider_label(value: &str) -> String {
     value
         .chars()
@@ -568,6 +573,7 @@ fn normalize_provider_label(value: &str) -> String {
         .to_ascii_lowercase()
 }
 
+#[cfg(test)]
 fn usage_provider_tabs_from_rows(
     rows: &[StoredAccountUsageSnapshot],
 ) -> Vec<jackin_protocol::control::UsageProviderTab> {
@@ -604,6 +610,7 @@ fn usage_provider_tabs_from_rows(
     .collect()
 }
 
+#[cfg(test)]
 fn tab_status_label(
     row: &StoredAccountUsageSnapshot,
     rows: &[StoredAccountUsageSnapshot],
@@ -622,6 +629,7 @@ fn tab_status_label(
         .unwrap_or_else(|| row.view_status.clone())
 }
 
+#[cfg(test)]
 fn usage_status_from_label(label: &str) -> UsageSnapshotStatus {
     match label {
         "fresh" => UsageSnapshotStatus::Fresh,
@@ -634,6 +642,7 @@ fn usage_status_from_label(label: &str) -> UsageSnapshotStatus {
     }
 }
 
+#[cfg(test)]
 fn usage_source_from_label(label: &str) -> UsageSource {
     match label {
         "provider_api" => UsageSource::ProviderApi,
@@ -644,6 +653,7 @@ fn usage_source_from_label(label: &str) -> UsageSource {
     }
 }
 
+#[cfg(test)]
 fn usage_confidence_from_label(label: &str) -> UsageConfidence {
     match label {
         "authoritative" => UsageConfidence::Authoritative,
@@ -653,17 +663,7 @@ fn usage_confidence_from_label(label: &str) -> UsageConfidence {
     }
 }
 
-fn relative_updated_label(fetched_at: i64, now_epoch: i64) -> String {
-    let age = now_epoch.saturating_sub(fetched_at).max(0);
-    if age < 60 {
-        "Updated just now".to_owned()
-    } else if age < 3_600 {
-        format!("Updated {}m ago", age / 60)
-    } else {
-        format!("Updated {}h ago", age / 3_600)
-    }
-}
-
+#[cfg(test)]
 fn lifecycle_status_bar_label(status: UsageSnapshotStatus) -> String {
     match status {
         UsageSnapshotStatus::Fresh => "usage cached",
@@ -677,6 +677,7 @@ fn lifecycle_status_bar_label(status: UsageSnapshotStatus) -> String {
     .to_owned()
 }
 
+#[cfg(test)]
 fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapshot>, String> {
     let path = path.to_path_buf();
     run_store(move || async move {
@@ -772,11 +773,13 @@ pub(crate) fn schema_version(path: &Path) -> Result<Option<String>, String> {
     })
 }
 
+#[cfg(test)]
 fn row_i64(row: &Row, idx: usize, name: &str) -> Result<i64, String> {
     row.get(idx)
         .map_err(|err| format!("decode telemetry {name} failed: {err}"))
 }
 
+#[cfg(test)]
 fn row_opt_i64(row: &Row, idx: usize, name: &str) -> Result<Option<i64>, String> {
     row.get(idx)
         .map_err(|err| format!("decode telemetry {name} failed: {err}"))
@@ -787,6 +790,7 @@ fn row_string(row: &Row, idx: usize, name: &str) -> Result<String, String> {
         .map_err(|err| format!("decode telemetry {name} failed: {err}"))
 }
 
+#[cfg(test)]
 fn row_opt_string(row: &Row, idx: usize, name: &str) -> Result<Option<String>, String> {
     row.get(idx)
         .map_err(|err| format!("decode telemetry {name} failed: {err}"))
