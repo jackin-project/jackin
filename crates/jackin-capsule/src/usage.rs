@@ -15,7 +15,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, TimeZone, Utc};
 use jackin_protocol::control::{
     AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, QuotaBucketView,
     UsageConfidence, UsageProviderTab, UsageSnapshotStatus, UsageSource,
@@ -943,8 +943,8 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
         });
     let buckets = api_usage
         .as_ref()
-        .map(AmpApiUsage::buckets)
-        .or_else(|| cli_usage.as_ref().map(AmpCliUsage::buckets))
+        .map(|usage| usage.buckets(now))
+        .or_else(|| cli_usage.as_ref().map(|usage| usage.buckets(now)))
         .filter(|buckets| !buckets.is_empty())
         .unwrap_or_else(|| {
             vec![bucket(
@@ -3948,27 +3948,18 @@ fn reset_label(reset_at: i64, now: i64) -> String {
     if reset_at <= now {
         return "Resets now".to_owned();
     }
-    let Some(reset) = DateTime::<Utc>::from_timestamp(reset_at, 0) else {
-        return format!(
-            "Resets in {}",
-            compact_duration_label(reset_at.saturating_sub(now).max(0))
-        );
-    };
-    let Some(current) = DateTime::<Utc>::from_timestamp(now, 0) else {
-        return format!("Resets {}", reset.format("%b %-d at %H:%M"));
-    };
-    let reset_date = reset.date_naive();
-    let current_date = current.date_naive();
-    if reset_date == current_date {
-        format!("Resets {}", reset.format("%H:%M"))
-    } else if current_date
-        .succ_opt()
-        .is_some_and(|tomorrow| reset_date == tomorrow)
-    {
-        format!("Resets tomorrow, {}", reset.format("%H:%M"))
-    } else {
-        format!("Resets {}", reset.format("%b %-d at %H:%M"))
-    }
+    format!(
+        "Resets in {} ({})",
+        compact_duration_label(reset_at.saturating_sub(now).max(0)),
+        local_timestamp_label(reset_at)
+    )
+}
+
+fn local_timestamp_label(epoch: i64) -> String {
+    Local.timestamp_opt(epoch, 0).single().map_or_else(
+        || "local time unavailable".to_owned(),
+        |timestamp| timestamp.format("%b %-d, %H:%M").to_string(),
+    )
 }
 
 fn quota_pace_label(
@@ -4125,7 +4116,7 @@ impl AmpApiUsage {
         .then_some(usage)
     }
 
-    fn buckets(&self) -> Vec<QuotaBucketView> {
+    fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
         if let (Some(remaining), Some(limit)) = (self.free_remaining, self.free_limit) {
             let used = (limit - remaining).max(0.0);
@@ -4139,7 +4130,7 @@ impl AmpApiUsage {
                 Some(format_currency(used)),
                 Some(format_currency(limit)),
                 remaining_percent,
-                amp_free_reset_label(remaining, limit, self.hourly_replenishment),
+                amp_free_reset_label(remaining, limit, self.hourly_replenishment, now),
                 None,
                 UsageSnapshotStatus::Fresh,
             ));
@@ -4193,7 +4184,7 @@ struct AmpCliUsage {
 }
 
 impl AmpCliUsage {
-    fn buckets(&self) -> Vec<QuotaBucketView> {
+    fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
         if let (Some(remaining), Some(limit)) = (self.free_remaining, self.free_limit) {
             let used = (limit - remaining).max(0.0);
@@ -4207,7 +4198,7 @@ impl AmpCliUsage {
                 Some(format_currency(used)),
                 Some(format_currency(limit)),
                 remaining_percent,
-                amp_free_reset_label(remaining, limit, self.hourly_replenishment),
+                amp_free_reset_label(remaining, limit, self.hourly_replenishment, now),
                 None,
                 UsageSnapshotStatus::Fresh,
             ));
@@ -4231,6 +4222,7 @@ fn amp_free_reset_label(
     remaining: f64,
     limit: f64,
     hourly_replenishment: Option<f64>,
+    now: i64,
 ) -> Option<String> {
     let hourly_replenishment = hourly_replenishment?;
     if !remaining.is_finite()
@@ -4242,7 +4234,12 @@ fn amp_free_reset_label(
         return None;
     }
     let seconds = (((limit - remaining).max(0.0) / hourly_replenishment) * 3_600.0).ceil() as i64;
-    Some(format!("Resets in {}", compact_duration_label(seconds)))
+    let reset_at = now.saturating_add(seconds);
+    Some(format!(
+        "Resets in {} ({})",
+        compact_duration_label(seconds),
+        local_timestamp_label(reset_at)
+    ))
 }
 
 fn fetch_amp_cli_usage() -> Result<AmpCliUsage, String> {
@@ -4950,7 +4947,16 @@ mod tests {
 
         assert_eq!(buckets[0].label, "Session");
         assert_eq!(buckets[0].remaining_percent, Some(16));
-        assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets 15:12"));
+        assert_eq!(
+            buckets[0].reset_label.as_deref(),
+            Some(
+                reset_label(
+                    parse_iso_epoch("2026-06-11T15:12:00Z").expect("session reset"),
+                    1_781_185_560,
+                )
+                .as_str()
+            )
+        );
         assert_eq!(buckets[1].label, "Weekly");
         assert_eq!(buckets[1].remaining_percent, Some(22));
         assert!(buckets.iter().any(|bucket| bucket.label == "Sonnet"));
@@ -5200,7 +5206,13 @@ mod tests {
         assert_eq!(buckets[0].remaining_percent, Some(64));
         assert_eq!(
             buckets[0].reset_label.as_deref(),
-            Some("Resets Jul 1 at 00:00")
+            Some(
+                reset_label(
+                    parse_iso_epoch("2026-07-01T00:00:00Z").expect("billing reset"),
+                    1_780_315_200,
+                )
+                .as_str()
+            )
         );
         assert_eq!(buckets[0].pace_label.as_deref(), Some("30 days window"));
         assert!(buckets.iter().any(|bucket| bucket.label == "Included usage"
@@ -5308,7 +5320,13 @@ mod tests {
         assert_eq!(buckets[0].remaining_percent, Some(14));
         assert_eq!(
             buckets[0].reset_label.as_deref(),
-            Some("Resets Jul 1 at 00:00")
+            Some(
+                reset_label(
+                    parse_iso_epoch("2026-07-01T00:00:00Z").expect("billing reset"),
+                    1_782_318_000,
+                )
+                .as_str()
+            )
         );
     }
 
@@ -5520,28 +5538,22 @@ mod tests {
     }
 
     #[test]
-    fn reset_label_uses_detail_tab_absolute_style() {
+    fn reset_label_uses_relative_and_local_timestamp() {
         let now = parse_iso_epoch("2026-06-11T13:46:00Z").expect("now");
+        let same_day = parse_iso_epoch("2026-06-11T15:12:00Z").expect("same day");
         assert_eq!(
-            reset_label(
-                parse_iso_epoch("2026-06-11T15:12:00Z").expect("same day"),
-                now
-            ),
-            "Resets 15:12"
+            reset_label(same_day, now),
+            format!("Resets in 1h 26m ({})", local_timestamp_label(same_day))
         );
+        let tomorrow = parse_iso_epoch("2026-06-12T04:18:00Z").expect("tomorrow");
         assert_eq!(
-            reset_label(
-                parse_iso_epoch("2026-06-12T04:18:00Z").expect("tomorrow"),
-                now
-            ),
-            "Resets tomorrow, 04:18"
+            reset_label(tomorrow, now),
+            format!("Resets in 14h 32m ({})", local_timestamp_label(tomorrow))
         );
+        let future = parse_iso_epoch("2026-07-01T16:31:00Z").expect("future");
         assert_eq!(
-            reset_label(
-                parse_iso_epoch("2026-07-01T16:31:00Z").expect("future"),
-                now
-            ),
-            "Resets Jul 1 at 16:31"
+            reset_label(future, now),
+            format!("Resets in 20d 2h ({})", local_timestamp_label(future))
         );
         assert_eq!(reset_label(now, now), "Resets now");
     }
@@ -5626,12 +5638,16 @@ mod tests {
             usage.account_label.as_deref(),
             Some("person@example.com (handle)")
         );
-        let buckets = usage.buckets();
+        let now = 1_781_185_560;
+        let buckets = usage.buckets(now);
         assert_eq!(buckets[0].label, "Amp Free");
         assert_eq!(buckets[0].used_label.as_deref(), Some("$7.58"));
         assert_eq!(buckets[0].limit_label.as_deref(), Some("$10"));
         assert_eq!(buckets[0].remaining_percent, Some(24));
-        assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets in 18h 2m"));
+        assert_eq!(
+            buckets[0].reset_label.as_deref(),
+            amp_free_reset_label(2.42, 10.0, Some(0.42), now).as_deref()
+        );
         assert_eq!(buckets[0].pace_label, None);
         assert_eq!(buckets[1].label, "Individual credits");
         assert_eq!(buckets[1].limit_label.as_deref(), Some("$0.33"));
@@ -5674,12 +5690,16 @@ mod tests {
         .expect("Amp API usage");
 
         assert_eq!(usage.account_label.as_deref(), Some("person@example.com"));
-        let buckets = usage.buckets();
+        let now = 1_781_185_560;
+        let buckets = usage.buckets(now);
         assert_eq!(buckets[0].label, "Amp Free");
         assert_eq!(buckets[0].used_label.as_deref(), Some("$5.06"));
         assert_eq!(buckets[0].limit_label.as_deref(), Some("$10"));
         assert_eq!(buckets[0].remaining_percent, Some(49));
-        assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets in 12h 2m"));
+        assert_eq!(
+            buckets[0].reset_label.as_deref(),
+            amp_free_reset_label(4.94, 10.0, Some(0.42), now).as_deref()
+        );
         assert_eq!(buckets[0].pace_label, None);
         assert_eq!(buckets[1].label, "Individual credits");
         assert_eq!(buckets[1].limit_label.as_deref(), Some("$1.25"));

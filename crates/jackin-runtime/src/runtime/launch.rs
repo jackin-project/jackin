@@ -1189,7 +1189,7 @@ fn host_runtime_passthrough_env(vars: impl IntoIterator<Item = (String, String)>
             if key.starts_with("JACKIN_DISABLE_")
                 || matches!(
                     key.as_str(),
-                    "JACKIN_DHAT_ALLOC_LOG" | "JACKIN_CAPSULE_FORCE_PANIC"
+                    "JACKIN_DHAT_ALLOC_LOG" | "JACKIN_CAPSULE_FORCE_PANIC" | "TZ"
                 )
             {
                 Some(format!("{key}={value}"))

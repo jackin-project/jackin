@@ -1720,6 +1720,7 @@ fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
         ("JACKIN_DISABLE_TIRITH".to_owned(), "1".to_owned()),
         ("JACKIN_DHAT_ALLOC_LOG".to_owned(), "1".to_owned()),
         ("JACKIN_CAPSULE_FORCE_PANIC".to_owned(), "true".to_owned()),
+        ("TZ".to_owned(), "Asia/Ho_Chi_Minh".to_owned()),
         ("JACKIN_RUN_ID".to_owned(), "operator-owned".to_owned()),
         ("PATH".to_owned(), "/bin".to_owned()),
     ]);
@@ -1730,6 +1731,7 @@ fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
             "JACKIN_DISABLE_TIRITH=1",
             "JACKIN_DHAT_ALLOC_LOG=1",
             "JACKIN_CAPSULE_FORCE_PANIC=true",
+            "TZ=Asia/Ho_Chi_Minh",
         ]
     );
 }

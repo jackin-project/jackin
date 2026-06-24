@@ -31,6 +31,7 @@ RUN apt-get update && \
     procps \
     ripgrep \
     sudo \
+    tzdata \
     tree \
     yq \
     zsh && \
