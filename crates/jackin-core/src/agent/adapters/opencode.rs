@@ -28,6 +28,8 @@ impl AgentRuntime for OpencodeRuntime {
 USER agent
 COPY --link --chown=agent:0 --chmod=0755 {source} /home/agent/.opencode/bin/opencode
 ENV PATH=\"/home/agent/.opencode/bin:${{PATH}}\"
+RUN set -euxo pipefail && \\
+    opencode --version
 "
         )
     }

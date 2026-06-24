@@ -73,8 +73,10 @@ pub trait AgentRuntime: Send + Sync + 'static + private::Sealed {
     /// Human-readable label for TUI surfaces.
     fn label(&self) -> &'static str;
 
-    /// Dockerfile `RUN` block that installs this agent's CLI from a
-    /// pre-fetched binary at `source` (relative path inside the image).
+    /// Dockerfile block that installs this agent's CLI from a pre-fetched
+    /// binary at `source` (relative path inside the image) and verifies the
+    /// resulting executable with `<agent> --version` so build logs expose the
+    /// baked version for every supported agent.
     fn install_block(&self, source: &str) -> String;
 
     /// Absolute in-container path(s) where this agent's CLI binary lives on

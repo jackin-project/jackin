@@ -29,6 +29,8 @@ impl AgentRuntime for KimiRuntime {
 USER agent
 COPY --link --chown=agent:0 --chmod=0755 {source} /home/agent/.kimi-code/bin/kimi
 ENV PATH=\"/home/agent/.kimi-code/bin:/home/agent/.local/bin:${{PATH}}\"
+RUN set -euxo pipefail && \\
+    kimi --version
 "
         )
     }
