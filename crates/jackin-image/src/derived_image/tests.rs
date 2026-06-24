@@ -125,6 +125,14 @@ fn renders_runtime_finalization_in_one_layer() {
         "runtime home mutable roots must be writable by supplementary group 0: {dockerfile}"
     );
     assert!(
+        dockerfile.contains("chgrp -R 0 /home/agent"),
+        "the whole runtime home must be normalized to supplementary group 0: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("chmod -R g+rwX /home/agent"),
+        "the whole runtime home must be recursively group-writable: {dockerfile}"
+    );
+    assert!(
         dockerfile.contains("touch /home/agent/.gitconfig /home/agent/.config/git/config"),
         "runtime Git config files must exist before permission repair: {dockerfile}"
     );
@@ -137,7 +145,9 @@ fn renders_runtime_finalization_in_one_layer() {
         "runtime shell config files must be repaired after finalization: {dockerfile}"
     );
     assert!(
-        dockerfile.contains("jackin runtime home contains a non-group-writable mutable dir: $bad"),
+        dockerfile.contains(
+            "jackin runtime home contains a non-group-0 or non-group-writable mutable path: $bad"
+        ),
         "runtime mutable home dirs should be guarded after permission repair: {dockerfile}"
     );
     let finalization_pos = dockerfile
@@ -168,7 +178,7 @@ fn renders_derived_dockerfile_keeps_construct_agent_identity() {
     assert!(!dockerfile.contains("groupmod "));
     assert!(!dockerfile.contains("usermod "));
     assert!(!dockerfile.contains("chown -R agent:agent /home/agent"));
-    assert!(!dockerfile.contains("chgrp -R 0 /home/agent"));
+    assert!(!dockerfile.contains("chgrp -R 0 /home/agent /jackin/default-home"));
     assert!(!dockerfile.contains("chmod -R g=u /home/agent"));
     assert!(dockerfile.contains("COPY --link --chown=agent:0"));
     assert!(dockerfile.contains("install -d -o agent -g 0 /jackin/default-home"));

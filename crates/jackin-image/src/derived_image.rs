@@ -193,8 +193,11 @@ fn render_default_home_guard() -> &'static str {
 fn render_runtime_home_writable_commands(source_hook_declared: bool) -> String {
     // Runtime containers run as the host UID/GID while NSS maps that UID to
     // `agent`. They also keep supplementary group 0, so mutable image-baked
-    // home paths have to be writable via group 0, not only by UID 1000.
-    let mutable_home_dirs = [
+    // home tree has to be writable via group 0, not only by UID 1000. This is a
+    // whole-home invariant, not a list of known tool directories: role authors
+    // can bake arbitrary tool state under `$HOME`, and jackin cannot predict
+    // every future `.cargo`/`.npm`/`.foo` path.
+    let mutable_home_leaf_dirs = [
         "/home/agent",
         "/home/agent/.cache",
         "/home/agent/.cache/mise",
@@ -221,7 +224,7 @@ fn render_runtime_home_writable_commands(source_hook_declared: bool) -> String {
     mutable_shell_files.push("/home/agent/.config/fish/config.fish");
     let mutable_shell_files = mutable_shell_files.join(" ");
     format!(
-        "install -d -o agent -g 0 -m 0775 {mutable_home_dirs} \\\n    && touch /home/agent/.gitconfig /home/agent/.config/git/config \\\n    && chown agent:0 /home/agent/.gitconfig /home/agent/.config/git/config \\\n    && chmod 0664 /home/agent/.gitconfig /home/agent/.config/git/config \\\n    && for path in {mutable_shell_files}; do \\\n        if [ -e \"$path\" ]; then chown agent:0 \"$path\" && chmod 0664 \"$path\"; fi; \\\n    done \\\n    && bad=\"$(find {mutable_home_dirs} -maxdepth 0 -type d ! -perm -0020 -print -quit)\" \\\n    && if [ -n \"$bad\" ]; then \\\n        echo \"jackin runtime home contains a non-group-writable mutable dir: $bad\" >&2; \\\n        exit 1; \\\n    fi"
+        "install -d -o agent -g 0 -m 0775 {mutable_home_leaf_dirs} \\\n    && chgrp -R 0 /home/agent \\\n    && chmod -R g+rwX /home/agent \\\n    && touch /home/agent/.gitconfig /home/agent/.config/git/config \\\n    && chown agent:0 /home/agent/.gitconfig /home/agent/.config/git/config \\\n    && chmod 0664 /home/agent/.gitconfig /home/agent/.config/git/config \\\n    && for path in {mutable_shell_files}; do \\\n        if [ -e \"$path\" ]; then chown agent:0 \"$path\" && chmod 0664 \"$path\"; fi; \\\n    done \\\n    && bad=\"$(find /home/agent \\( -type d -o -type f \\) \\( ! -group 0 -o ! -perm -0020 \\) -print -quit)\" \\\n    && if [ -n \"$bad\" ]; then \\\n        echo \"jackin runtime home contains a non-group-0 or non-group-writable mutable path: $bad\" >&2; \\\n        exit 1; \\\n    fi"
     )
 }
 
