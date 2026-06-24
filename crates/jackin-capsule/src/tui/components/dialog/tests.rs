@@ -1303,6 +1303,29 @@ fn usage_dialog_provider_tabs_are_clickable() {
 }
 
 #[test]
+fn usage_dialog_provider_tab_hover_uses_shared_tab_hover_color() {
+    let mut d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Overview);
+    let (tab_row, tab_col) = usage_tab_text_position(&d, 32, 120, "Anthropic");
+
+    assert!(d.set_usage_tab_hover(tab_row, tab_col, 32, 120));
+
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(32, 120);
+    let backend = TestBackend::new(120, 32);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    assert_eq!(
+        terminal.backend().buffer()[(tab_col, tab_row)].bg,
+        jackin_tui::theme::TAB_BG_INACTIVE_HOVER
+    );
+}
+
+#[test]
 fn usage_dialog_overview_tab_click_selects_overview() {
     let mut d = Dialog::new_usage(usage_view_fixture());
     let (tab_row, tab_col) = usage_tab_text_position(&d, 32, 120, "Overview");

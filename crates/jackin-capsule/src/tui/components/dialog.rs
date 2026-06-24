@@ -216,6 +216,7 @@ pub enum Dialog {
         view: Box<jackin_protocol::control::FocusedUsageView>,
         selected: UsageDialogTab,
         tab_bar_focused: bool,
+        hovered_tab: Option<usize>,
         scroll: jackin_tui::components::DialogBodyScroll,
     },
     /// Direction sub-dialog opened when the operator picks "Split pane"
@@ -797,6 +798,7 @@ impl Dialog {
             view: Box::new(view),
             selected,
             tab_bar_focused: true,
+            hovered_tab: None,
             scroll: jackin_tui::components::DialogBodyScroll::new(),
         }
     }
@@ -1816,6 +1818,35 @@ impl Dialog {
             && *hovered_row != hit
         {
             *hovered_row = hit;
+            return true;
+        }
+        false
+    }
+
+    pub fn set_usage_tab_hover(
+        &mut self,
+        row: u16,
+        col: u16,
+        term_rows: u16,
+        term_cols: u16,
+    ) -> bool {
+        let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
+        let area = ratatui::layout::Rect {
+            x: box_col,
+            y: box_row,
+            width,
+            height,
+        };
+        let hit = match self {
+            Self::Usage { view, selected, .. } => {
+                Self::usage_tab_index_at(view, *selected, area, row, col)
+            }
+            _ => None,
+        };
+        if let Self::Usage { hovered_tab, .. } = self
+            && *hovered_tab != hit
+        {
+            *hovered_tab = hit;
             return true;
         }
         false

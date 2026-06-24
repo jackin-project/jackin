@@ -58,7 +58,10 @@ impl Multiplexer {
         // stays DialogCopyTarget. Track the per-row hover separately.
         let (term_rows, term_cols) = (self.term_rows, self.term_cols);
         let row_hover_changed = self.dialog_top_mut().is_some_and(|dialog| {
-            dialog.set_container_info_hover(row + 1, col + 1, term_rows, term_cols)
+            let row = row + 1;
+            let col = col + 1;
+            dialog.set_container_info_hover(row, col, term_rows, term_cols)
+                || dialog.set_usage_tab_hover(row, col, term_rows, term_cols)
         });
         if self.hover_target == next && !row_hover_changed {
             return;

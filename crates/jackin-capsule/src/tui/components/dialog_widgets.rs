@@ -80,6 +80,7 @@ pub(crate) enum DialogRatatuiSnapshot {
         state: jackin_tui::components::ContainerInfoState,
         tabs: Vec<(String, bool)>,
         tab_bar_focused: bool,
+        hovered_tab: Option<usize>,
     },
 }
 
@@ -275,11 +276,13 @@ impl Dialog {
                 view,
                 selected,
                 tab_bar_focused,
+                hovered_tab,
                 ..
             } => DialogRatatuiSnapshot::UsageInfo {
                 state: self.usage_state().expect("usage_state is Some for Usage"),
                 tabs: usage_tab_strip_labels(view, *selected),
                 tab_bar_focused: *tab_bar_focused,
+                hovered_tab: *hovered_tab,
             },
         }
     }
@@ -375,8 +378,9 @@ pub(crate) fn render_dialog_ratatui(
             state,
             tabs,
             tab_bar_focused,
+            hovered_tab,
         } => {
-            render_usage_info(frame, area, state, tabs, *tab_bar_focused);
+            render_usage_info(frame, area, state, tabs, *tab_bar_focused, *hovered_tab);
         }
     }
 }
@@ -412,6 +416,7 @@ fn render_usage_info(
     state: &jackin_tui::components::ContainerInfoState,
     tabs: &[(String, bool)],
     tab_bar_focused: bool,
+    hovered_tab: Option<usize>,
 ) {
     let title = usage_panel_title(state, area.width);
     let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(title.as_str()));
@@ -425,6 +430,7 @@ fn render_usage_info(
         .collect::<Vec<_>>();
     TabStrip::new(&tab_refs)
         .focused(tab_bar_focused)
+        .hovered(hovered_tab)
         .render(frame, tab_area);
     let body_y = inner.y.saturating_add(tab_area.height);
     let body = Rect {
