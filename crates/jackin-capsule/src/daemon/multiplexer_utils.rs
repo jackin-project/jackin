@@ -1,8 +1,8 @@
 //! Miscellaneous Multiplexer utility methods.
 
 use super::{
-    Dialog, FullRedrawReason, MAX_SESSIONS, MAX_TABS, Multiplexer, PaletteCloseLabel, Result,
-    SESSION_ENV_PASSTHROUGH, SessionInfo,
+    Dialog, FullRedrawReason, Instant, MAX_SESSIONS, MAX_TABS, Multiplexer, PaletteCloseLabel,
+    Result, SESSION_ENV_PASSTHROUGH, SessionInfo,
 };
 
 impl Multiplexer {
@@ -256,15 +256,43 @@ impl Multiplexer {
         )
     }
 
-    pub(super) fn warm_usage_account_snapshots(&mut self, force_refresh: bool) {
-        let agent = self
+    pub(super) fn refresh_active_usage_account_snapshots(&mut self, now: Instant) {
+        let active_targets = self
+            .sessions
+            .values()
+            .filter_map(|session| {
+                session
+                    .agent
+                    .as_ref()
+                    .map(|agent| crate::usage::UsageRefreshTarget {
+                        agent: agent.clone(),
+                        provider: session
+                            .provider
+                            .as_ref()
+                            .map(|provider| provider.label.clone()),
+                    })
+            })
+            .collect::<Vec<_>>();
+        let focused = self
             .active_focused_id()
             .and_then(|id| self.sessions.get(&id))
-            .and_then(|session| session.agent.clone());
-        self.usage_cache.warm_account_snapshots(
-            agent.as_deref(),
+            .and_then(|session| {
+                session
+                    .agent
+                    .as_ref()
+                    .map(|agent| crate::usage::UsageRefreshTarget {
+                        agent: agent.clone(),
+                        provider: session
+                            .provider
+                            .as_ref()
+                            .map(|provider| provider.label.clone()),
+                    })
+            });
+        self.usage_cache.refresh_active_account_snapshots(
+            &active_targets,
+            focused,
             &self.provider_keys,
-            force_refresh,
+            now,
         );
     }
 

@@ -38,12 +38,38 @@ pub(crate) struct UsageCache {
     snapshots: HashMap<String, CachedUsage>,
     codex_rpc_gate: ManagedCliLaunchGate,
     grok_rpc_gate: ManagedCliLaunchGate,
+    refresh_schedule: UsageRefreshSchedule,
 }
 
 #[derive(Debug, Clone)]
 struct CachedUsage {
     view: FocusedUsageView,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UsageRefreshTarget {
+    pub(crate) agent: String,
+    pub(crate) provider: Option<String>,
+}
+
+impl UsageRefreshTarget {
+    fn cache_key(&self) -> String {
+        format!(
+            "{}:{}",
+            self.agent,
+            self.provider.as_deref().unwrap_or_default()
+        )
+    }
+}
+
+#[derive(Debug, Default)]
+struct UsageRefreshSchedule {
+    next_due: HashMap<String, Instant>,
+    in_flight: bool,
+}
+
+const USAGE_REFRESH_BASE_INTERVAL: Duration = Duration::from_mins(5);
+const USAGE_REFRESH_JITTER: Duration = Duration::from_mins(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum UsageSurface {
@@ -59,18 +85,6 @@ enum UsageSurface {
 }
 
 impl UsageSurface {
-    fn account_refresh_surfaces() -> [Self; 7] {
-        [
-            Self::Claude,
-            Self::Codex,
-            Self::Amp,
-            Self::Grok,
-            Self::Zai,
-            Self::Kimi,
-            Self::Minimax,
-        ]
-    }
-
     fn label(self) -> &'static str {
         match self {
             Self::Claude => "Claude",
@@ -194,23 +208,34 @@ impl UsageCache {
         view
     }
 
-    pub(crate) fn warm_account_snapshots(
+    pub(crate) fn refresh_active_account_snapshots(
         &mut self,
-        focused_agent: Option<&str>,
+        active_targets: &[UsageRefreshTarget],
+        focused: Option<UsageRefreshTarget>,
         provider_keys: &BTreeMap<jackin_protocol::Provider, String>,
-        force_refresh: bool,
+        now: Instant,
     ) {
-        let Some(agent) = focused_agent else {
+        if self.refresh_schedule.in_flight {
             return;
-        };
-        for surface in UsageSurface::account_refresh_surfaces() {
-            drop(self.focused_snapshot(
-                Some(agent),
-                Some(surface.label()),
-                provider_keys,
-                force_refresh,
-            ));
         }
+        let targets = ordered_refresh_targets(active_targets, focused);
+        if targets.is_empty() {
+            return;
+        }
+        self.refresh_schedule.in_flight = true;
+        for target in targets {
+            if !self.refresh_schedule.should_refresh(&target, now) {
+                continue;
+            }
+            drop(self.focused_snapshot(
+                Some(&target.agent),
+                target.provider.as_deref(),
+                provider_keys,
+                true,
+            ));
+            self.refresh_schedule.mark_refreshed(&target, now);
+        }
+        self.refresh_schedule.in_flight = false;
     }
 
     fn materialize_accounts(&self, generated_at_epoch: i64) -> Result<(), String> {
@@ -225,6 +250,59 @@ impl UsageCache {
             snapshots,
         )
     }
+}
+
+impl UsageRefreshSchedule {
+    fn should_refresh(&mut self, target: &UsageRefreshTarget, now: Instant) -> bool {
+        let key = target.cache_key();
+        match self.next_due.get(&key).copied() {
+            Some(due) if due > now => false,
+            Some(_) => true,
+            None => {
+                self.next_due.insert(key, now);
+                true
+            }
+        }
+    }
+
+    fn mark_refreshed(&mut self, target: &UsageRefreshTarget, now: Instant) {
+        let key = target.cache_key();
+        self.next_due
+            .insert(key.clone(), now + refresh_interval_for_key(&key));
+    }
+}
+
+fn ordered_refresh_targets(
+    active_targets: &[UsageRefreshTarget],
+    focused: Option<UsageRefreshTarget>,
+) -> Vec<UsageRefreshTarget> {
+    let mut seen = std::collections::HashSet::new();
+    let mut targets = Vec::new();
+    if let Some(target) = focused
+        && seen.insert(target.cache_key())
+    {
+        targets.push(target);
+    }
+    for target in active_targets {
+        if seen.insert(target.cache_key()) {
+            targets.push(target.clone());
+        }
+    }
+    targets
+}
+
+fn refresh_interval_for_key(key: &str) -> Duration {
+    let jitter_span = USAGE_REFRESH_JITTER.as_secs().saturating_mul(2);
+    let hash = stable_usage_hash(key);
+    let offset = hash % (jitter_span.saturating_add(1));
+    let min = USAGE_REFRESH_BASE_INTERVAL.saturating_sub(USAGE_REFRESH_JITTER);
+    min + Duration::from_secs(offset)
+}
+
+fn stable_usage_hash(value: &str) -> u64 {
+    value.bytes().fold(0xcbf29ce484222325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+    })
 }
 
 fn cached_unavailable_view(
@@ -2929,14 +3007,20 @@ fn fetch_minimax_usage(token: &str) -> Result<MiniMaxUsageResponse, String> {
     let client = provider_http_client()?;
     let mut last_error = None;
     for url in resolve_minimax_remains_urls() {
-        let response = client
+        let response = match client
             .get(&url)
             .bearer_auth(token)
             .header(reqwest::header::ACCEPT, "application/json")
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .header("MM-API-Source", "jackin-capsule")
             .send()
-            .map_err(|err| format!("MiniMax usage request failed: {err}"))?;
+        {
+            Ok(response) => response,
+            Err(err) => {
+                last_error = Some(format!("MiniMax usage request failed for {url}: {err}"));
+                continue;
+            }
+        };
         let status = response.status();
         if !status.is_success() {
             last_error = Some(format!("MiniMax usage HTTP {status}"));
@@ -3659,6 +3743,59 @@ mod tests {
             ),
             "Session 1%"
         );
+    }
+
+    #[test]
+    fn usage_refresh_targets_are_focused_first_and_deduplicated() {
+        let active = vec![
+            UsageRefreshTarget {
+                agent: "claude".to_owned(),
+                provider: Some("Anthropic".to_owned()),
+            },
+            UsageRefreshTarget {
+                agent: "codex".to_owned(),
+                provider: Some("OpenAI".to_owned()),
+            },
+            UsageRefreshTarget {
+                agent: "claude".to_owned(),
+                provider: Some("Anthropic".to_owned()),
+            },
+        ];
+        let focused = UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("OpenAI".to_owned()),
+        };
+
+        let ordered = ordered_refresh_targets(&active, Some(focused));
+
+        assert_eq!(
+            ordered,
+            vec![
+                UsageRefreshTarget {
+                    agent: "codex".to_owned(),
+                    provider: Some("OpenAI".to_owned()),
+                },
+                UsageRefreshTarget {
+                    agent: "claude".to_owned(),
+                    provider: Some("Anthropic".to_owned()),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn usage_refresh_interval_stays_within_jitter_bounds() {
+        for key in ["codex:OpenAI", "claude:Anthropic", "glm:GLM / Z.AI"] {
+            let interval = refresh_interval_for_key(key);
+            assert!(
+                interval >= USAGE_REFRESH_BASE_INTERVAL.saturating_sub(USAGE_REFRESH_JITTER),
+                "{key}: {interval:?}"
+            );
+            assert!(
+                interval <= USAGE_REFRESH_BASE_INTERVAL + USAGE_REFRESH_JITTER,
+                "{key}: {interval:?}"
+            );
+        }
     }
 
     #[test]

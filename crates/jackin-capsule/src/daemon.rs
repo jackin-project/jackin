@@ -108,7 +108,7 @@ use crate::tui::selection::{
 };
 use crate::tui::subscriptions::{
     GIT_BRANCH_CONTEXT_POLL_INTERVAL, PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL, RENDER_TICK_INTERVAL,
-    STATE_TICK_INTERVAL, USAGE_ACCOUNT_REFRESH_POLL_INTERVAL, USAGE_REFRESH_POLL_INTERVAL,
+    STATE_TICK_INTERVAL, USAGE_ACCOUNT_REFRESH_POLL_INTERVAL,
 };
 use crate::tui::terminal::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 use crate::tui::title::{
@@ -578,7 +578,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let mut new_clients = socket::start_listener()?;
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
     let mut state_ticker = interval(STATE_TICK_INTERVAL);
-    let mut usage_ticker = interval(USAGE_REFRESH_POLL_INTERVAL);
     let mut usage_account_ticker = interval(USAGE_ACCOUNT_REFRESH_POLL_INTERVAL);
     let mut sigterm = signal(SignalKind::terminate())?;
     let mut sigint = signal(SignalKind::interrupt())?;
@@ -1015,17 +1014,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 mux.maybe_spawn_git_branch_context_lookup(Instant::now());
             }
 
-            // Daemon-owned usage refresh cadence. This is the provider-calling
-            // path; render/status paths read the last Turso snapshot.
-            _ = usage_ticker.tick() => {
-                drop(mux.focused_usage_snapshot(true));
-            }
-
-            // Broader account cache warming for the provider tabs/account
-            // bridge. This remains daemon-owned; Capsule renderers never call
-            // providers.
+            // Account refresh scheduler. This remains the provider-calling
+            // path; Capsule renderers read the last Turso snapshot.
             _ = usage_account_ticker.tick() => {
-                mux.warm_usage_account_snapshots(true);
+                mux.refresh_active_usage_account_snapshots(Instant::now());
             }
 
             // Periodic state refresh: re-render the status bar so the tab
