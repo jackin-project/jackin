@@ -113,8 +113,9 @@ impl VirtualTerminalProfile {
     #[must_use]
     pub fn attrs_supported(self, attrs: &Attrs) -> bool {
         let sgr = self.supported_sgr;
-        (attrs.foreground == Color::Default || sgr.color_256 || sgr.truecolor)
-            && (attrs.background == Color::Default || sgr.color_256 || sgr.truecolor)
+        (sgr.color_256
+            || sgr.truecolor
+            || (attrs.foreground == Color::Default && attrs.background == Color::Default))
             && (!attrs.bold || sgr.bold)
             && (!attrs.dim || sgr.dim)
             && (!attrs.italic || sgr.italic)

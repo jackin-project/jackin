@@ -5,7 +5,10 @@
 
 use std::time::Instant;
 
-use crate::tui::app::{VisibleAgentState, visible_agent_state_from_protocol};
+use crate::tui::{
+    app::{VisibleAgentState, visible_agent_state_from_protocol},
+    socket_backend::SgrMetadata,
+};
 
 use super::{
     CursorVisibilityState, FullRedrawReason, Multiplexer, Rect, append_osc_window_title,
@@ -572,10 +575,7 @@ fn pane_hyperlink_regions(
 fn pane_sgr_regions(
     panes: &[crate::tui::app::VisiblePane],
     pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
-) -> Vec<(
-    ratatui::layout::Rect,
-    crate::tui::socket_backend::SgrMetadata,
-)> {
+) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
     let mut regions = Vec::new();
     for pane in panes {
         let Some((_, crate::tui::view::PaneScreen::View(view))) =
@@ -589,7 +589,7 @@ fn pane_sgr_regions(
                 let metadata = view
                     .cell(row, col)
                     .map(cell_sgr_metadata)
-                    .filter(|metadata| *metadata != Default::default());
+                    .filter(|metadata| *metadata != SgrMetadata::default());
                 let Some(metadata) = metadata else {
                     col += 1;
                     continue;
@@ -619,8 +619,8 @@ fn pane_sgr_regions(
     regions
 }
 
-fn cell_sgr_metadata(cell: &jackin_term::Cell) -> crate::tui::socket_backend::SgrMetadata {
-    crate::tui::socket_backend::SgrMetadata {
+fn cell_sgr_metadata(cell: &jackin_term::Cell) -> SgrMetadata {
+    SgrMetadata {
         underline_style: match cell.attrs.underline_style {
             jackin_term::UnderlineStyle::Single => jackin_term::UnderlineStyle::None,
             other => other,

@@ -229,26 +229,23 @@ fn write_sgr_metadata(buf: &mut Vec<u8>, metadata: SgrMetadata) {
         UnderlineStyle::Dotted => buf.extend_from_slice(b"\x1b[4:4m"),
         UnderlineStyle::Dashed => buf.extend_from_slice(b"\x1b[4:5m"),
     }
-    match metadata.underline_color {
-        TermColor::Default => {}
-        _ => {
-            buf.extend_from_slice(b"\x1b[58;");
-            match metadata.underline_color {
-                TermColor::Default => {}
-                TermColor::Idx(idx) => {
-                    buf.extend_from_slice(b"5;");
-                    push_number(buf, u32::from(idx));
-                    buf.push(b'm');
-                }
-                TermColor::Rgb(r, g, b) => {
-                    buf.extend_from_slice(b"2;");
-                    push_number(buf, u32::from(r));
-                    buf.push(b';');
-                    push_number(buf, u32::from(g));
-                    buf.push(b';');
-                    push_number(buf, u32::from(b));
-                    buf.push(b'm');
-                }
+    if metadata.underline_color != TermColor::Default {
+        buf.extend_from_slice(b"\x1b[58;");
+        match metadata.underline_color {
+            TermColor::Default => {}
+            TermColor::Idx(idx) => {
+                buf.extend_from_slice(b"5;");
+                push_number(buf, u32::from(idx));
+                buf.push(b'm');
+            }
+            TermColor::Rgb(r, g, b) => {
+                buf.extend_from_slice(b"2;");
+                push_number(buf, u32::from(r));
+                buf.push(b';');
+                push_number(buf, u32::from(g));
+                buf.push(b';');
+                push_number(buf, u32::from(b));
+                buf.push(b'm');
             }
         }
     }

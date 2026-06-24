@@ -244,8 +244,9 @@ fn render_cell(buf_cell: &mut ratatui::buffer::Cell, cell: &impl PaneCell) {
         buf_cell.set_symbol(cell.text());
     }
     if cell.is_wide() {
-        let width = NonZeroU16::new(2).expect("wide model cells have non-zero width");
-        buf_cell.set_diff_option(CellDiffOption::ForcedWidth(width));
+        if let Some(width) = NonZeroU16::new(2) {
+            buf_cell.set_diff_option(CellDiffOption::ForcedWidth(width));
+        }
     } else if cell.hyperlink_uri().is_some() {
         buf_cell.set_diff_option(CellDiffOption::AlwaysUpdate);
     }

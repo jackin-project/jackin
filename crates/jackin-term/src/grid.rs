@@ -1713,10 +1713,8 @@ fn parse_sgr_color_values(values: &[u16]) -> Option<Color> {
 fn cell_width(cell: &Cell) -> u16 {
     if cell.is_wide {
         2
-    } else if cell.is_wide_continuation || cell.contents.is_empty() {
-        0
     } else {
-        1
+        u16::from(!(cell.is_wide_continuation || cell.contents.is_empty()))
     }
 }
 

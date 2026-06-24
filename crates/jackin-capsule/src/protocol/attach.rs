@@ -188,8 +188,8 @@ impl ClientTerminal {
             .unwrap_or("")
             .to_ascii_lowercase();
 
-        let known_terminal = !(term.is_empty() && term_program.is_empty())
-            && !matches!(term.as_str(), "dumb" | "linux");
+        let known_terminal = !(matches!(term.as_str(), "dumb" | "linux")
+            || term.is_empty() && term_program.is_empty());
         let warp = term_program.contains("warp");
         let ghostty = term.contains("ghostty") || term_program.contains("ghostty");
         let kitty = term.contains("kitty") || term_program.contains("kitty");
