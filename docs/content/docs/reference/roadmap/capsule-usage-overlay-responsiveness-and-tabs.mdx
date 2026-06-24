@@ -1323,6 +1323,9 @@ done vs outstanding in this roadmap item.
 **A. Architectural foundations**
 - [x] Issue 1 — shared tab component (render + hover + per-tab hit-test + cursor); usage tabs wired through it — `25b2d988` + `e1cd613b` + `37917210` + `1a21fc36` + `13dd9f56` + `7b53575`
 - [ ] Issue 15 — unified status-bar component on every screen; display matrix; right-anchored progressive build
+  - [x] Shared status-bar right-group layout orders and compacts `[usage] [container] [run ID]`; capsule branch chrome, launch footer, root console debug footer, render geometry, and hit rectangles route through it — `2e592669` + `74b3b89c` + `b2c7e9d1` + `ec608b68`
+  - [x] Launch dialogs obey the non-debug display matrix: build log, Debug-info, failure, and quit confirm hide the status footer when debug is off and keep the run-ID anchored footer when debug is on — `fce67995` + `4f5c1581`
+  - [ ] Audit/finish remaining capsule + host-console screens/dialogs against the full debug/non-debug display matrix before checking Issue 15
 - [ ] Issue 4 — no blocking work on the event/input/render loop (offload + concurrent probes; daemon-wide rule)
 - [ ] Tokio-everywhere audit — enumerate every data-load/I/O path in jackin', confirm each is off-loop + parallel; refactor any blocking/serial (HARDCORE rule)
 - [x] Issue 13 (prereq) — propagate host `TZ` into the capsule (kill UTC-only timestamps class bug) — `d832930`
