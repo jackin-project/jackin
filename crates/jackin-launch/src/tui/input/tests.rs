@@ -44,3 +44,30 @@ fn non_ctrl_c_resets_sequence() {
         CtrlCAction::Continue
     );
 }
+
+#[test]
+fn forced_terminal_restore_disables_mouse_reporting() {
+    let mut out = Vec::new();
+
+    write_forced_terminal_restore(&mut out).expect("restore bytes");
+    let rendered = String::from_utf8(out).expect("utf8 escape bytes");
+
+    assert!(rendered.contains("\x1b[?1006l"));
+    assert!(rendered.contains("\x1b[?1003l"));
+    assert!(rendered.contains("\x1b[?1002l"));
+    assert!(rendered.contains("\x1b[?1000l"));
+}
+
+#[test]
+fn forced_terminal_restore_resets_other_host_modes() {
+    let mut out = Vec::new();
+
+    write_forced_terminal_restore(&mut out).expect("restore bytes");
+    let rendered = String::from_utf8(out).expect("utf8 escape bytes");
+
+    assert!(rendered.contains(jackin_tui::ansi::RESET));
+    assert!(rendered.contains(jackin_tui::ansi::POINTER_DEFAULT));
+    assert!(rendered.contains("\x1b[?1004l"));
+    assert!(rendered.contains("\x1b[?2004l"));
+    assert!(rendered.contains("\x1b[?25h"));
+}

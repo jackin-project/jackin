@@ -11,6 +11,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::LeaveAlternateScreen;
 
 const DOUBLE_CTRL_C_WINDOW: Duration = Duration::from_millis(750);
+const HARD_EXIT_DRAIN_LIMIT: usize = 16_384;
 
 #[derive(Debug)]
 pub struct LaunchInput {
@@ -126,13 +127,45 @@ pub(super) fn is_ctrl_c_event(ev: &Event) -> bool {
 
 pub(super) fn restore_terminal_for_process_exit() {
     let mut stdout = std::io::stdout();
-    drop(stdout.execute(crossterm::cursor::Show));
-    drop(jackin_tui::terminal_modes::disable_mouse_capture(
-        &mut stdout,
-    ));
+    drop(write_forced_terminal_restore(&mut stdout));
+    drain_pending_terminal_events(HARD_EXIT_DRAIN_LIMIT);
     drop(crossterm::terminal::disable_raw_mode());
+    drain_pending_terminal_events(HARD_EXIT_DRAIN_LIMIT);
     drop(stdout.execute(LeaveAlternateScreen));
     drop(stdout.flush());
+}
+
+pub(super) fn write_forced_terminal_restore<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
+    out.write_all(jackin_tui::ansi::RESET.as_bytes())?;
+    out.write_all(jackin_tui::ansi::POINTER_DEFAULT.as_bytes())?;
+    jackin_tui::terminal_modes::disable_mouse_capture(out)?;
+    // Defensive teardown for modes used by hosted agent UIs. The launch
+    // surface does not enable all of them, but a hard process exit must leave
+    // the operator's terminal cooked even when it interrupts a transition.
+    out.write_all(b"\x1b[?1004l\x1b[?2004l\x1b[?25h")?;
+    out.flush()
+}
+
+pub(super) fn drain_pending_terminal_events(limit: usize) {
+    for _ in 0..limit {
+        match event::poll(Duration::ZERO) {
+            Ok(true) => {
+                drop(event::read());
+            }
+            Ok(false) | Err(_) => break,
+        }
+    }
+}
+
+pub(super) fn restore_renderer_terminal_for_process_exit(
+    terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
+) {
+    drop(write_forced_terminal_restore(terminal.backend_mut()));
+    drain_pending_terminal_events(HARD_EXIT_DRAIN_LIMIT);
+    drop(crossterm::terminal::disable_raw_mode());
+    drain_pending_terminal_events(HARD_EXIT_DRAIN_LIMIT);
+    drop(terminal.backend_mut().execute(LeaveAlternateScreen));
+    drop(terminal.backend_mut().flush());
 }
 
 #[cfg(test)]

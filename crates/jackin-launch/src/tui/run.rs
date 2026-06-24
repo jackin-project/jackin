@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 use crate::tui::components::prompts::{
     draw_confirm, draw_error_popup, draw_select, draw_text_prompt,
 };
-use crate::tui::input::LaunchInput;
+use crate::tui::input::{LaunchInput, restore_renderer_terminal_for_process_exit};
 use crate::tui::message::LaunchMessage;
 use crate::tui::subscriptions::{CockpitOutcome, SharedView, handle_cockpit_input};
 use crate::tui::terminal::current_terminal_area;
@@ -104,7 +104,8 @@ impl RichDriver {
                     // the next launch's `gc_orphaned_resources`. This is the one
                     // path that deliberately skips `LoadCleanup`.
                     if outcome == CockpitOutcome::HardExit {
-                        rr.restore_terminal();
+                        rr.host.set_rich_surface_active(false);
+                        restore_renderer_terminal_for_process_exit(&mut rr.terminal);
                         std::process::exit(0);
                     }
                     // Other cancellation sources can still ask the launch
