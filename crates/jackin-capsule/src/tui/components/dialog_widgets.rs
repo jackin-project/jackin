@@ -18,7 +18,7 @@ use ratatui::widgets::{Clear, Widget};
 use jackin_tui::components::TabStrip;
 use jackin_tui::components::confirm_dialog::{ConfirmState, render_confirm_dialog};
 use jackin_tui::components::filter_input::render_filter_input;
-use jackin_tui::theme::{BOLD_GREEN, DIM, PHOSPHOR_GREEN, WHITE};
+use jackin_tui::theme::{DIM, PHOSPHOR_GREEN, WHITE};
 
 use crate::tui::components::dialog::{Dialog, GithubContextView};
 
@@ -597,13 +597,6 @@ fn usage_lines_for_row(
                 ),
             ]));
         }
-        "Account availability" => {
-            lines.push(Line::from(""));
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(label.to_owned(), BOLD_GREEN),
-            ]));
-        }
         "Provider" | "Account" | "Plan" | "Status" | "Updated" | "Focused" | "Started"
         | "Today" | "Since start" => {}
         bucket if is_quota_bucket_row(bucket, value) => {
@@ -881,10 +874,9 @@ fn is_known_quota_bucket(label: &str) -> bool {
             | "Opus"
             | "Daily Routines"
             | "Extra usage"
-            | "Token window"
-            | "Token quota"
-            | "Time / MCP quota"
-            | "Session token limit"
+            | "Tokens"
+            | "MCP"
+            | "5-hour"
             | "Amp Free"
             | "Individual credits"
     ) || label.starts_with("Codex Spark")

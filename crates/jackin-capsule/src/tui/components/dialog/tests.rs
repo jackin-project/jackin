@@ -892,7 +892,7 @@ fn usage_dialog_renders_bucket_status_rows_for_error_states() {
     let mut view = usage_view_fixture();
     view.buckets = vec![
         usage_status_bucket(
-            "Token window",
+            "Tokens",
             jackin_protocol::control::UsageSnapshotStatus::NeedsLogin,
         ),
         usage_status_bucket(
@@ -945,7 +945,7 @@ fn usage_dialog_rows_render_provider_quota_snapshot() {
     assert!(values.contains(&"fresh"));
     assert!(values.contains(&"Updated just now"));
     let rows_debug = format!("{:?}", state.rows());
-    assert!(rows_debug.contains("Account availability"));
+    assert!(!rows_debug.contains("Account availability"));
     assert!(rows_debug.contains("Header"));
     assert!(!rows_debug.contains("Instance"));
     assert!(values.contains(&"local diagnostic detail"));
@@ -1032,7 +1032,7 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
     let mut view = usage_view_fixture();
     view.buckets = vec![
         jackin_protocol::control::QuotaBucketView {
-            label: "Token quota".to_owned(),
+            label: "Tokens".to_owned(),
             used_label: Some("400M".to_owned()),
             limit_label: Some("1B".to_owned()),
             remaining_percent: Some(60),
@@ -1041,7 +1041,7 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         },
         jackin_protocol::control::QuotaBucketView {
-            label: "Time / MCP quota".to_owned(),
+            label: "MCP".to_owned(),
             used_label: Some("2h".to_owned()),
             limit_label: Some("5h".to_owned()),
             remaining_percent: Some(60),
@@ -1087,10 +1087,10 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert!(rendered.contains("Token quota"), "{rendered}");
+    assert!(rendered.contains("Tokens"), "{rendered}");
     assert!(rendered.contains("60% left"), "{rendered}");
     assert!(rendered.contains("31% in deficit"), "{rendered}");
-    assert!(rendered.contains("Time / MCP quota"), "{rendered}");
+    assert!(rendered.contains("MCP"), "{rendered}");
     assert!(rendered.contains("5 hours window"), "{rendered}");
     assert!(rendered.contains("Amp Free"), "{rendered}");
     assert!(rendered.contains("replenishes +$1.00/hour"), "{rendered}");
@@ -1270,7 +1270,7 @@ fn usage_dialog_renders_inside_narrow_terminal() {
     assert!(rendered.contains("alexey@example.com"), "{rendered}");
     assert!(rendered.contains("Pro 20x"), "{rendered}");
     assert!(rendered.contains("Updated just now"), "{rendered}");
-    assert!(rendered.contains("Account availability"), "{rendered}");
+    assert!(!rendered.contains("Account availability"), "{rendered}");
     assert!(!rendered.contains("2 buckets"), "{rendered}");
     assert!(!rendered.contains("Overview  Codex"), "{rendered}");
     assert!(!rendered.contains("████"), "{rendered}");
@@ -1284,7 +1284,28 @@ fn usage_dialog_renders_inside_narrow_terminal() {
 
 #[test]
 fn usage_dialog_geometry_counts_rendered_section_lines() {
-    let d = Dialog::new_usage(usage_view_fixture());
+    let mut view = usage_view_fixture();
+    view.buckets.extend([
+        jackin_protocol::control::QuotaBucketView {
+            label: "Tokens".to_owned(),
+            used_label: Some("100K".to_owned()),
+            limit_label: Some("1M".to_owned()),
+            remaining_percent: Some(90),
+            reset_label: Some("Resets in 6d".to_owned()),
+            pace_label: Some("20% in reserve".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+        jackin_protocol::control::QuotaBucketView {
+            label: "MCP".to_owned(),
+            used_label: Some("2".to_owned()),
+            limit_label: Some("100".to_owned()),
+            remaining_percent: Some(98),
+            reset_label: Some("Resets in 20d".to_owned()),
+            pace_label: Some("2 / 100 (98 remaining)".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+    ]);
+    let d = Dialog::new_usage(view);
     let state = d.usage_state().expect("usage state");
     let usage_height = crate::tui::components::dialog_widgets::usage_info_required_height(&state);
 

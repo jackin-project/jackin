@@ -2540,16 +2540,16 @@ impl ZaiQuotaResponse {
         if token_limits.len() >= 2 {
             token_limits.sort_by_key(|limit| limit.window_minutes().unwrap_or(i64::MAX));
             if let Some(short) = token_limits.first() {
-                buckets.push(zai_bucket("Session token limit", short, now));
+                buckets.push(zai_bucket("5-hour", short, now));
             }
             if let Some(long) = token_limits.last() {
-                buckets.push(zai_bucket("Token quota", long, now));
+                buckets.push(zai_bucket("Tokens", long, now));
             }
         } else if let Some(limit) = token_limits.first() {
-            buckets.push(zai_bucket("Token quota", limit, now));
+            buckets.push(zai_bucket("Tokens", limit, now));
         }
         if let Some(limit) = time_limit {
-            buckets.push(zai_bucket("Time / MCP quota", limit, now));
+            buckets.push(zai_bucket("MCP", limit, now));
         }
         buckets
     }
@@ -4673,12 +4673,12 @@ mod tests {
         let buckets = quota.buckets(1_781_185_560);
 
         assert_eq!(quota.plan_name().as_deref(), Some("Coding Pro"));
-        assert_eq!(buckets[0].label, "Session token limit");
+        assert_eq!(buckets[0].label, "5-hour");
         assert_eq!(buckets[0].remaining_percent, Some(75));
         assert_eq!(buckets[0].pace_label.as_deref(), Some("53% in reserve"));
-        assert_eq!(buckets[1].label, "Token quota");
+        assert_eq!(buckets[1].label, "Tokens");
         assert_eq!(buckets[1].remaining_percent, Some(10));
-        assert_eq!(buckets[2].label, "Time / MCP quota");
+        assert_eq!(buckets[2].label, "MCP");
         assert_eq!(buckets[2].remaining_percent, Some(75));
     }
 

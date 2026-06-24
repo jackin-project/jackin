@@ -572,10 +572,6 @@ impl Dialog {
                 plan.clone(),
             ));
         }
-        rows.push(jackin_tui::components::ContainerInfoRow::new(
-            "Account availability",
-            format!("{} buckets", view.buckets.len()),
-        ));
         for bucket in &view.buckets {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 bucket.label.clone(),
