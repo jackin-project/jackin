@@ -213,10 +213,11 @@ impl Widget for StatusFooter<'_> {
             )
             .render(area, buf);
 
+        let right_layout = status_right_group_layout(area.width, self.right);
         let mut right_spans: Vec<Span<'static>> = Vec::new();
-        if let Some(usage) = self.right.usage.filter(|usage| !usage.is_empty()) {
+        if let Some(usage) = right_layout.usage {
             right_spans.push(Span::styled(
-                format!(" {usage} "),
+                usage.text,
                 Style::default()
                     .bg(faded(WHITE, self.alpha))
                     .fg(faded(
@@ -230,9 +231,9 @@ impl Widget for StatusFooter<'_> {
                     .add_modifier(Modifier::BOLD),
             ));
         }
-        if !self.right.container.is_empty() {
+        if let Some(container) = right_layout.container {
             right_spans.push(Span::styled(
-                format!(" {} ", self.right.container),
+                container.text,
                 Style::default()
                     .bg(faded(WHITE, self.alpha))
                     .fg(faded(
@@ -246,7 +247,7 @@ impl Widget for StatusFooter<'_> {
                     .add_modifier(Modifier::BOLD),
             ));
         }
-        if let Some(debug) = self.right.run_id.filter(|debug| !debug.is_empty()) {
+        if let Some(debug) = right_layout.run_id {
             // Canonical debug chip: DANGER_RED background, white text — identical to
             // the console's render_debug_bar so the operator sees the same chip on
             // every surface. Inverted on hover (white bg, red text) for clickability cue.
@@ -256,7 +257,7 @@ impl Widget for StatusFooter<'_> {
                 (DANGER_RED, WHITE)
             };
             right_spans.push(Span::styled(
-                format!(" {debug} "),
+                debug.text,
                 Style::default()
                     .bg(faded(chip_bg, self.alpha))
                     .fg(faded(chip_fg, self.alpha))
@@ -392,25 +393,18 @@ pub fn status_footer_right_chip_rect(
     right: &str,
     right_debug: Option<&str>,
 ) -> Option<Rect> {
-    if right.is_empty() || area.width == 0 || area.height == 0 {
-        return None;
-    }
-    let right_width = u16::try_from(format!(" {right} ").chars().count()).unwrap_or(u16::MAX);
-    let debug_width = right_debug
-        .filter(|debug| !debug.is_empty())
-        .map_or(0, |debug| {
-            u16::try_from(format!(" {debug} ").chars().count()).unwrap_or(u16::MAX)
-        });
-    let total_width = right_width.saturating_add(debug_width);
-    let x = area
-        .x
-        .saturating_add(area.width.saturating_sub(total_width));
-    Some(Rect {
-        x,
-        y: area.y,
-        width: right_width.min(area.width),
-        height: area.height,
-    })
+    status_right_group_rect(
+        area,
+        status_right_group_layout(
+            area.width,
+            StatusRightGroup {
+                usage: None,
+                container: right,
+                run_id: right_debug,
+            },
+        )
+        .container,
+    )
 }
 
 /// Return the rect of the **debug chip** (`right_debug`) on the status bar,
@@ -421,15 +415,31 @@ pub fn status_footer_right_chip_rect(
 /// `right` is empty.
 #[must_use]
 pub fn status_footer_debug_chip_rect(area: Rect, right_debug: &str) -> Option<Rect> {
-    if right_debug.is_empty() || area.width == 0 || area.height == 0 {
+    status_right_group_rect(
+        area,
+        status_right_group_layout(
+            area.width,
+            StatusRightGroup {
+                usage: None,
+                container: "",
+                run_id: Some(right_debug),
+            },
+        )
+        .run_id,
+    )
+}
+
+fn status_right_group_rect(area: Rect, chunk: Option<StatusRightChunk>) -> Option<Rect> {
+    if area.width == 0 || area.height == 0 {
         return None;
     }
-    let chip_width = u16::try_from(format!(" {right_debug} ").chars().count()).unwrap_or(u16::MAX);
-    let x = area.x.saturating_add(area.width.saturating_sub(chip_width));
+    let chunk = chunk?;
+    let x_offset = chunk.start.saturating_sub(1);
+    let width = chunk.end.saturating_sub(chunk.start);
     Some(Rect {
-        x,
+        x: area.x.saturating_add(x_offset),
         y: area.y,
-        width: chip_width.min(area.width),
+        width: width.min(area.width),
         height: area.height,
     })
 }

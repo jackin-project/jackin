@@ -158,6 +158,23 @@ fn right_group_layout_compacts_usage_before_dropping_it() {
 }
 
 #[test]
+fn right_group_render_uses_compacted_layout() {
+    let row = dump_group(
+        "building",
+        StatusRightGroup {
+            usage: Some("Session 37% · Weekly 10%"),
+            container: "jk-test-container",
+            run_id: None,
+        },
+        44,
+    );
+
+    assert!(row.contains("Session 37%"), "{row:?}");
+    assert!(!row.contains("Weekly 10%"), "{row:?}");
+    assert!(row.contains("jk-test-container"), "{row:?}");
+}
+
+#[test]
 fn compact_usage_status_label_keeps_quota_and_lifecycle_state() {
     assert_eq!(
         compact_usage_status_label("Codex · Session 37% · Weekly 10% · account login"),
