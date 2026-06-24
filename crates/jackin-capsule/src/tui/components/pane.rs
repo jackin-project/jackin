@@ -4,8 +4,15 @@
 //! `SocketBackend` diff mechanism handles terminal output.
 
 use crate::tui::socket_backend::term_color;
+use std::num::NonZeroU16;
+
 use jackin_term::{Cell as TermCell, Color as TermColor, GridSnapshot, GridView, SnapCell};
-use ratatui::{buffer::Buffer, layout::Rect, style::Modifier, widgets::Widget};
+use ratatui::{
+    buffer::{Buffer, CellDiffOption},
+    layout::Rect,
+    style::Modifier,
+    widgets::Widget,
+};
 
 #[derive(Debug)]
 pub(crate) enum PaneBodyContent<'a> {
@@ -60,6 +67,7 @@ fn render_full(snapshot: &GridSnapshot, area: Rect, buf: &mut Buffer) {
             }
         }
     }
+    debug_assert_pane_area_well_formed(area, buf);
 }
 
 fn render_view(view: &GridView<'_>, area: Rect, buf: &mut Buffer) {
@@ -78,10 +86,12 @@ fn render_view(view: &GridView<'_>, area: Rect, buf: &mut Buffer) {
             }
         }
     }
+    debug_assert_pane_area_well_formed(area, buf);
 }
 
 trait PaneCell {
     fn text(&self) -> &str;
+    fn is_wide(&self) -> bool;
     fn is_wide_continuation(&self) -> bool;
     fn fg(&self) -> TermColor;
     fn bg(&self) -> TermColor;
@@ -95,6 +105,10 @@ trait PaneCell {
 impl PaneCell for SnapCell {
     fn text(&self) -> &str {
         &self.text
+    }
+
+    fn is_wide(&self) -> bool {
+        self.is_wide
     }
 
     fn is_wide_continuation(&self) -> bool {
@@ -133,6 +147,10 @@ impl PaneCell for SnapCell {
 impl PaneCell for TermCell {
     fn text(&self) -> &str {
         self.contents()
+    }
+
+    fn is_wide(&self) -> bool {
+        self.is_wide
     }
 
     fn is_wide_continuation(&self) -> bool {
@@ -174,10 +192,15 @@ fn render_cell(buf_cell: &mut ratatui::buffer::Cell, cell: &impl PaneCell) {
         return;
     }
 
+    buf_cell.set_diff_option(CellDiffOption::None);
     if cell.text().is_empty() {
         buf_cell.set_char(' ');
     } else {
         buf_cell.set_symbol(cell.text());
+    }
+    if cell.is_wide() {
+        let width = NonZeroU16::new(2).expect("wide model cells have non-zero width");
+        buf_cell.set_diff_option(CellDiffOption::ForcedWidth(width));
     }
 
     buf_cell.set_fg(term_color(cell.fg()));
@@ -200,6 +223,53 @@ fn render_cell(buf_cell: &mut ratatui::buffer::Cell, cell: &impl PaneCell) {
         modifier |= Modifier::DIM;
     }
     buf_cell.modifier = modifier;
+}
+
+fn debug_assert_pane_area_well_formed(area: Rect, buf: &Buffer) {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    for row in 0..area.height {
+        for col in 0..area.width {
+            let cell = &buf[(area.x + col, area.y + row)];
+            match cell.diff_option {
+                CellDiffOption::Skip => {
+                    debug_assert!(
+                        false,
+                        "pane body must not use CellDiffOption::Skip at ({col},{row})"
+                    );
+                }
+                CellDiffOption::ForcedWidth(width) => {
+                    let width = width.get();
+                    debug_assert!(
+                        width > 1,
+                        "pane body must not force width 1 at ({col},{row})"
+                    );
+                    debug_assert!(
+                        col + width <= area.width,
+                        "forced-width cell at ({col},{row}) exceeds pane area width {}",
+                        area.width
+                    );
+                    for tail in 1..width {
+                        let tail_cell = &buf[(area.x + col + tail, area.y + row)];
+                        debug_assert_eq!(
+                            tail_cell.diff_option,
+                            CellDiffOption::None,
+                            "forced-width tail at ({},{row}) must be an ordinary blank cell",
+                            col + tail
+                        );
+                        debug_assert_eq!(
+                            tail_cell.symbol(),
+                            " ",
+                            "forced-width tail at ({},{row}) must be blank",
+                            col + tail
+                        );
+                    }
+                }
+                CellDiffOption::None | CellDiffOption::AlwaysUpdate => {}
+            }
+        }
+    }
 }
 
 #[cfg(test)]

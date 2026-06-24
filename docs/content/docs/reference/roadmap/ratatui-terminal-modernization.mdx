@@ -192,10 +192,10 @@ Keep this checklist as the working ledger during implementation. When a task is 
 - [x] Phase 3: Remove the sentinel fill/swap path from `compose_ratatui_frame()`.
 - [x] Phase 3: Add emitted-byte counters for total bytes, cursor moves, SGR resets, OSC 8 opens/closes, full-screen erases, and full-frame repaint detection.
 - [x] Phase 3: Add sentinel-disabled convergence tests for unchanged frames, dialogs, selection, scrollback, focus swaps, tab switches, resize, detach/reset, and title updates.
-- [ ] Phase 4: Apply `CellDiffOption::ForcedWidth` to model-wide lead cells in pane rendering.
-- [ ] Phase 4: Keep ordinary continuations blank/default and do not use `CellDiffOption::Skip` for them.
-- [ ] Phase 4: Add the pre-diff buffer well-formedness property.
-- [ ] Phase 4: Add mapping tests for all width classes and stale-tail cases, proving forced updates are used only when justified.
+- [x] Phase 4: Apply `CellDiffOption::ForcedWidth` to model-wide lead cells in pane rendering.
+- [x] Phase 4: Keep ordinary continuations blank/default and do not use `CellDiffOption::Skip` for them.
+- [x] Phase 4: Add the pre-diff buffer well-formedness property.
+- [x] Phase 4: Add mapping tests for all width classes and stale-tail cases, proving forced updates are used only when justified.
 - [ ] Phase 5: Move PTY OSC 8 and UI hyperlinks into shared model/frame metadata.
 - [ ] Phase 5: Emit OSC 8 open/close transitions from frame metadata and force only affected boundary cells with `AlwaysUpdate`.
 - [ ] Phase 5: Preserve SGR subparameters, including colon forms such as `4:2`, `38:2:r:g:b`, and `58:2:r:g:b`.
@@ -269,6 +269,8 @@ Acceptance:
 - Keep ordinary continuations blank/default.
 - Add the buffer well-formedness property before diff.
 - Reserve `AlwaysUpdate` for metadata transitions.
+
+Phase 4 implementation note: `PaneBodyWidget` maps every model-wide lead cell to `ForcedWidth(2)` and resets ordinary cells back to `CellDiffOption::None`. Continuation cells remain blank/default and never use `Skip`. A debug-only pane-buffer property rejects `Skip`, forced width 1, forced spans that exceed the pane, and visible/styled forced-width tail cells before Ratatui's diff can consume the buffer.
 
 Acceptance:
 
