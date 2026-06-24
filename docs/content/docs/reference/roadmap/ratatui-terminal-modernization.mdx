@@ -26,7 +26,7 @@ PTY bytes
 Today that seam has three concrete problems:
 
 - Width is not a written contract. `jackin-term` uses `unicode-width`, while Ratatui 0.30's buffer width logic has additional terminal-compatibility behavior, including the halfwidth-katakana dakuten/handakuten case. A self-consistent but wrong width rule corrupts cursor math, continuation cells, dirty spans, and DSR replies.
-- The Capsule forces a full-frame repaint every frame by filling Ratatui's current buffer with a private-use sentinel before swapping buffers. This hides true diff behavior and prevents meaningful byte-count measurements.
+- The Capsule used to force a full-frame repaint every frame by filling Ratatui's current buffer with a private-use sentinel before swapping buffers. Phase 3 removes that stopgap so the remaining work can use true diff behavior and meaningful byte-count measurements.
 - Terminal-visible metadata is split or dropped: OSC 8 hyperlinks are split between backend regions and PTY passthrough, several SGR attributes are discarded at parse time, and attach-terminal capabilities are not represented as a separate backend concern.
 
 ## Baseline
@@ -35,7 +35,7 @@ Verified facts this implementation must preserve:
 
 - The workspace is already on Ratatui 0.30.2 through `ratatui = "0.30"`. `termina` and `ratatui-termina` appear only as optional Ratatui dependencies and are not compiled into jackin' binaries today.
 - `SocketBackend` already implements the modern Ratatui backend trait shape, including `type Error = io::Error` and all `clear_region` variants.
-- Ratatui's flush path already uses a zero-allocation diff iterator. jackin' currently defeats the practical byte savings with the sentinel full-frame repaint.
+- Ratatui's flush path already uses a zero-allocation diff iterator. Phase 3 restores the practical byte savings by deleting the sentinel full-frame repaint.
 - Existing conformance infrastructure must be extended, not replaced: parser conformance in <RepoFile path="crates/jackin-term/tests/conformance.rs" />, allocation regression in <RepoFile path="crates/jackin-term/tests/allocation.rs" />, fuzzing in <RepoFile path="crates/jackin-term/fuzz/src/damage_grid_process.rs" />, echo-back render conformance in <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs" />, and benches in <RepoFile path="crates/jackin-term/benches/present_frame.rs" />, <RepoFile path="crates/jackin-term/benches/scroll_throughput.rs" />, and <RepoFile path="crates/jackin-capsule/benches/pane_body.rs" />.
 - Cursor position, visibility, and DECSCUSR shape are already frame-level state. This work audits and completes that model; it does not rebuild cursor handling from scratch.
 - Ratatui 0.30 APIs to use are already available but unused: `CellWidth`, `CellDiffOption`, public `BufferDiff`, and `Terminal::apply_buffer()` / `apply_buffer_with_cursor()`.
@@ -187,11 +187,11 @@ Keep this checklist as the working ledger during implementation. When a task is 
 - [ ] Phase 2: Add backend-side attach-capability records populated from attach handshake data, terminfo where available, safe probes, user overrides, and denylist entries.
 - [x] Phase 2: Add the terminal-state matrix documentation, classifying profile-stable, host-adaptive, frame-reconciled, and boundary-only out-of-band state.
 - [x] Phase 2: Add reattach tests proving host-adaptive capability changes never alter profile-stable width, DSR, or agent-visible color semantics.
-- [ ] Phase 3: Inventory every byte writer outside Ratatui cell output and frame-state reconciliation.
-- [ ] Phase 3: Move legacy raw paint into Ratatui rendering or frame operations, leaving only boundary-safe out-of-band writes at frame boundaries.
-- [ ] Phase 3: Remove the sentinel fill/swap path from `compose_ratatui_frame()`.
-- [ ] Phase 3: Add emitted-byte counters for total bytes, cursor moves, SGR resets, OSC 8 opens/closes, full-screen erases, and full-frame repaint detection.
-- [ ] Phase 3: Add sentinel-disabled convergence tests for unchanged frames, dialogs, selection, scrollback, focus swaps, tab switches, resize, detach/reset, and title updates.
+- [x] Phase 3: Inventory every byte writer outside Ratatui cell output and frame-state reconciliation.
+- [x] Phase 3: Move legacy raw paint into Ratatui rendering or frame operations, leaving only boundary-safe out-of-band writes at frame boundaries.
+- [x] Phase 3: Remove the sentinel fill/swap path from `compose_ratatui_frame()`.
+- [x] Phase 3: Add emitted-byte counters for total bytes, cursor moves, SGR resets, OSC 8 opens/closes, full-screen erases, and full-frame repaint detection.
+- [x] Phase 3: Add sentinel-disabled convergence tests for unchanged frames, dialogs, selection, scrollback, focus swaps, tab switches, resize, detach/reset, and title updates.
 - [ ] Phase 4: Apply `CellDiffOption::ForcedWidth` to model-wide lead cells in pane rendering.
 - [ ] Phase 4: Keep ordinary continuations blank/default and do not use `CellDiffOption::Skip` for them.
 - [ ] Phase 4: Add the pre-diff buffer well-formedness property.
@@ -244,6 +244,18 @@ Acceptance:
 - Keep boundary-only out-of-band mode/passthrough writes at frame boundaries.
 - Remove the sentinel fill/swap path from `compose_ratatui_frame()`.
 - Add emitted-byte counters for total bytes, cursor moves, SGR resets, OSC 8 opens/closes, full-screen erases, and full-frame repaint detection.
+
+Writer inventory after this phase:
+
+| Writer | Classification | Rule |
+|---|---|---|
+| `SocketBackend::draw()` | Ratatui cell output | Emits pane bodies, chrome, dialog, selection, UI OSC 8 regions, and Ratatui cursor-hide bytes from the diff stream. |
+| `SocketBackend::clear_region(ClearType::All)` | frame operation | Emits full-screen erase only for FirstAttach and Resize baseline resets. |
+| `append_client_state_reconciliation()` | frame-level reconciled output state | Emits focused-pane cursor position/visibility, cursor style, bracketed paste, application cursor, and Kitty keyboard transitions after cell output. |
+| `append_outer_terminal_title()` | frame-level output state | Prepends jackin-owned OSC 2 only when the outer title changes or must be reasserted after focused title passthrough. |
+| `ClientWriter::write_frame()` | socket boundary | Flushes queued out-of-band bytes, then sends one synchronized-output bracketed frame. |
+| `ClientWriter::enqueue_out_of_band()` / `flush_out_of_band()` | boundary-only out-of-band | Carries focused-session OSC/CSI passthrough, clipboard, pointer-shape, and attach-owned mode prefaces only at frame boundaries. |
+| Initial attach burst in daemon loop | attach boundary | Sends Welcome, attach-client-owned modes, terminal reset/clear/home, and the FirstAttach frame to a fresh client. |
 
 Acceptance:
 

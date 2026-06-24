@@ -45,9 +45,8 @@ impl Multiplexer {
         let started = Instant::now();
         let alloc_before = crate::alloc_telemetry::snapshot();
         if wipe.is_some() {
-            // Terminal::clear() emits the screen erase and resets the diff
-            // baseline; the sentinel fill below then forces a full re-emit
-            // over the freshly blanked screen.
+            // Terminal::clear() emits the screen erase and resets Ratatui's
+            // previous buffer so FirstAttach/Resize get a real baseline reset.
             drop(self.ratatui_terminal.clear());
         }
         let Some(output) = self.compose_ratatui_frame() else {
@@ -112,37 +111,14 @@ impl Multiplexer {
 
     /// Compose one frame of the full widget tree through the Ratatui
     /// `SocketBackend`: status bar, pane bodies, pane borders, scrollbars,
-    /// selection, and the dialog when open. The bottom chrome and cursor are
-    /// still appended as raw ANSI until the chrome-widget step lands.
+    /// selection, dialog, and bottom chrome when open. Cursor/mode state is
+    /// reconciled after cell output as frame state.
     ///
     /// Returns the ANSI output to send to the attach client, or `None` if the
     /// Ratatui terminal fails to draw (the caller then skips the frame).
     fn compose_ratatui_frame(&mut self) -> Option<Vec<u8>> {
         use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
         use crate::tui::view::{CapsuleRatatuiFrame, PaneScreen, render_capsule_ratatui_frame};
-
-        // Convergence stopgap: force this frame's diff to re-emit every cell
-        // — including cells whose target state is default-blank — with no
-        // screen-erase byte. Resetting the baseline to default cells is not
-        // enough: the diff would skip default-blank cells and residue (dialog
-        // backdrops, selection highlights, glyphs scrolled out of the live
-        // view) would survive on the client. Filling the about-to-become-
-        // previous buffer with a sentinel no widget ever renders makes every
-        // composed cell differ, so the diff repaints the full frame in place.
-        // Until the extra writers are deleted (PR 3 of the capsule rendering
-        // plan), the previous buffer cannot be trusted as the client model.
-        //
-        // ratatui-core ≥ 0.1.2 calls `previous.cell_width()` during the diff,
-        // which triggers a debug_assert on 1-byte ASCII control characters.
-        // Use a private-use BMP scalar (U+E001, 3 bytes in UTF-8) instead of
-        // U+0001: `cell_width` skips the 1-byte fast-path for multi-byte
-        // symbols and calls `unicode_width` directly, avoiding the assert.
-        // U+E001 is never produced by any widget, so the diff still sees every
-        // cell as changed and re-emits the full frame.
-        for cell in &mut self.ratatui_terminal.current_buffer_mut().content {
-            cell.set_symbol("\u{E001}");
-        }
-        self.ratatui_terminal.swap_buffers();
 
         let term_rows = self.term_rows;
         let term_cols = self.term_cols;

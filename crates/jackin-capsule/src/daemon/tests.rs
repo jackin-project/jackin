@@ -402,15 +402,20 @@ fn assert_no_scroll_thumb(frame: &[u8], context: &str) {
 }
 
 fn assert_frame_stays_within_geometry(frame: &[u8], rows: u16, cols: u16, context: &str) {
-    let (moves, max_row, max_col, screen_erases) = scan_emitted_frame(frame);
+    let metrics = scan_emitted_frame(frame);
     assert!(
-        screen_erases > 0,
+        metrics.full_screen_erases > 0,
         "{context} resize repaint must clear the old geometry"
     );
-    assert!(moves > 0, "{context} resize repaint must draw cells");
     assert!(
-        max_row <= rows && max_col <= cols,
-        "{context} resize repaint moved outside {rows}x{cols}: max {max_row}x{max_col}"
+        metrics.cursor_moves > 0,
+        "{context} resize repaint must draw cells"
+    );
+    assert!(
+        metrics.max_row_addressed <= rows && metrics.max_col_addressed <= cols,
+        "{context} resize repaint moved outside {rows}x{cols}: max {}x{}",
+        metrics.max_row_addressed,
+        metrics.max_col_addressed
     );
 }
 
@@ -663,13 +668,12 @@ fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
         String::from_utf8_lossy(&first)
     );
 
-    // Chrome is widget cells now: every composed frame carries it inside the
-    // `?2026`-bracketed atomic frame, so re-emission cannot flicker and no
-    // byte cache exists to go stale.
+    // Chrome is widget cells now: Ratatui emits it when it changes, then the
+    // previous buffer suppresses unchanged chrome on later frames.
     let unchanged = compose_after(&mut mux, status_change_redraw_reason());
     assert!(
-        contains(&unchanged, b"resize pane"),
-        "chrome cells must ride every composed frame: {:?}",
+        !contains(&unchanged, b"resize pane"),
+        "unchanged chrome cells must not be re-emitted: {:?}",
         String::from_utf8_lossy(&unchanged)
     );
     assert!(
@@ -686,8 +690,8 @@ fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
     );
     let changed = compose_after(&mut mux, FullRedrawReason::ScrollbackMovement);
     assert!(
-        contains(&changed, b"exit scrollback"),
-        "changed scrollback chrome must re-emit the raw hint row: {:?}",
+        contains(&changed, b"scroll") && contains(&changed, b"exit"),
+        "changed scrollback chrome must re-emit the hint row: {:?}",
         String::from_utf8_lossy(&changed)
     );
 }
@@ -696,18 +700,48 @@ fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
 fn scan_emitted_frame_reports_geometry_fingerprint() {
     // \x1b[2J (erase) + move to (5,10) + move to (40,160).
     let frame = b"\x1b[2J\x1b[5;10Hx\x1b[40;160Hy".to_vec();
-    assert_eq!(scan_emitted_frame(&frame), (2, 40, 160, 1));
+    let metrics = scan_emitted_frame(&frame);
+    assert_eq!(metrics.cursor_moves, 2);
+    assert_eq!(metrics.max_row_addressed, 40);
+    assert_eq!(metrics.max_col_addressed, 160);
+    assert_eq!(metrics.full_screen_erases, 1);
+    assert_eq!(metrics.painted_cells, 2);
 
     // A move with no col defaults col to 1; `f` is an alias for `H`.
     let frame = b"\x1b[12Hz".to_vec();
-    assert_eq!(scan_emitted_frame(&frame), (1, 12, 1, 0));
+    let metrics = scan_emitted_frame(&frame);
+    assert_eq!(metrics.cursor_moves, 1);
+    assert_eq!(metrics.max_row_addressed, 12);
+    assert_eq!(metrics.max_col_addressed, 1);
+    assert_eq!(metrics.full_screen_erases, 0);
+}
+
+#[test]
+fn scan_emitted_frame_counts_modern_render_metrics() {
+    let frame = b"\x1b[0m\x1b]8;;https://example.test\x07x\x1b]8;;\x07";
+    let metrics = scan_emitted_frame(frame);
+    assert_eq!(metrics.bytes, frame.len());
+    assert_eq!(metrics.sgr_resets, 1);
+    assert_eq!(metrics.osc8_opens, 1);
+    assert_eq!(metrics.osc8_closes, 1);
+    assert_eq!(metrics.full_screen_erases, 0);
+    assert_eq!(metrics.painted_cells, 1);
+    assert!(
+        !metrics.full_frame_repaint,
+        "geometry-free scan should not claim full-frame repaint"
+    );
+    let full = crate::client_writer::scan_emitted_frame_with_geometry(b"12345678", Some((2, 5)));
+    assert!(
+        full.full_frame_repaint,
+        "painted-cell threshold should flag full-frame repaint"
+    );
 }
 
 #[test]
 fn wipe_policy_erases_only_on_first_attach_and_resize() {
     // I4: no screen erase outside FirstAttach/Resize. Every other
-    // invalidation repaints in place — the sentinel-baseline re-emit
-    // overwrites every cell without flashing the screen blank (D7).
+    // invalidation relies on Ratatui's previous buffer instead of blanking
+    // the screen.
     let erase = b"\x1b[2J";
     let contains = |frame: &[u8]| frame.windows(erase.len()).any(|w| w == erase);
 
@@ -2152,14 +2186,14 @@ fn wheel_back_to_live_repaints_body_and_footer() {
     .expect("wheel into history must repaint");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
     assert!(
-        contains(&scrolled, b"exit scrollback"),
+        contains(&scrolled, b"exit") && contains(&scrolled, b"scrollback"),
         "scrolled frame must show the scrollback footer: {:?}",
         String::from_utf8_lossy(&scrolled)
     );
 
     // Wheel-only return to the live tail: body and footer must repaint
     // together — the D2 regression left the scrollback view and the
-    // "exit scrollback" footer on screen here.
+    // scrollback footer on screen here.
     let live = handle_input_frame(
         &mut mux,
         InputEvent::MousePress {
@@ -2171,13 +2205,13 @@ fn wheel_back_to_live_repaints_body_and_footer() {
     .expect("wheel back to live must repaint");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
     assert!(
-        !contains(&live, b"exit scrollback"),
+        !contains(&live, b"scrollback"),
         "footer must return to the live hint: {:?}",
         String::from_utf8_lossy(&live)
     );
     assert!(
-        contains(&live, b"39"),
-        "body must repaint the live tail row: {:?}",
+        contains(&live, b"9"),
+        "body diff must include changed live-tail cells: {:?}",
         String::from_utf8_lossy(&live)
     );
     assert!(
@@ -2419,21 +2453,24 @@ fn diff_frames_repaint_in_place_without_screen_erase() {
 
     let first = compose_after(&mut mux, FullRedrawReason::FocusChange);
     let second = compose_after(&mut mux, FullRedrawReason::FocusChange);
-    for (frame, which) in [(&first, "first"), (&second, "second")] {
-        assert!(
-            !frame_contains_screen_erase(frame),
-            "{which} diff frame must not erase the screen"
-        );
-        // Convergence stopgap: every Ratatui frame re-emits its cells so the
-        // physical screen converges even if another writer desynced it. The
-        // encoder skips cells identical to the reset baseline (the space
-        // between the words), so match the words separately.
-        assert!(
-            contains(frame, b"hello") && contains(frame, b"capsule"),
-            "{which} diff frame must re-emit pane cells: {:?}",
-            String::from_utf8_lossy(frame)
-        );
-    }
+    assert!(
+        !frame_contains_screen_erase(&first),
+        "first diff frame must not erase the screen"
+    );
+    assert!(
+        contains(&first, b"hello") && contains(&first, b"capsule"),
+        "first diff frame must emit changed pane cells: {:?}",
+        String::from_utf8_lossy(&first)
+    );
+    assert!(
+        !frame_contains_screen_erase(&second),
+        "unchanged diff frame must not erase the screen"
+    );
+    assert!(
+        !contains(&second, b"hello") && !contains(&second, b"capsule"),
+        "unchanged diff frame must trust Ratatui's previous buffer: {:?}",
+        String::from_utf8_lossy(&second)
+    );
 }
 
 #[test]
@@ -3542,8 +3579,8 @@ fn prefix_clear_pane_uses_diff_frame_without_screen_erase() {
 
 #[test]
 fn prefix_redraw_repaints_in_place_without_screen_erase() {
-    // The explicit-redraw chord re-emits every cell through the sentinel
-    // baseline; under the wipe policy (I4) only FirstAttach/Resize erase.
+    // The explicit-redraw chord must not clear the full terminal; under the
+    // wipe policy (I4) only FirstAttach/Resize erase.
     let mut mux = single_pane_tab_mux();
     drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
@@ -4567,9 +4604,8 @@ fn typed_input_after_copied_selection_clears_and_forwards() {
 
 #[test]
 fn split_close_frame_repaints_in_place_without_screen_erase() {
-    // Defect 29 is covered by the sentinel baseline now: a layout reflow
-    // re-emits every cell of the new layout in place, so cells from the
-    // removed pane are overwritten without flashing the screen blank (I4).
+    // Layout reflow must converge through Ratatui's diff without flashing the
+    // screen blank (I4).
     let mut mux = single_pane_tab_mux_with_size(24, 80);
     drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
