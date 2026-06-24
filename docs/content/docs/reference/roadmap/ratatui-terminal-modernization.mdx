@@ -201,7 +201,7 @@ Keep this checklist as the working ledger during implementation. When a task is 
 - [x] Phase 5: Preserve SGR subparameters, including colon forms such as `4:2`, `38:2:r:g:b`, and `58:2:r:g:b`.
 - [x] Phase 5: Extend `Attrs`, snapshots, pane mapping, frame metadata, and `SocketBackend` emission for underline color, underline style, strikethrough, blink, conceal, and overline.
 - [x] Phase 5: Document any product-level suppression, such as recording blink but not emitting it.
-- [ ] Phase 5: Add hyperlink transition tests, unsafe URI tests, SGR round-trip tests, and golden wire snapshots for the new visible attributes.
+- [x] Phase 5: Add hyperlink transition tests, unsafe URI tests, SGR round-trip tests, and golden wire snapshots for the new visible attributes.
 - [ ] Phase 6: Record semantic `ScrollOp`s when `DamageGrid` mutates rows.
 - [ ] Phase 6: Gate DECSTBM emission through geometry and attach capability.
 - [ ] Phase 6: Keep Ratatui buffers and physical screen state coherent when scroll-region output is used.
@@ -285,7 +285,7 @@ Acceptance:
 - Extend `Attrs`, snapshots, pane mapping, frame metadata, and `SocketBackend` emission for the new visible SGR state.
 - Document any product-level suppression such as blink emission.
 
-Phase 5 implementation note: PTY OSC 8 links are model cell metadata, UI links and PTY links share the backend frame-region metadata path, unsafe PTY URIs are filtered before emission, and non-wide linked cells use `AlwaysUpdate` so link-boundary changes cannot be hidden by an unchanged glyph. `Attrs`, snapshots, pane mapping, frame metadata, and `SocketBackend` now preserve SGR subparameters and carry strikethrough, blink, conceal, overline, underline style, and underline color through to emitted bytes. No product-level suppression is applied in this item: blink and conceal are recorded and emitted. The Phase 5 checklist stays open until golden wire snapshots cover the full visible-attribute surface.
+Phase 5 implementation note: PTY OSC 8 links are model cell metadata, UI links and PTY links share the backend frame-region metadata path, unsafe PTY URIs are filtered before emission, and non-wide linked cells use `AlwaysUpdate` so link-boundary changes cannot be hidden by an unchanged glyph. `Attrs`, snapshots, pane mapping, frame metadata, and `SocketBackend` now preserve SGR subparameters and carry strikethrough, blink, conceal, overline, underline style, and underline color through to emitted bytes. No product-level suppression is applied in this item: blink and conceal are recorded and emitted. Golden wire snapshots pin OSC 8 and non-native SGR metadata output.
 
 Acceptance:
 

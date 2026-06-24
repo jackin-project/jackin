@@ -133,10 +133,35 @@ fn backend_emits_frame_sgr_metadata() {
         .unwrap();
 
     let output = terminal.backend_mut().take_output();
+    assert_eq!(
+        output, b"\x1b[1;1H\x1b[0m\x1b[4:3m\x1b[58;2;12;34;56m\x1b[53mx\x1b[?25l",
+        "SGR metadata wire output changed"
+    );
     let text = String::from_utf8_lossy(&output);
     for sgr in ["\x1b[4:3m", "\x1b[58;2;12;34;56m", "\x1b[53m"] {
         assert!(text.contains(sgr), "missing {sgr:?} in {text:?}");
     }
+}
+
+#[test]
+fn backend_emits_osc8_metadata_wire_snapshot() {
+    let backend = SocketBackend::new(10, 1);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.backend_mut().set_hyperlink_regions(vec![(
+        Rect::new(0, 0, 1, 1),
+        "https://example.test".to_owned(),
+    )]);
+    terminal
+        .draw(|frame| {
+            frame.render_widget(Paragraph::new(Span::raw("x")), frame.area());
+        })
+        .unwrap();
+
+    assert_eq!(
+        terminal.backend_mut().take_output(),
+        b"\x1b]8;;https://example.test\x1b\\\x1b[1;1Hx\x1b]8;;\x1b\\\x1b[?25l",
+        "OSC 8 metadata wire output changed"
+    );
 }
 
 #[test]
