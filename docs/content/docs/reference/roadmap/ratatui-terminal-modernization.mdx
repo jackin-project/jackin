@@ -196,9 +196,9 @@ Keep this checklist as the working ledger during implementation. When a task is 
 - [x] Phase 4: Keep ordinary continuations blank/default and do not use `CellDiffOption::Skip` for them.
 - [x] Phase 4: Add the pre-diff buffer well-formedness property.
 - [x] Phase 4: Add mapping tests for all width classes and stale-tail cases, proving forced updates are used only when justified.
-- [ ] Phase 5: Move PTY OSC 8 and UI hyperlinks into shared model/frame metadata.
-- [ ] Phase 5: Emit OSC 8 open/close transitions from frame metadata and force only affected boundary cells with `AlwaysUpdate`.
-- [ ] Phase 5: Preserve SGR subparameters, including colon forms such as `4:2`, `38:2:r:g:b`, and `58:2:r:g:b`.
+- [x] Phase 5: Move PTY OSC 8 and UI hyperlinks into shared model/frame metadata.
+- [x] Phase 5: Emit OSC 8 open/close transitions from frame metadata and force only affected boundary cells with `AlwaysUpdate`.
+- [x] Phase 5: Preserve SGR subparameters, including colon forms such as `4:2`, `38:2:r:g:b`, and `58:2:r:g:b`.
 - [ ] Phase 5: Extend `Attrs`, snapshots, pane mapping, frame metadata, and `SocketBackend` emission for underline color, underline style, strikethrough, blink, conceal, and overline.
 - [ ] Phase 5: Document any product-level suppression, such as recording blink but not emitting it.
 - [ ] Phase 5: Add hyperlink transition tests, unsafe URI tests, SGR round-trip tests, and golden wire snapshots for the new visible attributes.
@@ -285,7 +285,7 @@ Acceptance:
 - Extend `Attrs`, snapshots, pane mapping, frame metadata, and `SocketBackend` emission for the new visible SGR state.
 - Document any product-level suppression such as blink emission.
 
-Phase 5 partial progress: `Attrs`, snapshots, pane mapping, and `SocketBackend` now preserve SGR subparameters and carry strikethrough, blink, conceal, overline, underline style, and underline color through the model. Ratatui-native modifiers emit strikethrough, blink, and conceal. The Phase 5 checklist stays open until OSC 8 uses shared model/frame metadata and non-native underline style/color plus overline travel as frame metadata consumed by `SocketBackend`.
+Phase 5 partial progress: PTY OSC 8 links are model cell metadata, UI links and PTY links share the backend frame-region metadata path, unsafe PTY URIs are filtered before emission, and non-wide linked cells use `AlwaysUpdate` so link-boundary changes cannot be hidden by an unchanged glyph. `Attrs`, snapshots, pane mapping, and `SocketBackend` now preserve SGR subparameters and carry strikethrough, blink, conceal, overline, underline style, and underline color through the model. Ratatui-native modifiers emit strikethrough, blink, and conceal. The Phase 5 checklist stays open until non-native underline style/color plus overline travel as frame metadata consumed by `SocketBackend`, suppression policy is documented, and golden wire snapshots cover the full visible-attribute surface.
 
 Acceptance:
 

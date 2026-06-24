@@ -82,7 +82,7 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
 /// `file://`, and anything else are dropped — a compromised agent
 /// could otherwise script the operator's terminal emulator or
 /// reference operator-side files on click.
-fn osc8_uri_is_safe(uri: &str) -> bool {
+pub(crate) fn osc8_uri_is_safe(uri: &str) -> bool {
     if uri.is_empty() {
         return true;
     }
@@ -1064,6 +1064,10 @@ impl Session {
     /// titles must not reach the operator's outer terminal.
     pub fn drain_passthrough(&mut self) -> Vec<Vec<u8>> {
         std::mem::take(&mut self.pending_passthrough)
+    }
+
+    pub fn allow_frame_hyperlinks(&self) -> bool {
+        self.osc_policy.allow_hyperlink()
     }
 
     pub fn terminate(&self) {

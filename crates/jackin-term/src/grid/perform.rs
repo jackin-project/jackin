@@ -472,6 +472,7 @@ impl vte::Perform for DamageGrid {
                 self.cursor_row = 0;
                 self.cursor_col = 0;
                 self.current_attrs = Attrs::default();
+                self.active_hyperlink = None;
                 self.scroll_top = 0;
                 self.scroll_bottom = self.rows.saturating_sub(1);
                 self.reset_modes();

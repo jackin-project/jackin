@@ -59,6 +59,10 @@ pub struct SnapCell {
     pub conceal: bool,
     /// Overline.
     pub overline: bool,
+    /// OSC 8 hyperlink id.
+    pub hyperlink_id: Option<String>,
+    /// OSC 8 hyperlink target URI.
+    pub hyperlink_uri: Option<String>,
 }
 
 impl SnapCell {
@@ -87,6 +91,7 @@ impl SnapCell {
             && !self.rapid_blink
             && !self.conceal
             && !self.overline
+            && self.hyperlink_uri.is_none()
     }
 }
 
@@ -110,6 +115,8 @@ impl From<&Cell> for SnapCell {
             rapid_blink: cell.rapid_blink(),
             conceal: cell.conceal(),
             overline: cell.overline(),
+            hyperlink_id: cell.hyperlink.as_ref().map(|link| link.id.clone()),
+            hyperlink_uri: cell.hyperlink.as_ref().map(|link| link.uri.clone()),
         }
     }
 }

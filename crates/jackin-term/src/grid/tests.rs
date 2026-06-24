@@ -623,8 +623,45 @@ fn borrowed_scrollback_view_matches_owned_dump() {
             assert_eq!(borrowed_cell.rapid_blink(), owned_cell.rapid_blink);
             assert_eq!(borrowed_cell.conceal(), owned_cell.conceal);
             assert_eq!(borrowed_cell.overline(), owned_cell.overline);
+            assert_eq!(
+                borrowed_cell
+                    .hyperlink
+                    .as_ref()
+                    .map(|link| link.id.as_str()),
+                owned_cell.hyperlink_id.as_deref()
+            );
+            assert_eq!(
+                borrowed_cell
+                    .hyperlink
+                    .as_ref()
+                    .map(|link| link.uri.as_str()),
+                owned_cell.hyperlink_uri.as_deref()
+            );
         }
     }
+}
+
+#[test]
+fn osc8_hyperlink_is_cell_metadata_not_passthrough() {
+    let mut g = DamageGrid::new(2, 20, 100);
+    g.process(b"\x1b]8;id=docs;https://example.test\x07AB\x1b]8;;\x07C");
+
+    let snap = g.dump();
+    let first = snap.cell(0, 0).expect("linked A");
+    let second = snap.cell(0, 1).expect("linked B");
+    let third = snap.cell(0, 2).expect("plain C");
+
+    assert_eq!(first.hyperlink_id.as_deref(), Some("docs"));
+    assert_eq!(first.hyperlink_uri.as_deref(), Some("https://example.test"));
+    assert_eq!(
+        second.hyperlink_uri.as_deref(),
+        Some("https://example.test")
+    );
+    assert_eq!(third.hyperlink_uri, None);
+    assert!(
+        g.drain_passthrough().is_empty(),
+        "OSC 8 should not be raw passthrough"
+    );
 }
 
 #[test]

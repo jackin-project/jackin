@@ -338,7 +338,8 @@ impl Multiplexer {
 
         // Frame hyperlink layer (§3.4): the encoder brackets exactly these
         // cells with OSC 8 during emission — no raw overlay writes.
-        let hyperlink_regions =
+        let mut hyperlink_regions = pane_hyperlink_regions(&panes, &pane_screens, &self.sessions);
+        let ui_hyperlink_regions =
             if let Some((DialogRatatuiSnapshot::DebugInfo(state), (row, col, height, width))) =
                 dialog_snapshot.as_ref()
             {
@@ -352,6 +353,7 @@ impl Multiplexer {
             } else {
                 Vec::new()
             };
+        hyperlink_regions.extend(ui_hyperlink_regions);
         self.ratatui_terminal
             .backend_mut()
             .set_hyperlink_regions(hyperlink_regions);
@@ -506,4 +508,59 @@ impl Multiplexer {
         }
         self.last_asserted_client_state = Some(desired);
     }
+}
+
+fn pane_hyperlink_regions(
+    panes: &[crate::tui::app::VisiblePane],
+    pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
+    sessions: &std::collections::HashMap<u64, crate::session::Session>,
+) -> Vec<(ratatui::layout::Rect, String)> {
+    let mut regions = Vec::new();
+    for pane in panes {
+        let Some(session) = sessions.get(&pane.id) else {
+            continue;
+        };
+        if !session.allow_frame_hyperlinks() {
+            continue;
+        }
+        let Some((_, crate::tui::view::PaneScreen::View(view))) =
+            pane_screens.iter().find(|(id, _)| *id == pane.id)
+        else {
+            continue;
+        };
+        for row in 0..pane.inner.rows.min(view.rows) {
+            let mut col = 0;
+            while col < pane.inner.cols.min(view.cols) {
+                let uri = view
+                    .cell(row, col)
+                    .and_then(|cell| cell.hyperlink.as_ref())
+                    .map(|link| link.uri.as_str())
+                    .filter(|uri| crate::session::osc8_uri_is_safe(uri));
+                let Some(uri) = uri else {
+                    col += 1;
+                    continue;
+                };
+                let start = col;
+                col += 1;
+                while col < pane.inner.cols.min(view.cols)
+                    && view
+                        .cell(row, col)
+                        .and_then(|cell| cell.hyperlink.as_ref())
+                        .is_some_and(|link| link.uri == uri)
+                {
+                    col += 1;
+                }
+                regions.push((
+                    ratatui::layout::Rect {
+                        x: pane.inner.col + start,
+                        y: pane.inner.row + row,
+                        width: col - start,
+                        height: 1,
+                    },
+                    uri.to_owned(),
+                ));
+            }
+        }
+    }
+    regions
 }

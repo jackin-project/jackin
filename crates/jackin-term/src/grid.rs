@@ -22,7 +22,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, OnceLock},
 };
 
-use crate::cell::{Attrs, Cell, Color, UnderlineStyle};
+use crate::cell::{Attrs, Cell, Color, Hyperlink, UnderlineStyle};
 use crate::damage::{DirtySpans, DirtyTracker};
 use crate::passthrough::{PassthroughBuffer, PassthroughEvent};
 use crate::width::VirtualTerminalProfile;
@@ -146,6 +146,7 @@ pub struct DamageGrid {
 
     // ── Current SGR attributes (applied to newly written cells) ───────────────
     current_attrs: Attrs,
+    active_hyperlink: Option<Hyperlink>,
 
     // ── Scroll region ─────────────────────────────────────────────────────────
     scroll_top: u16,    // 0-based, inclusive
@@ -428,6 +429,7 @@ impl DamageGrid {
             reported_fg: DEFAULT_REPORTED_FG,
             reported_bg: DEFAULT_REPORTED_BG,
             current_attrs: Attrs::default(),
+            active_hyperlink: None,
             scroll_top: 0,
             scroll_bottom: rows.saturating_sub(1),
             kitty_kb_stack: Vec::new(),
@@ -901,8 +903,10 @@ impl DamageGrid {
             is_wide: width > 1,
             is_wide_continuation: false,
             attrs: attrs.clone(),
+            hyperlink: self.active_hyperlink.clone(),
         };
         {
+            let hyperlink = self.active_hyperlink.clone();
             let grid = self.active_grid();
             grid[row][col] = cell;
             if width > 1 && col + 1 < cols as usize && col + 1 < grid[row].len() {
@@ -911,6 +915,7 @@ impl DamageGrid {
                     is_wide: false,
                     is_wide_continuation: true,
                     attrs: attrs.clone(),
+                    hyperlink,
                 };
             }
         }
@@ -989,8 +994,10 @@ impl DamageGrid {
         let new_width = self.profile.cluster_width(joined.as_str()).min(2);
         {
             let cols = self.cols as usize;
+            let hyperlink = self.active_hyperlink.clone();
             let grid = self.active_grid();
             grid[row][col].contents = joined;
+            grid[row][col].hyperlink = hyperlink;
             set_cell_width(&mut grid[row], col, new_width, attrs, cols);
         }
         if self.cursor_row == row as u16
@@ -1368,7 +1375,9 @@ impl DamageGrid {
                         bell_terminated,
                     )));
             }
-            // OSC 8: hyperlink — emit for capsule to apply URI-scheme safety filter.
+            // OSC 8: hyperlink — model as cell metadata. The capsule applies
+            // URI-scheme safety filtering when converting metadata to frame
+            // OSC 8 spans.
             (Some(8), _) => {
                 let id = params
                     .get(1)
@@ -1381,8 +1390,7 @@ impl DamageGrid {
                     .and_then(|b| std::str::from_utf8(b).ok())
                     .unwrap_or("")
                     .to_owned();
-                self.passthrough
-                    .push(PassthroughEvent::Hyperlink { id, uri });
+                self.active_hyperlink = (!uri.is_empty()).then_some(Hyperlink { id, uri });
             }
             _ => {}
         }
@@ -1706,11 +1714,13 @@ fn set_cell_width(row: &mut [Cell], col: usize, width: u16, attrs: Attrs, cols: 
 
     if col + 1 < cols && col + 1 < row.len() {
         if width > 1 {
+            let hyperlink = row[col].hyperlink.clone();
             row[col + 1] = Cell {
                 contents: compact_str::CompactString::new(""),
                 is_wide: false,
                 is_wide_continuation: true,
                 attrs,
+                hyperlink,
             };
         } else if row[col + 1].is_wide_continuation {
             row[col + 1] = Cell::default();

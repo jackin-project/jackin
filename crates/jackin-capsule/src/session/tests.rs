@@ -112,13 +112,24 @@ fn osc_2_window_title_is_re_emitted_and_captured() {
 }
 
 #[test]
-fn osc_8_hyperlink_is_re_emitted() {
-    let drained = drained(b"\x1b]8;;https://example/\x07text\x1b]8;;\x07");
+fn osc_8_hyperlink_is_modeled_not_re_emitted() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.feed_pty(b"\x1b]8;;https://example/\x07text\x1b]8;;\x07");
+    let drained = session.drain_passthrough();
     assert!(
-        drained
-            .iter()
-            .any(|f| f.windows(b"https".len()).any(|w| w == b"https")),
-        "expected the http hyperlink to round-trip: {drained:?}"
+        drained.is_empty(),
+        "OSC 8 must not be raw passthrough: {drained:?}"
+    );
+    let snap = session.shadow_grid.dump();
+    assert_eq!(
+        snap.cell(0, 0)
+            .and_then(|cell| cell.hyperlink_uri.as_deref()),
+        Some("https://example/")
+    );
+    assert_eq!(
+        snap.cell(0, 4)
+            .and_then(|cell| cell.hyperlink_uri.as_deref()),
+        None
     );
 }
 

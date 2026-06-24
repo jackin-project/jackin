@@ -738,6 +738,51 @@ fn scan_emitted_frame_counts_modern_render_metrics() {
 }
 
 #[test]
+fn pty_osc8_hyperlink_emits_from_frame_metadata() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(20, 78);
+    session.feed_pty(b"\x1b]8;;https://example.test/docs\x07link\x1b]8;;\x07");
+    mux.sessions.insert(1, session);
+
+    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
+
+    assert!(
+        frame
+            .windows(b"\x1b]8;;https://example.test/docs\x1b\\".len())
+            .any(|w| w == b"\x1b]8;;https://example.test/docs\x1b\\"),
+        "safe OSC 8 link must be emitted from frame metadata: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+    assert!(
+        frame.windows(b"link".len()).any(|w| w == b"link"),
+        "linked glyphs must still render: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+}
+
+#[test]
+fn unsafe_pty_osc8_hyperlink_is_not_emitted_from_frame_metadata() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(20, 78);
+    session.feed_pty(b"\x1b]8;;javascript:alert(1)\x07link\x1b]8;;\x07");
+    mux.sessions.insert(1, session);
+
+    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
+
+    assert!(
+        !frame
+            .windows(b"javascript".len())
+            .any(|w| w == b"javascript"),
+        "unsafe OSC 8 URI must not be emitted: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+    assert!(
+        frame.windows(b"link".len()).any(|w| w == b"link"),
+        "glyphs must render even when the hyperlink URI is filtered"
+    );
+}
+
+#[test]
 fn wipe_policy_erases_only_on_first_attach_and_resize() {
     // I4: no screen erase outside FirstAttach/Resize. Every other
     // invalidation relies on Ratatui's previous buffer instead of blanking

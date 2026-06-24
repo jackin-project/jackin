@@ -104,6 +104,7 @@ trait PaneCell {
     fn slow_blink(&self) -> bool;
     fn rapid_blink(&self) -> bool;
     fn conceal(&self) -> bool;
+    fn hyperlink_uri(&self) -> Option<&str>;
 }
 
 impl PaneCell for SnapCell {
@@ -161,6 +162,10 @@ impl PaneCell for SnapCell {
 
     fn conceal(&self) -> bool {
         self.conceal
+    }
+
+    fn hyperlink_uri(&self) -> Option<&str> {
+        self.hyperlink_uri.as_deref()
     }
 }
 
@@ -220,6 +225,10 @@ impl PaneCell for TermCell {
     fn conceal(&self) -> bool {
         self.conceal()
     }
+
+    fn hyperlink_uri(&self) -> Option<&str> {
+        self.hyperlink.as_ref().map(|link| link.uri.as_str())
+    }
 }
 
 fn render_cell(buf_cell: &mut ratatui::buffer::Cell, cell: &impl PaneCell) {
@@ -237,6 +246,8 @@ fn render_cell(buf_cell: &mut ratatui::buffer::Cell, cell: &impl PaneCell) {
     if cell.is_wide() {
         let width = NonZeroU16::new(2).expect("wide model cells have non-zero width");
         buf_cell.set_diff_option(CellDiffOption::ForcedWidth(width));
+    } else if cell.hyperlink_uri().is_some() {
+        buf_cell.set_diff_option(CellDiffOption::AlwaysUpdate);
     }
 
     buf_cell.set_fg(term_color(cell.fg()));

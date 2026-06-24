@@ -48,6 +48,12 @@ pub enum UnderlineStyle {
     Dashed,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Hyperlink {
+    pub id: String,
+    pub uri: String,
+}
+
 /// A single cell in the terminal grid.
 ///
 /// `contents` is the grapheme cluster rendered at this cell position.
@@ -67,6 +73,7 @@ pub struct Cell {
     /// True for the phantom continuation column of a wide character.
     pub is_wide_continuation: bool,
     pub attrs: Attrs,
+    pub hyperlink: Option<Hyperlink>,
 }
 
 impl Cell {

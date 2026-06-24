@@ -20,6 +20,8 @@ fn snap_cell_blank_detection() {
         rapid_blink: false,
         conceal: false,
         overline: false,
+        hyperlink_id: None,
+        hyperlink_uri: None,
     };
     assert!(c.is_blank());
     assert!(!c.has_contents());
@@ -45,6 +47,8 @@ fn snap_cell_non_blank() {
         rapid_blink: false,
         conceal: false,
         overline: false,
+        hyperlink_id: None,
+        hyperlink_uri: None,
     };
     assert!(!c.is_blank());
     assert!(c.has_contents());
