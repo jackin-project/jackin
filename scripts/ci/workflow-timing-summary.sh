@@ -48,15 +48,20 @@ dependency_download_count=0
 third_party_build_count=0
 source_tool_compile_count=0
 sccache_issue_count=0
+sccache_low_utility_count=0
 prepared_workspace_count=0
+velnor_job_log_artifact_count=0
 github_cache_count=""
 github_cache_bytes=""
 
 dependency_download_pattern='Updating.*crates\.io index|Downloaded.*[0-9]+ crates?|Downloaded.*[[:alnum:]_.+-]+ v[0-9]|Downloading.*[[:alnum:]_.+-]+ v[0-9]'
 third_party_build_pattern='^[[:space:]]*(Compiling|Checking|Building) [[:alnum:]_.+-]+ v[0-9][^(/]*$'
 source_tool_compile_pattern='cargo install|Installing [[:alnum:]_.+-]+ v[0-9].*from source|Compiling [[:alnum:]_.+-]+ v[0-9].*\(.*cargo.*registry'
-sccache_issue_pattern='sccache.*(error|failed|write|server)'
+sccache_issue_pattern='sccache(:| )[[:alnum:] _-]*(error|failed)|Cache (read |write )?errors[[:space:]]+[1-9][0-9]*'
+sccache_low_utility_pattern='Cache misses( \(Rust\))?[[:space:]]+[1-9][0-9]*|Cache hits rate( \(Rust\))?[[:space:]]+0\.00 %'
 prepared_workspace_pattern='Download prepared nextest workspace|Restore prepared nextest workspace|prepared nextest workspace'
+cache_miss_pattern='Cache not found|No cache found|not found for input keys'
+cache_failure_pattern='Failed to restore cache|Failed to save cache|Unable to reserve cache'
 
 if cache_usage_json=$(gh api "repos/${repo}/actions/cache/usage" 2>/dev/null); then
   github_cache_count=$(printf '%s' "$cache_usage_json" | jq -r '.active_caches_count // ""')
@@ -67,26 +72,68 @@ append_marker_matches() {
   local marker="$1"
   local job="$2"
   local pattern="$3"
+  local file="$4"
   local lines
 
-  lines=$(grep -Ein "$pattern" || true)
-  [ -n "$lines" ] || return
+  lines=$(grep -Ein "$pattern" "$file" || true)
+  [ -n "$lines" ] || return 0
 
   printf '%s\n' "$lines" | while IFS= read -r line; do
     printf '%s\t%s\t%s\n' "$marker" "$job" "$line" >> "$log_markers_file"
   done
 }
 
+scan_logs_file() {
+  local name="$1"
+  local logs_file="$2"
+  local hits misses restores failures downloads builds source_tools sccache_issues sccache_low_utility prepared_workspace
+  local normalized_logs_file="${logs_file}.normalized"
+
+  perl -pe 's/\e\[[0-9;]*[A-Za-z]//g; s/^[0-9]{4}-[0-9T:.-]+Z[[:space:]]+//; s/^[^\t]+\t[^\t]+\t[0-9]{4}-[0-9T:.-]+Z[[:space:]]+//' \
+    "$logs_file" > "$normalized_logs_file"
+
+  hits=$(grep -Eci 'Cache hit for:|Restored from cache key|Cache restored successfully' "$normalized_logs_file" || true)
+  misses=$(grep -Eci "$cache_miss_pattern" "$normalized_logs_file" || true)
+  restores=$(grep -Eci 'Restoring cache|Cache Size:' "$normalized_logs_file" || true)
+  failures=$(grep -Eci "$cache_failure_pattern" "$normalized_logs_file" || true)
+  downloads=$(grep -Eci "$dependency_download_pattern" "$normalized_logs_file" || true)
+  builds=$(grep -Eci "$third_party_build_pattern" "$normalized_logs_file" || true)
+  source_tools=$(grep -Eci "$source_tool_compile_pattern" "$normalized_logs_file" || true)
+  sccache_issues=$(grep -Eci "$sccache_issue_pattern" "$normalized_logs_file" || true)
+  sccache_low_utility=$(grep -Eci "$sccache_low_utility_pattern" "$normalized_logs_file" || true)
+  prepared_workspace=$(grep -Eci "$prepared_workspace_pattern" "$normalized_logs_file" || true)
+  cache_hit_count=$((cache_hit_count + hits))
+  cache_miss_count=$((cache_miss_count + misses))
+  cache_restore_count=$((cache_restore_count + restores))
+  cache_failure_count=$((cache_failure_count + failures))
+  dependency_download_count=$((dependency_download_count + downloads))
+  third_party_build_count=$((third_party_build_count + builds))
+  source_tool_compile_count=$((source_tool_compile_count + source_tools))
+  sccache_issue_count=$((sccache_issue_count + sccache_issues))
+  sccache_low_utility_count=$((sccache_low_utility_count + sccache_low_utility))
+  prepared_workspace_count=$((prepared_workspace_count + prepared_workspace))
+
+  append_marker_matches "cache miss" "$name" "$cache_miss_pattern" "$normalized_logs_file"
+  append_marker_matches "cache failure" "$name" "$cache_failure_pattern" "$normalized_logs_file"
+  append_marker_matches "dependency download" "$name" "$dependency_download_pattern" "$normalized_logs_file"
+  append_marker_matches "third-party compile/check/build" "$name" "$third_party_build_pattern" "$normalized_logs_file"
+  append_marker_matches "source tool compile" "$name" "$source_tool_compile_pattern" "$normalized_logs_file"
+  append_marker_matches "sccache issue" "$name" "$sccache_issue_pattern" "$normalized_logs_file"
+  append_marker_matches "sccache low utility" "$name" "$sccache_low_utility_pattern" "$normalized_logs_file"
+  append_marker_matches "prepared workspace" "$name" "$prepared_workspace_pattern" "$normalized_logs_file"
+  return 0
+}
+
 while IFS= read -r job_b64; do
   [ -n "$job_b64" ] || continue
   job_json=$(printf '%s' "$job_b64" | base64 --decode)
-  job_id=$(printf '%s' "$job_json" | jq -r '.databaseId')
+  job_id=$(printf '%s' "$job_json" | jq -r '.databaseId // .id')
   name=$(printf '%s' "$job_json" | jq -r '.name')
   status=$(printf '%s' "$job_json" | jq -r '.status')
   conclusion=$(printf '%s' "$job_json" | jq -r '.conclusion // ""')
-  url=$(printf '%s' "$job_json" | jq -r '.url')
-  started_at=$(printf '%s' "$job_json" | jq -r '.startedAt // ""')
-  completed_at=$(printf '%s' "$job_json" | jq -r '.completedAt // ""')
+  url=$(printf '%s' "$job_json" | jq -r '.html_url // .url')
+  started_at=$(printf '%s' "$job_json" | jq -r '.startedAt // .started_at // ""')
+  completed_at=$(printf '%s' "$job_json" | jq -r '.completedAt // .completed_at // ""')
   start_s=$(epoch "$started_at")
   end_s=$(epoch "$completed_at")
 
@@ -107,8 +154,14 @@ while IFS= read -r job_b64; do
 
   printf '%s' "$job_json" | jq -r --arg job "$name" '
     .steps[]
-    | select((.startedAt // "") != "" and (.completedAt // "") != "" and (.completedAt | startswith("0001-") | not))
-    | [.startedAt, .completedAt, $job, .name, (.conclusion // "")]
+    | {
+        started_at: (.startedAt // .started_at // ""),
+        completed_at: (.completedAt // .completed_at // ""),
+        name,
+        conclusion: (.conclusion // "")
+      }
+    | select(.started_at != "" and .completed_at != "" and (.completed_at | startswith("0001-") | not))
+    | [.started_at, .completed_at, $job, .name, .conclusion]
     | @tsv
   ' | while IFS=$'\t' read -r step_start step_end step_job step_name step_conclusion; do
     step_start_s=$(epoch "$step_start")
@@ -119,35 +172,33 @@ while IFS= read -r job_b64; do
     fi
   done
 
-  if logs=$(gh api "repos/${repo}/actions/jobs/${job_id}/logs" 2>/dev/null); then
-    hits=$(printf '%s\n' "$logs" | grep -Eci 'Cache hit for:|Restored from cache key|Cache restored successfully' || true)
-    misses=$(printf '%s\n' "$logs" | grep -Eci 'Cache not found|not found for input keys|Cache miss' || true)
-    restores=$(printf '%s\n' "$logs" | grep -Eci 'Restoring cache|Cache Size:' || true)
-    failures=$(printf '%s\n' "$logs" | grep -Eci 'Failed to restore cache|Failed to save cache|Unable to reserve cache' || true)
-    downloads=$(printf '%s\n' "$logs" | grep -Eci "$dependency_download_pattern" || true)
-    builds=$(printf '%s\n' "$logs" | grep -Eci "$third_party_build_pattern" || true)
-    source_tools=$(printf '%s\n' "$logs" | grep -Eci "$source_tool_compile_pattern" || true)
-    sccache_issues=$(printf '%s\n' "$logs" | grep -Eci "$sccache_issue_pattern" || true)
-    prepared_workspace=$(printf '%s\n' "$logs" | grep -Eci "$prepared_workspace_pattern" || true)
-    cache_hit_count=$((cache_hit_count + hits))
-    cache_miss_count=$((cache_miss_count + misses))
-    cache_restore_count=$((cache_restore_count + restores))
-    cache_failure_count=$((cache_failure_count + failures))
-    dependency_download_count=$((dependency_download_count + downloads))
-    third_party_build_count=$((third_party_build_count + builds))
-    source_tool_compile_count=$((source_tool_compile_count + source_tools))
-    sccache_issue_count=$((sccache_issue_count + sccache_issues))
-    prepared_workspace_count=$((prepared_workspace_count + prepared_workspace))
-
-    printf '%s\n' "$logs" | append_marker_matches "dependency download" "$name" "$dependency_download_pattern"
-    printf '%s\n' "$logs" | append_marker_matches "third-party compile/check/build" "$name" "$third_party_build_pattern"
-    printf '%s\n' "$logs" | append_marker_matches "source tool compile" "$name" "$source_tool_compile_pattern"
-    printf '%s\n' "$logs" | append_marker_matches "sccache issue" "$name" "$sccache_issue_pattern"
-    printf '%s\n' "$logs" | append_marker_matches "prepared workspace" "$name" "$prepared_workspace_pattern"
+  logs_file="${RUNNER_TEMP:-/tmp}/workflow-job-${run_id}-${job_id}.log"
+  if gh api "repos/${repo}/actions/jobs/${job_id}/logs" > "$logs_file" 2>/dev/null; then
+    scan_logs_file "$name" "$logs_file"
   else
     printf 'log unavailable: %s (%s)\n' "$name" "$job_id" >> "$cache_file"
   fi
 done < "$jobs_file"
+
+artifacts_file="${RUNNER_TEMP:-/tmp}/workflow-artifacts-${run_id}.tsv"
+if gh api "repos/${repo}/actions/runs/${run_id}/artifacts?per_page=100" \
+  --paginate \
+  --jq '.artifacts[] | select(.name == "job-log") | [.id, .size_in_bytes] | @tsv' > "$artifacts_file" 2>/dev/null; then
+  while IFS=$'\t' read -r artifact_id artifact_size; do
+    [ -n "$artifact_id" ] || continue
+    artifact_zip="${RUNNER_TEMP:-/tmp}/workflow-job-log-${run_id}-${artifact_id}.zip"
+    artifact_log="${RUNNER_TEMP:-/tmp}/workflow-job-log-${run_id}-${artifact_id}.log"
+    if gh api "repos/${repo}/actions/artifacts/${artifact_id}/zip" > "$artifact_zip" 2>/dev/null &&
+      unzip -p "$artifact_zip" job-log.txt > "$artifact_log" 2>/dev/null; then
+      velnor_job_log_artifact_count=$((velnor_job_log_artifact_count + 1))
+      scan_logs_file "Velnor job-log artifact ${artifact_id}" "$artifact_log"
+    else
+      printf 'job-log artifact unavailable: %s (%s bytes)\n' "$artifact_id" "${artifact_size:-unknown}" >> "$cache_file"
+    fi
+  done < "$artifacts_file"
+else
+  printf 'job-log artifact list unavailable for run %s\n' "$run_id" >> "$cache_file"
+fi
 
 first_red_metric() {
   awk -F '\t' '
@@ -327,8 +378,9 @@ print_github_cache_budget() {
   fi
   printf -- '- Cache events in job logs: %s hit/restore markers, %s miss markers, %s restore attempts, %s failure markers\n\n' \
     "$cache_hit_count" "$cache_miss_count" "$cache_restore_count" "$cache_failure_count"
-  printf -- '- Rebuild/download markers in job logs: %s dependency download markers, %s third-party compile/check/build markers, %s source-tool compile markers, %s sccache issue markers, %s prepared-workspace artifact markers\n\n' \
-    "$dependency_download_count" "$third_party_build_count" "$source_tool_compile_count" "$sccache_issue_count" "$prepared_workspace_count"
+  printf -- '- Rebuild/download markers in job logs: %s dependency download markers, %s third-party compile/check/build markers, %s source-tool compile markers, %s sccache issue markers, %s sccache low-utility markers, %s prepared-workspace artifact markers\n\n' \
+    "$dependency_download_count" "$third_party_build_count" "$source_tool_compile_count" "$sccache_issue_count" "$sccache_low_utility_count" "$prepared_workspace_count"
+  printf -- '- Velnor job-log artifacts scanned: %s\n\n' "$velnor_job_log_artifact_count"
 
   print_target_metrics
   print_github_cache_budget
@@ -356,8 +408,8 @@ print_github_cache_budget() {
   fi
 
   if [ -s "$log_markers_file" ]; then
-    printf '\n### Rebuild and Download Markers\n\n'
-    printf 'These markers require review on warm sequential runs. True first-run cache population is acceptable; repeated dependency downloads, source tool compiles, third-party compile/check/build markers, low compiler-cache utility, or prepared-workspace artifact restores should be explained or fixed.\n\n'
+    printf '\n### Cache, Rebuild, and Download Markers\n\n'
+    printf 'These markers require review on warm sequential runs. True first-run cache population is acceptable; repeated cache misses/failures, dependency downloads, source tool compiles, third-party compile/check/build markers, low compiler-cache utility, or prepared-workspace artifact restores should be explained or fixed.\n\n'
     printf '| Marker | Job | Log line |\n| --- | --- | --- |\n'
     head -n 25 "$log_markers_file" | while IFS=$'\t' read -r marker job line; do
       line="${line//|/\\|}"
