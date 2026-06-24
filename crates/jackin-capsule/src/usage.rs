@@ -36,7 +36,7 @@ pub(crate) const TELEMETRY_STORE_PATH: &str = "/jackin/state/usage/telemetry.db"
 
 static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct UsageCache {
     snapshots: HashMap<String, CachedUsage>,
     codex_rpc_gate: ManagedCliLaunchGate,
@@ -62,7 +62,7 @@ impl UsageRefreshTarget {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 struct UsageRefreshSchedule {
     next_due: HashMap<String, Instant>,
     rate_limit_failures: HashMap<String, u32>,
@@ -2127,7 +2127,7 @@ struct CodexAdditionalRateLimit {
     rate_limit: Option<CodexRateLimitDetails>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 struct ManagedCliLaunchGate {
     cooldown_until: Option<Instant>,
     last_error: Option<String>,

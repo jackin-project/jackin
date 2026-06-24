@@ -270,7 +270,10 @@ impl Multiplexer {
         agent.map(|agent| crate::usage::UsageRefreshTarget { agent, provider })
     }
 
-    pub(super) fn refresh_active_usage_account_snapshots(&mut self, now: Instant) {
+    pub(super) fn spawn_active_usage_account_refresh(&mut self, now: Instant) -> bool {
+        if self.usage_refresh_task.is_some() {
+            return false;
+        }
         let active_targets = self
             .sessions
             .values()
@@ -281,12 +284,42 @@ impl Multiplexer {
             .and_then(|id| self.sessions.get(&id))
             .and_then(session_refresh_target);
         let focused = self.pending_usage_refresh.take().or(focused);
-        self.usage_cache.refresh_active_account_snapshots(
-            &active_targets,
-            focused,
-            &self.provider_keys,
-            now,
-        );
+        if active_targets.is_empty() && focused.is_none() {
+            return false;
+        }
+        let provider_keys = self.provider_keys.clone();
+        let mut cache = self.usage_cache.clone();
+        self.usage_refresh_task = Some(tokio::task::spawn_blocking(move || {
+            cache.refresh_active_account_snapshots(&active_targets, focused, &provider_keys, now);
+            cache
+        }));
+        true
+    }
+
+    pub(super) async fn finish_usage_account_refresh_if_ready(&mut self, now: Instant) -> bool {
+        let Some(task) = self.usage_refresh_task.as_ref() else {
+            return false;
+        };
+        if !task.is_finished() {
+            return false;
+        }
+        let task = self
+            .usage_refresh_task
+            .take()
+            .expect("checked usage refresh task presence");
+        match task.await {
+            Ok(cache) => {
+                self.usage_cache = cache;
+                if let Some(target) = &self.pending_usage_refresh {
+                    self.usage_cache.request_account_refresh(target, now);
+                }
+                true
+            }
+            Err(error) => {
+                crate::clog!("usage-refresh: background worker failed: {error}");
+                false
+            }
+        }
     }
 
     pub(super) fn refresh_open_usage_dialog_from_cache(&mut self) -> bool {

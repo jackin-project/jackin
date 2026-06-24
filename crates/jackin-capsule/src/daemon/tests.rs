@@ -166,12 +166,23 @@ fn frame_contains_screen_erase(frame: &[u8]) -> bool {
 
 #[test]
 fn control_reply_for_request_shapes_usage_variants() {
-    let mut mux = test_mux(24, 80);
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "test");
     let focused = control_reply_for_request(&mut mux, ClientMsg::UsageFocused);
     assert!(matches!(focused, ServerMsg::UsageFocused { .. }));
 
     let refreshed = control_reply_for_request(&mut mux, ClientMsg::UsageRefreshFocused);
     assert!(matches!(refreshed, ServerMsg::UsageFocused { .. }));
+    assert!(
+        mux.pending_usage_refresh.is_some(),
+        "refresh request should queue provider work instead of probing inline"
+    );
 
     let accounts = control_reply_for_request(&mut mux, ClientMsg::UsageAccountList);
     assert!(matches!(accounts, ServerMsg::UsageAccounts { .. }));
@@ -212,8 +223,8 @@ fn apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog() {
     );
 }
 
-#[test]
-fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
+#[tokio::test]
+async fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
     let mut mux = single_pane_tab_mux();
     let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
     mux.sessions.insert(1, session);
@@ -247,7 +258,17 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
         })
     );
 
-    mux.refresh_active_usage_account_snapshots(Instant::now());
+    assert!(mux.spawn_active_usage_account_refresh(Instant::now()));
+    for _ in 0..400 {
+        if mux
+            .finish_usage_account_refresh_if_ready(Instant::now())
+            .await
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    assert!(mux.usage_refresh_task.is_none());
     assert_eq!(mux.pending_usage_refresh, None);
 }
 

@@ -322,6 +322,10 @@ pub struct Multiplexer {
     /// ticker consumes this as a focused-first target so opening/switching tabs
     /// stays non-blocking but the selected provider refreshes next.
     pending_usage_refresh: Option<crate::usage::UsageRefreshTarget>,
+    /// Background account refresh worker. Provider probes can run HTTP
+    /// requests and CLI subprocesses, so the daemon select loop only starts
+    /// and joins this task; it never performs the probe work inline.
+    usage_refresh_task: Option<tokio::task::JoinHandle<UsageCache>>,
     /// Offset into the wordlist for the next codename pick, seeded once at
     /// daemon construction from the current time subsecond nanos.
     wordlist_offset: usize,
@@ -516,6 +520,7 @@ impl Multiplexer {
             resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
             usage_cache: UsageCache::default(),
             pending_usage_refresh: None,
+            usage_refresh_task: None,
             wordlist_offset: {
                 use std::time::{SystemTime, UNIX_EPOCH};
                 SystemTime::now()
@@ -1022,8 +1027,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // Account refresh scheduler. This remains the provider-calling
             // path; Capsule renderers read the last Turso snapshot.
             _ = usage_account_ticker.tick() => {
-                mux.refresh_active_usage_account_snapshots(Instant::now());
-                if mux.refresh_open_usage_dialog_from_cache() {
+                let now = Instant::now();
+                let refreshed = mux.finish_usage_account_refresh_if_ready(now).await;
+                mux.spawn_active_usage_account_refresh(now);
+                if refreshed && mux.refresh_open_usage_dialog_from_cache() {
                     mux.invalidate(dialog_change_redraw_reason());
                 }
             }
@@ -1098,9 +1105,12 @@ fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg
         ClientMsg::UsageFocused => ServerMsg::UsageFocused {
             usage: Box::new(mux.focused_usage_snapshot(false)),
         },
-        ClientMsg::UsageRefreshFocused => ServerMsg::UsageFocused {
-            usage: Box::new(mux.focused_usage_snapshot(true)),
-        },
+        ClientMsg::UsageRefreshFocused => {
+            mux.request_usage_refresh_for_provider(None);
+            ServerMsg::UsageFocused {
+                usage: Box::new(mux.focused_usage_snapshot(false)),
+            }
+        }
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
             accounts: crate::usage::cached_account_snapshots(),
         },
