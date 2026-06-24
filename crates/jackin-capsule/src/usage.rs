@@ -795,16 +795,38 @@ fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> 
     let has_auth = auth.exists();
     let has_xai_api_key = env_value("XAI_API_KEY").is_some();
     let has_deployment_key = env_value("GROK_DEPLOYMENT_KEY").is_some();
+    let rpc_result = fetch_grok_rpc_billing(rpc_gate);
+    grok_snapshot_from_rpc_result(
+        agent,
+        now,
+        &auth,
+        has_auth,
+        has_xai_api_key,
+        has_deployment_key,
+        rpc_result,
+    )
+}
+
+fn grok_snapshot_from_rpc_result(
+    agent: &str,
+    now: i64,
+    auth: &Path,
+    has_auth: bool,
+    has_xai_api_key: bool,
+    has_deployment_key: bool,
+    rpc_result: Result<GrokBillingResponse, String>,
+) -> FocusedUsageView {
     let has_credentials = has_auth || has_xai_api_key || has_deployment_key;
-    let rpc_usage = has_credentials
-        .then(|| fetch_grok_rpc_billing(rpc_gate))
-        .and_then(Result::ok);
+    let (rpc_usage, rpc_error) = match rpc_result {
+        Ok(usage) => (Some(usage), None),
+        Err(error) => (None, Some(error)),
+    };
     let account =
-        grok_account_label_or_presence(&auth, has_auth, has_xai_api_key, has_deployment_key);
+        grok_account_label_or_presence(auth, has_auth, has_xai_api_key, has_deployment_key);
     let status = if rpc_usage.is_some() {
         UsageSnapshotStatus::Fresh
     } else if has_credentials {
-        UsageSnapshotStatus::Unsupported
+        UsageSnapshotStatus::Error
     } else {
         UsageSnapshotStatus::NeedsLogin
     };
@@ -846,10 +868,10 @@ fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> 
         now,
         last_error: match status {
             UsageSnapshotStatus::NeedsLogin => {
-                Some("Grok auth not available to Capsule".to_owned())
+                Some(rpc_error.unwrap_or_else(|| "Grok auth not available to Capsule".to_owned()))
             }
-            UsageSnapshotStatus::Unsupported => {
-                Some("Grok ACP billing unavailable to Capsule".to_owned())
+            UsageSnapshotStatus::Error => {
+                rpc_error.or_else(|| Some("Grok ACP billing unavailable to Capsule".to_owned()))
             }
             _ => None,
         },
@@ -4340,6 +4362,61 @@ mod tests {
         assert_eq!(
             grok_account_label_or_presence(missing, false, false, false),
             "needs Grok login"
+        );
+    }
+
+    #[test]
+    fn grok_snapshot_uses_probe_success_without_local_credential_marker() {
+        let missing = Path::new("/tmp/nonexistent-grok-auth-for-test.json");
+        let billing: GrokBillingResponse = serde_json::from_value(serde_json::json!({
+            "billingCycle": {
+                "billingPeriodStart": "2026-06-01T00:00:00Z",
+                "billingPeriodEnd": "2026-07-01T00:00:00Z"
+            },
+            "monthlyLimit": { "val": 5000 },
+            "usage": { "totalUsed": { "val": 1000 } }
+        }))
+        .expect("valid Grok billing response");
+
+        let view = grok_snapshot_from_rpc_result(
+            "grok",
+            1_780_315_200,
+            missing,
+            false,
+            false,
+            false,
+            Ok(billing),
+        );
+
+        assert_eq!(view.status, UsageSnapshotStatus::Fresh);
+        assert_eq!(view.source, UsageSource::Cli);
+        assert_eq!(view.confidence, UsageConfidence::Authoritative);
+        assert_eq!(view.account.account_label, "needs Grok login");
+        assert_eq!(view.buckets[0].label, "Credits");
+        assert_eq!(view.buckets[0].remaining_percent, Some(80));
+        assert_eq!(view.last_error, None);
+    }
+
+    #[test]
+    fn grok_snapshot_reports_probe_error_instead_of_presence_gate() {
+        let missing = Path::new("/tmp/nonexistent-grok-auth-for-test.json");
+
+        let view = grok_snapshot_from_rpc_result(
+            "grok",
+            1_780_315_200,
+            missing,
+            false,
+            false,
+            false,
+            Err("grok agent stdio failed to start: not found".to_owned()),
+        );
+
+        assert_eq!(view.status, UsageSnapshotStatus::NeedsLogin);
+        assert_eq!(view.source, UsageSource::None);
+        assert_eq!(view.confidence, UsageConfidence::None);
+        assert_eq!(
+            view.last_error.as_deref(),
+            Some("grok agent stdio failed to start: not found")
         );
     }
 
