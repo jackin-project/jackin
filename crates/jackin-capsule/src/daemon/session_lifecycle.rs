@@ -399,23 +399,7 @@ impl Multiplexer {
             self.active_tab = self.tabs.len() - 1;
         }
         self.codename_live.insert(codename.clone());
-        // Use the explicit provider label when given; otherwise infer the default
-        // provider from the agent slug so the registry always shows a meaningful value.
-        let provider = provider_label
-            .map(str::to_owned)
-            .or_else(|| match agent.as_deref() {
-                Some("claude") => Some("anthropic".to_owned()),
-                Some("codex") => Some("openai".to_owned()),
-                _ => None,
-            });
-        self.agent_history.push(AgentRecord {
-            session_id: id,
-            codename,
-            agent: agent.clone(),
-            provider,
-            started_at: Utc::now(),
-            exited_at: None,
-        });
+        self.record_agent_history(id, codename, agent.clone(), provider_label);
         // Reflow so the new pane's PTY gets the correct interior
         // dimensions (outer rect minus border rows/cols). Without
         // this, the session keeps its initial `content_rows ×
@@ -430,6 +414,33 @@ impl Multiplexer {
             tab_idx = self.active_tab
         );
         Ok(id)
+    }
+
+    /// Append a session to the agent registry. Uses the explicit provider label
+    /// when given; otherwise infers the default provider from the agent slug so
+    /// the registry always shows a meaningful value.
+    pub(super) fn record_agent_history(
+        &mut self,
+        session_id: u64,
+        codename: String,
+        agent: Option<String>,
+        provider_label: Option<&str>,
+    ) {
+        let provider = provider_label
+            .map(str::to_owned)
+            .or_else(|| match agent.as_deref() {
+                Some("claude") => Some("anthropic".to_owned()),
+                Some("codex") => Some("openai".to_owned()),
+                _ => None,
+            });
+        self.agent_history.push(AgentRecord {
+            session_id,
+            codename,
+            agent,
+            provider,
+            started_at: Utc::now(),
+            exited_at: None,
+        });
     }
 
     pub(super) fn toggle_zoom(&mut self) {

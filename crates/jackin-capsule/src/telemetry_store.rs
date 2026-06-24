@@ -451,6 +451,7 @@ pub(crate) fn focused_usage_view(
     now_epoch: i64,
 ) -> Result<Option<FocusedUsageView>, String> {
     let rows = stored_account_snapshots(path)?;
+    let tabs = usage_provider_tabs_from_rows(&rows);
     let Some((provider, rows)) = select_provider_rows(rows, focused_provider) else {
         return Ok(None);
     };
@@ -506,13 +507,9 @@ pub(crate) fn focused_usage_view(
         } else {
             first.status_bar_label.clone()
         },
-        tabs: usage_provider_tabs_from_rows(&rows_for_tabs(path)?),
+        tabs,
         last_error: first.last_error.clone(),
     }))
-}
-
-fn rows_for_tabs(path: &Path) -> Result<Vec<StoredAccountUsageSnapshot>, String> {
-    stored_account_snapshots(path)
 }
 
 fn select_provider_rows(

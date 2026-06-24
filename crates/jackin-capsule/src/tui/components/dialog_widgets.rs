@@ -458,7 +458,7 @@ fn usage_tab_strip_labels(
     tabs
 }
 
-fn usage_provider_display_label(label: &str) -> &str {
+pub(crate) fn usage_provider_display_label(label: &str) -> &str {
     match label {
         "Codex" | "OpenAI / Codex" => "OpenAI",
         "Claude" | "Anthropic / Claude" => "Anthropic",
@@ -614,7 +614,7 @@ fn usage_lines_for_row(
             usage_overview_provider_lines(label, value, context.width, lines);
         }
         _ if is_overview_provider_row(value) => {
-            usage_legacy_overview_provider_lines(label, value, lines)
+            usage_legacy_overview_provider_lines(label, value, lines);
         }
         _ => lines.push(Line::from(vec![
             Span::raw("  "),

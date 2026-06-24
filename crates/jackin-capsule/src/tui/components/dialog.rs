@@ -639,14 +639,7 @@ impl Dialog {
     }
 
     fn usage_provider_header_label(label: &str) -> String {
-        match label {
-            "Codex" | "OpenAI / Codex" => "OpenAI",
-            "Claude" | "Anthropic / Claude" => "Anthropic",
-            "Grok Build" | "xAI / Grok" => "xAI",
-            "GLM / Z.AI" => "Z.AI",
-            other => other,
-        }
-        .to_owned()
+        crate::tui::components::dialog_widgets::usage_provider_display_label(label).to_owned()
     }
 
     fn usage_provider_tab_target(&mut self, step: isize) -> Option<String> {

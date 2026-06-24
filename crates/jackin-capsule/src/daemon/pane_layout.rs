@@ -59,22 +59,12 @@ impl Multiplexer {
             self.event_tx.clone(),
         )?;
         self.sessions.insert(new_id, session);
-        let provider =
-            provider_label
-                .map(str::to_owned)
-                .or_else(|| match agent_for_log.as_deref() {
-                    Some("claude") => Some("anthropic".to_owned()),
-                    Some("codex") => Some("openai".to_owned()),
-                    _ => None,
-                });
-        self.agent_history.push(crate::daemon::AgentRecord {
-            session_id: new_id,
-            codename: tab_codename.clone(),
-            agent: agent_for_log.clone(),
-            provider,
-            started_at: chrono::Utc::now(),
-            exited_at: None,
-        });
+        self.record_agent_history(
+            new_id,
+            tab_codename.clone(),
+            agent_for_log.clone(),
+            provider_label,
+        );
         let tab = &mut self.tabs[self.active_tab];
         let placed = match direction {
             SplitDirection::Left => tab.tree.split_h(from_id, new_id, SplitPosition::Before),

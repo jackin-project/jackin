@@ -215,17 +215,20 @@ impl Multiplexer {
         self.focused_usage_snapshot_for_provider(None, force_refresh)
     }
 
+    /// Agent codename and provider label of the currently focused session.
+    fn focused_agent_provider(&self) -> (Option<String>, Option<String>) {
+        self.active_focused_id()
+            .and_then(|id| self.sessions.get(&id))
+            .map_or((None, None), |session| {
+                (
+                    session.agent.clone(),
+                    session.provider.as_ref().map(|p| p.label.clone()),
+                )
+            })
+    }
+
     pub(super) fn focused_usage_status_label(&self) -> Option<String> {
-        let focused_id = self.active_focused_id();
-        let (agent, provider) =
-            focused_id
-                .and_then(|id| self.sessions.get(&id))
-                .map_or((None, None), |session| {
-                    (
-                        session.agent.clone(),
-                        session.provider.as_ref().map(|p| p.label.clone()),
-                    )
-                });
+        let (agent, provider) = self.focused_agent_provider();
         self.usage_cache
             .focused_status_bar_label(agent.as_deref(), provider.as_deref())
     }
@@ -235,16 +238,7 @@ impl Multiplexer {
         provider_label: Option<&str>,
         force_refresh: bool,
     ) -> jackin_protocol::control::FocusedUsageView {
-        let focused_id = self.active_focused_id();
-        let (agent, provider) =
-            focused_id
-                .and_then(|id| self.sessions.get(&id))
-                .map_or((None, None), |session| {
-                    (
-                        session.agent.clone(),
-                        session.provider.as_ref().map(|p| p.label.clone()),
-                    )
-                });
+        let (agent, provider) = self.focused_agent_provider();
         let provider = provider_label
             .map(str::to_owned)
             .or_else(|| provider.as_ref().map(ToOwned::to_owned));
@@ -269,16 +263,7 @@ impl Multiplexer {
         &self,
         provider_label: Option<&str>,
     ) -> Option<crate::usage::UsageRefreshTarget> {
-        let focused_id = self.active_focused_id();
-        let (agent, provider) =
-            focused_id
-                .and_then(|id| self.sessions.get(&id))
-                .map_or((None, None), |session| {
-                    (
-                        session.agent.clone(),
-                        session.provider.as_ref().map(|p| p.label.clone()),
-                    )
-                });
+        let (agent, provider) = self.focused_agent_provider();
         let provider = provider_label
             .map(str::to_owned)
             .or_else(|| provider.as_ref().map(ToOwned::to_owned));
@@ -289,34 +274,12 @@ impl Multiplexer {
         let active_targets = self
             .sessions
             .values()
-            .filter_map(|session| {
-                session
-                    .agent
-                    .as_ref()
-                    .map(|agent| crate::usage::UsageRefreshTarget {
-                        agent: agent.clone(),
-                        provider: session
-                            .provider
-                            .as_ref()
-                            .map(|provider| provider.label.clone()),
-                    })
-            })
+            .filter_map(session_refresh_target)
             .collect::<Vec<_>>();
         let focused = self
             .active_focused_id()
             .and_then(|id| self.sessions.get(&id))
-            .and_then(|session| {
-                session
-                    .agent
-                    .as_ref()
-                    .map(|agent| crate::usage::UsageRefreshTarget {
-                        agent: agent.clone(),
-                        provider: session
-                            .provider
-                            .as_ref()
-                            .map(|provider| provider.label.clone()),
-                    })
-            });
+            .and_then(session_refresh_target);
         let focused = self.pending_usage_refresh.take().or(focused);
         self.usage_cache.refresh_active_account_snapshots(
             &active_targets,
@@ -454,6 +417,19 @@ impl Multiplexer {
             })
             .collect()
     }
+}
+
+/// Build a usage refresh target from a session, if it has an agent codename.
+fn session_refresh_target(
+    session: &crate::session::Session,
+) -> Option<crate::usage::UsageRefreshTarget> {
+    session
+        .agent
+        .as_ref()
+        .map(|agent| crate::usage::UsageRefreshTarget {
+            agent: agent.clone(),
+            provider: session.provider.as_ref().map(|p| p.label.clone()),
+        })
 }
 
 fn decorate_usage_view_refreshing(view: &mut jackin_protocol::control::FocusedUsageView) {
