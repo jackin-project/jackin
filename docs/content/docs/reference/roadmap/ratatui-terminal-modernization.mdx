@@ -319,7 +319,9 @@ Acceptance:
 - Soak with real agents and terminals: Ghostty, iTerm2, WezTerm, Alacritty, Kitty, and SSH.
 - Merge only when the new path is the desired default.
 
-Phase 7 automated-gate note: `cargo nextest run`, `cargo nextest run --all-features`, native `cargo fuzz run --sanitizer none damage_grid_process -- -max_total_time=60`, `cargo nextest run -p jackin-term --features dhat-heap --test allocation`, and short Criterion runs for `present_frame`, `scroll_throughput`, and `pane_body` passed. The Linux-target fuzz command from CI could not run on this macOS checkout because `x86_64-linux-gnu-g++` is not installed; native fuzz coverage passed instead. Real-terminal soak remains open and keeps the item at partially implemented status.
+Phase 7 automated-gate note: `cargo nextest run`, `cargo nextest run --all-features`, native `cargo fuzz run --sanitizer none damage_grid_process -- -max_total_time=60`, `cargo nextest run -p jackin-term --features dhat-heap --test allocation`, short Criterion runs for `present_frame`, `scroll_throughput`, and `pane_body`, and the docs gates (`bun run types:check`, `bun run check:repo-links`, `bun run check:roadmap-sidebar`, `bun test`, `bun run build`) passed. The Linux-target fuzz command from CI could not run on this macOS checkout because `x86_64-linux-gnu-g++` is not installed; native fuzz coverage passed instead. Real-terminal soak remains open and keeps the item at partially implemented status.
+
+Phase 7 soak blocker note: this checkout can only detect Ghostty and Alacritty locally (`/Applications/Ghostty.app` and `/Applications/Alacritty.app`); iTerm2, WezTerm, and Kitty are not installed, and no SSH target is configured. The agent can launch commands but cannot perform the visual/manual checks required by this phase, so soak must be completed by the operator in the listed terminals before the final checkbox can be marked.
 
 ## Testing Strategy
 
