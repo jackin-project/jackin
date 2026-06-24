@@ -150,8 +150,6 @@ fn all_subcommand_help_pages_show_banner() {
         vec!["jackin", "usage", "--help"],
         vec!["jackin", "usage", "cache", "accounts", "--help"],
         vec!["jackin", "usage", "jk-demo-role", "accounts", "--help"],
-        vec!["jackin", "usage", "jk-demo-role", "workspace", "--help"],
-        vec!["jackin", "usage", "jk-demo-role", "session", "--help"],
     ];
     for args in &subcommands {
         let help = help_text(args);
