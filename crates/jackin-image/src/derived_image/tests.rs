@@ -616,6 +616,16 @@ fn claude_plugins_render_one_readable_run_layer() {
         !dockerfile.contains(" && claude plugin"),
         "plugin steps must stay as readable continued commands, not && chains: {dockerfile}"
     );
+    let install_pos = dockerfile
+        .find("    claude plugin install 'rtk'")
+        .expect("plugin install");
+    let cleanup_pos = dockerfile
+        .find("    rm -rf /home/agent/.claude/backups")
+        .expect("claude backup cleanup");
+    assert!(
+        install_pos < cleanup_pos,
+        "Claude plugin rollback backups are transient installer artifacts and must be removed before default-home snapshot: {dockerfile}"
+    );
 }
 
 #[test]

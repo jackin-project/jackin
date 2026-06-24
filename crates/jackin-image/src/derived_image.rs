@@ -226,6 +226,11 @@ fn render_claude_plugin_section(claude: Option<&ClaudeConfig>) -> String {
         out.push_str("; \\\n    claude plugin install ");
         out.push_str(&shell_quote(plugin));
     }
+    // Claude Code creates timestamped backups of `.claude.json` while mutating
+    // user-scope plugin settings. Those are transient installer rollback files,
+    // not default-home seed state; leaving them in the baked image can also fail
+    // the born-correct permission guard because Claude writes them private.
+    out.push_str("; \\\n    rm -rf /home/agent/.claude/backups");
     out.push('\n');
     out.push_str("USER root\n");
     out
