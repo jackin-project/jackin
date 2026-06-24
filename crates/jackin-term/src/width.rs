@@ -48,18 +48,17 @@ pub fn display_width(cluster: &str) -> u16 {
         return 0;
     }
 
-    let width = UnicodeWidthStr::width(cluster).min(2) as u16;
-    if width == 1 && has_halfwidth_katakana_voicing_mark(cluster) {
-        2
-    } else {
-        width
-    }
+    let width = UnicodeWidthStr::width(cluster) as u16;
+    width
+        .saturating_add(count_halfwidth_katakana_voicing_marks(cluster))
+        .min(2)
 }
 
-fn has_halfwidth_katakana_voicing_mark(cluster: &str) -> bool {
+fn count_halfwidth_katakana_voicing_marks(cluster: &str) -> u16 {
     cluster
         .chars()
-        .any(|ch| matches!(ch, '\u{ff9e}' | '\u{ff9f}'))
+        .filter(|ch| matches!(ch, '\u{ff9e}' | '\u{ff9f}'))
+        .count() as u16
 }
 
 #[cfg(test)]
