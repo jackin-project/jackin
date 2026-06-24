@@ -10,8 +10,7 @@ use std::path::Path;
 use std::thread;
 
 use jackin_protocol::control::{
-    AccountUsageSnapshotView, FocusedUsageView, QuotaBucketView, UsageConfidence,
-    UsageSnapshotStatus, UsageSource,
+    FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
 };
 use sha2::{Digest, Sha256};
 use turso::{Connection, Row, params};
@@ -419,29 +418,6 @@ fn status_label(status: UsageSnapshotStatus) -> &'static str {
         UsageSnapshotStatus::Unavailable => "unavailable",
         UsageSnapshotStatus::Error => "error",
     }
-}
-
-pub(crate) fn account_snapshot_views(path: &Path) -> Result<Vec<AccountUsageSnapshotView>, String> {
-    stored_account_snapshots(path).map(|rows| {
-        rows.into_iter()
-            .map(|row| AccountUsageSnapshotView {
-                provider: row.provider,
-                account_label: row.account_label,
-                source: row.source,
-                confidence: row.confidence,
-                window_kind: row.window_kind,
-                used_amount: row.used_amount,
-                used_unit: row.used_unit,
-                limit_amount: row.limit_amount,
-                limit_unit: row.limit_unit,
-                resets_at: row.resets_at,
-                fetched_at: row.fetched_at,
-                expires_at: row.expires_at,
-                status: row.status,
-                last_error: row.last_error,
-            })
-            .collect()
-    })
 }
 
 pub(crate) fn focused_usage_view(

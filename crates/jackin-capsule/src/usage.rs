@@ -122,6 +122,19 @@ impl UsageCache {
         self.telemetry_store_path = path;
     }
 
+    #[cfg(test)]
+    pub(crate) fn insert_snapshot_for_test(
+        &mut self,
+        agent: &str,
+        focused_provider: Option<&str>,
+        view: FocusedUsageView,
+    ) {
+        self.snapshots.insert(
+            canonical_usage_cache_key(agent, focused_provider),
+            CachedUsage { view },
+        );
+    }
+
     pub(crate) fn focused_status_bar_label(
         &self,
         focused_agent: Option<&str>,
@@ -140,6 +153,10 @@ impl UsageCache {
             return Some(view.status_bar_label);
         }
         None
+    }
+
+    pub(crate) fn account_snapshot_views(&self) -> Vec<AccountUsageSnapshotView> {
+        account_snapshot_views_from_cache(&self.snapshots)
     }
 
     pub(crate) fn focused_snapshot(
@@ -516,13 +533,86 @@ fn mark_active_tab(view: &mut FocusedUsageView) {
     }
 }
 
-pub(crate) fn cached_account_snapshots() -> Vec<AccountUsageSnapshotView> {
-    crate::telemetry_store::account_snapshot_views(Path::new(TELEMETRY_STORE_PATH)).unwrap_or_else(
-        |error| {
-            crate::cdebug!("usage account snapshot read failed: {error}");
-            Vec::new()
-        },
+fn account_snapshot_views_from_cache(
+    snapshots: &HashMap<String, CachedUsage>,
+) -> Vec<AccountUsageSnapshotView> {
+    let mut accounts = snapshots
+        .values()
+        .flat_map(|cached| {
+            let view = &cached.view;
+            view.buckets.iter().map(|bucket| {
+                let (used_amount, used_unit, limit_amount, limit_unit) =
+                    quota_amounts_for_account_snapshot(bucket);
+                AccountUsageSnapshotView {
+                    provider: view.account.provider_label.clone(),
+                    account_label: view.account.account_label.clone(),
+                    source: usage_source_storage_label(view.source).to_owned(),
+                    confidence: usage_confidence_storage_label(view.confidence).to_owned(),
+                    window_kind: bucket.label.clone(),
+                    used_amount,
+                    used_unit,
+                    limit_amount,
+                    limit_unit,
+                    resets_at: None,
+                    fetched_at: view.fetched_at_epoch,
+                    expires_at: None,
+                    status: usage_status_storage_label(bucket.status).to_owned(),
+                    last_error: view.last_error.clone(),
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    accounts.sort_by(|left, right| {
+        left.provider
+            .cmp(&right.provider)
+            .then(left.window_kind.cmp(&right.window_kind))
+    });
+    accounts
+}
+
+fn quota_amounts_for_account_snapshot(
+    bucket: &QuotaBucketView,
+) -> (Option<i64>, Option<String>, Option<i64>, Option<String>) {
+    let Some(remaining) = bucket.remaining_percent else {
+        return (None, None, None, None);
+    };
+    (
+        Some(i64::from(100_u8.saturating_sub(remaining.min(100)))),
+        Some("percent".to_owned()),
+        Some(100),
+        Some("percent".to_owned()),
     )
+}
+
+fn usage_status_storage_label(status: UsageSnapshotStatus) -> &'static str {
+    match status {
+        UsageSnapshotStatus::Fresh => "fresh",
+        UsageSnapshotStatus::Stale => "stale",
+        UsageSnapshotStatus::NeedsLogin => "needs_login",
+        UsageSnapshotStatus::NeedsSecret => "needs_secret",
+        UsageSnapshotStatus::Unsupported => "unsupported",
+        UsageSnapshotStatus::Unavailable => "unavailable",
+        UsageSnapshotStatus::Error => "error",
+    }
+}
+
+fn usage_source_storage_label(source: UsageSource) -> &'static str {
+    match source {
+        UsageSource::ProviderApi => "provider_api",
+        UsageSource::Cli => "cli",
+        UsageSource::LocalLogs => "local_logs",
+        UsageSource::Cache => "cache",
+        UsageSource::None => "none",
+    }
+}
+
+fn usage_confidence_storage_label(confidence: UsageConfidence) -> &'static str {
+    match confidence {
+        UsageConfidence::Authoritative => "authoritative",
+        UsageConfidence::Estimated => "estimated",
+        UsageConfidence::PresenceOnly => "presence_only",
+        UsageConfidence::None => "none",
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -4920,6 +5010,32 @@ mod tests {
                 .iter()
                 .any(|tab| tab.label == "Codex" && tab.active)
         );
+    }
+
+    #[test]
+    fn usage_account_snapshots_use_in_memory_cache() {
+        let mut cache = UsageCache::default();
+        cache.snapshots.insert(
+            canonical_usage_cache_key("codex", Some("OpenAI")),
+            CachedUsage {
+                view: codex_cached_usage_view(),
+            },
+        );
+
+        let accounts = cache.account_snapshot_views();
+
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].provider, "OpenAI / Codex");
+        assert_eq!(accounts[0].account_label, "codex@example.com");
+        assert_eq!(accounts[0].source, "provider_api");
+        assert_eq!(accounts[0].confidence, "authoritative");
+        assert_eq!(accounts[0].window_kind, "Session");
+        assert_eq!(accounts[0].used_amount, Some(63));
+        assert_eq!(accounts[0].used_unit.as_deref(), Some("percent"));
+        assert_eq!(accounts[0].limit_amount, Some(100));
+        assert_eq!(accounts[0].limit_unit.as_deref(), Some("percent"));
+        assert_eq!(accounts[0].fetched_at, 123);
+        assert_eq!(accounts[0].status, "fresh");
     }
 
     fn codex_cached_usage_view() -> FocusedUsageView {

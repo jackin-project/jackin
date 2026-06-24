@@ -189,6 +189,43 @@ fn control_reply_for_request_shapes_usage_variants() {
 }
 
 #[test]
+fn control_usage_account_list_uses_in_memory_cache() {
+    let mut mux = single_pane_tab_mux();
+    let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 123);
+    view.focused_agent = Some("codex".to_owned());
+    view.focused_provider = Some("OpenAI".to_owned());
+    view.account = jackin_protocol::control::FocusedAccountHeader {
+        provider_label: "OpenAI / Codex".to_owned(),
+        account_label: "codex@example.com".to_owned(),
+        plan_label: Some("Pro 20x".to_owned()),
+    };
+    view.status = jackin_protocol::control::UsageSnapshotStatus::Fresh;
+    view.source = jackin_protocol::control::UsageSource::ProviderApi;
+    view.confidence = jackin_protocol::control::UsageConfidence::Authoritative;
+    view.buckets = vec![jackin_protocol::control::QuotaBucketView {
+        label: "Session".to_owned(),
+        used_label: Some("63% used".to_owned()),
+        limit_label: Some("100%".to_owned()),
+        remaining_percent: Some(37),
+        reset_label: Some("Resets in 2h".to_owned()),
+        pace_label: None,
+        status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+    }];
+    mux.usage_cache
+        .insert_snapshot_for_test("codex", Some("OpenAI"), view);
+
+    let accounts = control_reply_for_request(&mut mux, ClientMsg::UsageAccountList);
+
+    let ServerMsg::UsageAccounts { accounts } = accounts else {
+        panic!("usage accounts response expected");
+    };
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].provider, "OpenAI / Codex");
+    assert_eq!(accounts[0].account_label, "codex@example.com");
+    assert_eq!(accounts[0].used_amount, Some(63));
+}
+
+#[test]
 fn apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog() {
     let mut mux = single_pane_tab_mux();
     let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));

@@ -1112,7 +1112,7 @@ fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg
             }
         }
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
-            accounts: crate::usage::cached_account_snapshots(),
+            accounts: mux.usage_cache.account_snapshot_views(),
         },
         ClientMsg::Unknown => {
             crate::clog!("control: ignoring unknown ClientMsg variant from peer");
