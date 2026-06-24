@@ -17,6 +17,15 @@ const REPO_DIR_NAME: &str = "jackin";
 // those defaults move, or are overridden in the environment, the exported
 // `JACKIN_CONSTRUCT_IMAGE` drifts from the image the build actually produces.
 const CONSTRUCT_IMAGE: &str = "jackin-local/construct:trixie";
+const CAPSULE_PATH_DEPS: [(&str, &str); 7] = [
+    ("crates/jackin-capsule/", "jackin-capsule"),
+    ("crates/jackin-core/", "jackin-core"),
+    ("crates/jackin-diagnostics/", "jackin-diagnostics"),
+    ("crates/jackin-protocol/", "jackin-protocol"),
+    ("crates/jackin-term/", "jackin-term"),
+    ("crates/jackin-tui/", "jackin-tui"),
+    ("crates/jackin-build-meta/", "jackin-build-meta"),
+];
 
 #[derive(Parser)]
 #[command(name = "jackin-dev", about = "Developer tooling for jackin")]
@@ -44,6 +53,8 @@ enum PrCommand {
     Path(PrPathArgs),
     /// Show local checkout/env freshness for a PR verification bundle.
     Status(PrRepoArgs),
+    /// Preview sync auto-prep decisions and explain the changed files behind them.
+    Explain(PrRepoArgs),
 }
 
 /// Fields shared by every command that resolves a PR against a remote repo.
@@ -129,8 +140,14 @@ struct PullRequestInfo {
 
 #[derive(Debug)]
 struct AutoPrep {
-    capsule: bool,
-    construct: bool,
+    capsule: PrepDecision,
+    construct: PrepDecision,
+}
+
+#[derive(Debug)]
+struct PrepDecision {
+    required: bool,
+    reasons: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -164,6 +181,7 @@ fn run(cli: Cli) -> Result<()> {
             PrCommand::Env(args) => print_env(args),
             PrCommand::Path(args) => print_path(args),
             PrCommand::Status(args) => status(args),
+            PrCommand::Explain(args) => explain(args),
         },
     }
 }
@@ -193,18 +211,38 @@ fn sync(args: SyncArgs) -> Result<()> {
 
     let mut env_lines = env_lines(&paths);
 
-    if auto.construct {
+    if auto.construct.required {
         run_checked(command("mise", ["run", "construct-build-local"]).current_dir(&paths.repo))?;
         env_lines.push(format!("export JACKIN_CONSTRUCT_IMAGE={CONSTRUCT_IMAGE}"));
     }
 
-    if auto.capsule {
+    if auto.capsule.required {
         env_lines.push(build_capsule_export(&paths.repo)?);
     }
 
     fs::write(&paths.env_file, format!("{}\n", env_lines.join("\n")))
         .with_context(|| format!("writing {}", paths.env_file.display()))?;
     print_sync_summary(args.common.pr, &paths, &pr, &auto);
+    Ok(())
+}
+
+fn explain(args: PrRepoArgs) -> Result<()> {
+    let paths = PrPaths::new(args.pr, args.test_dir)?;
+    let pr = pr_info(args.pr, &args.repo)?;
+    let auto = if paths.repo.join(".git").exists() {
+        auto_prep(&paths.repo, &pr.changed_files)?
+    } else {
+        auto_prep_from_paths(&pr.changed_files)
+    };
+
+    emit_line(format!("PR: #{}", args.pr));
+    emit_line(format!("repo: {}", args.repo));
+    emit_line(format!("head: {}", pr.head_oid));
+    emit_line(format!("changed files: {}", pr.changed_files.len()));
+    emit_line("");
+    emit_line("Preparation preview:");
+    print_prep_decision("capsule", &auto.capsule);
+    print_prep_decision("construct", &auto.construct);
     Ok(())
 }
 
@@ -445,37 +483,101 @@ fn env_lines(paths: &PrPaths) -> Vec<String> {
 
 fn auto_prep(repo_dir: &Path, files: &[String]) -> Result<AutoPrep> {
     Ok(AutoPrep {
-        capsule: capsule_build_required(repo_dir, files)?,
-        construct: construct_build_required(files),
+        capsule: capsule_build_decision(repo_dir, files)?,
+        construct: construct_build_decision(files),
     })
 }
 
-fn construct_build_required(files: &[String]) -> bool {
-    files.iter().any(|file| {
-        file.starts_with("docker/construct/")
-            || file == "docker-bake.hcl"
-            || file == "mise.toml"
-            || file.starts_with("crates/jackin-xtask/src/construct")
-    })
+fn auto_prep_from_paths(files: &[String]) -> AutoPrep {
+    AutoPrep {
+        capsule: capsule_build_path_decision(files),
+        construct: construct_build_decision(files),
+    }
 }
 
-fn capsule_build_required(repo_dir: &Path, files: &[String]) -> Result<bool> {
-    if files.iter().any(|file| {
-        matches!(
-            file.as_str(),
-            "Cargo.lock" | "Cargo.toml" | "rust-toolchain.toml" | "mise.toml"
-        ) || file.starts_with(".cargo/")
-    }) {
-        return Ok(true);
+fn construct_build_decision(files: &[String]) -> PrepDecision {
+    let reasons = files
+        .iter()
+        .filter_map(|file| construct_reason(file).map(|reason| format!("{file}: {reason}")))
+        .collect::<Vec<_>>();
+    PrepDecision {
+        required: !reasons.is_empty(),
+        reasons,
+    }
+}
+
+fn construct_reason(file: &str) -> Option<&'static str> {
+    if file.starts_with("docker/construct/") {
+        Some("construct image source changed")
+    } else if file == "docker-bake.hcl" {
+        Some("construct image bake graph changed")
+    } else if file == "mise.toml" {
+        Some("construct-build-local task wiring may have changed")
+    } else if file.starts_with("crates/jackin-xtask/src/construct") {
+        Some("construct build orchestration changed")
+    } else {
+        None
+    }
+}
+
+fn capsule_build_decision(repo_dir: &Path, files: &[String]) -> Result<PrepDecision> {
+    let broad_reasons = files
+        .iter()
+        .filter_map(|file| capsule_broad_reason(file).map(|reason| format!("{file}: {reason}")))
+        .collect::<Vec<_>>();
+    if !broad_reasons.is_empty() {
+        return Ok(PrepDecision {
+            required: true,
+            reasons: broad_reasons,
+        });
     }
 
     let packages = workspace_packages(repo_dir)?;
     let affected = affected_workspace_packages(repo_dir, files, &packages)?;
     if affected.is_empty() {
-        return Ok(false);
+        return Ok(PrepDecision {
+            required: false,
+            reasons: Vec::new(),
+        });
     }
     let closure = local_dependency_closure(&packages, "jackin-capsule")?;
-    Ok(!affected.is_disjoint(&closure))
+    let reasons = capsule_dependency_reasons(repo_dir, files, &packages, &closure)?;
+    Ok(PrepDecision {
+        required: !reasons.is_empty(),
+        reasons,
+    })
+}
+
+fn capsule_broad_reason(file: &str) -> Option<&'static str> {
+    if matches!(
+        file,
+        "Cargo.lock" | "Cargo.toml" | "rust-toolchain.toml" | "mise.toml"
+    ) {
+        Some("workspace build inputs changed")
+    } else if file.starts_with(".cargo/") {
+        Some("cargo configuration changed")
+    } else {
+        None
+    }
+}
+
+fn capsule_build_path_decision(files: &[String]) -> PrepDecision {
+    let mut reasons = files
+        .iter()
+        .filter_map(|file| capsule_broad_reason(file).map(|reason| format!("{file}: {reason}")))
+        .collect::<Vec<_>>();
+
+    reasons.extend(files.iter().filter_map(|file| {
+        CAPSULE_PATH_DEPS
+            .iter()
+            .find(|(prefix, _package)| file.starts_with(prefix))
+            .map(|(_prefix, package)| format!("{file}: {package} is used by jackin-capsule"))
+    }));
+
+    PrepDecision {
+        required: !reasons.is_empty(),
+        reasons,
+    }
 }
 
 fn workspace_packages(repo_dir: &Path) -> Result<Vec<WorkspacePackage>> {
@@ -541,6 +643,38 @@ fn affected_workspace_packages(
         }
     }
     Ok(affected)
+}
+
+fn capsule_dependency_reasons(
+    repo_dir: &Path,
+    files: &[String],
+    packages: &[WorkspacePackage],
+    closure: &BTreeSet<String>,
+) -> Result<Vec<String>> {
+    let mut reasons = Vec::new();
+    for file in files {
+        let path = Path::new(file);
+        for package in packages {
+            if !closure.contains(&package.name) {
+                continue;
+            }
+            let package_root = package.root.strip_prefix(repo_dir).with_context(|| {
+                format!(
+                    "package {} root {} is outside repo {}",
+                    package.name,
+                    package.root.display(),
+                    repo_dir.display()
+                )
+            })?;
+            if path.starts_with(package_root) {
+                reasons.push(format!(
+                    "{file}: {} is used by jackin-capsule",
+                    package.name
+                ));
+            }
+        }
+    }
+    Ok(reasons)
 }
 
 fn local_dependency_closure(packages: &[WorkspacePackage], root: &str) -> Result<BTreeSet<String>> {
@@ -689,6 +823,26 @@ fn built_label(value: bool) -> &'static str {
     if value { "built" } else { "not needed" }
 }
 
+fn prep_label(decision: &PrepDecision) -> &'static str {
+    if decision.required {
+        "will build"
+    } else {
+        "not needed"
+    }
+}
+
+fn print_prep_decision(name: &str, decision: &PrepDecision) {
+    emit_line(format!("  {name}: {}", prep_label(decision)));
+    if decision.reasons.is_empty() {
+        emit_line("    why: no changed file matches this prep rule");
+    } else {
+        emit_line("    why:");
+        for reason in &decision.reasons {
+            emit_line(format!("      - {reason}"));
+        }
+    }
+}
+
 fn print_sync_summary(pr: u64, paths: &PrPaths, info: &PullRequestInfo, auto: &AutoPrep) {
     emit_line(format!("Synced PR #{pr}:"));
     emit_line(format!("  repo: {}", paths.repo.display()));
@@ -697,8 +851,11 @@ fn print_sync_summary(pr: u64, paths: &PrPaths, info: &PullRequestInfo, auto: &A
     emit_line(format!("  home:   {}", paths.home.display()));
     emit_line(format!("  head:   {}", info.head_oid));
     emit_line(format!("  files:  {}", info.changed_files.len()));
-    emit_line(format!("  capsule: {}", built_label(auto.capsule)));
-    emit_line(format!("  construct: {}", built_label(auto.construct)));
+    emit_line(format!("  capsule: {}", built_label(auto.capsule.required)));
+    emit_line(format!(
+        "  construct: {}",
+        built_label(auto.construct.required)
+    ));
     emit_line("");
     emit_line("Next:");
     for line in enter_lines(paths) {

@@ -27,7 +27,7 @@ fn env_points_at_bundle_state() {
 
 #[test]
 fn auto_prep_detects_capsule_and_construct_inputs() {
-    let repo = repo_root();
+    let repo = test_repo_root();
     let auto = auto_prep(
         &repo,
         &[
@@ -37,48 +37,58 @@ fn auto_prep_detects_capsule_and_construct_inputs() {
     )
     .unwrap();
 
-    assert!(auto.capsule);
-    assert!(auto.construct);
+    assert!(auto.capsule.required);
+    assert!(auto.construct.required);
+    assert_eq!(
+        auto.construct.reasons,
+        vec!["docker/construct/Dockerfile: construct image source changed"]
+    );
 }
 
 #[test]
 fn auto_prep_ignores_docs_only_changes() {
-    let repo = repo_root();
+    let repo = test_repo_root();
     let auto = auto_prep(
         &repo,
         &["docs/content/docs/reference/roadmap/pr-verification.mdx".to_owned()],
     )
     .unwrap();
 
-    assert!(!auto.capsule);
-    assert!(!auto.construct);
+    assert!(!auto.capsule.required);
+    assert!(!auto.construct.required);
+    assert!(auto.capsule.reasons.is_empty());
+    assert!(auto.construct.reasons.is_empty());
 }
 
 #[test]
 fn auto_prep_treats_protocol_change_as_capsule() {
-    let repo = repo_root();
+    let repo = test_repo_root();
     let auto = auto_prep(&repo, &["crates/jackin-protocol/src/wire.rs".to_owned()]).unwrap();
 
-    assert!(auto.capsule);
-    assert!(!auto.construct);
+    assert!(auto.capsule.required);
+    assert!(!auto.construct.required);
+    assert_eq!(
+        auto.capsule.reasons,
+        vec!["crates/jackin-protocol/src/wire.rs: jackin-protocol is used by jackin-capsule"]
+    );
 }
 
 #[test]
 fn auto_prep_treats_tui_dependency_change_as_capsule() {
-    let repo = repo_root();
+    let repo = test_repo_root();
     let auto = auto_prep(&repo, &["crates/jackin-tui/src/lib.rs".to_owned()]).unwrap();
 
-    assert!(auto.capsule);
-    assert!(!auto.construct);
+    assert!(auto.capsule.required);
+    assert!(!auto.construct.required);
 }
 
 #[test]
 fn auto_prep_ignores_unrelated_workspace_package_change() {
-    let repo = repo_root();
+    let repo = test_repo_root();
     let auto = auto_prep(&repo, &["crates/jackin-dev/src/main.rs".to_owned()]).unwrap();
 
-    assert!(!auto.capsule);
-    assert!(!auto.construct);
+    assert!(!auto.capsule.required);
+    assert!(!auto.construct.required);
 }
 
 #[test]
@@ -90,13 +100,55 @@ fn auto_prep_construct_triggers() {
         "crates/jackin-xtask/src/construct/image.rs",
     ] {
         assert!(
-            construct_build_required(&[file.to_owned()]),
+            construct_build_decision(&[file.to_owned()]).required,
             "{file} should trigger a construct build"
         );
     }
 }
 
-fn repo_root() -> PathBuf {
+#[test]
+fn construct_decision_explains_triggering_files() {
+    let decision = construct_build_decision(&[
+        "docs/content/docs/getting-started/concepts.mdx".to_owned(),
+        "docker-bake.hcl".to_owned(),
+        "crates/jackin-xtask/src/construct.rs".to_owned(),
+    ]);
+
+    assert!(decision.required);
+    assert_eq!(
+        decision.reasons,
+        vec![
+            "docker-bake.hcl: construct image bake graph changed",
+            "crates/jackin-xtask/src/construct.rs: construct build orchestration changed",
+        ]
+    );
+}
+
+#[test]
+fn capsule_decision_explains_broad_workspace_inputs() {
+    let repo = test_repo_root();
+    let decision = capsule_build_decision(&repo, &["Cargo.lock".to_owned()]).unwrap();
+
+    assert!(decision.required);
+    assert_eq!(
+        decision.reasons,
+        vec!["Cargo.lock: workspace build inputs changed"]
+    );
+}
+
+#[test]
+fn path_only_prep_explains_capsule_dependency_without_checkout() {
+    let auto = auto_prep_from_paths(&["crates/jackin-tui/src/lib.rs".to_owned()]);
+
+    assert!(auto.capsule.required);
+    assert!(!auto.construct.required);
+    assert_eq!(
+        auto.capsule.reasons,
+        vec!["crates/jackin-tui/src/lib.rs: jackin-tui is used by jackin-capsule"]
+    );
+}
+
+fn test_repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
