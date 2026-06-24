@@ -242,17 +242,19 @@ pub(crate) struct DialogBottomChromeWidget<'a> {
 
 impl Widget for DialogBottomChromeWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        render_branch_bar_row(
-            buf,
-            area,
-            self.branch,
-            self.usage_status_label,
-            self.pull_request,
-            self.pull_request_loading,
-            self.debug_run_id,
-            self.instance_id_label,
-            None,
-        );
+        if self.debug_run_id.is_some() {
+            render_branch_bar_row(
+                buf,
+                area,
+                self.branch,
+                self.usage_status_label,
+                self.pull_request,
+                self.pull_request_loading,
+                self.debug_run_id,
+                self.instance_id_label,
+                None,
+            );
+        }
         if let Some(spans) = self.hint_spans {
             render_hint_spans_row(buf, area, spans);
         }
