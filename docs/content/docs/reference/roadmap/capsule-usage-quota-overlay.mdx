@@ -384,7 +384,7 @@ Removing the cut features is part of this work, not a follow-up: the workspace d
 - [ ] Background refresher writes `account_usage_snapshots` to Turso: ~5 min/account + ±60s jitter, active-providers-only, focused-first, `Retry-After`/backoff (cap 30 min), single-flight, and a host-shared per-account cooldown marker all containers honor.
 - [ ] Overlay: proactive background refresh on open (selected provider first); header shows `refreshing…` and updates in place; tick relative times/values every minute while open.
 - [x] Remove browser-cookie / web-session sources (Grok web, Kimi web, MiniMax web) and account-setup/add-account/buy-credits/settings/dashboard/status-page/login-repair code.
-- [ ] Make provenance honest; surface fetch errors.
+- [x] Make provenance honest; surface fetch errors.
 - [x] Remove the cost/spend/Instance/action-row render code and dead helpers.
 - [x] Remove the spend data plane and pricing in usage.rs.
 - [x] Remove usage_samples/scan tables and unused control messages, CLI subcommands, and snapshot summary path.

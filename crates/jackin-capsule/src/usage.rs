@@ -522,9 +522,13 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     } else {
         "needs Claude login".to_owned()
     };
-    let quota = oauth
-        .as_ref()
-        .and_then(|credentials| fetch_claude_oauth_usage(&credentials.access_token).ok());
+    let (quota, quota_error) = match oauth.as_ref() {
+        Some(credentials) => match fetch_claude_oauth_usage(&credentials.access_token) {
+            Ok(usage) => (Some(usage), None),
+            Err(error) => (None, Some(error)),
+        },
+        None => (None, None),
+    };
     let status = if account == "needs Claude login" {
         UsageSnapshotStatus::NeedsLogin
     } else if quota.is_some() {
@@ -544,7 +548,7 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
                     None,
                     None,
                     None,
-                    Some("provider API pending"),
+                    quota_error.as_deref().or(Some("provider API pending")),
                     bucket_status,
                 ),
                 bucket(
@@ -553,7 +557,7 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
                     None,
                     None,
                     None,
-                    Some("provider API pending"),
+                    quota_error.as_deref().or(Some("provider API pending")),
                     bucket_status,
                 ),
                 bucket(
@@ -562,7 +566,7 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
                     None,
                     None,
                     None,
-                    Some("provider API pending"),
+                    quota_error.as_deref().or(Some("provider API pending")),
                     bucket_status,
                 ),
             ]
@@ -590,9 +594,9 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
             UsageSnapshotStatus::NeedsLogin => {
                 Some("Claude credentials not available to Capsule".to_owned())
             }
-            UsageSnapshotStatus::Stale => {
-                Some("Claude provider usage unavailable; cached quota is stale".to_owned())
-            }
+            UsageSnapshotStatus::Stale => Some(quota_error.unwrap_or_else(|| {
+                "Claude provider usage unavailable; cached quota is stale".to_owned()
+            })),
             _ => None,
         },
     })
@@ -619,11 +623,19 @@ fn codex_snapshot(
                 "needs Codex login".to_owned()
             }
         });
-    let rpc_usage = fetch_codex_rpc_usage(rpc_gate).ok();
+    let (rpc_usage, rpc_error) = match fetch_codex_rpc_usage(rpc_gate) {
+        Ok(usage) => (Some(usage), None),
+        Err(error) => (None, Some(error)),
+    };
     let rpc_quota = rpc_usage.as_ref().map(|usage| &usage.response);
-    let oauth_quota = credentials
-        .as_ref()
-        .and_then(|credentials| fetch_codex_oauth_usage(credentials, &codex_home).ok());
+    let (oauth_quota, oauth_error) = match credentials.as_ref() {
+        Some(credentials) => match fetch_codex_oauth_usage(credentials, &codex_home) {
+            Ok(usage) => (Some(usage), None),
+            Err(error) => (None, Some(error)),
+        },
+        None => (None, None),
+    };
+    let provider_error = rpc_error.as_ref().or(oauth_error.as_ref()).cloned();
     let quota = rpc_quota.or(oauth_quota.as_ref());
     let account = rpc_usage
         .as_ref()
@@ -647,7 +659,9 @@ fn codex_snapshot(
                     None,
                     None,
                     None,
-                    Some("app-server/OAuth quota pending"),
+                    provider_error
+                        .as_deref()
+                        .or(Some("app-server/OAuth quota pending")),
                     UsageSnapshotStatus::Unsupported,
                 ),
                 bucket(
@@ -656,7 +670,9 @@ fn codex_snapshot(
                     None,
                     None,
                     None,
-                    Some("app-server/OAuth quota pending"),
+                    provider_error
+                        .as_deref()
+                        .or(Some("app-server/OAuth quota pending")),
                     UsageSnapshotStatus::Unsupported,
                 ),
                 bucket(
@@ -665,7 +681,7 @@ fn codex_snapshot(
                     None,
                     None,
                     None,
-                    Some("provider API pending"),
+                    provider_error.as_deref().or(Some("provider API pending")),
                     UsageSnapshotStatus::Unsupported,
                 ),
                 bucket(
@@ -674,7 +690,7 @@ fn codex_snapshot(
                     None,
                     None,
                     None,
-                    Some("provider API pending"),
+                    provider_error.as_deref().or(Some("provider API pending")),
                     UsageSnapshotStatus::Unsupported,
                 ),
             ]
@@ -706,9 +722,9 @@ fn codex_snapshot(
             UsageSnapshotStatus::NeedsLogin => {
                 Some("Codex auth not available to Capsule".to_owned())
             }
-            UsageSnapshotStatus::Stale => {
-                Some("Codex provider usage unavailable; cached quota is stale".to_owned())
-            }
+            UsageSnapshotStatus::Stale => Some(provider_error.unwrap_or_else(|| {
+                "Codex provider usage unavailable; cached quota is stale".to_owned()
+            })),
             _ => None,
         },
     })
@@ -717,13 +733,22 @@ fn codex_snapshot(
 fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let data = home_path(".local/share/amp");
     let amp_api_key = env_value("AMP_API_KEY");
-    let api_usage = amp_api_key
-        .as_deref()
-        .and_then(|token| fetch_amp_api_usage(token).ok());
-    let cli_usage = api_usage
-        .is_none()
-        .then(fetch_amp_cli_usage)
-        .and_then(Result::ok);
+    let (api_usage, api_error) = match amp_api_key.as_deref() {
+        Some(token) => match fetch_amp_api_usage(token) {
+            Ok(usage) => (Some(usage), None),
+            Err(error) => (None, Some(error)),
+        },
+        None => (None, None),
+    };
+    let (cli_usage, cli_error) = if api_usage.is_none() {
+        match fetch_amp_cli_usage() {
+            Ok(usage) => (Some(usage), None),
+            Err(error) => (None, Some(error)),
+        }
+    } else {
+        (None, None)
+    };
+    let provider_error = api_error.as_ref().or(cli_error.as_ref()).cloned();
     let has_auth = amp_api_key.is_some() || data.join("secrets.json").exists();
     let status = if api_usage.is_some() || cli_usage.is_some() {
         UsageSnapshotStatus::Fresh
@@ -759,7 +784,9 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
                 None,
                 None,
                 None,
-                Some("amp usage/web source pending"),
+                provider_error
+                    .as_deref()
+                    .or(Some("Amp API/CLI usage unavailable")),
                 status,
             )]
         });
@@ -788,9 +815,10 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
         now,
         last_error: match status {
             UsageSnapshotStatus::NeedsLogin => Some("Amp auth not available to Capsule".to_owned()),
-            UsageSnapshotStatus::Unsupported => {
-                Some("Amp API/CLI usage unavailable to Capsule".to_owned())
-            }
+            UsageSnapshotStatus::Unsupported => Some(
+                provider_error
+                    .unwrap_or_else(|| "Amp API/CLI usage unavailable to Capsule".to_owned()),
+            ),
             _ => None,
         },
     })
@@ -888,7 +916,13 @@ fn grok_snapshot_from_rpc_result(
 fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView {
     let has_local = home_path(".kimi-code").exists() || home_path(".kimi").exists();
     let has_token = token.is_some_and(|value| !value.is_empty());
-    let provider_usage = token.and_then(|token| fetch_kimi_usage(token).ok());
+    let (provider_usage, provider_error) = match token {
+        Some(token) => match fetch_kimi_usage(token) {
+            Ok(usage) => (Some(usage), None),
+            Err(error) => (None, Some(error)),
+        },
+        None => (None, None),
+    };
     let status = if provider_usage.is_some() {
         UsageSnapshotStatus::Fresh
     } else if has_token || has_local {
@@ -908,7 +942,9 @@ fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView
                     None,
                     None,
                     None,
-                    Some("Kimi billing endpoint unavailable"),
+                    provider_error
+                        .as_deref()
+                        .or(Some("Kimi billing endpoint unavailable")),
                     status,
                 ),
                 bucket(
@@ -917,7 +953,9 @@ fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView
                     None,
                     None,
                     None,
-                    Some("Kimi billing endpoint unavailable"),
+                    provider_error
+                        .as_deref()
+                        .or(Some("Kimi billing endpoint unavailable")),
                     status,
                 ),
             ]
@@ -954,9 +992,9 @@ fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView
             UsageSnapshotStatus::NeedsSecret => {
                 Some("Kimi auth not available to Capsule".to_owned())
             }
-            UsageSnapshotStatus::Unsupported => {
-                Some("Kimi billing endpoint unavailable; local presence only".to_owned())
-            }
+            UsageSnapshotStatus::Unsupported => Some(provider_error.unwrap_or_else(|| {
+                "Kimi billing endpoint unavailable; local presence only".to_owned()
+            })),
             _ => None,
         },
     })
@@ -964,7 +1002,13 @@ fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView
 
 fn minimax_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView {
     let has_token = token.is_some_and(|value| !value.is_empty());
-    let provider_usage = token.and_then(|token| fetch_minimax_usage(token).ok());
+    let (provider_usage, provider_error) = match token {
+        Some(token) => match fetch_minimax_usage(token) {
+            Ok(usage) => (Some(usage), None),
+            Err(error) => (None, Some(error)),
+        },
+        None => (None, None),
+    };
     let status = if provider_usage.is_some() {
         UsageSnapshotStatus::Fresh
     } else if has_token {
@@ -983,7 +1027,9 @@ fn minimax_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageV
                 None,
                 None,
                 None,
-                Some("MiniMax API-token endpoint unavailable"),
+                provider_error
+                    .as_deref()
+                    .or(Some("MiniMax API-token endpoint unavailable")),
                 status,
             )]
         });
@@ -1002,7 +1048,7 @@ fn minimax_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageV
             .and_then(MiniMaxUsageResponse::plan_name),
         buckets,
         status,
-        source: if provider_usage.is_some() || has_token {
+        source: if provider_usage.is_some() {
             UsageSource::ProviderApi
         } else {
             UsageSource::None
@@ -1020,7 +1066,9 @@ fn minimax_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageV
                 Some("MiniMax API token is not available to Capsule".to_owned())
             }
             UsageSnapshotStatus::Unsupported => {
-                Some("MiniMax API-token endpoint unavailable to Capsule".to_owned())
+                Some(provider_error.unwrap_or_else(|| {
+                    "MiniMax API-token endpoint unavailable to Capsule".to_owned()
+                }))
             }
             _ => None,
         },
@@ -1035,9 +1083,12 @@ fn provider_key_snapshot(
     now: i64,
 ) -> FocusedUsageView {
     let has_key = key.is_some_and(|value| !value.is_empty());
-    let provider_quota = match surface {
-        UsageSurface::Zai => key.and_then(|token| fetch_zai_usage(token).ok()),
-        _ => None,
+    let (provider_quota, provider_error) = match (surface, key) {
+        (UsageSurface::Zai, Some(token)) => match fetch_zai_usage(token) {
+            Ok(quota) => (Some(quota), None),
+            Err(error) => (None, Some(error)),
+        },
+        _ => (None, None),
     };
     let status = if provider_quota.is_some() {
         UsageSnapshotStatus::Fresh
@@ -1057,7 +1108,9 @@ fn provider_key_snapshot(
                 None,
                 None,
                 None,
-                Some("provider quota API pending"),
+                provider_error
+                    .as_deref()
+                    .or(Some("provider quota API pending")),
                 status,
             )]
         });
@@ -1075,7 +1128,7 @@ fn provider_key_snapshot(
             .and_then(ZaiQuotaResponse::plan_name),
         buckets,
         status,
-        source: if provider_quota.is_some() || has_key {
+        source: if provider_quota.is_some() {
             UsageSource::ProviderApi
         } else {
             UsageSource::None
@@ -1092,10 +1145,12 @@ fn provider_key_snapshot(
             UsageSnapshotStatus::NeedsSecret => {
                 Some(format!("{key_name} is not available to Capsule"))
             }
-            UsageSnapshotStatus::Unsupported => Some(format!(
-                "{} quota API unavailable; key presence only",
-                surface.label()
-            )),
+            UsageSnapshotStatus::Unsupported => Some(provider_error.unwrap_or_else(|| {
+                format!(
+                    "{} quota API unavailable; key presence only",
+                    surface.label()
+                )
+            })),
             _ => None,
         },
     })
