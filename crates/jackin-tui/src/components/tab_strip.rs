@@ -2,14 +2,16 @@
 
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Position, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
 
 use crate::{
-    TabCell, lay_out_tabs,
+    TabCell,
+    components::HoverTracker,
+    lay_out_tabs, tab_at_column,
     theme::{TAB_BG_ACTIVE, TAB_BG_ACTIVE_HOVER, TAB_BG_INACTIVE, TAB_BG_INACTIVE_HOVER, WHITE},
 };
 
@@ -44,6 +46,54 @@ impl<'a> TabStrip<'a> {
 
     pub fn render(self, frame: &mut Frame<'_>, area: Rect) {
         frame.render_widget(self.paragraph(), area);
+    }
+
+    /// Return the tab under a 0-based terminal coordinate.
+    ///
+    /// The same laid-out cells drive rendering, hover and click handling. The
+    /// returned index is therefore the tab the operator sees under the pointer,
+    /// not a locally re-derived approximation.
+    #[must_use]
+    pub fn hit_index_at(self, area: Rect, col: u16, row: u16) -> Option<usize> {
+        if !area.contains(Position { x: col, y: row }) {
+            return None;
+        }
+        let visible_height = area.height.min(2);
+        if row >= area.y.saturating_add(visible_height) {
+            return None;
+        }
+        tab_at_column(&self.cells(area.x), col)
+    }
+
+    /// Register each tab cell as a clickable hover region.
+    ///
+    /// Callers keep their own target enum, but the geometry comes from the tab
+    /// strip itself. This keeps OSC-22 pointer cues, hover colour and clicks in
+    /// the same coordinate system as the rendered strip.
+    pub fn register_hover_targets<K, F>(
+        self,
+        tracker: &mut HoverTracker<K>,
+        area: Rect,
+        mut key_for: F,
+    ) where
+        K: Clone + PartialEq,
+        F: FnMut(usize) -> K,
+    {
+        let height = area.height.min(2);
+        if height == 0 {
+            return;
+        }
+        for (idx, cell) in self.cells(area.x).iter().enumerate() {
+            tracker.register(
+                Rect {
+                    x: cell.start_col,
+                    y: area.y,
+                    width: cell.cell_cols,
+                    height,
+                },
+                key_for(idx),
+            );
+        }
     }
 
     #[must_use]

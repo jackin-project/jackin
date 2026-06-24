@@ -480,8 +480,7 @@ pub(crate) fn usage_tab_strip_index_at(
         .iter()
         .map(|(label, active)| (label.as_str(), *active))
         .collect::<Vec<_>>();
-    let cells = TabStrip::new(&tab_refs).cells(tab_area.x);
-    jackin_tui::tab_at_column(&cells, col)
+    TabStrip::new(&tab_refs).hit_index_at(tab_area, col, tab_area.y)
 }
 
 pub(crate) fn usage_tab_strip_labels(
