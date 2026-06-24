@@ -3462,8 +3462,30 @@ fn parse_iso_epoch(value: &str) -> Option<i64> {
 }
 
 fn reset_label(reset_at: i64, now: i64) -> String {
-    let seconds = reset_at.saturating_sub(now).max(0);
-    format!("Resets in {}", compact_duration_label(seconds))
+    if reset_at <= now {
+        return "Resets now".to_owned();
+    }
+    let Some(reset) = DateTime::<Utc>::from_timestamp(reset_at, 0) else {
+        return format!(
+            "Resets in {}",
+            compact_duration_label(reset_at.saturating_sub(now).max(0))
+        );
+    };
+    let Some(current) = DateTime::<Utc>::from_timestamp(now, 0) else {
+        return format!("Resets {}", reset.format("%b %-d at %H:%M"));
+    };
+    let reset_date = reset.date_naive();
+    let current_date = current.date_naive();
+    if reset_date == current_date {
+        format!("Resets {}", reset.format("%H:%M"))
+    } else if current_date
+        .succ_opt()
+        .is_some_and(|tomorrow| reset_date == tomorrow)
+    {
+        format!("Resets tomorrow, {}", reset.format("%H:%M"))
+    } else {
+        format!("Resets {}", reset.format("%b %-d at %H:%M"))
+    }
 }
 
 fn quota_pace_label(
@@ -4356,7 +4378,7 @@ mod tests {
 
         assert_eq!(buckets[0].label, "Session");
         assert_eq!(buckets[0].remaining_percent, Some(16));
-        assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets in 1h 26m"));
+        assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets 15:12"));
         assert_eq!(buckets[1].label, "Weekly");
         assert_eq!(buckets[1].remaining_percent, Some(22));
         assert!(buckets.iter().any(|bucket| bucket.label == "Sonnet"));
@@ -4583,7 +4605,10 @@ mod tests {
         assert_eq!(buckets[0].used_label.as_deref(), Some("$18"));
         assert_eq!(buckets[0].limit_label.as_deref(), Some("$50"));
         assert_eq!(buckets[0].remaining_percent, Some(64));
-        assert_eq!(buckets[0].reset_label.as_deref(), Some("Resets in 29d 12h"));
+        assert_eq!(
+            buckets[0].reset_label.as_deref(),
+            Some("Resets Jul 1 at 00:00")
+        );
         assert_eq!(buckets[0].pace_label.as_deref(), Some("30 days window"));
         assert!(buckets.iter().any(|bucket| bucket.label == "Included usage"
             && bucket.used_label.as_deref() == Some("$15")));
@@ -4758,6 +4783,33 @@ mod tests {
         // Within 2 points of the clock -> On pace.
         let on_pace = quota_pace_label(Some(50), Some(500), Some(1_000), 0).expect("pace label");
         assert_eq!(on_pace, "On pace");
+    }
+
+    #[test]
+    fn reset_label_uses_detail_tab_absolute_style() {
+        let now = parse_iso_epoch("2026-06-11T13:46:00Z").expect("now");
+        assert_eq!(
+            reset_label(
+                parse_iso_epoch("2026-06-11T15:12:00Z").expect("same day"),
+                now
+            ),
+            "Resets 15:12"
+        );
+        assert_eq!(
+            reset_label(
+                parse_iso_epoch("2026-06-12T04:18:00Z").expect("tomorrow"),
+                now
+            ),
+            "Resets tomorrow, 04:18"
+        );
+        assert_eq!(
+            reset_label(
+                parse_iso_epoch("2026-07-01T16:31:00Z").expect("future"),
+                now
+            ),
+            "Resets Jul 1 at 16:31"
+        );
+        assert_eq!(reset_label(now, now), "Resets now");
     }
 
     #[test]
