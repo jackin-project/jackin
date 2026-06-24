@@ -1285,7 +1285,7 @@ done vs outstanding in this roadmap item.
 - [ ] Issue 15 — unified status-bar component on every screen; display matrix; right-anchored progressive build
 - [ ] Issue 4 — no blocking work on the event/input/render loop (offload + concurrent probes; daemon-wide rule)
 - [ ] Tokio-everywhere audit — enumerate every data-load/I/O path in jackin', confirm each is off-loop + parallel; refactor any blocking/serial (HARDCORE rule)
-- [ ] Issue 13 (prereq) — propagate host `TZ` into the capsule (kill UTC-only timestamps class bug)
+- [x] Issue 13 (prereq) — propagate host `TZ` into the capsule (kill UTC-only timestamps class bug) — `d832930`
 - [ ] Canonical per-provider section spec + agent→provider resolver (root cause behind 7/8/9/10/11/12/14)
 
 **B. Refresh behavior**
@@ -1307,7 +1307,7 @@ done vs outstanding in this roadmap item.
 - [x] Issue 6 — one horizontal-padding policy (content padded both sides; separators full-bleed) — `b866e1f`
 - [x] Issue 2 — anchor usage dialog top edge (Usage-only `box_rect` branch) — `b866e1f`
 - [x] Issue 3 — center the usage tab strip — `b866e1f`
-- [ ] Issue 13 — reset/expiry format `Resets in <rel> (<local Mon D, HH:MM>)`, all providers, via one formatter
+- [x] Issue 13 — reset/expiry format `Resets in <rel> (<local Mon D, HH:MM>)`, all providers, via one formatter — `d832930`
 
 **F. Final verification (end-to-end, in-container)**
 - [ ] Hover color + pointer cursor on every tab surface (status bar, console, usage overlay)
