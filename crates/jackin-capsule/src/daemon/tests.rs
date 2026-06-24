@@ -267,6 +267,50 @@ fn apply_action_open_usage_queues_focused_provider_refresh() {
 #[test]
 fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
     let mut mux = single_pane_tab_mux();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db = dir.path().join("usage.db");
+    mux.usage_cache.set_telemetry_store_path(db.clone());
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "test");
+    let now_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time after epoch")
+        .as_secs() as i64;
+    crate::telemetry_store::store_usage_snapshot(
+        &db,
+        &jackin_protocol::control::FocusedUsageView {
+            focused_agent: Some("codex".to_owned()),
+            focused_provider: Some("OpenAI".to_owned()),
+            account: jackin_protocol::control::FocusedAccountHeader {
+                provider_label: "Codex".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("Pro 20x".to_owned()),
+            },
+            buckets: vec![jackin_protocol::control::QuotaBucketView {
+                label: "Session".to_owned(),
+                used_label: Some("63% used".to_owned()),
+                limit_label: Some("100%".to_owned()),
+                remaining_percent: Some(37),
+                reset_label: Some("Resets at 15:00 UTC".to_owned()),
+                pace_label: None,
+                status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+            }],
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+            source: jackin_protocol::control::UsageSource::Cli,
+            confidence: jackin_protocol::control::UsageConfidence::Authoritative,
+            fetched_at_epoch: now_epoch - 120,
+            updated_label: "Updated just now".to_owned(),
+            status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
+            tabs: Vec::new(),
+            last_error: None,
+        },
+    )
+    .expect("store usage snapshot");
     let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
     view.updated_label = "Updated just now".to_owned();
     mux.dialog_push(Dialog::new_usage(view));
@@ -276,7 +320,7 @@ fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog open") else {
         panic!("usage dialog expected");
     };
-    assert_ne!(view.updated_label, "Updated just now");
+    assert_eq!(view.updated_label, "Updated 2m ago");
 }
 
 fn pull_request_fixture(number: u64) -> PullRequestInfo {

@@ -36,12 +36,13 @@ pub(crate) const TELEMETRY_STORE_PATH: &str = "/jackin/state/usage/telemetry.db"
 
 static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct UsageCache {
     snapshots: HashMap<String, CachedUsage>,
     codex_rpc_gate: ManagedCliLaunchGate,
     grok_rpc_gate: ManagedCliLaunchGate,
     refresh_schedule: UsageRefreshSchedule,
+    telemetry_store_path: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +117,11 @@ impl UsageSurface {
 }
 
 impl UsageCache {
+    #[cfg(test)]
+    pub(crate) fn set_telemetry_store_path(&mut self, path: PathBuf) {
+        self.telemetry_store_path = path;
+    }
+
     pub(crate) fn focused_status_bar_label(
         &self,
         focused_agent: Option<&str>,
@@ -124,7 +130,7 @@ impl UsageCache {
         let agent = focused_agent?;
         let now = now_epoch();
         if let Ok(Some(view)) = crate::telemetry_store::focused_usage_view(
-            Path::new(TELEMETRY_STORE_PATH),
+            &self.telemetry_store_path,
             Some(agent),
             focused_provider,
             now,
@@ -153,7 +159,7 @@ impl UsageCache {
         if !force_refresh {
             let now = now_epoch();
             return match crate::telemetry_store::focused_usage_view(
-                Path::new(TELEMETRY_STORE_PATH),
+                &self.telemetry_store_path,
                 Some(agent),
                 focused_provider,
                 now,
@@ -193,12 +199,12 @@ impl UsageCache {
             crate::cdebug!("usage accounts materialization failed: {error}");
         }
         if let Err(error) =
-            crate::telemetry_store::store_usage_snapshot(Path::new(TELEMETRY_STORE_PATH), &view)
+            crate::telemetry_store::store_usage_snapshot(&self.telemetry_store_path, &view)
         {
             crate::cdebug!("usage telemetry store write failed: {error}");
         }
         if let Ok(Some(mut stored)) = crate::telemetry_store::focused_usage_view(
-            Path::new(TELEMETRY_STORE_PATH),
+            &self.telemetry_store_path,
             Some(agent),
             focused_provider,
             now_epoch(),
@@ -254,6 +260,18 @@ impl UsageCache {
             generated_at_epoch,
             snapshots,
         )
+    }
+}
+
+impl Default for UsageCache {
+    fn default() -> Self {
+        Self {
+            snapshots: HashMap::new(),
+            codex_rpc_gate: ManagedCliLaunchGate::default(),
+            grok_rpc_gate: ManagedCliLaunchGate::default(),
+            refresh_schedule: UsageRefreshSchedule::default(),
+            telemetry_store_path: PathBuf::from(TELEMETRY_STORE_PATH),
+        }
     }
 }
 
