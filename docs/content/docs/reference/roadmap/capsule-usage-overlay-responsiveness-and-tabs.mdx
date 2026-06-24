@@ -754,6 +754,14 @@ the bar. Resets are **relative countdowns**. Note CodexBar's Z.AI buckets do **n
 (Tokens, MCP, 5-hour), which buckets carry in-reserve, and that MCP shows the count line. Verify the
 MCP count derivation against CodexBar source.
 
+**Implementation verification.** Commit `324cf2f` verified Z.AI against CodexBar `docs/zai.md` and
+`Sources/CodexBarCore/Providers/Zai/ZaiUsageStats.swift`: CodexBar reads
+`GET https://api.z.ai/api/monitor/usage/quota/limit`, maps `TOKENS_LIMIT` to the primary Tokens
+window, `TIME_LIMIT` to MCP, keeps the shortest token window as the 5-hour/session token window, and
+derives counts from `currentValue`/`usage`/`remaining`. jackin' now renders Tokens · MCP · 5-hour
+after the Turso round trip, suppresses Z.AI pace/window subtitles, and shows MCP as
+`used / limit (remaining)`.
+
 ---
 
 ## Issue 12 — MiniMax tab: missing the per-bucket usage count line (USAGE OVERLAY)
@@ -1309,7 +1317,7 @@ done vs outstanding in this roadmap item.
 - [ ] Issue 8 — Codex: order, Limit Reset Credits, Credits, detail lines
 - [ ] Issue 9 — Claude: reset + in-reserve + "Lasts until reset" + Daily Routines + order
 - [x] Issue 10 — status-bar click opens the focused pane's provider — `ed98924`
-- [ ] Issue 11 — Z.AI: order Tokens·MCP·5-hour + MCP count line + in-reserve per spec
+- [x] Issue 11 — Z.AI: order Tokens·MCP·5-hour + MCP count line + in-reserve per spec — `324cf2f`
 - [ ] Issue 12 — MiniMax: `Usage: N/100` count line + order (keep "% left")
 - [ ] Issue 14 — Kimi: humanize "Rate Limit" label + order + in-reserve on right bucket + window-duration parse
 - [ ] Issue 16 — Grok: dynamic window label (Weekly/Monthly/Credits) + single percent bar + reset/in-reserve per spec
