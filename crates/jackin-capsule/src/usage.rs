@@ -3080,9 +3080,13 @@ fn fetch_kimi_usage(token: &str) -> Result<KimiUsageResponse, String> {
 }
 
 fn load_kimi_local_token(now: i64) -> Option<String> {
+    load_kimi_local_token_from_home(&home_path(""), now)
+}
+
+fn load_kimi_local_token_from_home(home: &Path, now: i64) -> Option<String> {
     [
-        home_path(".kimi-code/credentials/kimi-code.json"),
-        home_path(".kimi/credentials/kimi-code.json"),
+        home.join(".kimi-code/credentials/kimi-code.json"),
+        home.join(".kimi/credentials/kimi-code.json"),
     ]
     .into_iter()
     .find_map(|path| {
@@ -4759,6 +4763,123 @@ mod tests {
         assert_eq!(
             codex_account_label_from_id_token(&id_token).as_deref(),
             Some("ChatGPT account user-123")
+        );
+    }
+
+    #[test]
+    fn credential_file_loaders_reread_updated_container_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let claude_path = dir.path().join(".credentials.json");
+        fs::write(
+            &claude_path,
+            serde_json::json!({
+                "claudeAiOauth": {
+                    "accessToken": "old-claude",
+                    "subscriptionType": "max"
+                }
+            })
+            .to_string(),
+        )
+        .expect("write Claude auth");
+        assert_eq!(
+            load_claude_oauth_credentials(&claude_path)
+                .expect("Claude credentials")
+                .access_token,
+            "old-claude"
+        );
+        fs::write(
+            &claude_path,
+            serde_json::json!({
+                "claudeAiOauth": {
+                    "accessToken": "new-claude",
+                    "subscriptionType": "max"
+                }
+            })
+            .to_string(),
+        )
+        .expect("refresh Claude auth");
+        assert_eq!(
+            load_claude_oauth_credentials(&claude_path)
+                .expect("updated Claude credentials")
+                .access_token,
+            "new-claude"
+        );
+
+        let codex_path = dir.path().join("auth.json");
+        fs::write(
+            &codex_path,
+            serde_json::json!({
+                "tokens": {
+                    "access_token": "old-codex",
+                    "id_token": test_jwt(serde_json::json!({"email": "old@example.com"}))
+                }
+            })
+            .to_string(),
+        )
+        .expect("write Codex auth");
+        assert_eq!(
+            load_codex_oauth_credentials(&codex_path)
+                .expect("Codex credentials")
+                .access_token,
+            "old-codex"
+        );
+        fs::write(
+            &codex_path,
+            serde_json::json!({
+                "tokens": {
+                    "access_token": "new-codex",
+                    "id_token": test_jwt(serde_json::json!({"email": "new@example.com"}))
+                }
+            })
+            .to_string(),
+        )
+        .expect("refresh Codex auth");
+        let codex = load_codex_oauth_credentials(&codex_path).expect("updated Codex credentials");
+        assert_eq!(codex.access_token, "new-codex");
+        assert_eq!(codex.account_label.as_deref(), Some("new@example.com"));
+
+        let kimi_path = dir.path().join(".kimi-code/credentials/kimi-code.json");
+        fs::create_dir_all(kimi_path.parent().expect("Kimi credentials parent"))
+            .expect("create Kimi credentials dir");
+        fs::write(
+            &kimi_path,
+            serde_json::json!({
+                "access_token": "old-kimi",
+                "expires_at": 1_781_300_000
+            })
+            .to_string(),
+        )
+        .expect("write Kimi auth");
+        assert_eq!(
+            load_kimi_local_token_from_home(dir.path(), 1_781_200_000).as_deref(),
+            Some("old-kimi")
+        );
+        fs::write(
+            &kimi_path,
+            serde_json::json!({
+                "access_token": "new-kimi",
+                "expires_at": 1_781_300_000
+            })
+            .to_string(),
+        )
+        .expect("refresh Kimi auth");
+        assert_eq!(
+            load_kimi_local_token_from_home(dir.path(), 1_781_200_000).as_deref(),
+            Some("new-kimi")
+        );
+        fs::write(
+            &kimi_path,
+            serde_json::json!({
+                "access_token": "expired-kimi",
+                "expires_at": 1_781_100_000
+            })
+            .to_string(),
+        )
+        .expect("expire Kimi auth");
+        assert_eq!(
+            load_kimi_local_token_from_home(dir.path(), 1_781_200_000),
+            None
         );
     }
 
