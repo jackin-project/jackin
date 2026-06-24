@@ -50,6 +50,13 @@ struct CachedUsage {
     view: FocusedUsageView,
 }
 
+struct UsageRefreshResult {
+    target: UsageRefreshTarget,
+    view: FocusedUsageView,
+    codex_rpc_gate: ManagedCliLaunchGate,
+    grok_rpc_gate: ManagedCliLaunchGate,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UsageRefreshTarget {
     pub(crate) agent: String,
@@ -230,17 +237,75 @@ impl UsageCache {
             return;
         }
         self.refresh_schedule.in_flight = true;
-        for target in targets {
-            if !self.refresh_schedule.should_refresh(&target, now) {
-                continue;
+        let due_targets = targets
+            .into_iter()
+            .filter(|target| self.refresh_schedule.should_refresh(target, now))
+            .collect::<Vec<_>>();
+        if due_targets.is_empty() {
+            self.refresh_schedule.in_flight = false;
+            return;
+        }
+        let codex_rpc_gate = self.codex_rpc_gate.clone();
+        let grok_rpc_gate = self.grok_rpc_gate.clone();
+        let results = thread::scope(|scope| {
+            due_targets
+                .into_iter()
+                .map(|target| {
+                    let mut codex_rpc_gate = codex_rpc_gate.clone();
+                    let mut grok_rpc_gate = grok_rpc_gate.clone();
+                    scope.spawn(move || {
+                        let view = build_snapshot(
+                            &target.agent,
+                            target.provider.as_deref(),
+                            provider_keys,
+                            &mut codex_rpc_gate,
+                            &mut grok_rpc_gate,
+                        );
+                        UsageRefreshResult {
+                            target,
+                            view,
+                            codex_rpc_gate,
+                            grok_rpc_gate,
+                        }
+                    })
+                })
+                .filter_map(|handle| match handle.join() {
+                    Ok(result) => Some(result),
+                    Err(_) => {
+                        crate::clog!("usage-refresh: provider probe panicked");
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+        });
+        for result in results {
+            let UsageRefreshResult {
+                target,
+                mut view,
+                codex_rpc_gate,
+                grok_rpc_gate,
+            } = result;
+            let cache_key = canonical_usage_cache_key(&target.agent, target.provider.as_deref());
+            if let Some(cached) = self.snapshots.get(&cache_key) {
+                preserve_cached_quota_on_failed_refresh(&mut view, &cached.view);
             }
-            let view = self.focused_snapshot(
-                Some(&target.agent),
-                target.provider.as_deref(),
-                provider_keys,
-                true,
-            );
+            enrich_provider_tabs(&mut view, &self.snapshots);
+            self.snapshots
+                .insert(cache_key.clone(), CachedUsage { view: view.clone() });
+            match resolve_surface(&target.agent, target.provider.as_deref()) {
+                UsageSurface::Codex => self.codex_rpc_gate = codex_rpc_gate,
+                UsageSurface::Grok => self.grok_rpc_gate = grok_rpc_gate,
+                _ => {}
+            }
             self.refresh_schedule.mark_refreshed(&target, now, &view);
+            if let Err(error) =
+                crate::telemetry_store::store_usage_snapshot(&self.telemetry_store_path, &view)
+            {
+                crate::cdebug!("usage telemetry store write failed: {error}");
+            }
+        }
+        if let Err(error) = self.materialize_accounts(now_epoch()) {
+            crate::cdebug!("usage accounts materialization failed: {error}");
         }
         self.refresh_schedule.in_flight = false;
     }
