@@ -4,6 +4,14 @@ title: "Token & Cost Telemetry"
 
 **Status**: Open — design proposal (Phase 3, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
 
+**Implementation note**: The Capsule usage overlay work has landed the
+account-quota side of this design: a Capsule-local Turso
+`account_usage_snapshots` cache feeds the focused status signal and provider
+overlay. It deliberately removed the earlier local `usage_samples` bridge,
+workspace/session summaries, price-table estimates, and cost grids. The
+per-message token/cost plane described below remains open and still belongs to
+the final host-global telemetry daemon.
+
 ## Problem
 
 jackin' has no idea how much an agent has cost the operator. Token usage,
@@ -64,7 +72,6 @@ jackin' pricing pluggable across runtimes.
 - CodexBar — https://github.com/steipete/CodexBar
 - CodexBar provider / refresh documentation — https://github.com/steipete/CodexBar/tree/main/docs
 - OpenUsage — https://github.com/robinebers/openusage
-- OpenUsage plugin API — https://github.com/robinebers/openusage/blob/main/docs/plugins/api.md
 
 CodexBar and OpenUsage are better references for account-limit telemetry than for jackin' session telemetry. Both are menu-bar-first tools that collect provider usage from existing local state or provider APIs, then render quota bars, reset countdowns, and stale/error states. CodexBar is broader and deeper on local/provider source handling: it supports Claude, Codex, Amp, Kimi, OpenCode, and many providers outside jackin'; exposes configurable refresh cadences; renders reset windows; ships a CLI for local cost scans; and treats browser cookies / API keys / OAuth / local CLI state as provider-specific source strategies. OpenUsage is the cleaner product reference: a lightweight menu-bar panel, automatic refresh, global shortcut, local HTTP API on `127.0.0.1`, proxy support, and an explicit plugin direction for adding providers.
 
@@ -125,14 +132,17 @@ pub struct UsageSample {
     pub token_cache_read: u64,
     pub token_cache_write: u64,
     pub cost_usd_micros: u64,           // computed from (provider, model, tokens) at sample time; never recomputed
+    pub cost_source: CostSource,        // ExplicitUsd | PriceTable | Unpriced
 }
+
+pub enum CostSource { ExplicitUsd, PriceTable, Unpriced }
 ```
 
-Per-instance DB rows mirror the value fields; the SQL row adds a surrogate `id INTEGER PRIMARY KEY` and stores `at` as `occurred_at INTEGER` (epoch seconds). `instance` is implicit in the DB file path and is not stored per-row.
+Per-instance DB rows mirror the value fields; the SQL row adds a surrogate `id INTEGER PRIMARY KEY`, stores `at` as `occurred_at INTEGER` (epoch seconds), carries `cost_source TEXT`, and may carry a `source_hash` dedupe key for log scanners or runtime streams. The hash is derived from source identity and event bytes so refreshes can be idempotent without storing prompts, completions, or raw log text. `instance` is implicit in the DB file path and is not stored per-row.
 
-`cost_usd_micros` is integer to avoid floating-point summation drift across thousands of samples; renderers divide by 1e6 for display. The `delta per assistant message` rule matters: Claude stream-json emits cumulative chunks, Codex app-server emits per-event deltas — adapters convert to deltas before emitting `UsageSample`, so SQL aggregates are simple sums.
+`cost_usd_micros` is integer to avoid floating-point summation drift across thousands of samples; renderers divide by 1e6 for display. `cost_source` is load-bearing provenance: provider-reported USD fields are `ExplicitUsd`, verified model price tables are `PriceTable`, and unknown/Amp pass-through rows without explicit USD stay `Unpriced` instead of receiving a synthetic zero. The `delta per assistant message` rule matters: Claude stream-json emits cumulative chunks, Codex app-server emits per-event deltas — adapters convert to deltas before emitting `UsageSample`, so SQL aggregates are simple sums.
 
-`model: String` is loose by intent in V1: the pricing table is the closed set, and an unknown model is logged with `cost_usd_micros = 0` plus a one-line warning rather than rejected. Once the pricing table stabilizes, the field should tighten to a `Model` newtype whose constructor normalizes against the pricing table and rejects unknown variants — that is the right encapsulation but is a later tightening, not a V1 blocker.
+`model: String` is loose by intent in V1: the pricing table is the closed set, and an unknown model is logged with no `cost_usd_micros` plus `cost_source = Unpriced` rather than rejected. Once the pricing table stabilizes, the field should tighten to a `Model` newtype whose constructor normalizes against the pricing table and rejects unknown variants — that is the right encapsulation but is a later tightening, not a V1 blocker.
 
 ### Account quota snapshots
 
@@ -222,8 +232,8 @@ V1 should treat source selection as a deterministic matrix, not as a best-effort
 |---|---|---|---|
 | `codex` | `codex app-server` JSON-RPC (`account/read`, `account/rateLimits/read`) or OAuth-backed usage endpoint when daemon-owned credentials are available; optional web dashboard only for explicit extras | `CODEX_HOME` / `~/.codex` session JSONL, including archived sessions, plus runtime events when jackin' launches Codex | Strong V1 candidate because a non-interactive CLI RPC source exists and local logs are structured enough for attribution |
 | `claude` | The console usage endpoint Tokemon reverse-engineered (no Anthropic-published public quota API exists at the time of writing — endpoint is undocumented and may shift; jackin' treats it like a scrape, throttles, and degrades to local-estimate when it 4xx/5xxs); Claude CLI `/usage` probe only as a repair/diagnostic fallback; cookie-backed web API only after explicit operator opt-in | Claude JSONL project logs and stream-json usage payloads, deduped by message/request identity where streaming chunks are cumulative | Strong V1 candidate for **workspace spend**; account-availability confidence drops to `local_estimate` whenever the undocumented endpoint is unreachable |
-| `amp` | Prefer Amp CLI/account state if it exposes a stable non-interactive command; otherwise explicit browser-cookie settings scrape remains fallback-only | Amp thread/API usage events when available from the launched runtime; local transcript fallback only if structured token counts exist | Defer provider-authoritative quota until the source is less scrape-dependent; ship `unsupported` rather than pretending |
-| `kimi` | Investigate current CLI auth/account surfaces before implementation; cookie/JWT web state can be a fallback only if explicitly enabled | Kimi local logs or runtime hooks if they expose per-turn token usage | Research before V1 unless a maintained non-interactive quota source is confirmed |
+| `amp` | One-shot `amp --no-color usage` under daemon timeout, with explicit browser-cookie settings scrape fallback only if the operator opts in outside Capsule | Amp thread/API usage events when available from the launched runtime; local transcript fallback only if structured token counts exist | Capsule bridge can show Amp Free and individual credits from the CLI; the persistent account cache still needs scheduled refresh/backoff |
+| `kimi` | Kimi For Coding billing endpoint from `KIMI_AUTH_TOKEN` / local Kimi Code OAuth token; cookie/JWT web state can be a fallback only if explicitly enabled | Kimi local logs or runtime hooks if they expose per-turn token usage | Capsule bridge can show weekly and rate-limit buckets; the persistent account cache still needs scheduled refresh/backoff |
 | `opencode` | Provider-specific web dashboard or configured provider account state, not a generic OpenCode account guess | OpenCode message history, following multicode's local aggregation approach where compatible | Workspace spend can arrive before quota; account availability may be `unsupported` per backing provider |
 
 ### Host-owned telemetry cache
@@ -261,6 +271,15 @@ Daemon-owned account usage endpoints land before any UI polish. The naming follo
 
 These can live in the daemon protocol first. Capsule should consume a narrow read path later: focused provider/account summary in, no provider polling out. If a file bridge is needed for agents that can only read files, the daemon writes a read-only materialized JSON file under `/jackin/run/usage/` inside the container; containers never write back to the host telemetry cache.
 
+Capsule-local implementation note: the `jackin-capsule` control channel now has
+`UsageFocused` / `UsageRefreshFocused` and `UsageAccountList` message variants.
+These read the Capsule daemon cache and `/jackin/state/usage/telemetry.db`.
+The Capsule daemon persists account quota buckets only. It no longer persists
+local-log samples, token-bearing runtime-stream JSON samples, workspace
+summaries, session summaries, or invented price-table estimates. These APIs are
+not yet the host-global daemon API or final `account/list` / `account/refresh`
+/ `usage/*` CLI surface.
+
 ### Implementation sequence
 
 1. **Storage substrate.** Land the per-instance `usage_samples` table and daemon-global `account_usage_snapshots` cache with schema tests and no UI.
@@ -269,7 +288,14 @@ These can live in the daemon protocol first. Capsule should consume a narrow rea
 4. **Shared daemon endpoints.** Expose account list, refresh, workspace summary, and session summary; include source, confidence, freshness, and last-error fields in every response.
 5. **CLI.** Ship `jackin usage --json` and a compact human view before the Desktop/Capsule work so the data contract can be tested without a native UI.
 6. **Console and Desktop surfaces.** Add compact badges, then account/detail panels. Badges must carry both axes — `UsageConfidence` for provenance and `UsageSnapshotStatus` for lifecycle — before shipping percentage-only displays.
-7. **Capsule focused signal.** Once the daemon can map Capsule `session_id` to provider/account, add the always-visible compact quota signal to the status chrome and the read-only modal behind prefix `u`. Rendering contract lives in [jackin' Capsule → Usage and quota overlay](/reference/roadmap/jackin-capsule/#usage-and-quota-overlay).
+7. **Capsule focused signal.** The Capsule/control/TUI bridge has landed:
+   Capsule can request a normalized focused usage view, render a compact
+   focused-provider status label, and open the read-only prefix `u` overlay from
+   a daemon-owned account snapshot cache. Provider-authoritative quota adapters
+   and scheduled refresh/backoff for the in-container overlay have shipped. The
+   remaining work is to replace the Capsule-local account cache with the final
+   host-global account snapshot service described above. Rendering contract
+   lives in [Capsule usage overlay](/reference/roadmap/capsule-usage-overlay-responsiveness-and-tabs/).
 8. **Amp/Kimi/OpenCode research adapters.** Add provider rows only after each runtime has a non-interactive source contract or an explicit fallback UX. Until then, render honest unsupported/local-estimate states.
 
 ### Surface contract
@@ -288,7 +314,7 @@ Surfaces consuming the cache:
 - **Desktop app.** Accounts view is the full inspection surface: every account, provider, source, current availability, reset time, confidence, last refresh, active workspaces, repair actions. Running Agents view shows focused-account quota and workspace/session spend inline.
 - **macOS status bar.** Most-constrained active account by default — see the [most-constrained ordering](#most-constrained-ordering) rule below. Provider glyph plus remaining percent or `stale` / `login` state. Menu expands to all accounts with reset timers, source labels, and repair actions.
 - **`jackin console` Accounts / Usage.** Lists every known account with source, current availability, reset time, last refresh, and which workspaces currently use it. Workspace and running-agent rows carry compact badges for the attached account.
-- **Capsule multiplexer.** Focused-tab provider only — see [jackin' Capsule → Usage and quota overlay](/reference/roadmap/jackin-capsule/#usage-and-quota-overlay) for the rendering contract (status-line layout, prefix `u`, modal contents, daemon-disconnected and needs-login fallbacks).
+- **Capsule multiplexer.** Focused-tab provider only — see [Capsule usage overlay](/reference/roadmap/capsule-usage-overlay-responsiveness-and-tabs/) for the rendering contract (status-line layout, prefix `u`, modal contents, daemon-disconnected and needs-login fallbacks).
 - **CLI / automation.** `jackin usage` exposes account, workspace, and session views with `--json`, including freshness and provenance so scripts do not mistake local estimates for provider-enforced limits.
 
 The contract must answer, for the focused agent: which built-in-runtime accounts jackin' knows about, which one this agent is using, how much quota remains, when it resets, how much this workspace/session burned today/this week/lifetime, and which confidence + status pair the displayed limit carries.
@@ -369,7 +395,7 @@ $ jackin usage the-architect --json
 - Console "Cost (today)" column when the resource panel is open.
 - Compact quota badges on Desktop running-agent rows, `jackin console` workspace/agent rows, and macOS status item.
 - Console / Desktop account panel showing all accounts, quota windows, reset time, workspace attribution, and stale/login-needed state.
-- Capsule multiplexer quota signal — Capsule's rendering contract lives in [jackin' Capsule → Usage and quota overlay](/reference/roadmap/jackin-capsule/#usage-and-quota-overlay).
+- Capsule multiplexer quota signal — Capsule's rendering contract lives in [Capsule usage overlay](/reference/roadmap/capsule-usage-overlay-responsiveness-and-tabs/).
 - `jackin usage <selector>` CLI with `--json` and human-readable
   formatting.
 - Cost computed at sample time and stored, not recomputed on render —
@@ -422,5 +448,7 @@ $ jackin usage the-architect --json
 - [Agent runtime status](/reference/roadmap/agent-runtime-status/) —
   parallel consumer of the same input stream
 - [Console resource panel](/reference/roadmap/console-resource-panel/) — rendering home
+- [Capsule usage overlay](/reference/roadmap/capsule-usage-overlay-responsiveness-and-tabs/) —
+  Capsule TUI rendering contract
 - [jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) — desktop account/quota rendering home
 - [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) — future budget-gating consumer

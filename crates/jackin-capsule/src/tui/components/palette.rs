@@ -48,6 +48,7 @@ pub enum PaletteCommand {
     /// through `ConfirmAction` before the destructive call fires.
     Close,
     ClearPane,
+    Usage,
     Exit,
 }
 
@@ -63,6 +64,7 @@ pub(crate) const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (PaletteCommand::Split, "Split pane"),
     (PaletteCommand::ZoomPane, "Zoom / unzoom pane"),
     (PaletteCommand::ClearPane, "Clear pane"),
+    (PaletteCommand::Usage, "Usage"),
     (PaletteCommand::Close, "Close"),
     (PaletteCommand::Exit, "Exit"),
 ];

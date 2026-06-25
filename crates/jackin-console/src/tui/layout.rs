@@ -193,33 +193,33 @@ pub const fn tabbed_content_area(
 
 #[must_use]
 pub fn tab_cell_at_position(row: u16, col: u16, labels: &[&str]) -> Option<usize> {
-    if row < SCREEN_HEADER_HEIGHT || row >= SCREEN_HEADER_HEIGHT.saturating_add(TAB_STRIP_HEIGHT) {
-        return None;
-    }
     let cells: Vec<(&str, bool)> = labels.iter().map(|label| (*label, false)).collect();
-    let laid = jackin_tui::lay_out_tabs(&cells, 0);
-    jackin_tui::tab_at_column(&laid, col)
+    jackin_tui::components::TabStrip::new(&cells).hit_index_at(
+        ratatui::layout::Rect {
+            x: 0,
+            y: SCREEN_HEADER_HEIGHT,
+            width: u16::MAX,
+            height: TAB_STRIP_HEIGHT,
+        },
+        col,
+        row,
+    )
 }
 
 #[must_use]
 pub fn tab_hover_index_at_position(row: u16, col: u16, labels: &[&str]) -> Option<usize> {
-    if row < SCREEN_HEADER_HEIGHT || row >= SCREEN_HEADER_HEIGHT.saturating_add(TAB_STRIP_HEIGHT) {
-        return None;
-    }
     let cells: Vec<(&str, bool)> = labels.iter().map(|label| (*label, false)).collect();
-    let laid = jackin_tui::lay_out_tabs(&cells, 0);
     let mut tracker = jackin_tui::components::HoverTracker::new();
-    for (idx, cell) in laid.iter().enumerate() {
-        tracker.register(
-            ratatui::layout::Rect {
-                x: cell.start_col,
-                y: SCREEN_HEADER_HEIGHT,
-                width: cell.cell_cols,
-                height: TAB_STRIP_HEIGHT,
-            },
-            idx,
-        );
-    }
+    jackin_tui::components::TabStrip::new(&cells).register_hover_targets(
+        &mut tracker,
+        ratatui::layout::Rect {
+            x: 0,
+            y: SCREEN_HEADER_HEIGHT,
+            width: u16::MAX,
+            height: TAB_STRIP_HEIGHT,
+        },
+        |idx| idx,
+    );
     tracker.hovered(col, row).copied()
 }
 

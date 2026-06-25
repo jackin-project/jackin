@@ -899,7 +899,12 @@ pub fn handle_editor_modal(
             }
         }
         Modal::AuthForm { .. } => {
-            super::auth::handle_auth_form_key(editor, key, op_available);
+            if matches!(
+                super::auth::handle_auth_form_key(editor, key, op_available),
+                super::auth::AuthFormKeyOutcome::OpenSourceFolderBrowser
+            ) {
+                return EditorModalOutcome::OpenAuthSourceFolderBrowser;
+            }
         }
         Modal::AuthRolePicker { state: picker } => match inline_picker_plan(picker.handle_key(key))
         {

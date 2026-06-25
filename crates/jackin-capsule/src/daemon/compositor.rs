@@ -126,6 +126,7 @@ impl Multiplexer {
         let term_rows = self.term_rows;
         let term_cols = self.term_cols;
         let active_tab = self.active_tab;
+        let usage_status_label = self.focused_usage_snapshot().status_bar_label;
         let tabs = &self.tabs;
         let panes = self.visible_panes();
         // Frame-geometry trace: the status bar owns rows 0..STATUS_BAR_ROWS, so
@@ -164,10 +165,20 @@ impl Multiplexer {
             }
         }
         let focused_id = self.active_focused_id();
-        let focus_owner = focused_id.map_or(
-            jackin_tui::components::FocusOwner::TabBar,
-            jackin_tui::components::FocusOwner::Content,
-        );
+        // P5: tab-bar focus is part of the one shared `FocusOwner` model, not a
+        // parallel signal. When the operator has moved focus to the tab bar the
+        // owner is `TabBar` even while a pane is open — so the pane cursor hides
+        // and the active-tab underline goes green through the same abstraction
+        // that drives pane-border focus and cursor visibility. Otherwise the
+        // owner follows the focused pane.
+        let focus_owner = if self.tab_bar_focused {
+            jackin_tui::components::FocusOwner::TabBar
+        } else {
+            focused_id.map_or(
+                jackin_tui::components::FocusOwner::TabBar,
+                jackin_tui::components::FocusOwner::Content,
+            )
+        };
         let zoomed = self.active_zoomed_id().is_some();
         let dialog_open = self.dialog_open();
         // Status-bar inputs snapshotted before the draw closure borrows self.
@@ -422,6 +433,7 @@ impl Multiplexer {
                     selection_copied,
                     scrollbars: &pane_scrollbars,
                     branch: branch.as_deref(),
+                    usage_status_label: Some(usage_status_label.as_str()),
                     pull_request: pull_request.as_deref(),
                     pull_request_loading,
                     instance_id_label: self.status_bar.instance_id_label(),

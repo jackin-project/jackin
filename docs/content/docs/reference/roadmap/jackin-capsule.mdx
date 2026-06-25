@@ -210,7 +210,7 @@ Default prefix bindings (subject to refinement during implementation):
 | `Space` or `:` | Open command palette |
 | `Ctrl+L` | Clear focused pane scrollback and send form-feed to request redraw |
 | `r` | Force redraw |
-| `u` | (Phase 4) Open usage and quota overlay for the focused pane |
+| `u` | Open usage and quota overlay for the focused pane |
 | Prefix again | Literal prefix byte to PTY |
 
 `Ctrl+J` is **not** a default binding. It is reserved as an opt-in alternate prefix that experienced operators may enable when they accept the `0x0A` collision risk; the default never assigns it.
@@ -246,19 +246,10 @@ When the bar is wider than the host terminal, tabs past the right edge are clipp
 
 #### Usage and quota overlay
 
-**Phase 4 work documented under Phase 3.** The rendering contract is the status-chrome design (Phase 3 territory); the data source is the host daemon (Phase 4 territory). The subsection lives here so the status-bar layout decisions are colocated; nothing in this overlay ships in Phase 3.
-
-Phase 4 should add a read-only usage overlay fed by the host daemon's [Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/) cache. The Capsule does not poll providers and does not persist credentials. It asks the daemon only for the focused tab/pane's provider account quota and workspace/session spend, then renders that focused-agent result inside the multiplexer. The compact signal belongs in the same low-noise status chrome as the branch/repository detail line, not as a second standalone widget.
-
-Default shape:
-
-- Status line: compact always-visible quota glyph for the focused tab/pane's provider only, placed beside the branch/repository details when that line is present, e.g. `main · Codex 12%`, `feature/auth · Claude 80%`, `docs · Codex stale`, or `main · Amp login`. The multiplexer must not show a global account average or another agent's quota while the operator is focused on one agent.
-- Prefix `u` / palette `Usage`: modal dialog showing the focused agent's provider, account label, quota window, remaining percentage, reset countdown, source confidence, cache freshness, current session tokens/cost, workspace tokens/cost, and burn-rate projection when available. The dialog may mention other accounts only through explicit navigation out of the focused-agent view; the default view is focused-provider only.
-- Dialog rows must label provider-authoritative quota separately from locally estimated workspace spend. A local JSONL estimate must never be displayed as the enforced subscription limit.
-- If the daemon is disconnected, the overlay shows `usage unavailable: daemon disconnected` rather than falling back to in-container polling.
-- If the account needs authentication, the overlay shows `needs login` / `needs secret` with the repair action name, while the actual repair flow stays in `jackin console`, Desktop, CLI, or host bridge.
-
-This keeps the multiplexer useful while the operator is focused inside an agent: before starting an expensive run in a Codex tab, they see Codex headroom only; before starting work in a Claude tab, they see Claude headroom only. The operator opens the dialog only when they need reset timing, confidence, or workspace spend detail.
+Prefix `u` is reserved for the focused-agent usage overlay. The canonical TUI
+contract lives in [Capsule usage overlay](/reference/roadmap/capsule-usage-overlay-responsiveness-and-tabs/):
+status-chrome signal, CodexBar-inspired quota bucket modal, focused-provider
+rules, daemon-disconnected fallback, and read-only host-side-effects boundary.
 
 #### Initial state
 
