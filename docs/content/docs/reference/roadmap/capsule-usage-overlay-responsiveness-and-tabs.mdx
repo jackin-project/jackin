@@ -18,20 +18,35 @@ This is the single source of truth for the remaining work; it absorbs the former
 
 ## P0 — Claude and OpenAI full snapshots (the two regressions)
 
-**The biggest lever.** Live `usage verify` / `usage accounts` show both providers resolve via **`source: "cli"` (`confidence: authoritative`)** with only **two windows** (Session, Weekly) and `resets_at: null`. The richer paths exist but are shadowed.
+**The biggest lever — and a class of bug, not two isolated ones.** Live `usage verify` shows both providers resolve via **`source: "cli"` (`confidence: authoritative`)** with only two windows. The architecture *permits a silent degrade*: when the richer source (Claude OAuth, Codex RPC) is unavailable or unfetched, the snapshot quietly falls back to an impoverished `cli` snapshot still labelled `authoritative`, so the UI shows a confident-but-truncated result instead of an honest degraded state. **Root-cause / class fix:** the source layer must never present a reduced snapshot as `authoritative` — it must either produce the full snapshot from the available source or mark the result degraded with the reason. Fix that structural condition, not just the two tabs.
 
-- **Claude** resolves via `push_claude_cli_bucket` (`crates/jackin-capsule/src/usage.rs`), which emits only Session/Weekly/Sonnet with no reset, no pace, no Daily Routines — and live drops to two rows. The rich path is the OAuth usage endpoint feeding `push_claude_window` (reset + in-reserve + Sonnet + Daily Routines). Make the OAuth path authoritative; ensure its credentials reach the container (keychain / `.credentials.json`, see Credential delivery).
-- **OpenAI/Codex** truncates to Session/Weekly, dropping Codex Spark 5-hour/Weekly, Limit Reset Credits, Credits, and the plan multiplier (`Pro 20x` shows as `pro`). Source the extra windows + credits from the Codex CLI RPC `account/rateLimits/read`.
+### P0a — Claude (regression; diagnose the credential path FIRST)
 
-**Restore (verify each datum against the CodexBar source before building):**
+Symptom: Session/Weekly show `% left` only — no reset, no in-reserve, no `Lasts until reset`; Sonnet and Daily Routines absent. Claude resolves via `push_claude_cli_bucket` (`crates/jackin-capsule/src/usage.rs`), the impoverished path. The rich path is OAuth `/api/oauth/usage` → `push_claude_window` (reset + in-reserve + Sonnet + Daily Routines).
 
-- Claude tab sections, in order: **Session, Weekly, Sonnet, Daily Routines** (plus conditional Opus / Extra usage). Session and Weekly carry `Resets in <rel> (<local>)`, an in-reserve line, and `Lasts until reset`; Sonnet carries a reset; Daily Routines shows remaining only.
-- OpenAI tab sections, in order: **Session, Weekly, Codex Spark 5-hour, Codex Spark Weekly, Limit Reset Credits, Credits**. Session/Weekly carry reset + in-reserve + `Lasts until reset`; Spark buckets show remaining + reset; Limit Reset Credits shows `N manual resets available` + `Next expires in <rel> (<local>)`; Credits shows `N left` + token count.
-- **Overview** Anthropic row must then show its reset + local time like every other row (today it shows `49% left` only — blocked on the Claude reset data above).
+The root cause is **not yet pinned — diagnose before fixing.** All seven providers passed in-container on June 24, so Claude OAuth **regressed**. First step, in-container on a debug launch:
 
-**In-reserve gate.** Show the pace line only once at least 3% of the window has elapsed and only where the window length is known. In-reserve applies to Session + Weekly (Claude, Codex) and Kimi Rate Limit; not to Spark, Sonnet, Daily Routines, Limit Reset Credits, Credits, or count buckets.
+- Check the forwarded Claude credential: `~/.claude/.credentials.json`, `$CLAUDE_CONFIG_DIR/.credentials.json`, `~/.claude.json`, and `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` env.
+- If the credential is absent or stale → the OAuth fetch fails and the snapshot falls back to `cli`: the bug is in host→container credential forwarding (`crates/jackin-runtime/src/instance/auth.rs`). `git log` what changed Claude forwarding since the June-24 working state.
+- If the credential is present but `cli` still wins → the bug is in source selection: the `cli` path is preferred or OAuth is gated. Make OAuth win whenever its credential resolves.
 
-**Verify:** `usage verify` row counts (Claude → 4, OpenAI → 6); each tab matches its binding preview below and the CodexBar panel; Overview Anthropic row carries reset + local time.
+Then restore the Claude sections (in order): **Session, Weekly, Sonnet, Daily Routines** (+ conditional Opus / Extra usage). Session/Weekly carry `Resets in <rel> (<local>)` + in-reserve + `Lasts until reset`; Sonnet carries a reset; Daily Routines shows remaining only.
+
+### P0b — OpenAI / Codex (add the missing sections)
+
+The symptom **differs from Claude**: OpenAI Session/Weekly **already render correctly** (reset + in-reserve + `Lasts until reset`, confirmed live). What is missing is the rest of the tab — Codex Spark 5-hour, Codex Spark Weekly, Limit Reset Credits, Credits, and the plan multiplier (`Pro 20x` renders as `pro`). The Codex CLI RPC `account/rateLimits/read` carries these; the adapter does not currently fetch/emit them. Add them (verify each against the CodexBar Codex source).
+
+Sections (in order): **Session, Weekly, Codex Spark 5-hour, Codex Spark Weekly, Limit Reset Credits, Credits.** Limit Reset Credits shows `N manual resets available` + `Next expires in <rel> (<local>)`; Credits shows `N left` + token count.
+
+### Common to P0a + P0b
+
+- **In-reserve gate.** Show the pace line only once at least 3% of the window has elapsed and the window length is known. Applies to Session + Weekly (Claude, Codex) and Kimi Rate Limit; not Spark, Sonnet, Daily Routines, Limit Reset Credits, Credits, or count buckets.
+- **Overview.** The Anthropic row then shows reset + local time like every other row (today `49% left` only — unblocked by P0a).
+- **Verify (the TUI render is authoritative, not the JSON — see RC2):** both tabs match the binding previews + CodexBar panels; `usage verify` row counts Claude **≥4** (Session, Weekly, Sonnet, Daily Routines; more if Opus / Extra usage are present), OpenAI **6**.
+
+### RC2 — `usage accounts` reports `resets_at: null` for every provider (reporter bug, fix alongside P0)
+
+`usage accounts` JSON serializes `resets_at: null` for all rows even when the TUI renders resets correctly for six providers — so the reset data **is** in the in-memory snapshot but is dropped on the CLI report path (the reporter or its persistence). Consequences: (1) do **not** judge reset correctness from `usage accounts` — use the TUI render; (2) this is itself a bug — the architecture lets a render field be silently dropped on the CLI path, so the CLI and TUI disagree. Fix the reporter to serialize `resets_at` so both agree (same honest-output principle as P0's class fix).
 
 ### Binding previews — Claude and OpenAI (the two tabs that must change)
 
@@ -111,7 +126,7 @@ Today the header mixes identity with auth method and is inconsistent per provide
 | Kimi | none | — | — | `API token · env KIMI_CODE_API_KEY` |
 | MiniMax | none | — | plan title | `API token · env MINIMAX_API_KEY` |
 
-`FocusedAccountHeader` (`crates/jackin-protocol/src/control.rs`) has no field for credential origin — every snapshot resolver discards which `.or_else` arm won. Add a structured `credential_origin`, populate it at each arm, split email/username/plan, and render the Auth row. For Claude, parse the account email from `~/.claude.json` `oauthAccount` (or a profile endpoint) — verify against CodexBar's Claude fetcher. Providers with no email show plan + auth row only; no fabricated email. Parallax logs confirm Z.AI/Kimi/MiniMax creds arrive as env vars (`ZAI_API_KEY` / `KIMI_CODE_API_KEY` / `MINIMAX_API_KEY`).
+`FocusedAccountHeader` (`crates/jackin-protocol/src/control.rs`) has no field for credential origin — every snapshot resolver discards which `.or_else` arm won. Add a structured `credential_origin` (a small enum carrying the origin kind plus its detail: env-var with the variable name, file with the path, keychain, or OAuth source), populate it at the resolver arm that actually wins (not a guessed default), split email/username/plan, and render the Auth row. For Claude, parse the account email from `~/.claude.json` `oauthAccount` (or a profile endpoint) — verify against CodexBar's Claude fetcher. Providers with no email show plan + auth row only; no fabricated email. Parallax logs confirm Z.AI/Kimi/MiniMax creds arrive as env vars (`ZAI_API_KEY` / `KIMI_CODE_API_KEY` / `MINIMAX_API_KEY`).
 
 ---
 
@@ -126,7 +141,7 @@ Today the header mixes identity with auth method and is inconsistent per provide
 | MiniMax | General 5h | General Weekly | `Session N% · Weekly N%` |
 | Kimi | Rate Limit | Weekly | `Session N% · Weekly N%` |
 | xAI / Grok | — | Weekly | `Weekly N%` (no session; keep the word) |
-| Amp | Amp Free | — | `Free N% · $credits` (special, already correct) |
+| Amp | — | — | `Free N% · $credits` (special headline, not Session/Weekly; already correct) |
 
 Reads only from Turso; never calls a provider. Degrades to the lifecycle word (`needs login` / `stale` / `usage unavailable`) when no trustworthy percentage exists. Narrow terminal: drop the weekly value before the session value.
 
@@ -141,7 +156,9 @@ The usage segment must follow agent state, identically for **every** agent:
 3. **Resolved** — the real headline.
 4. **Genuinely unavailable** — only then `usage unavailable` (or the specific honest state: `needs login`, `stale`, `unsupported`, `daemon disconnected`).
 
-The segment is **clickable in the unknown/refreshing state** and a click forces a proactive load. Detect agent-start reliably by **routing the agent launch through jackin-capsule as a proxy/hook** (instead of exec-ing the agent directly) so the capsule knows the exact start moment and can trigger auth-verify + refresh. Honest degradation states (never a fabricated number):
+### P3a — lifecycle states + clickable refresh
+
+The segment is **clickable in the unknown/refreshing state**; a click forces a proactive load. These states are driven by the in-memory usage cache plus an agent-started flag, so P3a is implementable without the proxy below. Honest degradation (never a fabricated number):
 
 | State | Rendering |
 |---|---|
@@ -153,6 +170,10 @@ The segment is **clickable in the unknown/refreshing state** and a click forces 
 | Unsupported | `unsupported` + reason |
 | Daemon disconnected | `usage unavailable: daemon disconnected` |
 | No focused agent | `usage unavailable: no focused agent session` |
+
+### P3b — reliable agent-start signal (needs a design step before coding)
+
+Detecting "agent started" reliably is the open architectural question behind steps 1–2. Intended direction: **route the agent launch through jackin-capsule as a proxy/hook** instead of exec-ing the agent directly, so the capsule owns the exact start moment and triggers auth-verify + refresh then. Before coding: identify how the agent is launched today (the exec path in the daemon/runtime) and confirm whether a proxy/hook is the right structural fix or whether an existing lifecycle signal can be used. This is what makes "hide before start" and "`refreshing` on start" precise rather than approximated.
 
 ---
 
@@ -174,7 +195,7 @@ The tab bar reuses the shared `TabStrip` (`crates/jackin-tui/src/components/tab_
 - **Hover** a tab: the tab color changes AND the cursor changes to a pointer; clicking a tab moves focus onto the tab bar.
 - **Content focused:** the tab underline drops to a neutral/dim color (not bright green) and the content block carries the green focus indicator instead.
 
-**Capsule does not match today** — neither the top agent-tab bar nor the usage overlay strip shows the green-on-focus underline, arrow-nav while focused, the hover cursor, or the focus transition into content. Fix both to mirror the console settings reference exactly. This makes `TabStrip` own render + hover + per-tab hit-test + cursor + focus underline, consumed everywhere (Issue 1), and unifies the focus model across surfaces (Issue 15).
+**Capsule does not match today** — neither the top agent-tab bar nor the usage overlay strip shows the green-on-focus underline, arrow-nav while focused, the hover cursor, or the focus transition into content. The structural reason: the capsule agent-tab bar is a **hand-rolled painter** (`StatusBarWidget::paint_tab` in `crates/jackin-capsule/src/tui/components/chrome.rs`), separate from the shared `TabStrip` — that duplication is exactly why it diverges. Root-cause fix: fold the agent-tab bar (and the usage strip) onto the shared `TabStrip` so render + hover + per-tab hit-test + cursor + focus underline live in one place (Issue 1) and the focus model is unified across every surface (Issue 15) — not re-patch each painter.
 
 **Still owed (capture + verify in a live smoke):** hover color + pointer cursor on every tab surface; status-bar consistency on every screen per the display matrix (debug + non-debug); no vertical jump on tab switch, centered strip, correct symmetric padding (content padded both sides, separators full-bleed); left/right tab switch instant even mid-refresh with no refetch within the TTL.
 
@@ -198,12 +219,17 @@ The capsule runs as PID 1 inside the Linux container and cannot read the host Ke
 
 Each item lands with adapter unit/snapshot tests AND an in-container live check against the real forwarded credential — isolated fetch tests are not sufficient. Run a debug launch (`jackin load the-architect . --agent claude --debug`) and, in the container, `/jackin/runtime/jackin-capsule usage verify` + `usage accounts`.
 
-- [ ] P0 — `usage verify` row counts: Claude → 4 (Session, Weekly, Sonnet, Daily Routines), OpenAI → 6 (Session, Weekly, Spark 5h, Spark Weekly, Limit Reset Credits, Credits). Both tabs match the binding previews + CodexBar panels; Overview Anthropic row shows reset + local time.
-- [ ] P1 — every provider header shows email (where available) · username · plan and the `Auth: kind · origin` row, consistent across all tabs; Claude shows its email; no fabricated identity.
+- [ ] P0 (class fix) — a reduced snapshot is never labelled `authoritative`; it is either full or marked degraded with a reason.
+- [ ] P0a — Claude credential path diagnosed and fixed; tab renders Session, Weekly, Sonnet, Daily Routines with reset + in-reserve + `Lasts until reset` on Session/Weekly; `usage verify` Claude ≥4 rows; Overview Anthropic row shows reset + local time.
+- [ ] P0b — OpenAI tab adds Codex Spark 5-hour/Weekly, Limit Reset Credits, Credits, and plan `Pro 20x`; `usage verify` OpenAI 6 rows. (Session/Weekly already correct.)
+- [ ] P0 verify uses the TUI render, not `usage accounts` (RC2); both tabs match the binding previews + CodexBar panels.
+- [ ] RC2 — `usage accounts` serializes real `resets_at`; CLI and TUI agree.
+- [ ] P1 — every provider header shows email (where available) · username · plan and the `Auth: kind · origin` row, consistent across all tabs; Claude shows its email; no fabricated identity; `credential_origin` reflects the winning resolver arm.
 - [ ] P2 — status bar shows `Session N% · Weekly N%` for Z.AI / MiniMax / Kimi per the mapping; Grok shows `Weekly N%`; Amp shows `Free N% · $credits`.
-- [ ] P3 — usage segment hidden before agent start; `refreshing` while loading; clickable forces a load; resolves to real numbers; honest states otherwise. Same on every agent.
+- [ ] P3a — usage segment hidden before agent start; `refreshing` while loading; clickable forces a load; resolves to real numbers; honest states otherwise. Same on every agent.
+- [ ] P3b — agent-start signal designed (current launch path identified) and wired so steps 1–2 are precise, not approximated.
 - [ ] P4 — Z.AI order 5-hour/Tokens/MCP; Kimi order Rate Limit/Weekly; OpenAI plan `Pro 20x`; Claude credits spent-vs-cap shown.
-- [ ] P5 — every tab bar: green underline when focused + arrow-nav; hover color + pointer cursor; focus moves to content (underline neutral) on Down/click. Status-bar consistency across screens; no vertical jump; centered strip; symmetric padding; mid-refresh tab switch instant with no refetch within the TTL.
+- [ ] P5 — agent-tab bar + usage strip folded onto the shared `TabStrip`; every tab bar: green underline when focused + arrow-nav; hover color + pointer cursor; focus moves to content (underline neutral) on Down/click. Status-bar consistency across screens; no vertical jump; centered strip; symmetric padding; mid-refresh tab switch instant with no refetch within the TTL.
 
 ## Cross-references
 
