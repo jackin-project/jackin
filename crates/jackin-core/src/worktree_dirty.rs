@@ -81,6 +81,34 @@ pub async fn changed_files(
     }
 }
 
+/// Count commits on any local branch that are not reachable from any remote —
+/// i.e. unpushed work — via `git log --branches --not --remotes`.
+///
+/// Unlike [`assess_worktree`] this needs no `base_commit`, so an in-container
+/// caller that does not have the host's isolation record can still surface an
+/// unpushed-commit count for the dirty-exit summary. Returns 0 on any error.
+pub async fn unpushed_commit_count(worktree_path: &str, runner: &mut impl CommandRunner) -> usize {
+    match runner
+        .capture(
+            "git",
+            &[
+                "-C",
+                worktree_path,
+                "log",
+                "--branches",
+                "--not",
+                "--remotes",
+                "--format=%H",
+            ],
+            None,
+        )
+        .await
+    {
+        Ok(out) => out.lines().filter(|line| !line.trim().is_empty()).count(),
+        Err(_) => 0,
+    }
+}
+
 /// Assess whether `worktree_path` is safe to auto-clean.
 ///
 /// `log` receives diagnostic lines describing each fail-closed decision; the

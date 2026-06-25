@@ -1,4 +1,6 @@
-use super::{WorktreeState, assess_worktree, changed_files, parse_porcelain};
+use super::{
+    WorktreeState, assess_worktree, changed_files, parse_porcelain, unpushed_commit_count,
+};
 use crate::runner::{CommandRunner, RunOptions};
 use std::future::Future;
 use std::path::Path;
@@ -28,6 +30,7 @@ struct MockGit {
     rev_list: String,
     symbolic_ref_ok: bool,
     rev_parse_head: String,
+    log_output: String,
     fail_subcommand: Option<&'static str>,
 }
 
@@ -65,6 +68,7 @@ impl CommandRunner for MockGit {
                 }
             }
             "rev-parse" => Ok(self.rev_parse_head.clone()),
+            "log" => Ok(self.log_output.clone()),
             other => anyhow::bail!("unexpected git subcommand: {other}"),
         }
     }
@@ -248,6 +252,30 @@ fn changed_files_empty_on_error() {
         ..MockGit::default()
     };
     assert!(block_on(changed_files("/wt", &mut mock)).is_empty());
+}
+
+#[test]
+fn unpushed_commit_count_counts_log_lines() {
+    let mut mock = MockGit {
+        log_output: "aaaa\nbbbb\ncccc\n".to_owned(),
+        ..MockGit::default()
+    };
+    assert_eq!(block_on(unpushed_commit_count("/wt", &mut mock)), 3);
+}
+
+#[test]
+fn unpushed_commit_count_zero_when_pushed() {
+    let mut mock = MockGit::default();
+    assert_eq!(block_on(unpushed_commit_count("/wt", &mut mock)), 0);
+}
+
+#[test]
+fn unpushed_commit_count_zero_on_error() {
+    let mut mock = MockGit {
+        fail_subcommand: Some("log"),
+        ..MockGit::default()
+    };
+    assert_eq!(block_on(unpushed_commit_count("/wt", &mut mock)), 0);
 }
 
 #[test]
