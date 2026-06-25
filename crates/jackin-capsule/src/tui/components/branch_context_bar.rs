@@ -8,6 +8,7 @@
 //! must reserve; rendering writes ANSI escape sequences directly into the
 //! caller-supplied `buf` using absolute cursor positions.
 
+use jackin_tui::components::{StatusRightGroup, status_right_group_layout};
 use jackin_tui::{display_cols, take_display_cols};
 
 use crate::pull_request::PullRequestInfo;
@@ -36,22 +37,27 @@ impl ColRange {
 pub(crate) struct BranchContextBarLayout {
     pub(crate) left: String,
     pub(crate) left_region: Option<ColRange>,
+    pub(crate) usage: String,
+    pub(crate) usage_region: Option<ColRange>,
+    pub(crate) debug_chip: String,
+    pub(crate) debug_chip_region: Option<ColRange>,
     pub(crate) container: String,
     pub(crate) container_region: Option<ColRange>,
-    /// Click region for the debug run-id chip (rightmost, only when debug is active).
-    pub(crate) debug_chip_region: Option<ColRange>,
 }
 
 pub(crate) fn visible_branch(branch: Option<&str>, is_default_branch: bool) -> Option<&str> {
     branch.filter(|_| !is_default_branch)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn branch_context_bar_layout(
     term_rows: u16,
     term_cols: u16,
     branch: Option<&str>,
+    usage_status_label: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     pull_request_loading: bool,
+    debug_run_id: Option<&str>,
     container_name: &str,
 ) -> Option<BranchContextBarLayout> {
     if term_rows == 0 || term_cols == 0 {
@@ -59,25 +65,25 @@ pub(crate) fn branch_context_bar_layout(
     }
     // `branch` is the post-filter visible branch. Trust the input here so
     // renderer / layout / hit-test helpers stay default-branch-agnostic.
-    let (left, left_clickable) = match (pull_request, branch) {
+    let (context_left, left_clickable) = match (pull_request, branch) {
         (Some(pr), _) => (format!(" PR {} · {} ", pr.number_label(), pr.title), true),
         (None, Some(b)) if pull_request_loading => (format!(" Resolving PR · {b} "), true),
         (None, Some(b)) => (format!(" Branch · {b} "), true),
         (None, None) => (String::new(), false),
     };
-    let container = if container_name.is_empty() {
-        String::new()
-    } else {
-        format!(" {container_name} ")
-    };
     let term_cols_usize = usize::from(term_cols);
-    let container_cols = display_cols(&container);
-    let container_fits = container_cols > 0 && container_cols + 2 < term_cols_usize;
-    let left_max_cols = if container_fits {
-        term_cols_usize.saturating_sub(container_cols + 1)
-    } else {
-        term_cols_usize
-    };
+    let right = status_right_group_layout(
+        term_cols,
+        StatusRightGroup {
+            usage: usage_status_label,
+            container: container_name,
+            run_id: debug_run_id,
+        },
+    );
+
+    let right_start = right.start(term_cols_usize.saturating_add(1));
+    let left_max_cols = right_start.saturating_sub(2);
+    let left = context_left;
     let left = take_display_cols(&left, left_max_cols);
     let left_cols = display_cols(&left);
     let left_region = if left_clickable && left_cols > 0 {
@@ -86,46 +92,49 @@ pub(crate) fn branch_context_bar_layout(
     } else {
         None
     };
-    let container_region = if container_fits {
-        let start = term_cols_usize
-            .saturating_sub(container_cols)
-            .saturating_add(1);
-        let end = start.saturating_add(container_cols);
-        ColRange::new(
-            u16::try_from(start).unwrap_or(u16::MAX),
-            u16::try_from(end).unwrap_or(u16::MAX),
-        )
-    } else {
-        None
-    };
     Some(BranchContextBarLayout {
         left,
         left_region,
-        container,
-        container_region,
-        debug_chip_region: debug_chip_range(term_cols),
+        usage: right
+            .usage
+            .as_ref()
+            .map_or_else(String::new, |chunk| chunk.text.clone()),
+        usage_region: right
+            .usage
+            .as_ref()
+            .and_then(|chunk| ColRange::new(chunk.start, chunk.end)),
+        debug_chip: right
+            .run_id
+            .as_ref()
+            .map_or_else(String::new, |chunk| chunk.text.clone()),
+        debug_chip_region: right
+            .run_id
+            .as_ref()
+            .and_then(|chunk| ColRange::new(chunk.start, chunk.end)),
+        container: right
+            .container
+            .as_ref()
+            .map_or_else(String::new, |chunk| chunk.text.clone()),
+        container_region: right
+            .container
+            .as_ref()
+            .and_then(|chunk| ColRange::new(chunk.start, chunk.end)),
     })
 }
 
-pub(crate) fn debug_chip_range(term_cols: u16) -> Option<ColRange> {
+pub(crate) fn debug_run_id_label() -> Option<String> {
     if !crate::logging::debug_enabled() {
         return None;
     }
-    let Ok(run_id) = std::env::var("JACKIN_RUN_ID") else {
-        return None;
-    };
-    if run_id.is_empty() {
-        return None;
-    }
-    let chip = format!(" {run_id} ");
-    let chip_cols = u16::try_from(display_cols(&chip)).unwrap_or(u16::MAX);
-    let chip_start = term_cols.saturating_sub(chip_cols).saturating_add(1);
-    ColRange::new(chip_start, term_cols.saturating_add(1))
+    std::env::var("JACKIN_RUN_ID")
+        .ok()
+        .filter(|id| !id.is_empty())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BranchContextBarHit {
     Context,
+    UsageStatus,
     Container,
     /// Click on the debug run-id chip (only shown when `--debug` is active).
     DebugChip,
@@ -138,8 +147,10 @@ pub(crate) fn branch_context_bar_hit(
     term_rows: u16,
     term_cols: u16,
     branch: Option<&str>,
+    usage_status_label: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     pull_request_loading: bool,
+    debug_run_id: Option<&str>,
     container_name: &str,
 ) -> Option<BranchContextBarHit> {
     if row != term_rows {
@@ -149,8 +160,10 @@ pub(crate) fn branch_context_bar_hit(
         term_rows,
         term_cols,
         branch,
+        usage_status_label,
         pull_request,
         pull_request_loading,
+        debug_run_id,
         container_name,
     )?;
     if layout.debug_chip_region.is_some_and(|r| r.contains(col)) {
@@ -158,6 +171,9 @@ pub(crate) fn branch_context_bar_hit(
     }
     if layout.container_region.is_some_and(|r| r.contains(col)) {
         return Some(BranchContextBarHit::Container);
+    }
+    if layout.usage_region.is_some_and(|r| r.contains(col)) {
+        return Some(BranchContextBarHit::UsageStatus);
     }
     if layout.left_region.is_some_and(|r| r.contains(col)) {
         return Some(BranchContextBarHit::Context);

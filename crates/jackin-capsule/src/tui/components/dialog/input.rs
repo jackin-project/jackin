@@ -2,50 +2,8 @@
 
 use jackin_tui::components::raw_bytes_to_chord;
 
-use super::{CLOSE_TARGET_ITEMS, DialogAction, EXIT_DIRTY_ROWS, SPLIT_DIRECTION_ITEMS};
+use super::{CLOSE_TARGET_ITEMS, DialogAction, SPLIT_DIRECTION_ITEMS};
 use crate::tui::keymap::{RENAME_KEYMAP, RenameAction};
-
-/// Key handling for the dirty-exit modal: a **forced choice**. Up/Down (and
-/// `j`/`k`) move the selection over the four rows; Enter emits the focused
-/// row's action; everything else — including Esc — is consumed so the modal
-/// cannot be dismissed without choosing.
-pub(super) fn handle_exit_dirty_key(selected: &mut usize, key: &[u8]) -> DialogAction {
-    let last = EXIT_DIRTY_ROWS.len() - 1;
-    match key {
-        b"\x1b[A" | b"\x1bOA" | b"k" | b"K" => {
-            *selected = selected.saturating_sub(1);
-            DialogAction::Redraw
-        }
-        b"\x1b[B" | b"\x1bOB" | b"j" | b"J" => {
-            *selected = (*selected + 1).min(last);
-            DialogAction::Redraw
-        }
-        b"\r" | b"\n" => DialogAction::ExitDirty(EXIT_DIRTY_ROWS[(*selected).min(last)].0),
-        // Esc and any other key are ignored — the operator must pick a row.
-        _ => DialogAction::Consume,
-    }
-}
-
-/// Key handling for the read-only Inspect list: Up/Down scroll; Esc walks back
-/// one step to the exit modal.
-pub(super) fn handle_exit_inspect_key(
-    selected: &mut usize,
-    len: usize,
-    key: &[u8],
-) -> DialogAction {
-    match key {
-        b"\x1b[A" | b"\x1bOA" | b"k" | b"K" => {
-            *selected = selected.saturating_sub(1);
-            DialogAction::Redraw
-        }
-        b"\x1b[B" | b"\x1bOB" | b"j" | b"J" => {
-            *selected = (*selected + 1).min(len.saturating_sub(1));
-            DialogAction::Redraw
-        }
-        b"\x1b" => DialogAction::Dismiss,
-        _ => DialogAction::Consume,
-    }
-}
 
 /// Edit a rename-tab input buffer in response to a raw key chunk.
 /// Dispatches advertised keys through [`RENAME_KEYMAP`]: Enter commits,

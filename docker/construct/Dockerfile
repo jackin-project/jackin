@@ -1,5 +1,10 @@
 ARG SHELLFIRM_VERSION
 
+# shellfirm has no Debian package, so build it from source in a throwaway Rust
+# stage (the documented cargo-install fallback) and copy only the binary into
+# the final image. Building inside Docker — rather than prebuilding on the host —
+# keeps it off the host's mise/cargo-binstall environment and produces the
+# binary for the target image architecture.
 FROM rust:1.96.0-trixie AS shellfirm-builder
 
 ARG SHELLFIRM_VERSION
@@ -39,6 +44,7 @@ RUN apt-get update && \
     procps \
     ripgrep \
     sudo \
+    tzdata \
     tree \
     yq \
     zsh && \

@@ -800,9 +800,22 @@ fn entrypoint_run_hook_helper_captures_rc_before_failure() {
     // silently makes failure exit 0) is caught.
     let helper = extract_block(ENTRYPOINT_SH, "run_hook() {", "\n}\n");
     assert!(helper.contains("local rc=0"));
+    assert!(helper.contains("( cd \"$hook_cwd\" && \"$path\" ) || rc=$?"));
     assert!(helper.contains("\"$path\" || rc=$?"));
     assert!(helper.contains("if [ \"$rc\" -ne 0 ]"));
     assert!(helper.contains("exit \"$rc\""));
+}
+
+#[test]
+fn entrypoint_runs_preflight_from_agent_home() {
+    let preflight = extract_block(
+        ENTRYPOINT_SH,
+        "if [ -x /jackin/runtime/hooks/preflight.sh ]; then",
+        "\nfi\n",
+    );
+    assert!(
+        preflight.contains("run_hook preflight /jackin/runtime/hooks/preflight.sh \"\" \"$HOME\"")
+    );
 }
 
 #[test]

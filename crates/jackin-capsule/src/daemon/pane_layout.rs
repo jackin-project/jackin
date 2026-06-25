@@ -59,6 +59,12 @@ impl Multiplexer {
             self.event_tx.clone(),
         )?;
         self.sessions.insert(new_id, session);
+        self.record_agent_history(
+            new_id,
+            tab_codename.clone(),
+            agent_for_log.clone(),
+            provider_label,
+        );
         let tab = &mut self.tabs[self.active_tab];
         let placed = match direction {
             SplitDirection::Left => tab.tree.split_h(from_id, new_id, SplitPosition::Before),
@@ -152,6 +158,7 @@ impl Multiplexer {
                 self.active_tab = self.tabs.len().saturating_sub(1);
             }
         }
+        self.mark_agent_session_exited(id);
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
     }

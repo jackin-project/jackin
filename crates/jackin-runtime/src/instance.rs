@@ -13,6 +13,7 @@ use anyhow::Context;
 use jackin_config::{AuthForwardMode, GithubAuthMode};
 use jackin_core::paths::JackinPaths;
 use jackin_manifest::RoleManifest;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 mod auth;
@@ -39,6 +40,18 @@ pub enum AuthProvisionOutcome {
     /// Claude Code inside the container uses `CLAUDE_CODE_OAUTH_TOKEN`
     /// from the resolved env.
     TokenMode,
+}
+
+impl AuthProvisionOutcome {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Skipped => "skipped",
+            Self::Synced => "synced",
+            Self::HostMissing => "host_missing",
+            Self::TokenMode => "token_mode",
+        }
+    }
 }
 
 /// Outcome of the `[github]` provisioning step.
@@ -275,6 +288,7 @@ pub struct RoleState {
     pub gh_provision_outcome: GithubProvisionOutcome,
     pub agent_runtime: AgentRuntimeState,
     pub auth: ProvisionedAuth,
+    pub auth_outcomes: BTreeMap<jackin_core::agent::Agent, AuthProvisionOutcome>,
 }
 
 impl RoleState {
@@ -564,12 +578,14 @@ impl RoleState {
         })?;
 
         let mut auth = ProvisionedAuth::default();
+        let mut auth_outcomes = BTreeMap::new();
         let mut selected_outcome = AuthProvisionOutcome::Skipped;
 
         for provision in auth_provisions {
             if provision.agent == agent {
                 selected_outcome = provision.outcome;
             }
+            auth_outcomes.insert(provision.agent, provision.outcome);
             match provision.slot {
                 ProvisionedAuthSlot::Claude(slot) => auth.claude = Some(slot),
                 ProvisionedAuthSlot::Codex(slot) => auth.codex = Some(slot),
@@ -593,6 +609,7 @@ impl RoleState {
                 gh_provision_outcome,
                 agent_runtime,
                 auth,
+                auth_outcomes,
             },
             selected_outcome,
         ))

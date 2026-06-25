@@ -46,6 +46,8 @@ mod launch_pipeline;
 #[cfg(test)]
 pub(crate) use crate::instance::{DockerResources, NewInstanceManifest};
 #[cfg(test)]
+pub(crate) use launch_pipeline::emit_auth_provision_launch_plan;
+#[cfg(test)]
 pub(crate) use launch_pipeline::load_role_with;
 #[cfg(test)]
 pub(crate) use launch_pipeline::manifest_env_timing_detail;
@@ -1159,7 +1161,7 @@ fn host_runtime_passthrough_env(vars: impl IntoIterator<Item = (String, String)>
             if key.starts_with("JACKIN_DISABLE_")
                 || matches!(
                     key.as_str(),
-                    "JACKIN_DHAT_ALLOC_LOG" | "JACKIN_CAPSULE_FORCE_PANIC"
+                    "JACKIN_DHAT_ALLOC_LOG" | "JACKIN_CAPSULE_FORCE_PANIC" | "TZ"
                 )
             {
                 Some(format!("{key}={value}"))

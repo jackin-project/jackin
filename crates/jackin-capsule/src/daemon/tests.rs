@@ -136,6 +136,20 @@ fn apply_action_frame(mux: &mut Multiplexer, action: Action) -> Option<Vec<u8>> 
     (!frame.is_empty()).then_some(frame)
 }
 
+fn seed_usage_dialog_for_refresh_test(mux: &mut Multiplexer) {
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "test");
+    let mut stale = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
+    stale.updated_label = "seed".to_owned();
+    stale.status_bar_label = "seed".to_owned();
+    mux.dialog_push(Dialog::new_usage(stale));
+}
+
 /// Drive `handle_palette_command` then compose; `None` when empty.
 fn palette_command_frame(mux: &mut Multiplexer, cmd: PaletteCommand) -> Option<Vec<u8>> {
     mux.handle_palette_command(cmd);
@@ -166,6 +180,248 @@ fn single_pane_tab_mux_with_size(rows: u16, cols: u16) -> Multiplexer {
 
 fn frame_contains_screen_erase(frame: &[u8]) -> bool {
     frame.windows(b"\x1b[2J".len()).any(|w| w == b"\x1b[2J")
+}
+
+#[test]
+fn control_reply_for_request_shapes_usage_variants() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "test");
+    let focused = control_reply_for_request(&mut mux, ClientMsg::UsageFocused);
+    assert!(matches!(focused, ServerMsg::UsageFocused { .. }));
+
+    let refreshed = control_reply_for_request(&mut mux, ClientMsg::UsageRefreshFocused);
+    assert!(matches!(refreshed, ServerMsg::UsageFocused { .. }));
+    assert!(
+        mux.pending_usage_refresh.is_some(),
+        "refresh request should queue provider work instead of probing inline"
+    );
+
+    let accounts = control_reply_for_request(&mut mux, ClientMsg::UsageAccountList);
+    assert!(matches!(accounts, ServerMsg::UsageAccounts { .. }));
+}
+
+#[test]
+fn control_usage_account_list_uses_in_memory_cache() {
+    let mut mux = single_pane_tab_mux();
+    let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 123);
+    view.focused_agent = Some("codex".to_owned());
+    view.focused_provider = Some("OpenAI".to_owned());
+    view.account = jackin_protocol::control::FocusedAccountHeader {
+        provider_label: "OpenAI / Codex".to_owned(),
+        account_label: "codex@example.com".to_owned(),
+        username: None,
+        plan_label: Some("Pro 20x".to_owned()),
+        credential_origin: None,
+    };
+    view.status = jackin_protocol::control::UsageSnapshotStatus::Fresh;
+    view.source = jackin_protocol::control::UsageSource::ProviderApi;
+    view.confidence = jackin_protocol::control::UsageConfidence::Authoritative;
+    view.buckets = vec![jackin_protocol::control::QuotaBucketView {
+        label: "Session".to_owned(),
+        used_label: Some("63% used".to_owned()),
+        limit_label: Some("100%".to_owned()),
+        remaining_percent: Some(37),
+        reset_label: Some("Resets in 2h".to_owned()),
+        resets_at: None,
+        status_slot: None,
+        pace_label: None,
+        status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+    }];
+    mux.usage_cache
+        .insert_snapshot_for_test("codex", Some("OpenAI"), view);
+
+    let accounts = control_reply_for_request(&mut mux, ClientMsg::UsageAccountList);
+
+    let ServerMsg::UsageAccounts { accounts } = accounts else {
+        panic!("usage accounts response expected");
+    };
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].provider, "OpenAI / Codex");
+    assert_eq!(accounts[0].account_label, "codex@example.com");
+    assert_eq!(accounts[0].used_amount, Some(63));
+}
+
+#[test]
+fn apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog() {
+    let mut mux = single_pane_tab_mux();
+    seed_usage_dialog_for_refresh_test(&mut mux);
+
+    mux.apply_dialog_action(DialogAction::RefreshUsage);
+
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
+        panic!("refresh usage action must keep usage dialog open");
+    };
+    assert!(
+        view.updated_label.contains("refreshing"),
+        "{:?}",
+        view.updated_label
+    );
+    assert_eq!(view.status_bar_label, "seed");
+    assert_eq!(
+        mux.pending_usage_refresh,
+        Some(crate::usage::UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("OpenAI".to_owned())
+        })
+    );
+}
+
+#[test]
+fn apply_action_refresh_usage_queues_refresh_without_replacing_dialog() {
+    let mut mux = single_pane_tab_mux();
+    seed_usage_dialog_for_refresh_test(&mut mux);
+
+    mux.apply_action(Action::RefreshUsage);
+
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
+        panic!("refresh usage action must keep usage dialog open");
+    };
+    assert!(
+        view.updated_label.contains("refreshing"),
+        "{:?}",
+        view.updated_label
+    );
+    assert_eq!(view.status_bar_label, "seed");
+    assert_eq!(
+        mux.pending_usage_refresh,
+        Some(crate::usage::UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("OpenAI".to_owned())
+        })
+    );
+}
+
+#[test]
+fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
+    let mut mux = single_pane_tab_mux();
+    let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "test");
+    mux.dialog_push(Dialog::new_usage(
+        jackin_protocol::control::FocusedUsageView {
+            focused_provider: Some("MiniMax".to_owned()),
+            account: jackin_protocol::control::FocusedAccountHeader {
+                provider_label: "Usage".to_owned(),
+                account_label: "seed".to_owned(),
+                username: None,
+                plan_label: None,
+                credential_origin: None,
+            },
+            ..jackin_protocol::control::FocusedUsageView::unavailable("seed", 1)
+        },
+    ));
+
+    mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
+        provider_label: "Claude".to_owned(),
+    });
+
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
+        panic!("switch usage provider action must keep usage dialog open");
+    };
+    assert_eq!(view.focused_provider.as_deref(), Some("Claude"));
+    assert_eq!(view.account.provider_label, "Anthropic / Claude");
+    assert_eq!(
+        mux.pending_usage_refresh,
+        Some(crate::usage::UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("Claude".to_owned())
+        })
+    );
+}
+
+#[test]
+fn apply_action_open_usage_queues_focused_provider_refresh() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "test");
+
+    mux.apply_action(Action::OpenUsage);
+
+    assert!(matches!(mux.dialog_top(), Some(Dialog::Usage { .. })));
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog open") else {
+        panic!("usage dialog expected");
+    };
+    assert!(
+        view.updated_label.contains("refreshing"),
+        "{:?}",
+        view.updated_label
+    );
+    assert_eq!(
+        mux.pending_usage_refresh,
+        Some(crate::usage::UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("OpenAI".to_owned())
+        })
+    );
+}
+
+#[test]
+fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "test");
+    let now_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time after epoch")
+        .as_secs() as i64;
+    let cached = jackin_protocol::control::FocusedUsageView {
+        focused_agent: Some("codex".to_owned()),
+        focused_provider: Some("OpenAI".to_owned()),
+        account: jackin_protocol::control::FocusedAccountHeader {
+            provider_label: "Codex".to_owned(),
+            account_label: "alexey@example.com".to_owned(),
+            username: None,
+            plan_label: Some("Pro 20x".to_owned()),
+            credential_origin: None,
+        },
+        buckets: vec![jackin_protocol::control::QuotaBucketView {
+            label: "Session".to_owned(),
+            used_label: Some("63% used".to_owned()),
+            limit_label: Some("100%".to_owned()),
+            remaining_percent: Some(37),
+            reset_label: Some("Resets at 15:00 UTC".to_owned()),
+            resets_at: None,
+            status_slot: None,
+            pace_label: None,
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        }],
+        status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        source: jackin_protocol::control::UsageSource::Cli,
+        confidence: jackin_protocol::control::UsageConfidence::Authoritative,
+        fetched_at_epoch: now_epoch - 120,
+        updated_label: "Updated just now".to_owned(),
+        status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
+        tabs: Vec::new(),
+        last_error: None,
+    };
+    mux.usage_cache
+        .insert_snapshot_for_test("codex", Some("OpenAI"), cached);
+    let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
+    view.updated_label = "Updated just now".to_owned();
+    mux.dialog_push(Dialog::new_usage(view));
+
+    assert!(mux.refresh_open_usage_dialog_from_cache());
+
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog open") else {
+        panic!("usage dialog expected");
+    };
+    assert_eq!(view.updated_label, "Updated 2m ago");
 }
 
 fn pull_request_fixture(number: u64) -> PullRequestInfo {
@@ -2982,8 +3238,10 @@ fn pointer_shape_updates_only_when_shape_changes() {
         mux.term_rows,
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
+        None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
+        None,
         mux.status_bar.instance_id_label(),
     )
     .and_then(|layout| layout.left_region)
@@ -3083,6 +3341,45 @@ fn pointer_shape_updates_for_clickable_dialog_copy_target() {
     );
     mux.client.flush_out_of_band();
     let shape = rx.try_recv().expect("dialog pointer-shape update");
+    assert!(shape.ends_with(b"\x1b]22;pointer\x1b\\"));
+}
+
+#[test]
+fn pointer_shape_updates_for_usage_dialog_tabs() {
+    let mut mux = single_pane_tab_mux();
+    mux.pointer_shapes_supported = true;
+    let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
+    view.focused_provider = Some("OpenAI".to_owned());
+    view.tabs = vec![jackin_protocol::control::UsageProviderTab {
+        label: "OpenAI".to_owned(),
+        status_label: "usage unavailable".to_owned(),
+        account_label: "seed".to_owned(),
+        plan_label: None,
+        source_label: None,
+        active: true,
+    }];
+    mux.dialog_push(Dialog::new_usage(view.clone()));
+    let dialog = mux.dialog_top().expect("usage dialog should open");
+    let (row, col, rows, cols) = dialog.box_rect(mux.term_rows, mux.term_cols);
+    let area = ratatui::layout::Rect {
+        x: col,
+        y: row,
+        width: cols,
+        height: rows,
+    };
+    let inner = crate::tui::components::dialog_widgets::usage_dialog_inner_area(area);
+    let tabs = crate::tui::components::dialog_widgets::usage_tab_strip_labels(
+        &view,
+        crate::tui::components::dialog::UsageDialogTab::Provider,
+    );
+    let tab_area = crate::tui::components::dialog_widgets::usage_tab_strip_area(inner, &tabs);
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    mux.update_pointer_shape_for_mouse(tab_area.y, tab_area.x, SGR_NO_BUTTON_MOTION);
+    mux.client.flush_out_of_band();
+
+    let shape = rx.try_recv().expect("usage tab pointer-shape update");
     assert!(shape.ends_with(b"\x1b]22;pointer\x1b\\"));
 }
 
@@ -3195,8 +3492,10 @@ fn bottom_container_click_opens_container_info_without_copying() {
         mux.term_rows,
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
+        None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
+        None,
         mux.status_bar.instance_id_label(),
     )
     .and_then(|layout| layout.container_region)
@@ -3245,8 +3544,10 @@ fn bottom_context_click_opens_github_context_dialog() {
         mux.term_rows,
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
+        None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
+        None,
         mux.status_bar.instance_id_label(),
     )
     .and_then(|layout| layout.left_region)
@@ -3275,9 +3576,12 @@ fn bottom_context_click_opens_github_context_dialog() {
         rendered.contains(&format!("\x1b[{hint_row};")),
         "dialog hint should render one row above the spacer: {rendered:?}"
     );
+    // Outside a debug launch the bottom branch/context bar is hidden under a
+    // dialog (commit 5f2076a6); this mux has no debug run id, so the final row
+    // must stay clear — only the dialog hint renders below the dialog.
     assert!(
-        rendered.contains(&format!("\x1b[{bottom_row};")),
-        "bottom branch/context bar should stay on the final row: {rendered:?}"
+        !rendered.contains(&format!("\x1b[{bottom_row};")),
+        "bottom branch/context bar must be hidden under a dialog outside debug: {rendered:?}"
     );
     assert!(matches!(
         mux.dialog_top(),
@@ -3525,6 +3829,37 @@ fn apply_action_switch_tab_moves_active_tab() {
 }
 
 #[test]
+fn tab_bar_focus_key_maps_arrows_and_exit() {
+    use super::input_dispatch::{TabBarFocusKey, tab_bar_focus_key};
+    assert_eq!(tab_bar_focus_key(b"\x1b[C"), Some(TabBarFocusKey::Next)); // Right
+    assert_eq!(tab_bar_focus_key(b"\x1b[D"), Some(TabBarFocusKey::Prev)); // Left
+    assert_eq!(tab_bar_focus_key(b"\x1b[B"), Some(TabBarFocusKey::Exit)); // Down
+    assert_eq!(tab_bar_focus_key(b"\x1b"), Some(TabBarFocusKey::Exit)); // Esc
+    assert_eq!(tab_bar_focus_key(b"x"), None);
+}
+
+#[test]
+fn tab_bar_focus_mode_arrows_switch_tabs_then_esc_returns_to_agent() {
+    // P5: while the tab bar is focused, Left/Right switch agent tabs and Esc
+    // returns focus to the agent content.
+    let mut mux = single_pane_tab_mux();
+    mux.tabs.push(Tab::new_single("Shell", 2, "test"));
+    drop(compose_after(&mut mux, FullRedrawReason::ExplicitRedraw));
+
+    mux.set_tab_bar_focused(true);
+    assert!(mux.tab_bar_focused);
+
+    mux.handle_input(InputEvent::Data(b"\x1b[C".to_vec())); // Right → next tab
+    assert_eq!(mux.active_tab, 1);
+    mux.handle_input(InputEvent::Data(b"\x1b[D".to_vec())); // Left → previous tab
+    assert_eq!(mux.active_tab, 0);
+    assert!(mux.tab_bar_focused, "arrows keep the bar focused");
+
+    mux.handle_input(InputEvent::Data(b"\x1b".to_vec())); // Esc → back to agent
+    assert!(!mux.tab_bar_focused);
+}
+
+#[test]
 fn apply_action_status_bar_click_switches_tab() {
     let mut mux = single_pane_tab_mux();
     mux.tabs.push(Tab::new_single("Shell", 2, "test"));
@@ -3568,8 +3903,10 @@ fn apply_action_branch_context_bar_click_opens_container_info() {
         mux.term_rows,
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
+        None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
+        None,
         mux.status_bar.instance_id_label(),
     )
     .and_then(|layout| layout.container_region)

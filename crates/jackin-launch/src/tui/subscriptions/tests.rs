@@ -76,7 +76,7 @@ fn hit_point_for_payload(
     state: &jackin_tui::components::ContainerInfoState,
     payload: &str,
 ) -> (u16, u16) {
-    let rect = launch_container_info_rect(area, state);
+    let rect = launch_container_info_rect(area, state, true);
     for row in rect.y..rect.y.saturating_add(rect.height) {
         for col in rect.x..rect.x.saturating_add(rect.width) {
             if jackin_tui::components::container_info_copy_payload_at(rect, state, col, row)

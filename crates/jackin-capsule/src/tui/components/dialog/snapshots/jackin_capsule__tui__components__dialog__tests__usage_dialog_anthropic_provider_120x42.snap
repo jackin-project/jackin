@@ -1,0 +1,33 @@
+---
+source: crates/jackin-capsule/src/tui/components/dialog/tests.rs
+expression: "render_usage_dialog_snapshot_for_view(120, 42, UsageDialogTab::Provider,\nanthropic_usage_view_fixture())"
+---
+
+
+
+                 ┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
+                 │         Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax          │
+                 │                            ━━━━━━━━━━━                                             │
+                 │────────────────────────────────────────────────────────────────────────────────────│
+                 │  Anthropic                                                  alexey@chainargos.com  │
+                 │  Updated 2m ago                                                               Max  │
+                 │────────────────────────────────────────────────────────────────────────────────────│
+                 │  Session                                                                           │
+                 │  ██████████████████████████████████████████████████████████████████████░░░░░░░░░░  │
+                 │  89% left                                        Resets in 2h 12m (Jun 17, 19:19)  │
+                 │  34% in reserve                                                 Lasts until reset  │
+                 │                                                                                    │
+                 │  Weekly                                                                            │
+                 │  ██████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  │
+                 │  55% left                                         Resets in 1w 1d (Jun 26, 13:59)  │
+                 │  28% in reserve                                                 Lasts until reset  │
+                 │                                                                                    │
+                 │  Sonnet                                                                            │
+                 │  ███████████████████████████████████████████████████████████████████░░░░░░░░░░░░░  │
+                 │  85% left                                         Resets in 1w 1d (Jun 26, 13:59)  │
+                 │                                                                                    │
+                 │  Daily Routines                                                                    │
+                 │  ████████████████████████████████████████████████████████████████████████████████  │
+                 │  100% left                                                                         │
+                 │                                                                                    │
+                 └────────────────────────────────────────────────────────────────────────────────────┘

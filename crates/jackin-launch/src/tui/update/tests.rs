@@ -78,6 +78,7 @@ fn footer_hover_message_replaces_hover_state() {
         &mut view,
         LaunchMessage::FooterHoverChanged(StatusFooterHover {
             left: true,
+            usage: false,
             right: false,
             right_debug: false,
         }),
