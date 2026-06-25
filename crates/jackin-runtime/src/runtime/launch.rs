@@ -638,6 +638,23 @@ pub(super) async fn launch_role_runtime(
     let cgroup_version = crate::runtime::docker_profile::probe_cgroup_version();
     crate::runtime::docker_profile::validate_cgroup_for_profile(*profile, cgroup_version)
         .map_err(|msg| anyhow::anyhow!(msg))?;
+    // WP4 Part B: rootless DinD requires cgroup v2 — fail closed on v1 rather
+    // than silently falling back to a privileged sidecar.
+    crate::runtime::docker_profile::validate_dind_grant_for_cgroup(grants.dind, cgroup_version)
+        .map_err(|msg| anyhow::anyhow!(msg))?;
+    // WP4 / Decision 12: privileged DinD under hardened/locked defeats the
+    // capability + network boundary the profile promises. It is allowed only by
+    // explicit grant, but the operator must be told the enforcement is partial.
+    if crate::runtime::docker_profile::dind_privileged(grants)
+        && crate::runtime::docker_profile::drops_all_caps(*profile)
+    {
+        jackin_diagnostics::emit_compact_line(
+            "warning",
+            &format!(
+                "privileged DinD under `{profile}` profile defeats capability and network isolation (partial enforcement); prefer `dind = \"rootless\"`"
+            ),
+        );
+    }
     let apparmor_info = runner
         .capture(
             "docker",

@@ -898,6 +898,37 @@ pub fn dind_privileged(grants: &EffectiveGrants) -> bool {
     grants.dind == DindGrant::Privileged
 }
 
+/// WP4 Part B: the sidecar image and `--privileged` flag for a `DinD` tier.
+///
+/// `rootless` runs `docker:dind-rootless` in a user namespace with no
+/// `--privileged`; `privileged` runs `docker:dind` with `--privileged`. `none`
+/// never starts a sidecar — it maps to the privileged pair only as an
+/// unreachable default (the caller gates on `dind_enabled`).
+pub const fn dind_image_and_privileged(grant: DindGrant) -> (&'static str, bool) {
+    match grant {
+        DindGrant::Rootless => ("docker:dind-rootless", false),
+        DindGrant::Privileged | DindGrant::None => ("docker:dind", true),
+    }
+}
+
+/// WP4 Part B: rootless `DinD` requires cgroup v2.
+///
+/// Fails closed on a cgroup-v1 host rather than silently falling back to a
+/// privileged sidecar (which would defeat the operator's choice). Other tiers
+/// impose no cgroup requirement here (the profile-level cgroup gate is separate,
+/// see [`validate_cgroup_for_profile`]).
+pub fn validate_dind_grant_for_cgroup(grant: DindGrant, cgroup_version: &str) -> Result<(), String> {
+    if grant == DindGrant::Rootless && cgroup_version == "v1" {
+        return Err(
+            "rootless DinD requires cgroup v2 for user-namespace isolation; this host is cgroup v1. \
+             Use `dind = \"privileged\"` or run on a cgroup v2 host — jackin' will not silently fall \
+             back to a privileged sidecar."
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
 /// In-container path of the capsule binary, used for post-run `docker exec`.
 pub const CAPSULE_BIN_PATH: &str = "/jackin/runtime/jackin-capsule";
 
@@ -1755,6 +1786,32 @@ mod tests {
         assert!(firewall_post_run_argv(&grants, "ctr-1").is_none());
         grants.network = NetworkGrant::None;
         assert!(firewall_post_run_argv(&grants, "ctr-1").is_none());
+    }
+
+    // ── WP4 Part B: rootless DinD tier ────────────────────────────────────────
+
+    #[test]
+    fn dind_rootless_uses_rootless_image_without_privileged() {
+        assert_eq!(
+            dind_image_and_privileged(DindGrant::Rootless),
+            ("docker:dind-rootless", false)
+        );
+        assert_eq!(
+            dind_image_and_privileged(DindGrant::Privileged),
+            ("docker:dind", true)
+        );
+    }
+
+    #[test]
+    fn rootless_dind_fails_closed_on_cgroup_v1() {
+        assert!(
+            validate_dind_grant_for_cgroup(DindGrant::Rootless, "v1").is_err(),
+            "rootless DinD must fail closed on cgroup v1, never fall back to privileged"
+        );
+        assert!(validate_dind_grant_for_cgroup(DindGrant::Rootless, "v2").is_ok());
+        // privileged / none impose no cgroup requirement here.
+        assert!(validate_dind_grant_for_cgroup(DindGrant::Privileged, "v1").is_ok());
+        assert!(validate_dind_grant_for_cgroup(DindGrant::None, "v1").is_ok());
     }
 
     // ── WP2: locked uses a Docker-internal network ────────────────────────────

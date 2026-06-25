@@ -92,6 +92,7 @@ pub(super) async fn run_dind_sidecar_headless(
     network: &str,
     dind: &str,
     certs_volume: &str,
+    grant: crate::runtime::docker_profile::DindGrant,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
     run_dind_sidecar_headless_with_owner(
@@ -99,6 +100,7 @@ pub(super) async fn run_dind_sidecar_headless(
         network,
         dind,
         certs_volume,
+        grant,
         docker,
     )
     .await
@@ -130,8 +132,14 @@ async fn run_dind_sidecar_headless_with_owner(
     network: &str,
     dind: &str,
     certs_volume: &str,
+    grant: crate::runtime::docker_profile::DindGrant,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
+    // WP4 Part B: image + privileged flag are tier-aware. `rootless` runs
+    // `docker:dind-rootless` without `--privileged`; `privileged` keeps the
+    // classic `docker:dind` + `--privileged` path.
+    let (dind_image, dind_privileged) =
+        crate::runtime::docker_profile::dind_image_and_privileged(grant);
     // Create Docker network
     let network_labels = owner.labels(None);
     jackin_diagnostics::active_timing_started("sidecar", "create_network", Some(network));
@@ -147,8 +155,8 @@ async fn run_dind_sidecar_headless_with_owner(
     );
     create_network_result?;
 
-    jackin_diagnostics::active_timing_started("sidecar", "dind_image_lookup", Some(DIND_IMAGE));
-    let dind_image_tags = docker.list_image_tags(DIND_IMAGE).await;
+    jackin_diagnostics::active_timing_started("sidecar", "dind_image_lookup", Some(dind_image));
+    let dind_image_tags = docker.list_image_tags(dind_image).await;
     jackin_diagnostics::active_timing_done(
         "sidecar",
         "dind_image_lookup",
@@ -159,8 +167,8 @@ async fn run_dind_sidecar_headless_with_owner(
         },
     );
     if dind_image_tags?.is_empty() {
-        jackin_diagnostics::active_timing_started("sidecar", "pull_dind_image", Some(DIND_IMAGE));
-        let pull_dind_image = docker.pull_image(DIND_IMAGE);
+        jackin_diagnostics::active_timing_started("sidecar", "pull_dind_image", Some(dind_image));
+        let pull_dind_image = docker.pull_image(dind_image);
         let pull_dind_image_result = pull_dind_image.await;
         jackin_diagnostics::active_timing_done(
             "sidecar",
@@ -191,14 +199,14 @@ async fn run_dind_sidecar_headless_with_owner(
     let dind_tls_san = format!("DOCKER_TLS_SAN=DNS:{dind}");
     let labels = owner.labels(Some(LABEL_KIND_DIND));
     let spec = ContainerSpec {
-        image: DIND_IMAGE.to_owned(),
+        image: dind_image.to_owned(),
         hostname: None,
         env: vec!["DOCKER_TLS_CERTDIR=/certs".to_owned(), dind_tls_san],
         labels,
         network: network.to_owned(),
         binds: vec![certs_dind_mount],
         entrypoint: None,
-        privileged: true,
+        privileged: dind_privileged,
         workdir: None,
     };
     jackin_diagnostics::active_timing_started("sidecar", "docker_create_dind", Some(dind));
@@ -274,11 +282,14 @@ pub async fn prewarm_dind_sidecar_container(
     let _remove_stale_network = docker.remove_network(&network).await;
 
     let started = std::time::Instant::now();
+    // Prewarm warms the privileged DinD path (the only one a prewarmed sidecar
+    // can be adopted into today); a rootless launch starts its own sidecar.
     let result = run_dind_sidecar_headless_with_owner(
         DindSidecarOwner::Prewarm,
         &network,
         &dind,
         &certs_volume,
+        crate::runtime::docker_profile::DindGrant::Privileged,
         docker,
     )
     .await;

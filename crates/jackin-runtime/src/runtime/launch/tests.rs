@@ -5258,11 +5258,11 @@ plugins = []
         "role must verify TLS"
     );
     assert!(
-        run_cmd.contains("DOCKER_CERT_PATH=/certs/client"),
+        run_cmd.contains("DOCKER_CERT_PATH=/jackin/run/dind-certs/client"),
         "role must know cert path"
     );
     assert!(
-        run_cmd.contains(&format!("{certs_volume}:/certs/client:ro")),
+        run_cmd.contains(&format!("{certs_volume}:/jackin/run/dind-certs/client:ro")),
         "role must mount cert volume read-only"
     );
 }

@@ -1383,6 +1383,8 @@ pub(crate) async fn load_role_with(
         let sidecar_network = network.clone();
         let sidecar_dind = dind.clone();
         let sidecar_certs_volume = certs_volume.clone();
+        // WP4 Part B: the sidecar tier (rootless vs privileged image/flags).
+        let sidecar_dind_grant = effective_grants.dind;
         let sidecar_network_disabled =
             effective_grants.network == crate::runtime::docker_profile::NetworkGrant::None
                 && !dind_started;
@@ -1400,6 +1402,7 @@ pub(crate) async fn load_role_with(
                     &sidecar_network,
                     &sidecar_dind,
                     &sidecar_certs_volume,
+                    sidecar_dind_grant,
                     docker,
                 )
                 .await
