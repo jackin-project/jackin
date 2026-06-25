@@ -718,6 +718,19 @@ fn sgr_colon_rgb_preserves_foreground_and_background() {
 }
 
 #[test]
+fn sgr_colon_rgb_preserves_zero_red_channel() {
+    // The no-colorspace colon form `38:2:r:g:b` (4 subparams after `38`) must
+    // read a leading R=0 as the red channel, not as an empty colorspace-id to
+    // skip. The colorspace skip only applies to the 5-subparam `38:2:Pi:r:g:b`.
+    let mut g = DamageGrid::new(2, 20, 100);
+    g.process(b"\x1b[38:2:0:5:6mA");
+
+    let snap = g.dump();
+    let cell = snap.cell(0, 0).expect("rgb cell");
+    assert_eq!(cell.fg, Color::Rgb(0, 5, 6));
+}
+
+#[test]
 fn scroll_ops_record_linefeed_scrolls() {
     let mut g = DamageGrid::new(3, 10, 100);
     g.process(b"one\r\ntwo\r\nthree\r\nfour");
@@ -773,6 +786,31 @@ fn scroll_ops_record_insert_delete_line_and_reverse_index() {
                 top: 1,
                 bottom: 3,
                 rows: 1
+            },
+        ]
+    );
+}
+
+#[test]
+fn scroll_ops_record_csi_scroll_up_and_down() {
+    // CSI S (scroll up) and CSI T (scroll down) both shift the scroll region
+    // and must each record a ScrollOp so the deferred scroll-region optimizer
+    // sees both directions. Regression: CSI T previously recorded nothing.
+    let mut g = DamageGrid::new(5, 10, 100);
+    g.process(b"\x1b[2S\x1b[3T");
+
+    assert_eq!(
+        g.drain_scroll_ops(),
+        vec![
+            ScrollOp::Up {
+                top: 0,
+                bottom: 4,
+                rows: 2
+            },
+            ScrollOp::Down {
+                top: 0,
+                bottom: 4,
+                rows: 3
             },
         ]
     );

@@ -231,25 +231,27 @@ impl PaneCell for TermCell {
     }
 }
 
+/// Cell width forced for the lead cell of a wide glyph (always 2).
+const WIDE_CELL_WIDTH: NonZeroU16 = NonZeroU16::MIN.saturating_add(1);
+
 fn render_cell(buf_cell: &mut ratatui::buffer::Cell, cell: &impl PaneCell) {
     if cell.is_wide_continuation() {
         buf_cell.reset();
         return;
     }
 
-    buf_cell.set_diff_option(CellDiffOption::None);
     if cell.text().is_empty() {
         buf_cell.set_char(' ');
     } else {
         buf_cell.set_symbol(cell.text());
     }
-    if cell.is_wide() {
-        if let Some(width) = NonZeroU16::new(2) {
-            buf_cell.set_diff_option(CellDiffOption::ForcedWidth(width));
-        }
+    buf_cell.set_diff_option(if cell.is_wide() {
+        CellDiffOption::ForcedWidth(WIDE_CELL_WIDTH)
     } else if cell.hyperlink_uri().is_some() {
-        buf_cell.set_diff_option(CellDiffOption::AlwaysUpdate);
-    }
+        CellDiffOption::AlwaysUpdate
+    } else {
+        CellDiffOption::None
+    });
 
     buf_cell.set_fg(term_color(cell.fg()));
     buf_cell.set_bg(term_color(cell.bg()));

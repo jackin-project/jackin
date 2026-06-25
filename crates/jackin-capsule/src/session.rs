@@ -86,8 +86,17 @@ pub(crate) fn osc8_uri_is_safe(uri: &str) -> bool {
     if uri.is_empty() {
         return true;
     }
-    let lower = uri.trim().to_ascii_lowercase();
-    lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
+    // Byte-level case-insensitive prefix match so this stays allocation-free:
+    // the frame hyperlink-region builder calls it per linked cell every frame,
+    // and a `to_ascii_lowercase()` here would heap-allocate each call.
+    let bytes = uri.trim().as_bytes();
+    [b"http://".as_slice(), b"https://", b"mailto:"]
+        .iter()
+        .any(|scheme| {
+            bytes
+                .get(..scheme.len())
+                .is_some_and(|head| head.eq_ignore_ascii_case(scheme))
+        })
 }
 
 /// Parse an `OSC 7` payload into a local-filesystem path. `OSC 7`
@@ -869,6 +878,13 @@ impl Session {
             self.clear_transient_keyboard_modes();
         }
 
+        // The grid records semantic scroll operations, but the scroll-region
+        // (DECSTBM) emission optimizer that would consume them is deferred (see
+        // the Ratatui modernization roadmap). Drain-and-discard each chunk so
+        // they cannot grow unbounded on a long scroll-heavy session; the
+        // optimizer will relocate this drain to frame compose when it lands.
+        self.shadow_grid.drain_scroll_ops();
+
         self.apply_passthrough_policy();
 
         if was_scrolled {
@@ -1095,6 +1111,12 @@ impl Session {
         // Never hand the agent PTY a 0×0 window size (programs expect ≥1) nor the
         // shadow grid a degenerate geometry. `DamageGrid::set_size` clamps too;
         // this keeps TIOCSWINSZ and the model in agreement on the floor.
+        if rows == 0 || cols == 0 {
+            // A clamp here means a layout bug upstream collapsed a pane; log it
+            // so a soak run can pin the offending frame rather than silently
+            // running the agent in a 1×1 window.
+            crate::cdebug!("resize-clamp: degenerate geometry {rows}x{cols} floored to 1x1");
+        }
         let rows = rows.max(1);
         let cols = cols.max(1);
         // TIOCSWINSZ failure leaves the agent drawing at the old size

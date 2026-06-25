@@ -698,12 +698,16 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // Attach-handshake outcome (clog tier): the triage line for
                 // "agent themed wrong" reports — None means the client could
                 // not read its terminal's palette and grids keep what they
-                // had.
+                // had. `caps` (with its `sources` provenance) is logged so a
+                // wrong-capability report can be traced to whichever input
+                // (handshake identity, terminfo, color probe, override,
+                // denylist) decided it.
                 crate::clog!(
-                    "attach: client terminal term={:?} colors fg={:?} bg={:?}",
+                    "attach: client terminal term={:?} colors fg={:?} bg={:?} caps={:?}",
                     terminal.term,
                     terminal.default_fg,
                     terminal.default_bg,
+                    capabilities,
                 );
                 mux.attached_terminal = terminal;
                 mux.attached_capabilities = capabilities;

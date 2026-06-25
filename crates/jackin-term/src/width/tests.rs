@@ -65,7 +65,7 @@ fn profile_owns_agent_visible_terminal_contract() {
     assert_eq!(profile.default_reported_color(11), Some((0, 0, 0)));
     assert_eq!(profile.agent_term, "xterm-256color");
     assert_eq!(profile.agent_colorterm, "truecolor");
-    assert_eq!(profile.osc8_policy, OscPolicy::ModelMetadata);
+    assert_eq!(profile.osc8_policy, Osc8Policy::ModelMetadata);
 
     let attrs = Attrs {
         foreground: Color::Rgb(1, 2, 3),
@@ -83,4 +83,37 @@ fn profile_owns_agent_visible_terminal_contract() {
         overline: true,
     };
     assert!(profile.attrs_supported(&attrs));
+}
+
+#[test]
+fn attrs_supported_rejects_when_profile_lacks_capability() {
+    // The all-true default accepts everything; the contract that earns this
+    // method is the false branch — a profile missing a capability must reject
+    // an attr that needs it.
+    let mut profile = VirtualTerminalProfile::default();
+    profile.supported_sgr.italic = false;
+    let italic = Attrs {
+        italic: true,
+        ..Attrs::default()
+    };
+    assert!(
+        !profile.attrs_supported(&italic),
+        "italic attr must be rejected when the profile lacks italic"
+    );
+
+    // Non-default colors require a color capability; with both off and a
+    // truecolor foreground, the color gate must reject.
+    let mut mono = VirtualTerminalProfile::default();
+    mono.supported_sgr.color_256 = false;
+    mono.supported_sgr.truecolor = false;
+    let colored = Attrs {
+        foreground: Color::Rgb(1, 2, 3),
+        ..Attrs::default()
+    };
+    assert!(
+        !mono.attrs_supported(&colored),
+        "truecolor fg must be rejected when the profile supports no color"
+    );
+    // …but a default-colored, unstyled attr still passes the same mono profile.
+    assert!(mono.attrs_supported(&Attrs::default()));
 }

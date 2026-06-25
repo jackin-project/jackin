@@ -255,6 +255,10 @@ pub(crate) fn scan_emitted_frame_with_geometry(
                 continue;
             }
         } else if matches!(bytes[i], 0x20..=0x7e) {
+            // Printable ASCII only: a cheap repaint-density proxy, not an exact
+            // cell count. Multi-byte glyphs (CJK/emoji/box-drawing borders) are
+            // not counted, so `full_frame_repaint` is a heuristic — it can read
+            // false on a glyph-heavy full repaint.
             metrics.painted_cells += 1;
         }
         i += 1;

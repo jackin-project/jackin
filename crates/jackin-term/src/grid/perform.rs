@@ -222,6 +222,13 @@ impl vte::Perform for DamageGrid {
                 let top = self.scroll_top as usize;
                 let bottom = self.scroll_bottom as usize;
                 let cols = self.cols;
+                // Record the region shift like `S`/`L`/`M` do, so the deferred
+                // scroll-region optimizer sees both scroll directions.
+                self.scroll_ops.push(ScrollOp::Down {
+                    top: self.scroll_top,
+                    bottom: self.scroll_bottom,
+                    rows: p0.max(1),
+                });
                 let grid = self.active_grid();
                 for _ in 0..n {
                     if bottom < grid.len() {

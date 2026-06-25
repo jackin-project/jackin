@@ -133,7 +133,10 @@ impl Multiplexer {
         // `outer.row` is smaller means its top border is being drawn over the
         // status bar — the resize-residue class. Logged per frame (firehose,
         // JACKIN_DEBUG only) so a soak run pins the exact offending frame.
-        {
+        // Skip the per-pane trace loop entirely unless the firehose is on; the
+        // individual `cdebug!`s self-gate, but the loop and its arg setup would
+        // otherwise run every frame on the compose hot path.
+        if crate::logging::debug_enabled() {
             let status_rows = crate::tui::components::status_bar::STATUS_BAR_ROWS;
             crate::cdebug!(
                 "frame-geom: term={}x{} content_rows={} status_rows={} panes={}",
@@ -549,17 +552,27 @@ impl Multiplexer {
     }
 }
 
-fn pane_hyperlink_regions(
+/// Run-length-encode per-row cell metadata into single-row `Rect`s. For each
+/// allowed pane's visible `View`, groups horizontally-adjacent cells sharing
+/// the same run value and emits one `Rect` per run (offset into the pane's
+/// inner area). Shared by the hyperlink and SGR-metadata region builders so the
+/// boundary arithmetic and clamping live in one place.
+///
+/// `probe` opens a run and produces its owned value once at the run's first
+/// cell; `same_run` extends the run by comparing each later cell against that
+/// value. They are split so the (allocating) owned form is built once per run
+/// while extension stays allocation-free — the hyperlink path would otherwise
+/// allocate a `String` per cell.
+fn pane_cell_runs<T>(
     panes: &[crate::tui::app::VisiblePane],
     pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
-    sessions: &std::collections::HashMap<u64, crate::session::Session>,
-) -> Vec<(ratatui::layout::Rect, String)> {
+    allow_pane: impl Fn(u64) -> bool,
+    probe: impl Fn(&jackin_term::Cell) -> Option<T>,
+    same_run: impl Fn(&jackin_term::Cell, &T) -> bool,
+) -> Vec<(ratatui::layout::Rect, T)> {
     let mut regions = Vec::new();
     for pane in panes {
-        let Some(session) = sessions.get(&pane.id) else {
-            continue;
-        };
-        if !session.allow_frame_hyperlinks() {
+        if !allow_pane(pane.id) {
             continue;
         }
         let Some((_, crate::tui::view::PaneScreen::View(view))) =
@@ -567,25 +580,21 @@ fn pane_hyperlink_regions(
         else {
             continue;
         };
-        for row in 0..pane.inner.rows.min(view.rows) {
+        let max_rows = pane.inner.rows.min(view.rows);
+        let max_cols = pane.inner.cols.min(view.cols);
+        for row in 0..max_rows {
             let mut col = 0;
-            while col < pane.inner.cols.min(view.cols) {
-                let uri = view
-                    .cell(row, col)
-                    .and_then(|cell| cell.hyperlink.as_ref())
-                    .map(|link| link.uri.as_str())
-                    .filter(|uri| crate::session::osc8_uri_is_safe(uri));
-                let Some(uri) = uri else {
+            while col < max_cols {
+                let Some(value) = view.cell(row, col).and_then(&probe) else {
                     col += 1;
                     continue;
                 };
                 let start = col;
                 col += 1;
-                while col < pane.inner.cols.min(view.cols)
+                while col < max_cols
                     && view
                         .cell(row, col)
-                        .and_then(|cell| cell.hyperlink.as_ref())
-                        .is_some_and(|link| link.uri == uri)
+                        .is_some_and(|cell| same_run(cell, &value))
                 {
                     col += 1;
                 }
@@ -596,7 +605,7 @@ fn pane_hyperlink_regions(
                         width: col - start,
                         height: 1,
                     },
-                    uri.to_owned(),
+                    value,
                 ));
             }
         }
@@ -604,51 +613,48 @@ fn pane_hyperlink_regions(
     regions
 }
 
+/// The cell's hyperlink target if it carries one that passes the OSC 8 safety
+/// filter. Borrows from the cell — no allocation — so run extension can compare
+/// targets without owning a `String` per cell.
+fn cell_safe_uri(cell: &jackin_term::Cell) -> Option<&str> {
+    cell.hyperlink
+        .as_ref()
+        .map(|link| link.uri.as_str())
+        .filter(|uri| crate::session::osc8_uri_is_safe(uri))
+}
+
+fn pane_hyperlink_regions(
+    panes: &[crate::tui::app::VisiblePane],
+    pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
+    sessions: &std::collections::HashMap<u64, crate::session::Session>,
+) -> Vec<(ratatui::layout::Rect, String)> {
+    pane_cell_runs(
+        panes,
+        pane_screens,
+        |id| {
+            sessions
+                .get(&id)
+                .is_some_and(crate::session::Session::allow_frame_hyperlinks)
+        },
+        |cell| cell_safe_uri(cell).map(str::to_owned),
+        |cell, uri| cell_safe_uri(cell) == Some(uri.as_str()),
+    )
+}
+
 fn pane_sgr_regions(
     panes: &[crate::tui::app::VisiblePane],
     pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
 ) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
-    let mut regions = Vec::new();
-    for pane in panes {
-        let Some((_, crate::tui::view::PaneScreen::View(view))) =
-            pane_screens.iter().find(|(id, _)| *id == pane.id)
-        else {
-            continue;
-        };
-        for row in 0..pane.inner.rows.min(view.rows) {
-            let mut col = 0;
-            while col < pane.inner.cols.min(view.cols) {
-                let metadata = view
-                    .cell(row, col)
-                    .map(cell_sgr_metadata)
-                    .filter(|metadata| *metadata != SgrMetadata::default());
-                let Some(metadata) = metadata else {
-                    col += 1;
-                    continue;
-                };
-                let start = col;
-                col += 1;
-                while col < pane.inner.cols.min(view.cols)
-                    && view
-                        .cell(row, col)
-                        .map(cell_sgr_metadata)
-                        .is_some_and(|next| next == metadata)
-                {
-                    col += 1;
-                }
-                regions.push((
-                    ratatui::layout::Rect {
-                        x: pane.inner.col + start,
-                        y: pane.inner.row + row,
-                        width: col - start,
-                        height: 1,
-                    },
-                    metadata,
-                ));
-            }
-        }
-    }
-    regions
+    pane_cell_runs(
+        panes,
+        pane_screens,
+        |_| true,
+        |cell| {
+            let metadata = cell_sgr_metadata(cell);
+            (metadata != SgrMetadata::default()).then_some(metadata)
+        },
+        |cell, metadata| cell_sgr_metadata(cell) == *metadata,
+    )
 }
 
 fn cell_sgr_metadata(cell: &jackin_term::Cell) -> SgrMetadata {

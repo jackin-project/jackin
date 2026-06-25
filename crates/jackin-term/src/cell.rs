@@ -50,6 +50,9 @@ pub enum UnderlineStyle {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Hyperlink {
+    /// OSC 8 `id=` parameter, grouping discontiguous spans of one logical link.
+    /// Parsed and snapshotted but not yet read by the emitter (which keys on
+    /// `uri`); retained for the deferred span-grouping consumer.
     pub id: String,
     pub uri: String,
 }

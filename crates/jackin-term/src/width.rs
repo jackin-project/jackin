@@ -11,9 +11,12 @@ use crate::{Attrs, Color, UnderlineStyle};
 /// Stable per-session terminal profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VirtualTerminalProfile {
-    /// Unicode version implied by the width tables used by `unicode-width`.
+    /// Identifier for the width-table source (crate + version), not a Unicode
+    /// standard version string.
     pub unicode_version: &'static str,
-    /// DECRQM mode 2027 answer. `false` keeps agent apps on legacy cell widths.
+    /// Whether mode-2027 grapheme-cluster width is active. `false` keeps agent
+    /// apps on legacy cell widths. The DECRQM reply value itself is owned by
+    /// `decrqm_mode_2027_status`.
     pub grapheme_cluster_width_mode: bool,
     /// Whether East Asian Ambiguous code points are treated as two columns.
     pub ambiguous_width_is_wide: bool,
@@ -22,7 +25,7 @@ pub struct VirtualTerminalProfile {
     pub default_reported_bg: (u8, u8, u8),
     pub agent_term: &'static str,
     pub agent_colorterm: &'static str,
-    pub osc8_policy: OscPolicy,
+    pub osc8_policy: Osc8Policy,
     pub supported_sgr: SupportedSgr,
 }
 
@@ -37,7 +40,7 @@ impl Default for VirtualTerminalProfile {
             default_reported_bg: (0x00, 0x00, 0x00),
             agent_term: "xterm-256color",
             agent_colorterm: "truecolor",
-            osc8_policy: OscPolicy::ModelMetadata,
+            osc8_policy: Osc8Policy::ModelMetadata,
             supported_sgr: SupportedSgr {
                 bold: true,
                 dim: true,
@@ -57,8 +60,11 @@ impl Default for VirtualTerminalProfile {
     }
 }
 
+/// How OSC 8 hyperlinks are handled. Named `Osc8Policy` (not `OscPolicy`) to
+/// avoid colliding with the capsule's broader `session::OscPolicy`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OscPolicy {
+pub enum Osc8Policy {
+    /// Hyperlinks are modeled as cell metadata rather than passed through raw.
     ModelMetadata,
 }
 
@@ -134,8 +140,7 @@ pub fn display_width(cluster: &str) -> u16 {
         return 0;
     }
 
-    let width = UnicodeWidthStr::width(cluster) as u16;
-    width
+    (UnicodeWidthStr::width(cluster) as u16)
         .saturating_add(count_halfwidth_katakana_voicing_marks(cluster))
         .min(2)
 }

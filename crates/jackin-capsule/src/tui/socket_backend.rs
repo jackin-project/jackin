@@ -209,24 +209,32 @@ fn write_color_sgr(buf: &mut Vec<u8>, color: Color, is_bg: bool) {
         Color::LightCyan => push_sgr(buf, base + 66),
         Color::Gray => push_sgr(buf, base + 7),
         Color::Indexed(idx) => {
-            let prefix: &[u8] = if is_bg { b"48;5;" } else { b"38;5;" };
-            buf.extend_from_slice(b"\x1b[");
-            buf.extend_from_slice(prefix);
-            push_number(buf, u32::from(idx));
-            buf.push(b'm');
+            buf.extend_from_slice(if is_bg { b"\x1b[48;" } else { b"\x1b[38;" });
+            push_indexed_color_tail(buf, idx);
         }
         Color::Rgb(r, g, b) => {
-            let prefix: &[u8] = if is_bg { b"48;2;" } else { b"38;2;" };
-            buf.extend_from_slice(b"\x1b[");
-            buf.extend_from_slice(prefix);
-            push_number(buf, u32::from(r));
-            buf.push(b';');
-            push_number(buf, u32::from(g));
-            buf.push(b';');
-            push_number(buf, u32::from(b));
-            buf.push(b'm');
+            buf.extend_from_slice(if is_bg { b"\x1b[48;" } else { b"\x1b[38;" });
+            push_rgb_color_tail(buf, r, g, b);
         }
     }
+}
+
+/// `5;<idx>m` tail of an indexed-color SGR, after the `38;`/`48;`/`58;` opener.
+fn push_indexed_color_tail(buf: &mut Vec<u8>, idx: u8) {
+    buf.extend_from_slice(b"5;");
+    push_number(buf, u32::from(idx));
+    buf.push(b'm');
+}
+
+/// `2;<r>;<g>;<b>m` tail of a truecolor SGR, after the `38;`/`48;`/`58;` opener.
+fn push_rgb_color_tail(buf: &mut Vec<u8>, r: u8, g: u8, b: u8) {
+    buf.extend_from_slice(b"2;");
+    push_number(buf, u32::from(r));
+    buf.push(b';');
+    push_number(buf, u32::from(g));
+    buf.push(b';');
+    push_number(buf, u32::from(b));
+    buf.push(b'm');
 }
 
 fn write_sgr_metadata(buf: &mut Vec<u8>, metadata: SgrMetadata) {
@@ -242,20 +250,8 @@ fn write_sgr_metadata(buf: &mut Vec<u8>, metadata: SgrMetadata) {
         buf.extend_from_slice(b"\x1b[58;");
         match metadata.underline_color {
             TermColor::Default => {}
-            TermColor::Idx(idx) => {
-                buf.extend_from_slice(b"5;");
-                push_number(buf, u32::from(idx));
-                buf.push(b'm');
-            }
-            TermColor::Rgb(r, g, b) => {
-                buf.extend_from_slice(b"2;");
-                push_number(buf, u32::from(r));
-                buf.push(b';');
-                push_number(buf, u32::from(g));
-                buf.push(b';');
-                push_number(buf, u32::from(b));
-                buf.push(b'm');
-            }
+            TermColor::Idx(idx) => push_indexed_color_tail(buf, idx),
+            TermColor::Rgb(r, g, b) => push_rgb_color_tail(buf, r, g, b),
         }
     }
     if metadata.overline {

@@ -34,4 +34,4 @@ pub use damage::{DirtySpans, DirtyTracker};
 pub use grid::{DamageGrid, MouseProtocolEncoding, MouseProtocolMode, RowArena, RowWrap, ScrollOp};
 pub use passthrough::{PassthroughBuffer, PassthroughEvent};
 pub use snapshot::{GridPatch, GridSnapshot, GridView, SnapCell};
-pub use width::{OscPolicy, SupportedSgr, VirtualTerminalProfile, display_width};
+pub use width::{Osc8Policy, SupportedSgr, VirtualTerminalProfile, display_width};

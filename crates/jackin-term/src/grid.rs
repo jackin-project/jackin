@@ -966,44 +966,32 @@ impl DamageGrid {
         };
         let row = self.cursor_row as usize;
         let mut col = target_col as usize;
-        let grid_row_len = {
+        // Resolve the lead cell and snapshot what we need from it under one
+        // borrow, before the cursor/profile reads below re-borrow `self`.
+        let (old_width, attrs, mut joined) = {
             let grid = self.active_grid();
-            grid[row].len()
-        };
-        if col >= grid_row_len {
-            return zero_width;
-        }
-        // Step from a continuation cell back to its wide lead.
-        {
-            let grid = self.active_grid();
+            if col >= grid[row].len() {
+                return zero_width;
+            }
+            // Step from a continuation cell back to its wide lead.
             if grid[row][col].is_wide_continuation && col > 0 {
                 col -= 1;
             }
-        }
-        let continues_zwj = {
-            let grid = self.active_grid();
-            grid[row][col].contents.ends_with('\u{200d}')
-        };
-        if !zero_width && !continues_zwj {
-            return false;
-        }
-        let old_width = {
-            let grid = self.active_grid();
-            if grid[row][col].contents.is_empty() && zero_width {
+            let cell = &grid[row][col];
+            if !zero_width && !cell.contents.ends_with('\u{200d}') {
+                return false;
+            }
+            if cell.contents.is_empty() && zero_width {
                 // Nothing to join — drop the orphan mark.
                 return true;
             }
-            cell_width(&grid[row][col])
-        };
-        let attrs = {
-            let grid = self.active_grid();
-            grid[row][col].attrs.clone()
+            (
+                cell_width(cell),
+                cell.attrs.clone(),
+                compact_str::CompactString::new(&cell.contents),
+            )
         };
         let old_cursor_end = col as u16 + old_width;
-        let mut joined = {
-            let grid = self.active_grid();
-            compact_str::CompactString::new(&grid[row][col].contents)
-        };
         joined.push(ch);
         let new_width = self.profile.cluster_width(joined.as_str()).min(2);
         {
@@ -1424,22 +1412,20 @@ mod perform;
 
 impl DamageGrid {
     fn apply_sgr_params(&mut self, params: &vte::Params) {
-        if params.is_empty() {
-            self.current_attrs = Attrs::default();
-            return;
-        }
-        let params = params.iter().map(Vec::from).collect::<Vec<_>>();
+        // Borrow each subparameter slice rather than cloning into owned Vecs —
+        // SGR runs on the per-byte PTY parse hot path.
+        let params = params.iter().collect::<Vec<&[u16]>>();
         self.apply_sgr(&params);
     }
 
-    fn apply_sgr(&mut self, params: &[Vec<u16>]) {
+    fn apply_sgr(&mut self, params: &[&[u16]]) {
         let mut i = 0;
         if params.is_empty() {
             self.current_attrs = Attrs::default();
             return;
         }
         while i < params.len() {
-            let param = params[i].as_slice();
+            let param = params[i];
             let code = param.first().copied().unwrap_or(0);
             match code {
                 0 => {
@@ -1668,7 +1654,7 @@ fn underline_style_from_sgr(style: u16) -> UnderlineStyle {
 
 /// Parse extended color from either colon subparameters (`38:2:r:g:b`) or
 /// semicolon parameters (`38;2;r;g;b`). Advances `i` for semicolon forms.
-fn parse_sgr_color(current: &[u16], params: &[Vec<u16>], i: &mut usize) -> Option<Color> {
+fn parse_sgr_color(current: &[u16], params: &[&[u16]], i: &mut usize) -> Option<Color> {
     if current.len() > 1 {
         return parse_sgr_color_values(&current[1..]);
     }

@@ -125,6 +125,12 @@ pub struct ClientTerminal {
 ///
 /// These are host-adaptive and may change on every attach. They must not
 /// change agent-visible `jackin-term` profile semantics.
+///
+/// Consumption status: only `pointer_shapes` currently gates behavior. The
+/// remaining fields (and `sources`) are derived and logged on attach but do
+/// not yet gate emission — OSC 8 / underline / truecolor output is governed by
+/// `session::OscPolicy` and the terminal profile, not these flags. They are the
+/// forward contract for capability-driven downsampling (deferred per roadmap).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AttachCapabilities {
     pub pointer_shapes: bool,
@@ -753,15 +759,14 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 1 => Some(cursor.read_u64("focus session id")?),
                 other => bail!("unknown hello focus kind {other}"),
             };
-            let mut terminal = ClientTerminal {
+            let terminal = ClientTerminal {
                 term: read_terminal_field(&mut cursor, TERM_LABEL)?,
                 term_program: read_terminal_field(&mut cursor, TERM_PROGRAM_LABEL)?,
                 colorterm: read_terminal_field(&mut cursor, COLORTERM_LABEL)?,
                 default_fg: read_color_field(&mut cursor, "default fg")?,
                 default_bg: read_color_field(&mut cursor, "default bg")?,
-                capability_overrides: AttachCapabilityOverrides::default(),
+                capability_overrides: read_capability_overrides(&mut cursor)?,
             };
-            terminal.capability_overrides = read_capability_overrides(&mut cursor)?;
             if !cursor.finished() {
                 bail!("hello payload has trailing bytes");
             }
