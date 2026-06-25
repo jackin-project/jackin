@@ -2192,14 +2192,6 @@ fn tag_last_status_slot(buckets: &mut [QuotaBucketView], slot: StatusSlot) {
 
 /// Status-bar slot for a Claude/Codex window whose label is the canonical
 /// `Session`/`Weekly` (the other windows — Sonnet, Spark, Credits — fill none).
-fn status_slot_for_window(label: &str) -> Option<StatusSlot> {
-    match label {
-        "Session" => Some(StatusSlot::Session),
-        "Weekly" => Some(StatusSlot::Weekly),
-        _ => None,
-    }
-}
-
 /// Build a window bucket carrying both the formatted reset label and the raw
 /// reset epoch (RC2), so the CLI report can emit `resets_at`. `reset_at` is the
 /// authoritative timestamp; `reset_label` is derived from it.
@@ -2420,14 +2412,32 @@ struct ClaudeCliUsage {
 impl ClaudeCliUsage {
     fn buckets(&self) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
-        push_claude_cli_bucket(&mut buckets, "Session", self.session_used);
-        push_claude_cli_bucket(&mut buckets, "Weekly", self.weekly_used);
-        push_claude_cli_bucket(&mut buckets, "Sonnet", self.sonnet_used);
+        // The impoverished CLI fallback still fills the headline slots — tag them
+        // so the status bar renders even when the OAuth fetch failed (the slot
+        // is a semantic role, independent of which source produced the window).
+        push_claude_cli_bucket(
+            &mut buckets,
+            "Session",
+            Some(StatusSlot::Session),
+            self.session_used,
+        );
+        push_claude_cli_bucket(
+            &mut buckets,
+            "Weekly",
+            Some(StatusSlot::Weekly),
+            self.weekly_used,
+        );
+        push_claude_cli_bucket(&mut buckets, "Sonnet", None, self.sonnet_used);
         buckets
     }
 }
 
-fn push_claude_cli_bucket(buckets: &mut Vec<QuotaBucketView>, label: &str, used: Option<f64>) {
+fn push_claude_cli_bucket(
+    buckets: &mut Vec<QuotaBucketView>,
+    label: &str,
+    slot: Option<StatusSlot>,
+    used: Option<f64>,
+) {
     let Some(used) = used else {
         return;
     };
@@ -2440,16 +2450,37 @@ fn push_claude_cli_bucket(buckets: &mut Vec<QuotaBucketView>, label: &str, used:
         None,
         UsageSnapshotStatus::Fresh,
     ));
+    if let Some(slot) = slot {
+        tag_last_status_slot(buckets, slot);
+    }
 }
 
 impl ClaudeOAuthUsageResponse {
     fn into_buckets(self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
-        push_claude_window(&mut buckets, "Session", self.five_hour, now);
-        push_claude_window(&mut buckets, "Weekly", self.seven_day, now);
-        push_claude_window(&mut buckets, "Sonnet", self.seven_day_sonnet, now);
-        push_claude_window(&mut buckets, "Opus", self.seven_day_opus, now);
-        push_claude_window(&mut buckets, "Daily Routines", self.seven_day_routines, now);
+        push_claude_window(
+            &mut buckets,
+            "Session",
+            Some(StatusSlot::Session),
+            self.five_hour,
+            now,
+        );
+        push_claude_window(
+            &mut buckets,
+            "Weekly",
+            Some(StatusSlot::Weekly),
+            self.seven_day,
+            now,
+        );
+        push_claude_window(&mut buckets, "Sonnet", None, self.seven_day_sonnet, now);
+        push_claude_window(&mut buckets, "Opus", None, self.seven_day_opus, now);
+        push_claude_window(
+            &mut buckets,
+            "Daily Routines",
+            None,
+            self.seven_day_routines,
+            now,
+        );
         if let Some(extra) = self.extra_usage
             && extra.is_enabled.unwrap_or(true)
         {
@@ -2482,6 +2513,7 @@ impl ClaudeOAuthUsageResponse {
 fn push_claude_window(
     buckets: &mut Vec<QuotaBucketView>,
     label: &str,
+    slot: Option<StatusSlot>,
     window: Option<ClaudeOAuthUsageWindow>,
     now: i64,
 ) {
@@ -2502,7 +2534,7 @@ fn push_claude_window(
         pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     ));
-    if let Some(slot) = status_slot_for_window(label) {
+    if let Some(slot) = slot {
         tag_last_status_slot(buckets, slot);
     }
 }
@@ -2916,12 +2948,14 @@ impl CodexUsageResponse {
             push_codex_window(
                 &mut buckets,
                 "Session",
+                Some(StatusSlot::Session),
                 rate_limit.primary_window.as_ref(),
                 now,
             );
             push_codex_window(
                 &mut buckets,
                 "Weekly",
+                Some(StatusSlot::Weekly),
                 rate_limit.secondary_window.as_ref(),
                 now,
             );
@@ -2933,15 +2967,18 @@ impl CodexUsageResponse {
                 .or(limit.metered_feature.as_deref())
                 .map_or_else(|| "Codex extra limit".to_owned(), codex_limit_label);
             if let Some(rate_limit) = &limit.rate_limit {
+                // Extra per-feature limits are detail rows, never the headline.
                 push_codex_window(
                     &mut buckets,
                     &format!("{label} 5-hour"),
+                    None,
                     rate_limit.primary_window.as_ref(),
                     now,
                 );
                 push_codex_window(
                     &mut buckets,
                     &format!("{label} Weekly"),
+                    None,
                     rate_limit.secondary_window.as_ref(),
                     now,
                 );
@@ -3024,6 +3061,7 @@ struct CodexResetCredit {
 fn push_codex_window(
     buckets: &mut Vec<QuotaBucketView>,
     label: &str,
+    slot: Option<StatusSlot>,
     window: Option<&CodexWindowSnapshot>,
     now: i64,
 ) {
@@ -3045,7 +3083,7 @@ fn push_codex_window(
         pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     ));
-    if let Some(slot) = status_slot_for_window(label) {
+    if let Some(slot) = slot {
         tag_last_status_slot(buckets, slot);
     }
 }
@@ -6862,10 +6900,60 @@ mod tests {
 
         assert_eq!(buckets[0].label, "Session");
         assert_eq!(buckets[0].remaining_percent, Some(100));
+        // The CLI fallback still fills the headline slots (regression guard:
+        // OAuth-fetch failure must not blank the Claude status bar).
+        assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
         assert_eq!(buckets[1].label, "Weekly");
         assert_eq!(buckets[1].remaining_percent, Some(54));
+        assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
         assert_eq!(buckets[2].label, "Sonnet");
         assert_eq!(buckets[2].remaining_percent, Some(85));
+        assert_eq!(buckets[2].status_slot, None);
+    }
+
+    #[test]
+    fn provider_matches_usage_label_resolves_canonical_synonyms() {
+        // A tab label matches an account provider label when both resolve to the
+        // same canonical surface, across synonym spellings and in both orders.
+        for (left, right) in [
+            ("OpenAI / Codex", "codex"),
+            ("Codex", "openai"),
+            ("Anthropic / Claude", "claude"),
+            ("Claude", "anthropic"),
+            ("xAI / Grok", "grok"),
+            ("Grok Build", "xai"),
+            ("GLM / Z.AI", "glm"),
+            ("Z.AI", "zai"),
+            ("MiniMax", "minimax"),
+            ("Kimi", "kimi"),
+            ("Amp", "amp"),
+        ] {
+            assert!(
+                provider_matches_usage_label(left, right),
+                "{left} should match {right}"
+            );
+            assert!(
+                provider_matches_usage_label(right, left),
+                "{right} should match {left}"
+            );
+        }
+
+        // Different surfaces never match.
+        for (left, right) in [
+            ("Codex", "claude"),
+            ("GLM / Z.AI", "grok"),
+            ("Kimi", "minimax"),
+        ] {
+            assert!(
+                !provider_matches_usage_label(left, right),
+                "{left} must not match {right}"
+            );
+        }
+
+        // Providers outside the known surface set (OpenCode) fall through to the
+        // case-insensitive substring path — equal labels match, distinct don't.
+        assert!(provider_matches_usage_label("OpenCode", "opencode"));
+        assert!(!provider_matches_usage_label("OpenCode", "codex"));
     }
 
     #[test]
