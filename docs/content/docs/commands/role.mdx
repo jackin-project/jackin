@@ -16,6 +16,8 @@ These commands are for desktop/operator workflows. CI, validation workflows, and
 | `jackin role create <role-name-or-namespace/name> [<projects-dir>]` | Creates a starter role repository named `jackin-<role-name>`. When `<projects-dir>` is omitted, jackin' uses `JACKIN_PROJECTS_DIR` or `~/Projects`. |
 | `jackin role construct-version [<role-repo-path>]` | Prints the construct image version tag pinned in the role Dockerfile. Defaults to the current directory. |
 | `jackin role published-image [<role-repo-path>]` | Prints the published Docker image declared in the role manifest. Defaults to the current directory. |
+| `jackin role published-image-repository [<role-repo-path>]` | Prints the published Docker image repository without its tag or digest. Defaults to the current directory. |
+| `jackin role publish-labels --role-git-sha <sha> [<role-repo-path>]` | Prints the OCI labels required when publishing a role image. Defaults to the current directory. |
 
 ## Create a role
 
@@ -70,3 +72,14 @@ In CI or automation, use the standalone equivalent instead:
 ```sh
 jackin-role migrate <role-repo-path>
 ```
+
+## Publish metadata for CI
+
+The standalone `jackin-role` binary exposes the role-image metadata that reusable workflows and custom CI need when publishing a role image:
+
+```sh
+jackin-role published-image-repository .
+jackin-role publish-labels --role-git-sha "$(git rev-parse HEAD)" .
+```
+
+`published-image-repository` prints the `published_image` repository without a tag or digest. `publish-labels` prints the canonical Docker label lines, including `jackin.construct.version` from the role Dockerfile and `jackin.role.git.sha` from the SHA passed by CI.

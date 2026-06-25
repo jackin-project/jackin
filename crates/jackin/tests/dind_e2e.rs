@@ -1200,8 +1200,32 @@ echo "JACKIN_DIND_HOSTNAME=$JACKIN_DIND_HOSTNAME"
 echo "TESTCONTAINERS_HOST_OVERRIDE=$TESTCONTAINERS_HOST_OVERRIDE"
 echo "NO_PROXY=${{NO_PROXY:-}}"
 echo "no_proxy=${{no_proxy:-}}"
+smoke_image="jackin-dind-e2e-smoke:local"
+if ! docker image inspect "$smoke_image" >/dev/null 2>&1; then
+  smoke_root="$(mktemp -d)"
+  rootfs="$smoke_root/rootfs"
+  mkdir -p "$rootfs/bin" "$rootfs/usr/bin"
+
+  copy_binary() {{
+    src="$(readlink -f "$1")"
+    dest="$2"
+    mkdir -p "$rootfs$(dirname "$dest")"
+    cp "$src" "$rootfs$dest"
+    ldd "$src" | awk '{{ for (i = 1; i <= NF; i++) if ($i ~ /^\//) print $i }}' | while IFS= read -r lib; do
+      mkdir -p "$rootfs$(dirname "$lib")"
+      cp "$lib" "$rootfs$lib"
+    done
+  }}
+
+  copy_binary /bin/sh /bin/sh
+  copy_binary /usr/bin/sleep /usr/bin/sleep
+  cp "$rootfs/usr/bin/sleep" "$rootfs/bin/sleep"
+  tar -C "$rootfs" -cf "$smoke_root/rootfs.tar" .
+  docker import "$smoke_root/rootfs.tar" "$smoke_image" >/dev/null
+  rm -rf "$smoke_root"
+fi
 docker rm -f jackin-dind-e2e-docker-ps-smoke >/dev/null 2>&1 || true
-child_id="$(docker run -d --name jackin-dind-e2e-docker-ps-smoke alpine:3.20 sh -c 'sleep 30')"
+child_id="$(docker run -d --name jackin-dind-e2e-docker-ps-smoke "$smoke_image" /bin/sh -c 'sleep 30')"
 echo "DIND_DOCKER_RUN_CHILD=$child_id"
 docker inspect --format 'DIND_DOCKER_RUN_STATE={{{{.State.Status}}}}' "$child_id"
 docker ps --no-trunc --filter "id=$child_id"
@@ -1251,8 +1275,9 @@ import org.testcontainers.utility.DockerImageName;
 
 public final class JackinTestcontainersSmoke {{
     public static void main(String[] args) {{
-        GenericContainer<?> container = new GenericContainer<>(DockerImageName.parse("alpine:3.20"))
-                .withCommand("sh", "-c", "echo jackin-testcontainers-child-ok && sleep 1");
+        GenericContainer<?> container = new GenericContainer<>(DockerImageName.parse("jackin-dind-e2e-smoke:local"))
+                .withImagePullPolicy(imageName -> false)
+                .withCommand("/bin/sh", "-c", "echo jackin-testcontainers-child-ok && sleep 1");
         container.start();
         String logs = container.getLogs();
         if (!logs.contains("jackin-testcontainers-child-ok")) {{

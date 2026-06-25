@@ -33,11 +33,11 @@ Markers without TODO.md entry OK for transient in-flight work, but anything outl
 
 #### `shellfirm-aarch64-linux-binary` — switch to prebuilt download once upstream ships aarch64-linux artifact
 
-- **What:** in [`docker/construct/Dockerfile`](docker/construct/Dockerfile), drop `cargo install shellfirm` step (and multi-stage `rust:1.96.0-trixie` `security-tools` builder it lives in), download prebuilt `shellfirm-vX.Y.Z-aarch64-linux.tar.xz` artifact instead, mirror tirith install pattern.
+- **What:** once upstream ships Linux arm64 assets, replace the CI-built `docker/construct/prebuilt/shellfirm` staging path with a direct Dockerfile download of `shellfirm-vX.Y.Z-aarch64-linux.tar.xz`, mirroring the tirith install pattern.
 - **Why:** construct image built multi-arch (`linux/amd64` + `linux/arm64`). shellfirm currently ships only `x86_64-linux` (plus macOS/Windows) prebuilt, so arm64 variant compiles shellfirm + full dep graph from source on every layer-cache miss, dominating arm64 build time. tirith already moved to prebuilt download since its upstream publishes both Linux arches; shellfirm last blocker preventing full removal of rust toolchain stage from construct image.
 - **Tracking:** <https://github.com/kaplanelad/shellfirm/issues/179> — upstream issue requesting existing-but-commented-out `aarch64-linux` matrix entry in [`release.yml`](https://github.com/kaplanelad/shellfirm/blob/main/.github/workflows/release.yml) be re-enabled.
-- **Last verified:** 2026-05-04 — checked v0.3.5 through v0.3.9 release assets; only `x86_64-linux.tar.xz` ships for Linux. Filed upstream issue #179 same day.
-- **Done when:** shellfirm release at or after fix publishes `shellfirm-v<ver>-aarch64-linux.tar.xz` (or equivalent name) alongside existing x86_64 tarball. Replace cargo install step with TARGETARCH-aware curl + `tar -xJ` block (mirror tirith pattern), drop `security-tools` stage and `FROM rust:...` line, remove `COPY --from=security-tools` for shellfirm, remove `TODO(shellfirm-aarch64-linux-binary)` marker in Dockerfile.
+- **Last verified:** 2026-06-22 — checked v0.3.10 release assets; only `x86_64-linux.tar.xz` ships for Linux. PR #632 now builds/restores the pinned binary outside Docker and copies it from `docker/construct/prebuilt/shellfirm`.
+- **Done when:** shellfirm release at or after fix publishes `shellfirm-v<ver>-aarch64-linux.tar.xz` (or equivalent name) alongside existing x86_64 tarball. Replace the CI prebuild/staging step with TARGETARCH-aware curl + `tar -xJ` in the Dockerfile (mirror tirith pattern), then remove this TODO.
 
 ### Docker security profile — flip default from `compat` to `standard`
 

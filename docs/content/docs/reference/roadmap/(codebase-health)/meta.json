@@ -6,7 +6,7 @@
     "../rust-ci-tooling",
     "../test-infra-behavioral-specs",
     "../visual-snapshot-testing",
-    "../ci-matrix-split",
+    "../ci-speed-roadmap",
     "(phase-1-docs-setup)",
     "(phase-2-file-splits)",
     "(phase-3-deferred)"
