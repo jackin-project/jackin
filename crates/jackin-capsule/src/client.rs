@@ -140,6 +140,60 @@ pub async fn run_status() -> Result<()> {
     Ok(())
 }
 
+/// `jackin-capsule status explain <session_id>` — dump the agent-status
+/// evidence bundle (the arbitration report: raw state, winning source,
+/// confidence, visible flags, foreground pgid, subagent count, revisions) for
+/// one session, as pretty JSON. Reads the same `Snapshot` the console consumes,
+/// so it needs no extra protocol surface.
+pub async fn run_status_explain(args: &[String]) -> Result<()> {
+    let session_id: u64 = flag_value_positional(args, "explain")
+        .context("usage: jackin-capsule status explain <session_id>")?
+        .parse()
+        .context("session_id must be a u64")?;
+
+    let mut stream = UnixStream::connect(SOCKET_PATH)
+        .await
+        .context("cannot connect to jackin-capsule daemon")?;
+    stream
+        .write_all(&control_frame(&ClientMsg::Snapshot))
+        .await?;
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).await?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
+    if len > MAX_CONTROL_REPLY {
+        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
+    }
+    let mut body = vec![0u8; len];
+    stream.read_exact(&mut body).await?;
+
+    let ServerMsg::Snapshot { tabs, .. } = serde_json::from_slice::<ServerMsg>(&body)? else {
+        anyhow::bail!("daemon did not reply with a snapshot");
+    };
+    let pane = tabs
+        .iter()
+        .flat_map(|tab| tab.panes.iter())
+        .find(|pane| pane.session_id == session_id)
+        .with_context(|| format!("no session {session_id} in the current snapshot"))?;
+    let payload = serde_json::json!({
+        "session_id": pane.session_id,
+        "label": pane.label,
+        "agent": pane.agent,
+        "effective_state": pane.state.label(),
+        "report": pane.agent_status_report,
+    });
+    crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&payload)?));
+    Ok(())
+}
+
+/// The first arg after `marker` (e.g. the `<session_id>` after `explain`).
+fn flag_value_positional(args: &[String], marker: &str) -> Option<String> {
+    args.iter()
+        .position(|a| a == marker)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+}
+
 /// Query the daemon for the tab/pane snapshot and print as JSON.
 /// Output shape is `ServerMsg::Snapshot` verbatim so the host
 /// console can deserialize the same struct it shares with the

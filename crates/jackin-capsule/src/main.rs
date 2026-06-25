@@ -68,6 +68,9 @@ connecting as a client.",
                 ));
                 Ok(())
             }
+            Some("status") if args.get(2).map(String::as_str) == Some("explain") => {
+                client::run_status_explain(&args).await
+            }
             Some("status") => client::run_status().await,
             Some("snapshot") => client::run_snapshot().await,
             Some("report-event") => client::run_report_event(&args).await,
