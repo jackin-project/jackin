@@ -65,6 +65,14 @@ fn launch_container_info_keeps_run_id_bare_and_log_path_separate() {
         log_row.href(),
         Some("file:///Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl")
     );
+    let reveal_row = rows
+        .iter()
+        .find(|row| row.value().ends_with("jk-run-b93735.jsonl") && !row.is_copyable())
+        .expect("diagnostics reveal row present");
+    assert_eq!(
+        reveal_row.href(),
+        Some("file:///Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl")
+    );
 }
 
 #[test]
