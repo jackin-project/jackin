@@ -75,6 +75,17 @@ The most important difference is that `jackin-term` records damage at the source
 
 Earlier capsule versions split focused live-pane output into a direct `GridPatch` encoder and used Ratatui only for chrome, dialogs, selection, scrollback views, and layout-wide redraws. That was faster for narrow streaming cases, but it meant two emit paths could mutate the same outer terminal while only one of them updated Ratatui's baseline. ADR-005 retires that split: dirty rows are an invalidation and observation mechanism, while pane bodies render through `PaneBodyWidget` as part of the full widget tree.
 
+## Current Ratatui Contract
+
+The Ratatui path now has one explicit terminal contract:
+
+- `jackin-term` owns the virtual-terminal profile: display width, DSR replies, reported colors, SGR support, DECRQM mode-2027 stance, and OSC policy are stable for the session.
+- Attach-terminal capability is backend-only state. Reattaching from a different terminal can change emission policy, but it must not change profile-stable width, DSR, or agent-visible color semantics.
+- Pane body rendering maps model-wide lead cells to Ratatui `CellDiffOption::ForcedWidth`; ordinary continuation cells stay blank/default.
+- OSC 8 hyperlinks and extended SGR metadata are modeled as cell/frame metadata and emitted by `SocketBackend`, with unsafe hyperlink URIs filtered before emission.
+- Scroll operations are recorded in `DamageGrid` for future optimization, but DECSTBM/scroll-op output is not shipped. Ordinary Ratatui diff output remains the only frame path, so Ratatui's previous buffer and the physical client screen stay coherent.
+- The old sentinel full-frame repaint stopgap is gone. Byte counters and echo-back tests now measure the real Ratatui diff path.
+
 ## What Shipped
 
 `jackin-term` is the only terminal model in Capsule:

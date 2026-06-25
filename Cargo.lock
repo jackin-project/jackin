@@ -2995,6 +2995,7 @@ dependencies = [
  "dhat",
  "jackin-core",
  "jackin-diagnostics",
+ "ratatui-core",
  "serde_json",
  "smallvec",
  "unicode-width 0.2.2",

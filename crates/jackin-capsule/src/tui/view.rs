@@ -46,8 +46,6 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) prefix_mode: crate::tui::components::status_bar::PrefixMode,
     pub(crate) hovered_tab: Option<usize>,
     pub(crate) menu_hovered: bool,
-    /// P5: the agent-tab bar holds focus (green underline + arrow-nav).
-    pub(crate) tab_bar_focused: bool,
     pub(crate) selection: Option<crate::tui::selection::SelectionState>,
     pub(crate) selection_copied: bool,
     /// Per-pane scrollbar inputs `(session_id, offset, filled)`. A pane with
@@ -166,7 +164,9 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             prefix_mode: view.prefix_mode,
             hovered_tab: view.hovered_tab,
             menu_hovered: view.menu_hovered,
-            focused: view.tab_bar_focused,
+            // P5: the tab underline reads the one shared FocusOwner, the same
+            // signal that drives pane-border focus and cursor visibility.
+            focused: view.focus_owner.is_tab_bar(),
         },
         status_area,
     );

@@ -120,14 +120,19 @@ impl ClientWriter {
         if !crate::logging::debug_enabled() {
             return;
         }
-        let (moves, max_row, max_col, erases) = scan_emitted_frame(bytes);
+        let metrics = scan_emitted_frame(bytes);
         crate::cdebug!(
-            "send: bytes={} cursor_moves={} max_row_addressed={} max_col_addressed={} erases={}",
-            bytes.len(),
-            moves,
-            max_row,
-            max_col,
-            erases,
+            "send: bytes={} cursor_moves={} sgr_resets={} osc8_opens={} osc8_closes={} max_row_addressed={} max_col_addressed={} full_screen_erases={} painted_cells={} full_frame_repaint={}",
+            metrics.bytes,
+            metrics.cursor_moves,
+            metrics.sgr_resets,
+            metrics.osc8_opens,
+            metrics.osc8_closes,
+            metrics.max_row_addressed,
+            metrics.max_col_addressed,
+            metrics.full_screen_erases,
+            metrics.painted_cells,
+            metrics.full_frame_repaint,
         );
         // Verbatim dump of only the smallest emissions (chrome / out-of-band
         // only). Capped tight so a steady-state run can't balloon the log.
@@ -154,24 +159,48 @@ fn escape_for_log(bytes: &[u8]) -> String {
     out
 }
 
-/// Scan an emitted frame for the diagnostic fingerprint a render bug leaves:
-/// how many absolute cursor moves it contains, the largest row/col it
-/// addresses (1-based, from `CSI row;col H`), and how many full-screen erases
-/// (`CSI 2 J`) it carries. A `max_row_addressed` greater than the terminal
-/// rows is the signature of a geometry the capsule and the outer terminal
-/// disagree on. The scan is over our own trusted output, so the few lines of
-/// hand parsing are cheaper than a dependency.
-pub(crate) fn scan_emitted_frame(bytes: &[u8]) -> (usize, u16, u16, usize) {
-    let mut moves = 0usize;
-    let mut erases = 0usize;
+/// Emitted-byte counters used to catch render regressions now that Ratatui's
+/// diff is no longer forced into a full repaint every frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct EmittedFrameMetrics {
+    pub(crate) bytes: usize,
+    pub(crate) cursor_moves: usize,
+    pub(crate) sgr_resets: usize,
+    pub(crate) osc8_opens: usize,
+    pub(crate) osc8_closes: usize,
+    pub(crate) max_row_addressed: u16,
+    pub(crate) max_col_addressed: u16,
+    pub(crate) full_screen_erases: usize,
+    pub(crate) painted_cells: usize,
+    pub(crate) full_frame_repaint: bool,
+}
+
+/// Scan an emitted frame for the diagnostic fingerprint a render bug leaves.
+/// The scan is over our own trusted output, so the few lines of hand parsing
+/// are cheaper than a dependency.
+pub(crate) fn scan_emitted_frame(bytes: &[u8]) -> EmittedFrameMetrics {
+    scan_emitted_frame_with_geometry(bytes, None)
+}
+
+pub(crate) fn scan_emitted_frame_with_geometry(
+    bytes: &[u8],
+    geometry: Option<(u16, u16)>,
+) -> EmittedFrameMetrics {
+    let mut metrics = EmittedFrameMetrics {
+        bytes: bytes.len(),
+        ..EmittedFrameMetrics::default()
+    };
     let mut max_row = 0u16;
     let mut max_col = 0u16;
     let mut i = 0;
-    while i + 1 < bytes.len() {
-        if bytes[i] == 0x1b && bytes[i + 1] == b'[' {
+    while i < bytes.len() {
+        if bytes[i] == 0x1b && bytes.get(i + 1) == Some(&b'[') {
             let params_start = i + 2;
             let mut j = params_start;
-            while j < bytes.len() && (bytes[j].is_ascii_digit() || bytes[j] == b';') {
+            while j < bytes.len()
+                && (bytes[j].is_ascii_digit()
+                    || matches!(bytes[j], b';' | b':' | b'?' | b'>' | b'<'))
+            {
                 j += 1;
             }
             if j < bytes.len() {
@@ -179,7 +208,7 @@ pub(crate) fn scan_emitted_frame(bytes: &[u8]) -> (usize, u16, u16, usize) {
                 let params = &bytes[params_start..j];
                 match final_byte {
                     b'H' | b'f' => {
-                        moves += 1;
+                        metrics.cursor_moves += 1;
                         let mut parts = params.split(|&b| b == b';');
                         let row = parts
                             .next()
@@ -194,14 +223,52 @@ pub(crate) fn scan_emitted_frame(bytes: &[u8]) -> (usize, u16, u16, usize) {
                         max_row = max_row.max(row);
                         max_col = max_col.max(col);
                     }
-                    b'J' if params == b"2" => erases += 1,
+                    b'J' if params == b"2" => metrics.full_screen_erases += 1,
+                    b'm' if params == b"0" => metrics.sgr_resets += 1,
                     _ => {}
                 }
                 i = j + 1;
                 continue;
             }
+        } else if bytes[i] == 0x1b && bytes.get(i + 1) == Some(&b']') {
+            let payload_start = i + 2;
+            let mut j = payload_start;
+            while j < bytes.len() {
+                if bytes[j] == 0x07 {
+                    break;
+                }
+                if bytes[j] == 0x1b && bytes.get(j + 1) == Some(&b'\\') {
+                    break;
+                }
+                j += 1;
+            }
+            if j < bytes.len() {
+                let payload = &bytes[payload_start..j];
+                if payload.starts_with(b"8;") {
+                    if payload == b"8;;" {
+                        metrics.osc8_closes += 1;
+                    } else {
+                        metrics.osc8_opens += 1;
+                    }
+                }
+                i = if bytes[j] == 0x1b { j + 2 } else { j + 1 };
+                continue;
+            }
+        } else if matches!(bytes[i], 0x20..=0x7e) {
+            // Printable ASCII only: a cheap repaint-density proxy, not an exact
+            // cell count. Multi-byte glyphs (CJK/emoji/box-drawing borders) are
+            // not counted, so `full_frame_repaint` is a heuristic — it can read
+            // false on a glyph-heavy full repaint.
+            metrics.painted_cells += 1;
         }
         i += 1;
     }
-    (moves, max_row, max_col, erases)
+    metrics.max_row_addressed = max_row;
+    metrics.max_col_addressed = max_col;
+    if let Some((rows, cols)) = geometry {
+        let cells = usize::from(rows) * usize::from(cols);
+        metrics.full_frame_repaint =
+            cells > 0 && metrics.painted_cells >= cells.saturating_mul(4) / 5;
+    }
+    metrics
 }
