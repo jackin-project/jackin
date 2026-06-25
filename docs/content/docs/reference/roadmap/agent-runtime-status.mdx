@@ -366,6 +366,86 @@ This is the order to implement, written for a fresh pass that wires the feature 
 
 **Priorities & dependencies.** P0 = Phases 0–4 (no correct signal exists without them). P1 = 5–8 (semantic channel + screen accuracy). P2 = 9–12 (contract surface, operator UI, adapters, image). Edges: 1 → everything; 2 → 3 → 4; 5/6/7/8 depend on 3–4 and may run in parallel after; 9 and 10 depend on the producer (3) and protocol (1a); 11 depends on 5; 12 depends on 8. **Cross-cutting:** update this page's Acceptance Criteria as each phase lands, and when a dependent item ([attention prompts](/reference/roadmap/agent-attention-prompts/), [task queue](/reference/roadmap/autonomous-task-queue/), [Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/), [token telemetry](/reference/roadmap/token-cost-telemetry/), [session control](/reference/roadmap/console-agent-session-control/), [terminal observation](/reference/roadmap/terminal-observation-automation/)) first consumes a real signal, update it too.
 
+### Implementation Checklist
+
+Work top to bottom. Check an item only when it is in the build and its test is green in CI — never from intent. A phase's `Gate` is itself a checklist item; do not start the next phase until it is checked. Keep this list updated in the same change that lands each item (it is the live progress record).
+
+**Phase 0 — Decisions & guardrails [P0]**
+- [ ] 0a — Decide Claude/Codex hook authority (identity-only recommended); record the decision in the adapter table
+- [ ] 0b — Promote `cargo shear` unlinked-source from warning to hard CI error
+- [ ] 0c — Add a CI gate binding "Implemented" status to green `agent_status` tests
+- [ ] Gate 0 — a synthetic unlinked file fails CI; no behaviour change
+
+**Phase 1 — Compile the foundation [P0, blocks all]**
+- [ ] 1a — Create `jackin_protocol::agent_status` (`AgentRawState`, `AgentStatusReport`, `AgentStatusConfidence`, `AgentStatusSource`)
+- [ ] 1a — Add `AgentState::Unknown`
+- [ ] 1a — Add `PaneSnapshot.agent_status_report: Option<AgentStatusReport>` + host-snapshot decode
+- [ ] 1a — Reconcile raw-vs-public (wire carries public `AgentState` incl. `Unknown`; capsule derives `done` from `seen`)
+- [ ] 1b — Add `mod agent_status` to the capsule `lib.rs`
+- [ ] 1b — Fix `Duration::from_mins(5)` → `from_secs(300)`
+- [ ] 1b — Relocate every inline `#[cfg(test)] mod tests` into a sibling `tests.rs`
+- [ ] 1b — Collapse `HookAuthority` and `AuthorityEvidence` into one authority model
+- [ ] Gate 1 — `cargo check --workspace --all-targets`, `cargo nextest` (discovers agent_status tests), `cargo shear`, `clippy -D warnings` all green
+
+**Phase 2 — Kill the flap engine [P0] (Slice 1, rewritten)**
+- [ ] 2 — `state_after_pty_output` / `state_after_refresh` / `mark_operator_input` stop authoring state; keep only `last_output_at` / `last_input_at`
+- [ ] 2 — Delete the 3 s-silence → `Blocked` inference; daemon stops broadcasting raw `s.state`
+- [ ] Gate 2 — 30 s redraw soak asserts one transition; `pty_output_does_not_change_state`, `operator_input_does_not_change_state` pass
+
+**Phase 3 — Evidence + arbitration as the only path [P0] (Slice 2)**
+- [ ] 3 — Daemon tick assembles `EvidenceSnapshot` → `arbitrate` → publish; `AgentStateChanged` populated from the real snapshot
+- [ ] 3 — Fix: OSC progress-clear is a hint (still needs idle confirmation), never `Strong`-idle bypass
+- [ ] 3 — Arbitration consults `grade` (step 4) and `seq`
+- [ ] Gate 3 — one test per precedence step; same snapshot → same result; revision increments only on public transitions
+
+**Phase 4 — Debounce + watchdog [P0] (Slice 3)**
+- [ ] 4 — `debounce` implemented and called from the tick; add `IDLE_HOLD_CAP` (~700 ms) + faster pending recheck
+- [ ] 4 — Wire `STARTUP_GRACE` muting and `RENOTIFY_INTERVAL`; call `apply_watchdog` from the tick
+- [ ] 4 — Linux-gate the watchdog: physics-unavailable = "no evidence", never "quiet"
+- [ ] Gate 4 — every debounce row; watchdog demotes quiet `working`; does NOT fire off-Linux or during network-wait-with-recent-output
+
+**Phase 5 — Semantic channel + gating fixes [P1] (Slice 4, per 0a)**
+- [ ] 5 — `report-event` subcommand + spawn env vars + `ReportRuntimeEvent` protocol method
+- [ ] 5 — Fix gating holes: Codex `permission-resolved`, Claude `AskUserQuestion`→question-asked, Amp permission/elicitation→blocked
+- [ ] 5 — Apply 0a (identity-only ⇒ Claude/Codex emit identity+freshness only); re-add `toml_edit`
+- [ ] Gate 5 — every gate row exercised with real vendor event names; env vars present in `/proc/<child>/environ`
+
+**Phase 6 — Process physics [P1] (Slice 5)**
+- [ ] 6 — Wire `process.rs` into the tick (Linux); exit-clears-authority-before-recompute; foreground-returned-to-shell
+- [ ] Gate 6 — process fixtures (direct/node-wrapped/dead-pid/descendant/CPU-window); exit-precedes-identity-clear
+
+**Phase 7 — OSC evidence consumed [P1] (Slice 6)**
+- [ ] 7 — Retain title/notify/progress/BEL AND make arbitration read them (Codex title spinner, notification edge, Amp BEL)
+- [ ] Gate 7 — synthetic streams set/clear each field; payload cap; ignored when foreground ≠ agent
+
+**Phase 8 — Rule-pack engine + expressiveness [P1] (Slice 7)**
+- [ ] 8 — TOML loader; regions, priority, unknown fallback, safety caps
+- [ ] 8 — Add `line_regex`, nested `all`/`any`/`not`, `not` in OSC-title rules; compile each regex once
+- [ ] 8 — Add prompt-caret region family + one reused `is_horizontal_rule` box localizer (two rules from bottom)
+- [ ] 8 — Enforce `validated_versions` as semver (re-add `semver`+`toml` in `jackin-image`); add `min_engine_version` floor
+- [ ] 8 — Delete the five detector modules; fixture harness executes (incl. three Claude false-positive classes)
+- [ ] Gate 8 — per-region extraction, priority, unknown fallback, caps, false-positive fixtures pass
+
+**Phase 9 — Contract completion [P2] (Slice 8)**
+- [ ] 9 — seen/ack on focus + attach; subagent counter; `status explain` / `status capture`; flap-rate + stuck telemetry
+- [ ] Gate 9 — focus/attach ack end-to-end through the daemon (idle+unseen→done, focus→idle, re-work→done)
+
+**Phase 10 — Operator surface [P2] (new slice)**
+- [ ] 10 — Produce `PaneSnapshot.agent_status_report`; swap host console + capsule renders to the full `working/blocked/done/idle/unknown` vocabulary with seen/done
+- [ ] Gate 10 — operator sees correct, non-flapping state per pane; `done` and `unknown` reachable
+
+**Phase 11 — Runtime adapters + hook bookkeeping [P2] (Slice 9, per 0a)**
+- [ ] 11 — Per-runtime assets; per-source monotonic `seq` rejection; session-replacement allowlist; exit-clears-before-recompute; Kimi rule-pack-only
+- [ ] Gate 11 — per-runtime recorded event sequences assert the public transition sequence, incl. the interrupt hole
+
+**Phase 12 — Image assets + co-versioning [P2]**
+- [ ] 12 — Dockerfile/build step copies `runtime/agent-status/` into derived images; build-time pack-version validation rejects unpinned/mismatched CLI
+- [ ] Gate 12 — derived image contains the assets and packs; image build fails on a version mismatch
+
+**Cross-cutting (every phase)**
+- [ ] Update this page's Acceptance Criteria / Current Implementation State as each phase lands
+- [ ] Update each dependent roadmap item when it first consumes a real signal
+
 ## Implementation Blueprint
 
 Each slice below is independently shippable, lands in its own PR, and is specified so an implementing agent needs no further design decisions — when something is ambiguous, the Architecture Specification above is the tiebreaker, and this page must be updated in the same PR as any deviation. **Follow the Execution Plan above for ordering and the corrected scope; the slices here are the per-step detail.** Every slice ends with `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo nextest run -p jackin-protocol -p jackin-capsule`, and the capsule smoke-test mandate from <RepoFile path=".github/AGENTS.md" />. New files use the crate's self-named module layout (no `mod.rs`).
