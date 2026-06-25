@@ -87,15 +87,6 @@ pub const fn physics_available() -> bool {
     cfg!(target_os = "linux")
 }
 
-/// Reads the `tpgid` (terminal foreground process group) for `pid`.
-///
-/// Returns `None` when the process doesn't exist or the field is unparseable.
-pub fn read_tpgid(pid: u32) -> Option<i32> {
-    let process = procfs::process::Process::new(pid as i32).ok()?;
-    let stat = process.stat().ok()?;
-    Some(stat.tpgid)
-}
-
 /// Reads process info for `pid` from /proc. Returns `None` when the
 /// process doesn't exist or required fields are unreadable.
 pub fn read_process_info(pid: u32) -> Option<ProcessInfo> {

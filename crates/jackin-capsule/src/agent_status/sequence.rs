@@ -23,17 +23,14 @@ impl SequenceTracker {
     /// `seq` is strictly greater than the last accepted value).
     /// Returns `false` when rejected (stale or replayed sequence).
     pub fn accept(&mut self, source_id: &str, seq: u64) -> bool {
+        // Reject a stale/replayed seq; otherwise record and accept. A first
+        // report from a source has no prior, so it falls through and is accepted.
         match self.last.get(source_id) {
-            None => {
-                // First report from this source — always accepted.
+            Some(&last) if seq <= last => false,
+            _ => {
                 self.last.insert(source_id.to_owned(), seq);
                 true
             }
-            Some(&last) if seq > last => {
-                self.last.insert(source_id.to_owned(), seq);
-                true
-            }
-            _ => false,
         }
     }
 

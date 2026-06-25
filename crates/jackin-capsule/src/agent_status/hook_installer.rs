@@ -6,7 +6,7 @@
 
 use std::fs;
 use std::io::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Interface for a runtime-specific hook/plugin installer.
 pub trait HookInstaller {
@@ -206,35 +206,48 @@ impl ClaudeHookInstaller {
     }
 }
 
-/// Installer for Amp plugin reporter.
+/// Installer for the `plugins.json`-style reporters (Amp, `OpenCode`): agents
+/// that register a plugin by writing `{"plugins": [path]}` under
+/// `~/.config/<agent>/plugins.json`. Only the config subdir + plugin path vary.
 #[derive(Debug)]
-pub struct AmpPluginInstaller {
-    pub plugin_path: String,
+pub struct PluginInstaller {
+    config_dir: &'static str,
+    plugin_path: String,
 }
 
-impl Default for AmpPluginInstaller {
-    fn default() -> Self {
+impl PluginInstaller {
+    pub fn amp() -> Self {
         Self {
+            config_dir: "amp",
             plugin_path: "/jackin/runtime/agent-status/hooks/amp/plugin.js".to_owned(),
         }
     }
+
+    pub fn opencode() -> Self {
+        Self {
+            config_dir: "opencode",
+            plugin_path: "/jackin/runtime/agent-status/hooks/opencode/plugin.js".to_owned(),
+        }
+    }
+
+    fn config_path(&self, agent_home: &Path) -> PathBuf {
+        agent_home
+            .join(".config")
+            .join(self.config_dir)
+            .join("plugins.json")
+    }
 }
 
-impl HookInstaller for AmpPluginInstaller {
+impl HookInstaller for PluginInstaller {
     fn install(&self, agent_home: &Path) -> anyhow::Result<()> {
-        let config_path = agent_home.join(".config").join("amp").join("plugins.json");
         write_json_file(
-            &config_path,
-            &serde_json::json!({
-                "plugins": [self.plugin_path]
-            }),
-        )?;
-        Ok(())
+            &self.config_path(agent_home),
+            &serde_json::json!({ "plugins": [self.plugin_path] }),
+        )
     }
 
     fn verify(&self, agent_home: &Path) -> bool {
-        let config_path = agent_home.join(".config").join("amp").join("plugins.json");
-        json_file_contains_string(&config_path, &self.plugin_path)
+        json_file_contains_string(&self.config_path(agent_home), &self.plugin_path)
     }
 }
 
@@ -279,43 +292,6 @@ impl CodexHookInstaller {
             },
             "notify": format!("{} --event turn-complete", self.hook_script_path)
         })
-    }
-}
-
-/// Installer for `OpenCode` plugin reporter.
-#[derive(Debug)]
-pub struct OpenCodePluginInstaller {
-    pub plugin_path: String,
-}
-
-impl Default for OpenCodePluginInstaller {
-    fn default() -> Self {
-        Self {
-            plugin_path: "/jackin/runtime/agent-status/hooks/opencode/plugin.js".to_owned(),
-        }
-    }
-}
-
-impl HookInstaller for OpenCodePluginInstaller {
-    fn install(&self, agent_home: &Path) -> anyhow::Result<()> {
-        let config_path = agent_home
-            .join(".config")
-            .join("opencode")
-            .join("plugins.json");
-        write_json_file(
-            &config_path,
-            &serde_json::json!({
-                "plugins": [self.plugin_path]
-            }),
-        )
-    }
-
-    fn verify(&self, agent_home: &Path) -> bool {
-        let config_path = agent_home
-            .join(".config")
-            .join("opencode")
-            .join("plugins.json");
-        json_file_contains_string(&config_path, &self.plugin_path)
     }
 }
 

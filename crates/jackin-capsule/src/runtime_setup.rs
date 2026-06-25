@@ -260,14 +260,13 @@ fn run_agent_setup() -> Result<()> {
 /// reporter yet.
 fn install_agent_status_reporter(agent: &str) -> Result<()> {
     use crate::agent_status::hook_installer::{
-        AmpPluginInstaller, ClaudeHookInstaller, CodexHookInstaller, HookInstaller,
-        OpenCodePluginInstaller,
+        ClaudeHookInstaller, CodexHookInstaller, HookInstaller, PluginInstaller,
     };
     let installer: Option<Box<dyn HookInstaller>> = match agent {
         "claude" => Some(Box::new(ClaudeHookInstaller::default())),
         "codex" => Some(Box::new(CodexHookInstaller::default())),
-        "amp" => Some(Box::new(AmpPluginInstaller::default())),
-        "opencode" => Some(Box::new(OpenCodePluginInstaller::default())),
+        "amp" => Some(Box::new(PluginInstaller::amp())),
+        "opencode" => Some(Box::new(PluginInstaller::opencode())),
         _ => None,
     };
     if let Some(installer) = installer {
