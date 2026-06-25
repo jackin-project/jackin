@@ -463,6 +463,30 @@ fn redraw_soak_produces_zero_state_transitions() {
 }
 
 #[test]
+fn agent_session_gets_status_reporter_env() {
+    let mut cmd = CommandBuilder::new("/bin/true");
+    inject_status_env(&mut cmd, 42, Some("codex"));
+    let get = |k| cmd.get_env(k).and_then(|v| v.to_str());
+    assert_eq!(get("JACKIN_SESSION_ID"), Some("42"));
+    assert_eq!(get("JACKIN_AGENT_RUNTIME"), Some("codex"));
+    assert_eq!(get("JACKIN_STATUS_SOURCE"), Some("hook-codex-42"));
+    assert_eq!(get("JACKIN_STATUS_SOCKET"), Some("/jackin/run/jackin.sock"));
+}
+
+#[test]
+fn shell_session_gets_only_status_socket() {
+    let mut cmd = CommandBuilder::new("/bin/zsh");
+    inject_status_env(&mut cmd, 7, None);
+    assert!(cmd.get_env("JACKIN_SESSION_ID").is_none());
+    assert!(cmd.get_env("JACKIN_AGENT_RUNTIME").is_none());
+    assert!(cmd.get_env("JACKIN_STATUS_SOURCE").is_none());
+    assert_eq!(
+        cmd.get_env("JACKIN_STATUS_SOCKET").and_then(|v| v.to_str()),
+        Some("/jackin/run/jackin.sock")
+    );
+}
+
+#[test]
 fn osc8_uri_empty_is_safe() {
     // Empty URI = link terminator; must always pass.
     assert!(osc8_uri_is_safe(""));

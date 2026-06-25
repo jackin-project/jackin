@@ -448,7 +448,7 @@ impl Session {
         label: impl Into<String>,
         agent: Option<String>,
         provider: Option<SessionProvider>,
-        cmd: CommandBuilder,
+        mut cmd: CommandBuilder,
         terminal: SessionTerminal,
         event_tx: mpsc::UnboundedSender<SessionEvent>,
     ) -> Result<(Self, u64)> {
@@ -471,6 +471,11 @@ impl Session {
         let master = pair.master;
         let slave = pair.slave;
 
+        // Session id must exist before the child spawns so the agent-status
+        // reporter env can carry it. (Assigned here, used for the Session below.)
+        let sid = next_id();
+        inject_status_env(&mut cmd, sid, agent.as_deref());
+
         let mut child = slave
             .spawn_command(cmd)
             .context("failed to spawn session process")?;
@@ -487,7 +492,6 @@ impl Session {
 
         let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
-        let sid = next_id();
         let event_tx_output = event_tx.clone();
         let event_tx_exit = event_tx.clone();
         let event_tx_writer_err = event_tx.clone();
@@ -1224,6 +1228,27 @@ pub fn validate_agent_slug<'a>(
         return Err("not in launch config allowlist");
     }
     Ok(raw)
+}
+
+/// Socket the in-container agent-status reporter connects to. Matches the
+/// daemon's control socket under the fixed `/jackin/run/` layout.
+const STATUS_SOCKET_PATH: &str = "/jackin/run/jackin.sock";
+
+/// Inject the agent-status reporter environment into a session's command,
+/// keyed on the session id assigned at spawn. Agent panes get the full set so
+/// hook/plugin reporters can address this session; shell panes get only the
+/// socket var (no runtime to report for). State is never authored from these —
+/// reporters forward events, the daemon maps and gates them.
+fn inject_status_env(cmd: &mut CommandBuilder, session_id: u64, agent: Option<&str>) {
+    cmd.env("JACKIN_STATUS_SOCKET", STATUS_SOCKET_PATH);
+    if let Some(runtime) = agent {
+        cmd.env("JACKIN_SESSION_ID", session_id.to_string());
+        cmd.env("JACKIN_AGENT_RUNTIME", runtime);
+        cmd.env(
+            "JACKIN_STATUS_SOURCE",
+            format!("hook-{runtime}-{session_id}"),
+        );
+    }
 }
 
 /// Build a `CommandBuilder` for an agent session.
