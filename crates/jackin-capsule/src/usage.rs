@@ -10,7 +10,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 
 const PROVIDER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 const PROVIDER_CLI_TIMEOUT: Duration = Duration::from_secs(10);
+const PROVIDER_PROBE_TIMEOUT: Duration = Duration::from_secs(35);
 const CODEX_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 const CODEX_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 const CODEX_RPC_LAUNCH_COOLDOWN: Duration = Duration::from_mins(30);
@@ -224,13 +225,14 @@ impl UsageCache {
         }
         let codex_rpc_gate = self.codex_rpc_gate.clone();
         let grok_rpc_gate = self.grok_rpc_gate.clone();
-        let results = collect_usage_refresh_results(due_targets, |target| {
+        let provider_keys = provider_keys.clone();
+        let results = collect_usage_refresh_results(due_targets, move |target| {
             let mut codex_rpc_gate = codex_rpc_gate.clone();
             let mut grok_rpc_gate = grok_rpc_gate.clone();
             let view = build_snapshot(
                 &target.agent,
                 target.provider.as_deref(),
-                provider_keys,
+                &provider_keys,
                 &mut codex_rpc_gate,
                 &mut grok_rpc_gate,
             );
@@ -301,25 +303,86 @@ fn collect_usage_refresh_results<F>(
     probe: F,
 ) -> Vec<UsageRefreshResult>
 where
-    F: Fn(UsageRefreshTarget) -> UsageRefreshResult + Sync,
+    F: Fn(UsageRefreshTarget) -> UsageRefreshResult + Send + Sync + 'static,
 {
-    thread::scope(|scope| {
-        let handles = due_targets
-            .into_iter()
-            .map(|target| scope.spawn(|| probe(target)))
-            .collect::<Vec<_>>();
-        handles
-            .into_iter()
-            .filter_map(|handle| {
-                if let Ok(result) = handle.join() {
-                    Some(result)
-                } else {
-                    crate::clog!("usage-refresh: provider probe panicked");
-                    None
+    collect_usage_refresh_results_with_timeout(due_targets, probe, PROVIDER_PROBE_TIMEOUT)
+}
+
+fn collect_usage_refresh_results_with_timeout<F>(
+    due_targets: Vec<UsageRefreshTarget>,
+    probe: F,
+    timeout: Duration,
+) -> Vec<UsageRefreshResult>
+where
+    F: Fn(UsageRefreshTarget) -> UsageRefreshResult + Send + Sync + 'static,
+{
+    let probe = Arc::new(probe);
+    let (tx, rx) = mpsc::channel();
+    let mut pending = due_targets
+        .iter()
+        .map(UsageRefreshTarget::cache_key)
+        .collect::<std::collections::HashSet<_>>();
+    let fallback_targets = due_targets
+        .iter()
+        .map(|target| (target.cache_key(), target.clone()))
+        .collect::<HashMap<_, _>>();
+    let expected = due_targets.len();
+    for target in due_targets {
+        let tx = tx.clone();
+        let probe = Arc::clone(&probe);
+        thread::spawn(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| probe(target)));
+            match result {
+                Ok(result) => {
+                    drop(tx.send(result));
                 }
-            })
-            .collect::<Vec<_>>()
-    })
+                Err(_) => {
+                    crate::clog!("usage-refresh: provider probe panicked");
+                }
+            }
+        });
+    }
+    drop(tx);
+
+    let started = Instant::now();
+    let mut results = Vec::new();
+    while results.len() < expected {
+        let Some(remaining) = timeout.checked_sub(started.elapsed()) else {
+            break;
+        };
+        if remaining.is_zero() {
+            break;
+        }
+        match rx.recv_timeout(remaining) {
+            Ok(result) => {
+                pending.remove(&result.target.cache_key());
+                results.push(result);
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => break,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    if !pending.is_empty() {
+        let now = now_epoch();
+        for key in pending {
+            let Some(target) = fallback_targets.get(&key).cloned() else {
+                continue;
+            };
+            crate::clog!(
+                "usage-refresh: provider probe timed out for {}",
+                target.cache_key()
+            );
+            let mut view = cached_unavailable_view(&target.agent, target.provider.as_deref(), now);
+            view.last_error = Some("usage provider probe timed out".to_owned());
+            results.push(UsageRefreshResult {
+                target,
+                view,
+                codex_rpc_gate: ManagedCliLaunchGate::default(),
+                grok_rpc_gate: ManagedCliLaunchGate::default(),
+            });
+        }
+    }
+    results
 }
 
 impl Default for UsageCache {
@@ -5412,6 +5475,50 @@ mod tests {
         assert!(
             max_active.load(AtomicOrdering::SeqCst) >= 2,
             "refresh probes were joined serially instead of overlapping"
+        );
+    }
+
+    #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test worker sleeps on an owned thread to prove timeout fallback"
+    )]
+    fn usage_refresh_probe_timeout_returns_fallback_result() {
+        let targets = vec![
+            UsageRefreshTarget {
+                agent: "codex".to_owned(),
+                provider: Some("OpenAI".to_owned()),
+            },
+            UsageRefreshTarget {
+                agent: "claude".to_owned(),
+                provider: Some("Anthropic".to_owned()),
+            },
+        ];
+
+        let results = collect_usage_refresh_results_with_timeout(
+            targets,
+            |target| {
+                if target.provider.as_deref() == Some("Anthropic") {
+                    thread::sleep(Duration::from_millis(250));
+                }
+                UsageRefreshResult {
+                    target,
+                    view: FocusedUsageView::unavailable("test", now_epoch()),
+                    codex_rpc_gate: ManagedCliLaunchGate::default(),
+                    grok_rpc_gate: ManagedCliLaunchGate::default(),
+                }
+            },
+            Duration::from_millis(25),
+        );
+
+        assert_eq!(results.len(), 2);
+        let timed_out = results
+            .iter()
+            .find(|result| result.target.provider.as_deref() == Some("Anthropic"))
+            .expect("timed-out provider fallback");
+        assert_eq!(
+            timed_out.view.last_error.as_deref(),
+            Some("usage provider probe timed out")
         );
     }
 
