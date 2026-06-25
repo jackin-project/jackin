@@ -1622,3 +1622,62 @@ fn read_exit_action_none_when_absent_or_garbage() {
     std::fs::write(dir.path().join("exit-action.json"), "not json").expect("write");
     assert_eq!(read_exit_action(dir.path()), None);
 }
+
+#[tokio::test]
+async fn exit_action_keep_preserves_via_finalize() {
+    let dir = TempDir::new().unwrap();
+    let r = rec(dir.path());
+    std::fs::create_dir_all(&r.original_src).unwrap();
+    write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+    let state_dir = dir.path().join("state");
+    std::fs::create_dir_all(&state_dir).unwrap();
+    std::fs::write(state_dir.join("exit-action.json"), "\"keep\"").unwrap();
+    let mut runner = fake_with_outputs(&[" M file\n"]);
+    let mut prompt = ExitActionPrompt { state_dir };
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    let dec = finalize_foreground_session(
+        "jackin-x",
+        dir.path(),
+        AttachOutcome::stopped(0),
+        true,
+        DirtyExitPolicy::Ask,
+        &mut prompt,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+    assert_eq!(dec, FinalizeDecision::Preserved);
+    assert_eq!(
+        read_records(dir.path()).unwrap()[0].cleanup_status,
+        CleanupStatus::PreservedDirty
+    );
+}
+
+#[tokio::test]
+async fn exit_action_discard_cleans_via_finalize() {
+    let dir = TempDir::new().unwrap();
+    let r = rec(dir.path());
+    std::fs::create_dir_all(&r.original_src).unwrap();
+    write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+    let state_dir = dir.path().join("state");
+    std::fs::create_dir_all(&state_dir).unwrap();
+    std::fs::write(state_dir.join("exit-action.json"), "\"discard\"").unwrap();
+    let mut runner = fake_with_outputs(&[" M file\n"]);
+    let mut prompt = ExitActionPrompt { state_dir };
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    let dec = finalize_foreground_session(
+        "jackin-x",
+        dir.path(),
+        AttachOutcome::stopped(0),
+        true,
+        DirtyExitPolicy::Ask,
+        &mut prompt,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+    assert_eq!(dec, FinalizeDecision::Cleaned);
+    assert!(read_records(dir.path()).unwrap().is_empty());
+}

@@ -648,7 +648,17 @@ pub async fn hardline_agent_with_focus(
             )
         }
     };
-    attach_outcome?;
+    // A clean last-session shutdown surfaces as a non-zero attach result (the
+    // capsule client hits the socket close as `early eof`). Do not short-circuit
+    // on it: `finalize_reconnected_foreground_session` re-inspects the container
+    // and reads exit-action.json, so it handles both a clean exit and a genuine
+    // failure. Only a clean exit reaches here in practice; log and proceed.
+    if let Err(err) = attach_outcome {
+        jackin_diagnostics::debug_log!(
+            "hardline",
+            "attach for {container_name} ended with ({err}); proceeding to finalize"
+        );
+    }
 
     finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
 }
