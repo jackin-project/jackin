@@ -2019,7 +2019,10 @@ fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> 
 struct ClaudeOAuthUsageResponse {
     #[serde(rename = "five_hour")]
     five_hour: Option<ClaudeOAuthUsageWindow>,
-    #[serde(alias = "seven_day_oauth_apps")]
+    // `seven_day` is the Weekly window. `seven_day_oauth_apps` is a SEPARATE
+    // window the API also returns — it must NOT be aliased here (the API sends
+    // both keys, so aliasing collides into a serde "duplicate field" and fails
+    // the whole decode). It is not a CodexBar quota window, so it is ignored.
     #[serde(rename = "seven_day")]
     seven_day: Option<ClaudeOAuthUsageWindow>,
     #[serde(rename = "seven_day_sonnet")]
@@ -5186,6 +5189,35 @@ mod tests {
             resolved.map(|c| c.access_token),
             Some("home-token".to_owned())
         );
+    }
+
+    #[test]
+    fn claude_oauth_usage_decodes_live_api_body() {
+        // Mirrors the live api.anthropic.com/api/oauth/usage 200 body: `seven_day`
+        // and `seven_day_oauth_apps` are SEPARATE keys (they must not collide on
+        // one field), plus new codename windows the model must tolerate.
+        let body = r#"{
+            "five_hour": {"utilization": 12, "resets_at": "2026-06-25T19:00:00Z"},
+            "seven_day": {"utilization": 34, "resets_at": "2026-06-26T14:00:00Z"},
+            "seven_day_oauth_apps": null,
+            "seven_day_sonnet": {"utilization": 5, "resets_at": "2026-06-26T14:00:00Z"},
+            "seven_day_opus": null,
+            "seven_day_cowork": null,
+            "seven_day_omelette": null,
+            "amber_ladder": null, "cinder_cove": null, "iguana_necktie": null,
+            "omelette_promotional": null, "tangelo": null,
+            "extra_usage": {"is_enabled": false, "monthly_limit": 0, "used_credits": 0,
+                "utilization": 0, "currency": "USD", "decimal_places": 2,
+                "disabled_reason": "x", "daily": null, "weekly": null},
+            "limits": [{"kind": "x", "group": "x", "percent": 0, "severity": "x",
+                "resets_at": "x", "scope": null, "is_active": false}],
+            "spend": null
+        }"#;
+        let parsed: ClaudeOAuthUsageResponse =
+            serde_json::from_str(body).expect("decode live OAuth usage body");
+        assert!(parsed.five_hour.is_some());
+        assert!(parsed.seven_day.is_some());
+        assert!(parsed.seven_day_sonnet.is_some());
     }
 
     #[test]
