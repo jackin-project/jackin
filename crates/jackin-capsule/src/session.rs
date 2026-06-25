@@ -1097,11 +1097,10 @@ impl Session {
         // Stuck telemetry: a watchdog demotion means a witness claimed `working`
         // while physics went quiet (the interrupt hole / a hung authority).
         let stuck = candidate
-            .summary
             .notes
             .iter()
             .any(|n| matches!(n, EvidenceNote::WatchdogDemoted));
-        let winner = candidate.summary.winner;
+        let winner = candidate.winner;
         // Debounce gates whether the candidate becomes a public transition
         // (immediate for blocked/working/exit/strong-idle; inferred idle needs
         // confirmation + CPU/OSC-quiet). Only commit through SessionStatus when
@@ -1109,10 +1108,7 @@ impl Session {
         let mut transition = None;
         if debounce(self.state, &candidate, &mut self.pending_transition, now).is_some() {
             let previous = self.state;
-            if let Some(effective) =
-                self.status
-                    .publish_raw(candidate.raw, candidate.confidence, candidate.summary)
-            {
+            if let Some(effective) = self.status.publish_raw(candidate) {
                 self.state = effective;
                 transition = Some(StatusTransition {
                     previous,

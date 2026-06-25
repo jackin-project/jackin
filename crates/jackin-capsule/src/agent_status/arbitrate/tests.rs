@@ -47,9 +47,9 @@ fn process_exit_wins() {
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
-    assert_eq!(result.raw, RawAgentState::Idle);
+    assert_eq!(result.raw_state, RawAgentState::Idle);
     assert_eq!(result.winner, EvidenceWinner::ProcessExit);
-    assert!(result.summary.has_note(EvidenceNote::ProcessExited));
+    assert!(result.has_note(EvidenceNote::ProcessExited));
 }
 
 #[test]
@@ -64,15 +64,11 @@ fn foreground_shell_handoff_wins_as_exit_like_idle() {
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
-    assert_eq!(result.raw, RawAgentState::Idle);
+    assert_eq!(result.raw_state, RawAgentState::Idle);
     assert_eq!(result.winner, EvidenceWinner::ProcessExit);
-    assert!(result.summary.foreground_returned_to_shell);
-    assert!(
-        result
-            .summary
-            .has_note(EvidenceNote::ForegroundReturnedToShell)
-    );
-    assert!(!result.summary.stale_report);
+    assert!(result.foreground_returned_to_shell);
+    assert!(result.has_note(EvidenceNote::ForegroundReturnedToShell));
+    assert!(!result.stale_report);
 }
 
 #[test]
@@ -84,7 +80,7 @@ fn freeze_keeps_previous_raw() {
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
-    assert_eq!(result.raw, RawAgentState::Working);
+    assert_eq!(result.raw_state, RawAgentState::Working);
     assert_eq!(result.winner, EvidenceWinner::Freeze);
 }
 
@@ -96,7 +92,7 @@ fn pending_permission_blocks_immediately() {
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
-    assert_eq!(result.raw, RawAgentState::Blocked);
+    assert_eq!(result.raw_state, RawAgentState::Blocked);
     assert_eq!(result.winner, EvidenceWinner::Blocked);
 }
 
@@ -115,7 +111,7 @@ fn fresh_screen_blocker_overrides_non_blocked_authority() {
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
-    assert_eq!(result.raw, RawAgentState::Blocked);
+    assert_eq!(result.raw_state, RawAgentState::Blocked);
     assert_eq!(result.winner, EvidenceWinner::Blocked);
 }
 
@@ -130,7 +126,7 @@ fn stale_screen_blocker_does_not_override_fresher_authority() {
 
     let result = arbitrate(&snapshot, RawAgentState::Idle, now);
 
-    assert_eq!(result.raw, RawAgentState::Working);
+    assert_eq!(result.raw_state, RawAgentState::Working);
     assert_eq!(result.winner, EvidenceWinner::Authority);
 }
 
@@ -142,7 +138,7 @@ fn fresh_authority_wins_after_blocker_checks() {
 
     let result = arbitrate(&snapshot, RawAgentState::Idle, now);
 
-    assert_eq!(result.raw, RawAgentState::Working);
+    assert_eq!(result.raw_state, RawAgentState::Working);
     assert_eq!(result.winner, EvidenceWinner::Authority);
 }
 
@@ -185,9 +181,9 @@ fn expired_authority_leaves_note_and_falls_back_unknown() {
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
-    assert_eq!(result.raw, RawAgentState::Unknown);
-    assert!(result.summary.stale_report);
-    assert!(result.summary.has_note(EvidenceNote::AuthorityExpired));
+    assert_eq!(result.raw_state, RawAgentState::Unknown);
+    assert!(result.stale_report);
+    assert!(result.has_note(EvidenceNote::AuthorityExpired));
 }
 
 #[test]
@@ -199,13 +195,9 @@ fn identity_mismatch_leaves_note_and_rejects_authority() {
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
-    assert_eq!(result.raw, RawAgentState::Unknown);
-    assert!(result.summary.stale_report);
-    assert!(
-        result
-            .summary
-            .has_note(EvidenceNote::AuthorityIdentityMismatch)
-    );
+    assert_eq!(result.raw_state, RawAgentState::Unknown);
+    assert!(result.stale_report);
+    assert!(result.has_note(EvidenceNote::AuthorityIdentityMismatch));
 }
 
 #[test]
@@ -217,7 +209,7 @@ fn strong_screen_idle_wins_without_authority() {
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
-    assert_eq!(result.raw, RawAgentState::Idle);
+    assert_eq!(result.raw_state, RawAgentState::Idle);
     assert_eq!(result.winner, EvidenceWinner::StrongVisualOrOsc);
 }
 
@@ -229,7 +221,7 @@ fn osc_progress_clear_is_idle_hint() {
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
-    assert_eq!(result.raw, RawAgentState::Idle);
+    assert_eq!(result.raw_state, RawAgentState::Idle);
     assert_eq!(result.winner, EvidenceWinner::StrongVisualOrOsc);
     assert_eq!(
         result.confidence,
@@ -238,7 +230,7 @@ fn osc_progress_clear_is_idle_hint() {
              debounce policy still requires idle confirmation, never Strong"
     );
     assert!(
-        !result.summary.shell_integration,
+        !result.shell_integration,
         "agent-authored progress-clear must not be attributed to shell integration"
     );
 }
@@ -251,9 +243,9 @@ fn osc_shell_marker_is_shell_integration_evidence() {
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
-    assert_eq!(result.raw, RawAgentState::Idle);
+    assert_eq!(result.raw_state, RawAgentState::Idle);
     assert_eq!(result.winner, EvidenceWinner::StrongVisualOrOsc);
-    assert!(result.summary.shell_integration);
+    assert!(result.shell_integration);
 }
 
 #[test]
@@ -265,7 +257,7 @@ fn osc_progress_clear_is_ignored_when_foreground_is_not_agent() {
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
-    assert_eq!(result.raw, RawAgentState::Unknown);
+    assert_eq!(result.raw_state, RawAgentState::Unknown);
     assert_eq!(result.winner, EvidenceWinner::Unknown);
 }
 
@@ -277,7 +269,7 @@ fn physics_only_promotes_to_weak_working() {
 
     let result = arbitrate(&snapshot, RawAgentState::Unknown, now);
 
-    assert_eq!(result.raw, RawAgentState::Working);
+    assert_eq!(result.raw_state, RawAgentState::Working);
     assert_eq!(result.confidence, AgentStatusConfidence::Weak);
     assert_eq!(result.winner, EvidenceWinner::Physics);
 }
@@ -290,7 +282,7 @@ fn no_evidence_is_unknown() {
 
     let result = arbitrate(&snapshot, RawAgentState::Unknown, now);
 
-    assert_eq!(result.raw, RawAgentState::Unknown);
+    assert_eq!(result.raw_state, RawAgentState::Unknown);
     assert_eq!(result.winner, EvidenceWinner::Unknown);
 }
 

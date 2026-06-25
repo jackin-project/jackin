@@ -12,19 +12,11 @@ use crate::agent_status::evidence::{
 use crate::agent_status::policy::AUTHORITY_TTL;
 use crate::protocol::AgentState;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ArbitrationResult {
-    pub raw: RawAgentState,
-    pub confidence: AgentStatusConfidence,
-    pub winner: EvidenceWinner,
-    pub summary: EvidenceSummary,
-}
-
 pub fn arbitrate(
     snapshot: &EvidenceSnapshot,
     previous_raw: RawAgentState,
     now: Instant,
-) -> ArbitrationResult {
+) -> EvidenceSummary {
     let mut summary = EvidenceSummary {
         authority_source: snapshot
             .authority
@@ -193,16 +185,11 @@ fn finish(
     confidence: AgentStatusConfidence,
     winner: EvidenceWinner,
     mut summary: EvidenceSummary,
-) -> ArbitrationResult {
+) -> EvidenceSummary {
     summary.raw_state = raw;
     summary.confidence = confidence;
     summary.winner = winner;
-    ArbitrationResult {
-        raw,
-        confidence,
-        winner,
-        summary,
-    }
+    summary
 }
 
 /// Attention priority used for tab/workspace roll-up.

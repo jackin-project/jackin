@@ -161,12 +161,9 @@ impl SessionStatus {
         }
     }
 
-    pub fn publish_raw(
-        &mut self,
-        raw: RawAgentState,
-        confidence: AgentStatusConfidence,
-        mut summary: EvidenceSummary,
-    ) -> Option<AgentState> {
+    pub fn publish_raw(&mut self, mut summary: EvidenceSummary) -> Option<AgentState> {
+        let raw = summary.raw_state;
+        let confidence = summary.confidence;
         let previous = self.effective;
         let previous_raw = self.raw;
         let entering_work_cycle = matches!(raw, RawAgentState::Working | RawAgentState::Blocked)

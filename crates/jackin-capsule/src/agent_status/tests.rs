@@ -43,11 +43,11 @@ fn new_session_starts_unknown() {
 #[test]
 fn publish_working_transitions_unknown_to_working() {
     let mut s = SessionStatus::new();
-    let changed = s.publish_raw(
-        RawAgentState::Working,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
+    let changed = s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Working,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
     assert_eq!(changed, Some(AgentState::Working));
     assert_eq!(s.effective, AgentState::Working);
     assert_eq!(s.raw, RawAgentState::Working);
@@ -58,16 +58,16 @@ fn publish_working_transitions_unknown_to_working() {
 #[test]
 fn idle_after_working_produces_done_when_unseen() {
     let mut s = SessionStatus::new();
-    s.publish_raw(
-        RawAgentState::Working,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
-    let changed = s.publish_raw(
-        RawAgentState::Idle,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
+    s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Working,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
+    let changed = s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Idle,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
     assert_eq!(changed, Some(AgentState::Done));
     assert_eq!(s.effective, AgentState::Done);
 }
@@ -75,23 +75,23 @@ fn idle_after_working_produces_done_when_unseen() {
 #[test]
 fn repeated_idle_keeps_done_until_acknowledged() {
     let mut s = SessionStatus::new();
-    s.publish_raw(
-        RawAgentState::Working,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
-    s.publish_raw(
-        RawAgentState::Idle,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
+    s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Working,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
+    s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Idle,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
     assert_eq!(s.effective, AgentState::Done);
 
-    let changed = s.publish_raw(
-        RawAgentState::Idle,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
+    let changed = s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Idle,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
 
     assert_eq!(changed, None);
     assert_eq!(s.effective, AgentState::Done);
@@ -101,33 +101,33 @@ fn repeated_idle_keeps_done_until_acknowledged() {
 #[test]
 fn idle_after_working_produces_idle_when_seen() {
     let mut s = SessionStatus::new();
-    s.publish_raw(
-        RawAgentState::Working,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
+    s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Working,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
     s.seen = true;
-    let changed = s.publish_raw(
-        RawAgentState::Idle,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
+    let changed = s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Idle,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
     assert_eq!(changed, Some(AgentState::Idle));
 }
 
 #[test]
 fn acknowledge_transitions_done_to_idle() {
     let mut s = SessionStatus::new();
-    s.publish_raw(
-        RawAgentState::Working,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
-    s.publish_raw(
-        RawAgentState::Idle,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
+    s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Working,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
+    s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Idle,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
     assert_eq!(s.effective, AgentState::Done);
     let changed = s.acknowledge();
     assert_eq!(changed, Some(AgentState::Idle));
@@ -139,70 +139,70 @@ fn acknowledge_transitions_done_to_idle() {
 fn revision_increments_only_on_public_state_change() {
     let mut s = SessionStatus::new();
     assert_eq!(s.revision, 0);
-    s.publish_raw(
-        RawAgentState::Working,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
+    s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Working,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
     assert_eq!(s.revision, 1);
-    s.publish_raw(
-        RawAgentState::Working,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
+    s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Working,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
     assert_eq!(s.revision, 1);
-    s.publish_raw(
-        RawAgentState::Idle,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
+    s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Idle,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
     assert_eq!(s.revision, 2);
 }
 
 #[test]
 fn blocked_enters_work_cycle_and_done_on_idle() {
     let mut s = SessionStatus::new();
-    s.publish_raw(
-        RawAgentState::Blocked,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
+    s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Blocked,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
     assert_eq!(s.effective, AgentState::Blocked);
     assert!(!s.seen);
-    let changed = s.publish_raw(
-        RawAgentState::Idle,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
+    let changed = s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Idle,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
     assert_eq!(changed, Some(AgentState::Done));
 }
 
 #[test]
 fn re_work_after_ack_creates_new_done() {
     let mut s = SessionStatus::new();
-    s.publish_raw(
-        RawAgentState::Working,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
-    s.publish_raw(
-        RawAgentState::Idle,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
+    s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Working,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
+    s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Idle,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
     assert_eq!(s.effective, AgentState::Done);
     s.acknowledge();
     assert_eq!(s.effective, AgentState::Idle);
-    s.publish_raw(
-        RawAgentState::Working,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
-    let changed = s.publish_raw(
-        RawAgentState::Idle,
-        AgentStatusConfidence::Strong,
-        EvidenceSummary::default(),
-    );
+    s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Working,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
+    let changed = s.publish_raw(EvidenceSummary {
+        raw_state: RawAgentState::Idle,
+        confidence: AgentStatusConfidence::Strong,
+        ..Default::default()
+    });
     assert_eq!(changed, Some(AgentState::Done));
 }
 
@@ -210,15 +210,13 @@ fn re_work_after_ack_creates_new_done() {
 fn publish_raw_keeps_latest_evidence_summary() {
     let mut s = SessionStatus::new();
     let summary = EvidenceSummary {
+        raw_state: RawAgentState::Blocked,
+        confidence: AgentStatusConfidence::Strong,
         rule_id: Some("claude.permission-dialog".to_owned()),
         visible_blocker: true,
         ..EvidenceSummary::default()
     };
-    s.publish_raw(
-        RawAgentState::Blocked,
-        AgentStatusConfidence::Strong,
-        summary,
-    );
+    s.publish_raw(summary);
     assert_eq!(s.last_snapshot_summary.raw_state, RawAgentState::Blocked);
     assert_eq!(
         s.last_snapshot_summary.confidence,
@@ -235,17 +233,15 @@ fn publish_raw_keeps_latest_evidence_summary() {
 fn report_uses_evidence_summary() {
     let mut s = SessionStatus::new();
     let summary = EvidenceSummary {
+        raw_state: RawAgentState::Working,
+        confidence: AgentStatusConfidence::Authoritative,
         authority_source: Some("hook-claude-1".to_owned()),
         foreground_pgid: Some(42),
         visible_working: true,
         subagents_active: 2,
         ..EvidenceSummary::default()
     };
-    s.publish_raw(
-        RawAgentState::Working,
-        AgentStatusConfidence::Authoritative,
-        summary,
-    );
+    s.publish_raw(summary);
     let report = s.report(Some("claude".to_owned()));
     assert_eq!(report.raw_state, RawAgentState::Working);
     assert_eq!(report.confidence, AgentStatusConfidence::Authoritative);
@@ -264,11 +260,13 @@ fn report_uses_evidence_summary() {
 fn report_preserves_shell_integration_source() {
     let mut s = SessionStatus::new();
     let summary = EvidenceSummary {
+        raw_state: RawAgentState::Idle,
+        confidence: AgentStatusConfidence::Strong,
         winner: evidence::EvidenceWinner::StrongVisualOrOsc,
         shell_integration: true,
         ..EvidenceSummary::default()
     };
-    s.publish_raw(RawAgentState::Idle, AgentStatusConfidence::Strong, summary);
+    s.publish_raw(summary);
 
     assert_eq!(
         s.report(Some("codex".to_owned())).source,

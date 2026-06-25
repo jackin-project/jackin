@@ -2,8 +2,7 @@ use std::time::{Duration, Instant};
 
 use jackin_protocol::agent_status::AgentStatusConfidence;
 
-use crate::agent_status::arbitrate::ArbitrationResult;
-use crate::agent_status::evidence::{EvidenceNote, EvidenceWinner, RawAgentState};
+use crate::agent_status::evidence::{EvidenceNote, EvidenceSummary, EvidenceWinner, RawAgentState};
 use crate::protocol::AgentState;
 
 pub const AUTHORITY_TTL: Duration = Duration::from_secs(30);
@@ -26,11 +25,11 @@ pub struct PendingTransition {
 
 pub fn debounce(
     prev_public: AgentState,
-    candidate: &ArbitrationResult,
+    candidate: &EvidenceSummary,
     pending: &mut PendingTransition,
     now: Instant,
 ) -> Option<AgentState> {
-    let next = public_state_for_raw(prev_public, candidate.raw);
+    let next = public_state_for_raw(prev_public, candidate.raw_state);
     match next {
         // Blocked, working, exit, and positively-matched (Strong) idle publish
         // immediately. Strong idle clears any pending inferred-idle hold.
@@ -48,7 +47,7 @@ pub fn debounce(
         // consecutive evaluations AND no OSC progress active AND CPU-quiet, with
         // a wall-clock cap so a never-confirming loop cannot pin stale working.
         AgentState::Idle | AgentState::Done => {
-            if candidate.summary.osc_progress_active || candidate.summary.cpu_jiffies_delta > 0 {
+            if candidate.osc_progress_active || candidate.cpu_jiffies_delta > 0 {
                 clear_pending(pending);
                 return None;
             }
@@ -78,12 +77,11 @@ fn clear_pending(pending: &mut PendingTransition) {
     pending.started_at = None;
 }
 
-pub fn apply_watchdog(mut candidate: ArbitrationResult, now: Instant) -> ArbitrationResult {
-    if candidate.raw != RawAgentState::Working {
+pub fn apply_watchdog(mut candidate: EvidenceSummary, now: Instant) -> EvidenceSummary {
+    if candidate.raw_state != RawAgentState::Working {
         return candidate;
     }
     if candidate
-        .summary
         .notes
         .iter()
         .any(|note| matches!(note, EvidenceNote::WatchdogDemoted))
@@ -95,27 +93,24 @@ pub fn apply_watchdog(mut candidate: ArbitrationResult, now: Instant) -> Arbitra
     // unavailable (non-Linux, or the agent PID is unknown), a zero CPU/child
     // count means "no evidence", not "quiet" — demoting then would turn every
     // real working state into Unknown on the developer's own machine.
-    if !candidate.summary.physics_sampled {
+    if !candidate.physics_sampled {
         return candidate;
     }
-    let Some(last_output) = candidate.summary.last_output else {
+    let Some(last_output) = candidate.last_output else {
         return candidate;
     };
     if now.duration_since(last_output) < WATCHDOG_QUIET {
         return candidate;
     }
-    if candidate.summary.cpu_jiffies_delta > 0 || candidate.summary.child_process_count > 0 {
+    if candidate.cpu_jiffies_delta > 0 || candidate.child_process_count > 0 {
         return candidate;
     }
-    candidate.raw = RawAgentState::Unknown;
+    candidate.raw_state = RawAgentState::Unknown;
     candidate.confidence = AgentStatusConfidence::Unknown;
     candidate.winner = EvidenceWinner::Unknown;
-    candidate.summary.raw_state = RawAgentState::Unknown;
-    candidate.summary.confidence = AgentStatusConfidence::Unknown;
-    candidate.summary.winner = EvidenceWinner::Unknown;
-    // The early return above guarantees `summary.notes` did not already carry
+    // The early return above guarantees `notes` did not already carry
     // WatchdogDemoted, and nothing since added it, so this push is unconditional.
-    candidate.summary.notes.push(EvidenceNote::WatchdogDemoted);
+    candidate.notes.push(EvidenceNote::WatchdogDemoted);
     candidate
 }
 
