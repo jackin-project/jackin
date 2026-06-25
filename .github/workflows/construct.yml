@@ -113,6 +113,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         with:
+          token: ${{ secrets.GH_READONLY_TOKEN }}
           filters: |
             # Build the construct image when build plumbing changes, even if the
             # change should not publish a new immutable construct tag.
@@ -192,7 +193,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: ${{ matrix.config.runner_arch == 'X64' && 'rust shellfirm' || 'rust' }}
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
 
@@ -252,7 +253,7 @@ jobs:
           # layers written by earlier runs of this PR so mid-PR iterations stay warm too.
           CACHE_FROM: |
             type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }}
-            type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }}
+            type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ secrets.GH_READONLY_TOKEN }}
           CACHE_TO: type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }},mode=max
         run: mise run construct-build-platform ${{ matrix.config.platform }}
 
@@ -311,7 +312,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: ${{ runner.arch == 'X64' && 'rust shellfirm' || 'rust' }}
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
 
@@ -394,7 +395,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: ${{ matrix.config.runner_arch == 'X64' && 'rust shellfirm' || 'rust' }}
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
 
@@ -450,18 +451,3 @@ jobs:
         with:
           needs-json: ${{ toJSON(needs) }}
           workflow-label: construct
-
-  timing-summary:
-    if: always()
-    needs: construct-required
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Write workflow timing summary
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/ci/workflow-timing-summary.sh "Construct Image"

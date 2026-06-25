@@ -53,6 +53,45 @@ impl MasterPty for NullMasterPty {
     }
 }
 
+/// Master PTY double that records the last `PtySize` handed to `resize`, so a
+/// test can assert what `TIOCSWINSZ` the agent's PTY actually received. Only
+/// `resize` differs from the inert double; the other (external-trait) methods
+/// delegate to an inner `NullMasterPty` rather than re-stubbing them.
+struct RecordingMasterPty {
+    inner: NullMasterPty,
+    last_size: Arc<Mutex<Option<PtySize>>>,
+}
+
+impl MasterPty for RecordingMasterPty {
+    fn resize(&self, size: PtySize) -> Result<()> {
+        if let Ok(mut slot) = self.last_size.lock() {
+            *slot = Some(size);
+        }
+        Ok(())
+    }
+    fn get_size(&self) -> Result<PtySize> {
+        self.inner.get_size()
+    }
+    fn try_clone_reader(&self) -> Result<Box<dyn std::io::Read + Send>> {
+        self.inner.try_clone_reader()
+    }
+    fn take_writer(&self) -> Result<Box<dyn std::io::Write + Send>> {
+        self.inner.take_writer()
+    }
+    #[cfg(unix)]
+    fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
+        self.inner.process_group_leader()
+    }
+    #[cfg(unix)]
+    fn as_raw_fd(&self) -> Option<portable_pty::unix::RawFd> {
+        self.inner.as_raw_fd()
+    }
+    #[cfg(unix)]
+    fn tty_name(&self) -> Option<std::path::PathBuf> {
+        self.inner.tty_name()
+    }
+}
+
 fn test_session_with_policy(policy: OscPolicy) -> Session {
     let (input_tx, _input_rx) = mpsc::unbounded_channel();
     let mut session = Session::new_for_test(
@@ -67,6 +106,80 @@ fn test_session_with_policy(policy: OscPolicy) -> Session {
     );
     session.osc_policy = policy;
     session
+}
+
+#[test]
+fn resize_floors_pty_winsize_to_at_least_one() {
+    // A collapsed pane can hand `Session::resize` a 0-row (or 0-col) geometry.
+    // The agent PTY must never receive a 0×0 `TIOCSWINSZ` — programs expect
+    // ≥1 — and each axis must floor independently, not collapse to 1×1.
+    let last_size = Arc::new(Mutex::new(None));
+    let (input_tx, _input_rx) = mpsc::unbounded_channel();
+    let mut session = Session::new_for_test(
+        "Test".to_owned(),
+        Some("codex".to_owned()),
+        None,
+        (24, 80),
+        100,
+        input_tx,
+        Arc::new(Mutex::new(Box::new(RecordingMasterPty {
+            inner: NullMasterPty,
+            last_size: Arc::clone(&last_size),
+        }))),
+        Arc::new(Mutex::new(Box::new(NullChildKiller))),
+    );
+
+    let recorded = || {
+        last_size
+            .lock()
+            .ok()
+            .and_then(|slot| *slot)
+            .expect("resize must drive the PTY")
+    };
+
+    session.resize(0, 80);
+    let size = recorded();
+    assert_eq!(
+        (size.rows, size.cols),
+        (1, 80),
+        "0 rows floored to 1, cols kept"
+    );
+
+    session.resize(24, 0);
+    let size = recorded();
+    assert_eq!(
+        (size.rows, size.cols),
+        (24, 1),
+        "0 cols floored to 1, rows kept"
+    );
+}
+
+#[test]
+fn feed_pty_does_not_accumulate_scroll_ops() {
+    // feed_pty clears recorded scroll ops each chunk so they cannot grow
+    // unbounded while the scroll-region optimizer that would consume them is
+    // deferred.
+    let mut burst = Vec::new();
+    for i in 0..200 {
+        burst.extend_from_slice(format!("line {i}\r\n").as_bytes());
+    }
+    // Guard against a vacuous pass: confirm the burst genuinely records scroll
+    // ops, so the clear assertion below would fail if recording ever stopped or
+    // the clear ran before process().
+    let mut probe = jackin_term::DamageGrid::new(24, 80, 100);
+    probe.process(&burst);
+    assert!(
+        !probe.drain_scroll_ops().is_empty(),
+        "burst must record scroll ops for the clear assertion to be meaningful"
+    );
+    // feed_pty runs the same process() then clear_scroll_ops(); after it
+    // returns the buffer must already be empty.
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.feed_pty(&burst);
+    assert!(
+        session.shadow_grid.drain_scroll_ops().is_empty(),
+        "feed_pty must clear recorded scroll ops each chunk"
+    );
 }
 
 /// Feed `bytes` through a default-policy session and return the
@@ -112,13 +225,24 @@ fn osc_2_window_title_is_re_emitted_and_captured() {
 }
 
 #[test]
-fn osc_8_hyperlink_is_re_emitted() {
-    let drained = drained(b"\x1b]8;;https://example/\x07text\x1b]8;;\x07");
+fn osc_8_hyperlink_is_modeled_not_re_emitted() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.feed_pty(b"\x1b]8;;https://example/\x07text\x1b]8;;\x07");
+    let drained = session.drain_passthrough();
     assert!(
-        drained
-            .iter()
-            .any(|f| f.windows(b"https".len()).any(|w| w == b"https")),
-        "expected the http hyperlink to round-trip: {drained:?}"
+        drained.is_empty(),
+        "OSC 8 must not be raw passthrough: {drained:?}"
+    );
+    let snap = session.shadow_grid.dump();
+    assert_eq!(
+        snap.cell(0, 0)
+            .and_then(|cell| cell.hyperlink_uri.as_deref()),
+        Some("https://example/")
+    );
+    assert_eq!(
+        snap.cell(0, 4)
+            .and_then(|cell| cell.hyperlink_uri.as_deref()),
+        None
     );
 }
 

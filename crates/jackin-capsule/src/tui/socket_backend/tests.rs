@@ -8,7 +8,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::{CellStyle, SocketBackend};
+use super::{CellStyle, SgrMetadata, SocketBackend};
 
 #[test]
 fn backend_renders_text_to_output_buffer() {
@@ -54,15 +54,18 @@ fn suppressed_clear_resets_style_without_screen_erase() {
         modifiers: Modifier::BOLD,
     };
 
-    backend.suppress_next_clear_escape();
+    backend.begin_clear_suppression();
+    backend.clear_region(ClearType::All).unwrap();
+    // Sustained: a width-shrink resize clears twice; both stay byte-silent.
     backend.clear_region(ClearType::All).unwrap();
     assert!(
         backend.take_output().is_empty(),
-        "suppressed clear must not emit bytes"
+        "suppressed clears must not emit bytes"
     );
     assert_eq!(backend.current_style, CellStyle::default());
 
-    // One-shot: the next unsuppressed clear erases again.
+    // After lifting suppression, the next clear erases again.
+    backend.end_clear_suppression();
     backend.clear_region(ClearType::All).unwrap();
     let output = backend.take_output();
     assert!(
@@ -90,6 +93,108 @@ fn full_screen_clear_resets_style_before_erasing() {
         String::from_utf8_lossy(&output)
     );
     assert_eq!(backend.current_style, CellStyle::default());
+}
+
+#[test]
+fn backend_emits_extended_visible_sgr_modifiers() {
+    let mut backend = SocketBackend::new(10, 1);
+    backend.apply_style(
+        CellStyle {
+            fg: Color::Reset,
+            bg: Color::Reset,
+            modifiers: Modifier::CROSSED_OUT
+                | Modifier::SLOW_BLINK
+                | Modifier::RAPID_BLINK
+                | Modifier::HIDDEN,
+        },
+        SgrMetadata::default(),
+    );
+
+    let output = backend.take_output();
+    let text = String::from_utf8_lossy(&output);
+    for sgr in ["\x1b[5m", "\x1b[6m", "\x1b[8m", "\x1b[9m"] {
+        assert!(text.contains(sgr), "missing {sgr:?} in {text:?}");
+    }
+}
+
+/// Render a single styled cell through a one-cell SGR region and return the
+/// raw backend output. Shared by the frame-SGR-metadata tests.
+fn frame_sgr_output(metadata: SgrMetadata, span: Span<'_>) -> Vec<u8> {
+    let backend = SocketBackend::new(10, 1);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .backend_mut()
+        .set_sgr_regions(vec![(Rect::new(0, 0, 1, 1), metadata)]);
+    terminal
+        .draw(|frame| {
+            frame.render_widget(Paragraph::new(span), frame.area());
+        })
+        .unwrap();
+    terminal.backend_mut().take_output()
+}
+
+#[test]
+fn backend_emits_frame_sgr_metadata() {
+    let output = frame_sgr_output(
+        SgrMetadata {
+            underline_style: jackin_term::UnderlineStyle::Curly,
+            underline_color: jackin_term::Color::Rgb(12, 34, 56),
+            overline: true,
+        },
+        Span::raw("x"),
+    );
+    assert_eq!(
+        output, b"\x1b[1;1H\x1b[0m\x1b[4:3m\x1b[58;2;12;34;56m\x1b[53mx\x1b[?25l",
+        "SGR metadata wire output changed"
+    );
+    let text = String::from_utf8_lossy(&output);
+    for sgr in ["\x1b[4:3m", "\x1b[58;2;12;34;56m", "\x1b[53m"] {
+        assert!(text.contains(sgr), "missing {sgr:?} in {text:?}");
+    }
+}
+
+#[test]
+fn backend_emits_indexed_color_sgr() {
+    // 256-color fg/bg (`write_color_sgr`) and an indexed underline color
+    // (`write_sgr_metadata`) all route through `push_indexed_color_tail`;
+    // assert the `38;5;`/`48;5;`/`58;5;` forms emit.
+    let output = frame_sgr_output(
+        SgrMetadata {
+            underline_color: jackin_term::Color::Idx(200),
+            ..SgrMetadata::default()
+        },
+        Span::styled(
+            "x",
+            ratatui::style::Style::default()
+                .fg(Color::Indexed(208))
+                .bg(Color::Indexed(17)),
+        ),
+    );
+    let text = String::from_utf8_lossy(&output);
+    for sgr in ["\x1b[38;5;208m", "\x1b[48;5;17m", "\x1b[58;5;200m"] {
+        assert!(text.contains(sgr), "missing {sgr:?} in {text:?}");
+    }
+}
+
+#[test]
+fn backend_emits_osc8_metadata_wire_snapshot() {
+    let backend = SocketBackend::new(10, 1);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.backend_mut().set_hyperlink_regions(vec![(
+        Rect::new(0, 0, 1, 1),
+        "https://example.test".to_owned(),
+    )]);
+    terminal
+        .draw(|frame| {
+            frame.render_widget(Paragraph::new(Span::raw("x")), frame.area());
+        })
+        .unwrap();
+
+    assert_eq!(
+        terminal.backend_mut().take_output(),
+        b"\x1b]8;;https://example.test\x1b\\\x1b[1;1Hx\x1b]8;;\x1b\\\x1b[?25l",
+        "OSC 8 metadata wire output changed"
+    );
 }
 
 #[test]
