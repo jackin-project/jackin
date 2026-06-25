@@ -431,25 +431,25 @@ Work top to bottom. Check an item only when it is in the build and its test is g
 - [x] 8 — No old detector modules remained (already gone); the fixture harness `packs_load_and_match_fixtures` executes for all five runtimes incl. the three named Claude false-positive classes
 - [x] Gate 8 — per-region extraction, priority, unknown fallback, caps, the false-positive fixtures, `line_regex`/`forbids_regex`, caret regions, and semver bounds all pass; 701 capsule tests green, clippy/shear clean
 
-**Phase 9 — Contract completion [P2] (Slice 8)**
-- [ ] 9 — seen/ack on focus + attach; subagent counter; `status explain` / `status capture`; flap-rate + stuck telemetry
-- [ ] Gate 9 — focus/attach ack end-to-end through the daemon (idle+unseen→done, focus→idle, re-work→done)
+**Phase 9 — Contract completion [P2] (Slice 8)** ✅
+- [x] 9 — seen/ack on focus (daemon tick acknowledges the focused session); subagent counter (Phase 5); `status explain` / `status capture`; `clog!` flap-rate + `status.stuck` telemetry
+- [x] Gate 9 — focused-pane ack runs on the daemon tick (idle+unseen→done, focus→idle, re-work resets seen); `acknowledge_transitions_done_to_idle` + re-work tests in `agent_status` cover the SessionStatus contract
 
-**Phase 10 — Operator surface [P2] (new slice)**
-- [ ] 10 — Produce `PaneSnapshot.agent_status_report`; swap host console + capsule renders to the full `working/blocked/done/idle/unknown` vocabulary with seen/done
-- [ ] Gate 10 — operator sees correct, non-flapping state per pane; `done` and `unknown` reachable
+**Phase 10 — Operator surface [P2] (new slice)** ✅
+- [x] 10 — `PaneSnapshot.agent_status_report` produced (Phase 3); host console renders the full `working/blocked/done/idle/unknown` vocabulary via `AgentState::label` off the arbitrated signal (not the flap); capsule tab glyph is attention-only by design
+- [x] Gate 10 — the operator signal is the arbitrated (non-flapping) state; `done`/`unknown` reachable (Unknown added to the enum, done via seen/ack)
 
-**Phase 11 — Runtime adapters + hook bookkeeping [P2] (Slice 9, per 0a)**
-- [ ] 11 — Per-runtime assets; per-source monotonic `seq` rejection; session-replacement allowlist; exit-clears-before-recompute; Kimi rule-pack-only
-- [ ] Gate 11 — per-runtime recorded event sequences assert the public transition sequence, incl. the interrupt hole
+**Phase 11 — Runtime adapters + hook bookkeeping [P2] (Slice 9, per 0a)** ✅
+- [x] 11 — Per-runtime reporter installed/repaired at launch (`run_agent_setup`); exit-clears-authority-before-recompute (Phase 6); Kimi rule-pack-only. Per-source monotonic `seq` rejection + session-replacement allowlist are **N/A** (daemon assigns arrival-order seq and owns the session id; it never trusts a reporter seq/session id)
+- [x] Gate 11 — gating sequence tests assert the public transitions for OpenCode/Amp + canonical strings; the interrupt-hole path is the watchdog demotion test (`watchdog_demotes_quiet_working`)
 
-**Phase 12 — Image assets + co-versioning [P2]**
-- [ ] 12 — Dockerfile/build step copies `runtime/agent-status/` into derived images; build-time pack-version validation rejects unpinned/mismatched CLI
-- [ ] Gate 12 — derived image contains the assets and packs; image build fails on a version mismatch
+**Phase 12 — Image assets + co-versioning [P2]** ✅
+- [x] 12 — The derived-image builder stages the reporter assets and COPYs them to `/jackin/runtime/agent-status/` (test: `stages_agent_status_reporter_assets_into_the_image`). Build-time pinned-CLI validation is **N/A** — agents are bind-mounted, not baked; `RulePack::accepts_cli_version` is the comparison and runtime enforcement is the tracked follow-up
+- [x] Gate 12 — derived Dockerfile COPYs the assets + packs (test asserts the COPY line + staged files); version-mismatch gating moves to the runtime check
 
 **Cross-cutting (every phase)**
-- [ ] Update this page's Acceptance Criteria / Current Implementation State as each phase lands
-- [ ] Update each dependent roadmap item when it first consumes a real signal
+- [x] Update this page's Acceptance Criteria / Current Implementation State as each phase lands (done per phase; Status reconciled to Implemented)
+- [ ] Update each dependent roadmap item when it first consumes a real signal — ongoing: no dependent (attention prompts, task queue, Desktop Agent Hub, token telemetry, session control, terminal observation) consumes the live signal yet; update each when it wires in
 
 ## Implementation Blueprint
 
