@@ -1114,18 +1114,26 @@ fn codex_snapshot(
         &[auth_path.clone(), handoff_auth_path.to_path_buf()],
         load_codex_oauth_credentials,
     );
-    let auth_account = credentials
+    // P1: account_label is the email identity only; the auth source (the
+    // resolver arm that actually won) goes on `credential_origin`.
+    let auth_email = credentials
         .as_ref()
         .and_then(|credentials| credentials.account_label.clone())
         .or_else(|| codex_account_label(&auth_path))
-        .or_else(|| codex_account_label(handoff_auth_path))
-        .unwrap_or_else(|| {
-            if std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.is_empty()) {
-                "OPENAI_API_KEY".to_owned()
-            } else {
-                "needs Codex login".to_owned()
-            }
-        });
+        .or_else(|| codex_account_label(handoff_auth_path));
+    let has_env_key = std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.is_empty());
+    let needs_login = credentials.is_none() && auth_email.is_none() && !has_env_key;
+    let credential_origin = if credentials.is_some() {
+        Some(if auth_path.exists() {
+            "OAuth · ~/.codex/auth.json".to_owned()
+        } else {
+            format!("OAuth · {CODEX_HANDOFF_AUTH_PATH}")
+        })
+    } else if has_env_key {
+        Some("API token · env OPENAI_API_KEY".to_owned())
+    } else {
+        None
+    };
     let (rpc_usage, rpc_error) = match fetch_codex_rpc_usage(rpc_gate) {
         Ok(usage) => (Some(usage), None),
         Err(error) => (None, Some(error)),
@@ -1147,8 +1155,9 @@ fn codex_snapshot(
     let account = rpc_usage
         .as_ref()
         .and_then(|usage| usage.account_label.clone())
-        .unwrap_or(auth_account);
-    let status = if account == "needs Codex login" {
+        .or(auth_email)
+        .unwrap_or_default();
+    let status = if needs_login {
         UsageSnapshotStatus::NeedsLogin
     } else if quota.is_some() {
         UsageSnapshotStatus::Fresh
@@ -1211,7 +1220,7 @@ fn codex_snapshot(
         plan_label: quota
             .and_then(|usage| usage.plan_type.as_deref())
             .and_then(codex_plan_display_name),
-        credential_origin: Some("OAuth · ~/.codex/auth.json".to_owned()),
+        credential_origin,
         buckets,
         status,
         source: if status == UsageSnapshotStatus::Fresh {
@@ -1269,6 +1278,16 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     };
     let provider_error = api_error.as_ref().or(cli_error.as_ref()).cloned();
     let has_auth = amp_api_key.is_some() || amp_secrets.exists() || handoff_secrets.exists();
+    // P1: credential_origin reflects the resolver arm that actually won.
+    let credential_origin = if env_value("AMP_API_KEY").is_some() {
+        Some("API key · env AMP_API_KEY".to_owned())
+    } else if amp_secrets.exists() {
+        Some("API key · amp secrets.json".to_owned())
+    } else if handoff_secrets.exists() {
+        Some(format!("API key · {AMP_HANDOFF_SECRETS_PATH}"))
+    } else {
+        None
+    };
     let status = if api_usage.is_some() || cli_usage.is_some() {
         UsageSnapshotStatus::Fresh
     } else if has_auth {
@@ -1316,7 +1335,7 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
         account_label,
         username: None,
         plan_label: (api_usage.is_some() || cli_usage.is_some()).then_some("Amp Free".to_owned()),
-        credential_origin: Some("API key · AMP_API_KEY".to_owned()),
+        credential_origin,
         buckets,
         status,
         source: if api_usage.is_some() {
@@ -1383,6 +1402,21 @@ fn grok_snapshot_from_rpc_result(
         Ok(usage) => (Some(usage), None),
         Err(error) => (None, Some(error)),
     };
+    // P1: credential_origin reflects the resolver arm that actually won
+    // (`auth` is the resolved path — home `~/.grok/auth.json` or the handoff).
+    let credential_origin = if has_auth {
+        Some(if auth == Path::new(GROK_HANDOFF_AUTH_PATH) {
+            format!("OAuth · {GROK_HANDOFF_AUTH_PATH}")
+        } else {
+            "OAuth · ~/.grok/auth.json".to_owned()
+        })
+    } else if has_xai_api_key {
+        Some("API token · env XAI_API_KEY".to_owned())
+    } else if has_deployment_key {
+        Some("API token · env GROK_DEPLOYMENT_KEY".to_owned())
+    } else {
+        None
+    };
     let account =
         grok_account_label_or_presence(auth, has_auth, has_xai_api_key, has_deployment_key);
     let status = if billing_usage.is_some() {
@@ -1414,7 +1448,7 @@ fn grok_snapshot_from_rpc_result(
         account_label: account,
         username: None,
         plan_label: grok_plan_label(auth),
-        credential_origin: Some("OAuth · ~/.grok/auth.json".to_owned()),
+        credential_origin,
         buckets,
         status,
         source: billing_usage
