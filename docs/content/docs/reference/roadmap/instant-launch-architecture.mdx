@@ -45,9 +45,10 @@ last live session exits (agent /exit, Ctrl-D, or crash)
   │  run the shared dirty assessment on the workspace mount(s) in-container
   ├─ clean / pushed ─────────────► drain_and_exit  (unchanged — silent exit)
   └─ dirty / unpushed ───────────► push in-capsule modal; container stays alive
-        ├─ Start a new agent ────► open the existing agent picker (same as "New tab")
-        │                          → spawn session → back to work, container kept warm
-        └─ Exit ─────────────────► drain_and_exit → host finalize executes keep/discard
+        ├─ Start a new agent ─────► open the New-tab agent picker (verbatim) → spawn → back to work
+        ├─ Inspect changes ───────► read-only diff view (Esc back to modal)
+        ├─ Exit & keep changes ───► drain_and_exit → host preserves the instance (resumable)
+        └─ Exit & discard changes ► drain_and_exit → host discards the dirty work
 ```
 
 "Start a new agent" reuses the capsule's existing `new_agent_picker` (`PickerIntent::NewTab`) in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> — the exact dialog "New tab" already opens. The confirmation reuses the capsule's existing dialog / modal-stack infrastructure; no new chrome.
@@ -55,17 +56,42 @@ last live session exits (agent /exit, Ctrl-D, or crash)
 ## Remaining work — must do
 
 1. **Share detection (`jackin-core`).** Extract the dirty/unpushed assessment out of `finalize.rs::assess_cleanup` into a path-based `jackin-core` function and shared result type; rewire the host `assess_cleanup` to call it. Unit-test the function directly against a temp git repo (clean / uncommitted / untracked / unpushed).
-2. **In-capsule confirmation (`jackin-capsule`).** At `no_live_sessions()` in `daemon.rs`, run the shared detection on the workdir(s); if clean, `drain_and_exit` as today; if dirty, push the confirmation modal (`Start a new agent` / `Exit`) and keep the daemon alive with no live panes. Wire "Start a new agent" → `new_agent_picker` → `spawn_session`; wire "Exit" → `drain_and_exit`. Test that a dirty last-session exit pushes the modal (not shutdown) and that each choice routes correctly.
-3. **Host executes cleanup after Exit (`jackin-runtime`).** Make a clean capsule exit actually reach `finalize_foreground_session` so the host applies `dirty_exit_policy` keep/discard: the capsule client must exit `0` on a clean last-session shutdown (so `docker exec` returns success), and the host load/hardline paths must run finalize on a clean exit instead of treating it as `capsule attach failed`. This is the fix for the confirmed defect above.
+2. **In-capsule confirmation (`jackin-capsule`).** At `no_live_sessions()` in `daemon.rs`, run the shared detection on the workdir(s); if clean, `drain_and_exit` as today; if dirty, push the `Unsaved work — exit?` modal (per-repo summary + rows `Start a new agent` / `Inspect changes` / `Exit & keep changes` / `Exit & discard changes`) and keep the daemon alive with no live panes. Wire `Start a new agent` → the verbatim `new_agent_picker(NewTab)` → `spawn_session`; `Inspect changes` → the read-only diff view; `Exit & keep` / `Exit & discard` → record the operator's choice, then `drain_and_exit` and signal the host which action to execute. `Esc` is ignored (forced choice). Test that a dirty last-session exit pushes the modal (not shutdown) and that each row routes correctly.
+3. **Host executes the chosen action after Exit (`jackin-runtime`).** Make a clean capsule exit actually reach the host cleanup so it carries out what the operator chose in-capsule: the capsule client must exit `0` on a clean last-session shutdown (so `docker exec` returns success), and the host load/hardline paths must run the finalize/cleanup step on a clean exit instead of treating it as `capsule attach failed`. The host **executes** keep or discard — it does not prompt. This is the fix for the confirmed defect above.
 
-## Open design questions — for operator review (TUI)
+`dirty_exit_policy` still gates whether the modal appears at all: the resolved policy (workspace → global → `ask`) is passed into the capsule, and only `ask` shows the modal. `keep` and `discard` skip the modal and exit straight to the host executing that policy silently (clean + pushed always auto-cleans regardless). So the in-capsule modal is the `ask`-path UI; `keep`/`discard` keep their existing no-prompt meaning.
 
-Not yet settled; the operator will walk the TUI display and decide. Captured here so the design conversation has a home:
+## In-capsule dirty-exit UI — agreed design
 
-- Exact modal content and labels — wording of "Start a new agent" / "Exit", the title, and whether a short dirty summary (repo / file count) shows in the modal.
-- Whether the in-capsule modal offers an **Inspect** (read-only diff) view of the dirty changes before deciding, or only the two choices.
-- Where the **keep vs discard** *choice* is made: pulled into the in-capsule modal (so the operator makes every decision before teardown and the host only executes), or left to host `dirty_exit_policy` after Exit. The operator's "ask before teardown" preference leans toward in-capsule; the tentative default is host-executes-per-policy until decided.
-- Uncommitted-vs-unpushed messaging, and how multiple dirty repos / mounts are presented.
+Settled with the operator by walking faithful TUI previews. The modal renders in the capsule's existing chrome (row 0 ` jackin' ` brand pill + tab strip, row 1 `━` underline) as a centered choice list, reusing the capsule's existing dialog / modal-stack components — no new chrome.
+
+The exit modal, `Unsaved work — exit?`, shows **one summary line per dirty repo** (`<repo>  N changed · N unpushed`) above four choices:
+
+```text
+ jackin'  [the-architect]
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌─ Unsaved work — exit? ───────────────┐
+  │ jackin      2 changed · 1 unpushed    │
+  │ holla-apt   3 changed                 │
+  │                                       │
+  │ ▸ Start a new agent                   │
+  │   Inspect changes                     │
+  │   Exit & keep changes                 │
+  │   Exit & discard changes              │
+  └───────────────────────────────────────┘
+  ↑↓ · ↵ select · Ctrl-Q quit
+```
+
+Settled decisions:
+
+- **Default focus** is the first row, `Start a new agent`. **`Esc` is ignored** — the modal is a forced explicit choice; there is no ambiguous cancel.
+- **`Start a new agent`** opens the **exact New-tab agent picker** — the same `Dialog::new_agent_picker(agents, PickerIntent::NewTab)` in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />, rendered identically: title `New tab`, full-width `── agents ──` / `── shells ──` section dashes, agent display names, type-to-filter, and the `Shell` row. It is the New-tab flow verbatim, not a lookalike. `Esc` in the picker walks back one step to the exit modal (modal stack).
+- **`Inspect changes`** opens a read-only diff view inside the capsule, reusing the shared `jackin-tui` `diff_view` plus select-list panes: a changed-files pane beside a live diff, with a repos pane shown only when more than one repo is dirty. Strictly preview-only. `Esc` returns to the exit modal.
+- **Keep vs discard is decided in-capsule**: the two `Exit & …` rows are the decision. The host only **executes** the chosen action — it never prompts. Selecting `Exit & discard changes` is itself the explicit destructive approval, so there is no separate host confirmation; if a delete guard is wanted it is an in-capsule sub-confirm, never a post-teardown host prompt.
+- **Multiple dirty repos** are listed one line each, with full per-file detail behind `Inspect`.
+
+Still open (minor, settle during implementation): exact row wording, the `Ctrl+Q` meaning from this modal (tentatively treat as `Exit & keep`), and unpushed-only vs uncommitted summary phrasing. The cross-screen double-`Ctrl+C` immediate-exit guarantee applies here too.
 
 ## Operator verification — pending sign-off
 
