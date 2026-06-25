@@ -1014,7 +1014,14 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
             UsageSource::None
         },
         confidence: if status == UsageSnapshotStatus::Fresh {
-            UsageConfidence::Authoritative
+            // Class fix (P0): the rich OAuth snapshot is authoritative; the CLI
+            // fallback is a reduced snapshot and must be marked degraded
+            // (Estimated) with a reason, never presented as authoritative.
+            if cli_usage.is_some() {
+                UsageConfidence::Estimated
+            } else {
+                UsageConfidence::Authoritative
+            }
         } else {
             UsageConfidence::None
         },
@@ -1025,6 +1032,11 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
             }
             UsageSnapshotStatus::Stale => Some(provider_error.unwrap_or_else(|| {
                 "Claude provider usage unavailable; cached quota is stale".to_owned()
+            })),
+            // Degraded-but-fresh: the reduced CLI snapshot is showing because
+            // the OAuth fetch failed — surface why, not a confident silence.
+            _ if cli_usage.is_some() => Some(oauth_error.clone().unwrap_or_else(|| {
+                "Claude OAuth usage unavailable; showing reduced CLI snapshot".to_owned()
             })),
             _ => None,
         },
