@@ -155,9 +155,9 @@ fn backend_emits_frame_sgr_metadata() {
 
 #[test]
 fn backend_emits_indexed_color_sgr() {
-    // 256-color fg/bg (write_color_sgr) and an indexed underline color
-    // (write_sgr_metadata) all route through push_indexed_color_tail; assert
-    // the `38;5;`/`48;5;`/`58;5;` forms emit.
+    // 256-color fg/bg (`write_color_sgr`) and an indexed underline color
+    // (`write_sgr_metadata`) all route through `push_indexed_color_tail`;
+    // assert the `38;5;`/`48;5;`/`58;5;` forms emit.
     let output = frame_sgr_output(
         SgrMetadata {
             underline_color: jackin_term::Color::Idx(200),
