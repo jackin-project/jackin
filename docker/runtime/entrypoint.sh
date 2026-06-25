@@ -11,13 +11,17 @@ fi
 # `; ` to the failure line — used by setup-once to surface its retry
 # semantics.
 run_hook() {
-    local label="$1" path="$2" tail="${3:-}"
+    local label="$1" path="$2" tail="${3:-}" hook_cwd="${4:-}"
     echo "[entrypoint] running $label hook..."
     # `$?` inside `if ! cmd; then ...` is the negated test's status (0),
     # not the hook's. Capture before the test so the failure log + exit
     # surface the real exit code.
     local rc=0
-    "$path" || rc=$?
+    if [ -n "$hook_cwd" ]; then
+        ( cd "$hook_cwd" && "$path" ) || rc=$?
+    else
+        "$path" || rc=$?
+    fi
     if [ "$rc" -ne 0 ]; then
         echo "[entrypoint] $label hook failed (exit $rc)${tail:+; $tail}" >&2
         exit "$rc"
@@ -161,7 +165,7 @@ if [ -x /jackin/runtime/hooks/source.sh ]; then
 fi
 
 if [ -x /jackin/runtime/hooks/preflight.sh ]; then
-    run_hook preflight /jackin/runtime/hooks/preflight.sh
+    run_hook preflight /jackin/runtime/hooks/preflight.sh "" "$HOME"
 fi
 
 # In debug mode, pause so the operator can review logs before the agent clears the screen.

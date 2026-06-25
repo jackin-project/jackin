@@ -823,7 +823,7 @@ fn settings_auth_dialog_source_folder_stages_and_save_persists_global_kimi() {
 
     let op_cache = std::rc::Rc::new(std::cell::RefCell::new(jackin_env::OpCache::default()));
     let mut pending = None;
-    handle_settings_auth_modal(
+    let outcome = handle_settings_auth_modal(
         &mut settings.auth,
         &mut settings.env,
         &mut pending,
@@ -833,6 +833,25 @@ fn settings_auth_dialog_source_folder_stages_and_save_persists_global_kimi() {
         Rect::new(0, 0, 120, 40),
         &|_, _| Ok(()),
     );
+    assert!(matches!(
+        outcome,
+        SettingsAuthOutcome::ApplyFileBrowserOutcome(
+            crate::tui::components::file_browser::FileBrowserOutcome::RequestCommit(_)
+        )
+    ));
+
+    let mut state = ManagerState::from_config(&config, tmp.path());
+    state.stage = ManagerStage::Settings(settings);
+    crate::tui::file_browser::apply_file_browser_commit_result(
+        &mut state,
+        crate::tui::file_browser::FileBrowserCommitResult::Accepted {
+            context: crate::tui::effect::FileBrowserEffectContext::SettingsAuth,
+            path: expected_dir.clone(),
+        },
+    );
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        panic!("expected settings stage");
+    };
 
     let Some(SettingsAuthModal::AuthForm { state, focus, .. }) = &settings.auth.modal else {
         panic!("source folder commit must return to auth form");
@@ -928,7 +947,7 @@ fn settings_auth_dialog_invalid_source_folder_keeps_picker_open_and_sets_error()
 
     let op_cache = std::rc::Rc::new(std::cell::RefCell::new(jackin_env::OpCache::default()));
     let mut pending = None;
-    handle_settings_auth_modal(
+    let outcome = handle_settings_auth_modal(
         &mut settings.auth,
         &mut settings.env,
         &mut pending,
@@ -938,6 +957,25 @@ fn settings_auth_dialog_invalid_source_folder_keeps_picker_open_and_sets_error()
         Rect::new(0, 0, 120, 40),
         &|_, _| Err("missing credentials directory".to_owned()),
     );
+    assert!(matches!(
+        outcome,
+        SettingsAuthOutcome::ApplyFileBrowserOutcome(
+            crate::tui::components::file_browser::FileBrowserOutcome::RequestCommit(_)
+        )
+    ));
+
+    let mut state = ManagerState::from_config(&config, tmp.path());
+    state.stage = ManagerStage::Settings(settings);
+    crate::tui::file_browser::apply_file_browser_commit_result(
+        &mut state,
+        crate::tui::file_browser::FileBrowserCommitResult::Rejected {
+            context: crate::tui::effect::FileBrowserEffectContext::SettingsAuth,
+            reason: "missing credentials directory".to_owned(),
+        },
+    );
+    let ManagerStage::Settings(settings) = &state.stage else {
+        panic!("expected settings stage");
+    };
 
     assert!(
         settings.auth.error.is_some(),

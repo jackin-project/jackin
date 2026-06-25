@@ -29,7 +29,7 @@
 /// Layout columns come from `jackin_tui::lay_out_tabs`, so the
 /// console TUI and the multiplexer cannot drift on cell sizing /
 /// click-region maths.
-use jackin_tui::lay_out_tabs;
+use jackin_tui::components::TabStrip;
 
 use crate::tui::app::{MuxMode, VisibleAgentState};
 use crate::tui::layout::Tab;
@@ -251,7 +251,7 @@ pub fn status_bar_plan(
         .collect();
 
     let start_col_0based = display_cols(BRAND_TEXT) + BRAND_PAD_COLS;
-    let laid = lay_out_tabs(&label_refs, start_col_0based);
+    let laid = TabStrip::new(&label_refs).cells(start_col_0based);
     let max_tab_col = cols.saturating_sub(reserve_right);
 
     let mut cells = Vec::with_capacity(laid.len());

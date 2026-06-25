@@ -54,6 +54,7 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "JACKIN_DEBUG",
     "JACKIN_GIT_COAUTHOR_TRAILER",
     "JACKIN_GIT_DCO",
+    "TZ",
     // Per-tab provider injection — Anthropic-compatible backends (Claude Code).
     // Listed here so env_for_spawn's allowlist accepts them as overrides when the
     // operator picks an alternative provider in the AgentPicker flow.
@@ -82,12 +83,21 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
 /// `file://`, and anything else are dropped — a compromised agent
 /// could otherwise script the operator's terminal emulator or
 /// reference operator-side files on click.
-fn osc8_uri_is_safe(uri: &str) -> bool {
+pub(crate) fn osc8_uri_is_safe(uri: &str) -> bool {
     if uri.is_empty() {
         return true;
     }
-    let lower = uri.trim().to_ascii_lowercase();
-    lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
+    // Byte-level case-insensitive prefix match so this stays allocation-free:
+    // the frame hyperlink-region builder calls it per linked cell every frame,
+    // and a `to_ascii_lowercase()` here would heap-allocate each call.
+    let bytes = uri.trim().as_bytes();
+    [b"http://".as_slice(), b"https://", b"mailto:"]
+        .iter()
+        .any(|scheme| {
+            bytes
+                .get(..scheme.len())
+                .is_some_and(|head| head.eq_ignore_ascii_case(scheme))
+        })
 }
 
 /// Parse an `OSC 7` payload into a local-filesystem path. `OSC 7`
@@ -869,6 +879,14 @@ impl Session {
             self.clear_transient_keyboard_modes();
         }
 
+        // The grid records semantic scroll operations, but the scroll-region
+        // (DECSTBM) emission optimizer that would consume them is deferred (see
+        // the Ratatui modernization roadmap). Clear each chunk so they cannot
+        // grow unbounded on a long scroll-heavy session (retaining capacity to
+        // avoid per-chunk reallocation); the optimizer will consume them at
+        // frame compose when it lands.
+        self.shadow_grid.clear_scroll_ops();
+
         self.apply_passthrough_policy();
 
         if was_scrolled {
@@ -1066,6 +1084,10 @@ impl Session {
         std::mem::take(&mut self.pending_passthrough)
     }
 
+    pub fn allow_frame_hyperlinks(&self) -> bool {
+        self.osc_policy.allow_hyperlink()
+    }
+
     pub fn terminate(&self) {
         match self.child_killer.lock() {
             Ok(mut killer) => {
@@ -1087,6 +1109,23 @@ impl Session {
     }
 
     pub fn resize(&mut self, rows: u16, cols: u16) {
+        // A pane collapsed below its border height yields a 0-row inner rect.
+        // Never hand the agent PTY a 0×0 window size (programs expect ≥1) nor the
+        // shadow grid a degenerate geometry. `DamageGrid::set_size` clamps too;
+        // this keeps TIOCSWINSZ and the model in agreement on the floor.
+        if rows == 0 || cols == 0 {
+            // A clamp here means a layout bug upstream collapsed a pane; log it
+            // so a soak run can pin the offending frame rather than silently
+            // running the agent with a collapsed dimension. Each axis is floored
+            // independently, so `0x80` becomes `1x80`, not `1x1`.
+            crate::cdebug!(
+                "resize-clamp: degenerate geometry {rows}x{cols} floored to {}x{}",
+                rows.max(1),
+                cols.max(1),
+            );
+        }
+        let rows = rows.max(1);
+        let cols = cols.max(1);
         // TIOCSWINSZ failure leaves the agent drawing at the old size
         // while the screen renders at the new geometry — the operator
         // sees mis-wrapped lines with no explanation. Log so --debug

@@ -275,9 +275,14 @@ fn token_generate_status_message_names_target_scope() {
 }
 
 #[test]
-fn debug_run_id_label_uses_empty_fallback() {
-    assert_eq!(debug_run_id_label(Some("run-1")), "run-1");
-    assert_eq!(debug_run_id_label(None), "");
+fn debug_run_id_label_prefers_active_run_then_env() {
+    assert_eq!(
+        debug_run_id_label(Some("run-active"), Some("run-env")),
+        "run-active"
+    );
+    assert_eq!(debug_run_id_label(None, Some("run-env")), "run-env");
+    assert_eq!(debug_run_id_label(Some(""), Some("run-env")), "run-env");
+    assert_eq!(debug_run_id_label(None, None), "");
 }
 
 #[test]
@@ -578,11 +583,23 @@ fn debug_chip_activation_requires_click_hover_and_run() {
 }
 
 #[test]
-fn console_pointer_hand_uses_chrome_or_base_clickability() {
-    assert!(!console_pointer_hand(false, false));
-    assert!(console_pointer_hand(true, false));
-    assert!(console_pointer_hand(false, true));
-    assert!(console_pointer_hand(true, true));
+fn console_pointer_shape_uses_chrome_or_base_clickability() {
+    assert_eq!(
+        console_pointer_shape(false, false),
+        jackin_tui::PointerShape::Default
+    );
+    assert_eq!(
+        console_pointer_shape(true, false),
+        jackin_tui::PointerShape::Pointer
+    );
+    assert_eq!(
+        console_pointer_shape(false, true),
+        jackin_tui::PointerShape::Pointer
+    );
+    assert_eq!(
+        console_pointer_shape(true, true),
+        jackin_tui::PointerShape::Pointer
+    );
 }
 
 #[test]

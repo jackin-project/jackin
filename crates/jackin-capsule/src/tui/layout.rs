@@ -84,6 +84,20 @@ impl Rect {
             cols,
         }
     }
+
+    /// True when `inner` lies within `self`, treating both as half-open
+    /// `[row, row+rows)` × `[col, col+cols)` ranges — coincident far edges
+    /// pass, so a rect contains itself. Sub-rectangle containment, not point
+    /// membership. Used to assert that pane subdivision never escapes its
+    /// content rect — e.g. a pane top can never rise above `content_rect.row`
+    /// (`STATUS_BAR_ROWS`) into the status bar.
+    #[must_use]
+    pub const fn contains(&self, inner: Self) -> bool {
+        inner.row >= self.row
+            && inner.col >= self.col
+            && inner.row + inner.rows <= self.row + self.rows
+            && inner.col + inner.cols <= self.col + self.cols
+    }
 }
 
 pub fn available_content_rows(term_rows: u16) -> u16 {

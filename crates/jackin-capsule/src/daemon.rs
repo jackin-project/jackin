@@ -41,7 +41,7 @@ use tokio::time::{Duration, interval};
 use portable_pty::CommandBuilder;
 
 use crate::attach_protocol::{
-    AttachHandshake, detach_attached_task, detach_client, drain_and_exit,
+    AttachHandshake, ControlRequest, detach_attached_task, detach_client, drain_and_exit,
     drain_and_exit_with_reason, handle_attach_client, initial_spawn_request, perform_handshake,
     spawn_request_label,
 };
@@ -56,7 +56,7 @@ use crate::git_context::{
 };
 use crate::pr_context::gh_pull_request_info;
 use crate::protocol::attach::{
-    ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server,
+    AttachCapabilities, ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server,
 };
 use crate::protocol::control::SessionInfo;
 use crate::pull_request::PullRequestInfo;
@@ -108,7 +108,7 @@ use crate::tui::selection::{
 };
 use crate::tui::subscriptions::{
     GIT_BRANCH_CONTEXT_POLL_INTERVAL, PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL, RENDER_TICK_INTERVAL,
-    STATE_TICK_INTERVAL,
+    STATE_TICK_INTERVAL, USAGE_ACCOUNT_REFRESH_POLL_INTERVAL,
 };
 use crate::tui::terminal::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 use crate::tui::title::{
@@ -125,6 +125,8 @@ use crate::tui::update::{
     wheel_scrollback_redraw_reason,
 };
 use crate::tui::view::spawn_request_failure_message;
+use crate::usage::UsageCache;
+use jackin_protocol::control::{ClientMsg, ServerMsg};
 
 mod compositor;
 mod context_mgmt;
@@ -238,6 +240,10 @@ pub struct Multiplexer {
     /// follow the terminal the operator is using now rather than the
     /// terminal that launched the container.
     attached_terminal: ClientTerminal,
+    /// Host-adaptive terminal capabilities derived from the active attach
+    /// client. This backend-side record may change on reattach and must not
+    /// alter agent-visible terminal model semantics.
+    attached_capabilities: AttachCapabilities,
     /// Hash of the last multiplexer-owned OSC 2 title sent to the
     /// outer terminal. Gates re-emission on inequality: without the
     /// diff, every full frame would reassert the workspace/PR title
@@ -249,6 +255,10 @@ pub struct Multiplexer {
     /// next operator keystroke clears it.
     spawn_failure: Option<String>,
     hover_target: Option<HoverTarget>,
+    /// P5: focus is on the agent-tab bar (green underline + Left/Right switch
+    /// tabs; Down/Esc/click returns focus to the agent content). `false` means
+    /// the agent terminal holds focus, the default.
+    tab_bar_focused: bool,
     /// Deadline for hiding the transient "Copied!" badge in whichever
     /// dialog most recently performed a jackin-owned OSC 52 copy.
     dialog_copy_feedback_deadline: Option<Instant>,
@@ -313,6 +323,17 @@ pub struct Multiplexer {
     /// Debug-only process RSS/CPU sampler, emitted on the state ticker so live
     /// multi-pane smokes can attach resource data to the run id.
     resource_metrics: resource_metrics::ResourceMetricsSampler,
+    /// Daemon-owned focused usage/quota cache. Capsule UI renders this cache;
+    /// it does not poll providers from render code.
+    usage_cache: UsageCache,
+    /// Provider tab requested by the usage overlay. The normal usage refresh
+    /// ticker consumes this as a focused-first target so opening/switching tabs
+    /// stays non-blocking but the selected provider refreshes next.
+    pending_usage_refresh: Option<crate::usage::UsageRefreshTarget>,
+    /// Background account refresh worker. Provider probes can run HTTP
+    /// requests and CLI subprocesses, so the daemon select loop only starts
+    /// and joins this task; it never performs the probe work inline.
+    usage_refresh_task: Option<tokio::task::JoinHandle<UsageCache>>,
     /// Offset into the wordlist for the next codename pick, seeded once at
     /// daemon construction from the current time subsecond nanos.
     wordlist_offset: usize,
@@ -323,6 +344,7 @@ pub struct Multiplexer {
 /// data source for `jackin-capsule agents` and the tab hover tooltip.
 #[derive(Debug, Clone)]
 pub struct AgentRecord {
+    pub session_id: u64,
     pub codename: String,
     /// Agent slug (`"claude"`, `"codex"`, …), or `None` for shell sessions.
     pub agent: Option<String>,
@@ -485,9 +507,11 @@ impl Multiplexer {
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: false,
             attached_terminal: ClientTerminal::default(),
+            attached_capabilities: AttachCapabilities::default(),
             last_outer_terminal_title: None,
             spawn_failure: None,
             hover_target: None,
+            tab_bar_focused: false,
             dialog_copy_feedback_deadline: None,
             pull_request_context_branch: None,
             pull_request_context_head: None,
@@ -504,6 +528,9 @@ impl Multiplexer {
             codename_retired: HashSet::new(),
             agent_history: Vec::new(),
             resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
+            usage_cache: UsageCache::default(),
+            pending_usage_refresh: None,
+            usage_refresh_task: None,
             wordlist_offset: {
                 use std::time::{SystemTime, UNIX_EPOCH};
                 SystemTime::now()
@@ -571,6 +598,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let mut new_clients = socket::start_listener()?;
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
     let mut state_ticker = interval(STATE_TICK_INTERVAL);
+    let mut usage_account_ticker = interval(USAGE_ACCOUNT_REFRESH_POLL_INTERVAL);
     let mut sigterm = signal(SignalKind::terminate())?;
     let mut sigint = signal(SignalKind::interrupt())?;
 
@@ -582,6 +610,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // handshakes ride this channel back to the main loop, which then
     // applies the take-over + spawns the persistent attach task.
     let (handshake_tx, mut handshake_rx) = mpsc::unbounded_channel::<AttachHandshake>();
+    let (control_tx, mut control_rx) = mpsc::unbounded_channel::<ControlRequest>();
 
     // Resolve the operator's escape-time once at startup; the value
     // cannot change after daemon launch, so per-iteration env reads
@@ -659,19 +688,18 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // `handshake_tx`.
             Some((stream, client_permit)) = new_clients.recv() => {
                 let handshake_tx = handshake_tx.clone();
-                let sessions_snapshot = mux.session_infos();
-                let tabs_snapshot = mux.tab_snapshots();
-                let history_snapshot = mux.agent_registry_snapshot();
-                let active_tab = u32::try_from(mux.active_tab).unwrap_or(0);
+                let control_tx = control_tx.clone();
                 tokio::spawn(perform_handshake(
                     stream,
                     client_permit,
                     handshake_tx,
-                    sessions_snapshot,
-                    tabs_snapshot,
-                    history_snapshot,
-                    active_tab,
+                    control_tx,
                 ));
+            }
+
+            Some(request) = control_rx.recv() => {
+                let reply = control_reply_for_request(&mut mux, request.msg);
+                drop(request.reply_tx.send(reply));
             }
 
             // Validated attach handshake from the spawned handshake task.
@@ -688,18 +716,24 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 } = ready;
                 crate::cdebug!("resize-event: source=attach rows={rows} cols={cols}");
                 mux.resize(rows, cols);
-                mux.pointer_shapes_supported = terminal.pointer_shapes_supported();
+                let capabilities = terminal.attach_capabilities();
+                mux.pointer_shapes_supported = capabilities.pointer_shapes;
                 // Attach-handshake outcome (clog tier): the triage line for
                 // "agent themed wrong" reports — None means the client could
                 // not read its terminal's palette and grids keep what they
-                // had.
+                // had. `caps` (with its `sources` provenance) is logged so a
+                // wrong-capability report can be traced to whichever input
+                // (handshake identity, terminfo, color probe, override,
+                // denylist) decided it.
                 crate::clog!(
-                    "attach: client terminal term={:?} colors fg={:?} bg={:?}",
+                    "attach: client terminal term={:?} colors fg={:?} bg={:?} caps={:?}",
                     terminal.term,
                     terminal.default_fg,
                     terminal.default_bg,
+                    capabilities,
                 );
                 mux.attached_terminal = terminal;
+                mux.attached_capabilities = capabilities;
                 mux.apply_client_colors_to_sessions();
                 mux.pointer_shape = PointerShape::Default;
                 if mux.sessions.is_empty()
@@ -1006,6 +1040,17 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 mux.maybe_spawn_git_branch_context_lookup(Instant::now());
             }
 
+            // Account refresh scheduler. This remains the provider-calling
+            // path; Capsule renderers read the last Turso snapshot.
+            _ = usage_account_ticker.tick() => {
+                let now = Instant::now();
+                let refreshed = mux.finish_usage_account_refresh_if_ready(now).await;
+                mux.spawn_active_usage_account_refresh(now);
+                if refreshed && mux.refresh_open_usage_dialog_from_cache() {
+                    mux.invalidate(dialog_change_redraw_reason());
+                }
+            }
+
             // Periodic state refresh: re-render the status bar so the tab
             // strip's state glyph follows the four-state model. The full
             // pane bodies stay where they are.
@@ -1017,7 +1062,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // visibly jumps to the tab strip every tick and parks
             // there as a phantom block until the next pane redraw.
             _ = state_ticker.tick() => {
-                mux.log_resource_metrics();
+                mux.log_resource_metrics().await;
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
                 // Snapshot visible agent state, refresh, snapshot again. The
                 // ticker's only time-based effect is Working→Idle transitions;
@@ -1040,6 +1085,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     mux.invalidate(selection_change_redraw_reason());
                     continue;
                 }
+                if mux.refresh_open_usage_dialog_from_cache() {
+                    mux.invalidate(dialog_change_redraw_reason());
+                    continue;
+                }
                 // A modal owns the whole screen behind an opaque backdrop;
                 // repainting the status/branch chrome here would draw it
                 // back over the fill. The hidden tab-state glyph has nothing
@@ -1053,6 +1102,37 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 mux.refresh_tab_labels();
                 mux.invalidate(status_change_redraw_reason());
             }
+        }
+    }
+}
+
+fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg {
+    match msg {
+        ClientMsg::Status => ServerMsg::SessionList {
+            sessions: mux.session_infos(),
+        },
+        ClientMsg::Snapshot => ServerMsg::Snapshot {
+            tabs: mux.tab_snapshots(),
+            active_tab: u32::try_from(mux.active_tab).unwrap_or(0),
+        },
+        ClientMsg::Agents => ServerMsg::AgentRegistry {
+            records: mux.agent_registry_snapshot(),
+        },
+        ClientMsg::UsageFocused => ServerMsg::UsageFocused {
+            usage: Box::new(mux.focused_usage_snapshot()),
+        },
+        ClientMsg::UsageRefreshFocused => {
+            mux.request_usage_refresh_for_provider(None);
+            ServerMsg::UsageFocused {
+                usage: Box::new(mux.focused_usage_snapshot()),
+            }
+        }
+        ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
+            accounts: mux.usage_cache.account_snapshot_views(),
+        },
+        ClientMsg::Unknown => {
+            crate::clog!("control: ignoring unknown ClientMsg variant from peer");
+            ServerMsg::Unknown
         }
     }
 }

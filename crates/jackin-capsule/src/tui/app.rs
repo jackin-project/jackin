@@ -7,6 +7,7 @@
 use crate::protocol::AgentState;
 use crate::tui::components::branch_context_bar::BranchContextBarHit;
 use crate::tui::layout::{Rect, SplitOrient, Tab};
+pub(crate) use jackin_tui::PointerShape;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MuxMode {
@@ -46,29 +47,6 @@ pub(crate) fn mux_mode_for_state(state: MuxModeState) -> MuxMode {
         MuxMode::PrefixAwait
     } else {
         MuxMode::Normal
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PointerShape {
-    Default,
-    Pointer,
-    Text,
-    EwResize,
-    NsResize,
-    Grabbing,
-}
-
-impl PointerShape {
-    pub(crate) fn as_osc22_name(self) -> &'static str {
-        match self {
-            Self::Default => "default",
-            Self::Pointer => "pointer",
-            Self::Text => "text",
-            Self::EwResize => "ew-resize",
-            Self::NsResize => "ns-resize",
-            Self::Grabbing => "grabbing",
-        }
     }
 }
 
@@ -113,6 +91,7 @@ pub(crate) enum HoverTarget {
     Tab(usize),
     Menu,
     BranchContext,
+    UsageStatus,
     Container,
     /// The red debug run-id chip at the bottom-right when `--debug` is active.
     DebugChip,
@@ -142,6 +121,7 @@ pub(crate) fn chrome_hover_target_for_state(state: ChromeHitState) -> Option<Hov
     }
     match state.branch_hit {
         Some(BranchContextBarHit::Context) => Some(HoverTarget::BranchContext),
+        Some(BranchContextBarHit::UsageStatus) => Some(HoverTarget::UsageStatus),
         Some(BranchContextBarHit::Container) => Some(HoverTarget::Container),
         Some(BranchContextBarHit::DebugChip) => Some(HoverTarget::DebugChip),
         None => None,
@@ -246,6 +226,17 @@ pub(crate) fn visible_panes_for_layout(
     leaves
         .into_iter()
         .map(|(id, outer)| {
+            // Subdivision must never escape the content rect (a pane top can't
+            // rise above `content_rect.row` == `STATUS_BAR_ROWS` into the status
+            // bar). Production correctness rests on the `leaves()` split
+            // arithmetic, which enforces this structurally; this assert is a
+            // debug/test tripwire that catches a regression in that arithmetic
+            // (release builds drop it, and the `frame-pane` trace is firehose-
+            // gated, so neither fires in a normal release run).
+            debug_assert!(
+                content_rect.contains(outer),
+                "pane {id} outer rect {outer:?} escaped content_rect {content_rect:?}",
+            );
             let focused = Some(id) == focused_id;
             VisiblePane {
                 id,
