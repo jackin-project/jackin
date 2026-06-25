@@ -111,6 +111,20 @@ pub fn scan_osc133(bytes: &[u8]) -> Option<OscShellMark> {
     None
 }
 
+/// Scan raw PTY bytes for the first OSC 9;4 (`ConEmu` progress) state digit.
+///
+/// Sequence: `ESC ] 9 ; 4 ; <state>[;<pct>]` terminated by BEL or ST. Returns
+/// the state digit (0 = clear/done-ish, 1/2/3 = active, 4 = paused). jackin-term
+/// surfaces plain OSC 9 as a `Notification` passthrough but does not decode the
+/// `9;4` progress sub-protocol, so it is scanned from the raw stream here —
+/// the same model-independent approach as `scan_osc133`.
+pub fn scan_osc9_progress(bytes: &[u8]) -> Option<u8> {
+    const NEEDLE: &[u8] = b"\x1b]9;4;";
+    let pos = bytes.windows(NEEDLE.len()).position(|w| w == NEEDLE)?;
+    let digit = *bytes.get(pos + NEEDLE.len())?;
+    digit.is_ascii_digit().then(|| digit - b'0')
+}
+
 /// Per-session accumulated status. Holds the current effective state and
 /// the `seen` flag used to derive `Done`.
 #[derive(Debug, Clone)]

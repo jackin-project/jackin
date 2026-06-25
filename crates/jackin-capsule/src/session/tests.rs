@@ -497,6 +497,54 @@ fn clear_event_drops_authority_for_source() {
 }
 
 #[test]
+fn osc_title_captured_and_capped() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let long = "x".repeat(400);
+    session.feed_pty(format!("\x1b]2;{long}\x07").as_bytes());
+    let osc = session.osc_evidence();
+    assert_eq!(
+        osc.title.as_ref().map(|t| t.chars().count()),
+        Some(256),
+        "title retained and capped at 256 chars"
+    );
+    assert!(osc.title_changed_at.is_some());
+}
+
+#[test]
+fn osc9_notification_sets_notify_edge() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.feed_pty(b"\x1b]9;build done\x07");
+    assert!(session.osc_evidence().notify_edge_at.is_some());
+    assert!(!session.osc_evidence().progress_active);
+}
+
+#[test]
+fn osc94_progress_active_then_clear() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.feed_pty(b"\x1b]9;4;1;50\x07");
+    assert!(
+        session.osc_evidence().progress_active,
+        "OSC 9;4 state 1 marks progress active"
+    );
+    session.feed_pty(b"\x1b]9;4;0\x07");
+    assert!(!session.osc_evidence().progress_active);
+    assert!(session.osc_evidence().progress_cleared_at.is_some());
+}
+
+#[test]
+fn osc133_marks_set_shell_state() {
+    use crate::agent_status::evidence::RawAgentState;
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.feed_pty(b"\x1b]133;C\x07");
+    assert_eq!(
+        session.osc_evidence().shell_state,
+        Some(RawAgentState::Working)
+    );
+    session.feed_pty(b"\x1b]133;B\x07");
+    assert_eq!(session.osc_evidence().shell_state, Some(RawAgentState::Idle));
+}
+
+#[test]
 fn process_evidence_unavailable_without_child_pid() {
     // Test sessions have no real child PID; sampling must report "no physics"
     // (never a false exit), so the watchdog can't demote off this evidence.

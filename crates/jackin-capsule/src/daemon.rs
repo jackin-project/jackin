@@ -1057,6 +1057,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     let snapshot = EvidenceSnapshot {
                         authority: session.authority.clone(),
                         subagents_active: session.subagents_active,
+                        osc: session.osc_evidence().clone(),
                         process,
                         activity: ActivityEvidence {
                             last_output: Some(session.last_output_at),

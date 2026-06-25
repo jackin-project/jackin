@@ -416,9 +416,9 @@ Work top to bottom. Check an item only when it is in the build and its test is g
 - [x] 6 — `Session::sample_process_evidence` reads `/proc` per tick (Linux): `foreground_is_agent`, `foreground_pgid`, `child_process_count`, `cpu_jiffies_delta`, `root_is_agent`, `process_exited`, `foreground_returned_to_shell`, `physics_sampled`. Gated by `process::physics_available()` (off-Linux/no-PID → default, `physics_sampled=false` — "no evidence", never "quiet"). Exit/shell-return publishes via arbitration step 1, then `clear_runtime_authority()` drops authority/gate/counters — exit transition before identity clear. This also unblocks Phase 5 end-to-end: `foreground_is_agent` now lets fresh OpenCode authority reach published state on Linux
 - [x] Gate 6 — process `/proc` fixtures (direct/node-wrapped/dead-pid/descendant/CPU-window) pass; `process_evidence_unavailable_without_child_pid`, `clear_runtime_authority_drops_state_and_counters`; 691 capsule tests green, clippy/shear clean
 
-**Phase 7 — OSC evidence consumed [P1] (Slice 6)**
-- [ ] 7 — Retain title/notify/progress/BEL AND make arbitration read them (Codex title spinner, notification edge, Amp BEL)
-- [ ] Gate 7 — synthetic streams set/clear each field; payload cap; ignored when foreground ≠ agent
+**Phase 7 — OSC evidence consumed [P1] (Slice 6)** ✅ landed June 25, 2026
+- [x] 7 — Capture per-session `OscEvidence` from the PTY parse and feed it into the snapshot: title (OSC 0/2, capped 256 chars) + `title_changed_at`; notify edge (plain OSC 9 via passthrough); OSC 9;4 progress (raw scan `scan_osc9_progress` — jackin-term doesn't surface it as a passthrough event); OSC 133 shell marks (`scan_osc133` in `feed_pty`: PreExec→working, PromptEnd/CommandFinished→idle). Wiped on exit via `clear_runtime_authority` → `OscEvidence::clear_agent_signals`. Arbitration already consumes `shell_state` (Strong) and `progress_cleared_at` (Weak hint); the title-spinner channel is consumed by the rule pack's `osc_title` region (Phase 8) and the notify edge by the attention path (Phase 9). **BEL deferred to Phase 11** (needs a jackin-term Bell passthrough variant)
+- [x] Gate 7 — `osc_title_captured_and_capped` (256 cap), `osc9_notification_sets_notify_edge`, `osc94_progress_active_then_clear`, `osc133_marks_set_shell_state`; 695 capsule tests green, clippy/shear clean
 
 **Phase 8 — Rule-pack engine + expressiveness [P1] (Slice 7)**
 - [ ] 8 — TOML loader; regions, priority, unknown fallback, safety caps

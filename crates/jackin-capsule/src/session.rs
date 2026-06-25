@@ -47,6 +47,11 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 /// viewport, so this stays generous.
 pub const SCROLLBACK_LEN: usize = 10_000;
 
+/// Cap on retained OSC-evidence string payloads (e.g. the window title). OSC
+/// content is untrusted model output; retaining unbounded text would let an
+/// agent grow capsule memory by spamming long titles.
+const OSC_EVIDENCE_MAX_CHARS: usize = 256;
+
 pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "GIT_AUTHOR_NAME",
     "GIT_AUTHOR_EMAIL",
@@ -235,6 +240,10 @@ pub struct Session {
     /// the foreground-returned-to-shell exit edge (only meaningful after the
     /// agent was actually in front).
     saw_agent_foreground: bool,
+    /// Agent-authored terminal-protocol evidence (title, OSC 9 notify, OSC 9;4
+    /// progress, OSC 133 shell marks). Captured from the PTY parse, fed into the
+    /// evidence snapshot; wiped when the foreground is no longer the agent.
+    osc: crate::agent_status::evidence::OscEvidence,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
@@ -693,6 +702,7 @@ impl Session {
                 child_pid,
                 cpu_sample: None,
                 saw_agent_foreground: false,
+                osc: crate::agent_status::evidence::OscEvidence::default(),
                 input_tx,
                 pty_master: master,
                 child_killer,
@@ -926,6 +936,14 @@ impl Session {
         self.gate_states.clear();
         self.saw_agent_foreground = false;
         self.subagents_active = 0;
+        // A new foreground process must not inherit the previous agent's
+        // title/notify/progress evidence.
+        self.osc.clear_agent_signals();
+    }
+
+    /// Agent-authored terminal-protocol evidence for the evidence snapshot.
+    pub fn osc_evidence(&self) -> &crate::agent_status::evidence::OscEvidence {
+        &self.osc
     }
 
     /// Sample `/proc` physics for this session's child, producing the
@@ -1108,6 +1126,41 @@ impl Session {
         // dialog repaint flipped Blocked→Working). State comes from evidence
         // arbitration over the rule pack / OSC / authority / physics.
         self.last_output_at = std::time::Instant::now();
+
+        // OSC 133 shell-integration marks (emitted by the container shell rc,
+        // not by agents) are strong shell-state evidence: PreExec → working,
+        // PromptEnd / CommandFinished → idle. Captured here as evidence, never
+        // authoring state directly.
+        if let Some(mark) = crate::agent_status::scan_osc133(bytes) {
+            use crate::agent_status::OscShellMark;
+            use crate::agent_status::evidence::RawAgentState;
+            let now = std::time::Instant::now();
+            let shell_state = match mark {
+                OscShellMark::PreExec => Some(RawAgentState::Working),
+                OscShellMark::PromptEnd | OscShellMark::CommandFinished { .. } => {
+                    Some(RawAgentState::Idle)
+                }
+                OscShellMark::PromptStart => None,
+            };
+            if let Some(state) = shell_state {
+                self.osc.shell_state = Some(state);
+                self.osc.shell_mark_at = Some(now);
+            }
+        }
+
+        // OSC 9;4 (ConEmu progress): state 0 = clear (done-ish hint), 1/2/3 =
+        // active, 4 = paused. Not surfaced as a passthrough event, so scanned
+        // from the raw stream. Progress-active is never working-proof (Claude
+        // animates it during approval prompts); arbitration treats the clear
+        // edge as a hint only.
+        if let Some(state) = crate::agent_status::scan_osc9_progress(bytes) {
+            if state == 0 {
+                self.osc.progress_active = false;
+                self.osc.progress_cleared_at = Some(std::time::Instant::now());
+            } else {
+                self.osc.progress_active = true;
+            }
+        }
     }
 
     /// Drain the grid's typed `PassthroughEvent`s, apply the session's
@@ -1128,6 +1181,12 @@ impl Session {
             match event {
                 PassthroughEvent::TitleChanged(ref title) => {
                     self.title = Some(title.clone());
+                    // Agent-status evidence: retain the title (capped — OSC
+                    // content is untrusted model output) and its change time.
+                    // The rule pack's `osc_title` virtual region reads this.
+                    let capped: String = title.chars().take(OSC_EVIDENCE_MAX_CHARS).collect();
+                    self.osc.title = Some(capped);
+                    self.osc.title_changed_at = Some(std::time::Instant::now());
                     if self.osc_policy.allow_title()
                         && let Some(bytes) = event.encode()
                     {
@@ -1155,6 +1214,11 @@ impl Session {
                     }
                 }
                 PassthroughEvent::Notification(_) => {
+                    // Plain OSC 9 desktop notification = an attention edge (the
+                    // agent is done OR needs input; arbitration decides which).
+                    // OSC 9;4 progress is decoded separately from the raw stream
+                    // in `feed_pty` — jackin-term does not surface it here.
+                    self.osc.notify_edge_at = Some(std::time::Instant::now());
                     if self.osc_policy.allow_notify()
                         && let Some(bytes) = event.encode()
                     {
@@ -1350,6 +1414,7 @@ impl Session {
             child_pid: None,
             cpu_sample: None,
             saw_agent_foreground: false,
+            osc: crate::agent_status::evidence::OscEvidence::default(),
             input_tx,
             pty_master,
             child_killer,
