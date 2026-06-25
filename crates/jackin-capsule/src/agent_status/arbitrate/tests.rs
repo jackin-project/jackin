@@ -222,6 +222,12 @@
 
         assert_eq!(result.raw, RawAgentState::Idle);
         assert_eq!(result.winner, EvidenceWinner::StrongVisualOrOsc);
+        assert_eq!(
+            result.confidence,
+            AgentStatusConfidence::Weak,
+            "progress-clear is a done-ish hint: it must enter at Weak so the \
+             debounce policy still requires idle confirmation, never Strong"
+        );
         assert!(
             !result.summary.shell_integration,
             "agent-authored progress-clear must not be attributed to shell integration"

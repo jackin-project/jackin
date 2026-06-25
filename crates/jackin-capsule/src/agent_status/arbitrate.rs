@@ -150,10 +150,15 @@ pub fn arbitrate(
             summary,
         );
     }
+    // OSC 9;4 progress-clear is a done-ish *hint*, never authoritative idle: a
+    // single clear edge enters at Weak confidence so the debounce policy still
+    // requires IDLE_CONFIRMATIONS consecutive evaluations (and CPU-quiet) before
+    // publishing idle. Promoting it to Strong here would bypass that and flip a
+    // still-working agent to idle on one progress edge.
     if snapshot.process.foreground_is_agent && snapshot.osc.progress_cleared_at.is_some() {
         return finish(
             RawAgentState::Idle,
-            AgentStatusConfidence::Strong,
+            AgentStatusConfidence::Weak,
             EvidenceWinner::StrongVisualOrOsc,
             summary,
         );
