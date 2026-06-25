@@ -438,6 +438,7 @@ fn hello_with_client_terminal_round_trips() {
         colorterm: Some("truecolor".to_owned()),
         default_fg: Some((0xe6, 0xe6, 0xe6)),
         default_bg: Some((0x17, 0x17, 0x17)),
+        ..ClientTerminal::default()
     };
     let bytes = encode_client(ClientFrame::Hello {
         rows: 24,
@@ -495,6 +496,116 @@ fn client_terminal_detects_known_pointer_shape_support() {
     assert!(!generic_xterm.pointer_shapes_supported());
     assert!(!warp.pointer_shapes_supported());
     assert!(!dumb.pointer_shapes_supported());
+}
+
+#[test]
+fn client_terminal_derives_attach_capabilities() {
+    let kitty = ClientTerminal {
+        term: Some("xterm-kitty".to_owned()),
+        colorterm: Some("truecolor".to_owned()),
+        ..ClientTerminal::default()
+    };
+    let caps = kitty.attach_capabilities();
+    assert!(caps.pointer_shapes);
+    assert!(caps.truecolor);
+    assert!(caps.synchronized_output);
+    assert!(caps.osc8_hyperlinks);
+    assert!(caps.underline_style);
+    assert_eq!(caps.image_protocol, ImageProtocolCapability::Kitty);
+
+    let dumb = ClientTerminal {
+        term: Some("dumb".to_owned()),
+        ..ClientTerminal::default()
+    };
+    let caps = dumb.attach_capabilities();
+    assert!(!caps.pointer_shapes);
+    assert!(!caps.synchronized_output);
+    assert!(!caps.osc8_hyperlinks);
+    assert_eq!(caps.image_protocol, ImageProtocolCapability::Unsupported);
+}
+
+#[test]
+fn client_terminal_records_capability_sources_and_overrides() {
+    let terminal = ClientTerminal {
+        term: Some("xterm-256color".to_owned()),
+        colorterm: Some("truecolor".to_owned()),
+        default_fg: Some((1, 2, 3)),
+        capability_overrides: AttachCapabilityOverrides {
+            osc8_hyperlinks: Some(false),
+            image_protocol: Some(ImageProtocolCapability::Kitty),
+            ..AttachCapabilityOverrides::default()
+        },
+        ..ClientTerminal::default()
+    };
+
+    let caps = terminal.attach_capabilities();
+
+    assert!(caps.sources.handshake_identity);
+    assert!(caps.sources.terminfo_name);
+    assert!(caps.sources.safe_color_probe);
+    assert!(caps.sources.user_override);
+    assert!(!caps.sources.denylist);
+    assert!(caps.truecolor);
+    assert!(!caps.osc8_hyperlinks);
+    assert_eq!(caps.image_protocol, ImageProtocolCapability::Kitty);
+}
+
+#[test]
+fn hello_round_trips_capability_overrides() {
+    let frame = ClientFrame::Hello {
+        rows: 24,
+        cols: 80,
+        spawn: None,
+        env: Vec::new(),
+        focus_session: None,
+        terminal: ClientTerminal {
+            term: Some("xterm-kitty".to_owned()),
+            capability_overrides: AttachCapabilityOverrides {
+                pointer_shapes: Some(false),
+                synchronized_output: Some(true),
+                underline_style: Some(false),
+                image_protocol: Some(ImageProtocolCapability::Unsupported),
+                ..AttachCapabilityOverrides::default()
+            },
+            ..ClientTerminal::default()
+        },
+    };
+
+    let encoded = encode_client(frame.clone()).expect("encode hello");
+    let decoded = decode_client(encoded[0], encoded[5..].to_vec()).expect("decode hello");
+
+    assert_eq!(decoded, frame);
+}
+
+#[test]
+fn hello_without_capability_override_tail_decodes_as_default() {
+    let mut encoded = encode_client(ClientFrame::Hello {
+        rows: 24,
+        cols: 80,
+        spawn: None,
+        env: Vec::new(),
+        focus_session: None,
+        terminal: ClientTerminal {
+            term: Some("xterm-ghostty".to_owned()),
+            default_fg: Some((1, 2, 3)),
+            default_bg: Some((4, 5, 6)),
+            ..ClientTerminal::default()
+        },
+    })
+    .expect("encode hello");
+    encoded.truncate(encoded.len() - 6);
+
+    let decoded = decode_client(TAG_HELLO, encoded[5..].to_vec()).expect("decode old hello");
+
+    match decoded {
+        ClientFrame::Hello { terminal, .. } => {
+            assert_eq!(
+                terminal.capability_overrides,
+                AttachCapabilityOverrides::default()
+            );
+        }
+        other => panic!("expected Hello, got {other:?}"),
+    }
 }
 
 #[test]
@@ -590,10 +701,10 @@ fn hello_rejects_unknown_color_presence_byte() {
         focus_session: None,
     })
     .expect("hello encode");
-    // Both colors are None, so the fg presence byte is the second-to-last
-    // payload byte. Corrupt it to an undefined discriminant.
+    // Both colors are None and precede the six capability override bytes.
+    // Corrupt the fg presence byte to an undefined discriminant.
     let mut payload = bytes[5..].to_vec();
-    let fg_presence = payload.len() - 2;
+    let fg_presence = payload.len() - 8;
     payload[fg_presence] = 2;
     let err = decode_client(TAG_HELLO, payload).expect_err("presence byte 2 must fail");
     assert!(
@@ -601,9 +712,9 @@ fn hello_rejects_unknown_color_presence_byte() {
         "unexpected error: {err:#}"
     );
 
-    // Same body, bg label: the final payload byte is the bg presence.
+    // Same body, bg label: bg is immediately before override bytes.
     let mut payload = bytes[5..].to_vec();
-    let bg_presence = payload.len() - 1;
+    let bg_presence = payload.len() - 7;
     payload[bg_presence] = 7;
     let err = decode_client(TAG_HELLO, payload).expect_err("presence byte 7 must fail");
     assert!(

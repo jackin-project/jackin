@@ -405,18 +405,3 @@ jobs:
           git add Formula/jackin-dev.rb
           git commit -m "Update jackin-dev to ${VERSION}"
           git push origin main
-
-  timing-summary:
-    if: always()
-    needs: [matrix-setup, version, assert-version, build, publish]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Write workflow timing summary
-        env:
-          GH_TOKEN: ${{ secrets.GH_READONLY_TOKEN }}
-        run: bash scripts/ci/workflow-timing-summary.sh jackin-dev
