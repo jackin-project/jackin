@@ -186,7 +186,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "codebook-lsp"
+          install_args: "cargo-binstall cargo:codebook-lsp"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Run Codebook docs spell check
@@ -232,7 +232,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "codebook-lsp"
+          install_args: "cargo-binstall cargo:codebook-lsp"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Run Codebook source spell check

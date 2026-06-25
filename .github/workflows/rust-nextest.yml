@@ -68,10 +68,14 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        env:
+          # sccache install: blank wrapper in case binstall source-falls-back
+          # to cargo, which would probe rustc through a missing sccache.
+          RUSTC_WRAPPER: ""
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust cargo-nextest sccache"
+          install_args: "cargo-binstall rust cargo:cargo-nextest cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -152,10 +156,14 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        env:
+          # sccache install: blank wrapper in case binstall source-falls-back
+          # to cargo, which would probe rustc through a missing sccache.
+          RUSTC_WRAPPER: ""
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust cargo-nextest sccache"
+          install_args: "cargo-binstall rust cargo:cargo-nextest cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
