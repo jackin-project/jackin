@@ -361,10 +361,6 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        env:
-          # sccache is installed in this step; blank the wrapper so cargo
-          # does not probe rustc through a not-yet-present sccache binary.
-          RUSTC_WRAPPER: ""
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
@@ -416,10 +412,6 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        env:
-          # sccache is installed in this step; blank the wrapper so cargo
-          # does not probe rustc through a not-yet-present sccache binary.
-          RUSTC_WRAPPER: ""
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
@@ -523,10 +515,6 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        env:
-          # sccache is installed in this step; blank the wrapper so cargo
-          # does not probe rustc through a not-yet-present sccache binary.
-          RUSTC_WRAPPER: ""
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
@@ -602,10 +590,6 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
-        env:
-          # sccache is installed in this step; blank the wrapper so cargo
-          # does not probe rustc through a not-yet-present sccache binary.
-          RUSTC_WRAPPER: ""
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
