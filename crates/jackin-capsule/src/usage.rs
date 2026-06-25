@@ -4427,6 +4427,11 @@ struct AmpApiUsage {
 impl AmpApiUsage {
     fn from_value(value: serde_json::Value) -> Option<Self> {
         let root = value.get("result").unwrap_or(&value);
+        if let Some(display_text) = root.get("displayText").and_then(serde_json::Value::as_str)
+            && let Some(usage) = parse_amp_usage_output(display_text)
+        {
+            return Some(Self::from_cli_usage(usage));
+        }
         let usage = Self {
             account_label: first_string_key(root, "email")
                 .or_else(|| first_string_key(root, "accountEmail"))
@@ -4446,6 +4451,16 @@ impl AmpApiUsage {
             || usage.free_limit.is_some()
             || usage.individual_credits.is_some())
         .then_some(usage)
+    }
+
+    fn from_cli_usage(usage: AmpCliUsage) -> Self {
+        Self {
+            account_label: usage.account_label,
+            free_remaining: usage.free_remaining,
+            free_limit: usage.free_limit,
+            hourly_replenishment: usage.hourly_replenishment,
+            individual_credits: usage.individual_credits,
+        }
     }
 
     fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
@@ -6385,6 +6400,36 @@ mod tests {
             buckets[1].pace_label.as_deref(),
             Some("Individual credits: $1.25")
         );
+    }
+
+    #[test]
+    fn amp_api_usage_maps_display_text_response() {
+        let usage = AmpApiUsage::from_value(serde_json::json!({
+            "ok": true,
+            "result": {
+                "displayText": "Signed in as person@example.com (handle)\n\
+                    Amp Free: $7.17/$10 remaining (replenishes +$0.42/hour) - https://ampcode.com/settings#amp-free\n\
+                    Individual credits: $4.76 remaining - https://ampcode.com/settings"
+            }
+        }))
+        .expect("Amp API display text usage");
+
+        assert_eq!(
+            usage.account_label.as_deref(),
+            Some("person@example.com (handle)")
+        );
+        let now = 1_781_185_560;
+        let buckets = usage.buckets(now);
+        assert_eq!(buckets[0].label, "Amp Free");
+        assert_eq!(buckets[0].used_label.as_deref(), Some("$2.83"));
+        assert_eq!(buckets[0].limit_label.as_deref(), Some("$10"));
+        assert_eq!(buckets[0].remaining_percent, Some(72));
+        assert_eq!(
+            buckets[0].reset_label.as_deref(),
+            amp_free_reset_label(7.17, 10.0, Some(0.42), now).as_deref()
+        );
+        assert_eq!(buckets[1].label, "Individual credits");
+        assert_eq!(buckets[1].limit_label.as_deref(), Some("$4.76"));
     }
 
     #[test]
