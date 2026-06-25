@@ -1103,7 +1103,6 @@ impl Session {
             .notes
             .iter()
             .any(|n| matches!(n, EvidenceNote::WatchdogDemoted));
-        let winner = candidate.winner.clone();
         // Debounce gates whether the candidate becomes a public transition
         // (immediate for blocked/working/exit/strong-idle; inferred idle needs
         // confirmation + CPU/OSC-quiet). Only commit through SessionStatus when
@@ -1111,6 +1110,9 @@ impl Session {
         let mut transition = None;
         if debounce(self.state, &candidate, &mut self.pending_transition, now).is_some() {
             let previous = self.state;
+            // Clone the winner only on the committing tick — most ticks debounce
+            // suppresses the transition, and the winner now carries a String.
+            let winner = candidate.winner.clone();
             if let Some(effective) = self.status.publish_raw(candidate) {
                 self.state = effective;
                 transition = Some(StatusTransition {

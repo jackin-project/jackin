@@ -60,17 +60,14 @@ async fn try_report_event(args: &[String]) -> Result<()> {
         None
     };
 
-    let mut stream = UnixStream::connect(SOCKET_PATH)
-        .await
-        .context("cannot connect to jackin-capsule daemon")?;
-    let msg = control_frame(&ClientMsg::ReportRuntimeEvent {
+    let mut stream = connect_and_send(&ClientMsg::ReportRuntimeEvent {
         session_id,
         source_id,
         runtime,
         event,
         payload,
-    });
-    stream.write_all(&msg).await?;
+    })
+    .await?;
     // Read the bounded Ack so the daemon ingests the event before we exit; the
     // content is irrelevant.
     let mut len_buf = [0u8; 4];
@@ -168,12 +165,7 @@ pub async fn run_status_capture(args: &[String]) -> Result<()> {
         .parse()
         .context("session_id must be a u64")?;
 
-    let mut stream = UnixStream::connect(SOCKET_PATH)
-        .await
-        .context("cannot connect to jackin-capsule daemon")?;
-    stream
-        .write_all(&control_frame(&ClientMsg::StatusCapture { session_id }))
-        .await?;
+    let mut stream = connect_and_send(&ClientMsg::StatusCapture { session_id }).await?;
     // The daemon writes the fixture synchronously before replying, so reading the
     // reply's length prefix is enough to know the capture ran; the small Ack body
     // is intentionally not drained (the connection closes next).
@@ -482,12 +474,18 @@ fn normalize_usage_provider_label(value: &str) -> String {
         .to_ascii_lowercase()
 }
 
-async fn request_control(request: &ClientMsg) -> Result<ServerMsg> {
+/// Connect to the daemon control socket and send one length-prefixed request,
+/// returning the open stream so the caller can read (or ignore) the reply.
+async fn connect_and_send(request: &ClientMsg) -> Result<UnixStream> {
     let mut stream = UnixStream::connect(SOCKET_PATH)
         .await
         .context("cannot connect to jackin-capsule daemon")?;
-
     stream.write_all(&control_frame(request)).await?;
+    Ok(stream)
+}
+
+async fn request_control(request: &ClientMsg) -> Result<ServerMsg> {
+    let mut stream = connect_and_send(request).await?;
 
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await?;
