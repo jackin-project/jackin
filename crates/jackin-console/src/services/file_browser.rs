@@ -16,8 +16,10 @@ use crate::tui::effect::FileBrowserEffectContext;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileBrowserOpenTarget {
     EditorAddMount,
+    EditorAuthSourceFolder,
     CreatePrelude,
     GlobalMount,
+    SettingsAuthSourceFolder,
 }
 
 #[derive(Debug, Clone)]
@@ -25,6 +27,7 @@ pub enum FileBrowserListingRequest {
     OpenHome {
         target: FileBrowserOpenTarget,
         last_cwd: Option<PathBuf>,
+        show_hidden: bool,
     },
     NavigateTo {
         context: FileBrowserEffectContext,
@@ -176,15 +179,23 @@ pub fn start_listing_request(
 
 fn run_listing_request(request: FileBrowserListingRequest) -> FileBrowserListingResult {
     match request {
-        FileBrowserListingRequest::OpenHome { target, last_cwd } => {
-            let result = state_from_home()
-                .map(|mut state| {
-                    if let Some(cwd) = last_cwd.as_ref() {
-                        clamp_state_to_cwd(&mut state, cwd);
-                    }
-                    state
-                })
-                .map_err(|error| error.to_string());
+        FileBrowserListingRequest::OpenHome {
+            target,
+            last_cwd,
+            show_hidden,
+        } => {
+            let result = if show_hidden {
+                state_from_home_with_hidden()
+            } else {
+                state_from_home()
+            }
+            .map(|mut state| {
+                if let Some(cwd) = last_cwd.as_ref() {
+                    clamp_state_to_cwd(&mut state, cwd);
+                }
+                state
+            })
+            .map_err(|error| error.to_string());
             FileBrowserListingResult::OpenHome { target, result }
         }
         FileBrowserListingRequest::NavigateTo {

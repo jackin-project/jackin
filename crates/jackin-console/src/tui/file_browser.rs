@@ -10,7 +10,10 @@ use crate::services::file_browser::{
 use crate::tui::components::file_browser::{FileBrowserOutcome, FileBrowserState, FolderListing};
 use crate::tui::effect::FileBrowserEffectContext;
 use crate::tui::state::update::{ManagerMessage, update_manager};
-use crate::tui::state::{CreatePreludeState, GlobalMountModal, ManagerStage, ManagerState, Modal};
+use crate::tui::state::{
+    AuthFormFocus, CreatePreludeState, FileBrowserTarget, GlobalMountModal, ManagerStage,
+    ManagerState, Modal, SettingsAuthModal,
+};
 
 pub fn start_global_mount_file_browser_open(state: &mut ManagerState<'_>) -> bool {
     if !matches!(state.stage, ManagerStage::Settings(_)) {
@@ -20,6 +23,7 @@ pub fn start_global_mount_file_browser_open(state: &mut ManagerState<'_>) -> boo
         crate::services::file_browser::start_listing_request(FileBrowserListingRequest::OpenHome {
             target: FileBrowserOpenTarget::GlobalMount,
             last_cwd: None,
+            show_hidden: false,
         });
     state.begin_file_browser_listing(rx);
     true
@@ -33,6 +37,21 @@ pub fn start_editor_add_mount_file_browser_open(state: &mut ManagerState<'_>) ->
         crate::services::file_browser::start_listing_request(FileBrowserListingRequest::OpenHome {
             target: FileBrowserOpenTarget::EditorAddMount,
             last_cwd: None,
+            show_hidden: false,
+        });
+    state.begin_file_browser_listing(rx);
+    true
+}
+
+pub fn start_editor_auth_source_folder_browser_open(state: &mut ManagerState<'_>) -> bool {
+    if !matches!(state.stage, ManagerStage::Editor(_)) {
+        return false;
+    }
+    let rx =
+        crate::services::file_browser::start_listing_request(FileBrowserListingRequest::OpenHome {
+            target: FileBrowserOpenTarget::EditorAuthSourceFolder,
+            last_cwd: None,
+            show_hidden: true,
         });
     state.begin_file_browser_listing(rx);
     true
@@ -43,6 +62,21 @@ pub fn start_create_prelude_file_browser_open(state: &mut ManagerState<'_>) -> b
         crate::services::file_browser::start_listing_request(FileBrowserListingRequest::OpenHome {
             target: FileBrowserOpenTarget::CreatePrelude,
             last_cwd: None,
+            show_hidden: false,
+        });
+    state.begin_file_browser_listing(rx);
+    true
+}
+
+pub fn start_settings_auth_source_folder_browser_open(state: &mut ManagerState<'_>) -> bool {
+    if !matches!(state.stage, ManagerStage::Settings(_)) {
+        return false;
+    }
+    let rx =
+        crate::services::file_browser::start_listing_request(FileBrowserListingRequest::OpenHome {
+            target: FileBrowserOpenTarget::SettingsAuthSourceFolder,
+            last_cwd: None,
+            show_hidden: true,
         });
     state.begin_file_browser_listing(rx);
     true
@@ -56,6 +90,7 @@ pub fn start_create_prelude_file_browser_reopen(state: &mut ManagerState<'_>) ->
         crate::services::file_browser::start_listing_request(FileBrowserListingRequest::OpenHome {
             target: FileBrowserOpenTarget::CreatePrelude,
             last_cwd: prelude.last_browser_cwd.clone(),
+            show_hidden: false,
         });
     state.begin_file_browser_listing(rx);
     true
@@ -81,7 +116,6 @@ fn apply_file_browser_open_result(
     result: Result<FileBrowserState, String>,
 ) -> bool {
     use crate::tui::components::error_popup;
-    use crate::tui::state::FileBrowserTarget;
     match target {
         FileBrowserOpenTarget::EditorAddMount => {
             let ManagerStage::Editor(editor) = &mut state.stage else {
@@ -98,6 +132,23 @@ fn apply_file_browser_open_result(
                     crate::tui::state::open_editor_action_error(editor, &anyhow::anyhow!(error));
                 }
             }
+        }
+        FileBrowserOpenTarget::EditorAuthSourceFolder => {
+            let ManagerStage::Editor(editor) = &mut state.stage else {
+                return false;
+            };
+            match result {
+                Ok(file_browser) => {
+                    crate::tui::input::auth::open_auth_source_folder_browser_from_form_with_state(
+                        editor,
+                        file_browser,
+                    )
+                }
+                Err(error) => {
+                    crate::tui::state::open_editor_action_error(editor, &anyhow::anyhow!(error));
+                    true
+                }
+            };
         }
         FileBrowserOpenTarget::CreatePrelude => match result {
             Ok(file_browser) => {
@@ -139,6 +190,45 @@ fn apply_file_browser_open_result(
                 }
             }
         }
+        FileBrowserOpenTarget::SettingsAuthSourceFolder => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return false;
+            };
+            match result {
+                Ok(file_browser) => {
+                    let Some(SettingsAuthModal::AuthForm {
+                        target,
+                        state,
+                        focus,
+                        literal_buffer,
+                    }) = settings.auth.take_modal()
+                    else {
+                        return false;
+                    };
+                    if !state.shows_source_folder() {
+                        settings.auth.set_modal(SettingsAuthModal::AuthForm {
+                            target,
+                            state,
+                            focus,
+                            literal_buffer,
+                        });
+                        return false;
+                    }
+                    settings.auth.open_child_modal(
+                        SettingsAuthModal::AuthForm {
+                            target,
+                            state,
+                            focus: AuthFormFocus::SourceFolder,
+                            literal_buffer,
+                        },
+                        SettingsAuthModal::SourceFolderPicker {
+                            state: file_browser,
+                        },
+                    );
+                }
+                Err(error) => settings.auth.set_error(error),
+            }
+        }
     }
     true
 }
@@ -166,6 +256,7 @@ pub fn execute_file_browser_outcome(
         FileBrowserEffectContext::SettingsMounts => {
             execute_settings_file_browser_outcome(state, outcome)
         }
+        FileBrowserEffectContext::SettingsAuth => false,
     }
 }
 
@@ -405,6 +496,17 @@ fn active_file_browser_state_mut<'a>(
                 return None;
             };
             let Some(GlobalMountModal::FileBrowser { state }) = settings.mounts.modal.as_mut()
+            else {
+                return None;
+            };
+            Some(state)
+        }
+        FileBrowserEffectContext::SettingsAuth => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return None;
+            };
+            let Some(SettingsAuthModal::SourceFolderPicker { state }) =
+                settings.auth.modal.as_mut()
             else {
                 return None;
             };

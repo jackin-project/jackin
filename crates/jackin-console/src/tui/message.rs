@@ -329,6 +329,7 @@ pub enum ConsoleEditorModalOutcome<RoleSelector, RoleSource, OpRef> {
     },
     ApplyFileBrowserOutcome(crate::tui::components::file_browser::FileBrowserOutcome<PathBuf>),
     ResolveFileBrowserGitUrl(PathBuf),
+    OpenAuthSourceFolderBrowser,
     OpenUrl(String),
     ValidateOpRef(OpRef),
 }
@@ -346,6 +347,8 @@ pub enum ConsoleSettingsModalOutcome {
 #[derive(Debug)]
 pub enum ConsoleSettingsAuthOutcome<OpRef> {
     Continue,
+    OpenAuthSourceFolderBrowser,
+    ApplyFileBrowserOutcome(crate::tui::components::file_browser::FileBrowserOutcome<PathBuf>),
     ValidateOpRef(OpRef),
 }
 

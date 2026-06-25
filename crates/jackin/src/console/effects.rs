@@ -85,11 +85,17 @@ pub(crate) fn execute_manager_effect(
         ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd => {
             jackin_console::tui::file_browser::start_create_prelude_file_browser_reopen(state)
         }
+        ManagerEffect::OpenEditorAuthSourceFolderBrowser => {
+            jackin_console::tui::file_browser::start_editor_auth_source_folder_browser_open(state)
+        }
         ManagerEffect::OpenEditorAddMountFileBrowser => {
             jackin_console::tui::file_browser::start_editor_add_mount_file_browser_open(state)
         }
         ManagerEffect::OpenGlobalMountFileBrowser => {
             jackin_console::tui::file_browser::start_global_mount_file_browser_open(state)
+        }
+        ManagerEffect::OpenSettingsAuthSourceFolderBrowser => {
+            jackin_console::tui::file_browser::start_settings_auth_source_folder_browser_open(state)
         }
         ManagerEffect::ApplyFileBrowserOutcome { context, outcome } => {
             jackin_console::tui::file_browser::execute_file_browser_outcome_or_start_listing(
@@ -796,6 +802,8 @@ fn humanize_invalid_role_repo(err: &crate::repo::RoleRepoValidationError) -> Str
 #[cfg(test)]
 mod tests {
     use jackin_config::AppConfig;
+    use jackin_config::WorkspaceConfig;
+    use jackin_console::tui::auth::{AuthKind, AuthMode};
     use jackin_console::tui::components::file_browser::{
         FileBrowserOutcome, FileBrowserState, FolderListing,
     };
@@ -804,7 +812,9 @@ mod tests {
     use jackin_console::tui::state::update::{ManagerBackgroundEvent, ManagerMessage};
 
     use crate::console::tui::state::{
-        CreatePreludeState, FileBrowserTarget, ManagerEffect, ManagerStage, ManagerState, Modal,
+        AuthForm, AuthFormFocus, AuthFormTarget, CreatePreludeState, EditorState,
+        FileBrowserTarget, ManagerEffect, ManagerStage, ManagerState, Modal, SettingsAuthModal,
+        SettingsState,
     };
 
     use super::{execute_manager_effect, poll_background_messages};
@@ -904,5 +914,78 @@ mod tests {
             state.file_browser_listing_in_flight(),
             "file browser navigation should scan directories on a worker"
         );
+    }
+
+    #[tokio::test]
+    async fn editor_auth_source_folder_open_starts_listing_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("workspace".into(), WorkspaceConfig::default());
+        let mut form = AuthForm::new(AuthKind::Claude);
+        form.set_mode(AuthMode::Sync);
+        form.set_source_folder(cwd.to_path_buf());
+        editor.modal = Some(Modal::AuthForm {
+            target: AuthFormTarget::Workspace {
+                kind: AuthKind::Claude,
+            },
+            state: Box::new(form),
+            focus: AuthFormFocus::SourceFolder,
+            literal_buffer: String::new(),
+        });
+        state.stage = ManagerStage::Editor(editor);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ManagerEffect::OpenEditorAuthSourceFolderBrowser,
+        );
+
+        assert!(state.file_browser_listing_in_flight());
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("expected editor stage");
+        };
+        assert!(matches!(editor.modal, Some(Modal::AuthForm { .. })));
+    }
+
+    #[tokio::test]
+    async fn settings_auth_source_folder_open_starts_listing_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut settings = SettingsState::from_config(&config);
+        let mut form = AuthForm::new(AuthKind::Claude);
+        form.set_mode(AuthMode::Sync);
+        form.set_source_folder(cwd.to_path_buf());
+        settings.auth.modal = Some(SettingsAuthModal::AuthForm {
+            target: AuthFormTarget::Workspace {
+                kind: AuthKind::Claude,
+            },
+            state: Box::new(form),
+            focus: AuthFormFocus::SourceFolder,
+            literal_buffer: String::new(),
+        });
+        state.stage = ManagerStage::Settings(settings);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ManagerEffect::OpenSettingsAuthSourceFolderBrowser,
+        );
+
+        assert!(state.file_browser_listing_in_flight());
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert!(matches!(
+            settings.auth.modal,
+            Some(SettingsAuthModal::AuthForm { .. })
+        ));
     }
 }

@@ -26,8 +26,10 @@ pub enum ConsoleManagerEffect<RoleSelector, RoleSource, OpRef> {
     },
     OpenCreatePreludeFileBrowser,
     OpenCreatePreludeFileBrowserAtLastCwd,
+    OpenEditorAuthSourceFolderBrowser,
     OpenEditorAddMountFileBrowser,
     OpenGlobalMountFileBrowser,
+    OpenSettingsAuthSourceFolderBrowser,
     ApplyFileBrowserOutcome {
         context: FileBrowserEffectContext,
         outcome: crate::tui::components::file_browser::FileBrowserOutcome<std::path::PathBuf>,
@@ -57,6 +59,7 @@ pub enum FileBrowserEffectContext {
         browser_cwd: Option<std::path::PathBuf>,
     },
     SettingsMounts,
+    SettingsAuth,
 }
 
 #[derive(Debug)]

@@ -174,18 +174,8 @@ pub fn handle_settings_auth_modal(
                     return SettingsAuthOutcome::Continue;
                 }
                 AuthFormKeyPlan::OpenSourceFolderBrowser => {
-                    match crate::services::file_browser::state_from_home_with_hidden() {
-                        Ok(state) => {
-                            auth.open_child_modal(
-                                modal,
-                                SettingsAuthModal::SourceFolderPicker { state },
-                            );
-                        }
-                        Err(error) => {
-                            auth.set_error(error.to_string());
-                        }
-                    }
-                    return SettingsAuthOutcome::Continue;
+                    auth.set_modal(modal);
+                    return SettingsAuthOutcome::OpenAuthSourceFolderBrowser;
                 }
                 AuthFormKeyPlan::Save => {
                     persist_settings_auth_form(auth, env, state);
@@ -282,26 +272,34 @@ pub fn handle_settings_auth_modal(
         SettingsAuthModal::SourceFolderPicker { state } => {
             let page_rows = page_rows_for_modal(term_size, state);
             let browser_outcome = state.handle_key_with_page_rows(key, Some(page_rows));
-            let applied =
-                crate::services::file_browser::apply_state_outcome(state, browser_outcome);
-            match auth_source_folder_picker_plan(applied) {
-                AuthSourceFolderPickerPlan::Commit(path) => {
-                    match validate_source_folder(auth.selected_kind(), &path) {
-                        Ok(()) => apply_source_folder_to_settings_auth_form(auth, path),
-                        // Wrong folder for this agent: keep the picker open and
-                        // raise the standard error dialog (promoted from
-                        // `auth.error`) over it, rather than committing a folder
-                        // that yields no credentials. Dismissing the dialog
-                        // leaves the picker so the operator can pick another.
-                        Err(reason) => {
-                            auth.set_error(reason);
+            match browser_outcome {
+                crate::tui::components::file_browser::FileBrowserOutcome::NavigateTo(_)
+                | crate::tui::components::file_browser::FileBrowserOutcome::NavigateUp => {
+                    auth.set_modal(modal);
+                    return SettingsAuthOutcome::ApplyFileBrowserOutcome(browser_outcome);
+                }
+                other => {
+                    let applied = crate::services::file_browser::apply_state_outcome(state, other);
+                    match auth_source_folder_picker_plan(applied) {
+                        AuthSourceFolderPickerPlan::Commit(path) => {
+                            match validate_source_folder(auth.selected_kind(), &path) {
+                                Ok(()) => apply_source_folder_to_settings_auth_form(auth, path),
+                                // Wrong folder for this agent: keep the picker open and
+                                // raise the standard error dialog (promoted from
+                                // `auth.error`) over it, rather than committing a folder
+                                // that yields no credentials. Dismissing the dialog
+                                // leaves the picker so the operator can pick another.
+                                Err(reason) => {
+                                    auth.set_error(reason);
+                                    auth.set_modal(modal);
+                                }
+                            }
+                        }
+                        AuthSourceFolderPickerPlan::Close => {}
+                        AuthSourceFolderPickerPlan::KeepModal => {
                             auth.set_modal(modal);
                         }
                     }
-                }
-                AuthSourceFolderPickerPlan::Close => {}
-                AuthSourceFolderPickerPlan::KeepModal => {
-                    auth.set_modal(modal);
                 }
             }
         }
