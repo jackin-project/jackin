@@ -7,7 +7,6 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::str::FromStr as _;
 use std::time::Instant;
 
 use jackin_core::agent::Agent;
@@ -203,13 +202,13 @@ pub fn pids_in_pgrp(target_pgid: u32) -> Vec<u32> {
 /// is not a recognized agent binary.
 fn agent_from_name(name: &str) -> Option<Agent> {
     // `claude-code` is the npm package's binary name; the canonical slug is
-    // `claude`. Everything else maps by `Agent`'s own FromStr.
+    // `claude`. Everything else maps by `Agent`'s own slug parser.
     let slug = if name == "claude-code" {
         "claude"
     } else {
         name
     };
-    Agent::from_str(slug).ok()
+    Agent::from_slug(slug)
 }
 
 /// Identify the agent running in `proc`. Returns `None` when no recognized
