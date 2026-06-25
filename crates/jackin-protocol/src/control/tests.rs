@@ -31,3 +31,42 @@ fn known_variants_roundtrip() {
     let decoded: ClientMsg = serde_json::from_str(&json).unwrap();
     assert!(matches!(decoded, ClientMsg::Status));
 }
+
+#[test]
+fn report_runtime_event_roundtrips_and_omits_none_payload() {
+    let msg = ClientMsg::ReportRuntimeEvent {
+        session_id: 7,
+        source_id: "hook-claude-7".to_owned(),
+        runtime: "claude".to_owned(),
+        event: "Stop".to_owned(),
+        payload: None,
+    };
+    let json = serde_json::to_string(&msg).unwrap();
+    assert!(
+        !json.contains("payload"),
+        "a None payload must be omitted from the wire: {json}"
+    );
+    match serde_json::from_str::<ClientMsg>(&json).unwrap() {
+        ClientMsg::ReportRuntimeEvent {
+            session_id, event, ..
+        } => {
+            assert_eq!(session_id, 7);
+            assert_eq!(event, "Stop");
+        }
+        other => panic!("decoded wrong variant: {other:?}"),
+    }
+}
+
+#[test]
+fn status_capture_and_ack_roundtrip() {
+    let json = serde_json::to_string(&ClientMsg::StatusCapture { session_id: 3 }).unwrap();
+    assert!(matches!(
+        serde_json::from_str::<ClientMsg>(&json).unwrap(),
+        ClientMsg::StatusCapture { session_id: 3 }
+    ));
+    let ack = serde_json::to_string(&ServerMsg::Ack).unwrap();
+    assert!(matches!(
+        serde_json::from_str::<ServerMsg>(&ack).unwrap(),
+        ServerMsg::Ack
+    ));
+}
