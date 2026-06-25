@@ -94,7 +94,7 @@ pub fn read_process_info(pid: u32) -> Option<ProcessInfo> {
     let stat = process.stat().ok()?;
     let pgid = stat.pgrp as u32;
     let tpgid = stat.tpgid;
-    let comm = stat.comm.clone();
+    let comm = stat.comm;
     let exe_path = process.exe().ok();
     let cmdline = process.cmdline().unwrap_or_default();
     Some(ProcessInfo {

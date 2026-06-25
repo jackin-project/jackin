@@ -31,7 +31,6 @@ pub mod hook_installer;
 pub mod policy;
 pub mod process;
 pub mod rules;
-pub mod sequence;
 
 use evidence::{EvidenceSummary, RawAgentState};
 use jackin_protocol::agent_status::{AgentStatusConfidence, AgentStatusReport, AgentStatusSource};

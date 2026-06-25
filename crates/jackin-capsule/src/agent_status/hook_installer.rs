@@ -110,22 +110,13 @@ impl ClaudeHookInstaller {
     }
 
     fn merge_hook_entries(&self, mut settings: serde_json::Value) -> serde_json::Value {
-        let hooks = settings
-            .as_object_mut()
-            .map(|obj| {
-                obj.entry("hooks")
-                    .or_insert_with(|| serde_json::json!({}))
-                    .as_object_mut()
-                    .cloned()
-                    .unwrap_or_default()
-            })
+        // Start from the existing hooks map (if any); our command entries merge
+        // in below and the whole map is written back to `settings` at the end.
+        let mut hooks_obj = settings
+            .get("hooks")
+            .and_then(|h| h.as_object())
+            .cloned()
             .unwrap_or_default();
-
-        let mut hooks_obj = serde_json::Map::new();
-        // Preserve all existing entries first.
-        for (k, v) in &hooks {
-            hooks_obj.insert(k.clone(), v.clone());
-        }
 
         // Install or repair only our command entry inside each event array.
         for (event, async_flag) in self.expected_events() {

@@ -113,7 +113,6 @@ pub fn apply_watchdog(mut candidate: ArbitrationResult, now: Instant) -> Arbitra
     candidate.raw = RawAgentState::Unknown;
     candidate.confidence = AgentStatusConfidence::Unknown;
     candidate.winner = EvidenceWinner::Unknown;
-    candidate.notes.push(EvidenceNote::WatchdogDemoted);
     candidate.summary.raw_state = RawAgentState::Unknown;
     candidate.summary.confidence = AgentStatusConfidence::Unknown;
     candidate.summary.winner = EvidenceWinner::Unknown;

@@ -277,16 +277,6 @@ fn report_preserves_shell_integration_source() {
 }
 
 #[test]
-fn clear_authority_removes_only_matching_source() {
-    let mut seq = sequence::SequenceTracker::new();
-    seq.accept("source-a", 100);
-    seq.accept("source-b", 200);
-    seq.clear_source("source-a");
-    assert!(seq.has_source("source-b"));
-    assert!(!seq.has_source("source-a"));
-}
-
-#[test]
 fn roll_up_priority_blocked_gt_done_gt_working_gt_idle_gt_unknown() {
     use crate::agent_status::arbitrate::attention_priority;
     assert!(attention_priority(AgentState::Blocked) > attention_priority(AgentState::Done));

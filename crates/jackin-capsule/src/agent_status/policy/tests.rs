@@ -6,7 +6,6 @@ fn candidate(raw: RawAgentState, confidence: AgentStatusConfidence) -> Arbitrati
         raw,
         confidence,
         winner: EvidenceWinner::Unknown,
-        notes: Vec::new(),
         summary: EvidenceSummary {
             raw_state: raw,
             confidence,
@@ -25,7 +24,6 @@ fn watchdog_demotes_quiet_working() {
     let result = apply_watchdog(c, now);
 
     assert_eq!(result.raw, RawAgentState::Unknown);
-    assert!(result.notes.contains(&EvidenceNote::WatchdogDemoted));
     assert!(result.summary.has_note(EvidenceNote::WatchdogDemoted));
 }
 

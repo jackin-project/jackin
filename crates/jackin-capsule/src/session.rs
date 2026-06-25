@@ -254,8 +254,6 @@ pub struct Session {
     /// arbitration. `None` until a state-authoring event arrives (Claude/Codex
     /// are identity-only and never set this — Decision 0a).
     pub authority: Option<crate::agent_status::evidence::AuthorityEvidence>,
-    /// Daemon-assigned arrival-order sequence for this session's authority.
-    pub authority_seq: u64,
     /// Active descendant/subagent count from gating, surfaced in evidence.
     pub subagents_active: u32,
     /// PID of the spawned child (agent or shell), anchor for `/proc` physics.
@@ -724,7 +722,6 @@ impl Session {
                 pending_transition: crate::agent_status::policy::PendingTransition::default(),
                 gate_states: std::collections::HashMap::new(),
                 authority: None,
-                authority_seq: 0,
                 subagents_active: 0,
                 child_pid,
                 cpu_sample: None,
@@ -922,7 +919,6 @@ impl Session {
                 subagents_active,
                 notes,
             } => {
-                self.authority_seq += 1;
                 self.subagents_active = subagents_active;
                 self.authority = Some(AuthorityEvidence {
                     source_id: source_id.to_owned(),
@@ -931,7 +927,6 @@ impl Session {
                     mapped_state: state,
                     pending_permission,
                     last_event: now,
-                    seq: self.authority_seq,
                     notes,
                 });
             }
@@ -1109,6 +1104,7 @@ impl Session {
         // Stuck telemetry: a watchdog demotion means a witness claimed `working`
         // while physics went quiet (the interrupt hole / a hung authority).
         let stuck = candidate
+            .summary
             .notes
             .iter()
             .any(|n| matches!(n, EvidenceNote::WatchdogDemoted));
@@ -1566,7 +1562,6 @@ impl Session {
             pending_transition: crate::agent_status::policy::PendingTransition::default(),
             gate_states: std::collections::HashMap::new(),
             authority: None,
-            authority_seq: 0,
             subagents_active: 0,
             child_pid: None,
             cpu_sample: None,

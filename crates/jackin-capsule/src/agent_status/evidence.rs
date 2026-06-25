@@ -21,7 +21,6 @@ pub struct AuthorityEvidence {
     pub mapped_state: RawAgentState,
     pub pending_permission: bool,
     pub last_event: Instant,
-    pub seq: u64,
     pub notes: Vec<EvidenceNote>,
 }
 

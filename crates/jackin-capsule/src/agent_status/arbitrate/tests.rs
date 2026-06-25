@@ -35,7 +35,6 @@ fn authority(
         mapped_state: state,
         pending_permission,
         last_event,
-        seq: 1,
         notes: Vec::new(),
     }
 }

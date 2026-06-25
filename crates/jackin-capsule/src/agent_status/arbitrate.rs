@@ -17,7 +17,6 @@ pub struct ArbitrationResult {
     pub raw: RawAgentState,
     pub confidence: AgentStatusConfidence,
     pub winner: EvidenceWinner,
-    pub notes: Vec<EvidenceNote>,
     pub summary: EvidenceSummary,
 }
 
@@ -211,7 +210,6 @@ fn finish(
         raw,
         confidence,
         winner,
-        notes: summary.notes.clone(),
         summary,
     }
 }

@@ -598,7 +598,6 @@ fn opencode_event_sets_complete_authority() {
     assert_eq!(a.mapped_state, RawAgentState::Blocked);
     assert!(a.pending_permission);
     assert_eq!(a.grade, AuthorityGrade::Complete);
-    assert_eq!(a.seq, 1);
     assert!(!a.direct_state_report);
 }
 
