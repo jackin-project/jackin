@@ -1062,7 +1062,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let now = Instant::now();
                 let states_before: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
-                for (&session_id, session) in mux.sessions.iter_mut() {
+                for (&session_id, session) in &mut mux.sessions {
                     let process = session.sample_process_evidence(now);
                     let exiting = process.process_exited || process.foreground_returned_to_shell;
                     // Screen rule-pack evaluation over the live viewport: the
