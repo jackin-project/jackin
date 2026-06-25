@@ -37,6 +37,7 @@ const CODEX_HANDOFF_AUTH_PATH: &str = "/jackin/codex/auth.json";
 const AMP_HANDOFF_SECRETS_PATH: &str = "/jackin/amp/secrets.json";
 const KIMI_HANDOFF_HOME: &str = "/jackin/kimi-code";
 const GROK_HANDOFF_AUTH_PATH: &str = "/jackin/grok/auth.json";
+const CLAUDE_HANDOFF_CREDENTIALS_PATH: &str = "/jackin/claude/credentials.json";
 pub(crate) const TELEMETRY_STORE_PATH: &str = "/jackin/state/usage/telemetry.db";
 
 static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -853,14 +854,24 @@ fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurface {
 fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
     let config =
         std::env::var("CLAUDE_CONFIG_DIR").map_or_else(|_| home_path(".claude"), PathBuf::from);
-    // Claude Code stores the OAuth token in `<config>/.credentials.json`
-    // (the file the runtime forwards from the host Keychain or a
-    // workspace-pinned config dir). The legacy `~/.claude.json` only
-    // carries `oauthAccount` metadata, never the access token, so it is a
-    // last-resort read. Matches CodexBar's credential source order.
-    let oauth = load_claude_oauth_credentials(&config.join(".credentials.json"))
-        .or_else(|| load_claude_oauth_credentials(&home_path(".claude/.credentials.json")))
-        .or_else(|| load_claude_oauth_credentials(&home_path(".claude.json")));
+    // Resolve the Claude OAuth token, home credentials first (the agent CLI
+    // keeps the live token there and refreshes it in place). `~/.claude.json`
+    // only carries `oauthAccount` metadata, never the token. The runtime-
+    // forwarded handoff at `/jackin/claude/credentials.json` is the last-resort
+    // fallback — mirroring the other providers (Codex/Amp/Kimi/Grok) — so the
+    // snapshot does not silently drop to the impoverished CLI path when the
+    // home copy lacks `claudeAiOauth.accessToken`. Matches CodexBar's order.
+    let oauth = first_credential(
+        &[
+            // Home credentials first (the agent keeps the live token here);
+            // runtime-forwarded handoff last.
+            config.join(".credentials.json"),
+            home_path(".claude/.credentials.json"),
+            home_path(".claude.json"),
+            PathBuf::from(CLAUDE_HANDOFF_CREDENTIALS_PATH),
+        ],
+        load_claude_oauth_credentials,
+    );
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .ok()
         .filter(|v| !v.is_empty());
@@ -986,8 +997,11 @@ fn codex_snapshot(
         std::env::var("CODEX_HOME").map_or_else(|_| home_path(".codex"), PathBuf::from);
     let auth_path = codex_home.join("auth.json");
     let handoff_auth_path = Path::new(CODEX_HANDOFF_AUTH_PATH);
-    let credentials = load_codex_oauth_credentials(&auth_path)
-        .or_else(|| load_codex_oauth_credentials(handoff_auth_path));
+    // Home auth first, runtime-forwarded handoff last (shared resolver).
+    let credentials = first_credential(
+        &[auth_path.clone(), handoff_auth_path.to_path_buf()],
+        load_codex_oauth_credentials,
+    );
     let auth_account = credentials
         .as_ref()
         .and_then(|credentials| credentials.account_label.clone())
@@ -1115,9 +1129,13 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let data = home_path(".local/share/amp");
     let amp_secrets = data.join("secrets.json");
     let handoff_secrets = Path::new(AMP_HANDOFF_SECRETS_PATH);
-    let amp_api_key = env_value("AMP_API_KEY")
-        .or_else(|| load_amp_api_key(&amp_secrets))
-        .or_else(|| load_amp_api_key(handoff_secrets));
+    let amp_api_key = env_value("AMP_API_KEY").or_else(|| {
+        // Home secrets first, runtime-forwarded handoff last (shared resolver).
+        first_credential(
+            &[amp_secrets.clone(), handoff_secrets.to_path_buf()],
+            load_amp_api_key,
+        )
+    });
     let (api_usage, api_error) = match amp_api_key.as_deref() {
         Some(token) => match fetch_amp_api_usage(token) {
             Ok(usage) => (Some(usage), None),
@@ -1958,6 +1976,17 @@ fn bucket(
 struct ClaudeOAuthCredentials {
     access_token: String,
     subscription_type: Option<String>,
+}
+
+/// Resolve a credential from an ordered candidate list, taking the first path
+/// that yields a usable value via `load`. Every provider snapshot resolves its
+/// credential through this one helper so the order is uniform and explicit —
+/// the agent's own home location(s) first (the live source of truth the agent
+/// reads and refreshes), then the runtime-forwarded `/jackin/<provider>/`
+/// handoff as the last-resort fallback. Sharing the mechanism prevents a
+/// provider from being silently missed (as Claude's handoff read once was).
+fn first_credential<T>(paths: &[PathBuf], load: impl Fn(&Path) -> Option<T>) -> Option<T> {
+    paths.iter().find_map(|path| load(path.as_path()))
 }
 
 fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> {
@@ -5125,6 +5154,38 @@ mod tests {
         assert_eq!(claude.account_label, "claude@example.com");
         assert_eq!(claude.plan_label.as_deref(), Some("Max"));
         assert_eq!(claude.status_label, "stale");
+    }
+
+    #[test]
+    fn first_credential_uses_home_first_then_handoff_fallback() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = dir.path().join("home.credentials.json");
+        let handoff = dir.path().join("handoff.credentials.json");
+        // Home present but WITHOUT a usable token — the proven in-container
+        // failure mode — so resolution must fall through to the forwarded
+        // handoff rather than dropping to the impoverished CLI path.
+        fs::write(&home, r#"{"oauthAccount":{"emailAddress":"a@b.c"}}"#).expect("write home");
+        fs::write(
+            &handoff,
+            r#"{"claudeAiOauth":{"accessToken":"handoff-token"}}"#,
+        )
+        .expect("write handoff");
+        let resolved = first_credential(
+            &[home.clone(), handoff.clone()],
+            load_claude_oauth_credentials,
+        );
+        assert_eq!(
+            resolved.map(|c| c.access_token),
+            Some("handoff-token".to_owned())
+        );
+        // A valid home token wins over the handoff (home is the source of truth).
+        fs::write(&home, r#"{"claudeAiOauth":{"accessToken":"home-token"}}"#)
+            .expect("rewrite home");
+        let resolved = first_credential(&[home, handoff], load_claude_oauth_credentials);
+        assert_eq!(
+            resolved.map(|c| c.access_token),
+            Some("home-token".to_owned())
+        );
     }
 
     #[test]
