@@ -170,6 +170,9 @@ fn snapshot_from_msg(msg: ServerMsg) -> Result<InstanceSnapshot> {
         ServerMsg::UsageAccounts { .. } => {
             bail!("daemon replied with UsageAccounts; expected Snapshot")
         }
+        ServerMsg::TokenUsage { .. } => {
+            bail!("daemon replied with TokenUsage; expected Snapshot")
+        }
         ServerMsg::Unknown => bail!("daemon replied with an unknown ServerMsg variant"),
     }
 }
@@ -322,6 +325,7 @@ fn server_msg_kind(msg: &ServerMsg) -> &'static str {
         ServerMsg::AgentRegistry { .. } => "AgentRegistry",
         ServerMsg::UsageFocused { .. } => "UsageFocused",
         ServerMsg::UsageAccounts { .. } => "UsageAccounts",
+        ServerMsg::TokenUsage { .. } => "TokenUsage",
         ServerMsg::Ack => "Ack",
         ServerMsg::Unknown => "Unknown",
     }

@@ -66,6 +66,7 @@ use crate::session::{
     SessionEvent, build_agent_command, build_shell_command,
 };
 use crate::socket;
+use crate::token_monitor::{TokenMonitor, TokenTotals};
 use crate::tui::app::{
     ChromeHitState, CursorVisibilityState, DragState, HoverState, HoverTarget, MuxMode,
     MuxModeState, PointerShape, PointerShapeState, VisiblePane, chrome_hover_target_for_state,
@@ -327,6 +328,10 @@ pub struct Multiplexer {
     /// Daemon-owned focused usage/quota cache. Capsule UI renders this cache;
     /// it does not poll providers from render code.
     usage_cache: UsageCache,
+    /// Daemon-owned per-session token-spend monitor. Reconciled against the
+    /// live agent sessions and polled on the state tick; provider reads are
+    /// owned here, never in render or client code.
+    token_monitor: TokenMonitor,
     /// Provider tab requested by the usage overlay. The normal usage refresh
     /// ticker consumes this as a focused-first target so opening/switching tabs
     /// stays non-blocking but the selected provider refreshes next.
@@ -530,6 +535,7 @@ impl Multiplexer {
             agent_history: Vec::new(),
             resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
             usage_cache: UsageCache::default(),
+            token_monitor: TokenMonitor::new(),
             pending_usage_refresh: None,
             usage_refresh_task: None,
             wordlist_offset: {
@@ -1081,6 +1087,19 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // confidence, and publishes through SessionStatus (which derives
                 // the public `effective` state, incl. done-from-seen).
                 let now = Instant::now();
+                // Token-spend monitor: keep it synced to the live agent sessions
+                // and poll any due providers. `poll_due_sessions` self-throttles
+                // to the 30s/60s cadence, so calling it each state tick is cheap.
+                let token_sessions: Vec<(u64, String)> = mux
+                    .sessions
+                    .iter()
+                    .filter_map(|(id, s)| s.agent.clone().map(|agent| (*id, agent)))
+                    .collect();
+                mux.token_monitor.reconcile_sessions(&token_sessions);
+                // Returned changed-id list is unused for now (no live event
+                // stream yet); the poll updates the cached per-session totals
+                // that `ClientMsg::TokenUsage` reads.
+                drop(mux.token_monitor.poll_due_sessions().await);
                 let states_before: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
                 for (&session_id, session) in &mut mux.sessions {
@@ -1218,6 +1237,9 @@ fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg
         }
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
             accounts: mux.usage_cache.account_snapshot_views(),
+        },
+        ClientMsg::TokenUsage { session_id } => ServerMsg::TokenUsage {
+            summary: mux.token_monitor.totals(session_id).map(TokenTotals::to_summary),
         },
         ClientMsg::Unknown => {
             crate::clog!("control: ignoring unknown ClientMsg variant from peer");

@@ -80,6 +80,7 @@ connecting as a client.",
             Some("status") => client::run_status().await,
             Some("snapshot") => client::run_snapshot().await,
             Some("report-event") => client::run_report_event(&args).await,
+            Some("token-usage") => client::run_token_usage(&args).await,
             Some("usage") => run_usage_subcommand(&args).await,
             Some("agents") => {
                 let json_format = args.iter().any(|a| a == "--format=json")
@@ -137,7 +138,7 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, status explain <id>, status capture <id>, snapshot, usage accounts, usage verify, usage claude-cli, agents [--format json], report-event --event <name> [--payload-stdin], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, status explain <id>, status capture <id>, snapshot, usage accounts, usage verify, usage claude-cli, token-usage <id>, agents [--format json], report-event --event <name> [--payload-stdin], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }

@@ -89,6 +89,41 @@ fn usage_focused_roundtrips() {
 }
 
 #[test]
+fn token_usage_roundtrips_present_and_absent() {
+    // Request side.
+    let json = serde_json::to_string(&ClientMsg::TokenUsage { session_id: 9 }).unwrap();
+    assert!(matches!(
+        serde_json::from_str::<ClientMsg>(&json).unwrap(),
+        ClientMsg::TokenUsage { session_id: 9 }
+    ));
+
+    // Reply with a summary.
+    let summary = TokenUsageSummary {
+        input_tokens: 100,
+        output_tokens: 40,
+        cache_read_tokens: 10,
+        cache_write_tokens: 5,
+        cost_usd: Some(0.25),
+        model: Some("claude-opus-4-8".to_owned()),
+    };
+    let json = serde_json::to_string(&ServerMsg::TokenUsage {
+        summary: Some(summary.clone()),
+    })
+    .unwrap();
+    match serde_json::from_str::<ServerMsg>(&json).unwrap() {
+        ServerMsg::TokenUsage { summary: Some(s) } => assert_eq!(s, summary),
+        other => panic!("unexpected variant {other:?}"),
+    }
+
+    // Reply for an unknown session.
+    let json = serde_json::to_string(&ServerMsg::TokenUsage { summary: None }).unwrap();
+    assert!(matches!(
+        serde_json::from_str::<ServerMsg>(&json).unwrap(),
+        ServerMsg::TokenUsage { summary: None }
+    ));
+}
+
+#[test]
 fn usage_account_list_roundtrips() {
     let accounts = vec![AccountUsageSnapshotView {
         provider: "Codex".to_owned(),

@@ -46,6 +46,9 @@ pub enum ClientMsg {
     UsageRefreshFocused,
     /// Return every account/quota snapshot currently known to the daemon cache.
     UsageAccountList,
+    /// Request the per-session token-spend summary for one session, read from
+    /// the daemon's token monitor (provider JSONL/SQLite totals).
+    TokenUsage { session_id: u64 },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
@@ -75,9 +78,26 @@ pub enum ServerMsg {
     UsageAccounts {
         accounts: Vec<AccountUsageSnapshotView>,
     },
+    /// Per-session token-spend summary; `None` when the session is unknown to
+    /// the token monitor (never registered, or already exited).
+    TokenUsage { summary: Option<TokenUsageSummary> },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
+}
+
+/// Per-session token-spend totals reported by the in-container token monitor.
+/// Mirrors `token_monitor::TokenTotals::to_summary` on the wire.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TokenUsageSummary {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_write_tokens: u64,
+    /// Provider-supplied cost when the source reports it directly.
+    pub cost_usd: Option<f64>,
+    /// Most recently used model in the session.
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

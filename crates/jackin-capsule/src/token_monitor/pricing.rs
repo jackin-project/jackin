@@ -5,16 +5,16 @@
 
 /// Pricing for a specific model.
 #[derive(Debug, Clone)]
-pub struct ModelPrice {
-    pub input_per_1m: f64,
-    pub output_per_1m: f64,
-    pub cache_read_per_1m: f64,
-    pub cache_write_per_1m: f64,
+pub(crate) struct ModelPrice {
+    pub(crate) input_per_1m: f64,
+    pub(crate) output_per_1m: f64,
+    pub(crate) cache_read_per_1m: f64,
+    pub(crate) cache_write_per_1m: f64,
 }
 
 /// Estimate cost in USD from token counts using the static pricing table.
 /// Returns `None` when the model is not in the table.
-pub fn estimate_cost_usd(
+pub(crate) fn estimate_cost_usd(
     _agent: &str,
     model: &str,
     input_tokens: u64,
@@ -81,27 +81,4 @@ fn model_price(model: &str) -> Option<ModelPrice> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn pricing_table_returns_estimate_for_known_model() {
-        let cost = estimate_cost_usd("claude", "claude-sonnet-4-6", 1_000_000, 100_000, 0, 0);
-        assert!(cost.is_some());
-        assert!(cost.unwrap() > 0.0);
-    }
-
-    #[test]
-    fn pricing_table_returns_none_for_unknown_model() {
-        let cost = estimate_cost_usd("claude", "future-unknown-model-xyz", 1000, 100, 0, 0);
-        assert!(cost.is_none());
-    }
-
-    #[test]
-    fn pricing_table_applies_tiered_calculation() {
-        // 200k input tokens at sonnet pricing: 200k * $3/1M = $0.60
-        let cost = estimate_cost_usd("claude", "claude-sonnet-4-6-20251101", 200_000, 0, 0, 0);
-        assert!(cost.is_some());
-        assert!((cost.unwrap() - 0.60).abs() < 0.01);
-    }
-}
+mod tests;

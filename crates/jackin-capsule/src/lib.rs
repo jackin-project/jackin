@@ -30,6 +30,7 @@ pub mod session;
 pub mod socket;
 pub mod telemetry;
 pub(crate) mod telemetry_store;
+pub(crate) mod token_monitor;
 pub(crate) mod usage;
 pub mod util;
 

@@ -110,6 +110,9 @@ pub async fn run_status() -> Result<()> {
         ServerMsg::UsageAccounts { .. } => {
             anyhow::bail!("daemon replied with UsageAccounts for Status request")
         }
+        ServerMsg::TokenUsage { .. } => {
+            anyhow::bail!("daemon replied with TokenUsage for Status request")
+        }
     };
     crate::output::stdout_line(format_args!("Sessions: {}", sessions.len()));
     for s in &sessions {
@@ -178,6 +181,32 @@ pub async fn run_status_capture(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// `jackin-capsule token-usage <session_id>` — print the per-session token-spend
+/// summary as JSON, or a no-data line when the session is unknown to the monitor.
+pub async fn run_token_usage(args: &[String]) -> Result<()> {
+    let session_id: u64 = flag_value(args, "token-usage")
+        .context("usage: jackin-capsule token-usage <session_id>")?
+        .parse()
+        .context("session_id must be a u64")?;
+    match request_control(&ClientMsg::TokenUsage { session_id }).await? {
+        ServerMsg::TokenUsage {
+            summary: Some(summary),
+        } => {
+            crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&summary)?));
+        }
+        ServerMsg::TokenUsage { summary: None } => {
+            crate::output::stdout_line(format_args!(
+                "no token data for session {session_id} (not an agent session, or already exited)"
+            ));
+        }
+        other => anyhow::bail!(
+            "daemon replied with {} for TokenUsage request",
+            msg_kind(&other)
+        ),
+    }
+    Ok(())
+}
+
 /// Query the daemon for the tab/pane snapshot and print as JSON.
 /// Output shape is `ServerMsg::Snapshot` verbatim so the host
 /// console can deserialize the same struct it shares with the
@@ -202,6 +231,9 @@ pub async fn run_snapshot() -> Result<()> {
         }
         ServerMsg::UsageAccounts { .. } => {
             anyhow::bail!("daemon replied with UsageAccounts for Snapshot request")
+        }
+        ServerMsg::TokenUsage { .. } => {
+            anyhow::bail!("daemon replied with TokenUsage for Snapshot request")
         }
     };
     let payload = serde_json::json!({
@@ -243,6 +275,9 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
         }
         ServerMsg::UsageAccounts { .. } => {
             anyhow::bail!("daemon replied with UsageAccounts for Agents request")
+        }
+        ServerMsg::TokenUsage { .. } => {
+            anyhow::bail!("daemon replied with TokenUsage for Agents request")
         }
     };
 
@@ -511,6 +546,7 @@ fn msg_kind(msg: &ServerMsg) -> &'static str {
         ServerMsg::AgentRegistry { .. } => "AgentRegistry",
         ServerMsg::UsageFocused { .. } => "UsageFocused",
         ServerMsg::UsageAccounts { .. } => "UsageAccounts",
+        ServerMsg::TokenUsage { .. } => "TokenUsage",
         ServerMsg::Ack => "Ack",
         ServerMsg::Unknown => "Unknown",
     }
