@@ -791,6 +791,14 @@ impl DamageGrid {
         std::mem::take(&mut self.scroll_ops)
     }
 
+    /// Drop recorded scroll ops, retaining the buffer's capacity. The capsule
+    /// calls this each PTY chunk to bound growth without churning a fresh
+    /// allocation per scroll-heavy chunk (unlike `drain_scroll_ops`, which
+    /// hands off and thus discards the allocation).
+    pub fn clear_scroll_ops(&mut self) {
+        self.scroll_ops.clear();
+    }
+
     /// Mouse protocol mode.
     pub fn mouse_protocol_mode(&self) -> MouseProtocolMode {
         self.mouse_mode

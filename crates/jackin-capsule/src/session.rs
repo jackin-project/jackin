@@ -880,10 +880,11 @@ impl Session {
 
         // The grid records semantic scroll operations, but the scroll-region
         // (DECSTBM) emission optimizer that would consume them is deferred (see
-        // the Ratatui modernization roadmap). Drain-and-discard each chunk so
-        // they cannot grow unbounded on a long scroll-heavy session; the
-        // optimizer will relocate this drain to frame compose when it lands.
-        self.shadow_grid.drain_scroll_ops();
+        // the Ratatui modernization roadmap). Clear each chunk so they cannot
+        // grow unbounded on a long scroll-heavy session (retaining capacity to
+        // avoid per-chunk reallocation); the optimizer will consume them at
+        // frame compose when it lands.
+        self.shadow_grid.clear_scroll_ops();
 
         self.apply_passthrough_policy();
 
