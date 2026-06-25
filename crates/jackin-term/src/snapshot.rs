@@ -15,9 +15,9 @@
 use std::collections::vec_deque;
 
 use crate::{
-    cell::{Attrs, Cell, Color},
+    cell::{Attrs, Cell, Color, UnderlineStyle},
     damage::{DirtySpan, DirtySpans},
-    grid::RowStore,
+    grid::{RowStore, RowWrap},
 };
 
 /// A snapshot of a single cell at dump time.
@@ -41,10 +41,28 @@ pub struct SnapCell {
     pub italic: bool,
     /// Underline.
     pub underline: bool,
+    /// Underline style.
+    pub underline_style: UnderlineStyle,
+    /// Underline color.
+    pub underline_color: Color,
     /// Reverse video.
     pub inverse: bool,
     /// Dim / faint.
     pub dim: bool,
+    /// Strikethrough.
+    pub strikethrough: bool,
+    /// Slow blink.
+    pub slow_blink: bool,
+    /// Rapid blink.
+    pub rapid_blink: bool,
+    /// Conceal / hidden.
+    pub conceal: bool,
+    /// Overline.
+    pub overline: bool,
+    /// OSC 8 hyperlink id.
+    pub hyperlink_id: Option<String>,
+    /// OSC 8 hyperlink target URI.
+    pub hyperlink_uri: Option<String>,
 }
 
 impl SnapCell {
@@ -64,8 +82,16 @@ impl SnapCell {
             && !self.bold
             && !self.italic
             && !self.underline
+            && self.underline_style == UnderlineStyle::None
+            && self.underline_color == Color::Default
             && !self.inverse
             && !self.dim
+            && !self.strikethrough
+            && !self.slow_blink
+            && !self.rapid_blink
+            && !self.conceal
+            && !self.overline
+            && self.hyperlink_uri.is_none()
     }
 }
 
@@ -80,8 +106,17 @@ impl From<&Cell> for SnapCell {
             bold: cell.bold(),
             italic: cell.italic(),
             underline: cell.underline(),
+            underline_style: cell.attrs.underline_style,
+            underline_color: cell.attrs.underline_color,
             inverse: cell.inverse(),
             dim: cell.dim(),
+            strikethrough: cell.strikethrough(),
+            slow_blink: cell.slow_blink(),
+            rapid_blink: cell.rapid_blink(),
+            conceal: cell.conceal(),
+            overline: cell.overline(),
+            hyperlink_id: cell.hyperlink.as_ref().map(|link| link.id.clone()),
+            hyperlink_uri: cell.hyperlink.as_ref().map(|link| link.uri.clone()),
         }
     }
 }
@@ -102,6 +137,8 @@ pub struct GridSnapshot {
     pub alternate_screen: bool,
     /// The cell grid in row-major order.
     pub cells: Vec<Vec<SnapCell>>,
+    /// Row wrap provenance in row-major order.
+    pub row_wraps: Vec<RowWrap>,
 }
 
 /// Borrowed terminal view for render paths that do not need an owned snapshot.
@@ -152,6 +189,19 @@ impl<'a> GridView<'a> {
         self.screen
             .get(row_idx - self.scrollback_prefix)
             .and_then(|r| r.get(col_idx))
+    }
+
+    /// Return row wrap provenance for a visible row.
+    #[must_use]
+    pub fn row_wrap(&self, row: u16) -> Option<RowWrap> {
+        if row >= self.rows {
+            return None;
+        }
+        let row_idx = usize::from(row);
+        if row_idx < self.scrollback_prefix {
+            return self.scrollback.wrap(self.scrollback_start + row_idx);
+        }
+        self.screen.wrap(row_idx - self.scrollback_prefix)
     }
 }
 
@@ -400,16 +450,40 @@ impl GridSnapshot {
 }
 
 /// Attrs snapshot helper — matches the `Attrs` struct coupling surface.
-impl From<&Attrs> for (Color, Color, bool, bool, bool, bool, bool) {
+impl From<&Attrs>
+    for (
+        Color,
+        Color,
+        Color,
+        UnderlineStyle,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+    )
+{
     fn from(a: &Attrs) -> Self {
         (
             a.foreground,
             a.background,
+            a.underline_color,
+            a.underline_style,
             a.bold,
             a.italic,
-            a.underline,
+            a.underline_style != UnderlineStyle::None,
             a.inverse,
             a.dim,
+            a.strikethrough,
+            a.slow_blink,
+            a.rapid_blink,
+            a.conceal,
+            a.overline,
         )
     }
 }

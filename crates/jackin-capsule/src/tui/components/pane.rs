@@ -4,8 +4,15 @@
 //! `SocketBackend` diff mechanism handles terminal output.
 
 use crate::tui::socket_backend::term_color;
+use std::num::NonZeroU16;
+
 use jackin_term::{Cell as TermCell, Color as TermColor, GridSnapshot, GridView, SnapCell};
-use ratatui::{buffer::Buffer, layout::Rect, style::Modifier, widgets::Widget};
+use ratatui::{
+    buffer::{Buffer, CellDiffOption},
+    layout::Rect,
+    style::Modifier,
+    widgets::Widget,
+};
 
 #[derive(Debug)]
 pub(crate) enum PaneBodyContent<'a> {
@@ -60,6 +67,7 @@ fn render_full(snapshot: &GridSnapshot, area: Rect, buf: &mut Buffer) {
             }
         }
     }
+    debug_assert_pane_area_well_formed(area, buf);
 }
 
 fn render_view(view: &GridView<'_>, area: Rect, buf: &mut Buffer) {
@@ -78,10 +86,12 @@ fn render_view(view: &GridView<'_>, area: Rect, buf: &mut Buffer) {
             }
         }
     }
+    debug_assert_pane_area_well_formed(area, buf);
 }
 
 trait PaneCell {
     fn text(&self) -> &str;
+    fn is_wide(&self) -> bool;
     fn is_wide_continuation(&self) -> bool;
     fn fg(&self) -> TermColor;
     fn bg(&self) -> TermColor;
@@ -90,11 +100,20 @@ trait PaneCell {
     fn underline(&self) -> bool;
     fn inverse(&self) -> bool;
     fn dim(&self) -> bool;
+    fn strikethrough(&self) -> bool;
+    fn slow_blink(&self) -> bool;
+    fn rapid_blink(&self) -> bool;
+    fn conceal(&self) -> bool;
+    fn hyperlink_uri(&self) -> Option<&str>;
 }
 
 impl PaneCell for SnapCell {
     fn text(&self) -> &str {
         &self.text
+    }
+
+    fn is_wide(&self) -> bool {
+        self.is_wide
     }
 
     fn is_wide_continuation(&self) -> bool {
@@ -128,11 +147,35 @@ impl PaneCell for SnapCell {
     fn dim(&self) -> bool {
         self.dim
     }
+
+    fn strikethrough(&self) -> bool {
+        self.strikethrough
+    }
+
+    fn slow_blink(&self) -> bool {
+        self.slow_blink
+    }
+
+    fn rapid_blink(&self) -> bool {
+        self.rapid_blink
+    }
+
+    fn conceal(&self) -> bool {
+        self.conceal
+    }
+
+    fn hyperlink_uri(&self) -> Option<&str> {
+        self.hyperlink_uri.as_deref()
+    }
 }
 
 impl PaneCell for TermCell {
     fn text(&self) -> &str {
         self.contents()
+    }
+
+    fn is_wide(&self) -> bool {
+        self.is_wide
     }
 
     fn is_wide_continuation(&self) -> bool {
@@ -166,7 +209,30 @@ impl PaneCell for TermCell {
     fn dim(&self) -> bool {
         self.dim()
     }
+
+    fn strikethrough(&self) -> bool {
+        self.strikethrough()
+    }
+
+    fn slow_blink(&self) -> bool {
+        self.slow_blink()
+    }
+
+    fn rapid_blink(&self) -> bool {
+        self.rapid_blink()
+    }
+
+    fn conceal(&self) -> bool {
+        self.conceal()
+    }
+
+    fn hyperlink_uri(&self) -> Option<&str> {
+        self.hyperlink.as_ref().map(|link| link.uri.as_str())
+    }
 }
+
+/// Cell width forced for the lead cell of a wide glyph (always 2).
+const WIDE_CELL_WIDTH: NonZeroU16 = NonZeroU16::MIN.saturating_add(1);
 
 fn render_cell(buf_cell: &mut ratatui::buffer::Cell, cell: &impl PaneCell) {
     if cell.is_wide_continuation() {
@@ -179,6 +245,13 @@ fn render_cell(buf_cell: &mut ratatui::buffer::Cell, cell: &impl PaneCell) {
     } else {
         buf_cell.set_symbol(cell.text());
     }
+    buf_cell.set_diff_option(if cell.is_wide() {
+        CellDiffOption::ForcedWidth(WIDE_CELL_WIDTH)
+    } else if cell.hyperlink_uri().is_some() {
+        CellDiffOption::AlwaysUpdate
+    } else {
+        CellDiffOption::None
+    });
 
     buf_cell.set_fg(term_color(cell.fg()));
     buf_cell.set_bg(term_color(cell.bg()));
@@ -199,7 +272,66 @@ fn render_cell(buf_cell: &mut ratatui::buffer::Cell, cell: &impl PaneCell) {
     if cell.dim() {
         modifier |= Modifier::DIM;
     }
+    if cell.strikethrough() {
+        modifier |= Modifier::CROSSED_OUT;
+    }
+    if cell.slow_blink() {
+        modifier |= Modifier::SLOW_BLINK;
+    }
+    if cell.rapid_blink() {
+        modifier |= Modifier::RAPID_BLINK;
+    }
+    if cell.conceal() {
+        modifier |= Modifier::HIDDEN;
+    }
     buf_cell.modifier = modifier;
+}
+
+fn debug_assert_pane_area_well_formed(area: Rect, buf: &Buffer) {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    for row in 0..area.height {
+        for col in 0..area.width {
+            let cell = &buf[(area.x + col, area.y + row)];
+            match cell.diff_option {
+                CellDiffOption::Skip => {
+                    debug_assert!(
+                        false,
+                        "pane body must not use CellDiffOption::Skip at ({col},{row})"
+                    );
+                }
+                CellDiffOption::ForcedWidth(width) => {
+                    let width = width.get();
+                    debug_assert!(
+                        width > 1,
+                        "pane body must not force width 1 at ({col},{row})"
+                    );
+                    debug_assert!(
+                        col + width <= area.width,
+                        "forced-width cell at ({col},{row}) exceeds pane area width {}",
+                        area.width
+                    );
+                    for tail in 1..width {
+                        let tail_cell = &buf[(area.x + col + tail, area.y + row)];
+                        debug_assert_eq!(
+                            tail_cell.diff_option,
+                            CellDiffOption::None,
+                            "forced-width tail at ({},{row}) must be an ordinary blank cell",
+                            col + tail
+                        );
+                        debug_assert_eq!(
+                            tail_cell.symbol(),
+                            " ",
+                            "forced-width tail at ({},{row}) must be blank",
+                            col + tail
+                        );
+                    }
+                }
+                CellDiffOption::None | CellDiffOption::AlwaysUpdate => {}
+            }
+        }
+    }
 }
 
 #[cfg(test)]

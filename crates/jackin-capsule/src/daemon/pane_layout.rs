@@ -193,16 +193,25 @@ impl Multiplexer {
         self.content_rows = available_content_rows(self.term_rows);
         self.resize_panes();
         self.ratatui_terminal.backend_mut().resize(cols, rows);
-        // A size change invalidates Ratatui's previous-buffer geometry. Reset
-        // only the double-buffer state: Terminal::clear() routes through
-        // clear_region(All) → `\x1b[2J`, and that stray erase would otherwise
-        // sit in the backend buffer and ride whatever frame drains next. The
-        // visible wipe belongs to the Resize full redraw, not to this
-        // bookkeeping call.
+        // Drive Ratatui's own resize so the buffers AND `last_known_area` move
+        // to the new geometry together. `Terminal::clear()` resets the diff
+        // baseline but leaves `last_known_area` stale, so the `autoresize()` at
+        // the top of the next `draw()` re-fires `Terminal::resize` mid-frame —
+        // emitting an extra screen erase (and a second one on a width shrink;
+        // this backend writes `\x1b[2J\x1b[H` for every `clear_region(All)`)
+        // that, with the render sentinel gone, leaves a transient pane border
+        // one row high over the status bar. Syncing the area here makes that
+        // autoresize a no-op. Suppression keeps this bookkeeping byte-silent
+        // (the clears would otherwise ride a later frame); the single visible
+        // wipe belongs to the Resize full redraw in `compose_pending_frame`.
         self.ratatui_terminal
             .backend_mut()
-            .suppress_next_clear_escape();
-        drop(self.ratatui_terminal.clear());
+            .begin_clear_suppression();
+        drop(
+            self.ratatui_terminal
+                .resize(ratatui::layout::Rect::new(0, 0, cols, rows)),
+        );
+        self.ratatui_terminal.backend_mut().end_clear_suppression();
         self.invalidate(super::FullRedrawReason::Resize);
     }
 
