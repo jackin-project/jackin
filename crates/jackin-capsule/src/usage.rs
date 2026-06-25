@@ -2198,11 +2198,14 @@ fn bucket(
 /// Tag the bucket pushed last onto `buckets` with the status-bar slot it fills.
 /// Accepts a bare `StatusSlot` or an `Option`; a `None` slot is a no-op so the
 /// window-builder call sites that thread an optional slot need no `if let`.
-fn tag_last_status_slot(buckets: &mut [QuotaBucketView], slot: impl Into<Option<StatusSlot>>) {
-    let (Some(slot), Some(last)) = (slot.into(), buckets.last_mut()) else {
-        return;
-    };
-    last.status_slot = Some(slot);
+/// Stamp a quota bucket's status-bar slot at construction. Returns the bucket so
+/// it can be tagged and pushed in one expression (`buckets.push(with_status_slot(
+/// build(...), Some(StatusSlot::Session)))`) — the slot rides with the view it
+/// belongs to, so no later `last_mut`/positional step can float the tag onto the
+/// wrong bucket.
+fn with_status_slot(mut view: QuotaBucketView, slot: Option<StatusSlot>) -> QuotaBucketView {
+    view.status_slot = slot;
+    view
 }
 
 /// Build a window bucket carrying both the formatted reset label and the raw
@@ -2454,16 +2457,18 @@ fn push_claude_cli_bucket(
     let Some(used) = used else {
         return;
     };
-    buckets.push(bucket(
-        label,
-        used_percent_label(used),
-        Some("100%".to_owned()),
-        remaining_from_fraction(used),
-        None,
-        None,
-        UsageSnapshotStatus::Fresh,
+    buckets.push(with_status_slot(
+        bucket(
+            label,
+            used_percent_label(used),
+            Some("100%".to_owned()),
+            remaining_from_fraction(used),
+            None,
+            None,
+            UsageSnapshotStatus::Fresh,
+        ),
+        slot,
     ));
-    tag_last_status_slot(buckets, slot);
 }
 
 impl ClaudeOAuthUsageResponse {
@@ -2535,17 +2540,19 @@ fn push_claude_window(
     let window_seconds = claude_window_seconds(label);
     let remaining = window.utilization.and_then(remaining_from_fraction);
     let pace = quota_pace_label(remaining, reset_at, window_seconds, now);
-    buckets.push(timed_bucket(
-        label,
-        window.utilization.and_then(used_percent_label),
-        Some("100%".to_owned()),
-        remaining,
-        reset_at,
-        now,
-        pace.as_deref(),
-        UsageSnapshotStatus::Fresh,
+    buckets.push(with_status_slot(
+        timed_bucket(
+            label,
+            window.utilization.and_then(used_percent_label),
+            Some("100%".to_owned()),
+            remaining,
+            reset_at,
+            now,
+            pace.as_deref(),
+            UsageSnapshotStatus::Fresh,
+        ),
+        slot,
     ));
-    tag_last_status_slot(buckets, slot);
 }
 
 fn claude_window_seconds(label: &str) -> Option<i64> {
@@ -3082,17 +3089,19 @@ fn push_codex_window(
     let window_seconds = window.window_seconds();
     let pace = quota_pace_label(remaining, window.reset_at, window_seconds, now)
         .or_else(|| window.window_label());
-    buckets.push(timed_bucket(
-        label,
-        used.map(|value| format!("{value}% used")),
-        Some("100%".to_owned()),
-        remaining,
-        window.reset_at,
-        now,
-        pace.as_deref(),
-        UsageSnapshotStatus::Fresh,
+    buckets.push(with_status_slot(
+        timed_bucket(
+            label,
+            used.map(|value| format!("{value}% used")),
+            Some("100%".to_owned()),
+            remaining,
+            window.reset_at,
+            now,
+            pace.as_deref(),
+            UsageSnapshotStatus::Fresh,
+        ),
+        slot,
     ));
-    tag_last_status_slot(buckets, slot);
 }
 
 fn fetch_codex_rpc_usage(gate: &mut ManagedCliLaunchGate) -> Result<CodexRpcUsage, String> {
@@ -3355,18 +3364,20 @@ impl GrokBillingResponse {
             } else {
                 None
             };
-            buckets.push(timed_bucket(
-                label,
-                Some(format_cents(total_used)),
-                Some(format_cents(limit)),
-                used_percent.map(|used| 100u8.saturating_sub(used.round() as u8)),
-                reset_at,
-                now,
-                None,
-                UsageSnapshotStatus::Fresh,
-            ));
             // Billing cycle fills the Weekly slot; Grok has no session window.
-            tag_last_status_slot(&mut buckets, StatusSlot::Weekly);
+            buckets.push(with_status_slot(
+                timed_bucket(
+                    label,
+                    Some(format_cents(total_used)),
+                    Some(format_cents(limit)),
+                    used_percent.map(|used| 100u8.saturating_sub(used.round() as u8)),
+                    reset_at,
+                    now,
+                    None,
+                    UsageSnapshotStatus::Fresh,
+                ),
+                Some(StatusSlot::Weekly),
+            ));
         }
         if let Some(usage) = &self.usage
             && let Some(included) = usage.included_used.as_ref().and_then(|amount| amount.val)
@@ -4111,12 +4122,16 @@ impl ZaiQuotaResponse {
         // render order is 5-hour (short/active), then Tokens, then MCP — an
         // operator override of CodexBar's Tokens, MCP, 5-hour order.
         if let Some(limit) = session_token_limit {
-            buckets.push(zai_bucket("5-hour", limit, now));
-            tag_last_status_slot(&mut buckets, StatusSlot::Session);
+            buckets.push(with_status_slot(
+                zai_bucket("5-hour", limit, now),
+                Some(StatusSlot::Session),
+            ));
         }
         if let Some(limit) = primary_token_limit {
-            buckets.push(zai_bucket("Tokens", limit, now));
-            tag_last_status_slot(&mut buckets, StatusSlot::Weekly);
+            buckets.push(with_status_slot(
+                zai_bucket("Tokens", limit, now),
+                Some(StatusSlot::Weekly),
+            ));
         }
         if let Some(limit) = time_limit {
             buckets.push(zai_bucket("MCP", limit, now));
@@ -4320,16 +4335,20 @@ impl KimiUsageResponse {
         // override of CodexBar's Weekly, Rate Limit order.
         let mut buckets = Vec::new();
         if let Some(rate_limit) = limits.first() {
-            buckets.push(kimi_bucket(
-                "Rate Limit",
-                &rate_limit.detail,
-                rate_limit.window.as_ref(),
-                now,
+            buckets.push(with_status_slot(
+                kimi_bucket(
+                    "Rate Limit",
+                    &rate_limit.detail,
+                    rate_limit.window.as_ref(),
+                    now,
+                ),
+                Some(StatusSlot::Session),
             ));
-            tag_last_status_slot(&mut buckets, StatusSlot::Session);
         }
-        buckets.push(kimi_bucket("Weekly", detail, None, now));
-        tag_last_status_slot(&mut buckets, StatusSlot::Weekly);
+        buckets.push(with_status_slot(
+            kimi_bucket("Weekly", detail, None, now),
+            Some(StatusSlot::Weekly),
+        ));
         buckets
     }
 }
@@ -6945,26 +6964,6 @@ mod tests {
     }
 
     #[test]
-    fn tag_last_status_slot_none_preserves_existing_slot() {
-        let mut buckets = vec![QuotaBucketView {
-            label: "Session".to_owned(),
-            used_label: None,
-            limit_label: None,
-            remaining_percent: Some(50),
-            reset_label: None,
-            resets_at: None,
-            status_slot: Some(StatusSlot::Session),
-            pace_label: None,
-            status: UsageSnapshotStatus::Fresh,
-        }];
-        // A None slot must not clobber a slot already set on the last bucket.
-        tag_last_status_slot(&mut buckets, None);
-        assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
-        // An empty slice is a no-op, not a panic.
-        tag_last_status_slot(&mut [], StatusSlot::Weekly);
-    }
-
-    #[test]
     fn provider_matches_usage_label_resolves_canonical_synonyms() {
         // A tab label matches an account provider label when both resolve to the
         // same canonical surface, across synonym spellings and in both orders.
@@ -7009,11 +7008,22 @@ mod tests {
         assert!(!provider_matches_usage_label("OpenCode", "codex"));
 
         // Unknown text names no surface; the short "amp" token must not match
-        // inside an unrelated word (whole-token match, not bare substring).
+        // inside an unrelated word (whole-token match, not bare substring), and
+        // a glued token ("ampcode") is not a word match either.
         assert_eq!(surface_from_text("totally-unknown"), None);
         assert_eq!(surface_from_text("example"), None);
+        assert_eq!(surface_from_text("ampcode"), None);
         assert!(!provider_matches_usage_label("Example", "amp"));
         assert_eq!(surface_from_text("Amp / Code"), Some(UsageSurface::Amp));
+
+        // A known surface never matches an unknown label — this is the
+        // production direction (tab label resolves, focus value may not).
+        assert!(!provider_matches_usage_label("Codex", "totally-unknown"));
+        assert!(!provider_matches_usage_label("Amp", "totally-unknown"));
+
+        // Both unknown → substring fallback: containment matches, distinct don't.
+        assert!(provider_matches_usage_label("opencode-zen", "opencode"));
+        assert!(!provider_matches_usage_label("opencode", "ollama"));
     }
 
     #[test]
