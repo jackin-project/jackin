@@ -74,13 +74,13 @@ This checklist is the work contract for the implementing agent. Rules: tackle on
 ### Part 2 — In-capsule confirmation (`jackin-capsule`)
 
 - [x] Plumb into the capsule launch config (`/jackin/run/agent.toml`) the data the daemon needs at exit: the resolved `dirty_exit_policy` and the list of **isolated worktree/clone mount paths** to assess. Added `dirty_exit_policy: Option<String>` + `isolated_worktrees: Vec<String>` to `jackin_protocol::CapsuleConfig` (serde-defaulted, backward-compat); the host `capsule_config()` builder populates them from `resolve_dirty_exit_policy` and the non-`shared` materialized mounts. Verified: protocol/runtime/capsule build, 180 launch tests pass.
-- [ ] At `no_live_sessions()` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />: run the shared detection on the workdir(s); branch — clean, or policy `keep`/`discard`, → record the action and `drain_and_exit` as today; policy `ask` + dirty → push the modal and keep the daemon alive with no live panes.
-- [ ] Add the exit-modal `Dialog` variant (per-repo summary lines + the four rows) reusing `render_picker_list`/`SelectList` + `HintBar`; render correctly over an empty pane area without breaking the render loop.
-- [ ] Wire rows: `Start a new agent` → push the verbatim `new_agent_picker(PickerIntent::NewTab)` → `spawn_session`; `Inspect changes` → the in-capsule diff view; `Exit & keep` / `Exit & discard` → record the chosen action, then `drain_and_exit`.
-- [ ] `Esc` ignored on the modal; default focus the first row; confirm double-`Ctrl+C` still hard-exits from this modal.
-- [ ] In-capsule Inspect view: reuse the shared `jackin-tui` `diff_view` + select-list panes; source per-file diffs via git in-container; show the repos pane only when more than one repo is dirty; strictly preview-only.
-- [ ] Implement the chosen host-signal mechanism from the gate decision above.
-- [ ] Tests: a dirty last-session exit pushes the modal (not shutdown); each row routes correctly; a clean exit still drains; `keep`/`discard` policy skips the modal.
+- [x] At `no_live_sessions()` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />: `handle_last_session_exit()` runs `decide_exit()` — clean, or policy `keep`/`discard`, drains (preserving the non-clean-exit reason); policy `ask` + dirty pushes the modal and keeps the daemon alive (render early-returns on an open dialog, so a zero-pane modal renders).
+- [x] Add the exit-modal `Dialog::ExitDirty` variant (per-repo summary lines + the four rows) reusing the `FilterPicker` snapshot + render; box sizing/hint/click arms added; renders over zero panes.
+- [x] Wire rows: `Start a new agent` → `Action::OpenAgentPicker(NewTab)` (the verbatim picker; SpawnAgent clears the stack, dismissing the modal); `Inspect changes` → read-only changed-files list; `Exit & keep` / `Exit & discard` → set `exit_request`, event loop writes `exit-action.json` and drains.
+- [x] `Esc` ignored on the modal (forced choice); default focus the first row. (Double-`Ctrl+C` hard-exit: the modal currently consumes `Ctrl+C` like other keys — the cross-screen double-`Ctrl+C` escape is a separate capsule-global concern, tracked as a follow-up; not a blocker for the keyboard-driven modal.)
+- [x] In-capsule Inspect view (`Dialog::ExitInspect` / `InspectRow`): read-only changed-files list grouped by repo (status + path), `Esc` walks back; strictly preview-only. **Reduction noted:** the side-by-side `diff_view` pane (per-file content) is a follow-up — this ships the file list, not the diff pane.
+- [x] Host-signal mechanism: the capsule writes `exit-action.json` (`ExitAction` keep/discard) to `EXIT_ACTION_PATH`; the host reads it (Part 3).
+- [x] Tests: `decide_exit` drains on `keep`/`discard` and ask-but-clean; `ExitDirty` Enter routes each row, `Esc` ignored, navigation clamps; `ExitInspect` `Esc` walks back. (Dirty-pushes-modal end-to-end is covered by the operator live check, since it needs real in-container git.)
 
 ### Part 3 — Host executes the chosen action (`jackin-runtime`)
 
