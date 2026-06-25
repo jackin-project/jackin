@@ -15,6 +15,54 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 const ENTRYPOINT_SH: &str = include_str!("../../../docker/runtime/entrypoint.sh");
+
+/// Agent-status reporter assets (hook/plugin scripts + rule packs), embedded so
+/// the derived-image build copies them to `/jackin/runtime/agent-status/`. The
+/// installer (runtime-setup) registers these in-container script paths in each
+/// agent's home, and the operator-override pack loader reads the packs here.
+/// `(relative path under agent-status/, file contents)`.
+const AGENT_STATUS_ASSETS: &[(&str, &str)] = &[
+    (
+        "hooks/claude/report-hook.sh",
+        include_str!("../../../docker/runtime/agent-status/hooks/claude/report-hook.sh"),
+    ),
+    (
+        "hooks/codex/report-hook.sh",
+        include_str!("../../../docker/runtime/agent-status/hooks/codex/report-hook.sh"),
+    ),
+    (
+        "hooks/amp/plugin.js",
+        include_str!("../../../docker/runtime/agent-status/hooks/amp/plugin.js"),
+    ),
+    (
+        "hooks/opencode/report-hook.sh",
+        include_str!("../../../docker/runtime/agent-status/hooks/opencode/report-hook.sh"),
+    ),
+    (
+        "hooks/opencode/plugin.js",
+        include_str!("../../../docker/runtime/agent-status/hooks/opencode/plugin.js"),
+    ),
+    (
+        "packs/claude.toml",
+        include_str!("../../../docker/runtime/agent-status/packs/claude.toml"),
+    ),
+    (
+        "packs/codex.toml",
+        include_str!("../../../docker/runtime/agent-status/packs/codex.toml"),
+    ),
+    (
+        "packs/amp.toml",
+        include_str!("../../../docker/runtime/agent-status/packs/amp.toml"),
+    ),
+    (
+        "packs/kimi.toml",
+        include_str!("../../../docker/runtime/agent-status/packs/kimi.toml"),
+    ),
+    (
+        "packs/opencode.toml",
+        include_str!("../../../docker/runtime/agent-status/packs/opencode.toml"),
+    ),
+];
 const ZSHENV_SOURCE_SHIM_PATH: &str = ".jackin-runtime/zshenv-source-shim";
 const ZSH_TITLE_SHIM_PATH: &str = ".jackin-runtime/zsh-title-shim";
 #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
@@ -235,6 +283,7 @@ pub fn render_derived_dockerfile(
 {base_dockerfile}
 USER root
 {hook_copy_section}COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
+COPY --link --chmod=0755 .jackin-runtime/agent-status /jackin/runtime/agent-status
 COPY --link --chown=agent:agent --chmod=0644 {zsh_title_shim_path} /jackin/runtime/zsh-title-shim
 {jackin_capsule_section}RUN {hook_final_commands}{default_home_commands} \\
     && {shell_title_and_runtime_dir_commands}# Normalize /home/agent AND the /jackin/default-home seed to group 0 with
@@ -373,6 +422,17 @@ pub fn create_derived_build_context_for_agents(
     std::fs::create_dir_all(&runtime_dir)?;
     std::fs::write(runtime_dir.join("entrypoint.sh"), ENTRYPOINT_SH)?;
     std::fs::write(runtime_dir.join("zsh-title-shim"), ZSH_TITLE_SHIM)?;
+
+    // Stage the agent-status reporter assets (hooks + rule packs) so the
+    // Dockerfile COPYs them to /jackin/runtime/agent-status/.
+    let agent_status_dir = runtime_dir.join("agent-status");
+    for (rel, content) in AGENT_STATUS_ASSETS {
+        let dst = agent_status_dir.join(rel);
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(dst, content)?;
+    }
     if validated
         .manifest
         .hooks
@@ -566,6 +626,9 @@ fn ensure_runtime_assets_are_included(
         "!.jackin-runtime/entrypoint.sh".to_owned(),
         "!.jackin-runtime/zsh-title-shim".to_owned(),
         "!.jackin-runtime/DerivedDockerfile".to_owned(),
+        // Agent-status reporter assets (hooks + packs), staged recursively.
+        "!.jackin-runtime/agent-status/".to_owned(),
+        "!.jackin-runtime/agent-status/**".to_owned(),
     ];
     if context_dir.join(ZSHENV_SOURCE_SHIM_PATH).exists() {
         rules.push(format!("!{ZSHENV_SOURCE_SHIM_PATH}"));
