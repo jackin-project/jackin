@@ -157,6 +157,44 @@ impl FinalizerPrompt for RichCleanupPrompt {
     }
 }
 
+/// Finalizer prompt for the in-capsule dirty-exit flow: the operator already
+/// decided **inside the capsule** (the dirty-exit modal), which wrote its choice
+/// to `exit-action.json` under the per-instance state dir. This prompt reads
+/// that choice instead of showing a host-side dialog — the host only executes.
+///
+/// An absent file means no recorded choice (e.g. an interruption before the
+/// modal wrote one); fall back to `KeepAll` so at-risk work is never lost.
+/// `ReturnToRole` is never returned — "start a new agent" is handled in-capsule
+/// before exit, so it never reaches the host.
+#[derive(Debug)]
+pub struct ExitActionPrompt {
+    /// `<container_dir>/state`, the host-visible mount of the capsule's
+    /// `/jackin/state` where `exit-action.json` is written.
+    pub state_dir: std::path::PathBuf,
+}
+
+impl FinalizerPrompt for ExitActionPrompt {
+    fn ask_exit_dialog(
+        &mut self,
+        _container: &str,
+        _records: &[(IsolationRecord, PreservedReason)],
+    ) -> anyhow::Result<ExitDialogChoice> {
+        Ok(match read_exit_action(&self.state_dir) {
+            Some(jackin_protocol::ExitAction::Keep) => ExitDialogChoice::KeepAll,
+            Some(jackin_protocol::ExitAction::Discard) => ExitDialogChoice::DiscardAll,
+            None => ExitDialogChoice::KeepAll,
+        })
+    }
+}
+
+/// Read the operator's recorded dirty-exit choice from `<state_dir>/exit-action.json`.
+/// Returns `None` when the file is absent or unparsable.
+pub(crate) fn read_exit_action(state_dir: &Path) -> Option<jackin_protocol::ExitAction> {
+    let path = state_dir.join(jackin_protocol::EXIT_ACTION_FILENAME);
+    let text = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(text.trim()).ok()
+}
+
 /// D23/D24: one-screen exit dialog with `I`-key inspect support.
 /// Shows all preserved worktrees and offers three batch choices
 /// (Return | Keep all | Discard all). The operator can press `I` to open

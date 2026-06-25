@@ -1589,3 +1589,36 @@ async fn discard_policy_skips_dialog_on_dirty_record() {
         "discard policy must never return ReturnToAgent; got {dec:?}"
     );
 }
+
+#[test]
+fn exit_action_prompt_reads_recorded_choice() {
+    let dir = TempDir::new().expect("tempdir");
+    let mut prompt = ExitActionPrompt {
+        state_dir: dir.path().to_path_buf(),
+    };
+    // Absent file → KeepAll (never lose at-risk work).
+    assert_eq!(
+        prompt.ask_exit_dialog("c", &[]).expect("prompt"),
+        ExitDialogChoice::KeepAll
+    );
+    // Discard recorded → DiscardAll.
+    std::fs::write(dir.path().join("exit-action.json"), "\"discard\"").expect("write");
+    assert_eq!(
+        prompt.ask_exit_dialog("c", &[]).expect("prompt"),
+        ExitDialogChoice::DiscardAll
+    );
+    // Keep recorded → KeepAll.
+    std::fs::write(dir.path().join("exit-action.json"), "\"keep\"").expect("write");
+    assert_eq!(
+        prompt.ask_exit_dialog("c", &[]).expect("prompt"),
+        ExitDialogChoice::KeepAll
+    );
+}
+
+#[test]
+fn read_exit_action_none_when_absent_or_garbage() {
+    let dir = TempDir::new().expect("tempdir");
+    assert_eq!(read_exit_action(dir.path()), None);
+    std::fs::write(dir.path().join("exit-action.json"), "not json").expect("write");
+    assert_eq!(read_exit_action(dir.path()), None);
+}
