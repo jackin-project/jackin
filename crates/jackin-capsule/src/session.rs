@@ -39,7 +39,6 @@ use crate::pull_request::PullRequestInfo;
 use crate::tui::render::RowSnapshot;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
-const BLOCKED_AFTER: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Lines of scrollback every PTY session retains. ~1.5 MB worst-case
 /// per session at 200 cols. Empty cells cost less. Operators need
@@ -212,6 +211,10 @@ pub struct Session {
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
     pub last_output_at: std::time::Instant,
+    /// Last time the operator sent explicit keyboard input to this pane.
+    /// Recency evidence only — never authors state (see the agent runtime
+    /// status authority; the watchdog uses output, not input).
+    pub last_input_at: std::time::Instant,
     /// `true` once the PTY has produced any output. Stays `false`
     /// during the brief window between `Session::spawn` and the
     /// child's first write — when the grid's cursor sits at (0, 0)
@@ -648,11 +651,12 @@ impl Session {
                 label,
                 agent,
                 provider,
-                state: AgentState::Working,
+                state: AgentState::Unknown,
                 input_tx,
                 pty_master: master,
                 child_killer,
                 last_output_at: std::time::Instant::now(),
+                last_input_at: std::time::Instant::now(),
                 received_output: false,
                 shadow_grid: {
                     let mut grid = Box::new(jackin_term::DamageGrid::with_row_arena(
@@ -796,8 +800,10 @@ impl Session {
     /// Returns true when this clears a previously latched blocked state.
     pub fn mark_operator_input(&mut self) -> bool {
         let was_blocked = self.state == AgentState::Blocked;
-        self.last_output_at = std::time::Instant::now();
-        self.state = AgentState::Working;
+        // Operator input updates recency evidence only. It never authors state
+        // (that was the old flap bug: a keystroke in a blocked dialog flipped
+        // Blocked→Working). State comes from evidence arbitration.
+        self.last_input_at = std::time::Instant::now();
         was_blocked
     }
 
@@ -912,8 +918,11 @@ impl Session {
             );
         }
 
+        // PTY output updates recency evidence only. It never authors state
+        // (the old flap bug: any byte flipped Idle→Working, and a blocked
+        // dialog repaint flipped Blocked→Working). State comes from evidence
+        // arbitration over the rule pack / OSC / authority / physics.
         self.last_output_at = std::time::Instant::now();
-        self.state = state_after_pty_output(self.state);
     }
 
     /// Drain the grid's typed `PassthroughEvent`s, apply the session's
@@ -1113,16 +1122,6 @@ impl Session {
         self.shadow_grid.set_scrollback(self.scrollback_offset());
     }
 
-    pub fn refresh_state(&mut self) {
-        // `AgentState::Done` is part of the protocol surface but never
-        // produced: `remove_exited_session` removes the Session entry
-        // the moment the PTY's child reaper fires (see daemon.rs
-        // SessionEvent::Exited handler), so there is no live `Session`
-        // instance to refresh past that point. Operators experience
-        // tab removal directly; no transient `○ Done` glyph.
-        let elapsed = self.last_output_at.elapsed();
-        self.state = state_after_refresh(self.state, elapsed);
-    }
 }
 
 fn child_exit_reason(status: Result<&portable_pty::ExitStatus, &std::io::Error>) -> Option<String> {
@@ -1156,11 +1155,12 @@ impl Session {
             label,
             agent,
             provider,
-            state: AgentState::Working,
+            state: AgentState::Unknown,
             input_tx,
             pty_master,
             child_killer,
             last_output_at: std::time::Instant::now(),
+            last_input_at: std::time::Instant::now(),
             received_output: true,
             shadow_grid: Box::new(jackin_term::DamageGrid::new(size.0, size.1, scrollback_len)),
             osc_policy: OscPolicy::default(),
@@ -1186,21 +1186,6 @@ fn parse_modify_other_keys(raw: &[u8]) -> Option<u16> {
     }
     let level = parts.next().unwrap_or(b"0");
     std::str::from_utf8(level).ok()?.parse::<u16>().ok()
-}
-
-fn state_after_pty_output(current: AgentState) -> AgentState {
-    match current {
-        AgentState::Blocked | AgentState::Done | AgentState::Unknown => current,
-        AgentState::Working | AgentState::Idle => AgentState::Working,
-    }
-}
-
-fn state_after_refresh(current: AgentState, elapsed: std::time::Duration) -> AgentState {
-    match current {
-        AgentState::Blocked | AgentState::Done | AgentState::Unknown => current,
-        AgentState::Working | AgentState::Idle if elapsed < BLOCKED_AFTER => AgentState::Working,
-        AgentState::Working | AgentState::Idle => AgentState::Blocked,
-    }
 }
 
 /// Reject agent-slug strings that are flags (start with `-`), empty,

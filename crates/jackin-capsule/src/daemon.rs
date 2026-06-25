@@ -1019,17 +1019,15 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             _ = state_ticker.tick() => {
                 mux.log_resource_metrics();
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
-                // Snapshot visible agent state, refresh, snapshot again. The
-                // ticker's only time-based effect is Working→Idle transitions;
-                // tab labels derive from state and the status bar has no
-                // per-second counter, so when state is unchanged the chrome is
-                // identical. A full redraw (clear + repaint) every tick reads as
-                // a constant flicker, so skip it unless state actually changed.
+                // Agent state is no longer authored on this tick: PTY output and
+                // operator input update recency evidence only, never state (the
+                // old flap engine is gone). Phase 3 rewires this tick to assemble
+                // an EvidenceSnapshot per session, arbitrate, and publish — the
+                // mutation that will make the before/after snapshots differ and
+                // drive the state-change redraw. Until then state is unchanged on
+                // the tick, so the redraw below is correctly skipped.
                 let states_before: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
-                for session in mux.sessions.values_mut() {
-                    session.refresh_state();
-                }
                 let states_after: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
                 if mux.expire_dialog_copy_feedback(Instant::now()) {
@@ -1041,9 +1039,8 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     continue;
                 }
                 // A modal owns the whole screen behind an opaque backdrop;
-                // repainting the status/branch chrome here would draw it
-                // back over the fill. The hidden tab-state glyph has nothing
-                // to refresh, so skip the chrome frame while a dialog is open.
+                // repainting the status/branch chrome here would draw it back
+                // over the fill, so skip the chrome frame while a dialog is open.
                 if mux.dialog_open() {
                     continue;
                 }

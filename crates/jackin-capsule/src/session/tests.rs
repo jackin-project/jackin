@@ -393,35 +393,73 @@ fn build_shell_command_removes_stale_agent_env() {
 }
 
 #[test]
-fn pty_output_does_not_clear_latched_blocked_state() {
+fn pty_output_does_not_change_state() {
+    // The old flap engine flipped state on every PTY byte (Idle→Working) and
+    // could not hold a blocked dialog through its own repaint. After Phase 2,
+    // PTY output updates recency only and never authors state.
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.state = AgentState::Blocked;
+    let before = session.last_output_at;
+    session.feed_pty(b"\x1b[2K some redrawn dialog frame\r\n");
     assert_eq!(
-        state_after_pty_output(AgentState::Blocked),
-        AgentState::Blocked
+        session.state,
+        AgentState::Blocked,
+        "PTY output must not author state"
     );
-    assert_eq!(
-        state_after_pty_output(AgentState::Working),
-        AgentState::Working
-    );
-    assert_eq!(
-        state_after_pty_output(AgentState::Idle),
-        AgentState::Working
+    assert!(
+        session.last_output_at >= before,
+        "PTY output still updates recency evidence"
     );
 }
 
 #[test]
-fn refresh_latches_blocked_until_operator_input() {
+fn operator_input_does_not_change_state() {
+    // A keystroke inside a blocked dialog used to flip Blocked→Working and
+    // re-notify. After Phase 2 it updates the input timestamp and reports
+    // whether it cleared a latched blocker, but never authors state.
+    let mut session = test_session_with_policy(OscPolicy::default());
+
+    session.state = AgentState::Blocked;
+    assert!(session.mark_operator_input(), "reports it was blocked");
     assert_eq!(
-        state_after_refresh(AgentState::Working, BLOCKED_AFTER),
-        AgentState::Blocked
+        session.state,
+        AgentState::Blocked,
+        "operator input must not author state"
     );
+
+    session.state = AgentState::Done;
+    assert!(!session.mark_operator_input());
     assert_eq!(
-        state_after_refresh(AgentState::Blocked, std::time::Duration::ZERO),
-        AgentState::Blocked
+        session.state,
+        AgentState::Done,
+        "operator input must not author state"
     );
+}
+
+#[test]
+fn redraw_soak_produces_zero_state_transitions() {
+    // The flap engine produced a Blocked↔Working flip on every redraw frame.
+    // Replaying a permission-dialog repaint many times must now yield zero
+    // state changes at the session level. (The real single Blocked transition
+    // arrives with the Phase 3/8 evidence pipeline; this guards that redraws
+    // alone never author state — the regression that motivated this work.)
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let start = session.state;
+    let frame = b"\x1b[2K\x1b[1;1H Do you want to proceed?\r\n  1. Yes\r\n  2. No\r\n  esc to cancel\r\n";
+    let mut transitions = 0;
+    let mut prev = start;
+    for _ in 0..150 {
+        session.feed_pty(frame);
+        if session.state != prev {
+            transitions += 1;
+            prev = session.state;
+        }
+    }
     assert_eq!(
-        state_after_refresh(AgentState::Idle, BLOCKED_AFTER / 2),
-        AgentState::Working
+        transitions, 0,
+        "redraws must not author any state transition"
     );
+    assert_eq!(session.state, start);
 }
 
 #[test]

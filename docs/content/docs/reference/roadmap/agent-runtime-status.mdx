@@ -389,10 +389,10 @@ Work top to bottom. Check an item only when it is in the build and its test is g
 - [x] 1b — Collapsed the dual authority model: deleted dead `HookAuthority`/`AuthorityOrigin`; `AuthorityEvidence` (consumed by `arbitrate`) is the survivor
 - [x] Gate 1 — verified: `cargo check --workspace --all-targets` green; `cargo nextest` discovers + passes the **88** agent_status tests (2067 workspace-wide); `cargo shear --deny-warnings` exit 0 (agent_status de-grandfathered); `cargo clippy --workspace --all-targets -D warnings` clean
 
-**Phase 2 — Kill the flap engine [P0] (Slice 1, rewritten)**
-- [ ] 2 — `state_after_pty_output` / `state_after_refresh` / `mark_operator_input` stop authoring state; keep only `last_output_at` / `last_input_at`
-- [ ] 2 — Delete the 3 s-silence → `Blocked` inference; daemon stops broadcasting raw `s.state`
-- [ ] Gate 2 — 30 s redraw soak asserts one transition; `pty_output_does_not_change_state`, `operator_input_does_not_change_state` pass
+**Phase 2 — Kill the flap engine [P0] (Slice 1, rewritten)** ✅ landed June 25, 2026
+- [x] 2 — `feed_pty` and `mark_operator_input` now update recency only (`last_output_at` / new `last_input_at`); deleted `state_after_pty_output`, `state_after_refresh`, `refresh_state`, and `BLOCKED_AFTER`. Sessions start `Unknown` (was `Working`)
+- [x] 2 — Removed the 3 s-silence → `Blocked` inference and the daemon ticker's flap `refresh_state` loop; state is no longer authored on the tick (Phase 3 rewires the tick to assemble evidence → arbitrate → publish)
+- [x] Gate 2 — `pty_output_does_not_change_state` and `operator_input_does_not_change_state` pass; `redraw_soak_produces_zero_state_transitions` replays 150 dialog repaints and asserts **zero** transitions. (The "exactly one Blocked transition" soak needs the detection pipeline; it lands with the Phase 8 fixtures.) 683 capsule tests green, clippy/shear clean
 
 **Phase 3 — Evidence + arbitration as the only path [P0] (Slice 2)**
 - [ ] 3 — Daemon tick assembles `EvidenceSnapshot` → `arbitrate` → publish; `AgentStateChanged` populated from the real snapshot
