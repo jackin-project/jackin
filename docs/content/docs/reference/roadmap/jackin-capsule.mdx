@@ -88,7 +88,7 @@ The original target API was:
 | `session.attach` | 3 | Return a PTY attachment handle so the client can connect |
 | `events` | 3 | Upgrade connection to a streaming event channel |
 
-**Event stream:** Phase 3 now exposes `EventsSubscribe` with `AgentStateChanged`, `SessionSpawned`, `SessionExited`, token usage, and workspace roll-up events. Phase 4 daemon integration consumes that stream across containers instead of inventing a second status channel.
+**Event stream:** not yet implemented. The control channel is strictly request/reply today (`Status`, `Snapshot`, `Agents`, `ReportRuntimeEvent`, `StatusCapture`, the `Usage*` quota reads, and `TokenUsage`); there is no `EventsSubscribe` / streaming `AgentStateChanged` / `SessionSpawned` / `SessionExited` / `WorkspaceStatusChanged` channel. Per-session token spend ships as the polled `TokenUsage` request/reply method, **not** a `TokenUsageChanged` event. A streaming event channel for the Phase 4 host daemon to consume across containers (instead of polling) remains open.
 
 ### Agent state model
 
@@ -276,6 +276,7 @@ The rewrite produces this layout under `crates/jackin-capsule/src/`:
 | `protocol/control.rs` | Newline-delimited JSON request/response types for `status`, `session.create`, etc. |
 | `protocol/attach.rs` | Tag-plus-length binary framing for the attach channel |
 | `session.rs` | One PTY + one `DamageGrid` + state-inference timer; `Session::spawn`, `Session::feed_pty`, mode/OSC passthrough state |
+| `token_monitor.rs` | Per-session token-spend reader (provider JSONL / OpenCode turso SQLite); reconciled against live agent sessions + polled on the state tick, served via the `TokenUsage` control method |
 | `layout.rs` | Pane tree (kept, border math fixed) |
 | `tab.rs` | Tab struct + tab strip ordering |
 | `statusbar.rs` | Top-chrome renderer (brand pill, tabs, active-tab underline) |
@@ -474,7 +475,7 @@ Phase 3 also keeps the control-channel work the first attempt completed:
 - Shipped the [agent runtime status authority](/reference/roadmap/agent-runtime-status/): raw `working` / `blocked` / `idle` / `unknown`, derived `done`, foreground-process detection, semantic runtime reports, visible-screen signals, stale-report arbitration, and stuck diagnostics. Silence alone is not a blocker signal.
 - Implement the two-stage `done` / `idle` split and the operator-acknowledgement mechanism.
 - Expand control-channel API: `session.create`, `session.kill`, `session.title`, `events`.
-- Shipped event stream: `AgentStateChanged`, `SessionSpawned`, `SessionExited`, `TokenUsageChanged`, and `WorkspaceStatusChanged`.
+- Per-session token spend ships as the polled `TokenUsage` request/reply method. The streaming event channel (`EventsSubscribe` with `AgentStateChanged` / `SessionSpawned` / `SessionExited` / `TokenUsageChanged` / `WorkspaceStatusChanged`) remains open — the control channel is request/reply only today.
 - Implement per-tab status roll-up (`blocked > done > working > idle > unknown`) on the host side, consuming events from the control channel.
 - Remove `tmux` from the derived image (<RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile>).
 - Replace all `docker exec tmux …` call sites in the host CLI with control-channel calls.
