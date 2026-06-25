@@ -34,6 +34,7 @@ use anyhow::{Context, Result};
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tokio::sync::mpsc;
 
+use crate::agent_status::SessionStatus;
 use crate::protocol::AgentState;
 use crate::pull_request::PullRequestInfo;
 use crate::tui::render::RowSnapshot;
@@ -206,7 +207,12 @@ pub struct Session {
     pub label: String,
     pub agent: Option<String>,
     pub provider: Option<SessionProvider>,
+    /// Published effective state. Authored solely by evidence arbitration on the
+    /// daemon tick (see `agent_status`); kept in sync with `status.effective`.
     pub state: AgentState,
+    /// Per-session evidence-arbitration status (raw state, confidence, seen,
+    /// revision, last evidence summary). The single source of `state`.
+    pub status: SessionStatus,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
@@ -652,6 +658,7 @@ impl Session {
                 agent,
                 provider,
                 state: AgentState::Unknown,
+                status: SessionStatus::new(),
                 input_tx,
                 pty_master: master,
                 child_killer,
@@ -1156,6 +1163,7 @@ impl Session {
             agent,
             provider,
             state: AgentState::Unknown,
+            status: SessionStatus::new(),
             input_tx,
             pty_master,
             child_killer,

@@ -394,11 +394,11 @@ Work top to bottom. Check an item only when it is in the build and its test is g
 - [x] 2 — Removed the 3 s-silence → `Blocked` inference and the daemon ticker's flap `refresh_state` loop; state is no longer authored on the tick (Phase 3 rewires the tick to assemble evidence → arbitrate → publish)
 - [x] Gate 2 — `pty_output_does_not_change_state` and `operator_input_does_not_change_state` pass; `redraw_soak_produces_zero_state_transitions` replays 150 dialog repaints and asserts **zero** transitions. (The "exactly one Blocked transition" soak needs the detection pipeline; it lands with the Phase 8 fixtures.) 683 capsule tests green, clippy/shear clean
 
-**Phase 3 — Evidence + arbitration as the only path [P0] (Slice 2)**
-- [ ] 3 — Daemon tick assembles `EvidenceSnapshot` → `arbitrate` → publish; `AgentStateChanged` populated from the real snapshot
-- [ ] 3 — Fix: OSC progress-clear is a hint (still needs idle confirmation), never `Strong`-idle bypass
-- [ ] 3 — Arbitration consults `grade` (step 4) and `seq`
-- [ ] Gate 3 — one test per precedence step; same snapshot → same result; revision increments only on public transitions
+**Phase 3 — Evidence + arbitration as the only path [P0] (Slice 2)** ✅ landed June 25, 2026
+- [x] 3 — Daemon `state_ticker` now assembles an `EvidenceSnapshot` per session → `arbitrate` → `SessionStatus::publish_raw` → syncs `session.state`; arbitration is the **only** path that authors state. `PaneSnapshot.agent_status_report` populated from `SessionStatus::report` (was always `None`). Evidence sources are recency-only for now (authority P5, process P6, OSC P7, screen P8 fill them in) so arbitration returns `Unknown` until those land — correct per the vocabulary
+- [x] 3 — OSC progress-clear fixed to a `Weak` hint (still requires idle confirmation), never the `Strong`-idle bypass
+- [x] 3 — Arbitration now consults `grade` (Complete → Authoritative, Partial → Strong); test locks it. `seq` consumption lands with Phase 5 (no authority producer assigns `seq` until runtime events arrive); the push `AgentStateChanged` event also lands with Phase 5's subscription surface — Phase 3 carries the report on the pulled snapshot
+- [x] Gate 3 — 18 arbitrate tests (one per precedence step + freshness both directions + freeze + grade); `publish_raw` increments revision only on public transitions (existing `revision_increments_only_on_public_state_change`); 695 capsule+protocol tests green, clippy/shear clean
 
 **Phase 4 — Debounce + watchdog [P0] (Slice 3)**
 - [ ] 4 — `debounce` implemented and called from the tick; add `IDLE_HOLD_CAP` (~700 ms) + faster pending recheck

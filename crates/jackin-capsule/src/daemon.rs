@@ -40,6 +40,8 @@ use tokio::time::{Duration, interval};
 
 use portable_pty::CommandBuilder;
 
+use crate::agent_status::arbitrate::arbitrate;
+use crate::agent_status::evidence::{ActivityEvidence, EvidenceSnapshot};
 use crate::attach_protocol::{
     AttachHandshake, detach_attached_task, detach_client, drain_and_exit,
     drain_and_exit_with_reason, handle_attach_client, initial_spawn_request, perform_handshake,
@@ -1019,15 +1021,33 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             _ = state_ticker.tick() => {
                 mux.log_resource_metrics();
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
-                // Agent state is no longer authored on this tick: PTY output and
-                // operator input update recency evidence only, never state (the
-                // old flap engine is gone). Phase 3 rewires this tick to assemble
-                // an EvidenceSnapshot per session, arbitrate, and publish — the
-                // mutation that will make the before/after snapshots differ and
-                // drive the state-change redraw. Until then state is unchanged on
-                // the tick, so the redraw below is correctly skipped.
+                // Evidence arbitration is the ONLY path that authors agent state.
+                // Assemble an EvidenceSnapshot per session, arbitrate to a raw
+                // state + confidence, and publish through SessionStatus (which
+                // derives the public `effective` state, incl. done-from-seen).
+                // Evidence sources are filled in by later phases (authority P5,
+                // process P6, OSC P7, screen P8); until then the snapshot carries
+                // recency only and arbitration returns Unknown.
+                let now = Instant::now();
                 let states_before: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
+                for session in mux.sessions.values_mut() {
+                    let snapshot = EvidenceSnapshot {
+                        activity: ActivityEvidence {
+                            last_output: Some(session.last_output_at),
+                            last_input: Some(session.last_input_at),
+                        },
+                        ..EvidenceSnapshot::default()
+                    };
+                    let result = arbitrate(&snapshot, session.status.raw, now);
+                    if let Some(effective) = session.status.publish_raw(
+                        result.raw,
+                        result.confidence,
+                        result.summary,
+                    ) {
+                        session.state = effective;
+                    }
+                }
                 let states_after: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
                 if mux.expire_dialog_copy_feedback(Instant::now()) {

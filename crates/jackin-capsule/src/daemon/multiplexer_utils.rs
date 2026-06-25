@@ -245,9 +245,9 @@ impl Multiplexer {
                             label: session.label.clone(),
                             agent: session.agent.clone(),
                             state: session.state,
-                            // Populated from SessionStatus::report once the
-                            // evidence tick is wired (Phase 3/10).
-                            agent_status_report: None,
+                            agent_status_report: Some(
+                                session.status.report(session.agent.clone(), 0),
+                            ),
                         },
                         None => PaneSnapshot {
                             session_id: id,

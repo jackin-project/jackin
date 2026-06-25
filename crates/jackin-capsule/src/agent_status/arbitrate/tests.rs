@@ -164,6 +164,32 @@
     }
 
     #[test]
+    fn authority_confidence_reflects_grade() {
+        let now = Instant::now();
+
+        // Complete-grade runtime-event authority is the most trusted semantic
+        // source -> Authoritative.
+        let mut complete = base_snapshot(now);
+        let mut a = authority(RawAgentState::Working, false, now);
+        a.grade = AuthorityGrade::Complete;
+        complete.authority = Some(a);
+        assert_eq!(
+            arbitrate(&complete, RawAgentState::Idle, now).confidence,
+            AgentStatusConfidence::Authoritative,
+        );
+
+        // Partial-grade coverage cannot author at full confidence -> Strong.
+        let mut partial = base_snapshot(now);
+        let mut b = authority(RawAgentState::Working, false, now);
+        b.grade = AuthorityGrade::Partial;
+        partial.authority = Some(b);
+        assert_eq!(
+            arbitrate(&partial, RawAgentState::Idle, now).confidence,
+            AgentStatusConfidence::Strong,
+        );
+    }
+
+    #[test]
     fn expired_authority_leaves_note_and_falls_back_unknown() {
         let now = Instant::now();
         let mut snapshot = base_snapshot(now);

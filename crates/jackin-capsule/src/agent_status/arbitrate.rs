@@ -6,8 +6,8 @@ use std::time::Instant;
 use jackin_protocol::agent_status::AgentStatusConfidence;
 
 use crate::agent_status::evidence::{
-    AuthorityEvidence, EvidenceNote, EvidenceSnapshot, EvidenceSummary, EvidenceWinner,
-    RawAgentState,
+    AuthorityEvidence, AuthorityGrade, EvidenceNote, EvidenceSnapshot, EvidenceSummary,
+    EvidenceWinner, RawAgentState,
 };
 use crate::agent_status::policy::AUTHORITY_TTL;
 use crate::protocol::AgentState;
@@ -183,9 +183,17 @@ pub fn arbitrate(
 
 fn authority_confidence(authority: &AuthorityEvidence) -> AgentStatusConfidence {
     if authority.direct_state_report {
+        // Lower-trust cooperative reporter (a role-authored `ReportAgentState`):
+        // accepted with freshness/process validation, never full authority.
         AgentStatusConfidence::Strong
     } else {
-        AgentStatusConfidence::Authoritative
+        // Daemon-mapped runtime-event authority, graded by lifecycle coverage:
+        // Complete (e.g. OpenCode's full event stream) is the most trusted
+        // semantic source; Partial coverage cannot author at full confidence.
+        match authority.grade {
+            AuthorityGrade::Complete => AgentStatusConfidence::Authoritative,
+            AuthorityGrade::Partial => AgentStatusConfidence::Strong,
+        }
     }
 }
 
