@@ -148,39 +148,6 @@ mod osc133_tests {
     }
 }
 
-/// Stored state report from an in-container source.
-///
-/// Runtime hook/plugin events are daemon-mapped semantic authority. Direct
-/// `ReportAgentState` senders are lower-trust cooperative reporters: accepted
-/// with freshness and process validation, but not full authority.
-#[derive(Debug, Clone)]
-pub struct HookAuthority {
-    pub source_id: String,
-    pub agent_label: String,
-    pub raw_state: String,
-    pub origin: AuthorityOrigin,
-    pub seq: u64,
-    pub ts_ns: u64,
-    pub message: Option<String>,
-    /// Timestamp when this authority was last updated or heartbeated.
-    pub last_seen: std::time::Instant,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AuthorityOrigin {
-    RuntimeEvent,
-    DirectStateReport,
-}
-
-impl AuthorityOrigin {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::RuntimeEvent => "runtime_event",
-            Self::DirectStateReport => "direct_state_report",
-        }
-    }
-}
-
 /// Per-session accumulated status. Holds the current effective state and
 /// the `seen` flag used to derive `Done`.
 #[derive(Debug, Clone)]
@@ -603,23 +570,5 @@ mod tests {
         ];
         let rolled = roll_up_states(&session_states);
         assert_eq!(rolled, AgentState::Blocked);
-    }
-
-    #[test]
-    fn heartbeat_keeps_hook_authority_fresh() {
-        use std::time::Instant;
-        let mut auth = HookAuthority {
-            source_id: "hook-1".to_owned(),
-            agent_label: "claude".to_owned(),
-            raw_state: "blocked".to_owned(),
-            origin: AuthorityOrigin::RuntimeEvent,
-            seq: 100,
-            ts_ns: 0,
-            message: None,
-            last_seen: Instant::now(),
-        };
-        let before = auth.last_seen;
-        auth.last_seen = Instant::now();
-        assert!(auth.last_seen >= before);
     }
 }

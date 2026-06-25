@@ -103,6 +103,8 @@ pub enum AgentState {
     Blocked,
     Done,
     Idle,
+    /// No reliable evidence about the agent's state. Safer than guessing.
+    Unknown,
 }
 
 impl AgentState {
@@ -112,6 +114,7 @@ impl AgentState {
             Self::Blocked => "blocked",
             Self::Done => "done",
             Self::Idle => "idle",
+            Self::Unknown => "unknown",
         }
     }
 }

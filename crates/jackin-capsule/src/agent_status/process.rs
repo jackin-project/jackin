@@ -15,42 +15,42 @@ use crate::agent_status::policy::CPU_SAMPLE_WINDOW;
 mod procfs {
     use std::path::PathBuf;
 
-    pub mod process {
+    pub(crate) mod process {
         use super::PathBuf;
 
         #[derive(Debug, Clone)]
-        pub struct Process;
+        pub(crate) struct Process;
 
         #[derive(Debug, Clone)]
-        pub struct Stat {
-            pub pid: i32,
-            pub ppid: i32,
-            pub pgrp: i32,
-            pub tpgid: i32,
-            pub comm: String,
-            pub utime: u64,
-            pub stime: u64,
+        pub(crate) struct Stat {
+            pub(crate) pid: i32,
+            pub(crate) ppid: i32,
+            pub(crate) pgrp: i32,
+            pub(crate) tpgid: i32,
+            pub(crate) comm: String,
+            pub(crate) utime: u64,
+            pub(crate) stime: u64,
         }
 
         impl Process {
-            pub fn new(_pid: i32) -> Result<Self, ()> {
+            pub(crate) fn new(_pid: i32) -> Result<Self, ()> {
                 Err(())
             }
 
-            pub fn stat(&self) -> Result<Stat, ()> {
+            pub(crate) fn stat(&self) -> Result<Stat, ()> {
                 Err(())
             }
 
-            pub fn exe(&self) -> Result<PathBuf, ()> {
+            pub(crate) fn exe(&self) -> Result<PathBuf, ()> {
                 Err(())
             }
 
-            pub fn cmdline(&self) -> Result<Vec<String>, ()> {
+            pub(crate) fn cmdline(&self) -> Result<Vec<String>, ()> {
                 Err(())
             }
         }
 
-        pub fn all_processes() -> Result<std::vec::IntoIter<Result<Process, ()>>, ()> {
+        pub(crate) fn all_processes() -> Result<std::vec::IntoIter<Result<Process, ()>>, ()> {
             Ok(Vec::new().into_iter())
         }
     }

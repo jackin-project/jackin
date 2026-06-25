@@ -194,6 +194,9 @@ pub fn visible_agent_state_from_protocol(state: AgentState) -> VisibleAgentState
         AgentState::Working => VisibleAgentState::Working,
         AgentState::Done => VisibleAgentState::Done,
         AgentState::Blocked => VisibleAgentState::Blocked,
+        // Unknown has no dedicated status-bar glyph yet; render as Idle until
+        // Phase 10 (operator surface) gives the full vocabulary its own glyphs.
+        AgentState::Unknown => VisibleAgentState::Idle,
     }
 }
 

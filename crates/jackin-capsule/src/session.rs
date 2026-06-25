@@ -1190,14 +1190,14 @@ fn parse_modify_other_keys(raw: &[u8]) -> Option<u16> {
 
 fn state_after_pty_output(current: AgentState) -> AgentState {
     match current {
-        AgentState::Blocked | AgentState::Done => current,
+        AgentState::Blocked | AgentState::Done | AgentState::Unknown => current,
         AgentState::Working | AgentState::Idle => AgentState::Working,
     }
 }
 
 fn state_after_refresh(current: AgentState, elapsed: std::time::Duration) -> AgentState {
     match current {
-        AgentState::Blocked | AgentState::Done => current,
+        AgentState::Blocked | AgentState::Done | AgentState::Unknown => current,
         AgentState::Working | AgentState::Idle if elapsed < BLOCKED_AFTER => AgentState::Working,
         AgentState::Working | AgentState::Idle => AgentState::Blocked,
     }
