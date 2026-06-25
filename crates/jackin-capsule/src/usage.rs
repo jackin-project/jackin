@@ -2184,10 +2184,13 @@ fn bucket(
 }
 
 /// Tag the bucket pushed last onto `buckets` with the status-bar slot it fills.
-fn tag_last_status_slot(buckets: &mut [QuotaBucketView], slot: StatusSlot) {
-    if let Some(last) = buckets.last_mut() {
-        last.status_slot = Some(slot);
-    }
+/// Accepts a bare `StatusSlot` or an `Option`; a `None` slot is a no-op so the
+/// window-builder call sites that thread an optional slot need no `if let`.
+fn tag_last_status_slot(buckets: &mut [QuotaBucketView], slot: impl Into<Option<StatusSlot>>) {
+    let (Some(slot), Some(last)) = (slot.into(), buckets.last_mut()) else {
+        return;
+    };
+    last.status_slot = Some(slot);
 }
 
 /// Status-bar slot for a Claude/Codex window whose label is the canonical
@@ -2450,9 +2453,7 @@ fn push_claude_cli_bucket(
         None,
         UsageSnapshotStatus::Fresh,
     ));
-    if let Some(slot) = slot {
-        tag_last_status_slot(buckets, slot);
-    }
+    tag_last_status_slot(buckets, slot);
 }
 
 impl ClaudeOAuthUsageResponse {
@@ -2534,9 +2535,7 @@ fn push_claude_window(
         pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     ));
-    if let Some(slot) = slot {
-        tag_last_status_slot(buckets, slot);
-    }
+    tag_last_status_slot(buckets, slot);
 }
 
 fn claude_window_seconds(label: &str) -> Option<i64> {
@@ -3083,9 +3082,7 @@ fn push_codex_window(
         pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     ));
-    if let Some(slot) = slot {
-        tag_last_status_slot(buckets, slot);
-    }
+    tag_last_status_slot(buckets, slot);
 }
 
 fn fetch_codex_rpc_usage(gate: &mut ManagedCliLaunchGate) -> Result<CodexRpcUsage, String> {
@@ -6614,7 +6611,8 @@ mod tests {
         );
         assert!(buckets.iter().any(|bucket| bucket.label == "Daily Routines"
             && bucket.remaining_percent == Some(100)
-            && bucket.pace_label.is_none()));
+            && bucket.pace_label.is_none()
+            && bucket.status_slot.is_none()));
         // `seven_day_opus` was absent from the response — it must be omitted
         // entirely, never fabricated into a (full-meter) row.
         assert!(!buckets.iter().any(|bucket| bucket.label == "Opus"));
