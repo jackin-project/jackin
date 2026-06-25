@@ -378,16 +378,16 @@ Work top to bottom. Check an item only when it is in the build and its test is g
 - [x] 0c — `scripts/ci/check-agent-status-truthful.sh` (CI step) fails if the page claims "Implemented" while `agent_status` is unwired or still grandfathered
 - [x] Gate 0 — verified: a synthetic unlinked file fails `cargo shear --deny-warnings` (exit 1) while the grandfathered tree stays green (exit 0); workspace still compiles; no behaviour change
 
-**Phase 1 — Compile the foundation [P0, blocks all]**
-- [ ] 1a — Create `jackin_protocol::agent_status` (`AgentRawState`, `AgentStatusReport`, `AgentStatusConfidence`, `AgentStatusSource`)
-- [ ] 1a — Add `AgentState::Unknown`
-- [ ] 1a — Add `PaneSnapshot.agent_status_report: Option<AgentStatusReport>` + host-snapshot decode
-- [ ] 1a — Reconcile raw-vs-public (wire carries public `AgentState` incl. `Unknown`; capsule derives `done` from `seen`)
-- [ ] 1b — Add `mod agent_status` to the capsule `lib.rs`
-- [ ] 1b — Fix `Duration::from_mins(5)` → `from_secs(300)`
-- [ ] 1b — Relocate every inline `#[cfg(test)] mod tests` into a sibling `tests.rs`
-- [ ] 1b — Collapse `HookAuthority` and `AuthorityEvidence` into one authority model
-- [ ] Gate 1 — `cargo check --workspace --all-targets`, `cargo nextest` (discovers agent_status tests), `cargo shear`, `clippy -D warnings` all green
+**Phase 1 — Compile the foundation [P0, blocks all]** ✅ landed June 25, 2026
+- [x] 1a — Created `jackin_protocol::agent_status` (`AgentRawState`, `AgentStatusReport`, `AgentStatusConfidence`, `AgentStatusSource`)
+- [x] 1a — Added `AgentState::Unknown` (+ `label()` arm; three live non-exhaustive matches fixed)
+- [x] 1a — Added `PaneSnapshot.agent_status_report: Option<AgentStatusReport>` (serde `default`/`skip`); host decodes via serde, populated in Phase 3/10
+- [x] 1a — Raw-vs-public reconciled: wire carries public `AgentState` incl. `Unknown`; `SessionStatus` derives `done` from raw `idle` + `!seen`
+- [x] 1b — `pub mod agent_status` added to the capsule `lib.rs` (follows the crate's `pub mod` convention; non-Linux `procfs` stub made `pub(crate)`)
+- [x] 1b — `Duration::from_mins` was a non-issue: stable on the pinned 1.96 toolchain (already used elsewhere in the workspace) — no change needed
+- [x] 1b — All 10 inline `#[cfg(test)] mod tests` relocated to sibling `tests.rs` (the two `agent_status.rs` modules merged into one)
+- [x] 1b — Collapsed the dual authority model: deleted dead `HookAuthority`/`AuthorityOrigin`; `AuthorityEvidence` (consumed by `arbitrate`) is the survivor
+- [x] Gate 1 — verified: `cargo check --workspace --all-targets` green; `cargo nextest` discovers + passes the **88** agent_status tests (2067 workspace-wide); `cargo shear --deny-warnings` exit 0 (agent_status de-grandfathered); `cargo clippy --workspace --all-targets -D warnings` clean
 
 **Phase 2 — Kill the flap engine [P0] (Slice 1, rewritten)**
 - [ ] 2 — `state_after_pty_output` / `state_after_refresh` / `mark_operator_input` stop authoring state; keep only `last_output_at` / `last_input_at`

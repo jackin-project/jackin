@@ -245,12 +245,16 @@ impl Multiplexer {
                             label: session.label.clone(),
                             agent: session.agent.clone(),
                             state: session.state,
+                            // Populated from SessionStatus::report once the
+                            // evidence tick is wired (Phase 3/10).
+                            agent_status_report: None,
                         },
                         None => PaneSnapshot {
                             session_id: id,
                             label: "(missing)".to_owned(),
                             agent: None,
                             state: crate::protocol::control::AgentState::Idle,
+                            agent_status_report: None,
                         },
                     })
                     .collect();

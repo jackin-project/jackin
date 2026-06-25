@@ -7,6 +7,8 @@
 //! disconnects.
 use serde::{Deserialize, Serialize};
 
+use crate::agent_status::AgentStatusReport;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
@@ -94,6 +96,11 @@ pub struct PaneSnapshot {
     /// `None` for shell sessions; the agent slug otherwise.
     pub agent: Option<String>,
     pub state: AgentState,
+    /// Full evidence-arbitration status report. `None` until the capsule
+    /// populates it from `SessionStatus::report` (Phase 3/10 wiring); the host
+    /// console renders `state` until then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_status_report: Option<AgentStatusReport>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
