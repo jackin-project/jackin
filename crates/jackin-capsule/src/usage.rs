@@ -2239,21 +2239,25 @@ impl ClaudeOAuthUsageResponse {
         if let Some(extra) = self.extra_usage
             && extra.is_enabled.unwrap_or(true)
         {
+            // F8: surface Claude credits as spent vs cap only —
+            // `<currency> <spent> spent` + `NN% used`, against the monthly cap.
             let remaining_percent = extra.utilization.and_then(remaining_from_fraction);
             let currency = extra.currency.unwrap_or_else(|| "credits".to_owned());
             let used = extra
                 .used_credits
-                .map(|used| format_extra_usage_amount(used, &currency));
+                .map(|used| format!("{} spent", format_extra_usage_amount(used, &currency)));
             let limit = extra
                 .monthly_limit
                 .map(|limit| format_extra_usage_amount(limit, &currency));
+            let pace = remaining_percent
+                .map(|remaining| format!("{}% used", 100u8.saturating_sub(remaining)));
             buckets.push(bucket(
                 "Extra usage",
                 used,
                 limit,
                 remaining_percent,
                 None,
-                None,
+                pace.as_deref(),
                 UsageSnapshotStatus::Fresh,
             ));
         }
@@ -6180,9 +6184,11 @@ mod tests {
             .iter()
             .find(|bucket| bucket.label == "Extra usage")
             .expect("extra usage bucket");
+        // F8: spent vs cap — `<currency> <spent> spent` + `NN% used`.
         assert_eq!(extra.remaining_percent, Some(70));
-        assert_eq!(extra.used_label.as_deref(), Some("SGD 78.49"));
+        assert_eq!(extra.used_label.as_deref(), Some("SGD 78.49 spent"));
         assert_eq!(extra.limit_label.as_deref(), Some("SGD 260.00"));
+        assert_eq!(extra.pace_label.as_deref(), Some("30% used"));
     }
 
     #[test]
