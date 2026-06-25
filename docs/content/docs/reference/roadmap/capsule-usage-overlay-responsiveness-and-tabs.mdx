@@ -41,7 +41,58 @@ In-container smoke on branch `feature/capsule-usage-overlay-roadmap` (capsule `0
 - **F8 — Claude usage credits.** Surface Claude credits as **spent vs available cap** only: `SGD <spent> spent · NN% used` against the monthly cap (e.g. `SGD 78.49 spent · 30% used` of `SGD 260.00`), as on the claude.ai → Settings → Usage page (`claude.ai/api/organizations/{org}/usage`). Not the full cost grid. Verify extraction against CodexBar source before building.
 - **F9 — Z.AI order** → **5-hour · Tokens · MCP** (operator override of CodexBar's Tokens·MCP·5-hour; document the divergence per principle 5).
 - **F10 — Kimi order** → **Rate Limit · Weekly** (operator override of CodexBar's Weekly·Rate Limit). F9+F10 share a principle: put the short/active (5-hour / rate) window on top.
-- **F11 — account label consistency.** Header account string differs in kind across tabs (real email for OpenAI/Amp/xAI; `Claude OAuth` / `*_API_KEY present` / `auth token` for the rest). Make consistent: prefer real account identity (email/handle) where the source provides it — Anthropic must show its email (available via the OAuth path), not `Claude OAuth` — with one consistent fallback phrasing for API-key-only providers.
+- **F11 → superseded by F12** (account label consistency folded into the unified identity + auth-source design below).
+
+### F12 — unified identity + auth-source display (operator-approved layout)
+
+Today the account header is inconsistent in kind across providers (real email for Codex/Amp/xAI; `Claude OAuth`; `ZAI_API_KEY present`; `Kimi auth token`; `MiniMax API token`). Re-architect into separated, uniform fields everywhere in the usage dialog.
+
+**Approved layout (every provider):**
+- Row 1: provider name (left) · account email (right; omit when the provider exposes none).
+- Row 2: `Updated <rel> · <state>` (left) · `<username> · <plan>` (right; username only when distinct from email).
+- Row 3 (NEW): `Auth: <kind> · <origin>` — the credential SOURCE, never the secret. kind = `OAuth` (native client) / `API token` (env) / `API key` (file); origin = the WINNING resolver arm (env → `env <VAR_NAME>`; file → the path; OAuth → `keychain`/path).
+
+**Per-provider data (verified vs `usage.rs` resolver code + parallax logs):**
+
+| Provider | email | username | plan | Auth row |
+|---|---|---|---|---|
+| OpenAI / Codex | yes | yes | `Pro 20x` | `OAuth · ~/.codex/auth.json` (or `/jackin` handoff) |
+| Anthropic / Claude | needs new parse (`~/.claude.json` `oauthAccount`) | — | `Max` | `OAuth · keychain` |
+| Amp | yes | yes | `Amp Free` | `API key · amp secrets.json` |
+| xAI / Grok | yes | (user id) | `SuperGrok` | `OAuth · ~/.grok/auth.json` |
+| Z.AI | none | — | plan name | `API token · env ZAI_API_KEY` |
+| Kimi | none | — | — | `API token · env KIMI_CODE_API_KEY` |
+| MiniMax | none | — | plan name | `API token · env MINIMAX_API_KEY` |
+
+Implementation: `FocusedAccountHeader` (jackin-protocol) has no field for credential origin — every snapshot resolver discards which `.or_else` arm won. Add a structured `credential_origin` populated at each arm; split email/username/plan; render the Auth row. For Claude, parse the account email from `~/.claude.json` `oauthAccount` (or a profile endpoint) — verify vs CodexBar's Claude fetcher. Parallax logs confirm Z.AI/Kimi/MiniMax creds arrive as env vars (`ZAI_API_KEY` / `KIMI_CODE_API_KEY` / `MINIMAX_API_KEY`).
+
+### F13 — status-bar headline: canonical `Session N% · Weekly N%`, every provider
+
+`status_bar_quota_labels` (`usage.rs:1442-1473`) matches only buckets literally named Session/Weekly, so Z.AI/MiniMax/Kimi fall through and render wrong/inconsistent headlines. Add a per-provider mapping of which bucket fills the Session vs Weekly slot, then render the Codex/Claude format everywhere:
+
+| Provider | Session slot | Weekly slot | status bar |
+|---|---|---|---|
+| OpenAI / Codex · Anthropic | Session | Weekly | `Session N% · Weekly N%` |
+| Z.AI | 5-hour | Tokens | `Session N% · Weekly N%` |
+| MiniMax | General · 5h | General · Weekly | `Session N% · Weekly N%` |
+| Kimi | Rate Limit | Weekly | `Session N% · Weekly N%` |
+| xAI / Grok | — | Weekly | `Weekly N%` (no session; keep the word) |
+| Amp | — | — | `Free N% · $credits` (special, already correct) |
+
+### F14 — tab-bar focus indicator (green underline) consistent everywhere
+
+The usage tab bar reuses the shared component (settings / workspace-editor). Operator rule: when a tab bar **is focused**, the active tab shows a **green underline** (focus signal) and left/right arrows switch tabs while focused — identical on every tab-bar surface in jackin' (usage overlay, console settings, workspace editor, capsule status bar, lookbook). Extends Issue 1 (shared `TabStrip` already has a green/white focus underline in the status-bar painter): make it the single consistent focus affordance and ensure the usage strip is focusable → green underline → arrow-nav. Audit which surfaces show it today.
+
+### Final plan — remaining PR 579 work (priority order)
+
+- **P0 — RC1 full snapshots:** Claude via OAuth `/api/oauth/usage` (reset + in-reserve + Sonnet + Daily Routines) instead of the `cli` 2-row path; OpenAI Codex Spark 5h/Weekly + Limit Reset Credits + Credits via the Codex CLI RPC `account/rateLimits/read`. Fixes Issues 8/9 + Overview (F5) + status bar.
+- **P1 — Identity + auth source (F12):** the operator-approved layout above.
+- **P2 — Status bar (F13):** per-provider Session/Weekly slot mapping.
+- **P3 — Usage lifecycle (F1–F3):** hide before agent start; `refreshing` (one consistent word) on start; clickable proactive refresh; capsule-as-proxy agent-start signal; every agent.
+- **P4 — Order + labels + credits:** F9 Z.AI order (5h · Tokens · MCP), F10 Kimi order (Rate Limit · Weekly), F7a OpenAI plan `Pro 20x`, F8 Claude credits (spent vs cap).
+- **P5 — Shared tab + remaining visual:** F14 tab-bar focus green underline + arrow-nav consistent on every surface (extends Issue 1); hover/cursor; status-bar consistency across screens; no vertical jump / centered strip / padding; mid-refresh responsiveness.
+
+Each item: verify vs the cloned CodexBar source + provider data; update roadmap + tests; keep CI green.
 
 Not yet captured in this smoke (still owed): hover color + pointer cursor on tab surfaces, status-bar consistency across all screens, no-vertical-jump / centered strip / padding, mid-refresh tab-switch responsiveness + no-refetch-within-TTL.
 
