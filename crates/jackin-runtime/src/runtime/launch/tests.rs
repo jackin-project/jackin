@@ -1859,6 +1859,74 @@ plugins = ["code-review@claude-plugins-official"]
     );
 }
 
+/// WP3 hard rule: the host Docker socket must never be bind-mounted into a
+/// role container. Inner-Docker access is provided exclusively by the DinD
+/// sidecar over TLS; mounting `docker.sock` would hand the agent the host
+/// daemon (root-equivalent escape). This guards the rule against regression
+/// across the whole launch path, not just one mount-builder.
+#[tokio::test]
+async fn role_container_never_mounts_host_docker_socket() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(Some("chainargos"), "the-architect");
+    let mut runner =
+        FakeRunner::for_load_agent(["false 0 false".to_owned(), "false 0 false".to_owned()]);
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+model = "sonnet"
+"#,
+    )
+    .unwrap();
+
+    let workspace = repo_workspace(&repo_dir);
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    load_role_with(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+        auto_trust,
+        |_, _, _| Ok(()),
+    )
+    .await
+    .unwrap();
+
+    let role_run_cmd = runner
+        .recorded
+        .iter()
+        .find(|call| call.contains("docker run -d --name jk-") && call.contains("jackin.kind=role"))
+        .expect("expected role docker run command");
+    assert!(
+        !role_run_cmd.contains("docker.sock"),
+        "role container must never bind-mount the host Docker socket; run cmd was: {role_run_cmd}"
+    );
+    // Belt and suspenders: no container the fake daemon created (the DinD
+    // sidecar included) binds the host Docker socket.
+    for (name, spec) in docker.created_containers.borrow().iter() {
+        assert!(
+            !spec.binds.iter().any(|b| b.contains("docker.sock")),
+            "container {name} must not bind-mount docker.sock"
+        );
+    }
+}
+
 #[tokio::test]
 async fn load_namespaced_agent_aborts_when_trust_declined() {
     let temp = tempdir().unwrap();
