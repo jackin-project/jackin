@@ -429,26 +429,6 @@ pub(crate) fn execute_workspace_save_effect(
             plan,
             exit_on_success,
         } => {
-            let has_records = jackin_runtime::isolation::state::list_records_for_workspace(
-                &paths.data_dir,
-                &original_name,
-            )
-            .is_ok_and(|records| !records.is_empty());
-            if !has_records {
-                let (_tx, rx) = tokio::sync::oneshot::channel();
-                let check = PendingDriftCheck::new(rx, original_name, plan, exit_on_success);
-                if let Ok(Some(effect)) =
-                    jackin_console::tui::input::save::continue_save_after_drift_check(
-                        state,
-                        config,
-                        check,
-                        Ok(crate::runtime::drift::DriftDetection::default()),
-                    )
-                {
-                    execute_workspace_save_effect(state, config, paths, cwd, effect);
-                }
-                return;
-            }
             let ManagerStage::Editor(editor) = &mut state.stage else {
                 return;
             };
@@ -812,8 +792,8 @@ mod tests {
     use jackin_console::tui::components::file_browser::{
         FileBrowserOutcome, FileBrowserState, FolderListing,
     };
-    use jackin_console::tui::effect::ConsoleEffect;
     use jackin_console::tui::effect::FileBrowserEffectContext;
+    use jackin_console::tui::effect::{ConsoleEffect, WorkspaceSaveEffect};
     use jackin_console::tui::state::update::{ManagerBackgroundEvent, ManagerMessage};
 
     use crate::console::tui::state::{
@@ -822,7 +802,7 @@ mod tests {
         SettingsState,
     };
 
-    use super::{execute_manager_effect, poll_background_messages};
+    use super::{execute_manager_effect, execute_workspace_save_effect, poll_background_messages};
 
     #[tokio::test]
     async fn poll_background_messages_routes_file_browser_poll_through_message() {
@@ -859,6 +839,44 @@ mod tests {
             state.instance_refresh_in_flight(),
             "instance refresh effect should spawn a worker"
         );
+    }
+
+    #[tokio::test]
+    async fn workspace_save_drift_check_starts_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let editor = EditorState::new_edit("workspace".into(), WorkspaceConfig::default());
+        let mut state = ManagerState::from_config(&config, cwd);
+        state.stage = ManagerStage::Editor(editor);
+
+        execute_workspace_save_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            cwd,
+            WorkspaceSaveEffect::StartDriftCheck {
+                original_name: "workspace".into(),
+                prospective_mounts: Vec::new(),
+                plan: jackin_console::tui::state::PendingSaveCommit {
+                    effective_removals: Vec::new(),
+                    final_mounts: None,
+                    delete_isolated_acknowledged: false,
+                    isolated_cleanup_complete: false,
+                },
+                exit_on_success: false,
+            },
+        );
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("expected editor stage");
+        };
+        assert!(
+            editor.pending_drift_check.is_some(),
+            "workspace save drift detection should run on a worker"
+        );
+        assert!(matches!(editor.modal, Some(Modal::StatusPopup { .. })));
     }
 
     #[tokio::test]
