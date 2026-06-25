@@ -159,6 +159,8 @@ Reads only from Turso; never calls a provider. Degrades to the lifecycle word (`
 
 **Shipped — `9a63843a`.** `status_bar_bucket_matches` is now surface-aware: Z.AI weekly → `Tokens`, MiniMax session → `General · 5h`, Grok → its billing cycle (Weekly/Monthly/Credits) in the Weekly slot with no session, Kimi already mapped via `5-hour rate limit` → Session. Amp keeps its dedicated `Free N% · $credits` headline. Locked by `status_bar_maps_session_weekly_slots_per_provider`. (Non-`general` MiniMax models, whose session bucket is a bare model name with no time marker, fall through to the lifecycle word — acceptable; `general` is the default.)
 
+**Code-health follow-up (deferred, named).** `status_bar_bucket_matches` and `provider_matches_usage_label` reconstruct a fact each provider already knows at construction (which window fills the Session/Weekly slot; which provider a tab belongs to) by substring-matching display labels. The deeper fix carries the slot role as a semantic field on `QuotaBucketView` (set by the provider, read by the status bar) and compares canonical `UsageSurface` values instead of label substrings. Both touch every bucket builder across all seven providers, so they belong in their own focused refactor rather than this overlay PR.
+
 ---
 
 ## P3 — Usage-state lifecycle: never show a misleading state (F1–F3)

@@ -912,9 +912,10 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     // once. account_label is the real email identity — empty when none, never a
     // fabricated auth-method string; the auth source lives on `credential_origin`.
     let (oauth_resolved, account_email) = resolve_claude_identity(&oauth_candidates);
-    let oauth = oauth_resolved
-        .as_ref()
-        .map(|(_, credentials)| credentials.clone());
+    let (oauth_path, oauth) = match oauth_resolved {
+        Some((path, credentials)) => (Some(path), Some(credentials)),
+        None => (None, None),
+    };
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .ok()
         .filter(|v| !v.is_empty());
@@ -928,8 +929,8 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     // The displayed numbers come from the OAuth file token (the env keys are
     // never used for the fetch), so name the OAuth path that won first; fall
     // back to the env token only when no OAuth credential resolved.
-    let credential_origin = if let Some((path, _)) = oauth_resolved.as_ref() {
-        Some(format!("OAuth · {}", abbreviate_home_path(path)))
+    let credential_origin = if let Some(path) = oauth_path.as_deref() {
+        Some(oauth_origin(path))
     } else if api_key.is_some() {
         Some("API token · env ANTHROPIC_API_KEY".to_owned())
     } else if auth_token.is_some() {
@@ -1105,7 +1106,7 @@ fn codex_plan_word_display(raw: &str) -> String {
     if raw == raw.to_ascii_uppercase() && raw.chars().any(char::is_alphabetic) {
         return raw.to_owned();
     }
-    capitalize_first(raw)
+    titlecase_ascii(raw)
 }
 
 fn codex_snapshot(
@@ -1118,27 +1119,25 @@ fn codex_snapshot(
         std::env::var("CODEX_HOME").map_or_else(|_| home_path(".codex"), PathBuf::from);
     let auth_path = codex_home.join("auth.json");
     let handoff_auth_path = Path::new(CODEX_HANDOFF_AUTH_PATH);
-    // Home auth first, runtime-forwarded handoff last (shared resolver); keep
-    // the winning path so the `Auth:` origin names the file that actually
-    // produced the credential instead of re-stat'ing to guess it.
+    // Home auth first, runtime-forwarded handoff last; one walk yields the
+    // credential (with its winning path, for the `Auth:` origin) and the account
+    // label, reading each file once.
     let codex_candidates = [auth_path.clone(), handoff_auth_path.to_path_buf()];
-    let resolved = codex_candidates.iter().find_map(|path| {
-        load_codex_oauth_credentials(path).map(|credentials| (path.clone(), credentials))
-    });
-    let credentials = resolved
-        .as_ref()
-        .map(|(_, credentials)| credentials.clone());
+    let (resolved, account_from_file) = resolve_codex_identity(&codex_candidates);
+    let (oauth_path, credentials) = match resolved {
+        Some((path, credentials)) => (Some(path), Some(credentials)),
+        None => (None, None),
+    };
     // account_label is the email identity only; the auth source (the resolver
     // arm that actually won) goes on `credential_origin`.
     let auth_email = credentials
         .as_ref()
         .and_then(|credentials| credentials.account_label.clone())
-        .or_else(|| codex_account_label(&auth_path))
-        .or_else(|| codex_account_label(handoff_auth_path));
+        .or(account_from_file);
     let has_env_key = std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.is_empty());
     let needs_login = credentials.is_none() && auth_email.is_none() && !has_env_key;
-    let credential_origin = if let Some((path, _)) = resolved.as_ref() {
-        Some(format!("OAuth · {}", abbreviate_home_path(path)))
+    let credential_origin = if let Some(path) = oauth_path.as_deref() {
+        Some(oauth_origin(path))
     } else if has_env_key {
         Some("API token · env OPENAI_API_KEY".to_owned())
     } else {
@@ -1271,7 +1270,8 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let amp_secrets = data.join("secrets.json");
     let handoff_secrets = Path::new(AMP_HANDOFF_SECRETS_PATH);
     let amp_env_key = env_value("AMP_API_KEY");
-    let amp_api_key = amp_env_key.clone().or_else(|| {
+    let env_present = amp_env_key.is_some();
+    let amp_api_key = amp_env_key.or_else(|| {
         // Home secrets first, runtime-forwarded handoff last (shared resolver).
         first_credential(
             &[amp_secrets.clone(), handoff_secrets.to_path_buf()],
@@ -1298,7 +1298,7 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let handoff_secrets_exists = handoff_secrets.exists();
     let has_auth = amp_api_key.is_some() || amp_secrets_exists || handoff_secrets_exists;
     // credential_origin reflects the resolver arm that actually won.
-    let credential_origin = if amp_env_key.is_some() {
+    let credential_origin = if env_present {
         Some("API key · env AMP_API_KEY".to_owned())
     } else if amp_secrets_exists {
         Some("API key · amp secrets.json".to_owned())
@@ -2538,8 +2538,12 @@ struct CodexOAuthCredentials {
     account_label: Option<String>,
 }
 
+#[cfg(test)]
 fn load_codex_oauth_credentials(path: &Path) -> Option<CodexOAuthCredentials> {
-    let value = read_json_file(path)?;
+    codex_oauth_from_value(&read_json_file(path)?)
+}
+
+fn codex_oauth_from_value(value: &serde_json::Value) -> Option<CodexOAuthCredentials> {
     if let Some(api_key) = value
         .get("OPENAI_API_KEY")
         .and_then(serde_json::Value::as_str)
@@ -4872,15 +4876,6 @@ fn window_minutes_label(minutes: i64) -> Option<String> {
     Some(format!("{minutes} minute window"))
 }
 
-/// Capitalize the first character of `part`, leaving the rest untouched.
-fn capitalize_first(part: &str) -> String {
-    let mut chars = part.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-        None => String::new(),
-    }
-}
-
 /// Split a machine-style identifier on `_`/`-`/whitespace and join the per-word
 /// transform with spaces. Shared by `humanize_plan_label` (plain title-case) and
 /// `codex_plan_display_name` (acronym-aware words).
@@ -4894,7 +4889,7 @@ fn humanize_words_with(value: &str, word: impl Fn(&str) -> String) -> String {
 }
 
 fn humanize_plan_label(value: &str) -> String {
-    humanize_words_with(value, capitalize_first)
+    humanize_words_with(value, titlecase_ascii)
 }
 
 fn codex_limit_label(value: &str) -> String {
@@ -5352,8 +5347,7 @@ fn format_cents(value: i64) -> String {
     format_currency(value as f64 / 100.0)
 }
 
-fn codex_account_label(path: &Path) -> Option<String> {
-    let value = read_json_file(path)?;
+fn codex_account_from_value(value: &serde_json::Value) -> Option<String> {
     value
         .pointer("/tokens/email")
         .and_then(serde_json::Value::as_str)
@@ -5364,6 +5358,33 @@ fn codex_account_label(path: &Path) -> Option<String> {
         })
         .or_else(|| value.get("auth_mode").and_then(serde_json::Value::as_str))
         .map(str::to_owned)
+}
+
+/// Resolve the Codex OAuth credential (with the winning path, for the `Auth:`
+/// origin) and the account label in a single home-first walk, reading and
+/// parsing each candidate file at most once — mirrors `resolve_claude_identity`.
+fn resolve_codex_identity(
+    candidates: &[PathBuf],
+) -> (Option<(PathBuf, CodexOAuthCredentials)>, Option<String>) {
+    let mut credentials = None;
+    let mut account = None;
+    for path in candidates {
+        if credentials.is_some() && account.is_some() {
+            break;
+        }
+        let Some(value) = read_json_file(path) else {
+            continue;
+        };
+        if credentials.is_none()
+            && let Some(found) = codex_oauth_from_value(&value)
+        {
+            credentials = Some((path.clone(), found));
+        }
+        if account.is_none() {
+            account = codex_account_from_value(&value);
+        }
+    }
+    (credentials, account)
 }
 
 fn grok_account_label(path: &Path) -> Option<String> {
@@ -5436,16 +5457,14 @@ fn home_path(rel: &str) -> PathBuf {
         .join(rel)
 }
 
-/// Render a path for display, collapsing the `$HOME` prefix to `~` so the
-/// `Auth:` line reads `~/.claude/.credentials.json` rather than an absolute
-/// container path. Non-home paths (e.g. the `/jackin/...` handoff) render as-is.
-fn abbreviate_home_path(path: &Path) -> String {
-    if let Some(home) = std::env::var_os("HOME")
-        && let Ok(rest) = path.strip_prefix(&home)
-    {
-        return format!("~/{}", rest.display());
-    }
-    path.display().to_string()
+/// `Auth:` origin label for an OAuth credential resolved from `path`, with the
+/// home dir collapsed to `~` (so it reads `~/.codex/auth.json`, not an absolute
+/// container path). Shared by the Claude and Codex snapshots.
+fn oauth_origin(path: &Path) -> String {
+    format!(
+        "OAuth · {}",
+        jackin_tui::shorten_home(&path.display().to_string())
+    )
 }
 
 fn now_epoch() -> i64 {
