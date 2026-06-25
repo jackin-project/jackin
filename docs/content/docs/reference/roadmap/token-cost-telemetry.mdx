@@ -72,7 +72,6 @@ jackin' pricing pluggable across runtimes.
 - CodexBar — https://github.com/steipete/CodexBar
 - CodexBar provider / refresh documentation — https://github.com/steipete/CodexBar/tree/main/docs
 - OpenUsage — https://github.com/robinebers/openusage
-- OpenUsage plugin API — https://github.com/robinebers/openusage/blob/main/docs/plugins/api.md
 
 CodexBar and OpenUsage are better references for account-limit telemetry than for jackin' session telemetry. Both are menu-bar-first tools that collect provider usage from existing local state or provider APIs, then render quota bars, reset countdowns, and stale/error states. CodexBar is broader and deeper on local/provider source handling: it supports Claude, Codex, Amp, Kimi, OpenCode, and many providers outside jackin'; exposes configurable refresh cadences; renders reset windows; ships a CLI for local cost scans; and treats browser cookies / API keys / OAuth / local CLI state as provider-specific source strategies. OpenUsage is the cleaner product reference: a lightweight menu-bar panel, automatic refresh, global shortcut, local HTTP API on `127.0.0.1`, proxy support, and an explicit plugin direction for adding providers.
 
