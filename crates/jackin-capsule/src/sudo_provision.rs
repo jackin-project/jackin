@@ -9,29 +9,55 @@
 //! (injected by `render_derived_dockerfile()`) that bakes a sudoers file into
 //! the derived image, and a non-sudo profile must strip it at launch.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
 
 const SUDOERS_PATH: &str = "/etc/sudoers.d/agent";
 const SUDOERS_ENTRY: &[u8] = b"agent ALL=(ALL) NOPASSWD:ALL\n";
 
+#[cfg(test)]
+mod tests;
+
+/// The filesystem action to take, derived purely from the grant + whether the
+/// sudoers entry already exists. Kept pure so the read-only-root edge is tested
+/// without touching `/etc`.
+#[derive(Debug, PartialEq, Eq)]
+enum SudoAction {
+    /// Grant on, entry missing — write it.
+    Write,
+    /// Grant off, entry present — strip it.
+    Remove,
+    /// Nothing to do.
+    Noop,
+}
+
+fn sudo_action(granted: bool, present: bool) -> SudoAction {
+    match (granted, present) {
+        (true, false) => SudoAction::Write,
+        (false, true) => SudoAction::Remove,
+        // Grant on + already present, or grant off + already absent: no change.
+        // The (false, false) arm is the load-bearing one — it must NOT attempt a
+        // removal, because on a read-only root (hardened/locked) `unlink` returns
+        // EROFS even for a missing file (the parent dir is read-only), which would
+        // fail the launch fail-closed for the common no-sudo case.
+        (true, true) | (false, false) => SudoAction::Noop,
+    }
+}
+
 pub fn provision() -> Result<()> {
     let granted = std::env::var(jackin_core::env_model::JACKIN_SUDO_ENV_NAME).as_deref() == Ok("1");
-    if granted {
-        if !Path::new(SUDOERS_PATH).exists() {
-            write_sudoers()?;
+    let present = Path::new(SUDOERS_PATH).exists();
+    match sudo_action(granted, present) {
+        SudoAction::Write => write_sudoers()?,
+        SudoAction::Remove => {
+            fs::remove_file(SUDOERS_PATH)
+                .with_context(|| format!("removing stray {SUDOERS_PATH}"))?;
+            crate::output::stdout_line(format_args!(
+                "[sudo-provision] sudo revoked (no JACKIN_SUDO grant)"
+            ));
         }
-    } else {
-        match fs::remove_file(SUDOERS_PATH) {
-            Ok(()) => {
-                crate::output::stdout_line(format_args!(
-                    "[sudo-provision] sudo revoked (no JACKIN_SUDO grant)"
-                ));
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.into()),
-        }
+        SudoAction::Noop => {}
     }
     Ok(())
 }
