@@ -1705,7 +1705,14 @@ async fn ensure_local_role_base(
     let mut args: Vec<&str> = vec!["build"];
     // A workspace rebuild refreshes the construct base. A plain workspace base
     // build rides the local layer cache.
-    if rebuild {
+    //
+    // Only `--pull` the default published construct: when the operator overrides
+    // `JACKIN_CONSTRUCT_IMAGE` (e.g. the local `jackin-local/construct:trixie`
+    // built for PR verification), that tag exists only in the local image store,
+    // so `--pull` would force a registry resolve and fail with "pull access
+    // denied". For a local override, ride the local image instead.
+    let custom_construct = construct != jackin_manifest::repo_contract::CONSTRUCT_IMAGE;
+    if rebuild && !custom_construct {
         args.push("--pull");
     }
     args.extend(["--label", &role_sha_label, "--label", &construct_label]);
