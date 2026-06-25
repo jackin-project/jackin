@@ -155,6 +155,11 @@ pub struct QuotaBucketView {
     pub limit_label: Option<String>,
     pub remaining_percent: Option<u8>,
     pub reset_label: Option<String>,
+    /// Raw reset timestamp (epoch seconds) behind `reset_label`. Kept so the
+    /// CLI report (`usage accounts`) can emit `resets_at` instead of dropping
+    /// it — the formatted `reset_label` alone cannot be reversed (RC2).
+    #[serde(default)]
+    pub resets_at: Option<i64>,
     pub pace_label: Option<String>,
     pub status: UsageSnapshotStatus,
 }

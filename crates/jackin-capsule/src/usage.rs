@@ -666,7 +666,7 @@ fn account_snapshot_views_from_cache(
                     used_unit,
                     limit_amount,
                     limit_unit,
-                    resets_at: None,
+                    resets_at: bucket.resets_at,
                     fetched_at: view.fetched_at_epoch,
                     expires_at: None,
                     status: usage_status_storage_label(bucket.status).to_owned(),
@@ -2105,9 +2105,37 @@ fn bucket(
         limit_label,
         remaining_percent,
         reset_label,
+        resets_at: None,
         pace_label: pace_label.map(str::to_owned),
         status,
     }
+}
+
+/// Build a window bucket carrying both the formatted reset label and the raw
+/// reset epoch (RC2), so the CLI report can emit `resets_at`. `reset_at` is the
+/// authoritative timestamp; `reset_label` is derived from it.
+#[allow(clippy::too_many_arguments)]
+fn timed_bucket(
+    label: &str,
+    used_label: Option<String>,
+    limit_label: Option<String>,
+    remaining_percent: Option<u8>,
+    reset_at: Option<i64>,
+    now: i64,
+    pace_label: Option<&str>,
+    status: UsageSnapshotStatus,
+) -> QuotaBucketView {
+    let mut view = bucket(
+        label,
+        used_label,
+        limit_label,
+        remaining_percent,
+        reset_at.map(|epoch| reset_label(epoch, now)),
+        pace_label,
+        status,
+    );
+    view.resets_at = reset_at;
+    view
 }
 
 #[derive(Debug, Clone)]
@@ -2278,12 +2306,13 @@ fn push_claude_window(
     let window_seconds = claude_window_seconds(label);
     let remaining = window.utilization.and_then(remaining_from_fraction);
     let pace = quota_pace_label(remaining, reset_at, window_seconds, now);
-    buckets.push(bucket(
+    buckets.push(timed_bucket(
         label,
         window.utilization.map(used_percent_label),
         Some("100%".to_owned()),
         remaining,
-        reset_at.map(|epoch| reset_label(epoch, now)),
+        reset_at,
+        now,
         pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     ));
@@ -2814,12 +2843,13 @@ fn push_codex_window(
     let window_seconds = window.window_seconds();
     let pace = quota_pace_label(remaining, window.reset_at, window_seconds, now)
         .or_else(|| window.window_label());
-    buckets.push(bucket(
+    buckets.push(timed_bucket(
         label,
         used.map(|value| format!("{value}% used")),
         Some("100%".to_owned()),
         remaining,
-        window.reset_at.map(|epoch| reset_label(epoch, now)),
+        window.reset_at,
+        now,
         pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     ));
@@ -3045,13 +3075,13 @@ impl GrokWebBillingSnapshot {
         let label = self.reset_at_epoch.map_or("Credits", |reset_at| {
             grok_cycle_label_from_reset(reset_at, now)
         });
-        vec![bucket(
+        vec![timed_bucket(
             label,
             None,
             None,
             Some(100u8.saturating_sub(self.used_percent.round() as u8)),
-            self.reset_at_epoch
-                .map(|reset_at| reset_label(reset_at, now)),
+            self.reset_at_epoch,
+            now,
             None,
             UsageSnapshotStatus::Fresh,
         )]
@@ -3077,12 +3107,13 @@ impl GrokBillingResponse {
             } else {
                 None
             };
-            buckets.push(bucket(
+            buckets.push(timed_bucket(
                 label,
                 Some(format_cents(total_used)),
                 Some(format_cents(limit)),
                 used_percent.map(|used| 100u8.saturating_sub(used.round() as u8)),
-                reset_at.map(|reset_at| reset_label(reset_at, now)),
+                reset_at,
+                now,
                 None,
                 UsageSnapshotStatus::Fresh,
             ));
@@ -3880,14 +3911,15 @@ fn zai_bucket(label: &str, limit: &ZaiLimitRaw, now: i64) -> QuotaBucketView {
     } else {
         None
     };
-    bucket(
+    timed_bucket(
         label,
         limit
             .current_value
             .map(|value| compact_count(value.max(0) as u64)),
         limit.usage.map(|value| compact_count(value.max(0) as u64)),
         remaining,
-        reset_at.map(|epoch| reset_label(epoch, now)),
+        reset_at,
+        now,
         detail.as_deref(),
         UsageSnapshotStatus::Fresh,
     )
@@ -4105,12 +4137,13 @@ fn kimi_bucket(
     let reset_at = detail.reset_time.as_deref().and_then(parse_iso_epoch);
     let window_seconds = kimi_window_seconds(label, window);
     let pace = quota_pace_label(remaining, reset_at, window_seconds, now);
-    bucket(
+    timed_bucket(
         label,
         used.map(|value| compact_count(value.max(0) as u64)),
         limit.map(|value| compact_count(value.max(0) as u64)),
         remaining,
-        reset_at.map(|epoch| reset_label(epoch, now)),
+        reset_at,
+        now,
         pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     )
@@ -4373,14 +4406,15 @@ fn minimax_bucket(
     let used_label = usage.map(|usage| compact_count(usage.max(0) as u64));
     let reset_epoch = minimax_reset_epoch(end, remains_time, now);
     let detail = minimax_usage_count_line(usage, total, remaining_percent);
-    Some(bucket(
+    Some(timed_bucket(
         &minimax_bucket_label(model_name, window),
         used_label,
         total
             .filter(|value| *value > 0)
             .map(|value| compact_count(value.max(0) as u64)),
         remaining_percent,
-        reset_epoch.map(|epoch| reset_label(epoch, now)),
+        reset_epoch,
+        now,
         detail.as_deref(),
         UsageSnapshotStatus::Fresh,
     ))
@@ -5577,6 +5611,33 @@ mod tests {
     }
 
     #[test]
+    fn account_snapshot_rows_carry_reset_epoch() {
+        // RC2: the CLI report (`usage accounts`) emits the raw reset epoch, not
+        // a dropped null — so the CLI and TUI agree on reset data.
+        let now = 1_782_000_000;
+        let reset_at = now + 3_600;
+        let mut view = codex_cached_usage_view();
+        view.buckets = vec![timed_bucket(
+            "Session",
+            Some("7% used".to_owned()),
+            Some("100%".to_owned()),
+            Some(93),
+            Some(reset_at),
+            now,
+            None,
+            UsageSnapshotStatus::Fresh,
+        )];
+        let mut snapshots = HashMap::new();
+        snapshots.insert("codex".to_owned(), CachedUsage { view });
+        let rows = account_snapshot_views_from_cache(&snapshots);
+        let session = rows
+            .iter()
+            .find(|row| row.window_kind == "Session")
+            .expect("session row");
+        assert_eq!(session.resets_at, Some(reset_at));
+    }
+
+    #[test]
     fn usage_account_snapshots_use_in_memory_cache() {
         let mut cache = UsageCache::default();
         cache.snapshots.insert(
@@ -5617,6 +5678,7 @@ mod tests {
                 limit_label: Some("100%".to_owned()),
                 remaining_percent: Some(37),
                 reset_label: Some("Resets in 2h".to_owned()),
+                resets_at: None,
                 pace_label: None,
                 status: UsageSnapshotStatus::Fresh,
             }],
@@ -5665,6 +5727,7 @@ mod tests {
                 limit_label: Some("100%".to_owned()),
                 remaining_percent: Some(37),
                 reset_label: None,
+                resets_at: None,
                 pace_label: None,
                 status: UsageSnapshotStatus::Fresh,
             },
@@ -5674,6 +5737,7 @@ mod tests {
                 limit_label: Some("100%".to_owned()),
                 remaining_percent: Some(10),
                 reset_label: Some("Resets in 3h 52m".to_owned()),
+                resets_at: None,
                 pace_label: None,
                 status: UsageSnapshotStatus::Fresh,
             },
@@ -5701,6 +5765,7 @@ mod tests {
             limit_label: None,
             remaining_percent: Some(remaining),
             reset_label: None,
+            resets_at: None,
             pace_label: None,
             status: UsageSnapshotStatus::Fresh,
         };
@@ -5776,6 +5841,7 @@ mod tests {
             limit_label: Some("100%".to_owned()),
             remaining_percent: Some(1),
             reset_label: None,
+            resets_at: None,
             pace_label: None,
             status: UsageSnapshotStatus::Stale,
         }];
@@ -5800,6 +5866,7 @@ mod tests {
                 limit_label: Some("$10".to_owned()),
                 remaining_percent: Some(48),
                 reset_label: None,
+                resets_at: None,
                 pace_label: None,
                 status: UsageSnapshotStatus::Fresh,
             },
@@ -5809,6 +5876,7 @@ mod tests {
                 limit_label: Some("$4.76".to_owned()),
                 remaining_percent: None,
                 reset_label: None,
+                resets_at: None,
                 pace_label: Some("Individual credits: $4.76".to_owned()),
                 status: UsageSnapshotStatus::Fresh,
             },
@@ -5833,6 +5901,7 @@ mod tests {
             limit_label: Some("$10".to_owned()),
             remaining_percent: Some(9),
             reset_label: None,
+            resets_at: None,
             pace_label: None,
             status: UsageSnapshotStatus::Stale,
         }];
@@ -6098,6 +6167,7 @@ mod tests {
             limit_label: Some("100%".to_owned()),
             remaining_percent: Some(10),
             reset_label: Some("Resets in 3h 52m".to_owned()),
+            resets_at: None,
             pace_label: None,
             status: UsageSnapshotStatus::Fresh,
         }];

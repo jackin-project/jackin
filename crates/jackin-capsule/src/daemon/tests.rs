@@ -224,6 +224,7 @@ fn control_usage_account_list_uses_in_memory_cache() {
         limit_label: Some("100%".to_owned()),
         remaining_percent: Some(37),
         reset_label: Some("Resets in 2h".to_owned()),
+        resets_at: None,
         pace_label: None,
         status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
     }];
@@ -390,6 +391,7 @@ fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
             limit_label: Some("100%".to_owned()),
             remaining_percent: Some(37),
             reset_label: Some("Resets at 15:00 UTC".to_owned()),
+            resets_at: None,
             pace_label: None,
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         }],
