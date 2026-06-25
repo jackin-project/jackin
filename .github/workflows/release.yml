@@ -446,18 +446,3 @@ jobs:
             --head "$branch")
           echo "Opened PR: $pr_url"
           gh pr merge "$pr_url" --squash --delete-branch
-
-  timing-summary:
-    if: always()
-    needs: [matrix-setup, check-version, test, build, build-jackin-capsule, release, homebrew]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Write workflow timing summary
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/ci/workflow-timing-summary.sh Release
