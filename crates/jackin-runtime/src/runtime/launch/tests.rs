@@ -485,12 +485,6 @@ plugins = []
         "jackin state mount missing: {mounts:?}"
     );
     assert!(
-        mounts
-            .iter()
-            .any(|m| m.ends_with(":/home/agent/.gitconfig")),
-        "writable .gitconfig mount missing (read-only root needs it): {mounts:?}"
-    );
-    assert!(
         mounts.iter().any(|m| m.contains(":/home/agent/.claude")),
         "durable Claude home mount missing: {mounts:?}"
     );

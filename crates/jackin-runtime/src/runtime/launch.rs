@@ -231,18 +231,6 @@ fn agent_mounts(state: &RoleState) -> Vec<String> {
         state.root.join("state").display()
     )];
 
-    // Writable `~/.gitconfig` for every role. Under read-only-root profiles
-    // (`hardened`/`locked`) `/home/agent` is the read-only image layer, but the
-    // runtime entrypoint and the agent itself run `git config --global`, which
-    // writes `~/.gitconfig`. Bind-mounting a host-backed file (created in the
-    // instance home state) keeps git identity writable + persistent without
-    // opening the whole home. (The `$HOME` read-only audit on the Docker
-    // hardening roadmap item tracks the full enumeration of such targets.)
-    mounts.push(format!(
-        "{}:/home/agent/.gitconfig",
-        state.root.join("home/.gitconfig").display()
-    ));
-
     if let Some(claude) = &state.auth.claude {
         mounts.push(format!(
             "{}:/home/agent/.claude",
@@ -1039,6 +1027,15 @@ pub(super) async fn launch_role_runtime(
             "{}=1",
             jackin_core::env_model::JACKIN_SUDO_ENV_NAME
         ));
+    }
+    // Read-only-root profiles (hardened/locked) make `~/.gitconfig` unwritable —
+    // not because the file is locked but because `git config --global` writes a
+    // lock file in the read-only `/home/agent` dir. The entrypoint and the agent
+    // both run `git config --global`, so redirect git's global config onto the
+    // writable `/jackin/state` bind-mount. (Part of the read-only-root `$HOME`
+    // audit on the Docker hardening roadmap item.)
+    if !grants.system_writes {
+        env_strings.push("GIT_CONFIG_GLOBAL=/jackin/state/gitconfig".to_owned());
     }
     // Computed once here so the WP1 allowlist (below) can include the OTLP
     // endpoint host; reused for OTLP propagation after env_strings is flushed.
