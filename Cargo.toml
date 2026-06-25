@@ -25,10 +25,13 @@ resolver = "3"
 
 # Hard guard: `cargo shear --deny-warnings` (CI) fails on any source file not
 # reachable from a crate's module graph, so an orphaned tree can never again be
-# mistaken for shipped code. The entries below grandfather the two known-orphaned
-# agent-runtime-status trees that are being wired in. Remove each entry in the
-# phase that links its module (agent_status: Execution Plan Phase 1;
-# token_monitor: Phase 10). This list must reach empty before the feature is done.
+# mistaken for shipped code. agent-runtime-status's orphan (agent_status) was
+# wired in Phase 1 and removed from this list. The remaining entry, token_monitor,
+# is an orphaned token-reading subsystem that belongs to the separate
+# token-cost-telemetry roadmap item, NOT agent-runtime-status; it stays
+# grandfathered until that item wires it (tracked there, not here). Leaving it
+# here is the honest state: it is not part of this feature, and this feature does
+# not delete another item's WIP.
 [workspace.metadata.cargo-shear]
 ignored-paths = [
     "crates/jackin-capsule/src/token_monitor.rs",
