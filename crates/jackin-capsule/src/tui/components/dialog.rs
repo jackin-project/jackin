@@ -1919,7 +1919,12 @@ impl Dialog {
             }
             Self::Usage { .. } => usage_hint(axes),
             Self::ConfirmAction { .. } => confirm_hint(),
-            Self::ExitDirty { .. } | Self::ExitInspect { .. } => picker_hint(),
+            // No filter input on either: the modal is a fixed choice list and
+            // Inspect is a read-only scroll list. Reuse the shared no-filter
+            // "select" hint and read-only hint rather than the picker's
+            // "type filter" / "launch" wording.
+            Self::ExitDirty { .. } => provider_hint(),
+            Self::ExitInspect { .. } => read_only_hint(),
         }
     }
 
