@@ -70,6 +70,7 @@ connecting as a client.",
             }
             Some("status") => client::run_status().await,
             Some("snapshot") => client::run_snapshot().await,
+            Some("report-event") => client::run_report_event(&args).await,
             Some("agents") => {
                 let json_format = args.iter().any(|a| a == "--format=json")
                     || args
@@ -126,7 +127,7 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, agents [--format json], report-event --event <name> [--payload-stdin], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }

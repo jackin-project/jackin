@@ -35,6 +35,10 @@ pub(crate) struct AttachHandshake {
 /// socket), and forwards validated attach Hellos back to the main
 /// loop via `handshake_tx`. Owning the slow `read_exact` here keeps a
 /// silent or slow client from stalling the daemon's main `select!`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "threads the attach handshake channel, the control-request snapshots, and the runtime-event channel; bundling the snapshots into a struct is a separate cleanup"
+)]
 pub(crate) async fn perform_handshake(
     mut stream: UnixStream,
     client_permit: tokio::sync::OwnedSemaphorePermit,
@@ -43,6 +47,7 @@ pub(crate) async fn perform_handshake(
     tabs_snapshot: Vec<crate::protocol::control::TabSnapshot>,
     history_snapshot: Vec<jackin_protocol::control::AgentRegistryEntry>,
     active_tab: u32,
+    runtime_event_tx: mpsc::UnboundedSender<socket::RuntimeEventMsg>,
 ) {
     // Bound the handshake reads. A client that opens the socket and
     // never sends a byte otherwise holds the `OwnedSemaphorePermit`
@@ -78,6 +83,7 @@ pub(crate) async fn perform_handshake(
             tabs_snapshot,
             history_snapshot,
             active_tab,
+            runtime_event_tx,
         )
         .await;
         drop(client_permit);

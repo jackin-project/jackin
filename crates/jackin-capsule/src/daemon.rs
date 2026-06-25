@@ -572,6 +572,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let mut pending_initial_spawn = Some(initial_spawn);
 
     let mut new_clients = socket::start_listener()?;
+    // Runtime hook/plugin events from control-socket reporters are forwarded
+    // here and applied to session authority in the select loop below.
+    let (runtime_event_tx, mut runtime_event_rx) =
+        mpsc::unbounded_channel::<socket::RuntimeEventMsg>();
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
     let mut state_ticker = interval(STATE_TICK_INTERVAL);
     let mut sigterm = signal(SignalKind::terminate())?;
@@ -674,7 +678,22 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     tabs_snapshot,
                     history_snapshot,
                     active_tab,
+                    runtime_event_tx.clone(),
                 ));
+            }
+
+            // Runtime hook/plugin event forwarded from a control-socket reporter.
+            // Apply it to the addressed session's authority (events -> gating ->
+            // AuthorityEvidence); the next state tick arbitrates the result.
+            Some(ev) = runtime_event_rx.recv() => {
+                if let Some(session) = mux.sessions.get_mut(&ev.session_id) {
+                    session.apply_runtime_event(
+                        &ev.source_id,
+                        &ev.runtime,
+                        &ev.event,
+                        Instant::now(),
+                    );
+                }
             }
 
             // Validated attach handshake from the spawned handshake task.

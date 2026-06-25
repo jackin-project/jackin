@@ -25,6 +25,68 @@ pub async fn run_client(
     crate::tui::run::run_client(spawn_request, focus_session).await
 }
 
+/// Forward a runtime hook/plugin event to the daemon for the current session.
+///
+/// Invoked as `jackin-capsule report-event --event <name> [--payload-stdin]`
+/// from a container-local hook/plugin. Reads `JACKIN_SESSION_ID`,
+/// `JACKIN_STATUS_SOURCE`, `JACKIN_AGENT_RUNTIME` from the spawn env. Always
+/// exits 0 — a reporter must never break the agent's hook — so all failures are
+/// logged and swallowed.
+pub async fn run_report_event(args: &[String]) -> Result<()> {
+    if let Err(e) = try_report_event(args).await {
+        crate::clog!("report-event: {e:#}");
+    }
+    Ok(())
+}
+
+async fn try_report_event(args: &[String]) -> Result<()> {
+    let event = flag_value(args, "--event").context("report-event requires --event <name>")?;
+    let session_id: u64 = std::env::var("JACKIN_SESSION_ID")
+        .context("JACKIN_SESSION_ID unset")?
+        .parse()
+        .context("JACKIN_SESSION_ID not a u64")?;
+    let source_id = std::env::var("JACKIN_STATUS_SOURCE").context("JACKIN_STATUS_SOURCE unset")?;
+    let runtime = std::env::var("JACKIN_AGENT_RUNTIME").context("JACKIN_AGENT_RUNTIME unset")?;
+
+    // Drain stdin when asked so the hook's pipe never breaks; the payload is
+    // forwarded but unused by gating today.
+    let payload = if args.iter().any(|a| a == "--payload-stdin") {
+        let mut buf = String::new();
+        let _read = tokio::io::stdin().read_to_string(&mut buf).await;
+        (!buf.is_empty()).then_some(buf)
+    } else {
+        None
+    };
+
+    let mut stream = UnixStream::connect(SOCKET_PATH)
+        .await
+        .context("cannot connect to jackin-capsule daemon")?;
+    let msg = control_frame(&ClientMsg::ReportRuntimeEvent {
+        session_id,
+        source_id,
+        runtime,
+        event,
+        payload,
+    });
+    stream.write_all(&msg).await?;
+    // Read the bounded Ack so the daemon ingests the event before we exit; the
+    // content is irrelevant.
+    let mut len_buf = [0u8; 4];
+    let _ack = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        stream.read_exact(&mut len_buf),
+    )
+    .await;
+    Ok(())
+}
+
+fn flag_value(args: &[String], flag: &str) -> Option<String> {
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+}
+
 /// Query the daemon for current session list and print it.
 pub async fn run_status() -> Result<()> {
     let mut stream = UnixStream::connect(SOCKET_PATH)
@@ -51,7 +113,7 @@ pub async fn run_status() -> Result<()> {
     let msg: ServerMsg = serde_json::from_slice(&body)?;
     let sessions = match msg {
         ServerMsg::SessionList { sessions } => sessions,
-        ServerMsg::Unknown => {
+        ServerMsg::Ack | ServerMsg::Unknown => {
             anyhow::bail!(
                 "daemon replied with ServerMsg::Unknown for Status — peer is newer than this CLI"
             )
@@ -104,7 +166,7 @@ pub async fn run_snapshot() -> Result<()> {
     let msg: ServerMsg = serde_json::from_slice(&body)?;
     let (tabs, active_tab) = match msg {
         ServerMsg::Snapshot { tabs, active_tab } => (tabs, active_tab),
-        ServerMsg::Unknown => {
+        ServerMsg::Ack | ServerMsg::Unknown => {
             anyhow::bail!(
                 "daemon replied with ServerMsg::Unknown for Snapshot — peer is newer than this CLI"
             )
@@ -155,7 +217,7 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
     let msg: ServerMsg = serde_json::from_slice(&body)?;
     let records = match msg {
         ServerMsg::AgentRegistry { records } => records,
-        ServerMsg::Unknown => {
+        ServerMsg::Ack | ServerMsg::Unknown => {
             anyhow::bail!(
                 "daemon replied with ServerMsg::Unknown for Agents — peer is newer than this CLI"
             )

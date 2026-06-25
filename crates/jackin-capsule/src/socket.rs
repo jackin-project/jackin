@@ -262,6 +262,16 @@ async fn read_payload_lazy(
 }
 
 /// Handle a one-shot control request and close the connection.
+/// A runtime hook/plugin event forwarded over the control socket, handed to the
+/// daemon loop to apply to the addressed session's authority.
+#[derive(Debug, Clone)]
+pub struct RuntimeEventMsg {
+    pub session_id: u64,
+    pub source_id: String,
+    pub runtime: String,
+    pub event: String,
+}
+
 pub async fn handle_control_request(
     mut stream: UnixStream,
     first_byte: u8,
@@ -269,6 +279,7 @@ pub async fn handle_control_request(
     tabs: Vec<crate::protocol::control::TabSnapshot>,
     history: Vec<jackin_protocol::control::AgentRegistryEntry>,
     active_tab: u32,
+    runtime_event_tx: mpsc::UnboundedSender<RuntimeEventMsg>,
 ) {
     let msg = match read_control_msg(&mut stream, first_byte).await {
         Ok(msg) => msg,
@@ -277,10 +288,31 @@ pub async fn handle_control_request(
             return;
         }
     };
-    let reply = match msg {
+    let reply = match &msg {
         ClientMsg::Status => ServerMsg::SessionList { sessions },
         ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
         ClientMsg::Agents => ServerMsg::AgentRegistry { records: history },
+        ClientMsg::ReportRuntimeEvent {
+            session_id,
+            source_id,
+            runtime,
+            event,
+            payload: _,
+        } => {
+            // Forward to the daemon loop; never block the agent's hook.
+            if runtime_event_tx
+                .send(RuntimeEventMsg {
+                    session_id: *session_id,
+                    source_id: source_id.clone(),
+                    runtime: runtime.clone(),
+                    event: event.clone(),
+                })
+                .is_err()
+            {
+                crate::clog!("control: runtime event dropped (daemon loop gone)");
+            }
+            ServerMsg::Ack
+        }
         ClientMsg::Unknown => {
             // Reply with `Unknown` so the peer's `read_exact` returns
             // immediately rather than hanging until SOCKET_TIMEOUT.

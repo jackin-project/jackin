@@ -18,6 +18,22 @@ pub enum ClientMsg {
     Snapshot,
     /// Request the agent registry (codenames, agent types, providers, timestamps).
     Agents,
+    /// Forward a runtime hook/plugin event for a session from an in-container
+    /// reporter. The daemon maps and gates it (events, never states); the
+    /// reporter only forwards. Acked immediately so the reporter never blocks
+    /// an agent hook.
+    ReportRuntimeEvent {
+        session_id: u64,
+        /// Unique per session+runtime, e.g. `hook-<runtime>-<session>`.
+        source_id: String,
+        /// Agent runtime slug (`claude`, `codex`, `opencode`, `amp`, …).
+        runtime: String,
+        /// Vendor event name (`Stop`, `permission.asked`, …) or a canonical name.
+        event: String,
+        /// Optional raw JSON payload from the hook's stdin (unused for now).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payload: Option<String>,
+    },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
@@ -39,6 +55,8 @@ pub enum ServerMsg {
     },
     /// Agent registry: every tab ever opened in this container lifetime.
     AgentRegistry { records: Vec<AgentRegistryEntry> },
+    /// Acknowledgement for a fire-and-forget request (e.g. `ReportRuntimeEvent`).
+    Ack,
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
