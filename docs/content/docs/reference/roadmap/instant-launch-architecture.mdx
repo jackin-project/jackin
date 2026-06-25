@@ -2,622 +2,91 @@
 title: "Runtime Restore and Image Architecture"
 ---
 
-**Status**: Implemented — all Phases 1–6 and Phase 5 TUI surfaces shipped. D1 agent binaries baked into derived image via `install_block()` (no `agent_binary_mount_specs` at `docker run`); D2 Claude plugins and default-home state materialized during Docker build; D3 Docker image labels carry agent versions/checksums, plugin hash, base digest, hooks hash, and Capsule payload for recipe validation; D4 default-home snapshot (`mv` each agent home root into `/jackin/default-home` as last build step, then recreate empty homes); D5/D6 empty-dir gate with atomic first seed and no separate auth marker — home emptiness is the sole signal; D6a one start path (container init + role hooks every start, seed/auth conditional on emptiness only); D7 pinned launch recipe stored in manifest for faithful Tier 2/3 restore; D8 `dirty_exit_policy` config (global + per-workspace, `ask`/`keep`/`discard`); D9 inline clean-exit purge of per-instance data, name-claim lock, socket dir, and index row; D10 restore filter to terminal statuses only; D11/D23 one-screen exit dialog (three-way choice) and one-screen launch dialog (candidates + Start-new); D12 schema v1alpha7 migration; D13 launch never reconnects to a live instance; D14 role hooks exact-as-today; D15 console instance surfaces list live/failed instances and route selection into the restore ladder; D16 base-image pinning by digest with tag fallback; D17 discard aggressiveness; D18 rich-terminal gate; D19 auth after first seed only; D20 agent-version-changed rebuild trigger; D21 explicit delete with confirm screen listing dirty work from the launch dialog; D22 background prewarm refreshes stale saved-workspace images off the operator attach path; D24 GitUI-style dirty-inspection drill-down (repos + changed-files + diff panes, `I` key from both launch and exit dialogs); D25 cleanup requires explicit operator approval (dirty/unpushed instances always preserved); D26 shared `diff_view` component (side-by-side for modified, single-pane for added/deleted/untracked) with lookbook stories; Amp `.config/amp` and OpenCode `.config/opencode` durable config roots bind-mounted.
+**Status**: In progress — most of the runtime-restore / image-architecture work has landed as code in this branch, but it is **not operator-verified**, and the dirty-exit confirmation flow is **confirmed not working**. This page tracks only the remaining must-do work: the confirmed defect, the agreed in-capsule redesign, and the verification still owed. Do not treat any item here as done until the operator has manually confirmed it (see the verification list at the end of this page). Landed code is not the same as a working, signed-off feature, and a green CI run is not operator verification.
 
-## Product Contract
+## Confirmed defect — the dirty-exit confirmation never fires
 
-An agent instance has one lifecycle. Startup speed, crash recovery, image validity, durable home seeding, and cleanup are not separate features; they are the same runtime contract observed at different moments.
+The headline behavior of this work — "if you exit with dirty or unpushed work, jackin' asks what to do" — does not happen. Reproduced three times: with a dirty workspace and the default `ask` policy, exiting the agent normally shows **no dialog**; the container just disappears and the work is silently left preserved. The operator is never asked.
 
-The target behavior is:
+Root cause (code-confirmed):
 
-- **Launch resumes before it rebuilds.** If the selected workspace/role/agent has a running, stopped, or restorable instance, jackin' offers resume and reuses that same `container_base` and `~/.jackin/data/<container>/` before role refresh, credential resolution, image rebuild, workspace freshness checks, or sibling-runtime preparation enter the foreground.
-- **Valid images make container creation cheap.** If no resumable container can be used but the stored image recipe is valid, jackin' creates the container from that image without Docker build, runtime agent install, runtime Claude plugin install, or foreground sibling-agent checks.
-- **Builds are deterministic and explainable.** If the image is missing or invalid, jackin' rebuilds from a pinned recipe that names the role commit, base/construct image, supported agent installs, Claude plugin/default-home state, hooks, Capsule payload, mount plan, and Docker resource shape. Every rejected faster path has a typed reason.
-- **Runtime setup never repairs a non-empty home.** Container startup only seeds empty durable homes from `/jackin/default-home`, copies auth handoff on that first seed, runs cheap runtime hooks, and starts the selected agent. It does not install agents, install plugins, merge default state, or overwrite existing auth/session state.
-- **Exit leaves either resumable state or no state.** A kept session leaves exactly the data needed to resume. A clean terminal outcome deletes the per-instance data directory, socket directory, name-claim lock, and instance-index row in the same path. There is no orphaned middle state that needs a later manual prune.
+- The `jackin load` foreground path, `launch_role_runtime` in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />, **never calls `finalize_foreground_session`** at all. On success it returns `Ok(())`; on the attach result being an error it returns a `capsule attach failed` error. There is no dirty-exit dialog on the load path, on any exit.
+- The `jackin hardline` reconnect path, `finalize_reconnected_foreground_session` in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" />, runs `attach_outcome?` **before** it calls finalize, so a clean agent exit short-circuits past the dialog.
+- On a clean last-session exit the in-container capsule client (`client::run_client`) hits the daemon's socket close as `early eof` and **exits non-zero**, so `docker exec … jackin-capsule` returns non-zero. The host then treats a normal exit as a failed attach.
 
-This page replaces the old separate instant-launch and session keep/resume roadmap items. The merged goal is a fast path that reaches an already-materialized agent in roughly 1-3 seconds, and a cold path that does only the smallest required repair while preserving the same operator state.
+Net effect: the host-side exit dialog is unreachable on the everyday "quit the agent" flow. The feature, as a thing an operator can see and use, is not implemented.
 
-## Current Gaps
+## Decision — the dirty-exit confirmation moves inside the capsule
 
-All Phases 1–6 implementation gaps are resolved. The launch plan vocabulary, restore tiers, instance index, dirty/unpushed assessment, and recipe-hash image check were the foundation; D1–D9 baked the agents/plugins/default-home into the derived image, introduced the empty-dir gate and atomic first seed, added the pinned launch recipe, added `dirty_exit_policy`, wired the full Phase 5 TUI surfaces (D11/D15/D18/D20/D21/D23/D24/D25/D26), completed Phase 6 cleanup, and added D22 background prewarm off the operator attach path.
+The confirmation is **redesigned to run inside the capsule** (the in-container multiplexer), not on the host after the container exits. This supersedes the old host-side post-exit exit dialog for the dirty case.
 
-Verified durable roots:
+Why in-capsule (operator's call, accepted):
 
-| Agent | Runtime home/state roots to persist | Current status |
-|---|---|---|
-| Claude | `/home/agent/.claude`, `/home/agent/.claude.json` | Mounted today |
-| Codex | `/home/agent/.codex` | Mounted today |
-| Amp | `/home/agent/.local/share/amp`, `/home/agent/.config/amp` | Mounted today |
-| Kimi | `/home/agent/.kimi-code` | Mounted today |
-| OpenCode | `/home/agent/.local/share/opencode`, `/home/agent/.config/opencode` | Mounted today |
-| Grok | `/home/agent/.grok` | Mounted today |
+- **Ask before teardown.** A host-side dialog can only prompt *after* the container has exited — at which point "want to resume?" means rebuild/restart to get back to work. In-capsule, the container is still warm; starting a new agent is instant.
+- **Decision at the place of work.** The operator is already inside the container; the capsule already owns the TUI and a full set of dialogs. No new surface, no second binary.
+- **Less resource churn.** No stop → ask → recreate cycle.
 
-The host-side persisted layout remains under the per-instance data directory. The mount contract must be explicit and agent-scoped:
+The split of responsibility: the **capsule** detects dirty/unpushed state and **asks** the operator before any teardown; the **host** still **executes** the filesystem keep/discard, because it owns the isolated worktrees. The capsule decides; the host carries it out.
 
-```text
-~/.jackin/data/<container>/
-├── home/
-│   ├── .claude/                         -> /home/agent/.claude
-│   ├── .claude.json                     -> /home/agent/.claude.json
-│   ├── .codex/                          -> /home/agent/.codex
-│   ├── .local/share/amp/                -> /home/agent/.local/share/amp
-│   ├── .config/amp/                     -> /home/agent/.config/amp
-│   ├── .kimi-code/                      -> /home/agent/.kimi-code
-│   ├── .local/share/opencode/           -> /home/agent/.local/share/opencode
-│   ├── .config/opencode/                -> /home/agent/.config/opencode
-│   └── .grok/                           -> /home/agent/.grok
-├── claude/                              -> /jackin/claude auth handoff
-├── codex/                               -> /jackin/codex auth handoff
-├── amp/                                 -> /jackin/amp auth handoff
-├── kimi-code/                           -> /jackin/kimi-code auth handoff
-├── opencode/                            -> /jackin/opencode auth handoff
-├── grok/                                -> /jackin/grok auth handoff
-├── .config/gh/                          -> /home/agent/.config/gh
-├── state/                               -> /jackin/state
-└── .jackin/                             instance and isolation metadata
-```
+## Architecture — share the dirty-detection logic
 
-## Resolved Decisions
+The detection logic must be shared, not duplicated, so the capsule and the host can never disagree on what "dirty" means.
 
-These are settled. The rest of this page assumes them; an implementation that diverges from one of these is wrong, not an alternative.
+- Today the detection lives only host-side, in `assess_cleanup` in <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> — pure git work (`git -C <path> status --porcelain` for uncommitted/untracked, `rev-list <upstream>..<branch>` for unpushed), coupled only to a worktree path and a command runner.
+- Both `jackin-runtime` (host) and `jackin-capsule` (in-container) already depend on `jackin-core`, which already holds the shared `CleanupStatus` and `IsolationRecord` types in <RepoFile path="crates/jackin-core/src/isolation_record.rs" />. `jackin-core` is the natural shared home — no new crate, no new binary.
+- Plan: extract the path-based assessment into `jackin-core` as a function over a repo path returning `Clean | Dirty | Unpushed` (plus the `PreservedReason` it already produces). The host's `assess_cleanup` becomes a thin wrapper over it; the capsule calls the same function in-container against its workdir at last-session-close. One source of truth.
 
-| # | Question | Decision |
-|---|---|---|
-| D1 | Agent binary delivery | Bake every supported agent into the derived image via its `install_block()`. Remove the `docker run` read-only binary mounts (`agent_binary_mount_specs`). The image proves the runtime; nothing installs or mounts agent CLIs at start. |
-| D2 | Claude plugin / default-state timing | Materialize marketplaces, plugins, skills, and agent config during Docker build into `/jackin/default-home`. Runtime never installs plugins. |
-| D3 | Image validity signal | Carry agent versions/checksums, base-image digest, plugin recipe hash, hooks, and Capsule payload identity as **Docker image labels**. Launch reads the labels to decide whether the local image is valid; a mismatch forces a rebuild. |
-| D4 | Default-home snapshot | `mv` each supported agent's whole initialized home root into `/jackin/default-home` as the last build step, then recreate empty homes. Captures everything an agent wrote, not an enumerated subset. |
-| D5 | Durable-home seeding | Empty-dir **gate**: a non-empty durable home is authoritative and is left untouched. Only a fully-empty home is seeded from `/jackin/default-home`. No merge, no repair. |
-| D6 | First-seed signal | **Home emptiness is the marker — no sentinel file.** Drop the separate `/jackin/state/agent-auth` marker. Empty durable home → seed defaults + copy auth; non-empty → skip both. To keep emptiness trustworthy the seed is atomic (copy into a temp dir on the same mount, then `rename` into place) so a crash mid-seed leaves the home empty and the next start retries cleanly. |
-| D6a | One start path | First start, restart, and recreate-after-crash all run the **same** container-init lifecycle; all hooks run normally every start. The only conditional is seed/auth-copy, which no-ops on a non-empty home. There is no separate restore code path that skips init steps. |
-| D7 | Restore fidelity | Restore replays a **pinned launch recipe** (pinned role SHA, base-image digest, mount plan, env-reference names, Docker resource shape). It does not re-resolve current role `HEAD` or run `git_pull_on_entry`. |
-| D8 | Dirty-exit policy | New config key `dirty_exit_policy` with values `"ask"` / `"keep"` / `"discard"`, global on `AppConfig` and optional per-`[workspaces.<name>]` override. Resolution: workspace → global → built-in `ask`. Value is `discard` (not `clean`) so the meaning is guessable cold — `keep` ↔ `discard` are obvious opposites. |
-| D9 | Per-instance lock | The `jk-<id>-<role>.lock` is a **name-claim lock** (guards the unique container name during launch), not a sibling-coordination lock. Sibling tabs are multiplexed in-process by the Capsule daemon. Clean exit and prune reap this lock file; the contract describes it as a name-claim lock. |
-| D10 | Restore candidates | A launch pick lists only **un-cleanly-terminated** instances for the matching workspace+role+agent — `RestoreAvailable`, `PreservedDirty`, `PreservedUnpushed`, `Crashed`, and stale index rows whose container is actually gone. A **healthy live instance is never a restore candidate**. The operator restores one, deletes one, or starts new. Deleting all leaves only "Start new". |
-| D11 | UX surface | Every resume/exit/dirty decision renders on the rich launch/exit TUI surface only. jackin **requires a rich terminal**; a non-rich, dumb, or headless/CI context is refused with a clear upfront error — there is no degraded plain-text fallback (D18). No other surface prompts for these. |
-| D18 | Rich terminal required | jackin targets rich desktop terminals only. It does not support dumb terminals or CI/headless use; without a rich terminal most functionality cannot work, so jackin errors out at the start ("jackin requires an interactive rich terminal") rather than degrading. No degraded flows are built or maintained. |
-| D12 | Delivery | Ships as one PR covering image build, runtime setup, restore, schema migration, and TUI, including the full 5-artifact schema-migration set under one version bump. |
-| D19 | Auth after first seed | Auth enters a durable home only at first seed (strict). If auth was not forwarded then, the operator authenticates **inside the container** (the agent's normal login), which writes into the durable home and persists. No late host-auth re-injection logic. |
-| D20 | Rebuild trigger | On launch, jackin resolves the latest available agent binary versions plus the current recipe and compares them to the baked image's Docker labels (D3); any version/checksum mismatch marks the image invalid → rebuild or prewarm. Stale baked binaries are detected automatically, not left until a manual rebuild. |
-| D21 | Explicit delete | Deleting a failed instance that has dirty/unpushed isolated work shows a confirm screen listing what will be lost before deleting; a clean instance deletes immediately. Explicit delete still honors "look before you delete". |
-| D22 | Prewarm | Prewarm builds/refreshes the baked image when the recipe or version labels are stale, off the operator attach path (the `PrewarmOnly` plan), invoked by operator or a background trigger. Launch never waits on prewarm. |
-| D23 | Dialog shapes | The **exit dialog** is one screen: a list of dirty isolated repos + the outcome choices (Return default / Exit-and-keep / Exit-and-discard). The **launch dialog** is one screen: Start-new + candidates; a highlighted dirty candidate shows its dirty *repo names* (not file detail). Deleting a dirty candidate opens a **dedicated confirm screen** listing what will be lost. Neither top screen shows per-file detail inline — that is behind the dirty-inspection drill-down (D24). |
-| D24 | Dirty inspection | Inspection only covers **mounts with `worktree` or `clone` isolation** — `shared` mounts are never checked (host-owned). The change viewer copies the **concept of GitUI's status tab** (jackin components only, never gitui itself) and is strictly **preview-only**: no staging, committing, pushing, hunk-discard, or any mutation — viewing and nothing more. Layout is a live multi-pane surface: a **repos** pane (shown only when more than one repo is dirty), a **changed-files** pane (status rows: glyph + path), and a **diff** pane that updates as the file selection changes. Modified files render side-by-side (before │ after); added and untracked files render single-pane full content (additions); deleted files render single-pane full content (deletions). Built with `similar` for diffing; `assess_cleanup` is extended to yield a per-file change list. |
-| D26 | TUI component inventory | Every screen is a jackin' component (hard reuse rule). Reuse: `ConfirmDialog` (delete), `SelectList`/`render_picker_list` + `filter_input` (exit dirty-repo list, launch resume-or-new picker, and the Inspect repos + changed-files panes), `HintBar`, the scrollable-block + modal-stack primitives. The Inspect surface (GitUI-status layout) is composed from those — only its diff pane is a **new shared `jackin-tui` component `diff_view`** (side-by-side for modified, single-pane for added/deleted), with a lookbook story + visual-regression coverage. The inspection is a modal-stack sub-dialog (`Esc` walks back one step). No screen hand-rolls chrome. |
-| D25 | Cleanup needs explicit approval | An instance is cleaned up **only** by explicit operator approval — an intentional delete or an explicit discard choice. Any interruption or crash, **including during inspection**, leaves every instance preserved as resumable dirty state (treated exactly like a crashed instance). Without approval, nothing is removed and the operator can always resume/restart. (Clean + fully-pushed sessions still auto-clean — that is not dirty state.) See <RepoFile path="docs/adr/0003-cleanup-requires-explicit-operator-approval.md" />. |
-| D17 | `discard` aggressiveness | `dirty_exit_policy = "discard"` discards everything unconditionally — uncommitted edits and unpushed commits — with no prompt, on the dirty/unpushed branch. It is an explicit operator opt-in for disposable workspaces; jackin does not second-guess it. `ask` (default) prompts; `keep` auto-preserves. |
-| D16 | Base image pinning | Restore pins the base/construct image by **digest** and rebuilds from it whenever the digest is still pullable (faithful Tier 3). If the digest is gone, jackin **auto-falls back to the recorded tag/latest** and continues — but emits a typed diagnostic that restore is no longer byte-faithful (drift possible). Digest is always preferred; the tag is only a fallback. |
-| D15 | Instance surfaces | The console (workspace tree + Running panel + instance detail) lists **all** instances — live and failed — each with its state, and selecting one enters the shared restore ladder at its current rung (live → Tier 0 hardline; stopped/died → Tier 1; image gone → Tier 2/3), with delete/restart available on a failed instance. The launch dialog lists **failed/restartable candidates + "Start new" only** — never live instances. Live instances are reachable only from the console. |
-| D14 | Role hooks | Role hooks are the role author's domain. jackin runs them exactly as today (no new build hook, no sandbox, no detection/warning of installs or slowness). A hook exiting non-zero hard-fails the start and surfaces the error — always, not `--debug`-gated. Deterministic deps belong in the role's own Dockerfile (guidance, not enforced). See <RepoFile path="docs/adr/0002-role-hooks-are-the-role-authors-domain.md" />. |
-| D13 | Launch vs reconnect | **Launch never reconnects to a live instance.** A launch (pick workspace + role + agent) only creates a new instance or restores an un-cleanly-terminated one. Reconnect (hardline) happens only when the operator explicitly selects a concrete instance. The two surfaces are orthogonal: **launch = create or restore-dead; instance selection = reconnect/manage live.** Unlimited live instances per workspace+role+agent are allowed. Reverses PR #576's silent auto-attach — see <RepoFile path="docs/adr/0001-launch-never-reconnects-to-a-live-instance.md" />. |
+## Target workflow — in-capsule dirty-exit
 
-## Target Design
-
-### Image materialization
-
-The derived role image must prove that all supported runtime materialization needed for cheap startup is already present before `docker run`:
-
-1. Install every agent in `manifest.supported_agents()` using the normal official/default paths.
-2. Install Claude marketplaces/plugins during Docker build, writing to the standard Claude home `/home/agent/.claude`.
-3. Run deterministic role dependency materialization during image build, not from runtime `setup-once.sh`, when the work does not require per-instance mounted state.
-4. As the final setup step, move each supported agent's initialized home/state root into `/jackin/default-home`.
-5. Recreate empty standard homes afterward so the final image remains sane, even though runtime bind mounts normally cover them.
-6. Stamp **Docker image labels** carrying the role commit, base/construct image reference and digest, generated runtime Dockerfile section hashes, each agent's install recipe and binary version/checksum, the Claude plugin/default-home recipe hash, hooks hash, Capsule payload identity, and host identity strategy.
-
-Example final snapshot shape:
-
-```dockerfile
-RUN install -d -o agent -g agent /jackin/default-home \
- && mv /home/agent/.claude /jackin/default-home/.claude \
- && mv /home/agent/.claude.json /jackin/default-home/.claude.json \
- && mv /home/agent/.codex /jackin/default-home/.codex \
- && mv /home/agent/.local/share/amp /jackin/default-home/.local/share/amp \
- && mv /home/agent/.config/amp /jackin/default-home/.config/amp \
- && mv /home/agent/.kimi-code /jackin/default-home/.kimi-code \
- && mv /home/agent/.local/share/opencode /jackin/default-home/.local/share/opencode \
- && mv /home/agent/.config/opencode /jackin/default-home/.config/opencode \
- && mv /home/agent/.grok /jackin/default-home/.grok \
- && install -d -o agent -g agent \
-      /home/agent/.claude \
-      /home/agent/.codex \
-      /home/agent/.local/share/amp \
-      /home/agent/.config/amp \
-      /home/agent/.kimi-code \
-      /home/agent/.local/share/opencode \
-      /home/agent/.config/opencode \
-      /home/agent/.grok
-```
-
-The generated Dockerfile should only move roots for supported agents and only for roots/files that exist after setup. The snapshot step must be last among agent/default-home setup steps so all plugin and agent initialization is captured once. The generated command must not run runtime auth setup during image build; image-baked default-home represents tool defaults, plugins, skills, agent config, and non-secret state only.
-
-Image-preparation work can be optimized later with a recipe-keyed artifact cache or a `jackin-image-prepare` helper, but that optimization must preserve the same contract: plugin and agent materialization are image/default-home inputs, not container-start side effects.
-
-### Image validity
-
-Image validity is decided by reading the Docker labels from step 6, not by re-deriving the whole build. Launch computes the expected recipe (role SHA, base digest, agent versions/checksums, plugin/hooks/Capsule hashes) and compares it against the labels stamped on the local image:
-
-- All labels match the expected recipe → the image is valid; create the container from it with no `docker build`, no runtime agent install, no runtime plugin install (`CreateFromValidImage`).
-- Any label missing or mismatched → the image is invalid; rebuild from the pinned recipe (`BuildAndCreate`). The specific mismatched label is the typed reason.
-
-Because agent binaries and plugins are now baked (D1/D2), an agent CLI version bump or a plugin recipe change *should* invalidate the image — that is the intended cost of a self-proving image, and the version/checksum labels are what make the bump visible. The trigger is automatic (D20): on launch jackin resolves the latest available agent binary versions plus the current recipe and compares them to the baked image's labels, so a newer binary is detected and rebuilt/prewarmed without a manual rebuild.
-
-### Runtime seeding
-
-Runtime setup must treat the host-mounted durable home as authoritative:
-
-- If the mounted home/root is empty, copy the full matching `/jackin/default-home/...` tree into it.
-- If it is not empty, do nothing.
-- No merge.
-- No partial plugin repair.
-- No runtime plugin install.
-- No runtime agent install.
-
-Authentication handoff is also first-start-only:
-
-- If the mounted home was empty and got seeded, copy auth handoff into that home when that agent's resolved auth mode requires it.
-- If the mounted home was already non-empty, do not copy, remove, or overwrite auth files.
-
-This prevents jackin' from clobbering refreshed in-container OAuth tokens or session state when an operator resumes an old instance. Existing durable state wins.
-
-`/jackin/default-home` must not contain operator auth secrets. It contains image-baked defaults, plugins, agent config, and tool state. Auth enters durable homes only from the runtime handoff on first seed. If auth was not forwarded at first seed, jackin does not re-inject it later (D19) — the operator authenticates inside the container with the agent's normal login, which writes into the durable home and persists.
-
-Per-agent first-seed auth copy rules:
-
-| Agent | Empty-root check | Auth copy on first seed only |
-|---|---|---|
-| Claude | `/home/agent/.claude` empty | copy `/jackin/claude/account.json` to `/home/agent/.claude.json`; copy `/jackin/claude/credentials.json` to `/home/agent/.claude/.credentials.json` when forwarded |
-| Codex | `/home/agent/.codex` empty | copy `/jackin/codex/auth.json` to `/home/agent/.codex/auth.json` when forwarded |
-| Amp | `/home/agent/.local/share/amp` empty | copy `/jackin/amp/secrets.json` to `/home/agent/.local/share/amp/secrets.json` when forwarded |
-| Kimi | `/home/agent/.kimi-code` empty | copy `/jackin/kimi-code/` contents into `/home/agent/.kimi-code/` when forwarded |
-| OpenCode | `/home/agent/.local/share/opencode` empty | copy `/jackin/opencode/auth.json` to `/home/agent/.local/share/opencode/auth.json` when forwarded |
-| Grok | `/home/agent/.grok` empty | copy `/jackin/grok/auth.json` to `/home/agent/.grok/auth.json` when forwarded |
-
-For agents with both data and config roots, first-seed detection uses the primary data root and seeds/copies the paired config root in the same transaction. If either root is already non-empty, treat the agent as existing durable state and leave both roots untouched.
-
-There is no separate seed marker (D6). The home's own **emptiness is the signal**: empty → first start → seed defaults and copy auth; non-empty → already set up → do nothing. The current `/jackin/state/agent-auth/<agent>.done` marker is removed — it lives apart from the home it describes and can disagree with it (a wiped home with a surviving marker never gets auth; a lost marker re-copies auth over a refreshed token). Emptiness is one fact that moves, deletes, and restores together with the home.
-
-For emptiness to stay trustworthy, the first seed must be **atomic** per agent: copy the default-home tree and the auth handoff into a temporary location on the same mount, then `rename` into place as the last step. A crash before the rename leaves the home empty, so the next start retries cleanly from scratch — a half-copied home never survives to count as durable.
-
-This is the same lifecycle for first start, restart, and recreate-after-crash (D6a): the container init and all role hooks run normally every start; only this seed/auth step is conditional on emptiness. Restore is not a special path — it is an ordinary start whose home already exists, so seeding no-ops.
-
-### Role hooks
-
-Role hooks are the **role author's domain**. jackin runs them exactly as they are implemented today and does not police, sandbox, rewrite, or rate-limit them. The contract is intentionally narrow (see <RepoFile path="docs/adr/0002-role-hooks-are-the-role-authors-domain.md" />):
-
-- jackin runs the hooks as the standard start flow: `setup-once.sh` once (marker-gated), `source.sh` sourced every start, `preflight.sh` every start. No new build hook is added (D14) — deterministic dependency installation belongs in the role's **own Dockerfile**, which is the build surface jackin already builds on top of.
-- A hook that exits non-zero is a **hard failure**: jackin aborts the start and surfaces the hook's error and exit code directly. This is always fatal, not gated on `--debug`. The role author decides what the hook does; jackin only reports faithfully when it fails.
-- jackin does not detect, warn about, or prevent what a hook does or how long it takes. If a hook installs dependencies at runtime, that is the author's choice and the author's latency to own; jackin neither blocks it nor runs it in a restricted sandbox.
-- Documentation guides authors on intended use — `setup-once.sh` for per-instance state init, `source.sh` for env/PATH, `preflight.sh` for cheap validation, and deterministic deps in the Dockerfile — but this is guidance for role authors, not an enforced jackin contract.
-
-### Launch planning
-
-Launch planning chooses the smallest valid foreground repair:
-
-| Plan | Foreground work allowed | Foreground work forbidden |
-|---|---|---|
-| `AttachExisting` | inspect running container, verify Capsule, open hardline | role repo refresh, workspace pull, credential resolution, image decision, binary prep, Docker build |
-| `StartStopped` | `docker start`, verify Capsule, open hardline | role repo refresh, workspace pull, credential resolution, image decision, binary prep, Docker build |
-| `CreateFromValidImage` | re-resolve required secret values, re-materialize mounts from stored recipe, `docker run`, seed empty homes, attach | Docker build, role `HEAD` refresh as restore input, runtime agent/plugin install |
-| `BuildAndCreate` | rebuild from pinned or current recipe, then create | untyped rebuilds, rebuilding from moved `HEAD` during restore, storing resolved secrets |
-| `PrewarmOnly` | refresh role/image/runtime resources outside operator attach path | mutating host repos or external tool state without explicit opt-in |
-
-Fresh starts may use current role/config inputs. Restores must use the saved launch recipe. This is the key difference: “start new” means “launch what the workspace says today,” while “resume” means “return to the state that was already working.”
-
-### Restore ladder
-
-Resume always reuses the same `container_base` and the same `~/.jackin/data/<container>/` directory. The tiers are ordered by fidelity:
+The hinge is the last-session-close branch in <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> (`no_live_sessions()`, which today calls `drain_and_exit` immediately):
 
 ```text
-operator chooses Resume <id>
-  │  inspect_container_state(container_base)
-  ├─ Running                -> Tier 0: hardline reconnect
-  ├─ Stopped / exists        -> Tier 1: docker start + reconnect
-  ├─ NotFound, image exists  -> Tier 2: docker run using stored image_tag
-  └─ NotFound, image missing -> Tier 3: pinned rebuild, then Tier 2
+last live session exits (agent /exit, Ctrl-D, or crash)
+  │  run the shared dirty assessment on the workspace mount(s) in-container
+  ├─ clean / pushed ─────────────► drain_and_exit  (unchanged — silent exit)
+  └─ dirty / unpushed ───────────► push in-capsule modal; container stays alive
+        ├─ Start a new agent ────► open the existing agent picker (same as "New tab")
+        │                          → spawn session → back to work, container kept warm
+        └─ Exit ─────────────────► drain_and_exit → host finalize executes keep/discard
 ```
 
-| Tier | Meaning | What comes back | Build allowed? |
-|---|---|---|---|
-| Tier 0 | The original container is still running. | The literal live process/session and writable layer. | No |
-| Tier 1 | The original container exists but is stopped. | The same container and writable layer after `docker start`. | No |
-| Tier 2 | The container was removed, but its stored image tag still exists. | A recreated container with the same host-backed homes, mounts, auth handoff refs, and image defaults. Container writable-layer-only changes are gone. | No |
-| Tier 3 | Both container and stored local image are gone. | A recreated container after rebuilding the same image from launch-time pinned inputs. | Yes, pinned rebuild only |
+"Start a new agent" reuses the capsule's existing `new_agent_picker` (`PickerIntent::NewTab`) in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> — the exact dialog "New tab" already opens. The confirmation reuses the capsule's existing dialog / modal-stack infrastructure; no new chrome.
 
-The ladder is one shared mechanism keyed on `inspect_container_state` of the **chosen instance**; the entry rung depends on the instance's current state, and the two surfaces enter it differently (D15):
+## Remaining work — must do
 
-- **Console instance selection** lists every instance for the workspace — live and failed — with its state, and selecting one enters the ladder at its current rung: a live instance → **Tier 0** hardline (the only path that reaches Tier 0); a stopped/died instance → **Tier 1**; an instance whose image is gone → **Tier 2/3**. The console also offers **delete** and **restart** on a failed instance.
-- **The launch dialog** (role+agent pick with no instance selected) shows only failed/restartable candidates plus "Start new"; it **never lists live instances**. So a launch-restore always enters at **Tier 1 or below** — never Tier 0.
+1. **Share detection (`jackin-core`).** Extract the dirty/unpushed assessment out of `finalize.rs::assess_cleanup` into a path-based `jackin-core` function and shared result type; rewire the host `assess_cleanup` to call it. Unit-test the function directly against a temp git repo (clean / uncommitted / untracked / unpushed).
+2. **In-capsule confirmation (`jackin-capsule`).** At `no_live_sessions()` in `daemon.rs`, run the shared detection on the workdir(s); if clean, `drain_and_exit` as today; if dirty, push the confirmation modal (`Start a new agent` / `Exit`) and keep the daemon alive with no live panes. Wire "Start a new agent" → `new_agent_picker` → `spawn_session`; wire "Exit" → `drain_and_exit`. Test that a dirty last-session exit pushes the modal (not shutdown) and that each choice routes correctly.
+3. **Host executes cleanup after Exit (`jackin-runtime`).** Make a clean capsule exit actually reach `finalize_foreground_session` so the host applies `dirty_exit_policy` keep/discard: the capsule client must exit `0` on a clean last-session shutdown (so `docker exec` returns success), and the host load/hardline paths must run finalize on a clean exit instead of treating it as `capsule attach failed`. This is the fix for the confirmed defect above.
 
-Restore must replay the launch-time recipe stored in the instance manifest rather than resolving current role `HEAD` or current config as if this were a fresh launch. If the role repo, workspace config, or base image changed after the original launch, resume still targets the old pinned recipe. Secrets are never stored; only env var names, `op://` references, and auth mode/source references are persisted and re-resolved when a new container must be created.
+## Open design questions — for operator review (TUI)
 
-Required launch-recipe fields:
+Not yet settled; the operator will walk the TUI display and decide. Captured here so the design conversation has a home:
 
-| Field | Restore use |
-|---|---|
-| `image_tag` plus role commit SHA | Reuse exact image at Tier 2; rebuild from exact role commit at Tier 3. |
-| base / construct image reference and digest | Tier 3 rebuilds from the pinned **digest** when it is still pullable (faithful); if the digest is gone, jackin auto-falls back to the recorded tag and continues, emitting a typed diagnostic that restore is no longer byte-faithful (D16). Digest is always preferred over tag. |
-| selected agent and supported-agent set | Avoid prompting for a different runtime during resume. |
-| mount plan and isolation records | Reuse the same worktree/clone/shared layout. |
-| env var names and source references | Re-resolve values without storing secrets. |
-| auth mode/source references | Rebuild auth handoff when a new container must be created. |
-| Docker resource shape | Recreate network, DinD, volumes, labels, and runtime flags consistently. |
-| image recipe labels/hashes | Explain whether Tier 2 is valid and why Tier 3 is needed. |
+- Exact modal content and labels — wording of "Start a new agent" / "Exit", the title, and whether a short dirty summary (repo / file count) shows in the modal.
+- Whether the in-capsule modal offers an **Inspect** (read-only diff) view of the dirty changes before deciding, or only the two choices.
+- Where the **keep vs discard** *choice* is made: pulled into the in-capsule modal (so the operator makes every decision before teardown and the host only executes), or left to host `dirty_exit_policy` after Exit. The operator's "ask before teardown" preference leans toward in-capsule; the tentative default is host-executes-per-policy until decided.
+- Uncommitted-vs-unpushed messaging, and how multiple dirty repos / mounts are presented.
 
-### Exit, keep, and cleanup lifecycle
+## Operator verification — pending sign-off
 
-The same instance identity is the unit of resume. A kept instance retains `~/.jackin/data/<container>/`, its materialized worktree/clone state, the per-instance name-claim lock (`jk-<id>-<role>.lock`), the Capsule socket directory if needed for reconnect metadata, and the `instances.json` row marked restorable. A clean terminal outcome removes all of those immediately.
+The following landed as code in this branch but is **not operator-verified**. None of it may be marked implemented until the operator manually confirms it works. This list deliberately replaces the previous page's "shipped ✓" claims, which asserted completion without operator verification. CI passing does not move an item off this list — only the operator's manual confirmation does.
 
-The name-claim lock is not a sibling-coordination lock: it guards the unique container name during launch and is otherwise inert detritus once the instance is up. Sibling agent tabs in one container are multiplexed in-process by the Capsule daemon, with no host-side lock. Cleanup reaps the lock file because it is leftover per-instance state, not because anything still holds it (D9).
+- Image-baked agent binaries, Claude plugins, and default-home state; image-validity by Docker labels; agent-version-changed rebuild trigger.
+- Empty-dir home seeding, first-seed-only auth handoff, atomic first seed; durable Amp / OpenCode config roots.
+- Container identity: `--user $HOST_UID:$HOST_GID --group-add 0` with `libnss-extrausers` passwd/group; group-0 image-home writability; an arbitrary-UID/GID launch (read + write + first seed + `git config --global` + role-hook tool installs) without permission-denied.
+- Restore ladder: Tier 1 `docker start`, Tier 2 reuse of the stored image, Tier 3 pinned rebuild from `role_git_sha` (original commit, not current `HEAD`); launch never reattaches to a live instance.
+- Schema `v1alpha7` migration and `dirty_exit_policy` config (global + per-workspace; `ask` / `keep` / `discard`).
+- Console instance surfaces; clean-exit purge and stale-row / orphaned-lock reconciliation on launch / prune.
+- Launch cockpit hard-exit behavior (`Ctrl+Q` → confirm → immediate exit; `Ctrl+C`; double `Ctrl+C` mid-build) with the terminal restored and `gc_orphaned_resources` reclaiming abandoned resources on the next launch.
+- Local image-build performance changes (no recursive permission repair, single-layer plugin install, uncompressed local export, construct `shellfirm` prebuild) — and the arbitrary-UID/GID correctness this permission rework depends on.
 
-The policy governs **one decision only: what to do when a session ends with dirty or unpushed isolated work.** A session whose `worktree`/`clone` mounts are all clean and fully pushed has nothing at risk and is **always auto-cleaned regardless of policy**. The policy is a single config key — global on `AppConfig`, optionally overridden per-`[workspaces.<name>]` — and its value only changes the dirty/unpushed branch:
+When the operator confirms a group above, move it out of this list with an explicit note that it was operator-verified; until then it stays here regardless of test or CI status.
 
-| Policy | When the session is clean + pushed | When the session is dirty or unpushed |
-|---|---|---|
-| `ask` (default) | auto-clean | prompt the operator (keep/discard) |
-| `keep` | auto-clean | auto-**preserve** the instance for resume — no prompt |
-| `discard` | auto-clean | auto-**discard** everything, including uncommitted edits and unpushed commits — no prompt (D17) |
+## Related files
 
-`keep` and `discard` only take effect when there is dirty/unpushed work; neither keeps a clean session around. Resolution order: workspace override, then global default, then built-in `ask`. The default is always `ask` — the conservative choice that never silently keeps or discards at-risk work.
-
-For `ask`, jackin' must assess `worktree` and `clone` mounts, show concrete uncommitted files and unpushed branches before discard or reuse, and treat `shared` mounts as host-owned data that jackin' never cleans. On resume, `git_pull_on_entry` is skipped; the preserved worktree/clone is authoritative because resume means “return to this exact session,” not “advance the workspace before returning.”
-
-A terminal cleanup outcome must:
-
-1. stamp the terminal status so an interrupted cleanup leaves an honest record;
-2. remove `~/.jackin/data/<container>/`, the per-instance name-claim lock `jk-<id>-<role>.lock`, and `~/.jackin/sockets/<container>/`;
-3. remove the instance row from `~/.jackin/data/instances.json`.
-
-Only keep/resume outcomes may leave an instance directory or index row behind. Launch or prune should also reconcile stale `active` rows against Docker and reap orphaned `jk-*.lock` / repo-lock detritus through the existing cleanup helpers.
-
-Adding the global and per-workspace `dirty_exit_policy` changes versioned schema surfaces, so the implementation PR must ship the full schema-migration set for affected files: version bump, migration step, migration fixtures, re-baked `after.toml` files, and a [Schema Versions](/reference/runtime/schema-versions/) timeline entry.
-
-### TUI flow
-
-The operator-facing flow must be designed as session continuity, not as an error recovery path. It renders through the launch/exit rich surface. jackin requires a rich terminal (D18); a non-rich, dumb, or headless context is refused with a clear upfront error rather than falling back to a degraded flow. This rich surface is the only place these decisions are made (D11): the console instance list may show status, but resume-or-new, delete-candidate, and the dirty-exit decision are not duplicated as separate console stages or CLI subcommand prompts.
-
-Every screen below follows the [jackin' TUI design rules](/reference/tui/): brand-chrome header, the shared `HintBar` footer (all keys live in the footer, never inside the box — vocabulary `↑↓ navigate · ↵ <action> · Esc back · Ctrl-Q quit`), the `▸` cursor with full-width row selection, the canonical `Confirm` Yes/No dialog (box title `Confirm`, default focus **No**) for destructive confirms, and the sub-dialog stack where each `Esc` walks back exactly one step. The mockups are intent sketches; the implementation reuses the existing `jackin-tui` components (`SelectList`, `ConfirmDialog`, `HintBar`, the scrollable-block and full-screen-overlay primitives) rather than drawing new chrome. Footer hints below are written outside the box to reflect that the footer is a separate reserved region.
-
-Exit flow:
-
-```text
-foreground session ends
-  │
-  ├─ policy = discard ───────────────────────────► DISCARD
-  ├─ policy = keep  ─────────────────────────────► KEEP
-  └─ policy = ask
-        │  assess isolated worktree/clone mounts
-        ├─ all clean / all pushed ───────────────► DISCARD
-        └─ any dirty or unpushed ─────────────────► Exit dialog (one screen)
-                 ├─ Return to agent ─────────────► reconnect now
-                 ├─ Exit and keep ───────────────► KEEP
-                 └─ Exit and discard ────────────► DISCARD
-```
-
-The exit dialog is a **single screen**: a list of the dirty isolated repos (worktree/clone only — D24) plus the three outcome choices. The operator must explicitly choose one; there is no implicit cleanup (D25). The three outcomes:
-
-- **Reconnect** — hardline back into the instance: jackin keeps the container we were about to stop, re-enters the agent, and the operator finishes the work, then exits again later. The no-loss option.
-- **Keep** — silently exit and keep the instance. The container stops but the instance is preserved; from `jackin console` the operator can always select it and restart it later (to resume this exact state).
-- **Discard** — delete everything. The instance and its dirty work disappear and are no longer selectable anywhere.
-
-`I`nspect opens the read-only change viewer (D24) so the operator can examine the changes before deciding. It does not show per-file detail inline.
-
-```text
- jackin'  · session ended
- the-architect (claude) · jackin · jk-sz2v4p0e
-
- Unsaved work in 2 isolated repos (worktree/clone only):
-   ▸ jackin       worktree · uncommitted · 1 branch unpushed
-     holla-apt    clone    · uncommitted
-
- End this session:
-   Reconnect   (hardline back, finish the work — no loss)
-   Keep        (stop now, resume from console later)
-   Discard     (delete the instance and its changes)
-```
-
-Footer hint: `↑↓ navigate · ↵ inspect changes · R reconnect · K keep · D discard · Ctrl-Q quit`. Clean repos are not listed; if nothing is dirty there is no dialog (auto-clean per `dirty_exit_policy`). `↵`/`I` on a repo opens its change viewer; `R`/`K`/`D` are the outcome shortcuts, `R`econnect being the safe default. `Discard` routes through the canonical `Confirm` dialog before deleting.
-
-Launch flow:
-
-Matching candidates are the **un-cleanly-terminated** instances for the same workspace + role + agent: `RestoreAvailable`, `PreservedDirty`, `PreservedUnpushed`, `Crashed`, and stale index rows whose container is gone (D10). A healthy live instance is never a candidate — it is reached only by explicit instance selection (reconnect/hardline), never from a launch pick (D13). The operator can restore one, delete one in place, or start new; a launch with no candidate starts new directly even while another instance is live. Deleting an instance runs the same terminal cleanup as a clean exit — but a candidate with dirty/unpushed work first shows a confirm screen listing what will be lost (D21); a clean one deletes immediately. Deleting every candidate collapses the screen to a plain "Start new".
-
-```text
-operator selects workspace + role + agent
-  │  find matching candidate instances
-  ├─ none ───────────────────────────────────────► Start new
-  └─ one or more ────────────────────────────────► Launch dialog (one screen)
-        ├─ Start new ────────────────────────────► fresh instance
-        ├─ Resume <id> ──────────────────────────► restore ladder Tier 1 → 2 → 3
-        └─ Del <id>
-              ├─ candidate clean ────────────────► delete immediately
-              └─ candidate dirty ────────────────► Delete-confirm screen
-```
-
-This dialog opens from the **launch surface**: the operator picks a workspace + role + agent and launches (without having selected a concrete instance). If that workspace+role+agent has no un-cleanly-terminated instances, launch starts a new one directly. If it has one or more, the launch surface opens this dialog instead of silently starting.
-
-The launch dialog is a **single screen**: `Start new` plus each candidate with its **state** (`crashed`, `dirty`, `unpushed`, `kept`) and age, and whether its image is ready. A highlighted dirty candidate lists its dirty *repo names* (not file detail). Resume, delete, start-new, and `I`nspect are all reachable here — no separate verify step. `Start new` stays first so launch never enters old state without selection. Choosing a candidate resumes it: it enters the restore ladder at its current rung (D15) — a stopped/crashed instance is restarted (`docker start`) and the operator hardlines back in; the preserved tree is authoritative and workspace pull is skipped (D7).
-
-```text
- jackin'  · resume or start new
- the-architect (claude) · jackin
-
- Filter:
- ▸ Start new session
-   Resume  jk-sz2v4p0e · 2h · kept · clean · image ready
-   Resume  jk-fme29j3j · 5h · crashed · dirty
-        dirty repos: jackin (worktree), holla-apt (clone)
-   Resume  jk-az81mq4d · 1d · crashed · unpushed · image ready
-```
-
-Footer hint: `↑↓ navigate · ↵ resume · I inspect · Del delete · type to filter · Ctrl-Q quit`. The `Filter:` row sits directly under the header per the picker convention. `↵` on `Start new` launches fresh; `↵` on a candidate resumes it (restart + hardline). `I` opens the read-only Inspect viewer (D24) for the highlighted candidate. Once the last candidate is deleted, only `Start new` remains.
-
-Pressing `Del` on a clean candidate deletes it immediately; on a dirty/unpushed candidate it opens the **canonical `Confirm` dialog** (D21) — box title `Confirm`, one-line question, a dim summary of what is lost, two side-by-side buttons with default focus on **No**. The full per-file detail is available via `V`iew beforehand, so the confirm only summarizes:
-
-```text
- ┌ Confirm ─────────────────────────────────┐
- │                                           │
- │           Delete jk-fme29j3j?             │
- │                                           │
- │   Discards 3 uncommitted files and 1      │
- │   unpushed branch — cannot be undone.     │
- │                                           │
- │              Yes        No                │
- │                                           │
- └───────────────────────────────────────────┘
-```
-
-Footer hint: `←→ select · ↵ confirm · Y yes · N back · Esc cancel · Ctrl-Q quit`. Default focus is `No`, so a reflexive `↵` does not delete.
-
-### Dirty inspection
-
-`I`nspect (from the exit dialog, or `V`iew from the launch dialog) opens a read-only change viewer. It copies the **concept of GitUI's status tab** — a changed-files list beside a live diff of the selected file — using jackin components only, never gitui itself. It is strictly **preview-only**: no staging, committing, pushing, hunk-discard, or any other mutation. The operator examines changes to inform the reconnect/keep/discard (or resume/delete) decision, and nothing else.
-
-The viewer is one full-screen surface with up to three live panes (`⇥` moves between them):
-
-1. **Repos** (left) — the dirty `worktree`/`clone` repos; shown only when more than one is dirty. `shared` mounts are never inspected.
-2. **Changed files** (middle) — the selected repo's changed paths as GitUI-style status rows (`M`/`A`/`D`/`??` glyph + path); nothing clean is listed.
-3. **Diff** (right) — the selected file's content, updating live as the selection moves.
-
-```text
- jackin'  · inspect changes · jk-fme29j3j
-
- ┌ Repos ────────┐┌ Changed files ─────────┐┌ Diff · mod.rs · modified ───────────┐
- │▸ jackin       ││▸ M runtime/launch/mod  ││ ── before ──────│── after ───────    │
- │  holla-apt    ││  M isolation/finalize  ││  fn resolve() { │ fn resolve() {     │
- │               ││  A docs/new-guide.md   ││- attach_now();  │+ create_new();     │
- │               ││  D old/legacy.rs       ││  return Ok(p);  │ return Ok(p);      │
- │               ││  ?? notes.md           ││ }               │ }                  │
- └───────────────┘└────────────────────────┘└─────────────────────────────────────┘
-```
-
-Footer hint: `⇥ switch pane · ↑↓ navigate · ↑↓←→ scroll diff · Esc back · Ctrl-Q quit`. With a single dirty repo the Repos pane is omitted, leaving the two-pane files │ diff layout exactly like GitUI's status tab.
-
-Diff rendering by change kind, in the Diff pane:
-
-- **Modified** (`M`) — side-by-side, before │ after.
-- **Added / untracked** (`A` / `??`) — single-pane full content as additions; untracked is identical to added because nothing is committed yet.
-- **Deleted** (`D`) — single-pane full content as deletions.
-
-```text
- ┌ Diff · docs/new-guide.md · added ───────┐   ┌ Diff · old/legacy.rs · deleted ─────────┐
- │ + # New Guide                           │   │ - fn legacy() {                         │
- │ + ...                                   │   │ -   ...                                 │
- └─────────────────────────────────────────┘   └─────────────────────────────────────────┘
-```
-
-The viewer is a sub-dialog on the modal stack: `Esc` returns to the originating exit/launch dialog; a terminal action (choosing an outcome, confirming a delete) clears the chain. Inspecting mutates nothing.
-
-**Crash safety (D25) — critical.** An instance is removed only by explicit operator approval (intentional delete or an explicit discard choice). Any interruption or crash — including while the operator is partway through this inspection — leaves every instance preserved as resumable dirty state, exactly like a crashed instance. There is no implicit cleanup; the operator can always resume/restart. (Only a clean + fully-pushed session auto-cleans, and that is not dirty state.)
-
-**Build notes.** jackin already has ratatui 0.30 + crossterm and a modal/scroll/select-list/dialog component library, plus an Elm-style `ConsoleManagerStage` to add a screen to. To build the viewer: extend <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> (`assess_cleanup`) to also parse `git status --porcelain` into a per-file change list (added/modified/deleted/untracked), source per-file content via `git diff` (and the file contents for added/deleted), and render with the `similar` crate (already vendored transitively via `insta`; promote to a direct dependency). [gitui](https://crates.io/crates/gitui) is the reference for the status-tab layout and read-only diff rendering — concept only; the repos and changed-files panes reuse jackin's `SelectList`, and the diff pane is one new `diff_view` component. Syntax highlighting is optional and deferred.
-
-### TUI components
-
-Following the [component reuse rule](/reference/tui/components), each screen maps to a jackin' component — reusing an existing one wherever a shape already exists, and adding a new shared component only for a genuinely new pattern (D26). The drill-down as a whole is a [wizard-style modal-stack flow](/reference/tui/components), like the Claude-token flow: each step is one component and `Esc` walks back one step.
-
-| Screen | Component | Reuse / new |
-|---|---|---|
-| Exit dialog — dirty-repo list + outcomes | `SelectList`/`render_picker_list` for the repo list; outcomes (`R`/`K`/`D`) are footer action keys via `HintBar` (the workspace-list action pattern). Modal shell + backdrop. | Reuse |
-| Launch dialog — resume-or-new | `filter_input` + `SelectList` picker with a `Start new session` sentinel row and candidate rows (modeled on `role_picker`). | Reuse (compose) |
-| Delete confirm | `ConfirmDialog` — canonical `Confirm` Yes/No, default `No`, with a note row summarizing what is lost. | Reuse |
-| Inspect — repos pane + changed-files pane | `SelectList` ×2 (repos list; GitUI-style changed-files status list), arranged in the multi-pane surface. | Reuse (compose) |
-| Inspect — diff pane | **`diff_view`** — scrollable diff with a mode for side-by-side (modified) and single-pane (added/untracked, deleted), rendered from `similar` hunks through the shared scrollbar. | **New** shared `jackin-tui` component |
-
-The Inspect surface composes the two `SelectList` panes and the new `diff_view` into a GitUI-status layout; only `diff_view` is genuinely new. It lives under `crates/jackin-tui/src/components/` with a `jackin-tui-lookbook` story exercising focused/unfocused and side-by-side/single-pane states for visual-regression coverage. No screen draws its own border, scrollbar, hint row, or selection chrome — those come from the shared primitives.
-
-## Implementation Plan
-
-These phases are the build/dependency order, not separate PRs. The work ships as one PR (D12) because the image, runtime-setup, restore, and schema surfaces are one contract and a partial landing would leave the seed/auth and restore behaviors inconsistent. The phases below order the work within that PR; the schema-migration set (D8) lands atomically inside it.
-
-### Phase 0 — Roadmap consolidation ✓ shipped
-
-- ✓ Make this page the canonical roadmap item for restore, image validity, default-home seeding, and startup speed.
-- ✓ Remove the old session keep/resume roadmap item so this is the only active roadmap page for the lifecycle contract.
-- ✓ Update cross-references that pointed at the deleted page.
-
-### Phase 1 — Image recipe contract ✓ shipped
-
-- ✓ Remove `agent_binary_mount_specs` from `docker run`.
-- ✓ Stage prefetched binaries for every supported agent in the derived build context.
-- ✓ Render each supported agent's `install_block()` into the derived Dockerfile.
-- ✓ Include all supported agent install recipes and binary versions/checksums in `ImageRecipe`, and stamp them as Docker image labels so launch can judge validity by reading labels (D3).
-- ✓ Remove the Grok host-home binary seeding workaround once `.grok` is baked and seeded from `/jackin/default-home`.
-- ✓ Include generated runtime Dockerfile sections, hooks, Capsule payload, Claude plugin/default-home recipe, base/construct image identity, and host identity strategy in recipe labels.
-
-### Phase 2 — Image-baked default state ✓ shipped
-
-- ✓ Move Claude marketplace/plugin installation out of `runtime_setup.rs`.
-- ✓ Render plugin install commands in the derived Dockerfile after Claude is installed and before final default-home snapshot.
-- ✓ Include Claude plugin recipe hash in `ImageRecipe`.
-- ✓ Remove `claude_marketplaces` / `claude_plugins` from `CapsuleConfig` if no runtime consumer remains.
-- ✓ Add one final default-home snapshot step after all agent/plugin/dependency setup.
-- ✓ Move each supported agent root from official home path into `/jackin/default-home`.
-- ✓ Recreate empty official home paths after moving.
-- ✓ Preserve `/jackin/default-home` as the only image-baked seed location for bind-mounted homes.
-- ✓ Do not add an image-build hook; document the role's own Dockerfile as the build surface for deterministic dependency installation (D14). Keep runtime hooks as-is, running faithfully with a hard-fail on non-zero exit.
-
-### Phase 3 — Runtime setup seed/auth rewrite ✓ shipped
-
-- ✓ Replace `seed_home_dir(..., SkipExisting)` with an explicit empty-dir gate.
-- ✓ Copy default-home only when the mounted root is empty.
-- ✓ Copy auth handoff only when that same root was empty before seeding.
-- ✓ Do not remove or overwrite auth in non-empty homes.
-- ✓ Mount Amp config and OpenCode config roots as durable state.
-- ✓ Remove the `/jackin/state/agent-auth/<agent>.done` marker; gate seeding and auth-copy purely on durable-home emptiness (D6).
-- ✓ Make the first seed atomic per agent: stage default-home + auth-copy into a temp dir on the same mount and `rename` into place last, so a crash leaves the home empty for a clean retry (data root and paired config root land together).
-- ✓ Keep one start path: container init and role hooks run every start; only seed/auth is conditional on emptiness (D6a).
-- ✓ Emit diagnostics for every runtime setup action and skipped action.
-
-### Phase 4 — Restore recipe and launch planning ✓ shipped
-
-- ✓ Persist the launch recipe needed for faithful restore: `role_git_sha`, `base_image_ref`, `base_image_digest` (placeholder), and `supported_agents` stored in `InstanceManifest` with `#[serde(default)]` backward-compat fields (D7). Mount plan and env-ref names deferred to a follow-up.
-- ✓ Treat restore as authoritative: `git_pull_on_entry` is skipped when `restore_container` is set; pinned `role_git_sha` passed to `decide_role_image` so Tier 3 rebuilds from the original commit, not current `HEAD` (D7).
-- ✓ Implement Tier 1 `docker start` restore using the existing Docker API (`StartCurrentRole` → `restore_current_role_now`).
-- ✓ Ensure Tier 2 recreates from a valid stored image without rebuilding: pinned SHA → same image tag → `ImageDecision::Reuse` when image exists locally.
-- ✓ Ensure Tier 3 rebuilds from pinned launch inputs only: pinned SHA propagated to `role_git_sha_for_recipe` via `decide_role_image(pinned_sha: Option<&str>)`.
-- ✓ Remove the silent auto-attach of a running current-role instance from the launch fast-path: `AttachCurrentRole` variant removed from `RestoreResolution`; Running/Paused/Restarting containers emit `launch_never_reconnects_to_live_instance` diagnostic (D13). See <RepoFile path="docs/adr/0001-launch-never-reconnects-to-a-live-instance.md" />.
-- ✓ Resume-or-new operator choice for matching restorable instances via the existing terminal `select_choice` dialog; rich launch dialog upgrade is Phase 5.
-- ✓ Keep `AttachExisting`, `StartStopped`, `CreateFromValidImage`, `BuildAndCreate`, and `PrewarmOnly` as explicit plan vocabulary in diagnostics.
-
-### Phase 5 — Dirty-exit policy and TUI ✓ shipped
-
-- ✓ Add global `dirty_exit_policy` and per-workspace override: `ask`, `keep`, `discard`; the policy governs only the dirty/unpushed-exit branch (clean+pushed always auto-cleans).
-- ✓ Ship the required config/workspace schema migrations and docs.
-- ✓ Add the exit dialog (dirty-repo list + Return/keep/discard), the launch dialog (Start new + candidates), and the canonical `Confirm` delete dialog — on the rich surface only (D11/D21/D23), following the TUI design rules (shared `HintBar`, `▸` selection, sub-dialog stack).
-- ✓ Add the read-only Inspect surface (D24, GitUI-status layout): extend `assess_cleanup` to yield a per-file change list, compose the repos + changed-files `SelectList` panes, and render the live diff pane (side-by-side for modified, single-pane for added/untracked/deleted) using `similar`; worktree/clone only, `shared` exempt; preview-only (no stage/commit/push).
-- ✓ Build the one new shared `jackin-tui` component `diff_view` under `crates/jackin-tui/src/components/` with a lookbook story + visual-regression coverage; reuse `SelectList`/`filter_input`/`ConfirmDialog`/`HintBar` for the exit, launch, inspect, and delete screens rather than forking chrome (D26).
-- ✓ Enforce the cleanup-needs-approval invariant (D25): no implicit cleanup of dirty/unpushed state, including on crash mid-inspection.
-- ✓ Update the matching <RepoFile path="docs/content/docs/reference/tui/dialogs.mdx" /> / navigation / components pages for the new screens in the same PR.
-- ✓ Let the launch screen delete a candidate instance in place via terminal cleanup; deleting all candidates leaves only "Start new" (D10).
-- ✓ Refuse non-rich/dumb/headless terminals with a clear upfront error; build no degraded flow (D18).
-- ✓ Show concrete worktree/clone dirty and unpushed details before reuse or discard; keep `shared` mounts exempt.
-
-### Phase 6 — Cleanup and reconciliation ✓ shipped
-
-- ✓ Route clean terminal outcomes through existing cleanup helpers so per-instance data, the name-claim lock, socket dirs, and index rows are removed inline.
-- ✓ Reconcile stale active rows and reap orphaned `jk-*.lock` name-claim files during launch/prune.
-- ✓ Ensure only keep/resume outcomes can leave `~/.jackin/data/<container>/` and an index row behind.
-
-## Acceptance Criteria
-
-- This is the only roadmap page for the merged runtime lifecycle contract; the old session keep/resume page is deleted.
-- A fresh image build installs all supported agents, Claude plugins, deterministic role dependencies, hooks, Capsule, and default-home state before container start.
-- A matching local image launches without `docker build`, runtime agent install, or runtime plugin install.
-- Image validity is decided by reading Docker image labels; an agent CLI version bump or plugin-recipe change invalidates the image and the mismatched label is the typed rebuild reason.
-- Saved-workspace image prewarm runs in the background from the console path, never blocks launch, and reuses valid images without rebuilding.
-- First launch of a new instance seeds each empty durable home from `/jackin/default-home` and copies auth handoff only once.
-- Seeding and auth-copy are gated purely on durable-home emptiness with no separate marker; a recreated empty home re-seeds and re-copies auth correctly, and a crash mid-seed leaves the home empty for a clean retry.
-- Reopening a tab or restarting/recreating an existing instance never overwrites non-empty durable homes or auth files.
-- Claude, Codex, Amp, Kimi, OpenCode, and Grok all persist their known state roots on the host.
-- A sibling agent tab inside the same container finds its CLI and durable home without adding mounts.
-- A stopped valid instance restarts via `docker start`; a missing-container valid-image restore recreates without rebuild.
-- A kept dirty/unpushed or `Crashed` instance, and stale rows whose container is gone, appear as restore candidates for the same workspace, role, and agent; a healthy live instance never does.
-- A launch pick never reconnects to a live instance; reconnect happens only on explicit instance selection. A launch with no restore candidate starts a new instance even while another is live.
-- The launch screen can delete a candidate instance in place; deleting every candidate leaves only "Start new".
-- Resume skips workspace `git_pull_on_entry` and reuses the preserved worktree/clone as authoritative state.
-- A clean terminal outcome deletes per-instance data, socket state, sibling locks, and the instance index row without requiring a later manual prune.
-- A resume/reuse or cleanup decision shows concrete dirty/unpushed files for worktree and clone mounts before the operator confirms.
-- Restore rebuilds only from pinned launch inputs and never persists resolved secret values.
-- Global `dirty_exit_policy` and per-workspace override are documented and migrated.
-- TUI previews in this item match the implemented rich flows; non-rich/dumb/headless terminals are refused with a clear upfront error, with no degraded flow.
-- Diagnostics explain every rejected faster path and every foreground wait over 500ms.
-
-## Bug — launch-exit confirmation hangs during a build (fix in this PR)
-
-Reproduced live: with a cold role-base build running on the launch cockpit, opening the "Exit jackin'?" confirmation and answering Yes does not exit. The screen stays on "Building role base image…" and the process never terminates. Parallax confirms it: run `18bbf8288aa08ca8` stayed `status: running` 14 minutes after the exit attempt, the TUI render task was still responsive (mouse scroll log lines 2 minutes before inspection), and `buildx` spans (`FileSync/DiffCopy`, `Secrets/GetSecret`) were still firing 12–13 minutes in — the build never stopped and the launch never unwound.
-
-Two distinct defects, both to fix in this PR:
-
-**LX1 — the exit confirmation defaults focus to No, so Enter dismisses it.** `ConfirmState::new` in <RepoFile path="crates/jackin-tui/src/components/confirm_dialog.rs" /> sets `focus: ConfirmFocus::No` (commented "Default focus = No, so Enter does not accidentally confirm"). The dialog renders the buttons left-to-right as `Yes  No`, which reads as if Yes is the default, but `Enter` maps to `CommitFocused` → `Commit(false)` → `QuitConfirmOutcome::Dismissed` in `apply_quit_confirm_key` (<RepoFile path="crates/jackin-launch/src/tui/subscriptions.rs" />), so the build silently continues. The operator believes they chose Yes; nothing happens. Decision still open and user-facing: either default the **exit** dialog's focus to Yes (a focused-Yes variant, leaving destructive confirmations like delete defaulting to No), or make the rendered button order/highlight unambiguous about which one Enter triggers. Do not silently flip the global default for every `ConfirmState` — the delete/data-loss dialogs intentionally default to No. Pick the exit-specific fix and keep the destructive ones conservative.
-
-**LX2 — Yes is a graceful cancel that waits, but it must be an immediate hard exit.** Today `QuitConfirmOutcome::Confirmed` calls `cancel_token.cancel()` and returns `CockpitOutcome::Continue` (<RepoFile path="crates/jackin-launch/src/tui/subscriptions.rs" /> around the quit-confirm branch). The pipeline is supposed to observe the token via `while_waiting` (role-base build and derived build in <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" />) and unwind through `LoadCleanup` before exiting. That graceful unwind waits on the in-flight build (and, because the dropped build future does not necessarily kill the `docker`/buildkit child, on an orphaned daemon-side build), which is the observed hang. The decided behavior: **answering Yes exits immediately — cancel and quit without waiting for the build, cleanup, or any result.** Implementation: route `QuitConfirmOutcome::Confirmed` to `CockpitOutcome::HardExit` instead of `cancel_token.cancel()` + `Continue`. The render task already implements `HardExit` as restore-terminal-then-`std::process::exit(0)` (<RepoFile path="crates/jackin-launch/src/tui/run.rs" />, the `CockpitOutcome::HardExit` arm), the same path Ctrl+C uses — so Yes becomes the menu equivalent of Ctrl+C: an explicit, immediate, improper exit. This deliberately skips `LoadCleanup`; half-built containers, networks, and volumes are reclaimed by the next launch's `gc_orphaned_resources`, exactly as the existing Ctrl+C path documents. Two side-decisions to settle while implementing: (a) whether to additionally kill the in-flight `docker build` child on the way out (set `kill_on_drop` / send SIGTERM to the buildx process) so the daemon-side build stops promptly rather than running to completion orphaned — preferred, since a multi-minute orphaned build wastes the host; and (b) confirm we want Yes to *always* hard-exit, including the no-build case where graceful cleanup would have been cheap — the user's intent is "always immediate," so the simple single-path behavior wins over branching on whether a build is in flight.
-
-**LX3 — double Ctrl+C must be an unconditional immediate exit from every screen, and currently is not.** Observed: during the build, pressing Ctrl+C repeatedly does nothing — the process does not exit. Ctrl+C detection today lives in `handle_cockpit_input` (<RepoFile path="crates/jackin-launch/src/tui/subscriptions.rs" />), which runs inside the cooperative render task spawned in <RepoFile path="crates/jackin-launch/src/tui/run.rs" /> and is gated on `renderer.try_lock()` plus a 33ms tick. That task is starved while a heavy build is in flight (the same trace shows input recovering only after the build stage changed: mouse events logged at 2 minutes versus the build still running at 12–13 minutes), so the `HardExit` arm never runs and Ctrl+C is effectively dead exactly when the operator most needs it. Note this is in crossterm raw mode, where `ISIG` is disabled, so Ctrl+C arrives as a key event, not a `SIGINT` — a plain `SIGINT` handler would not fire and cannot be the fix.
-
-Required behavior, as a hard cross-screen guarantee: **two Ctrl+C presses within a short window force an immediate process exit from any screen — cockpit, any modal, any prompt, mid-build — with no confirmation, no cleanup, no waiting, no lock acquisition.** The first Ctrl+C may keep its current best-effort meaning; the second is an absolute escape hatch. Implementation must not depend on the tokio runtime or the render task being schedulable, because that is precisely what the build starves. The robust shape is a dedicated OS thread (`std::thread`, outside the async runtime) that owns terminal input, counts consecutive Ctrl+C presses, and on the second within the window calls `std::process::exit` (or `libc::_exit`) directly after restoring the terminal — bypassing `cancel_token`, `LoadCleanup`, the pipeline, and every mutex. Moving input ownership to a never-starved thread also fixes LX2's `HardExit` reliability (the menu Yes → `HardExit` route only helps if something is actually polling input). Orphaned docker resources are reclaimed by the next launch's `gc_orphaned_resources`, identical to the existing accepted Ctrl+C contract. This guarantee applies to the launch cockpit and every other rich-surface screen (exit/launch/inspect dialogs, prompts) — not just the build screen.
-
-Verification: launch into a cold build (e.g. a custom-construct dev sync so the role base rebuilds), and confirm each of these exits in well under a second with the terminal restored — (a) Ctrl+Q then Yes; (b) a single Ctrl+C where the input thread is responsive; (c) **double Ctrl+C mid-build, the case that currently hangs**; and from a non-build screen (an open modal/prompt) confirm double Ctrl+C also exits immediately. Then confirm the next launch's `gc_orphaned_resources` reclaims the abandoned container/network/volume. Add regression tests at the `handle_cockpit_input`/input-thread layer asserting that a confirmed quit yields `HardExit` and that a second Ctrl+C forces exit regardless of pending state, mirroring the existing quit-confirm tests in <RepoFile path="crates/jackin-launch/src/tui/subscriptions/tests.rs" />.
-
-## Follow-up — derived-image build performance (implemented)
-
-The lifecycle contract above is implemented, and this PR also implements the derived/role image build optimizations below. The dominant cost was not the `RUN` steps themselves but the BuildKit **export + unpack** phase: a representative build showed `exporting layers 87.1s` followed by an `unpacking` pass, plus an attestation manifest and a manifest list for a single-platform, never-pushed image. The checklist records the implementation and verification evidence for each build-performance decision.
-
-Context that frames every item below: the derived image is **local-only** — built on the operator's host, loaded into the local engine, and never pushed to a registry. So compression, provenance attestations, and OCI-index packaging buy nothing here. The primary target is macOS, split between OrbStack and Docker Desktop; OrbStack already runs the containerd image store (`overlayfs` + `io.containerd.snapshotter.v1`) by default, so the slow export/unpack on OrbStack is compression + attestations + redundant layers, not a missing store.
-
-| Item | Change | Decision | Risk |
-|---|---|---|---|
-| BP1 | Disable BuildKit default provenance/SBOM attestations | Do | None — no consumer of attestations on a local throwaway image |
-| BP2 | Eliminate the recursive `chgrp -R 0 && chmod -R g=u` by making baked files born group-0 + group-writable | Do, with arbitrary-UID test | Medium — touches the construct base user + arbitrary-UID read/write/seed correctness |
-| BP3 | Collapse the per-plugin `claude plugin install` layers into one readable step | Do | Low — loses per-plugin cache granularity; plugins already move as one recipe unit (D2) |
-| BP4 | Stop compressing exported layers for the local-only build | Do (confirm exact flag by test) | Medium — likely requires switching from plain `docker build` to explicit `docker buildx build --output …` |
-| BP5 | Exploit / require the containerd image store on the daemon | Detect + document only | None to code — store type is operator-daemon config |
-
-**BP1 — provenance/SBOM off.** Log shows `exporting attestation manifest` + `exporting manifest list` for a single-platform image because buildx defaults `--provenance=true` (≥v0.10). That builds an OCI index instead of a plain image and blocks the fast loader, forcing a full OCI export then unpack. Preferred knob is the env var `BUILDX_NO_DEFAULT_ATTESTATIONS=1` added to `docker_build_env()` in <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" />, not a `--provenance=false` CLI flag: the build currently shells out to plain `docker build` (`build_args` starts `["build", …]`), whose classic frontend rejects `--provenance`, while the env var works whether the command resolves to buildx or the classic builder. No detection logic, one line.
-
-**BP2 — narrow the recursive permission pass to the correct boundary.** The old final derived-image step (`RUN chgrp -R 0 /home/agent /jackin/default-home && chmod -R g=u …` in <RepoFile path="crates/jackin-image/src/derived_image.rs" />) rewrote both the live runtime home and the seed snapshot. That was structurally wrong: `/jackin/default-home` is seed data and only needs group readability for runtime seeding, while `/home/agent` is the runtime-mutable home left behind after seed state moves out. The container runs as the host UID/GID (`docker run --user <hostuid>:<hostgid> --group-add 0`, the bind-mount-writability pattern), so every image-baked file that remains under `/home/agent` must be writable through supplementary group 0. jackin cannot predict role-authored tool paths (`.cargo`, `.npm`, `.rustup`, or future dotdirs), so enumerating selected children is the wrong abstraction. Replacement: create the `agent` user with primary group 0 (`useradd -u 1000 -g 0`, the OpenShift idiom) in the construct base <RepoFile path="docker/construct/Dockerfile" />, make `/home/agent` and initial home roots group-writable, set `umask 0002` across build `RUN` steps (files 664 / dirs 775, group-writable by birth), switch generated `COPY --chown=agent:agent` lines to `COPY --chown=agent:0`, copy construct shell configs as `0664`, recreate live-home placeholders with `install -d -o agent -g 0 -m 0775`, explicitly seed/repair Git and shell config files as `0664 agent:0` after runtime finalization, then normalize **only `/home/agent`** to group `0` + group-write and fail the build if anything under it is not group `0` or group-writable. `/jackin/default-home` gets a separate stat-only group-read guard and is not made runtime-writable. Transient installer artifacts are not seed state and must be removed before the snapshot rather than normalized into `/jackin/default-home`. This spans the construct base and the derived template, so it must be validated by an end-to-end arbitrary-UID/GID launch (read + write + first seed + `git config --global` during runtime setup + role hook tool installs) before it is trusted; it is a correctness/security change, not a cosmetic one.
-
-**BP3 — collapse plugin layers, keep them readable.** The generated Dockerfile emits one `RUN claude plugin install …` per plugin (four separate layers in the sampled build), each re-exporting a growing node-heavy plugin store. Fold them into a single `RUN`, but keep it readable: every plugin on its own continued line so the Dockerfile still reads as a clear list of what is installed. Readability of the generated Dockerfile is a hard requirement — an operator must be able to open it and understand each step at a glance. Rendered in `claude_plugin_section` of <RepoFile path="crates/jackin-image/src/derived_image.rs" />.
-
-**BP4 — drop layer compression.** Export gzip-compresses every layer; for an image that is loaded locally and immediately unpacked, that compression is pure wasted CPU that the unpack step then reverses. Remove it entirely for now (a smarter compression policy can come later). The active builder is the `docker` driver writing to the containerd store, and compression is still occurring, so the exact mechanism must be confirmed by a measured test build — the likely shape is switching to an explicit `docker buildx build --output type=image,compression=uncompressed …` invocation in <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" />, which is a larger change than BP1's env var.
-
-**BP5 — containerd image store.** The export-then-unpack round-trip is inherent to the BuildKit image exporter; a daemon backed by the containerd image store avoids the tarball materialization. On macOS this splits by engine: OrbStack already enables it by default (verified: `Storage Driver: overlayfs`, `driver-type: io.containerd.snapshotter.v1`), and Docker Desktop defaults it on since roughly v4.34 with a Settings toggle on older versions. Scope here is therefore detection and guidance, not engine configuration: read the daemon storage driver (e.g. from `docker info`) and surface a launch/diagnostics note when the slow non-containerd store is in use, plus an operator doc for enabling it on Docker Desktop. No jackin-owned code can flip an operator's daemon setting.
-
-## Implementation checklist
-
-This checklist is the work contract for the implementing agent. Rules: tackle one item at a time; mark a box `[x]` **only** after the change is implemented *and* its verification step passes; never check an item on code alone. Do not check a parent item until every child box under it is checked. If an item's open design question (marked "decide") is unresolved, stop and confirm with the operator before implementing — do not guess. Each item's full rationale (what, why, how) is in the prose above; the checklist is the execution tracker, not a substitute for that detail.
-
-### Bugs — fixed in this PR
-
-- [x] **LX1 — Exit confirmation must not silently dismiss on Enter.** (`crates/jackin-tui/src/components/confirm_dialog.rs`, `crates/jackin-launch/src/tui/subscriptions.rs`)
-  - [x] (decide) Choose the exit-specific fix: either an exit-confirm variant whose default focus is `Yes`, or an unambiguous render/highlight that shows which button `Enter` triggers. Confirm with operator — this is user-facing.
-  - [x] Implement the chosen fix for the **exit** dialog only; leave destructive confirmations (delete / data-loss) defaulting to `No`.
-  - [x] Verify: on the launch cockpit, opening "Exit jackin'?" and pressing `Enter` performs the operator-expected action (and `Y`/`N`/`Esc` still behave); destructive dialogs unchanged.
-- [x] **LX2 — "Yes" exits immediately, no waiting.** (`crates/jackin-launch/src/tui/subscriptions.rs`, `crates/jackin-launch/src/tui/run.rs`)
-  - [x] Route `QuitConfirmOutcome::Confirmed` to `CockpitOutcome::HardExit` instead of `cancel_token.cancel()` + `Continue`.
-  - [x] (decide) Additionally kill the in-flight `docker build` child on exit (kill_on_drop / SIGTERM to buildx) so the daemon-side build stops promptly — preferred.
-  - [x] Verify: Ctrl+Q → Yes during a cold build exits in well under 1s with terminal restored; next launch's `gc_orphaned_resources` reclaims the abandoned container/network/volume.
-- [x] **LX3 — Double Ctrl+C is an unconditional immediate exit from every screen.** (`crates/jackin-launch/src/tui/run.rs`, `crates/jackin-launch/src/tui/subscriptions.rs`)
-  - [x] Move terminal-input ownership to a dedicated OS thread (`std::thread`, outside the tokio runtime) so input is never starved by build work.
-  - [x] On the second Ctrl+C within a short window, restore the terminal and call `std::process::exit`/`libc::_exit` directly — bypassing `cancel_token`, `LoadCleanup`, the pipeline, and all mutexes. Keep first Ctrl+C as current best-effort.
-  - [x] Confirm the guarantee holds on every rich screen (cockpit, exit/launch/inspect dialogs, prompts), not just the build screen.
-  - [x] Add regression tests: a confirmed quit yields `HardExit`; a second Ctrl+C forces exit regardless of pending state (mirror `crates/jackin-launch/src/tui/subscriptions/tests.rs`).
-  - [x] Verify the four cases: (a) Ctrl+Q→Yes; (b) single Ctrl+C when responsive; (c) double Ctrl+C mid-build (the currently-hanging case); (d) double Ctrl+C from an open modal/prompt — each exits in well under 1s with terminal restored.
-
-### Build performance — implemented
-
-- [x] **BP1 — Disable default provenance/SBOM attestations.** (`crates/jackin-runtime/src/runtime/image.rs`, `docker_build_env()`)
-  - [x] Add `("BUILDX_NO_DEFAULT_ATTESTATIONS".to_owned(), "1".to_owned())` to the returned env vec.
-  - [x] Verify: a cold derived build's BuildKit output no longer emits `exporting attestation manifest` / `exporting manifest list`; image still builds and launches.
-- [x] **BP2 — Born-correct permissions; delete the recursive `chgrp/chmod`.** (<RepoFile path="docker/construct/Dockerfile" />, <RepoFile path="crates/jackin-image/src/derived_image.rs" />)
-  - [x] Construct base: create `agent` with primary group 0 (`useradd -u 1000 -g 0`); make `/home/agent` and initial home roots group-writable; set `umask 0002` for build `RUN` steps; switch generated `COPY --chown=agent:agent` → `--chown=agent:0`, with mutable shell configs copied as `0664`.
-  - [x] Derived template: remove the trailing `RUN chgrp -R 0 … && chmod -R g=u …`.
-  - [x] Derived template: recreate live `/home/agent` placeholders with `agent:0` and `0775`, make Git/shell config files `agent:0` `0664`, and normalize everything under live `/home/agent` to group `0` + group-write after default-home seed state has been moved out, so runtime setup, shells, role hooks, and arbitrary role-authored tools can write through supplementary group 0 while running as the host UID/GID.
-  - [x] Add a stat-only build guard that fails when any live `/home/agent` path is not group `0` or not group-writable.
-  - [x] Add a stat-only build guard that fails when `/jackin/default-home` contains a file without group read or a directory without group read+execute.
-  - [x] Verify (correctness/security — required): an end-to-end arbitrary-UID/GID launch (`--user <hostuid>:<hostgid> --group-add 0`) reads baked `/jackin/default-home`, writes Git's global config during runtime setup, the agent writes into non-mounted `/home/agent` subdirs (`.zsh_history`, `.zcompdump`), and first-seed completes; confirm no permission regressions.
-  - [x] Verify (perf): the duplicate fat layer is gone and export/unpack time drops on a cold build.
-- [x] **BP3 — Collapse plugin installs into one readable `RUN`.** (`crates/jackin-image/src/derived_image.rs`, `claude_plugin_section`)
-  - [x] Render a single `RUN` with one plugin per continued line so the generated Dockerfile still reads as a clear list.
-  - [x] Verify: generated Dockerfile shows one plugin layer, remains human-readable, and all plugins install.
-- [x] **BP4 — Drop layer compression for the local-only build.** (`crates/jackin-runtime/src/runtime/image.rs`)
-  - [x] Confirm the exact mechanism by a measured test build (likely explicit `docker buildx build --output type=image,compression=uncompressed …`).
-  - [x] Implement the confirmed invocation; ensure the image still loads into the local engine and launches.
-  - [x] Verify: `exporting layers` time drops materially on a cold build with no functional regression.
-- [x] **BP5 — Detect + document the containerd image store.** (`crates/jackin-runtime/src/runtime/image.rs` or diagnostics, plus operator docs)
-  - [x] Read the daemon storage driver (e.g. `docker info`) and emit a launch/diagnostics note when a non-containerd store is in use.
-  - [x] Add operator doc for enabling the containerd image store on Docker Desktop.
-  - [x] Verify: on a non-containerd daemon the note appears; on OrbStack/containerd it does not.
-
-## Related Files
-
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — launch orchestration and restore decisions.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — docker run mounts and runtime config.
-- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> — image recipe, binary prep, image decision, Docker build.
-- <RepoFile path="crates/jackin-runtime/src/runtime/prewarm_trigger.rs" /> — background saved-workspace image prewarm trigger.
-- <RepoFile path="crates/jackin-image/src/derived_image.rs" /> — derived Dockerfile and default-home snapshot rendering.
-- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — runtime seeding/auth setup.
-- <RepoFile path="crates/jackin-runtime/src/instance.rs" /> — durable home/auth state preparation.
-- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> — hardline reconnect and restart paths.
-- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> — prune and per-instance filesystem cleanup helpers.
-- <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> — isolated mount assessment and terminal outcome decisions.
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — multiplexer daemon; the `no_live_sessions()` last-session-close branch is the in-capsule hinge.
+- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> — capsule dialog system and `new_agent_picker` reused for "Start a new agent".
+- <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> — host `assess_cleanup` (detection to extract) and terminal-outcome / keep-discard execution.
+- <RepoFile path="crates/jackin-core/src/isolation_record.rs" /> — shared cleanup types; target home for the extracted detection.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — `launch_role_runtime` load path that must run finalize on clean exit.
+- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> — hardline reconnect path that short-circuits finalize on clean exit.
