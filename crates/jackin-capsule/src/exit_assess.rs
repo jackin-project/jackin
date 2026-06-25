@@ -162,24 +162,28 @@ pub async fn assess_dirty(config: &CapsuleConfig) -> Vec<DirtyRepo> {
 /// What the daemon does when the last live session exits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExitDecision {
-    /// No modal — drain and exit (clean workspace, or policy `keep`/`discard`).
+    /// No dirty work — drain and exit cleanly (no exit-action file written).
     Drain,
-    /// Show the dirty-exit modal for these repos (policy `ask` + dirty).
+    /// Dirty work under policy `keep`/`discard` — record the action for the host
+    /// (no prompt), then drain.
+    DrainWithAction(ExitAction),
+    /// Dirty work under policy `ask` — show the in-capsule modal for these repos.
     ShowModal(Vec<DirtyRepo>),
 }
 
-/// Decide what to do when the last live session exits: show the dirty-exit modal
-/// only when the resolved policy is `ask` and at least one isolated worktree is
-/// dirty; otherwise drain straight to exit.
+/// Decide what to do when the last live session exits. A clean workspace always
+/// drains. Dirty work resolves by policy: `ask` (default) shows the modal;
+/// `keep`/`discard` record that action for the host and drain with no prompt.
 pub async fn decide_exit(config: &CapsuleConfig) -> ExitDecision {
-    if !policy_is_ask(config) {
-        return ExitDecision::Drain;
-    }
     let dirty = assess_dirty(config).await;
     if dirty.is_empty() {
-        ExitDecision::Drain
-    } else {
-        ExitDecision::ShowModal(dirty)
+        return ExitDecision::Drain;
+    }
+    match config.dirty_exit_policy.as_deref().unwrap_or("ask") {
+        "keep" => ExitDecision::DrainWithAction(ExitAction::Keep),
+        "discard" => ExitDecision::DrainWithAction(ExitAction::Discard),
+        // "ask" and any unknown value fall back to the conservative prompt.
+        _ => ExitDecision::ShowModal(dirty),
     }
 }
 

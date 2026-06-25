@@ -574,6 +574,18 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
             }
             true
         }
+        crate::exit_assess::ExitDecision::DrainWithAction(action) => {
+            // Policy keep/discard: record the action for the host, no prompt.
+            if let Err(error) = crate::exit_assess::write_exit_action(action) {
+                crate::clog!("exit: failed to write exit-action file: {error}");
+            }
+            if let Some(reason) = reason {
+                drain_and_exit_with_reason(mux, Some(reason)).await;
+            } else {
+                drain_and_exit(mux).await;
+            }
+            true
+        }
         crate::exit_assess::ExitDecision::ShowModal(repos) => {
             crate::clog!(
                 "exit: {} dirty repo(s) with policy ask — showing in-capsule dirty-exit modal",
