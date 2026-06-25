@@ -53,6 +53,18 @@ pub struct CapsuleConfig {
     /// start by the capsule.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub claude_plugins: Vec<String>,
+    /// Resolved dirty-exit policy (`"ask"` | `"keep"` | `"discard"`). The
+    /// in-container daemon shows the dirty-exit modal only when this is `"ask"`;
+    /// `"keep"`/`"discard"` exit straight to the host executing that policy.
+    /// `None` resolves to `"ask"`. Carried as a string so `jackin-protocol` need
+    /// not depend on `jackin-config`'s `DirtyExitPolicy`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dirty_exit_policy: Option<String>,
+    /// Container-side paths of isolated `worktree`/`clone` mounts the daemon
+    /// assesses for dirty/unpushed work at last-session exit. `shared` mounts are
+    /// never listed (host-owned).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub isolated_worktrees: Vec<String>,
 }
 
 /// A Claude plugin marketplace the capsule registers at container start via

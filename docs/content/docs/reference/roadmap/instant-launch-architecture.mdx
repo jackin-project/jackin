@@ -73,7 +73,7 @@ This checklist is the work contract for the implementing agent. Rules: tackle on
 
 ### Part 2 — In-capsule confirmation (`jackin-capsule`)
 
-- [ ] Plumb into the capsule launch config (`/jackin/run/agent.toml`) the data the daemon needs at exit: the resolved `dirty_exit_policy` (`ask` vs `keep`/`discard`) and the list of **isolated worktree/clone mount paths** to assess (not just the primary workdir; `shared` mounts are never assessed).
+- [x] Plumb into the capsule launch config (`/jackin/run/agent.toml`) the data the daemon needs at exit: the resolved `dirty_exit_policy` and the list of **isolated worktree/clone mount paths** to assess. Added `dirty_exit_policy: Option<String>` + `isolated_worktrees: Vec<String>` to `jackin_protocol::CapsuleConfig` (serde-defaulted, backward-compat); the host `capsule_config()` builder populates them from `resolve_dirty_exit_policy` and the non-`shared` materialized mounts. Verified: protocol/runtime/capsule build, 180 launch tests pass.
 - [ ] At `no_live_sessions()` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />: run the shared detection on the workdir(s); branch — clean, or policy `keep`/`discard`, → record the action and `drain_and_exit` as today; policy `ask` + dirty → push the modal and keep the daemon alive with no live panes.
 - [ ] Add the exit-modal `Dialog` variant (per-repo summary lines + the four rows) reusing `render_picker_list`/`SelectList` + `HintBar`; render correctly over an empty pane area without breaking the render loop.
 - [ ] Wire rows: `Start a new agent` → push the verbatim `new_agent_picker(PickerIntent::NewTab)` → `spawn_session`; `Inspect changes` → the in-capsule diff view; `Exit & keep` / `Exit & discard` → record the chosen action, then `drain_and_exit`.

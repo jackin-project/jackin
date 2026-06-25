@@ -171,7 +171,7 @@ model = "zai/glm"
 
     let manifest = jackin_manifest::load_role_manifest(temp.path()).unwrap();
     let selector = RoleSelector::new(Some("chainargos"), "the-architect");
-    let config = capsule_config(&selector, "/workspace", &manifest, None);
+    let config = capsule_config(&selector, "/workspace", &manifest, None, "ask", Vec::new());
 
     assert_eq!(config.role, "chainargos/the-architect");
     assert_eq!(config.workdir, "/workspace");

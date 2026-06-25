@@ -501,6 +501,8 @@ pub(super) fn capsule_config(
     workdir: &str,
     manifest: &jackin_manifest::RoleManifest,
     initial_provider: Option<jackin_protocol::InitialProvider>,
+    dirty_exit_policy: &str,
+    isolated_worktrees: Vec<String>,
 ) -> jackin_protocol::CapsuleConfig {
     let mut agents = Vec::new();
     let mut models = std::collections::BTreeMap::new();
@@ -529,6 +531,8 @@ pub(super) fn capsule_config(
         initial_provider,
         claude_marketplaces: Vec::new(),
         claude_plugins: Vec::new(),
+        dirty_exit_policy: Some(dirty_exit_policy.to_owned()),
+        isolated_worktrees,
     }
 }
 

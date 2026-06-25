@@ -1604,11 +1604,23 @@ pub(crate) async fn load_role_with(
             progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, "materialized");
         }
 
+        let dirty_exit_policy =
+            config.resolve_dirty_exit_policy(config.workspaces.get(workspace_label));
+        // The in-capsule dirty-exit modal assesses every isolated worktree/clone
+        // mount; `shared` mounts are host-owned and never checked.
+        let isolated_worktrees = materialized
+            .mounts
+            .iter()
+            .filter(|mount| !mount.isolation.is_shared())
+            .map(|mount| mount.dst.clone())
+            .collect();
         let launch_config = super::capsule_config(
             selector,
             &workspace.workdir,
             &validated_repo.manifest,
             opts.initial_provider(),
+            dirty_exit_policy.as_str(),
+            isolated_worktrees,
         );
         let ctx = super::LaunchContext {
             container_name: &container_name,
