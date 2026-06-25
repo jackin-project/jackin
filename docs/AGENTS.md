@@ -58,6 +58,14 @@ Populates `node_modules/` with platform-specific optional native binaries (e.g. 
 - Rebuild and then check links: `bun run check:links:fresh`
 - Run tests: `bun test`
 
+**CI locked install:**
+
+```sh
+bun ci
+```
+
+Use `bun ci` in workflows. It has the same lockfile enforcement as `bun install --frozen-lockfile` and makes the CI intent explicit.
+
 `bun run check:links` and `bun run check:links:fresh` require the `lychee` CLI (e.g. `brew install lychee` on macOS).
 
 **If `node_modules` was last installed on a different OS** (e.g. agent built from Linux container shares working tree with macOS host), Bun won't always re-resolve optional native binaries. Reset with:

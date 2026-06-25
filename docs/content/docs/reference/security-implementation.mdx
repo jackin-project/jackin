@@ -48,13 +48,13 @@ Both tools are installed in the construct image and active in every container se
 
 ### shellfirm
 
-Intercepts dangerous shell commands at the shell level before execution, blocking `rm -rf /`, `chmod 777`, `curl | bash`, and similar patterns. Installed in <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> at line 5 via `cargo install shellfirm --version ... --locked` in a multi-stage build. Shell hook wired in <RepoFile path="docker/construct/zshrc">docker/construct/zshrc</RepoFile> and <RepoFile path="docker/construct/fish-config.fish">docker/construct/fish-config.fish</RepoFile>.
+Intercepts dangerous shell commands at the shell level before execution, blocking `rm -rf /`, `chmod 777`, `curl | bash`, and similar patterns. CI prepares the pinned binary before Docker Buildx runs, stages it at `docker/construct/prebuilt/shellfirm`, and <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> copies that binary into the image at line 5. Shell hook wired in <RepoFile path="docker/construct/zshrc">docker/construct/zshrc</RepoFile> and <RepoFile path="docker/construct/fish-config.fish">docker/construct/fish-config.fish</RepoFile>.
 
 Protects against both accidental operator mistakes and agent-generated destructive commands. Disable per-session by setting `JACKIN_DISABLE_SHELLFIRM=1` in the container environment.
 
 ### tirith
 
-Security scanner that validates container runtime state against a policy. Guards against configuration drift and unexpected privilege escalation during a session. Downloaded in <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> at line 51 via a SHA256-verified curl + `tar` extraction. Shell hook wired in the same shell config files as shellfirm.
+Security scanner that validates container runtime state against a policy. Guards against configuration drift and unexpected privilege escalation during a session. Downloaded in <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> at line 61 via a SHA256-verified curl + `tar` extraction. Shell hook wired in the same shell config files as shellfirm.
 
 Disable per-session by setting `JACKIN_DISABLE_TIRITH=1` in the container environment.
 

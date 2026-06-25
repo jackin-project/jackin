@@ -6,8 +6,16 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      lanes:
+        description: |
+          Which runner(s) to run on. Default github; use both for parity runs.
+        type: choice
+        default: github
+        options: [github, velnor, both]
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -28,8 +36,50 @@ env:
   # treats BUILDX_BUILDER as the default-builder selection.
 
 jobs:
+  matrix-setup:
+    name: Select runner lane
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      build_configs: ${{ steps.set.outputs.build_configs }}
+      lane_configs: ${{ steps.set.outputs.lane_configs }}
+      has_github: ${{ steps.set.outputs.has_github }}
+    steps:
+      - id: set
+        env:
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+        run: |
+          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}'
+          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}'
+          github_amd64='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64","platform":"amd64"}'
+          github_arm64='{"lane":"GitHub","runner":"\"ubuntu-24.04-arm\"","runner_os":"Linux","runner_arch":"ARM64","platform":"arm64"}'
+          velnor_amd64='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64","platform":"amd64"}'
+          case "$LANES" in
+            velnor)
+              build_configs="[$velnor_amd64]"
+              lane_configs="[$velnor]"
+              has_github=false
+              ;;
+            both)
+              build_configs="[$github_amd64,$github_arm64,$velnor_amd64]"
+              lane_configs="[$github,$velnor]"
+              has_github=true
+              ;;
+            *)
+              build_configs="[$github_amd64,$github_arm64]"
+              lane_configs="[$github]"
+              has_github=true
+              ;;
+          esac
+          {
+            echo "build_configs=$build_configs"
+            echo "lane_configs=$lane_configs"
+            echo "has_github=$has_github"
+          } >> "$GITHUB_OUTPUT"
+
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     outputs:
       construct: ${{ steps.dispatch.outputs.construct || steps.filter.outputs.construct }}
       construct_image: ${{ steps.dispatch.outputs.construct_image || steps.filter.outputs.construct_image }}
@@ -52,7 +102,11 @@ jobs:
         shell: bash
         run: |
           echo "construct=true" >> "$GITHUB_OUTPUT"
-          echo "construct_image=true" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            echo "construct_image=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "construct_image=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Classify changed paths
         id: filter
@@ -94,10 +148,11 @@ jobs:
   # behavior (one arch failing must not cancel the other) while
   # eliminating ~60 lines of cross-job copy-paste.
   build:
-    name: ${{ matrix.platform }}
-    needs: changes
+    name: ${{ matrix.config.platform }} (${{ matrix.config.lane }})
+    needs: [changes, matrix-setup]
     if: needs.changes.outputs.construct == 'true'
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     permissions:
       contents: read
     env:
@@ -111,14 +166,12 @@ jobs:
       # without this, an unrelated tool's install (e.g. a flaky rustup
       # component download for cargo-zigbuild) reds the construct build.
       MISE_TASK_RUN_AUTO_INSTALL: "false"
+      DOCKERHUB_USERNAME: ${{ matrix.config.lane == 'GitHub' && secrets.DOCKERHUB_USERNAME || '' }}
+      DOCKERHUB_TOKEN: ${{ matrix.config.lane == 'GitHub' && secrets.DOCKERHUB_TOKEN || '' }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: amd64
-            runner: ubuntu-24.04
-          - platform: arm64
-            runner: ubuntu-24.04-arm
+        config: ${{ fromJSON(needs.matrix-setup.outputs.build_configs) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -136,70 +189,101 @@ jobs:
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
-          install_args: "rust"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: ${{ matrix.config.runner_arch == 'X64' && 'rust shellfirm' || 'rust' }}
+          github_token: ${{ github.token }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}
+          shared-key: construct-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
+      - name: Prefetch Cargo dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fetch --locked --offline
+      - name: Resolve construct tool versions
+        id: versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          source docker/construct/versions.env
+          echo "shellfirm-version=${SHELLFIRM_VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Restore prebuilt shellfirm
+        id: shellfirm-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: docker/construct/prebuilt
+          key: shellfirm-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.shellfirm-version }}-${{ hashFiles('rust-toolchain.toml') }}
+      - name: Log in to Docker Hub
+        if: matrix.config.lane == 'GitHub' && env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+
       - name: Install Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
         with:
           name: ${{ env.BUILDX_BUILDER }}
           driver: docker-container
 
-      - name: Log in to Docker Hub
-        if: needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Bootstrap buildx
         run: mise run construct-init-buildx
 
       - name: Expose GitHub Actions cache runtime
-        if: needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true'
+        if: matrix.config.lane == 'GitHub' && (needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true')
         uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
 
-      - name: Build ${{ matrix.platform }} without push
-        if: needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true'
+      - name: Build ${{ matrix.config.platform }} without push (GitHub)
+        if: matrix.config.lane == 'GitHub' && (needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true')
         env:
           # Registry buildcache (written by main) is the primary warm source — avoids a cold
           # GHA start when the scope is empty or evicted. GHA scope is secondary: persists
           # layers written by earlier runs of this PR so mid-PR iterations stay warm too.
           CACHE_FROM: |
-            type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.platform }}
-            type=gha,scope=construct-pr-${{ matrix.platform }}
-          CACHE_TO: type=gha,scope=construct-pr-${{ matrix.platform }},mode=max
-        run: mise run construct-build-platform ${{ matrix.platform }}
+            type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }}
+            type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }}
+          CACHE_TO: type=gha,scope=construct-pr-${{ matrix.config.platform }},repository=${{ github.repository }},ghtoken=${{ github.token }},mode=max
+        run: mise run construct-build-platform ${{ matrix.config.platform }}
 
-      - name: Push ${{ matrix.platform }} image by digest
-        if: needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
+      - name: Build ${{ matrix.config.platform }} without push (Velnor)
+        if: matrix.config.lane == 'Velnor' && (needs.changes.outputs.is_publish != 'true' || needs.changes.outputs.construct_image != 'true')
         env:
-          CACHE_FROM: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.platform }}
-          CACHE_TO: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.platform }},mode=max
-        run: mise run construct-push-platform ${{ matrix.platform }}
+          CACHE_FROM: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }}
+        run: mise run construct-build-platform ${{ matrix.config.platform }}
 
-      - name: Upload ${{ matrix.platform }} digest
-        if: needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
+      - name: Push ${{ matrix.config.platform }} image by digest
+        if: matrix.config.lane == 'GitHub' && needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
+        env:
+          CACHE_FROM: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }}
+          CACHE_TO: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.config.platform }},mode=max
+        run: mise run construct-push-platform ${{ matrix.config.platform }}
+
+      - name: Upload ${{ matrix.config.platform }} digest
+        if: matrix.config.lane == 'GitHub' && needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: construct-digest-${{ matrix.platform }}
-          path: ${{ env.DIGEST_DIR }}/${{ matrix.platform }}.digest
+          name: construct-digest-GitHub-${{ matrix.config.platform }}
+          path: ${{ env.DIGEST_DIR }}/${{ matrix.config.platform }}.digest
           if-no-files-found: error
           retention-days: 1
 
   publish-manifest:
     name: publish manifest
-    if: needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
-    needs: [changes, build]
+    if: needs.matrix-setup.outputs.has_github == 'true' && needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct_image == 'true'
+    needs: [changes, matrix-setup, build]
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       contents: read
     env:
@@ -224,17 +308,28 @@ jobs:
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
-          install_args: "rust"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: ${{ runner.arch == 'X64' && 'rust shellfirm' || 'rust' }}
+          github_token: ${{ github.token }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}
+          shared-key: construct-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
+      - name: Prefetch Cargo dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fetch --locked --offline
       - name: Log in to Docker Hub
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
@@ -244,7 +339,7 @@ jobs:
       - name: Download platform digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: construct-digest-*
+          pattern: construct-digest-GitHub-*
           path: ${{ env.DIGEST_DIR }}
           merge-multiple: true
 
@@ -264,16 +359,21 @@ jobs:
   # publish-manifest itself skips: PR and feature-branch dispatch
   # that touch construct paths.
   publish-manifest-rehearsal:
-    name: publish manifest (rehearsal)
+    name: publish manifest (rehearsal, ${{ matrix.config.lane }})
     if: needs.changes.outputs.construct == 'true' && needs.changes.outputs.is_publish != 'true'
-    needs: [changes, build]
-    runs-on: ubuntu-24.04
+    needs: [changes, matrix-setup, build]
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     permissions:
       contents: read
     env:
       # Keep `mise run` on the rust toolchain mise-action installed instead of
       # installing the whole mise.toml tool set for the rust-only xtask task.
       MISE_TASK_RUN_AUTO_INSTALL: "false"
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.lane_configs) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -291,17 +391,28 @@ jobs:
       - name: Setup mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4
         with:
-          install_args: "rust"
-          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: ${{ matrix.config.runner_arch == 'X64' && 'rust shellfirm' || 'rust' }}
+          github_token: ${{ github.token }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}
+          shared-key: construct-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
+      - name: Prefetch Cargo dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fetch --locked --offline
       - name: Verify docker buildx CLI resolves under workflow env
         # `docker buildx ls` reads BUILDX_BUILDER (and the rest of
         # buildx's env-driven config) and fails fast on a missing
@@ -330,11 +441,27 @@ jobs:
 
   construct-required:
     if: always()
-    needs: [changes, build, publish-manifest, publish-manifest-rehearsal]
+    needs: [matrix-setup, changes, build, publish-manifest, publish-manifest-rehearsal]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/aggregate-needs
         with:
           needs-json: ${{ toJSON(needs) }}
           workflow-label: construct
+
+  timing-summary:
+    if: always()
+    needs: construct-required
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Write workflow timing summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/workflow-timing-summary.sh "Construct Image"
