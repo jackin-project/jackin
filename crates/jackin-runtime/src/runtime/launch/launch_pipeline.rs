@@ -1700,7 +1700,11 @@ pub(crate) async fn load_role_with(
         // exactly once so the operator can address the dirty state inside the
         // role, then the safe cleanup is retried.
         let interactive_finalize = true;
-        let mut prompt = crate::isolation::finalize::RichCleanupPrompt;
+        // The dirty-exit decision is made in-capsule (the dirty-exit modal) and
+        // recorded in exit-action.json; the host only executes it — no host dialog.
+        let mut prompt = crate::isolation::finalize::ExitActionPrompt {
+            state_dir: paths.data_dir.join(&container_name).join("state"),
+        };
         let dirty_exit_policy = config.resolve_dirty_exit_policy(
             workspace_name.as_deref().and_then(|n| config.workspaces.get(n)),
         );

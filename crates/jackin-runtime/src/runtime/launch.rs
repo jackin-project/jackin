@@ -1131,12 +1131,20 @@ pub(super) async fn launch_role_runtime(
         {
             return Err(diag);
         }
-        let attach_error =
+        // `diagnose_with_state` returned `None`, so PID 1 exited cleanly: the
+        // in-capsule dirty-exit modal already made any keep/discard decision and
+        // recorded it in exit-action.json. The non-zero `docker exec` result is
+        // the attach socket-close race at clean shutdown, not a failed session,
+        // so fall through to a successful return — the pipeline then runs
+        // finalize, which reads exit-action.json and executes the choice. The
+        // attach detail is kept only as a diagnostic breadcrumb.
+        let attach_detail =
             attach_failure_error(container_name, &err, &capsule_log_path, &capsule_log_str);
-        if let Some(run) = jackin_diagnostics::active_run() {
-            run.error("attach_error", &attach_error.to_string());
-        }
-        return Err(attach_error);
+        jackin_diagnostics::debug_log!(
+            "session",
+            "clean container exit for {container_name}; proceeding to finalize \
+             (attach shutdown detail: {attach_detail})"
+        );
     }
     if let Some(progress) = steps.progress_mut() {
         progress.stage_done(super::progress::LaunchStage::Hardline, "open");

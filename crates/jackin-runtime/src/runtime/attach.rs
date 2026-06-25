@@ -674,7 +674,11 @@ async fn finalize_reconnected_foreground_session(
     );
     super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
     let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
-    let mut prompt = crate::isolation::finalize::RichCleanupPrompt;
+    // The dirty-exit decision is made in-capsule (the dirty-exit modal) and
+    // recorded in exit-action.json; the host only executes it — no host dialog.
+    let mut prompt = crate::isolation::finalize::ExitActionPrompt {
+        state_dir: paths.data_dir.join(container_name).join("state"),
+    };
     jackin_diagnostics::active_timing_started(
         "hardline",
         "foreground_session_finalize",
