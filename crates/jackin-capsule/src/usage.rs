@@ -536,12 +536,18 @@ fn write_shared_usage_cooldown_marker(
     until_epoch: i64,
     reason: &str,
 ) {
-    if fs::create_dir_all(cooldown_dir).is_err() {
+    if let Err(error) = fs::create_dir_all(cooldown_dir) {
+        crate::cdebug!("usage cooldown marker dir create failed for {key}: {error}");
         return;
     }
     let path = shared_usage_cooldown_marker_path(cooldown_dir, key);
     let reason = reason.replace('\n', " ");
-    drop(fs::write(path, format!("{until_epoch}\n{reason}\n")));
+    // A dropped marker means the provider gets re-probed inside its backoff
+    // window, so surface the failure rather than silently defeating the 429
+    // cooldown.
+    if let Err(error) = fs::write(path, format!("{until_epoch}\n{reason}\n")) {
+        crate::cdebug!("usage cooldown marker write failed for {key}: {error}");
+    }
 }
 
 fn usage_error_is_rate_limited(error: &str) -> bool {
@@ -602,6 +608,23 @@ pub(crate) fn resolved_usage_provider_label(
     (surface != UsageSurface::Unsupported).then_some(surface.label())
 }
 
+/// Stamp the surface-derived agent, provider label, and tab strip onto a base
+/// placeholder view, so a `unavailable`/`refreshing` view still shows the proper
+/// header (e.g. `Anthropic / Claude`) and tabs while it loads.
+fn decorate_surface_view(
+    view: &mut FocusedUsageView,
+    agent: &str,
+    focused_provider: Option<&str>,
+    surface: UsageSurface,
+) {
+    view.focused_agent = Some(agent.to_owned());
+    view.focused_provider = focused_provider
+        .map(str::to_owned)
+        .or_else(|| Some(surface.label().to_owned()));
+    view.account.provider_label = surface.account_label().to_owned();
+    view.tabs = provider_tabs(surface);
+}
+
 fn cached_unavailable_view(
     agent: &str,
     focused_provider: Option<&str>,
@@ -610,18 +633,10 @@ fn cached_unavailable_view(
     let surface = resolve_surface(agent, focused_provider);
     let mut view =
         FocusedUsageView::unavailable("usage unavailable: no cached provider snapshot", now);
-    view.focused_agent = Some(agent.to_owned());
-    view.focused_provider = focused_provider
-        .map(str::to_owned)
-        .or_else(|| Some(surface.label().to_owned()));
-    view.account.provider_label = surface.account_label().to_owned();
-    view.tabs = provider_tabs(surface);
+    decorate_surface_view(&mut view, agent, focused_provider, surface);
     view
 }
 
-/// P3 "refreshing" state with the same surface-derived provider label and tab
-/// strip as `cached_unavailable_view`, so switching to a not-yet-loaded provider
-/// keeps the proper header (e.g. `Anthropic / Claude`) while it loads.
 fn cached_refreshing_view(
     agent: &str,
     focused_provider: Option<&str>,
@@ -629,12 +644,7 @@ fn cached_refreshing_view(
 ) -> FocusedUsageView {
     let surface = resolve_surface(agent, focused_provider);
     let mut view = FocusedUsageView::refreshing(focused_provider, now);
-    view.focused_agent = Some(agent.to_owned());
-    view.focused_provider = focused_provider
-        .map(str::to_owned)
-        .or_else(|| Some(surface.label().to_owned()));
-    view.account.provider_label = surface.account_label().to_owned();
-    view.tabs = provider_tabs(surface);
+    decorate_surface_view(&mut view, agent, focused_provider, surface);
     view
 }
 
@@ -887,17 +897,24 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     // fallback — mirroring the other providers (Codex/Amp/Kimi/Grok) — so the
     // snapshot does not silently drop to the impoverished CLI path when the
     // home copy lacks `claudeAiOauth.accessToken`. Matches CodexBar's order.
-    let oauth = first_credential(
-        &[
-            // Home credentials first (the agent keeps the live token here);
-            // runtime-forwarded handoff last.
-            config.join(".credentials.json"),
-            home_path(".claude/.credentials.json"),
-            home_path(".claude.json"),
-            PathBuf::from(CLAUDE_HANDOFF_CREDENTIALS_PATH),
-        ],
-        load_claude_oauth_credentials,
-    );
+    // Home credentials first (the agent keeps the live token here);
+    // runtime-forwarded handoff last. Capture the winning path so the `Auth:`
+    // line names the file that actually produced the token instead of a
+    // constant — there is no keychain reader in the capsule.
+    let oauth_candidates = [
+        config.join(".credentials.json"),
+        home_path(".claude/.credentials.json"),
+        home_path(".claude.json"),
+        PathBuf::from(CLAUDE_HANDOFF_CREDENTIALS_PATH),
+    ];
+    // One home-first walk yields both the OAuth token (with its winning path,
+    // for the `Auth:` origin) and the `oauthAccount` email, reading each file
+    // once. account_label is the real email identity — empty when none, never a
+    // fabricated auth-method string; the auth source lives on `credential_origin`.
+    let (oauth_resolved, account_email) = resolve_claude_identity(&oauth_candidates);
+    let oauth = oauth_resolved
+        .as_ref()
+        .map(|(_, credentials)| credentials.clone());
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .ok()
         .filter(|v| !v.is_empty());
@@ -907,27 +924,16 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     let has_local_creds = config.join(".credentials.json").exists();
     let needs_login =
         api_key.is_none() && auth_token.is_none() && oauth.is_none() && !has_local_creds;
-    // P1: account_label is the real email identity (from `oauthAccount`), not a
-    // fabricated auth-method string — empty when none, with the auth source on
-    // its own `credential_origin` line. The winning resolver arm sets the origin.
-    let account = first_credential(
-        &[
-            config.join(".credentials.json"),
-            home_path(".claude/.credentials.json"),
-            home_path(".claude.json"),
-            PathBuf::from(CLAUDE_HANDOFF_CREDENTIALS_PATH),
-        ],
-        load_claude_account_email,
-    )
-    .unwrap_or_default();
-    let credential_origin = if api_key.is_some() {
+    let account = account_email.unwrap_or_default();
+    // The displayed numbers come from the OAuth file token (the env keys are
+    // never used for the fetch), so name the OAuth path that won first; fall
+    // back to the env token only when no OAuth credential resolved.
+    let credential_origin = if let Some((path, _)) = oauth_resolved.as_ref() {
+        Some(format!("OAuth · {}", abbreviate_home_path(path)))
+    } else if api_key.is_some() {
         Some("API token · env ANTHROPIC_API_KEY".to_owned())
     } else if auth_token.is_some() {
         Some("API token · env ANTHROPIC_AUTH_TOKEN".to_owned())
-    } else if oauth.is_some() {
-        Some("OAuth · keychain".to_owned())
-    } else if has_local_creds {
-        Some("OAuth · ~/.claude/.credentials.json".to_owned())
     } else {
         None
     };
@@ -1075,15 +1081,11 @@ fn codex_plan_display_name(raw: &str) -> Option<String> {
     if let Some(exact) = codex_plan_exact_display(cleaned) {
         return Some(exact);
     }
-    let words = cleaned
-        .split(|c: char| c == '_' || c == '-' || c.is_whitespace())
-        .filter(|part| !part.is_empty())
-        .map(codex_plan_word_display)
-        .collect::<Vec<_>>();
-    if words.is_empty() {
+    let formatted = humanize_words_with(cleaned, codex_plan_word_display);
+    if formatted.is_empty() {
         return Some(cleaned.to_owned());
     }
-    Some(words.join(" "))
+    Some(formatted)
 }
 
 fn codex_plan_exact_display(value: &str) -> Option<String> {
@@ -1103,12 +1105,7 @@ fn codex_plan_word_display(raw: &str) -> String {
     if raw == raw.to_ascii_uppercase() && raw.chars().any(char::is_alphabetic) {
         return raw.to_owned();
     }
-    match raw.chars().next() {
-        Some(first) if first.is_lowercase() => {
-            first.to_ascii_uppercase().to_string() + &raw[first.len_utf8()..]
-        }
-        _ => raw.to_owned(),
-    }
+    capitalize_first(raw)
 }
 
 fn codex_snapshot(
@@ -1121,13 +1118,18 @@ fn codex_snapshot(
         std::env::var("CODEX_HOME").map_or_else(|_| home_path(".codex"), PathBuf::from);
     let auth_path = codex_home.join("auth.json");
     let handoff_auth_path = Path::new(CODEX_HANDOFF_AUTH_PATH);
-    // Home auth first, runtime-forwarded handoff last (shared resolver).
-    let credentials = first_credential(
-        &[auth_path.clone(), handoff_auth_path.to_path_buf()],
-        load_codex_oauth_credentials,
-    );
-    // P1: account_label is the email identity only; the auth source (the
-    // resolver arm that actually won) goes on `credential_origin`.
+    // Home auth first, runtime-forwarded handoff last (shared resolver); keep
+    // the winning path so the `Auth:` origin names the file that actually
+    // produced the credential instead of re-stat'ing to guess it.
+    let codex_candidates = [auth_path.clone(), handoff_auth_path.to_path_buf()];
+    let resolved = codex_candidates.iter().find_map(|path| {
+        load_codex_oauth_credentials(path).map(|credentials| (path.clone(), credentials))
+    });
+    let credentials = resolved
+        .as_ref()
+        .map(|(_, credentials)| credentials.clone());
+    // account_label is the email identity only; the auth source (the resolver
+    // arm that actually won) goes on `credential_origin`.
     let auth_email = credentials
         .as_ref()
         .and_then(|credentials| credentials.account_label.clone())
@@ -1135,12 +1137,8 @@ fn codex_snapshot(
         .or_else(|| codex_account_label(handoff_auth_path));
     let has_env_key = std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.is_empty());
     let needs_login = credentials.is_none() && auth_email.is_none() && !has_env_key;
-    let credential_origin = if credentials.is_some() {
-        Some(if auth_path.exists() {
-            "OAuth · ~/.codex/auth.json".to_owned()
-        } else {
-            format!("OAuth · {CODEX_HANDOFF_AUTH_PATH}")
-        })
+    let credential_origin = if let Some((path, _)) = resolved.as_ref() {
+        Some(format!("OAuth · {}", abbreviate_home_path(path)))
     } else if has_env_key {
         Some("API token · env OPENAI_API_KEY".to_owned())
     } else {
@@ -1155,7 +1153,13 @@ fn codex_snapshot(
         Some(credentials) => match fetch_codex_oauth_usage(credentials, &codex_home) {
             Ok(mut usage) => {
                 usage.reset_credits =
-                    fetch_codex_oauth_reset_credits(credentials, &codex_home).ok();
+                    match fetch_codex_oauth_reset_credits(credentials, &codex_home) {
+                        Ok(reset_credits) => Some(reset_credits),
+                        Err(error) => {
+                            crate::cdebug!("codex reset-credits fetch failed: {error}");
+                            None
+                        }
+                    };
                 (Some(usage), None)
             }
             Err(error) => (None, Some(error)),
@@ -1266,7 +1270,8 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let data = home_path(".local/share/amp");
     let amp_secrets = data.join("secrets.json");
     let handoff_secrets = Path::new(AMP_HANDOFF_SECRETS_PATH);
-    let amp_api_key = env_value("AMP_API_KEY").or_else(|| {
+    let amp_env_key = env_value("AMP_API_KEY");
+    let amp_api_key = amp_env_key.clone().or_else(|| {
         // Home secrets first, runtime-forwarded handoff last (shared resolver).
         first_credential(
             &[amp_secrets.clone(), handoff_secrets.to_path_buf()],
@@ -1289,13 +1294,15 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
         (None, None)
     };
     let provider_error = api_error.as_ref().or(cli_error.as_ref()).cloned();
-    let has_auth = amp_api_key.is_some() || amp_secrets.exists() || handoff_secrets.exists();
-    // P1: credential_origin reflects the resolver arm that actually won.
-    let credential_origin = if env_value("AMP_API_KEY").is_some() {
+    let amp_secrets_exists = amp_secrets.exists();
+    let handoff_secrets_exists = handoff_secrets.exists();
+    let has_auth = amp_api_key.is_some() || amp_secrets_exists || handoff_secrets_exists;
+    // credential_origin reflects the resolver arm that actually won.
+    let credential_origin = if amp_env_key.is_some() {
         Some("API key · env AMP_API_KEY".to_owned())
-    } else if amp_secrets.exists() {
+    } else if amp_secrets_exists {
         Some("API key · amp secrets.json".to_owned())
-    } else if handoff_secrets.exists() {
+    } else if handoff_secrets_exists {
         Some(format!("API key · {AMP_HANDOFF_SECRETS_PATH}"))
     } else {
         None
@@ -1380,12 +1387,11 @@ fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> 
     let data = home_path(".grok");
     let home_auth = data.join("auth.json");
     let handoff_auth = PathBuf::from(GROK_HANDOFF_AUTH_PATH);
-    let auth = if home_auth.exists() {
-        home_auth
-    } else {
-        handoff_auth
-    };
-    let has_auth = auth.exists();
+    let home_exists = home_auth.exists();
+    let auth = if home_exists { home_auth } else { handoff_auth };
+    // `home_exists` short-circuits when home won, so the resolved path is
+    // stat'd at most once.
+    let has_auth = home_exists || auth.exists();
     let has_xai_api_key = env_value("XAI_API_KEY").is_some();
     let has_deployment_key = env_value("GROK_DEPLOYMENT_KEY").is_some();
     let billing_result = fetch_grok_billing(&auth, now, rpc_gate);
@@ -1414,7 +1420,7 @@ fn grok_snapshot_from_rpc_result(
         Ok(usage) => (Some(usage), None),
         Err(error) => (None, Some(error)),
     };
-    // P1: credential_origin reflects the resolver arm that actually won
+    // credential_origin reflects the resolver arm that actually won
     // (`auth` is the resolved path — home `~/.grok/auth.json` or the handoff).
     let credential_origin = if has_auth {
         Some(if auth == Path::new(GROK_HANDOFF_AUTH_PATH) {
@@ -2217,25 +2223,57 @@ fn first_credential<T>(paths: &[PathBuf], load: impl Fn(&Path) -> Option<T>) -> 
     paths.iter().find_map(|path| load(path.as_path()))
 }
 
+/// Read and parse a JSON credential/config file, distinguishing "absent"
+/// (expected — `None`, no log) from "present but broken" (a real error the
+/// operator must see — logged via `cdebug!`, then `None`). The `.ok()?` idiom
+/// these loaders previously used collapsed both cases, so a corrupt or
+/// permission-denied token file looked identical to a logged-out provider and
+/// surfaced no diagnostic.
+fn read_json_file(path: &Path) -> Option<serde_json::Value> {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) => {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                crate::cdebug!(
+                    "usage credential read failed for {}: {error}",
+                    path.display()
+                );
+            }
+            return None;
+        }
+    };
+    match serde_json::from_str(&text) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            crate::cdebug!(
+                "usage credential parse failed for {}: {error}",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
 /// Claude account email (F12): `~/.claude.json` carries `oauthAccount` metadata
 /// (never the token), and `CodexBar` reads the address from there. Returns the
 /// trimmed `oauthAccount.emailAddress`, or `None` when absent.
-fn load_claude_account_email(path: &Path) -> Option<String> {
-    let text = fs::read_to_string(path).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
-    value
-        .get("oauthAccount")?
+fn claude_email_from_value(value: &serde_json::Value) -> Option<String> {
+    let oauth = value.get("oauthAccount")?;
+    oauth
         .get("emailAddress")
-        .or_else(|| value.get("oauthAccount")?.get("email_address"))
+        .or_else(|| oauth.get("email_address"))
         .and_then(serde_json::Value::as_str)
         .map(str::trim)
         .filter(|email| !email.is_empty())
         .map(str::to_owned)
 }
 
-fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> {
-    let text = fs::read_to_string(path).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+#[cfg(test)]
+fn load_claude_account_email(path: &Path) -> Option<String> {
+    claude_email_from_value(&read_json_file(path)?)
+}
+
+fn claude_oauth_from_value(value: &serde_json::Value) -> Option<ClaudeOAuthCredentials> {
     let oauth = value.get("claudeAiOauth")?;
     let access_token = oauth
         .get("accessToken")
@@ -2257,6 +2295,38 @@ fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> 
         access_token,
         subscription_type,
     })
+}
+
+#[cfg(test)]
+fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> {
+    claude_oauth_from_value(&read_json_file(path)?)
+}
+
+/// Resolve the Claude OAuth credential (with the winning path, for the `Auth:`
+/// origin) and the account email in a single home-first walk, reading and
+/// parsing each candidate file at most once instead of once per concern.
+fn resolve_claude_identity(
+    candidates: &[PathBuf],
+) -> (Option<(PathBuf, ClaudeOAuthCredentials)>, Option<String>) {
+    let mut oauth = None;
+    let mut email = None;
+    for path in candidates {
+        if oauth.is_some() && email.is_some() {
+            break;
+        }
+        let Some(value) = read_json_file(path) else {
+            continue;
+        };
+        if oauth.is_none()
+            && let Some(credentials) = claude_oauth_from_value(&value)
+        {
+            oauth = Some((path.clone(), credentials));
+        }
+        if email.is_none() {
+            email = claude_email_from_value(&value);
+        }
+    }
+    (oauth, email)
 }
 
 #[derive(Debug, Deserialize)]
@@ -2325,7 +2395,7 @@ fn push_claude_cli_bucket(buckets: &mut Vec<QuotaBucketView>, label: &str, used:
     };
     buckets.push(bucket(
         label,
-        Some(used_percent_label(used)),
+        used_percent_label(used),
         Some("100%".to_owned()),
         remaining_from_fraction(used),
         None,
@@ -2345,7 +2415,7 @@ impl ClaudeOAuthUsageResponse {
         if let Some(extra) = self.extra_usage
             && extra.is_enabled.unwrap_or(true)
         {
-            // F8: surface Claude credits as spent vs cap only —
+            // surface Claude credits as spent vs cap only —
             // `<currency> <spent> spent` + `NN% used`, against the monthly cap.
             let remaining_percent = extra.utilization.and_then(remaining_from_fraction);
             let currency = extra.currency.unwrap_or_else(|| "credits".to_owned());
@@ -2386,7 +2456,7 @@ fn push_claude_window(
     let pace = quota_pace_label(remaining, reset_at, window_seconds, now);
     buckets.push(timed_bucket(
         label,
-        window.utilization.map(used_percent_label),
+        window.utilization.and_then(used_percent_label),
         Some("100%".to_owned()),
         remaining,
         reset_at,
@@ -2469,8 +2539,7 @@ struct CodexOAuthCredentials {
 }
 
 fn load_codex_oauth_credentials(path: &Path) -> Option<CodexOAuthCredentials> {
-    let text = fs::read_to_string(path).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let value = read_json_file(path)?;
     if let Some(api_key) = value
         .get("OPENAI_API_KEY")
         .and_then(serde_json::Value::as_str)
@@ -2990,6 +3059,9 @@ fn fetch_codex_rpc_usage(gate: &mut ManagedCliLaunchGate) -> Result<CodexRpcUsag
             serde_json::json!({}),
             CODEX_RPC_REQUEST_TIMEOUT,
         )?;
+        // The account label is non-essential (rate limits already succeeded), so
+        // an RPC failure here degrades to no label rather than failing the whole
+        // snapshot — but log it so a silently-absent account is debuggable.
         let account_value = codex_rpc_request(
             &mut stdin,
             &rx,
@@ -2998,6 +3070,7 @@ fn fetch_codex_rpc_usage(gate: &mut ManagedCliLaunchGate) -> Result<CodexRpcUsag
             serde_json::json!({}),
             CODEX_RPC_REQUEST_TIMEOUT,
         )
+        .inspect_err(|error| crate::cdebug!("codex account/read RPC failed: {error}"))
         .ok();
         let limits = serde_json::from_value::<CodexRpcRateLimitsResponse>(limits_value)
             .map_err(|err| format!("Codex app-server rate limit decode failed: {err}"))?;
@@ -3815,8 +3888,22 @@ fn resolve_codex_reset_credits_url(codex_home: &Path) -> String {
 }
 
 fn resolve_codex_base_url(codex_home: &Path) -> String {
-    let base = fs::read_to_string(codex_home.join("config.toml"))
-        .ok()
+    let config_path = codex_home.join("config.toml");
+    let contents = match fs::read_to_string(&config_path) {
+        Ok(contents) => Some(contents),
+        Err(error) => {
+            // A config.toml that exists but is unreadable silently drops the
+            // operator's custom base-URL override back to the public default.
+            if error.kind() != std::io::ErrorKind::NotFound {
+                crate::cdebug!(
+                    "codex config.toml read failed for {}: {error}",
+                    config_path.display()
+                );
+            }
+            None
+        }
+    };
+    let base = contents
         .and_then(|contents| parse_chatgpt_base_url(&contents))
         .unwrap_or_else(|| "https://chatgpt.com/backend-api".to_owned());
     let mut normalized = base.trim().trim_end_matches('/').to_owned();
@@ -3922,7 +4009,7 @@ impl ZaiQuotaResponse {
         } else if let Some(limit) = token_limits.first() {
             primary_token_limit = Some(*limit);
         }
-        // F9: render order is 5-hour (short/active), then Tokens, then MCP — an
+        // render order is 5-hour (short/active), then Tokens, then MCP — an
         // operator override of CodexBar's Tokens, MCP, 5-hour order.
         if let Some(limit) = session_token_limit {
             buckets.push(zai_bucket("5-hour", limit, now));
@@ -4128,7 +4215,7 @@ impl KimiUsageResponse {
         } else {
             return Vec::new();
         };
-        // F10: rate (short/active) window on top, then Weekly — an operator
+        // rate (short/active) window on top, then Weekly — an operator
         // override of CodexBar's Weekly, Rate Limit order.
         let mut buckets = Vec::new();
         if let Some(rate_limit) = limits.first() {
@@ -4262,8 +4349,7 @@ fn load_kimi_local_token_from_home(home: &Path, now: i64) -> Option<String> {
     ]
     .into_iter()
     .find_map(|path| {
-        let text = fs::read_to_string(path).ok()?;
-        let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+        let value = read_json_file(&path)?;
         kimi_local_token_from_value(&value, now)
     })
 }
@@ -4652,21 +4738,29 @@ fn env_value(name: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-fn remaining_from_fraction(value: f64) -> Option<u8> {
-    if !value.is_finite() {
+/// Clamp a raw provider utilization into a `0..=100` "used" percentage.
+///
+/// Accepts both fraction form (`0.0..=1.0`) and already-percent form (`>1.0`).
+/// Returns `None` for non-finite or negative inputs: several providers use a
+/// negative sentinel (e.g. `-1`) for "unknown/unlimited", which must be omitted,
+/// never fabricated into a full meter (`remaining_from_fraction(-0.5)` would
+/// otherwise yield `Some(100)` — a "100% left" row for data that is absent).
+fn used_percent_from_fraction(value: f64) -> Option<u8> {
+    if !value.is_finite() || value < 0.0 {
         return None;
     }
     let used = if value <= 1.0 { value * 100.0 } else { value }
         .round()
         .clamp(0.0, 100.0) as u8;
-    Some(100u8.saturating_sub(used))
+    Some(used)
 }
 
-fn used_percent_label(value: f64) -> String {
-    let used = if value <= 1.0 { value * 100.0 } else { value }
-        .round()
-        .clamp(0.0, 100.0) as u8;
-    format!("{used}% used")
+fn remaining_from_fraction(value: f64) -> Option<u8> {
+    used_percent_from_fraction(value).map(|used| 100u8.saturating_sub(used))
+}
+
+fn used_percent_label(value: f64) -> Option<String> {
+    used_percent_from_fraction(value).map(|used| format!("{used}% used"))
 }
 
 fn parse_iso_epoch(value: &str) -> Option<i64> {
@@ -4778,19 +4872,29 @@ fn window_minutes_label(minutes: i64) -> Option<String> {
     Some(format!("{minutes} minute window"))
 }
 
-fn humanize_plan_label(value: &str) -> String {
+/// Capitalize the first character of `part`, leaving the rest untouched.
+fn capitalize_first(part: &str) -> String {
+    let mut chars = part.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+/// Split a machine-style identifier on `_`/`-`/whitespace and join the per-word
+/// transform with spaces. Shared by `humanize_plan_label` (plain title-case) and
+/// `codex_plan_display_name` (acronym-aware words).
+fn humanize_words_with(value: &str, word: impl Fn(&str) -> String) -> String {
     value
-        .split(['_', '-', ' '])
+        .split(|c: char| c == '_' || c == '-' || c.is_whitespace())
         .filter(|part| !part.is_empty())
-        .map(|part| {
-            let mut chars = part.chars();
-            match chars.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                None => String::new(),
-            }
-        })
+        .map(word)
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn humanize_plan_label(value: &str) -> String {
+    humanize_words_with(value, capitalize_first)
 }
 
 fn codex_limit_label(value: &str) -> String {
@@ -4932,7 +5036,7 @@ fn fetch_amp_api_usage(token: &str) -> Result<AmpApiUsage, String> {
 }
 
 fn load_amp_api_key(path: &Path) -> Option<String> {
-    let value = serde_json::from_str::<serde_json::Value>(&fs::read_to_string(path).ok()?).ok()?;
+    let value = read_json_file(path)?;
     value
         .as_object()?
         .iter()
@@ -5249,8 +5353,7 @@ fn format_cents(value: i64) -> String {
 }
 
 fn codex_account_label(path: &Path) -> Option<String> {
-    let text = fs::read_to_string(path).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let value = read_json_file(path)?;
     value
         .pointer("/tokens/email")
         .and_then(serde_json::Value::as_str)
@@ -5264,16 +5367,14 @@ fn codex_account_label(path: &Path) -> Option<String> {
 }
 
 fn grok_account_label(path: &Path) -> Option<String> {
-    let text = fs::read_to_string(path).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let value = read_json_file(path)?;
     first_string_key(&value, "email")
         .or_else(|| first_string_key(&value, "user_id"))
         .or_else(|| first_string_key(&value, "team_id"))
 }
 
 fn grok_plan_label(path: &Path) -> Option<String> {
-    let text = fs::read_to_string(path).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let value = read_json_file(path)?;
     first_string_key(&value, "auth_mode").map(|mode| {
         if mode.eq_ignore_ascii_case("oidc") {
             "SuperGrok".to_owned()
@@ -5333,6 +5434,18 @@ fn home_path(rel: &str) -> PathBuf {
     std::env::var("HOME")
         .map_or_else(|_| PathBuf::from("/home/agent"), PathBuf::from)
         .join(rel)
+}
+
+/// Render a path for display, collapsing the `$HOME` prefix to `~` so the
+/// `Auth:` line reads `~/.claude/.credentials.json` rather than an absolute
+/// container path. Non-home paths (e.g. the `/jackin/...` handoff) render as-is.
+fn abbreviate_home_path(path: &Path) -> String {
+    if let Some(home) = std::env::var_os("HOME")
+        && let Ok(rest) = path.strip_prefix(&home)
+    {
+        return format!("~/{}", rest.display());
+    }
+    path.display().to_string()
 }
 
 fn now_epoch() -> i64 {
@@ -5480,7 +5593,7 @@ mod tests {
 
     #[test]
     fn claude_account_email_reads_oauth_account_metadata() {
-        // P1/F12: the email identity comes from `oauthAccount.emailAddress`.
+        // the email identity comes from `oauthAccount.emailAddress`.
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("claude.json");
         fs::write(
@@ -5673,7 +5786,7 @@ mod tests {
 
         let snapshot = cache.focused_snapshot(Some("codex"), Some("OpenAI"));
 
-        // P3: a focused agent with no cached snapshot renders `refreshing`
+        // a focused agent with no cached snapshot renders `refreshing`
         // (still without reading the store), not a stale/unavailable headline.
         assert_eq!(snapshot.status_bar_label, "refreshing");
         assert_eq!(snapshot.last_error.as_deref(), Some("refreshing"));
@@ -5714,7 +5827,7 @@ mod tests {
 
     #[test]
     fn account_snapshot_rows_carry_reset_epoch() {
-        // RC2: the CLI report (`usage accounts`) emits the raw reset epoch, not
+        // the CLI report (`usage accounts`) emits the raw reset epoch, not
         // a dropped null — so the CLI and TUI agree on reset data.
         let now = 1_782_000_000;
         let reset_at = now + 3_600;
@@ -5858,7 +5971,7 @@ mod tests {
 
     #[test]
     fn status_bar_maps_session_weekly_slots_per_provider() {
-        // P2: the generic Session/Weekly substring match misses these slots —
+        // the generic Session/Weekly substring match misses these slots —
         // Z.AI weekly is "Tokens", MiniMax session is "General · 5h", and Grok
         // exposes only a billing cycle with no session window.
         let pct = |label: &str, remaining: u8| QuotaBucketView {
@@ -5899,7 +6012,7 @@ mod tests {
 
     #[test]
     fn codex_plan_display_name_matches_codexbar() {
-        // F7a: ported from CodexBar's CodexPlanFormatting tests.
+        // ported from CodexBar's CodexPlanFormatting tests.
         assert_eq!(codex_plan_display_name("pro").as_deref(), Some("Pro 20x"));
         assert_eq!(codex_plan_display_name("Pro").as_deref(), Some("Pro 20x"));
         assert_eq!(
@@ -6352,15 +6465,48 @@ mod tests {
         assert!(buckets.iter().any(|bucket| bucket.label == "Daily Routines"
             && bucket.remaining_percent == Some(100)
             && bucket.pace_label.is_none()));
+        // `seven_day_opus` was absent from the response — it must be omitted
+        // entirely, never fabricated into a (full-meter) row.
+        assert!(!buckets.iter().any(|bucket| bucket.label == "Opus"));
         let extra = buckets
             .iter()
             .find(|bucket| bucket.label == "Extra usage")
             .expect("extra usage bucket");
-        // F8: spent vs cap — `<currency> <spent> spent` + `NN% used`.
+        // spent vs cap — `<currency> <spent> spent` + `NN% used`.
         assert_eq!(extra.remaining_percent, Some(70));
         assert_eq!(extra.used_label.as_deref(), Some("SGD 78.49 spent"));
         assert_eq!(extra.limit_label.as_deref(), Some("SGD 260.00"));
         assert_eq!(extra.pace_label.as_deref(), Some("30% used"));
+    }
+
+    #[test]
+    fn fraction_helpers_reject_absent_and_clamp_present() {
+        // Fraction form (0..=1) and already-percent form (>1) both map to a
+        // clamped used percentage.
+        assert_eq!(used_percent_from_fraction(0.0), Some(0));
+        assert_eq!(used_percent_from_fraction(1.0), Some(100));
+        assert_eq!(used_percent_from_fraction(0.84), Some(84));
+        assert_eq!(used_percent_from_fraction(42.0), Some(42));
+        assert_eq!(used_percent_from_fraction(150.0), Some(100));
+
+        // Absent/unknown sentinels must yield None, never a fabricated value.
+        // A negative input previously rendered as `Some(100)` — a "100% left"
+        // row for data that is genuinely absent.
+        assert_eq!(used_percent_from_fraction(-0.5), None);
+        assert_eq!(used_percent_from_fraction(f64::NAN), None);
+        assert_eq!(used_percent_from_fraction(f64::INFINITY), None);
+        assert_eq!(used_percent_from_fraction(f64::NEG_INFINITY), None);
+
+        // remaining = 100 - used, propagating None for absent data.
+        assert_eq!(remaining_from_fraction(0.84), Some(16));
+        assert_eq!(remaining_from_fraction(1.0), Some(0));
+        assert_eq!(remaining_from_fraction(-0.5), None);
+        assert_eq!(remaining_from_fraction(f64::NAN), None);
+
+        // The "used" label tracks the same absence contract.
+        assert_eq!(used_percent_label(0.84).as_deref(), Some("84% used"));
+        assert_eq!(used_percent_label(-0.5), None);
+        assert_eq!(used_percent_label(f64::NAN), None);
     }
 
     #[test]
@@ -7237,7 +7383,7 @@ mod tests {
         let buckets = quota.buckets(1_781_185_560);
 
         assert_eq!(quota.plan_name().as_deref(), Some("Coding Pro"));
-        // F9: render order is 5-hour, Tokens, MCP.
+        // render order is 5-hour, Tokens, MCP.
         assert_eq!(buckets[0].label, "5-hour");
         assert_eq!(buckets[0].remaining_percent, Some(75));
         assert_eq!(buckets[0].pace_label, None);
@@ -7300,7 +7446,7 @@ mod tests {
 
         let buckets = usage.buckets(1_781_185_560);
 
-        // F10: render order is Rate Limit, then Weekly.
+        // render order is Rate Limit, then Weekly.
         assert_eq!(buckets[0].label, "Rate Limit");
         assert_eq!(buckets[0].used_label.as_deref(), Some("50"));
         assert_eq!(buckets[0].remaining_percent, Some(75));

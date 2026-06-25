@@ -164,7 +164,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             prefix_mode: view.prefix_mode,
             hovered_tab: view.hovered_tab,
             menu_hovered: view.menu_hovered,
-            // P5: the tab underline reads the one shared FocusOwner, the same
+            // the tab underline reads the one shared FocusOwner, the same
             // signal that drives pane-border focus and cursor visibility.
             focused: view.focus_owner.is_tab_bar(),
         },

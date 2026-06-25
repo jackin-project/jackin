@@ -520,6 +520,10 @@ fn usage_tab_strip_width(tabs: &[(String, bool)]) -> usize {
 /// Overview/Instance panels keep their own titles.
 fn usage_panel_title(state: &jackin_tui::components::ContainerInfoState, width: u16) -> String {
     let base = state.title();
+    // Below 68 cols the full `Usage` title plus the provider detail no longer
+    // fits the panel border, so collapse to the short `Usage: <provider>` form.
+    // This trips a few cols before the body switches to the single-column list
+    // layout (< 64) so the title is already compact when the rows reflow.
     if width >= 68 || base != "Usage" {
         return base.to_owned();
     }
@@ -535,6 +539,9 @@ fn usage_panel_title(state: &jackin_tui::components::ContainerInfoState, width: 
 pub(crate) fn usage_info_required_height(
     state: &jackin_tui::components::ContainerInfoState,
 ) -> u16 {
+    // Add the fixed chrome rows that frame the content (borders, title, and
+    // padding) on top of the content-line count, then keep a 7-row floor so the
+    // box stays usable when a provider has only a line or two to show.
     u16::try_from(usage_info_lines(state).len())
         .unwrap_or(u16::MAX)
         .saturating_add(5)
@@ -560,6 +567,8 @@ fn usage_info_lines_for_width(
     state: &jackin_tui::components::ContainerInfoState,
     width: u16,
 ) -> Vec<Line<'static>> {
+    // Below 64 cols the two-column rows can no longer right-align without the
+    // left and right halves overlapping, so fall back to a single-column list.
     usage_info_lines_impl(state, width < 64, width)
 }
 
@@ -793,9 +802,8 @@ fn usage_header_lines(
     width: usize,
     lines: &mut Vec<Line<'static>>,
 ) {
-    // Line 1: provider flush-left, account email flush-right. The email is the
-    // account identity; omit it (no "account unavailable") when the provider
-    // exposes none — the auth source goes on its own line below.
+    // The email is the account identity; omit it (no "account unavailable")
+    // when the provider exposes none — the auth source goes on its own line.
     let account = account.map(str::trim).filter(|value| !value.is_empty());
     lines.push(usage_header_two_column(
         value,
@@ -805,16 +813,11 @@ fn usage_header_lines(
         width,
     ));
 
-    // Line 2: "Updated …" flush-left, "username · plan" flush-right.
     let updated = updated.map(str::trim).filter(|value| !value.is_empty());
     let username = username.map(str::trim).filter(|value| !value.is_empty());
     let plan = plan.map(str::trim).filter(|value| !value.is_empty());
-    let right = match (username, plan) {
-        (Some(user), Some(plan)) => Some(format!("{user} \u{b7} {plan}")),
-        (Some(user), None) => Some(user.to_owned()),
-        (None, Some(plan)) => Some(plan.to_owned()),
-        (None, None) => None,
-    };
+    let right_parts = [username, plan].into_iter().flatten().collect::<Vec<_>>();
+    let right = (!right_parts.is_empty()).then(|| right_parts.join(" \u{b7} "));
     if updated.is_some() || right.is_some() {
         lines.push(usage_header_two_column(
             updated.unwrap_or(""),
@@ -825,7 +828,7 @@ fn usage_header_lines(
         ));
     }
 
-    // Line 3 (new): the credential source — never the secret.
+    // Line 3: the credential source — never the secret.
     if let Some(auth) = auth.map(str::trim).filter(|value| !value.is_empty()) {
         lines.push(Line::from(vec![
             usage_content_indent(),
