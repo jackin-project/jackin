@@ -117,25 +117,32 @@ fn backend_emits_extended_visible_sgr_modifiers() {
     }
 }
 
-#[test]
-fn backend_emits_frame_sgr_metadata() {
+/// Render a single styled cell through a one-cell SGR region and return the
+/// raw backend output. Shared by the frame-SGR-metadata tests.
+fn frame_sgr_output(metadata: SgrMetadata, span: Span<'_>) -> Vec<u8> {
     let backend = SocketBackend::new(10, 1);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.backend_mut().set_sgr_regions(vec![(
-        Rect::new(0, 0, 1, 1),
+    terminal
+        .backend_mut()
+        .set_sgr_regions(vec![(Rect::new(0, 0, 1, 1), metadata)]);
+    terminal
+        .draw(|frame| {
+            frame.render_widget(Paragraph::new(span), frame.area());
+        })
+        .unwrap();
+    terminal.backend_mut().take_output()
+}
+
+#[test]
+fn backend_emits_frame_sgr_metadata() {
+    let output = frame_sgr_output(
         SgrMetadata {
             underline_style: jackin_term::UnderlineStyle::Curly,
             underline_color: jackin_term::Color::Rgb(12, 34, 56),
             overline: true,
         },
-    )]);
-    terminal
-        .draw(|frame| {
-            frame.render_widget(Paragraph::new(Span::raw("x")), frame.area());
-        })
-        .unwrap();
-
-    let output = terminal.backend_mut().take_output();
+        Span::raw("x"),
+    );
     assert_eq!(
         output, b"\x1b[1;1H\x1b[0m\x1b[4:3m\x1b[58;2;12;34;56m\x1b[53mx\x1b[?25l",
         "SGR metadata wire output changed"
@@ -151,29 +158,18 @@ fn backend_emits_indexed_color_sgr() {
     // 256-color fg/bg (write_color_sgr) and an indexed underline color
     // (write_sgr_metadata) all route through push_indexed_color_tail; assert
     // the `38;5;`/`48;5;`/`58;5;` forms emit.
-    let backend = SocketBackend::new(10, 1);
-    let mut terminal = Terminal::new(backend).unwrap();
-    terminal.backend_mut().set_sgr_regions(vec![(
-        Rect::new(0, 0, 1, 1),
+    let output = frame_sgr_output(
         SgrMetadata {
-            underline_style: jackin_term::UnderlineStyle::None,
             underline_color: jackin_term::Color::Idx(200),
-            overline: false,
+            ..SgrMetadata::default()
         },
-    )]);
-    terminal
-        .draw(|frame| {
-            let span = Span::styled(
-                "x",
-                ratatui::style::Style::default()
-                    .fg(Color::Indexed(208))
-                    .bg(Color::Indexed(17)),
-            );
-            frame.render_widget(Paragraph::new(span), frame.area());
-        })
-        .unwrap();
-
-    let output = terminal.backend_mut().take_output();
+        Span::styled(
+            "x",
+            ratatui::style::Style::default()
+                .fg(Color::Indexed(208))
+                .bg(Color::Indexed(17)),
+        ),
+    );
     let text = String::from_utf8_lossy(&output);
     for sgr in ["\x1b[38;5;208m", "\x1b[48;5;17m", "\x1b[58;5;200m"] {
         assert!(text.contains(sgr), "missing {sgr:?} in {text:?}");
