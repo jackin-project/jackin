@@ -84,6 +84,12 @@ pub fn apply() -> Result<()> {
     let raw = std::env::var("JACKIN_ALLOWED_HOSTS").unwrap_or_default();
     let entries = parse_allowed_hosts(&raw);
 
+    // Preflight the required binaries before touching the policy, so a missing
+    // tool yields an actionable error rather than a bare "No such file" after a
+    // partial install.
+    ensure_tool("iptables")?;
+    ensure_tool("ipset")?;
+
     // Fail-closed: deny by default, then permit loopback and established flows
     // before anything fallible runs, so a mid-apply error cannot leave egress
     // open.
@@ -242,9 +248,42 @@ fn iptables(args: &[&str]) -> Result<()> {
     run_command("iptables", args)
 }
 
+/// Verify a required firewall binary is present, with an actionable error.
+///
+/// Without this, a construct/role image that lacks `iptables`/`ipset` (e.g. an
+/// older published construct image or a custom base) fails the allowlist install
+/// with a bare `No such file or directory` and a torn-down container. Surface
+/// the real cause and the fix instead.
+fn ensure_tool(tool: &str) -> Result<()> {
+    match Command::new(tool)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+    {
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!(
+            "`{tool}` is not installed in this container image, but the `allowlist` network tier \
+             requires `iptables` and `ipset`. Rebuild the role image on a construct image that \
+             installs them (jackin' construct >= 0.17-trixie), or use a profile whose network \
+             tier does not enforce an egress allowlist."
+        ),
+        Err(e) => Err(e).context(format!("checking for `{tool}`")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ensure_tool_errors_actionably_for_missing_binary() {
+        let err = ensure_tool("jackin-no-such-firewall-binary-xyz").unwrap_err();
+        assert!(
+            err.to_string().contains("allowlist"),
+            "missing-tool error must name the allowlist requirement: {err}"
+        );
+    }
 
     #[test]
     fn classifies_ipv4_and_cidr_as_net() {
