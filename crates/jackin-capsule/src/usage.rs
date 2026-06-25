@@ -1395,7 +1395,7 @@ fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> 
     let home_exists = home_auth.exists();
     let auth = if home_exists { home_auth } else { handoff_auth };
     // `home_exists` short-circuits when home won, so the resolved path is
-    // stat'd at most once.
+    // checked at most once.
     let has_auth = home_exists || auth.exists();
     let has_xai_api_key = env_value("XAI_API_KEY").is_some();
     let has_deployment_key = env_value("GROK_DEPLOYMENT_KEY").is_some();
@@ -5559,7 +5559,7 @@ fn home_path(rel: &str) -> PathBuf {
 /// container path). Shared by the Claude and Codex snapshots.
 fn oauth_origin(path: &Path) -> String {
     // `to_string_lossy` borrows (no alloc) for the common UTF-8 path and only
-    // allocates for non-UTF-8 container paths; `&Cow<str>` derefs to `&str`.
+    // allocates for non-UTF-8 container paths; `&Cow<str>` coerces to `&str`.
     format!(
         "OAuth · {}",
         jackin_tui::shorten_home(&path.to_string_lossy())
