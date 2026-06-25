@@ -117,14 +117,9 @@ pub fn apply_watchdog(mut candidate: ArbitrationResult, now: Instant) -> Arbitra
     candidate.summary.raw_state = RawAgentState::Unknown;
     candidate.summary.confidence = AgentStatusConfidence::Unknown;
     candidate.summary.winner = EvidenceWinner::Unknown;
-    if !candidate
-        .summary
-        .notes
-        .iter()
-        .any(|note| matches!(note, EvidenceNote::WatchdogDemoted))
-    {
-        candidate.summary.notes.push(EvidenceNote::WatchdogDemoted);
-    }
+    // The early return above guarantees `summary.notes` did not already carry
+    // WatchdogDemoted, and nothing since added it, so this push is unconditional.
+    candidate.summary.notes.push(EvidenceNote::WatchdogDemoted);
     candidate
 }
 

@@ -422,15 +422,17 @@ impl Region {
     fn extract(self, screen_rows: &[String], virtuals: VirtualRegions<'_>) -> Vec<String> {
         match self {
             Self::Bottom(n) => bottom(screen_rows, n),
-            Self::BottomNonEmpty(n) => bottom(screen_rows, n.saturating_mul(2).max(n))
-                .into_iter()
-                .filter(|line| !line.trim().is_empty())
-                .rev()
-                .take(n)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect(),
+            Self::BottomNonEmpty(n) => {
+                // Scan a wider window so up to `n` non-empty lines survive even
+                // when the bottom of the screen is blank, then keep the last `n`
+                // in original top-to-bottom order.
+                let non_empty: Vec<String> = bottom(screen_rows, n.saturating_mul(2))
+                    .into_iter()
+                    .filter(|line| !line.trim().is_empty())
+                    .collect();
+                let start = non_empty.len().saturating_sub(n);
+                non_empty[start..].to_vec()
+            }
             Self::PromptBoxBody => prompt_box_body(screen_rows),
             Self::AbovePromptBox => above_prompt_box(screen_rows),
             Self::AfterLastRule => after_last_rule(screen_rows),

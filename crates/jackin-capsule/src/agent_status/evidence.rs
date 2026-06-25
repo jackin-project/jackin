@@ -162,7 +162,7 @@ impl Default for EvidenceSummary {
 
 impl EvidenceSummary {
     pub fn has_note(&self, target: EvidenceNote) -> bool {
-        self.notes.iter().any(|note| note == &target)
+        self.notes.contains(&target)
     }
 }
 

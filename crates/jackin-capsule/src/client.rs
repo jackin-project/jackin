@@ -80,6 +80,8 @@ async fn try_report_event(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// The first arg after `flag` — works for both `--flag value` and a positional
+/// marker like the `<session_id>` after `explain`.
 fn flag_value(args: &[String], flag: &str) -> Option<String> {
     args.iter()
         .position(|a| a == flag)
@@ -146,7 +148,7 @@ pub async fn run_status() -> Result<()> {
 /// one session, as pretty JSON. Reads the same `Snapshot` the console consumes,
 /// so it needs no extra protocol surface.
 pub async fn run_status_explain(args: &[String]) -> Result<()> {
-    let session_id: u64 = flag_value_positional(args, "explain")
+    let session_id: u64 = flag_value(args, "explain")
         .context("usage: jackin-capsule status explain <session_id>")?
         .parse()
         .context("session_id must be a u64")?;
@@ -190,7 +192,7 @@ pub async fn run_status_explain(args: &[String]) -> Result<()> {
 /// capture fixture (live grid + evidence) for one session. The daemon owns the
 /// grid, so it does the write; the client triggers and waits for the Ack.
 pub async fn run_status_capture(args: &[String]) -> Result<()> {
-    let session_id: u64 = flag_value_positional(args, "capture")
+    let session_id: u64 = flag_value(args, "capture")
         .context("usage: jackin-capsule status capture <session_id>")?
         .parse()
         .context("session_id must be a u64")?;
@@ -208,14 +210,6 @@ pub async fn run_status_capture(args: &[String]) -> Result<()> {
          see /jackin/state/agent-status/captures/"
     ));
     Ok(())
-}
-
-/// The first arg after `marker` (e.g. the `<session_id>` after `explain`).
-fn flag_value_positional(args: &[String], marker: &str) -> Option<String> {
-    args.iter()
-        .position(|a| a == marker)
-        .and_then(|i| args.get(i + 1))
-        .cloned()
 }
 
 /// Query the daemon for the tab/pane snapshot and print as JSON.
