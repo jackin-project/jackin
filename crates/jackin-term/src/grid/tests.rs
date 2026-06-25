@@ -818,6 +818,34 @@ fn dump_dirty_patch_drains_changed_rows_only() {
 }
 
 #[test]
+fn resize_to_zero_rows_keeps_grid_addressable() {
+    // Regression: a capsule pane squeezed below its border height resized its
+    // shadow grid to 0 rows. The next PTY burst — `ESC[1;1H` (home) then
+    // `ESC[J` (erase-to-end) — indexed `active_grid()[0]` on an empty VecDeque
+    // and panicked the whole capsule daemon ("Out of bounds access"). The grid
+    // must clamp to at least 1×1 and absorb the bytes without panicking.
+    let mut g = DamageGrid::new(10, 132, 100);
+    g.process(b"\x1b[3;3HX");
+
+    g.set_size(0, 0);
+    let (rows, cols) = g.size();
+    assert!(
+        rows >= 1 && cols >= 1,
+        "grid clamped to 1x1, got {rows}x{cols}"
+    );
+
+    // The exact alt-screen repaint burst from the soak crash log.
+    g.process(
+        b"\x1b[?2026h\x1b[1;1H\x1b[J\x1b[39m\x1b[49m\x1b[0m\x1b[0 q\x1b[?25h\x1b[3;3H\x1b[?2026l",
+    );
+    let (row, col) = g.cursor_position();
+    assert!(
+        row < rows && col < cols,
+        "cursor stays in range: {row}x{col} vs {rows}x{cols}"
+    );
+}
+
+#[test]
 fn dump_dirty_patch_tracks_changed_cell_span() {
     let mut g = DamageGrid::new(3, 12, 100);
     g.process(b"\x1b[1;1Halpha\x1b[2;1Hbeta");

@@ -716,6 +716,15 @@ impl DamageGrid {
 
     /// Resize the grid. Marks all rows dirty.
     pub fn set_size(&mut self, rows: u16, cols: u16) {
+        // The grid must always keep at least one addressable cell. The parser
+        // indexes `active_grid()[cursor_row]` directly on every erase/write, so
+        // a 0-row or 0-col grid turns the next PTY byte into an out-of-bounds
+        // panic on the empty `VecDeque`. This is reachable in practice: a
+        // capsule pane squeezed below its border height under an extreme
+        // resize hands `set_size` a 0-row inner rect. Clamp to 1×1 so the
+        // model stays well-formed regardless of the geometry the host computes.
+        let rows = rows.max(1);
+        let cols = cols.max(1);
         self.rows = rows;
         self.cols = cols;
         self.primary = resize_grid(&self.primary, rows, cols);

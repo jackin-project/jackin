@@ -1091,6 +1091,12 @@ impl Session {
     }
 
     pub fn resize(&mut self, rows: u16, cols: u16) {
+        // A pane collapsed below its border height yields a 0-row inner rect.
+        // Never hand the agent PTY a 0×0 winsize (programs expect ≥1) nor the
+        // shadow grid a degenerate geometry. `DamageGrid::set_size` clamps too;
+        // this keeps TIOCSWINSZ and the model in agreement on the floor.
+        let rows = rows.max(1);
+        let cols = cols.max(1);
         // TIOCSWINSZ failure leaves the agent drawing at the old size
         // while the screen renders at the new geometry — the operator
         // sees mis-wrapped lines with no explanation. Log so --debug
