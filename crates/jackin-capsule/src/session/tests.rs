@@ -54,8 +54,11 @@ impl MasterPty for NullMasterPty {
 }
 
 /// Master PTY double that records the last `PtySize` handed to `resize`, so a
-/// test can assert what `TIOCSWINSZ` the agent's PTY actually received.
+/// test can assert what `TIOCSWINSZ` the agent's PTY actually received. Only
+/// `resize` differs from the inert double; the other (external-trait) methods
+/// delegate to an inner `NullMasterPty` rather than re-stubbing them.
 struct RecordingMasterPty {
+    inner: NullMasterPty,
     last_size: Arc<Mutex<Option<PtySize>>>,
 }
 
@@ -67,30 +70,25 @@ impl MasterPty for RecordingMasterPty {
         Ok(())
     }
     fn get_size(&self) -> Result<PtySize> {
-        Ok(PtySize {
-            rows: 24,
-            cols: 80,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
+        self.inner.get_size()
     }
     fn try_clone_reader(&self) -> Result<Box<dyn std::io::Read + Send>> {
-        Ok(Box::new(std::io::empty()))
+        self.inner.try_clone_reader()
     }
     fn take_writer(&self) -> Result<Box<dyn std::io::Write + Send>> {
-        Ok(Box::new(std::io::sink()))
+        self.inner.take_writer()
     }
     #[cfg(unix)]
     fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
-        None
+        self.inner.process_group_leader()
     }
     #[cfg(unix)]
     fn as_raw_fd(&self) -> Option<portable_pty::unix::RawFd> {
-        None
+        self.inner.as_raw_fd()
     }
     #[cfg(unix)]
     fn tty_name(&self) -> Option<std::path::PathBuf> {
-        None
+        self.inner.tty_name()
     }
 }
 
@@ -125,6 +123,7 @@ fn resize_floors_pty_winsize_to_at_least_one() {
         100,
         input_tx,
         Arc::new(Mutex::new(Box::new(RecordingMasterPty {
+            inner: NullMasterPty,
             last_size: Arc::clone(&last_size),
         }))),
         Arc::new(Mutex::new(Box::new(NullChildKiller))),
