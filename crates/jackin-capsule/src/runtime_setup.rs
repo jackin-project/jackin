@@ -334,6 +334,23 @@ fn setup_claude(copy_auth: bool) -> Result<()> {
             &["mcp", "add", "shellfirm", "--", "shellfirm", "mcp"],
         );
     }
+    // jackin-exec MCP tool: register only when the workspace declares on-demand
+    // credentials (JACKIN_EXEC_BINDINGS non-empty), so the tool advertises a
+    // non-empty binding list. The agent spawns `jackin-capsule mcp-server`,
+    // which exposes a `jackin_exec` tool over MCP stdio.
+    if std::env::var_os("JACKIN_EXEC_BINDINGS").is_some_and(|v| !v.is_empty()) {
+        run_optional_command(
+            "claude",
+            &[
+                "mcp",
+                "add",
+                "jackin-exec",
+                "--",
+                "jackin-capsule",
+                "mcp-server",
+            ],
+        );
+    }
     setup_claude_plugins();
     Ok(())
 }

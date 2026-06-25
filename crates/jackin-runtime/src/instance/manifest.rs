@@ -40,8 +40,8 @@ pub struct AppleContainerResources {
     pub container_name: String,
     /// OCI image ref used to start the container.
     pub role_image_ref: String,
-    /// Whether an inner rootless Docker daemon (DinD) is running. Gated on the
-    /// Phase 0 empirical validation of rootless DinD inside an apple/container
+    /// Whether an inner rootless Docker daemon (`DinD`) is running. Gated on the
+    /// Phase 0 empirical validation of rootless `DinD` inside an apple/container
     /// VM; `false` until that gate passes.
     pub inner_docker_enabled: bool,
 }

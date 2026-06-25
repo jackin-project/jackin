@@ -2,7 +2,7 @@
 title: "Apple Container Backend"
 ---
 
-**Status**: Open — Phase 1–4 code landed; Phase 0 empirical validation pending. Run <RepoFile path="scripts/phase0-apple-container.sh" /> on macOS 26 ARM with `apple/container` installed to validate the decision gate.
+**Status**: Open — the backend code has landed and compiles: the `container` CLI client (<RepoFile path="crates/jackin-runtime/src/apple_container_client.rs" />), the launch/attach/reconnect/stop/purge orchestration and session contract (<RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs" />), the `JACKIN_CAPSULE_FORCE_DAEMON` capsule patch, and the instance-manifest `BackendResources` union are all in the tree and wired into their crates. **The `apple-container` backend is not yet selectable from `jackin load`:** the launch pipeline still always takes the Docker path, so the backend-selection dispatch (reading `[runtime].default_backend` / `[runtime].backend` and routing to `apple_container::launch`) is the remaining integration. Beyond that, the **Phase 0 empirical gate is unvalidated** — it requires real macOS 26 ARM hardware with `apple/container` installed. Run <RepoFile path="scripts/phase0-apple-container.sh" /> there to validate the gate before the backend is enabled; nothing in this branch claims Phase 0 has passed.
 
 ## What This Is
 
@@ -128,10 +128,10 @@ pub struct AppleContainerResources {
 
 `DockerResources` has four fields: `role_container: String`, `dind_container: String`, `network: String`, `certs_volume: String`.
 
-The `BackendResources` enum that replaces `DockerResources`:
+The `BackendResources` tagged union, added alongside the existing `DockerResources`:
 
 ```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BackendResources {
     Docker(DockerResources),
@@ -139,9 +139,9 @@ pub enum BackendResources {
 }
 ```
 
-`InstanceManifest` now stores `pub backend: BackendResources`. `NewInstanceManifest` still carries Docker resources for the common Docker construction path, and `InstanceManifest::new_with_backend` accepts an explicit backend for apple-container launches.
+The change is **additive, not a replacement**: `InstanceManifest` keeps its existing `docker: DockerResources` field (still the source of truth for the Docker path and for resource naming) and gains an optional `backend: Option<BackendResources>` field. `InstanceManifest::new` leaves `backend` as `None` (Docker), and `InstanceManifest::new_with_backend` sets it for apple-container launches. The optional field means old manifests deserialize unchanged.
 
-**`INSTANCE_MANIFEST_VERSION`**: the manifest version is now `2`.
+**`INSTANCE_MANIFEST_VERSION`**: bumped from `1` to `2`.
 
 ### Docker Client Architecture Note
 

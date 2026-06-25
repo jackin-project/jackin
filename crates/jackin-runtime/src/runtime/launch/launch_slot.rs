@@ -312,7 +312,9 @@ fn github_env_value_kind(value: &jackin_core::EnvValue) -> &'static str {
             if e.value
                 .strip_prefix("${")
                 .is_some_and(|rest| rest.ends_with('}'))
-                || e.value.strip_prefix('$').is_some_and(|rest| !rest.is_empty()) =>
+                || e.value
+                    .strip_prefix('$')
+                    .is_some_and(|rest| !rest.is_empty()) =>
         {
             "host"
         }

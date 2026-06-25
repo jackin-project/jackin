@@ -835,13 +835,9 @@ mod tests {
                 on_demand: true,
             }),
         );
-        let resolved = resolve_operator_env_with(
-            &config,
-            None,
-            None,
-            &FakeOpRunner,
-            |_| Err(std::env::VarError::NotPresent),
-        )
+        let resolved = resolve_operator_env_with(&config, None, None, &FakeOpRunner, |_| {
+            Err(std::env::VarError::NotPresent)
+        })
         .expect("resolution must succeed");
         assert_eq!(resolved.get("ALWAYS").map(String::as_str), Some("here"));
         assert!(

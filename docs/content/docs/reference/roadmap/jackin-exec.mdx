@@ -2,7 +2,9 @@
 title: "jackin-exec: Secure Execution Wrapper"
 ---
 
-**Status**: Partially implemented — Phase 1 code landed for capsule exec, picker, host.sock resolution, MCP registration, launch filtering, and schema support; remaining work is hardening, temp-file materialization for key credentials, and end-to-end behavioral coverage
+**Status**: Partially implemented — the plumbing has landed and is wired end to end except the operator picker. Shipped and compiled: the `ExecCommand`/`ExecResult`/`ExecDenied` control protocol, the `jackin-exec` argv0/subcommand dispatch in the capsule, the host-side `op read`/host-env/literal resolver on `host.sock` (started by the launch path and bind-mounted to `/jackin/run/host.sock`), launch-time on-demand filtering (on-demand credentials are never resolved at launch) with `JACKIN_EXEC_BINDINGS` injection and the entrypoint system-prompt block, the `jackin_exec` MCP server (`jackin-capsule mcp-server`) registered from `runtime_setup`, and the `EnvValue::Extended` / `OpRef.on_demand` schema (`v1alpha7`).
+
+**Not yet implemented — the interactive operator credential picker.** The capsule daemon's `ExecCommand` handler currently **fails closed**: every `jackin-exec` call returns `ExecDenied` ("credential picker is not yet available") because the `Dialog::ExecPicker` dialog and its daemon event-loop integration are not built. No credential is ever resolved or injected without operator approval. Remaining work: the picker dialog + event-loop wiring, temp-file materialization for key-type credentials, and end-to-end behavioral coverage.
 
 ## What This Is
 
