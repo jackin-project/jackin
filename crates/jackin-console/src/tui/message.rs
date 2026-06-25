@@ -15,6 +15,7 @@ pub enum ConsoleManagerMessage<
     CreatePrelude,
     Editor,
     Settings,
+    FileBrowserListing,
     InstanceRefreshSnapshot,
     MountInfoRefresh,
     OpRef,
@@ -48,6 +49,7 @@ pub enum ConsoleManagerMessage<
         kind: AuthKind,
     },
     EnterSettings(Settings),
+    FileBrowserListingLoaded(FileBrowserListing),
     InstancesRefreshed(Result<InstanceRefreshSnapshot, String>),
     MountInfoRefreshed(MountInfoRefresh),
     OpCommitResolved {

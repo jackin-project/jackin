@@ -80,23 +80,19 @@ pub(crate) fn execute_manager_effect(
             true
         }
         ManagerEffect::OpenCreatePreludeFileBrowser => {
-            jackin_console::tui::file_browser::execute_create_prelude_file_browser_open(state);
-            true
+            jackin_console::tui::file_browser::start_create_prelude_file_browser_open(state)
         }
         ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd => {
-            jackin_console::tui::file_browser::execute_create_prelude_file_browser_reopen(state);
-            true
+            jackin_console::tui::file_browser::start_create_prelude_file_browser_reopen(state)
         }
         ManagerEffect::OpenEditorAddMountFileBrowser => {
-            jackin_console::tui::file_browser::execute_editor_add_mount_file_browser_open(state);
-            true
+            jackin_console::tui::file_browser::start_editor_add_mount_file_browser_open(state)
         }
         ManagerEffect::OpenGlobalMountFileBrowser => {
-            jackin_console::tui::file_browser::execute_global_mount_file_browser_open(state);
-            true
+            jackin_console::tui::file_browser::start_global_mount_file_browser_open(state)
         }
         ManagerEffect::ApplyFileBrowserOutcome { context, outcome } => {
-            jackin_console::tui::file_browser::execute_file_browser_outcome(
+            jackin_console::tui::file_browser::execute_file_browser_outcome_or_start_listing(
                 state,
                 context,
                 outcome,
@@ -650,6 +646,11 @@ pub(crate) fn poll_background_messages(
             ManagerMessage::MountInfoRefreshed(result),
         ));
     }
+    if let Some(result) = state.poll_file_browser_listing() {
+        messages.push(ManagerBackgroundEvent::Message(
+            ManagerMessage::FileBrowserListingLoaded(result),
+        ));
+    }
     if let Some(result) = state.poll_instance_refresh() {
         messages.push(ManagerBackgroundEvent::Message(
             ManagerMessage::InstancesRefreshed(result),
@@ -795,10 +796,16 @@ fn humanize_invalid_role_repo(err: &crate::repo::RoleRepoValidationError) -> Str
 #[cfg(test)]
 mod tests {
     use jackin_config::AppConfig;
+    use jackin_console::tui::components::file_browser::{
+        FileBrowserOutcome, FileBrowserState, FolderListing,
+    };
     use jackin_console::tui::effect::ConsoleEffect;
+    use jackin_console::tui::effect::FileBrowserEffectContext;
     use jackin_console::tui::state::update::{ManagerBackgroundEvent, ManagerMessage};
 
-    use crate::console::tui::state::ManagerState;
+    use crate::console::tui::state::{
+        CreatePreludeState, FileBrowserTarget, ManagerEffect, ManagerStage, ManagerState, Modal,
+    };
 
     use super::{execute_manager_effect, poll_background_messages};
 
@@ -836,6 +843,66 @@ mod tests {
         assert!(
             state.instance_refresh_in_flight(),
             "instance refresh effect should spawn a worker"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_prelude_file_browser_open_starts_listing_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ManagerEffect::OpenCreatePreludeFileBrowser,
+        );
+
+        assert!(
+            state.file_browser_listing_in_flight(),
+            "file browser open should scan directories on a worker"
+        );
+        assert!(
+            matches!(state.stage, ManagerStage::List),
+            "the modal should open only after the worker returns"
+        );
+    }
+
+    #[tokio::test]
+    async fn file_browser_navigation_starts_listing_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let listing = FolderListing {
+            root: cwd.to_path_buf(),
+            cwd: cwd.to_path_buf(),
+            entries: Vec::new(),
+        };
+        let mut prelude = CreatePreludeState::new();
+        prelude.modal = Some(Modal::FileBrowser {
+            target: FileBrowserTarget::CreateFirstMountSrc,
+            state: FileBrowserState::from_listing(listing),
+        });
+        state.stage = ManagerStage::CreatePrelude(prelude);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ManagerEffect::ApplyFileBrowserOutcome {
+                context: FileBrowserEffectContext::Prelude { browser_cwd: None },
+                outcome: FileBrowserOutcome::NavigateTo(cwd.join("child")),
+            },
+        );
+
+        assert!(
+            state.file_browser_listing_in_flight(),
+            "file browser navigation should scan directories on a worker"
         );
     }
 }

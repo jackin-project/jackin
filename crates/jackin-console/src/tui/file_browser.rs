@@ -4,91 +4,143 @@
 //! `auth_source_folder_validator` so the root binary can supply the macOS
 //! `security`-subprocess check without creating a runtime dep here.
 
-use crate::tui::components::file_browser::FileBrowserOutcome;
+use crate::services::file_browser::{
+    FileBrowserListingRequest, FileBrowserListingResult, FileBrowserOpenTarget,
+};
+use crate::tui::components::file_browser::{FileBrowserOutcome, FileBrowserState, FolderListing};
 use crate::tui::effect::FileBrowserEffectContext;
 use crate::tui::state::update::{ManagerMessage, update_manager};
 use crate::tui::state::{CreatePreludeState, GlobalMountModal, ManagerStage, ManagerState, Modal};
 
-pub fn execute_global_mount_file_browser_open(state: &mut ManagerState<'_>) {
-    let ManagerStage::Settings(settings) = &mut state.stage else {
-        return;
+pub fn start_global_mount_file_browser_open(state: &mut ManagerState<'_>) -> bool {
+    if !matches!(state.stage, ManagerStage::Settings(_)) {
+        return false;
+    }
+    let rx =
+        crate::services::file_browser::start_listing_request(FileBrowserListingRequest::OpenHome {
+            target: FileBrowserOpenTarget::GlobalMount,
+            last_cwd: None,
+        });
+    state.begin_file_browser_listing(rx);
+    true
+}
+
+pub fn start_editor_add_mount_file_browser_open(state: &mut ManagerState<'_>) -> bool {
+    if !matches!(state.stage, ManagerStage::Editor(_)) {
+        return false;
+    }
+    let rx =
+        crate::services::file_browser::start_listing_request(FileBrowserListingRequest::OpenHome {
+            target: FileBrowserOpenTarget::EditorAddMount,
+            last_cwd: None,
+        });
+    state.begin_file_browser_listing(rx);
+    true
+}
+
+pub fn start_create_prelude_file_browser_open(state: &mut ManagerState<'_>) -> bool {
+    let rx =
+        crate::services::file_browser::start_listing_request(FileBrowserListingRequest::OpenHome {
+            target: FileBrowserOpenTarget::CreatePrelude,
+            last_cwd: None,
+        });
+    state.begin_file_browser_listing(rx);
+    true
+}
+
+pub fn start_create_prelude_file_browser_reopen(state: &mut ManagerState<'_>) -> bool {
+    let ManagerStage::CreatePrelude(prelude) = &mut state.stage else {
+        return false;
     };
-    match crate::services::file_browser::state_from_home() {
-        Ok(file_browser) => {
-            settings
-                .mounts
-                .open_sub_modal(GlobalMountModal::FileBrowser {
-                    state: Box::new(file_browser),
-                });
+    let rx =
+        crate::services::file_browser::start_listing_request(FileBrowserListingRequest::OpenHome {
+            target: FileBrowserOpenTarget::CreatePrelude,
+            last_cwd: prelude.last_browser_cwd.clone(),
+        });
+    state.begin_file_browser_listing(rx);
+    true
+}
+
+pub fn apply_file_browser_listing_result(
+    state: &mut ManagerState<'_>,
+    result: FileBrowserListingResult,
+) -> bool {
+    match result {
+        FileBrowserListingResult::OpenHome { target, result } => {
+            apply_file_browser_open_result(state, target, result)
         }
-        Err(error) => {
-            settings.mounts.add_draft = None;
-            settings.mounts.error = Some(error.to_string());
+        FileBrowserListingResult::Listing { context, listing } => {
+            apply_file_browser_listing(state, &context, listing)
         }
     }
 }
 
-pub fn execute_editor_add_mount_file_browser_open(state: &mut ManagerState<'_>) {
-    use crate::tui::state::FileBrowserTarget;
-    let ManagerStage::Editor(editor) = &mut state.stage else {
-        return;
-    };
-    match crate::services::file_browser::state_from_home() {
-        Ok(file_browser) => {
-            editor.modal = Some(Modal::FileBrowser {
-                target: FileBrowserTarget::EditAddMountSrc,
-                state: file_browser,
-            });
-        }
-        Err(error) => {
-            crate::tui::state::open_editor_action_error(editor, &error);
-        }
-    }
-}
-
-pub fn execute_create_prelude_file_browser_open(state: &mut ManagerState<'_>) {
+fn apply_file_browser_open_result(
+    state: &mut ManagerState<'_>,
+    target: FileBrowserOpenTarget,
+    result: Result<FileBrowserState, String>,
+) -> bool {
     use crate::tui::components::error_popup;
     use crate::tui::state::FileBrowserTarget;
-    match crate::services::file_browser::state_from_home() {
-        Ok(file_browser) => {
-            let mut prelude = CreatePreludeState::new();
-            prelude.modal = Some(Modal::FileBrowser {
-                target: FileBrowserTarget::CreateFirstMountSrc,
-                state: file_browser,
-            });
-            drop(update_manager(
-                state,
-                ManagerMessage::EnterCreatePrelude(prelude),
-            ));
+    match target {
+        FileBrowserOpenTarget::EditorAddMount => {
+            let ManagerStage::Editor(editor) = &mut state.stage else {
+                return false;
+            };
+            match result {
+                Ok(file_browser) => {
+                    editor.modal = Some(Modal::FileBrowser {
+                        target: FileBrowserTarget::EditAddMountSrc,
+                        state: file_browser,
+                    });
+                }
+                Err(error) => {
+                    crate::tui::state::open_editor_action_error(editor, &anyhow::anyhow!(error));
+                }
+            }
         }
-        Err(error) => {
-            let _unused = update_manager(
-                state,
-                ManagerMessage::OpenListErrorPopup {
-                    title: error_popup::file_browser_failed_error_title().into(),
-                    message: format!("{error:#}"),
-                },
-            );
+        FileBrowserOpenTarget::CreatePrelude => match result {
+            Ok(file_browser) => {
+                let mut prelude = CreatePreludeState::new();
+                prelude.modal = Some(Modal::FileBrowser {
+                    target: FileBrowserTarget::CreateFirstMountSrc,
+                    state: file_browser,
+                });
+                drop(update_manager(
+                    state,
+                    ManagerMessage::EnterCreatePrelude(prelude),
+                ));
+            }
+            Err(error) => {
+                let _unused = update_manager(
+                    state,
+                    ManagerMessage::OpenListErrorPopup {
+                        title: error_popup::file_browser_failed_error_title().into(),
+                        message: error,
+                    },
+                );
+            }
+        },
+        FileBrowserOpenTarget::GlobalMount => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return false;
+            };
+            match result {
+                Ok(file_browser) => {
+                    settings
+                        .mounts
+                        .open_sub_modal(GlobalMountModal::FileBrowser {
+                            state: Box::new(file_browser),
+                        });
+                }
+                Err(error) => {
+                    settings.mounts.add_draft = None;
+                    settings.mounts.error = Some(error);
+                }
+            }
         }
     }
-}
-
-pub fn execute_create_prelude_file_browser_reopen(state: &mut ManagerState<'_>) {
-    use crate::tui::state::FileBrowserTarget;
-    let ManagerStage::CreatePrelude(prelude) = &mut state.stage else {
-        return;
-    };
-    let Ok(mut file_browser) = crate::services::file_browser::state_from_home() else {
-        prelude.modal = None;
-        return;
-    };
-    if let Some(cwd) = prelude.last_browser_cwd.as_ref() {
-        crate::services::file_browser::clamp_state_to_cwd(&mut file_browser, cwd);
-    }
-    prelude.modal = Some(Modal::FileBrowser {
-        target: FileBrowserTarget::CreateFirstMountSrc,
-        state: file_browser,
-    });
+    true
 }
 
 /// Dispatch a file-browser outcome to the active stage handler.
@@ -115,6 +167,67 @@ pub fn execute_file_browser_outcome(
             execute_settings_file_browser_outcome(state, outcome)
         }
     }
+}
+
+pub fn execute_file_browser_outcome_or_start_listing(
+    state: &mut ManagerState<'_>,
+    context: FileBrowserEffectContext,
+    outcome: FileBrowserOutcome<std::path::PathBuf>,
+    auth_source_folder_validator: &impl Fn(
+        Option<crate::tui::auth::AuthKind>,
+        &std::path::Path,
+    ) -> Result<(), String>,
+) -> bool {
+    match outcome {
+        FileBrowserOutcome::NavigateTo(path) => start_file_browser_listing_for_navigation(
+            state,
+            context.clone(),
+            FileBrowserListingRequestKind::NavigateTo(path),
+        ),
+        FileBrowserOutcome::NavigateUp => start_file_browser_listing_for_navigation(
+            state,
+            context.clone(),
+            FileBrowserListingRequestKind::NavigateUp,
+        ),
+        outcome => {
+            execute_file_browser_outcome(state, context, outcome, auth_source_folder_validator)
+        }
+    }
+}
+
+enum FileBrowserListingRequestKind {
+    NavigateTo(std::path::PathBuf),
+    NavigateUp,
+}
+
+fn start_file_browser_listing_for_navigation(
+    state: &mut ManagerState<'_>,
+    context: FileBrowserEffectContext,
+    kind: FileBrowserListingRequestKind,
+) -> bool {
+    let Some(browser) = active_file_browser_state_mut(state, &context) else {
+        return false;
+    };
+    let root = browser.root.clone();
+    let cwd = browser.cwd().to_path_buf();
+    let show_hidden = browser.show_hidden;
+    let request = match kind {
+        FileBrowserListingRequestKind::NavigateTo(path) => FileBrowserListingRequest::NavigateTo {
+            context,
+            root,
+            path,
+            show_hidden,
+        },
+        FileBrowserListingRequestKind::NavigateUp => FileBrowserListingRequest::NavigateUp {
+            context,
+            root,
+            cwd,
+            show_hidden,
+        },
+    };
+    let rx = crate::services::file_browser::start_listing_request(request);
+    state.begin_file_browser_listing(rx);
+    true
 }
 
 fn execute_editor_file_browser_outcome(
@@ -247,6 +360,57 @@ fn execute_settings_file_browser_outcome(
         | FileBrowserOutcome::RequestCommit(_) => {}
     }
     true
+}
+
+fn apply_file_browser_listing(
+    state: &mut ManagerState<'_>,
+    context: &FileBrowserEffectContext,
+    listing: Option<FolderListing>,
+) -> bool {
+    let Some(listing) = listing else {
+        return false;
+    };
+    let Some(browser) = active_file_browser_state_mut(state, context) else {
+        return false;
+    };
+    browser.apply_listing(listing);
+    true
+}
+
+fn active_file_browser_state_mut<'a>(
+    state: &'a mut ManagerState<'_>,
+    context: &FileBrowserEffectContext,
+) -> Option<&'a mut FileBrowserState> {
+    match context {
+        FileBrowserEffectContext::Editor => {
+            let ManagerStage::Editor(editor) = &mut state.stage else {
+                return None;
+            };
+            let Some(Modal::FileBrowser { state, .. }) = editor.modal.as_mut() else {
+                return None;
+            };
+            Some(state)
+        }
+        FileBrowserEffectContext::Prelude { .. } => {
+            let ManagerStage::CreatePrelude(prelude) = &mut state.stage else {
+                return None;
+            };
+            let Some(Modal::FileBrowser { state, .. }) = prelude.modal.as_mut() else {
+                return None;
+            };
+            Some(state)
+        }
+        FileBrowserEffectContext::SettingsMounts => {
+            let ManagerStage::Settings(settings) = &mut state.stage else {
+                return None;
+            };
+            let Some(GlobalMountModal::FileBrowser { state }) = settings.mounts.modal.as_mut()
+            else {
+                return None;
+            };
+            Some(state)
+        }
+    }
 }
 
 #[allow(clippy::option_if_let_else)]

@@ -37,8 +37,8 @@ use jackin_env::OpCache;
 use super::{
     DEFAULT_SPLIT_PCT, ManagerEffect, ManagerInstanceRefreshSnapshot, ManagerListRow, ManagerStage,
     ManagerState, Modal, MountInfoCache, MountInfoRefreshTarget, MountScrollFocus,
-    PendingDriftCheck, PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad,
-    PendingTokenGenerate, WorkspaceSummary, active_instances_matching,
+    PendingDriftCheck, PendingFileBrowserListing, PendingIsolationCleanup, PendingMountInfoRefresh,
+    PendingRoleLoad, PendingTokenGenerate, WorkspaceSummary, active_instances_matching,
 };
 
 impl ManagerState<'_> {
@@ -170,6 +170,7 @@ impl ManagerState<'_> {
             instances_refresh_generation: 0,
             instances_refresh_rx: None,
             mount_info_refresh_rx: None,
+            file_browser_listing_rx: None,
             instances_last_error: None,
             expanded_workspaces: BTreeSet::new(),
             current_dir_expanded: false,
@@ -544,6 +545,17 @@ impl ManagerState<'_> {
         self.mount_info_refresh_rx = Some(rx);
     }
 
+    pub fn begin_file_browser_listing(
+        &mut self,
+        rx: BlockingSubscription<PendingFileBrowserListing>,
+    ) {
+        self.file_browser_listing_rx = Some(rx);
+    }
+
+    pub const fn file_browser_listing_in_flight(&self) -> bool {
+        self.file_browser_listing_rx.is_some()
+    }
+
     pub fn poll_mount_info_refresh(&mut self) -> Option<PendingMountInfoRefresh> {
         let rx = self.mount_info_refresh_rx.as_mut()?;
         let result = match rx.poll_next() {
@@ -555,6 +567,20 @@ impl ManagerState<'_> {
             }
         };
         self.mount_info_refresh_rx = None;
+        Some(result)
+    }
+
+    pub fn poll_file_browser_listing(&mut self) -> Option<PendingFileBrowserListing> {
+        let rx = self.file_browser_listing_rx.as_mut()?;
+        let result = match rx.poll_next() {
+            SubscriptionPoll::Ready(result) => result,
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => {
+                self.file_browser_listing_rx = None;
+                return None;
+            }
+        };
+        self.file_browser_listing_rx = None;
         Some(result)
     }
 

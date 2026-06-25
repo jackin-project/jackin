@@ -192,6 +192,8 @@ pub type PendingMountInfoRefresh = crate::tui::message::PendingMountInfoRefresh;
 
 pub type MountInfoRefreshTarget = crate::tui::message::MountInfoRefreshTarget;
 
+pub type PendingFileBrowserListing = crate::services::file_browser::FileBrowserListingResult;
+
 pub type PendingDriftCheck =
     crate::tui::subscriptions::PendingDriftCheck<jackin_core::DriftDetection, PendingSaveCommit>;
 
@@ -303,6 +305,8 @@ pub struct ManagerState<'a> {
     pub(in crate::tui) instances_refresh_rx:
         Option<BlockingSubscription<(u64, Result<ManagerInstanceRefreshSnapshot, String>)>>,
     pub(in crate::tui) mount_info_refresh_rx: Option<BlockingSubscription<PendingMountInfoRefresh>>,
+    pub(in crate::tui) file_browser_listing_rx:
+        Option<BlockingSubscription<PendingFileBrowserListing>>,
     /// Dedup gate: last error string from `refresh_instances`. Without
     /// this, a persistent parse error would reopen the popup on every
     /// 20 Hz tick — operators would never be able to dismiss it.

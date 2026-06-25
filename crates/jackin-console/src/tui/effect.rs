@@ -50,7 +50,7 @@ pub enum ConsoleManagerEffect<RoleSelector, RoleSource, OpRef> {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FileBrowserEffectContext {
     Editor,
     Prelude {

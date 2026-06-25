@@ -11,6 +11,46 @@ use jackin_tui::runtime::BlockingSubscription;
 
 use crate::tui::components::file_browser::{FileBrowserOutcome, FileBrowserState};
 pub use crate::tui::components::file_browser::{FolderEntry, FolderListing};
+use crate::tui::effect::FileBrowserEffectContext;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileBrowserOpenTarget {
+    EditorAddMount,
+    CreatePrelude,
+    GlobalMount,
+}
+
+#[derive(Debug, Clone)]
+pub enum FileBrowserListingRequest {
+    OpenHome {
+        target: FileBrowserOpenTarget,
+        last_cwd: Option<PathBuf>,
+    },
+    NavigateTo {
+        context: FileBrowserEffectContext,
+        root: PathBuf,
+        path: PathBuf,
+        show_hidden: bool,
+    },
+    NavigateUp {
+        context: FileBrowserEffectContext,
+        root: PathBuf,
+        cwd: PathBuf,
+        show_hidden: bool,
+    },
+}
+
+#[derive(Debug)]
+pub enum FileBrowserListingResult {
+    OpenHome {
+        target: FileBrowserOpenTarget,
+        result: Result<FileBrowserState, String>,
+    },
+    Listing {
+        context: FileBrowserEffectContext,
+        listing: Option<FolderListing>,
+    },
+}
 
 /// Directories excluded from the listing when browsing $HOME.
 pub const EXCLUDED: &[&str] = &[
@@ -123,6 +163,49 @@ pub fn state_from_home_with_hidden() -> anyhow::Result<FileBrowserState> {
     let mut state = FileBrowserState::from_listing(listing_from_home_with_hidden()?);
     state.show_hidden = true;
     Ok(state)
+}
+
+pub fn start_listing_request(
+    request: FileBrowserListingRequest,
+) -> BlockingSubscription<FileBrowserListingResult> {
+    jackin_tui::runtime::spawn_named_blocking_subscription(
+        "jackin-file-browser-listing",
+        move || run_listing_request(request),
+    )
+}
+
+fn run_listing_request(request: FileBrowserListingRequest) -> FileBrowserListingResult {
+    match request {
+        FileBrowserListingRequest::OpenHome { target, last_cwd } => {
+            let result = state_from_home()
+                .map(|mut state| {
+                    if let Some(cwd) = last_cwd.as_ref() {
+                        clamp_state_to_cwd(&mut state, cwd);
+                    }
+                    state
+                })
+                .map_err(|error| error.to_string());
+            FileBrowserListingResult::OpenHome { target, result }
+        }
+        FileBrowserListingRequest::NavigateTo {
+            context,
+            root,
+            path,
+            show_hidden,
+        } => FileBrowserListingResult::Listing {
+            context,
+            listing: Some(clamped_listing_with_hidden(&root, &path, show_hidden)),
+        },
+        FileBrowserListingRequest::NavigateUp {
+            context,
+            root,
+            cwd,
+            show_hidden,
+        } => FileBrowserListingResult::Listing {
+            context,
+            listing: parent_listing_with_hidden(&root, &cwd, show_hidden),
+        },
+    }
 }
 
 /// Build a listing at `cwd`, canonicalizing paths but not clamping to root.
