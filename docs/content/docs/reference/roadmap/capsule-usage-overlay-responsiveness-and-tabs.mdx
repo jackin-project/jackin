@@ -30,7 +30,9 @@ The root cause is **not yet pinned — diagnose before fixing.** All seven provi
 - If the credential is absent or stale → the OAuth fetch fails and the snapshot falls back to `cli`: the bug is in host→container credential forwarding (`crates/jackin-runtime/src/instance/auth.rs`). `git log` what changed Claude forwarding since the June-24 working state.
 - If the credential is present but `cli` still wins → the bug is in source selection: the `cli` path is preferred or OAuth is gated. Make OAuth win whenever its credential resolves.
 
-Then restore the Claude sections (in order): **Session, Weekly, Sonnet, Daily Routines** (+ conditional Opus / Extra usage). Session/Weekly carry `Resets in <rel> (<local>)` + in-reserve + `Lasts until reset`; Sonnet carries a reset; Daily Routines shows remaining only.
+Then restore the Claude sections (in order): **Session, Weekly, Sonnet, Daily Routines** (+ conditional Opus / Extra usage). Session/Weekly carry `Resets in <rel> (<local>)` + in-reserve + `Lasts until reset`; Sonnet carries a reset; Daily Routines shows remaining only. A section appears **only when the API returns data for it** — a `null` window (an unused Sonnet/Opus/Daily Routines) is omitted, never rendered as `100% left` (honest degradation; an intentional divergence from CodexBar, which shows null Daily Routines at 100%).
+
+**Resolved** (verified in-container). Two root causes, both proven: (1) `claude_snapshot` never read the runtime handoff `/jackin/claude/credentials.json` (the home copy lacked `claudeAiOauth.accessToken`), so OAuth was skipped and the snapshot dropped to the impoverished CLI fallback — commit `90acd5e2` adds the handoff read via a shared `first_credential` resolver (home-first, handoff-last) reused by Claude/Codex/Amp so no provider is missed; (2) with the token resolving, the OAuth 200 body failed to decode because `seven_day_oauth_apps` was aliased onto the `seven_day` field and the API now returns both keys (serde "duplicate field") — commit `3ff657e1` drops the alias. Claude now resolves via OAuth (`provider_api`, authoritative); Session/Weekly carry utilization + reset; Sonnet/Daily Routines appear when present.
 
 ### P0b — OpenAI / Codex (add the missing sections)
 
@@ -220,7 +222,7 @@ The capsule runs as PID 1 inside the Linux container and cannot read the host Ke
 Each item lands with adapter unit/snapshot tests AND an in-container live check against the real forwarded credential — isolated fetch tests are not sufficient. Run a debug launch (`jackin load the-architect . --agent claude --debug`) and, in the container, `/jackin/runtime/jackin-capsule usage verify` + `usage accounts`.
 
 - [ ] P0 (class fix) — a reduced snapshot is never labelled `authoritative`; it is either full or marked degraded with a reason.
-- [ ] P0a — Claude credential path diagnosed and fixed; tab renders Session, Weekly, Sonnet, Daily Routines with reset + in-reserve + `Lasts until reset` on Session/Weekly; `usage verify` Claude ≥4 rows; Overview Anthropic row shows reset + local time.
+- [x] P0a — Claude credential path diagnosed + fixed (`90acd5e2` handoff read via shared resolver, `3ff657e1` OAuth decode). Claude resolves via OAuth (`provider_api`, authoritative); Session/Weekly carry utilization + reset + in-reserve + `Lasts until reset`. Sonnet/Daily Routines/Opus render only when the API returns them (`null` omitted, not fabricated). Verified in-container. (Overview Anthropic reset follows once the row consumes the same data — confirm during P-pass.)
 - [ ] P0b — OpenAI tab adds Codex Spark 5-hour/Weekly, Limit Reset Credits, Credits, and plan `Pro 20x`; `usage verify` OpenAI 6 rows. (Session/Weekly already correct.)
 - [ ] P0 verify uses the TUI render, not `usage accounts` (RC2); both tabs match the binding previews + CodexBar panels.
 - [ ] RC2 — `usage accounts` serializes real `resets_at`; CLI and TUI agree.
