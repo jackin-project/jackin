@@ -5755,7 +5755,7 @@ plugins = []
         .join(&container_name)
         .join(".jackin/instance.json");
     let body = std::fs::read_to_string(manifest_path).unwrap();
-    assert!(body.contains(r#""version": 1"#));
+    assert!(body.contains(r#""version": 2"#));
     assert!(body.contains(&format!(r#""container_base": "{container_name}""#)));
     assert!(body.contains(r#""role_key": "agent-smith""#));
     assert!(body.contains(r#""agent_runtime": "claude""#));

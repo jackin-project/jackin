@@ -18,7 +18,7 @@ pub use jackin_core::instance::{
     InstanceIndexEntry, InstanceQuery, InstanceStatus, SessionRecord, SessionStatus,
 };
 
-pub const INSTANCE_MANIFEST_VERSION: u32 = 1;
+pub const INSTANCE_MANIFEST_VERSION: u32 = 2;
 pub const INSTANCE_INDEX_VERSION: u32 = 1;
 const INSTANCE_INDEX_FILE: &str = "instances.json";
 const INSTANCE_INDEX_LOCK_FILE: &str = "instances.json.lock";
@@ -29,6 +29,32 @@ pub struct DockerResources {
     pub dind_container: String,
     pub network: String,
     pub certs_volume: String,
+}
+
+/// Resources backing an apple-container instance. The lifecycle CLI
+/// (`container run/exec/stop/rm`) keys off `container_name`; the other fields
+/// record what the VM is running for the session contract and reconnect path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppleContainerResources {
+    /// Name of the apple/container container: `jackin-<instance-id>`.
+    pub container_name: String,
+    /// OCI image ref used to start the container.
+    pub role_image_ref: String,
+    /// Whether an inner rootless Docker daemon (DinD) is running. Gated on the
+    /// Phase 0 empirical validation of rootless DinD inside an apple/container
+    /// VM; `false` until that gate passes.
+    pub inner_docker_enabled: bool,
+}
+
+/// Backend-specific resources for an instance. `Docker` carries the four
+/// container/network/volume names; `AppleContainer` carries the VM container
+/// identity. Serialized as a tagged union so the manifest is self-describing
+/// about which backend launched it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackendResources {
+    Docker(DockerResources),
+    AppleContainer(AppleContainerResources),
 }
 
 impl DockerResources {
@@ -67,6 +93,11 @@ pub struct InstanceManifest {
     pub status: InstanceStatus,
     pub last_attach_outcome: Option<String>,
     pub docker: DockerResources,
+    /// Backend that launched this instance. `None` for legacy/Docker manifests
+    /// (the `docker` field above is the source of truth then); `Some` records
+    /// the backend explicitly for apple-container and future backends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend: Option<BackendResources>,
     #[serde(default)]
     pub sessions: Vec<SessionRecord>,
 }
@@ -94,7 +125,20 @@ pub struct NewInstanceManifest<'a> {
 }
 
 impl InstanceManifest {
+    /// Docker-backed instance: the `backend` field is left `None`, so the
+    /// `docker` resources are the single source of truth (current behavior).
     pub fn new(input: NewInstanceManifest<'_>) -> Self {
+        Self::build(input, None)
+    }
+
+    /// Instance launched by an explicit non-Docker backend (e.g.
+    /// apple-container). `docker` is still populated for naming continuity, but
+    /// `backend` records which backend actually owns the instance.
+    pub fn new_with_backend(input: NewInstanceManifest<'_>, backend: BackendResources) -> Self {
+        Self::build(input, Some(backend))
+    }
+
+    fn build(input: NewInstanceManifest<'_>, backend: Option<BackendResources>) -> Self {
         let now = now_rfc3339();
         Self {
             version: INSTANCE_MANIFEST_VERSION,
@@ -119,6 +163,7 @@ impl InstanceManifest {
             status: InstanceStatus::Active,
             last_attach_outcome: None,
             docker: input.docker,
+            backend,
             sessions: Vec::new(),
         }
     }

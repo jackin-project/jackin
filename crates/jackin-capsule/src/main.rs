@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use jackin_capsule::{
-    client, config, daemon, output, protocol::attach::SpawnRequest, runtime_setup,
-    session::validate_agent_slug,
+    client, config, daemon, exec, mcp_server, output, protocol::attach::SpawnRequest,
+    runtime_setup, session::validate_agent_slug,
 };
 use std::path::Path;
 
@@ -23,7 +23,22 @@ async fn main() -> Result<()> {
         return runtime_setup::run_prepare_commit_msg_hook(&args[1..]);
     }
 
-    let is_pid1 = std::process::id() == 1;
+    // `jackin-exec` (argv0 symlink) and `jackin-capsule exec …` are always
+    // client-side credential execs, never the daemon. Check before the daemon
+    // gate below so an inherited `JACKIN_CAPSULE_FORCE_DAEMON` in the
+    // apple-container VM env cannot capture this invocation into daemon mode.
+    if let Some(exec_args) = exec_invocation(&args) {
+        return exec::run(exec_args).await;
+    }
+
+    // Daemon mode when PID 1 (Docker backend, capsule is the entrypoint) or when
+    // `JACKIN_CAPSULE_FORCE_DAEMON` is set (apple-container backend, where
+    // `vminitd` is PID 1 and capsule runs as PID 2+). The env var is injected by
+    // the launch path, never baked into the image, so the Docker backend — where
+    // capsule IS PID 1 and client subcommands must stay client-mode — is
+    // unaffected.
+    let is_pid1 =
+        std::process::id() == 1 || std::env::var_os("JACKIN_CAPSULE_FORCE_DAEMON").is_some();
 
     if is_pid1 {
         let launch_config = config::load()?;
@@ -58,6 +73,8 @@ SUBCOMMANDS:
     usage verify                   Verify all provider quota rows are cached and trusted
     usage claude-cli               Explicitly run Claude Code /usage diagnostic
     --focus <session_id>           Connect and focus the given session
+    exec <command> [args…]         Run a command with operator-approved on-demand credentials
+    mcp-server                     Run the jackin-exec MCP stdio server (spawned by the agent)
     runtime-setup                  First-boot environment setup (run by entrypoint)
     prepare-commit-msg <file>      Git hook integration
 
@@ -87,6 +104,7 @@ connecting as a client.",
                 client::run_agents(format).await
             }
             Some("runtime-setup") => runtime_setup::run(),
+            Some("mcp-server") => mcp_server::run().await,
             Some("prepare-commit-msg") => runtime_setup::run_prepare_commit_msg_hook(&args[2..]),
             Some("new") => {
                 let supported_agents = config::load_optional()
@@ -130,7 +148,7 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, usage accounts, usage verify, usage claude-cli, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, usage accounts, usage verify, usage claude-cli, agents [--format json], exec <command>, mcp-server, runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
@@ -153,6 +171,26 @@ fn invoked_as_prepare_commit_msg_hook(args: &[String]) -> bool {
     args.first()
         .and_then(|arg0| Path::new(arg0).file_name())
         .is_some_and(|file_name| file_name == "prepare-commit-msg")
+}
+
+/// Detect a `jackin-exec` invocation and return the command + its args.
+///
+/// Two forms route here: the `jackin-exec` argv0 symlink
+/// (`jackin-exec ssh sentry` → `["ssh", "sentry"]`) and the explicit
+/// `jackin-capsule exec ssh sentry` subcommand (→ `["ssh", "sentry"]`).
+/// Returns `None` for any other invocation.
+fn exec_invocation(args: &[String]) -> Option<&[String]> {
+    let invoked_as_symlink = args
+        .first()
+        .and_then(|arg0| Path::new(arg0).file_name())
+        .is_some_and(|file_name| file_name == "jackin-exec");
+    if invoked_as_symlink {
+        return Some(&args[1..]);
+    }
+    if args.get(1).map(String::as_str) == Some("exec") {
+        return Some(&args[2..]);
+    }
+    None
 }
 
 /// Parse `--focus <id>` / `--focus=<id>` out of the client argv.
@@ -180,8 +218,8 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
         // --focus. Scan past the end of args so a stray --focus is
         // ignored instead of silently consumed.
         Some(
-            "status" | "snapshot" | "usage" | "agents" | "runtime-setup" | "prepare-commit-msg"
-            | "--version" | "-V" | "--help" | "-h",
+            "status" | "snapshot" | "usage" | "agents" | "runtime-setup" | "mcp-server"
+            | "prepare-commit-msg" | "--version" | "-V" | "--help" | "-h",
         ) => args.len(),
         // `jackin-capsule --focus 5` (no subcommand) or no args at
         // all — scan from index 1.

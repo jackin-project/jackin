@@ -51,7 +51,7 @@ fn writes_manifest_under_jackin_state_dir() {
     manifest.write(temp.path()).unwrap();
 
     let body = std::fs::read_to_string(temp.path().join(".jackin/instance.json")).unwrap();
-    assert!(body.contains(r#""version": 1"#));
+    assert!(body.contains(r#""version": 2"#));
     assert!(body.contains(r#""status": "running""#));
     assert!(body.contains(r#""role_key": "org/agent""#));
 }
@@ -263,7 +263,7 @@ fn instance_manifest_write_replaces_partial_file() {
     std::fs::write(state_dir.join(".jackin/instance.json"), b"{ partial").unwrap();
     sample_manifest().write(state_dir).unwrap();
     let body = std::fs::read_to_string(state_dir.join(".jackin/instance.json")).unwrap();
-    assert!(body.contains(r#""version": 1"#));
+    assert!(body.contains(r#""version": 2"#));
     assert!(!body.contains("partial"));
 }
 
