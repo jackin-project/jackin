@@ -904,16 +904,32 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     let auth_token = std::env::var("ANTHROPIC_AUTH_TOKEN")
         .ok()
         .filter(|v| !v.is_empty());
-    let account = if api_key.is_some() {
-        "ANTHROPIC_API_KEY".to_owned()
+    let has_local_creds = config.join(".credentials.json").exists();
+    let needs_login =
+        api_key.is_none() && auth_token.is_none() && oauth.is_none() && !has_local_creds;
+    // P1: account_label is the real email identity (from `oauthAccount`), not a
+    // fabricated auth-method string — empty when none, with the auth source on
+    // its own `credential_origin` line. The winning resolver arm sets the origin.
+    let account = first_credential(
+        &[
+            config.join(".credentials.json"),
+            home_path(".claude/.credentials.json"),
+            home_path(".claude.json"),
+            PathBuf::from(CLAUDE_HANDOFF_CREDENTIALS_PATH),
+        ],
+        load_claude_account_email,
+    )
+    .unwrap_or_default();
+    let credential_origin = if api_key.is_some() {
+        Some("API token · env ANTHROPIC_API_KEY".to_owned())
     } else if auth_token.is_some() {
-        "ANTHROPIC_AUTH_TOKEN".to_owned()
+        Some("API token · env ANTHROPIC_AUTH_TOKEN".to_owned())
     } else if oauth.is_some() {
-        "Claude OAuth".to_owned()
-    } else if config.join(".credentials.json").exists() {
-        "local Claude credentials".to_owned()
+        Some("OAuth · keychain".to_owned())
+    } else if has_local_creds {
+        Some("OAuth · ~/.claude/.credentials.json".to_owned())
     } else {
-        "needs Claude login".to_owned()
+        None
     };
     let (oauth_quota, oauth_error) = match oauth.as_ref() {
         Some(credentials) => match fetch_claude_oauth_usage(&credentials.access_token) {
@@ -935,7 +951,7 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     } else {
         oauth_error.as_ref().or(cli_error.as_ref()).cloned()
     };
-    let status = if account == "needs Claude login" {
+    let status = if needs_login {
         UsageSnapshotStatus::NeedsLogin
     } else if oauth_quota.is_some() || cli_usage.is_some() {
         UsageSnapshotStatus::Fresh
@@ -985,7 +1001,7 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
         account_label: account,
         username: None,
         plan_label: oauth.and_then(|credentials| credentials.subscription_type),
-        credential_origin: Some("OAuth · keychain".to_owned()),
+        credential_origin,
         buckets,
         status,
         source: if status == UsageSnapshotStatus::Fresh {
@@ -2153,6 +2169,22 @@ struct ClaudeOAuthCredentials {
 /// provider from being silently missed (as Claude's handoff read once was).
 fn first_credential<T>(paths: &[PathBuf], load: impl Fn(&Path) -> Option<T>) -> Option<T> {
     paths.iter().find_map(|path| load(path.as_path()))
+}
+
+/// Claude account email (F12): `~/.claude.json` carries `oauthAccount` metadata
+/// (never the token), and `CodexBar` reads the address from there. Returns the
+/// trimmed `oauthAccount.emailAddress`, or `None` when absent.
+fn load_claude_account_email(path: &Path) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    value
+        .get("oauthAccount")?
+        .get("emailAddress")
+        .or_else(|| value.get("oauthAccount")?.get("email_address"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|email| !email.is_empty())
+        .map(str::to_owned)
 }
 
 fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> {
@@ -5398,6 +5430,30 @@ mod tests {
         assert_eq!(claude.account_label, "claude@example.com");
         assert_eq!(claude.plan_label.as_deref(), Some("Max"));
         assert_eq!(claude.status_label, "stale");
+    }
+
+    #[test]
+    fn claude_account_email_reads_oauth_account_metadata() {
+        // P1/F12: the email identity comes from `oauthAccount.emailAddress`.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("claude.json");
+        fs::write(
+            &path,
+            r#"{"oauthAccount":{"emailAddress":"alexey@example.com"}}"#,
+        )
+        .expect("write");
+        assert_eq!(
+            load_claude_account_email(&path).as_deref(),
+            Some("alexey@example.com")
+        );
+
+        let empty = dir.path().join("empty.json");
+        fs::write(&empty, r#"{"oauthAccount":{}}"#).expect("write");
+        assert_eq!(load_claude_account_email(&empty), None);
+
+        let none = dir.path().join("none.json");
+        fs::write(&none, "{}").expect("write");
+        assert_eq!(load_claude_account_email(&none), None);
     }
 
     #[test]
