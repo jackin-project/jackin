@@ -35,14 +35,6 @@ pub(crate) fn execute_manager_effect(
             let Some((target, sources)) = state.active_mount_info_sources(config) else {
                 return false;
             };
-            if tokio::runtime::Handle::try_current().is_err() {
-                let entries = jackin_console::services::mount_info::inspect_entries(sources);
-                return update_manager(
-                    state,
-                    ManagerMessage::MountInfoRefreshed(PendingMountInfoRefresh { target, entries }),
-                )
-                .is_dirty();
-            }
             let rx = spawn_blocking_subscription(move || {
                 let entries = jackin_console::services::mount_info::inspect_entries(sources);
                 PendingMountInfoRefresh { target, entries }
