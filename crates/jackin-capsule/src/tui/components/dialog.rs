@@ -83,8 +83,8 @@ const PALETTE_WIDTH: u16 = 50;
 const CONTAINER_INFO_WIDTH: u16 = 86;
 mod input;
 use input::{
-    PickerRow, close_target_filtered_indices, dialog_list_row_clickable, first_selectable_idx,
-    picker_filtered_rows, printable_filter_char, rename_tab_handle_key,
+    PickerRow, close_target_filtered_indices, dialog_list_row_clickable, exec_picker_handle_key,
+    first_selectable_idx, picker_filtered_rows, printable_filter_char, rename_tab_handle_key,
     split_direction_filtered_indices, step_selectable,
 };
 mod hint;
@@ -250,6 +250,12 @@ pub enum Dialog {
         selected: usize,
         intent: PickerIntent,
     },
+    /// Operator credential picker for a `jackin-exec` invocation. The daemon
+    /// builds it from the workspace's on-demand bindings, stashes the control
+    /// reply channel, and drives confirm/cancel through `DialogAction`. Space
+    /// toggles the row under the cursor, ↑/↓ move, Enter confirms (resolve the
+    /// selected credentials + run the command), Esc cancels (deny, run nothing).
+    ExecPicker(crate::exec::ExecPickerState),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -331,6 +337,17 @@ pub enum DialogAction {
     SwitchUsageProvider { provider_label: String },
     /// Dialog is still open; redraw.
     Redraw,
+    /// Operator confirmed a `jackin-exec` credential picker (Enter). Carries
+    /// the command + the selected credentials; the daemon resolves them via the
+    /// host socket, runs the command, and replies `ExecResult`.
+    ExecConfirm {
+        command: String,
+        args: Vec<String>,
+        selected: Vec<crate::exec::CredRef>,
+    },
+    /// Operator cancelled the `jackin-exec` picker (Esc) — daemon replies
+    /// `ExecDenied` and runs nothing.
+    ExecCancel,
     /// Mouse event lands somewhere with no semantic effect (border,
     /// padding row). Swallow it so it does not reach the focused pane.
     Consume,
@@ -992,6 +1009,11 @@ impl Dialog {
         if let Self::RenameTab { tab_idx, input } = self {
             return rename_tab_handle_key(*tab_idx, input, key);
         }
+        // The exec credential picker is multi-select (Space toggles), so it
+        // intercepts keys before the shared single-select arrow/dismiss logic.
+        if let Self::ExecPicker(state) = self {
+            return exec_picker_handle_key(state, key);
+        }
         // Read-only info dialogs (ContainerInfo, GitHubContext): Esc /
         // dismiss keys close, Enter copies the dialog's value to the
         // operator's clipboard with the `copied` flag flipped to true
@@ -1177,7 +1199,8 @@ impl Dialog {
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
                     | Self::Usage { .. }
-                    | Self::ConfirmAction { .. } => {}
+                    | Self::ConfirmAction { .. }
+                    | Self::ExecPicker(_) => {}
                 }
                 DialogAction::Redraw
             }
@@ -1227,7 +1250,8 @@ impl Dialog {
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
                     | Self::Usage { .. }
-                    | Self::ConfirmAction { .. } => {}
+                    | Self::ConfirmAction { .. }
+                    | Self::ExecPicker(_) => {}
                 }
                 DialogAction::Redraw
             }
@@ -1528,7 +1552,8 @@ impl Dialog {
             | Self::GitHubContext { .. }
             | Self::Usage { .. }
             | Self::ConfirmAction { .. }
-            | Self::ProviderPicker { .. } => 0,
+            | Self::ProviderPicker { .. }
+            | Self::ExecPicker(_) => 0,
         };
         if row < first_item_row || row >= first_item_row + visible_count {
             return DialogAction::Consume;
@@ -1598,7 +1623,8 @@ impl Dialog {
             | Self::GitHubContext { .. }
             | Self::Usage { .. }
             | Self::ConfirmAction { .. }
-            | Self::ProviderPicker { .. } => DialogAction::Consume,
+            | Self::ProviderPicker { .. }
+            | Self::ExecPicker(_) => DialogAction::Consume,
         }
     }
 
@@ -1626,7 +1652,7 @@ impl Dialog {
             return false;
         }
         match self {
-            Self::RenameTab { .. } => false,
+            Self::RenameTab { .. } | Self::ExecPicker(_) => false,
             Self::ContainerInfo { .. } => {
                 let area = ratatui::layout::Rect {
                     x: box_col,
@@ -1765,6 +1791,9 @@ impl Dialog {
             },
             // No filter row: top border + items + bottom border.
             Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
+            // Top border + command line + separator + one row per credential +
+            // hint + bottom border.
+            Self::ExecPicker(state) => state.items.len() as u16 + 5,
         };
         let content_height = crate::tui::layout::available_content_rows(term_rows).max(3);
         let max_height = if matches!(self, Self::Usage { .. }) {
@@ -1800,7 +1829,8 @@ impl Dialog {
             Self::CommandPalette { .. } => palette_hint(),
             Self::SplitDirectionPicker { .. }
             | Self::AgentPicker { .. }
-            | Self::CloseTargetPicker { .. } => picker_hint(),
+            | Self::CloseTargetPicker { .. }
+            | Self::ExecPicker(_) => picker_hint(),
             Self::ProviderPicker { .. } => provider_hint(),
             Self::RenameTab { .. } => rename_hint(),
             Self::ContainerInfo { .. } => info_dialog_hint("copy value", axes),

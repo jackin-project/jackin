@@ -172,6 +172,12 @@ pub struct Multiplexer {
     content_rows: u16,
     available_agents: Vec<String>,
     launch_config: CapsuleConfig,
+    /// Control-channel reply slot for an in-flight `jackin-exec` credential
+    /// picker. Set when an `ExecCommand` opens the `Dialog::ExecPicker`; the
+    /// confirm/cancel handlers take it to send `ExecResult` / `ExecDenied`. A
+    /// new `ExecCommand` arriving while one is pending drops the prior sender
+    /// (its client sees the socket close and reports the error).
+    pending_exec_reply: Option<tokio::sync::oneshot::Sender<ServerMsg>>,
     env_passthrough: Vec<(String, String)>,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
     event_rx: mpsc::UnboundedReceiver<SessionEvent>,
@@ -484,6 +490,7 @@ impl Multiplexer {
             content_rows,
             available_agents: agents,
             launch_config,
+            pending_exec_reply: None,
             env_passthrough,
             event_tx,
             event_rx,
@@ -698,8 +705,15 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             }
 
             Some(request) = control_rx.recv() => {
-                let reply = control_reply_for_request(&mut mux, request.msg);
-                drop(request.reply_tx.send(reply));
+                // `jackin-exec` is the one control message with a deferred reply:
+                // it opens the operator credential picker and answers only after
+                // confirm/cancel resolves. Every other message replies inline.
+                if let ClientMsg::ExecCommand { command, args } = request.msg {
+                    mux.begin_exec_picker(command, args, request.reply_tx);
+                } else {
+                    let reply = control_reply_for_request(&mut mux, request.msg);
+                    drop(request.reply_tx.send(reply));
+                }
             }
 
             // Validated attach handshake from the spawned handshake task.
@@ -1130,22 +1144,13 @@ fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
             accounts: mux.usage_cache.account_snapshot_views(),
         },
-        ClientMsg::ExecCommand { command, .. } => {
-            // `jackin-exec` requires the operator to approve credential
-            // injection through an interactive picker dialog
-            // (`Dialog::ExecPicker`) driven from the daemon event loop. That
-            // dialog is not yet wired into this synchronous control path, so
-            // fail closed: never resolve or inject a credential without
-            // explicit operator approval. The wire protocol, the host-side
-            // resolver (`jackin-runtime` `exec_host`), and the launch-time
-            // binding plumbing are in place; the interactive picker is the
-            // remaining integration (see the jackin-exec roadmap item).
-            crate::clog!(
-                "control: jackin-exec requested for {command:?} but the credential picker is not wired; denying"
-            );
+        ClientMsg::ExecCommand { .. } => {
+            // Defensive only: `ExecCommand` is intercepted by the control loop
+            // (it opens `Dialog::ExecPicker` and replies after the operator
+            // confirms/cancels), so it never reaches this synchronous path.
+            // Fail closed if it ever does.
             ServerMsg::ExecDenied {
-                reason: "jackin-exec credential picker is not yet available in this build"
-                    .to_owned(),
+                reason: "jackin-exec must be dispatched through the credential picker".to_owned(),
             }
         }
         ClientMsg::Unknown => {

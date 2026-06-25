@@ -194,6 +194,28 @@ impl Dialog {
                 }
             }
 
+            Dialog::ExecPicker(state) => {
+                // Multi-select credential list. The checkbox state is encoded in
+                // each row label (`[x]` / `[ ]`) so the shared single-select
+                // FilterPicker widget renders it without a bespoke widget; the
+                // cursor is the highlighted row, Space toggles via handle_key.
+                let items: Vec<PickerItem> = state
+                    .items
+                    .iter()
+                    .map(|item| {
+                        let mark = if item.selected { "[x]" } else { "[ ]" };
+                        PickerItem::Item(format!("{mark} {}  {}", item.name, item.display))
+                    })
+                    .collect();
+                DialogRatatuiSnapshot::FilterPicker {
+                    title: format!("Attach credentials · {}", state.command),
+                    filter: String::new(),
+                    items,
+                    selected: state.cursor,
+                    show_filter: false,
+                }
+            }
+
             Dialog::SplitDirectionPicker { selected, filter } => {
                 use crate::tui::components::dialog::SPLIT_DIRECTION_ITEMS;
                 let needle = filter.to_ascii_lowercase();

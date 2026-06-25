@@ -88,9 +88,56 @@ impl ExecItemKind {
             Self::Literal => "literal",
         }
     }
+
+    /// Parse a binding `kind` string (`"op"`/`"env"`/`"literal"`). Anything
+    /// unrecognised maps to `Literal` (returned verbatim, never resolved
+    /// through `op` or host env) — the fail-safe choice for an unknown kind.
+    pub fn from_kind_str(kind: &str) -> Self {
+        match kind {
+            "op" => Self::Op,
+            "env" => Self::Env,
+            _ => Self::Literal,
+        }
+    }
 }
 
 impl ExecPickerState {
+    /// Build the picker for a `jackin-exec <command> [args…]` invocation from
+    /// the workspace's on-demand bindings. Every binding becomes one unselected
+    /// row; the operator toggles the ones the command needs. The display label
+    /// is the source for `op`/`env` kinds (never a resolved secret) and the
+    /// name for literals.
+    #[must_use]
+    pub fn from_bindings(
+        command: String,
+        args: Vec<String>,
+        bindings: &[jackin_protocol::ExecBinding],
+    ) -> Self {
+        let items = bindings
+            .iter()
+            .map(|b| {
+                let kind = ExecItemKind::from_kind_str(&b.kind);
+                let display = match kind {
+                    ExecItemKind::Literal => b.name.clone(),
+                    ExecItemKind::Op | ExecItemKind::Env => b.source.clone(),
+                };
+                ExecPickerItem {
+                    name: b.name.clone(),
+                    display,
+                    kind,
+                    source: b.source.clone(),
+                    selected: false,
+                }
+            })
+            .collect();
+        Self {
+            command,
+            args,
+            items,
+            cursor: 0,
+        }
+    }
+
     /// Returns the set of selected items, formatted for the host.sock request.
     pub fn selected_refs(&self) -> Vec<CredRef> {
         self.items
@@ -128,7 +175,7 @@ impl ExecPickerState {
 // ---------------------------------------------------------------------------
 
 /// One on-demand credential ref sent to the host.sock listener.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CredRef {
     pub name: String,
     pub kind: String,
