@@ -45,6 +45,122 @@ pub(super) async fn read_image_from_clipboard_text_path() -> Result<Option<Clipb
     read_host_clipboard_text_path_image().await
 }
 
+/// Env opt-out for auto-staging bracketed-pasted host image paths.
+const PASTE_IMAGE_PATHS_ENV: &str = "JACKIN_PASTE_IMAGE_PATHS";
+const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
+const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
+const IMAGE_PATH_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "tiff", "tif"];
+
+/// Auto-staging of a `Cmd+V`-pasted host image path (the `CleanShot` flow: tools
+/// that copy a *file path* to the clipboard, which the terminal pastes as
+/// bracketed-paste text). On by default whenever host attach is active; set
+/// `JACKIN_PASTE_IMAGE_PATHS` to `0`/`false`/`no`/`off` to keep every paste as
+/// ordinary terminal text.
+#[must_use]
+pub(super) fn paste_image_paths_enabled() -> bool {
+    match std::env::var(PASTE_IMAGE_PATHS_ENV) {
+        Ok(value) => !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "0" | "false" | "no" | "off" | "deny"
+        ),
+        Err(_) => true,
+    }
+}
+
+/// The payload of a single self-contained bracketed paste, or `None` when
+/// `input` is not exactly `ESC[200~ <content> ESC[201~`. Typed input, a partial
+/// paste, or a paste mixed with other bytes is rejected so ordinary terminal
+/// input is never hijacked.
+fn sole_bracketed_paste_payload(input: &[u8]) -> Option<&[u8]> {
+    let body = input
+        .strip_prefix(BRACKETED_PASTE_START)?
+        .strip_suffix(BRACKETED_PASTE_END)?;
+    let contains = |needle: &[u8]| body.windows(needle.len()).any(|window| window == needle);
+    if body.is_empty() || contains(BRACKETED_PASTE_START) || contains(BRACKETED_PASTE_END) {
+        return None;
+    }
+    Some(body)
+}
+
+/// Cheap pre-check: does the pasted text look like a single absolute image-file
+/// path or `file://` image URL? Gates the filesystem read so ordinary text
+/// pastes never touch disk.
+fn looks_like_image_path(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty()
+        || trimmed.len() > MAX_CLIPBOARD_TEXT_PATH_BYTES
+        || trimmed.contains(['\n', '\r'])
+    {
+        return false;
+    }
+    let unquoted = trimmed
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .or_else(|| {
+            trimmed
+                .strip_prefix('\'')
+                .and_then(|value| value.strip_suffix('\''))
+        })
+        .unwrap_or(trimmed);
+    let is_absolute = unquoted.starts_with("file://") || unquoted.starts_with('/');
+    let lower = unquoted.to_ascii_lowercase();
+    is_absolute
+        && IMAGE_PATH_EXTENSIONS
+            .iter()
+            .any(|ext| lower.ends_with(&format!(".{ext}")))
+}
+
+/// Drop one level of shell backslash-escaping. Terminals escape pasted file
+/// paths (e.g. `\ ` for a space) before inserting them, so the literal bytes
+/// would not resolve on disk without this.
+fn unescape_shell_path(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(next) = chars.next() {
+                out.push(next);
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Auto-stage path for `Cmd+V` parity: if `input` is a single bracketed paste
+/// whose content is a real, magic-validated host image file, return that image
+/// so the caller stages it and inserts the container path instead of the raw
+/// host path. Anything else returns `None` and is forwarded as ordinary text.
+pub(super) async fn read_image_from_pasted_path(input: &[u8]) -> Result<Option<ClipboardImage>> {
+    if !paste_image_paths_enabled() {
+        return Ok(None);
+    }
+    let Some(payload) = sole_bracketed_paste_payload(input) else {
+        return Ok(None);
+    };
+    let Ok(text) = std::str::from_utf8(payload) else {
+        return Ok(None);
+    };
+    if !looks_like_image_path(text) {
+        return Ok(None);
+    }
+    let owned = text.to_owned();
+    tokio::task::spawn_blocking(move || -> Result<Option<ClipboardImage>> {
+        if let Some(image) = image_from_path_text(&owned)? {
+            return Ok(Some(image));
+        }
+        // Terminals shell-escape pasted paths; retry once de-escaped.
+        let unescaped = unescape_shell_path(&owned);
+        if unescaped == owned {
+            return Ok(None);
+        }
+        image_from_path_text(&unescaped)
+    })
+    .await
+    .map_err(|err| anyhow::anyhow!("joining pasted-path image reader: {err}"))?
+}
+
 #[cfg(target_os = "macos")]
 async fn read_host_clipboard_image() -> Result<Option<ClipboardImage>> {
     tokio::task::spawn_blocking(read_macos_clipboard_image)
@@ -550,6 +666,94 @@ mod tests {
     async fn non_trigger_does_not_probe_clipboard() {
         let image = read_image_for_paste_trigger(b"abc").await.unwrap();
         assert!(image.is_none());
+    }
+
+    fn bracketed(content: &str) -> Vec<u8> {
+        let mut input = b"\x1b[200~".to_vec();
+        input.extend_from_slice(content.as_bytes());
+        input.extend_from_slice(b"\x1b[201~");
+        input
+    }
+
+    #[test]
+    fn sole_bracketed_paste_payload_extracts_only_self_contained_pastes() {
+        assert_eq!(
+            sole_bracketed_paste_payload(&bracketed("/tmp/x.png")),
+            Some(b"/tmp/x.png".as_slice())
+        );
+        // Typed input, partial paste, trailing bytes, and nested markers reject.
+        assert!(sole_bracketed_paste_payload(b"/tmp/x.png").is_none());
+        assert!(sole_bracketed_paste_payload(b"\x1b[200~/tmp/x.png").is_none());
+        assert!(sole_bracketed_paste_payload(b"\x1b[200~\x1b[201~").is_none());
+        let mut trailing = bracketed("/tmp/x.png");
+        trailing.extend_from_slice(b"more");
+        assert!(sole_bracketed_paste_payload(&trailing).is_none());
+    }
+
+    #[test]
+    fn looks_like_image_path_gates_to_absolute_image_files() {
+        assert!(looks_like_image_path("/Users/me/shot.png"));
+        assert!(looks_like_image_path("\"/Users/me/my shot.jpeg\""));
+        assert!(looks_like_image_path("file:///Users/me/shot.gif"));
+        // Not an image, not absolute, or multi-line — all forward as text.
+        assert!(!looks_like_image_path("/Users/me/notes.txt"));
+        assert!(!looks_like_image_path("relative/shot.png"));
+        assert!(!looks_like_image_path("/Users/me/a.png\n/Users/me/b.png"));
+        assert!(!looks_like_image_path("just some pasted prose"));
+    }
+
+    #[test]
+    fn unescape_shell_path_drops_backslash_escapes() {
+        assert_eq!(
+            unescape_shell_path("/Users/me/Application\\ Support/x.png"),
+            "/Users/me/Application Support/x.png"
+        );
+        assert_eq!(unescape_shell_path("/plain/path.png"), "/plain/path.png");
+    }
+
+    #[tokio::test]
+    async fn pasted_path_stages_real_image_and_forwards_everything_else() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("shot.png");
+        std::fs::write(&path, b"\x89PNG\r\n\x1a\npayload").unwrap();
+
+        let staged = read_image_from_pasted_path(&bracketed(&path.display().to_string()))
+            .await
+            .unwrap()
+            .expect("bracketed image path should stage");
+        assert_eq!(staged.format, ClipboardImageFormat::Png);
+        assert_eq!(staged.bytes, b"\x89PNG\r\n\x1a\npayload");
+
+        // Not a paste, a non-image path, and a missing file all forward as text.
+        assert!(
+            read_image_from_pasted_path(path.display().to_string().as_bytes())
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let missing = temp.path().join("missing.png");
+        assert!(
+            read_image_from_pasted_path(&bracketed(&missing.display().to_string()))
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn pasted_path_resolves_shell_escaped_spaces() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("Application Support");
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("shot.png");
+        std::fs::write(&path, b"\x89PNG\r\n\x1a\npayload").unwrap();
+
+        let escaped = path.display().to_string().replace(' ', "\\ ");
+        let staged = read_image_from_pasted_path(&bracketed(&escaped))
+            .await
+            .unwrap()
+            .expect("shell-escaped image path should resolve");
+        assert_eq!(staged.format, ClipboardImageFormat::Png);
     }
 
     #[test]

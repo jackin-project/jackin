@@ -102,6 +102,12 @@ JACKIN_HOST_ATTACH=1 jackin hardline <instance>
 
 With this flag, the `jackin` host process owns the interactive attach loop instead of using the in-container `docker exec -it /jackin/runtime/jackin-capsule` client. That enables explicit host actions such as clipboard image staging, GitHub PR/CI opening, and file export. See [Host Affordances](/guides/host-affordances/) for the current behavior and validation checklist.
 
+`JACKIN_PASTE_IMAGE_PATHS` controls auto-staging of pasted host image paths under host attach. It is on by default: when a single paste's entire content is one absolute host path or `file://` URL that resolves to a real image file, jackin' stages the image and inserts the container path, which makes a normal `Cmd+V` paste work for screenshot tools that copy a file path. Set it to `0`, `false`, `no`, or `off` to disable that and keep every paste as ordinary text:
+
+```bash
+JACKIN_HOST_ATTACH=1 JACKIN_PASTE_IMAGE_PATHS=0 jackin load <role>
+```
+
 `JACKIN_OPEN_LINKS=deny` disables jackin' host browser-open actions while leaving ordinary terminal output and OSC 8 passthrough under their separate policies:
 
 ```bash

@@ -19,6 +19,7 @@ Open the command palette from an attached Capsule session with `Ctrl+\` unless y
 | Action | How to trigger it | Result |
 |---|---|---|
 | Clipboard image paste | Focus an agent or shell pane, copy an image on the host, then press `Ctrl+V`. | jackin' reads the host clipboard, stages a validated image under `/jackin/run/clipboard/`, and pastes that container path into the focused pane. |
+| Paste a host image path (`Cmd+V`) | With a screenshot tool that copies a *file path* to the clipboard (for example CleanShot), copy the image, focus a pane, and paste normally with `Cmd+V`. | jackin' recognizes that the pasted text is a single absolute host image file, stages the validated image under `/jackin/run/clipboard/`, and inserts that container path instead of the raw host path. This makes a normal `Cmd+V` paste work without a special key. On by default under host attach; set `JACKIN_PASTE_IMAGE_PATHS=0` to keep every paste as plain text. |
 | Paste image from host clipboard | Copy an image on the host, open the command palette, and run **Paste image from host clipboard**. | jackin' runs the same host clipboard image reader as `Ctrl+V`, stages the validated image under `/jackin/run/clipboard/`, and pastes the container path. |
 | Stage image without pasting | Copy an image on the host, open the command palette, and run **Stage image without pasting**. | jackin' runs the same host clipboard image reader as `Ctrl+V`, stages the validated image under `/jackin/run/clipboard/`, and shows the staged container path without typing it into the focused pane. |
 | Stage image from clipboard path | Copy an absolute host image path or `file://` URL as text, open the command palette, and run **Stage image from clipboard path**. | jackin' reads the host clipboard text, validates the referenced image, stages it under `/jackin/run/clipboard/`, and pastes the container path. |
@@ -45,7 +46,19 @@ Host-open, host-reveal, and file-export results are reported back into Capsule a
 
 ## Clipboard Expectations
 
-Ordinary text paste remains ordinary terminal input. A text clipboard containing `/tmp/example.png` or `file:///tmp/example.png` is not auto-imported. Use **Paste image from host clipboard** when you want an explicit discoverable image-paste action, **Stage image without pasting** when you want a staged container file but do not want jackin' to type the path into the focused pane, or **Stage image from clipboard path** when you intentionally want jackin' to treat host clipboard text as an image path or file URL.
+Ordinary text paste remains ordinary terminal input, with one narrow exception for image-path parity: when a single paste's *entire* content is one absolute host path or `file://` URL that resolves to a real, magic-validated image file, jackin' auto-stages that image and inserts the container path instead. This is what makes a normal `Cmd+V` paste work for screenshot tools that copy a file path (such as CleanShot). Anything else — prose, a relative path, a non-image file, a path to a file that does not exist, or a paste mixed with other typed bytes — stays plain text. The behavior is on by default under host attach; set `JACKIN_PASTE_IMAGE_PATHS=0` (or `false`/`no`/`off`) to disable it and keep every paste as ordinary text. The probe only reads the bytes already pasted, so ordinary text pastes never touch the host clipboard or filesystem.
+
+Use **Paste image from host clipboard** when you want an explicit discoverable image-paste action, **Stage image without pasting** when you want a staged container file but do not want jackin' to type the path into the focused pane, or **Stage image from clipboard path** when you intentionally want jackin' to treat host clipboard text as an image path or file URL.
+
+### `Cmd+V` and raw-screenshot parity
+
+`Cmd` is a macOS GUI modifier the terminal consumes; it never reaches jackin' as a keystroke, so jackin' can only react to what the terminal *pastes*. Screenshot tools that copy a **file path** (CleanShot, "Copy as Pathname") paste that path, which the auto-stage path above turns into a real image — so `Cmd+V` already works for them. A **raw image-only clipboard** (for example macOS `Shift+Ctrl+Cmd+4`) has no text representation, so `Cmd+V` pastes nothing and there is nothing for jackin' to catch; use `Ctrl+V` for those, which reads the host clipboard image directly. To keep pressing `Cmd+V` for every source, remap it at the terminal level — for Ghostty, add a keybind that sends `Ctrl+V`'s byte:
+
+```ini
+keybind = cmd+v=text:\x16
+```
+
+With that remap, `Cmd+V` routes through the same host clipboard image probe as `Ctrl+V`, so raw screenshots and copied images both paste. Trade-off: a `Cmd+V` with no image in the clipboard now sends the `Ctrl+V` control byte to the focused agent instead of pasting clipboard *text*, so apply this remap only if you rarely paste plain text with `Cmd+V`. The friction-free default is the reverse: leave `Cmd+V` as your normal text paste, rely on the file-path auto-stage above for screenshot tools that copy a path, and use `Ctrl+V` for raw image-only clipboards.
 
 When an image is staged but Capsule has no writable focused pane, jackin' reports the staged `/jackin/run/clipboard/...` path and says it was not pasted instead of silently dropping the image. The staged file remains available for manual copy or a later explicit action.
 

@@ -33,7 +33,7 @@ use super::attach::{
 };
 use super::host_clipboard::{
     is_image_paste_trigger, read_image_for_paste_trigger, read_image_from_clipboard,
-    read_image_from_clipboard_text_path,
+    read_image_from_clipboard_text_path, read_image_from_pasted_path,
 };
 use super::host_desktop::{open_host_file, open_host_url, reveal_host_file};
 
@@ -65,6 +65,13 @@ fn log_clipboard_image_no_image_forwarded() {
     jackin_diagnostics::emit_compact_line(
         "clipboard-image",
         "clipboard-image: no-image source=clipboard text-paste=forwarded",
+    );
+}
+
+fn log_clipboard_image_pasted_path_staged() {
+    jackin_diagnostics::emit_compact_line(
+        "clipboard-image",
+        "clipboard-image: pasted-path staged source=paste",
     );
 }
 
@@ -400,7 +407,7 @@ where
                 if image_paste_trigger {
                     log_clipboard_image_paste_trigger();
                 }
-                let image = match read_image_for_paste_trigger(input).await {
+                let mut image = match read_image_for_paste_trigger(input).await {
                     Ok(Some(image)) => {
                         jackin_diagnostics::debug_log!(
                             "attach",
@@ -427,6 +434,31 @@ where
                         None
                     }
                 };
+                // Cmd+V parity: a Ctrl+V trigger never carries a path, so only
+                // probe plain pastes. A bracketed paste whose sole content is a
+                // real host image file is auto-staged; the staged container path
+                // replaces the raw host path. Everything else forwards as text.
+                if image.is_none() && !image_paste_trigger {
+                    match read_image_from_pasted_path(input).await {
+                        Ok(Some(staged)) => {
+                            jackin_diagnostics::debug_log!(
+                                "attach",
+                                "host pasted-path image: format={:?} bytes={}",
+                                staged.format,
+                                staged.bytes.len()
+                            );
+                            log_clipboard_image_pasted_path_staged();
+                            image = Some(staged);
+                        }
+                        Ok(None) => {}
+                        Err(err) => {
+                            jackin_diagnostics::debug_log!(
+                                "attach",
+                                "host pasted-path image probe failed: {err:#}"
+                            );
+                        }
+                    }
+                }
                 if let Some(image) = image {
                     if let Err(err) = write_clipboard_image_frames(&mut server_writer, image).await {
                         jackin_diagnostics::debug_log!(
@@ -1853,6 +1885,73 @@ mod tests {
         .unwrap();
 
         assert_eq!(server_task.await.unwrap(), ClientFrame::Input(raw_input));
+    }
+
+    #[tokio::test]
+    async fn attach_protocol_auto_stages_bracketed_image_path_paste() {
+        let temp = tempfile::tempdir().unwrap();
+        let image_path = temp.path().join("shot.png");
+        fs::write(&image_path, b"\x89PNG\r\n\x1a\npayload").unwrap();
+
+        let (client, mut server) = duplex(4096);
+        let (client_reader, client_writer) = tokio::io::split(client);
+        let request = HostAttachRequest {
+            spawn_request: None,
+            focus_session: None,
+            env: Vec::new(),
+            terminal: ClientTerminal::default(),
+            export_subdir: "jk-agent-smith".to_owned(),
+            diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
+        };
+        let mut raw_input = b"\x1b[200~".to_vec();
+        raw_input.extend_from_slice(image_path.display().to_string().as_bytes());
+        raw_input.extend_from_slice(b"\x1b[201~");
+
+        let server_task = tokio::spawn(async move {
+            let mut tag = [0u8; 1];
+            server.read_exact(&mut tag).await.unwrap();
+            let _hello = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            server.read_exact(&mut tag).await.unwrap();
+            let frame = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            server
+                .write_all(&encode_server(ServerFrame::Shutdown { reason: None }))
+                .await
+                .unwrap();
+            frame
+        });
+
+        let (mut input_writer, input_reader) = duplex(128);
+        input_writer.write_all(&raw_input).await.unwrap();
+        let winch = signal(SignalKind::window_change()).unwrap();
+        run_attach_protocol(
+            client_reader,
+            client_writer,
+            input_reader,
+            Cursor::new(Vec::<u8>::new()),
+            24,
+            80,
+            request,
+            Vec::new(),
+            winch,
+        )
+        .await
+        .unwrap();
+
+        // The pasted host image path is staged as an image frame, not forwarded
+        // as the raw path text.
+        match server_task.await.unwrap() {
+            ClientFrame::ClipboardImage(image) => {
+                assert_eq!(image.format, ClipboardImageFormat::Png);
+                assert_eq!(image.bytes, b"\x89PNG\r\n\x1a\npayload");
+            }
+            other => panic!("expected staged ClipboardImage frame, got {other:?}"),
+        }
     }
 
     #[tokio::test]
