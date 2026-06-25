@@ -257,19 +257,27 @@ For the full design rationale and phased implementation plan, see the [Docker Ru
 
 ## What's in place today vs. what comes next
 
-### Today (all shipped)
+### Status: under active development
 
-Everything described on this page is fully implemented and available now:
-- All four profiles with enforced capability sets (`locked`, `hardened`, `standard`, `compat`)
+The profile model and several controls are live; the full egress/observability/DinD-tier enforcement is still being built. This section is the honest split — do not rely on an in-development control for isolation until it moves to "Enforced today."
+
+**Enforced today:**
+- All four profiles with enforced capability sets (`locked`, `hardened`, `standard`, `compat`) and `no-new-privileges` on by default outside `compat`
 - `[docker.grants]` in config and workspace for per-dimension overrides
 - `[docker]` in `jackin.role.toml` for role declarations (`min_profile`, `dind`, `allowed_hosts`, `capabilities_add`)
-- `allowlist` network tier: iptables/ipset OUTPUT allowlist installed in the container via `docker exec --user root` before the agent session starts; `JACKIN_ALLOWED_HOSTS` and `JACKIN_NETWORK_ENFORCEMENT` injected; fail-closed (launch aborts if firewall install fails)
-- `locked` profile uses a Docker-internal network (`--internal=true`) — traffic cannot leave the Docker network even without iptables rules
-- `standard`/`hardened`/`locked` sudo off by default — enabled only via an explicit `sudo = true` grant; `compat` keeps sudo on unchanged
-- DinD off by default in `standard`/`hardened`/`locked` — enabled via grant (`"none"` / `"rootless"` / `"privileged"`); rootless DinD wired and selectable (requires cgroup v2); `compat` keeps privileged DinD unchanged
-- Full telemetry under `--debug`: per-decision lines for profile, capabilities, `no_new_privileges`, read-only root, resources, cgroup version, AppArmor, network mode, and session contract summary
-- All validation errors at launch time (bad cap names, user+sudo conflict, memory sizing, profile conflicts)
+- `standard`/`hardened`/`locked` sudo off by default; `compat` keeps sudo on unchanged (the deny side; see in-development note on enabling sudo)
+- DinD off by default in `standard`/`hardened`/`locked`, on in `compat` — the per-profile default and skip-when-disabled behavior
 - cgroup v2 required for `hardened`/`locked` — launches fail-closed on v1 hosts with a clear error; `standard` warns
+- All validation errors at launch time (bad cap names, user+sudo conflict, memory sizing, profile conflicts)
+
+**In development (described above as the target, not yet enforced):**
+- `allowlist` network tier — the in-container iptables/ipset allowlist primitive exists but is not yet installed at launch; egress is not restricted yet
+- `locked` Docker-internal network — not yet applied
+- Enabling sudo via a `sudo = true` grant — the deny side is live, but runtime provisioning of the grant is not wired yet
+- Rootless DinD tier (`dind = "rootless"`) — not yet selectable; a rootless grant currently falls back to privileged
+- Full `--debug` per-decision telemetry and the session-contract summary — only a subset of lines is emitted today
+
+See the [Docker Runtime Hardening Contract](/reference/roadmap/docker-runtime-hardening-contract/) roadmap item for the remaining work and status.
 
 ### Current default: `compat`
 
