@@ -77,22 +77,13 @@ pub(super) mod config {
                 source,
             } => (key.clone(), source.clone()),
         };
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            let result = tokio::task::spawn_blocking(move || {
-                upsert_role_source_on_disk(&paths, &key, &source)
-            })
-            .await
-            .map_err(|error| anyhow::anyhow!("role source persist worker panicked: {error}"))
-            .and_then(std::convert::identity);
-            drop(tx.send(
-                jackin_console::tui::subscriptions::ConfigSaveResult::RoleSourcePersist {
-                    result,
-                    origin,
-                },
-            ));
-        });
-        rx
+        jackin_tui::runtime::spawn_blocking_subscription(move || {
+            let result = upsert_role_source_on_disk(&paths, &key, &source);
+            jackin_console::tui::subscriptions::ConfigSaveResult::RoleSourcePersist {
+                result,
+                origin,
+            }
+        })
     }
 
     fn remove_workspace_from_disk(paths: &JackinPaths, name: &str) -> anyhow::Result<AppConfig> {
@@ -108,21 +99,10 @@ pub(super) mod config {
     ) -> jackin_tui::runtime::BlockingSubscription<
         jackin_console::tui::state::ManagerConfigSaveResult,
     > {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            let result =
-                tokio::task::spawn_blocking(move || remove_workspace_from_disk(&paths, &name))
-                    .await
-                    .map_err(|error| anyhow::anyhow!("workspace delete worker panicked: {error}"))
-                    .and_then(std::convert::identity);
-            drop(tx.send(
-                jackin_console::tui::subscriptions::ConfigSaveResult::RemoveWorkspace {
-                    result,
-                    cwd,
-                },
-            ));
-        });
-        rx
+        jackin_tui::runtime::spawn_blocking_subscription(move || {
+            let result = remove_workspace_from_disk(&paths, &name);
+            jackin_console::tui::subscriptions::ConfigSaveResult::RemoveWorkspace { result, cwd }
+        })
     }
 
     #[cfg(test)]
@@ -221,36 +201,27 @@ pub(super) mod config {
     ) -> jackin_tui::runtime::BlockingSubscription<
         jackin_console::tui::state::ManagerConfigSaveResult,
     > {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            let result = tokio::task::spawn_blocking(move || {
-                save_workspace(
-                    &paths,
-                    WorkspaceSaveInput {
-                        mode,
-                        original: &original,
-                        pending: &pending,
-                    },
-                )
-                .map(|saved| {
-                    jackin_console::tui::subscriptions::WorkspaceSaveResult {
-                        config: saved.config,
-                        current_name: saved.current_name,
-                        pending_rename: saved.pending_rename,
-                    }
-                })
-            })
-            .await
-            .map_err(|error| anyhow::anyhow!("workspace save worker panicked: {error}"))
-            .and_then(std::convert::identity);
-            drop(tx.send(
-                jackin_console::tui::subscriptions::ConfigSaveResult::Workspace {
-                    result,
-                    exit_on_success,
+        jackin_tui::runtime::spawn_blocking_subscription(move || {
+            let result = save_workspace(
+                &paths,
+                WorkspaceSaveInput {
+                    mode,
+                    original: &original,
+                    pending: &pending,
                 },
-            ));
-        });
-        rx
+            )
+            .map(
+                |saved| jackin_console::tui::subscriptions::WorkspaceSaveResult {
+                    config: saved.config,
+                    current_name: saved.current_name,
+                    pending_rename: saved.pending_rename,
+                },
+            );
+            jackin_console::tui::subscriptions::ConfigSaveResult::Workspace {
+                result,
+                exit_on_success,
+            }
+        })
     }
 
     pub(crate) struct OwnedSettingsSaveInput {
@@ -289,16 +260,10 @@ pub(super) mod config {
     ) -> jackin_tui::runtime::BlockingSubscription<
         jackin_console::tui::state::ManagerConfigSaveResult,
     > {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            let result =
-                tokio::task::spawn_blocking(move || save_settings(&paths, input.as_borrowed()))
-                    .await
-                    .map_err(|error| anyhow::anyhow!("settings save worker panicked: {error}"))
-                    .and_then(std::convert::identity);
-            drop(tx.send(jackin_console::tui::subscriptions::ConfigSaveResult::Settings(result)));
-        });
-        rx
+        jackin_tui::runtime::spawn_blocking_subscription(move || {
+            let result = save_settings(&paths, input.as_borrowed());
+            jackin_console::tui::subscriptions::ConfigSaveResult::Settings(result)
+        })
     }
 
     fn apply_workspace_save_diff_plan(
@@ -580,22 +545,22 @@ pub(super) mod role_load {
         selector: jackin_core::RoleSelector,
         git_url: String,
     ) -> BlockingSubscription<anyhow::Result<()>> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            let mut runner = crate::docker::ShellRunner {
-                debug: crate::tui::is_debug_mode(),
-            };
-            let result = register_with_runner(
-                &paths,
-                &selector,
-                &git_url,
-                &mut runner,
-                crate::tui::is_debug_mode(),
-            )
-            .await;
-            drop(tx.send(result));
-        });
-        rx
+        jackin_tui::runtime::spawn_named_async_subscription(
+            "jackin-role-registration",
+            async move {
+                let mut runner = crate::docker::ShellRunner {
+                    debug: crate::tui::is_debug_mode(),
+                };
+                register_with_runner(
+                    &paths,
+                    &selector,
+                    &git_url,
+                    &mut runner,
+                    crate::tui::is_debug_mode(),
+                )
+                .await
+            },
+        )
     }
 
     pub(crate) async fn register_with_runner(
@@ -637,9 +602,8 @@ pub(super) mod workspace_save {
         workspace_name: String,
         prospective_mounts: Vec<jackin_config::MountConfig>,
     ) -> BlockingSubscription<anyhow::Result<crate::runtime::drift::DriftDetection>> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            let result = async {
+        jackin_tui::runtime::spawn_named_async_subscription("jackin-drift-check", async move {
+            async {
                 let docker = crate::docker_client::BollardDockerClient::connect()?;
                 crate::runtime::drift::detect_workspace_edit_drift(
                     &paths,
@@ -649,10 +613,8 @@ pub(super) mod workspace_save {
                 )
                 .await
             }
-            .await;
-            drop(tx.send(result));
-        });
-        rx
+            .await
+        })
     }
 
     /// Start cleanup for isolated mount records removed by a workspace save.
@@ -660,24 +622,24 @@ pub(super) mod workspace_save {
         paths: crate::paths::JackinPaths,
         records: Vec<jackin_runtime::isolation::state::IsolationRecord>,
     ) -> BlockingSubscription<anyhow::Result<()>> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            let result = async {
-                for rec in records {
-                    let container_dir = paths.data_dir.join(&rec.container_name);
-                    let mut runner = crate::docker::ShellRunner::default();
-                    jackin_runtime::isolation::cleanup::force_cleanup_isolated(
-                        &rec,
-                        &container_dir,
-                        &mut runner,
-                    )
-                    .await?;
+        jackin_tui::runtime::spawn_named_async_subscription(
+            "jackin-isolation-cleanup",
+            async move {
+                async {
+                    for rec in records {
+                        let container_dir = paths.data_dir.join(&rec.container_name);
+                        let mut runner = crate::docker::ShellRunner::default();
+                        jackin_runtime::isolation::cleanup::force_cleanup_isolated(
+                            &rec,
+                            &container_dir,
+                            &mut runner,
+                        )
+                        .await?;
+                    }
+                    Ok(())
                 }
-                Ok(())
-            }
-            .await;
-            drop(tx.send(result));
-        });
-        rx
+                .await
+            },
+        )
     }
 }

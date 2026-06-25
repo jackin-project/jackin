@@ -762,7 +762,7 @@ fn apply_settings_save_result(
     }
 }
 
-pub(crate) fn poll_background_messages(
+pub fn poll_background_messages(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
@@ -827,7 +827,7 @@ pub(crate) fn poll_background_messages(
     messages
 }
 
-pub(crate) fn apply_background_event(
+pub fn apply_background_event(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
