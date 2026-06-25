@@ -9,7 +9,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
 use crate::protocol::attach::SpawnRequest;
-use crate::protocol::control::{ClientMsg, ServerMsg, frame as control_frame};
+use crate::protocol::control::{
+    AccountUsageSnapshotView, ClientMsg, ServerMsg, frame as control_frame,
+};
 use crate::socket::SOCKET_PATH;
 
 /// Connect to the running daemon and run the interactive attach client.
@@ -89,33 +91,9 @@ fn flag_value(args: &[String], flag: &str) -> Option<String> {
         .cloned()
 }
 
-/// Read one length-prefixed control reply from the daemon and deserialize it.
-/// Mirror the daemon-side cap in `socket::read_control_msg`: a buggy or wedged
-/// daemon (or a peer that won the socket race inside the container) could
-/// otherwise send `0xFFFFFFFF` and force a ~4 GiB allocation attempt here.
-async fn read_control_reply(stream: &mut UnixStream) -> Result<ServerMsg> {
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await?;
-    let len = u32::from_be_bytes(len_buf) as usize;
-    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
-    if len > MAX_CONTROL_REPLY {
-        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
-    }
-    let mut body = vec![0u8; len];
-    stream.read_exact(&mut body).await?;
-    Ok(serde_json::from_slice(&body)?)
-}
-
 /// Query the daemon for current session list and print it.
 pub async fn run_status() -> Result<()> {
-    let mut stream = UnixStream::connect(SOCKET_PATH)
-        .await
-        .context("cannot connect to jackin-capsule daemon")?;
-
-    let msg = control_frame(&ClientMsg::Status);
-    stream.write_all(&msg).await?;
-
-    let msg = read_control_reply(&mut stream).await?;
+    let msg = request_control(&ClientMsg::Status).await?;
     let sessions = match msg {
         ServerMsg::SessionList { sessions } => sessions,
         ServerMsg::Ack | ServerMsg::Unknown => {
@@ -128,6 +106,12 @@ pub async fn run_status() -> Result<()> {
         }
         ServerMsg::AgentRegistry { .. } => {
             anyhow::bail!("daemon replied with AgentRegistry for Status request")
+        }
+        ServerMsg::UsageFocused { .. } => {
+            anyhow::bail!("daemon replied with UsageFocused for Status request")
+        }
+        ServerMsg::UsageAccounts { .. } => {
+            anyhow::bail!("daemon replied with UsageAccounts for Status request")
         }
     };
     crate::output::stdout_line(format_args!("Sessions: {}", sessions.len()));
@@ -156,13 +140,7 @@ pub async fn run_status_explain(args: &[String]) -> Result<()> {
         .parse()
         .context("session_id must be a u64")?;
 
-    let mut stream = UnixStream::connect(SOCKET_PATH)
-        .await
-        .context("cannot connect to jackin-capsule daemon")?;
-    stream
-        .write_all(&control_frame(&ClientMsg::Snapshot))
-        .await?;
-    let ServerMsg::Snapshot { tabs, .. } = read_control_reply(&mut stream).await? else {
+    let ServerMsg::Snapshot { tabs, .. } = request_control(&ClientMsg::Snapshot).await? else {
         anyhow::bail!("daemon did not reply with a snapshot");
     };
     let pane = tabs
@@ -210,15 +188,7 @@ pub async fn run_status_capture(args: &[String]) -> Result<()> {
 /// console can deserialize the same struct it shares with the
 /// daemon — no second schema to keep in sync.
 pub async fn run_snapshot() -> Result<()> {
-    let mut stream = UnixStream::connect(SOCKET_PATH)
-        .await
-        .context("cannot connect to jackin-capsule daemon")?;
-
-    stream
-        .write_all(&control_frame(&ClientMsg::Snapshot))
-        .await?;
-
-    let msg = read_control_reply(&mut stream).await?;
+    let msg = request_control(&ClientMsg::Snapshot).await?;
     let (tabs, active_tab) = match msg {
         ServerMsg::Snapshot { tabs, active_tab } => (tabs, active_tab),
         ServerMsg::Ack | ServerMsg::Unknown => {
@@ -231,6 +201,12 @@ pub async fn run_snapshot() -> Result<()> {
         }
         ServerMsg::AgentRegistry { .. } => {
             anyhow::bail!("daemon replied with AgentRegistry for Snapshot request")
+        }
+        ServerMsg::UsageFocused { .. } => {
+            anyhow::bail!("daemon replied with UsageFocused for Snapshot request")
+        }
+        ServerMsg::UsageAccounts { .. } => {
+            anyhow::bail!("daemon replied with UsageAccounts for Snapshot request")
         }
     };
     let payload = serde_json::json!({
@@ -253,13 +229,7 @@ pub enum AgentsFormat {
 /// `--format json` emits the registry as a JSON array.
 /// Human format renders a table with a `← you` annotation on the caller's row.
 pub async fn run_agents(format: AgentsFormat) -> Result<()> {
-    let mut stream = UnixStream::connect(SOCKET_PATH)
-        .await
-        .context("cannot connect to jackin-capsule daemon")?;
-
-    stream.write_all(&control_frame(&ClientMsg::Agents)).await?;
-
-    let msg = read_control_reply(&mut stream).await?;
+    let msg = request_control(&ClientMsg::Agents).await?;
     let records = match msg {
         ServerMsg::AgentRegistry { records } => records,
         ServerMsg::Ack | ServerMsg::Unknown => {
@@ -272,6 +242,12 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
         }
         ServerMsg::Snapshot { .. } => {
             anyhow::bail!("daemon replied with Snapshot for Agents request")
+        }
+        ServerMsg::UsageFocused { .. } => {
+            anyhow::bail!("daemon replied with UsageFocused for Agents request")
+        }
+        ServerMsg::UsageAccounts { .. } => {
+            anyhow::bail!("daemon replied with UsageAccounts for Agents request")
         }
     };
 
@@ -333,4 +309,294 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub async fn run_usage_accounts() -> Result<()> {
+    let accounts = usage_accounts().await?;
+    crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&accounts)?));
+    Ok(())
+}
+
+pub async fn run_usage_verify() -> Result<()> {
+    let accounts = usage_accounts().await?;
+    let checks = verify_usage_accounts(&accounts);
+    for check in &checks {
+        crate::output::stdout_line(format_args!(
+            "{:<9} {}",
+            check.label,
+            check.detail.as_deref().unwrap_or(check.status)
+        ));
+    }
+    let failures = checks
+        .iter()
+        .filter(|check| check.status != "ok")
+        .map(|check| format!("{}: {}", check.label, check.status))
+        .collect::<Vec<_>>();
+    if !failures.is_empty() {
+        anyhow::bail!("usage verification failed: {}", failures.join(", "));
+    }
+    crate::output::stdout_line(format_args!("usage verification passed"));
+    Ok(())
+}
+
+pub async fn run_usage_claude_cli() -> Result<()> {
+    let diagnostic = crate::usage::run_claude_usage_diagnostic()
+        .map_err(|error| anyhow::anyhow!("Claude CLI usage diagnostic failed: {error}"))?;
+    crate::output::stdout_line(format_args!(
+        "{}",
+        serde_json::to_string_pretty(&diagnostic)?
+    ));
+    Ok(())
+}
+
+async fn usage_accounts() -> Result<Vec<AccountUsageSnapshotView>> {
+    let msg = request_control(&ClientMsg::UsageAccountList).await?;
+    match msg {
+        ServerMsg::UsageAccounts { accounts } => Ok(accounts),
+        other => anyhow::bail!(
+            "daemon replied with {} for UsageAccountList request",
+            msg_kind(&other)
+        ),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct UsageVerifyCheck {
+    label: &'static str,
+    status: &'static str,
+    detail: Option<String>,
+}
+
+fn verify_usage_accounts(accounts: &[AccountUsageSnapshotView]) -> Vec<UsageVerifyCheck> {
+    usage_verify_provider_aliases()
+        .iter()
+        .map(|(label, aliases)| verify_usage_provider(label, aliases, accounts))
+        .collect()
+}
+
+fn usage_verify_provider_aliases() -> &'static [(&'static str, &'static [&'static str])] {
+    &[
+        ("OpenAI", &["Codex", "OpenAI / Codex"]),
+        ("Anthropic", &["Claude", "Anthropic / Claude"]),
+        ("Amp", &["Amp"]),
+        ("xAI", &["Grok Build", "xAI / Grok"]),
+        ("Z.AI", &["GLM / Z.AI"]),
+        ("Kimi", &["Kimi"]),
+        ("MiniMax", &["MiniMax"]),
+    ]
+}
+
+fn verify_usage_provider(
+    label: &'static str,
+    aliases: &[&str],
+    accounts: &[AccountUsageSnapshotView],
+) -> UsageVerifyCheck {
+    let rows = accounts
+        .iter()
+        .filter(|account| {
+            aliases
+                .iter()
+                .any(|alias| usage_provider_matches(alias, &account.provider))
+        })
+        .collect::<Vec<_>>();
+    if rows.is_empty() {
+        return UsageVerifyCheck {
+            label,
+            status: "missing",
+            detail: None,
+        };
+    }
+    let ok = rows.iter().any(|row| usage_row_proves_live_quota(row));
+    if ok {
+        let Some(latest) = rows.iter().max_by_key(|row| row.fetched_at) else {
+            return UsageVerifyCheck {
+                label,
+                status: "missing",
+                detail: None,
+            };
+        };
+        return UsageVerifyCheck {
+            label,
+            status: "ok",
+            detail: Some(format!(
+                "ok: {} {} {} {} row(s)",
+                latest.status,
+                latest.source,
+                latest.confidence,
+                rows.len()
+            )),
+        };
+    }
+    let Some(latest) = rows.iter().max_by_key(|row| row.fetched_at) else {
+        return UsageVerifyCheck {
+            label,
+            status: "missing",
+            detail: None,
+        };
+    };
+    UsageVerifyCheck {
+        label,
+        status: "untrusted",
+        detail: Some(format!(
+            "untrusted: latest status={} source={} confidence={} error={}",
+            latest.status,
+            latest.source,
+            latest.confidence,
+            latest.last_error.as_deref().unwrap_or("none")
+        )),
+    }
+}
+
+fn usage_row_proves_live_quota(row: &AccountUsageSnapshotView) -> bool {
+    row.status == "fresh"
+        && row.confidence == "authoritative"
+        && matches!(row.source.as_str(), "provider_api" | "cli")
+        && !row.window_kind.trim().is_empty()
+        && !row.account_label.trim().is_empty()
+        && !row.account_label.to_ascii_lowercase().contains("needs")
+}
+
+fn usage_provider_matches(needle: &str, provider: &str) -> bool {
+    let needle = normalize_usage_provider_label(needle);
+    let provider = normalize_usage_provider_label(provider);
+    provider.contains(&needle)
+        || needle.contains(&provider)
+        || (needle.contains("openai") && provider.contains("codex"))
+        || (needle.contains("codex") && provider.contains("openai"))
+        || (needle.contains("anthropic") && provider.contains("claude"))
+        || (needle.contains("claude") && provider.contains("anthropic"))
+        || (needle.contains("xai") && provider.contains("grok"))
+        || (needle.contains("grok") && provider.contains("xai"))
+        || (needle.contains("zai") && provider.contains("glm"))
+        || (needle.contains("glm") && provider.contains("zai"))
+}
+
+fn normalize_usage_provider_label(value: &str) -> String {
+    value
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect::<String>()
+        .to_ascii_lowercase()
+}
+
+async fn request_control(request: &ClientMsg) -> Result<ServerMsg> {
+    let mut stream = UnixStream::connect(SOCKET_PATH)
+        .await
+        .context("cannot connect to jackin-capsule daemon")?;
+
+    stream.write_all(&control_frame(request)).await?;
+
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).await?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    // Mirror the daemon-side cap in `socket::read_control_msg`. A
+    // buggy or wedged daemon (or a peer that won the socket race
+    // inside the container) could otherwise send `0xFFFFFFFF` and
+    // force a 4 GiB allocation attempt in the client.
+    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
+    if len > MAX_CONTROL_REPLY {
+        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
+    }
+    let mut body = vec![0u8; len];
+    stream.read_exact(&mut body).await?;
+
+    Ok(serde_json::from_slice(&body)?)
+}
+
+fn msg_kind(msg: &ServerMsg) -> &'static str {
+    match msg {
+        ServerMsg::SessionList { .. } => "SessionList",
+        ServerMsg::Snapshot { .. } => "Snapshot",
+        ServerMsg::AgentRegistry { .. } => "AgentRegistry",
+        ServerMsg::UsageFocused { .. } => "UsageFocused",
+        ServerMsg::UsageAccounts { .. } => "UsageAccounts",
+        ServerMsg::Ack => "Ack",
+        ServerMsg::Unknown => "Unknown",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn account(
+        provider: &str,
+        status: &str,
+        source: &str,
+        confidence: &str,
+    ) -> AccountUsageSnapshotView {
+        AccountUsageSnapshotView {
+            provider: provider.to_owned(),
+            account_label: format!("{provider} account"),
+            source: source.to_owned(),
+            confidence: confidence.to_owned(),
+            window_kind: "Session".to_owned(),
+            used_amount: Some(63),
+            used_unit: Some("percent".to_owned()),
+            limit_amount: Some(100),
+            limit_unit: Some("percent".to_owned()),
+            resets_at: Some(1_781_186_000),
+            fetched_at: 1_781_185_680,
+            expires_at: None,
+            status: status.to_owned(),
+            last_error: None,
+        }
+    }
+
+    #[test]
+    fn usage_verify_accepts_trusted_rows_for_every_provider() {
+        let accounts = [
+            account("Codex", "fresh", "provider_api", "authoritative"),
+            account("Claude", "fresh", "cli", "authoritative"),
+            account("Amp", "fresh", "provider_api", "authoritative"),
+            account("Grok Build", "fresh", "cli", "authoritative"),
+            account("GLM / Z.AI", "fresh", "provider_api", "authoritative"),
+            account("Kimi", "fresh", "provider_api", "authoritative"),
+            account("MiniMax", "fresh", "provider_api", "authoritative"),
+        ];
+
+        let checks = verify_usage_accounts(&accounts);
+
+        assert_eq!(checks.len(), 7);
+        assert!(
+            checks.iter().all(|check| check.status == "ok"),
+            "{checks:?}"
+        );
+    }
+
+    #[test]
+    fn usage_verify_reports_missing_and_untrusted_providers() {
+        let mut untrusted = account("Codex", "needs_login", "none", "none");
+        untrusted.account_label = "needs Codex login".to_owned();
+        untrusted.last_error = Some("Codex auth not available".to_owned());
+        let accounts = [
+            untrusted,
+            account("Amp", "fresh", "provider_api", "authoritative"),
+        ];
+
+        let checks = verify_usage_accounts(&accounts);
+
+        let codex = checks
+            .iter()
+            .find(|check| check.label == "OpenAI")
+            .expect("OpenAI check");
+        assert_eq!(codex.status, "untrusted");
+        assert!(
+            codex
+                .detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("needs_login")),
+            "{codex:?}"
+        );
+        let anthropic = checks
+            .iter()
+            .find(|check| check.label == "Anthropic")
+            .expect("Anthropic check");
+        assert_eq!(anthropic.status, "missing");
+        let amp = checks
+            .iter()
+            .find(|check| check.label == "Amp")
+            .expect("Amp check");
+        assert_eq!(amp.status, "ok");
+    }
 }

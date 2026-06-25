@@ -30,7 +30,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Semaphore, mpsc};
 
-use crate::protocol::control::{ClientMsg, ServerMsg, SessionInfo, frame};
+use crate::protocol::control::{ClientMsg, ServerMsg, frame};
 
 type ClientPermit = tokio::sync::OwnedSemaphorePermit;
 type ListenerReceiver = mpsc::UnboundedReceiver<(UnixStream, ClientPermit)>;
@@ -261,95 +261,11 @@ async fn read_payload_lazy(
     Ok(buf)
 }
 
-/// Handle a one-shot control request and close the connection.
-/// A runtime hook/plugin event forwarded over the control socket, handed to the
-/// daemon loop to apply to the addressed session's authority.
-#[derive(Debug, Clone)]
-pub struct RuntimeEventMsg {
-    pub session_id: u64,
-    pub source_id: String,
-    pub runtime: String,
-    pub event: String,
-}
-
-/// A command from a control-socket handler task to the daemon event loop (which
-/// owns mutable session state). Both variants are fire-and-forget: the handler
-/// Acks the client immediately and never blocks an agent hook.
-#[derive(Debug, Clone)]
-pub enum DaemonCommand {
-    /// Apply a forwarded runtime event to a session's authority.
-    RuntimeEvent(RuntimeEventMsg),
-    /// Write a capture fixture (visible grid + evidence) for a session.
-    Capture { session_id: u64 },
-}
-
-pub async fn handle_control_request(
-    mut stream: UnixStream,
-    first_byte: u8,
-    sessions: Vec<SessionInfo>,
-    tabs: Vec<crate::protocol::control::TabSnapshot>,
-    history: Vec<jackin_protocol::control::AgentRegistryEntry>,
-    active_tab: u32,
-    daemon_cmd_tx: mpsc::UnboundedSender<DaemonCommand>,
-) {
-    let msg = match read_control_msg(&mut stream, first_byte).await {
-        Ok(msg) => msg,
-        Err(e) => {
-            crate::clog!("control: rejecting malformed request: {e:#}");
-            return;
-        }
-    };
-    let reply = match &msg {
-        ClientMsg::Status => ServerMsg::SessionList { sessions },
-        ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
-        ClientMsg::Agents => ServerMsg::AgentRegistry { records: history },
-        ClientMsg::ReportRuntimeEvent {
-            session_id,
-            source_id,
-            runtime,
-            event,
-            payload: _,
-        } => {
-            // Forward to the daemon loop; never block the agent's hook.
-            if daemon_cmd_tx
-                .send(DaemonCommand::RuntimeEvent(RuntimeEventMsg {
-                    session_id: *session_id,
-                    source_id: source_id.clone(),
-                    runtime: runtime.clone(),
-                    event: event.clone(),
-                }))
-                .is_err()
-            {
-                crate::clog!("control: runtime event dropped (daemon loop gone)");
-            }
-            ServerMsg::Ack
-        }
-        ClientMsg::StatusCapture { session_id } => {
-            if daemon_cmd_tx
-                .send(DaemonCommand::Capture {
-                    session_id: *session_id,
-                })
-                .is_err()
-            {
-                crate::clog!("control: capture dropped (daemon loop gone)");
-            }
-            ServerMsg::Ack
-        }
-        ClientMsg::Unknown => {
-            // Reply with `Unknown` so the peer's `read_exact` returns
-            // immediately rather than hanging until SOCKET_TIMEOUT.
-            crate::clog!("control: ignoring unknown ClientMsg variant from peer");
-            ServerMsg::Unknown
-        }
-    };
-    // Bound the reply write so a peer that disappeared between request
-    // decode and reply write cannot wedge this task forever holding the
-    // attach-concurrency permit. 2 s is generous for a single localhost
-    // socket write; anything slower is the peer being unresponsive.
-    match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(&reply))).await {
+pub async fn write_control_reply(mut stream: UnixStream, reply: &ServerMsg) {
+    match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(reply))).await {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => crate::clog!("control reply write failed (msg={msg:?}): {e}"),
-        Err(_) => crate::clog!("control reply write timed out after 2 s (msg={msg:?})"),
+        Ok(Err(e)) => crate::clog!("control reply write failed: {e}"),
+        Err(_) => crate::clog!("control reply write timed out after 2 s"),
     }
 }
 

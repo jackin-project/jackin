@@ -180,6 +180,7 @@ fn render_default_home_commands(agents: &[Agent]) -> String {
         .iter()
         .map(|agent| agent.runtime().state_paths().credential_dir)
         .collect::<Vec<_>>();
+    dirs.push(".config/mise");
     dirs.sort_unstable();
     dirs.dedup();
 

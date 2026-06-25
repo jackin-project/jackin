@@ -4,6 +4,8 @@ title: "Persistent Storage and Workspace Memory Layer"
 
 **Status**: Open — design proposal (Phase 3, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
 
+Partial implementation note: the [Capsule usage overlay](/reference/roadmap/capsule-usage-overlay-responsiveness-and-tabs/) now creates a Capsule-local Turso store at `/jackin/state/usage/telemetry.db` with the `account_usage_snapshots` schema subset. That store persists normalized account quota buckets for the in-container Capsule daemon only, and the Capsule control channel can read focused/account quota rows from it. The removed local-log usage samples, runtime-stream samples, scan offsets, workspace summaries, and session summaries are deliberately not part of the shipped overlay. The host `jackin usage <instance> accounts --sync-host-cache` command can explicitly seed the Turso host-global account cache at `~/.jackin/data/daemon/accounts.db` from those daemon-cached rows. The full per-instance `~/.jackin/data/<container>/jackin.db`, automatic host-global account refresh daemon, migrations, memory tables, provider-specific runtime pricing, and richer runtime event contracts described below remain open.
+
 ## Problem
 
 jackin' currently has zero structured persistence. Per-instance state is
@@ -99,9 +101,9 @@ alone is the right choice for jackin'.
 
 One SQLite database **per instance**, at
 `~/.jackin/data/<container>/jackin.db`. Schema versioned via
-embedded migrations. Async access via `sqlx` (jackin' is already async-
-ready) or `rusqlite` with a small async wrapper — pick once, document
-the rationale in an ADR.
+embedded migrations. Async access should follow the Capsule-local Turso
+decision once the host-global store starts; document the production
+rationale in an ADR before promoting the current in-container cache pattern.
 
 ### Tables (V1)
 
@@ -160,11 +162,15 @@ CREATE TABLE usage_samples (
     token_output INTEGER,
     token_cache_read INTEGER,
     token_cache_write INTEGER,
-    cost_usd_micros INTEGER                  -- $cost * 1e6, integer-safe
+    cost_usd_micros INTEGER,                 -- $cost * 1e6, integer-safe
+    source_hash TEXT                         -- optional scanner/stream event hash for dedupe; never raw prompt text
 );
 CREATE INDEX usage_samples_by_time ON usage_samples (occurred_at);
 CREATE INDEX usage_samples_by_session ON usage_samples (session_id, occurred_at);
 CREATE INDEX usage_samples_by_workspace ON usage_samples (workspace, occurred_at);
+CREATE UNIQUE INDEX usage_samples_by_source_hash
+    ON usage_samples (source_hash)
+    WHERE source_hash IS NOT NULL;
 
 -- Tool fire audit. Rolling N=1000 entries.
 CREATE TABLE tool_history (
@@ -263,15 +269,22 @@ containers.
 
 **Location and lifecycle.** The DB lives at `~/.jackin/data/daemon/accounts.db` —
 outside any `~/.jackin/data/<container>/` tree so it survives `jackin purge`
-on individual instances. The daemon creates and migrates this file on first
-start; CLI / `jackin console` / Capsule never write to it. The daemon
-process is the single writer; CLI tools and the console open the file
-read-only. WAL mode handles the daemon-write / multi-reader-process pattern
+on individual instances. In the final architecture, the daemon creates and
+migrates this file on first start; CLI / `jackin console` / Capsule do not
+write to it, and the daemon process is the single writer. CLI tools and the
+console open the file read-only. WAL mode handles the daemon-write /
+multi-reader-process pattern
 (this table's concurrency model is **different** from the per-instance
 tables described in the "Concurrency model" section below — those assume
 single-process single-writer; the daemon-global cache assumes single-writer
 across **all** host processes, enforced by the daemon's per-operator-user
 singleton).
+
+Current bridge: before the long-running host daemon exists, `jackin usage
+<instance> accounts --sync-host-cache` can explicitly create and upsert this
+same table from one selected Capsule daemon's cached rows. That manual path is
+operator-triggered and exists only to seed the host-global shape; automatic
+provider refresh remains daemon-owned future work.
 
 ```sql
 CREATE TABLE account_usage_snapshots (
@@ -365,12 +378,12 @@ observing real footprint.
 
 ## Open Questions
 
-- **`sqlx` vs `rusqlite`.** `sqlx` is async-native and matches jackin'
-  Tokio runtime, but adds a meaningful build-time cost (offline mode
-  with macro-checked queries). `rusqlite` is simpler and battle-tested
-  but blocking — needs `spawn_blocking` discipline. Recommended:
-  *write an ADR* (see [ADR roadmap](/reference/adrs/));
-  this is the kind of decision that earns one.
+- **Turso production posture.** Capsule-local usage telemetry now uses
+  Turso's SQLite-compatible Rust engine, but the upstream crate is still a
+  pre-1.0 release and the Turso project labels the engine beta. Before the
+  host-global persistence layer ships, write an ADR covering build cost,
+  migration tooling, multi-process behaviour, backup/export shape, and why
+  Turso remains the right default for operator data.
 - **Schema in code vs schema in `.sql` files.** Diesel-style embedded
   migrations are clean but add a new toolchain dependency. A small
   in-code migration list works fine for V1's table count. Recommended:
@@ -393,7 +406,7 @@ observing real footprint.
 - Future control/MCP surface — agents query/propose memory through jackin,
   never by opening host-side storage directly
 - Future ADR file under `docs/content/docs/internal/adrs/` —
-  sqlx vs rusqlite decision plus physical home for workspace memory
+  Turso production posture plus physical home for workspace memory
 
 ## See Also
 
@@ -411,4 +424,4 @@ observing real footprint.
   package/install layer for skills, prompts, and MCP clients; complementary to
   mutable workspace memory
 - [Architecture Decision Records](/reference/adrs/) —
-  the right home for the sqlx-vs-rusqlite decision
+  the right home for the Turso production-posture decision

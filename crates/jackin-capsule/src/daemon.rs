@@ -42,7 +42,7 @@ use portable_pty::CommandBuilder;
 
 use crate::agent_status::rules::RulePackRegistry;
 use crate::attach_protocol::{
-    AttachHandshake, detach_attached_task, detach_client, drain_and_exit,
+    AttachHandshake, ControlRequest, detach_attached_task, detach_client, drain_and_exit,
     drain_and_exit_with_reason, handle_attach_client, initial_spawn_request, perform_handshake,
     spawn_request_label,
 };
@@ -109,7 +109,7 @@ use crate::tui::selection::{
 };
 use crate::tui::subscriptions::{
     GIT_BRANCH_CONTEXT_POLL_INTERVAL, PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL, RENDER_TICK_INTERVAL,
-    STATE_TICK_INTERVAL,
+    STATE_TICK_INTERVAL, USAGE_ACCOUNT_REFRESH_POLL_INTERVAL,
 };
 use crate::tui::terminal::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
 use crate::tui::title::{
@@ -126,6 +126,8 @@ use crate::tui::update::{
     wheel_scrollback_redraw_reason,
 };
 use crate::tui::view::spawn_request_failure_message;
+use crate::usage::UsageCache;
+use jackin_protocol::control::{ClientMsg, ServerMsg};
 
 mod compositor;
 mod context_mgmt;
@@ -254,6 +256,10 @@ pub struct Multiplexer {
     /// next operator keystroke clears it.
     spawn_failure: Option<String>,
     hover_target: Option<HoverTarget>,
+    /// P5: focus is on the agent-tab bar (green underline + Left/Right switch
+    /// tabs; Down/Esc/click returns focus to the agent content). `false` means
+    /// the agent terminal holds focus, the default.
+    tab_bar_focused: bool,
     /// Deadline for hiding the transient "Copied!" badge in whichever
     /// dialog most recently performed a jackin-owned OSC 52 copy.
     dialog_copy_feedback_deadline: Option<Instant>,
@@ -318,6 +324,17 @@ pub struct Multiplexer {
     /// Debug-only process RSS/CPU sampler, emitted on the state ticker so live
     /// multi-pane smokes can attach resource data to the run id.
     resource_metrics: resource_metrics::ResourceMetricsSampler,
+    /// Daemon-owned focused usage/quota cache. Capsule UI renders this cache;
+    /// it does not poll providers from render code.
+    usage_cache: UsageCache,
+    /// Provider tab requested by the usage overlay. The normal usage refresh
+    /// ticker consumes this as a focused-first target so opening/switching tabs
+    /// stays non-blocking but the selected provider refreshes next.
+    pending_usage_refresh: Option<crate::usage::UsageRefreshTarget>,
+    /// Background account refresh worker. Provider probes can run HTTP
+    /// requests and CLI subprocesses, so the daemon select loop only starts
+    /// and joins this task; it never performs the probe work inline.
+    usage_refresh_task: Option<tokio::task::JoinHandle<UsageCache>>,
     /// Offset into the wordlist for the next codename pick, seeded once at
     /// daemon construction from the current time subsecond nanos.
     wordlist_offset: usize,
@@ -328,6 +345,7 @@ pub struct Multiplexer {
 /// data source for `jackin-capsule agents` and the tab hover tooltip.
 #[derive(Debug, Clone)]
 pub struct AgentRecord {
+    pub session_id: u64,
     pub codename: String,
     /// Agent slug (`"claude"`, `"codex"`, …), or `None` for shell sessions.
     pub agent: Option<String>,
@@ -494,6 +512,7 @@ impl Multiplexer {
             last_outer_terminal_title: None,
             spawn_failure: None,
             hover_target: None,
+            tab_bar_focused: false,
             dialog_copy_feedback_deadline: None,
             pull_request_context_branch: None,
             pull_request_context_head: None,
@@ -510,6 +529,9 @@ impl Multiplexer {
             codename_retired: HashSet::new(),
             agent_history: Vec::new(),
             resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
+            usage_cache: UsageCache::default(),
+            pending_usage_refresh: None,
+            usage_refresh_task: None,
             wordlist_offset: {
                 use std::time::{SystemTime, UNIX_EPOCH};
                 SystemTime::now()
@@ -575,9 +597,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let mut pending_initial_spawn = Some(initial_spawn);
 
     let mut new_clients = socket::start_listener()?;
-    // Runtime hook/plugin events from control-socket reporters are forwarded
-    // here and applied to session authority in the select loop below.
-    let (daemon_cmd_tx, mut daemon_cmd_rx) = mpsc::unbounded_channel::<socket::DaemonCommand>();
     // Screen rule packs: the universal detector. Loaded once; the embedded
     // packs are validated, so a load failure means a broken build — log and
     // run without screen evidence rather than killing the daemon.
@@ -590,6 +609,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     };
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
     let mut state_ticker = interval(STATE_TICK_INTERVAL);
+    let mut usage_account_ticker = interval(USAGE_ACCOUNT_REFRESH_POLL_INTERVAL);
     let mut sigterm = signal(SignalKind::terminate())?;
     let mut sigint = signal(SignalKind::interrupt())?;
 
@@ -601,6 +621,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // handshakes ride this channel back to the main loop, which then
     // applies the take-over + spawns the persistent attach task.
     let (handshake_tx, mut handshake_rx) = mpsc::unbounded_channel::<AttachHandshake>();
+    let (control_tx, mut control_rx) = mpsc::unbounded_channel::<ControlRequest>();
 
     // Resolve the operator's escape-time once at startup; the value
     // cannot change after daemon launch, so per-iteration env reads
@@ -678,60 +699,18 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // `handshake_tx`.
             Some((stream, client_permit)) = new_clients.recv() => {
                 let handshake_tx = handshake_tx.clone();
-                let sessions_snapshot = mux.session_infos();
-                let tabs_snapshot = mux.tab_snapshots();
-                let history_snapshot = mux.agent_registry_snapshot();
-                let active_tab = u32::try_from(mux.active_tab).unwrap_or(0);
+                let control_tx = control_tx.clone();
                 tokio::spawn(perform_handshake(
                     stream,
                     client_permit,
                     handshake_tx,
-                    sessions_snapshot,
-                    tabs_snapshot,
-                    history_snapshot,
-                    active_tab,
-                    daemon_cmd_tx.clone(),
+                    control_tx,
                 ));
             }
 
-            // Commands forwarded from a control-socket handler (the loop owns
-            // mutable session state). Runtime events update authority; capture
-            // writes a fixture from the live grid + evidence.
-            Some(cmd) = daemon_cmd_rx.recv() => {
-                match cmd {
-                    socket::DaemonCommand::RuntimeEvent(ev) => {
-                        if let Some(session) = mux.sessions.get_mut(&ev.session_id) {
-                            session.apply_runtime_event(
-                                &ev.source_id,
-                                &ev.runtime,
-                                &ev.event,
-                                Instant::now(),
-                            );
-                        } else {
-                            // Benign on a session-exit race; a persistently wrong
-                            // JACKIN_SESSION_ID, though, silently drops every
-                            // authority event for that reporter — leave a
-                            // firehose-tier breadcrumb so `JACKIN_DEBUG=1` can
-                            // triage a misconfigured reporter.
-                            crate::cdebug!(
-                                "agent-status: runtime event for unknown session {}",
-                                ev.session_id
-                            );
-                        }
-                    }
-                    socket::DaemonCommand::Capture { session_id } => {
-                        if let Some(session) = mux.sessions.get(&session_id) {
-                            if let Err(e) = write_status_capture(session_id, session) {
-                                crate::clog!("status.capture: session {session_id} failed: {e:#}");
-                            }
-                        } else {
-                            // The client already told the operator the capture was
-                            // requested; without this they would find no fixture and
-                            // no explanation for a fat-fingered session id.
-                            crate::clog!("status.capture: no live session {session_id} to capture");
-                        }
-                    }
-                }
+            Some(request) = control_rx.recv() => {
+                let reply = control_reply_for_request(&mut mux, request.msg);
+                drop(request.reply_tx.send(reply));
             }
 
             // Validated attach handshake from the spawned handshake task.
@@ -1072,6 +1051,17 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 mux.maybe_spawn_git_branch_context_lookup(Instant::now());
             }
 
+            // Account refresh scheduler. This remains the provider-calling
+            // path; Capsule renderers read the last Turso snapshot.
+            _ = usage_account_ticker.tick() => {
+                let now = Instant::now();
+                let refreshed = mux.finish_usage_account_refresh_if_ready(now).await;
+                mux.spawn_active_usage_account_refresh(now);
+                if refreshed && mux.refresh_open_usage_dialog_from_cache() {
+                    mux.invalidate(dialog_change_redraw_reason());
+                }
+            }
+
             // Periodic state refresh: re-render the status bar so the tab
             // strip's state glyph follows the four-state model. The full
             // pane bodies stay where they are.
@@ -1083,7 +1073,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // visibly jumps to the tab strip every tick and parks
             // there as a phantom block until the next pane redraw.
             _ = state_ticker.tick() => {
-                mux.log_resource_metrics();
+                mux.log_resource_metrics().await;
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
                 // Evidence arbitration is the ONLY path that authors agent state.
                 // Each session assembles an EvidenceSnapshot (authority, process,
@@ -1134,6 +1124,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     mux.invalidate(selection_change_redraw_reason());
                     continue;
                 }
+                if mux.refresh_open_usage_dialog_from_cache() {
+                    mux.invalidate(dialog_change_redraw_reason());
+                    continue;
+                }
                 // A modal owns the whole screen behind an opaque backdrop;
                 // repainting the status/branch chrome here would draw it back
                 // over the fill, so skip the chrome frame while a dialog is open.
@@ -1172,6 +1166,64 @@ fn write_status_capture(session_id: u64, session: &Session) -> Result<()> {
     )?;
     crate::clog!("status.capture: wrote {}", dir.display());
     Ok(())
+}
+
+fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg {
+    match msg {
+        ClientMsg::Status => ServerMsg::SessionList {
+            sessions: mux.session_infos(),
+        },
+        ClientMsg::Snapshot => ServerMsg::Snapshot {
+            tabs: mux.tab_snapshots(),
+            active_tab: u32::try_from(mux.active_tab).unwrap_or(0),
+        },
+        ClientMsg::Agents => ServerMsg::AgentRegistry {
+            records: mux.agent_registry_snapshot(),
+        },
+        // Forwarded in-container reporter event: apply it to the addressed
+        // session's authority and Ack immediately (never block the agent hook).
+        ClientMsg::ReportRuntimeEvent {
+            session_id,
+            source_id,
+            runtime,
+            event,
+            payload: _,
+        } => {
+            if let Some(session) = mux.sessions.get_mut(&session_id) {
+                session.apply_runtime_event(&source_id, &runtime, &event, Instant::now());
+            } else {
+                crate::cdebug!("agent-status: runtime event for unknown session {session_id}");
+            }
+            ServerMsg::Ack
+        }
+        // Contributor diagnostic: snapshot the live grid + evidence to a fixture.
+        ClientMsg::StatusCapture { session_id } => {
+            if let Some(session) = mux.sessions.get(&session_id) {
+                if let Err(e) = write_status_capture(session_id, session) {
+                    crate::clog!("status.capture: session {session_id} failed: {e:#}");
+                }
+            } else {
+                crate::clog!("status.capture: no live session {session_id} to capture");
+            }
+            ServerMsg::Ack
+        }
+        ClientMsg::UsageFocused => ServerMsg::UsageFocused {
+            usage: Box::new(mux.focused_usage_snapshot()),
+        },
+        ClientMsg::UsageRefreshFocused => {
+            mux.request_usage_refresh_for_provider(None);
+            ServerMsg::UsageFocused {
+                usage: Box::new(mux.focused_usage_snapshot()),
+            }
+        }
+        ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
+            accounts: mux.usage_cache.account_snapshot_views(),
+        },
+        ClientMsg::Unknown => {
+            crate::clog!("control: ignoring unknown ClientMsg variant from peer");
+            ServerMsg::Unknown
+        }
+    }
 }
 
 async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {

@@ -335,5 +335,43 @@ pub mod ansi {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PointerShape {
+    Default,
+    Pointer,
+    Text,
+    EwResize,
+    NsResize,
+    Grabbing,
+}
+
+impl PointerShape {
+    #[must_use]
+    pub const fn as_osc22_name(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Pointer => "pointer",
+            Self::Text => "text",
+            Self::EwResize => "ew-resize",
+            Self::NsResize => "ns-resize",
+            Self::Grabbing => "grabbing",
+        }
+    }
+}
+
+#[must_use]
+pub const fn clickable_pointer_shape(clickable: bool) -> PointerShape {
+    if clickable {
+        PointerShape::Pointer
+    } else {
+        PointerShape::Default
+    }
+}
+
+#[must_use]
+pub fn osc22_pointer_shape(shape: PointerShape) -> String {
+    format!("\x1b]22;{}\x1b\\", shape.as_osc22_name())
+}
+
 #[cfg(test)]
 mod tests;

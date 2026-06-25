@@ -59,6 +59,7 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "JACKIN_DEBUG",
     "JACKIN_GIT_COAUTHOR_TRAILER",
     "JACKIN_GIT_DCO",
+    "TZ",
     // Per-tab provider injection — Anthropic-compatible backends (Claude Code).
     // Listed here so env_for_spawn's allowlist accepts them as overrides when the
     // operator picks an alternative provider in the AgentPicker flow.

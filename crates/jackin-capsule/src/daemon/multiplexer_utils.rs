@@ -1,8 +1,8 @@
 //! Miscellaneous Multiplexer utility methods.
 
 use super::{
-    Dialog, FullRedrawReason, MAX_SESSIONS, MAX_TABS, Multiplexer, PaletteCloseLabel, Result,
-    SESSION_ENV_PASSTHROUGH, SessionInfo,
+    Dialog, FullRedrawReason, Instant, MAX_SESSIONS, MAX_TABS, Multiplexer, PaletteCloseLabel,
+    Result, SESSION_ENV_PASSTHROUGH, SessionInfo,
 };
 
 impl Multiplexer {
@@ -208,6 +208,159 @@ impl Multiplexer {
         self.frame_generation != self.rendered_generation
     }
 
+    pub(super) fn focused_usage_snapshot(&mut self) -> jackin_protocol::control::FocusedUsageView {
+        self.focused_usage_snapshot_for_provider(None)
+    }
+
+    /// Agent codename and provider label of the currently focused session.
+    fn focused_agent_provider(&self) -> (Option<String>, Option<String>) {
+        self.active_focused_id()
+            .and_then(|id| self.sessions.get(&id))
+            .map_or((None, None), |session| {
+                (
+                    session.agent.clone(),
+                    session.provider.as_ref().map(|p| p.label.clone()),
+                )
+            })
+    }
+
+    pub(super) fn focused_usage_status_label(&self) -> Option<String> {
+        let (agent, provider) = self.focused_agent_provider();
+        self.usage_cache
+            .focused_status_bar_label(agent.as_deref(), provider.as_deref())
+    }
+
+    pub(super) fn focused_usage_snapshot_for_provider(
+        &mut self,
+        provider_label: Option<&str>,
+    ) -> jackin_protocol::control::FocusedUsageView {
+        let (agent, provider) = self.focused_agent_provider();
+        let provider = provider_label
+            .map(str::to_owned)
+            .or_else(|| provider.as_ref().map(ToOwned::to_owned));
+        self.usage_cache
+            .focused_snapshot(agent.as_deref(), provider.as_deref())
+    }
+
+    pub(super) fn request_usage_refresh_for_provider(&mut self, provider_label: Option<&str>) {
+        self.pending_usage_refresh = self.usage_refresh_target_for_provider(provider_label);
+        if let Some(target) = &self.pending_usage_refresh {
+            self.usage_cache
+                .request_account_refresh(target, Instant::now());
+        }
+        self.decorate_open_usage_dialog_refreshing();
+    }
+
+    fn usage_refresh_target_for_provider(
+        &self,
+        provider_label: Option<&str>,
+    ) -> Option<crate::usage::UsageRefreshTarget> {
+        let (agent, provider) = self.focused_agent_provider();
+        let provider = provider_label
+            .map(str::to_owned)
+            .or_else(|| provider.as_ref().map(ToOwned::to_owned));
+        agent.map(|agent| crate::usage::UsageRefreshTarget { agent, provider })
+    }
+
+    pub(super) fn spawn_active_usage_account_refresh(&mut self, now: Instant) -> bool {
+        if self.usage_refresh_task.is_some() {
+            return false;
+        }
+        let active_targets = self
+            .sessions
+            .values()
+            .filter_map(session_refresh_target)
+            .collect::<Vec<_>>();
+        let focused = self
+            .active_focused_id()
+            .and_then(|id| self.sessions.get(&id))
+            .and_then(session_refresh_target);
+        let focused = self.pending_usage_refresh.take().or(focused);
+        if active_targets.is_empty() && focused.is_none() {
+            return false;
+        }
+        let provider_keys = self.provider_keys.clone();
+        let mut cache = self.usage_cache.clone();
+        self.usage_refresh_task = Some(tokio::task::spawn_blocking(move || {
+            cache.refresh_active_account_snapshots(&active_targets, focused, &provider_keys, now);
+            cache
+        }));
+        true
+    }
+
+    pub(super) async fn finish_usage_account_refresh_if_ready(&mut self, now: Instant) -> bool {
+        let Some(task) = self.usage_refresh_task.as_ref() else {
+            return false;
+        };
+        if !task.is_finished() {
+            return false;
+        }
+        let Some(task) = self.usage_refresh_task.take() else {
+            return false;
+        };
+        match task.await {
+            Ok(cache) => {
+                self.usage_cache = cache;
+                if let Some(target) = &self.pending_usage_refresh {
+                    self.usage_cache.request_account_refresh(target, now);
+                }
+                true
+            }
+            Err(error) => {
+                crate::clog!("usage-refresh: background worker failed: {error}");
+                false
+            }
+        }
+    }
+
+    pub(super) fn refresh_open_usage_dialog_from_cache(&mut self) -> bool {
+        let Some((selected, provider_label)) = self.open_usage_dialog_selection() else {
+            return false;
+        };
+        let mut view = self.focused_usage_snapshot_for_provider(provider_label.as_deref());
+        if self.pending_usage_refresh.is_some() {
+            decorate_usage_view_refreshing(&mut view);
+        }
+        if let Some(Dialog::Usage {
+            view: current,
+            selected: current_selected,
+            ..
+        }) = self.dialog_top_mut()
+        {
+            if **current == view && *current_selected == selected {
+                return false;
+            }
+            **current = view;
+            *current_selected = selected;
+            return true;
+        }
+        false
+    }
+
+    fn decorate_open_usage_dialog_refreshing(&mut self) {
+        if self.pending_usage_refresh.is_none() {
+            return;
+        }
+        if let Some(Dialog::Usage { view, .. }) = self.dialog_top_mut() {
+            decorate_usage_view_refreshing(view);
+        }
+    }
+
+    fn open_usage_dialog_selection(
+        &self,
+    ) -> Option<(
+        crate::tui::components::dialog::UsageDialogTab,
+        Option<String>,
+    )> {
+        let Dialog::Usage { view, selected, .. } = self.dialog_top()? else {
+            return None;
+        };
+        let provider = (*selected == crate::tui::components::dialog::UsageDialogTab::Provider)
+            .then(|| view.focused_provider.clone())
+            .flatten();
+        Some((*selected, provider))
+    }
+
     pub(super) fn session_infos(&self) -> Vec<SessionInfo> {
         let focused = self.active_focused_id();
         self.sessions
@@ -289,5 +442,24 @@ impl Multiplexer {
                 is_self: false,
             })
             .collect()
+    }
+}
+
+/// Build a usage refresh target from a session, if it has an agent codename.
+fn session_refresh_target(
+    session: &crate::session::Session,
+) -> Option<crate::usage::UsageRefreshTarget> {
+    session
+        .agent
+        .as_ref()
+        .map(|agent| crate::usage::UsageRefreshTarget {
+            agent: agent.clone(),
+            provider: session.provider.as_ref().map(|p| p.label.clone()),
+        })
+}
+
+fn decorate_usage_view_refreshing(view: &mut jackin_protocol::control::FocusedUsageView) {
+    if !view.updated_label.contains("refreshing") {
+        view.updated_label.push_str(" · refreshing...");
     }
 }

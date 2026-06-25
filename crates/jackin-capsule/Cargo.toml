@@ -27,6 +27,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
+base64 = "0.22"
 jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
 # OTLP export for the in-container session, runtime-gated on the endpoint the
 # host injects. Pulls the opentelemetry stack into the capsule image.
@@ -50,6 +51,9 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 regex = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 ureq = { version = "2.12", features = ["tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls"] }
+turso = { version = "0.7.0-pre.7", default-features = false }
+sha2 = "0.11"
 jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
 ratatui = "0.30"
 dhat = { version = "0.3.3", optional = true }

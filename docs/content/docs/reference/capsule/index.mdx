@@ -79,7 +79,7 @@ The same bind-mounted `/jackin/run` directory also carries `agent.toml`. The hos
 
 Two protocols share the same socket. The first byte sent by a client selects which one the daemon dispatches:
 
-- **Control channel** — first byte `0x00`, interpreted as the first byte of a four-byte big-endian length prefix. The rest of the frame is a UTF-8 JSON request. The daemon reads one request, writes one length-prefixed JSON response, then closes the connection. This is used for one-shot status and snapshot queries.
+- **Control channel** — first byte `0x00`, interpreted as the first byte of a four-byte big-endian length prefix. The rest of the frame is a UTF-8 JSON request. The daemon reads one request, writes one length-prefixed JSON response, then closes the connection. This is used for one-shot status, snapshot, agent-registry, and cached usage queries.
 - **Attach channel** — any non-zero first byte, interpreted as an attach-frame tag. Every frame is `[tag: u8][payload_len: u32 big-endian][payload bytes]`. Interactive terminal bytes stay raw on this hot path; they are not JSON-wrapped or base64-encoded.
 
 Both channels cap a single payload at 4 MiB. The control channel rejects malformed JSON and unknown structural shapes. Unknown tagged message variants decode as `Unknown` so a newer peer can fail fast instead of hanging on a read. The attach channel rejects unknown tags, truncated payloads, and oversized lengths.
@@ -98,10 +98,27 @@ Current control messages:
 | `{"type":"report_runtime_event",...}` | one-way forwarded to the daemon loop | Agent hook and plugin reporters |
 | `{"type":"report_child_agent_state",...}` | one-way forwarded to the daemon loop | Bridge reporters that roll descendant agent work into a parent pane |
 | `{"type":"events_subscribe",...}` | persistent stream of `ServerMsg` events | Host daemons and tools that need live session, token, and workspace status changes |
+| `{"type":"agents"}` | `{"type":"agent_registry","records":[...]}` | `jackin-capsule agents`, per-container agent inventory |
+| `{"type":"usage_focused"}` | `{"type":"usage_focused","usage":{...}}` | Capsule prefix-`u` overlay and active-tab status signal |
+| `{"type":"usage_refresh_focused"}` | `{"type":"usage_focused","usage":{...}}` | Capsule overlay refresh action; refresh runs inside the daemon cache |
+| `{"type":"usage_account_list"}` | `{"type":"usage_accounts","accounts":[...]}` | `jackin-capsule usage accounts` |
 
 `SessionInfo` carries `id`, `label`, optional `agent`, public `state`, and `active`. `TabSnapshot` carries render-order tabs, each tab's focused pane id, and one `PaneSnapshot` per pane leaf. `PaneSnapshot` carries `session_id`, label, optional agent slug, public state, and an `AgentStatusReport` when the daemon has evidence. The report exposes the raw detector state, source, confidence, detected agent, foreground pgid, visible-screen booleans, `process_exited`, `foreground_returned_to_shell`, `stale_report`, `subagents_active`, and revision fields. The public states are `working`, `blocked`, `done`, `idle`, and `unknown`; `stuck` is a diagnostic overlay exposed in `status explain`, not a replacement state. Raw detector states are `unknown`, `working`, `blocked`, and `idle`; `done` is derived when raw idle returns after work and the pane has not yet been acknowledged by focus or attach. The authority is implemented by <RepoFile path="crates/jackin-capsule/src/agent_status.rs" />, with the evidence snapshot in <RepoFile path="crates/jackin-capsule/src/agent_status/evidence.rs" />, arbitration in <RepoFile path="crates/jackin-capsule/src/agent_status/arbitrate.rs" />, debounce/watchdog policy in <RepoFile path="crates/jackin-capsule/src/agent_status/policy.rs" />, and rule-pack engine in <RepoFile path="crates/jackin-capsule/src/agent_status/rules.rs" />. Rule packs load from embedded fallbacks, then `/jackin/runtime/agent-status/packs/`, then the operator override directory selected by `JACKIN_STATUS_PACK_DIR` or `$HOME/.jackin/agent-status/packs/`.
 
 `EventsSubscribe` keeps the control connection open after the initial request and sends length-prefixed `ServerMsg` frames. The live event stream includes `AgentStateChanged` for per-session effective-state transitions, `SessionSpawned`, `SessionExited`, `TokenUsageChanged`, and `WorkspaceStatusChanged`. `WorkspaceStatusChanged` is emitted when the daemon's aggregate status snapshot changes; it carries the rolled-up `effective` status plus `session_count`, `blocked_count`, `done_count`, and `working_count`. The roll-up precedence is `blocked > done > working > idle > unknown`, matching the status authority contract used by console badges and future host-daemon consumers.
+
+Usage control replies are daemon-cache reads. Capsule renderers and one-shot
+clients do not call provider APIs directly; refresh cadence, timeouts, stale
+states, and provider-child cooldowns stay owned by the PID 1 daemon.
+The usage surface is account-quota-only: the obsolete workspace/session spend
+summary messages and CLI subcommands were removed with the Capsule usage overlay
+cleanup. Per-message token/cost attribution belongs to
+[Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/), not this
+control surface.
+`jackin-capsule usage claude-cli` is intentionally outside the control channel:
+it is an explicit operator diagnostic that runs `claude -p /usage` on demand and
+prints the raw CLI stdout/stderr/status as JSON for debugging Claude OAuth
+snapshot failures.
 
 Current attach frames:
 

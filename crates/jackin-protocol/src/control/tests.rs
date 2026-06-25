@@ -70,3 +70,49 @@ fn status_capture_and_ack_roundtrip() {
         ServerMsg::Ack
     ));
 }
+
+#[test]
+fn usage_focused_roundtrips() {
+    let usage = FocusedUsageView::unavailable("no focused agent session", 123);
+    let json = serde_json::to_string(&ServerMsg::UsageFocused {
+        usage: Box::new(usage.clone()),
+    })
+    .unwrap();
+    let decoded: ServerMsg = serde_json::from_str(&json).unwrap();
+    match decoded {
+        ServerMsg::UsageFocused { usage: decoded } => {
+            assert_eq!(decoded.status, UsageSnapshotStatus::Unavailable);
+            assert_eq!(decoded.fetched_at_epoch, 123);
+        }
+        other => panic!("unexpected variant {other:?}"),
+    }
+}
+
+#[test]
+fn usage_account_list_roundtrips() {
+    let accounts = vec![AccountUsageSnapshotView {
+        provider: "Codex".to_owned(),
+        account_label: "alexey@example.com".to_owned(),
+        source: "cli".to_owned(),
+        confidence: "authoritative".to_owned(),
+        window_kind: "Session".to_owned(),
+        used_amount: Some(63),
+        used_unit: Some("percent".to_owned()),
+        limit_amount: Some(100),
+        limit_unit: Some("percent".to_owned()),
+        resets_at: Some(1_781_190_720),
+        fetched_at: 1_781_185_560,
+        expires_at: Some(1_781_185_860),
+        status: "fresh".to_owned(),
+        last_error: None,
+    }];
+    let json = serde_json::to_string(&ServerMsg::UsageAccounts {
+        accounts: accounts.clone(),
+    })
+    .unwrap();
+    let decoded: ServerMsg = serde_json::from_str(&json).unwrap();
+    match decoded {
+        ServerMsg::UsageAccounts { accounts: decoded } => assert_eq!(decoded, accounts),
+        other => panic!("unexpected variant {other:?}"),
+    }
+}
