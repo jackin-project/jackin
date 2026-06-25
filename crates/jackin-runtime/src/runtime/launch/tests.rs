@@ -1860,7 +1860,7 @@ plugins = ["code-review@claude-plugins-official"]
 }
 
 /// WP3 hard rule: the host Docker socket must never be bind-mounted into a
-/// role container. Inner-Docker access is provided exclusively by the DinD
+/// role container. Inner-Docker access is provided exclusively by the `DinD`
 /// sidecar over TLS; mounting `docker.sock` would hand the agent the host
 /// daemon (root-equivalent escape). This guards the rule against regression
 /// across the whole launch path, not just one mount-builder.

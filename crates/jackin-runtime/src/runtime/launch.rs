@@ -817,7 +817,11 @@ pub(super) async fn launch_role_runtime(
     jackin_diagnostics::debug_log!(
         "launch",
         "no_new_privileges enforced={}",
-        if grants.no_new_privileges { "yes" } else { "no" },
+        if grants.no_new_privileges {
+            "yes"
+        } else {
+            "no"
+        },
     );
     jackin_diagnostics::debug_log!("launch", "seccomp profile=docker-default");
     jackin_diagnostics::debug_log!(
@@ -1017,7 +1021,10 @@ pub(super) async fn launch_role_runtime(
     // WP-SUDO: the container provisions sudo at runtime from this signal (the
     // base image bakes no sudoers). Reserved so role manifests can't set it.
     if grants.sudo {
-        env_strings.push(format!("{}=1", jackin_core::env_model::JACKIN_SUDO_ENV_NAME));
+        env_strings.push(format!(
+            "{}=1",
+            jackin_core::env_model::JACKIN_SUDO_ENV_NAME
+        ));
     }
     // Computed once here so the WP1 allowlist (below) can include the OTLP
     // endpoint host; reused for OTLP propagation after env_strings is flushed.
@@ -1347,7 +1354,9 @@ pub(super) async fn launch_role_runtime(
             if let Err(remove_err) = docker.remove_container(container_name).await {
                 jackin_diagnostics::emit_compact_line(
                     "warning",
-                    &format!("fail-closed teardown could not remove {container_name}: {remove_err}"),
+                    &format!(
+                        "fail-closed teardown could not remove {container_name}: {remove_err}"
+                    ),
                 );
             }
             return Err(err.context(format!(

@@ -111,14 +111,14 @@ allowed_hosts = [
 ]
 ```
 
-**Allowlist enforcement:** when `network = "allowlist"`, jackin' installs an `iptables` OUTPUT allowlist in the container via `docker exec --user root` before the agent session starts. The allowlist includes the configured agent's model API endpoint automatically (no need to add `api.anthropic.com` manually for Claude).
+**Allowlist enforcement:** when `network = "allowlist"`, jackin' installs an outbound allowlist firewall in the container before the agent session starts, and the launch fails closed if that firewall cannot be applied. The allowlist always includes the configured agent's model API endpoint and the telemetry (OTLP) host automatically, so you never have to add them by hand.
 
 Enforcement quality depends on other grants:
-- `full` — when `sudo = false` and `dind = "none"` (agent cannot reach iptables)
-- `partial` — when `sudo = true` (agent can flush iptables rules)
-- `partial` — when DinD is active (inner containers bypass host iptables)
+- `full` — when `sudo = false` and `dind = "none"` (the agent cannot reach the firewall rules)
+- `partial` — when `sudo = true` (the agent can flush the firewall rules)
+- `partial` — when DinD is active (inner containers have their own network path and bypass the host firewall)
 
-`JACKIN_NETWORK_ENFORCEMENT` inside the container reports the actual quality.
+The active enforcement quality is reported in the launch summary and in `--debug` output.
 
 ### DinD grants
 
@@ -127,7 +127,7 @@ Enforcement quality depends on other grants:
 dind = "none"        # "none" | "rootless" | "privileged"
 ```
 
-`rootless` runs DinD without `--privileged`. Most Compose/build workflows work. Requires cgroup v2 on the host.
+`rootless` runs DinD without `--privileged`. Most Compose/build workflows work. It requires cgroup v2 on the host and fails closed on cgroup v1. Rootless DinD is experimental and is not yet a default for any profile — opt in via a grant or role declaration.
 
 ### User and privilege grants
 
@@ -146,7 +146,7 @@ sudo = false      # NOPASSWD:ALL sudo
 system_writes = true   # false = --read-only root; true = writable root
 ```
 
-`system_writes = false` enables `--read-only` on the container root filesystem plus tmpfs mounts for `/tmp`, `/run`, `/var/cache`, and related paths. Compatible only with roles where all tools are pre-installed in the Dockerfile — `apt install` at runtime fails because dpkg extracts to image-layer paths.
+`system_writes = false` enables `--read-only` on the container root filesystem, with writable in-memory scratch space for the paths a process legitimately needs to write at runtime. Compatible only with roles where all tools are pre-installed in the Dockerfile — `apt install` at runtime fails because package installation writes to read-only image paths.
 
 ### Resource grants
 
@@ -226,31 +226,19 @@ This is intentional: jackin' is a no-interruption autonomous agent environment. 
 
 ## Debug output
 
-Run any launch with `--debug` to see the full grant resolution:
+Run any launch with `--debug` to see how the profile was resolved and which controls were applied:
 
 ```sh
-cargo run --bin jackin -- load the-architect . --docker-profile hardened --debug
+jackin load the-architect . --docker-profile hardened --debug
 ```
 
-The debug output includes:
-- `profile_selected profile=hardened source=cli` — which profile was chosen and why
-- `cap_drop_all` + `cap_add cap=CHOWN reason=jackin-default` — per-capability decisions
-- `no_new_privileges enforced=yes reason=profile`
-- `seccomp profile=docker-default`
-- `apparmor available=yes profile=docker-default layer=host`
-- `read_only_root enforced=yes tmpfs=/tmp,/run,…`
-- `cgroup_version v=v2`
-- `resource_limit kind=memory value=17179869184 flag=--memory`
-- `dind enabled=no mode=none tls_certs_path=/jackin/run/dind-certs/client`
-- `host_socket_check passed=yes`
-- `network_mode mode=allowlist enforcement=full`
-- Session contract (multi-line summary of every applied control)
+`--debug` prints a per-control summary of the active profile: which profile was selected and why, the resolved Linux capability set, the no-new-privileges and seccomp/AppArmor posture, the read-only-root and resource-limit decisions, the DinD tier, the network enforcement mode and its quality, and the residual risk that remains. This lets you confirm at launch time exactly what the container boundary permits before the agent session starts.
 
 ## What the profiles cannot guarantee
 
 - **Shared host kernel.** Containers share the host kernel. A kernel exploit can escape the container regardless of profile. microVM-based backends (tracked in the roadmap) are the path to stronger isolation.
 - **Writable workspace mounts.** Even under `locked` with read-only root, the workspace bind mounts are writable if the mount was configured as writable. The profile does not retroactively make mounts read-only.
-- **DinD with `standard`/`compat`.** When DinD is active, inner containers can bypass network allowlists (they have their own network path). Enforcement quality is `partial` and reported in `JACKIN_NETWORK_ENFORCEMENT`.
+- **DinD with `standard`/`compat`.** When DinD is active, inner containers can bypass network allowlists (they have their own network path). Enforcement quality is `partial` and is reported in the launch summary and `--debug` output.
 - **Credential files inside the container.** Auth tokens copied into the container via `sync` mode are readable by the agent. A future release will add a telemetry note for `hardened`/`locked` profiles recommending `api_key` or `oauth_token` mode over `sync`; enforcement is not planned.
 
 For the full design rationale and phased implementation plan, see the [Docker Runtime Hardening Contract](/reference/roadmap/docker-runtime-hardening-contract/) roadmap item.
@@ -259,23 +247,26 @@ For the full design rationale and phased implementation plan, see the [Docker Ru
 
 ### Status: under active development
 
-The profile model and several controls are live; the full egress/observability/DinD-tier enforcement is still being built. This section is the honest split — do not rely on an in-development control for isolation until it moves to "Enforced today."
+The profile model and most controls are live; a few items remain deferred. This section is the honest split — do not rely on an in-development control for isolation until it moves to "Enforced today."
 
 **Enforced today:**
 - All four profiles with enforced capability sets (`locked`, `hardened`, `standard`, `compat`) and `no-new-privileges` on by default outside `compat`
 - `[docker.grants]` in config and workspace for per-dimension overrides
 - `[docker]` in `jackin.role.toml` for role declarations (`min_profile`, `dind`, `allowed_hosts`, `capabilities_add`)
-- `standard`/`hardened`/`locked` sudo off by default; `compat` keeps sudo on unchanged (the deny side; see in-development note on enabling sudo)
+- `standard`/`hardened`/`locked` sudo off by default; `compat` keeps sudo on unchanged
+- Runtime sudo provisioning when `sudo = true` is granted (off by default outside `compat`)
 - DinD off by default in `standard`/`hardened`/`locked`, on in `compat` — the per-profile default and skip-when-disabled behavior
+- The `allowlist` network tier — the outbound allowlist firewall is applied at launch, fails closed if it cannot be installed, and always includes the model API and telemetry endpoints
+- The `locked` Docker-internal network
+- Rootless DinD tier (`dind = "rootless"`) — experimental, requires cgroup v2, fails closed on v1, and is not yet a profile default
 - cgroup v2 required for `hardened`/`locked` — launches fail-closed on v1 hosts with a clear error; `standard` warns
+- The launch session contract and per-decision `--debug` telemetry
 - All validation errors at launch time (bad cap names, user+sudo conflict, memory sizing, profile conflicts)
 
-**In development (described above as the target, not yet enforced):**
-- `allowlist` network tier — the in-container iptables/ipset allowlist primitive exists but is not yet installed at launch; egress is not restricted yet
-- `locked` Docker-internal network — not yet applied
-- Enabling sudo via a `sudo = true` grant — the deny side is live, but runtime provisioning of the grant is not wired yet
-- Rootless DinD tier (`dind = "rootless"`) — not yet selectable; a rootless grant currently falls back to privileged
-- Full `--debug` per-decision telemetry and the session-contract summary — only a subset of lines is emitted today
+**Deferred (described above as the target, not yet shipped):**
+- `standard` becoming the compiled-in default — waiting on the workload compatibility matrix
+- Credential env-only posture under `hardened`/`locked` — preferring `api_key`/`oauth_token` over `sync` mode
+- The non-HTTP network proxy sidecar (protocol-level egress allowlist beyond HTTP)
 
 See the [Docker Runtime Hardening Contract](/reference/roadmap/docker-runtime-hardening-contract/) roadmap item for the remaining work and status.
 

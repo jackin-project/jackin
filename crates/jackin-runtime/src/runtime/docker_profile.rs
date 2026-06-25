@@ -917,7 +917,10 @@ pub const fn dind_image_and_privileged(grant: DindGrant) -> (&'static str, bool)
 /// privileged sidecar (which would defeat the operator's choice). Other tiers
 /// impose no cgroup requirement here (the profile-level cgroup gate is separate,
 /// see [`validate_cgroup_for_profile`]).
-pub fn validate_dind_grant_for_cgroup(grant: DindGrant, cgroup_version: &str) -> Result<(), String> {
+pub fn validate_dind_grant_for_cgroup(
+    grant: DindGrant,
+    cgroup_version: &str,
+) -> Result<(), String> {
     if grant == DindGrant::Rootless && cgroup_version == "v1" {
         return Err(
             "rootless DinD requires cgroup v2 for user-namespace isolation; this host is cgroup v1. \
