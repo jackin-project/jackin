@@ -13,6 +13,7 @@ Must use crate, not hand-rolled:
 - JSON parsing → `serde_json` (already in workspace).
 - Date/time, base64, semver, URL parsing, hex, regex — pick maintained ecosystem crate.
 - Cryptographic primitives — never roll own; use `ring`, `rustls`, `argon2`, etc.
+- SQLite / embedded-DB access → **`turso` only** (the workspace's single DB stack; see `crates/jackin-capsule/src/telemetry_store.rs`). Never `rusqlite`, `diesel`-on-SQLite, or any other SQLite binding — a second SQLite stack is a continuity-with-workspace violation. `turso`'s API is async, so a sync caller must make its path async (or `block_on` a runtime handle), not reach for a sync binding.
 
 "Trivially small" carve-out narrow: single five-line helper splitting one fixed-format string fine. Multi-state line-by-line scanner with quote handling, comment stripping, indent rules, or anything smelling like reimplementing parser — not.
 

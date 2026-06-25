@@ -2,15 +2,11 @@
 title: "Token & Cost Telemetry"
 ---
 
-**Status**: Open — design proposal (Phase 3, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
+**Status**: Partially implemented (Phase 3, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
 
-**Implementation note**: The Capsule usage overlay work has landed the
-account-quota side of this design: a Capsule-local Turso
-`account_usage_snapshots` cache feeds the focused status signal and provider
-overlay. It deliberately removed the earlier local `usage_samples` bridge,
-workspace/session summaries, price-table estimates, and cost grids. The
-per-message token/cost plane described below remains open and still belongs to
-the final host-global telemetry daemon.
+**Implementation note**: Both halves of the design now have a landed slice. The Capsule usage overlay shipped the **account-quota** side: a Capsule-local Turso `account_usage_snapshots` cache feeds the focused status signal and provider overlay. The Capsule **token-spend** side is now wired too: the in-container token monitor reads each agent's provider logs (Claude/Codex/Kimi/Amp JSONL incrementally by byte offset, OpenCode via the async `turso` SQLite reader), fills cost from the provider stream or the static pricing table, and the daemon reconciles it against the live agent sessions and polls it on the state tick (self-throttled to 30s/60s). Per-session totals are exposed over the control channel as `TokenUsageSummary` (`ClientMsg::TokenUsage` → `ServerMsg::TokenUsage`) and printed by `jackin-capsule token-usage <id>`.
+
+**Still open** (the full host-global telemetry daemon): per-instance `usage_samples` storage substrate, workspace/session spend summaries, the shared `account/*` and `usage/*` daemon API + `jackin usage --json` CLI, and the console/Desktop spend badges. The quota-window cards and richer model catalog were deliberately dropped from the Capsule slice (they duplicate the shipped account-quota plane).
 
 ## Problem
 
