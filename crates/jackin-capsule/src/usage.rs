@@ -1153,14 +1153,11 @@ fn codex_snapshot(
     let (oauth_quota, oauth_error) = match credentials.as_ref() {
         Some(credentials) => match fetch_codex_oauth_usage(credentials, &codex_home) {
             Ok(mut usage) => {
-                usage.reset_credits =
-                    match fetch_codex_oauth_reset_credits(credentials, &codex_home) {
-                        Ok(reset_credits) => Some(reset_credits),
-                        Err(error) => {
-                            crate::cdebug!("codex reset-credits fetch failed: {error}");
-                            None
-                        }
-                    };
+                usage.reset_credits = fetch_codex_oauth_reset_credits(credentials, &codex_home)
+                    .inspect_err(|error| {
+                        crate::cdebug!("codex reset-credits fetch failed: {error}");
+                    })
+                    .ok();
                 (Some(usage), None)
             }
             Err(error) => (None, Some(error)),
@@ -2304,9 +2301,6 @@ fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> 
     claude_oauth_from_value(&read_json_file(path)?)
 }
 
-/// Resolve the Claude OAuth credential (with the winning path, for the `Auth:`
-/// origin) and the account email in a single home-first walk, reading and
-/// parsing each candidate file at most once instead of once per concern.
 /// Resolve a provider credential (with the winning path, for the `Auth:`
 /// origin) and its account label in one home-first walk, reading and parsing
 /// each candidate file at most once. `extract_credential` pulls the token from a
@@ -5443,15 +5437,12 @@ fn home_path(rel: &str) -> PathBuf {
 /// home dir collapsed to `~` (so it reads `~/.codex/auth.json`, not an absolute
 /// container path). Shared by the Claude and Codex snapshots.
 fn oauth_origin(path: &Path) -> String {
-    // `to_str()` avoids an intermediate `String` for the common UTF-8 case;
-    // fall back to lossy `display()` only for non-UTF-8 container paths.
-    match path.to_str() {
-        Some(text) => format!("OAuth · {}", jackin_tui::shorten_home(text)),
-        None => format!(
-            "OAuth · {}",
-            jackin_tui::shorten_home(&path.display().to_string())
-        ),
-    }
+    // `to_string_lossy` borrows (no alloc) for the common UTF-8 path and only
+    // allocates for non-UTF-8 container paths; `&Cow<str>` derefs to `&str`.
+    format!(
+        "OAuth · {}",
+        jackin_tui::shorten_home(&path.to_string_lossy())
+    )
 }
 
 fn now_epoch() -> i64 {
