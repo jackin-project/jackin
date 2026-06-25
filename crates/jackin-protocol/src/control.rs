@@ -114,6 +114,20 @@ impl FocusedUsageView {
             last_error: Some(reason),
         }
     }
+
+    /// The agent has started but its usage data is not yet known — an honest
+    /// "loading" state, distinct from `unavailable` (genuinely no data) and
+    /// from a hidden segment (no agent at all). Carries no fabricated numbers.
+    #[must_use]
+    pub fn refreshing(provider: Option<&str>, now_epoch: i64) -> Self {
+        let mut view = Self::unavailable("refreshing", now_epoch);
+        view.focused_provider = provider.map(str::to_owned);
+        view.account.provider_label = provider.unwrap_or("Usage").to_owned();
+        view.account.account_label = String::new();
+        view.status_bar_label = "refreshing".to_owned();
+        view.updated_label = "Refreshing".to_owned();
+        view
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

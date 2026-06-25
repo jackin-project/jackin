@@ -157,7 +157,11 @@ impl UsageCache {
         if let Some(view) = self.cached_focused_usage_view(agent, focused_provider) {
             return Some(view.status_bar_label);
         }
-        None
+        // A focused agent with no snapshot yet is mid-load — show `refreshing`
+        // (clickable to force a load), never blank or a stale headline. The
+        // segment is hidden only when there is no focused agent at all (the
+        // `focused_agent?` above returns `None` → caller renders nothing).
+        Some("refreshing".to_owned())
     }
 
     pub(crate) fn account_snapshot_views(&self) -> Vec<AccountUsageSnapshotView> {
@@ -179,7 +183,10 @@ impl UsageCache {
         if let Some(view) = self.cached_focused_usage_view(agent, focused_provider) {
             return view;
         }
-        cached_unavailable_view(agent, focused_provider, now)
+        // Agent is focused but no snapshot is cached yet: the agent has started
+        // and the fetch is in flight — an honest "refreshing" state, not the
+        // "usage unavailable" we reserve for a genuine absence.
+        cached_refreshing_view(agent, focused_provider, now)
     }
 
     fn cached_focused_usage_view(
@@ -603,6 +610,25 @@ fn cached_unavailable_view(
     let surface = resolve_surface(agent, focused_provider);
     let mut view =
         FocusedUsageView::unavailable("usage unavailable: no cached provider snapshot", now);
+    view.focused_agent = Some(agent.to_owned());
+    view.focused_provider = focused_provider
+        .map(str::to_owned)
+        .or_else(|| Some(surface.label().to_owned()));
+    view.account.provider_label = surface.account_label().to_owned();
+    view.tabs = provider_tabs(surface);
+    view
+}
+
+/// P3 "refreshing" state with the same surface-derived provider label and tab
+/// strip as `cached_unavailable_view`, so switching to a not-yet-loaded provider
+/// keeps the proper header (e.g. `Anthropic / Claude`) while it loads.
+fn cached_refreshing_view(
+    agent: &str,
+    focused_provider: Option<&str>,
+    now: i64,
+) -> FocusedUsageView {
+    let surface = resolve_surface(agent, focused_provider);
+    let mut view = FocusedUsageView::refreshing(focused_provider, now);
     view.focused_agent = Some(agent.to_owned());
     view.focused_provider = focused_provider
         .map(str::to_owned)
@@ -5413,9 +5439,11 @@ mod tests {
         let mut cache = UsageCache::default();
         cache.set_telemetry_store_path(db);
 
+        // A focused agent with no cached snapshot is mid-load → `refreshing`
+        // (P3), computed without touching the store.
         assert_eq!(
             cache.focused_status_bar_label(Some("codex"), Some("OpenAI")),
-            None
+            Some("refreshing".to_owned())
         );
     }
 
@@ -5430,11 +5458,43 @@ mod tests {
 
         let snapshot = cache.focused_snapshot(Some("codex"), Some("OpenAI"));
 
-        assert_eq!(snapshot.status, UsageSnapshotStatus::Unavailable);
+        // P3: a focused agent with no cached snapshot renders `refreshing`
+        // (still without reading the store), not a stale/unavailable headline.
+        assert_eq!(snapshot.status_bar_label, "refreshing");
+        assert_eq!(snapshot.last_error.as_deref(), Some("refreshing"));
+    }
+
+    #[test]
+    fn focused_usage_lifecycle_hides_before_start_and_refreshes_on_start() {
+        // P3 lifecycle: no focused agent → segment hidden; focused agent with
+        // no data yet → `refreshing` (no fabricated quota); resolved → headline.
+        let mut cache = UsageCache::default();
+
+        // Before start: no focused agent → status bar renders nothing.
+        assert_eq!(cache.focused_status_bar_label(None, None), None);
+
+        // Started, not yet resolved → refreshing on both surfaces.
         assert_eq!(
-            snapshot.last_error.as_deref(),
-            Some("usage unavailable: no cached provider snapshot")
+            cache.focused_status_bar_label(Some("codex"), Some("OpenAI")),
+            Some("refreshing".to_owned())
         );
+        let refreshing = cache.focused_snapshot(Some("codex"), Some("OpenAI"));
+        assert_eq!(refreshing.status_bar_label, "refreshing");
+        assert!(
+            refreshing.buckets.is_empty(),
+            "refreshing must carry no fabricated quota"
+        );
+
+        // Resolved: a cached snapshot wins and the real headline renders.
+        cache.snapshots.insert(
+            canonical_usage_cache_key("codex", Some("OpenAI")),
+            CachedUsage {
+                view: codex_cached_usage_view(),
+            },
+        );
+        let resolved = cache.focused_snapshot(Some("codex"), Some("OpenAI"));
+        assert_ne!(resolved.status_bar_label, "refreshing");
+        assert!(!resolved.buckets.is_empty());
     }
 
     #[test]

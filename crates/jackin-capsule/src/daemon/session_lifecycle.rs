@@ -201,7 +201,9 @@ impl Multiplexer {
                 {
                     anyhow::bail!("rejected agent {agent_slug:?}: {reason}");
                 }
-                self.spawn_session(Some(agent_slug), env_overrides, None)
+                let id = self.spawn_session(Some(agent_slug), env_overrides, None)?;
+                self.note_agent_started();
+                Ok(id)
             }
             SpawnRequest::AgentWithProvider {
                 slug,
@@ -224,10 +226,21 @@ impl Multiplexer {
                     );
                     env_overrides.to_vec()
                 };
-                self.spawn_session(Some(slug), &resolved_env, Some(&provider_label))
+                let id = self.spawn_session(Some(slug), &resolved_env, Some(&provider_label))?;
+                self.note_agent_started();
+                Ok(id)
             }
             SpawnRequest::Shell => self.spawn_session(None, env_overrides, None),
         }
+    }
+
+    /// P3: an agent session just spawned — the start moment the usage lifecycle
+    /// hangs off. Kick a usage refresh now so the focused segment moves from
+    /// `refreshing` to a real headline promptly rather than waiting for the next
+    /// poll cycle. (The daemon already owns this moment via `SpawnRequest`, so no
+    /// separate launch proxy is needed.)
+    fn note_agent_started(&mut self) {
+        self.spawn_active_usage_account_refresh(std::time::Instant::now());
     }
 
     pub(super) fn session_launch(
