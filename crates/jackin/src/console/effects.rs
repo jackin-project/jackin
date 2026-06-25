@@ -181,18 +181,34 @@ pub fn execute_pending_workspace_save_commit(
 
 pub(crate) fn execute_remove_workspace(
     state: &mut ManagerState<'_>,
-    config: &mut AppConfig,
+    _config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
     cwd: &std::path::Path,
     name: &str,
 ) -> bool {
-    match crate::console::services::config::remove_workspace(config, paths, name) {
-        Ok(()) => {
+    let rx = crate::console::services::config::start_remove_workspace(
+        paths.clone(),
+        cwd.to_path_buf(),
+        name.to_owned(),
+    );
+    state.begin_config_save(rx);
+    true
+}
+
+fn apply_remove_workspace_result(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    cwd: std::path::PathBuf,
+    result: anyhow::Result<AppConfig>,
+) {
+    match result {
+        Ok(saved) => {
+            *config = saved;
             let _unused = update_manager(
                 state,
                 ManagerMessage::ReloadFromConfig {
                     config: Box::new(config.clone()),
-                    cwd: cwd.to_path_buf(),
+                    cwd,
                 },
             );
         }
@@ -206,7 +222,6 @@ pub(crate) fn execute_remove_workspace(
             );
         }
     }
-    true
 }
 
 pub(crate) fn apply_role_load_completion(
@@ -750,6 +765,12 @@ pub(crate) fn apply_background_event(
                 jackin_console::tui::subscriptions::ConfigSaveResult::Settings(result) => {
                     apply_settings_save_result(state, config, result);
                 }
+                jackin_console::tui::subscriptions::ConfigSaveResult::RemoveWorkspace {
+                    result,
+                    cwd,
+                } => {
+                    apply_remove_workspace_result(state, config, cwd, result);
+                }
             }
             true
         }
@@ -979,6 +1000,22 @@ mod tests {
         assert!(
             state.config_save_in_flight(),
             "settings config save should run on a worker"
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_workspace_starts_config_save_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+
+        super::execute_remove_workspace(&mut state, &mut config, &paths, cwd, "workspace");
+
+        assert!(
+            state.config_save_in_flight(),
+            "workspace delete should run on a worker"
         );
     }
 

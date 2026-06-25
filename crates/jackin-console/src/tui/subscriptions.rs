@@ -109,6 +109,10 @@ pub enum ConfigSaveResult<AppConfig> {
         exit_on_success: bool,
     },
     Settings(anyhow::Result<AppConfig>),
+    RemoveWorkspace {
+        result: anyhow::Result<AppConfig>,
+        cwd: std::path::PathBuf,
+    },
 }
 
 /// In-flight 1Password read triggered by an op picker commit from an auth form.

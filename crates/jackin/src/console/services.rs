@@ -51,15 +51,34 @@ pub(super) mod config {
         Ok(())
     }
 
-    pub(crate) fn remove_workspace(
-        config: &mut AppConfig,
-        paths: &JackinPaths,
-        name: &str,
-    ) -> anyhow::Result<()> {
+    fn remove_workspace_from_disk(paths: &JackinPaths, name: &str) -> anyhow::Result<AppConfig> {
         let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
         editor_doc.remove_workspace(name)?;
-        *config = editor_doc.save()?;
-        Ok(())
+        editor_doc.save()
+    }
+
+    pub(crate) fn start_remove_workspace(
+        paths: JackinPaths,
+        cwd: std::path::PathBuf,
+        name: String,
+    ) -> jackin_tui::runtime::BlockingSubscription<
+        jackin_console::tui::state::ManagerConfigSaveResult,
+    > {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let result =
+                tokio::task::spawn_blocking(move || remove_workspace_from_disk(&paths, &name))
+                    .await
+                    .map_err(|error| anyhow::anyhow!("workspace delete worker panicked: {error}"))
+                    .and_then(std::convert::identity);
+            drop(tx.send(
+                jackin_console::tui::subscriptions::ConfigSaveResult::RemoveWorkspace {
+                    result,
+                    cwd,
+                },
+            ));
+        });
+        rx
     }
 
     #[cfg(test)]
