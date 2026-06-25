@@ -911,11 +911,12 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     // for the `Auth:` origin) and the `oauthAccount` email, reading each file
     // once. account_label is the real email identity — empty when none, never a
     // fabricated auth-method string; the auth source lives on `credential_origin`.
-    let (oauth_resolved, account_email) = resolve_claude_identity(&oauth_candidates);
-    let (oauth_path, oauth) = match oauth_resolved {
-        Some((path, credentials)) => (Some(path), Some(credentials)),
-        None => (None, None),
-    };
+    let (oauth_resolved, account_email) = resolve_identity(
+        &oauth_candidates,
+        claude_oauth_from_value,
+        claude_email_from_value,
+    );
+    let (oauth_path, oauth) = oauth_resolved.unzip();
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .ok()
         .filter(|v| !v.is_empty());
@@ -1122,12 +1123,13 @@ fn codex_snapshot(
     // Home auth first, runtime-forwarded handoff last; one walk yields the
     // credential (with its winning path, for the `Auth:` origin) and the account
     // label, reading each file once.
-    let codex_candidates = [auth_path.clone(), handoff_auth_path.to_path_buf()];
-    let (resolved, account_from_file) = resolve_codex_identity(&codex_candidates);
-    let (oauth_path, credentials) = match resolved {
-        Some((path, credentials)) => (Some(path), Some(credentials)),
-        None => (None, None),
-    };
+    let codex_candidates = [auth_path, handoff_auth_path.to_path_buf()];
+    let (resolved, account_from_file) = resolve_identity(
+        &codex_candidates,
+        codex_oauth_from_value,
+        codex_account_from_value,
+    );
+    let (oauth_path, credentials) = resolved.unzip();
     // account_label is the email identity only; the auth source (the resolver
     // arm that actually won) goes on `credential_origin`.
     let auth_email = credentials
@@ -2305,28 +2307,35 @@ fn load_claude_oauth_credentials(path: &Path) -> Option<ClaudeOAuthCredentials> 
 /// Resolve the Claude OAuth credential (with the winning path, for the `Auth:`
 /// origin) and the account email in a single home-first walk, reading and
 /// parsing each candidate file at most once instead of once per concern.
-fn resolve_claude_identity(
+/// Resolve a provider credential (with the winning path, for the `Auth:`
+/// origin) and its account label in one home-first walk, reading and parsing
+/// each candidate file at most once. `extract_credential` pulls the token from a
+/// parsed file; `extract_label` pulls the account email/label. The walk stops as
+/// soon as both are found, so a later candidate never re-reads a resolved file.
+fn resolve_identity<T>(
     candidates: &[PathBuf],
-) -> (Option<(PathBuf, ClaudeOAuthCredentials)>, Option<String>) {
-    let mut oauth = None;
-    let mut email = None;
+    extract_credential: impl Fn(&serde_json::Value) -> Option<T>,
+    extract_label: impl Fn(&serde_json::Value) -> Option<String>,
+) -> (Option<(PathBuf, T)>, Option<String>) {
+    let mut credential = None;
+    let mut label = None;
     for path in candidates {
-        if oauth.is_some() && email.is_some() {
+        if credential.is_some() && label.is_some() {
             break;
         }
         let Some(value) = read_json_file(path) else {
             continue;
         };
-        if oauth.is_none()
-            && let Some(credentials) = claude_oauth_from_value(&value)
+        if credential.is_none()
+            && let Some(found) = extract_credential(&value)
         {
-            oauth = Some((path.clone(), credentials));
+            credential = Some((path.clone(), found));
         }
-        if email.is_none() {
-            email = claude_email_from_value(&value);
+        if label.is_none() {
+            label = extract_label(&value);
         }
     }
-    (oauth, email)
+    (credential, label)
 }
 
 #[derive(Debug, Deserialize)]
@@ -5360,33 +5369,6 @@ fn codex_account_from_value(value: &serde_json::Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Resolve the Codex OAuth credential (with the winning path, for the `Auth:`
-/// origin) and the account label in a single home-first walk, reading and
-/// parsing each candidate file at most once — mirrors `resolve_claude_identity`.
-fn resolve_codex_identity(
-    candidates: &[PathBuf],
-) -> (Option<(PathBuf, CodexOAuthCredentials)>, Option<String>) {
-    let mut credentials = None;
-    let mut account = None;
-    for path in candidates {
-        if credentials.is_some() && account.is_some() {
-            break;
-        }
-        let Some(value) = read_json_file(path) else {
-            continue;
-        };
-        if credentials.is_none()
-            && let Some(found) = codex_oauth_from_value(&value)
-        {
-            credentials = Some((path.clone(), found));
-        }
-        if account.is_none() {
-            account = codex_account_from_value(&value);
-        }
-    }
-    (credentials, account)
-}
-
 fn grok_account_label(path: &Path) -> Option<String> {
     let value = read_json_file(path)?;
     first_string_key(&value, "email")
@@ -5461,10 +5443,15 @@ fn home_path(rel: &str) -> PathBuf {
 /// home dir collapsed to `~` (so it reads `~/.codex/auth.json`, not an absolute
 /// container path). Shared by the Claude and Codex snapshots.
 fn oauth_origin(path: &Path) -> String {
-    format!(
-        "OAuth · {}",
-        jackin_tui::shorten_home(&path.display().to_string())
-    )
+    // `to_str()` avoids an intermediate `String` for the common UTF-8 case;
+    // fall back to lossy `display()` only for non-UTF-8 container paths.
+    match path.to_str() {
+        Some(text) => format!("OAuth · {}", jackin_tui::shorten_home(text)),
+        None => format!(
+            "OAuth · {}",
+            jackin_tui::shorten_home(&path.display().to_string())
+        ),
+    }
 }
 
 fn now_epoch() -> i64 {
