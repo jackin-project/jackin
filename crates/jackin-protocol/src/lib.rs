@@ -67,6 +67,12 @@ pub struct CapsuleConfig {
     /// start by the capsule.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub claude_plugins: Vec<String>,
+    /// On-demand credential bindings (`jackin-exec`). Carries the
+    /// `(name, kind, source)` triples the host credential resolver allow-lists;
+    /// the container only learns the names (via `JACKIN_EXEC_BINDINGS`), never
+    /// resolved values. Empty when the workspace declares no on-demand vars.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exec_bindings: Vec<ExecBinding>,
 }
 
 /// A Claude plugin marketplace the capsule registers at container start via

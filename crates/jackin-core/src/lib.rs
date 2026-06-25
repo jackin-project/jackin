@@ -36,7 +36,7 @@ pub use auth::AuthForwardMode;
 pub use docker::{
     ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
 };
-pub use env_value::{EnvValue, FieldTarget, OpRef};
+pub use env_value::{EnvValue, Extended, FieldTarget, OpRef};
 pub use isolation::{MountIsolation, ParseMountIsolationError};
 pub use isolation_record::{CleanupStatus, DriftDetection, IsolationRecord};
 pub use path_text::shorten_home;

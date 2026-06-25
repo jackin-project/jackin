@@ -105,6 +105,7 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             initial_provider: None,
             claude_marketplaces: Vec::new(),
             claude_plugins: Vec::new(),
+            exec_bindings: Vec::new(),
         },
     )
     .unwrap_or_else(|error| panic!("test multiplexer construction failed: {error}"))

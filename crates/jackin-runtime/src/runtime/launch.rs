@@ -584,7 +584,41 @@ pub(super) fn capsule_config(
         initial_provider,
         claude_marketplaces,
         claude_plugins,
+        // Populated by the launch pipeline once the operator env is known; the
+        // manifest alone does not carry on-demand workspace credentials.
+        exec_bindings: Vec::new(),
     }
+}
+
+/// Comma-join the on-demand credential binding names for the
+/// `JACKIN_EXEC_BINDINGS` env var. Shared by the Docker and apple-container
+/// launch paths so the two cannot format the list differently.
+#[must_use]
+pub(super) fn exec_binding_names(bindings: &[jackin_protocol::ExecBinding]) -> String {
+    bindings
+        .iter()
+        .map(|b| b.name.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Create the per-container socket dir and write Capsule's launch config
+/// (`agent.toml`) into it. The dir is bind-mounted to `/jackin/run`, so the
+/// in-container capsule reads `agent.toml` at startup and the host.sock
+/// credential-resolver socket lands beside it. Used by the apple-container
+/// launch path; the Docker path inlines an equivalent write alongside its
+/// extrausers passwd setup. Directory permissions are locked to `0o700` by the
+/// `exec_host` listener when it binds the socket.
+pub(super) fn prepare_socket_dir(
+    socket_dir: &Path,
+    capsule_config: &jackin_protocol::CapsuleConfig,
+) -> std::io::Result<()> {
+    std::fs::create_dir_all(socket_dir)?;
+    let contents = toml::to_string(capsule_config).map_err(std::io::Error::other)?;
+    std::fs::write(
+        socket_dir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
+        contents,
+    )
 }
 
 /// Launch the role container after the caller has prepared the private network
@@ -1018,6 +1052,19 @@ pub(super) async fn launch_role_runtime(
         },
     );
     prepare_socket_dir_result?;
+    // Start the jackin-exec host credential resolver for this container's
+    // on-demand bindings. Its socket lands in the dir just prepared (bind-
+    // mounted to /jackin/run), so the in-container capsule reaches it at
+    // /jackin/run/host.sock. Spawned detached: the task runs independently of
+    // this handle, for the host process's lifetime alongside the interactive
+    // attach. No-op when the workspace declares no on-demand credentials.
+    if !ctx.capsule_config.exec_bindings.is_empty() {
+        drop(crate::exec_host::start_for_container(
+            &ctx.paths.jackin_home,
+            ctx.container_name,
+            &ctx.capsule_config.exec_bindings,
+        ));
+    }
     // `Display` is lossy on non-UTF-8 paths — docker would silently mount a
     // different host dir than the one we just created. Bail rather than
     // smuggle U+FFFD into a `-v` argument.

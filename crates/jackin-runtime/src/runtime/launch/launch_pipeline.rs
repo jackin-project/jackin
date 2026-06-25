@@ -909,6 +909,26 @@ pub(crate) async fn load_role_with(
         }
     }
     inject_workspace_mise_env(&mut merged_vars, workspace);
+
+    // On-demand credential bindings (jackin-exec). These were filtered out of
+    // launch-time resolution above (never `op read` at launch); here we surface
+    // only their NAMES to the agent via `JACKIN_EXEC_BINDINGS` — an
+    // always-available var the entrypoint turns into a system-prompt block. The
+    // full (name, kind, source) triples flow host-side to the credential
+    // resolver via `capsule_config.exec_bindings` below.
+    let exec_bindings: Vec<jackin_protocol::ExecBinding> = jackin_env::collect_on_demand_bindings(
+        config,
+        Some(role_key.as_str()),
+        workspace_name.as_deref(),
+    )
+    .into_iter()
+    .map(|(name, kind, source)| jackin_protocol::ExecBinding { name, kind, source })
+    .collect();
+    if !exec_bindings.is_empty() {
+        let names = super::exec_binding_names(&exec_bindings);
+        merged_vars.retain(|(k, _)| k != "JACKIN_EXEC_BINDINGS");
+        merged_vars.push(("JACKIN_EXEC_BINDINGS".to_owned(), names));
+    }
     let resolved_env = jackin_env::ResolvedEnv { vars: merged_vars };
 
     // Launch-time diagnostic: emit a single compact line summarising
@@ -1588,12 +1608,15 @@ pub(crate) async fn load_role_with(
             progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, "materialized");
         }
 
-        let launch_config = super::capsule_config(
+        let mut launch_config = super::capsule_config(
             selector,
             &workspace.workdir,
             &validated_repo.manifest,
             opts.initial_provider(),
         );
+        // Carry the on-demand credential bindings to the host resolver, which
+        // the launch path starts once the per-container socket dir exists.
+        launch_config.exec_bindings = exec_bindings;
         let ctx = super::LaunchContext {
             container_name: &container_name,
             image: &image,
