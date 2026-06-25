@@ -21,7 +21,7 @@ In-container smoke on branch `feature/capsule-usage-overlay-roadmap` (capsule `0
 | **xAI / Grok** | ✅ correct — single Weekly window `% left` + reset, plan `SuperGrok`. |
 | **Z.AI** | ✅ data correct — Tokens / MCP (`0 / 100 (100 remaining)`) / 5-hour, resets. Order change owed → **F9**. |
 | **Kimi** | ✅ data correct — Weekly + Rate Limit (in-reserve + Lasts on Rate Limit). Order change owed → **F10**. |
-| **MiniMax** | ✅ correct — General·5h / General·Weekly / Video, `Usage: N/100`, `% left`, resets. |
+| **MiniMax** | ✅ correct — General 5h, General Weekly, Video; `Usage: N/100`, `% left`, resets. |
 | **OpenAI / Codex** | ❌ **regressed** — only Session + Weekly render (those are correct, incl. reset + in-reserve + Lasts). Missing Codex Spark 5-hour, Codex Spark Weekly, Limit Reset Credits, Credits, and plan `Pro 20x`. |
 | **Anthropic / Claude** | ❌ **regressed** — Session/Weekly show only `% left`: no reset, no in-reserve, no "Lasts until reset". Sonnet + Daily Routines absent. Account shows `Claude OAuth` not email. |
 
@@ -39,8 +39,8 @@ In-container smoke on branch `feature/capsule-usage-overlay-roadmap` (capsule `0
 - **F1–F3 — usage status-bar lifecycle (architectural, every agent).** The usage segment must: (1) be hidden before the agent has started (today it shows `usage unavailable` during container init); (2) show `refreshing` — one consistent word everywhere — once the agent starts but usage is unknown (not `usage unavailable`, which is misinformation); (3) resolve to the real headline; (4) show `usage unavailable` only when genuinely unavailable. The segment must be **clickable in the unknown/refreshing state** to force a proactive load. Detect agent-start reliably by **routing agent launch through jackin-capsule as a proxy/hook** (instead of exec-ing the agent directly) so the capsule knows the exact start moment and can trigger auth-verify + refresh. Applies to every agent, every surface. Ties to Issues 4/5/7/15.
 - **F7a — plan labels.** Restore full plan label/multiplier: OpenAI shows `pro`, must show `Pro 20x` (CodexBar). Verify derivation in CodexBar `Providers/Codex/`.
 - **F8 — Claude usage credits.** Surface Claude credits as **spent vs available cap** only: `SGD <spent> spent · NN% used` against the monthly cap (e.g. `SGD 78.49 spent · 30% used` of `SGD 260.00`), as on the claude.ai → Settings → Usage page (`claude.ai/api/organizations/{org}/usage`). Not the full cost grid. Verify extraction against CodexBar source before building.
-- **F9 — Z.AI order** → **5-hour · Tokens · MCP** (operator override of CodexBar's Tokens·MCP·5-hour; document the divergence per principle 5).
-- **F10 — Kimi order** → **Rate Limit · Weekly** (operator override of CodexBar's Weekly·Rate Limit). F9+F10 share a principle: put the short/active (5-hour / rate) window on top.
+- **F9 — Z.AI order** → **5-hour, then Tokens, then MCP** (operator override of CodexBar's Tokens, MCP, 5-hour order; document the divergence per principle 5).
+- **F10 — Kimi order** → **Rate Limit, then Weekly** (operator override of CodexBar's Weekly, Rate Limit order). F9+F10 share a principle: put the short/active (5-hour or rate) window on top.
 - **F11 → superseded by F12** (account label consistency folded into the unified identity + auth-source design below).
 
 ### F12 — unified identity + auth-source display (operator-approved layout)
@@ -79,9 +79,19 @@ Implementation: `FocusedAccountHeader` (jackin-protocol) has no field for creden
 | xAI / Grok | — | Weekly | `Weekly N%` (no session; keep the word) |
 | Amp | — | — | `Free N% · $credits` (special, already correct) |
 
-### F14 — tab-bar focus indicator (green underline) consistent everywhere
+### F14 / F15 — unified focus model: phosphor-green indicator follows focus, every tab bar
 
-The usage tab bar reuses the shared component (settings / workspace-editor). Operator rule: when a tab bar **is focused**, the active tab shows a **green underline** (focus signal) and left/right arrows switch tabs while focused — identical on every tab-bar surface in jackin' (usage overlay, console settings, workspace editor, capsule status bar, lookbook). Extends Issue 1 (shared `TabStrip` already has a green/white focus underline in the status-bar painter): make it the single consistent focus affordance and ensure the usage strip is focusable → green underline → arrow-nav. Audit which surfaces show it today.
+Reference (correct, to mirror exactly): the jackin console **settings / workspace-editor** tab bar. The model applies on EVERY tab bar in jackin' (console settings, workspace editor, capsule agent-tab bar, capsule usage overlay, capsule status bar, lookbook):
+
+- The **bright phosphor-green** accent is the single focus indicator and always marks WHERE focus currently is — it is never shown in two places at once.
+- **Tab bar focused:** the active tab shows the bright-green underline; Left/Right switch tabs; pressing Down (or Tab), or clicking the content area, moves focus into the content.
+- **Hover** a tab: the tab color changes AND the mouse cursor changes to a pointer (Issue 1); clicking a tab moves focus onto the tab bar.
+- **Content focused:** once focus moves into the content block, the tab underline drops to a neutral/dim color (NOT bright phosphor-green) and the content block carries the green focus indicator instead.
+- Identical look, feel, functionality, keybindings, and visibility on every surface.
+
+Capsule today does NOT match — neither the top agent-tab bar nor the usage overlay strip shows the green-on-focus underline, arrow-nav while focused, hover cursor, or the focus transition into content. Fix both to mirror the console settings reference.
+
+Extends Issue 1 (shared `TabStrip`: render + hover + per-tab hit-test + cursor + focus underline) and Issue 15 (focus model across surfaces). Audit every tab-bar surface and confirm the model is identical.
 
 ### Final plan — remaining PR 579 work (priority order)
 
