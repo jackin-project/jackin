@@ -14,24 +14,10 @@
         }
     }
 
+    // Complete-grade (OpenCode) and Amp vendor turns still author state. Claude
+    // and Codex are identity-only (Decision 0a) — covered separately below.
     fn canonical_turn(runtime: &str) -> &'static [&'static str] {
         match runtime {
-            "claude" => &[
-                "UserPromptSubmit",
-                "PreToolUse",
-                "PermissionRequest",
-                "PermissionDenied",
-                "PostToolUse",
-                "Stop",
-            ],
-            "codex" => &[
-                "UserPromptSubmit",
-                "PreToolUse",
-                "PermissionRequest",
-                "permission-resolved",
-                "PostToolUse",
-                "Stop",
-            ],
             "opencode" => &[
                 "session.status",
                 "tool.execute.before",
@@ -54,7 +40,7 @@
 
     #[test]
     fn recorded_runtime_turn_sequences_map_to_expected_states() {
-        for runtime in ["claude", "codex", "opencode", "amp"] {
+        for runtime in ["opencode", "amp"] {
             let mut state = SourceGateState::default();
             let observed = canonical_turn(runtime)
                 .iter()
@@ -77,10 +63,59 @@
     }
 
     #[test]
+    fn claude_and_codex_hooks_are_identity_only() {
+        // Decision 0a: every Claude/Codex lifecycle hook event refreshes
+        // freshness only (Heartbeat) and never authors state. Only Claude's
+        // SessionEnd is an identity edge (Clear). This is what prevents the
+        // post-Stop SubagentStop/recap from reviving an idle pane.
+        for runtime in ["claude", "codex"] {
+            let mut state = SourceGateState::default();
+            for name in [
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PermissionRequest",
+                "PermissionDenied",
+                "PostToolUse",
+                "SubagentStart",
+                "SubagentStop",
+                "Stop",
+            ] {
+                assert_eq!(
+                    map_event(&event(runtime, name), &mut state),
+                    GateEffect::Heartbeat,
+                    "runtime={runtime} event={name} must be identity-only"
+                );
+            }
+            // State never moved off the default; no spurious pending permission.
+            assert!(!state.pending_permission);
+            assert_eq!(state.subagents_active, 0);
+        }
+        // Claude's permission/idle Notification types are also freshness-only
+        // (never blocked — the documented idle-notification false-positive).
+        let mut state = SourceGateState::default();
+        for name in ["Notification:permission_prompt", "Notification:idle_prompt"] {
+            assert_eq!(
+                map_event(&event("claude", name), &mut state),
+                GateEffect::Heartbeat,
+                "claude {name} must be identity-only"
+            );
+        }
+        assert!(!state.pending_permission);
+        // The one carry-through identity edge: Claude SessionEnd clears.
+        assert_eq!(
+            map_event(&event("claude", "SessionEnd"), &mut SourceGateState::default()),
+            GateEffect::Clear
+        );
+    }
+
+    #[test]
     fn permission_stop_stays_blocked_until_resolved() {
+        // Canonical gating logic (runtime-agnostic): a turn-complete while a
+        // permission is pending stays Blocked, suppressed.
         let mut state = SourceGateState::default();
         assert_eq!(
-            map_event(&event("claude", "PermissionRequest"), &mut state),
+            map_event(&event("opencode", "permission-requested"), &mut state),
             GateEffect::Authority {
                 state: RawAgentState::Blocked,
                 pending_permission: true,
@@ -89,7 +124,7 @@
             }
         );
         assert_eq!(
-            map_event(&event("claude", "Stop"), &mut state),
+            map_event(&event("opencode", "stop"), &mut state),
             GateEffect::Authority {
                 state: RawAgentState::Blocked,
                 pending_permission: true,
@@ -107,7 +142,7 @@
             notes: Vec::new(),
         };
         assert_eq!(
-            map_event(&event("claude", "PermissionDenied"), &mut state),
+            map_event(&event("opencode", "permission.replied"), &mut state),
             GateEffect::Authority {
                 state: RawAgentState::Working,
                 pending_permission: false,
@@ -121,13 +156,13 @@
     fn stop_with_live_subagent_stays_working() {
         let mut state = SourceGateState::default();
         assert!(matches!(
-            map_event(&event("claude", "SubagentStart"), &mut state),
+            map_event(&event("opencode", "subagent-start"), &mut state),
             GateEffect::CounterOnly {
                 subagents_active: 1
             }
         ));
         assert_eq!(
-            map_event(&event("claude", "Stop"), &mut state),
+            map_event(&event("opencode", "session.idle"), &mut state),
             GateEffect::Authority {
                 state: RawAgentState::Working,
                 pending_permission: false,
@@ -135,30 +170,4 @@
                 notes: vec![EvidenceNote::StopSuppressed],
             }
         );
-    }
-
-    #[test]
-    fn claude_idle_notification_is_not_blocked() {
-        let mut state = SourceGateState::default();
-        assert_eq!(
-            map_event(&event("claude", "Notification:idle_prompt"), &mut state),
-            GateEffect::Heartbeat
-        );
-        assert!(!state.pending_permission);
-    }
-
-    #[test]
-    fn claude_permission_notification_blocks() {
-        let mut state = SourceGateState::default();
-        assert!(matches!(
-            map_event(
-                &event("claude", "Notification:permission_prompt"),
-                &mut state
-            ),
-            GateEffect::Authority {
-                state: RawAgentState::Blocked,
-                pending_permission: true,
-                ..
-            }
-        ));
     }

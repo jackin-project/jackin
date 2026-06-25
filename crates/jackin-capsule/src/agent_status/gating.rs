@@ -119,19 +119,22 @@ fn canonical_event(runtime: &str, event: &str) -> Option<&'static str> {
 
 fn canonical_vendor_event(runtime: &str, event: &str) -> Option<&'static str> {
     match (runtime, event) {
-        ("claude" | "codex", "UserPromptSubmit") => Some("prompt-submitted"),
-        ("claude" | "codex", "PreToolUse") => Some("tool-start"),
-        ("claude" | "codex", "PostToolUse") | ("claude", "PostToolUseFailure") => Some("tool-end"),
-        ("claude" | "codex", "PermissionRequest") => Some("permission-requested"),
-        ("claude", "PermissionDenied") => Some("permission-resolved"),
-        ("claude", "Notification:permission_prompt" | "Notification:elicitation_dialog") => {
-            Some("permission-requested")
-        }
-        ("claude", "Notification:idle_prompt" | "Notification:auth_success") => Some("heartbeat"),
-        ("claude" | "codex", "Stop") | ("claude", "StopFailure") => Some("turn-complete"),
-        ("claude" | "codex", "SubagentStart") => Some("subagent-start"),
-        ("claude" | "codex", "SubagentStop") => Some("subagent-stop"),
+        // Claude and Codex are identity-only authorities (Decision 0a): their
+        // hook events are unreliable in order and timing (a SubagentStop/recap
+        // can fire after the turn's Stop and would revive an idle pane), so they
+        // never author working/blocked/idle. Every lifecycle event refreshes
+        // freshness/liveness only; the screen rule pack + physics watchdog own
+        // their state. The exit edge is the one identity transition that carries
+        // through. Promoting any of these back to a state mapping reintroduces
+        // the post-Stop revive hazard.
         ("claude", "SessionEnd") => Some("agent-exit"),
+        (
+            "claude" | "codex",
+            "SessionStart" | "UserPromptSubmit" | "PreToolUse" | "PostToolUse"
+            | "PostToolUseFailure" | "PermissionRequest" | "PermissionDenied" | "Stop"
+            | "StopFailure" | "SubagentStart" | "SubagentStop",
+        ) => Some("heartbeat"),
+        ("claude", e) if e.starts_with("Notification:") => Some("heartbeat"),
         ("opencode", "session.status" | "tool.execute.before") => Some("tool-start"),
         ("opencode", "tool.execute.after") => Some("tool-end"),
         ("opencode", "session.idle") => Some("turn-complete"),
