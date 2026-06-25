@@ -718,6 +718,46 @@ pub fn default_allowed_hosts_for_agent(agent: &str) -> &'static [&'static str] {
     }
 }
 
+/// WP1: assemble the full egress allowlist injected as `JACKIN_ALLOWED_HOSTS`.
+///
+/// Union of: operator/role-configured `grants.allowed_hosts`, the agent's
+/// default API endpoint(s), any forwarded GitHub host(s), and the OTLP
+/// telemetry endpoint host — deduplicated, order-preserving. The OTLP host is
+/// jackin'-owned infrastructure egress (Decision 9): it is always present when
+/// telemetry is active and is not operator-removable, so the capsule keeps
+/// exporting under `hardened`/`locked`.
+///
+/// The result is fail-closed by construction: an empty union under
+/// `network = allowlist` yields a DROP-only policy in `firewall-apply` (no
+/// egress), never open egress.
+pub fn allowlist_hosts(
+    agent: &str,
+    grants: &EffectiveGrants,
+    github_hosts: &[String],
+    otlp_host: Option<&str>,
+) -> Vec<String> {
+    let mut hosts: Vec<String> = Vec::new();
+    let mut push = |h: &str| {
+        let h = h.trim();
+        if !h.is_empty() && !hosts.iter().any(|existing| existing == h) {
+            hosts.push(h.to_owned());
+        }
+    };
+    for h in &grants.allowed_hosts {
+        push(h);
+    }
+    for h in default_allowed_hosts_for_agent(agent) {
+        push(h);
+    }
+    for h in github_hosts {
+        push(h);
+    }
+    if let Some(h) = otlp_host {
+        push(h);
+    }
+    hosts
+}
+
 /// Emit resource limit Docker CLI flags from resolved grants.
 /// Returns an owned `Vec<String>` of alternating flag/value pairs ready to
 /// extend a `Vec<&str>` `run_args` via `.iter().map(String::as_str)`.
@@ -856,6 +896,32 @@ pub fn dind_enabled(grants: &EffectiveGrants) -> bool {
 /// Returns `true` when the effective `DinD` tier is `Privileged`.
 pub fn dind_privileged(grants: &EffectiveGrants) -> bool {
     grants.dind == DindGrant::Privileged
+}
+
+/// In-container path of the capsule binary, used for post-run `docker exec`.
+pub const CAPSULE_BIN_PATH: &str = "/jackin/runtime/jackin-capsule";
+
+/// WP1: the post-run `docker exec` argv that installs the egress allowlist, or
+/// `None` when the profile does not enforce one.
+///
+/// Returns `Some` only for the `allowlist` tier; `open`/`none` install no
+/// firewall. The exec runs `--user root` (root via `exec` needs no setuid, so
+/// it composes with `no-new-privileges`) and is fail-closed at the call site.
+pub fn firewall_post_run_argv<'a>(
+    grants: &EffectiveGrants,
+    container_name: &'a str,
+) -> Option<[&'a str; 6]> {
+    if grants.network != NetworkGrant::Allowlist {
+        return None;
+    }
+    Some([
+        "exec",
+        "--user",
+        "root",
+        container_name,
+        CAPSULE_BIN_PATH,
+        "firewall-apply",
+    ])
 }
 
 /// WP2: whether the role's Docker network must be created `internal`.
@@ -1628,6 +1694,67 @@ mod tests {
     fn validate_cgroup_hardened_accepts_v2() {
         let result = validate_cgroup_for_profile(DockerSecurityProfile::Hardened, "v2");
         assert!(result.is_ok(), "hardened must accept cgroup v2");
+    }
+
+    // ── WP1: egress allowlist assembly ────────────────────────────────────────
+
+    #[test]
+    fn allowlist_union_dedups_and_includes_all_sources() {
+        let mut grants = profile_base_grants(DockerSecurityProfile::Hardened);
+        grants.allowed_hosts = vec!["example.com".to_owned(), "api.anthropic.com".to_owned()];
+        let github = vec!["github.com".to_owned()];
+        let hosts = allowlist_hosts("claude", &grants, &github, Some("host.docker.internal"));
+        // configured first, agent default (api.anthropic.com already present, deduped),
+        // github, then OTLP.
+        assert_eq!(
+            hosts,
+            vec![
+                "example.com".to_owned(),
+                "api.anthropic.com".to_owned(),
+                "github.com".to_owned(),
+                "host.docker.internal".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn allowlist_always_includes_otlp_even_when_otherwise_empty() {
+        let grants = profile_base_grants(DockerSecurityProfile::Locked);
+        let hosts = allowlist_hosts("unknown-agent", &grants, &[], Some("host.docker.internal"));
+        assert_eq!(hosts, vec!["host.docker.internal".to_owned()]);
+    }
+
+    #[test]
+    fn allowlist_empty_is_fail_closed_when_no_otlp() {
+        let grants = profile_base_grants(DockerSecurityProfile::Locked);
+        let hosts = allowlist_hosts("unknown-agent", &grants, &[], None);
+        assert!(
+            hosts.is_empty(),
+            "no sources + no OTLP yields an empty (DROP-only, fail-closed) allowlist"
+        );
+    }
+
+    #[test]
+    fn firewall_exec_only_for_allowlist_and_runs_as_root() {
+        let mut grants = profile_base_grants(DockerSecurityProfile::Hardened);
+        // hardened is allowlist by default.
+        let argv = firewall_post_run_argv(&grants, "ctr-1").expect("allowlist emits exec");
+        assert_eq!(
+            argv,
+            [
+                "exec",
+                "--user",
+                "root",
+                "ctr-1",
+                CAPSULE_BIN_PATH,
+                "firewall-apply"
+            ]
+        );
+        // open / none emit no firewall.
+        grants.network = NetworkGrant::Open;
+        assert!(firewall_post_run_argv(&grants, "ctr-1").is_none());
+        grants.network = NetworkGrant::None;
+        assert!(firewall_post_run_argv(&grants, "ctr-1").is_none());
     }
 
     // ── WP2: locked uses a Docker-internal network ────────────────────────────

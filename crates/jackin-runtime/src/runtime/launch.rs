@@ -933,6 +933,41 @@ pub(super) async fn launch_role_runtime(
             crate::runtime::docker_profile::NetworkGrant::None => "none",
         }
     ));
+    // Computed once here so the WP1 allowlist (below) can include the OTLP
+    // endpoint host; reused for OTLP propagation after env_strings is flushed.
+    let container_otlp = jackin_diagnostics::container_otlp();
+    // WP1: egress allowlist enforcement. Inject the assembled allowlist and the
+    // truthful enforcement label so the `firewall-apply` exec (after the
+    // container starts) installs an iptables OUTPUT allowlist. The OTLP host is
+    // always included (Decision 9) so telemetry keeps flowing. Only the
+    // allowlist tier installs a firewall; open/none get none.
+    if grants.network == crate::runtime::docker_profile::NetworkGrant::Allowlist {
+        let mut github_hosts: Vec<String> = Vec::new();
+        if gh_token.is_some() {
+            github_hosts.push("github.com".to_owned());
+            github_hosts.push("api.github.com".to_owned());
+            if let Some(host) = github_env.get(jackin_core::env_model::GH_HOST_ENV_NAME) {
+                github_hosts.push(host.clone());
+            }
+        }
+        let otlp_host = container_otlp.as_ref().map(|_| "host.docker.internal");
+        let allowlist = crate::runtime::docker_profile::allowlist_hosts(
+            agent.slug(),
+            grants,
+            &github_hosts,
+            otlp_host,
+        );
+        env_strings.push(format!(
+            "{}={}",
+            jackin_core::env_model::JACKIN_ALLOWED_HOSTS_ENV_NAME,
+            allowlist.join(",")
+        ));
+        env_strings.push(format!(
+            "{}={}",
+            jackin_core::env_model::JACKIN_NETWORK_ENFORCEMENT_ENV_NAME,
+            crate::runtime::docker_profile::network_enforcement_label(grants)
+        ));
+    }
     push_env_if_present(
         &mut env_strings,
         jackin_core::env_model::GITHUB_TOKEN_ENV_NAME,
@@ -962,8 +997,8 @@ pub(super) async fn launch_role_runtime(
     // context (W3C traceparent) and a container-reachable endpoint, so the
     // capsule's telemetry links back to this launch trace and shares the run.
     // host.docker.internal must be wired to the host gateway for the rewritten
-    // loopback endpoint to resolve on Linux engines.
-    let container_otlp = jackin_diagnostics::container_otlp();
+    // loopback endpoint to resolve on Linux engines. `container_otlp` is
+    // computed once above (for the WP1 allowlist) and reused here.
     let mut otlp_propagation: Vec<String> = Vec::new();
     if let Some(otlp) = &container_otlp {
         otlp_propagation.push(format!("OTEL_EXPORTER_OTLP_ENDPOINT={}", otlp.endpoint));
@@ -1143,6 +1178,42 @@ pub(super) async fn launch_role_runtime(
         },
     );
     run_role_result?;
+
+    // WP1: install the egress allowlist before any session starts. Root via
+    // `docker exec` needs no setuid, so it composes with no-new-privileges.
+    // Fail-closed (Decision 3): if `firewall-apply` errors, tear the container
+    // down rather than drop the operator into a session that believes it is
+    // firewalled but is not. `firewall-apply` reads JACKIN_ALLOWED_HOSTS from
+    // the container env injected at run; an empty list is itself fail-closed.
+    if let Some(firewall_args) =
+        crate::runtime::docker_profile::firewall_post_run_argv(grants, container_name)
+    {
+        let firewall_result = runner
+            .run("docker", &firewall_args, None, &docker_run_opts)
+            .await;
+        jackin_diagnostics::debug_log!(
+            "launch",
+            "firewall_apply profile={profile} exit={}",
+            if firewall_result.is_ok() {
+                "0"
+            } else {
+                "nonzero"
+            },
+        );
+        if let Err(err) = firewall_result {
+            if let Err(remove_err) = docker.remove_container(container_name).await {
+                jackin_diagnostics::emit_compact_line(
+                    "warning",
+                    &format!(
+                        "fail-closed teardown could not remove {container_name}: {remove_err}"
+                    ),
+                );
+            }
+            return Err(err.context(format!(
+                "egress allowlist install failed for `{profile}` profile; container torn down (fail-closed). The agent was not started without the firewall the profile promises."
+            )));
+        }
+    }
 
     // Reconcile keep_awake AFTER the role container is running but
     // BEFORE the foreground session blocks. This is the only window in
