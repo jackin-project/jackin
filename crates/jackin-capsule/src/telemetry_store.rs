@@ -454,6 +454,10 @@ pub(crate) fn focused_usage_view(
                 .and_then(|value| u8::try_from(value.clamp(0, 100)).ok()),
             reset_label: row.reset_label.clone(),
             resets_at: row.resets_at,
+            // The headline is persisted as `status_bar_label`, so the slot tag is
+            // not stored; a store-restored bucket carries none and the live
+            // refresh re-tags it.
+            status_slot: None,
             pace_label: row.pace_label.clone(),
             status: usage_status_from_label(&row.status),
         })
@@ -837,6 +841,7 @@ mod tests {
                     remaining_percent: Some(37),
                     reset_label: Some("Resets in 1h".to_owned()),
                     resets_at: None,
+                    status_slot: None,
                     pace_label: None,
                     status: UsageSnapshotStatus::Fresh,
                 },
@@ -847,6 +852,7 @@ mod tests {
                     remaining_percent: None,
                     reset_label: None,
                     resets_at: None,
+                    status_slot: None,
                     pace_label: Some("ACP billing unavailable".to_owned()),
                     status: UsageSnapshotStatus::Unsupported,
                 },
@@ -887,6 +893,7 @@ mod tests {
                 remaining_percent: Some(remaining),
                 reset_label: Some("Resets at 15:00 UTC".to_owned()),
                 resets_at: None,
+                status_slot: None,
                 pace_label: Some("On pace".to_owned()),
                 status: UsageSnapshotStatus::Fresh,
             }],
@@ -952,6 +959,16 @@ mod tests {
         assert_eq!(view.buckets[0].label, "Session");
         assert_eq!(view.buckets[0].remaining_percent, Some(37));
         assert_eq!(view.buckets[1].label, "Credits");
+        // Restored buckets carry no status-bar slot: the headline is persisted as
+        // `status_bar_label` and read directly, never recomputed from the restored
+        // (untagged) buckets. Locks that contract so a future change recomputing
+        // the headline from buckets — which would blank every cached headline —
+        // fails loudly here.
+        assert!(
+            view.buckets
+                .iter()
+                .all(|bucket| bucket.status_slot.is_none())
+        );
         assert_eq!(view.updated_label, "Updated just now");
         assert_eq!(view.status_bar_label, "Codex Session: 63% used · 37% left");
     }

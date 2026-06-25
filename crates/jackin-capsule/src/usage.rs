@@ -17,7 +17,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use base64::Engine as _;
 use chrono::{DateTime, Local, TimeZone, Utc};
 use jackin_protocol::control::{
-    AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, QuotaBucketView,
+    AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, QuotaBucketView, StatusSlot,
     UsageConfidence, UsageProviderTab, UsageSnapshotStatus, UsageSource,
 };
 use serde::{Deserialize, Serialize};
@@ -537,7 +537,7 @@ fn write_shared_usage_cooldown_marker(
     reason: &str,
 ) {
     if let Err(error) = fs::create_dir_all(cooldown_dir) {
-        crate::cdebug!("usage cooldown marker dir create failed for {key}: {error}");
+        crate::clog!("usage cooldown marker dir create failed for {key}: {error}");
         return;
     }
     let path = shared_usage_cooldown_marker_path(cooldown_dir, key);
@@ -546,7 +546,7 @@ fn write_shared_usage_cooldown_marker(
     // window, so surface the failure rather than silently defeating the 429
     // cooldown.
     if let Err(error) = fs::write(path, format!("{until_epoch}\n{reason}\n")) {
-        crate::cdebug!("usage cooldown marker write failed for {key}: {error}");
+        crate::clog!("usage cooldown marker write failed for {key}: {error}");
     }
 }
 
@@ -897,18 +897,15 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     // fallback — mirroring the other providers (Codex/Amp/Kimi/Grok) — so the
     // snapshot does not silently drop to the impoverished CLI path when the
     // home copy lacks `claudeAiOauth.accessToken`. Matches CodexBar's order.
-    // Home credentials first (the agent keeps the live token here);
-    // runtime-forwarded handoff last. Capture the winning path so the `Auth:`
-    // line names the file that actually produced the token instead of a
-    // constant — there is no keychain reader in the capsule.
     let oauth_candidates = [
         config.join(".credentials.json"),
         home_path(".claude/.credentials.json"),
         home_path(".claude.json"),
         PathBuf::from(CLAUDE_HANDOFF_CREDENTIALS_PATH),
     ];
-    // One home-first walk yields both the OAuth token (with its winning path,
-    // for the `Auth:` origin) and the `oauthAccount` email, reading each file
+    // One home-first walk yields both the OAuth token (with its winning path, for
+    // the `Auth:` origin — there is no keychain reader in the capsule, so the
+    // origin names the file) and the `oauthAccount` email, reading each file
     // once. account_label is the real email identity — empty when none, never a
     // fabricated auth-method string; the auth source lives on `credential_origin`.
     let (oauth_resolved, account_email) = resolve_identity(
@@ -1270,13 +1267,20 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let handoff_secrets = Path::new(AMP_HANDOFF_SECRETS_PATH);
     let amp_env_key = env_value("AMP_API_KEY");
     let env_present = amp_env_key.is_some();
-    let amp_api_key = amp_env_key.or_else(|| {
-        // Home secrets first, runtime-forwarded handoff last (shared resolver).
-        first_credential(
+    // Resolve the file key only when the env var is absent (env wins), capturing
+    // the winning path so the origin names the file that actually produced the
+    // key instead of re-`stat`ing and guessing. Home secrets first, handoff last.
+    let amp_file = if env_present {
+        None
+    } else {
+        first_credential_with_path(
             &[amp_secrets.clone(), handoff_secrets.to_path_buf()],
             load_amp_api_key,
         )
-    });
+    };
+    let amp_api_key = amp_env_key
+        .clone()
+        .or_else(|| amp_file.as_ref().map(|(_, key)| key.clone()));
     let (api_usage, api_error) = match amp_api_key.as_deref() {
         Some(token) => match fetch_amp_api_usage(token) {
             Ok(usage) => (Some(usage), None),
@@ -1293,16 +1297,18 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
         (None, None)
     };
     let provider_error = api_error.as_ref().or(cli_error.as_ref()).cloned();
-    let amp_secrets_exists = amp_secrets.exists();
-    let handoff_secrets_exists = handoff_secrets.exists();
-    let has_auth = amp_api_key.is_some() || amp_secrets_exists || handoff_secrets_exists;
-    // credential_origin reflects the resolver arm that actually won.
+    let has_auth = amp_api_key.is_some() || amp_secrets.exists() || handoff_secrets.exists();
+    // credential_origin names the file that actually produced the key (env wins
+    // first). A present-but-unparseable home `secrets.json` no longer mislabels a
+    // key that actually resolved from the handoff.
     let credential_origin = if env_present {
         Some("API key · env AMP_API_KEY".to_owned())
-    } else if amp_secrets_exists {
-        Some("API key · amp secrets.json".to_owned())
-    } else if handoff_secrets_exists {
-        Some(format!("API key · {AMP_HANDOFF_SECRETS_PATH}"))
+    } else if let Some((path, _)) = amp_file.as_ref() {
+        Some(if path.as_path() == handoff_secrets {
+            format!("API key · {AMP_HANDOFF_SECRETS_PATH}")
+        } else {
+            "API key · amp secrets.json".to_owned()
+        })
     } else {
         None
     };
@@ -1874,7 +1880,7 @@ fn status_bar_headline_for_surface(
     if surface == UsageSurface::Amp {
         amp_status_bar_headline(buckets)
     } else {
-        let labels = status_bar_quota_labels(surface, buckets);
+        let labels = status_bar_quota_labels(buckets);
         (!labels.is_empty()).then(|| labels.join(" · "))
     }
 }
@@ -1918,20 +1924,25 @@ fn amp_credit_status_label(bucket: &QuotaBucketView) -> Option<String> {
         .map(str::to_owned)
 }
 
-fn status_bar_quota_labels(surface: UsageSurface, buckets: &[QuotaBucketView]) -> Vec<String> {
-    ["Session", "Weekly"]
-        .into_iter()
-        .filter_map(|target| {
-            buckets
-                .iter()
-                .find(|bucket| status_bar_bucket_matches(surface, target, bucket))
-                .and_then(|bucket| {
-                    bucket
-                        .remaining_percent
-                        .map(|remaining| format!("{target} {remaining}%"))
-                })
-        })
-        .collect()
+fn status_bar_quota_labels(buckets: &[QuotaBucketView]) -> Vec<String> {
+    // Read the semantic slot the provider tagged at construction, not the
+    // free-text label — a window rename can't silently break the headline.
+    [
+        (StatusSlot::Session, "Session"),
+        (StatusSlot::Weekly, "Weekly"),
+    ]
+    .into_iter()
+    .filter_map(|(slot, label)| {
+        buckets
+            .iter()
+            .find(|bucket| bucket.status_slot == Some(slot) && status_bar_fresh_or_stale(bucket))
+            .and_then(|bucket| {
+                bucket
+                    .remaining_percent
+                    .map(|remaining| format!("{label} {remaining}%"))
+            })
+    })
+    .collect()
 }
 
 fn status_bar_fresh_or_stale(bucket: &QuotaBucketView) -> bool {
@@ -1939,36 +1950,6 @@ fn status_bar_fresh_or_stale(bucket: &QuotaBucketView) -> bool {
         bucket.status,
         UsageSnapshotStatus::Fresh | UsageSnapshotStatus::Stale
     )
-}
-
-fn status_bar_bucket_matches(
-    surface: UsageSurface,
-    target: &str,
-    bucket: &QuotaBucketView,
-) -> bool {
-    if !status_bar_fresh_or_stale(bucket) {
-        return false;
-    }
-    let label = bucket.label.to_ascii_lowercase();
-    // Per-provider slot mapping: which bucket fills the Session vs Weekly
-    // headline slot. Z.AI's weekly window is "Tokens", MiniMax's session is
-    // "General · 5h", Grok exposes only a billing cycle (Weekly/Monthly/Credits)
-    // and no session — the generic Session/Weekly substring match misses these.
-    match target {
-        "Session" => match surface {
-            UsageSurface::Minimax => label.contains("5h") || label.contains("5-hour"),
-            UsageSurface::Grok => false,
-            _ => label.contains("session") || label.contains("5-hour") || label.contains("5 hour"),
-        },
-        "Weekly" => match surface {
-            UsageSurface::Zai => label.contains("token"),
-            UsageSurface::Grok => {
-                label.contains("weekly") || label.contains("monthly") || label.contains("credits")
-            }
-            _ => label.contains("weekly") || label.contains("week"),
-        },
-        _ => false,
-    }
 }
 
 fn compact_account_identity(account_label: &str) -> &str {
@@ -1984,23 +1965,46 @@ fn compact_account_identity(account_label: &str) -> &str {
     }
 }
 
+/// Best-effort canonical surface for any provider-ish text — a tab label
+/// (`OpenAI / Codex`) or an account provider label (`codex`), case-insensitive
+/// and synonym-aware. `None` for text that names no known provider.
+fn surface_from_text(text: &str) -> Option<UsageSurface> {
+    let text = text.to_ascii_lowercase();
+    let surface = if text.contains("claude") || text.contains("anthropic") {
+        UsageSurface::Claude
+    } else if text.contains("codex") || text.contains("openai") {
+        UsageSurface::Codex
+    } else if text.contains("amp") {
+        UsageSurface::Amp
+    } else if text.contains("grok") || text.contains("xai") {
+        UsageSurface::Grok
+    } else if text.contains("glm") || text.contains("z.ai") || text.contains("zai") {
+        UsageSurface::Zai
+    } else if text.contains("kimi") {
+        UsageSurface::Kimi
+    } else if text.contains("minimax") {
+        UsageSurface::Minimax
+    } else {
+        return None;
+    };
+    Some(surface)
+}
+
 fn provider_matches_usage_label(provider: &str, account_provider: &str) -> bool {
+    // Compare the canonical surface each label resolves to instead of a long
+    // synonym OR-chain; fall back to a case-insensitive substring match for
+    // providers outside the known set (e.g. OpenCode).
+    if let (Some(left), Some(right)) = (
+        surface_from_text(provider),
+        surface_from_text(account_provider),
+    ) {
+        return left == right;
+    }
     let provider = provider.to_ascii_lowercase();
     let account_provider = account_provider.to_ascii_lowercase();
     provider == account_provider
         || provider.contains(&account_provider)
         || account_provider.contains(&provider)
-        || (provider.contains("openai") && account_provider.contains("codex"))
-        || (provider.contains("codex") && account_provider.contains("codex"))
-        || (provider.contains("anthropic") && account_provider.contains("claude"))
-        || (provider.contains("claude") && account_provider.contains("claude"))
-        || (provider.contains("z.ai") && account_provider.contains("glm"))
-        || (provider.contains("zai") && account_provider.contains("glm"))
-        || (provider.contains("glm") && account_provider.contains("z.ai"))
-        || (provider.contains("xai") && account_provider.contains("grok"))
-        || (provider.contains("grok") && account_provider.contains("grok"))
-        || (provider.contains("minimax") && account_provider.contains("minimax"))
-        || (provider.contains("kimi") && account_provider.contains("kimi"))
 }
 
 fn most_constrained_fresh_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBucketView> {
@@ -2173,8 +2177,26 @@ fn bucket(
         remaining_percent,
         reset_label,
         resets_at: None,
+        status_slot: None,
         pace_label: pace_label.map(str::to_owned),
         status,
+    }
+}
+
+/// Tag the bucket pushed last onto `buckets` with the status-bar slot it fills.
+fn tag_last_status_slot(buckets: &mut [QuotaBucketView], slot: StatusSlot) {
+    if let Some(last) = buckets.last_mut() {
+        last.status_slot = Some(slot);
+    }
+}
+
+/// Status-bar slot for a Claude/Codex window whose label is the canonical
+/// `Session`/`Weekly` (the other windows — Sonnet, Spark, Credits — fill none).
+fn status_slot_for_window(label: &str) -> Option<StatusSlot> {
+    match label {
+        "Session" => Some(StatusSlot::Session),
+        "Weekly" => Some(StatusSlot::Weekly),
+        _ => None,
     }
 }
 
@@ -2211,29 +2233,42 @@ struct ClaudeOAuthCredentials {
     subscription_type: Option<String>,
 }
 
-/// Resolve a credential from an ordered candidate list, taking the first path
-/// that yields a usable value via `load`. Every provider snapshot resolves its
-/// credential through this one helper so the order is uniform and explicit —
-/// the agent's own home location(s) first (the live source of truth the agent
-/// reads and refreshes), then the runtime-forwarded `/jackin/<provider>/`
-/// handoff as the last-resort fallback. Sharing the mechanism prevents a
-/// provider from being silently missed (as Claude's handoff read once was).
+/// Resolve a credential from an ordered candidate list, returning the first path
+/// that yields a usable value via `load` together with that winning path. Used
+/// by Amp for its single file credential; the home-first / handoff-last ordering
+/// it encodes — the agent's own home location(s) first (the live source of truth
+/// the agent reads and refreshes), then the runtime-forwarded `/jackin/<provider>/`
+/// handoff as the last-resort fallback — is the same ordering `resolve_identity`
+/// applies for the dual-concern providers (Claude, Codex), so credential order is
+/// uniform across providers. The winning path is returned so the `Auth:` origin
+/// can name the file that actually produced the credential instead of re-`stat`ing
+/// and guessing.
+fn first_credential_with_path<T>(
+    paths: &[PathBuf],
+    load: impl Fn(&Path) -> Option<T>,
+) -> Option<(PathBuf, T)> {
+    paths
+        .iter()
+        .find_map(|path| load(path.as_path()).map(|value| (path.clone(), value)))
+}
+
+#[cfg(test)]
 fn first_credential<T>(paths: &[PathBuf], load: impl Fn(&Path) -> Option<T>) -> Option<T> {
-    paths.iter().find_map(|path| load(path.as_path()))
+    first_credential_with_path(paths, load).map(|(_, value)| value)
 }
 
 /// Read and parse a JSON credential/config file, distinguishing "absent"
 /// (expected — `None`, no log) from "present but broken" (a real error the
-/// operator must see — logged via `cdebug!`, then `None`). The `.ok()?` idiom
-/// these loaders previously used collapsed both cases, so a corrupt or
-/// permission-denied token file looked identical to a logged-out provider and
-/// surfaced no diagnostic.
+/// operator must see — logged via the always-on `clog!`, then `None`). The
+/// `.ok()?` idiom these loaders previously used collapsed both cases, so a
+/// corrupt or permission-denied token file looked identical to a logged-out
+/// provider and surfaced no diagnostic.
 fn read_json_file(path: &Path) -> Option<serde_json::Value> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(error) => {
             if error.kind() != std::io::ErrorKind::NotFound {
-                crate::cdebug!(
+                crate::clog!(
                     "usage credential read failed for {}: {error}",
                     path.display()
                 );
@@ -2244,7 +2279,7 @@ fn read_json_file(path: &Path) -> Option<serde_json::Value> {
     match serde_json::from_str(&text) {
         Ok(value) => Some(value),
         Err(error) => {
-            crate::cdebug!(
+            crate::clog!(
                 "usage credential parse failed for {}: {error}",
                 path.display()
             );
@@ -2467,6 +2502,9 @@ fn push_claude_window(
         pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     ));
+    if let Some(slot) = status_slot_for_window(label) {
+        tag_last_status_slot(buckets, slot);
+    }
 }
 
 fn claude_window_seconds(label: &str) -> Option<i64> {
@@ -3007,6 +3045,9 @@ fn push_codex_window(
         pace.as_deref(),
         UsageSnapshotStatus::Fresh,
     ));
+    if let Some(slot) = status_slot_for_window(label) {
+        tag_last_status_slot(buckets, slot);
+    }
 }
 
 fn fetch_codex_rpc_usage(gate: &mut ManagedCliLaunchGate) -> Result<CodexRpcUsage, String> {
@@ -3233,7 +3274,9 @@ impl GrokWebBillingSnapshot {
         let label = self.reset_at_epoch.map_or("Credits", |reset_at| {
             grok_cycle_label_from_reset(reset_at, now)
         });
-        vec![timed_bucket(
+        // Grok exposes only a billing cycle (no session), so it fills the Weekly
+        // headline slot.
+        let mut view = timed_bucket(
             label,
             None,
             None,
@@ -3242,7 +3285,9 @@ impl GrokWebBillingSnapshot {
             now,
             None,
             UsageSnapshotStatus::Fresh,
-        )]
+        );
+        view.status_slot = Some(StatusSlot::Weekly);
+        vec![view]
     }
 }
 
@@ -3275,6 +3320,8 @@ impl GrokBillingResponse {
                 None,
                 UsageSnapshotStatus::Fresh,
             ));
+            // Billing cycle fills the Weekly slot; Grok has no session window.
+            tag_last_status_slot(&mut buckets, StatusSlot::Weekly);
         }
         if let Some(usage) = &self.usage
             && let Some(included) = usage.included_used.as_ref().and_then(|amount| amount.val)
@@ -3902,7 +3949,7 @@ fn resolve_codex_base_url(codex_home: &Path) -> String {
             // A config.toml that exists but is unreadable silently drops the
             // operator's custom base-URL override back to the public default.
             if error.kind() != std::io::ErrorKind::NotFound {
-                crate::cdebug!(
+                crate::clog!(
                     "codex config.toml read failed for {}: {error}",
                     config_path.display()
                 );
@@ -4020,9 +4067,11 @@ impl ZaiQuotaResponse {
         // operator override of CodexBar's Tokens, MCP, 5-hour order.
         if let Some(limit) = session_token_limit {
             buckets.push(zai_bucket("5-hour", limit, now));
+            tag_last_status_slot(&mut buckets, StatusSlot::Session);
         }
         if let Some(limit) = primary_token_limit {
             buckets.push(zai_bucket("Tokens", limit, now));
+            tag_last_status_slot(&mut buckets, StatusSlot::Weekly);
         }
         if let Some(limit) = time_limit {
             buckets.push(zai_bucket("MCP", limit, now));
@@ -4232,8 +4281,10 @@ impl KimiUsageResponse {
                 rate_limit.window.as_ref(),
                 now,
             ));
+            tag_last_status_slot(&mut buckets, StatusSlot::Session);
         }
         buckets.push(kimi_bucket("Weekly", detail, None, now));
+        tag_last_status_slot(&mut buckets, StatusSlot::Weekly);
         buckets
     }
 }
@@ -4577,7 +4628,14 @@ fn minimax_bucket(
     let used_label = usage.map(|usage| compact_count(usage.max(0) as u64));
     let reset_epoch = minimax_reset_epoch(end, remains_time, now);
     let detail = minimax_usage_count_line(usage, total, remaining_percent);
-    Some(timed_bucket(
+    // Only the general model fills the status-bar slots; per-model windows are
+    // detail rows the headline ignores.
+    let status_slot = match (minimax_is_general_model(Some(model_name)), window) {
+        (true, MiniMaxWindow::Interval) => Some(StatusSlot::Session),
+        (true, MiniMaxWindow::Weekly) => Some(StatusSlot::Weekly),
+        _ => None,
+    };
+    let mut view = timed_bucket(
         &minimax_bucket_label(model_name, window),
         used_label,
         total
@@ -4588,7 +4646,9 @@ fn minimax_bucket(
         now,
         detail.as_deref(),
         UsageSnapshotStatus::Fresh,
-    ))
+    );
+    view.status_slot = status_slot;
+    Some(view)
 }
 
 fn minimax_is_general_model(model_name: Option<&str>) -> bool {
@@ -5891,6 +5951,7 @@ mod tests {
                 remaining_percent: Some(37),
                 reset_label: Some("Resets in 2h".to_owned()),
                 resets_at: None,
+                status_slot: None,
                 pace_label: None,
                 status: UsageSnapshotStatus::Fresh,
             }],
@@ -5940,6 +6001,7 @@ mod tests {
                 remaining_percent: Some(37),
                 reset_label: None,
                 resets_at: None,
+                status_slot: Some(StatusSlot::Session),
                 pace_label: None,
                 status: UsageSnapshotStatus::Fresh,
             },
@@ -5950,6 +6012,7 @@ mod tests {
                 remaining_percent: Some(10),
                 reset_label: Some("Resets in 3h 52m".to_owned()),
                 resets_at: None,
+                status_slot: Some(StatusSlot::Weekly),
                 pace_label: None,
                 status: UsageSnapshotStatus::Fresh,
             },
@@ -5967,28 +6030,38 @@ mod tests {
     }
 
     #[test]
-    fn status_bar_maps_session_weekly_slots_per_provider() {
-        // the generic Session/Weekly substring match misses these slots —
-        // Z.AI weekly is "Tokens", MiniMax session is "General · 5h", and Grok
-        // exposes only a billing cycle with no session window.
-        let pct = |label: &str, remaining: u8| QuotaBucketView {
+    fn status_bar_reads_session_weekly_slots_from_tags() {
+        // The headline reads the semantic slot the provider tagged at
+        // construction, not the (free-text) window label — Z.AI's weekly window
+        // is "Tokens", MiniMax's is "General · Weekly", Grok tags its billing
+        // cycle Weekly with no session. An untagged window (MCP) never reaches
+        // the headline.
+        let pct = |label: &str, remaining: u8, slot: Option<StatusSlot>| QuotaBucketView {
             label: label.to_owned(),
             used_label: None,
             limit_label: None,
             remaining_percent: Some(remaining),
             reset_label: None,
             resets_at: None,
+            status_slot: slot,
             pace_label: None,
             status: UsageSnapshotStatus::Fresh,
         };
 
-        let zai = vec![pct("5-hour", 80), pct("Tokens", 42), pct("MCP", 90)];
+        let zai = vec![
+            pct("5-hour", 80, Some(StatusSlot::Session)),
+            pct("Tokens", 42, Some(StatusSlot::Weekly)),
+            pct("MCP", 90, None),
+        ];
         assert_eq!(
             status_bar_label(UsageSurface::Zai, "", UsageSnapshotStatus::Fresh, &zai),
             "Session 80% · Weekly 42%"
         );
 
-        let minimax = vec![pct("General · 5h", 70), pct("General · Weekly", 55)];
+        let minimax = vec![
+            pct("General · 5h", 70, Some(StatusSlot::Session)),
+            pct("General · Weekly", 55, Some(StatusSlot::Weekly)),
+        ];
         assert_eq!(
             status_bar_label(
                 UsageSurface::Minimax,
@@ -5999,8 +6072,8 @@ mod tests {
             "Session 70% · Weekly 55%"
         );
 
-        // Grok: only a billing cycle (here "Monthly"), no session → "Weekly N%".
-        let grok = vec![pct("Monthly", 33)];
+        // Grok: billing cycle tagged Weekly, no session → "Weekly N%".
+        let grok = vec![pct("Monthly", 33, Some(StatusSlot::Weekly))];
         assert_eq!(
             status_bar_label(UsageSurface::Grok, "", UsageSnapshotStatus::Fresh, &grok),
             "Weekly 33%"
@@ -6054,6 +6127,7 @@ mod tests {
             remaining_percent: Some(1),
             reset_label: None,
             resets_at: None,
+            status_slot: Some(StatusSlot::Session),
             pace_label: None,
             status: UsageSnapshotStatus::Stale,
         }];
@@ -6070,6 +6144,34 @@ mod tests {
     }
 
     #[test]
+    fn status_bar_label_drops_tagged_bucket_that_failed() {
+        // A Session-tagged bucket whose own status is not Fresh/Stale (e.g. the
+        // window errored) must not surface its percentage as if it were live;
+        // the headline falls through to the snapshot-level status label.
+        let buckets = vec![QuotaBucketView {
+            label: "Session".to_owned(),
+            used_label: Some("50% used".to_owned()),
+            limit_label: Some("100%".to_owned()),
+            remaining_percent: Some(50),
+            reset_label: None,
+            resets_at: None,
+            status_slot: Some(StatusSlot::Session),
+            pace_label: None,
+            status: UsageSnapshotStatus::Error,
+        }];
+
+        assert_eq!(
+            status_bar_label(
+                UsageSurface::Claude,
+                "alexey@example.com",
+                UsageSnapshotStatus::Error,
+                &buckets
+            ),
+            "error"
+        );
+    }
+
+    #[test]
     fn status_bar_label_uses_amp_free_and_credits() {
         let buckets = vec![
             QuotaBucketView {
@@ -6079,6 +6181,7 @@ mod tests {
                 remaining_percent: Some(48),
                 reset_label: None,
                 resets_at: None,
+                status_slot: None,
                 pace_label: None,
                 status: UsageSnapshotStatus::Fresh,
             },
@@ -6089,6 +6192,7 @@ mod tests {
                 remaining_percent: None,
                 reset_label: None,
                 resets_at: None,
+                status_slot: None,
                 pace_label: Some("Individual credits: $4.76".to_owned()),
                 status: UsageSnapshotStatus::Fresh,
             },
@@ -6114,6 +6218,7 @@ mod tests {
             remaining_percent: Some(9),
             reset_label: None,
             resets_at: None,
+            status_slot: None,
             pace_label: None,
             status: UsageSnapshotStatus::Stale,
         }];
@@ -6380,6 +6485,7 @@ mod tests {
             remaining_percent: Some(10),
             reset_label: Some("Resets in 3h 52m".to_owned()),
             resets_at: None,
+            status_slot: Some(StatusSlot::Weekly),
             pace_label: None,
             status: UsageSnapshotStatus::Fresh,
         }];
@@ -6439,6 +6545,7 @@ mod tests {
         let buckets = usage.into_buckets(1_781_185_560);
 
         assert_eq!(buckets[0].label, "Session");
+        assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
         assert_eq!(buckets[0].remaining_percent, Some(16));
         assert_eq!(
             buckets[0].reset_label.as_deref(),
@@ -6451,8 +6558,16 @@ mod tests {
             )
         );
         assert_eq!(buckets[1].label, "Weekly");
+        assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
         assert_eq!(buckets[1].remaining_percent, Some(22));
+        // Sonnet / Daily Routines fill no headline slot.
         assert!(buckets.iter().any(|bucket| bucket.label == "Sonnet"));
+        assert!(
+            buckets
+                .iter()
+                .find(|bucket| bucket.label == "Sonnet")
+                .is_some_and(|bucket| bucket.status_slot.is_none())
+        );
         assert!(
             buckets
                 .iter()
@@ -6663,9 +6778,11 @@ mod tests {
         assert_eq!(usage.account_label.as_deref(), Some("person@example.com"));
         assert_eq!(usage.response.plan_type.as_deref(), Some("pro"));
         assert_eq!(buckets[0].label, "Session");
+        assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
         assert_eq!(buckets[0].remaining_percent, Some(37));
         assert_eq!(buckets[0].pace_label.as_deref(), Some("15% in reserve"));
         assert_eq!(buckets[1].label, "Weekly");
+        assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
         assert_eq!(buckets[1].remaining_percent, Some(10));
         assert_eq!(buckets[1].pace_label.as_deref(), Some("1 week window"));
         let credits = buckets
@@ -6772,6 +6889,14 @@ mod tests {
         let buckets = usage.buckets(1_780_315_200);
 
         assert_eq!(buckets[0].label, "Monthly");
+        // The RPC/CLI billing path tags its cycle bucket Weekly (no Session); the
+        // detail rows must stay untagged so they never reach the headline.
+        assert_eq!(buckets[0].status_slot, Some(StatusSlot::Weekly));
+        assert!(
+            buckets[1..]
+                .iter()
+                .all(|bucket| bucket.status_slot.is_none())
+        );
         assert_eq!(buckets[0].used_label.as_deref(), Some("$18"));
         assert_eq!(buckets[0].limit_label.as_deref(), Some("$50"));
         assert_eq!(buckets[0].remaining_percent, Some(64));
@@ -6886,6 +7011,7 @@ mod tests {
         let snapshot =
             parse_grok_web_billing_response(&data, 1_782_318_000).expect("parse grok billing");
         let buckets = snapshot.buckets(1_782_318_000);
+        assert_eq!(buckets[0].status_slot, Some(StatusSlot::Weekly));
 
         assert_eq!(buckets[0].label, "Weekly");
         assert_eq!(buckets[0].remaining_percent, Some(14));
@@ -7382,12 +7508,15 @@ mod tests {
         assert_eq!(quota.plan_name().as_deref(), Some("Coding Pro"));
         // render order is 5-hour, Tokens, MCP.
         assert_eq!(buckets[0].label, "5-hour");
+        assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
         assert_eq!(buckets[0].remaining_percent, Some(75));
         assert_eq!(buckets[0].pace_label, None);
         assert_eq!(buckets[1].label, "Tokens");
+        assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
         assert_eq!(buckets[1].remaining_percent, Some(10));
         assert_eq!(buckets[1].pace_label, None);
         assert_eq!(buckets[2].label, "MCP");
+        assert_eq!(buckets[2].status_slot, None);
         assert_eq!(buckets[2].remaining_percent, Some(75));
         assert_eq!(
             buckets[2].pace_label.as_deref(),
@@ -7445,10 +7574,12 @@ mod tests {
 
         // render order is Rate Limit, then Weekly.
         assert_eq!(buckets[0].label, "Rate Limit");
+        assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
         assert_eq!(buckets[0].used_label.as_deref(), Some("50"));
         assert_eq!(buckets[0].remaining_percent, Some(75));
         assert_eq!(buckets[0].pace_label.as_deref(), Some("30% in reserve"));
         assert_eq!(buckets[1].label, "Weekly");
+        assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
         assert_eq!(buckets[1].used_label.as_deref(), Some("220"));
         assert_eq!(buckets[1].limit_label.as_deref(), Some("1.0K"));
         assert_eq!(buckets[1].remaining_percent, Some(78));
@@ -7519,6 +7650,8 @@ mod tests {
 
         assert_eq!(usage.plan_name().as_deref(), Some("MiniMax Pro"));
         assert_eq!(buckets[0].label, "MiniMax Text");
+        // A non-general model fills no headline slot.
+        assert_eq!(buckets[0].status_slot, None);
         assert_eq!(buckets[0].used_label.as_deref(), Some("60"));
         assert_eq!(buckets[0].limit_label.as_deref(), Some("100"));
         assert_eq!(buckets[0].remaining_percent, Some(40));
@@ -7579,6 +7712,19 @@ mod tests {
                 ("General · 5h", Some(100), Some("Usage: 0 / 100")),
                 ("General · Weekly", Some(99), Some("Usage: 1 / 100")),
                 ("Video", Some(100), Some("Usage: 0 / 5")),
+            ]
+        );
+        // The general model's windows fill the headline slots; per-model windows
+        // (Video) fill none.
+        assert_eq!(
+            buckets
+                .iter()
+                .map(|bucket| (bucket.label.as_str(), bucket.status_slot))
+                .collect::<Vec<_>>(),
+            vec![
+                ("General · 5h", Some(StatusSlot::Session)),
+                ("General · Weekly", Some(StatusSlot::Weekly)),
+                ("Video", None),
             ]
         );
     }

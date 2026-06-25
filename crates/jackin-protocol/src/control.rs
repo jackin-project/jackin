@@ -148,6 +148,17 @@ pub struct FocusedAccountHeader {
     pub credential_origin: Option<String>,
 }
 
+/// Which slot of the canonical `Session N% · Weekly N%` status-bar headline a
+/// quota window fills. Set by the provider snapshot that builds the bucket (it
+/// knows the window's role), so the status bar reads this semantic tag instead
+/// of substring-matching free-text labels.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StatusSlot {
+    Session,
+    Weekly,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct QuotaBucketView {
     pub label: String,
@@ -160,6 +171,9 @@ pub struct QuotaBucketView {
     /// it — the formatted `reset_label` alone cannot be reversed (RC2).
     #[serde(default)]
     pub resets_at: Option<i64>,
+    /// Which status-bar headline slot this window fills, if any.
+    #[serde(default)]
+    pub status_slot: Option<StatusSlot>,
     pub pace_label: Option<String>,
     pub status: UsageSnapshotStatus,
 }
