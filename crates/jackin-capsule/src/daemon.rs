@@ -42,6 +42,7 @@ use portable_pty::CommandBuilder;
 
 use crate::agent_status::arbitrate::arbitrate;
 use crate::agent_status::evidence::{ActivityEvidence, EvidenceSnapshot};
+use crate::agent_status::policy::{apply_watchdog, debounce};
 use crate::attach_protocol::{
     AttachHandshake, detach_attached_task, detach_client, drain_and_exit,
     drain_and_exit_with_reason, handle_attach_client, initial_spawn_request, perform_handshake,
@@ -1039,12 +1040,25 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         },
                         ..EvidenceSnapshot::default()
                     };
-                    let result = arbitrate(&snapshot, session.status.raw, now);
-                    if let Some(effective) = session.status.publish_raw(
-                        result.raw,
-                        result.confidence,
-                        result.summary,
-                    ) {
+                    let candidate =
+                        apply_watchdog(arbitrate(&snapshot, session.status.raw, now), now);
+                    // Debounce gates whether the candidate becomes a public
+                    // transition (immediate for blocked/working/exit/strong-idle;
+                    // inferred idle needs confirmation + CPU/OSC-quiet). Only
+                    // commit through SessionStatus when it permits.
+                    if debounce(
+                        session.state,
+                        &candidate,
+                        &mut session.pending_transition,
+                        now,
+                    )
+                    .is_some()
+                        && let Some(effective) = session.status.publish_raw(
+                            candidate.raw,
+                            candidate.confidence,
+                            candidate.summary,
+                        )
+                    {
                         session.state = effective;
                     }
                 }

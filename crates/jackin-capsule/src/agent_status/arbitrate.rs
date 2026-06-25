@@ -43,6 +43,7 @@ pub fn arbitrate(
         last_input: snapshot.activity.last_input,
         child_process_count: snapshot.process.child_process_count,
         cpu_jiffies_delta: snapshot.process.cpu_jiffies_delta,
+        physics_sampled: snapshot.process.physics_sampled,
         subagents_active: snapshot.subagents_active,
         osc_progress_active: snapshot.osc.progress_active,
         shell_integration: snapshot.osc.shell_state.is_some(),

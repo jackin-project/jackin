@@ -87,6 +87,11 @@ pub struct ProcessEvidence {
     pub foreground_pgid: Option<u32>,
     pub child_process_count: u32,
     pub cpu_jiffies_delta: u64,
+    /// `true` only when `/proc` physics was actually sampled this evaluation
+    /// (Linux, agent PID known). When `false`, CPU/child counts are absent, not
+    /// "quiet": the watchdog must not demote on unavailable physics. Set by the
+    /// process source (Phase 6); the non-Linux stub leaves it `false`.
+    pub physics_sampled: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -107,6 +112,7 @@ pub struct EvidenceSummary {
     pub last_input: Option<Instant>,
     pub child_process_count: u32,
     pub cpu_jiffies_delta: u64,
+    pub physics_sampled: bool,
     pub subagents_active: u32,
     pub osc_progress_active: bool,
     pub shell_integration: bool,
@@ -133,6 +139,7 @@ impl Default for EvidenceSummary {
             last_input: None,
             child_process_count: 0,
             cpu_jiffies_delta: 0,
+            physics_sampled: false,
             subagents_active: 0,
             osc_progress_active: false,
             shell_integration: false,

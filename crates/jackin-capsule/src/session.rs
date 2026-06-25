@@ -213,6 +213,8 @@ pub struct Session {
     /// Per-session evidence-arbitration status (raw state, confidence, seen,
     /// revision, last evidence summary). The single source of `state`.
     pub status: SessionStatus,
+    /// Debounce bookkeeping for the inferred working→idle hold.
+    pub pending_transition: crate::agent_status::policy::PendingTransition,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
@@ -659,6 +661,7 @@ impl Session {
                 provider,
                 state: AgentState::Unknown,
                 status: SessionStatus::new(),
+                pending_transition: crate::agent_status::policy::PendingTransition::default(),
                 input_tx,
                 pty_master: master,
                 child_killer,
@@ -1164,6 +1167,7 @@ impl Session {
             provider,
             state: AgentState::Unknown,
             status: SessionStatus::new(),
+            pending_transition: crate::agent_status::policy::PendingTransition::default(),
             input_tx,
             pty_master,
             child_killer,

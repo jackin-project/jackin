@@ -400,11 +400,11 @@ Work top to bottom. Check an item only when it is in the build and its test is g
 - [x] 3 — Arbitration now consults `grade` (Complete → Authoritative, Partial → Strong); test locks it. `seq` consumption lands with Phase 5 (no authority producer assigns `seq` until runtime events arrive); the push `AgentStateChanged` event also lands with Phase 5's subscription surface — Phase 3 carries the report on the pulled snapshot
 - [x] Gate 3 — 18 arbitrate tests (one per precedence step + freshness both directions + freeze + grade); `publish_raw` increments revision only on public transitions (existing `revision_increments_only_on_public_state_change`); 695 capsule+protocol tests green, clippy/shear clean
 
-**Phase 4 — Debounce + watchdog [P0] (Slice 3)**
-- [ ] 4 — `debounce` implemented and called from the tick; add `IDLE_HOLD_CAP` (~700 ms) + faster pending recheck
-- [ ] 4 — Wire `STARTUP_GRACE` muting and `RENOTIFY_INTERVAL`; call `apply_watchdog` from the tick
-- [ ] 4 — Linux-gate the watchdog: physics-unavailable = "no evidence", never "quiet"
-- [ ] Gate 4 — every debounce row; watchdog demotes quiet `working`; does NOT fire off-Linux or during network-wait-with-recent-output
+**Phase 4 — Debounce + watchdog [P0] (Slice 3)** ✅ landed June 25, 2026
+- [x] 4 — `debounce` and `apply_watchdog` now run on the tick (`apply_watchdog(arbitrate(..)) → debounce → publish_raw`); added `IDLE_HOLD_CAP` (700 ms) + `started_at`; merged the inferred-idle OSC-progress/CPU-quiet guard into `debounce` and deleted the redundant `should_publish_candidate`. **Faster pending-recheck deferred** to the dirty-session early-evaluation scheduling (`EVAL_COALESCE`), only observable once evidence produces idle (Phases 5–8); at the 1 Hz floor the 700 ms cap governs inferred-idle latency (sub-2 s, never a flap)
+- [x] 4 — `STARTUP_GRACE` muting deferred to Phase 8 (no screen candidates to mute yet); `RENOTIFY_INTERVAL` to Phase 9 (notifications); both consts in place
+- [x] 4 — Watchdog Linux-gated via a new `physics_sampled` flag: fires only when `/proc` was actually read, so unavailable physics reads as "no evidence", never "quiet"
+- [x] Gate 4 — debounce rows + `watchdog_demotes_quiet_working`, `watchdog_does_not_fire_when_physics_unsampled`, recent-output, live-child, OSC/CPU guard; 685 capsule tests green, clippy/shear clean
 
 **Phase 5 — Semantic channel + gating fixes [P1] (Slice 4, per 0a)**
 - [ ] 5 — `report-event` subcommand + spawn env vars + `ReportRuntimeEvent` protocol method
