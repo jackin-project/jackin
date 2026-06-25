@@ -225,6 +225,127 @@ fn apply_remove_workspace_result(
 }
 
 pub(crate) fn apply_role_load_completion(
+    state: &mut ManagerState<'_>,
+    _config: &mut AppConfig,
+    paths: &crate::paths::JackinPaths,
+    load: PendingRoleLoad,
+    result: anyhow::Result<()>,
+) {
+    match result {
+        Ok(()) => {
+            let rx = crate::console::services::config::start_role_source_persist(
+                paths.clone(),
+                jackin_console::tui::subscriptions::RoleSourcePersistOrigin::RoleLoad {
+                    raw: load.raw,
+                    key: load.key,
+                    source: load.source,
+                },
+            );
+            state.begin_config_save(rx);
+        }
+        Err(e) => {
+            let ManagerStage::Editor(editor) = &mut state.stage else {
+                return;
+            };
+            crate::debug_log!(
+                "role",
+                "role loader failed for key={key:?} raw={raw:?}: {e:?}",
+                key = load.key,
+                raw = load.raw
+            );
+            let err_text = e.to_string();
+            if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
+                crate::console::tui::state::open_role_input_error(
+                    editor,
+                    &format!(
+                        "Could not load role {:?}.\n\nThe role loader hit an internal \
+                         error while registering the repository.\n\n{panic_message}",
+                        load.raw
+                    ),
+                );
+                return;
+            }
+            open_role_resolution_error(editor, &load.raw, Some(&load.source.git), &e);
+        }
+    }
+}
+
+fn apply_role_source_persist_result(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    result: anyhow::Result<AppConfig>,
+    origin: jackin_console::tui::subscriptions::RoleSourcePersistOrigin<jackin_config::RoleSource>,
+) {
+    match origin {
+        jackin_console::tui::subscriptions::RoleSourcePersistOrigin::RoleLoad {
+            raw,
+            key,
+            source,
+        } => match result {
+            Ok(saved) => {
+                *config = saved;
+                let ManagerStage::Editor(editor) = &mut state.stage else {
+                    return;
+                };
+                crate::debug_log!(
+                    "role",
+                    "role repo registration completed for key={key:?} git={git:?}",
+                    git = source.git.as_str()
+                );
+                if source.trusted {
+                    crate::debug_log!(
+                        "role",
+                        "role source is trusted; adding key={key:?} directly to the workspace"
+                    );
+                    crate::console::tui::state::add_role_to_workspace_editor(editor, config, &key);
+                } else {
+                    crate::debug_log!(
+                        "role",
+                        "role source registered untrusted; opening trust confirm for key={key:?} git={git:?}",
+                        git = source.git.as_str()
+                    );
+                    crate::console::tui::state::open_role_trust_confirm(editor, key, source);
+                }
+            }
+            Err(e) => {
+                let ManagerStage::Editor(editor) = &mut state.stage else {
+                    return;
+                };
+                crate::debug_log!(
+                    "role",
+                    "role loader failed for key={key:?} raw={raw:?}: {e:?}"
+                );
+                open_role_resolution_error(
+                    editor,
+                    &raw,
+                    Some(&source.git),
+                    &e.context("role repository loaded, but registration could not be persisted"),
+                );
+            }
+        },
+        jackin_console::tui::subscriptions::RoleSourcePersistOrigin::TrustConfirm {
+            key,
+            source: _,
+        } => match result {
+            Ok(saved) => {
+                *config = saved;
+                let ManagerStage::Editor(editor) = &mut state.stage else {
+                    return;
+                };
+                crate::console::tui::state::add_role_to_workspace_editor(editor, config, &key);
+            }
+            Err(error) => {
+                let ManagerStage::Editor(editor) = &mut state.stage else {
+                    return;
+                };
+                crate::console::tui::state::open_editor_action_error(editor, &error);
+            }
+        },
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn apply_role_load_completion_for_tests(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
@@ -332,7 +453,7 @@ pub(crate) async fn apply_role_input_with_runner_for_tests(
     )
     .await;
     let (_tx, rx) = tokio::sync::oneshot::channel();
-    apply_role_load_completion(
+    apply_role_load_completion_for_tests(
         editor,
         config,
         paths,
@@ -366,23 +487,23 @@ pub(crate) fn persist_trusted_role_source_for_tests(
 
 fn execute_trusted_role_source_persist(
     state: &mut ManagerState<'_>,
-    config: &mut AppConfig,
+    _config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
     key: &str,
     mut source: jackin_config::RoleSource,
 ) {
-    let ManagerStage::Editor(editor) = &mut state.stage else {
+    let ManagerStage::Editor(_) = &mut state.stage else {
         return;
     };
     source.trusted = true;
-    match execute_role_source_persist(config, paths, key, &source) {
-        Ok(()) => {
-            crate::console::tui::state::add_role_to_workspace_editor(editor, config, key);
-        }
-        Err(error) => {
-            crate::console::tui::state::open_editor_action_error(editor, &error);
-        }
-    }
+    let rx = crate::console::services::config::start_role_source_persist(
+        paths.clone(),
+        jackin_console::tui::subscriptions::RoleSourcePersistOrigin::TrustConfirm {
+            key: key.to_owned(),
+            source,
+        },
+    );
+    state.begin_config_save(rx);
 }
 
 pub(crate) fn execute_token_generate(
@@ -590,6 +711,7 @@ fn apply_workspace_save_write_result(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn execute_role_source_persist(
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
@@ -729,9 +851,7 @@ pub(crate) fn apply_background_event(
             dirty
         }
         ManagerBackgroundEvent::RoleLoadFinished { load, result } => {
-            if let ManagerStage::Editor(editor) = &mut state.stage {
-                apply_role_load_completion(editor, config, paths, load, result);
-            }
+            apply_role_load_completion(state, config, paths, load, result);
             true
         }
         ManagerBackgroundEvent::DriftCheckFinished { check, detection } => {
@@ -770,6 +890,12 @@ pub(crate) fn apply_background_event(
                     cwd,
                 } => {
                     apply_remove_workspace_result(state, config, cwd, result);
+                }
+                jackin_console::tui::subscriptions::ConfigSaveResult::RoleSourcePersist {
+                    result,
+                    origin,
+                } => {
+                    apply_role_source_persist_result(state, config, result, origin);
                 }
             }
             true
@@ -860,14 +986,14 @@ mod tests {
 
     use crate::console::tui::state::{
         AuthForm, AuthFormFocus, AuthFormTarget, CreatePreludeState, EditorState,
-        FileBrowserTarget, ManagerEffect, ManagerStage, ManagerState, Modal, SettingsAuthModal,
-        SettingsState,
+        FileBrowserTarget, ManagerEffect, ManagerStage, ManagerState, Modal, PendingRoleLoad,
+        SettingsAuthModal, SettingsState,
     };
     use crate::console::tui::{WorkspaceSaveWriteInput, WorkspaceSaveWriteMode};
 
     use super::{
-        execute_manager_effect, execute_workspace_save_effect, execute_workspace_save_write,
-        poll_background_messages,
+        apply_role_load_completion, execute_manager_effect, execute_workspace_save_effect,
+        execute_workspace_save_write, poll_background_messages,
     };
 
     #[tokio::test]
@@ -1016,6 +1142,62 @@ mod tests {
         assert!(
             state.config_save_in_flight(),
             "workspace delete should run on a worker"
+        );
+    }
+
+    #[tokio::test]
+    async fn trusted_role_source_persist_starts_config_save_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let editor = EditorState::new_edit("workspace".into(), WorkspaceConfig::default());
+        let mut state = ManagerState::from_config(&config, cwd);
+        state.stage = ManagerStage::Editor(editor);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ManagerEffect::PersistTrustedRoleSource {
+                key: "agent-smith".into(),
+                source: jackin_config::RoleSource::default(),
+            },
+        );
+
+        assert!(
+            state.config_save_in_flight(),
+            "trusted role source persistence should run on a worker"
+        );
+    }
+
+    #[tokio::test]
+    async fn role_load_completion_starts_role_source_persist_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let editor = EditorState::new_edit("workspace".into(), WorkspaceConfig::default());
+        let mut state = ManagerState::from_config(&config, cwd);
+        state.stage = ManagerStage::Editor(editor);
+        let (_tx, rx) = tokio::sync::oneshot::channel();
+
+        apply_role_load_completion(
+            &mut state,
+            &mut config,
+            &paths,
+            PendingRoleLoad {
+                raw: "agent-smith".into(),
+                key: "agent-smith".into(),
+                source: jackin_config::RoleSource::default(),
+                rx,
+            },
+            Ok(()),
+        );
+
+        assert!(
+            state.config_save_in_flight(),
+            "loaded role source persistence should run on a worker"
         );
     }
 

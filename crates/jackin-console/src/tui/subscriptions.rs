@@ -103,7 +103,20 @@ pub struct WorkspaceSaveResult<AppConfig> {
 }
 
 #[derive(Debug)]
-pub enum ConfigSaveResult<AppConfig> {
+pub enum RoleSourcePersistOrigin<RoleSource> {
+    RoleLoad {
+        raw: String,
+        key: String,
+        source: RoleSource,
+    },
+    TrustConfirm {
+        key: String,
+        source: RoleSource,
+    },
+}
+
+#[derive(Debug)]
+pub enum ConfigSaveResult<AppConfig, RoleSource> {
     Workspace {
         result: anyhow::Result<WorkspaceSaveResult<AppConfig>>,
         exit_on_success: bool,
@@ -112,6 +125,10 @@ pub enum ConfigSaveResult<AppConfig> {
     RemoveWorkspace {
         result: anyhow::Result<AppConfig>,
         cwd: std::path::PathBuf,
+    },
+    RoleSourcePersist {
+        result: anyhow::Result<AppConfig>,
+        origin: RoleSourcePersistOrigin<RoleSource>,
     },
 }
 

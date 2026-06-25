@@ -78,7 +78,8 @@ pub type ManagerInstanceRefreshSnapshot = crate::tui::subscriptions::InstanceRef
     jackin_core::instance::SessionRecord,
     jackin_protocol::InstanceSnapshot,
 >;
-pub type ManagerConfigSaveResult = crate::tui::subscriptions::ConfigSaveResult<AppConfig>;
+pub type ManagerConfigSaveResult =
+    crate::tui::subscriptions::ConfigSaveResult<AppConfig, jackin_config::RoleSource>;
 
 // ── Type aliases ────────────────────────────────────────────────────────────
 

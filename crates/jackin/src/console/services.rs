@@ -39,16 +39,60 @@ pub(super) mod config {
     #[cfg(test)]
     mod tests;
 
+    #[cfg(test)]
     pub(crate) fn upsert_role_source(
         config: &mut AppConfig,
         paths: &JackinPaths,
         key: &str,
         source: &RoleSource,
     ) -> anyhow::Result<()> {
+        *config = upsert_role_source_on_disk(paths, key, source)?;
+        Ok(())
+    }
+
+    fn upsert_role_source_on_disk(
+        paths: &JackinPaths,
+        key: &str,
+        source: &RoleSource,
+    ) -> anyhow::Result<AppConfig> {
         let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
         editor_doc.upsert_agent_source(key, source);
-        *config = editor_doc.save()?;
-        Ok(())
+        editor_doc.save()
+    }
+
+    pub(crate) fn start_role_source_persist(
+        paths: JackinPaths,
+        origin: jackin_console::tui::subscriptions::RoleSourcePersistOrigin<RoleSource>,
+    ) -> jackin_tui::runtime::BlockingSubscription<
+        jackin_console::tui::state::ManagerConfigSaveResult,
+    > {
+        let (key, source) = match &origin {
+            jackin_console::tui::subscriptions::RoleSourcePersistOrigin::RoleLoad {
+                key,
+                source,
+                ..
+            }
+            | jackin_console::tui::subscriptions::RoleSourcePersistOrigin::TrustConfirm {
+                key,
+                source,
+            } => (key.clone(), source.clone()),
+        };
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                upsert_role_source_on_disk(&paths, &key, &source)
+            })
+            .await
+            .map_err(|error| anyhow::anyhow!("role source persist worker panicked: {error}"))
+            .and_then(std::convert::identity);
+            drop(tx.send(
+                jackin_console::tui::subscriptions::ConfigSaveResult::RoleSourcePersist {
+                    result,
+                    origin,
+                },
+            ));
+        });
+        rx
     }
 
     fn remove_workspace_from_disk(paths: &JackinPaths, name: &str) -> anyhow::Result<AppConfig> {
