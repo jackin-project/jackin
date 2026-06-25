@@ -1711,7 +1711,7 @@ fn status_bar_headline_for_surface(
     if surface == UsageSurface::Amp {
         amp_status_bar_headline(buckets)
     } else {
-        let labels = status_bar_quota_labels(buckets);
+        let labels = status_bar_quota_labels(surface, buckets);
         (!labels.is_empty()).then(|| labels.join(" · "))
     }
 }
@@ -1755,13 +1755,13 @@ fn amp_credit_status_label(bucket: &QuotaBucketView) -> Option<String> {
         .map(str::to_owned)
 }
 
-fn status_bar_quota_labels(buckets: &[QuotaBucketView]) -> Vec<String> {
+fn status_bar_quota_labels(surface: UsageSurface, buckets: &[QuotaBucketView]) -> Vec<String> {
     ["Session", "Weekly"]
         .into_iter()
         .filter_map(|target| {
             buckets
                 .iter()
-                .find(|bucket| status_bar_bucket_matches(target, bucket))
+                .find(|bucket| status_bar_bucket_matches(surface, target, bucket))
                 .and_then(|bucket| {
                     bucket
                         .remaining_percent
@@ -1778,16 +1778,32 @@ fn status_bar_fresh_or_stale(bucket: &QuotaBucketView) -> bool {
     )
 }
 
-fn status_bar_bucket_matches(target: &str, bucket: &QuotaBucketView) -> bool {
+fn status_bar_bucket_matches(
+    surface: UsageSurface,
+    target: &str,
+    bucket: &QuotaBucketView,
+) -> bool {
     if !status_bar_fresh_or_stale(bucket) {
         return false;
     }
     let label = bucket.label.to_ascii_lowercase();
+    // Per-provider slot mapping: which bucket fills the Session vs Weekly
+    // headline slot. Z.AI's weekly window is "Tokens", MiniMax's session is
+    // "General · 5h", Grok exposes only a billing cycle (Weekly/Monthly/Credits)
+    // and no session — the generic Session/Weekly substring match misses these.
     match target {
-        "Session" => {
-            label.contains("session") || label.contains("5-hour") || label.contains("5 hour")
-        }
-        "Weekly" => label.contains("weekly") || label.contains("week"),
+        "Session" => match surface {
+            UsageSurface::Minimax => label.contains("5h") || label.contains("5-hour"),
+            UsageSurface::Grok => false,
+            _ => label.contains("session") || label.contains("5-hour") || label.contains("5 hour"),
+        },
+        "Weekly" => match surface {
+            UsageSurface::Zai => label.contains("token"),
+            UsageSurface::Grok => {
+                label.contains("weekly") || label.contains("monthly") || label.contains("credits")
+            }
+            _ => label.contains("weekly") || label.contains("week"),
+        },
         _ => false,
     }
 }
@@ -5532,6 +5548,46 @@ mod tests {
                 &buckets
             ),
             "Session 37% · Weekly 10%"
+        );
+    }
+
+    #[test]
+    fn status_bar_maps_session_weekly_slots_per_provider() {
+        // P2: the generic Session/Weekly substring match misses these slots —
+        // Z.AI weekly is "Tokens", MiniMax session is "General · 5h", and Grok
+        // exposes only a billing cycle with no session window.
+        let pct = |label: &str, remaining: u8| QuotaBucketView {
+            label: label.to_owned(),
+            used_label: None,
+            limit_label: None,
+            remaining_percent: Some(remaining),
+            reset_label: None,
+            pace_label: None,
+            status: UsageSnapshotStatus::Fresh,
+        };
+
+        let zai = vec![pct("5-hour", 80), pct("Tokens", 42), pct("MCP", 90)];
+        assert_eq!(
+            status_bar_label(UsageSurface::Zai, "", UsageSnapshotStatus::Fresh, &zai),
+            "Session 80% · Weekly 42%"
+        );
+
+        let minimax = vec![pct("General · 5h", 70), pct("General · Weekly", 55)];
+        assert_eq!(
+            status_bar_label(
+                UsageSurface::Minimax,
+                "",
+                UsageSnapshotStatus::Fresh,
+                &minimax
+            ),
+            "Session 70% · Weekly 55%"
+        );
+
+        // Grok: only a billing cycle (here "Monthly"), no session → "Weekly N%".
+        let grok = vec![pct("Monthly", 33)];
+        assert_eq!(
+            status_bar_label(UsageSurface::Grok, "", UsageSnapshotStatus::Fresh, &grok),
+            "Weekly 33%"
         );
     }
 
