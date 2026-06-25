@@ -2423,6 +2423,29 @@ enum CodexRpcAccountDetails {
 struct CodexRpcRateLimitsResponse {
     #[serde(rename = "rateLimits")]
     rate_limits: CodexRpcRateLimits,
+    // Per-limit-id windows. Every entry other than the main "codex" limit
+    // (already surfaced as Session/Weekly) is an extra limit — the
+    // "…Codex-Spark" entry carries the Codex Spark 5-hour/Weekly windows.
+    #[serde(rename = "rateLimitsByLimitId", default)]
+    rate_limits_by_limit_id: BTreeMap<String, CodexRpcLimitEntry>,
+    #[serde(rename = "rateLimitResetCredits")]
+    reset_credits: Option<CodexRpcResetCredits>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexRpcLimitEntry {
+    #[serde(rename = "limitId")]
+    limit_id: Option<String>,
+    #[serde(rename = "limitName")]
+    limit_name: Option<String>,
+    primary: Option<CodexRpcRateLimitWindow>,
+    secondary: Option<CodexRpcRateLimitWindow>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexRpcResetCredits {
+    #[serde(rename = "availableCount")]
+    available_count: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2472,7 +2495,39 @@ impl CodexRpcUsage {
             Some(CodexRpcAccountDetails::Chatgpt { plan_type, .. }) => plan_type,
             _ => None,
         };
-        let rate_limits = limits.rate_limits;
+        let CodexRpcRateLimitsResponse {
+            rate_limits,
+            rate_limits_by_limit_id,
+            reset_credits: rpc_reset_credits,
+        } = limits;
+        // Every per-limit-id entry except the main "codex" limit is an extra
+        // rate limit (e.g. Codex Spark); its primary/secondary become the
+        // "<label> 5-hour"/"Weekly" buckets in `buckets()`.
+        let additional_rate_limits: Vec<CodexAdditionalRateLimit> = rate_limits_by_limit_id
+            .into_values()
+            .filter(|entry| entry.limit_id.as_deref() != Some("codex"))
+            .filter_map(|entry| {
+                let primary = entry.primary.map(CodexWindowSnapshot::from_rpc);
+                let secondary = entry.secondary.map(CodexWindowSnapshot::from_rpc);
+                if primary.is_none() && secondary.is_none() {
+                    return None;
+                }
+                Some(CodexAdditionalRateLimit {
+                    limit_name: entry.limit_name,
+                    metered_feature: None,
+                    rate_limit: Some(CodexRateLimitDetails {
+                        primary_window: primary,
+                        secondary_window: secondary,
+                    }),
+                })
+            })
+            .collect();
+        let reset_credits = rpc_reset_credits
+            .filter(|reset| reset.available_count > 0)
+            .map(|reset| CodexResetCredits {
+                credits: Vec::new(),
+                available_count: reset.available_count,
+            });
         let response = CodexUsageResponse {
             plan_type: account_plan.or(rate_limits.plan_type),
             rate_limit: Some(CodexRateLimitDetails {
@@ -2480,8 +2535,9 @@ impl CodexRpcUsage {
                 secondary_window: rate_limits.secondary.map(CodexWindowSnapshot::from_rpc),
             }),
             credits: rate_limits.credits.map(CodexCreditDetails::from_rpc),
-            additional_rate_limits: None,
-            reset_credits: None,
+            additional_rate_limits: (!additional_rate_limits.is_empty())
+                .then_some(additional_rate_limits),
+            reset_credits,
         };
         Self {
             response,
@@ -5221,6 +5277,46 @@ mod tests {
     }
 
     #[test]
+    fn codex_rpc_maps_spark_windows_and_reset_credits() {
+        // Mirrors the live `account/rateLimits/read` response: the main "codex"
+        // limit is Session/Weekly; a separate "…Codex-Spark" entry under
+        // rateLimitsByLimitId carries the Spark windows; rateLimitResetCredits
+        // carries the manual-reset count.
+        let body = r#"{
+            "rateLimits": {"limitId": "codex",
+                "primary": {"usedPercent": 7, "windowDurationMins": 300, "resetsAt": 1782396144},
+                "secondary": {"usedPercent": 5, "windowDurationMins": 10080, "resetsAt": 1782940724},
+                "credits": {"hasCredits": false, "unlimited": false, "balance": "0"},
+                "planType": "pro"},
+            "rateLimitsByLimitId": {
+                "codex_bengalfox": {"limitId": "codex_bengalfox", "limitName": "GPT-5.3-Codex-Spark",
+                    "primary": {"usedPercent": 0, "windowDurationMins": 300, "resetsAt": 1782411283},
+                    "secondary": {"usedPercent": 0, "windowDurationMins": 10080, "resetsAt": 1782998083}},
+                "codex": {"limitId": "codex",
+                    "primary": {"usedPercent": 7, "windowDurationMins": 300, "resetsAt": 1782396144},
+                    "secondary": {"usedPercent": 5, "windowDurationMins": 10080, "resetsAt": 1782940724}}
+            },
+            "rateLimitResetCredits": {"availableCount": 2}
+        }"#;
+        let limits: CodexRpcRateLimitsResponse =
+            serde_json::from_str(body).expect("decode rateLimits response");
+        let usage = CodexRpcUsage::from_rpc(limits, None);
+        let labels: Vec<String> = usage
+            .response
+            .buckets(1_782_300_000)
+            .into_iter()
+            .map(|b| b.label)
+            .collect();
+        assert!(labels.contains(&"Session".to_owned()));
+        assert!(labels.contains(&"Weekly".to_owned()));
+        assert!(labels.contains(&"Codex Spark 5-hour".to_owned()));
+        assert!(labels.contains(&"Codex Spark Weekly".to_owned()));
+        assert!(labels.contains(&"Limit Reset Credits".to_owned()));
+        // The main "codex" limit must not be duplicated as an extra limit.
+        assert_eq!(labels.iter().filter(|l| l.as_str() == "Session").count(), 1);
+    }
+
+    #[test]
     fn usage_status_label_prefers_in_memory_cache_before_store() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut cache = UsageCache::default();
@@ -5828,7 +5924,10 @@ mod tests {
     fn claude_oauth_response_accepts_window_aliases() {
         let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
             "five_hour": { "utilization": 0.10 },
-            "seven_day_oauth_apps": { "utilization": 0.45 },
+            "seven_day": { "utilization": 0.45 },
+            // `seven_day_oauth_apps` is a SEPARATE window, not an alias of
+            // `seven_day` — it must be ignored, never override Weekly.
+            "seven_day_oauth_apps": { "utilization": 0.99 },
             "seven_day_cowork": { "utilization": 0.25 }
         }))
         .expect("valid Claude OAuth usage aliases");
