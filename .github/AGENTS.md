@@ -288,6 +288,12 @@ Rules for writing + maintaining workflows under `.github/workflows/` and composi
 
 **Locally:** `mise install` from repo root installs every tool at version CI uses.
 
+## Read-only GitHub token in workflows
+
+Use the organization read-only token for every read-only GitHub operation in workflows and composite actions: `${{ secrets.GH_READONLY_TOKEN }}`. This includes `jdx/mise-action`'s `github_token`, `dorny/paths-filter`'s `token`, `GH_TOKEN` / `GITHUB_TOKEN` for `gh api`, `curl`, `lychee`, timing summaries, release existence checks, and read-only composite-action token inputs.
+
+Do not use `${{ github.token }}` for read-only calls; it burns the workflow installation quota and causes unrelated jobs to fail under rate limits. Keep write-capable tokens only where the step actually writes: release creation/edit/upload, Homebrew tap pushes/PRs, cache deletion, artifact/cache writes, registry publication, or other explicit mutation.
+
 ## Env-var scope: job level, not workflow level
 
 Environment variables a third-party CLI reads as a default-selection (`BUILDX_BUILDER`, `DOCKER_BUILDKIT`, `GH_TOKEN`, `RUSTUP_TOOLCHAIN`, `AWS_PROFILE`, etc.) MUST be declared at **job** level, not workflow level. Workflow-level `env:` leaks into every job; a job that didn't opt into corresponding tool setup fails at runtime when CLI dereferences a missing resource.
