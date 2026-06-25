@@ -8,7 +8,9 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use crate::mount_info::{GitOrigin, MountKind, inspect};
+#[cfg(test)]
+use crate::mount_info::inspect;
+use crate::mount_info::{GitOrigin, MountKind};
 
 pub trait MountSource {
     fn mount_src(&self) -> &str;
@@ -20,6 +22,7 @@ pub struct MountInfoCache {
 }
 
 impl MountInfoCache {
+    #[cfg(test)]
     pub fn refresh_src(&self, src: &str) {
         let kind = inspect(src);
         self.entries.borrow_mut().insert(src.to_owned(), kind);
@@ -29,6 +32,7 @@ impl MountInfoCache {
         self.entries.borrow_mut().extend(entries);
     }
 
+    #[cfg(test)]
     pub fn refresh_mounts(&self, mounts: &[impl MountSource]) {
         for mount in mounts {
             self.refresh_src(mount.mount_src());
