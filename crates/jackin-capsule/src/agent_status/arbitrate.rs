@@ -18,10 +18,10 @@ pub fn arbitrate(
     now: Instant,
 ) -> EvidenceSummary {
     let mut summary = EvidenceSummary {
-        authority_source: snapshot
-            .authority
-            .as_ref()
-            .map(|authority| authority.source_id.clone()),
+        // authority_source is the *winning* source, so it is set only in the
+        // branches where a fresh authority actually authors the state (below) —
+        // not whenever authority merely exists. Setting it here would make
+        // report() attribute a screen/OSC-authored state to a stale authority.
         visible_blocker: snapshot.screen.state == Some(RawAgentState::Blocked),
         visible_idle: snapshot.screen.state == Some(RawAgentState::Idle),
         visible_working: snapshot.screen.state == Some(RawAgentState::Working),
@@ -94,6 +94,7 @@ pub fn arbitrate(
         && authority.pending_permission
         && authority.mapped_state == RawAgentState::Blocked
     {
+        summary.authority_source = Some(authority.source_id.clone());
         return finish(
             RawAgentState::Blocked,
             authority_confidence(authority),
@@ -118,6 +119,7 @@ pub fn arbitrate(
     }
 
     if let Some(authority) = fresh_authority {
+        summary.authority_source = Some(authority.source_id.clone());
         return finish(
             authority.mapped_state,
             authority_confidence(authority),

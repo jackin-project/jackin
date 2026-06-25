@@ -144,6 +144,31 @@ fn fresh_authority_wins_after_blocker_checks() {
 
     assert_eq!(result.raw_state, RawAgentState::Working);
     assert_eq!(result.winner, EvidenceWinner::Authority);
+    // When authority wins, its source is attributed (report() shows Reported).
+    assert_eq!(result.authority_source.as_deref(), Some("hook-claude-1"));
+}
+
+#[test]
+fn losing_authority_is_not_attributed_as_source() {
+    // An expired authority loses to a strong screen idle. The source must NOT be
+    // attributed to the authority — otherwise report() emits Reported{source} for
+    // a screen-authored state (and `stale_report = true` at the same time).
+    let now = Instant::now();
+    let mut snapshot = base_snapshot(now);
+    snapshot.authority = Some(authority(
+        RawAgentState::Working,
+        false,
+        now.checked_sub(AUTHORITY_TTL + Duration::from_secs(1))
+            .unwrap(),
+    ));
+    snapshot.screen.state = Some(RawAgentState::Idle);
+    snapshot.screen.strong = true;
+
+    let result = arbitrate(&snapshot, RawAgentState::Working, now);
+
+    assert_eq!(result.winner, EvidenceWinner::StrongVisualOrOsc);
+    assert!(result.stale_report);
+    assert_eq!(result.authority_source, None);
 }
 
 #[test]

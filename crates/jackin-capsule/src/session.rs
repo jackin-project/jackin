@@ -265,9 +265,10 @@ pub struct Session {
     /// the foreground-returned-to-shell exit edge (only meaningful after the
     /// agent was actually in front).
     saw_agent_foreground: bool,
-    /// Agent-authored terminal-protocol evidence (title, OSC 9;4 progress, OSC
-    /// 133 shell marks). Captured from the PTY parse, fed into the evidence
-    /// snapshot; wiped when the foreground is no longer the agent.
+    /// Terminal-protocol evidence captured from the PTY parse and fed into the
+    /// evidence snapshot. The agent-authored signals (title, OSC 9;4 progress)
+    /// are wiped when the foreground is no longer the agent; the shell-authored
+    /// OSC 133 `shell_state` persists (it belongs to the shell, not the agent).
     osc: crate::agent_status::evidence::OscEvidence,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,

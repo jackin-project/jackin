@@ -707,13 +707,28 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                                 &ev.event,
                                 Instant::now(),
                             );
+                        } else {
+                            // Benign on a session-exit race; a persistently wrong
+                            // JACKIN_SESSION_ID, though, silently drops every
+                            // authority event for that reporter — leave a
+                            // firehose-tier breadcrumb so `JACKIN_DEBUG=1` can
+                            // triage a misconfigured reporter.
+                            crate::cdebug!(
+                                "agent-status: runtime event for unknown session {}",
+                                ev.session_id
+                            );
                         }
                     }
                     socket::DaemonCommand::Capture { session_id } => {
-                        if let Some(session) = mux.sessions.get(&session_id)
-                            && let Err(e) = write_status_capture(session_id, session)
-                        {
-                            crate::clog!("status.capture: session {session_id} failed: {e:#}");
+                        if let Some(session) = mux.sessions.get(&session_id) {
+                            if let Err(e) = write_status_capture(session_id, session) {
+                                crate::clog!("status.capture: session {session_id} failed: {e:#}");
+                            }
+                        } else {
+                            // The client already told the operator the capture was
+                            // requested; without this they would find no fixture and
+                            // no explanation for a fat-fingered session id.
+                            crate::clog!("status.capture: no live session {session_id} to capture");
                         }
                     }
                 }

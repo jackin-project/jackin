@@ -309,10 +309,18 @@ fn write_json_file(path: &Path, value: &serde_json::Value) -> anyhow::Result<()>
         fs::create_dir_all(parent)?;
     }
     let tmp = path.with_extension("json.tmp");
-    {
+    // Write to a tmp file then rename so a partial write never replaces the real
+    // file. Clean up the tmp on a write/flush failure so a failed install does
+    // not leave a stray `*.json.tmp` in the agent config dir.
+    let write_result = (|| {
         let mut file = fs::File::create(&tmp)?;
         serde_json::to_writer_pretty(&mut file, value)?;
         file.flush()?;
+        anyhow::Ok(())
+    })();
+    if let Err(e) = write_result {
+        drop(fs::remove_file(&tmp));
+        return Err(e);
     }
     fs::rename(tmp, path)?;
     Ok(())

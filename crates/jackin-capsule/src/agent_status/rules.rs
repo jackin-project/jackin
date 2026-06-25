@@ -30,27 +30,31 @@ pub struct Rule {
     pub region: Region,
     #[serde(default)]
     pub strength: RuleStrength,
+    // Matcher pattern vecs are private: they are set once by deserialize and the
+    // regex ones are compiled in lock-step by `finalize`. Keeping them out of the
+    // public API means no external code can mutate a pattern in place and silently
+    // desync it from its compiled regex (which `regex_all` would then trust).
     #[serde(default)]
-    pub requires_all: Vec<String>,
+    requires_all: Vec<String>,
     #[serde(default)]
-    pub requires_any: Vec<String>,
+    requires_any: Vec<String>,
     #[serde(default)]
-    pub forbids: Vec<String>,
+    forbids: Vec<String>,
     #[serde(default)]
-    pub regex: Vec<String>,
+    regex: Vec<String>,
     /// Each pattern must match *some single line* of the region (existential,
     /// anchored per line). The Herdr-borrowed disambiguator for "a spinner glyph
     /// at the start of its own line", numbered choices, and count tokens — cases
     /// a whole-region regex (which anchors to the joined blob) cannot express.
     #[serde(default)]
-    pub line_regex: Vec<String>,
+    line_regex: Vec<String>,
     /// No pattern may match *any line* of the region (anchored negation). Lets a
     /// rule say "blocked unless a line is a bare prompt caret", or derive idle
     /// from an OSC title by subtraction (title present AND not the spinner title
     /// AND not an action-required title) — `forbids` is substring-only and
     /// cannot express an anchored pattern.
     #[serde(default)]
-    pub forbids_regex: Vec<String>,
+    forbids_regex: Vec<String>,
     // Regexes compiled once by `RulePack::finalize` at load (parallel to the
     // pattern vecs above). `matches` falls back to per-eval compilation if these
     // are absent, so a pack that skipped finalize still matches — just slower.

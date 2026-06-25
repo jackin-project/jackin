@@ -84,7 +84,7 @@ pub struct ProcessEvidence {
     /// `true` only when `/proc` physics was actually sampled this evaluation
     /// (Linux, agent PID known). When `false`, CPU/child counts are absent, not
     /// "quiet": the watchdog must not demote on unavailable physics. Set by the
-    /// process source (Phase 6); the non-Linux stub leaves it `false`.
+    /// `/proc` process sampler; the non-Linux stub leaves it `false`.
     pub physics_sampled: bool,
 }
 

@@ -275,6 +275,49 @@ fn report_preserves_shell_integration_source() {
 }
 
 #[test]
+fn report_attributes_source_by_winner_when_authority_did_not_win() {
+    // With no authority_source set (authority lost or was absent), report() maps
+    // the source from the winning channel — never Reported.
+    let cases = [
+        (
+            evidence::EvidenceWinner::Physics,
+            false,
+            AgentStatusSource::ForegroundProcess,
+        ),
+        (
+            evidence::EvidenceWinner::StrongVisualOrOsc,
+            false,
+            AgentStatusSource::VisibleScreen,
+        ),
+        (
+            evidence::EvidenceWinner::Blocked,
+            false,
+            AgentStatusSource::VisibleScreen,
+        ),
+        (
+            evidence::EvidenceWinner::Authority,
+            false,
+            AgentStatusSource::None,
+        ),
+    ];
+    for (winner, shell_integration, expected) in cases {
+        let mut s = SessionStatus::new();
+        s.publish_raw(EvidenceSummary {
+            raw_state: RawAgentState::Working,
+            confidence: AgentStatusConfidence::Strong,
+            winner,
+            shell_integration,
+            ..EvidenceSummary::default()
+        });
+        assert_eq!(
+            s.report(None).source,
+            expected,
+            "winner {winner:?} should map to {expected:?}"
+        );
+    }
+}
+
+#[test]
 fn roll_up_priority_blocked_gt_done_gt_working_gt_idle_gt_unknown() {
     use crate::agent_status::arbitrate::attention_priority;
     assert!(attention_priority(AgentState::Blocked) > attention_priority(AgentState::Done));

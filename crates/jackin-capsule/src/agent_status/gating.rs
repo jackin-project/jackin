@@ -129,9 +129,10 @@ fn canonical_vendor_event(runtime: &str, event: &str) -> Option<&'static str> {
         // can fire after the turn's Stop and would revive an idle pane), so they
         // never author working/blocked/idle. Every lifecycle event refreshes
         // freshness/liveness only; the screen rule pack + physics watchdog own
-        // their state. The exit edge is the one identity transition that carries
-        // through. Promoting any of these back to a state mapping reintroduces
-        // the post-Stop revive hazard.
+        // their state. Promoting any of these back to a state mapping reintroduces
+        // the post-Stop revive hazard. Claude's SessionEnd is the one identity
+        // exit edge that carries through; Codex emits no exit hook, so its exit is
+        // detected via `/proc` process physics instead.
         ("claude", "SessionEnd") => Some("agent-exit"),
         (
             "claude" | "codex",
