@@ -192,7 +192,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust"
+          install_args: "rust shellfirm"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -311,7 +311,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust"
+          install_args: "rust shellfirm"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -394,7 +394,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust"
+          install_args: "rust shellfirm"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry

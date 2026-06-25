@@ -23,6 +23,17 @@ zig = "0.16.0"
 cargo.binstall = true
 idiomatic_version_file_enable_tools = ["rust"]
 
+# shellfirm is not published to crates.io, so it stays on the github: (ubi)
+# backend rather than cargo:. Only the construct image jobs install it (a handful
+# of runs), so it does not load the GitHub API the way the per-job rust tools did.
+[tool_alias]
+shellfirm = "github:kaplanelad/shellfirm"
+
+[tools.shellfirm]
+version = "v0.3.10"
+matching = "shellfirm"
+rename_exe = "shellfirm"
+
 # Construct image tasks. Each delegates to the `jackin-xtask` Rust binary
 # via `cargo xtask construct <sub>`; all task logic lives in Rust, not shell.
 [tasks.construct-init-buildx]
