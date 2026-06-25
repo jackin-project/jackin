@@ -1329,9 +1329,10 @@ done vs outstanding in this roadmap item.
   - [x] Remaining capsule + host-console screens/dialogs audited against the display matrix: capsule main bottom chrome keeps usage+container in non-debug and adds run ID in debug; capsule dialogs hide bottom status outside debug; host console reserves a debug-only footer via `split_debug_area` and renders the shared right group with run ID only, so non-debug console screens/dialogs have no status footer — `40a8f260` + `364a1700`
 - [ ] Issue 4 — no blocking work on the event/input/render loop (offload + concurrent probes; daemon-wide rule)
   - [x] Host-console mount/create file-browser open and directory navigation paths moved off the manager input/render task into a `BlockingSubscription`; completion is applied through the background-message loop — `ee924d0`
-  - [ ] Auth source-folder file-browser paths still need the same treatment: editor/settings auth pickers call `state_from_home_with_hidden` and `apply_state_outcome` directly from input handlers, and commit validation still canonicalizes synchronously.
+  - [x] Auth source-folder file-browser open and directory navigation paths moved onto the same listing worker for editor and settings auth pickers; hidden-directory home scans no longer run from input handlers — `4366e11`
+  - [ ] File-browser commit validation still canonicalizes and validates credential folders synchronously from commit handlers; move that validation off the input/render task next.
 - [ ] Tokio-everywhere audit — enumerate every data-load/I/O path in jackin', confirm each is off-loop + parallel; refactor any blocking/serial (HARDCORE rule)
-  - [ ] File-browser audit in progress: mount/create open and navigation are off-loop (`ee924d0`); auth source-folder picker open/navigation/commit validation remains UI-reachable blocking I/O.
+  - [ ] File-browser audit in progress: mount/create open/navigation (`ee924d0`) and auth source-folder open/navigation (`4366e11`) are off-loop; commit validation remains UI-reachable blocking I/O.
 - [x] Issue 13 (prereq) — propagate host `TZ` into the capsule (kill UTC-only timestamps class bug) — `d832930`
 - [x] Canonical per-provider section spec + agent→provider resolver (root cause behind 7/8/9/10/11/12/14) — `ed98924` + provider commits
 
