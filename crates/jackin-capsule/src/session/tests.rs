@@ -620,6 +620,46 @@ fn clear_event_drops_authority_for_source() {
 }
 
 #[test]
+fn clear_from_other_source_leaves_authority() {
+    // A Clear from a different source_id must not drop the live authority — the
+    // source guard keeps one reporter from clearing another's state.
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let now = std::time::Instant::now();
+    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", now);
+    session.apply_runtime_event("hook-opencode-2", "opencode", "session.error", now);
+    let a = session.authority.as_ref().expect("authority survives");
+    assert_eq!(a.source_id, "hook-opencode-1");
+}
+
+#[test]
+fn heartbeat_from_other_source_does_not_refresh_last_event() {
+    use std::time::Duration;
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let t0 = std::time::Instant::now();
+    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", t0);
+    let original = session.authority.as_ref().unwrap().last_event;
+    // A heartbeat (claude lifecycle event) from a different source must not
+    // refresh source-1's freshness, or a stale authority could outlive its TTL.
+    session.apply_runtime_event(
+        "hook-claude-9",
+        "claude",
+        "PreToolUse",
+        t0 + Duration::from_secs(5),
+    );
+    assert_eq!(session.authority.as_ref().unwrap().last_event, original);
+}
+
+#[test]
+fn amp_event_sets_partial_authority() {
+    use crate::agent_status::evidence::AuthorityGrade;
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.apply_runtime_event("hook-amp-1", "amp", "tool-start", std::time::Instant::now());
+    let a = session.authority.as_ref().expect("amp authority set");
+    // amp has partial lifecycle coverage, so it cannot author at full confidence.
+    assert_eq!(a.grade, AuthorityGrade::Partial);
+}
+
+#[test]
 fn osc_title_captured_and_capped() {
     let mut session = test_session_with_policy(OscPolicy::default());
     let long = "x".repeat(400);

@@ -18,10 +18,6 @@ pub fn arbitrate(
     now: Instant,
 ) -> EvidenceSummary {
     let mut summary = EvidenceSummary {
-        // authority_source is the *winning* source, so it is set only in the
-        // branches where a fresh authority actually authors the state (below) —
-        // not whenever authority merely exists. Setting it here would make
-        // report() attribute a screen/OSC-authored state to a stale authority.
         visible_blocker: snapshot.screen.state == Some(RawAgentState::Blocked),
         visible_idle: snapshot.screen.state == Some(RawAgentState::Idle),
         visible_working: snapshot.screen.state == Some(RawAgentState::Working),
@@ -94,36 +90,36 @@ pub fn arbitrate(
         && authority.pending_permission
         && authority.mapped_state == RawAgentState::Blocked
     {
-        summary.authority_source = Some(authority.source_id.clone());
         return finish(
             RawAgentState::Blocked,
             authority_confidence(authority),
-            EvidenceWinner::Blocked,
+            EvidenceWinner::Authority {
+                source_id: authority.source_id.clone(),
+            },
             summary,
         );
     }
 
     if snapshot.screen.strong && snapshot.screen.state == Some(RawAgentState::Blocked) {
-        let screen_fresh_enough = fresh_authority.is_none_or(|authority| {
-            snapshot.screen.observed_at >= authority.last_event
-                || authority.mapped_state == RawAgentState::Blocked
-        });
-        if screen_fresh_enough {
-            return finish(
-                RawAgentState::Blocked,
-                AgentStatusConfidence::Strong,
-                EvidenceWinner::Blocked,
-                summary,
-            );
-        }
+        // A strong Blocked match is a dialog visible on the live screen right now
+        // — the rule packs match the bottom region, not scrollback — so it is
+        // current ground truth and overrides a runtime authority that may be
+        // reporting a now-superseded Working/Idle.
+        return finish(
+            RawAgentState::Blocked,
+            AgentStatusConfidence::Strong,
+            EvidenceWinner::Blocked,
+            summary,
+        );
     }
 
     if let Some(authority) = fresh_authority {
-        summary.authority_source = Some(authority.source_id.clone());
         return finish(
             authority.mapped_state,
             authority_confidence(authority),
-            EvidenceWinner::Authority,
+            EvidenceWinner::Authority {
+                source_id: authority.source_id.clone(),
+            },
             summary,
         );
     }

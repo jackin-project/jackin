@@ -50,25 +50,12 @@ impl OscEvidence {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ScreenEvidence {
     pub state: Option<RawAgentState>,
     pub rule_id: Option<String>,
     pub strong: bool,
     pub freeze: bool,
-    pub observed_at: Instant,
-}
-
-impl Default for ScreenEvidence {
-    fn default() -> Self {
-        Self {
-            state: None,
-            rule_id: None,
-            strong: false,
-            freeze: false,
-            observed_at: Instant::now(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -100,7 +87,6 @@ pub struct EvidenceSummary {
     pub confidence: AgentStatusConfidence,
     pub winner: EvidenceWinner,
     pub rule_id: Option<String>,
-    pub authority_source: Option<String>,
     pub foreground_pgid: Option<u32>,
     pub last_output: Option<Instant>,
     pub last_input: Option<Instant>,
@@ -127,7 +113,6 @@ impl Default for EvidenceSummary {
             confidence: AgentStatusConfidence::Unknown,
             winner: EvidenceWinner::Unknown,
             rule_id: None,
-            authority_source: None,
             foreground_pgid: None,
             last_output: None,
             last_input: None,
@@ -155,12 +140,19 @@ impl EvidenceSummary {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which evidence channel authored the arbitrated state. `Authority` carries the
+/// winning reporter's source id, so the reported source is a function of the
+/// winner alone — a screen/OSC/physics state can never be mis-attributed to a
+/// reporter, and an authority-won state always knows its source.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EvidenceWinner {
     ProcessExit,
     Freeze,
+    /// A blocking dialog matched on the live screen (not authority-sourced).
     Blocked,
-    Authority,
+    Authority {
+        source_id: String,
+    },
     StrongVisualOrOsc,
     Physics,
     Unknown,

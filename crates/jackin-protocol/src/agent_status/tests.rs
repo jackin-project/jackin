@@ -11,7 +11,7 @@ fn confidence_orders_weakest_to_strongest() {
 }
 
 #[test]
-fn report_roundtrips_with_reported_source_and_omitted_nones() {
+fn report_roundtrips_with_reported_source() {
     let report = AgentStatusReport {
         raw_state: AgentRawState::Working,
         source: AgentStatusSource::Reported {

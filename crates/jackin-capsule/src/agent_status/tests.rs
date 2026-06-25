@@ -235,7 +235,9 @@ fn report_uses_evidence_summary() {
     let summary = EvidenceSummary {
         raw_state: RawAgentState::Working,
         confidence: AgentStatusConfidence::Authoritative,
-        authority_source: Some("hook-claude-1".to_owned()),
+        winner: evidence::EvidenceWinner::Authority {
+            source_id: "hook-claude-1".to_owned(),
+        },
         foreground_pgid: Some(42),
         visible_working: true,
         subagents_active: 2,
@@ -276,8 +278,8 @@ fn report_preserves_shell_integration_source() {
 
 #[test]
 fn report_attributes_source_by_winner_when_authority_did_not_win() {
-    // With no authority_source set (authority lost or was absent), report() maps
-    // the source from the winning channel — never Reported.
+    // For every non-authority winner, report() maps the source from the winning
+    // channel — never Reported (that is reserved for EvidenceWinner::Authority).
     let cases = [
         (
             evidence::EvidenceWinner::Physics,
@@ -290,12 +292,27 @@ fn report_attributes_source_by_winner_when_authority_did_not_win() {
             AgentStatusSource::VisibleScreen,
         ),
         (
+            evidence::EvidenceWinner::StrongVisualOrOsc,
+            true,
+            AgentStatusSource::ShellIntegration,
+        ),
+        (
             evidence::EvidenceWinner::Blocked,
             false,
             AgentStatusSource::VisibleScreen,
         ),
         (
-            evidence::EvidenceWinner::Authority,
+            evidence::EvidenceWinner::Freeze,
+            false,
+            AgentStatusSource::VisibleScreen,
+        ),
+        (
+            evidence::EvidenceWinner::ProcessExit,
+            false,
+            AgentStatusSource::None,
+        ),
+        (
+            evidence::EvidenceWinner::Unknown,
             false,
             AgentStatusSource::None,
         ),
@@ -305,7 +322,7 @@ fn report_attributes_source_by_winner_when_authority_did_not_win() {
         s.publish_raw(EvidenceSummary {
             raw_state: RawAgentState::Working,
             confidence: AgentStatusConfidence::Strong,
-            winner,
+            winner: winner.clone(),
             shell_integration,
             ..EvidenceSummary::default()
         });

@@ -207,28 +207,27 @@ impl SessionStatus {
         let summary = &self.last_snapshot_summary;
         AgentStatusReport {
             raw_state: self.raw,
-            source: summary.authority_source.as_ref().map_or_else(
-                || match summary.winner {
-                    evidence::EvidenceWinner::Authority => AgentStatusSource::None,
-                    evidence::EvidenceWinner::Blocked | evidence::EvidenceWinner::Freeze => {
-                        AgentStatusSource::VisibleScreen
-                    }
-                    evidence::EvidenceWinner::StrongVisualOrOsc => {
-                        if summary.shell_integration {
-                            AgentStatusSource::ShellIntegration
-                        } else {
-                            AgentStatusSource::VisibleScreen
-                        }
-                    }
-                    evidence::EvidenceWinner::Physics => AgentStatusSource::ForegroundProcess,
-                    evidence::EvidenceWinner::ProcessExit | evidence::EvidenceWinner::Unknown => {
-                        AgentStatusSource::None
-                    }
-                },
-                |source_id| AgentStatusSource::Reported {
+            // The reported source is a pure function of the winning channel — no
+            // separate flag to fall out of sync with the winner.
+            source: match &summary.winner {
+                evidence::EvidenceWinner::Authority { source_id } => AgentStatusSource::Reported {
                     source_id: source_id.clone(),
                 },
-            ),
+                evidence::EvidenceWinner::Blocked | evidence::EvidenceWinner::Freeze => {
+                    AgentStatusSource::VisibleScreen
+                }
+                evidence::EvidenceWinner::StrongVisualOrOsc => {
+                    if summary.shell_integration {
+                        AgentStatusSource::ShellIntegration
+                    } else {
+                        AgentStatusSource::VisibleScreen
+                    }
+                }
+                evidence::EvidenceWinner::Physics => AgentStatusSource::ForegroundProcess,
+                evidence::EvidenceWinner::ProcessExit | evidence::EvidenceWinner::Unknown => {
+                    AgentStatusSource::None
+                }
+            },
             confidence: self.confidence,
             detected_agent,
             foreground_pgid: summary.foreground_pgid,

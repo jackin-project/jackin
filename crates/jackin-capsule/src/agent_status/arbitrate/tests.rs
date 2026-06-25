@@ -5,14 +5,11 @@ use crate::agent_status::evidence::{
 };
 use std::time::Duration;
 
-fn base_snapshot(now: Instant) -> EvidenceSnapshot {
+fn base_snapshot() -> EvidenceSnapshot {
     EvidenceSnapshot {
         authority: None,
         osc: OscEvidence::default(),
-        screen: ScreenEvidence {
-            observed_at: now,
-            ..ScreenEvidence::default()
-        },
+        screen: ScreenEvidence::default(),
         process: ProcessEvidence {
             child_alive: true,
             foreground_is_agent: true,
@@ -41,7 +38,7 @@ fn authority(
 #[test]
 fn process_exit_wins() {
     let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
+    let mut snapshot = base_snapshot();
     snapshot.process.process_exited = true;
     snapshot.authority = Some(authority(RawAgentState::Working, false, now));
 
@@ -58,7 +55,7 @@ fn process_exit_wins() {
 #[test]
 fn foreground_shell_handoff_wins_as_exit_like_idle() {
     let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
+    let mut snapshot = base_snapshot();
     snapshot.process.foreground_returned_to_shell = true;
     snapshot.process.child_alive = true;
     snapshot.process.root_is_agent = false;
@@ -78,7 +75,7 @@ fn foreground_shell_handoff_wins_as_exit_like_idle() {
 #[test]
 fn freeze_keeps_previous_raw() {
     let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
+    let mut snapshot = base_snapshot();
     snapshot.screen.freeze = true;
     snapshot.screen.state = Some(RawAgentState::Blocked);
 
@@ -91,19 +88,26 @@ fn freeze_keeps_previous_raw() {
 #[test]
 fn pending_permission_blocks_immediately() {
     let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
+    let mut snapshot = base_snapshot();
     snapshot.authority = Some(authority(RawAgentState::Blocked, true, now));
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
     assert_eq!(result.raw_state, RawAgentState::Blocked);
-    assert_eq!(result.winner, EvidenceWinner::Blocked);
+    // A pending-permission block is authored by the authority (the hook), so the
+    // winner carries its source — report() shows Reported, not VisibleScreen.
+    assert_eq!(
+        result.winner,
+        EvidenceWinner::Authority {
+            source_id: "hook-claude-1".to_owned()
+        }
+    );
 }
 
 #[test]
 fn fresh_screen_blocker_overrides_non_blocked_authority() {
     let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
+    let mut snapshot = base_snapshot();
     snapshot.authority = Some(authority(
         RawAgentState::Working,
         false,
@@ -111,41 +115,31 @@ fn fresh_screen_blocker_overrides_non_blocked_authority() {
     ));
     snapshot.screen.state = Some(RawAgentState::Blocked);
     snapshot.screen.strong = true;
-    snapshot.screen.observed_at = now;
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
     assert_eq!(result.raw_state, RawAgentState::Blocked);
+    // The visible dialog wins via the screen channel (not the authority), so
+    // report() will attribute it to VisibleScreen, not Reported.
     assert_eq!(result.winner, EvidenceWinner::Blocked);
-}
-
-#[test]
-fn stale_screen_blocker_does_not_override_fresher_authority() {
-    let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
-    snapshot.authority = Some(authority(RawAgentState::Working, false, now));
-    snapshot.screen.state = Some(RawAgentState::Blocked);
-    snapshot.screen.strong = true;
-    snapshot.screen.observed_at = now.checked_sub(Duration::from_secs(1)).unwrap();
-
-    let result = arbitrate(&snapshot, RawAgentState::Idle, now);
-
-    assert_eq!(result.raw_state, RawAgentState::Working);
-    assert_eq!(result.winner, EvidenceWinner::Authority);
 }
 
 #[test]
 fn fresh_authority_wins_after_blocker_checks() {
     let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
+    let mut snapshot = base_snapshot();
     snapshot.authority = Some(authority(RawAgentState::Working, false, now));
 
     let result = arbitrate(&snapshot, RawAgentState::Idle, now);
 
     assert_eq!(result.raw_state, RawAgentState::Working);
-    assert_eq!(result.winner, EvidenceWinner::Authority);
-    // When authority wins, its source is attributed (report() shows Reported).
-    assert_eq!(result.authority_source.as_deref(), Some("hook-claude-1"));
+    // When authority wins, the winner carries its source (report() shows Reported).
+    assert_eq!(
+        result.winner,
+        EvidenceWinner::Authority {
+            source_id: "hook-claude-1".to_owned()
+        }
+    );
 }
 
 #[test]
@@ -154,7 +148,7 @@ fn losing_authority_is_not_attributed_as_source() {
     // attributed to the authority — otherwise report() emits Reported{source} for
     // a screen-authored state (and `stale_report = true` at the same time).
     let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
+    let mut snapshot = base_snapshot();
     snapshot.authority = Some(authority(
         RawAgentState::Working,
         false,
@@ -166,9 +160,10 @@ fn losing_authority_is_not_attributed_as_source() {
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
+    // The screen authored the state, not the (expired) authority — so the winner
+    // is not Authority and report() will not emit Reported{source}.
     assert_eq!(result.winner, EvidenceWinner::StrongVisualOrOsc);
     assert!(result.stale_report);
-    assert_eq!(result.authority_source, None);
 }
 
 #[test]
@@ -177,7 +172,7 @@ fn authority_confidence_reflects_grade() {
 
     // Complete-grade runtime-event authority is the most trusted semantic
     // source -> Authoritative.
-    let mut complete = base_snapshot(now);
+    let mut complete = base_snapshot();
     let mut a = authority(RawAgentState::Working, false, now);
     a.grade = AuthorityGrade::Complete;
     complete.authority = Some(a);
@@ -187,7 +182,7 @@ fn authority_confidence_reflects_grade() {
     );
 
     // Partial-grade coverage cannot author at full confidence -> Strong.
-    let mut partial = base_snapshot(now);
+    let mut partial = base_snapshot();
     let mut b = authority(RawAgentState::Working, false, now);
     b.grade = AuthorityGrade::Partial;
     partial.authority = Some(b);
@@ -200,7 +195,7 @@ fn authority_confidence_reflects_grade() {
 #[test]
 fn expired_authority_leaves_note_and_falls_back_unknown() {
     let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
+    let mut snapshot = base_snapshot();
     snapshot.authority = Some(authority(
         RawAgentState::Working,
         false,
@@ -218,7 +213,7 @@ fn expired_authority_leaves_note_and_falls_back_unknown() {
 #[test]
 fn identity_mismatch_leaves_note_and_rejects_authority() {
     let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
+    let mut snapshot = base_snapshot();
     snapshot.authority = Some(authority(RawAgentState::Working, false, now));
     snapshot.process.foreground_is_agent = false;
 
@@ -232,7 +227,7 @@ fn identity_mismatch_leaves_note_and_rejects_authority() {
 #[test]
 fn strong_screen_idle_wins_without_authority() {
     let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
+    let mut snapshot = base_snapshot();
     snapshot.screen.state = Some(RawAgentState::Idle);
     snapshot.screen.strong = true;
 
@@ -245,7 +240,7 @@ fn strong_screen_idle_wins_without_authority() {
 #[test]
 fn osc_progress_clear_is_idle_hint() {
     let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
+    let mut snapshot = base_snapshot();
     snapshot.osc.progress_cleared_at = Some(now);
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
@@ -267,7 +262,7 @@ fn osc_progress_clear_is_idle_hint() {
 #[test]
 fn osc_shell_marker_is_shell_integration_evidence() {
     let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
+    let mut snapshot = base_snapshot();
     snapshot.osc.shell_state = Some(RawAgentState::Idle);
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
@@ -280,7 +275,7 @@ fn osc_shell_marker_is_shell_integration_evidence() {
 #[test]
 fn osc_progress_clear_is_ignored_when_foreground_is_not_agent() {
     let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
+    let mut snapshot = base_snapshot();
     snapshot.process.foreground_is_agent = false;
     snapshot.osc.progress_cleared_at = Some(now);
 
@@ -293,7 +288,7 @@ fn osc_progress_clear_is_ignored_when_foreground_is_not_agent() {
 #[test]
 fn physics_only_promotes_to_weak_working() {
     let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
+    let mut snapshot = base_snapshot();
     snapshot.process.child_process_count = 1;
 
     let result = arbitrate(&snapshot, RawAgentState::Unknown, now);
@@ -306,7 +301,7 @@ fn physics_only_promotes_to_weak_working() {
 #[test]
 fn no_evidence_is_unknown() {
     let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
+    let mut snapshot = base_snapshot();
     snapshot.process.foreground_is_agent = false;
 
     let result = arbitrate(&snapshot, RawAgentState::Unknown, now);

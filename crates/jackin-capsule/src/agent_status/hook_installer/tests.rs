@@ -169,3 +169,43 @@ fn claude_hook_installer_preserves_unrelated_hook_entries() {
     assert!(entries.iter().any(|entry| entry["hooks"][0]["command"]
         == "/jackin/runtime/agent-status/hooks/claude/report-hook.sh --event PreToolUse"));
 }
+
+#[test]
+fn plugin_installer_writes_and_verifies() {
+    for (installer, dir_seg) in [
+        (PluginInstaller::amp(), "amp"),
+        (PluginInstaller::opencode(), "opencode"),
+    ] {
+        let dir = TempDir::new().unwrap();
+        let home = dir.path().to_path_buf();
+        installer.install(&home).unwrap();
+        let path = home.join(".config").join(dir_seg).join("plugins.json");
+        assert!(path.exists(), "{dir_seg} plugins.json written");
+        let val: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(
+            val["plugins"].as_array().unwrap()[0]
+                .as_str()
+                .unwrap()
+                .contains(dir_seg)
+        );
+        assert!(installer.verify(&home));
+    }
+}
+
+#[test]
+fn claude_install_bails_on_malformed_settings_and_preserves_it() {
+    let dir = TempDir::new().unwrap();
+    let home = dir.path().to_path_buf();
+    let claude_dir = home.join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    let settings = claude_dir.join("settings.json");
+    // A malformed settings.json (e.g. a half-flushed write) must not be clobbered.
+    fs::write(&settings, "{ not valid json").unwrap();
+
+    assert!(installer().install(&home).is_err());
+    // The operator's (broken) file is left exactly as-is, not overwritten.
+    assert_eq!(fs::read_to_string(&settings).unwrap(), "{ not valid json");
+    // And verify keeps reporting drift, so the failure stays visible.
+    assert!(!installer().verify(&home));
+}

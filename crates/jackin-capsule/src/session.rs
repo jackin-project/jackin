@@ -214,7 +214,7 @@ pub struct SessionProvider {
 }
 
 /// A published public-state change emitted by [`Session::advance_status`].
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct StatusTransition {
     pub previous: AgentState,
     pub effective: AgentState,
@@ -224,7 +224,7 @@ pub struct StatusTransition {
 /// Outcome of one [`Session::advance_status`] tick for the daemon to react to:
 /// `transition` is `Some` when a public state change published; `stuck` flags a
 /// watchdog demotion for telemetry.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct StatusTick {
     pub transition: Option<StatusTransition>,
     pub stuck: bool,
@@ -940,7 +940,15 @@ impl Session {
                     self.subagents_active = 0;
                 }
             }
-            GateEffect::Ignore => {}
+            GateEffect::Ignore => {
+                // An event this build does not map (runtime/version skew renamed
+                // it). The reporter's authority silently goes dark; leave a
+                // firehose breadcrumb so JACKIN_DEBUG=1 surfaces the drift.
+                crate::cdebug!(
+                    "agent-status: unmapped runtime event runtime={runtime} event={event} \
+                     source={source_id}"
+                );
+            }
         }
     }
 
@@ -1070,19 +1078,12 @@ impl Session {
                 };
                 registry.evaluate_with_virtuals(self.agent.as_deref(), &rows, virtuals)
             })
-            .map_or_else(
-                || ScreenEvidence {
-                    observed_at: now,
-                    ..ScreenEvidence::default()
-                },
-                |m| ScreenEvidence {
-                    state: m.state,
-                    rule_id: Some(m.rule_id),
-                    strong: m.strong,
-                    freeze: m.freeze,
-                    observed_at: now,
-                },
-            );
+            .map_or_else(ScreenEvidence::default, |m| ScreenEvidence {
+                state: m.state,
+                rule_id: Some(m.rule_id),
+                strong: m.strong,
+                freeze: m.freeze,
+            });
         let snapshot = EvidenceSnapshot {
             authority: self.authority.clone(),
             subagents_active: self.subagents_active,
@@ -1101,7 +1102,7 @@ impl Session {
             .notes
             .iter()
             .any(|n| matches!(n, EvidenceNote::WatchdogDemoted));
-        let winner = candidate.winner;
+        let winner = candidate.winner.clone();
         // Debounce gates whether the candidate becomes a public transition
         // (immediate for blocked/working/exit/strong-idle; inferred idle needs
         // confirmation + CPU/OSC-quiet). Only commit through SessionStatus when
