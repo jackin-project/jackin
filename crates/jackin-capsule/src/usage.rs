@@ -1965,6 +1965,13 @@ fn compact_account_identity(account_label: &str) -> &str {
     }
 }
 
+/// True when `word` appears in `text` as a whole alphanumeric token, so a short
+/// provider token (`amp`) is not matched inside an unrelated word (`example`).
+fn contains_word(text: &str, word: &str) -> bool {
+    text.split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|token| token == word)
+}
+
 /// Best-effort canonical surface for any provider-ish text — a tab label
 /// (`OpenAI / Codex`) or an account provider label (`codex`), case-insensitive
 /// and synonym-aware. `None` for text that names no known provider.
@@ -1974,7 +1981,7 @@ fn surface_from_text(text: &str) -> Option<UsageSurface> {
         UsageSurface::Claude
     } else if text.contains("codex") || text.contains("openai") {
         UsageSurface::Codex
-    } else if text.contains("amp") {
+    } else if contains_word(&text, "amp") {
         UsageSurface::Amp
     } else if text.contains("grok") || text.contains("xai") {
         UsageSurface::Grok
@@ -1992,19 +1999,24 @@ fn surface_from_text(text: &str) -> Option<UsageSurface> {
 
 fn provider_matches_usage_label(provider: &str, account_provider: &str) -> bool {
     // Compare the canonical surface each label resolves to instead of a long
-    // synonym OR-chain; fall back to a case-insensitive substring match for
-    // providers outside the known set (e.g. OpenCode).
-    if let (Some(left), Some(right)) = (
+    // synonym OR-chain. When both name a known surface, equality decides; when
+    // both are outside the known set (e.g. OpenCode), fall back to a case-
+    // insensitive substring match; a known surface never matches an unknown
+    // label (else a stray substring like `amp` in `example` would link them).
+    match (
         surface_from_text(provider),
         surface_from_text(account_provider),
     ) {
-        return left == right;
+        (Some(left), Some(right)) => left == right,
+        (None, None) => {
+            let provider = provider.to_ascii_lowercase();
+            let account_provider = account_provider.to_ascii_lowercase();
+            provider == account_provider
+                || provider.contains(&account_provider)
+                || account_provider.contains(&provider)
+        }
+        _ => false,
     }
-    let provider = provider.to_ascii_lowercase();
-    let account_provider = account_provider.to_ascii_lowercase();
-    provider == account_provider
-        || provider.contains(&account_provider)
-        || account_provider.contains(&provider)
 }
 
 fn most_constrained_fresh_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBucketView> {
@@ -2193,8 +2205,6 @@ fn tag_last_status_slot(buckets: &mut [QuotaBucketView], slot: impl Into<Option<
     last.status_slot = Some(slot);
 }
 
-/// Status-bar slot for a Claude/Codex window whose label is the canonical
-/// `Session`/`Weekly` (the other windows — Sonnet, Spark, Credits — fill none).
 /// Build a window bucket carrying both the formatted reset label and the raw
 /// reset epoch (RC2), so the CLI report can emit `resets_at`. `reset_at` is the
 /// authoritative timestamp; `reset_label` is derived from it.
@@ -6662,6 +6672,7 @@ mod tests {
         let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
             "five_hour": { "utilization": 0.10 },
             "seven_day": { "utilization": 0.45 },
+            "seven_day_opus": { "utilization": 0.30 },
             // `seven_day_oauth_apps` is a SEPARATE window, not an alias of
             // `seven_day` — it must be ignored, never override Weekly.
             "seven_day_oauth_apps": { "utilization": 0.99 },
@@ -6681,6 +6692,12 @@ mod tests {
                 .iter()
                 .any(|bucket| bucket.label == "Daily Routines"
                     && bucket.remaining_percent == Some(75))
+        );
+        // A present Opus window is a detail row, never a headline slot.
+        assert!(
+            buckets
+                .iter()
+                .any(|bucket| bucket.label == "Opus" && bucket.status_slot.is_none())
         );
     }
 
@@ -6744,14 +6761,20 @@ mod tests {
 
         assert_eq!(buckets[0].label, "Session");
         assert_eq!(buckets[0].remaining_percent, Some(37));
+        assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
         assert_eq!(buckets[1].label, "Weekly");
         assert_eq!(buckets[1].remaining_percent, Some(10));
+        assert_eq!(buckets[1].status_slot, Some(StatusSlot::Weekly));
         assert!(
             buckets
                 .iter()
                 .any(|bucket| bucket.label == "Codex Spark 5-hour"
                     && bucket.remaining_percent == Some(100))
         );
+        // The per-feature Spark detail rows are not headline slots.
+        assert!(buckets.iter().all(|bucket| {
+            !bucket.label.starts_with("Codex Spark") || bucket.status_slot.is_none()
+        }));
         let reset_credits = buckets
             .iter()
             .position(|bucket| bucket.label == "Limit Reset Credits")
@@ -6907,6 +6930,38 @@ mod tests {
         assert_eq!(buckets[2].label, "Sonnet");
         assert_eq!(buckets[2].remaining_percent, Some(85));
         assert_eq!(buckets[2].status_slot, None);
+
+        // End-to-end: the tagged CLI buckets still render the Claude headline, so
+        // an OAuth-fetch failure that drops to the CLI path does not blank it.
+        assert_eq!(
+            status_bar_label(
+                UsageSurface::Claude,
+                "",
+                UsageSnapshotStatus::Fresh,
+                &buckets
+            ),
+            "Session 100% · Weekly 54%"
+        );
+    }
+
+    #[test]
+    fn tag_last_status_slot_none_preserves_existing_slot() {
+        let mut buckets = vec![QuotaBucketView {
+            label: "Session".to_owned(),
+            used_label: None,
+            limit_label: None,
+            remaining_percent: Some(50),
+            reset_label: None,
+            resets_at: None,
+            status_slot: Some(StatusSlot::Session),
+            pace_label: None,
+            status: UsageSnapshotStatus::Fresh,
+        }];
+        // A None slot must not clobber a slot already set on the last bucket.
+        tag_last_status_slot(&mut buckets, None);
+        assert_eq!(buckets[0].status_slot, Some(StatusSlot::Session));
+        // An empty slice is a no-op, not a panic.
+        tag_last_status_slot(&mut [], StatusSlot::Weekly);
     }
 
     #[test]
@@ -6952,6 +7007,13 @@ mod tests {
         // case-insensitive substring path — equal labels match, distinct don't.
         assert!(provider_matches_usage_label("OpenCode", "opencode"));
         assert!(!provider_matches_usage_label("OpenCode", "codex"));
+
+        // Unknown text names no surface; the short "amp" token must not match
+        // inside an unrelated word (whole-token match, not bare substring).
+        assert_eq!(surface_from_text("totally-unknown"), None);
+        assert_eq!(surface_from_text("example"), None);
+        assert!(!provider_matches_usage_label("Example", "amp"));
+        assert_eq!(surface_from_text("Amp / Code"), Some(UsageSurface::Amp));
     }
 
     #[test]
