@@ -32,15 +32,8 @@ pub const CONSTRUCT_PINNED_TAG: &str = "0.1-trixie";
 pub const BASE_DOCKERFILE_FROM: &str = "FROM projectjackin/construct:0.1-trixie\n";
 
 /// Published role-image label storing the construct tag from the role Dockerfile.
-///
-/// This key is part of the role publishing contract. Keep it here so launch-time
-/// freshness checks and external publish automation use the same source.
 pub const LABEL_PUBLISHED_IMAGE_CONSTRUCT_VERSION: &str = "jackin.construct.version";
-
 /// Published role-image label storing the role repository commit SHA.
-///
-/// This key is part of the role publishing contract. Keep it here so launch-time
-/// freshness checks and external publish automation use the same source.
 pub const LABEL_PUBLISHED_IMAGE_ROLE_GIT_SHA: &str = "jackin.role.git.sha";
 
 pub fn published_image_labels(construct_version: &str, role_git_sha: &str) -> [String; 2] {

@@ -448,7 +448,7 @@ fn parses_role_published_image_repository_with_path() {
 }
 
 #[test]
-fn parses_role_publish_labels_with_sha_and_path() {
+fn parses_role_publish_labels_with_path() {
     let cli = Cli::try_parse_from([
         "jackin",
         "role",

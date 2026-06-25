@@ -19,9 +19,9 @@ dockerfile = "Dockerfile"
 plugins = []
 "#;
 
-const VALID_PUBLISHED_MANIFEST: &str = r#"version = "v1alpha5"
+const PUBLISHED_MANIFEST: &str = r#"version = "v1alpha5"
 dockerfile = "Dockerfile"
-published_image = "localhost:5000/projectjackin/example:latest"
+published_image = "ghcr.io/example/jackin-sentinel:latest"
 
 [claude]
 plugins = []
@@ -333,24 +333,24 @@ fn construct_version_fails_for_invalid_repo() {
 // ── published-image-repository subcommand ───────────────────────────────────
 
 #[test]
-fn published_image_repository_prints_image_without_tag() {
+fn published_image_repository_strips_tag() {
     let temp = tempdir().unwrap();
-    write_role_repo(&temp, VERSIONED_FROM, VALID_PUBLISHED_MANIFEST);
+    write_role_repo(&temp, VERSIONED_FROM, PUBLISHED_MANIFEST);
 
     Command::cargo_bin("jackin-role")
         .unwrap()
         .args(["published-image-repository", temp.path().to_str().unwrap()])
         .assert()
         .success()
-        .stdout("localhost:5000/projectjackin/example\n");
+        .stdout("ghcr.io/example/jackin-sentinel\n");
 }
 
 // ── publish-labels subcommand ───────────────────────────────────────────────
 
 #[test]
-fn publish_labels_prints_canonical_docker_labels() {
+fn publish_labels_prints_canonical_contract() {
     let temp = tempdir().unwrap();
-    write_role_repo(&temp, VERSIONED_FROM, VALID_MANIFEST);
+    write_role_repo(&temp, VERSIONED_FROM, PUBLISHED_MANIFEST);
 
     Command::cargo_bin("jackin-role")
         .unwrap()

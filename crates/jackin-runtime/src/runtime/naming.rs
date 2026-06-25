@@ -37,13 +37,11 @@ pub(super) const LABEL_KEEP_AWAKE: &str = "jackin.keep.awake=true";
 pub(super) const LABEL_IMAGE_CONSTRUCT: &str = "jackin.construct.image";
 
 /// Image label key recording the construct version tag baked into a published
-/// role image. Role CI calls `jackin-role construct-version` to obtain the tag,
-/// passes it as `--build-arg CONSTRUCT_VERSION=<ver>` to `docker build`, and
-/// the Dockerfile's `LABEL jackin.construct.version=${CONSTRUCT_VERSION}`
-/// instruction writes the image label (see jackin-role-action). Checked at
-/// launch time: a mismatch against the Dockerfile's pinned version means the
-/// published image pre-dates a Renovate bump; jackin falls back to workspace
-/// mode so the role's workspace Dockerfile — carrying the new pin — is used.
+/// role image. Role CI gets this key from `jackin-role publish-labels` instead
+/// of hardcoding it in workflow YAML. Checked at launch time: a mismatch
+/// against the Dockerfile's pinned version means the published image pre-dates
+/// a Renovate bump; jackin falls back to workspace mode so the role's workspace
+/// Dockerfile — carrying the new pin — is used.
 pub(super) const LABEL_IMAGE_CONSTRUCT_VERSION: &str =
     jackin_manifest::LABEL_PUBLISHED_IMAGE_CONSTRUCT_VERSION;
 
@@ -56,13 +54,12 @@ pub(super) const LABEL_ROLE_KEY: &str = "jackin.role";
 pub(super) const LABEL_IMAGE_KEY: &str = "jackin.image";
 
 /// Image label key recording the git commit SHA of the role repo from which a
-/// published image was built. Role CI passes `--build-arg ROLE_GIT_SHA=<sha>`
-/// (set to `${{ github.sha }}`) so the Dockerfile's
-/// `LABEL jackin.role.git.sha=${ROLE_GIT_SHA}` bakes it in. Checked at launch
-/// time before the construct-version check: if the label matches the HEAD of
-/// the cached role repo the image is current and the workspace rebuild is
-/// skipped. Falls through to the construct-version check when this label is
-/// absent (images predating this feature).
+/// published image was built. Role CI gets this key from `jackin-role
+/// publish-labels` instead of hardcoding it in workflow YAML. Checked at launch
+/// time before the construct-version check: if the label matches the HEAD of the
+/// cached role repo the image is current and the workspace rebuild is skipped.
+/// Falls through to the construct-version check when this label is absent
+/// (images predating this feature).
 pub(super) const LABEL_IMAGE_ROLE_GIT_SHA: &str =
     jackin_manifest::LABEL_PUBLISHED_IMAGE_ROLE_GIT_SHA;
 
