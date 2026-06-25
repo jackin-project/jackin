@@ -126,7 +126,7 @@ Today the header mixes identity with auth method and is inconsistent per provide
 | Kimi | none | — | — | `API token · env KIMI_CODE_API_KEY` |
 | MiniMax | none | — | plan title | `API token · env MINIMAX_API_KEY` |
 
-`FocusedAccountHeader` (`crates/jackin-protocol/src/control.rs`) has no field for credential origin — every snapshot resolver discards which `.or_else` arm won. Add a structured `credential_origin` (a small enum carrying the origin kind plus its detail: env-var with the variable name, file with the path, keychain, or OAuth source), populate it at the resolver arm that actually wins (not a guessed default), split email/username/plan, and render the Auth row. For Claude, parse the account email from `~/.claude.json` `oauthAccount` (or a profile endpoint) — verify against CodexBar's Claude fetcher. Providers with no email show plan + auth row only; no fabricated email. Parallax logs confirm Z.AI/Kimi/MiniMax creds arrive as env vars (`ZAI_API_KEY` / `KIMI_CODE_API_KEY` / `MINIMAX_API_KEY`).
+`FocusedAccountHeader` (`crates/jackin-protocol/src/control.rs`) has no field for credential origin — every snapshot resolver discards which `.or_else` arm won. Add a structured `credential_origin` (a small enum carrying the origin kind plus its detail: an environment variable with its name, a file with the path, the keychain, or an OAuth source), populate it at the resolver arm that actually wins (not a guessed default), split email/username/plan, and render the Auth row. For Claude, parse the account email from `~/.claude.json` `oauthAccount` (or a profile endpoint) — verify against CodexBar's Claude fetcher. Providers with no email show plan + auth row only; no fabricated email. Parallax logs confirm Z.AI/Kimi/MiniMax creds arrive as env vars (`ZAI_API_KEY` / `KIMI_CODE_API_KEY` / `MINIMAX_API_KEY`).
 
 ---
 
@@ -173,7 +173,7 @@ The segment is **clickable in the unknown/refreshing state**; a click forces a p
 
 ### P3b — reliable agent-start signal (needs a design step before coding)
 
-Detecting "agent started" reliably is the open architectural question behind steps 1–2. Intended direction: **route the agent launch through jackin-capsule as a proxy/hook** instead of exec-ing the agent directly, so the capsule owns the exact start moment and triggers auth-verify + refresh then. Before coding: identify how the agent is launched today (the exec path in the daemon/runtime) and confirm whether a proxy/hook is the right structural fix or whether an existing lifecycle signal can be used. This is what makes "hide before start" and "`refreshing` on start" precise rather than approximated.
+Detecting "agent started" reliably is the open architectural question behind steps 1–2. Intended direction: **route the agent launch through jackin-capsule as a proxy/hook** instead of launching the agent directly, so the capsule owns the exact start moment and triggers auth-verify + refresh then. Before coding: identify how the agent is launched today (the process-launch path in the daemon/runtime) and confirm whether a proxy/hook is the right structural fix or whether an existing lifecycle signal can be used. This is what makes "hide before start" and "`refreshing` on start" precise rather than approximated.
 
 ---
 
