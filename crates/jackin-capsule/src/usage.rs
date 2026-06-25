@@ -32,6 +32,10 @@ const CLAUDE_CODE_USER_AGENT_FALLBACK: &str = "claude-code/2.1.0";
 const GROK_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 const GROK_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
 const MATERIALIZED_USAGE_ACCOUNTS_PATH: &str = "/jackin/run/usage/accounts.json";
+const CODEX_HANDOFF_AUTH_PATH: &str = "/jackin/codex/auth.json";
+const AMP_HANDOFF_SECRETS_PATH: &str = "/jackin/amp/secrets.json";
+const KIMI_HANDOFF_HOME: &str = "/jackin/kimi-code";
+const GROK_HANDOFF_AUTH_PATH: &str = "/jackin/grok/auth.json";
 pub(crate) const TELEMETRY_STORE_PATH: &str = "/jackin/state/usage/telemetry.db";
 
 static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -727,6 +731,7 @@ fn build_snapshot(
             let token = env_value("KIMI_AUTH_TOKEN")
                 .or_else(|| env_value("kimi_auth_token"))
                 .or_else(|| load_kimi_local_token(now))
+                .or_else(|| load_kimi_local_token_from_home(Path::new(KIMI_HANDOFF_HOME), now))
                 .or_else(|| provider_keys.get(&jackin_protocol::Provider::Kimi).cloned())
                 .or_else(|| env_value("KIMI_CODE_API_KEY"));
             kimi_snapshot(agent, token.as_deref(), now)
@@ -917,11 +922,14 @@ fn codex_snapshot(
     let codex_home =
         std::env::var("CODEX_HOME").map_or_else(|_| home_path(".codex"), PathBuf::from);
     let auth_path = codex_home.join("auth.json");
-    let credentials = load_codex_oauth_credentials(&auth_path);
+    let handoff_auth_path = Path::new(CODEX_HANDOFF_AUTH_PATH);
+    let credentials = load_codex_oauth_credentials(&auth_path)
+        .or_else(|| load_codex_oauth_credentials(handoff_auth_path));
     let auth_account = credentials
         .as_ref()
         .and_then(|credentials| credentials.account_label.clone())
         .or_else(|| codex_account_label(&auth_path))
+        .or_else(|| codex_account_label(handoff_auth_path))
         .unwrap_or_else(|| {
             if std::env::var("OPENAI_API_KEY").is_ok_and(|v| !v.is_empty()) {
                 "OPENAI_API_KEY".to_owned()
@@ -1042,7 +1050,11 @@ fn codex_snapshot(
 
 fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let data = home_path(".local/share/amp");
-    let amp_api_key = env_value("AMP_API_KEY");
+    let amp_secrets = data.join("secrets.json");
+    let handoff_secrets = Path::new(AMP_HANDOFF_SECRETS_PATH);
+    let amp_api_key = env_value("AMP_API_KEY")
+        .or_else(|| load_amp_api_key(&amp_secrets))
+        .or_else(|| load_amp_api_key(handoff_secrets));
     let (api_usage, api_error) = match amp_api_key.as_deref() {
         Some(token) => match fetch_amp_api_usage(token) {
             Ok(usage) => (Some(usage), None),
@@ -1059,7 +1071,7 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
         (None, None)
     };
     let provider_error = api_error.as_ref().or(cli_error.as_ref()).cloned();
-    let has_auth = amp_api_key.is_some() || data.join("secrets.json").exists();
+    let has_auth = amp_api_key.is_some() || amp_secrets.exists() || handoff_secrets.exists();
     let status = if api_usage.is_some() || cli_usage.is_some() {
         UsageSnapshotStatus::Fresh
     } else if has_auth {
@@ -1136,7 +1148,13 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
 
 fn grok_snapshot(agent: &str, now: i64, rpc_gate: &mut ManagedCliLaunchGate) -> FocusedUsageView {
     let data = home_path(".grok");
-    let auth = data.join("auth.json");
+    let home_auth = data.join("auth.json");
+    let handoff_auth = PathBuf::from(GROK_HANDOFF_AUTH_PATH);
+    let auth = if home_auth.exists() {
+        home_auth
+    } else {
+        handoff_auth
+    };
     let has_auth = auth.exists();
     let has_xai_api_key = env_value("XAI_API_KEY").is_some();
     let has_deployment_key = env_value("GROK_DEPLOYMENT_KEY").is_some();
@@ -4488,6 +4506,29 @@ fn fetch_amp_api_usage(token: &str) -> Result<AmpApiUsage, String> {
         .ok_or_else(|| "Amp usage response did not include balance info".to_owned())
 }
 
+fn load_amp_api_key(path: &Path) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(&fs::read_to_string(path).ok()?).ok()?;
+    value
+        .as_object()?
+        .iter()
+        .find_map(|(key, value)| {
+            key.starts_with("apiKey@")
+                .then(|| value.as_str())
+                .flatten()
+                .map(str::trim)
+                .filter(|token| !token.is_empty())
+                .map(ToOwned::to_owned)
+        })
+        .or_else(|| {
+            value
+                .as_object()?
+                .values()
+                .filter_map(|value| value.as_str().map(str::trim))
+                .find(|token| !token.is_empty())
+                .map(ToOwned::to_owned)
+        })
+}
+
 #[derive(Debug, Clone, Default)]
 struct AmpCliUsage {
     account_label: Option<String>,
@@ -6344,6 +6385,23 @@ mod tests {
             buckets[1].pace_label.as_deref(),
             Some("Individual credits: $1.25")
         );
+    }
+
+    #[test]
+    fn amp_secrets_json_provides_api_key() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("secrets.json");
+        fs::write(
+            &path,
+            serde_json::json!({
+                "other": "ignored",
+                "apiKey@https://ampcode.com/": " amp-token "
+            })
+            .to_string(),
+        )
+        .expect("write Amp secrets");
+
+        assert_eq!(load_amp_api_key(&path).as_deref(), Some("amp-token"));
     }
 
     #[test]
