@@ -80,6 +80,17 @@ pub enum Region {
     LastNonEmptyLine,
     OscTitle,
     OscProgress,
+    /// Lines after the last prompt-caret line (Codex `›`). Isolates text the
+    /// agent emitted since the live prompt, so a question echoed in scrollback
+    /// above the caret cannot match.
+    AfterLastPromptMarker,
+    /// Lines before the last prompt-caret line — prior conversation without the
+    /// live input line polluting matches.
+    BeforeCurrentPromptMarker,
+    /// The whole recent screen, but empty when a live prompt caret is present.
+    /// A rule keyed here fires only when the agent is NOT sitting at a fresh
+    /// prompt (a self-disabling region).
+    WholeRecentWithoutCurrentPromptMarker,
 }
 
 impl<'de> Deserialize<'de> for Region {
@@ -402,6 +413,21 @@ impl Region {
                 .map(str::to_owned)
                 .into_iter()
                 .collect(),
+            Self::AfterLastPromptMarker => match last_prompt_marker(screen_rows) {
+                Some(index) => screen_rows.get(index + 1..).unwrap_or_default().to_vec(),
+                None => Vec::new(),
+            },
+            Self::BeforeCurrentPromptMarker => match last_prompt_marker(screen_rows) {
+                Some(index) => screen_rows.get(..index).unwrap_or_default().to_vec(),
+                None => screen_rows.to_vec(),
+            },
+            Self::WholeRecentWithoutCurrentPromptMarker => {
+                if last_prompt_marker(screen_rows).is_some() {
+                    Vec::new()
+                } else {
+                    screen_rows.to_vec()
+                }
+            }
         }
     }
 
@@ -415,8 +441,26 @@ impl Region {
             Self::LastNonEmptyLine => "last_nonempty_line".to_owned(),
             Self::OscTitle => "osc_title".to_owned(),
             Self::OscProgress => "osc_progress".to_owned(),
+            Self::AfterLastPromptMarker => "after_last_prompt_marker".to_owned(),
+            Self::BeforeCurrentPromptMarker => "before_current_prompt_marker".to_owned(),
+            Self::WholeRecentWithoutCurrentPromptMarker => {
+                "whole_recent_without_current_prompt_marker".to_owned()
+            }
         }
     }
+}
+
+/// A Codex prompt-caret line: exactly `›` or starting `› ` (after trim).
+fn is_prompt_marker_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed == "›" || trimmed.starts_with("› ")
+}
+
+/// Index of the last prompt-caret line, if any.
+fn last_prompt_marker(screen_rows: &[String]) -> Option<usize> {
+    screen_rows
+        .iter()
+        .rposition(|line| is_prompt_marker_line(line))
 }
 
 fn preview(value: &str, max_chars: usize) -> String {
@@ -441,6 +485,11 @@ fn parse_region(raw: &str) -> anyhow::Result<Region> {
         "last_nonempty_line" => Ok(Region::LastNonEmptyLine),
         "osc_title" => Ok(Region::OscTitle),
         "osc_progress" => Ok(Region::OscProgress),
+        "after_last_prompt_marker" => Ok(Region::AfterLastPromptMarker),
+        "before_current_prompt_marker" => Ok(Region::BeforeCurrentPromptMarker),
+        "whole_recent_without_current_prompt_marker" => {
+            Ok(Region::WholeRecentWithoutCurrentPromptMarker)
+        }
         _ => anyhow::bail!("unknown region {raw:?}"),
     }
 }

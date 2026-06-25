@@ -54,6 +54,63 @@
         assert!(pack.evaluate(&idle).is_none());
     }
 
+    #[test]
+    fn prompt_caret_regions_isolate_live_prompt() {
+        let pack: RulePack = toml::from_str(
+            "schema_version = 1\n\
+             agent = \"test\"\n\
+             validated_versions = \">=1.0.0, <2\"\n\
+             [[rule]]\n\
+             id = \"q\"\n\
+             state = \"blocked\"\n\
+             priority = 100\n\
+             region = \"after_last_prompt_marker\"\n\
+             requires_any = [\"approve?\"]\n",
+        )
+        .unwrap();
+        pack.validate().unwrap();
+        // The question scrolled ABOVE the live caret -> not matched.
+        let stale = vec![
+            "Approve?".to_owned(),
+            "› ".to_owned(),
+            "ok thanks".to_owned(),
+        ];
+        assert!(pack.evaluate(&stale).is_none());
+        // The question is below the caret (the live prompt) -> matched.
+        let live = vec!["›".to_owned(), "Approve?".to_owned()];
+        assert_eq!(
+            pack.evaluate(&live).unwrap().state,
+            Some(RawAgentState::Blocked)
+        );
+    }
+
+    #[test]
+    fn whole_recent_without_caret_self_disables() {
+        let pack: RulePack = toml::from_str(
+            "schema_version = 1\n\
+             agent = \"test\"\n\
+             validated_versions = \">=1.0.0, <2\"\n\
+             [[rule]]\n\
+             id = \"w\"\n\
+             state = \"working\"\n\
+             priority = 100\n\
+             region = \"whole_recent_without_current_prompt_marker\"\n\
+             requires_any = [\"running\"]\n",
+        )
+        .unwrap();
+        pack.validate().unwrap();
+        // No caret -> whole screen -> matches.
+        assert_eq!(
+            pack.evaluate(&[String::from("task running")]).unwrap().state,
+            Some(RawAgentState::Working)
+        );
+        // Live caret present -> region self-disables -> no match (idle at prompt).
+        assert!(
+            pack.evaluate(&[String::from("task running"), String::from("› ")])
+                .is_none()
+        );
+    }
+
     fn fixture(path: &str) -> Vec<String> {
         fs::read_to_string(path)
             .unwrap()
