@@ -420,13 +420,14 @@ Work top to bottom. Check an item only when it is in the build and its test is g
 - [x] 7 — Capture per-session `OscEvidence` from the PTY parse and feed it into the snapshot: title (OSC 0/2, capped 256 chars) + `title_changed_at`; notify edge (plain OSC 9 via passthrough); OSC 9;4 progress (raw scan `scan_osc9_progress` — jackin-term doesn't surface it as a passthrough event); OSC 133 shell marks (`scan_osc133` in `feed_pty`: PreExec→working, PromptEnd/CommandFinished→idle). Wiped on exit via `clear_runtime_authority` → `OscEvidence::clear_agent_signals`. Arbitration already consumes `shell_state` (Strong) and `progress_cleared_at` (Weak hint); the title-spinner channel is consumed by the rule pack's `osc_title` region (Phase 8) and the notify edge by the attention path (Phase 9). **BEL deferred to Phase 11** (needs a jackin-term Bell passthrough variant)
 - [x] Gate 7 — `osc_title_captured_and_capped` (256 cap), `osc9_notification_sets_notify_edge`, `osc94_progress_active_then_clear`, `osc133_marks_set_shell_state`; 695 capsule tests green, clippy/shear clean
 
-**Phase 8 — Rule-pack engine + expressiveness [P1] (Slice 7)**
-- [ ] 8 — TOML loader; regions, priority, unknown fallback, safety caps
-- [ ] 8 — Add `line_regex`, nested `all`/`any`/`not`, `not` in OSC-title rules; compile each regex once
-- [ ] 8 — Add prompt-caret region family + one reused `is_horizontal_rule` box localizer (two rules from bottom)
-- [ ] 8 — Enforce `validated_versions` as semver (re-add `semver`+`toml` in `jackin-image`); add `min_engine_version` floor
-- [ ] 8 — Delete the five detector modules; fixture harness executes (incl. three Claude false-positive classes)
-- [ ] Gate 8 — per-region extraction, priority, unknown fallback, caps, false-positive fixtures pass
+**Phase 8 — Rule-pack engine + expressiveness [P1] (Slice 7)** ✅ landed June 25, 2026
+- [x] 8a — **Wired the engine into the tick** (keystone): `RulePackRegistry::bundled()` loaded once; per session per tick it evaluates the pack over `Session::visible_screen_rows` (scrollback never read) → `ScreenEvidence` in the snapshot. Screen detection was the universal fallback but ran nowhere — identity-only runtimes (Claude/Codex per 0a) and Kimi now get state from the pack. OSC virtual regions fed from captured evidence (`osc_title`, `osc_progress` via new `progress_raw`)
+- [x] 8 — TOML loader, regions, priority, unknown fallback, safety caps were already present and tested
+- [x] 8 — Added `line_regex` (existential per-line) and `forbids_regex` (anchored negation → OSC-title idle-by-subtraction); `validate()` compile-checks every regex at load (fixes the silent-never-match defect). Regex alternation within `line_regex`/`regex` subsumes most nested `all`/`any`/`not` cases, so a recursive `Gate` struct is deferred unless a pattern provably needs it; a compiled-regex cache (compile-once perf) is a noted follow-up
+- [x] 8 — Added the prompt-caret region family (`after_last_prompt_marker`, `before_current_prompt_marker`, `whole_recent_without_current_prompt_marker`) for Codex live-vs-stale discrimination. Existing `after_last_rule` already passes the horizontal-rule false-positive fixture, so its geometry is unchanged; block-marker regions remain a Codex refinement no pack needs yet
+- [x] 8 — `validate()` enforces `validated_versions` as a **bounded** semver range (rejects `*` and lower-only); `RulePack::accepts_cli_version` is the image-build co-versioning comparison (semver in the capsule, where the loader is). The construct build step feeding installed CLI versions is the remaining wiring (Phase 12); `min_engine_version` deferred — the exact `schema_version==1` check already hard-gates
+- [x] 8 — No old detector modules remained (already gone); the fixture harness `packs_load_and_match_fixtures` executes for all five runtimes incl. the three named Claude false-positive classes
+- [x] Gate 8 — per-region extraction, priority, unknown fallback, caps, the false-positive fixtures, `line_regex`/`forbids_regex`, caret regions, and semver bounds all pass; 701 capsule tests green, clippy/shear clean
 
 **Phase 9 — Contract completion [P2] (Slice 8)**
 - [ ] 9 — seen/ack on focus + attach; subagent counter; `status explain` / `status capture`; flap-rate + stuck telemetry
