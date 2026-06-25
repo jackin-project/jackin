@@ -1103,7 +1103,14 @@ pub(crate) async fn load_role_with(
             },
         );
         let network = resources.network.clone();
-        let dind = crate::runtime::naming::dind_container_name(&container_name);
+        // Adoption-aware: when a prewarmed sidecar was adopted, the role connects
+        // to (and teardown must remove) the adopted DinD container, not the
+        // role-default name. `resources.dind_container` is always `Some` — set
+        // from the adopted sidecar or `from_container_name`.
+        let dind = resources
+            .dind_container
+            .clone()
+            .unwrap_or_else(|| crate::runtime::naming::dind_container_name(&container_name));
         let certs_volume = crate::runtime::naming::dind_certs_volume(&container_name);
         let workspace_docker_for_grants = config
             .workspaces

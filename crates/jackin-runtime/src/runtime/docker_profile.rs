@@ -1832,7 +1832,10 @@ mod tests {
 
     #[test]
     fn hardened_locked_drop_all_then_add_exactly_the_minimum_caps() {
-        for profile in [DockerSecurityProfile::Hardened, DockerSecurityProfile::Locked] {
+        for profile in [
+            DockerSecurityProfile::Hardened,
+            DockerSecurityProfile::Locked,
+        ] {
             let flags = capability_flags(profile, &[]);
             assert_eq!(flags.first().map(String::as_str), Some("--cap-drop=ALL"));
             let added: Vec<&str> = flags
