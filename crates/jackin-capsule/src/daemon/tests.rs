@@ -3664,6 +3664,37 @@ fn apply_action_switch_tab_moves_active_tab() {
 }
 
 #[test]
+fn tab_bar_focus_key_maps_arrows_and_exit() {
+    use super::input_dispatch::{TabBarFocusKey, tab_bar_focus_key};
+    assert_eq!(tab_bar_focus_key(b"\x1b[C"), Some(TabBarFocusKey::Next)); // Right
+    assert_eq!(tab_bar_focus_key(b"\x1b[D"), Some(TabBarFocusKey::Prev)); // Left
+    assert_eq!(tab_bar_focus_key(b"\x1b[B"), Some(TabBarFocusKey::Exit)); // Down
+    assert_eq!(tab_bar_focus_key(b"\x1b"), Some(TabBarFocusKey::Exit)); // Esc
+    assert_eq!(tab_bar_focus_key(b"x"), None);
+}
+
+#[test]
+fn tab_bar_focus_mode_arrows_switch_tabs_then_esc_returns_to_agent() {
+    // P5: while the tab bar is focused, Left/Right switch agent tabs and Esc
+    // returns focus to the agent content.
+    let mut mux = single_pane_tab_mux();
+    mux.tabs.push(Tab::new_single("Shell", 2, "test"));
+    drop(compose_after(&mut mux, FullRedrawReason::ExplicitRedraw));
+
+    mux.set_tab_bar_focused(true);
+    assert!(mux.tab_bar_focused);
+
+    mux.handle_input(InputEvent::Data(b"\x1b[C".to_vec())); // Right → next tab
+    assert_eq!(mux.active_tab, 1);
+    mux.handle_input(InputEvent::Data(b"\x1b[D".to_vec())); // Left → previous tab
+    assert_eq!(mux.active_tab, 0);
+    assert!(mux.tab_bar_focused, "arrows keep the bar focused");
+
+    mux.handle_input(InputEvent::Data(b"\x1b".to_vec())); // Esc → back to agent
+    assert!(!mux.tab_bar_focused);
+}
+
+#[test]
 fn apply_action_status_bar_click_switches_tab() {
     let mut mux = single_pane_tab_mux();
     mux.tabs.push(Tab::new_single("Shell", 2, "test"));

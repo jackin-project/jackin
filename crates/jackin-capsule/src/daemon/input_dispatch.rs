@@ -531,6 +531,9 @@ impl Multiplexer {
                 };
                 if matches!(action, Action::SwitchTab(_)) {
                     self.last_tab_click = tab.map(|idx| (idx, now));
+                    // P5: clicking a tab moves focus onto the tab bar (green
+                    // underline + Left/Right nav until the agent is re-focused).
+                    self.set_tab_bar_focused(true);
                 }
                 self.apply_action(action);
             }
@@ -650,11 +653,42 @@ impl Multiplexer {
     /// Handle a parsed input event from the client terminal. Handlers only
     /// mutate state and record an invalidation; the render loop composes the
     /// next frame when the generation moved.
+    /// P5: move focus onto/off the agent-tab bar, redrawing the status bar so
+    /// the active-tab underline switches between phosphor-green (focused) and
+    /// neutral white (agent content focused).
+    pub(super) fn set_tab_bar_focused(&mut self, focused: bool) {
+        if self.tab_bar_focused != focused {
+            self.tab_bar_focused = focused;
+            self.invalidate(FullRedrawReason::StatusChange);
+        }
+    }
+
     pub(super) fn handle_input(&mut self, event: InputEvent) {
         if let Some(action) = mouse_chrome_update_action(&event) {
             self.apply_action(action);
         }
         if let InputEvent::Data(bytes) = event {
+            // P5: while the agent-tab bar holds focus, it captures the arrow
+            // keys (Left/Right switch tabs; Down/Esc return focus to the agent).
+            // Any other key also returns focus to the agent and is forwarded as
+            // normal input, so the operator is never trapped in the bar.
+            if self.tab_bar_focused {
+                match tab_bar_focus_key(&bytes) {
+                    Some(TabBarFocusKey::Prev) => {
+                        self.apply_action(Action::PreviousTab);
+                        return;
+                    }
+                    Some(TabBarFocusKey::Next) => {
+                        self.apply_action(Action::NextTab);
+                        return;
+                    }
+                    Some(TabBarFocusKey::Exit) => {
+                        self.set_tab_bar_focused(false);
+                        return;
+                    }
+                    None => self.set_tab_bar_focused(false),
+                }
+            }
             if let Some(action) =
                 self.dispatch_to_dialog_top(|dialog, github| dialog.handle_key(&bytes, github))
             {
@@ -774,5 +808,25 @@ impl Multiplexer {
             }
         }
         self.invalidate(palette_route_frame_plan(route).reason());
+    }
+}
+
+/// P5: keys the agent-tab-bar focus mode captures, as raw terminal byte
+/// sequences. `Prev`/`Next` are Left/Right (switch tabs); `Exit` is Down or Esc
+/// (return focus to the agent). Any other key returns `None` — it ends tab-bar
+/// focus and is forwarded to the agent as normal input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TabBarFocusKey {
+    Prev,
+    Next,
+    Exit,
+}
+
+pub(super) fn tab_bar_focus_key(bytes: &[u8]) -> Option<TabBarFocusKey> {
+    match bytes {
+        b"\x1b[D" | b"\x1bOD" => Some(TabBarFocusKey::Prev), // Left
+        b"\x1b[C" | b"\x1bOC" => Some(TabBarFocusKey::Next), // Right
+        b"\x1b[B" | b"\x1bOB" | b"\x1b" => Some(TabBarFocusKey::Exit), // Down / Esc
+        _ => None,
     }
 }

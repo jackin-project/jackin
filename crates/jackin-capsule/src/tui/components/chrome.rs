@@ -31,6 +31,10 @@ pub struct StatusBarWidget<'a> {
     pub prefix_mode: PrefixMode,
     pub hovered_tab: Option<usize>,
     pub menu_hovered: bool,
+    /// P5: whether the tab bar itself holds focus. The active-tab underline is
+    /// the single focus indicator — bright phosphor-green when the bar is
+    /// focused, neutral (white) when focus is in the agent content below.
+    pub focused: bool,
 }
 
 impl StatusBarWidget<'_> {
@@ -139,12 +143,17 @@ impl Widget for StatusBarWidget<'_> {
             && let Some(active) = plan.cells.iter().find(|c| c.active)
         {
             let underline = "━".repeat(active.cell_cols as usize);
+            let underline_fg = if self.focused {
+                jackin_tui::theme::PHOSPHOR_GREEN
+            } else {
+                jackin_tui::theme::WHITE
+            };
             buf.set_string(
                 area.x.saturating_add(active.start_col0),
                 area.y + 1,
                 &underline,
                 Style::default()
-                    .fg(jackin_tui::theme::WHITE)
+                    .fg(underline_fg)
                     .add_modifier(Modifier::BOLD),
             );
         }

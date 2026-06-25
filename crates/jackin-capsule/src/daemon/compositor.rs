@@ -175,6 +175,7 @@ impl Multiplexer {
         let hover_target = self.hover_target;
         let hovered_tab = crate::tui::view::hovered_tab(hover_target);
         let menu_hovered = crate::tui::view::hovered_menu(hover_target);
+        let tab_bar_focused = self.tab_bar_focused;
         // Selection highlight is only meaningful in the unzoomed multi-pane
         // view; a zoom toggle cancels it, matching the raw path's gate.
         let selection = if zoomed { None } else { self.selection };
@@ -399,6 +400,7 @@ impl Multiplexer {
                     prefix_mode,
                     hovered_tab,
                     menu_hovered,
+                    tab_bar_focused,
                     selection,
                     selection_copied,
                     scrollbars: &pane_scrollbars,

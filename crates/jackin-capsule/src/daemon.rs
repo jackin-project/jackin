@@ -251,6 +251,10 @@ pub struct Multiplexer {
     /// next operator keystroke clears it.
     spawn_failure: Option<String>,
     hover_target: Option<HoverTarget>,
+    /// P5: focus is on the agent-tab bar (green underline + Left/Right switch
+    /// tabs; Down/Esc/click returns focus to the agent content). `false` means
+    /// the agent terminal holds focus, the default.
+    tab_bar_focused: bool,
     /// Deadline for hiding the transient "Copied!" badge in whichever
     /// dialog most recently performed a jackin-owned OSC 52 copy.
     dialog_copy_feedback_deadline: Option<Instant>,
@@ -502,6 +506,7 @@ impl Multiplexer {
             last_outer_terminal_title: None,
             spawn_failure: None,
             hover_target: None,
+            tab_bar_focused: false,
             dialog_copy_feedback_deadline: None,
             pull_request_context_branch: None,
             pull_request_context_head: None,
