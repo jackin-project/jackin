@@ -1062,7 +1062,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let now = Instant::now();
                 let states_before: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
-                for session in mux.sessions.values_mut() {
+                for (&session_id, session) in mux.sessions.iter_mut() {
                     let process = session.sample_process_evidence(now);
                     let exiting = process.process_exited || process.foreground_returned_to_shell;
                     // Screen rule-pack evaluation over the live viewport: the
@@ -1109,6 +1109,15 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     };
                     let candidate =
                         apply_watchdog(arbitrate(&snapshot, session.status.raw, now), now);
+                    // Stuck telemetry: a watchdog demotion means a witness
+                    // claimed `working` while physics went quiet (the interrupt
+                    // hole / a hung authority). Rate-limited by being once per
+                    // demotion (the note is only pushed when the state flips).
+                    let stuck = candidate
+                        .notes
+                        .iter()
+                        .any(|n| matches!(n, crate::agent_status::evidence::EvidenceNote::WatchdogDemoted));
+                    let winner = candidate.summary.winner;
                     // Debounce gates whether the candidate becomes a public
                     // transition (immediate for blocked/working/exit/strong-idle;
                     // inferred idle needs confirmation + CPU/OSC-quiet). Only
@@ -1120,13 +1129,30 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         now,
                     )
                     .is_some()
-                        && let Some(effective) = session.status.publish_raw(
+                    {
+                        let previous = session.state;
+                        if let Some(effective) = session.status.publish_raw(
                             candidate.raw,
                             candidate.confidence,
                             candidate.summary,
-                        )
-                    {
-                        session.state = effective;
+                        ) {
+                            session.state = effective;
+                            // Flap-rate telemetry: every public transition is
+                            // logged with the deciding evidence so a regression
+                            // (an agent update breaking a pack) shows up as a
+                            // burst of transitions.
+                            crate::clog!(
+                                "agent-status: session {session_id} {} -> {} (winner={winner:?})",
+                                previous.label(),
+                                effective.label()
+                            );
+                        }
+                    }
+                    if stuck {
+                        crate::clog!(
+                            "status.stuck: session {session_id} demoted to unknown — \
+                             working claimed with no output/CPU/children past the watchdog window"
+                        );
                     }
                     // Exit transition is published above (arbitration step 1)
                     // BEFORE clearing identity/authority, so a stale semantic
@@ -1134,6 +1160,15 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     if exiting {
                         session.clear_runtime_authority();
                     }
+                }
+                // Seen/ack: the focused pane is being reviewed, so it must never
+                // linger on `done`. Acknowledge it each tick (idempotent — only
+                // done→idle changes anything), which records the seen revision.
+                if let Some(focused) = mux.active_focused_id()
+                    && let Some(session) = mux.sessions.get_mut(&focused)
+                    && let Some(effective) = session.status.acknowledge()
+                {
+                    session.state = effective;
                 }
                 let states_after: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
