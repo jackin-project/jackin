@@ -16,7 +16,7 @@
 mod tests;
 
 use jackin_core::runner::{CommandRunner, RunOptions};
-use jackin_core::worktree_dirty::{changed_files, unpushed_commit_count};
+use jackin_core::worktree_dirty::{ChangedFile, changed_files, unpushed_commit_count};
 use jackin_protocol::{CapsuleConfig, EXIT_ACTION_PATH, ExitAction};
 use std::path::Path;
 use std::process::Stdio;
@@ -26,8 +26,8 @@ use std::process::Stdio;
 pub struct DirtyRepo {
     /// Container-side worktree path.
     pub path: String,
-    /// Count of uncommitted/untracked changed files.
-    pub changed: usize,
+    /// Uncommitted/untracked changed files (for the summary count + Inspect).
+    pub changed: Vec<ChangedFile>,
     /// Count of unpushed commits across local branches.
     pub unpushed: usize,
 }
@@ -41,6 +41,29 @@ impl DirtyRepo {
             .rsplit('/')
             .find(|segment| !segment.is_empty())
             .unwrap_or(self.path.as_str())
+    }
+
+    /// One-line modal summary, e.g. `jackin   2 changed · 1 unpushed`. Omits a
+    /// zero count; at least one count is always non-zero (the repo is dirty).
+    #[must_use]
+    pub fn summary_line(&self) -> String {
+        let mut parts = Vec::new();
+        if !self.changed.is_empty() {
+            parts.push(format!("{} changed", self.changed.len()));
+        }
+        if self.unpushed > 0 {
+            parts.push(format!("{} unpushed", self.unpushed));
+        }
+        format!("{}   {}", self.label(), parts.join(" · "))
+    }
+
+    /// Read-only Inspect rows for this repo: `M path`, `?? path`, etc.
+    #[must_use]
+    pub fn inspect_rows(&self) -> Vec<String> {
+        self.changed
+            .iter()
+            .map(|file| format!("{} {}", file.status, file.path))
+            .collect()
     }
 }
 
@@ -123,9 +146,9 @@ pub async fn assess_dirty(config: &CapsuleConfig) -> Vec<DirtyRepo> {
     let mut runner = GitRunner;
     let mut dirty = Vec::new();
     for path in &config.isolated_worktrees {
-        let changed = changed_files(path, &mut runner).await.len();
+        let changed = changed_files(path, &mut runner).await;
         let unpushed = unpushed_commit_count(path, &mut runner).await;
-        if changed > 0 || unpushed > 0 {
+        if !changed.is_empty() || unpushed > 0 {
             dirty.push(DirtyRepo {
                 path: path.clone(),
                 changed,

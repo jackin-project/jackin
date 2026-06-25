@@ -7,9 +7,55 @@ use jackin_protocol::{CapsuleConfig, ExitAction};
 fn repo(path: &str) -> DirtyRepo {
     DirtyRepo {
         path: path.to_owned(),
-        changed: 0,
+        changed: Vec::new(),
         unpushed: 0,
     }
+}
+
+fn changed_file(status: char, path: &str) -> jackin_core::worktree_dirty::ChangedFile {
+    jackin_core::worktree_dirty::ChangedFile {
+        status,
+        path: path.to_owned(),
+    }
+}
+
+#[test]
+fn summary_line_formats_changed_and_unpushed() {
+    let r = DirtyRepo {
+        path: "/jackin/work/jackin".to_owned(),
+        changed: vec![changed_file('M', "a.rs"), changed_file('?', "b.md")],
+        unpushed: 1,
+    };
+    assert_eq!(r.summary_line(), "jackin   2 changed · 1 unpushed");
+}
+
+#[test]
+fn summary_line_omits_zero_counts() {
+    let only_unpushed = DirtyRepo {
+        path: "/work/holla".to_owned(),
+        changed: Vec::new(),
+        unpushed: 3,
+    };
+    assert_eq!(only_unpushed.summary_line(), "holla   3 unpushed");
+    let only_changed = DirtyRepo {
+        path: "/work/holla".to_owned(),
+        changed: vec![changed_file('M', "a")],
+        unpushed: 0,
+    };
+    assert_eq!(only_changed.summary_line(), "holla   1 changed");
+}
+
+#[test]
+fn inspect_rows_render_status_and_path() {
+    let r = DirtyRepo {
+        path: "/work/x".to_owned(),
+        changed: vec![changed_file('M', "src/a.rs"), changed_file('?', "n.md")],
+        unpushed: 0,
+    };
+    assert_eq!(
+        r.inspect_rows(),
+        vec!["M src/a.rs".to_owned(), "? n.md".to_owned()]
+    );
 }
 
 #[test]

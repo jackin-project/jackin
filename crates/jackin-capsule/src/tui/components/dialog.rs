@@ -84,8 +84,8 @@ const CONTAINER_INFO_WIDTH: u16 = 86;
 mod input;
 use input::{
     PickerRow, close_target_filtered_indices, dialog_list_row_clickable, first_selectable_idx,
-    picker_filtered_rows, printable_filter_char, rename_tab_handle_key,
-    split_direction_filtered_indices, step_selectable,
+    handle_exit_dirty_key, handle_exit_inspect_key, picker_filtered_rows, printable_filter_char,
+    rename_tab_handle_key, split_direction_filtered_indices, step_selectable,
 };
 mod hint;
 pub(crate) use hint::main_view_hint;
@@ -242,6 +242,54 @@ pub enum Dialog {
         selected: usize,
         intent: PickerIntent,
     },
+    /// Last-session dirty-exit modal (in-capsule). Shows a per-repo summary plus
+    /// the four choice rows. `Esc` is ignored — the operator must pick a row.
+    ExitDirty {
+        /// One summary line per dirty repo (e.g. `jackin   2 changed · 1 unpushed`).
+        summary: Vec<String>,
+        /// Focused choice row, `0..EXIT_DIRTY_ROWS.len()`.
+        selected: usize,
+    },
+    /// Read-only changed-files list opened from the `ExitDirty` modal's Inspect
+    /// row. `Esc` walks back to the exit modal (modal stack).
+    ExitInspect {
+        /// Changed-file rows grouped by repo via section headers.
+        lines: Vec<InspectRow>,
+        /// Focused row for scrolling.
+        selected: usize,
+    },
+}
+
+/// The four selectable rows of the dirty-exit modal, in display order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitDirtyRow {
+    /// Open the verbatim New-tab agent picker and return to work.
+    StartNewAgent,
+    /// Open the read-only changed-files Inspect view.
+    Inspect,
+    /// Exit; the host preserves the instance as resumable dirty state.
+    Keep,
+    /// Exit; the host discards the instance and its dirty work.
+    Discard,
+}
+
+/// The exit modal's choice rows in display order, with their labels.
+pub const EXIT_DIRTY_ROWS: [(ExitDirtyRow, &str); 4] = [
+    (ExitDirtyRow::StartNewAgent, "Start a new agent"),
+    (ExitDirtyRow::Inspect, "Inspect changes"),
+    (ExitDirtyRow::Keep, "Exit & keep changes"),
+    (ExitDirtyRow::Discard, "Exit & discard changes"),
+];
+
+/// One row of the read-only dirty-exit Inspect list — a repo header or a
+/// changed-file line. A public type so the `Dialog` API does not leak the
+/// crate-private `PickerItem`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InspectRow {
+    /// Repo section header.
+    Repo(String),
+    /// A `<status> <path>` changed-file line.
+    File(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -315,6 +363,9 @@ pub enum DialogAction {
     /// it from the dialog) keeps the dialog the single source of
     /// truth for what gets copied.
     CopyToClipboard(String),
+    /// Operator picked a row in the dirty-exit modal. The daemon opens the
+    /// agent picker, opens Inspect, or records keep/discard and drains.
+    ExitDirty(ExitDirtyRow),
     /// User dismissed with Escape.
     Dismiss,
     /// Dialog is still open; redraw.
@@ -638,6 +689,21 @@ impl Dialog {
         }
     }
 
+    /// Build the in-capsule dirty-exit modal from per-repo summary lines.
+    #[must_use]
+    pub fn new_exit_dirty(summary: Vec<String>) -> Self {
+        Self::ExitDirty {
+            summary,
+            selected: 0,
+        }
+    }
+
+    /// Build the read-only Inspect list opened from the dirty-exit modal.
+    #[must_use]
+    pub fn new_exit_inspect(lines: Vec<InspectRow>) -> Self {
+        Self::ExitInspect { lines, selected: 0 }
+    }
+
     /// Handle a raw key byte and return the resulting action.
     pub fn handle_key(
         &mut self,
@@ -650,6 +716,16 @@ impl Dialog {
         // character inside a custom tab name).
         if let Self::RenameTab { tab_idx, input } = self {
             return rename_tab_handle_key(*tab_idx, input, key);
+        }
+        // Dirty-exit modal: forced choice — Esc is ignored; arrows/jk move the
+        // selection; Enter emits the row's action. Intercept before the generic
+        // dismiss/navigation handling so Esc cannot close it.
+        if let Self::ExitDirty { selected, .. } = self {
+            return handle_exit_dirty_key(selected, key);
+        }
+        // Read-only Inspect list opened from the exit modal: scroll + Esc back.
+        if let Self::ExitInspect { selected, lines } = self {
+            return handle_exit_inspect_key(selected, lines.len(), key);
         }
         // Read-only info dialogs (ContainerInfo, GitHubContext): Esc /
         // dismiss keys close, Enter copies the dialog's value to the
@@ -774,7 +850,9 @@ impl Dialog {
                     Self::RenameTab { .. }
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
-                    | Self::ConfirmAction { .. } => {}
+                    | Self::ConfirmAction { .. }
+                    | Self::ExitDirty { .. }
+                    | Self::ExitInspect { .. } => {}
                 }
                 DialogAction::Redraw
             }
@@ -823,7 +901,9 @@ impl Dialog {
                     Self::RenameTab { .. }
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
-                    | Self::ConfirmAction { .. } => {}
+                    | Self::ConfirmAction { .. }
+                    | Self::ExitDirty { .. }
+                    | Self::ExitInspect { .. } => {}
                 }
                 DialogAction::Redraw
             }
@@ -1107,7 +1187,9 @@ impl Dialog {
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
             | Self::ConfirmAction { .. }
-            | Self::ProviderPicker { .. } => 0,
+            | Self::ProviderPicker { .. }
+            | Self::ExitDirty { .. }
+            | Self::ExitInspect { .. } => 0,
         };
         if row < first_item_row || row >= first_item_row + visible_count {
             return DialogAction::Consume;
@@ -1176,7 +1258,9 @@ impl Dialog {
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
             | Self::ConfirmAction { .. }
-            | Self::ProviderPicker { .. } => DialogAction::Consume,
+            | Self::ProviderPicker { .. }
+            | Self::ExitDirty { .. }
+            | Self::ExitInspect { .. } => DialogAction::Consume,
         }
     }
 
@@ -1256,6 +1340,8 @@ impl Dialog {
                 let first_item_row = box_row + 1;
                 row >= first_item_row && row < first_item_row + providers.len() as u16
             }
+            // Keyboard-only modals — no click targets.
+            Self::ExitDirty { .. } | Self::ExitInspect { .. } => false,
         }
     }
 
@@ -1329,6 +1415,8 @@ impl Dialog {
             },
             // No filter row: top border + items + bottom border.
             Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
+            Self::ExitDirty { summary, .. } => (summary.len() + EXIT_DIRTY_ROWS.len()) as u16 + 4,
+            Self::ExitInspect { lines, .. } => lines.len() as u16 + 4,
         };
         let max_height = term_rows
             .saturating_sub(crate::tui::components::status_bar::STATUS_BAR_ROWS)
@@ -1370,6 +1458,7 @@ impl Dialog {
                 }
             }
             Self::ConfirmAction { .. } => confirm_hint(),
+            Self::ExitDirty { .. } | Self::ExitInspect { .. } => picker_hint(),
         }
     }
 

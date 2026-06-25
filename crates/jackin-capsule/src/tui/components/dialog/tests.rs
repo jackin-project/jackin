@@ -885,3 +885,58 @@ fn agent_picker_section_labels_are_bare_not_dash_padded() {
         panic!("expected FilterPicker snapshot");
     }
 }
+
+#[test]
+fn exit_dirty_enter_routes_each_row() {
+    let expected = [
+        ExitDirtyRow::StartNewAgent,
+        ExitDirtyRow::Inspect,
+        ExitDirtyRow::Keep,
+        ExitDirtyRow::Discard,
+    ];
+    for (steps, want) in expected.iter().enumerate() {
+        let mut d = Dialog::new_exit_dirty(vec!["jackin   1 changed".to_owned()]);
+        for _ in 0..steps {
+            d.handle_key(b"\x1b[B", None);
+        }
+        match d.handle_key(b"\r", None) {
+            DialogAction::ExitDirty(row) => assert_eq!(row, *want),
+            other => panic!("row {steps}: expected ExitDirty, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn exit_dirty_esc_is_ignored_forced_choice() {
+    let mut d = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Consume);
+}
+
+#[test]
+fn exit_dirty_navigation_clamps_at_ends() {
+    // Up at the top stays on the first row.
+    let mut top = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    top.handle_key(b"\x1b[A", None);
+    assert!(matches!(
+        top.handle_key(b"\r", None),
+        DialogAction::ExitDirty(ExitDirtyRow::StartNewAgent)
+    ));
+    // Down past the end clamps to the last row.
+    let mut bottom = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    for _ in 0..10 {
+        bottom.handle_key(b"\x1b[B", None);
+    }
+    assert!(matches!(
+        bottom.handle_key(b"\r", None),
+        DialogAction::ExitDirty(ExitDirtyRow::Discard)
+    ));
+}
+
+#[test]
+fn exit_inspect_esc_walks_back() {
+    let mut d = Dialog::new_exit_inspect(vec![
+        InspectRow::Repo("jackin".to_owned()),
+        InspectRow::File("M a.rs".to_owned()),
+    ]);
+    assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
+}

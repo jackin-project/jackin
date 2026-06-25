@@ -261,6 +261,46 @@ impl Dialog {
                 self.github_context_state(github)
                     .expect("github_context_state is Some for GitHubContext"),
             ),
+
+            Dialog::ExitDirty { summary, selected } => {
+                use crate::tui::components::dialog::EXIT_DIRTY_ROWS;
+                // Per-repo summary lines render as non-selectable section rows
+                // above the four choice rows.
+                let mut items: Vec<PickerItem> = summary
+                    .iter()
+                    .map(|line| PickerItem::Section(line.clone()))
+                    .collect();
+                let first_choice = items.len();
+                for (_, label) in EXIT_DIRTY_ROWS {
+                    items.push(PickerItem::Item(label.to_owned()));
+                }
+                let last_choice = EXIT_DIRTY_ROWS.len().saturating_sub(1);
+                DialogRatatuiSnapshot::FilterPicker {
+                    title: "Unsaved work — exit?".into(),
+                    filter: String::new(),
+                    items,
+                    selected: first_choice + (*selected).min(last_choice),
+                    show_filter: false,
+                }
+            }
+
+            Dialog::ExitInspect { lines, selected } => {
+                use crate::tui::components::dialog::InspectRow;
+                let items = lines
+                    .iter()
+                    .map(|row| match row {
+                        InspectRow::Repo(label) => PickerItem::Section(label.clone()),
+                        InspectRow::File(line) => PickerItem::Item(line.clone()),
+                    })
+                    .collect();
+                DialogRatatuiSnapshot::FilterPicker {
+                    title: "Inspect changes".into(),
+                    filter: String::new(),
+                    items,
+                    selected: *selected,
+                    show_filter: false,
+                }
+            }
         }
     }
 }
