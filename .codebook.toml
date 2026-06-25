@@ -944,6 +944,8 @@ words = [
   "mins",
   "tcgetpgrp",
   "tpgid",
+  "ppid",
+  "cmdline",
   "Notif",
   "epoll",
   "Acks",
