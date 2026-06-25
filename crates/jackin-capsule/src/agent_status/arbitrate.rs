@@ -138,13 +138,10 @@ pub fn arbitrate(
     }
 
     if snapshot.screen.strong
-        && matches!(
-            snapshot.screen.state,
-            Some(RawAgentState::Working | RawAgentState::Idle)
-        )
+        && let Some(state @ (RawAgentState::Working | RawAgentState::Idle)) = snapshot.screen.state
     {
         return finish(
-            snapshot.screen.state.unwrap_or(RawAgentState::Unknown),
+            state,
             AgentStatusConfidence::Strong,
             EvidenceWinner::StrongVisualOrOsc,
             summary,
