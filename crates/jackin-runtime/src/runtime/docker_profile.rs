@@ -858,6 +858,16 @@ pub fn dind_privileged(grants: &EffectiveGrants) -> bool {
     grants.dind == DindGrant::Privileged
 }
 
+/// WP2: whether the role's Docker network must be created `internal`.
+///
+/// `locked` runs on a Docker-internal network so traffic cannot leave the
+/// bridge even before the in-container iptables allowlist is installed — a
+/// second, daemon-level egress boundary independent of `firewall-apply`. Every
+/// other profile uses an ordinary (routable) network.
+pub const fn role_network_internal(profile: DockerSecurityProfile) -> bool {
+    matches!(profile, DockerSecurityProfile::Locked)
+}
+
 // ── Host probes (WP3 observability) ─────────────────────────────────────────
 
 /// Detect the cgroup version on the host that will run containers.
@@ -1618,5 +1628,25 @@ mod tests {
     fn validate_cgroup_hardened_accepts_v2() {
         let result = validate_cgroup_for_profile(DockerSecurityProfile::Hardened, "v2");
         assert!(result.is_ok(), "hardened must accept cgroup v2");
+    }
+
+    // ── WP2: locked uses a Docker-internal network ────────────────────────────
+
+    #[test]
+    fn role_network_internal_only_for_locked() {
+        assert!(
+            role_network_internal(DockerSecurityProfile::Locked),
+            "locked must run on a Docker-internal network"
+        );
+        for profile in [
+            DockerSecurityProfile::Hardened,
+            DockerSecurityProfile::Standard,
+            DockerSecurityProfile::Compat,
+        ] {
+            assert!(
+                !role_network_internal(profile),
+                "{profile} must use a routable network"
+            );
+        }
     }
 }

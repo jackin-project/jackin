@@ -1386,6 +1386,11 @@ pub(crate) async fn load_role_with(
         let sidecar_network_disabled =
             effective_grants.network == crate::runtime::docker_profile::NetworkGrant::None
                 && !dind_started;
+        // WP2: `locked` runs on a Docker-internal network (no off-bridge route)
+        // independent of the in-container iptables allowlist; every other
+        // profile uses a routable network.
+        let role_network_internal =
+            crate::runtime::docker_profile::role_network_internal(resolved_profile.0);
         let sidecar = async move {
             if adopted_sidecar.is_some() {
                 Ok(())
@@ -1404,7 +1409,7 @@ pub(crate) async fn load_role_with(
                 super::create_role_network(
                     &sidecar_container,
                     &sidecar_network,
-                    false,
+                    role_network_internal,
                     docker,
                 )
                 .await
