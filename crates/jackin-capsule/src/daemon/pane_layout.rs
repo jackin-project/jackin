@@ -197,7 +197,8 @@ impl Multiplexer {
         // to the new geometry together. `Terminal::clear()` resets the diff
         // baseline but leaves `last_known_area` stale, so the `autoresize()` at
         // the top of the next `draw()` re-fires `Terminal::resize` mid-frame —
-        // emitting an extra `\x1b[2J` (plus a cursor-home on a width shrink)
+        // emitting an extra screen erase (and a second one on a width shrink;
+        // this backend writes `\x1b[2J\x1b[H` for every `clear_region(All)`)
         // that, with the render sentinel gone, leaves a transient pane border
         // one row high over the status bar. Syncing the area here makes that
         // autoresize a no-op. Suppression keeps this bookkeeping byte-silent

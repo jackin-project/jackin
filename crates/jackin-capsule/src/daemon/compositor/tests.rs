@@ -6,21 +6,27 @@ use crate::tui::app::VisiblePane;
 use crate::tui::layout::Rect;
 use crate::tui::view::PaneScreen;
 
-/// Build a one-row grid from `bytes`, then run it through `pane_sgr_regions`
-/// with a single pane whose inner area is offset by (row 2, col 3) so the
-/// returned rects exercise the pane-relative offset arithmetic.
-fn sgr_regions_for(bytes: &[u8]) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
+/// Run `bytes` through `pane_sgr_regions` for a single pane with the given
+/// `inner` area, so callers can vary the inner offset/size to exercise the
+/// pane-relative offset arithmetic and the `inner`-vs-`view` clamp.
+fn sgr_regions_for_inner(bytes: &[u8], inner: Rect) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
     let mut grid = DamageGrid::new(2, 10, 100);
     grid.process(bytes);
     let view = grid.scrollback_view(0, 2);
     let panes = vec![VisiblePane {
         id: 1,
-        outer: Rect::new(1, 2, 7, 12),
-        inner: Rect::new(2, 3, 5, 10),
+        outer: inner,
+        inner,
         focused: false,
     }];
     let pane_screens = vec![(1u64, PaneScreen::View(view))];
     pane_sgr_regions(&panes, &pane_screens)
+}
+
+/// Standard helper: inner offset by (row 2, col 3) so returned rects are
+/// pane-relative, not raw grid coordinates.
+fn sgr_regions_for(bytes: &[u8]) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
+    sgr_regions_for_inner(bytes, Rect::new(2, 3, 5, 10))
 }
 
 #[test]
@@ -52,4 +58,14 @@ fn pane_sgr_regions_splits_adjacent_differing_runs() {
 #[test]
 fn pane_sgr_regions_empty_when_nothing_styled() {
     assert!(sgr_regions_for(b"plain text").is_empty());
+}
+
+#[test]
+fn pane_sgr_regions_clamps_run_to_inner_width() {
+    // A styled run spanning grid cols 0..6, but the pane's inner area is only
+    // 4 cols wide: the emitted run must be clamped to the pane, not escape it.
+    let regions = sgr_regions_for_inner(b"\x1b[4:3mabcdef", Rect::new(0, 0, 5, 4));
+    assert_eq!(regions.len(), 1, "got {regions:?}");
+    assert_eq!(regions[0].0.width, 4, "run must clamp to inner cols");
+    assert_eq!(regions[0].1.underline_style, UnderlineStyle::Curly);
 }

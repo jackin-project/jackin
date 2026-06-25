@@ -36,12 +36,14 @@ pub struct SocketBackend {
     hyperlink_regions: Vec<(ratatui::layout::Rect, String)>,
     sgr_regions: Vec<(ratatui::layout::Rect, SgrMetadata)>,
     /// While armed, swallow every screen-erase escape from
-    /// `clear_region(ClearType::All)`. `Terminal::resize()`/`clear()` reset
-    /// Ratatui's diff baseline (and resize the buffers) but route through
-    /// `clear_region(All)` one or more times; the resize bookkeeping needs that
-    /// baseline/geometry reset without blanking the client screen or leaking a
-    /// stray erase that would ride a later frame. The single visible wipe is
-    /// the compositor's `Resize` redraw, emitted after suppression is lifted.
+    /// `clear_region(ClearType::All)`. `Terminal::resize()` resets Ratatui's
+    /// diff baseline AND moves the buffers/`last_known_area` (whereas
+    /// `Terminal::clear()` only resets the baseline), routing through
+    /// `clear_region(All)` once — or twice on a width shrink. The resize
+    /// bookkeeping needs that baseline/geometry reset without blanking the
+    /// client screen or leaking a stray erase that would ride a later frame.
+    /// The single visible wipe is the compositor's `Resize` redraw, emitted
+    /// after suppression is lifted.
     suppress_clear_escapes: bool,
 }
 
