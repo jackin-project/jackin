@@ -46,6 +46,7 @@ ignore_patterns = [
 
 words = [
   "andrewpatterson",
+  "bigmodel",
   "chgrp",
   "extrausers",
   "gecos",
@@ -798,10 +799,12 @@ words = [
   "triaging",
   "trixie",
   "truecolor",
+  "tzdata",
   "tsc",
   "ttyrec",
   "TUI's",
   "Turso",
+  "Utc",
   "TypeScript",
   "typo'd",
   "udeps",
