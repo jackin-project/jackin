@@ -368,7 +368,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: ${{ runner.arch == 'X64' && 'cargo-binstall rust sccache shellfirm' || 'cargo-binstall rust sccache' }}
+          install_args: "cargo-binstall rust sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -609,7 +609,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "cargo-binstall rust sccache shellfirm"
+          install_args: "cargo-binstall rust sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
