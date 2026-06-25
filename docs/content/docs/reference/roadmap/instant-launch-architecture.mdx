@@ -84,11 +84,11 @@ This checklist is the work contract for the implementing agent. Rules: tackle on
 
 ### Part 3 — Host executes the chosen action (`jackin-runtime`)
 
-- [ ] Make the capsule client exit `0` on a clean last-session shutdown so `docker exec … jackin-capsule` returns success (fix the `early eof` non-zero exit).
-- [ ] `launch_role_runtime` in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> runs the host finalize/cleanup on a clean exit instead of returning `capsule attach failed`.
-- [ ] The hardline path in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> runs finalize on a clean exit rather than short-circuiting on `attach_outcome?`.
-- [ ] Host reads the capsule-signaled action and **executes** it — keep (preserve the instance + index row) or discard (run the terminal cleanup) — with no host prompt.
-- [ ] Tests: clean exit → host executes the signaled action; keep preserves the instance directory and index row; discard runs terminal cleanup.
+- [x] Clean last-session shutdown no longer fails the launch. **Resolved host-side** (more robust than racing the capsule client's exit code): the non-zero `docker exec` result at clean shutdown is treated as the attach socket-close race, not a failure. (The capsule client's own exit code is now irrelevant to the host; left as-is.)
+- [x] `launch_role_runtime` in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> falls through to a successful return on a clean exit (diagnose `None`) instead of returning `attach_failure_error`, so the pipeline runs finalize instead of skipping it via `launch_result?`.
+- [x] The hardline path in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> no longer short-circuits on `attach_outcome?`: a non-zero attach result is logged and finalize runs (it re-inspects the container + reads `exit-action.json`).
+- [x] Host reads the capsule-signaled action and **executes** it via `ExitActionPrompt` (replacing `RichCleanupPrompt` at both finalize call sites): keep → `KeepAll` (preserve), discard → `DiscardAll` (terminal cleanup); no host prompt. Absent file → `KeepAll` (never lose work).
+- [x] Tests: `ExitActionPrompt` maps keep/discard/absent; `read_exit_action` ignores absent/garbage; `finalize_foreground_session` + `ExitActionPrompt` + `exit-action.json` `keep` preserves the records (`PreservedDirty`) and `discard` removes them.
 
 ### End-to-end verification (operator)
 
