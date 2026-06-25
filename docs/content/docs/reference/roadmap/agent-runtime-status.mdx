@@ -406,11 +406,11 @@ Work top to bottom. Check an item only when it is in the build and its test is g
 - [x] 4 — Watchdog Linux-gated via a new `physics_sampled` flag: fires only when `/proc` was actually read, so unavailable physics reads as "no evidence", never "quiet"
 - [x] Gate 4 — debounce rows + `watchdog_demotes_quiet_working`, `watchdog_does_not_fire_when_physics_unsampled`, recent-output, live-child, OSC/CPU guard; 685 capsule tests green, clippy/shear clean
 
-**Phase 5 — Semantic channel + gating fixes [P1] (Slice 4, per 0a)** 🟡 in progress
+**Phase 5 — Semantic channel + gating fixes [P1] (Slice 4, per 0a)** ✅ landed June 25, 2026
 - [x] 5 — Spawn env vars injected (`JACKIN_SESSION_ID` / `JACKIN_AGENT_RUNTIME` / `JACKIN_STATUS_SOURCE` / `JACKIN_STATUS_SOCKET`; shell panes get only the socket var), keyed on the spawn-time session id; tested
-- [ ] 5 — `ReportRuntimeEvent` protocol method + socket handler; per-session authority storage feeding the snapshot; `report-event` capsule subcommand (delivery core — next)
-- [x] 5 — Applied 0a: Claude/Codex hook events map to `Heartbeat` (identity/freshness) only, never state; OpenCode (Complete) + Amp keep full vendor→state mapping. The pre-0a "gating holes" (Codex `permission-resolved`, Claude `AskUserQuestion`) are obviated — Claude/Codex no longer author state; Amp blocked comes from BEL + screen (no vendor permission event). `toml_edit` re-added with the installer (Phase 11)
-- [ ] Gate 5 — gating rows tested via OpenCode/Amp + canonical strings and `claude_and_codex_hooks_are_identity_only`; env-var unit tests pass. End-to-end (`/proc/<child>/environ` + real socket delivery) lands with the delivery core
+- [x] 5 — `ClientMsg::ReportRuntimeEvent` + `ServerMsg::Ack`; control-socket handler forwards over a `RuntimeEventMsg` channel; daemon select-loop arm calls `Session::apply_runtime_event` (per-source gate state → `AuthorityEvidence` with arrival-order `seq`, fed into the snapshot); `report-event --event <name> [--payload-stdin]` subcommand reads the spawn env, sends, drains stdin, always exits 0. The docker hook scripts that call it now resolve
+- [x] 5 — Applied 0a: Claude/Codex hook events map to `Heartbeat` (identity/freshness) only, never state; OpenCode (Complete) + Amp keep full vendor→state mapping. Pre-0a "gating holes" obviated. `toml_edit` re-added with the installer (Phase 11)
+- [x] Gate 5 — gating rows tested via OpenCode/Amp + canonical strings + `claude_and_codex_hooks_are_identity_only`; env-var + `apply_runtime_event` unit tests pass; 2740 tests across affected crates green, clippy/shear clean. **Note:** end-to-end authority→published-state is gated on Phase 6 (arbitration's fresh-authority filter needs `foreground_is_agent` from `/proc`); transport + gating + storage are complete
 
 **Phase 6 — Process physics [P1] (Slice 5)**
 - [ ] 6 — Wire `process.rs` into the tick (Linux); exit-clears-authority-before-recompute; foreground-returned-to-shell
