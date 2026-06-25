@@ -1410,6 +1410,7 @@ pub(crate) async fn load_role_with(
                 return Err(error);
             }
         };
+        emit_auth_provision_launch_plan(&state, &container_name);
         // The sidecar (adopted or freshly started above) is now running, so a
         // bare `?` here would leak the container/network/volume. Route trust
         // seeding through cleanup like the role-state and sidecar arms.
@@ -1882,6 +1883,32 @@ pub(crate) async fn load_role_with(
             super::render_exit(paths, docker).await;
             Err(final_error)
         }
+    }
+}
+
+pub(crate) fn emit_auth_provision_launch_plan(state: &RoleState, container: &str) {
+    if state.auth_outcomes.is_empty() {
+        return;
+    }
+    let outcomes = state
+        .auth_outcomes
+        .iter()
+        .map(|(agent, outcome)| (agent.slug(), outcome.as_str()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let detail = serde_json::json!({
+        "plan": "AuthProvision",
+        "reason": "credential_outcomes",
+        "container": container,
+        "agents": outcomes,
+    })
+    .to_string();
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.stage(
+            "launch_plan",
+            "credentials",
+            "agent credential outcomes",
+            Some(&detail),
+        );
     }
 }
 

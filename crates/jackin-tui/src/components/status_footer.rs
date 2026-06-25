@@ -6,23 +6,132 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph, Widget};
 
+use crate::display_cols;
 use crate::theme::{DANGER_RED, DEBUG_AMBER, LINK_BLUE, WHITE, faded};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StatusFooterHover {
     pub left: bool,
+    pub usage: bool,
     pub right: bool,
     /// Whether the pointer is over the debug chip (inverts chip colors on hover).
     pub right_debug: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StatusRightGroup<'a> {
+    pub usage: Option<&'a str>,
+    pub container: &'a str,
+    pub run_id: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusRightChunk {
+    pub text: String,
+    /// One-based inclusive start column, matching terminal mouse coordinates.
+    pub start: u16,
+    /// One-based exclusive end column.
+    pub end: u16,
+}
+
+impl StatusRightChunk {
+    #[must_use]
+    pub const fn contains(&self, col: u16) -> bool {
+        col >= self.start && col < self.end
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StatusRightGroupLayout {
+    pub usage: Option<StatusRightChunk>,
+    pub container: Option<StatusRightChunk>,
+    pub run_id: Option<StatusRightChunk>,
+}
+
+impl StatusRightGroupLayout {
+    #[must_use]
+    pub fn start(&self, fallback: usize) -> usize {
+        self.usage
+            .as_ref()
+            .or(self.container.as_ref())
+            .or(self.run_id.as_ref())
+            .map_or(fallback, |chunk| usize::from(chunk.start))
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct StatusFooter<'a> {
     left: &'a str,
-    right: &'a str,
-    right_debug: Option<&'a str>,
+    right: StatusRightGroup<'a>,
     alpha: f32,
     hover: StatusFooterHover,
+}
+
+#[must_use]
+pub fn status_right_group_layout(
+    term_cols: u16,
+    right: StatusRightGroup<'_>,
+) -> StatusRightGroupLayout {
+    if term_cols == 0 {
+        return StatusRightGroupLayout::default();
+    }
+    let term_cols = usize::from(term_cols);
+    let mut cursor = term_cols.saturating_add(1);
+    let run_id = place_status_right_chunk(
+        &mut cursor,
+        term_cols,
+        right
+            .run_id
+            .filter(|run_id| !run_id.is_empty())
+            .map(|run_id| format!(" {run_id} ")),
+    );
+    let container = place_status_right_chunk(&mut cursor, term_cols, {
+        (!right.container.is_empty()).then(|| format!(" {} ", right.container))
+    });
+    let usage = place_usage_status_chunk(&mut cursor, term_cols, right.usage);
+    StatusRightGroupLayout {
+        usage,
+        container,
+        run_id,
+    }
+}
+
+fn place_usage_status_chunk(
+    cursor: &mut usize,
+    term_cols: usize,
+    usage: Option<&str>,
+) -> Option<StatusRightChunk> {
+    let usage = usage.filter(|usage| !usage.is_empty())?;
+    let full = format!(" {usage} ");
+    let compact_usage = compact_usage_status_label(usage);
+    let compact = format!(" {compact_usage} ");
+    if display_cols(&full) < cursor.saturating_sub(1) {
+        place_status_right_chunk(cursor, term_cols, Some(full))
+    } else if display_cols(&compact) < cursor.saturating_sub(1) {
+        place_status_right_chunk(cursor, term_cols, Some(compact))
+    } else {
+        None
+    }
+}
+
+fn place_status_right_chunk(
+    cursor: &mut usize,
+    term_cols: usize,
+    chunk: Option<String>,
+) -> Option<StatusRightChunk> {
+    let chunk = chunk?;
+    let cols = display_cols(&chunk);
+    if cols == 0 || cols + 2 >= term_cols || cols >= cursor.saturating_sub(1) {
+        return None;
+    }
+    let start = cursor.saturating_sub(cols);
+    let end = start.saturating_add(cols);
+    *cursor = start;
+    Some(StatusRightChunk {
+        text: chunk,
+        start: u16::try_from(start).unwrap_or(u16::MAX),
+        end: u16::try_from(end).unwrap_or(u16::MAX),
+    })
 }
 
 impl<'a> StatusFooter<'a> {
@@ -30,11 +139,15 @@ impl<'a> StatusFooter<'a> {
     pub const fn new(left: &'a str) -> Self {
         Self {
             left,
-            right: "",
-            right_debug: None,
+            right: StatusRightGroup {
+                usage: None,
+                container: "",
+                run_id: None,
+            },
             alpha: 1.0,
             hover: StatusFooterHover {
                 left: false,
+                usage: false,
                 right: false,
                 right_debug: false,
             },
@@ -43,13 +156,19 @@ impl<'a> StatusFooter<'a> {
 
     #[must_use]
     pub const fn right(mut self, right: &'a str) -> Self {
-        self.right = right;
+        self.right.container = right;
         self
     }
 
     #[must_use]
     pub const fn right_debug(mut self, right_debug: Option<&'a str>) -> Self {
-        self.right_debug = right_debug;
+        self.right.run_id = right_debug;
+        self
+    }
+
+    #[must_use]
+    pub const fn right_group(mut self, right: StatusRightGroup<'a>) -> Self {
+        self.right = right;
         self
     }
 
@@ -72,6 +191,12 @@ impl<'a> StatusFooter<'a> {
     }
 
     #[must_use]
+    pub const fn usage_hover(mut self, hovered: bool) -> Self {
+        self.hover.usage = hovered;
+        self
+    }
+
+    #[must_use]
     pub const fn right_debug_hover(mut self, hovered: bool) -> Self {
         self.hover.right_debug = hovered;
         self
@@ -88,10 +213,27 @@ impl Widget for StatusFooter<'_> {
             )
             .render(area, buf);
 
+        let right_layout = status_right_group_layout(area.width, self.right);
         let mut right_spans: Vec<Span<'static>> = Vec::new();
-        if !self.right.is_empty() {
+        if let Some(usage) = right_layout.usage {
             right_spans.push(Span::styled(
-                format!(" {} ", self.right),
+                usage.text,
+                Style::default()
+                    .bg(faded(WHITE, self.alpha))
+                    .fg(faded(
+                        if self.hover.usage {
+                            DEBUG_AMBER
+                        } else {
+                            Color::Black
+                        },
+                        self.alpha,
+                    ))
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+        if let Some(container) = right_layout.container {
+            right_spans.push(Span::styled(
+                container.text,
                 Style::default()
                     .bg(faded(WHITE, self.alpha))
                     .fg(faded(
@@ -105,7 +247,7 @@ impl Widget for StatusFooter<'_> {
                     .add_modifier(Modifier::BOLD),
             ));
         }
-        if let Some(debug) = self.right_debug.filter(|debug| !debug.is_empty()) {
+        if let Some(debug) = right_layout.run_id {
             // Canonical debug chip: DANGER_RED background, white text — identical to
             // the console's render_debug_bar so the operator sees the same chip on
             // every surface. Inverted on hover (white bg, red text) for clickability cue.
@@ -115,7 +257,7 @@ impl Widget for StatusFooter<'_> {
                 (DANGER_RED, WHITE)
             };
             right_spans.push(Span::styled(
-                format!(" {debug} "),
+                debug.text,
                 Style::default()
                     .bg(faded(chip_bg, self.alpha))
                     .fg(faded(chip_fg, self.alpha))
@@ -176,10 +318,73 @@ pub fn render_status_footer(
             .right_debug(right_debug)
             .alpha(alpha)
             .left_hover(hover.left)
+            .usage_hover(hover.usage)
             .right_hover(hover.right)
             .right_debug_hover(hover.right_debug),
         area,
     );
+}
+
+pub fn render_status_footer_right_group(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    left: &str,
+    right: StatusRightGroup<'_>,
+    alpha: f32,
+    hover: StatusFooterHover,
+) {
+    frame.render_widget(
+        StatusFooter::new(left)
+            .right_group(right)
+            .alpha(alpha)
+            .left_hover(hover.left)
+            .usage_hover(hover.usage)
+            .right_hover(hover.right)
+            .right_debug_hover(hover.right_debug),
+        area,
+    );
+}
+
+#[must_use]
+pub fn compact_usage_status_label(label: &str) -> String {
+    let parts = label
+        .split(" · ")
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    let remaining = parts
+        .iter()
+        .find(|part| part.starts_with("Session ") || part.starts_with("5-hour "))
+        .or_else(|| parts.iter().find(|part| part.contains('%')))
+        .map(|part| (*part).to_owned());
+    let state = parts
+        .iter()
+        .rev()
+        .find_map(|part| usage_lifecycle_word(part));
+    match (remaining, state) {
+        (Some(remaining), Some(state)) => format!("{remaining} · {state}"),
+        (Some(remaining), None) => remaining,
+        (None, Some(state)) => state.to_owned(),
+        (None, None) => label
+            .split_whitespace()
+            .next()
+            .unwrap_or("usage")
+            .to_owned(),
+    }
+}
+
+fn usage_lifecycle_word(part: &str) -> Option<&'static str> {
+    let lower = part.to_ascii_lowercase();
+    [
+        "login",
+        "secret",
+        "stale",
+        "unsupported",
+        "unavailable",
+        "error",
+    ]
+    .into_iter()
+    .find(|word| lower.contains(word))
 }
 
 #[must_use]
@@ -188,25 +393,18 @@ pub fn status_footer_right_chip_rect(
     right: &str,
     right_debug: Option<&str>,
 ) -> Option<Rect> {
-    if right.is_empty() || area.width == 0 || area.height == 0 {
-        return None;
-    }
-    let right_width = u16::try_from(format!(" {right} ").chars().count()).unwrap_or(u16::MAX);
-    let debug_width = right_debug
-        .filter(|debug| !debug.is_empty())
-        .map_or(0, |debug| {
-            u16::try_from(format!(" {debug} ").chars().count()).unwrap_or(u16::MAX)
-        });
-    let total_width = right_width.saturating_add(debug_width);
-    let x = area
-        .x
-        .saturating_add(area.width.saturating_sub(total_width));
-    Some(Rect {
-        x,
-        y: area.y,
-        width: right_width.min(area.width),
-        height: area.height,
-    })
+    status_right_group_rect(
+        area,
+        status_right_group_layout(
+            area.width,
+            StatusRightGroup {
+                usage: None,
+                container: right,
+                run_id: right_debug,
+            },
+        )
+        .container,
+    )
 }
 
 /// Return the rect of the **debug chip** (`right_debug`) on the status bar,
@@ -217,15 +415,31 @@ pub fn status_footer_right_chip_rect(
 /// `right` is empty.
 #[must_use]
 pub fn status_footer_debug_chip_rect(area: Rect, right_debug: &str) -> Option<Rect> {
-    if right_debug.is_empty() || area.width == 0 || area.height == 0 {
+    status_right_group_rect(
+        area,
+        status_right_group_layout(
+            area.width,
+            StatusRightGroup {
+                usage: None,
+                container: "",
+                run_id: Some(right_debug),
+            },
+        )
+        .run_id,
+    )
+}
+
+fn status_right_group_rect(area: Rect, chunk: Option<StatusRightChunk>) -> Option<Rect> {
+    if area.width == 0 || area.height == 0 {
         return None;
     }
-    let chip_width = u16::try_from(format!(" {right_debug} ").chars().count()).unwrap_or(u16::MAX);
-    let x = area.x.saturating_add(area.width.saturating_sub(chip_width));
+    let chunk = chunk?;
+    let x_offset = chunk.start.saturating_sub(1);
+    let width = chunk.end.saturating_sub(chunk.start);
     Some(Rect {
-        x,
+        x: area.x.saturating_add(x_offset),
         y: area.y,
-        width: chip_width.min(area.width),
+        width: width.min(area.width),
         height: area.height,
     })
 }

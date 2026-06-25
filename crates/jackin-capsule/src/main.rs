@@ -55,6 +55,9 @@ SUBCOMMANDS:
     status                         Print daemon status to stdout
     snapshot                       Write a screen snapshot to stdout
     attach-proxy                   Relay attach protocol bytes over stdio
+    usage accounts                 Print cached account quota rows as JSON
+    usage verify                   Verify all provider quota rows are cached and trusted
+    usage claude-cli               Explicitly run Claude Code /usage diagnostic
     --focus <session_id>           Connect and focus the given session
     runtime-setup                  First-boot environment setup (run by entrypoint)
     prepare-commit-msg <file>      Git hook integration
@@ -72,6 +75,7 @@ connecting as a client.",
             Some("status") => client::run_status().await,
             Some("snapshot") => client::run_snapshot().await,
             Some("attach-proxy") => client::run_attach_proxy().await,
+            Some("usage") => run_usage_subcommand(&args).await,
             Some("agents") => {
                 let json_format = args.iter().any(|a| a == "--format=json")
                     || args
@@ -128,10 +132,22 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, attach-proxy, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, attach-proxy, usage accounts, usage verify, usage claude-cli, agents [--format json], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
+    }
+}
+
+async fn run_usage_subcommand(args: &[String]) -> Result<()> {
+    match args.get(2).map(String::as_str) {
+        Some("accounts") => client::run_usage_accounts().await,
+        Some("verify") => client::run_usage_verify().await,
+        Some("claude-cli") => client::run_usage_claude_cli().await,
+        Some(other) => {
+            bail!("unknown usage subcommand {other:?} — known: accounts, verify, claude-cli")
+        }
+        None => bail!("usage requires a subcommand: accounts, verify, or claude-cli"),
     }
 }
 
@@ -166,7 +182,7 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
         // --focus. Scan past the end of args so a stray --focus is
         // ignored instead of silently consumed.
         Some(
-            "status" | "snapshot" | "attach-proxy" | "agents" | "runtime-setup"
+            "status" | "snapshot" | "attach-proxy" | "usage" | "agents" | "runtime-setup"
             | "prepare-commit-msg" | "--version" | "-V" | "--help" | "-h",
         ) => args.len(),
         // `jackin-capsule --focus 5` (no subcommand) or no args at
@@ -225,4 +241,118 @@ fn resolve_initial_agent(args: &[String], supported_agents: &[String]) -> Result
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+
+    fn args(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn parse_focus_flag_no_subcommand_finds_global_flag() {
+        // Bare client mode: `jackin-capsule --focus 5` must resolve to
+        // session 5 — the original use case the flag was added for.
+        assert_eq!(
+            parse_focus_flag(&args(&["jackin-capsule", "--focus", "5"])),
+            Some(5)
+        );
+        assert_eq!(
+            parse_focus_flag(&args(&["jackin-capsule", "--focus=7"])),
+            Some(7)
+        );
+    }
+
+    #[test]
+    fn parse_focus_flag_new_with_agent_finds_trailing_focus() {
+        // `new <agent> --focus N` is a legitimate combination — spawn
+        // the agent AND switch focus to N once the daemon answers.
+        assert_eq!(
+            parse_focus_flag(&args(&["jackin-capsule", "new", "claude", "--focus", "9"])),
+            Some(9)
+        );
+    }
+
+    #[test]
+    fn parse_focus_flag_new_without_agent_ignores_focus() {
+        // `new --focus 5` is the typo this regression guards against.
+        // Without scoping, --focus at index 2 (where the agent slug
+        // would belong) would silently route the operator to session 5
+        // AND spawn a default Shell because validate_agent_slug rejects
+        // "--focus" as an agent. After the scope fix, --focus at index
+        // 2 is treated as a malformed agent argument; focus stays None.
+        assert_eq!(
+            parse_focus_flag(&args(&["jackin-capsule", "new", "--focus", "5"])),
+            None
+        );
+        assert_eq!(
+            parse_focus_flag(&args(&["jackin-capsule", "new", "--focus=5"])),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_focus_flag_other_subcommands_ignore_focus_positional() {
+        // status/snapshot/runtime-setup take no arguments at all; any
+        // --focus after them is residual.
+        assert_eq!(
+            parse_focus_flag(&args(&["jackin-capsule", "status", "--focus", "5"])),
+            None
+        );
+        assert_eq!(
+            parse_focus_flag(&args(&[
+                "jackin-capsule",
+                "usage",
+                "session",
+                "5",
+                "--focus",
+                "7",
+            ])),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_provider_flag_extracts_label_after_agent() {
+        assert_eq!(
+            parse_provider_flag(&args(&[
+                "jackin-capsule",
+                "new",
+                "claude",
+                "--provider=Z.AI"
+            ])),
+            Some("Z.AI".to_owned())
+        );
+    }
+
+    #[test]
+    fn parse_provider_flag_absent_or_no_agent_is_none() {
+        assert_eq!(
+            parse_provider_flag(&args(&["jackin-capsule", "new", "claude"])),
+            None
+        );
+        // No agent positional → nothing at index 3+ to scan.
+        assert_eq!(parse_provider_flag(&args(&["jackin-capsule", "new"])), None);
+    }
+
+    #[test]
+    fn parse_provider_flag_empty_value_is_empty_label() {
+        // The daemon treats an empty label as an unknown provider (no redirect).
+        assert_eq!(
+            parse_provider_flag(&args(&["jackin-capsule", "new", "claude", "--provider="])),
+            Some(String::new())
+        );
+    }
+
+    #[test]
+    fn hook_invocation_detects_symlink_name() {
+        assert!(invoked_as_prepare_commit_msg_hook(&args(&[
+            "/jackin/state/git-hooks/prepare-commit-msg",
+            ".git/COMMIT_EDITMSG",
+        ])));
+        assert!(!invoked_as_prepare_commit_msg_hook(&args(&[
+            "/jackin/runtime/jackin-capsule",
+            "prepare-commit-msg",
+            ".git/COMMIT_EDITMSG",
+        ])));
+    }
+}

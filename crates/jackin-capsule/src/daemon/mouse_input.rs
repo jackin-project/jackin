@@ -5,7 +5,7 @@ use jackin_tui::components::HoverTracker;
 use ratatui::layout::Rect;
 
 use crate::tui::components::branch_context_bar::{
-    BranchContextBarHit, ColRange, branch_context_bar_layout,
+    BranchContextBarHit, ColRange, branch_context_bar_layout, debug_run_id_label,
 };
 use crate::tui::render::RowSnapshot;
 use crate::tui::terminal::osc22_pointer_shape;
@@ -66,7 +66,10 @@ impl Multiplexer {
         // stays DialogCopyTarget. Track the per-row hover separately.
         let (term_rows, term_cols) = (self.term_rows, self.term_cols);
         let row_hover_changed = self.dialog_top_mut().is_some_and(|dialog| {
-            dialog.set_container_info_hover(row + 1, col + 1, term_rows, term_cols)
+            let row = row + 1;
+            let col = col + 1;
+            dialog.set_container_info_hover(row, col, term_rows, term_cols)
+                || dialog.set_usage_tab_hover(row, col, term_rows, term_cols)
         });
         if self.hover_target == next && self.link_hover_url == next_link && !row_hover_changed {
             return;
@@ -119,6 +122,7 @@ impl Multiplexer {
             menu_hit: target == Some(HoverTarget::Menu),
             branch_hit: target.and_then(|target| match target {
                 HoverTarget::BranchContext => Some(BranchContextBarHit::Context),
+                HoverTarget::UsageStatus => Some(BranchContextBarHit::UsageStatus),
                 HoverTarget::Container => Some(BranchContextBarHit::Container),
                 HoverTarget::DebugChip => Some(BranchContextBarHit::DebugChip),
                 _ => None,
@@ -138,8 +142,10 @@ impl Multiplexer {
             self.term_rows,
             self.term_cols,
             self.context_bar_branch(),
+            self.focused_usage_status_label().as_deref(),
             self.pull_request_context.as_deref(),
             self.pull_request_context_loading(),
+            debug_run_id_label().as_deref(),
             self.status_bar.instance_id_label(),
         ) else {
             return;
@@ -151,6 +157,7 @@ impl Multiplexer {
             layout.left_region,
             HoverTarget::BranchContext,
         );
+        register_col_range_1based(tracker, row0, layout.usage_region, HoverTarget::UsageStatus);
         register_col_range_1based(
             tracker,
             row0,

@@ -1688,6 +1688,7 @@ mod tests {
                 colorterm: None,
                 default_fg: None,
                 default_bg: None,
+                ..ClientTerminal::default()
             },
             export_subdir: "jk-agent-smith".to_owned(),
             diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
@@ -1740,6 +1741,7 @@ mod tests {
                     colorterm: None,
                     default_fg: None,
                     default_bg: None,
+                    ..ClientTerminal::default()
                 },
             }
         );

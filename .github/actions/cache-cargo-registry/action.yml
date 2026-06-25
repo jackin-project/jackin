@@ -1,0 +1,62 @@
+name: Cache Cargo registry
+description: Restore the shared Cargo registry/index/git DB cache.
+
+outputs:
+  cache-hit:
+    description: Whether the exact Cargo registry cache key was restored.
+    value: ${{ steps.restore.outputs.cache-hit }}
+  cache-primary-key:
+    description: Primary Cargo registry cache key.
+    value: ${{ steps.restore.outputs.cache-primary-key }}
+
+runs:
+  using: composite
+  steps:
+    - name: Restore Cargo registry
+      id: restore
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git/db
+        key: cargo-registry-v5-${{ hashFiles('Cargo.lock', 'crates/**/fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+        restore-keys: |
+          cargo-registry-v5-
+          cargo-registry-v4-
+    - name: Fetch Cargo registry
+      if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        CARGO_NET_OFFLINE: "false"
+        CARGO_NET_RETRY: "10"
+        RUSTC_WRAPPER: ""
+      run: |
+        set -euo pipefail
+        attempt=1
+        until cargo fetch --locked; do
+          if [ "$attempt" -ge 3 ]; then
+            exit 1
+          fi
+          sleep "$((attempt * 10))"
+          attempt="$((attempt + 1))"
+        done
+
+        while IFS= read -r manifest; do
+          attempt=1
+          until cargo fetch --manifest-path "$manifest" --locked; do
+            if [ "$attempt" -ge 3 ]; then
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+            attempt="$((attempt + 1))"
+          done
+        done < <(find crates -path '*/fuzz/Cargo.toml' -type f | sort)
+    - name: Save Cargo registry
+      if: steps.restore.outputs.cache-hit != 'true'
+      continue-on-error: true
+      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git/db
+        key: ${{ steps.restore.outputs.cache-primary-key }}

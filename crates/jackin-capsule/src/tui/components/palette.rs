@@ -88,6 +88,7 @@ pub enum PaletteCommand {
     /// through `ConfirmAction` before the destructive call fires.
     Close,
     ClearPane,
+    Usage,
     Exit,
 }
 
@@ -146,6 +147,7 @@ pub(crate) const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
         "Open link under cursor",
     ),
     (PaletteCommand::ClearPane, "Clear pane"),
+    (PaletteCommand::Usage, "Usage"),
     (PaletteCommand::Close, "Close"),
     (PaletteCommand::Exit, "Exit"),
 ];

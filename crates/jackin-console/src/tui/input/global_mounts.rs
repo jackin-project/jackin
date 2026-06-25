@@ -413,6 +413,7 @@ fn handle_env_key(state: &mut ManagerState<'_>, key: KeyEvent) {
 }
 
 mod auth;
+pub(crate) use auth::apply_source_folder_to_settings_auth_form;
 use auth::handle_auth_key;
 pub use auth::handle_settings_auth_modal;
 pub use auth::settings_auth_can_generate_token;

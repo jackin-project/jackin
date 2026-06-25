@@ -23,8 +23,14 @@ fn chrome_frame(
     let tabs = [Tab::new_single("Codex", 1, "codex")];
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan =
-        crate::tui::components::status_bar::status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle);
+    let status_plan = crate::tui::components::status_bar::status_bar_plan(
+        80,
+        &tabs,
+        0,
+        &[],
+        PrefixMode::Idle,
+        None,
+    );
     terminal
         .draw(|frame| {
             render_capsule_ratatui_frame(
@@ -48,6 +54,7 @@ fn chrome_frame(
                     selection_copied: false,
                     scrollbars: &[],
                     branch: Some("main"),
+                    usage_status_label: None,
                     pull_request: None,
                     pull_request_loading: false,
                     instance_id_label: "jk-test",
@@ -57,6 +64,7 @@ fn chrome_frame(
                     debug_run_id,
                     dialog_hint_spans: None,
                     spawn_failure,
+                    palette_key: 0x1C,
                     clipboard_image_notice,
                     link_hover_notice,
                 },
@@ -159,6 +167,91 @@ fn clipboard_image_notice_keeps_status_and_bottom_chrome_rows_free() {
 }
 
 #[test]
+fn non_debug_dialog_hides_bottom_status_bar() {
+    let tabs = [Tab::new_single("Codex", 1, "codex")];
+    let state = jackin_tui::components::DebugInfo {
+        jackin_version: Some("0.6.0-dev".to_owned()),
+        capsule_version: Some("0.6.0-dev".to_owned()),
+        container_id: Some("jk-test-thearchitect".to_owned()),
+        role: Some("the-architect".to_owned()),
+        agent: Some("Codex".to_owned()),
+        target: None,
+        run_id: None,
+        diagnostics_log_path: None,
+    }
+    .into_state();
+    let snapshot = (DialogRatatuiSnapshot::DebugInfo(state), (3, 8, 10, 64));
+    let hints = [
+        jackin_tui::HintSpan::Key("Esc"),
+        jackin_tui::HintSpan::Text("dismiss"),
+    ];
+    let backend = TestBackend::new(120, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let status_plan = crate::tui::components::status_bar::status_bar_plan(
+        120,
+        &tabs,
+        0,
+        &[],
+        PrefixMode::Idle,
+        None,
+    );
+
+    terminal
+        .draw(|frame| {
+            render_capsule_ratatui_frame(
+                frame,
+                CapsuleRatatuiFrame {
+                    tabs: &tabs,
+                    status_plan: &status_plan,
+                    term_cols: 120,
+                    term_rows: 24,
+                    panes: &[],
+                    pane_titles: &[],
+                    focus_owner: jackin_tui::components::FocusOwner::Content(1),
+                    zoomed: false,
+                    dialog_open: true,
+                    dialog_snapshot: Some(&snapshot),
+                    pane_screens: &[],
+                    prefix_mode: PrefixMode::Idle,
+                    hovered_tab: None,
+                    menu_hovered: false,
+                    selection: None,
+                    selection_copied: false,
+                    scrollbars: &[],
+                    branch: Some("feature/status"),
+                    usage_status_label: Some("Session 99%"),
+                    pull_request: None,
+                    pull_request_loading: false,
+                    instance_id_label: "jk-test",
+                    hover_target: None,
+                    scrollback_active: false,
+                    main_scroll_axes: jackin_tui::components::ScrollAxes::default(),
+                    debug_run_id: None,
+                    dialog_hint_spans: Some(&hints),
+                    spawn_failure: None,
+                    palette_key: 0x1C,
+                    clipboard_image_notice: None,
+                    link_hover_notice: None,
+                },
+            );
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let row0: String = (0..30).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
+    assert!(row0.contains("jackin'"), "status brand missing: {row0:?}");
+    let hint = row_text(buf, 21);
+    assert!(hint.contains("dismiss"), "dialog hint missing: {hint:?}");
+    let footer = row_text(buf, 23);
+    assert!(
+        !footer.contains("Session 99%")
+            && !footer.contains("jk-test")
+            && !footer.contains("feature/status"),
+        "non-debug dialog must not render the bottom status bar: {footer:?}"
+    );
+}
+
+#[test]
 fn link_hover_notice_keeps_status_and_bottom_chrome_rows_free() {
     let buf = chrome_frame(
         None,
@@ -217,8 +310,14 @@ fn clipboard_image_notice_takes_priority_over_selection_copy_toast() {
     let tabs = [Tab::new_single("Codex", 1, "codex")];
     let backend = TestBackend::new(90, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan =
-        crate::tui::components::status_bar::status_bar_plan(90, &tabs, 0, &[], PrefixMode::Idle);
+    let status_plan = crate::tui::components::status_bar::status_bar_plan(
+        90,
+        &tabs,
+        0,
+        &[],
+        PrefixMode::Idle,
+        None,
+    );
 
     terminal
         .draw(|frame| {
@@ -243,6 +342,7 @@ fn clipboard_image_notice_takes_priority_over_selection_copy_toast() {
                     selection_copied: true,
                     scrollbars: &[],
                     branch: None,
+                    usage_status_label: None,
                     pull_request: None,
                     pull_request_loading: false,
                     instance_id_label: "jk-test",
@@ -252,6 +352,7 @@ fn clipboard_image_notice_takes_priority_over_selection_copy_toast() {
                     debug_run_id: None,
                     dialog_hint_spans: None,
                     spawn_failure: None,
+                    palette_key: 0x1C,
                     clipboard_image_notice: Some("Image staged: /jackin/run/clipboard/test.png"),
                     link_hover_notice: None,
                 },
@@ -292,8 +393,14 @@ fn debug_dialog_keeps_status_bar_visible() {
     let snapshot = (DialogRatatuiSnapshot::DebugInfo(state), (3, 8, 10, 64));
     let backend = TestBackend::new(90, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan =
-        crate::tui::components::status_bar::status_bar_plan(90, &tabs, 0, &[], PrefixMode::Idle);
+    let status_plan = crate::tui::components::status_bar::status_bar_plan(
+        90,
+        &tabs,
+        0,
+        &[],
+        PrefixMode::Idle,
+        None,
+    );
 
     terminal
         .draw(|frame| {
@@ -327,6 +434,8 @@ fn debug_dialog_keeps_status_bar_visible() {
                     debug_run_id: None,
                     dialog_hint_spans: None,
                     spawn_failure: None,
+                    palette_key: 0x1C,
+                    usage_status_label: None,
                     clipboard_image_notice: None,
                     link_hover_notice: None,
                 },
@@ -355,8 +464,14 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
     let tabs = [Tab::new_single("Codex", 1, "codex")];
     let backend = TestBackend::new(90, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan =
-        crate::tui::components::status_bar::status_bar_plan(90, &tabs, 0, &[], PrefixMode::Idle);
+    let status_plan = crate::tui::components::status_bar::status_bar_plan(
+        90,
+        &tabs,
+        0,
+        &[],
+        PrefixMode::Idle,
+        None,
+    );
 
     terminal
         .draw(|frame| {
@@ -390,6 +505,8 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
                     debug_run_id: None,
                     dialog_hint_spans: None,
                     spawn_failure: None,
+                    palette_key: 0x1C,
+                    usage_status_label: None,
                     clipboard_image_notice: None,
                     link_hover_notice: None,
                 },

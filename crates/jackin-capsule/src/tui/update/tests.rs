@@ -369,6 +369,9 @@ fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
         DialogAction::RevealHostPath(
             "/Users/operator/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl".into(),
         ),
+        DialogAction::SwitchUsageProvider {
+            provider_label: "Claude".into(),
+        },
         DialogAction::Dismiss,
         DialogAction::Redraw,
         DialogAction::Consume,

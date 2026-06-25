@@ -163,6 +163,13 @@ fn chrome_hover_priority_matches_visible_layers() {
     );
     assert_eq!(
         chrome_hover_target_for_state(ChromeHitState {
+            branch_hit: Some(BranchContextBarHit::UsageStatus),
+            ..base
+        }),
+        Some(HoverTarget::UsageStatus)
+    );
+    assert_eq!(
+        chrome_hover_target_for_state(ChromeHitState {
             branch_hit: Some(BranchContextBarHit::Container),
             ..base
         }),

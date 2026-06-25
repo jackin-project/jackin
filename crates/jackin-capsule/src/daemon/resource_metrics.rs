@@ -1,5 +1,7 @@
 use std::{fs, time::Instant};
 
+use tokio::task::JoinHandle;
+
 use super::Multiplexer;
 
 const LINUX_USER_HZ: f64 = 100.0;
@@ -14,6 +16,7 @@ struct ResourceSample {
 #[derive(Debug, Default)]
 pub(super) struct ResourceMetricsSampler {
     previous: Option<ResourceSample>,
+    pending: Option<JoinHandle<Option<ResourceSample>>>,
 }
 
 impl ResourceMetricsSampler {
@@ -27,8 +30,29 @@ impl ResourceMetricsSampler {
         })
     }
 
-    fn record(&mut self) -> Option<(ResourceSample, Option<f64>)> {
-        let sample = Self::sample()?;
+    fn start(&mut self) {
+        if self.pending.is_some() {
+            return;
+        }
+        self.pending = Some(tokio::task::spawn_blocking(Self::sample));
+    }
+
+    async fn poll(&mut self) -> Option<anyhow::Result<Option<(ResourceSample, Option<f64>)>>> {
+        let task = self.pending.as_ref()?;
+        if !task.is_finished() {
+            return None;
+        }
+        let task = self.pending.take()?;
+        let sample = match task
+            .await
+            .map_err(|error| anyhow::anyhow!("resource metrics worker panicked: {error}"))
+        {
+            Ok(sample) => sample,
+            Err(error) => return Some(Err(error)),
+        };
+        let Some(sample) = sample else {
+            return Some(Ok(None));
+        };
         let cpu_percent = self.previous.and_then(|previous| {
             let elapsed = sample.at.duration_since(previous.at).as_secs_f64();
             if elapsed <= f64::EPSILON {
@@ -38,12 +62,12 @@ impl ResourceMetricsSampler {
             Some((delta as f64 / clock_ticks_per_second()) / elapsed * 100.0)
         });
         self.previous = Some(sample);
-        Some((sample, cpu_percent))
+        Some(Ok(Some((sample, cpu_percent))))
     }
 }
 
 impl Multiplexer {
-    pub(super) fn log_resource_metrics(&mut self) {
+    pub(super) async fn log_resource_metrics(&mut self) {
         if !crate::logging::debug_enabled() {
             return;
         }
@@ -51,28 +75,42 @@ impl Multiplexer {
         let tab_count = self.tabs.len();
         let visible_panes = self.visible_pane_count();
         let pending_render = self.has_pending_render();
-        let Some((sample, cpu_percent)) = self.resource_metrics.record() else {
-            crate::cdebug!(
-                "resource: sample unavailable sessions={} tabs={} panes={} pending_render={}",
-                session_count,
-                tab_count,
-                visible_panes,
-                pending_render
-            );
-            return;
-        };
-        let cpu_percent =
-            cpu_percent.map_or_else(|| "n/a".to_owned(), |value| format!("{value:.2}"));
-        crate::cdebug!(
-            "resource: sessions={} tabs={} panes={} pending_render={} rss_kib={} cpu_jiffies={} cpu_percent_estimate={}",
-            session_count,
-            tab_count,
-            visible_panes,
-            pending_render,
-            sample.rss_kib,
-            sample.cpu_jiffies,
-            cpu_percent
-        );
+        match self.resource_metrics.poll().await {
+            Some(Ok(Some((sample, cpu_percent)))) => {
+                let cpu_percent =
+                    cpu_percent.map_or_else(|| "n/a".to_owned(), |value| format!("{value:.2}"));
+                crate::cdebug!(
+                    "resource: sessions={} tabs={} panes={} pending_render={} rss_kib={} cpu_jiffies={} cpu_percent_estimate={}",
+                    session_count,
+                    tab_count,
+                    visible_panes,
+                    pending_render,
+                    sample.rss_kib,
+                    sample.cpu_jiffies,
+                    cpu_percent
+                );
+            }
+            Some(Ok(None)) => {
+                crate::cdebug!(
+                    "resource: sample unavailable sessions={} tabs={} panes={} pending_render={}",
+                    session_count,
+                    tab_count,
+                    visible_panes,
+                    pending_render
+                );
+            }
+            Some(Err(error)) => {
+                crate::cdebug!(
+                    "resource: sample failed sessions={} tabs={} panes={} pending_render={} error={error:#}",
+                    session_count,
+                    tab_count,
+                    visible_panes,
+                    pending_render
+                );
+            }
+            None => {}
+        }
+        self.resource_metrics.start();
     }
 }
 

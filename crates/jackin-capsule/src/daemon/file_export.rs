@@ -348,6 +348,8 @@ mod tests {
                 models: BTreeMap::new(),
                 provider_models: BTreeMap::new(),
                 initial_provider: None,
+                claude_marketplaces: Vec::new(),
+                claude_plugins: Vec::new(),
             },
         )
         .expect("test multiplexer");

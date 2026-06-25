@@ -375,5 +375,9 @@ fn branch_context_bar_click_action_routes_context_and_container() {
         branch_context_bar_click_action(Some(BranchContextBarHit::Container)),
         Some(Action::OpenContainerInfo)
     );
+    assert_eq!(
+        branch_context_bar_click_action(Some(BranchContextBarHit::UsageStatus)),
+        Some(Action::OpenUsage)
+    );
     assert_eq!(branch_context_bar_click_action(None), None);
 }

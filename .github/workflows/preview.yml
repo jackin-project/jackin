@@ -1,13 +1,18 @@
 name: Publish Homebrew Preview
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
+  push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      lanes:
+        description: "Which runner(s) to run on. Default github; use both for parity runs."
+        type: choice
+        options: [github, velnor, both]
+        default: github
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -15,15 +20,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  matrix-setup:
+    name: Select runner lane
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      configs: ${{ steps.config.outputs.configs }}
+      has_github: ${{ steps.config.outputs.has_github }}
+    steps:
+      - name: Build runner config
+        id: config
+        env:
+          LANES: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || 'github' }}
+        run: |
+          set -euo pipefail
+          github='{"lane":"GitHub","runner":"\"ubuntu-24.04\"","runner_os":"Linux","runner_arch":"X64"}'
+          velnor='{"lane":"Velnor","runner":"[\"self-hosted\",\"velnor-target-mvp\"]","runner_os":"Linux","runner_arch":"X64"}'
+
+          case "$LANES" in
+            github)
+              configs=$(jq -cn --argjson github "$github" '[$github]')
+              has_github=true
+              ;;
+            velnor)
+              configs=$(jq -cn --argjson velnor "$velnor" '[$velnor]')
+              has_github=false
+              ;;
+            both)
+              configs=$(jq -cn --argjson github "$github" --argjson velnor "$velnor" '[$github, $velnor]')
+              has_github=true
+              ;;
+            *)
+              echo "::error::Unsupported lanes value: $LANES"
+              exit 1
+              ;;
+          esac
+
+          echo "configs=$configs" >> "$GITHUB_OUTPUT"
+          echo "has_github=$has_github" >> "$GITHUB_OUTPUT"
+
   source-changed:
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_repository.full_name == github.repository &&
-       github.event.workflow_run.head_branch == 'main')
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     outputs:
       source: ${{ steps.filter.outputs.source }}
       sha: ${{ steps.source.outputs.sha }}
@@ -37,14 +78,21 @@ jobs:
           # template substitution — keeps the script style identical to
           # the rest of this workflow's run blocks.
           DISPATCH_SHA: ${{ github.sha }}
-          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          PUSH_SHA: ${{ github.sha }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "sha=${DISPATCH_SHA}" >> "$GITHUB_OUTPUT"
-          else
-            echo "sha=${WORKFLOW_RUN_SHA}" >> "$GITHUB_OUTPUT"
-          fi
+          case "$EVENT_NAME" in
+            workflow_dispatch)
+              echo "sha=${DISPATCH_SHA}" >> "$GITHUB_OUTPUT"
+              ;;
+            push)
+              echo "sha=${PUSH_SHA}" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Unsupported event: ${EVENT_NAME}"
+              exit 1
+              ;;
+          esac
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -110,6 +158,36 @@ jobs:
             exit 0
           fi
 
+          extract_release_mise() {
+            awk '
+              function keep(name) {
+                return name == "zig" ||
+                  name == "cosign" ||
+                  name == "syft" ||
+                  name == "cargo-zigbuild" ||
+                  name == "sccache"
+              }
+              /^\[tools\]$/ { section = "tools"; next }
+              /^\[tool_alias\]$/ { section = "tool_alias"; next }
+              /^\[tools\./ {
+                section = $0
+                sub(/^\[tools\./, "", section)
+                sub(/\]$/, "", section)
+                next
+              }
+              /^\[/ { section = ""; next }
+              /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+              {
+                key = $1
+                sub(/[[:space:]]*=.*/, "", key)
+                gsub(/"/, "", key)
+                if (section == "tools" && keep(key)) print section "." key "=" $0
+                else if (section == "tool_alias" && keep(key)) print section "." key "=" $0
+                else if (keep(section)) print "tools." section "." $0
+              }
+            ' "$1"
+          }
+
           source=false
           while IFS= read -r path; do
             # Skip the trailing-newline empty iteration.
@@ -124,6 +202,20 @@ jobs:
             case "$path" in
               .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/**|docker/runtime/**|crates/**)
                 source=true
+                ;;
+              mise.toml)
+                if ! git cat-file -e "${old_sha}:mise.toml" 2>/dev/null; then
+                  source=true
+                  continue
+                fi
+
+                git show "${old_sha}:mise.toml" > "$RUNNER_TEMP/mise-preview-base.toml"
+                extract_release_mise "$RUNNER_TEMP/mise-preview-base.toml" > "$RUNNER_TEMP/mise-preview-base-release.txt"
+                extract_release_mise mise.toml > "$RUNNER_TEMP/mise-preview-head-release.txt"
+
+                if ! cmp -s "$RUNNER_TEMP/mise-preview-base-release.txt" "$RUNNER_TEMP/mise-preview-head-release.txt"; then
+                  source=true
+                fi
                 ;;
             esac
           done <<< "$diff_files"
@@ -166,9 +258,11 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   build-preview:
-    needs: source-changed
+    name: build preview jackin (${{ matrix.config.lane }}, ${{ matrix.target.target }})
+    needs: [matrix-setup, source-changed]
     if: needs.source-changed.outputs.source == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     permissions:
       contents: read
       id-token: write
@@ -176,17 +270,17 @@ jobs:
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
     strategy:
       matrix:
-        include:
-          # macOS targets cross-compiled from Linux via cargo-zigbuild +
-          # real macOS SDK. Zig respects SDKROOT for framework lookups;
-          # SDK sourced from joseluisq/macosx-sdks, cached between runs.
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        target:
           - target: aarch64-apple-darwin
             zigbuild_target: aarch64-apple-darwin
           - target: x86_64-apple-darwin
             zigbuild_target: x86_64-apple-darwin
-          # Linux targets: glibc 2.17 minimum for broad host compatibility.
           - target: aarch64-unknown-linux-gnu
             zigbuild_target: aarch64-unknown-linux-gnu.2.17
           - target: x86_64-unknown-linux-gnu
@@ -204,81 +298,68 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache mise cargo tools
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-${{ hashFiles('mise.toml') }}
-          restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        env:
+          # sccache install: blank wrapper in case binstall source-falls-back
+          # to cargo, which would probe rustc through a missing sccache.
+          RUSTC_WRAPPER: ""
         with:
-          install_args: "rust zig cargo:cargo-zigbuild cosign syft"
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}-${{ matrix.target }}
+          shared-key: release-archive-jackin-${{ matrix.target.target }}-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
-      - run: rustup target add ${{ matrix.target }}
+      - run: rustup target add ${{ matrix.target.target }}
       - name: Cache macOS SDK
-        if: contains(matrix.target, 'apple')
+        if: contains(matrix.target.target, 'apple')
         id: sdk-cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: /tmp/macos-sdk
           key: macos-sdk-26.1
       - name: Download macOS SDK
-        if: contains(matrix.target, 'apple') && steps.sdk-cache.outputs.cache-hit != 'true'
+        if: contains(matrix.target.target, 'apple') && steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p /tmp/macos-sdk
           curl -fsSL "https://github.com/joseluisq/macosx-sdks/releases/download/26.1/MacOSX26.1.sdk.tar.xz" \
             | tar -xJ -C /tmp/macos-sdk
       - name: Set macOS SDKROOT
-        if: contains(matrix.target, 'apple')
+        if: contains(matrix.target.target, 'apple')
         run: |
           echo "SDKROOT=/tmp/macos-sdk/MacOSX26.1.sdk" >> "$GITHUB_ENV"
           # Pin deployment target so the binary runs on macOS 12+ even
           # though we build with the latest SDK.
           echo "MACOSX_DEPLOYMENT_TARGET=12.0" >> "$GITHUB_ENV"
-      - name: Build
-        env:
-          ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
-          JACKIN_VERSION_OVERRIDE: ${{ needs.source-changed.outputs.version }}
-        run: cargo zigbuild --release --locked --target "$ZIGBUILD_TARGET"
-      - name: Package
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          archive="jackin-${TARGET}.tar.gz"
-          tar -czf "$archive" \
-            -C "target/${TARGET}/release" \
-            jackin jackin-role
-          sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
-          echo "archive=$archive" >> "$GITHUB_ENV"
-
-      - name: Sign, SBOM, and attest archive
-        uses: ./.github/actions/sign-and-attest-archive
+      - name: Build signed archive
+        uses: ./.github/actions/build-release-archive
         with:
-          archive: ${{ env.archive }}
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: jackin-${{ matrix.target }}
-          path: |
-            jackin-${{ matrix.target }}.tar.gz
-            jackin-${{ matrix.target }}.tar.gz.sha256
-            jackin-${{ matrix.target }}.tar.gz.bundle
-            jackin-${{ matrix.target }}.tar.gz.sbom.json
-
+          package: jackin
+          target: ${{ matrix.target.target }}
+          zigbuild-target: ${{ matrix.target.zigbuild_target }}
+          version: ${{ needs.source-changed.outputs.version }}
+          archive-basename: jackin-${{ matrix.target.target }}
+          artifact-name: preview-${{ matrix.config.lane }}-jackin-${{ matrix.target.target }}
+          timings-artifact-name: cargo-timings-preview-jackin-${{ matrix.target.target }}-${{ matrix.config.lane }}
+          sccache-stats-artifact-name: sccache-stats-preview-jackin-${{ matrix.target.target }}-${{ matrix.config.lane }}
+          sccache-stats-heading: sccache preview jackin ${{ matrix.target.target }} (${{ matrix.config.lane }})
 
   build-jackin-capsule:
-    needs: source-changed
+    name: build preview capsule (${{ matrix.config.lane }}, ${{ matrix.target.target }})
+    needs: [matrix-setup, source-changed]
     if: needs.source-changed.outputs.source == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
     permissions:
       contents: read
       id-token: write
@@ -286,9 +367,13 @@ jobs:
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
     strategy:
       matrix:
-        include:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+        target:
           - target: aarch64-unknown-linux-gnu
             zigbuild_target: aarch64-unknown-linux-gnu.2.17
             arch: arm64
@@ -308,62 +393,109 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache mise cargo tools
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-${{ hashFiles('mise.toml') }}
-          restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-zigbuild-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        env:
+          # sccache install: blank wrapper in case binstall source-falls-back
+          # to cargo, which would probe rustc through a missing sccache.
+          RUSTC_WRAPPER: ""
         with:
-          install_args: "rust zig cargo:cargo-zigbuild cosign syft"
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}-${{ matrix.target }}
+          shared-key: release-archive-capsule-${{ matrix.target.target }}-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
-      - run: rustup target add ${{ matrix.target }}
-      - name: Build
+      - run: rustup target add ${{ matrix.target.target }}
+      - name: Build signed capsule archive
+        uses: ./.github/actions/build-release-archive
+        with:
+          package: jackin-capsule
+          target: ${{ matrix.target.target }}
+          zigbuild-target: ${{ matrix.target.zigbuild_target }}
+          version: ${{ needs.source-changed.outputs.version }}
+          archive-basename: jackin-capsule-${{ matrix.target.target }}
+          artifact-name: preview-${{ matrix.config.lane }}-jackin-capsule-${{ matrix.target.target }}
+          timings-artifact-name: cargo-timings-preview-capsule-${{ matrix.target.target }}-${{ matrix.config.lane }}
+          sccache-stats-artifact-name: sccache-stats-preview-capsule-${{ matrix.target.target }}-${{ matrix.config.lane }}
+          sccache-stats-heading: sccache preview capsule ${{ matrix.target.target }} (${{ matrix.config.lane }})
+
+  publish-gate:
+    needs: [matrix-setup, source-changed, build-preview, build-jackin-capsule]
+    if: needs.source-changed.outputs.source == 'true' && needs.matrix-setup.outputs.has_github == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      ci_ok: ${{ steps.ci.outputs.ok }}
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Wait for matching CI
+        id: ci
         env:
-          ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
-          JACKIN_VERSION_OVERRIDE: ${{ needs.source-changed.outputs.version }}
-        run: cargo zigbuild --release --locked -p jackin-capsule --target "$ZIGBUILD_TARGET"
-      - name: Publish binary as release asset
-        env:
-          ARCH: ${{ matrix.arch }}
-          TARGET: ${{ matrix.target }}
+          EVENT_NAME: ${{ github.event_name }}
+          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          archive="jackin-capsule-${TARGET}.tar.gz"
-          tar -czf "$archive" \
-            -C "target/${TARGET}/release" \
-            jackin-capsule
-          sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
-          echo "archive=$archive" >> "$GITHUB_ENV"
 
-      - name: Sign, SBOM, and attest archive
-        uses: ./.github/actions/sign-and-attest-archive
-        with:
-          archive: ${{ env.archive }}
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: jackin-capsule-${{ matrix.target }}
-          path: |
-            jackin-capsule-${{ matrix.target }}.tar.gz
-            jackin-capsule-${{ matrix.target }}.tar.gz.sha256
-            jackin-capsule-${{ matrix.target }}.tar.gz.bundle
-            jackin-capsule-${{ matrix.target }}.tar.gz.sbom.json
+          deadline=$((SECONDS + 2400))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            run=$(
+              curl -fsSL \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${FULL_SHA}&branch=main&event=push&per_page=10" |
+                jq -c '[.workflow_runs[] | select(.head_sha == "'"$FULL_SHA"'")] | sort_by(.run_started_at) | reverse | .[0] // empty'
+            )
+
+            if [ -z "$run" ]; then
+              echo "Waiting for CI run for ${FULL_SHA}"
+              sleep 30
+              continue
+            fi
+
+            status=$(jq -r '.status' <<< "$run")
+            conclusion=$(jq -r '.conclusion // ""' <<< "$run")
+            url=$(jq -r '.html_url' <<< "$run")
+            echo "CI status for ${FULL_SHA}: ${status} ${conclusion} (${url})"
+
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then
+                echo "ok=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "ok=false" >> "$GITHUB_OUTPUT"
+              fi
+              exit 0
+            fi
+
+            sleep 30
+          done
+
+          echo "::error::Timed out waiting for CI run for ${FULL_SHA}"
+          exit 1
 
   publish-preview:
-    needs: [source-changed, build-preview, build-jackin-capsule]
-    if: needs.source-changed.outputs.source == 'true'
+    needs: [source-changed, build-preview, build-jackin-capsule, publish-gate]
+    if: needs.source-changed.outputs.source == 'true' && needs.publish-gate.outputs.ci_ok == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     concurrency:
       group: homebrew-tap-publish
       cancel-in-progress: false
@@ -379,10 +511,10 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
+          pattern: preview-GitHub-*
           merge-multiple: true
 
       - name: Verify source SHA is on main
-        if: github.event_name == 'workflow_run'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           FULL_SHA: ${{ needs.source-changed.outputs.sha }}
@@ -426,7 +558,7 @@ jobs:
           version: ${{ needs.source-changed.outputs.version }}
           arm64-sha: ${{ steps.shas.outputs.capsule_arm64_linux }}
           x86-sha: ${{ steps.shas.outputs.capsule_x86_linux }}
-          github-token: ${{ secrets.GH_READONLY_TOKEN }}
+          github-token: ${{ github.token }}
 
       - name: Publish preview GitHub Release
         env:

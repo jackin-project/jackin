@@ -34,6 +34,7 @@ pub mod prewarm;
 pub mod prune;
 pub mod role;
 pub mod status;
+pub mod usage;
 pub mod workspace;
 
 pub use config::{
@@ -134,6 +135,9 @@ pub enum Command {
     /// Show fleet status — workspaces, instances, and agents
     #[command(before_help = BANNER, styles = HELP_STYLES, visible_alias = "ps")]
     Status(status::StatusArgs),
+    /// Read cached usage and quota data from a running Capsule daemon
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Usage(usage::UsageArgs),
     /// Print help documentation for a jackin command
     ///
     /// With no arguments, displays the jackin manual.

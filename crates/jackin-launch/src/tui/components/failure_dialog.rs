@@ -1,6 +1,6 @@
 //! Launch failure popup rendering and hit-testing.
 
-use jackin_tui::components::{ModalBackdrop, bottom_chrome_areas, render_hint_bar};
+use jackin_tui::components::{ModalBackdrop, render_hint_bar};
 use jackin_tui::theme::{DANGER_RED, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 use jackin_tui::{HintSpan, centered_rect};
 use ratatui::Frame;
@@ -9,6 +9,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
+use crate::tui::components::footer::launch_overlay_chrome_areas;
 use crate::{FailureCopyTarget, LaunchFailure, LaunchView};
 
 #[derive(Debug)]
@@ -217,10 +218,11 @@ pub fn failure_copy_target_at(
     area: Rect,
     failure: &LaunchFailure,
     run_id: &str,
+    debug_mode: bool,
     col: u16,
     row: u16,
 ) -> Option<FailureCopyTarget> {
-    let body_area = bottom_chrome_areas(area).body;
+    let body_area = launch_overlay_chrome_areas(area, debug_mode).body;
     let rows = failure_popup_rows(failure, run_id);
     let rect = failure_popup_rect_for_rows(body_area, &rows);
     for entry in rows.iter().filter(|row| row.copy_target.is_some()) {
@@ -338,8 +340,9 @@ pub fn render_failure_popup(
     view: &LaunchView,
     failure: &LaunchFailure,
     run_id: &str,
+    debug_mode: bool,
 ) {
-    let chrome = bottom_chrome_areas(area);
+    let chrome = launch_overlay_chrome_areas(area, debug_mode);
     frame.render_widget(ModalBackdrop, chrome.body);
 
     let rows = failure_popup_rows(failure, run_id);
@@ -392,22 +395,28 @@ pub fn render_failure_popup(
             .alignment(Alignment::Center),
         button_area,
     );
-    // The popup draws no hint of its own; keys live in the shared hint row and
-    // the status footer row remains visible beneath it.
+    // The popup draws no hint of its own; keys live in the shared hint row.
+    // In non-debug overlays that row replaces the base footer, so clear first
+    // or a shorter hint can leave stale right-side footer text behind.
+    if !debug_mode {
+        frame.render_widget(Clear, chrome.hint);
+    }
     render_hint_bar(frame, chrome.hint, FAILURE_HINT);
 }
 
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub fn failure_popup_hyperlink_overlay(
     area: Rect,
     failure: &LaunchFailure,
     run_id: &str,
+    debug_mode: bool,
     hovered: Option<FailureCopyTarget>,
     copied: Option<FailureCopyTarget>,
     revealed: Option<FailureCopyTarget>,
     opened: Option<FailureCopyTarget>,
 ) -> Vec<u8> {
-    let body_area = bottom_chrome_areas(area).body;
+    let body_area = launch_overlay_chrome_areas(area, debug_mode).body;
     let rows = failure_popup_rows(failure, run_id);
     let rect = failure_popup_rect_for_rows(body_area, &rows);
     let body = failure_popup_body_rect(rect);

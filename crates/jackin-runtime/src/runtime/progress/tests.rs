@@ -737,14 +737,14 @@ fn failure_copy_target_at_hits_each_copyable_row_value() {
         let vr = failure_popup_value_rect(rect, &rows, target)
             .expect("copyable target must have a value rect");
         assert_eq!(
-            failure_copy_target_at(area, &failure, run_id, vr.x, vr.y),
+            failure_copy_target_at(area, &failure, run_id, true, vr.x, vr.y),
             Some(target),
             "click at value-column start must hit {target:?}",
         );
         // One column left of the value column lands in the label area —
         // must not register as a copy target.
         assert_eq!(
-            failure_copy_target_at(area, &failure, run_id, vr.x.saturating_sub(1), vr.y),
+            failure_copy_target_at(area, &failure, run_id, true, vr.x.saturating_sub(1), vr.y),
             None,
             "click in label area must not hit {target:?}",
         );
@@ -816,7 +816,7 @@ fn failure_copy_target_at_ignores_non_copyable_rows_and_absent_paths() {
     // above the run-id row in the body.
     let message_y = run_id_rect.y.saturating_sub(2);
     assert_eq!(
-        failure_copy_target_at(area, &failure, run_id, run_id_rect.x, message_y),
+        failure_copy_target_at(area, &failure, run_id, true, run_id_rect.x, message_y),
         None,
         "click on the non-copyable message row must not hit any target",
     );
@@ -923,8 +923,16 @@ fn failure_popup_wraps_long_paths_without_dropping_tail() {
 fn failure_popup_path_overlay_emits_osc8_file_links() {
     let area = Rect::new(0, 0, 120, 28);
     let failure = failure_with_paths();
-    let overlay =
-        failure_popup_hyperlink_overlay(area, &failure, "jk-run-rendered", None, None, None, None);
+    let overlay = failure_popup_hyperlink_overlay(
+        area,
+        &failure,
+        "jk-run-rendered",
+        true,
+        None,
+        None,
+        None,
+        None,
+    );
     let text = String::from_utf8_lossy(&overlay);
 
     assert!(text.contains("\x1b]8;;file:///jk/run/x.jsonl\x1b\\"));

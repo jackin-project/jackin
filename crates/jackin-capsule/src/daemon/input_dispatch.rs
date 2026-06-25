@@ -1,6 +1,6 @@
 //! Input dispatch methods for the Multiplexer.
 
-use crate::tui::components::branch_context_bar::branch_context_bar_hit;
+use crate::tui::components::branch_context_bar::{branch_context_bar_hit, debug_run_id_label};
 use crate::tui::input::TAB_DOUBLE_CLICK_WINDOW;
 use crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION;
 use crate::tui::update::action_frame_plan;
@@ -174,6 +174,16 @@ impl Multiplexer {
                 self.dialog_clear();
                 self.export_file_to_host(path, reveal_after_export, open_after_export);
             }
+            DialogAction::RefreshUsage => {
+                self.request_usage_refresh_for_provider(None);
+            }
+            DialogAction::SwitchUsageProvider { provider_label } => {
+                let view = self.focused_usage_snapshot_for_provider(Some(&provider_label));
+                if let Some(dialog) = self.dialog_top_mut() {
+                    *dialog = Dialog::new_usage(view);
+                }
+                self.request_usage_refresh_for_provider(Some(&provider_label));
+            }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
                 // push it on top of the SplitDirectionPicker so Esc
@@ -285,6 +295,12 @@ impl Multiplexer {
                 self.open_github_context_dialog(Instant::now());
                 self.invalidate_for(&Action::OpenGithubContext);
             }
+            Action::OpenUsage => {
+                let view = self.focused_usage_snapshot();
+                self.dialog_push(Dialog::new_usage(view));
+                self.request_usage_refresh_for_provider(None);
+                self.invalidate_for(&Action::OpenUsage);
+            }
             Action::OpenRenameTab(idx) => {
                 if idx >= self.tabs.len() {
                     return;
@@ -354,6 +370,10 @@ impl Multiplexer {
             Action::Detach => {
                 self.detach_requested = true;
                 self.invalidate_for(&Action::Detach);
+            }
+            Action::RefreshUsage => {
+                self.request_usage_refresh_for_provider(None);
+                self.invalidate_for(&Action::RefreshUsage);
             }
             Action::Palette(cmd) => self.handle_palette_command(cmd),
             Action::Prefix(cmd) => {
@@ -604,18 +624,24 @@ impl Multiplexer {
                 };
                 if matches!(action, Action::SwitchTab(_)) {
                     self.last_tab_click = tab.map(|idx| (idx, now));
+                    // P5: clicking a tab moves focus onto the tab bar (green
+                    // underline + Left/Right nav until the agent is re-focused).
+                    self.set_tab_bar_focused(true);
                 }
                 self.apply_action(action);
             }
             Action::BranchContextBarClick { row, col } => {
+                let usage_status_label = self.focused_usage_snapshot().status_bar_label;
                 let hit = branch_context_bar_hit(
                     row + 1,
                     col + 1,
                     self.term_rows,
                     self.term_cols,
                     self.context_bar_branch(),
+                    Some(&usage_status_label),
                     self.pull_request_context.as_deref(),
                     self.pull_request_context_loading(),
+                    debug_run_id_label().as_deref(),
                     self.status_bar.instance_id_label(),
                 );
                 let Some(action) = branch_context_bar_click_action(hit) else {
@@ -693,11 +719,42 @@ impl Multiplexer {
     /// Handle a parsed input event from the client terminal. Handlers only
     /// mutate state and record an invalidation; the render loop composes the
     /// next frame when the generation moved.
+    /// P5: move focus onto/off the agent-tab bar, redrawing the status bar so
+    /// the active-tab underline switches between phosphor-green (focused) and
+    /// neutral white (agent content focused).
+    pub(super) fn set_tab_bar_focused(&mut self, focused: bool) {
+        if self.tab_bar_focused != focused {
+            self.tab_bar_focused = focused;
+            self.invalidate(FullRedrawReason::StatusChange);
+        }
+    }
+
     pub(super) fn handle_input(&mut self, event: InputEvent) {
         if let Some(action) = mouse_chrome_update_action(&event) {
             self.apply_action(action);
         }
         if let InputEvent::Data(bytes) = event {
+            // P5: while the agent-tab bar holds focus, it captures the arrow
+            // keys (Left/Right switch tabs; Down/Esc return focus to the agent).
+            // Any other key also returns focus to the agent and is forwarded as
+            // normal input, so the operator is never trapped in the bar.
+            if self.tab_bar_focused {
+                match tab_bar_focus_key(&bytes) {
+                    Some(TabBarFocusKey::Prev) => {
+                        self.apply_action(Action::PreviousTab);
+                        return;
+                    }
+                    Some(TabBarFocusKey::Next) => {
+                        self.apply_action(Action::NextTab);
+                        return;
+                    }
+                    Some(TabBarFocusKey::Exit) => {
+                        self.set_tab_bar_focused(false);
+                        return;
+                    }
+                    None => self.set_tab_bar_focused(false),
+                }
+            }
             if let Some(action) =
                 self.dispatch_to_dialog_top(|dialog, github| dialog.handle_key(&bytes, github))
             {
@@ -711,6 +768,7 @@ impl Multiplexer {
                 self.apply_action(Action::PaneData(bytes));
             }
         } else {
+            let usage_status_label = self.focused_usage_status_label();
             let branch_context_hit = match &event {
                 InputEvent::MousePress {
                     row,
@@ -722,8 +780,10 @@ impl Multiplexer {
                     self.term_rows,
                     self.term_cols,
                     self.context_bar_branch(),
+                    usage_status_label.as_deref(),
                     self.pull_request_context.as_deref(),
                     self.pull_request_context_loading(),
+                    debug_run_id_label().as_deref(),
                     self.status_bar.instance_id_label(),
                 )
                 .is_some(),
@@ -873,7 +933,32 @@ impl Multiplexer {
                 self.dialog_clear();
                 self.clear_focused_pane();
             }
+            PaletteCommandRoute::OpenUsage => {
+                let view = self.focused_usage_snapshot();
+                self.dialog_push(Dialog::new_usage(view));
+                self.request_usage_refresh_for_provider(None);
+            }
         }
         self.invalidate(palette_route_frame_plan(route).reason());
+    }
+}
+
+/// P5: keys the agent-tab-bar focus mode captures, as raw terminal byte
+/// sequences. `Prev`/`Next` are Left/Right (switch tabs); `Exit` is Down or Esc
+/// (return focus to the agent). Any other key returns `None` — it ends tab-bar
+/// focus and is forwarded to the agent as normal input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TabBarFocusKey {
+    Prev,
+    Next,
+    Exit,
+}
+
+pub(super) fn tab_bar_focus_key(bytes: &[u8]) -> Option<TabBarFocusKey> {
+    match bytes {
+        b"\x1b[D" | b"\x1bOD" => Some(TabBarFocusKey::Prev), // Left
+        b"\x1b[C" | b"\x1bOC" => Some(TabBarFocusKey::Next), // Right
+        b"\x1b[B" | b"\x1bOB" | b"\x1b" => Some(TabBarFocusKey::Exit), // Down / Esc
+        _ => None,
     }
 }
