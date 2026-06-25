@@ -238,9 +238,8 @@ impl RulePack {
         // would silently match any future CLI the agent's TUI may have changed
         // under. (Image-build enforcement compares this range against the
         // pinned CLI version; here we reject ranges that could never gate.)
-        let req = semver::VersionReq::parse(self.validated_versions.trim()).with_context(|| {
-            format!("invalid validated_versions in pack {}", self.agent)
-        })?;
+        let req = semver::VersionReq::parse(self.validated_versions.trim())
+            .with_context(|| format!("invalid validated_versions in pack {}", self.agent))?;
         anyhow::ensure!(
             !req.comparators.is_empty(),
             "validated_versions must be a bounded range, not a wildcard, in pack {}",

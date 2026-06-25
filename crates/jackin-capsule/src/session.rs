@@ -222,7 +222,8 @@ pub struct Session {
     pub pending_transition: crate::agent_status::policy::PendingTransition,
     /// Per-source gate state for runtime-event reporters (one per hook/plugin
     /// source addressing this session).
-    pub gate_states: std::collections::HashMap<String, crate::agent_status::gating::SourceGateState>,
+    pub gate_states:
+        std::collections::HashMap<String, crate::agent_status::gating::SourceGateState>,
     /// Current semantic authority derived from runtime events, consumed by
     /// arbitration. `None` until a state-authoring event arrives (Claude/Codex
     /// are identity-only and never set this — Decision 0a).
@@ -994,8 +995,8 @@ impl Session {
         let foreground_pgid = foreground.as_ref().map(|(_, pgid)| *pgid);
         let child_process_count = descendant_process_count(pid);
         let cpu_jiffies_delta = sample_cpu_jiffies_delta(pid, &mut self.cpu_sample, now);
-        let root_is_agent = process::identify_agent(&info)
-            .is_some_and(|kind| kind != AgentKind::Unknown);
+        let root_is_agent =
+            process::identify_agent(&info).is_some_and(|kind| kind != AgentKind::Unknown);
 
         if foreground_is_agent {
             self.saw_agent_foreground = true;
@@ -1382,7 +1383,6 @@ impl Session {
         // scrollback the offset was clamped against.
         self.shadow_grid.set_scrollback(self.scrollback_offset());
     }
-
 }
 
 fn child_exit_reason(status: Result<&portable_pty::ExitStatus, &std::io::Error>) -> Option<String> {

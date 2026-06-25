@@ -4,8 +4,8 @@
 //! Not responsible for: protocol encoding (see `jackin-protocol`), host-side
 //! launch orchestration, or config schema migration.
 
-pub(crate) mod alloc_telemetry;
 pub mod agent_status;
+pub(crate) mod alloc_telemetry;
 pub mod attach_context;
 /// Library target so integration tests under `tests/` can exercise
 /// the protocol, prefix-key parser, VT round-trips, and status bar

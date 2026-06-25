@@ -445,7 +445,8 @@ fn redraw_soak_produces_zero_state_transitions() {
     // alone never author state — the regression that motivated this work.)
     let mut session = test_session_with_policy(OscPolicy::default());
     let start = session.state;
-    let frame = b"\x1b[2K\x1b[1;1H Do you want to proceed?\r\n  1. Yes\r\n  2. No\r\n  esc to cancel\r\n";
+    let frame =
+        b"\x1b[2K\x1b[1;1H Do you want to proceed?\r\n  1. Yes\r\n  2. No\r\n  esc to cancel\r\n";
     let mut transitions = 0;
     let mut prev = start;
     for _ in 0..150 {
@@ -541,7 +542,10 @@ fn osc133_marks_set_shell_state() {
         Some(RawAgentState::Working)
     );
     session.feed_pty(b"\x1b]133;B\x07");
-    assert_eq!(session.osc_evidence().shell_state, Some(RawAgentState::Idle));
+    assert_eq!(
+        session.osc_evidence().shell_state,
+        Some(RawAgentState::Idle)
+    );
 }
 
 #[test]
