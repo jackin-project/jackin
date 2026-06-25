@@ -2505,7 +2505,7 @@ dependencies = [
 
 [[package]]
 name = "jackin-dev"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "clap",
