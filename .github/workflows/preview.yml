@@ -226,7 +226,7 @@ jobs:
         id: meta
         if: steps.filter.outputs.source == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_READONLY_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
           FULL_SHA: ${{ steps.source.outputs.sha }}
         run: |
           base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
@@ -445,7 +445,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           FULL_SHA: ${{ needs.source-changed.outputs.sha }}
-          GH_TOKEN: ${{ secrets.GH_READONLY_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -516,7 +516,7 @@ jobs:
 
       - name: Verify source SHA is on main
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_READONLY_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
           FULL_SHA: ${{ needs.source-changed.outputs.sha }}
         run: |
           # Use GitHub's compare API instead of mutating the local checkout.
@@ -558,7 +558,7 @@ jobs:
           version: ${{ needs.source-changed.outputs.version }}
           arm64-sha: ${{ steps.shas.outputs.capsule_arm64_linux }}
           x86-sha: ${{ steps.shas.outputs.capsule_x86_linux }}
-          github-token: ${{ secrets.GH_READONLY_TOKEN }}
+          github-token: ${{ github.token }}
 
       - name: Publish preview GitHub Release
         env:

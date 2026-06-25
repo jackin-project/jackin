@@ -182,7 +182,7 @@ jobs:
         shell: bash
         env:
           ARTIFACT_NAME: construct-trixie-image-${{ matrix.config.lane }}
-          GH_TOKEN: ${{ secrets.GH_READONLY_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.run_id }}
           REPOSITORY: ${{ github.repository }}
         run: |

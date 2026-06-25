@@ -290,9 +290,12 @@ Rules for writing + maintaining workflows under `.github/workflows/` and composi
 
 ## Read-only GitHub token in workflows
 
-Use the organization read-only token for every read-only GitHub operation in workflows and composite actions: `${{ secrets.GH_READONLY_TOKEN }}`. This includes `jdx/mise-action`'s `github_token`, `dorny/paths-filter`'s `token`, `GH_TOKEN` / `GITHUB_TOKEN` for `gh api`, `curl`, `lychee`, timing summaries, release existence checks, and read-only composite-action token inputs.
+Pick the read token by what it reads, because the two read tokens have different rate-limit budgets. `${{ secrets.GH_READONLY_TOKEN }}` is a single organization PAT: one shared ~5000/hr bucket drained by every job, every workflow, and every concurrent PR in the org at once — so concentrating high-frequency reads on it exhausts it and fails the `changes` gate (and everything downstream) with `API rate limit exceeded for user ID …`. `${{ github.token }}` is minted fresh per workflow run with its own per-repo budget, so it spreads read load instead of pooling it.
 
-Do not use `${{ github.token }}` for read-only calls; it burns the workflow installation quota and causes unrelated jobs to fail under rate limits. Keep write-capable tokens only where the step actually writes: release creation/edit/upload, Homebrew tap pushes/PRs, cache deletion, artifact/cache writes, registry publication, or other explicit mutation.
+- **Same-repo reads → `${{ github.token }}`.** Anything that reads *this* repository: `dorny/paths-filter`'s `token`, `lychee` link checks, `gh api` / `curl` against this repo's runs, artifacts, caches, releases, compare, or contents, the GHA buildx cache `ghtoken`, and read-only composite-action token inputs that hit this repo. The per-run token has actions read/write scope, so it is also the correct token for cache writes.
+- **Cross-repo reads → `${{ secrets.GH_READONLY_TOKEN }}`.** Reads of *other* repositories that the per-repo `github.token` cannot reach or that would otherwise drain this repo's budget: `jdx/mise-action`'s `github_token` (downloads tool releases from external repos), and any read of a private sibling org repo. Keeping these on the org PAT keeps external-download volume off the per-repo budget.
+
+Keep write-capable tokens only where the step actually writes outside this repo's automatic `github.token` scope: Homebrew tap pushes/PRs (`HOMEBREW_TAP_TOKEN`), and release creation/edit/upload, cache deletion, registry publication where a cross-repo or elevated token is required. Do not route same-repo read traffic through the org PAT — it is the documented cause of the shared-bucket exhaustion above.
 
 ## Env-var scope: job level, not workflow level
 
