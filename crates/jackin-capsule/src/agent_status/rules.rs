@@ -38,6 +38,19 @@ pub struct Rule {
     pub forbids: Vec<String>,
     #[serde(default)]
     pub regex: Vec<String>,
+    /// Each pattern must match *some single line* of the region (existential,
+    /// anchored per line). The Herdr-borrowed disambiguator for "a spinner glyph
+    /// at the start of its own line", numbered choices, and count tokens — cases
+    /// a whole-region regex (which anchors to the joined blob) cannot express.
+    #[serde(default)]
+    pub line_regex: Vec<String>,
+    /// No pattern may match *any line* of the region (anchored negation). Lets a
+    /// rule say "blocked unless a line is a bare prompt caret", or derive idle
+    /// from an OSC title by subtraction (title present AND not the spinner title
+    /// AND not an action-required title) — `forbids` is substring-only and
+    /// cannot express an anchored pattern.
+    #[serde(default)]
+    pub forbids_regex: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -205,7 +218,9 @@ impl RulePack {
             let matcher_count = rule.requires_all.len()
                 + rule.requires_any.len()
                 + rule.forbids.len()
-                + rule.regex.len();
+                + rule.regex.len()
+                + rule.line_regex.len()
+                + rule.forbids_regex.len();
             anyhow::ensure!(matcher_count <= 32, "too many matchers in {}", rule.id);
             for matcher in rule
                 .requires_all
@@ -213,13 +228,20 @@ impl RulePack {
                 .chain(rule.requires_any.iter())
                 .chain(rule.forbids.iter())
                 .chain(rule.regex.iter())
+                .chain(rule.line_regex.iter())
+                .chain(rule.forbids_regex.iter())
             {
                 anyhow::ensure!(matcher.len() <= 512, "matcher too long in rule {}", rule.id);
             }
-            for matcher in &rule.regex {
-                regex::RegexBuilder::new(matcher)
-                    .case_insensitive(true)
-                    .build()
+            // Compile-check every regex pattern at load so a broken pattern
+            // fails loudly here instead of silently never matching at runtime.
+            for matcher in rule
+                .regex
+                .iter()
+                .chain(rule.line_regex.iter())
+                .chain(rule.forbids_regex.iter())
+            {
+                build_regex(matcher)
                     .with_context(|| format!("invalid regex in rule {}", rule.id))?;
             }
         }
@@ -261,6 +283,16 @@ impl RulePack {
     }
 }
 
+/// Build a case-insensitive regex. Rebuilt per evaluation today; `validate`
+/// compile-checks every pattern at pack load so a broken pattern fails loudly
+/// there rather than silently never matching. (Caching compiled regexes is a
+/// perf follow-up — see the roadmap; correctness does not depend on it.)
+fn build_regex(pattern: &str) -> Result<regex::Regex, regex::Error> {
+    regex::RegexBuilder::new(pattern)
+        .case_insensitive(true)
+        .build()
+}
+
 impl Rule {
     fn matches(&self, screen_rows: &[String], virtuals: VirtualRegions<'_>) -> bool {
         let region = self.region.extract(screen_rows, virtuals);
@@ -277,11 +309,19 @@ impl Rule {
                     .requires_any
                     .iter()
                     .any(|matcher| text.contains(&matcher.to_ascii_lowercase())))
-            && self.regex.iter().all(|matcher| {
-                regex::RegexBuilder::new(matcher)
-                    .case_insensitive(true)
-                    .build()
-                    .is_ok_and(|regex| regex.is_match(&text))
+            && self
+                .regex
+                .iter()
+                .all(|matcher| build_regex(matcher).is_ok_and(|re| re.is_match(&text)))
+            // line_regex: each pattern must match SOME line of the region.
+            && self.line_regex.iter().all(|matcher| {
+                build_regex(matcher)
+                    .is_ok_and(|re| region.iter().any(|line| re.is_match(line)))
+            })
+            // forbids_regex: NO pattern may match ANY line of the region.
+            && self.forbids_regex.iter().all(|matcher| {
+                build_regex(matcher)
+                    .is_ok_and(|re| !region.iter().any(|line| re.is_match(line)))
             })
     }
 

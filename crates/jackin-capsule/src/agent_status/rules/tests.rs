@@ -1,5 +1,59 @@
     use super::*;
 
+    #[test]
+    fn line_regex_matches_per_line_not_joined_blob() {
+        let pack: RulePack = toml::from_str(
+            "schema_version = 1\n\
+             agent = \"test\"\n\
+             validated_versions = \">=1.0.0, <2\"\n\
+             [[rule]]\n\
+             id = \"numbered-choice\"\n\
+             state = \"blocked\"\n\
+             priority = 100\n\
+             region = \"bottom:5\"\n\
+             line_regex = ['^\\s*\\d+\\.\\s']\n",
+        )
+        .unwrap();
+        pack.validate().unwrap();
+        // A line that *starts* with "N. " -> match.
+        let rows = vec!["Choose one:".to_owned(), "  1. yes".to_owned()];
+        assert_eq!(
+            pack.evaluate(&rows).unwrap().state,
+            Some(RawAgentState::Blocked)
+        );
+        // The same token mid-line -> no match. A whole-region regex anchored at
+        // ^ could not distinguish this; line_regex can.
+        let rows2 = vec!["see item 1. here".to_owned()];
+        assert!(pack.evaluate(&rows2).is_none());
+    }
+
+    #[test]
+    fn forbids_regex_blocks_anchored_pattern() {
+        let pack: RulePack = toml::from_str(
+            "schema_version = 1\n\
+             agent = \"test\"\n\
+             validated_versions = \">=1.0.0, <2\"\n\
+             [[rule]]\n\
+             id = \"blocked-unless-bare-caret\"\n\
+             state = \"blocked\"\n\
+             priority = 100\n\
+             region = \"bottom:5\"\n\
+             requires_any = [\"do you want to proceed\"]\n\
+             forbids_regex = ['^\\s*>\\s*$']\n",
+        )
+        .unwrap();
+        pack.validate().unwrap();
+        let blocked = vec!["Do you want to proceed?".to_owned(), "  1. yes".to_owned()];
+        assert_eq!(
+            pack.evaluate(&blocked).unwrap().state,
+            Some(RawAgentState::Blocked)
+        );
+        // A bare caret line means it is actually an idle prompt, not a dialog ->
+        // the anchored forbid suppresses the blocked match.
+        let idle = vec!["Do you want to proceed?".to_owned(), ">".to_owned()];
+        assert!(pack.evaluate(&idle).is_none());
+    }
+
     fn fixture(path: &str) -> Vec<String> {
         fs::read_to_string(path)
             .unwrap()
