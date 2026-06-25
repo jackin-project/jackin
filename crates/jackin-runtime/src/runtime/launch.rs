@@ -231,6 +231,18 @@ fn agent_mounts(state: &RoleState) -> Vec<String> {
         state.root.join("state").display()
     )];
 
+    // Writable `~/.gitconfig` for every role. Under read-only-root profiles
+    // (`hardened`/`locked`) `/home/agent` is the read-only image layer, but the
+    // runtime entrypoint and the agent itself run `git config --global`, which
+    // writes `~/.gitconfig`. Bind-mounting a host-backed file (created in the
+    // instance home state) keeps git identity writable + persistent without
+    // opening the whole home. (The `$HOME` read-only audit on the Docker
+    // hardening roadmap item tracks the full enumeration of such targets.)
+    mounts.push(format!(
+        "{}:/home/agent/.gitconfig",
+        state.root.join("home/.gitconfig").display()
+    ));
+
     if let Some(claude) = &state.auth.claude {
         mounts.push(format!(
             "{}:/home/agent/.claude",

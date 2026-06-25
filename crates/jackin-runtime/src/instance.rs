@@ -473,6 +473,7 @@ impl RoleState {
         // (`--user` on docker run), so `agent` can write state files here
         // with no special directory mode.
         std::fs::create_dir_all(&jackin_state_dir)?;
+        ensure_agent_home_state_files(&home_dir)?;
 
         let supported = manifest.supported_agents();
         let supported_auth: Vec<_> = provision_agents
@@ -640,6 +641,7 @@ impl RoleState {
 
         std::fs::create_dir_all(&home_dir)?;
         std::fs::create_dir_all(&jackin_state_dir)?;
+        ensure_agent_home_state_files(&home_dir)?;
 
         let supported = manifest.supported_agents();
         let supported_auth: Vec<_> = agents
@@ -980,6 +982,23 @@ impl RoleState {
 
         Ok((GrokAuth { auth_json }, outcome))
     }
+}
+
+/// Pre-create the host-backed agent-home state files that are bind-mounted into
+/// the container, so Docker does not materialise them as root-owned directories.
+///
+/// `.gitconfig` is the one read-only-root profiles need: the runtime entrypoint
+/// and the agent run `git config --global`, which writes `~/.gitconfig` — on the
+/// read-only image layer under `hardened`/`locked` unless backed by this
+/// writable mount. An empty file is enough; the entrypoint populates the
+/// identity. Owned by the host operator, which is the container's runtime UID.
+fn ensure_agent_home_state_files(home_dir: &Path) -> anyhow::Result<()> {
+    let gitconfig = home_dir.join(".gitconfig");
+    if !gitconfig.exists() {
+        std::fs::write(&gitconfig, b"")
+            .with_context(|| format!("creating {}", gitconfig.display()))?;
+    }
+    Ok(())
 }
 
 fn skipped_ignore_auth_slot(root: &Path, agent: jackin_core::agent::Agent) -> ProvisionedAuthSlot {
