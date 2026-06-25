@@ -18,7 +18,7 @@ This is the single source of truth for the remaining work; it absorbs the former
 
 ## P0 — Claude and OpenAI full snapshots (the two regressions)
 
-**The biggest lever — and a class of bug, not two isolated ones.** Live `usage verify` shows both providers resolve via **`source: "cli"` (`confidence: authoritative`)** with only two windows. The architecture *permits a silent degrade*: when the richer source (Claude OAuth, Codex RPC) is unavailable or unfetched, the snapshot quietly falls back to an impoverished `cli` snapshot still labelled `authoritative`, so the UI shows a confident-but-truncated result instead of an honest degraded state. **Root-cause / class fix:** the source layer must never present a reduced snapshot as `authoritative` — it must either produce the full snapshot from the available source or mark the result degraded with the reason. Fix that structural condition, not just the two tabs.
+**The biggest lever — and a class of bug, not two isolated ones.** Live `usage verify` shows both providers resolve via **`source: "cli"` (`confidence: authoritative`)** with only two windows. The architecture *permits a silent degrade*: when the richer source (Claude OAuth, Codex RPC) is unavailable or not yet fetched, the snapshot quietly falls back to an impoverished `cli` snapshot still labelled `authoritative`, so the UI shows a confident-but-truncated result instead of an honest degraded state. **Root-cause / class fix:** the source layer must never present a reduced snapshot as `authoritative` — it must either produce the full snapshot from the available source or mark the result degraded with the reason. Fix that structural condition, not just the two tabs.
 
 ### P0a — Claude (regression; diagnose the credential path FIRST)
 
