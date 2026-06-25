@@ -2076,3 +2076,35 @@ fn exit_inspect_esc_walks_back() {
     ]);
     assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
 }
+
+#[test]
+fn exit_dirty_selection_marker_moves_on_down_arrow() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    fn marker_row(d: &Dialog) -> Option<u16> {
+        let backend = TestBackend::new(60, 20);
+        let mut term = Terminal::new(backend).expect("backend");
+        term.draw(|f| {
+            let snap = d.to_ratatui_snapshot(None);
+            let rect = d.box_rect(20, 60);
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(f, rect, &snap);
+        })
+        .expect("draw");
+        let buf = term.backend().buffer().clone();
+        (0..buf.area.height).find(|&y| {
+            (0..buf.area.width)
+                .map(|x| buf[(x, y)].symbol().to_owned())
+                .any(|s| s == "▸")
+        })
+    }
+
+    let mut d = Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]);
+    let before = marker_row(&d).expect("marker visible initially");
+    assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
+    let after = marker_row(&d).expect("marker visible after down");
+    assert!(
+        after > before,
+        "down-arrow must move the ▸ marker down: before row {before}, after row {after}"
+    );
+}

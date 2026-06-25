@@ -6185,3 +6185,70 @@ fn render_perf_probe() {
     }
     assert_frame_conformance(&mut mux, &client, "perf probe end");
 }
+
+fn exit_dirty_selected_value(mux: &Multiplexer) -> usize {
+    match mux.dialog_top() {
+        Some(Dialog::ExitDirty { selected, .. }) => *selected,
+        other => panic!("expected ExitDirty on top, got {other:?}"),
+    }
+}
+
+#[test]
+fn exit_dirty_down_arrow_advances_selection_via_handle_input() {
+    // Zero live panes — exactly the dirty-exit modal scenario.
+    let mut mux = test_mux(30, 100);
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    assert_eq!(exit_dirty_selected_value(&mux), 0);
+
+    // Down arrow, as the input parser hands it to handle_input.
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
+    assert_eq!(
+        exit_dirty_selected_value(&mux),
+        1,
+        "down arrow must advance the dirty-exit selection through the full daemon path"
+    );
+
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
+    assert_eq!(exit_dirty_selected_value(&mux), 2);
+
+    // Up arrow walks back.
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x41]));
+    assert_eq!(exit_dirty_selected_value(&mux), 1);
+}
+
+#[test]
+fn exit_dirty_down_arrow_recomposes_a_changed_frame() {
+    let mut mux = test_mux(30, 100);
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    // Paint the modal once so rendered == frame generation.
+    let first = mux.compose_pending_frame();
+
+    // Down arrow should invalidate and produce a non-empty, *changed* frame.
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
+    assert!(
+        mux.has_pending_render(),
+        "down arrow on the modal must mark a pending render"
+    );
+    let second = mux.compose_pending_frame();
+    assert!(!second.is_empty(), "down arrow must recompose a frame");
+    assert_ne!(
+        first, second,
+        "the recomposed frame must differ once the selection moved"
+    );
+}
+
+#[test]
+fn zero_pane_dialog_nav_forces_full_repaint() {
+    // The dirty-exit modal renders with no live panes; selection moves must
+    // force a full repaint so a lossy outer transport cannot drop the update.
+    let mut mux = test_mux(30, 100);
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    // Drain the wipe from the initial push.
+    drop(mux.compose_pending_frame());
+
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
+    assert!(
+        mux.wipe_pending.is_some(),
+        "zero-pane modal navigation must force a full repaint (wipe)"
+    );
+}
