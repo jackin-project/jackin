@@ -274,7 +274,8 @@ pub fn handle_settings_auth_modal(
             let browser_outcome = state.handle_key_with_page_rows(key, Some(page_rows));
             match browser_outcome {
                 crate::tui::components::file_browser::FileBrowserOutcome::NavigateTo(_)
-                | crate::tui::components::file_browser::FileBrowserOutcome::NavigateUp => {
+                | crate::tui::components::file_browser::FileBrowserOutcome::NavigateUp
+                | crate::tui::components::file_browser::FileBrowserOutcome::RequestCommit(_) => {
                     auth.set_modal(modal);
                     return SettingsAuthOutcome::ApplyFileBrowserOutcome(browser_outcome);
                 }
@@ -445,7 +446,7 @@ pub fn apply_plain_text_to_settings_auth_form(
     });
 }
 
-fn apply_source_folder_to_settings_auth_form(
+pub(crate) fn apply_source_folder_to_settings_auth_form(
     auth: &mut crate::tui::state::SettingsAuthState,
     path: std::path::PathBuf,
 ) {

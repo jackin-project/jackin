@@ -40,8 +40,8 @@ use crate::tui::update::{
 use super::{
     EditorState, EditorTab, FieldFocus, ManagerEffect, ManagerInstanceRefreshSnapshot,
     ManagerStage, ManagerState, Modal, MountScrollFocus, PendingDriftCheck,
-    PendingFileBrowserListing, PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad,
-    SecretsScopeTag, SettingsState, SettingsTab,
+    PendingFileBrowserCommit, PendingFileBrowserListing, PendingIsolationCleanup,
+    PendingMountInfoRefresh, PendingRoleLoad, SecretsScopeTag, SettingsState, SettingsTab,
 };
 
 // ── Concrete type aliases ──────────────────────────────────────────────────
@@ -51,6 +51,7 @@ pub type ManagerMessage = crate::tui::message::ConsoleManagerMessage<
     super::CreatePreludeState<'static>,
     EditorState<'static>,
     SettingsState<'static>,
+    PendingFileBrowserCommit,
     PendingFileBrowserListing,
     ManagerInstanceRefreshSnapshot,
     PendingMountInfoRefresh,
@@ -103,6 +104,9 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
         ManagerMessage::EnterEditorAuthKind { kind } => enter_editor_auth_kind(state, kind),
         ManagerMessage::EnterSettings(settings) => {
             apply_manager_stage(state, ManagerStage::Settings(settings));
+        }
+        ManagerMessage::FileBrowserCommitValidated(result) => {
+            crate::tui::file_browser::apply_file_browser_commit_result(state, result);
         }
         ManagerMessage::FileBrowserListingLoaded(result) => {
             crate::tui::file_browser::apply_file_browser_listing_result(state, result);

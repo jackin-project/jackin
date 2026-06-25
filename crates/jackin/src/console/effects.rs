@@ -102,7 +102,7 @@ pub(crate) fn execute_manager_effect(
                 state,
                 context,
                 outcome,
-                &crate::console::validate_auth_source_folder,
+                crate::console::validate_auth_source_folder,
             )
         }
         ManagerEffect::ResolveFileBrowserGitUrl(path) => {
@@ -657,6 +657,11 @@ pub(crate) fn poll_background_messages(
             ManagerMessage::FileBrowserListingLoaded(result),
         ));
     }
+    if let Some(result) = state.poll_file_browser_commit() {
+        messages.push(ManagerBackgroundEvent::Message(
+            ManagerMessage::FileBrowserCommitValidated(result),
+        ));
+    }
     if let Some(result) = state.poll_instance_refresh() {
         messages.push(ManagerBackgroundEvent::Message(
             ManagerMessage::InstancesRefreshed(result),
@@ -913,6 +918,43 @@ mod tests {
         assert!(
             state.file_browser_listing_in_flight(),
             "file browser navigation should scan directories on a worker"
+        );
+    }
+
+    #[tokio::test]
+    async fn file_browser_commit_starts_validation_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let child = cwd.join("child");
+        std::fs::create_dir(&child).unwrap();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let listing = FolderListing {
+            root: cwd.to_path_buf(),
+            cwd: cwd.to_path_buf(),
+            entries: Vec::new(),
+        };
+        let mut prelude = CreatePreludeState::new();
+        prelude.modal = Some(Modal::FileBrowser {
+            target: FileBrowserTarget::CreateFirstMountSrc,
+            state: FileBrowserState::from_listing(listing),
+        });
+        state.stage = ManagerStage::CreatePrelude(prelude);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ManagerEffect::ApplyFileBrowserOutcome {
+                context: FileBrowserEffectContext::Prelude { browser_cwd: None },
+                outcome: FileBrowserOutcome::RequestCommit(child),
+            },
+        );
+
+        assert!(
+            state.file_browser_commit_in_flight(),
+            "file browser commit validation should run on a worker"
         );
     }
 
