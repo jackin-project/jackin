@@ -246,6 +246,18 @@ pub(crate) fn visible_panes_for_layout(
     leaves
         .into_iter()
         .map(|(id, outer)| {
+            // Subdivision must never escape the content rect — in particular a
+            // pane's top can never rise above `content_rect.row`
+            // (`STATUS_BAR_ROWS`) into the status bar. Asserted at the source so
+            // a layout regression fails a test loudly rather than only surfacing
+            // as a runtime `frame-pane` soak trace.
+            debug_assert!(
+                outer.row >= content_rect.row
+                    && outer.col >= content_rect.col
+                    && outer.row + outer.rows <= content_rect.row + content_rect.rows
+                    && outer.col + outer.cols <= content_rect.col + content_rect.cols,
+                "pane {id} outer rect {outer:?} escaped content_rect {content_rect:?}",
+            );
             let focused = Some(id) == focused_id;
             VisiblePane {
                 id,
