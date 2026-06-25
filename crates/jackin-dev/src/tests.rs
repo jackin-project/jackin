@@ -129,6 +129,23 @@ fn shell_quote_quotes_shell_metachars() {
 }
 
 #[test]
+fn local_construct_image_ref_is_commit_pinned() {
+    let repo = repo_root();
+    let image = local_construct_image_ref(&repo).unwrap();
+    let prefix = "jackin-local/construct:trixie-";
+    assert!(
+        image.starts_with(prefix),
+        "expected commit-pinned local construct ref, got {image}"
+    );
+    let sha = &image[prefix.len()..];
+    assert_eq!(sha.len(), 12, "short SHA must be 12 chars: {image}");
+    assert!(
+        sha.chars().all(|c| c.is_ascii_hexdigit()),
+        "SHA must be hex: {image}"
+    );
+}
+
+#[test]
 fn parse_pr_refs_reads_head_name_and_oid() {
     let json = serde_json::json!({ "headRefName": "fix/example", "headRefOid": "abc123" });
     let (name, oid) = parse_pr_refs(&json).unwrap();

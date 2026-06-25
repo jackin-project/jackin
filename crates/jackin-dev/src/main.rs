@@ -12,11 +12,18 @@ use serde_json::Value;
 
 const DEFAULT_REPO: &str = "jackin-project/jackin";
 const REPO_DIR_NAME: &str = "jackin";
-// Locked to the `construct-build-local` default tag composed from
-// `LOCAL_REGISTRY_IMAGE`/`STABLE_TAG` in `jackin-xtask/src/construct.rs`; if
-// those defaults move, or are overridden in the environment, the exported
-// `JACKIN_CONSTRUCT_IMAGE` drifts from the image the build actually produces.
-const CONSTRUCT_IMAGE: &str = "jackin-local/construct:trixie";
+// Local construct image registry + stable tag — must match the
+// `LOCAL_REGISTRY_IMAGE`/`STABLE_TAG` defaults in `jackin-xtask/src/construct.rs`.
+// The exported `JACKIN_CONSTRUCT_IMAGE` pins to the commit-suffixed tag
+// (`<registry>:<stable>-<short12 sha>`) that `construct build-local` also
+// produces, NOT the moving `<registry>:<stable>` tag. Pinning to the commit
+// makes every custom build's tag unique, so a construct change invalidates the
+// cached role base (`local_role_base_labels_match` compares the construct
+// label) instead of silently reusing a stale base built from a different
+// construct. The role git SHA used here is `git rev-parse --short=12 HEAD`,
+// identical to `git_sha()` in the xtask.
+const LOCAL_CONSTRUCT_REGISTRY: &str = "jackin-local/construct";
+const CONSTRUCT_STABLE_TAG: &str = "trixie";
 
 #[derive(Parser)]
 #[command(name = "jackin-dev", about = "Developer tooling for jackin")]
@@ -195,7 +202,8 @@ fn sync(args: SyncArgs) -> Result<()> {
 
     if auto.construct {
         run_checked(command("mise", ["run", "construct-build-local"]).current_dir(&paths.repo))?;
-        env_lines.push(format!("export JACKIN_CONSTRUCT_IMAGE={CONSTRUCT_IMAGE}"));
+        let construct_image = local_construct_image_ref(&paths.repo)?;
+        env_lines.push(format!("export JACKIN_CONSTRUCT_IMAGE={construct_image}"));
     }
 
     if auto.capsule {
@@ -310,6 +318,31 @@ fn pr_info(pr: u64, repo: &str) -> Result<PullRequestInfo> {
         head_oid,
         changed_files,
     })
+}
+
+/// The commit-pinned local construct image ref that `construct build-local`
+/// produces (`jackin-local/construct:trixie-<short12 HEAD sha>`).
+///
+/// Pinning to the commit keeps each custom build's tag unique, so switching
+/// jackin' onto it invalidates a role base built from a different construct
+/// instead of reusing it under the moving `:trixie` tag.
+fn local_construct_image_ref(repo: &Path) -> Result<String> {
+    let mut cmd = command("git", ["rev-parse", "--short=12", "HEAD"]);
+    cmd.current_dir(repo);
+    let output = run_output(&mut cmd)?;
+    let sha = String::from_utf8(output)
+        .context("`git rev-parse` output was not valid UTF-8")?
+        .trim()
+        .to_owned();
+    if sha.is_empty() {
+        bail!(
+            "`git rev-parse --short=12 HEAD` returned an empty SHA in {}",
+            repo.display()
+        );
+    }
+    Ok(format!(
+        "{LOCAL_CONSTRUCT_REGISTRY}:{CONSTRUCT_STABLE_TAG}-{sha}"
+    ))
 }
 
 fn parse_pr_refs(json: &Value) -> Result<(String, String)> {
