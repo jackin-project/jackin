@@ -9,6 +9,7 @@
             notify_edge_at: Some(now),
             progress_active: true,
             progress_cleared_at: Some(now),
+            progress_raw: Some("4;1".to_owned()),
             bel_at: Some(now),
             bel_count: 2,
             shell_state: Some(RawAgentState::Idle),
@@ -22,6 +23,7 @@
         assert_eq!(evidence.notify_edge_at, None);
         assert!(!evidence.progress_active);
         assert_eq!(evidence.progress_cleared_at, None);
+        assert_eq!(evidence.progress_raw, None);
         assert_eq!(evidence.bel_at, None);
         assert_eq!(evidence.bel_count, 0);
         assert_eq!(evidence.shell_state, Some(RawAgentState::Idle));

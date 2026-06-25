@@ -41,8 +41,9 @@ use tokio::time::{Duration, interval};
 use portable_pty::CommandBuilder;
 
 use crate::agent_status::arbitrate::arbitrate;
-use crate::agent_status::evidence::{ActivityEvidence, EvidenceSnapshot};
+use crate::agent_status::evidence::{ActivityEvidence, EvidenceSnapshot, ScreenEvidence};
 use crate::agent_status::policy::{apply_watchdog, debounce};
+use crate::agent_status::rules::{RulePackRegistry, VirtualRegions};
 use crate::attach_protocol::{
     AttachHandshake, detach_attached_task, detach_client, drain_and_exit,
     drain_and_exit_with_reason, handle_attach_client, initial_spawn_request, perform_handshake,
@@ -576,6 +577,16 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // here and applied to session authority in the select loop below.
     let (runtime_event_tx, mut runtime_event_rx) =
         mpsc::unbounded_channel::<socket::RuntimeEventMsg>();
+    // Screen rule packs: the universal detector. Loaded once; the embedded
+    // packs are validated, so a load failure means a broken build — log and
+    // run without screen evidence rather than killing the daemon.
+    let rule_registry = match RulePackRegistry::bundled() {
+        Ok(registry) => Some(registry),
+        Err(e) => {
+            crate::clog!("agent-status: rule packs failed to load, screen detection off: {e:#}");
+            None
+        }
+    };
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
     let mut state_ticker = interval(STATE_TICK_INTERVAL);
     let mut sigterm = signal(SignalKind::terminate())?;
@@ -1054,16 +1065,47 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 for session in mux.sessions.values_mut() {
                     let process = session.sample_process_evidence(now);
                     let exiting = process.process_exited || process.foreground_returned_to_shell;
+                    // Screen rule-pack evaluation over the live viewport: the
+                    // universal detector and the sole state source for
+                    // identity-only runtimes (Claude/Codex) and Kimi.
+                    let screen = rule_registry
+                        .as_ref()
+                        .and_then(|registry| {
+                            let rows = session.visible_screen_rows();
+                            let osc = session.osc_evidence();
+                            let virtuals = VirtualRegions {
+                                osc_title: osc.title.as_deref(),
+                                osc_progress: osc.progress_raw.as_deref(),
+                            };
+                            registry.evaluate_with_virtuals(
+                                session.agent.as_deref(),
+                                &rows,
+                                virtuals,
+                            )
+                        })
+                        .map_or_else(
+                            || ScreenEvidence {
+                                observed_at: now,
+                                ..ScreenEvidence::default()
+                            },
+                            |m| ScreenEvidence {
+                                state: m.state,
+                                rule_id: Some(m.rule_id),
+                                strong: m.strong,
+                                freeze: m.freeze,
+                                observed_at: now,
+                            },
+                        );
                     let snapshot = EvidenceSnapshot {
                         authority: session.authority.clone(),
                         subagents_active: session.subagents_active,
                         osc: session.osc_evidence().clone(),
+                        screen,
                         process,
                         activity: ActivityEvidence {
                             last_output: Some(session.last_output_at),
                             last_input: Some(session.last_input_at),
                         },
-                        ..EvidenceSnapshot::default()
                     };
                     let candidate =
                         apply_watchdog(arbitrate(&snapshot, session.status.raw, now), now);

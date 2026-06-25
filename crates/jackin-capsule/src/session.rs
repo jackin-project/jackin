@@ -946,6 +946,17 @@ impl Session {
         &self.osc
     }
 
+    /// Plain-text rows of the current visible viewport (top to bottom), for the
+    /// screen rule-pack engine. Operator scrollback never affects detection —
+    /// only the live screen is read.
+    pub fn visible_screen_rows(&self) -> Vec<String> {
+        let (_, cols) = self.shadow_grid.size();
+        self.render_content_snapshot(cols)
+            .iter()
+            .map(|row| row.text_range(0, cols))
+            .collect()
+    }
+
     /// Sample `/proc` physics for this session's child, producing the
     /// `ProcessEvidence` arbitration consumes. Off-Linux (or with no child PID)
     /// returns default evidence with `physics_sampled = false` — "no evidence",
@@ -1154,6 +1165,7 @@ impl Session {
         // animates it during approval prompts); arbitration treats the clear
         // edge as a hint only.
         if let Some(state) = crate::agent_status::scan_osc9_progress(bytes) {
+            self.osc.progress_raw = Some(format!("4;{state}"));
             if state == 0 {
                 self.osc.progress_active = false;
                 self.osc.progress_cleared_at = Some(std::time::Instant::now());
