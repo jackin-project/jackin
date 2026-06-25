@@ -280,8 +280,7 @@ pub fn handle_settings_auth_modal(
                     return SettingsAuthOutcome::ApplyFileBrowserOutcome(browser_outcome);
                 }
                 other => {
-                    let applied = crate::services::file_browser::apply_state_outcome(state, other);
-                    match auth_source_folder_picker_plan(applied) {
+                    match auth_source_folder_picker_plan(other) {
                         AuthSourceFolderPickerPlan::Commit(path) => {
                             match validate_source_folder(auth.selected_kind(), &path) {
                                 Ok(()) => apply_source_folder_to_settings_auth_form(auth, path),

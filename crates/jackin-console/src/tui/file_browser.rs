@@ -551,16 +551,13 @@ fn execute_editor_file_browser_outcome(
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return false;
     };
-    let (target, applied) = {
-        let Some(Modal::FileBrowser { target, state }) = editor.modal.as_mut() else {
+    let target = {
+        let Some(Modal::FileBrowser { target, .. }) = editor.modal.as_mut() else {
             return false;
         };
-        (
-            target.clone(),
-            crate::services::file_browser::apply_state_outcome(state, outcome),
-        )
+        target.clone()
     };
-    match applied {
+    match outcome {
         FileBrowserOutcome::Commit(path) => {
             // Auth source-folder picks must hold the selected agent's
             // credential structure. Reject a wrong folder inline and keep
@@ -595,13 +592,10 @@ fn execute_prelude_file_browser_outcome(
     let ManagerStage::CreatePrelude(prelude) = &mut state.stage else {
         return false;
     };
-    let applied = {
-        let Some(Modal::FileBrowser { state, .. }) = prelude.modal.as_mut() else {
-            return false;
-        };
-        crate::services::file_browser::apply_state_outcome(state, outcome)
+    if !matches!(prelude.modal, Some(Modal::FileBrowser { .. })) {
+        return false;
     };
-    match applied {
+    match outcome {
         FileBrowserOutcome::Commit(path) => {
             prelude.modal = None;
             prelude.last_browser_cwd = browser_cwd;
@@ -636,13 +630,13 @@ fn execute_settings_file_browser_outcome(
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return false;
     };
-    let applied = {
-        let Some(GlobalMountModal::FileBrowser { state }) = settings.mounts.modal.as_mut() else {
-            return false;
-        };
-        crate::services::file_browser::apply_state_outcome(state, outcome)
+    if !matches!(
+        settings.mounts.modal,
+        Some(GlobalMountModal::FileBrowser { .. })
+    ) {
+        return false;
     };
-    match applied {
+    match outcome {
         FileBrowserOutcome::Commit(path) => {
             let src = path.display().to_string();
             if let Some(draft) = settings.mounts.add_draft.as_mut() {
