@@ -51,6 +51,15 @@ pub struct Rule {
     /// cannot express an anchored pattern.
     #[serde(default)]
     pub forbids_regex: Vec<String>,
+    // Regexes compiled once by `RulePack::finalize` at load (parallel to the
+    // pattern vecs above). `matches` falls back to per-eval compilation if these
+    // are absent, so a pack that skipped finalize still matches — just slower.
+    #[serde(skip)]
+    compiled_regex: Vec<regex::Regex>,
+    #[serde(skip)]
+    compiled_line_regex: Vec<regex::Regex>,
+    #[serde(skip)]
+    compiled_forbids_regex: Vec<regex::Regex>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -182,8 +191,7 @@ fn load_embedded_packs(packs: &mut HashMap<String, RulePack>) -> anyhow::Result<
         include_str!("../../../../docker/runtime/agent-status/packs/kimi.toml"),
         include_str!("../../../../docker/runtime/agent-status/packs/opencode.toml"),
     ] {
-        let pack: RulePack = toml::from_str(content)?;
-        pack.validate()?;
+        let pack = toml::from_str::<RulePack>(content)?.finalize()?;
         packs.insert(pack.agent.clone(), pack);
     }
     Ok(())
@@ -192,9 +200,7 @@ fn load_embedded_packs(packs: &mut HashMap<String, RulePack>) -> anyhow::Result<
 impl RulePack {
     pub fn load(path: &Path) -> anyhow::Result<Self> {
         let content = fs::read_to_string(path)?;
-        let pack: Self = toml::from_str(&content)?;
-        pack.validate()?;
-        Ok(pack)
+        toml::from_str::<Self>(&content)?.finalize()
     }
 
     /// Whether this pack's `validated_versions` range accepts `cli_version`.
@@ -274,6 +280,20 @@ impl RulePack {
         Ok(())
     }
 
+    /// Validate, sort rules by descending priority, and compile every regex
+    /// once. Run at load so evaluation does no per-tick sort or regex build.
+    pub fn finalize(mut self) -> anyhow::Result<Self> {
+        self.validate()?;
+        self.rule
+            .sort_by_key(|rule| std::cmp::Reverse(rule.priority));
+        for rule in &mut self.rule {
+            rule.compiled_regex = compile_all(&rule.regex, &rule.id)?;
+            rule.compiled_line_regex = compile_all(&rule.line_regex, &rule.id)?;
+            rule.compiled_forbids_regex = compile_all(&rule.forbids_regex, &rule.id)?;
+        }
+        Ok(self)
+    }
+
     pub fn evaluate(&self, screen_rows: &[String]) -> Option<RuleMatch> {
         self.evaluate_with_virtuals(screen_rows, VirtualRegions::default())
     }
@@ -283,10 +303,9 @@ impl RulePack {
         screen_rows: &[String],
         virtuals: VirtualRegions<'_>,
     ) -> Option<RuleMatch> {
-        let mut rules: Vec<&Rule> = self.rule.iter().collect();
-        rules.sort_by_key(|rule| std::cmp::Reverse(rule.priority));
-        rules
-            .into_iter()
+        // `self.rule` is pre-sorted by descending priority in `finalize`.
+        self.rule
+            .iter()
             .find(|rule| rule.matches(screen_rows, virtuals))
             .map(Rule::to_match)
     }
@@ -296,10 +315,9 @@ impl RulePack {
         screen_rows: &[String],
         virtuals: VirtualRegions<'_>,
     ) -> Vec<RuleEvaluation> {
-        let mut rules: Vec<&Rule> = self.rule.iter().collect();
-        rules.sort_by_key(|rule| std::cmp::Reverse(rule.priority));
-        rules
-            .into_iter()
+        // `self.rule` is pre-sorted by descending priority in `finalize`.
+        self.rule
+            .iter()
             .map(|rule| rule.evaluation(screen_rows, virtuals))
             .collect()
     }
@@ -313,6 +331,33 @@ fn build_regex(pattern: &str) -> Result<regex::Regex, regex::Error> {
     regex::RegexBuilder::new(pattern)
         .case_insensitive(true)
         .build()
+}
+
+/// Evaluate `pred` against every pattern's compiled regex. Uses the regexes
+/// `finalize` compiled when present (the production path); falls back to
+/// per-call compilation when they are absent (a pack that skipped finalize), so
+/// the result is correct either way — never a silent non-match.
+fn regex_all(
+    patterns: &[String],
+    compiled: &[regex::Regex],
+    pred: impl Fn(&regex::Regex) -> bool,
+) -> bool {
+    if compiled.len() == patterns.len() {
+        compiled.iter().all(pred)
+    } else {
+        patterns
+            .iter()
+            .all(|pattern| build_regex(pattern).is_ok_and(|re| pred(&re)))
+    }
+}
+
+fn compile_all(patterns: &[String], rule_id: &str) -> anyhow::Result<Vec<regex::Regex>> {
+    patterns
+        .iter()
+        .map(|pattern| {
+            build_regex(pattern).with_context(|| format!("invalid regex in rule {rule_id}"))
+        })
+        .collect()
 }
 
 impl Rule {
@@ -331,19 +376,14 @@ impl Rule {
                     .requires_any
                     .iter()
                     .any(|matcher| text.contains(&matcher.to_ascii_lowercase())))
-            && self
-                .regex
-                .iter()
-                .all(|matcher| build_regex(matcher).is_ok_and(|re| re.is_match(&text)))
+            && regex_all(&self.regex, &self.compiled_regex, |re| re.is_match(&text))
             // line_regex: each pattern must match SOME line of the region.
-            && self.line_regex.iter().all(|matcher| {
-                build_regex(matcher)
-                    .is_ok_and(|re| region.iter().any(|line| re.is_match(line)))
+            && regex_all(&self.line_regex, &self.compiled_line_regex, |re| {
+                region.iter().any(|line| re.is_match(line))
             })
             // forbids_regex: NO pattern may match ANY line of the region.
-            && self.forbids_regex.iter().all(|matcher| {
-                build_regex(matcher)
-                    .is_ok_and(|re| !region.iter().any(|line| re.is_match(line)))
+            && regex_all(&self.forbids_regex, &self.compiled_forbids_regex, |re| {
+                !region.iter().any(|line| re.is_match(line))
             })
     }
 
