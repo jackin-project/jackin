@@ -859,6 +859,7 @@ words = [
   "waitable",
   "waitid",
   "waitpid",
+  "waker",
   "walkdir",
   "wasi",
   "wasip",
