@@ -47,7 +47,7 @@ pub enum FileBrowserListingRequest {
 pub enum FileBrowserListingResult {
     OpenHome {
         target: FileBrowserOpenTarget,
-        result: Result<FileBrowserState, String>,
+        result: Result<Box<FileBrowserState>, String>,
     },
     Listing {
         context: FileBrowserEffectContext,
@@ -193,7 +193,7 @@ fn run_listing_request(request: FileBrowserListingRequest) -> FileBrowserListing
                 if let Some(cwd) = last_cwd.as_ref() {
                     clamp_state_to_cwd(&mut state, cwd);
                 }
-                state
+                Box::new(state)
             })
             .map_err(|error| error.to_string());
             FileBrowserListingResult::OpenHome { target, result }

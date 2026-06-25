@@ -260,13 +260,13 @@ impl UsageCache {
             self.refresh_schedule.mark_refreshed(&target, now, &view);
             stored_views.push(view);
         }
-        if !stored_views.is_empty() {
-            if let Err(error) = crate::telemetry_store::store_usage_snapshots(
+        if !stored_views.is_empty()
+            && let Err(error) = crate::telemetry_store::store_usage_snapshots(
                 &self.telemetry_store_path,
                 &stored_views,
-            ) {
-                crate::cdebug!("usage telemetry store write failed: {error}");
-            }
+            )
+        {
+            crate::cdebug!("usage telemetry store write failed: {error}");
         }
         if let Err(error) = self.materialize_accounts(now_epoch()) {
             crate::cdebug!("usage accounts materialization failed: {error}");
@@ -306,9 +306,10 @@ where
             .collect::<Vec<_>>();
         handles
             .into_iter()
-            .filter_map(|handle| match handle.join() {
-                Ok(result) => Some(result),
-                Err(_) => {
+            .filter_map(|handle| {
+                if let Ok(result) = handle.join() {
+                    Some(result)
+                } else {
                     crate::clog!("usage-refresh: provider probe panicked");
                     None
                 }
@@ -1582,12 +1583,11 @@ fn status_bar_headline_for_surface(
     surface: UsageSurface,
     buckets: &[QuotaBucketView],
 ) -> Option<String> {
-    match surface {
-        UsageSurface::Amp => amp_status_bar_headline(buckets),
-        _ => {
-            let labels = status_bar_quota_labels(buckets);
-            (!labels.is_empty()).then(|| labels.join(" · "))
-        }
+    if surface == UsageSurface::Amp {
+        amp_status_bar_headline(buckets)
+    } else {
+        let labels = status_bar_quota_labels(buckets);
+        (!labels.is_empty()).then(|| labels.join(" · "))
     }
 }
 
@@ -5314,6 +5314,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test worker sleeps on owned scoped threads to prove overlapping probes"
+    )]
     fn usage_refresh_probes_are_spawned_before_any_join() {
         use std::sync::Arc;
         use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};

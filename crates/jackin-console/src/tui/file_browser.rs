@@ -128,7 +128,7 @@ pub fn apply_file_browser_listing_result(
 fn apply_file_browser_open_result(
     state: &mut ManagerState<'_>,
     target: FileBrowserOpenTarget,
-    result: Result<FileBrowserState, String>,
+    result: Result<Box<FileBrowserState>, String>,
 ) -> bool {
     use crate::tui::components::error_popup;
     match target {
@@ -140,7 +140,7 @@ fn apply_file_browser_open_result(
                 Ok(file_browser) => {
                     editor.modal = Some(Modal::FileBrowser {
                         target: FileBrowserTarget::EditAddMountSrc,
-                        state: file_browser,
+                        state: *file_browser,
                     });
                 }
                 Err(error) => {
@@ -156,7 +156,7 @@ fn apply_file_browser_open_result(
                 Ok(file_browser) => {
                     crate::tui::input::auth::open_auth_source_folder_browser_from_form_with_state(
                         editor,
-                        file_browser,
+                        *file_browser,
                     )
                 }
                 Err(error) => {
@@ -170,7 +170,7 @@ fn apply_file_browser_open_result(
                 let mut prelude = CreatePreludeState::new();
                 prelude.modal = Some(Modal::FileBrowser {
                     target: FileBrowserTarget::CreateFirstMountSrc,
-                    state: file_browser,
+                    state: *file_browser,
                 });
                 drop(update_manager(
                     state,
@@ -196,7 +196,7 @@ fn apply_file_browser_open_result(
                     settings
                         .mounts
                         .open_sub_modal(GlobalMountModal::FileBrowser {
-                            state: Box::new(file_browser),
+                            state: file_browser,
                         });
                 }
                 Err(error) => {
@@ -237,7 +237,7 @@ fn apply_file_browser_open_result(
                             literal_buffer,
                         },
                         SettingsAuthModal::SourceFolderPicker {
-                            state: file_browser,
+                            state: *file_browser,
                         },
                     );
                 }
@@ -594,7 +594,7 @@ fn execute_prelude_file_browser_outcome(
     };
     if !matches!(prelude.modal, Some(Modal::FileBrowser { .. })) {
         return false;
-    };
+    }
     match outcome {
         FileBrowserOutcome::Commit(path) => {
             prelude.modal = None;
@@ -635,7 +635,7 @@ fn execute_settings_file_browser_outcome(
         Some(GlobalMountModal::FileBrowser { .. })
     ) {
         return false;
-    };
+    }
     match outcome {
         FileBrowserOutcome::Commit(path) => {
             let src = path.display().to_string();

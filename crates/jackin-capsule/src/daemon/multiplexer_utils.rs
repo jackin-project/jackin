@@ -295,10 +295,9 @@ impl Multiplexer {
         if !task.is_finished() {
             return false;
         }
-        let task = self
-            .usage_refresh_task
-            .take()
-            .expect("checked usage refresh task presence");
+        let Some(task) = self.usage_refresh_task.take() else {
+            return false;
+        };
         match task.await {
             Ok(cache) => {
                 self.usage_cache = cache;

@@ -1420,13 +1420,12 @@ impl Dialog {
                     *selected = UsageDialogTab::Overview;
                     DialogAction::Redraw
                 }
-                Some(idx) => view
-                    .tabs
-                    .get(idx.saturating_sub(1))
-                    .map(|tab| DialogAction::SwitchUsageProvider {
+                Some(idx) => view.tabs.get(idx.saturating_sub(1)).map_or_else(
+                    || DialogAction::Consume,
+                    |tab| DialogAction::SwitchUsageProvider {
                         provider_label: tab.label.clone(),
-                    })
-                    .unwrap_or(DialogAction::Consume),
+                    },
+                ),
                 None => DialogAction::Consume,
             };
         }
