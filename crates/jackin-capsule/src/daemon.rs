@@ -575,8 +575,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let mut new_clients = socket::start_listener()?;
     // Runtime hook/plugin events from control-socket reporters are forwarded
     // here and applied to session authority in the select loop below.
-    let (runtime_event_tx, mut runtime_event_rx) =
-        mpsc::unbounded_channel::<socket::RuntimeEventMsg>();
+    let (daemon_cmd_tx, mut daemon_cmd_rx) = mpsc::unbounded_channel::<socket::DaemonCommand>();
     // Screen rule packs: the universal detector. Loaded once; the embedded
     // packs are validated, so a load failure means a broken build — log and
     // run without screen evidence rather than killing the daemon.
@@ -689,21 +688,32 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     tabs_snapshot,
                     history_snapshot,
                     active_tab,
-                    runtime_event_tx.clone(),
+                    daemon_cmd_tx.clone(),
                 ));
             }
 
-            // Runtime hook/plugin event forwarded from a control-socket reporter.
-            // Apply it to the addressed session's authority (events -> gating ->
-            // AuthorityEvidence); the next state tick arbitrates the result.
-            Some(ev) = runtime_event_rx.recv() => {
-                if let Some(session) = mux.sessions.get_mut(&ev.session_id) {
-                    session.apply_runtime_event(
-                        &ev.source_id,
-                        &ev.runtime,
-                        &ev.event,
-                        Instant::now(),
-                    );
+            // Commands forwarded from a control-socket handler (the loop owns
+            // mutable session state). Runtime events update authority; capture
+            // writes a fixture from the live grid + evidence.
+            Some(cmd) = daemon_cmd_rx.recv() => {
+                match cmd {
+                    socket::DaemonCommand::RuntimeEvent(ev) => {
+                        if let Some(session) = mux.sessions.get_mut(&ev.session_id) {
+                            session.apply_runtime_event(
+                                &ev.source_id,
+                                &ev.runtime,
+                                &ev.event,
+                                Instant::now(),
+                            );
+                        }
+                    }
+                    socket::DaemonCommand::Capture { session_id } => {
+                        if let Some(session) = mux.sessions.get(&session_id)
+                            && let Err(e) = write_status_capture(session_id, session)
+                        {
+                            crate::clog!("status.capture: session {session_id} failed: {e:#}");
+                        }
+                    }
                 }
             }
 
@@ -1194,6 +1204,30 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             }
         }
     }
+}
+
+/// Write a capture fixture for `session`: its live visible grid (`visible.txt`)
+/// and the current evidence report (`evidence.json`), under
+/// `/jackin/state/agent-status/captures/<id>-<seq>/`. Turns a live
+/// mis-detection into a regression fixture in one command.
+fn write_status_capture(session_id: u64, session: &Session) -> Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static CAPTURE_SEQ: AtomicU64 = AtomicU64::new(0);
+    let seq = CAPTURE_SEQ.fetch_add(1, Ordering::Relaxed);
+    let dir = PathBuf::from("/jackin/state/agent-status/captures")
+        .join(format!("{session_id}-{seq}"));
+    std::fs::create_dir_all(&dir)?;
+    std::fs::write(
+        dir.join("visible.txt"),
+        session.visible_screen_rows().join("\n"),
+    )?;
+    let report = session.status.report(session.agent.clone(), 0);
+    std::fs::write(
+        dir.join("evidence.json"),
+        serde_json::to_string_pretty(&report)?,
+    )?;
+    crate::clog!("status.capture: wrote {}", dir.display());
+    Ok(())
 }
 
 async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {

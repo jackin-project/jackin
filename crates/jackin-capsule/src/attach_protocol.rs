@@ -47,7 +47,7 @@ pub(crate) async fn perform_handshake(
     tabs_snapshot: Vec<crate::protocol::control::TabSnapshot>,
     history_snapshot: Vec<jackin_protocol::control::AgentRegistryEntry>,
     active_tab: u32,
-    runtime_event_tx: mpsc::UnboundedSender<socket::RuntimeEventMsg>,
+    daemon_cmd_tx: mpsc::UnboundedSender<socket::DaemonCommand>,
 ) {
     // Bound the handshake reads. A client that opens the socket and
     // never sends a byte otherwise holds the `OwnedSemaphorePermit`
@@ -83,7 +83,7 @@ pub(crate) async fn perform_handshake(
             tabs_snapshot,
             history_snapshot,
             active_tab,
-            runtime_event_tx,
+            daemon_cmd_tx,
         )
         .await;
         drop(client_permit);

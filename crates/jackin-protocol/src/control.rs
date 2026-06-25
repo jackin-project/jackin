@@ -34,6 +34,11 @@ pub enum ClientMsg {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         payload: Option<String>,
     },
+    /// Ask the daemon to snapshot a session's live grid + evidence bundle into a
+    /// new capture fixture directory (a contributor diagnostic: turn a live
+    /// mis-detection into a regression fixture). The daemon owns the grid, so it
+    /// writes the files; the client only triggers and is Acked.
+    StatusCapture { session_id: u64 },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,

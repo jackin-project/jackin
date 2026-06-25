@@ -186,6 +186,30 @@ pub async fn run_status_explain(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// `jackin-capsule status capture <session_id>` — ask the daemon to write a
+/// capture fixture (live grid + evidence) for one session. The daemon owns the
+/// grid, so it does the write; the client triggers and waits for the Ack.
+pub async fn run_status_capture(args: &[String]) -> Result<()> {
+    let session_id: u64 = flag_value_positional(args, "capture")
+        .context("usage: jackin-capsule status capture <session_id>")?
+        .parse()
+        .context("session_id must be a u64")?;
+
+    let mut stream = UnixStream::connect(SOCKET_PATH)
+        .await
+        .context("cannot connect to jackin-capsule daemon")?;
+    stream
+        .write_all(&control_frame(&ClientMsg::StatusCapture { session_id }))
+        .await?;
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).await?;
+    crate::output::stdout_line(format_args!(
+        "capture requested for session {session_id}; \
+         see /jackin/state/agent-status/captures/"
+    ));
+    Ok(())
+}
+
 /// The first arg after `marker` (e.g. the `<session_id>` after `explain`).
 fn flag_value_positional(args: &[String], marker: &str) -> Option<String> {
     args.iter()

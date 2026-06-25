@@ -272,6 +272,17 @@ pub struct RuntimeEventMsg {
     pub event: String,
 }
 
+/// A command from a control-socket handler task to the daemon event loop (which
+/// owns mutable session state). Both variants are fire-and-forget: the handler
+/// Acks the client immediately and never blocks an agent hook.
+#[derive(Debug, Clone)]
+pub enum DaemonCommand {
+    /// Apply a forwarded runtime event to a session's authority.
+    RuntimeEvent(RuntimeEventMsg),
+    /// Write a capture fixture (visible grid + evidence) for a session.
+    Capture { session_id: u64 },
+}
+
 pub async fn handle_control_request(
     mut stream: UnixStream,
     first_byte: u8,
@@ -279,7 +290,7 @@ pub async fn handle_control_request(
     tabs: Vec<crate::protocol::control::TabSnapshot>,
     history: Vec<jackin_protocol::control::AgentRegistryEntry>,
     active_tab: u32,
-    runtime_event_tx: mpsc::UnboundedSender<RuntimeEventMsg>,
+    daemon_cmd_tx: mpsc::UnboundedSender<DaemonCommand>,
 ) {
     let msg = match read_control_msg(&mut stream, first_byte).await {
         Ok(msg) => msg,
@@ -300,16 +311,27 @@ pub async fn handle_control_request(
             payload: _,
         } => {
             // Forward to the daemon loop; never block the agent's hook.
-            if runtime_event_tx
-                .send(RuntimeEventMsg {
+            if daemon_cmd_tx
+                .send(DaemonCommand::RuntimeEvent(RuntimeEventMsg {
                     session_id: *session_id,
                     source_id: source_id.clone(),
                     runtime: runtime.clone(),
                     event: event.clone(),
-                })
+                }))
                 .is_err()
             {
                 crate::clog!("control: runtime event dropped (daemon loop gone)");
+            }
+            ServerMsg::Ack
+        }
+        ClientMsg::StatusCapture { session_id } => {
+            if daemon_cmd_tx
+                .send(DaemonCommand::Capture {
+                    session_id: *session_id,
+                })
+                .is_err()
+            {
+                crate::clog!("control: capture dropped (daemon loop gone)");
             }
             ServerMsg::Ack
         }
