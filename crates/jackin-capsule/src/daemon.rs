@@ -1046,7 +1046,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             // visibly jumps to the tab strip every tick and parks
             // there as a phantom block until the next pane redraw.
             _ = state_ticker.tick() => {
-                mux.log_resource_metrics();
+                mux.log_resource_metrics().await;
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
                 // Snapshot visible agent state, refresh, snapshot again. The
                 // ticker's only time-based effect is Working→Idle transitions;
