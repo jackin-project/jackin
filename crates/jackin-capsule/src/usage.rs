@@ -2195,9 +2195,6 @@ fn bucket(
     }
 }
 
-/// Tag the bucket pushed last onto `buckets` with the status-bar slot it fills.
-/// Accepts a bare `StatusSlot` or an `Option`; a `None` slot is a no-op so the
-/// window-builder call sites that thread an optional slot need no `if let`.
 /// Stamp a quota bucket's status-bar slot at construction. Returns the bucket so
 /// it can be tagged and pushed in one expression (`buckets.push(with_status_slot(
 /// build(...), Some(StatusSlot::Session)))`) — the slot rides with the view it
