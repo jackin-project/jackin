@@ -206,11 +206,7 @@ impl SessionStatus {
         }
     }
 
-    pub fn report(
-        &self,
-        detected_agent: Option<String>,
-        last_seen_revision: u64,
-    ) -> AgentStatusReport {
+    pub fn report(&self, detected_agent: Option<String>) -> AgentStatusReport {
         let summary = &self.last_snapshot_summary;
         AgentStatusReport {
             raw_state: self.raw,
@@ -247,7 +243,6 @@ impl SessionStatus {
             stale_report: summary.stale_report,
             subagents_active: summary.subagents_active,
             revision: self.revision,
-            last_seen_revision,
         }
     }
 

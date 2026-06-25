@@ -259,17 +259,19 @@ pub fn identify_agent(info: &ProcessInfo) -> Option<AgentKind> {
 /// currently owns the terminal's foreground process group.
 ///
 /// Returns `(agent_kind, foreground_pgid)` or `None` when detection fails.
-pub fn detect_foreground_agent(child_pid: u32) -> Option<(AgentKind, u32)> {
-    let info = read_process_info(child_pid)?;
-    if info.tpgid <= 0 {
+/// `root_info` is the already-read `/proc` info for the child PID, so the caller
+/// (which read it for its own physics sample) does not pay a second stat+exe+
+/// cmdline read here.
+pub fn detect_foreground_agent(root_info: &ProcessInfo) -> Option<(AgentKind, u32)> {
+    if root_info.tpgid <= 0 {
         return None;
     }
-    let fg_pgid = u32::try_from(info.tpgid).ok()?;
+    let fg_pgid = u32::try_from(root_info.tpgid).ok()?;
     let process_group: Vec<_> = pids_in_pgrp(fg_pgid)
         .into_iter()
         .filter_map(read_process_info)
         .collect();
-    detect_foreground_agent_from_process_infos(&info, &process_group)
+    detect_foreground_agent_from_process_infos(root_info, &process_group)
 }
 
 fn detect_foreground_agent_from_process_infos(

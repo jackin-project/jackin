@@ -70,5 +70,4 @@ pub struct AgentStatusReport {
     pub stale_report: bool,
     pub subagents_active: u32,
     pub revision: u64,
-    pub last_seen_revision: u64,
 }

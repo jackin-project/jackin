@@ -40,10 +40,7 @@ use tokio::time::{Duration, interval};
 
 use portable_pty::CommandBuilder;
 
-use crate::agent_status::arbitrate::arbitrate;
-use crate::agent_status::evidence::{ActivityEvidence, EvidenceSnapshot, ScreenEvidence};
-use crate::agent_status::policy::{apply_watchdog, debounce};
-use crate::agent_status::rules::{RulePackRegistry, VirtualRegions};
+use crate::agent_status::rules::RulePackRegistry;
 use crate::attach_protocol::{
     AttachHandshake, detach_attached_task, detach_client, drain_and_exit,
     drain_and_exit_with_reason, handle_attach_client, initial_spawn_request, perform_handshake,
@@ -1084,102 +1081,25 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let states_before: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
                 for (&session_id, session) in &mut mux.sessions {
-                    let process = session.sample_process_evidence(now);
-                    let exiting = process.process_exited || process.foreground_returned_to_shell;
-                    // Screen rule-pack evaluation over the live viewport: the
-                    // universal detector and the sole state source for
-                    // identity-only runtimes (Claude/Codex) and Kimi.
-                    let screen = rule_registry
-                        .as_ref()
-                        .and_then(|registry| {
-                            let rows = session.visible_screen_rows();
-                            let osc = session.osc_evidence();
-                            let virtuals = VirtualRegions {
-                                osc_title: osc.title.as_deref(),
-                                osc_progress: osc.progress_raw.as_deref(),
-                            };
-                            registry.evaluate_with_virtuals(
-                                session.agent.as_deref(),
-                                &rows,
-                                virtuals,
-                            )
-                        })
-                        .map_or_else(
-                            || ScreenEvidence {
-                                observed_at: now,
-                                ..ScreenEvidence::default()
-                            },
-                            |m| ScreenEvidence {
-                                state: m.state,
-                                rule_id: Some(m.rule_id),
-                                strong: m.strong,
-                                freeze: m.freeze,
-                                observed_at: now,
-                            },
+                    // Session::advance_status is the sole state-authoring path;
+                    // the daemon only reacts to the resulting transition.
+                    let tick = session.advance_status(rule_registry.as_ref(), now);
+                    if let Some(transition) = tick.transition {
+                        // Flap-rate telemetry: every public transition is logged
+                        // with the deciding evidence so a regression (an agent
+                        // update breaking a pack) shows up as a burst.
+                        crate::clog!(
+                            "agent-status: session {session_id} {} -> {} (winner={:?})",
+                            transition.previous.label(),
+                            transition.effective.label(),
+                            transition.winner
                         );
-                    let snapshot = EvidenceSnapshot {
-                        authority: session.authority.clone(),
-                        subagents_active: session.subagents_active,
-                        osc: session.osc_evidence().clone(),
-                        screen,
-                        process,
-                        activity: ActivityEvidence {
-                            last_output: Some(session.last_output_at),
-                            last_input: Some(session.last_input_at),
-                        },
-                    };
-                    let candidate =
-                        apply_watchdog(arbitrate(&snapshot, session.status.raw, now), now);
-                    // Stuck telemetry: a watchdog demotion means a witness
-                    // claimed `working` while physics went quiet (the interrupt
-                    // hole / a hung authority). Rate-limited by being once per
-                    // demotion (the note is only pushed when the state flips).
-                    let stuck = candidate
-                        .notes
-                        .iter()
-                        .any(|n| matches!(n, crate::agent_status::evidence::EvidenceNote::WatchdogDemoted));
-                    let winner = candidate.summary.winner;
-                    // Debounce gates whether the candidate becomes a public
-                    // transition (immediate for blocked/working/exit/strong-idle;
-                    // inferred idle needs confirmation + CPU/OSC-quiet). Only
-                    // commit through SessionStatus when it permits.
-                    if debounce(
-                        session.state,
-                        &candidate,
-                        &mut session.pending_transition,
-                        now,
-                    )
-                    .is_some()
-                    {
-                        let previous = session.state;
-                        if let Some(effective) = session.status.publish_raw(
-                            candidate.raw,
-                            candidate.confidence,
-                            candidate.summary,
-                        ) {
-                            session.state = effective;
-                            // Flap-rate telemetry: every public transition is
-                            // logged with the deciding evidence so a regression
-                            // (an agent update breaking a pack) shows up as a
-                            // burst of transitions.
-                            crate::clog!(
-                                "agent-status: session {session_id} {} -> {} (winner={winner:?})",
-                                previous.label(),
-                                effective.label()
-                            );
-                        }
                     }
-                    if stuck {
+                    if tick.stuck {
                         crate::clog!(
                             "status.stuck: session {session_id} demoted to unknown — \
                              working claimed with no output/CPU/children past the watchdog window"
                         );
-                    }
-                    // Exit transition is published above (arbitration step 1)
-                    // BEFORE clearing identity/authority, so a stale semantic
-                    // report can never outlive the process it described.
-                    if exiting {
-                        session.clear_runtime_authority();
                     }
                 }
                 // Seen/ack: the focused pane is being reviewed, so it must never
@@ -1232,7 +1152,7 @@ fn write_status_capture(session_id: u64, session: &Session) -> Result<()> {
         dir.join("visible.txt"),
         session.visible_screen_rows().join("\n"),
     )?;
-    let report = session.status.report(session.agent.clone(), 0);
+    let report = session.status.report(session.agent.clone());
     std::fs::write(
         dir.join("evidence.json"),
         serde_json::to_string_pretty(&report)?,

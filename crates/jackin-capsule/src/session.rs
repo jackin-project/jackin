@@ -213,6 +213,23 @@ pub struct SessionProvider {
     pub env_overrides: Vec<(String, String)>,
 }
 
+/// A published public-state change emitted by [`Session::advance_status`].
+#[derive(Debug, Clone, Copy)]
+pub struct StatusTransition {
+    pub previous: AgentState,
+    pub effective: AgentState,
+    pub winner: crate::agent_status::evidence::EvidenceWinner,
+}
+
+/// Outcome of one [`Session::advance_status`] tick for the daemon to react to:
+/// `transition` is `Some` when a public state change published; `stuck` flags a
+/// watchdog demotion for telemetry.
+#[derive(Debug, Clone, Copy)]
+pub struct StatusTick {
+    pub transition: Option<StatusTransition>,
+    pub stuck: bool,
+}
+
 #[expect(
     missing_debug_implementations,
     reason = "Session owns PTY and child-killer trait objects; capsule logs expose session identity and state."
@@ -998,7 +1015,7 @@ impl Session {
             };
         };
 
-        let foreground = detect_foreground_agent(pid);
+        let foreground = detect_foreground_agent(&info);
         let foreground_is_agent =
             matches!(&foreground, Some((kind, _)) if *kind != AgentKind::Unknown);
         let foreground_pgid = foreground.as_ref().map(|(_, pgid)| *pgid);
@@ -1029,6 +1046,96 @@ impl Session {
             cpu_jiffies_delta,
             physics_sampled: true,
         }
+    }
+
+    /// Advance the agent-status state machine by one tick: sample evidence,
+    /// run the screen rule pack, arbitrate, debounce, and publish. This is the
+    /// sole path that authors public agent state — the daemon only reacts to the
+    /// returned [`StatusTick`] (redraw + telemetry). Exit clears runtime
+    /// authority only after the exit transition has published, so a stale
+    /// semantic report can never outlive the process it described.
+    pub fn advance_status(
+        &mut self,
+        rule_registry: Option<&crate::agent_status::rules::RulePackRegistry>,
+        now: std::time::Instant,
+    ) -> StatusTick {
+        use crate::agent_status::arbitrate::arbitrate;
+        use crate::agent_status::evidence::{
+            ActivityEvidence, EvidenceNote, EvidenceSnapshot, ScreenEvidence,
+        };
+        use crate::agent_status::policy::{apply_watchdog, debounce};
+        use crate::agent_status::rules::VirtualRegions;
+
+        let process = self.sample_process_evidence(now);
+        let exiting = process.process_exited || process.foreground_returned_to_shell;
+        // Screen rule-pack evaluation over the live viewport: the universal
+        // detector and the sole state source for identity-only runtimes
+        // (Claude/Codex) and Kimi.
+        let screen = rule_registry
+            .and_then(|registry| {
+                let rows = self.visible_screen_rows();
+                let osc = self.osc_evidence();
+                let virtuals = VirtualRegions {
+                    osc_title: osc.title.as_deref(),
+                    osc_progress: osc.progress_raw.as_deref(),
+                };
+                registry.evaluate_with_virtuals(self.agent.as_deref(), &rows, virtuals)
+            })
+            .map_or_else(
+                || ScreenEvidence {
+                    observed_at: now,
+                    ..ScreenEvidence::default()
+                },
+                |m| ScreenEvidence {
+                    state: m.state,
+                    rule_id: Some(m.rule_id),
+                    strong: m.strong,
+                    freeze: m.freeze,
+                    observed_at: now,
+                },
+            );
+        let snapshot = EvidenceSnapshot {
+            authority: self.authority.clone(),
+            subagents_active: self.subagents_active,
+            osc: self.osc_evidence().clone(),
+            screen,
+            process,
+            activity: ActivityEvidence {
+                last_output: Some(self.last_output_at),
+                last_input: Some(self.last_input_at),
+            },
+        };
+        let candidate = apply_watchdog(arbitrate(&snapshot, self.status.raw, now), now);
+        // Stuck telemetry: a watchdog demotion means a witness claimed `working`
+        // while physics went quiet (the interrupt hole / a hung authority).
+        let stuck = candidate
+            .notes
+            .iter()
+            .any(|n| matches!(n, EvidenceNote::WatchdogDemoted));
+        let winner = candidate.summary.winner;
+        // Debounce gates whether the candidate becomes a public transition
+        // (immediate for blocked/working/exit/strong-idle; inferred idle needs
+        // confirmation + CPU/OSC-quiet). Only commit through SessionStatus when
+        // it permits.
+        let mut transition = None;
+        if debounce(self.state, &candidate, &mut self.pending_transition, now).is_some() {
+            let previous = self.state;
+            if let Some(effective) =
+                self.status
+                    .publish_raw(candidate.raw, candidate.confidence, candidate.summary)
+            {
+                self.state = effective;
+                transition = Some(StatusTransition {
+                    previous,
+                    effective,
+                    winner,
+                });
+            }
+        }
+        if exiting {
+            self.clear_runtime_authority();
+        }
+        StatusTick { transition, stuck }
     }
 
     /// True when the session's program has enabled any mouse protocol

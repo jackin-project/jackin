@@ -245,9 +245,7 @@ impl Multiplexer {
                             label: session.label.clone(),
                             agent: session.agent.clone(),
                             state: session.state,
-                            agent_status_report: Some(
-                                session.status.report(session.agent.clone(), 0),
-                            ),
+                            agent_status_report: Some(session.status.report(session.agent.clone())),
                         },
                         None => PaneSnapshot {
                             session_id: id,

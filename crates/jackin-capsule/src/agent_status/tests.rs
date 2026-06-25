@@ -246,7 +246,7 @@ fn report_uses_evidence_summary() {
         AgentStatusConfidence::Authoritative,
         summary,
     );
-    let report = s.report(Some("claude".to_owned()), 0);
+    let report = s.report(Some("claude".to_owned()));
     assert_eq!(report.raw_state, RawAgentState::Working);
     assert_eq!(report.confidence, AgentStatusConfidence::Authoritative);
     assert_eq!(report.foreground_pgid, Some(42));
@@ -271,7 +271,7 @@ fn report_preserves_shell_integration_source() {
     s.publish_raw(RawAgentState::Idle, AgentStatusConfidence::Strong, summary);
 
     assert_eq!(
-        s.report(Some("codex".to_owned()), 0).source,
+        s.report(Some("codex".to_owned())).source,
         AgentStatusSource::ShellIntegration
     );
 }

@@ -172,25 +172,6 @@ impl RulePackRegistry {
             .get(agent?)?
             .evaluate_with_virtuals(screen_rows, virtuals)
     }
-
-    pub fn explain(&self, agent: Option<&str>, screen_rows: &[String]) -> Vec<RuleEvaluation> {
-        self.packs
-            .get(agent.unwrap_or_default())
-            .map_or_else(Vec::new, |pack| pack.explain(screen_rows))
-    }
-
-    pub fn explain_with_virtuals(
-        &self,
-        agent: Option<&str>,
-        screen_rows: &[String],
-        virtuals: VirtualRegions<'_>,
-    ) -> Vec<RuleEvaluation> {
-        self.packs
-            .get(agent.unwrap_or_default())
-            .map_or_else(Vec::new, |pack| {
-                pack.explain_with_virtuals(screen_rows, virtuals)
-            })
-    }
 }
 
 fn load_embedded_packs(packs: &mut HashMap<String, RulePack>) -> anyhow::Result<()> {
@@ -308,10 +289,6 @@ impl RulePack {
             .into_iter()
             .find(|rule| rule.matches(screen_rows, virtuals))
             .map(Rule::to_match)
-    }
-
-    pub fn explain(&self, screen_rows: &[String]) -> Vec<RuleEvaluation> {
-        self.explain_with_virtuals(screen_rows, VirtualRegions::default())
     }
 
     pub fn explain_with_virtuals(
