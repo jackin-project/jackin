@@ -57,11 +57,11 @@ last live session exits (agent /exit, Ctrl-D, or crash)
 
 This checklist is the work contract for the implementing agent. Rules: tackle one item at a time; mark a box `[x]` **only** after the change is implemented *and* its verification step passes — never on code alone; do not check a parent until every child under it is checked; if an item marked **(decide)** is unresolved, stop and confirm with the operator before implementing — do not guess. The full rationale lives in the sections above; this is the execution tracker.
 
-### Decisions to confirm before coding (gates)
+### Settled decisions (resolved with operator)
 
-- [ ] **(decide)** How the capsule signals the chosen keep/discard action to the host — exit-code convention, a small state file under the per-instance dir, or a control frame. The host reads it to execute keep vs discard without prompting.
-- [ ] **(decide)** `Ctrl+Q` meaning from the exit modal (tentative: `Exit & keep`).
-- [ ] **(decide)** Confirm discard takes no extra in-capsule sub-confirm (operator chose the split-Exit shape with selection-as-approval); lock or add a single Yes/No guard.
+- **Host signal**: the capsule writes the chosen action to a small state file under the per-instance dir — `~/.jackin/data/<container>/.jackin/exit-action.json` (`{ "action": "keep" | "discard" }`) — before `drain_and_exit`. The host finalize reads it and executes that action. Chosen over an exit-code convention (range-limited, conflated with real errors) and a control frame (more plumbing); the file survives the exit and is inspectable.
+- **`Ctrl+Q` from the exit modal** maps to `Exit & keep` — the safe default that never loses work.
+- **Discard takes no extra sub-confirm**: selecting `Exit & discard changes` is itself the explicit destructive approval (the operator chose the split-Exit shape). No second Yes/No.
 
 ### Part 1 — Share dirty detection into `jackin-core`
 
@@ -73,7 +73,7 @@ This checklist is the work contract for the implementing agent. Rules: tackle on
 
 ### Part 2 — In-capsule confirmation (`jackin-capsule`)
 
-- [ ] Plumb the resolved `dirty_exit_policy` into the capsule launch config (`/jackin/run/agent.toml`) so the daemon knows `ask` vs `keep`/`discard`.
+- [ ] Plumb into the capsule launch config (`/jackin/run/agent.toml`) the data the daemon needs at exit: the resolved `dirty_exit_policy` (`ask` vs `keep`/`discard`) and the list of **isolated worktree/clone mount paths** to assess (not just the primary workdir; `shared` mounts are never assessed).
 - [ ] At `no_live_sessions()` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />: run the shared detection on the workdir(s); branch — clean, or policy `keep`/`discard`, → record the action and `drain_and_exit` as today; policy `ask` + dirty → push the modal and keep the daemon alive with no live panes.
 - [ ] Add the exit-modal `Dialog` variant (per-repo summary lines + the four rows) reusing `render_picker_list`/`SelectList` + `HintBar`; render correctly over an empty pane area without breaking the render loop.
 - [ ] Wire rows: `Start a new agent` → push the verbatim `new_agent_picker(PickerIntent::NewTab)` → `spawn_session`; `Inspect changes` → the in-capsule diff view; `Exit & keep` / `Exit & discard` → record the chosen action, then `drain_and_exit`.
