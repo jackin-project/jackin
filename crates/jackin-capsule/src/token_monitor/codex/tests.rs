@@ -2,31 +2,35 @@
 use super::*;
 
 #[test]
-fn codex_token_reader_computes_per_turn_delta() {
+fn cumulative_token_count_takes_last_value_not_sum() {
+    // Two cumulative `total_token_usage` lines: the session total is the LAST
+    // value (the counter is monotonic), never their sum. Regression guard for
+    // the prior double-count, where each poll re-added the running total.
     let line1 = r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":50}}}}"#;
     let line2 = r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200,"output_tokens":90}}}}"#;
-    let v1: serde_json::Value = serde_json::from_str(line1).unwrap();
-    let v2: serde_json::Value = serde_json::from_str(line2).unwrap();
-    assert_eq!(v1.get("type").and_then(|v| v.as_str()), Some("event_msg"));
-    assert_eq!(v2.get("type").and_then(|v| v.as_str()), Some("event_msg"));
-    let info2 = &v2["payload"]["info"]["total_token_usage"];
-    let (inp, out, _, _) = parse_raw_usage(info2);
-    assert_eq!(inp, 200);
-    assert_eq!(out, 90);
+    let mut acc = Acc::default();
+    apply_line(line1, &mut acc);
+    apply_line(line2, &mut acc);
+    assert_eq!(acc.cumulative, Some((200, 90, 0)));
+    assert_eq!(acc.headless, (0, 0, 0));
+    assert!(acc.seen);
 }
 
 #[test]
-fn codex_token_reader_handles_headless_format() {
-    let line = r#"{"usage":{"input_tokens":300,"output_tokens":100},"costUSD":0.15}"#;
-    let val: serde_json::Value = serde_json::from_str(line).unwrap();
-    assert!(val.get("usage").is_some());
-    assert_eq!(
-        val.get("costUSD").and_then(serde_json::Value::as_f64),
-        Some(0.15)
+fn headless_usage_lines_sum() {
+    let mut acc = Acc::default();
+    apply_line(
+        r#"{"usage":{"input_tokens":300,"output_tokens":100},"costUSD":0.15}"#,
+        &mut acc,
     );
-    let (inp, out, _, _) = parse_raw_usage(val.get("usage").unwrap());
-    assert_eq!(inp, 300);
-    assert_eq!(out, 100);
+    apply_line(
+        r#"{"usage":{"input_tokens":50,"output_tokens":20}}"#,
+        &mut acc,
+    );
+    assert_eq!(acc.cumulative, None);
+    assert_eq!(acc.headless, (350, 120, 0));
+    assert!(acc.has_cost);
+    assert!((acc.cost - 0.15).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -35,11 +39,9 @@ fn parse_raw_usage_handles_alternate_field_names() {
         "prompt_tokens": 50,
         "completion_tokens": 20,
         "cache_read_input_tokens": 10,
-        "reasoning_output_tokens": 5,
     });
-    let (inp, out, cached, reasoning) = parse_raw_usage(&obj);
+    let (inp, out, cached) = parse_raw_usage(&obj);
     assert_eq!(inp, 50);
     assert_eq!(out, 20);
     assert_eq!(cached, 10);
-    assert_eq!(reasoning, 5);
 }

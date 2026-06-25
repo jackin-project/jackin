@@ -946,6 +946,8 @@ words = [
   "tpgid",
   "ppid",
   "cmdline",
+  "rollouts",
+  "globbed",
   "Notif",
   "epoll",
   "Acks",

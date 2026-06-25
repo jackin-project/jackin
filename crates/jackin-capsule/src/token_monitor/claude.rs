@@ -1,7 +1,9 @@
 //! JSONL reader for Claude Code token usage.
 //!
-//! Reads `/home/agent/.config/claude/projects/**/*.jsonl` (v1.0.30+)
-//! or `/home/agent/.claude/projects/**/*.jsonl` (legacy).
+//! Reads `/home/agent/.config/claude/projects/**/*.jsonl` (v1.0.30+) or
+//! `/home/agent/.claude/projects/**/*.jsonl` (legacy). Each line carries one
+//! message's usage; totals are recomputed from scratch each poll (re-reading the
+//! whole file), so polls never double-count and need no byte-offset bookkeeping.
 
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -65,7 +67,6 @@ fn parse_line(line: &str) -> Option<ClaudeUsageLine> {
     })
 }
 
-/// Find the JSONL file(s) for the current session.
 fn find_jsonl_files() -> Vec<PathBuf> {
     super::find_provider_files(
         &[
@@ -76,70 +77,78 @@ fn find_jsonl_files() -> Vec<PathBuf> {
     )
 }
 
-/// Poll Claude JSONL files for new token data.
-/// Returns true when totals changed.
+/// Recomputed session totals over one poll pass.
+#[derive(Default)]
+struct Acc {
+    input: u64,
+    output: u64,
+    cache_read: u64,
+    cache_write: u64,
+    cost: f64,
+    has_cost: bool,
+    model: Option<String>,
+    seen: bool,
+}
+
 pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
     let files = find_jsonl_files();
     if files.is_empty() {
         return false;
     }
 
-    // Incremental polling: track a single shared byte offset across all files.
-    // A production implementation should track per-file offsets via a
-    // HashMap<PathBuf, u64>, but a single offset is sufficient for the first
-    // implementation where one JSONL file dominates.
-    let mut changed = false;
-    let mut new_cost: f64 = 0.0;
-    let mut has_cost = false;
-    let mut new_input: u64 = 0;
-    let mut new_output: u64 = 0;
-    let mut new_cache_read: u64 = 0;
-    let mut new_cache_write: u64 = 0;
-    let mut last_model: Option<String> = session.totals.model.clone();
-
+    let mut acc = Acc::default();
     for path in &files {
-        let Some((text, new_offset)) = super::read_new_text(path, &mut session.file_offset) else {
+        let Some(text) = super::read_file_text(path) else {
             continue;
         };
-
         for line in text.lines() {
             if line.trim().is_empty() {
                 continue;
             }
-            if let Some(parsed) = parse_line(line) {
-                if parsed.is_sidechain {
-                    continue; // Skip sidechain replays.
-                }
-                if parsed.is_error && parsed.input_tokens == 0 && parsed.output_tokens == 0 {
-                    continue;
-                }
-                if let Some(ref m) = parsed.model {
-                    last_model = Some(m.clone());
-                }
-                if let Some(cost) = parsed.cost_usd {
-                    new_cost += cost;
-                    has_cost = true;
-                } else {
-                    new_input += parsed.input_tokens;
-                    new_output += parsed.output_tokens;
-                    new_cache_read += parsed.cache_read_input_tokens;
-                    new_cache_write += parsed.cache_creation_input_tokens;
-                }
-                changed = true;
+            let Some(parsed) = parse_line(line) else {
+                continue;
+            };
+            if parsed.is_sidechain {
+                continue; // Skip sidechain replays.
             }
+            if parsed.is_error && parsed.input_tokens == 0 && parsed.output_tokens == 0 {
+                continue;
+            }
+            if let Some(m) = parsed.model {
+                acc.model = Some(m);
+            }
+            acc.input += parsed.input_tokens;
+            acc.output += parsed.output_tokens;
+            acc.cache_read += parsed.cache_read_input_tokens;
+            acc.cache_write += parsed.cache_creation_input_tokens;
+            if let Some(cost) = parsed.cost_usd {
+                acc.cost += cost;
+                acc.has_cost = true;
+            }
+            acc.seen = true;
         }
-        session.file_offset = new_offset;
+    }
+    if !acc.seen {
+        return false;
     }
 
+    let cost = acc.has_cost.then_some(acc.cost);
+    let changed = acc.input != session.totals.input_tokens
+        || acc.output != session.totals.output_tokens
+        || acc.cache_read != session.totals.cache_read_tokens
+        || acc.cache_write != session.totals.cache_write_tokens
+        || (cost.is_some() && cost != session.totals.cost_usd);
     if changed {
-        if has_cost {
-            session.totals.cost_usd = Some(session.totals.cost_usd.unwrap_or(0.0) + new_cost);
+        session.totals.input_tokens = acc.input;
+        session.totals.output_tokens = acc.output;
+        session.totals.cache_read_tokens = acc.cache_read;
+        session.totals.cache_write_tokens = acc.cache_write;
+        if cost.is_some() {
+            session.totals.cost_usd = cost;
         }
-        session.totals.input_tokens += new_input;
-        session.totals.output_tokens += new_output;
-        session.totals.cache_read_tokens += new_cache_read;
-        session.totals.cache_write_tokens += new_cache_write;
-        session.totals.model = last_model;
+        if acc.model.is_some() {
+            session.totals.model = acc.model;
+        }
         if session.totals.window_start.is_none() {
             session.totals.window_start = Some(SystemTime::now());
         }

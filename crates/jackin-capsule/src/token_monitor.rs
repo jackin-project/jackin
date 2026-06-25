@@ -53,8 +53,6 @@ impl TokenTotals {
 pub(crate) struct TokenSession {
     pub(crate) agent: String,
     pub(crate) totals: TokenTotals,
-    /// Last byte offset read in the JSONL file (for incremental reads).
-    pub(crate) file_offset: u64,
     /// Last rowid seen in `SQLite` (for `OpenCode` incremental reads).
     pub(crate) last_rowid: i64,
     /// Time of last poll.
@@ -68,7 +66,6 @@ impl TokenSession {
         Self {
             agent: agent.to_owned(),
             totals: TokenTotals::default(),
-            file_offset: 0,
             last_rowid: 0,
             last_polled: Instant::now(),
             silent_polls: 0,
@@ -101,10 +98,15 @@ impl TokenSession {
         if changed {
             self.silent_polls = 0;
             // Fill cost from the static pricing table when the provider's own
-            // stream did not carry a precomputed cost.
-            if self.totals.cost_usd.is_none()
-                && let Some(model) = self.totals.model.clone()
-            {
+            // stream did not carry a precomputed cost. Key on the wire model when
+            // present, else the agent slug (so e.g. Kimi, which carries no model,
+            // still prices off its `kimi` row).
+            if self.totals.cost_usd.is_none() {
+                let model = self
+                    .totals
+                    .model
+                    .clone()
+                    .unwrap_or_else(|| self.agent.clone());
                 self.totals.cost_usd = pricing::estimate_cost_usd(
                     &self.agent,
                     &model,
@@ -121,51 +123,42 @@ impl TokenSession {
     }
 }
 
-/// Walk `base_dirs` and return all files with extension `ext` found either as
-/// direct children of each base directory or one level deeper (for providers
-/// that nest files inside a per-session subdirectory).
+/// Recursively walk `base_dirs` and return every file with extension `ext`.
+/// Providers nest session logs at varying depths — Claude one level
+/// (`projects/<dir>/*.jsonl`), Codex three (`sessions/YYYY/MM/DD/*.jsonl`) — so
+/// the walk is fully recursive (bounded by `MAX_WALK_DEPTH` against a pathological
+/// tree). A missing or unreadable directory yields no files, never an error.
 pub(crate) fn find_provider_files(base_dirs: &[&str], ext: &str) -> Vec<std::path::PathBuf> {
+    const MAX_WALK_DEPTH: usize = 8;
     let mut paths = Vec::new();
-    for &base in base_dirs {
-        let Ok(dir) = std::fs::read_dir(base) else {
+    let mut stack: Vec<(std::path::PathBuf, usize)> = base_dirs
+        .iter()
+        .map(|b| (Path::new(b).to_owned(), 0))
+        .collect();
+    while let Some((dir, depth)) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
-        for session in dir.flatten() {
-            let sp = session.path();
-            if sp.extension().and_then(|e| e.to_str()) == Some(ext) {
-                paths.push(sp);
-                continue;
-            }
-            let Ok(entries) = std::fs::read_dir(&sp) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().and_then(|e| e.to_str()) == Some(ext) {
-                    paths.push(p);
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                if depth < MAX_WALK_DEPTH {
+                    stack.push((p, depth + 1));
                 }
+            } else if p.extension().and_then(|e| e.to_str()) == Some(ext) {
+                paths.push(p);
             }
         }
     }
     paths
 }
 
-pub(crate) fn read_new_text(path: &Path, offset: &mut u64) -> Option<(String, u64)> {
-    let content = std::fs::read_to_string(path).ok()?;
-    let len = content.len() as u64;
-    let start = if *offset <= len {
-        *offset as usize
-    } else {
-        crate::cdebug!(
-            "token monitor: offset {} beyond len {} for {:?}, resetting",
-            *offset,
-            len,
-            path
-        );
-        *offset = 0;
-        0
-    };
-    Some((content[start..].to_owned(), len))
+/// Read a file in full, returning its text. Token logs are re-read whole on each
+/// poll (the adapters recompute totals from scratch); this avoids the per-file
+/// byte-offset bookkeeping that silently double-counted when one shared offset
+/// was applied across multiple globbed files.
+pub(crate) fn read_file_text(path: &Path) -> Option<String> {
+    std::fs::read_to_string(path).ok()
 }
 
 /// The token monitor manages per-session polling.
