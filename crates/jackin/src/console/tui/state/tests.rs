@@ -809,7 +809,7 @@ fn editor_with_one_shared_mount() -> EditorState<'static> {
         env: BTreeMap::default(),
         roles: BTreeMap::default(),
         keep_awake: KeepAwakeConfig::default(),
-        docker: Default::default(),
+        docker: None,
         claude: None,
         codex: None,
         amp: None,

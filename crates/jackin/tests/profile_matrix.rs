@@ -111,15 +111,15 @@ fn no_new_privileges_active(container: &str) -> bool {
 
 /// Read `CapEff` from `/proc/self/status` and test whether `bit` is set.
 ///
-/// Linux capability bit numbers: NET_ADMIN=12, NET_RAW=13, SETPCAP=8.
+/// Linux capability bit numbers: `NET_ADMIN`=12, `NET_RAW`=13, `SETPCAP`=8.
 fn cap_eff_has_bit(container: &str, bit: u32) -> bool {
     let out = docker_exec_output(container, &["sh", "-c", "cat /proc/self/status"]);
     for line in out.lines() {
         // The field is lowercase in `docker_exec_output` (it calls `.to_lowercase()`).
-        if let Some(hex) = line.strip_prefix("capeff:\t") {
-            if let Ok(val) = u64::from_str_radix(hex.trim(), 16) {
-                return (val >> bit) & 1 == 1;
-            }
+        if let Some(hex) = line.strip_prefix("capeff:\t")
+            && let Ok(val) = u64::from_str_radix(hex.trim(), 16)
+        {
+            return (val >> bit) & 1 == 1;
         }
     }
     false
