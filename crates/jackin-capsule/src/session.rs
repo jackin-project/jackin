@@ -1092,7 +1092,7 @@ impl Session {
 
     pub fn resize(&mut self, rows: u16, cols: u16) {
         // A pane collapsed below its border height yields a 0-row inner rect.
-        // Never hand the agent PTY a 0×0 winsize (programs expect ≥1) nor the
+        // Never hand the agent PTY a 0×0 window size (programs expect ≥1) nor the
         // shadow grid a degenerate geometry. `DamageGrid::set_size` clamps too;
         // this keeps TIOCSWINSZ and the model in agreement on the floor.
         let rows = rows.max(1);
