@@ -1,10 +1,13 @@
 //! `sudo-provision` subcommand — called host-side via `docker exec --user root`
 //! after container start to enforce the per-profile sudo grant.
 //!
-//! The construct image ships `/etc/sudoers.d/agent` (passwordless sudo) so role
-//! Dockerfiles can use `sudo apt-get` during `docker build` (WP-SUDO build compat).
-//! At runtime this subcommand removes the entry for profiles that do not grant
-//! sudo, and is a no-op for profiles that do (`JACKIN_SUDO=1`).
+//! The base construct image ships **no** `/etc/sudoers.d/agent` entry (the baked
+//! `NOPASSWD:ALL` was removed in WP-SUDO). At runtime this subcommand writes the
+//! passwordless-sudo entry when the profile grants sudo (`JACKIN_SUDO=1`) and
+//! removes any stray entry otherwise. The removal path matters even on the base
+//! image: a workspace Dockerfile may receive a temporary build-time sudo grant
+//! (injected by `render_derived_dockerfile()`) that bakes a sudoers file into
+//! the derived image, and a non-sudo profile must strip it at launch.
 
 use anyhow::Result;
 use std::fs;

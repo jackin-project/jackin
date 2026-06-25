@@ -955,6 +955,24 @@ pub fn firewall_post_run_argv<'a>(
     ])
 }
 
+/// WP-SUDO: the post-run `docker exec` argv that enforces the sudo grant.
+///
+/// Runs on every launch (not gated on the grant): it writes
+/// `/etc/sudoers.d/agent` when `JACKIN_SUDO=1` is in the container env and
+/// removes any stray entry otherwise. Because the base image bakes no sudoers,
+/// `compat` relies on this to *get* sudo, and a non-sudo profile relies on it to
+/// strip any build-time sudoers a derived image may carry. Runs `--user root`.
+pub fn sudo_provision_post_run_argv(container_name: &str) -> [&str; 6] {
+    [
+        "exec",
+        "--user",
+        "root",
+        container_name,
+        CAPSULE_BIN_PATH,
+        "sudo-provision",
+    ]
+}
+
 /// WP2: whether the role's Docker network must be created `internal`.
 ///
 /// `locked` runs on a Docker-internal network so traffic cannot leave the
@@ -1786,6 +1804,32 @@ mod tests {
         assert!(firewall_post_run_argv(&grants, "ctr-1").is_none());
         grants.network = NetworkGrant::None;
         assert!(firewall_post_run_argv(&grants, "ctr-1").is_none());
+    }
+
+    // ── WP-SUDO: runtime sudo provisioning ────────────────────────────────────
+
+    #[test]
+    fn sudo_provision_exec_runs_as_root() {
+        assert_eq!(
+            sudo_provision_post_run_argv("ctr-9"),
+            [
+                "exec",
+                "--user",
+                "root",
+                "ctr-9",
+                CAPSULE_BIN_PATH,
+                "sudo-provision"
+            ]
+        );
+    }
+
+    #[test]
+    fn sudo_default_off_outside_compat_on_for_compat() {
+        // The grant the launch path turns into JACKIN_SUDO=1.
+        assert!(profile_base_grants(DockerSecurityProfile::Compat).sudo);
+        assert!(!profile_base_grants(DockerSecurityProfile::Standard).sudo);
+        assert!(!profile_base_grants(DockerSecurityProfile::Hardened).sudo);
+        assert!(!profile_base_grants(DockerSecurityProfile::Locked).sudo);
     }
 
     // ── WP4 Part B: rootless DinD tier ────────────────────────────────────────

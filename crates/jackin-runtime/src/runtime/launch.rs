@@ -1014,6 +1014,11 @@ pub(super) async fn launch_role_runtime(
             crate::runtime::docker_profile::NetworkGrant::None => "none",
         }
     ));
+    // WP-SUDO: the container provisions sudo at runtime from this signal (the
+    // base image bakes no sudoers). Reserved so role manifests can't set it.
+    if grants.sudo {
+        env_strings.push(format!("{}=1", jackin_core::env_model::JACKIN_SUDO_ENV_NAME));
+    }
     // Computed once here so the WP1 allowlist (below) can include the OTLP
     // endpoint host; reused for OTLP propagation after env_strings is flushed.
     let container_otlp = jackin_diagnostics::container_otlp();
@@ -1318,6 +1323,35 @@ pub(super) async fn launch_role_runtime(
             }
             return Err(err.context(format!(
                 "egress allowlist install failed for `{profile}` profile; container torn down (fail-closed). The agent was not started without the firewall the profile promises."
+            )));
+        }
+    }
+
+    // WP-SUDO: enforce the sudo grant. Runs on every launch (the base image
+    // ships no sudoers): writes /etc/sudoers.d/agent when JACKIN_SUDO=1 is set,
+    // strips any stray entry otherwise. Fail-closed — a non-sudo profile that
+    // could not strip a build-time sudoers leftover must not start the agent.
+    {
+        let sudo_args =
+            crate::runtime::docker_profile::sudo_provision_post_run_argv(container_name);
+        let sudo_result = runner
+            .run("docker", &sudo_args, None, &docker_run_opts)
+            .await;
+        jackin_diagnostics::debug_log!(
+            "launch",
+            "sudo_provision enabled={} exit={}",
+            if grants.sudo { "yes" } else { "no" },
+            if sudo_result.is_ok() { "0" } else { "nonzero" },
+        );
+        if let Err(err) = sudo_result {
+            if let Err(remove_err) = docker.remove_container(container_name).await {
+                jackin_diagnostics::emit_compact_line(
+                    "warning",
+                    &format!("fail-closed teardown could not remove {container_name}: {remove_err}"),
+                );
+            }
+            return Err(err.context(format!(
+                "sudo provisioning failed for `{profile}` profile; container torn down (fail-closed)."
             )));
         }
     }
