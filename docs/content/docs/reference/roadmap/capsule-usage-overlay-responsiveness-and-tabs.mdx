@@ -155,6 +155,8 @@ Today the header mixes identity with auth method and is inconsistent per provide
 
 Reads only from Turso; never calls a provider. Degrades to the lifecycle word (`needs login` / `stale` / `usage unavailable`) when no trustworthy percentage exists. Narrow terminal: drop the weekly value before the session value.
 
+**Shipped — `9a63843a`.** `status_bar_bucket_matches` is now surface-aware: Z.AI weekly → `Tokens`, MiniMax session → `General · 5h`, Grok → its billing cycle (Weekly/Monthly/Credits) in the Weekly slot with no session, Kimi already mapped via `5-hour rate limit` → Session. Amp keeps its dedicated `Free N% · $credits` headline. Locked by `status_bar_maps_session_weekly_slots_per_provider`. (Non-`general` MiniMax models, whose session bucket is a bare model name with no time marker, fall through to the lifecycle word — acceptable; `general` is the default.)
+
 ---
 
 ## P3 — Usage-state lifecycle: never show a misleading state (F1–F3)
@@ -235,7 +237,7 @@ Each item lands with adapter unit/snapshot tests AND an in-container live check 
 - [ ] P0 verify uses the TUI render, not `usage accounts` (RC2); both tabs match the binding previews + CodexBar panels.
 - [ ] RC2 — root cause pinned (`QuotaBucketView` discards the reset epoch). Deferred to its own focused change: add the epoch to the bucket + thread the window builders + a `account_usage_snapshots` schema migration (5 artifacts, one version bump) so the store persists it. Use the TUI for reset data until then.
 - [~] P1 — separation + `Auth:` row + render shipped (`8df471f4`): `credential_origin` + `username` on `FocusedAccountHeader`, email-only `account_label` (no fabricated identity), no-email providers' precise environment-variable source; render + snapshot test landed. Remaining: exact winning-arm precision (Codex/Amp/Grok), Claude email parse, `username` population, structured-enum origin, store persistence.
-- [ ] P2 — status bar shows `Session N% · Weekly N%` for Z.AI / MiniMax / Kimi per the mapping; Grok shows `Weekly N%`; Amp shows `Free N% · $credits`.
+- [x] P2 — surface-aware `status_bar_bucket_matches` (`9a63843a`): Z.AI weekly → Tokens, MiniMax session → `General · 5h`, Grok → billing cycle (Weekly/Monthly/Credits) in the Weekly slot with no session, Kimi already mapped via `5-hour rate limit`; Amp keeps its `Free N% · $credits` headline. Unit test `status_bar_maps_session_weekly_slots_per_provider` locks the mapping.
 - [ ] P3a — usage segment hidden before agent start; `refreshing` while loading; clickable forces a load; resolves to real numbers; honest states otherwise. Same on every agent.
 - [ ] P3b — agent-start signal designed (current launch path identified) and wired so steps 1–2 are precise, not approximated.
 - [ ] P4 — Z.AI order 5-hour/Tokens/MCP; Kimi order Rate Limit/Weekly; OpenAI plan `Pro 20x`; Claude credits spent-vs-cap shown.
