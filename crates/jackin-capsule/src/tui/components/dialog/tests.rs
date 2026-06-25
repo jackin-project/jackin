@@ -1683,6 +1683,19 @@ fn usage_dialog_renders_inside_narrow_terminal() {
 }
 
 #[test]
+fn usage_dialog_stays_above_bottom_chrome_on_default_terminal() {
+    let d = Dialog::new_usage_with_tab(zai_usage_view_fixture(), UsageDialogTab::Provider);
+    let (row, _, height, _) = d.box_rect(24, 80);
+    let content_bottom = crate::tui::components::status_bar::STATUS_BAR_ROWS
+        + crate::tui::layout::available_content_rows(24);
+
+    assert!(
+        row + height <= content_bottom,
+        "usage dialog must not overlap hint/footer chrome: row={row} height={height} content_bottom={content_bottom}"
+    );
+}
+
+#[test]
 fn snapshot_usage_dialog_narrow_60x18() {
     insta::assert_snapshot!(
         "usage_dialog_narrow_60x18",

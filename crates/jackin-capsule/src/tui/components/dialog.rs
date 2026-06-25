@@ -1754,16 +1754,18 @@ impl Dialog {
             // No filter row: top border + items + bottom border.
             Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
         };
-        let max_height = term_rows
-            .saturating_sub(crate::tui::components::status_bar::STATUS_BAR_ROWS)
-            .saturating_sub(1)
-            .max(3);
+        let content_height = crate::tui::layout::available_content_rows(term_rows).max(3);
+        let max_height = if matches!(self, Self::Usage { .. }) {
+            content_height.saturating_sub(1).max(3)
+        } else {
+            content_height
+        };
         let height = natural_height.min(max_height);
         let top_row = crate::tui::components::status_bar::STATUS_BAR_ROWS;
         let row = if matches!(self, Self::Usage { .. }) {
             top_row.saturating_add(1)
         } else {
-            top_row + (max_height.saturating_sub(height)) / 2
+            top_row + (content_height.saturating_sub(height)) / 2
         };
         let col = (term_cols.saturating_sub(width)) / 2;
         (row, col, height, width)
