@@ -174,7 +174,7 @@ jobs:
       - name: Assert jackin-dev version is unpublished
         if: github.ref == 'refs/heads/main'
         env:
-          GH_TOKEN: ${{ secrets.GH_READONLY_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           if gh release view "jackin-dev-v${VERSION}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then

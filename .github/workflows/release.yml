@@ -79,7 +79,7 @@ jobs:
       - name: Determine version
         id: version
         env:
-          GH_TOKEN: ${{ secrets.GH_READONLY_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             version="${GITHUB_REF#refs/tags/v}"
@@ -310,7 +310,7 @@ jobs:
           version: ${{ needs.check-version.outputs.version }}
           arm64-sha: ${{ steps.shas.outputs.capsule_arm64_linux }}
           x86-sha: ${{ steps.shas.outputs.capsule_x86_linux }}
-          github-token: ${{ secrets.GH_READONLY_TOKEN }}
+          github-token: ${{ github.token }}
 
       - name: Create GitHub Release
         env:
