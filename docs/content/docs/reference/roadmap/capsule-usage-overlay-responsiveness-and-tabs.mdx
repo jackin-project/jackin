@@ -40,6 +40,8 @@ The symptom **differs from Claude**: OpenAI Session/Weekly **already render corr
 
 Sections (in order): **Session, Weekly, Codex Spark 5-hour, Codex Spark Weekly, Limit Reset Credits, Credits.** Limit Reset Credits shows `N manual resets available` + `Next expires in <rel> (<local>)`; Credits shows `N left` + token count.
 
+**Resolved (code + unit; in-container re-verify pending).** Root cause proven from the live `codex app-server` `account/rateLimits/read` response: `CodexRpcUsage::from_rpc` hardcoded `additional_rate_limits: None` and `reset_credits: None`, so when the RPC path wins (`source: cli`, as live) only Session/Weekly rendered. The RPC response actually carries the rest — `rateLimitsByLimitId` holds a per-limit-id map whose non-`codex` entry (e.g. `"…Codex-Spark"`) is the Spark 5-hour/Weekly windows, and `rateLimitResetCredits.availableCount` is the manual-reset count. Commit `53f08dfb` parses both and maps them in `from_rpc` (excluding the main `codex` entry so Session/Weekly are not duplicated); `buckets()` already renders them. Locked by a unit test built from the captured live RPC body. End-to-end `usage verify` re-check (expect Session, Weekly, Codex Spark 5-hour, Codex Spark Weekly, Limit Reset Credits) is owed once the launch environment is available — the headless rebuild relaunch is currently blocked by 1Password operator-env resolution, not by code. (Credits renders when the account has credits; this account reports `hasCredits: false`, so per the absent-data rule Credits is omitted.)
+
 ### Common to P0a + P0b
 
 - **In-reserve gate.** Show the pace line only once at least 3% of the window has elapsed and the window length is known. Applies to Session + Weekly (Claude, Codex) and Kimi Rate Limit; not Spark, Sonnet, Daily Routines, Limit Reset Credits, Credits, or count buckets.
@@ -223,7 +225,7 @@ Each item lands with adapter unit/snapshot tests AND an in-container live check 
 
 - [ ] P0 (class fix) — a reduced snapshot is never labelled `authoritative`; it is either full or marked degraded with a reason.
 - [x] P0a — Claude credential path diagnosed + fixed (`90acd5e2` handoff read via shared resolver, `3ff657e1` OAuth decode). Claude resolves via OAuth (`provider_api`, authoritative); Session/Weekly carry utilization + reset + in-reserve + `Lasts until reset`. Sonnet/Daily Routines/Opus render only when the API returns them (`null` omitted, not fabricated). Verified in-container. (Overview Anthropic reset follows once the row consumes the same data — confirm during P-pass.)
-- [ ] P0b — OpenAI tab adds Codex Spark 5-hour/Weekly, Limit Reset Credits, Credits, and plan `Pro 20x`; `usage verify` OpenAI 6 rows. (Session/Weekly already correct.)
+- [~] P0b — OpenAI Codex Spark 5-hour/Weekly + Limit Reset Credits mapped from the RPC (`53f08dfb`), unit-verified against the captured live `account/rateLimits/read` body. In-container `usage verify` re-check owed (blocked on 1Password operator-env, not code). Credits omitted when `hasCredits: false` (absent-data rule). Plan `Pro 20x` → see P4.
 - [ ] P0 verify uses the TUI render, not `usage accounts` (RC2); both tabs match the binding previews + CodexBar panels.
 - [ ] RC2 — `usage accounts` serializes real `resets_at`; CLI and TUI agree.
 - [ ] P1 — every provider header shows email (where available) · username · plan and the `Auth: kind · origin` row, consistent across all tabs; Claude shows its email; no fabricated identity; `credential_origin` reflects the winning resolver arm.
