@@ -6237,18 +6237,46 @@ fn exit_dirty_down_arrow_recomposes_a_changed_frame() {
     );
 }
 
-#[test]
-fn zero_pane_dialog_nav_forces_full_repaint() {
-    // The dirty-exit modal renders with no live panes; selection moves must
-    // force a full repaint so a lossy outer transport cannot drop the update.
-    let mut mux = test_mux(30, 100);
-    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
-    // Drain the wipe from the initial push.
-    drop(mux.compose_pending_frame());
+// End-to-end screen repro: replay the daemon's emitted ANSI bytes into a real
+// terminal grid (the same vte-backed emulator the capsule uses for PTY output)
+// and read where the selection marker actually lands on screen.
+fn marker_row_on_screen(grid: &DamageGrid, rows: u16, cols: u16) -> Option<u16> {
+    for row in 0..rows {
+        for col in 0..cols {
+            if grid
+                .cell(row, col)
+                .is_some_and(|c| c.contents() == "\u{25b8}")
+            {
+                return Some(row);
+            }
+        }
+    }
+    None
+}
 
-    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
+#[test]
+fn exit_dirty_marker_moves_on_screen_with_zero_panes() {
+    let (rows, cols) = (44u16, 157u16);
+    let mut mux = test_mux(rows, cols);
+    mux.dialog_push(Dialog::new_exit_dirty(vec![
+        "holla   1 changed \u{b7} 3 unpushed".to_owned(),
+    ]));
+    mux.invalidate(FullRedrawReason::DialogChange);
+    let mut grid = DamageGrid::new(rows, cols, 0);
+
+    grid.process(&mux.compose_pending_frame());
+    let before = marker_row_on_screen(&grid, rows, cols);
+
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42])); // down
+    grid.process(&mux.compose_pending_frame());
+    let after = marker_row_on_screen(&grid, rows, cols);
+
     assert!(
-        mux.wipe_pending.is_some(),
-        "zero-pane modal navigation must force a full repaint (wipe)"
+        before.is_some(),
+        "marker must be visible on screen initially"
+    );
+    assert!(
+        after > before,
+        "down arrow must move the rendered \u{25b8} marker: before={before:?} after={after:?}"
     );
 }

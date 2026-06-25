@@ -191,23 +191,10 @@ impl Multiplexer {
     pub(super) fn invalidate(&mut self, reason: FullRedrawReason) {
         self.frame_generation = self.frame_generation.wrapping_add(1);
         self.last_invalidate_reason = Some(reason);
-        // FirstAttach/Resize always reset the diff baseline. A dialog shown with
-        // no live panes (the dirty-exit modal) owns the whole screen, so force a
-        // full repaint on its changes too: the incremental cursor-addressed diff
-        // is fragile through nested PTY proxies (e.g. an outer wrapper) and can
-        // silently drop a selection-move update, leaving the modal looking
-        // frozen. A zero-pane modal has no pane content to preserve, so a full
-        // repaint is cheap and guarantees the change is visible.
-        let exit_modal_open = matches!(
-            self.dialog_top(),
-            Some(Dialog::ExitDirty { .. } | Dialog::ExitInspect { .. })
-        );
-        let force_full_repaint = matches!(
+        if matches!(
             reason,
             FullRedrawReason::FirstAttach | FullRedrawReason::Resize
-        ) || (matches!(reason, FullRedrawReason::DialogChange)
-            && exit_modal_open);
-        if force_full_repaint {
+        ) {
             self.wipe_pending = Some(reason);
         }
         crate::cdebug!(
