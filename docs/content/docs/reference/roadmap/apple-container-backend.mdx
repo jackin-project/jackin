@@ -250,14 +250,14 @@ The script (<RepoFile path="scripts/phase0-apple-container.sh" />) automates all
 Phase 1 adds <RepoFile path="crates/jackin-runtime/src/apple_container_client.rs" />. Unlike <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> which uses the **bollard** crate (typed async Rust API), Apple Container has no Rust API — all operations shell out to the `container` CLI using `tokio::process::Command`. The trait shape for the apple-container backend:
 
 ```rust
-#[async_trait::async_trait]
+// Native async-fn-in-trait (no `async_trait` macro needed on this toolchain).
 pub trait AppleContainerApi {
     async fn run_container(&self, name: &str, spec: &AppleContainerSpec) -> anyhow::Result<()>;
     async fn exec_attach(&self, name: &str) -> anyhow::Result<tokio::process::Child>;
     async fn stop_container(&self, name: &str) -> anyhow::Result<()>;
     async fn remove_container(&self, name: &str) -> anyhow::Result<()>;
     async fn inspect_container(&self, name: &str) -> anyhow::Result<Option<AppleContainerInfo>>;
-    async fn list_containers(&self, label_prefix: &str) -> anyhow::Result<Vec<AppleContainerInfo>>;
+    async fn list_containers(&self, name_prefix: &str) -> anyhow::Result<Vec<AppleContainerInfo>>;
 }
 
 pub struct AppleContainerSpec {
