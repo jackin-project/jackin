@@ -513,224 +513,28 @@ enum CleanupAssessment {
 /// `PreservedUnpushed` (the "I don't know, keep it" outcome) with a
 /// `debug_log!` of the underlying error so `--debug` shows what went
 /// wrong.
-#[allow(clippy::unnecessary_wraps)] // Result lets us propagate from inner ? if a future revision adds Err arms
-#[expect(clippy::too_many_lines)] // Linear policy table is clearer inline than split across helpers
 async fn assess_cleanup(
     record: &IsolationRecord,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<CleanupAssessment> {
-    let porcelain = match runner
-        .capture(
-            "git",
-            &["-C", &record.worktree_path, "status", "--porcelain"],
-            None,
-        )
-        .await
-    {
-        Ok(s) => s,
-        Err(e) => {
-            debug_log!(
-                "isolation",
-                "finalize assess: status --porcelain failed for {wt}: {e}; preserving as unpushed (cannot observe state)",
-                wt = record.worktree_path,
-            );
-            return Ok(CleanupAssessment::PreservedUnpushed);
+    // Detection logic is shared with the in-container Capsule via
+    // `jackin_core::worktree_dirty` so host cleanup and the capsule exit modal
+    // can never disagree on what "dirty" means. The closure routes the shared
+    // assessment's fail-closed diagnostics back into the host debug channel.
+    let state = jackin_core::worktree_dirty::assess_worktree(
+        &record.worktree_path,
+        &record.base_commit,
+        runner,
+        |msg| debug_log!("isolation", "finalize {}", msg),
+    )
+    .await?;
+    Ok(match state {
+        jackin_core::worktree_dirty::WorktreeState::Clean => CleanupAssessment::SafeToDelete,
+        jackin_core::worktree_dirty::WorktreeState::Dirty => CleanupAssessment::PreservedDirty,
+        jackin_core::worktree_dirty::WorktreeState::Unpushed => {
+            CleanupAssessment::PreservedUnpushed
         }
-    };
-    if !porcelain.trim().is_empty() {
-        return Ok(CleanupAssessment::PreservedDirty);
-    }
-
-    // Enumerate every local branch in the worktree and classify each.
-    // Format columns separated by tab (\t = %09 in git format-spec):
-    //   refname:short  objectname  upstream:short  upstream:track
-    // upstream:track yields the literal string "[gone]" (with brackets)
-    // when the configured upstream ref no longer resolves locally —
-    // typically because the remote branch was deleted after a PR merge
-    // and the next `git fetch --prune` removed the remote-tracking ref.
-    let raw = match runner
-        .capture(
-            "git",
-            &[
-                "-C",
-                &record.worktree_path,
-                "for-each-ref",
-                "--format=%(refname:short)%09%(objectname)%09%(upstream:short)%09%(upstream:track)",
-                "refs/heads/",
-            ],
-            None,
-        )
-        .await
-    {
-        Ok(s) => s,
-        Err(e) => {
-            debug_log!(
-                "isolation",
-                "finalize assess: for-each-ref refs/heads/ failed for {wt}: {e}; preserving as unpushed (cannot enumerate branches)",
-                wt = record.worktree_path,
-            );
-            return Ok(CleanupAssessment::PreservedUnpushed);
-        }
-    };
-    if raw.trim().is_empty() {
-        // A worktree with zero local branches is pathological — even a
-        // freshly materialized worktree carries the scratch branch.
-        // Refuse to delete what we can't account for.
-        debug_log!(
-            "isolation",
-            "finalize assess: for-each-ref refs/heads/ returned no branches for {wt}; preserving as unpushed",
-            wt = record.worktree_path,
-        );
-        return Ok(CleanupAssessment::PreservedUnpushed);
-    }
-
-    for line in raw.lines() {
-        let line = line.trim_end_matches(['\r', '\n']);
-        if line.is_empty() {
-            continue;
-        }
-        // `split('\t')` keeps trailing empty fields (e.g. when both
-        // upstream:short and upstream:track are empty), which is what we
-        // want — the column count is fixed at four.
-        let mut parts = line.split('\t');
-        let name = parts.next().unwrap_or("");
-        let tip = parts.next().unwrap_or("").trim();
-        let upstream = parts.next().unwrap_or("").trim();
-        let track = parts.next().unwrap_or("").trim();
-
-        if name.is_empty() || tip.is_empty() {
-            // Malformed row — fail closed.
-            debug_log!(
-                "isolation",
-                "finalize assess: malformed for-each-ref row for {wt}: {line:?}; preserving as unpushed",
-                wt = record.worktree_path,
-            );
-            return Ok(CleanupAssessment::PreservedUnpushed);
-        }
-
-        if tip == record.base_commit {
-            // Branch tip is at the recorded base — by definition no work
-            // was done on this branch (covers the abandoned scratch
-            // branch in the captured rename case).
-            continue;
-        }
-
-        if upstream.is_empty() {
-            // Tip moved past base, no upstream configured — genuinely
-            // local-only work that we must preserve.
-            debug_log!(
-                "isolation",
-                "finalize assess: branch {name} in {wt} is ahead of base with no upstream; preserving as unpushed",
-                wt = record.worktree_path,
-            );
-            return Ok(CleanupAssessment::PreservedUnpushed);
-        }
-
-        // `[gone]` (or bare `gone` in some git versions) means the
-        // upstream ref is configured but the remote-tracking ref was
-        // pruned. Treat as Safe — see the policy comment above.
-        if track == "[gone]" || track == "gone" {
-            debug_log!(
-                "isolation",
-                "finalize assess: branch {name} in {wt} has upstream={upstream} marked gone; treating as merged-and-pruned (safe)",
-                wt = record.worktree_path,
-            );
-            continue;
-        }
-
-        let ahead = match runner
-            .capture(
-                "git",
-                &[
-                    "-C",
-                    &record.worktree_path,
-                    "rev-list",
-                    &format!("{upstream}..{name}"),
-                ],
-                None,
-            )
-            .await
-        {
-            Ok(s) => s,
-            Err(e) => {
-                debug_log!(
-                    "isolation",
-                    "finalize assess: rev-list {upstream}..{name} failed for {wt}: {e}; preserving as unpushed (cannot verify all commits pushed)",
-                    wt = record.worktree_path,
-                );
-                return Ok(CleanupAssessment::PreservedUnpushed);
-            }
-        };
-        if !ahead.trim().is_empty() {
-            debug_log!(
-                "isolation",
-                "finalize assess: branch {name} in {wt} has commits past upstream {upstream}; preserving as unpushed",
-                wt = record.worktree_path,
-            );
-            return Ok(CleanupAssessment::PreservedUnpushed);
-        }
-    }
-
-    // Detached-HEAD guard: commits made while HEAD is detached don't
-    // appear under refs/heads/ and slip past the branch loop above.
-    // `symbolic-ref --quiet HEAD` exits 0 on an attached branch and
-    // fails (exit 1) on a detached HEAD — both failure and a capture
-    // error are treated as potentially unsafe.
-    if runner
-        .capture(
-            "git",
-            &[
-                "-C",
-                &record.worktree_path,
-                "symbolic-ref",
-                "--quiet",
-                "HEAD",
-            ],
-            None,
-        )
-        .await
-        .is_err()
-    {
-        // `symbolic-ref` fails on detached HEAD (exit 1) and on any git
-        // error — both are unsafe until we can verify HEAD is at base.
-        debug_log!(
-            "isolation",
-            "finalize assess: symbolic-ref HEAD failed for {wt} (detached HEAD or error); checking rev-parse HEAD",
-            wt = record.worktree_path,
-        );
-        match runner
-            .capture(
-                "git",
-                &["-C", &record.worktree_path, "rev-parse", "HEAD"],
-                None,
-            )
-            .await
-        {
-            Ok(head_sha) if head_sha.trim() == record.base_commit.trim() => {
-                // Detached HEAD parked at base — no unreachable commits.
-            }
-            Ok(head_sha) => {
-                debug_log!(
-                    "isolation",
-                    "finalize assess: detached HEAD {sha} != base {base} in {wt}; preserving as unpushed",
-                    sha = head_sha.trim(),
-                    base = record.base_commit.trim(),
-                    wt = record.worktree_path,
-                );
-                return Ok(CleanupAssessment::PreservedUnpushed);
-            }
-            Err(e) => {
-                debug_log!(
-                    "isolation",
-                    "finalize assess: rev-parse HEAD failed for {wt}: {e}; preserving as unpushed (cannot verify detached HEAD state)",
-                    wt = record.worktree_path,
-                );
-                return Ok(CleanupAssessment::PreservedUnpushed);
-            }
-        }
-    }
-
-    Ok(CleanupAssessment::SafeToDelete)
+    })
 }
 
 fn mark_preserved(

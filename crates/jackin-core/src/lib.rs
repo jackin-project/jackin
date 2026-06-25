@@ -26,6 +26,7 @@ pub mod paths;
 pub mod prune_output;
 pub mod runner;
 pub mod selector;
+pub mod worktree_dirty;
 
 pub use agent::{
     Agent, ParseAgentError,

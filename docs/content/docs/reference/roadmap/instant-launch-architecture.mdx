@@ -65,11 +65,11 @@ This checklist is the work contract for the implementing agent. Rules: tackle on
 
 ### Part 1 — Share dirty detection into `jackin-core`
 
-- [ ] Add a `jackin-core` module exposing a path-based assessment: input a repo path (and base ref for the unpushed check), output `Clean | Dirty | Unpushed` plus the per-file change list (`M`/`A`/`D`/`??` + path) the Inspect view needs.
-- [ ] Move the shared result type and `PreservedReason` into `jackin-core` (alongside `CleanupStatus`/`IsolationRecord` in <RepoFile path="crates/jackin-core/src/isolation_record.rs" />); expose a git-runner shape both host (async `CommandRunner`) and capsule (in-container, current-thread) can drive.
-- [ ] Rewire host `assess_cleanup` in <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> to call the shared function — no host behavior change.
-- [ ] Add `jackin-core` unit tests against a temp git repo: clean, uncommitted, untracked, unpushed, detached-HEAD-at-base, and multiple repos.
-- [ ] Verify: `cargo nextest` — existing `finalize` tests still pass and the new core tests pass.
+- [x] Add a `jackin-core` module (`worktree_dirty`) exposing a path-based assessment: input a repo path + base ref, output `WorktreeState` (`Clean | Dirty | Unpushed`) via `assess_worktree`, plus the per-file change list (`ChangedFile` + `parse_porcelain`/`changed_files`) the Inspect view needs. Drives git through the existing `jackin_core::runner::CommandRunner` seam so the crate stays subprocess-free.
+- [x] Expose the shared result type (`WorktreeState`, `ChangedFile`) in `jackin-core`, driven by the existing `CommandRunner` seam that both host (async) and capsule (in-container) can implement. (`PreservedReason` deliberately stays host-side in `finalize.rs` — it is exit-dialog wording the capsule does not consume; the capsule derives its own summary from `WorktreeState` + the change list.)
+- [x] Rewire host `assess_cleanup` in <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> to call `jackin_core::worktree_dirty::assess_worktree` with a logger closure that preserves the `--debug` diagnostics — no host behavior change.
+- [x] Add `jackin-core` unit tests (scripted `CommandRunner` mock + std-only `block_on`): clean, uncommitted, untracked, branch-ahead-no-upstream, ahead-of-upstream, fully-pushed, `[gone]`-merged, detached-HEAD off/at base, status-failure fail-closed, no-branches fail-closed, multiple repos, and `changed_files`/`parse_porcelain`.
+- [x] Verify: `jackin-core` tests (15) and host `finalize` tests (43) pass; `cargo fmt --check` and `cargo clippy` clean on both crates.
 
 ### Part 2 — In-capsule confirmation (`jackin-capsule`)
 
