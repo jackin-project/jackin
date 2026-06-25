@@ -2,15 +2,15 @@
 actionlint = "1.7.12"
 bun = "1.3.14"
 cargo-binstall = "1.20.1"
-cargo-audit = "0.22.2"
-cargo-deny = "0.19.8"
-cargo-fuzz = "0.13.1"
-cargo-hack = "0.6.45"
-cargo-nextest = "0.9.136"
-cargo-shear = "1.13.0"
-cargo-zigbuild = "0.23.0"
-codebook-lsp = "0.3.41"
-sccache = "0.16.0"
+"cargo:cargo-audit" = "0.22.2"
+"cargo:cargo-deny" = "0.19.8"
+"cargo:cargo-fuzz" = "0.13.1"
+"cargo:cargo-hack" = "0.6.45"
+"cargo:cargo-nextest" = "0.9.136"
+"cargo:cargo-shear" = "1.13.0"
+"cargo:cargo-zigbuild" = "0.23.0"
+"cargo:codebook-lsp" = "0.3.41"
+"cargo:sccache" = "0.16.0"
 cosign = "3.1.1"
 shellcheck = "0.11.0"
 node = "24.17.0"
@@ -18,17 +18,6 @@ syft = "1.45.1"
 zig = "0.16.0"
 # rust is read from `rust-toolchain.toml` via the `idiomatic_version_file`
 # setting below — single source of truth for the toolchain channel and components.
-
-[tool_alias]
-cargo-audit = "cargo:cargo-audit"
-cargo-deny = "cargo:cargo-deny"
-cargo-fuzz = "cargo:cargo-fuzz"
-cargo-hack = "cargo:cargo-hack"
-cargo-nextest = "cargo:cargo-nextest"
-cargo-shear = "cargo:cargo-shear"
-cargo-zigbuild = "cargo:cargo-zigbuild"
-codebook-lsp = "cargo:codebook-lsp"
-sccache = "cargo:sccache"
 
 [settings]
 cargo.binstall = true
