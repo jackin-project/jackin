@@ -513,6 +513,7 @@ fn github_config_mount_skips_absent_ignored_state() {
             model: None,
         },
         auth: crate::instance::ProvisionedAuth::default(),
+        auth_outcomes: std::collections::BTreeMap::new(),
     };
 
     assert!(
@@ -536,6 +537,7 @@ fn github_config_mount_keeps_existing_ignored_state() {
             model: None,
         },
         auth: crate::instance::ProvisionedAuth::default(),
+        auth_outcomes: std::collections::BTreeMap::new(),
     };
 
     assert!(
@@ -544,6 +546,57 @@ fn github_config_mount_keeps_existing_ignored_state() {
             .is_some_and(|mount| mount.ends_with(":/home/agent/.config/gh")),
         "existing jackin-owned GitHub state should still mount"
     );
+}
+
+#[test]
+fn auth_provision_launch_plan_surfaces_per_agent_outcomes() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
+    let _guard = run.activate();
+    let root = temp.path().join("role-state");
+    let mut auth_outcomes = std::collections::BTreeMap::new();
+    auth_outcomes.insert(
+        jackin_core::agent::Agent::Claude,
+        crate::instance::AuthProvisionOutcome::Synced,
+    );
+    auth_outcomes.insert(
+        jackin_core::agent::Agent::Codex,
+        crate::instance::AuthProvisionOutcome::HostMissing,
+    );
+    auth_outcomes.insert(
+        jackin_core::agent::Agent::Amp,
+        crate::instance::AuthProvisionOutcome::TokenMode,
+    );
+    auth_outcomes.insert(
+        jackin_core::agent::Agent::Grok,
+        crate::instance::AuthProvisionOutcome::Skipped,
+    );
+    let state = RoleState {
+        root: root.clone(),
+        gh_config_dir: root.join(".config/gh"),
+        gh_provision_outcome: crate::instance::GithubProvisionOutcome::Skipped,
+        agent_runtime: crate::instance::AgentRuntimeState {
+            agent: jackin_core::agent::Agent::Claude,
+            model: None,
+        },
+        auth: crate::instance::ProvisionedAuth::default(),
+        auth_outcomes,
+    };
+
+    emit_auth_provision_launch_plan(&state, "jk-auth-demo");
+
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(jsonl.contains("\"kind\":\"launch_plan\""), "{jsonl}");
+    assert!(jsonl.contains("AuthProvision"), "{jsonl}");
+    assert!(jsonl.contains("credential_outcomes"), "{jsonl}");
+    assert!(jsonl.contains("\\\"claude\\\":\\\"synced\\\""), "{jsonl}");
+    assert!(
+        jsonl.contains("\\\"codex\\\":\\\"host_missing\\\""),
+        "{jsonl}"
+    );
+    assert!(jsonl.contains("\\\"amp\\\":\\\"token_mode\\\""), "{jsonl}");
+    assert!(jsonl.contains("\\\"grok\\\":\\\"skipped\\\""), "{jsonl}");
 }
 
 #[tokio::test]
@@ -1411,6 +1464,7 @@ fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorksp
             codex: Some(crate::instance::CodexAuth::default()),
             ..Default::default()
         },
+        auth_outcomes: std::collections::BTreeMap::new(),
     };
     let workspace = jackin_config::ResolvedWorkspace {
         label: "sample-workspace".to_owned(),
@@ -1666,6 +1720,7 @@ fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
         ("JACKIN_DISABLE_TIRITH".to_owned(), "1".to_owned()),
         ("JACKIN_DHAT_ALLOC_LOG".to_owned(), "1".to_owned()),
         ("JACKIN_CAPSULE_FORCE_PANIC".to_owned(), "true".to_owned()),
+        ("TZ".to_owned(), "Asia/Ho_Chi_Minh".to_owned()),
         ("JACKIN_RUN_ID".to_owned(), "operator-owned".to_owned()),
         ("PATH".to_owned(), "/bin".to_owned()),
     ]);
@@ -1676,6 +1731,7 @@ fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
             "JACKIN_DISABLE_TIRITH=1",
             "JACKIN_DHAT_ALLOC_LOG=1",
             "JACKIN_CAPSULE_FORCE_PANIC=true",
+            "TZ=Asia/Ho_Chi_Minh",
         ]
     );
 }

@@ -174,7 +174,7 @@ jobs:
       - name: Assert jackin-dev version is unpublished
         if: github.ref == 'refs/heads/main'
         env:
-          GH_TOKEN: ${{ secrets.GH_READONLY_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           if gh release view "jackin-dev-v${VERSION}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -225,10 +225,14 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        env:
+          # sccache install: blank wrapper in case binstall source-falls-back
+          # to cargo, which would probe rustc through a missing sccache.
+          RUSTC_WRAPPER: ""
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust zig cargo-zigbuild cosign syft sccache"
+          install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry

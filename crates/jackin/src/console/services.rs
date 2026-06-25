@@ -27,7 +27,6 @@ pub(super) mod config {
     //! Non-TUI config persistence services.
 
     use crate::paths::JackinPaths;
-    #[cfg(test)]
     use jackin_config::GlobalMountRow;
     use jackin_config::WorkspaceConfig;
     use jackin_config::{AppConfig, RoleSource};
@@ -40,27 +39,70 @@ pub(super) mod config {
     #[cfg(test)]
     mod tests;
 
+    #[cfg(test)]
     pub(crate) fn upsert_role_source(
         config: &mut AppConfig,
         paths: &JackinPaths,
         key: &str,
         source: &RoleSource,
     ) -> anyhow::Result<()> {
-        let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
-        editor_doc.upsert_agent_source(key, source);
-        *config = editor_doc.save()?;
+        *config = upsert_role_source_on_disk(paths, key, source)?;
         Ok(())
     }
 
-    pub(crate) fn remove_workspace(
-        config: &mut AppConfig,
+    fn upsert_role_source_on_disk(
         paths: &JackinPaths,
-        name: &str,
-    ) -> anyhow::Result<()> {
+        key: &str,
+        source: &RoleSource,
+    ) -> anyhow::Result<AppConfig> {
+        let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
+        editor_doc.upsert_agent_source(key, source);
+        editor_doc.save()
+    }
+
+    pub(crate) fn start_role_source_persist(
+        paths: JackinPaths,
+        origin: jackin_console::tui::subscriptions::RoleSourcePersistOrigin<RoleSource>,
+    ) -> jackin_tui::runtime::BlockingSubscription<
+        jackin_console::tui::state::ManagerConfigSaveResult,
+    > {
+        let (key, source) = match &origin {
+            jackin_console::tui::subscriptions::RoleSourcePersistOrigin::RoleLoad {
+                key,
+                source,
+                ..
+            }
+            | jackin_console::tui::subscriptions::RoleSourcePersistOrigin::TrustConfirm {
+                key,
+                source,
+            } => (key.clone(), source.clone()),
+        };
+        jackin_tui::runtime::spawn_blocking_subscription(move || {
+            let result = upsert_role_source_on_disk(&paths, &key, &source);
+            jackin_console::tui::subscriptions::ConfigSaveResult::RoleSourcePersist {
+                result,
+                origin,
+            }
+        })
+    }
+
+    fn remove_workspace_from_disk(paths: &JackinPaths, name: &str) -> anyhow::Result<AppConfig> {
         let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
         editor_doc.remove_workspace(name)?;
-        *config = editor_doc.save()?;
-        Ok(())
+        editor_doc.save()
+    }
+
+    pub(crate) fn start_remove_workspace(
+        paths: JackinPaths,
+        cwd: std::path::PathBuf,
+        name: String,
+    ) -> jackin_tui::runtime::BlockingSubscription<
+        jackin_console::tui::state::ManagerConfigSaveResult,
+    > {
+        jackin_tui::runtime::spawn_blocking_subscription(move || {
+            let result = remove_workspace_from_disk(&paths, &name);
+            jackin_console::tui::subscriptions::ConfigSaveResult::RemoveWorkspace { result, cwd }
+        })
     }
 
     #[cfg(test)]
@@ -147,6 +189,80 @@ pub(super) mod config {
             config,
             current_name,
             pending_rename,
+        })
+    }
+
+    pub(crate) fn start_workspace_save(
+        paths: JackinPaths,
+        mode: WorkspaceSaveMode,
+        original: WorkspaceConfig,
+        pending: WorkspaceConfig,
+        exit_on_success: bool,
+    ) -> jackin_tui::runtime::BlockingSubscription<
+        jackin_console::tui::state::ManagerConfigSaveResult,
+    > {
+        jackin_tui::runtime::spawn_blocking_subscription(move || {
+            let result = save_workspace(
+                &paths,
+                WorkspaceSaveInput {
+                    mode,
+                    original: &original,
+                    pending: &pending,
+                },
+            )
+            .map(
+                |saved| jackin_console::tui::subscriptions::WorkspaceSaveResult {
+                    config: saved.config,
+                    current_name: saved.current_name,
+                    pending_rename: saved.pending_rename,
+                },
+            );
+            jackin_console::tui::subscriptions::ConfigSaveResult::Workspace {
+                result,
+                exit_on_success,
+            }
+        })
+    }
+
+    pub(crate) struct OwnedSettingsSaveInput {
+        pub mounts_original: Vec<GlobalMountRow>,
+        pub mounts_pending: Vec<GlobalMountRow>,
+        pub env_original: jackin_console::tui::state::SettingsEnvConfig,
+        pub env_pending: jackin_console::tui::state::SettingsEnvConfig,
+        pub auth_pending: Vec<jackin_console::tui::state::SettingsAuthRow>,
+        pub original_github_env: std::collections::BTreeMap<String, jackin_core::EnvValue>,
+        pub github_env: std::collections::BTreeMap<String, jackin_core::EnvValue>,
+        pub trust_pending: Vec<jackin_console::tui::state::SettingsTrustRow>,
+        pub git_coauthor_trailer: bool,
+        pub git_dco: bool,
+    }
+
+    impl OwnedSettingsSaveInput {
+        fn as_borrowed(&self) -> SettingsSaveInput<'_> {
+            SettingsSaveInput {
+                mounts_original: &self.mounts_original,
+                mounts_pending: &self.mounts_pending,
+                env_original: &self.env_original,
+                env_pending: &self.env_pending,
+                auth_pending: &self.auth_pending,
+                original_github_env: &self.original_github_env,
+                github_env: &self.github_env,
+                trust_pending: &self.trust_pending,
+                git_coauthor_trailer: self.git_coauthor_trailer,
+                git_dco: self.git_dco,
+            }
+        }
+    }
+
+    pub(crate) fn start_settings_save(
+        paths: JackinPaths,
+        input: OwnedSettingsSaveInput,
+    ) -> jackin_tui::runtime::BlockingSubscription<
+        jackin_console::tui::state::ManagerConfigSaveResult,
+    > {
+        jackin_tui::runtime::spawn_blocking_subscription(move || {
+            let result = save_settings(&paths, input.as_borrowed());
+            jackin_console::tui::subscriptions::ConfigSaveResult::Settings(result)
         })
     }
 
@@ -429,22 +545,22 @@ pub(super) mod role_load {
         selector: jackin_core::RoleSelector,
         git_url: String,
     ) -> BlockingSubscription<anyhow::Result<()>> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            let mut runner = crate::docker::ShellRunner {
-                debug: crate::tui::is_debug_mode(),
-            };
-            let result = register_with_runner(
-                &paths,
-                &selector,
-                &git_url,
-                &mut runner,
-                crate::tui::is_debug_mode(),
-            )
-            .await;
-            drop(tx.send(result));
-        });
-        rx
+        jackin_tui::runtime::spawn_named_async_subscription(
+            "jackin-role-registration",
+            async move {
+                let mut runner = crate::docker::ShellRunner {
+                    debug: crate::tui::is_debug_mode(),
+                };
+                register_with_runner(
+                    &paths,
+                    &selector,
+                    &git_url,
+                    &mut runner,
+                    crate::tui::is_debug_mode(),
+                )
+                .await
+            },
+        )
     }
 
     pub(crate) async fn register_with_runner(
@@ -486,9 +602,8 @@ pub(super) mod workspace_save {
         workspace_name: String,
         prospective_mounts: Vec<jackin_config::MountConfig>,
     ) -> BlockingSubscription<anyhow::Result<crate::runtime::drift::DriftDetection>> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            let result = async {
+        jackin_tui::runtime::spawn_named_async_subscription("jackin-drift-check", async move {
+            async {
                 let docker = crate::docker_client::BollardDockerClient::connect()?;
                 crate::runtime::drift::detect_workspace_edit_drift(
                     &paths,
@@ -498,10 +613,8 @@ pub(super) mod workspace_save {
                 )
                 .await
             }
-            .await;
-            drop(tx.send(result));
-        });
-        rx
+            .await
+        })
     }
 
     /// Start cleanup for isolated mount records removed by a workspace save.
@@ -509,24 +622,24 @@ pub(super) mod workspace_save {
         paths: crate::paths::JackinPaths,
         records: Vec<jackin_runtime::isolation::state::IsolationRecord>,
     ) -> BlockingSubscription<anyhow::Result<()>> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            let result = async {
-                for rec in records {
-                    let container_dir = paths.data_dir.join(&rec.container_name);
-                    let mut runner = crate::docker::ShellRunner::default();
-                    jackin_runtime::isolation::cleanup::force_cleanup_isolated(
-                        &rec,
-                        &container_dir,
-                        &mut runner,
-                    )
-                    .await?;
+        jackin_tui::runtime::spawn_named_async_subscription(
+            "jackin-isolation-cleanup",
+            async move {
+                async {
+                    for rec in records {
+                        let container_dir = paths.data_dir.join(&rec.container_name);
+                        let mut runner = crate::docker::ShellRunner::default();
+                        jackin_runtime::isolation::cleanup::force_cleanup_isolated(
+                            &rec,
+                            &container_dir,
+                            &mut runner,
+                        )
+                        .await?;
+                    }
+                    Ok(())
                 }
-                Ok(())
-            }
-            .await;
-            drop(tx.send(result));
-        });
-        rx
+                .await
+            },
+        )
     }
 }

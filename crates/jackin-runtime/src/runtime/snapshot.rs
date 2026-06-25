@@ -28,7 +28,9 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use jackin_protocol::control::{ClientMsg, ServerMsg, TabSnapshot, frame as control_frame};
+use jackin_protocol::control::{
+    AccountUsageSnapshotView, ClientMsg, ServerMsg, TabSnapshot, frame as control_frame,
+};
 use serde::Deserialize;
 
 use jackin_core::paths::JackinPaths;
@@ -80,7 +82,7 @@ pub fn fetch_snapshot(
     let path = socket_path(paths, container_name);
     let mut direct_error = None;
     if path.exists() {
-        match fetch_snapshot_inner(&path) {
+        match request_control_inner(&path, &ClientMsg::Snapshot).and_then(snapshot_from_msg) {
             Ok(snapshot) => return Ok(Some(snapshot)),
             Err(error) => direct_error = Some(error),
         }
@@ -98,7 +100,33 @@ pub fn fetch_snapshot(
     }
 }
 
-fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
+pub fn fetch_usage_accounts(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> Result<Option<Vec<AccountUsageSnapshotView>>> {
+    let path = socket_path(paths, container_name);
+    let mut direct_error = None;
+    if path.exists() {
+        match request_control_inner(&path, &ClientMsg::UsageAccountList).and_then(accounts_from_msg)
+        {
+            Ok(accounts) => return Ok(Some(accounts)),
+            Err(error) => direct_error = Some(error),
+        }
+    }
+
+    match fetch_usage_accounts_via_docker_exec(container_name) {
+        Ok(accounts) => Ok(accounts),
+        Err(exec_error) => match direct_error {
+            Some(error) => Err(exec_error.context(format!(
+                "direct socket usage accounts failed for {} ({error:#})",
+                path.display()
+            ))),
+            None => Err(exec_error),
+        },
+    }
+}
+
+fn request_control_inner(path: &Path, request: &ClientMsg) -> Result<ServerMsg> {
     let mut stream = UnixStream::connect(path)
         .with_context(|| format!("connecting to daemon socket {}", path.display()))?;
     stream
@@ -109,8 +137,8 @@ fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
         .context("setting write timeout")?;
 
     stream
-        .write_all(&control_frame(&ClientMsg::Snapshot))
-        .context("writing Snapshot request to daemon")?;
+        .write_all(&control_frame(request))
+        .context("writing control request to daemon")?;
 
     let mut len_buf = [0u8; 4];
     stream
@@ -123,7 +151,10 @@ fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body).context("reading reply body")?;
 
-    let msg: ServerMsg = serde_json::from_slice(&body).context("parsing reply JSON")?;
+    serde_json::from_slice(&body).context("parsing reply JSON")
+}
+
+fn snapshot_from_msg(msg: ServerMsg) -> Result<InstanceSnapshot> {
     match msg {
         ServerMsg::Snapshot { tabs, active_tab } => Ok(InstanceSnapshot { tabs, active_tab }),
         ServerMsg::SessionList { .. } => {
@@ -132,13 +163,29 @@ fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
         ServerMsg::AgentRegistry { .. } => {
             bail!("daemon replied with AgentRegistry; expected Snapshot")
         }
+        ServerMsg::UsageFocused { .. } => {
+            bail!("daemon replied with UsageFocused; expected Snapshot")
+        }
+        ServerMsg::UsageAccounts { .. } => {
+            bail!("daemon replied with UsageAccounts; expected Snapshot")
+        }
         // `Unknown` is the `#[serde(other)]` sink for variants from a newer daemon.
         ServerMsg::Unknown => bail!("daemon replied with an unknown ServerMsg variant"),
     }
 }
 
+fn accounts_from_msg(msg: ServerMsg) -> Result<Vec<AccountUsageSnapshotView>> {
+    match msg {
+        ServerMsg::UsageAccounts { accounts } => Ok(accounts),
+        other => bail!(
+            "daemon replied with {}; expected UsageAccounts",
+            server_msg_kind(&other)
+        ),
+    }
+}
+
 fn fetch_snapshot_via_docker_exec(container_name: &str) -> Result<Option<InstanceSnapshot>> {
-    let output = run_docker_exec_snapshot(container_name)?;
+    let output = run_docker_exec_capsule(container_name, snapshot_exec_script())?;
     if !output.status.success() {
         bail!(
             "docker exec snapshot failed with status {}: {}",
@@ -153,11 +200,41 @@ fn fetch_snapshot_via_docker_exec(container_name: &str) -> Result<Option<Instanc
     snapshot_from_cli_stdout(&stdout).map(Some)
 }
 
-fn run_docker_exec_snapshot(container_name: &str) -> Result<std::process::Output> {
-    let script = snapshot_exec_script();
-    // Match the container's run-time UID (`--user` on docker run) so the
-    // snapshot exec reads host-UID-owned state, not as the image's baked
-    // UID 1000.
+fn fetch_usage_accounts_via_docker_exec(
+    container_name: &str,
+) -> Result<Option<Vec<AccountUsageSnapshotView>>> {
+    let output = run_docker_exec_capsule(container_name, usage_accounts_exec_script())?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        if let Some(message) = stale_usage_subcommand_hint(container_name, stderr) {
+            bail!("{message}");
+        }
+        bail!(
+            "docker exec usage accounts failed with status {}: {}",
+            output.status,
+            stderr
+        );
+    }
+    let stdout = String::from_utf8(output.stdout).context("usage accounts stdout is not UTF-8")?;
+    if stdout.trim().is_empty() {
+        return Ok(None);
+    }
+    usage_accounts_from_cli_stdout(&stdout).map(Some)
+}
+
+fn stale_usage_subcommand_hint(container_name: &str, stderr: &str) -> Option<String> {
+    if stderr.contains("unknown jackin-capsule subcommand") && stderr.contains("\"usage\"") {
+        return Some(format!(
+            "docker exec usage accounts failed because container {container_name} is running a stale jackin-capsule binary without usage support; rerun `jackin-dev pr sync <PR_NUMBER>`, source the generated env.sh, relaunch the instance, then retry `jackin usage {container_name} verify`: {stderr}"
+        ));
+    }
+    None
+}
+
+fn run_docker_exec_capsule(container_name: &str, script: &str) -> Result<std::process::Output> {
+    // Match the container's run-time UID (`--user` on docker run) so fallback
+    // exec reads host-UID-owned state, not as the image's baked UID 1000.
     let run_as_user = crate::runtime::identity::host_run_as_user();
     let mut args: Vec<&str> = vec!["exec"];
     if let Some(ref user) = run_as_user {
@@ -221,6 +298,10 @@ const fn snapshot_exec_script() -> &'static str {
     "exec /jackin/runtime/jackin-capsule snapshot"
 }
 
+const fn usage_accounts_exec_script() -> &'static str {
+    "exec /jackin/runtime/jackin-capsule usage accounts"
+}
+
 fn snapshot_from_cli_stdout(stdout: &str) -> Result<InstanceSnapshot> {
     let payload: SnapshotPayload =
         serde_json::from_str(stdout).context("parsing jackin-capsule snapshot JSON")?;
@@ -228,6 +309,21 @@ fn snapshot_from_cli_stdout(stdout: &str) -> Result<InstanceSnapshot> {
         tabs: payload.tabs,
         active_tab: payload.active_tab,
     })
+}
+
+fn usage_accounts_from_cli_stdout(stdout: &str) -> Result<Vec<AccountUsageSnapshotView>> {
+    serde_json::from_str(stdout).context("parsing jackin-capsule usage accounts JSON")
+}
+
+fn server_msg_kind(msg: &ServerMsg) -> &'static str {
+    match msg {
+        ServerMsg::SessionList { .. } => "SessionList",
+        ServerMsg::Snapshot { .. } => "Snapshot",
+        ServerMsg::AgentRegistry { .. } => "AgentRegistry",
+        ServerMsg::UsageFocused { .. } => "UsageFocused",
+        ServerMsg::UsageAccounts { .. } => "UsageAccounts",
+        ServerMsg::Unknown => "Unknown",
+    }
 }
 
 #[cfg(test)]

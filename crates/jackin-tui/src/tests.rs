@@ -131,6 +131,30 @@ fn encode_osc52_clipboard_write_handles_empty_payload() {
 }
 
 #[test]
+fn pointer_shape_osc22_names_are_shared() {
+    assert_eq!(PointerShape::Default.as_osc22_name(), "default");
+    assert_eq!(PointerShape::Pointer.as_osc22_name(), "pointer");
+    assert_eq!(PointerShape::Text.as_osc22_name(), "text");
+    assert_eq!(PointerShape::EwResize.as_osc22_name(), "ew-resize");
+    assert_eq!(PointerShape::NsResize.as_osc22_name(), "ns-resize");
+    assert_eq!(PointerShape::Grabbing.as_osc22_name(), "grabbing");
+    assert_eq!(
+        osc22_pointer_shape(PointerShape::Pointer),
+        ansi::POINTER_HAND
+    );
+    assert_eq!(
+        osc22_pointer_shape(PointerShape::Default),
+        ansi::POINTER_DEFAULT
+    );
+}
+
+#[test]
+fn clickable_pointer_shape_maps_clickability_to_pointer_or_default() {
+    assert_eq!(clickable_pointer_shape(true), PointerShape::Pointer);
+    assert_eq!(clickable_pointer_shape(false), PointerShape::Default);
+}
+
+#[test]
 fn take_display_cols_truncates_to_display_width() {
     // ASCII: char count == display width, plain prefix truncation.
     assert_eq!(take_display_cols("abcdef", 3), "abc");

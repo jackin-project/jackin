@@ -30,6 +30,8 @@ pub mod session;
 pub mod socket;
 pub mod sudo_provision;
 pub mod telemetry;
+pub(crate) mod telemetry_store;
+pub(crate) mod usage;
 pub mod util;
 
 /// Terminal-rendering code — all UI paint/layout lives here.
