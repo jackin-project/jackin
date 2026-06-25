@@ -14,9 +14,10 @@ pub struct VirtualTerminalProfile {
     /// Identifier for the width-table source (crate + version), not a Unicode
     /// standard version string.
     pub unicode_version: &'static str,
-    /// Whether mode-2027 grapheme-cluster width is active. `false` keeps agent
-    /// apps on legacy cell widths. The DECRQM reply value itself is owned by
-    /// `decrqm_mode_2027_status`.
+    /// Intended flag for whether mode-2027 grapheme-cluster width is active.
+    /// Currently inert — `cluster_width`/`display_width` do not consult it yet;
+    /// `false` is the legacy-cell-width default and forward contract. The DECRQM
+    /// reply value itself is owned by `decrqm_mode_2027_status`.
     pub grapheme_cluster_width_mode: bool,
     /// Whether East Asian Ambiguous code points are treated as two columns.
     pub ambiguous_width_is_wide: bool,

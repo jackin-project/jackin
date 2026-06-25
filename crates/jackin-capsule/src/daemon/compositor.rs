@@ -667,3 +667,6 @@ fn cell_sgr_metadata(cell: &jackin_term::Cell) -> SgrMetadata {
         overline: cell.attrs.overline,
     }
 }
+
+#[cfg(test)]
+mod tests;

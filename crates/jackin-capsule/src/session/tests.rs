@@ -69,6 +69,24 @@ fn test_session_with_policy(policy: OscPolicy) -> Session {
     session
 }
 
+#[test]
+fn feed_pty_does_not_accumulate_scroll_ops() {
+    // feed_pty clears recorded scroll ops each chunk so they cannot grow
+    // unbounded while the scroll-region optimizer that would consume them is
+    // deferred. A scroll-heavy chunk records ops during process(); after
+    // feed_pty returns they must already be cleared.
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let mut burst = Vec::new();
+    for i in 0..200 {
+        burst.extend_from_slice(format!("line {i}\r\n").as_bytes());
+    }
+    session.feed_pty(&burst);
+    assert!(
+        session.shadow_grid.drain_scroll_ops().is_empty(),
+        "feed_pty must clear recorded scroll ops each chunk"
+    );
+}
+
 /// Feed `bytes` through a default-policy session and return the
 /// forwardable passthrough byte sequences (post-policy filter).
 fn drained(bytes: &[u8]) -> Vec<Vec<u8>> {

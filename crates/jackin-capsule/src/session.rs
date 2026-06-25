@@ -1115,8 +1115,13 @@ impl Session {
         if rows == 0 || cols == 0 {
             // A clamp here means a layout bug upstream collapsed a pane; log it
             // so a soak run can pin the offending frame rather than silently
-            // running the agent in a 1×1 window.
-            crate::cdebug!("resize-clamp: degenerate geometry {rows}x{cols} floored to 1x1");
+            // running the agent with a collapsed dimension. Each axis is floored
+            // independently, so `0x80` becomes `1x80`, not `1x1`.
+            crate::cdebug!(
+                "resize-clamp: degenerate geometry {rows}x{cols} floored to {}x{}",
+                rows.max(1),
+                cols.max(1),
+            );
         }
         let rows = rows.max(1);
         let cols = cols.max(1);

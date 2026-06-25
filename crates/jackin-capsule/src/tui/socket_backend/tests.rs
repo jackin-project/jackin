@@ -147,6 +147,40 @@ fn backend_emits_frame_sgr_metadata() {
 }
 
 #[test]
+fn backend_emits_indexed_color_sgr() {
+    // 256-color fg/bg (write_color_sgr) and an indexed underline color
+    // (write_sgr_metadata) all route through push_indexed_color_tail; assert
+    // the `38;5;`/`48;5;`/`58;5;` forms emit.
+    let backend = SocketBackend::new(10, 1);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.backend_mut().set_sgr_regions(vec![(
+        Rect::new(0, 0, 1, 1),
+        SgrMetadata {
+            underline_style: jackin_term::UnderlineStyle::None,
+            underline_color: jackin_term::Color::Idx(200),
+            overline: false,
+        },
+    )]);
+    terminal
+        .draw(|frame| {
+            let span = Span::styled(
+                "x",
+                ratatui::style::Style::default()
+                    .fg(Color::Indexed(208))
+                    .bg(Color::Indexed(17)),
+            );
+            frame.render_widget(Paragraph::new(span), frame.area());
+        })
+        .unwrap();
+
+    let output = terminal.backend_mut().take_output();
+    let text = String::from_utf8_lossy(&output);
+    for sgr in ["\x1b[38;5;208m", "\x1b[48;5;17m", "\x1b[58;5;200m"] {
+        assert!(text.contains(sgr), "missing {sgr:?} in {text:?}");
+    }
+}
+
+#[test]
 fn backend_emits_osc8_metadata_wire_snapshot() {
     let backend = SocketBackend::new(10, 1);
     let mut terminal = Terminal::new(backend).unwrap();
