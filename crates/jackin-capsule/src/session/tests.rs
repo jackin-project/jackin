@@ -598,7 +598,6 @@ fn opencode_event_sets_complete_authority() {
     assert_eq!(a.mapped_state, RawAgentState::Blocked);
     assert!(a.pending_permission);
     assert_eq!(a.grade, AuthorityGrade::Complete);
-    assert!(!a.direct_state_report);
 }
 
 #[test]
@@ -631,15 +630,6 @@ fn osc_title_captured_and_capped() {
         Some(256),
         "title retained and capped at 256 chars"
     );
-    assert!(osc.title_changed_at.is_some());
-}
-
-#[test]
-fn osc9_notification_sets_notify_edge() {
-    let mut session = test_session_with_policy(OscPolicy::default());
-    session.feed_pty(b"\x1b]9;build done\x07");
-    assert!(session.osc_evidence().notify_edge_at.is_some());
-    assert!(!session.osc_evidence().progress_active);
 }
 
 #[test]

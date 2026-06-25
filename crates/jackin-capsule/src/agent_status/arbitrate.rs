@@ -179,18 +179,12 @@ pub fn arbitrate(
 }
 
 fn authority_confidence(authority: &AuthorityEvidence) -> AgentStatusConfidence {
-    if authority.direct_state_report {
-        // Lower-trust cooperative reporter (a role-authored `ReportAgentState`):
-        // accepted with freshness/process validation, never full authority.
-        AgentStatusConfidence::Strong
-    } else {
-        // Daemon-mapped runtime-event authority, graded by lifecycle coverage:
-        // Complete (e.g. OpenCode's full event stream) is the most trusted
-        // semantic source; Partial coverage cannot author at full confidence.
-        match authority.grade {
-            AuthorityGrade::Complete => AgentStatusConfidence::Authoritative,
-            AuthorityGrade::Partial => AgentStatusConfidence::Strong,
-        }
+    // Daemon-mapped runtime-event authority, graded by lifecycle coverage:
+    // Complete (e.g. OpenCode's full event stream) is the most trusted semantic
+    // source; Partial coverage cannot author at full confidence.
+    match authority.grade {
+        AuthorityGrade::Complete => AgentStatusConfidence::Authoritative,
+        AuthorityGrade::Partial => AgentStatusConfidence::Strong,
     }
 }
 

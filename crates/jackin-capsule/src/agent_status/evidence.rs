@@ -17,7 +17,6 @@ pub struct EvidenceSnapshot {
 pub struct AuthorityEvidence {
     pub source_id: String,
     pub grade: AuthorityGrade,
-    pub direct_state_report: bool,
     pub mapped_state: RawAgentState,
     pub pending_permission: bool,
     pub last_event: Instant,
@@ -33,30 +32,21 @@ pub enum AuthorityGrade {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OscEvidence {
     pub title: Option<String>,
-    pub title_changed_at: Option<Instant>,
-    pub notify_edge_at: Option<Instant>,
     pub progress_active: bool,
     pub progress_cleared_at: Option<Instant>,
     /// Last raw OSC 9;4 progress payload (`"4;<state>"`), for the rule pack's
     /// `osc_progress` virtual region. `None` until any progress is emitted, so a
     /// rule can never match progress that never happened.
     pub progress_raw: Option<String>,
-    pub bel_at: Option<Instant>,
-    pub bel_count: u64,
     pub shell_state: Option<RawAgentState>,
-    pub shell_mark_at: Option<Instant>,
 }
 
 impl OscEvidence {
     pub fn clear_agent_signals(&mut self) {
         self.title = None;
-        self.title_changed_at = None;
-        self.notify_edge_at = None;
         self.progress_active = false;
         self.progress_cleared_at = None;
         self.progress_raw = None;
-        self.bel_at = None;
-        self.bel_count = 0;
     }
 }
 

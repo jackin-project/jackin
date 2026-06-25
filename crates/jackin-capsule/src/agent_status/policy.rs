@@ -14,10 +14,7 @@ pub const IDLE_CONFIRMATIONS: u8 = 3;
 /// pin a stale `working` indefinitely; after this long the idle candidate is
 /// released regardless of count. (Herdr-validated bound.)
 pub const IDLE_HOLD_CAP: Duration = Duration::from_millis(700);
-pub const STARTUP_GRACE: Duration = Duration::from_secs(3);
 pub const CPU_SAMPLE_WINDOW: Duration = Duration::from_secs(2);
-pub const RENOTIFY_INTERVAL: Duration = Duration::from_mins(5);
-pub const EVAL_COALESCE: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone, Default)]
 pub struct PendingTransition {

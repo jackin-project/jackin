@@ -31,7 +31,6 @@ fn authority(
     AuthorityEvidence {
         source_id: "hook-claude-1".to_owned(),
         grade: AuthorityGrade::Partial,
-        direct_state_report: false,
         mapped_state: state,
         pending_permission,
         last_event,
@@ -145,21 +144,6 @@ fn fresh_authority_wins_after_blocker_checks() {
 
     assert_eq!(result.raw, RawAgentState::Working);
     assert_eq!(result.winner, EvidenceWinner::Authority);
-}
-
-#[test]
-fn direct_state_report_is_lower_confidence_than_runtime_event_authority() {
-    let now = Instant::now();
-    let mut snapshot = base_snapshot(now);
-    let mut direct_report = authority(RawAgentState::Working, false, now);
-    direct_report.direct_state_report = true;
-    snapshot.authority = Some(direct_report);
-
-    let result = arbitrate(&snapshot, RawAgentState::Idle, now);
-
-    assert_eq!(result.raw, RawAgentState::Working);
-    assert_eq!(result.winner, EvidenceWinner::Authority);
-    assert_eq!(result.confidence, AgentStatusConfidence::Strong);
 }
 
 #[test]

@@ -923,7 +923,6 @@ impl Session {
                 self.authority = Some(AuthorityEvidence {
                     source_id: source_id.to_owned(),
                     grade: grade_for_runtime(runtime),
-                    direct_state_report: false,
                     mapped_state: state,
                     pending_permission,
                     last_event: now,
@@ -1266,7 +1265,6 @@ impl Session {
         if let Some(mark) = crate::agent_status::scan_osc133(bytes) {
             use crate::agent_status::OscShellMark;
             use crate::agent_status::evidence::RawAgentState;
-            let now = std::time::Instant::now();
             let shell_state = match mark {
                 OscShellMark::PreExec => Some(RawAgentState::Working),
                 OscShellMark::PromptEnd | OscShellMark::CommandFinished { .. } => {
@@ -1276,7 +1274,6 @@ impl Session {
             };
             if let Some(state) = shell_state {
                 self.osc.shell_state = Some(state);
-                self.osc.shell_mark_at = Some(now);
             }
         }
 
@@ -1319,7 +1316,6 @@ impl Session {
                     // The rule pack's `osc_title` virtual region reads this.
                     let capped: String = title.chars().take(OSC_EVIDENCE_MAX_CHARS).collect();
                     self.osc.title = Some(capped);
-                    self.osc.title_changed_at = Some(std::time::Instant::now());
                     if self.osc_policy.allow_title()
                         && let Some(bytes) = event.encode()
                     {
@@ -1347,11 +1343,10 @@ impl Session {
                     }
                 }
                 PassthroughEvent::Notification(_) => {
-                    // Plain OSC 9 desktop notification = an attention edge (the
-                    // agent is done OR needs input; arbitration decides which).
-                    // OSC 9;4 progress is decoded separately from the raw stream
-                    // in `feed_pty` — jackin-term does not surface it here.
-                    self.osc.notify_edge_at = Some(std::time::Instant::now());
+                    // Plain OSC 9 desktop notification is forwarded to the host
+                    // per policy. OSC 9;4 progress is decoded separately from the
+                    // raw stream in `feed_pty` — jackin-term does not surface it
+                    // here.
                     if self.osc_policy.allow_notify()
                         && let Some(bytes) = event.encode()
                     {
