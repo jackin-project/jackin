@@ -51,9 +51,15 @@ pub fn arbitrate(
         if snapshot.process.foreground_returned_to_shell {
             summary.notes.push(EvidenceNote::ForegroundReturnedToShell);
         }
+        // Process exit / foreground-return-to-shell is a definitive idle, not an
+        // inferred one: publish immediately (Strong) so the done transition lands
+        // on this tick, before the daemon clears runtime authority for an exiting
+        // session. Weak here would route through the debounce idle-confirmation
+        // path, which the same-tick authority clear then starves — the pane would
+        // fall to Unknown instead of Done.
         return finish(
             RawAgentState::Idle,
-            AgentStatusConfidence::Weak,
+            AgentStatusConfidence::Strong,
             EvidenceWinner::ProcessExit,
             summary,
         );

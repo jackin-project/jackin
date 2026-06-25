@@ -8,6 +8,8 @@ use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
+use anyhow::Context as _;
+
 /// Interface for a runtime-specific hook/plugin installer.
 pub trait HookInstaller {
     /// Install hook/plugin assets into `agent_home`. Creates any missing
@@ -46,9 +48,25 @@ impl HookInstaller for ClaudeHookInstaller {
         }
 
         // Read existing settings.json if present; start from empty object if not.
+        // Claude Code owns this file (model, theme, permissions, MCP config), so a
+        // parse failure or a non-object root must NOT be silently overwritten with
+        // jackin's hooks alone — that would permanently destroy the operator's
+        // settings on every drift-repair launch. Bail instead: the error is logged
+        // non-fatally at the install call site and `verify` keeps reporting drift.
         let existing: serde_json::Value = if settings_path.exists() {
             let content = fs::read_to_string(&settings_path)?;
-            serde_json::from_str(&content).unwrap_or(serde_json::json!({}))
+            let value: serde_json::Value = serde_json::from_str(&content).with_context(|| {
+                format!(
+                    "{} is not valid JSON; refusing to overwrite agent settings",
+                    settings_path.display()
+                )
+            })?;
+            anyhow::ensure!(
+                value.is_object(),
+                "{} root is not a JSON object; refusing to overwrite agent settings",
+                settings_path.display()
+            );
+            value
         } else {
             serde_json::json!({})
         };

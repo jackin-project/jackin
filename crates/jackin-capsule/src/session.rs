@@ -265,9 +265,9 @@ pub struct Session {
     /// the foreground-returned-to-shell exit edge (only meaningful after the
     /// agent was actually in front).
     saw_agent_foreground: bool,
-    /// Agent-authored terminal-protocol evidence (title, OSC 9 notify, OSC 9;4
-    /// progress, OSC 133 shell marks). Captured from the PTY parse, fed into the
-    /// evidence snapshot; wiped when the foreground is no longer the agent.
+    /// Agent-authored terminal-protocol evidence (title, OSC 9;4 progress, OSC
+    /// 133 shell marks). Captured from the PTY parse, fed into the evidence
+    /// snapshot; wiped when the foreground is no longer the agent.
     osc: crate::agent_status::evidence::OscEvidence,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
@@ -952,7 +952,7 @@ impl Session {
         self.saw_agent_foreground = false;
         self.subagents_active = 0;
         // A new foreground process must not inherit the previous agent's
-        // title/notify/progress evidence.
+        // title/progress evidence.
         self.osc.clear_agent_signals();
     }
 
@@ -1302,8 +1302,8 @@ impl Session {
                 PassthroughEvent::TitleChanged(ref title) => {
                     self.title = Some(title.clone());
                     // Agent-status evidence: retain the title (capped — OSC
-                    // content is untrusted model output) and its change time.
-                    // The rule pack's `osc_title` virtual region reads this.
+                    // content is untrusted model output). The rule pack's
+                    // `osc_title` virtual region reads this.
                     let capped: String = title.chars().take(OSC_EVIDENCE_MAX_CHARS).collect();
                     self.osc.title = Some(capped);
                     if self.osc_policy.allow_title()

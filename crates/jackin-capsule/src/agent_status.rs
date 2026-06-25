@@ -161,7 +161,7 @@ impl SessionStatus {
         }
     }
 
-    pub fn publish_raw(&mut self, mut summary: EvidenceSummary) -> Option<AgentState> {
+    pub fn publish_raw(&mut self, summary: EvidenceSummary) -> Option<AgentState> {
         let raw = summary.raw_state;
         let confidence = summary.confidence;
         let previous = self.effective;
@@ -175,10 +175,11 @@ impl SessionStatus {
             self.seen = false;
         }
         let next = self.effective_from_raw(raw);
+        // `raw`/`confidence` were read from `summary` above, so the cached copies
+        // on self are exactly the incoming summary's verdict — kept for `report()`
+        // and the next tick's `previous_raw` without re-reading the summary.
         self.raw = raw;
         self.confidence = confidence;
-        summary.raw_state = raw;
-        summary.confidence = confidence;
         self.last_snapshot_summary = summary;
         if next == previous {
             None

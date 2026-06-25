@@ -1071,12 +1071,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 mux.log_resource_metrics();
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
                 // Evidence arbitration is the ONLY path that authors agent state.
-                // Assemble an EvidenceSnapshot per session, arbitrate to a raw
-                // state + confidence, and publish through SessionStatus (which
-                // derives the public `effective` state, incl. done-from-seen).
-                // Evidence sources are filled in by later phases (authority P5,
-                // process P6, OSC P7, screen P8); until then the snapshot carries
-                // recency only and arbitration returns Unknown.
+                // Each session assembles an EvidenceSnapshot (authority, process,
+                // OSC, screen) in `advance_status`, arbitrates to a raw state +
+                // confidence, and publishes through SessionStatus (which derives
+                // the public `effective` state, incl. done-from-seen).
                 let now = Instant::now();
                 let states_before: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();

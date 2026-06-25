@@ -323,10 +323,10 @@ impl RulePack {
     }
 }
 
-/// Build a case-insensitive regex. Rebuilt per evaluation today; `validate`
-/// compile-checks every pattern at pack load so a broken pattern fails loudly
-/// there rather than silently never matching. (Caching compiled regexes is a
-/// perf follow-up — see the roadmap; correctness does not depend on it.)
+/// Build a case-insensitive regex. Used by `finalize` to compile each pattern
+/// once at load, by `validate` to compile-check patterns (so a broken pattern
+/// fails loudly at load, not silently at eval), and by `regex_all` as the
+/// per-call fallback for a pack loaded without `finalize`.
 fn build_regex(pattern: &str) -> Result<regex::Regex, regex::Error> {
     regex::RegexBuilder::new(pattern)
         .case_insensitive(true)
@@ -610,9 +610,20 @@ fn load_packs_from_dir(packs: &mut HashMap<String, RulePack>, dir: &Path) -> any
         if path.extension().and_then(|ext| ext.to_str()) != Some("toml") {
             continue;
         }
-        let pack = RulePack::load(&path)
-            .with_context(|| format!("load agent-status pack {}", path.display()))?;
-        packs.insert(pack.agent.clone(), pack);
+        // Skip-and-log a bad pack rather than failing the whole registry: one
+        // malformed operator override pack must not discard the validated
+        // embedded packs and take screen detection dark for every agent.
+        match RulePack::load(&path) {
+            Ok(pack) => {
+                packs.insert(pack.agent.clone(), pack);
+            }
+            Err(e) => {
+                crate::clog!(
+                    "agent-status: skipping invalid pack {}: {e:#}",
+                    path.display()
+                );
+            }
+        }
     }
     Ok(())
 }

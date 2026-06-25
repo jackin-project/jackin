@@ -234,7 +234,8 @@ fn agent_kind_from_name(name: &str) -> Option<AgentKind> {
 /// Identify the agent running in `proc`. Returns `None` when no known agent
 /// is found.
 pub fn identify_agent(info: &ProcessInfo) -> Option<AgentKind> {
-    // Primary: exe basename
+    // Prefer the exe basename: it is the full binary name, unlike `comm` which
+    // the kernel truncates to 15 chars (so a longer agent name would be missed).
     if let Some(ref exe) = info.exe_path {
         let exe_name = exe.file_name()?.to_string_lossy();
         if let Some(kind) = agent_kind_from_name(exe_name.as_ref()) {
@@ -251,7 +252,7 @@ pub fn identify_agent(info: &ProcessInfo) -> Option<AgentKind> {
         }
     }
 
-    // Fallback: comm field (capped at 15 chars)
+    // Fall back to the (15-char-truncated) comm when the exe path is unreadable.
     agent_kind_from_name(info.comm.as_str())
 }
 
