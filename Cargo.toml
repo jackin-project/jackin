@@ -23,6 +23,18 @@ members = [
 ]
 resolver = "3"
 
+# Hard guard: `cargo shear --deny-warnings` (CI) fails on any source file not
+# reachable from a crate's module graph, so an orphaned tree can never again be
+# mistaken for shipped code. The entries below grandfather the two known-orphaned
+# agent-runtime-status trees that are being wired in. Remove each entry in the
+# phase that links its module (agent_status: Execution Plan Phase 1;
+# token_monitor: Phase 10). This list must reach empty before the feature is done.
+[workspace.metadata.cargo-shear]
+ignored-paths = [
+    "crates/jackin-capsule/src/agent_status.rs",
+    "crates/jackin-capsule/src/token_monitor.rs",
+]
+
 [workspace.package]
 version = "0.6.0-dev"
 edition = "2024"
