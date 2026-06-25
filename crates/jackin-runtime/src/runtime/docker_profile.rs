@@ -1809,6 +1809,49 @@ mod tests {
         assert!(firewall_post_run_argv(&grants, "ctr-1").is_none());
     }
 
+    // ── WP0: 8-cap minimum guard (Docker-free) ────────────────────────────────
+
+    #[test]
+    fn minimum_capability_set_is_exactly_eight_expected_caps() {
+        // The roadmap's "8-cap minimum" under hardened/locked. Guards against
+        // accidental drift of the dropped-to set without needing a container.
+        assert_eq!(
+            MINIMUM_CAPABILITIES,
+            [
+                "CHOWN",
+                "DAC_OVERRIDE",
+                "FOWNER",
+                "FSETID",
+                "SETUID",
+                "SETGID",
+                "SETFCAP",
+                "KILL",
+            ]
+        );
+    }
+
+    #[test]
+    fn hardened_locked_drop_all_then_add_exactly_the_minimum_caps() {
+        for profile in [DockerSecurityProfile::Hardened, DockerSecurityProfile::Locked] {
+            let flags = capability_flags(profile, &[]);
+            assert_eq!(flags.first().map(String::as_str), Some("--cap-drop=ALL"));
+            let added: Vec<&str> = flags
+                .iter()
+                .skip_while(|f| f.as_str() != "--cap-add")
+                .collect::<Vec<_>>()
+                .chunks(2)
+                .filter_map(|pair| match pair {
+                    [flag, cap] if flag.as_str() == "--cap-add" => Some(cap.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                added, MINIMUM_CAPABILITIES,
+                "{profile} must add exactly the 8 minimum caps after drop-all"
+            );
+        }
+    }
+
     // ── WP-SUDO: runtime sudo provisioning ────────────────────────────────────
 
     #[test]
