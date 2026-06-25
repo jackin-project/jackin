@@ -1034,6 +1034,8 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
                 for session in mux.sessions.values_mut() {
                     let snapshot = EvidenceSnapshot {
+                        authority: session.authority.clone(),
+                        subagents_active: session.subagents_active,
                         activity: ActivityEvidence {
                             last_output: Some(session.last_output_at),
                             last_input: Some(session.last_input_at),

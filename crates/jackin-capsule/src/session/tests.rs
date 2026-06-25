@@ -463,6 +463,40 @@ fn redraw_soak_produces_zero_state_transitions() {
 }
 
 #[test]
+fn opencode_event_sets_complete_authority() {
+    use crate::agent_status::evidence::{AuthorityGrade, RawAgentState};
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let now = std::time::Instant::now();
+    session.apply_runtime_event("hook-opencode-1", "opencode", "permission.asked", now);
+    let a = session.authority.as_ref().expect("authority set");
+    assert_eq!(a.source_id, "hook-opencode-1");
+    assert_eq!(a.mapped_state, RawAgentState::Blocked);
+    assert!(a.pending_permission);
+    assert_eq!(a.grade, AuthorityGrade::Complete);
+    assert_eq!(a.seq, 1);
+    assert!(!a.direct_state_report);
+}
+
+#[test]
+fn claude_event_never_sets_authority() {
+    // Decision 0a: Claude/Codex are identity-only; their events never produce
+    // a semantic authority — state comes from the screen pack + watchdog.
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.apply_runtime_event("hook-claude-1", "claude", "Stop", std::time::Instant::now());
+    assert!(session.authority.is_none());
+}
+
+#[test]
+fn clear_event_drops_authority_for_source() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let now = std::time::Instant::now();
+    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", now);
+    assert!(session.authority.is_some());
+    session.apply_runtime_event("hook-opencode-1", "opencode", "session.error", now);
+    assert!(session.authority.is_none());
+}
+
+#[test]
 fn agent_session_gets_status_reporter_env() {
     let mut cmd = CommandBuilder::new("/bin/true");
     inject_status_env(&mut cmd, 42, Some("codex"));

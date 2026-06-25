@@ -215,6 +215,17 @@ pub struct Session {
     pub status: SessionStatus,
     /// Debounce bookkeeping for the inferred working→idle hold.
     pub pending_transition: crate::agent_status::policy::PendingTransition,
+    /// Per-source gate state for runtime-event reporters (one per hook/plugin
+    /// source addressing this session).
+    pub gate_states: std::collections::HashMap<String, crate::agent_status::gating::SourceGateState>,
+    /// Current semantic authority derived from runtime events, consumed by
+    /// arbitration. `None` until a state-authoring event arrives (Claude/Codex
+    /// are identity-only and never set this — Decision 0a).
+    pub authority: Option<crate::agent_status::evidence::AuthorityEvidence>,
+    /// Daemon-assigned arrival-order sequence for this session's authority.
+    pub authority_seq: u64,
+    /// Active descendant/subagent count from gating, surfaced in evidence.
+    pub subagents_active: u32,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
@@ -666,6 +677,10 @@ impl Session {
                 state: AgentState::Unknown,
                 status: SessionStatus::new(),
                 pending_transition: crate::agent_status::policy::PendingTransition::default(),
+                gate_states: std::collections::HashMap::new(),
+                authority: None,
+                authority_seq: 0,
+                subagents_active: 0,
                 input_tx,
                 pty_master: master,
                 child_killer,
@@ -819,6 +834,76 @@ impl Session {
         // Blocked→Working). State comes from evidence arbitration.
         self.last_input_at = std::time::Instant::now();
         was_blocked
+    }
+
+    /// Apply a forwarded runtime hook/plugin event from an in-container reporter.
+    /// Maps the event through the daemon-owned gating table and updates this
+    /// session's semantic authority (consumed by arbitration). Reporters forward
+    /// events only — all mapping/gating lives here, never in the reporter.
+    /// `seq` is assigned in arrival order per session.
+    pub fn apply_runtime_event(
+        &mut self,
+        source_id: &str,
+        runtime: &str,
+        event: &str,
+        now: std::time::Instant,
+    ) {
+        use crate::agent_status::evidence::AuthorityEvidence;
+        use crate::agent_status::gating::{GateEffect, RuntimeEvent, map_event};
+
+        let gate = self.gate_states.entry(source_id.to_owned()).or_default();
+        let effect = map_event(
+            &RuntimeEvent {
+                runtime: runtime.to_owned(),
+                event: event.to_owned(),
+            },
+            gate,
+        );
+        let refresh_matching = |authority: &mut Option<AuthorityEvidence>| {
+            if let Some(a) = authority
+                && a.source_id == source_id
+            {
+                a.last_event = now;
+            }
+        };
+        match effect {
+            GateEffect::Authority {
+                state,
+                pending_permission,
+                subagents_active,
+                notes,
+            } => {
+                self.authority_seq += 1;
+                self.subagents_active = subagents_active;
+                self.authority = Some(AuthorityEvidence {
+                    source_id: source_id.to_owned(),
+                    grade: grade_for_runtime(runtime),
+                    direct_state_report: false,
+                    mapped_state: state,
+                    pending_permission,
+                    last_event: now,
+                    seq: self.authority_seq,
+                    notes,
+                });
+            }
+            GateEffect::CounterOnly { subagents_active } => {
+                self.subagents_active = subagents_active;
+                refresh_matching(&mut self.authority);
+            }
+            GateEffect::Heartbeat => refresh_matching(&mut self.authority),
+            GateEffect::Clear => {
+                self.gate_states.remove(source_id);
+                if self
+                    .authority
+                    .as_ref()
+                    .is_some_and(|a| a.source_id == source_id)
+                {
+                    self.authority = None;
+                    self.subagents_active = 0;
+                }
+            }
+            GateEffect::Ignore => {}
+        }
     }
 
     /// True when the session's program has enabled any mouse protocol
@@ -1172,6 +1257,10 @@ impl Session {
             state: AgentState::Unknown,
             status: SessionStatus::new(),
             pending_transition: crate::agent_status::policy::PendingTransition::default(),
+            gate_states: std::collections::HashMap::new(),
+            authority: None,
+            authority_seq: 0,
+            subagents_active: 0,
             input_tx,
             pty_master,
             child_killer,
@@ -1248,6 +1337,17 @@ fn inject_status_env(cmd: &mut CommandBuilder, session_id: u64, agent: Option<&s
             "JACKIN_STATUS_SOURCE",
             format!("hook-{runtime}-{session_id}"),
         );
+    }
+}
+
+/// Authority grade for a runtime's semantic source. `opencode` ships a complete
+/// lifecycle event stream (Complete); `amp` and other event sources have partial
+/// coverage. Claude/Codex are identity-only (Decision 0a) and never reach this.
+fn grade_for_runtime(runtime: &str) -> crate::agent_status::evidence::AuthorityGrade {
+    use crate::agent_status::evidence::AuthorityGrade;
+    match runtime {
+        "opencode" => AuthorityGrade::Complete,
+        _ => AuthorityGrade::Partial,
     }
 }
 
