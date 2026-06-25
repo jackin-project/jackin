@@ -384,6 +384,33 @@ fn build_workspace_mount_strings(
     out
 }
 
+/// Resolve the container backend for a launch. A per-workspace
+/// `[runtime].backend` overrides the host-wide `[runtime].default_backend`,
+/// which defaults to Docker when unset. Returns the backend name
+/// (`"docker"` or `"apple-container"`).
+pub(super) fn resolve_backend(config: &AppConfig, workspace_name: Option<&str>) -> String {
+    workspace_name
+        .and_then(|name| config.workspaces.get(name))
+        .and_then(|ws| ws.runtime.backend.clone())
+        .or_else(|| config.runtime.default_backend.clone())
+        .unwrap_or_else(|| crate::apple_container_client::DOCKER_BACKEND_NAME.to_owned())
+}
+
+/// Translate a [`MaterializedWorkspace`] into `(host, guest)` mount pairs for
+/// the apple-container backend (which formats its own `-v host:container`
+/// flags via the `container` CLI). Mirrors [`build_workspace_mount_strings`]
+/// but yields typed path pairs. Read-only flags and the worktree-mode `.git`
+/// override entries are not yet carried — tracked as apple-container Phase 0
+/// work, since they need empirical validation inside an apple/container VM.
+pub(super) fn build_workspace_mount_pairs(
+    workspace: &crate::isolation::materialize::MaterializedWorkspace,
+) -> Vec<(PathBuf, PathBuf)> {
+    crate::isolation::materialize::mount_order_for_docker(workspace)
+        .into_iter()
+        .map(|mount| (PathBuf::from(&mount.bind_src), PathBuf::from(&mount.dst)))
+        .collect()
+}
+
 pub(super) struct LaunchContext<'a> {
     container_name: &'a str,
     image: &'a str,

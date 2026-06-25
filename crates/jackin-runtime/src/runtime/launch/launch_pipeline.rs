@@ -1617,6 +1617,52 @@ pub(crate) async fn load_role_with(
         // Carry the on-demand credential bindings to the host resolver, which
         // the launch path starts once the per-container socket dir exists.
         launch_config.exec_bindings = exec_bindings;
+
+        // Backend dispatch. A per-workspace `[runtime].backend` or the host
+        // `[runtime].default_backend` routes this launch to the apple-container
+        // backend instead of Docker. Everything above (role resolution, image
+        // build, env resolution, mount materialization, capsule config) is
+        // backend-neutral; only the container lifecycle below is Docker-specific.
+        //
+        // The apple-container VM boots its own kernel and runs rootless DinD
+        // inside, so the Docker DinD sidecar / private network / certs volume
+        // provisioned by the shared path above are unused here — tear them down
+        // before handing off so they do not leak. (The empirical Phase 0 gate —
+        // see the apple-container roadmap item — moves this branch ahead of the
+        // sidecar so it is never started; it cannot be validated without macOS
+        // 26 ARM hardware, so for now the sidecar is started and immediately
+        // reclaimed.)
+        if super::resolve_backend(config, workspace_name.as_deref())
+            == crate::apple_container_client::BACKEND_NAME
+        {
+            cleanup.run(docker).await;
+            let mount_pairs = super::build_workspace_mount_pairs(&materialized);
+            let env_pairs: Vec<(String, String)> = resolved_env.vars.clone();
+            return crate::runtime::apple_container::launch(
+                crate::runtime::apple_container::AppleContainerLaunch {
+                    paths,
+                    container_name: &container_name,
+                    image: &image,
+                    workspace_name: workspace_name.as_deref(),
+                    workspace_label: workspace.label.as_str(),
+                    workdir: &workspace.workdir,
+                    role_key: &role_key,
+                    role_display_name: &agent_display_name,
+                    agent,
+                    role_source_git: &source.git,
+                    role_source_ref: opts.role_branch.as_deref(),
+                    image_tag: &image,
+                    env_pairs: &env_pairs,
+                    mount_pairs: &mount_pairs,
+                    host_workdir_fingerprint: &host_workdir_fingerprint,
+                    capsule_config: &launch_config,
+                    debug: opts.debug,
+                },
+            )
+            .await
+            .map(|()| container_name.clone());
+        }
+
         let ctx = super::LaunchContext {
             container_name: &container_name,
             image: &image,

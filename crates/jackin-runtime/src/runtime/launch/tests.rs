@@ -1155,6 +1155,23 @@ agents = ["amp"]
     );
 }
 
+#[test]
+fn resolve_backend_defaults_docker_and_workspace_overrides_config() {
+    let mut config = jackin_config::AppConfig::default();
+    // No selection anywhere → Docker.
+    assert_eq!(resolve_backend(&config, None), "docker");
+    // Host-wide default applies.
+    config.runtime.default_backend = Some("apple-container".to_owned());
+    assert_eq!(resolve_backend(&config, None), "apple-container");
+    // Per-workspace backend overrides the host-wide default.
+    let mut ws = jackin_config::WorkspaceConfig::default();
+    ws.runtime.backend = Some("docker".to_owned());
+    config.workspaces.insert("prod".to_owned(), ws);
+    assert_eq!(resolve_backend(&config, Some("prod")), "docker");
+    // A workspace without an override falls back to the host-wide default.
+    assert_eq!(resolve_backend(&config, Some("absent")), "apple-container");
+}
+
 #[tokio::test]
 async fn build_workspace_mount_strings_marks_overrides_readonly() {
     // One worktree-mode mount with all four bind sources populated.
