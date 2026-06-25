@@ -497,6 +497,32 @@ fn clear_event_drops_authority_for_source() {
 }
 
 #[test]
+fn process_evidence_unavailable_without_child_pid() {
+    // Test sessions have no real child PID; sampling must report "no physics"
+    // (never a false exit), so the watchdog can't demote off this evidence.
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let ev = session.sample_process_evidence(std::time::Instant::now());
+    assert!(!ev.physics_sampled);
+    assert!(!ev.process_exited);
+    assert!(!ev.foreground_is_agent);
+}
+
+#[test]
+fn clear_runtime_authority_drops_state_and_counters() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.apply_runtime_event(
+        "hook-opencode-1",
+        "opencode",
+        "permission.asked",
+        std::time::Instant::now(),
+    );
+    assert!(session.authority.is_some());
+    session.clear_runtime_authority();
+    assert!(session.authority.is_none());
+    assert_eq!(session.subagents_active, 0);
+}
+
+#[test]
 fn agent_session_gets_status_reporter_env() {
     let mut cmd = CommandBuilder::new("/bin/true");
     inject_status_env(&mut cmd, 42, Some("codex"));

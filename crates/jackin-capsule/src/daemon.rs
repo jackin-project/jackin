@@ -1052,9 +1052,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 let states_before: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
                 for session in mux.sessions.values_mut() {
+                    let process = session.sample_process_evidence(now);
+                    let exiting = process.process_exited || process.foreground_returned_to_shell;
                     let snapshot = EvidenceSnapshot {
                         authority: session.authority.clone(),
                         subagents_active: session.subagents_active,
+                        process,
                         activity: ActivityEvidence {
                             last_output: Some(session.last_output_at),
                             last_input: Some(session.last_input_at),
@@ -1081,6 +1084,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         )
                     {
                         session.state = effective;
+                    }
+                    // Exit transition is published above (arbitration step 1)
+                    // BEFORE clearing identity/authority, so a stale semantic
+                    // report can never outlive the process it described.
+                    if exiting {
+                        session.clear_runtime_authority();
                     }
                 }
                 let states_after: Vec<_> =

@@ -78,6 +78,15 @@ pub struct ProcessCpuSample {
     pub sampled_at: Instant,
 }
 
+/// Whether `/proc` physics can be sampled on this platform. Only Linux exposes
+/// the `/proc` fields the detectors read; elsewhere the `procfs` shim returns
+/// nothing. Callers use this to distinguish "physics unavailable" (no evidence)
+/// from "process gone" (a real exit) — the watchdog must never demote on the
+/// former.
+pub const fn physics_available() -> bool {
+    cfg!(target_os = "linux")
+}
+
 /// Reads the `tpgid` (terminal foreground process group) for `pid`.
 ///
 /// Returns `None` when the process doesn't exist or the field is unparseable.

@@ -412,9 +412,9 @@ Work top to bottom. Check an item only when it is in the build and its test is g
 - [x] 5 — Applied 0a: Claude/Codex hook events map to `Heartbeat` (identity/freshness) only, never state; OpenCode (Complete) + Amp keep full vendor→state mapping. Pre-0a "gating holes" obviated. `toml_edit` re-added with the installer (Phase 11)
 - [x] Gate 5 — gating rows tested via OpenCode/Amp + canonical strings + `claude_and_codex_hooks_are_identity_only`; env-var + `apply_runtime_event` unit tests pass; 2740 tests across affected crates green, clippy/shear clean. **Note:** end-to-end authority→published-state is gated on Phase 6 (arbitration's fresh-authority filter needs `foreground_is_agent` from `/proc`); transport + gating + storage are complete
 
-**Phase 6 — Process physics [P1] (Slice 5)**
-- [ ] 6 — Wire `process.rs` into the tick (Linux); exit-clears-authority-before-recompute; foreground-returned-to-shell
-- [ ] Gate 6 — process fixtures (direct/node-wrapped/dead-pid/descendant/CPU-window); exit-precedes-identity-clear
+**Phase 6 — Process physics [P1] (Slice 5)** ✅ landed June 25, 2026
+- [x] 6 — `Session::sample_process_evidence` reads `/proc` per tick (Linux): `foreground_is_agent`, `foreground_pgid`, `child_process_count`, `cpu_jiffies_delta`, `root_is_agent`, `process_exited`, `foreground_returned_to_shell`, `physics_sampled`. Gated by `process::physics_available()` (off-Linux/no-PID → default, `physics_sampled=false` — "no evidence", never "quiet"). Exit/shell-return publishes via arbitration step 1, then `clear_runtime_authority()` drops authority/gate/counters — exit transition before identity clear. This also unblocks Phase 5 end-to-end: `foreground_is_agent` now lets fresh OpenCode authority reach published state on Linux
+- [x] Gate 6 — process `/proc` fixtures (direct/node-wrapped/dead-pid/descendant/CPU-window) pass; `process_evidence_unavailable_without_child_pid`, `clear_runtime_authority_drops_state_and_counters`; 691 capsule tests green, clippy/shear clean
 
 **Phase 7 — OSC evidence consumed [P1] (Slice 6)**
 - [ ] 7 — Retain title/notify/progress/BEL AND make arbitration read them (Codex title spinner, notification edge, Amp BEL)

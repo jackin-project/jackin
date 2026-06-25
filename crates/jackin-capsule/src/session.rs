@@ -226,6 +226,15 @@ pub struct Session {
     pub authority_seq: u64,
     /// Active descendant/subagent count from gating, surfaced in evidence.
     pub subagents_active: u32,
+    /// PID of the spawned child (agent or shell), anchor for `/proc` physics.
+    /// `None` for test sessions with no real process.
+    pub child_pid: Option<u32>,
+    /// Rolling CPU-jiffies sample for the watchdog's busy/quiet delta.
+    cpu_sample: Option<crate::agent_status::process::ProcessCpuSample>,
+    /// `true` once the agent has been seen owning the pane foreground — gates
+    /// the foreground-returned-to-shell exit edge (only meaningful after the
+    /// agent was actually in front).
+    saw_agent_foreground: bool,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
@@ -681,6 +690,9 @@ impl Session {
                 authority: None,
                 authority_seq: 0,
                 subagents_active: 0,
+                child_pid,
+                cpu_sample: None,
+                saw_agent_foreground: false,
                 input_tx,
                 pty_master: master,
                 child_killer,
@@ -903,6 +915,80 @@ impl Session {
                 }
             }
             GateEffect::Ignore => {}
+        }
+    }
+
+    /// Clear runtime-event authority and per-source gate state after an exit /
+    /// foreground-returned-to-shell transition has been published, so a stale
+    /// semantic report cannot outlive the process it described.
+    pub fn clear_runtime_authority(&mut self) {
+        self.authority = None;
+        self.gate_states.clear();
+        self.saw_agent_foreground = false;
+        self.subagents_active = 0;
+    }
+
+    /// Sample `/proc` physics for this session's child, producing the
+    /// `ProcessEvidence` arbitration consumes. Off-Linux (or with no child PID)
+    /// returns default evidence with `physics_sampled = false` — "no evidence",
+    /// never "quiet", so the watchdog cannot false-demote. On Linux a missing
+    /// process is a real exit.
+    pub fn sample_process_evidence(
+        &mut self,
+        now: std::time::Instant,
+    ) -> crate::agent_status::evidence::ProcessEvidence {
+        use crate::agent_status::evidence::ProcessEvidence;
+        use crate::agent_status::process::{
+            self, AgentKind, descendant_process_count, detect_foreground_agent, physics_available,
+            read_process_info, sample_cpu_jiffies_delta,
+        };
+
+        let Some(pid) = self.child_pid else {
+            return ProcessEvidence::default();
+        };
+        if !physics_available() {
+            return ProcessEvidence::default();
+        }
+        let Some(info) = read_process_info(pid) else {
+            // Linux + PID gone = a real process exit.
+            self.cpu_sample = None;
+            return ProcessEvidence {
+                process_exited: true,
+                physics_sampled: true,
+                ..ProcessEvidence::default()
+            };
+        };
+
+        let foreground = detect_foreground_agent(pid);
+        let foreground_is_agent =
+            matches!(&foreground, Some((kind, _)) if *kind != AgentKind::Unknown);
+        let foreground_pgid = foreground.as_ref().map(|(_, pgid)| *pgid);
+        let child_process_count = descendant_process_count(pid);
+        let cpu_jiffies_delta = sample_cpu_jiffies_delta(pid, &mut self.cpu_sample, now);
+        let root_is_agent = process::identify_agent(&info)
+            .is_some_and(|kind| kind != AgentKind::Unknown);
+
+        if foreground_is_agent {
+            self.saw_agent_foreground = true;
+        }
+        // Returned to shell: the agent owned the pane earlier, the child is still
+        // alive, the foreground group is now a non-agent (shell), and no
+        // descendant work remains.
+        let foreground_returned_to_shell = self.saw_agent_foreground
+            && !foreground_is_agent
+            && foreground.is_some()
+            && child_process_count == 0;
+
+        ProcessEvidence {
+            process_exited: false,
+            foreground_returned_to_shell,
+            child_alive: true,
+            root_is_agent,
+            foreground_is_agent,
+            foreground_pgid,
+            child_process_count,
+            cpu_jiffies_delta,
+            physics_sampled: true,
         }
     }
 
@@ -1261,6 +1347,9 @@ impl Session {
             authority: None,
             authority_seq: 0,
             subagents_active: 0,
+            child_pid: None,
+            cpu_sample: None,
+            saw_agent_foreground: false,
             input_tx,
             pty_master,
             child_killer,
