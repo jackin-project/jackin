@@ -54,16 +54,7 @@ impl HookInstaller for ClaudeHookInstaller {
         };
 
         let updated = self.merge_hook_entries(existing);
-
-        // Atomic write via tmp-file + rename to avoid partial writes.
-        let tmp = settings_path.with_extension("json.tmp");
-        {
-            let mut f = fs::File::create(&tmp)?;
-            serde_json::to_writer_pretty(&mut f, &updated)?;
-            f.flush()?;
-        }
-        fs::rename(&tmp, &settings_path)?;
-
+        write_json_file(&settings_path, &updated)?;
         Ok(())
     }
 

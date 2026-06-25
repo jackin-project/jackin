@@ -31,7 +31,6 @@ pub mod hook_installer;
 pub mod policy;
 pub mod process;
 pub mod rules;
-pub mod seen;
 pub mod sequence;
 
 use evidence::{EvidenceSummary, RawAgentState};
@@ -179,7 +178,7 @@ impl SessionStatus {
         if entering_work_cycle {
             self.seen = false;
         }
-        let next = self.effective_from_raw(raw, previous_raw);
+        let next = self.effective_from_raw(raw);
         self.raw = raw;
         self.confidence = confidence;
         summary.raw_state = raw;
@@ -252,7 +251,7 @@ impl SessionStatus {
         }
     }
 
-    fn effective_from_raw(&self, raw: RawAgentState, _previous_raw: RawAgentState) -> AgentState {
+    fn effective_from_raw(&self, raw: RawAgentState) -> AgentState {
         match raw {
             RawAgentState::Unknown => AgentState::Unknown,
             RawAgentState::Working => AgentState::Working,

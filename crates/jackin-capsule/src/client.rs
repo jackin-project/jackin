@@ -89,6 +89,23 @@ fn flag_value(args: &[String], flag: &str) -> Option<String> {
         .cloned()
 }
 
+/// Read one length-prefixed control reply from the daemon and deserialize it.
+/// Mirror the daemon-side cap in `socket::read_control_msg`: a buggy or wedged
+/// daemon (or a peer that won the socket race inside the container) could
+/// otherwise send `0xFFFFFFFF` and force a ~4 GiB allocation attempt here.
+async fn read_control_reply(stream: &mut UnixStream) -> Result<ServerMsg> {
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).await?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
+    if len > MAX_CONTROL_REPLY {
+        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
+    }
+    let mut body = vec![0u8; len];
+    stream.read_exact(&mut body).await?;
+    Ok(serde_json::from_slice(&body)?)
+}
+
 /// Query the daemon for current session list and print it.
 pub async fn run_status() -> Result<()> {
     let mut stream = UnixStream::connect(SOCKET_PATH)
@@ -98,21 +115,7 @@ pub async fn run_status() -> Result<()> {
     let msg = control_frame(&ClientMsg::Status);
     stream.write_all(&msg).await?;
 
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await?;
-    let len = u32::from_be_bytes(len_buf) as usize;
-    // Mirror the daemon-side cap in `socket::read_control_msg`. A
-    // buggy or wedged daemon (or a peer that won the socket race
-    // inside the container) could otherwise send `0xFFFFFFFF` and
-    // force a 4 GiB allocation attempt in the client.
-    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
-    if len > MAX_CONTROL_REPLY {
-        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
-    }
-    let mut body = vec![0u8; len];
-    stream.read_exact(&mut body).await?;
-
-    let msg: ServerMsg = serde_json::from_slice(&body)?;
+    let msg = read_control_reply(&mut stream).await?;
     let sessions = match msg {
         ServerMsg::SessionList { sessions } => sessions,
         ServerMsg::Ack | ServerMsg::Unknown => {
@@ -159,17 +162,7 @@ pub async fn run_status_explain(args: &[String]) -> Result<()> {
     stream
         .write_all(&control_frame(&ClientMsg::Snapshot))
         .await?;
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await?;
-    let len = u32::from_be_bytes(len_buf) as usize;
-    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
-    if len > MAX_CONTROL_REPLY {
-        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
-    }
-    let mut body = vec![0u8; len];
-    stream.read_exact(&mut body).await?;
-
-    let ServerMsg::Snapshot { tabs, .. } = serde_json::from_slice::<ServerMsg>(&body)? else {
+    let ServerMsg::Snapshot { tabs, .. } = read_control_reply(&mut stream).await? else {
         anyhow::bail!("daemon did not reply with a snapshot");
     };
     let pane = tabs
@@ -225,17 +218,7 @@ pub async fn run_snapshot() -> Result<()> {
         .write_all(&control_frame(&ClientMsg::Snapshot))
         .await?;
 
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await?;
-    let len = u32::from_be_bytes(len_buf) as usize;
-    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
-    if len > MAX_CONTROL_REPLY {
-        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
-    }
-    let mut body = vec![0u8; len];
-    stream.read_exact(&mut body).await?;
-
-    let msg: ServerMsg = serde_json::from_slice(&body)?;
+    let msg = read_control_reply(&mut stream).await?;
     let (tabs, active_tab) = match msg {
         ServerMsg::Snapshot { tabs, active_tab } => (tabs, active_tab),
         ServerMsg::Ack | ServerMsg::Unknown => {
@@ -276,17 +259,7 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
 
     stream.write_all(&control_frame(&ClientMsg::Agents)).await?;
 
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await?;
-    let len = u32::from_be_bytes(len_buf) as usize;
-    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
-    if len > MAX_CONTROL_REPLY {
-        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
-    }
-    let mut body = vec![0u8; len];
-    stream.read_exact(&mut body).await?;
-
-    let msg: ServerMsg = serde_json::from_slice(&body)?;
+    let msg = read_control_reply(&mut stream).await?;
     let records = match msg {
         ServerMsg::AgentRegistry { records } => records,
         ServerMsg::Ack | ServerMsg::Unknown => {

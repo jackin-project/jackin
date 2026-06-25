@@ -10,7 +10,6 @@ pub struct RuntimeEvent {
 pub struct SourceGateState {
     pub pending_permission: bool,
     pub subagents_active: u32,
-    pub notes: Vec<EvidenceNote>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,7 +84,6 @@ fn authority(
     gate: &mut SourceGateState,
     notes: Vec<EvidenceNote>,
 ) -> GateEffect {
-    gate.notes = notes.clone();
     GateEffect::Authority {
         state,
         pending_permission: gate.pending_permission,
@@ -94,27 +92,34 @@ fn authority(
     }
 }
 
+/// The canonical agent-event vocabulary. A reporter event already in canonical
+/// form passes through unchanged; anything else falls to per-vendor mapping.
+const CANONICAL_EVENTS: &[&str] = &[
+    "prompt-submitted",
+    "tool-start",
+    "tool-end",
+    "compact-start",
+    "permission-requested",
+    "question-asked",
+    "elicitation",
+    "permission-resolved",
+    "question-answered",
+    "turn-complete",
+    "stop",
+    "subagent-start",
+    "subagent-stop",
+    "session-end",
+    "agent-exit",
+    "heartbeat",
+];
+
 fn canonical_event(runtime: &str, event: &str) -> Option<&'static str> {
     let normalized = event.trim();
-    match normalized {
-        "prompt-submitted" => Some("prompt-submitted"),
-        "tool-start" => Some("tool-start"),
-        "tool-end" => Some("tool-end"),
-        "compact-start" => Some("compact-start"),
-        "permission-requested" => Some("permission-requested"),
-        "question-asked" => Some("question-asked"),
-        "elicitation" => Some("elicitation"),
-        "permission-resolved" => Some("permission-resolved"),
-        "question-answered" => Some("question-answered"),
-        "turn-complete" => Some("turn-complete"),
-        "stop" => Some("stop"),
-        "subagent-start" => Some("subagent-start"),
-        "subagent-stop" => Some("subagent-stop"),
-        "session-end" => Some("session-end"),
-        "agent-exit" => Some("agent-exit"),
-        "heartbeat" => Some("heartbeat"),
-        _ => canonical_vendor_event(runtime, normalized),
-    }
+    CANONICAL_EVENTS
+        .iter()
+        .copied()
+        .find(|canonical| *canonical == normalized)
+        .or_else(|| canonical_vendor_event(runtime, normalized))
 }
 
 fn canonical_vendor_event(runtime: &str, event: &str) -> Option<&'static str> {

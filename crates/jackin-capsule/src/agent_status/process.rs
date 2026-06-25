@@ -161,24 +161,13 @@ pub fn descendant_process_count(root_pid: u32) -> u32 {
     let Ok(iter) = procfs::process::all_processes() else {
         return 0;
     };
-    let mut children_by_parent: HashMap<u32, Vec<u32>> = HashMap::new();
-    for proc_result in iter {
-        let Ok(process) = proc_result else { continue };
-        let Ok(stat) = process.stat() else { continue };
-        if stat.pid <= 0 || stat.ppid <= 0 {
-            continue;
-        }
-        children_by_parent
-            .entry(stat.ppid as u32)
-            .or_default()
-            .push(stat.pid as u32);
-    }
-    descendant_process_count_from_parents(
-        root_pid,
-        children_by_parent
-            .into_iter()
-            .flat_map(|(ppid, pids)| pids.into_iter().map(move |pid| (pid, ppid))),
-    )
+    // Feed (pid, ppid) pairs straight from /proc; the helper owns the single
+    // parent->children map build so it stays unit-testable with synthetic input.
+    let parents = iter.filter_map(|proc_result| {
+        let stat = proc_result.ok()?.stat().ok()?;
+        (stat.pid > 0 && stat.ppid > 0).then_some((stat.pid as u32, stat.ppid as u32))
+    });
+    descendant_process_count_from_parents(root_pid, parents)
 }
 
 fn descendant_process_count_from_parents(

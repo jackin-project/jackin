@@ -1523,17 +1523,13 @@ pub fn validate_agent_slug<'a>(
     Ok(raw)
 }
 
-/// Socket the in-container agent-status reporter connects to. Matches the
-/// daemon's control socket under the fixed `/jackin/run/` layout.
-const STATUS_SOCKET_PATH: &str = "/jackin/run/jackin.sock";
-
 /// Inject the agent-status reporter environment into a session's command,
 /// keyed on the session id assigned at spawn. Agent panes get the full set so
 /// hook/plugin reporters can address this session; shell panes get only the
 /// socket var (no runtime to report for). State is never authored from these —
 /// reporters forward events, the daemon maps and gates them.
 fn inject_status_env(cmd: &mut CommandBuilder, session_id: u64, agent: Option<&str>) {
-    cmd.env("JACKIN_STATUS_SOCKET", STATUS_SOCKET_PATH);
+    cmd.env("JACKIN_STATUS_SOCKET", crate::socket::SOCKET_PATH);
     if let Some(runtime) = agent {
         cmd.env("JACKIN_SESSION_ID", session_id.to_string());
         cmd.env("JACKIN_AGENT_RUNTIME", runtime);

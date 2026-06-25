@@ -142,7 +142,6 @@ fn permission_resolved_unblocks_to_working() {
     let mut state = SourceGateState {
         pending_permission: true,
         subagents_active: 0,
-        notes: Vec::new(),
     };
     assert_eq!(
         map_event(&event("opencode", "permission.replied"), &mut state),
