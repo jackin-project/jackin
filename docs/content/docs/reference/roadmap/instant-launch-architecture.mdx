@@ -53,13 +53,46 @@ last live session exits (agent /exit, Ctrl-D, or crash)
 
 "Start a new agent" reuses the capsule's existing `new_agent_picker` (`PickerIntent::NewTab`) in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> — the exact dialog "New tab" already opens. The confirmation reuses the capsule's existing dialog / modal-stack infrastructure; no new chrome.
 
-## Remaining work — must do
+## Implementation checklist
 
-1. **Share detection (`jackin-core`).** Extract the dirty/unpushed assessment out of `finalize.rs::assess_cleanup` into a path-based `jackin-core` function and shared result type; rewire the host `assess_cleanup` to call it. Unit-test the function directly against a temp git repo (clean / uncommitted / untracked / unpushed).
-2. **In-capsule confirmation (`jackin-capsule`).** At `no_live_sessions()` in `daemon.rs`, run the shared detection on the workdir(s); if clean, `drain_and_exit` as today; if dirty, push the `Unsaved work — exit?` modal (per-repo summary + rows `Start a new agent` / `Inspect changes` / `Exit & keep changes` / `Exit & discard changes`) and keep the daemon alive with no live panes. Wire `Start a new agent` → the verbatim `new_agent_picker(NewTab)` → `spawn_session`; `Inspect changes` → the read-only diff view; `Exit & keep` / `Exit & discard` → record the operator's choice, then `drain_and_exit` and signal the host which action to execute. `Esc` is ignored (forced choice). Test that a dirty last-session exit pushes the modal (not shutdown) and that each row routes correctly.
-3. **Host executes the chosen action after Exit (`jackin-runtime`).** Make a clean capsule exit actually reach the host cleanup so it carries out what the operator chose in-capsule: the capsule client must exit `0` on a clean last-session shutdown (so `docker exec` returns success), and the host load/hardline paths must run the finalize/cleanup step on a clean exit instead of treating it as `capsule attach failed`. The host **executes** keep or discard — it does not prompt. This is the fix for the confirmed defect above.
+This checklist is the work contract for the implementing agent. Rules: tackle one item at a time; mark a box `[x]` **only** after the change is implemented *and* its verification step passes — never on code alone; do not check a parent until every child under it is checked; if an item marked **(decide)** is unresolved, stop and confirm with the operator before implementing — do not guess. The full rationale lives in the sections above; this is the execution tracker.
 
-`dirty_exit_policy` still gates whether the modal appears at all: the resolved policy (workspace → global → `ask`) is passed into the capsule, and only `ask` shows the modal. `keep` and `discard` skip the modal and exit straight to the host executing that policy silently (clean + pushed always auto-cleans regardless). So the in-capsule modal is the `ask`-path UI; `keep`/`discard` keep their existing no-prompt meaning.
+### Decisions to confirm before coding (gates)
+
+- [ ] **(decide)** How the capsule signals the chosen keep/discard action to the host — exit-code convention, a small state file under the per-instance dir, or a control frame. The host reads it to execute keep vs discard without prompting.
+- [ ] **(decide)** `Ctrl+Q` meaning from the exit modal (tentative: `Exit & keep`).
+- [ ] **(decide)** Confirm discard takes no extra in-capsule sub-confirm (operator chose the split-Exit shape with selection-as-approval); lock or add a single Yes/No guard.
+
+### Part 1 — Share dirty detection into `jackin-core`
+
+- [ ] Add a `jackin-core` module exposing a path-based assessment: input a repo path (and base ref for the unpushed check), output `Clean | Dirty | Unpushed` plus the per-file change list (`M`/`A`/`D`/`??` + path) the Inspect view needs.
+- [ ] Move the shared result type and `PreservedReason` into `jackin-core` (alongside `CleanupStatus`/`IsolationRecord` in <RepoFile path="crates/jackin-core/src/isolation_record.rs" />); expose a git-runner shape both host (async `CommandRunner`) and capsule (in-container, current-thread) can drive.
+- [ ] Rewire host `assess_cleanup` in <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> to call the shared function — no host behavior change.
+- [ ] Add `jackin-core` unit tests against a temp git repo: clean, uncommitted, untracked, unpushed, detached-HEAD-at-base, and multiple repos.
+- [ ] Verify: `cargo nextest` — existing `finalize` tests still pass and the new core tests pass.
+
+### Part 2 — In-capsule confirmation (`jackin-capsule`)
+
+- [ ] Plumb the resolved `dirty_exit_policy` into the capsule launch config (`/jackin/run/agent.toml`) so the daemon knows `ask` vs `keep`/`discard`.
+- [ ] At `no_live_sessions()` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />: run the shared detection on the workdir(s); branch — clean, or policy `keep`/`discard`, → record the action and `drain_and_exit` as today; policy `ask` + dirty → push the modal and keep the daemon alive with no live panes.
+- [ ] Add the exit-modal `Dialog` variant (per-repo summary lines + the four rows) reusing `render_picker_list`/`SelectList` + `HintBar`; render correctly over an empty pane area without breaking the render loop.
+- [ ] Wire rows: `Start a new agent` → push the verbatim `new_agent_picker(PickerIntent::NewTab)` → `spawn_session`; `Inspect changes` → the in-capsule diff view; `Exit & keep` / `Exit & discard` → record the chosen action, then `drain_and_exit`.
+- [ ] `Esc` ignored on the modal; default focus the first row; confirm double-`Ctrl+C` still hard-exits from this modal.
+- [ ] In-capsule Inspect view: reuse the shared `jackin-tui` `diff_view` + select-list panes; source per-file diffs via git in-container; show the repos pane only when more than one repo is dirty; strictly preview-only.
+- [ ] Implement the chosen host-signal mechanism from the gate decision above.
+- [ ] Tests: a dirty last-session exit pushes the modal (not shutdown); each row routes correctly; a clean exit still drains; `keep`/`discard` policy skips the modal.
+
+### Part 3 — Host executes the chosen action (`jackin-runtime`)
+
+- [ ] Make the capsule client exit `0` on a clean last-session shutdown so `docker exec … jackin-capsule` returns success (fix the `early eof` non-zero exit).
+- [ ] `launch_role_runtime` in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> runs the host finalize/cleanup on a clean exit instead of returning `capsule attach failed`.
+- [ ] The hardline path in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> runs finalize on a clean exit rather than short-circuiting on `attach_outcome?`.
+- [ ] Host reads the capsule-signaled action and **executes** it — keep (preserve the instance + index row) or discard (run the terminal cleanup) — with no host prompt.
+- [ ] Tests: clean exit → host executes the signaled action; keep preserves the instance directory and index row; discard runs terminal cleanup.
+
+### End-to-end verification (operator)
+
+- [ ] Operator confirms the full flow live: dirty workspace → exit agent → modal appears in-capsule; `Start a new agent` returns to work with the New-tab picker; `Inspect changes` shows the diff; `Exit & keep` preserves and the instance is resumable; `Exit & discard` removes it; a clean exit shows no modal; `keep`/`discard` policies skip the modal.
 
 ## In-capsule dirty-exit UI — agreed design
 
@@ -97,14 +130,14 @@ Still open (minor, settle during implementation): exact row wording, the `Ctrl+Q
 
 The following landed as code in this branch but is **not operator-verified**. None of it may be marked implemented until the operator manually confirms it works. This list deliberately replaces the previous page's "shipped ✓" claims, which asserted completion without operator verification. CI passing does not move an item off this list — only the operator's manual confirmation does.
 
-- Image-baked agent binaries, Claude plugins, and default-home state; image-validity by Docker labels; agent-version-changed rebuild trigger.
-- Empty-dir home seeding, first-seed-only auth handoff, atomic first seed; durable Amp / OpenCode config roots.
-- Container identity: `--user $HOST_UID:$HOST_GID --group-add 0` with `libnss-extrausers` passwd/group; group-0 image-home writability; an arbitrary-UID/GID launch (read + write + first seed + `git config --global` + role-hook tool installs) without permission-denied.
-- Restore ladder: Tier 1 `docker start`, Tier 2 reuse of the stored image, Tier 3 pinned rebuild from `role_git_sha` (original commit, not current `HEAD`); launch never reattaches to a live instance.
-- Schema `v1alpha7` migration and `dirty_exit_policy` config (global + per-workspace; `ask` / `keep` / `discard`).
-- Console instance surfaces; clean-exit purge and stale-row / orphaned-lock reconciliation on launch / prune.
-- Launch cockpit hard-exit behavior (`Ctrl+Q` → confirm → immediate exit; `Ctrl+C`; double `Ctrl+C` mid-build) with the terminal restored and `gc_orphaned_resources` reclaiming abandoned resources on the next launch.
-- Local image-build performance changes (no recursive permission repair, single-layer plugin install, uncompressed local export, construct `shellfirm` prebuild) — and the arbitrary-UID/GID correctness this permission rework depends on.
+- [ ] Image-baked agent binaries, Claude plugins, and default-home state; image-validity by Docker labels; agent-version-changed rebuild trigger.
+- [ ] Empty-dir home seeding, first-seed-only auth handoff, atomic first seed; durable Amp / OpenCode config roots.
+- [ ] Container identity: `--user $HOST_UID:$HOST_GID --group-add 0` with `libnss-extrausers` passwd/group; group-0 image-home writability; an arbitrary-UID/GID launch (read + write + first seed + `git config --global` + role-hook tool installs) without permission-denied.
+- [ ] Restore ladder: Tier 1 `docker start`, Tier 2 reuse of the stored image, Tier 3 pinned rebuild from `role_git_sha` (original commit, not current `HEAD`); launch never reattaches to a live instance.
+- [ ] Schema `v1alpha7` migration and `dirty_exit_policy` config (global + per-workspace; `ask` / `keep` / `discard`).
+- [ ] Console instance surfaces; clean-exit purge and stale-row / orphaned-lock reconciliation on launch / prune.
+- [ ] Launch cockpit hard-exit behavior (`Ctrl+Q` → confirm → immediate exit; `Ctrl+C`; double `Ctrl+C` mid-build) with the terminal restored and `gc_orphaned_resources` reclaiming abandoned resources on the next launch.
+- [ ] Local image-build performance changes (no recursive permission repair, single-layer plugin install, uncompressed local export, construct `shellfirm` prebuild) — and the arbitrary-UID/GID correctness this permission rework depends on.
 
 When the operator confirms a group above, move it out of this list with an explicit note that it was operator-verified; until then it stays here regardless of test or CI status.
 
