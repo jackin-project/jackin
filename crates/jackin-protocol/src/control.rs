@@ -16,6 +16,13 @@ pub enum ClientMsg {
     Snapshot,
     /// Request the agent registry (codenames, agent types, providers, timestamps).
     Agents,
+    /// Request the usage/quota snapshot for the currently focused pane.
+    UsageFocused,
+    /// Ask the daemon to refresh focused usage/quota data, then return the
+    /// current cached snapshot immediately.
+    UsageRefreshFocused,
+    /// Return every account/quota snapshot currently known to the daemon cache.
+    UsageAccountList,
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
@@ -37,9 +44,181 @@ pub enum ServerMsg {
     },
     /// Agent registry: every tab ever opened in this container lifetime.
     AgentRegistry { records: Vec<AgentRegistryEntry> },
+    /// Usage/quota data for the focused pane.
+    UsageFocused { usage: Box<FocusedUsageView> },
+    /// Account/quota snapshots known to the daemon cache.
+    UsageAccounts {
+        accounts: Vec<AccountUsageSnapshotView>,
+    },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AccountUsageSnapshotView {
+    pub provider: String,
+    pub account_label: String,
+    pub source: String,
+    pub confidence: String,
+    pub window_kind: String,
+    pub used_amount: Option<i64>,
+    pub used_unit: Option<String>,
+    pub limit_amount: Option<i64>,
+    pub limit_unit: Option<String>,
+    pub resets_at: Option<i64>,
+    pub fetched_at: i64,
+    pub expires_at: Option<i64>,
+    pub status: String,
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FocusedUsageView {
+    pub focused_agent: Option<String>,
+    pub focused_provider: Option<String>,
+    pub account: FocusedAccountHeader,
+    pub buckets: Vec<QuotaBucketView>,
+    pub status: UsageSnapshotStatus,
+    pub source: UsageSource,
+    pub confidence: UsageConfidence,
+    pub fetched_at_epoch: i64,
+    pub updated_label: String,
+    pub status_bar_label: String,
+    pub tabs: Vec<UsageProviderTab>,
+    pub last_error: Option<String>,
+}
+
+impl FocusedUsageView {
+    #[must_use]
+    pub fn unavailable(reason: impl Into<String>, now_epoch: i64) -> Self {
+        let reason = reason.into();
+        Self {
+            focused_agent: None,
+            focused_provider: None,
+            account: FocusedAccountHeader {
+                provider_label: "Usage".to_owned(),
+                account_label: reason.clone(),
+                username: None,
+                plan_label: None,
+                credential_origin: None,
+            },
+            buckets: Vec::new(),
+            status: UsageSnapshotStatus::Unavailable,
+            source: UsageSource::None,
+            confidence: UsageConfidence::None,
+            fetched_at_epoch: now_epoch,
+            updated_label: "Unavailable".to_owned(),
+            status_bar_label: "usage unavailable".to_owned(),
+            tabs: Vec::new(),
+            last_error: Some(reason),
+        }
+    }
+
+    /// The agent has started but its usage data is not yet known — an honest
+    /// "loading" state, distinct from `unavailable` (genuinely no data) and
+    /// from a hidden segment (no agent at all). Carries no fabricated numbers.
+    #[must_use]
+    pub fn refreshing(provider: Option<&str>, now_epoch: i64) -> Self {
+        let mut view = Self::unavailable("refreshing", now_epoch);
+        view.focused_provider = provider.map(str::to_owned);
+        view.account.provider_label = provider.unwrap_or("Usage").to_owned();
+        view.account.account_label = String::new();
+        view.status_bar_label = "refreshing".to_owned();
+        view.updated_label = "Refreshing".to_owned();
+        view
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FocusedAccountHeader {
+    pub provider_label: String,
+    /// Account identity: the real account email when the provider exposes one,
+    /// otherwise empty (no fabricated identity). Auth method/source belongs in
+    /// `credential_origin`, not here.
+    pub account_label: String,
+    /// Account username/handle, when distinct from the email.
+    #[serde(default)]
+    pub username: Option<String>,
+    pub plan_label: Option<String>,
+    /// Where the credential came from (the auth source), never the secret:
+    /// e.g. `OAuth · keychain`, `API token · env ZAI_API_KEY`,
+    /// `API key · amp secrets.json`. `None` until populated.
+    #[serde(default)]
+    pub credential_origin: Option<String>,
+}
+
+/// Which slot of the canonical `Session N% · Weekly N%` status-bar headline a
+/// quota window fills. Set by the provider snapshot that builds the bucket (it
+/// knows the window's role), so the status bar reads this semantic tag instead
+/// of substring-matching free-text labels.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StatusSlot {
+    Session,
+    Weekly,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuotaBucketView {
+    pub label: String,
+    pub used_label: Option<String>,
+    pub limit_label: Option<String>,
+    pub remaining_percent: Option<u8>,
+    pub reset_label: Option<String>,
+    /// Raw reset timestamp (epoch seconds) behind `reset_label`. Kept so the
+    /// CLI report (`usage accounts`) can emit `resets_at` instead of dropping
+    /// it — the formatted `reset_label` alone cannot be reversed (RC2).
+    #[serde(default)]
+    pub resets_at: Option<i64>,
+    /// Which status-bar headline slot this window fills, if any.
+    #[serde(default)]
+    pub status_slot: Option<StatusSlot>,
+    pub pace_label: Option<String>,
+    pub status: UsageSnapshotStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageProviderTab {
+    pub label: String,
+    pub status_label: String,
+    pub account_label: String,
+    pub plan_label: Option<String>,
+    /// Freshness + source tag for the Overview row, e.g. "fresh · provider"
+    /// or "stale · local estimate". `None` until the daemon enriches the tab.
+    pub source_label: Option<String>,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageSnapshotStatus {
+    Fresh,
+    Stale,
+    NeedsLogin,
+    NeedsSecret,
+    Unsupported,
+    Unavailable,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageSource {
+    ProviderApi,
+    Cli,
+    LocalLogs,
+    Cache,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageConfidence {
+    Authoritative,
+    Estimated,
+    PresenceOnly,
+    None,
 }
 
 /// One entry in the agent registry, representing a tab that was (or is) open.

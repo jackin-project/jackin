@@ -1,5 +1,5 @@
 {
   "title": "Commands",
   "defaultOpen": false,
-  "pages": ["console", "load", "hardline", "eject", "exile", "purge", "prewarm", "prune", "workspace", "config", "role", "logs", "doctor", "diagnostics", "status"]
+  "pages": ["console", "load", "hardline", "eject", "exile", "purge", "prewarm", "prune", "workspace", "config", "role", "logs", "doctor", "diagnostics", "status", "usage"]
 }

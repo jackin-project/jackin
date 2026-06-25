@@ -82,7 +82,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         with:
-          token: ${{ secrets.GH_READONLY_TOKEN }}
+          token: ${{ github.token }}
           filters: |
             rust:
               - '.cargo/**'
@@ -361,10 +361,14 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        env:
+          # sccache install: blank wrapper in case binstall source-falls-back
+          # to cargo, which would probe rustc through a missing sccache.
+          RUSTC_WRAPPER: ""
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: ${{ runner.arch == 'X64' && 'rust sccache shellfirm' || 'rust sccache' }}
+          install_args: "cargo-binstall rust cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -412,10 +416,14 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        env:
+          # sccache install: blank wrapper in case binstall source-falls-back
+          # to cargo, which would probe rustc through a missing sccache.
+          RUSTC_WRAPPER: ""
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust sccache"
+          install_args: "cargo-binstall rust cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -480,7 +488,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust cargo-deny cargo-shear"
+          install_args: "cargo-binstall rust cargo:cargo-deny cargo:cargo-shear"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -515,10 +523,14 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        env:
+          # sccache install: blank wrapper in case binstall source-falls-back
+          # to cargo, which would probe rustc through a missing sccache.
+          RUSTC_WRAPPER: ""
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust sccache"
+          install_args: "cargo-binstall rust cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -590,10 +602,14 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        env:
+          # sccache install: blank wrapper in case binstall source-falls-back
+          # to cargo, which would probe rustc through a missing sccache.
+          RUSTC_WRAPPER: ""
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust sccache shellfirm"
+          install_args: "cargo-binstall rust cargo:sccache"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -625,7 +641,7 @@ jobs:
         env:
           CACHE_FROM: |
             type=registry,ref=projectjackin/construct:buildcache-amd64
-            type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ secrets.GH_READONLY_TOKEN }}
+            type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }}
           CACHE_TO: type=gha,scope=construct-ci-e2e,repository=${{ github.repository }},ghtoken=${{ github.token }},mode=max
         run: |
           set -euo pipefail
@@ -683,7 +699,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust cargo-fuzz"
+          install_args: "cargo-binstall rust cargo:cargo-fuzz"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -845,7 +861,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust cargo-audit"
+          install_args: "cargo-binstall rust cargo:cargo-audit"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry

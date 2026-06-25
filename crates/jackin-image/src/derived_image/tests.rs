@@ -61,7 +61,7 @@ fn renders_runtime_finalization_in_one_layer() {
     );
     assert!(
         dockerfile.contains(
-            "RUN install -d -o agent -g agent /jackin/default-home /jackin/default-home/.claude \\\n    && for dir in '.claude'; do"
+            "RUN install -d -o agent -g agent /jackin/default-home /jackin/default-home/.claude /jackin/default-home/.config/mise \\\n    && for dir in '.claude' '.config/mise'; do"
         ),
         "default-home snapshot should share the runtime finalization layer: {dockerfile}"
     );
@@ -501,12 +501,13 @@ fn derived_image_snapshots_agent_home_defaults() {
 
     assert!(dockerfile.contains("/jackin/default-home/.claude"));
     assert!(dockerfile.contains("/jackin/default-home/.codex"));
+    assert!(dockerfile.contains("/jackin/default-home/.config/mise"));
     assert!(dockerfile.contains("/jackin/default-home/.local/share/amp"));
     assert!(dockerfile.contains("/jackin/default-home/.kimi-code"));
     assert!(dockerfile.contains("/jackin/default-home/.local/share/opencode"));
     assert!(dockerfile.contains("/jackin/default-home/.grok"));
     assert!(dockerfile.contains(
-        "for dir in '.claude' '.codex' '.grok' '.kimi-code' '.local/share/amp' '.local/share/opencode'; do"
+        "for dir in '.claude' '.codex' '.config/mise' '.grok' '.kimi-code' '.local/share/amp' '.local/share/opencode'; do"
     ));
     assert_eq!(
         dockerfile.matches("cp -a \"/home/agent/$dir/.\"").count(),
@@ -525,6 +526,7 @@ fn derived_image_snapshots_only_selected_agent_home_defaults() {
     );
 
     assert!(dockerfile.contains("/jackin/default-home/.claude"));
+    assert!(dockerfile.contains("/jackin/default-home/.config/mise"));
     for path in [
         "/jackin/default-home/.codex",
         "/jackin/default-home/.local/share/amp",
@@ -603,9 +605,22 @@ fn entrypoint_run_hook_helper_captures_rc_before_failure() {
     // silently makes failure exit 0) is caught.
     let helper = extract_block(ENTRYPOINT_SH, "run_hook() {", "\n}\n");
     assert!(helper.contains("local rc=0"));
+    assert!(helper.contains("( cd \"$hook_cwd\" && \"$path\" ) || rc=$?"));
     assert!(helper.contains("\"$path\" || rc=$?"));
     assert!(helper.contains("if [ \"$rc\" -ne 0 ]"));
     assert!(helper.contains("exit \"$rc\""));
+}
+
+#[test]
+fn entrypoint_runs_preflight_from_agent_home() {
+    let preflight = extract_block(
+        ENTRYPOINT_SH,
+        "if [ -x /jackin/runtime/hooks/preflight.sh ]; then",
+        "\nfi\n",
+    );
+    assert!(
+        preflight.contains("run_hook preflight /jackin/runtime/hooks/preflight.sh \"\" \"$HOME\"")
+    );
 }
 
 #[test]

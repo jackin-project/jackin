@@ -10,10 +10,10 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Block;
+use ratatui::widgets::{Block, Clear};
 
 use crate::LaunchView;
-use crate::tui::components::footer::render_footer;
+use crate::tui::components::footer::{launch_overlay_chrome_areas, render_footer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuildLogScrollMetrics {
@@ -180,7 +180,7 @@ pub fn render_build_log_dialog(
         Block::default().style(Style::default().bg(jackin_tui::theme::DIALOG_BACKDROP)),
         area,
     );
-    let chrome = bottom_chrome_areas(area);
+    let chrome = launch_overlay_chrome_areas(area, debug_mode);
     let box_area = chrome.body;
 
     let title = if view.build_log_active {
@@ -210,8 +210,13 @@ pub fn render_build_log_dialog(
     );
 
     let vertical = is_scrollable(lines_len, viewport_h);
+    if !debug_mode {
+        frame.render_widget(Clear, chrome.hint);
+    }
     render_hint_bar(frame, chrome.hint, &build_log_hint(vertical));
-    render_footer(frame, chrome.footer, view, run_id, debug_mode);
+    if debug_mode {
+        render_footer(frame, chrome.footer, view, run_id, true);
+    }
 }
 
 pub const BUILD_LOG_WRAP_PREFIX: &str = "↳ ";

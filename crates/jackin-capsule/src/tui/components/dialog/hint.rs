@@ -150,6 +150,30 @@ pub(super) fn info_dialog_hint(
     spans
 }
 
+pub(super) fn usage_hint(axes: jackin_tui::components::ScrollAxes) -> Vec<HintSpan<'static>> {
+    let mut spans = vec![
+        HintSpan::Key("←→"),
+        HintSpan::Text("switch provider"),
+        HintSpan::GroupSep,
+        HintSpan::Key("Tab"),
+        HintSpan::Text("focus content"),
+        HintSpan::GroupSep,
+        HintSpan::Key("r"),
+        HintSpan::Text("refresh"),
+    ];
+    let scroll = jackin_tui::components::scroll_hint_spans(axes);
+    if !scroll.is_empty() {
+        spans.push(HintSpan::GroupSep);
+        spans.extend(scroll);
+    }
+    spans.push(HintSpan::GroupSep);
+    spans.push(HintSpan::Key(
+        READ_ONLY_DISMISS_KEYMAP.glyph_for(ReadOnlyDismissAction::Dismiss),
+    ));
+    spans.push(HintSpan::Text("close"));
+    spans
+}
+
 pub(super) fn read_only_hint() -> Vec<HintSpan<'static>> {
     READ_ONLY_DISMISS_KEYMAP.hint_spans()
 }

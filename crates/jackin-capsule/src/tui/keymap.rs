@@ -149,6 +149,13 @@ pub(crate) static PREFIX_COMMAND_KEYMAP: Keymap<PrefixCommand> = Keymap::new(&[
         glyph: Some("d"),
     },
     KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Char('u'))],
+        action: PrefixCommand::Usage,
+        hint: Some("usage"),
+        visibility: Visibility::Shown,
+        glyph: Some("u"),
+    },
+    KeyBinding {
         chords: &[
             KeyChord::plain(LogicalKey::Char(' ')),
             KeyChord::plain(LogicalKey::Char(':')),

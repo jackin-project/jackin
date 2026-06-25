@@ -240,6 +240,7 @@ pub enum PrefixCommand {
     KillTab,
     ClearPane,
     Detach,
+    Usage,
     Palette,
     Redraw,
 }
