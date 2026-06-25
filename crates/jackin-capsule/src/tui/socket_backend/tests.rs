@@ -54,15 +54,18 @@ fn suppressed_clear_resets_style_without_screen_erase() {
         modifiers: Modifier::BOLD,
     };
 
-    backend.suppress_next_clear_escape();
+    backend.begin_clear_suppression();
+    backend.clear_region(ClearType::All).unwrap();
+    // Sustained: a width-shrink resize clears twice; both stay byte-silent.
     backend.clear_region(ClearType::All).unwrap();
     assert!(
         backend.take_output().is_empty(),
-        "suppressed clear must not emit bytes"
+        "suppressed clears must not emit bytes"
     );
     assert_eq!(backend.current_style, CellStyle::default());
 
-    // One-shot: the next unsuppressed clear erases again.
+    // After lifting suppression, the next clear erases again.
+    backend.end_clear_suppression();
     backend.clear_region(ClearType::All).unwrap();
     let output = backend.take_output();
     assert!(

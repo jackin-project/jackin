@@ -35,12 +35,14 @@ pub struct SocketBackend {
     /// emission (§3.4 — no raw overlay writes). Consumed by the next `draw`.
     hyperlink_regions: Vec<(ratatui::layout::Rect, String)>,
     sgr_regions: Vec<(ratatui::layout::Rect, SgrMetadata)>,
-    /// One-shot: swallow the screen-erase escape on the next
-    /// `clear_region(ClearType::All)`. `Terminal::clear()` is the only way to
-    /// reset Ratatui's diff baseline, but it unconditionally routes through
-    /// `clear_region(All)`; the compositor's convergence repaint needs the
-    /// baseline reset without blanking the client screen.
-    suppress_next_clear_escape: bool,
+    /// While armed, swallow every screen-erase escape from
+    /// `clear_region(ClearType::All)`. `Terminal::resize()`/`clear()` reset
+    /// Ratatui's diff baseline (and resize the buffers) but route through
+    /// `clear_region(All)` one or more times; the resize bookkeeping needs that
+    /// baseline/geometry reset without blanking the client screen or leaking a
+    /// stray erase that would ride a later frame. The single visible wipe is
+    /// the compositor's `Resize` redraw, emitted after suppression is lifted.
+    suppress_clear_escapes: bool,
 }
 
 /// Compact style summary for change-tracking only — enough detail to
@@ -72,7 +74,7 @@ impl SocketBackend {
             current_metadata: SgrMetadata::default(),
             hyperlink_regions: Vec::new(),
             sgr_regions: Vec::new(),
-            suppress_next_clear_escape: false,
+            suppress_clear_escapes: false,
         }
     }
 
@@ -85,12 +87,19 @@ impl SocketBackend {
         self.sgr_regions = regions;
     }
 
-    /// Arm the one-shot erase suppression consumed by the next
-    /// `clear_region(ClearType::All)`. See the field doc for why
-    /// `Terminal::clear()` cannot be called without it when the goal is a
-    /// baseline reset rather than a visible wipe.
-    pub fn suppress_next_clear_escape(&mut self) {
-        self.suppress_next_clear_escape = true;
+    /// Arm sustained erase suppression: every `clear_region(ClearType::All)`
+    /// resets style/baseline but emits no bytes until `end_clear_suppression`.
+    /// Wrap a `Terminal::resize()` (which clears once, or twice on a width
+    /// shrink) so the geometry/baseline reset stays byte-silent. See the field
+    /// doc for why the visible wipe must come from the compositor instead.
+    pub fn begin_clear_suppression(&mut self) {
+        self.suppress_clear_escapes = true;
+    }
+
+    /// Lift sustained erase suppression. The next `clear_region(All)` — the
+    /// compositor's `Resize` wipe — erases the client screen normally.
+    pub fn end_clear_suppression(&mut self) {
+        self.suppress_clear_escapes = false;
     }
 
     /// Update the terminal size. Called when the daemon receives a resize event.
@@ -400,10 +409,10 @@ impl Backend for SocketBackend {
             ClearType::All => {
                 self.current_style = CellStyle::default();
                 self.current_metadata = SgrMetadata::default();
-                if self.suppress_next_clear_escape {
-                    // One-shot baseline-reset mode: Terminal::clear() wants the
-                    // diff baseline reset without a visible wipe.
-                    self.suppress_next_clear_escape = false;
+                if self.suppress_clear_escapes {
+                    // Sustained baseline/geometry-reset mode: Terminal::resize()
+                    // wants the diff baseline reset (possibly twice on a width
+                    // shrink) without any visible wipe.
                     return Ok(());
                 }
                 // ED uses the terminal's active SGR background on BCE-capable

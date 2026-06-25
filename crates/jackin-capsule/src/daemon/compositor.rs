@@ -128,6 +128,38 @@ impl Multiplexer {
         let active_tab = self.active_tab;
         let tabs = &self.tabs;
         let panes = self.visible_panes();
+        // Frame-geometry trace: the status bar owns rows 0..STATUS_BAR_ROWS, so
+        // every pane's outer rect must start at or below that. A pane whose
+        // `outer.row` is smaller means its top border is being drawn over the
+        // status bar — the resize-residue class. Logged per frame (firehose,
+        // JACKIN_DEBUG only) so a soak run pins the exact offending frame.
+        {
+            let status_rows = crate::tui::components::status_bar::STATUS_BAR_ROWS;
+            crate::cdebug!(
+                "frame-geom: term={}x{} content_rows={} status_rows={} panes={}",
+                term_cols,
+                term_rows,
+                self.content_rows,
+                status_rows,
+                panes.len(),
+            );
+            for pane in &panes {
+                crate::cdebug!(
+                    "frame-pane: id={} outer=row{},col{},rows{},cols{} inner_row={} {}",
+                    pane.id,
+                    pane.outer.row,
+                    pane.outer.col,
+                    pane.outer.rows,
+                    pane.outer.cols,
+                    pane.inner.row,
+                    if pane.outer.row < status_rows {
+                        "VIOLATION-ABOVE-STATUS"
+                    } else {
+                        "ok"
+                    },
+                );
+            }
+        }
         let focused_id = self.active_focused_id();
         let focus_owner = focused_id.map_or(
             jackin_tui::components::FocusOwner::TabBar,
