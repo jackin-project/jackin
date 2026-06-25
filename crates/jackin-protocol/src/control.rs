@@ -23,6 +23,11 @@ pub enum ClientMsg {
     UsageRefreshFocused,
     /// Return every account/quota snapshot currently known to the daemon cache.
     UsageAccountList,
+    /// `jackin-exec <command> [args…]` — run a command with operator-approved
+    /// on-demand credentials injected at exec time. The daemon shows the
+    /// credential picker, resolves selections via the host socket, runs the
+    /// command, and replies with `ExecResult` or `ExecDenied`.
+    ExecCommand { command: String, args: Vec<String> },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
@@ -50,6 +55,19 @@ pub enum ServerMsg {
     UsageAccounts {
         accounts: Vec<AccountUsageSnapshotView>,
     },
+    /// Result of a `jackin-exec` invocation: the child's exit code and its
+    /// (capped, secret-redacted) stdout/stderr. `redacted_count` reports how
+    /// many secret patterns were scrubbed from the output.
+    ExecResult {
+        exit_code: i32,
+        stdout: String,
+        stderr: String,
+        redacted_count: u32,
+    },
+    /// A `jackin-exec` invocation the daemon refused to run (operator cancelled
+    /// the picker, the host resolver was unavailable, or `op read` failed). No
+    /// command was executed.
+    ExecDenied { reason: String },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,

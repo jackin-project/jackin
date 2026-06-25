@@ -482,7 +482,7 @@ fn workspace_show_includes_isolation_column() {
         grok: None,
         github: None,
         git_pull_on_entry: false,
-        runtime: config::WorkspaceRuntimeConfig::default(),
+        runtime: jackin_config::WorkspaceRuntimeConfig::default(),
     };
     let out = render_workspace_show(&AppConfig::default(), "jackin", &ws);
     assert!(out.contains("Isolation"));

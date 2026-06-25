@@ -260,6 +260,7 @@ pub fn resolve_op_uri_to_ref(
         op: op_uri,
         path: display_path,
         account: account.map(str::to_owned),
+        on_demand: false,
     })
 }
 
@@ -647,13 +648,18 @@ impl ValueKind {
     fn of_env_value(value: &EnvValue) -> Self {
         match value {
             EnvValue::OpRef(_) => Self::Op,
-            EnvValue::Plain(s) => {
-                if parse_host_ref(s).is_some() {
-                    Self::Host
-                } else {
-                    Self::Literal
-                }
-            }
+            // An Extended value carries a literal or `$VAR` string, same as
+            // Plain — classify it by whether it is a host ref.
+            EnvValue::Plain(s) => Self::of_str(s),
+            EnvValue::Extended(e) => Self::of_str(&e.value),
+        }
+    }
+
+    fn of_str(s: &str) -> Self {
+        if parse_host_ref(s).is_some() {
+            Self::Host
+        } else {
+            Self::Literal
         }
     }
 
@@ -672,13 +678,18 @@ impl ValueKind {
 fn classify_env_value(value: &EnvValue) -> String {
     match value {
         EnvValue::OpRef(r) => r.op.clone(),
-        EnvValue::Plain(s) => {
-            if parse_host_ref(s).is_some() {
-                s.clone()
-            } else {
-                "literal".to_owned()
-            }
-        }
+        EnvValue::Plain(s) => classify_str(s),
+        EnvValue::Extended(e) => classify_str(&e.value),
+    }
+}
+
+/// `$NAME` host refs are returned verbatim; literals collapse to `"literal"`
+/// so the value never reaches stderr.
+fn classify_str(s: &str) -> String {
+    if parse_host_ref(s).is_some() {
+        s.to_owned()
+    } else {
+        "literal".to_owned()
     }
 }
 
@@ -848,6 +859,7 @@ mod tests {
                 op: "op://vault/item/field".to_owned(),
                 path: "Vault/Item/Field".to_owned(),
                 account: None,
+                on_demand: false,
             }),
         );
 
@@ -896,6 +908,7 @@ mod tests {
                     op: format!("op://vault/item/{key}"),
                     path: format!("Vault/Item/{key}"),
                     account: None,
+                    on_demand: false,
                 }),
             );
         }

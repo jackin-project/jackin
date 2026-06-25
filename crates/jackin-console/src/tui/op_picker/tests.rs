@@ -2050,6 +2050,7 @@ mod cache_invalidation {
                 op: "op://v1/i1/f1".into(),
                 path: "Work/Claude/token".into(),
                 account: Some("ACCT".into()),
+                on_demand: false,
             },
         );
 
@@ -2066,6 +2067,7 @@ mod cache_invalidation {
                 op: "not-a-ref".into(),
                 path: String::new(),
                 account: None,
+                on_demand: false,
             },
         );
     }

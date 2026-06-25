@@ -17,6 +17,20 @@ pub use snapshot::InstanceSnapshot;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// One on-demand credential binding the operator configured for a session.
+///
+/// Built host-side from the workspace's `on_demand` env entries and handed to
+/// the host credential resolver (`jackin-runtime`'s `exec_host`) as the
+/// allow-list of (name, kind, source) triples it will resolve. `kind` is
+/// `"op"` (resolve via `op read <source>`), `"env"` (read host env named by
+/// `source`), or `"literal"` (return `source` verbatim).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExecBinding {
+    pub name: String,
+    pub kind: String,
+    pub source: String,
+}
+
 /// Filename written under `/jackin/run/` by the host launcher.
 pub const CAPSULE_CONFIG_FILENAME: &str = "agent.toml";
 

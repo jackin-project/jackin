@@ -1,4 +1,4 @@
 from_version = "legacy"
-target_version = "v1alpha6"
+target_version = "v1alpha7"
 target_version_shipped = "2026-05-11"
 summary = "Migrates legacy workspace config through v1alpha1 to v1alpha4. Comments, existing keys, mounts, and env tables are preserved, with version written first."

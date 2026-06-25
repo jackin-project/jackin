@@ -55,8 +55,9 @@ pub use resolve::{
 };
 pub use schema::{
     DockerConfig, DockerMounts, GitConfig, GlobalMountConfig, KeepAwakeConfig, MountConfig,
-    MountEntry, ResolvedWorkspace, RoleSource, WorkspaceConfig, WorkspaceEdit,
-    WorkspaceRoleOverride, validate_mount_paths, validate_mount_specs, validate_mounts,
+    MountEntry, ResolvedWorkspace, RoleSource, RuntimeConfig, WorkspaceConfig, WorkspaceEdit,
+    WorkspaceRoleOverride, WorkspaceRuntimeConfig, validate_mount_paths, validate_mount_specs,
+    validate_mounts,
 };
 pub use sensitive::{SensitiveMount, find_sensitive_mounts};
 pub use validation::{validate_isolation_layout, validate_workspace_config};

@@ -169,6 +169,12 @@ fn snapshot_from_msg(msg: ServerMsg) -> Result<InstanceSnapshot> {
         ServerMsg::UsageAccounts { .. } => {
             bail!("daemon replied with UsageAccounts; expected Snapshot")
         }
+        ServerMsg::ExecResult { .. } => {
+            bail!("daemon replied with ExecResult; expected Snapshot")
+        }
+        ServerMsg::ExecDenied { .. } => {
+            bail!("daemon replied with ExecDenied; expected Snapshot")
+        }
         ServerMsg::Unknown => bail!("daemon replied with an unknown ServerMsg variant"),
     }
 }
@@ -321,6 +327,8 @@ fn server_msg_kind(msg: &ServerMsg) -> &'static str {
         ServerMsg::AgentRegistry { .. } => "AgentRegistry",
         ServerMsg::UsageFocused { .. } => "UsageFocused",
         ServerMsg::UsageAccounts { .. } => "UsageAccounts",
+        ServerMsg::ExecResult { .. } => "ExecResult",
+        ServerMsg::ExecDenied { .. } => "ExecDenied",
         ServerMsg::Unknown => "Unknown",
     }
 }

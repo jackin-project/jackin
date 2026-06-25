@@ -497,6 +497,7 @@ fn validate_workspace_config_surfaces_isolation_layout_errors() {
         grok: None,
         github: None,
         git_pull_on_entry: false,
+        runtime: jackin_config::WorkspaceRuntimeConfig::default(),
     };
     let err = validate_workspace_config("ws", &workspace).unwrap_err();
     let msg = err.to_string();
@@ -728,6 +729,7 @@ fn workspace_op_ref_round_trips_account() {
             op: "op://v/i/f".into(),
             path: "Vault/Item/Field".into(),
             account: Some("ACCT123".into()),
+            on_demand: false,
         }),
     );
     let original = WorkspaceConfig {
@@ -759,6 +761,7 @@ fn workspace_op_ref_omits_account_when_none() {
             op: "op://v/i/f".into(),
             path: "Vault/Item/Field".into(),
             account: None,
+            on_demand: false,
         }),
     );
     let cfg = WorkspaceConfig {

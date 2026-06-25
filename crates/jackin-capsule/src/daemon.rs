@@ -1130,6 +1130,24 @@ fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
             accounts: mux.usage_cache.account_snapshot_views(),
         },
+        ClientMsg::ExecCommand { command, .. } => {
+            // `jackin-exec` requires the operator to approve credential
+            // injection through an interactive picker dialog
+            // (`Dialog::ExecPicker`) driven from the daemon event loop. That
+            // dialog is not yet wired into this synchronous control path, so
+            // fail closed: never resolve or inject a credential without
+            // explicit operator approval. The wire protocol, the host-side
+            // resolver (`jackin-runtime` `exec_host`), and the launch-time
+            // binding plumbing are in place; the interactive picker is the
+            // remaining integration (see the jackin-exec roadmap item).
+            crate::clog!(
+                "control: jackin-exec requested for {command:?} but the credential picker is not wired; denying"
+            );
+            ServerMsg::ExecDenied {
+                reason: "jackin-exec credential picker is not yet available in this build"
+                    .to_owned(),
+            }
+        }
         ClientMsg::Unknown => {
             crate::clog!("control: ignoring unknown ClientMsg variant from peer");
             ServerMsg::Unknown

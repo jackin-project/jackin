@@ -2034,6 +2034,7 @@ fn editor_auth_source_display(
         .map(|value| match value {
             jackin_core::EnvValue::OpRef(r) => AuthSourceValue::OpRefPath(r.path.clone()),
             jackin_core::EnvValue::Plain(s) => AuthSourceValue::Plain(s.clone()),
+            jackin_core::EnvValue::Extended(e) => AuthSourceValue::Plain(e.value.clone()),
         });
 
     auth_source_display_for_required_env(

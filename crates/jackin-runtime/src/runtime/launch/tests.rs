@@ -3338,6 +3338,7 @@ async fn valid_image_decision_runs_before_operator_env_resolution() {
             op: "op://vault/item/field".to_owned(),
             path: "Vault/Item/Field".to_owned(),
             account: None,
+            on_demand: false,
         }),
     );
     let selector = RoleSelector::new(None, "agent-smith");
@@ -3650,6 +3651,7 @@ async fn load_agent_skips_non_required_operator_credential_refs() {
             op: "op://vault/openai/key".to_owned(),
             path: "Vault/OpenAI/key".to_owned(),
             account: None,
+            on_demand: false,
         }),
     );
     let selector = RoleSelector::new(None, "agent-smith");
@@ -3849,6 +3851,7 @@ async fn load_agent_skips_github_env_resolution_when_github_auth_ignored() {
             op: "op://vault/github/token".to_owned(),
             path: "Vault/GitHub/token".to_owned(),
             account: None,
+            on_demand: false,
         }),
     );
     config.github = Some(jackin_config::GithubAuthConfig {
@@ -3928,6 +3931,7 @@ async fn load_agent_skips_unused_github_env_resolution() {
             op: "op://vault/github/unused".to_owned(),
             path: "Vault/GitHub/unused".to_owned(),
             account: None,
+            on_demand: false,
         }),
     );
     config.github = Some(jackin_config::GithubAuthConfig {
@@ -4146,6 +4150,7 @@ async fn load_agent_attaches_running_current_instance_before_credentials_and_bui
             op: "op://vault/item/attach-secret".to_owned(),
             path: "Vault/Item/attach secret".to_owned(),
             account: None,
+            on_demand: false,
         }),
     );
     let git_marker = temp.path().join("git-pull-ran");
@@ -4265,6 +4270,7 @@ async fn load_agent_attaches_explicit_restore_container_before_role_repo() {
             op: "op://vault/item/restore-secret".to_owned(),
             path: "Vault/Item/restore secret".to_owned(),
             account: None,
+            on_demand: false,
         }),
     );
     let selector = RoleSelector::new(None, "agent-smith");
@@ -7907,6 +7913,7 @@ async fn build_env_layer_states_classifies_present_vs_absent() {
             op: "op://uuid/test/field".into(),
             path: "Test/api/key".into(),
             account: None,
+            on_demand: false,
         }),
     );
     let mut ws = WorkspaceConfig::default();
@@ -8338,6 +8345,7 @@ async fn resolve_github_env_map_reads_independent_op_refs_concurrently() {
                 op: format!("op://vault/item/{key}"),
                 path: format!("Vault/Item/{key}"),
                 account: None,
+                on_demand: false,
             }),
         );
     }

@@ -49,6 +49,12 @@ pub async fn run_status() -> Result<()> {
         ServerMsg::UsageAccounts { .. } => {
             anyhow::bail!("daemon replied with UsageAccounts for Status request")
         }
+        ServerMsg::ExecResult { .. } => {
+            anyhow::bail!("daemon replied with ExecResult for Status request")
+        }
+        ServerMsg::ExecDenied { .. } => {
+            anyhow::bail!("daemon replied with ExecDenied for Status request")
+        }
     };
     crate::output::stdout_line(format_args!("Sessions: {}", sessions.len()));
     for s in &sessions {
@@ -90,6 +96,12 @@ pub async fn run_snapshot() -> Result<()> {
         ServerMsg::UsageAccounts { .. } => {
             anyhow::bail!("daemon replied with UsageAccounts for Snapshot request")
         }
+        ServerMsg::ExecResult { .. } => {
+            anyhow::bail!("daemon replied with ExecResult for Snapshot request")
+        }
+        ServerMsg::ExecDenied { .. } => {
+            anyhow::bail!("daemon replied with ExecDenied for Snapshot request")
+        }
     };
     let payload = serde_json::json!({
         "tabs": tabs,
@@ -130,6 +142,12 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
         }
         ServerMsg::UsageAccounts { .. } => {
             anyhow::bail!("daemon replied with UsageAccounts for Agents request")
+        }
+        ServerMsg::ExecResult { .. } => {
+            anyhow::bail!("daemon replied with ExecResult for Agents request")
+        }
+        ServerMsg::ExecDenied { .. } => {
+            anyhow::bail!("daemon replied with ExecDenied for Agents request")
         }
     };
 
@@ -392,6 +410,8 @@ fn msg_kind(msg: &ServerMsg) -> &'static str {
         ServerMsg::AgentRegistry { .. } => "AgentRegistry",
         ServerMsg::UsageFocused { .. } => "UsageFocused",
         ServerMsg::UsageAccounts { .. } => "UsageAccounts",
+        ServerMsg::ExecResult { .. } => "ExecResult",
+        ServerMsg::ExecDenied { .. } => "ExecDenied",
         ServerMsg::Unknown => "Unknown",
     }
 }

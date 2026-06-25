@@ -4982,6 +4982,7 @@ mod tests {
             op: "op://vault/item/field".into(),
             path: "Vault/Item/Field".into(),
             account: None,
+            on_demand: false,
         };
         let mut modal = None;
         let mut parents = vec![TestModal::AuthForm {

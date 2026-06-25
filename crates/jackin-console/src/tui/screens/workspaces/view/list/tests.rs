@@ -684,7 +684,7 @@ mod subpanel_padding {
             grok: None,
             github: None,
             git_pull_on_entry: false,
-            runtime: crate::config::WorkspaceRuntimeConfig::default(),
+            runtime: jackin_config::WorkspaceRuntimeConfig::default(),
         }
     }
 

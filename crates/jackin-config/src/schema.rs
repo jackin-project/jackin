@@ -119,6 +119,45 @@ impl WorkspaceRoleOverride {
     }
 }
 
+// ─── Runtime backend selection ───────────────────────────────────────────────
+
+/// Host-wide container backend selection (`config.toml` `[runtime]`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct RuntimeConfig {
+    /// Default backend for new launches: `docker` (the default when unset) or
+    /// `apple-container`. A per-workspace `[runtime].backend` overrides it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_backend: Option<String>,
+}
+
+impl RuntimeConfig {
+    /// True when nothing diverges from the serde default, so the whole
+    /// `[runtime]` table is skipped on serialize and existing files stay clean.
+    #[must_use]
+    pub const fn is_default(&self) -> bool {
+        self.default_backend.is_none()
+    }
+}
+
+/// Per-workspace container backend override (`workspaces/<name>.toml`
+/// `[runtime]`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct WorkspaceRuntimeConfig {
+    /// Backend override for this workspace: `docker` or `apple-container`.
+    /// `None` inherits the host-wide `[runtime].default_backend`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend: Option<String>,
+}
+
+impl WorkspaceRuntimeConfig {
+    /// True when nothing diverges from the serde default — see
+    /// [`RuntimeConfig::is_default`].
+    #[must_use]
+    pub const fn is_default(&self) -> bool {
+        self.backend.is_none()
+    }
+}
+
 // ─── WorkspaceConfig ─────────────────────────────────────────────────────────
 
 /// A saved workspace: the workdir, mounts, and per-agent auth config.
@@ -159,6 +198,8 @@ pub struct WorkspaceConfig {
     pub github: Option<GithubAuthConfig>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub git_pull_on_entry: bool,
+    #[serde(default, skip_serializing_if = "WorkspaceRuntimeConfig::is_default")]
+    pub runtime: WorkspaceRuntimeConfig,
 }
 
 impl Default for WorkspaceConfig {
@@ -182,6 +223,7 @@ impl Default for WorkspaceConfig {
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            runtime: WorkspaceRuntimeConfig::default(),
         }
     }
 }

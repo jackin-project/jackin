@@ -147,6 +147,7 @@ fn resolve_agent_from_context_matches_workspace_from_nested_mount_path() {
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            runtime: jackin_config::WorkspaceRuntimeConfig::default(),
         },
     );
 
@@ -199,6 +200,7 @@ fn resolve_agent_from_context_matches_workspace_from_host_workdir_root() {
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            runtime: jackin_config::WorkspaceRuntimeConfig::default(),
         },
     );
 
@@ -250,6 +252,7 @@ fn resolve_agent_from_context_ignores_stale_last_agent() {
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            runtime: jackin_config::WorkspaceRuntimeConfig::default(),
         },
     );
 
@@ -309,6 +312,7 @@ fn config_with_workspace(
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            runtime: jackin_config::WorkspaceRuntimeConfig::default(),
         },
     );
     config

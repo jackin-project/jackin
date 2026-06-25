@@ -785,6 +785,9 @@ fn apply_generated_token(state: &mut ManagerState<'_>, env_value: jackin_core::E
             jackin_core::EnvValue::Plain(value) => {
                 crate::tui::input::auth::apply_plain_text_to_auth_form(editor, &value);
             }
+            jackin_core::EnvValue::Extended(e) => {
+                crate::tui::input::auth::apply_plain_text_to_auth_form(editor, &e.value);
+            }
         },
         ManagerStage::Settings(settings) => match env_value {
             jackin_core::EnvValue::OpRef(op_ref) => {
@@ -797,6 +800,12 @@ fn apply_generated_token(state: &mut ManagerState<'_>, env_value: jackin_core::E
                 crate::tui::input::apply_plain_text_to_settings_auth_form(
                     &mut settings.auth,
                     &value,
+                );
+            }
+            jackin_core::EnvValue::Extended(e) => {
+                crate::tui::input::apply_plain_text_to_settings_auth_form(
+                    &mut settings.auth,
+                    &e.value,
                 );
             }
         },

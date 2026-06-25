@@ -24,13 +24,54 @@ The split-workspace layout described in [Configuration File](/reference/runtime/
 
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
-| `~/.config/jackin/config.toml` | `v1alpha6` | jackin | Automatic on startup |
-| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha6` | jackin | Automatic on startup |
+| `~/.config/jackin/config.toml` | `v1alpha7` | jackin | Automatic on startup |
+| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha7` | jackin | Automatic on startup |
 | `jackin.role.toml` | `v1alpha5` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
 
 ## Timeline
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="crates/jackin/tests/migration_fixtures.rs">crates/jackin/tests/migration_fixtures.rs</RepoFile> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+
+### `v1alpha7` — 2026-06-26
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml</RepoFile> |
+
+**Summary**: introduces selectable container backends and on-demand credential metadata. Config gains an optional `[runtime].default_backend` field selecting the host-wide backend (`docker` default, or `apple-container`). Workspace files gain an optional `[runtime].backend` per-workspace override plus optional `on_demand` env metadata that marks a credential for exec-time injection rather than launch-time injection. All three are additive with `serde` defaults, so existing files round-trip cleanly through a no-op restamp.
+
+**Before** (v1alpha6 config):
+
+```toml
+version = "v1alpha6"
+data_dir = "/tmp/jackin"
+```
+
+**After** (v1alpha7 — no change needed; `default_backend` defaults to `docker`):
+
+```toml
+version = "v1alpha7"
+data_dir = "/tmp/jackin"
+```
+
+**Example with an explicit backend and an on-demand credential**:
+
+```toml
+# config.toml
+version = "v1alpha7"
+
+[runtime]
+default_backend = "apple-container"
+```
+
+```toml
+# workspaces/prod.toml
+version = "v1alpha7"
+
+[env]
+GH_TOKEN = { value = "$GH_TOKEN", on_demand = true }
+```
 
 ### Manifest `v1alpha5` — 2026-06-10
 

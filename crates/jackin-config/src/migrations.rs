@@ -57,6 +57,13 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
     // Additive with serde default; no transformation needed.
     MigrationStep {
         from: "v1alpha5",
+        to: "v1alpha6",
+        migrate: noop_migration,
+    },
+    // v1alpha6 → v1alpha7: add optional `[runtime].default_backend` for
+    // selectable container backends. Additive with serde default; no transform.
+    MigrationStep {
+        from: "v1alpha6",
         to: CURRENT_CONFIG_VERSION,
         migrate: noop_migration,
     },
@@ -91,6 +98,14 @@ pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
     // Additive with serde default; no transformation needed.
     MigrationStep {
         from: "v1alpha5",
+        to: "v1alpha6",
+        migrate: noop_migration,
+    },
+    // v1alpha6 → v1alpha7: add optional on-demand env metadata (`on_demand`)
+    // and optional `[runtime].backend` per-workspace override. Additive with
+    // serde defaults; no transformation needed.
+    MigrationStep {
+        from: "v1alpha6",
         to: CURRENT_WORKSPACE_VERSION,
         migrate: noop_migration,
     },

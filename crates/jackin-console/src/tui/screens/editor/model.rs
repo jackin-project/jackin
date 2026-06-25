@@ -3535,6 +3535,7 @@ mod tests {
                 op: "op://vault/item/field".into(),
                 path: "Vault/Item/Field".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         workspace.mounts.push(MountConfig {
@@ -3775,6 +3776,7 @@ mod tests {
                     op: "op://vault/item/field".into(),
                     path: "Vault/Item/Field".into(),
                     account: None,
+                    on_demand: false,
                 }),
             );
 
@@ -3871,6 +3873,7 @@ mod tests {
                 op: "op://vault/item/field".into(),
                 path: "Vault/Item/Field".into(),
                 account: None,
+                on_demand: false,
             }),
         );
 
@@ -3887,6 +3890,7 @@ mod tests {
                 op: "op://vault/item/field".into(),
                 path: "Vault/Item/Field".into(),
                 account: None,
+                on_demand: false,
             }),
         );
         editor.pending.env.insert(
@@ -3914,6 +3918,7 @@ mod tests {
                 op: "op://vault/item/field".into(),
                 path: "Vault/Item/Field".into(),
                 account: None,
+                on_demand: false,
             }),
         );
 
