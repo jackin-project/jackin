@@ -32,7 +32,7 @@ fn identify_agent_node_wrapped_claude_from_cmdline() {
             "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js",
         ],
     );
-    assert_eq!(identify_agent(&info), Some(AgentKind::ClaudeCode));
+    assert_eq!(identify_agent(&info), Some(Agent::Claude));
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn identify_agent_native_codex_binary() {
         "codex",
         &["codex"],
     );
-    assert_eq!(identify_agent(&info), Some(AgentKind::Codex));
+    assert_eq!(identify_agent(&info), Some(Agent::Codex));
 }
 
 #[test]
@@ -58,7 +58,7 @@ fn identify_agent_native_amp_binary() {
         "amp",
         &["amp", "--dangerously-allow-all"],
     );
-    assert_eq!(identify_agent(&info), Some(AgentKind::Amp));
+    assert_eq!(identify_agent(&info), Some(Agent::Amp));
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn identify_agent_stat_comm_truncation_falls_back_to_exe() {
         "node",
         &["node", "/path/to/@anthropic-ai/claude-code/cli.js"],
     );
-    assert_eq!(identify_agent(&info), Some(AgentKind::ClaudeCode));
+    assert_eq!(identify_agent(&info), Some(Agent::Claude));
 }
 
 #[test]
@@ -167,7 +167,7 @@ fn foreground_agent_fixture_detects_direct_binary() {
 
     assert_eq!(
         detect_foreground_agent_from_process_infos(&root, &foreground),
-        Some((AgentKind::Codex, 300))
+        Some((Some(Agent::Codex), 300))
     );
 }
 
@@ -185,7 +185,7 @@ fn foreground_agent_fixture_detects_node_wrapped_claude() {
 
     assert_eq!(
         detect_foreground_agent_from_process_infos(&root, &foreground),
-        Some((AgentKind::ClaudeCode, 300))
+        Some((Some(Agent::Claude), 300))
     );
 }
 
@@ -206,7 +206,7 @@ fn foreground_agent_fixture_reports_unknown_shell_handoff() {
 
     assert_eq!(
         detect_foreground_agent_from_process_infos(&root, &foreground),
-        Some((AgentKind::Unknown, 100))
+        Some((None, 100))
     );
 }
 

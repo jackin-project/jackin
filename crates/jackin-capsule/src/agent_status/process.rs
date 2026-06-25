@@ -7,7 +7,10 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::str::FromStr as _;
 use std::time::Instant;
+
+use jackin_core::agent::Agent;
 
 use crate::agent_status::policy::CPU_SAMPLE_WINDOW;
 
@@ -196,74 +199,54 @@ pub fn pids_in_pgrp(target_pgid: u32) -> Vec<u32> {
     pids
 }
 
-/// Agent kinds that jackin' recognises.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AgentKind {
-    ClaudeCode,
-    Codex,
-    Amp,
-    Kimi,
-    OpenCode,
-    Unknown,
+/// Map a process basename to the canonical agent slug enum, or `None` when it
+/// is not a recognized agent binary.
+fn agent_from_name(name: &str) -> Option<Agent> {
+    // `claude-code` is the npm package's binary name; the canonical slug is
+    // `claude`. Everything else maps by `Agent`'s own FromStr.
+    let slug = if name == "claude-code" {
+        "claude"
+    } else {
+        name
+    };
+    Agent::from_str(slug).ok()
 }
 
-impl AgentKind {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "claude",
-            Self::Codex => "codex",
-            Self::Amp => "amp",
-            Self::Kimi => "kimi",
-            Self::OpenCode => "opencode",
-            Self::Unknown => "unknown",
-        }
-    }
-}
-
-fn agent_kind_from_name(name: &str) -> Option<AgentKind> {
-    match name {
-        "codex" => Some(AgentKind::Codex),
-        "amp" => Some(AgentKind::Amp),
-        "kimi" => Some(AgentKind::Kimi),
-        "opencode" => Some(AgentKind::OpenCode),
-        "claude" | "claude-code" => Some(AgentKind::ClaudeCode),
-        _ => None,
-    }
-}
-
-/// Identify the agent running in `proc`. Returns `None` when no known agent
-/// is found.
-pub fn identify_agent(info: &ProcessInfo) -> Option<AgentKind> {
+/// Identify the agent running in `proc`. Returns `None` when no recognized
+/// agent is found.
+pub fn identify_agent(info: &ProcessInfo) -> Option<Agent> {
     // Prefer the exe basename: it is the full binary name, unlike `comm` which
     // the kernel truncates to 15 chars (so a longer agent name would be missed).
     if let Some(ref exe) = info.exe_path {
         let exe_name = exe.file_name()?.to_string_lossy();
-        if let Some(kind) = agent_kind_from_name(exe_name.as_ref()) {
-            return Some(kind);
+        if let Some(agent) = agent_from_name(exe_name.as_ref()) {
+            return Some(agent);
         }
-        // Node-wrapped agents: inspect argv[1] for the JS entry point
+        // Node-wrapped agents: inspect argv[1] for the JS entry point.
         if matches!(exe_name.as_ref(), "node" | "bun" | "deno") {
             if let Some(script) = info.cmdline.get(1)
                 && (script.contains("@anthropic-ai/claude-code") || script.contains("claude-code"))
             {
-                return Some(AgentKind::ClaudeCode);
+                return Some(Agent::Claude);
             }
-            return Some(AgentKind::Unknown);
+            // A node process that is not a recognized JS agent.
+            return None;
         }
     }
 
     // Fall back to the (15-char-truncated) comm when the exe path is unreadable.
-    agent_kind_from_name(info.comm.as_str())
+    agent_from_name(info.comm.as_str())
 }
 
 /// Given the child PID of a session's root process, determine what agent
 /// currently owns the terminal's foreground process group.
 ///
-/// Returns `(agent_kind, foreground_pgid)` or `None` when detection fails.
-/// `root_info` is the already-read `/proc` info for the child PID, so the caller
-/// (which read it for its own physics sample) does not pay a second stat+exe+
-/// cmdline read here.
-pub fn detect_foreground_agent(root_info: &ProcessInfo) -> Option<(AgentKind, u32)> {
+/// Returns `(foreground_agent, foreground_pgid)` or `None` when there is no
+/// foreground process group. The agent is `None` when a foreground group exists
+/// but holds no recognized agent. `root_info` is the already-read `/proc` info
+/// for the child PID, so the caller (which read it for its own physics sample)
+/// does not pay a second stat+exe+cmdline read here.
+pub fn detect_foreground_agent(root_info: &ProcessInfo) -> Option<(Option<Agent>, u32)> {
     if root_info.tpgid <= 0 {
         return None;
     }
@@ -278,20 +261,18 @@ pub fn detect_foreground_agent(root_info: &ProcessInfo) -> Option<(AgentKind, u3
 fn detect_foreground_agent_from_process_infos(
     root_info: &ProcessInfo,
     process_group: &[ProcessInfo],
-) -> Option<(AgentKind, u32)> {
+) -> Option<(Option<Agent>, u32)> {
     if root_info.tpgid <= 0 {
         return None;
     }
     let fg_pgid = u32::try_from(root_info.tpgid).ok()?;
     for proc_info in process_group {
-        if let Some(kind) = identify_agent(proc_info)
-            && kind != AgentKind::Unknown
-        {
-            return Some((kind, fg_pgid));
+        if let Some(agent) = identify_agent(proc_info) {
+            return Some((Some(agent), fg_pgid));
         }
     }
     // Process group exists but no recognized agent binary found.
-    Some((AgentKind::Unknown, fg_pgid))
+    Some((None, fg_pgid))
 }
 
 #[cfg(test)]

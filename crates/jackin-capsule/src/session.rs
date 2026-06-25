@@ -993,7 +993,7 @@ impl Session {
     ) -> crate::agent_status::evidence::ProcessEvidence {
         use crate::agent_status::evidence::ProcessEvidence;
         use crate::agent_status::process::{
-            self, AgentKind, descendant_process_count, detect_foreground_agent, physics_available,
+            self, descendant_process_count, detect_foreground_agent, physics_available,
             read_process_info, sample_cpu_jiffies_delta,
         };
 
@@ -1014,13 +1014,12 @@ impl Session {
         };
 
         let foreground = detect_foreground_agent(&info);
-        let foreground_is_agent =
-            matches!(&foreground, Some((kind, _)) if *kind != AgentKind::Unknown);
+        // A recognized agent owns the foreground group (the inner Option is Some).
+        let foreground_is_agent = matches!(&foreground, Some((Some(_), _)));
         let foreground_pgid = foreground.as_ref().map(|(_, pgid)| *pgid);
         let child_process_count = descendant_process_count(pid);
         let cpu_jiffies_delta = sample_cpu_jiffies_delta(pid, &mut self.cpu_sample, now);
-        let root_is_agent =
-            process::identify_agent(&info).is_some_and(|kind| kind != AgentKind::Unknown);
+        let root_is_agent = process::identify_agent(&info).is_some();
 
         if foreground_is_agent {
             self.saw_agent_foreground = true;
