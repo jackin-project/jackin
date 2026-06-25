@@ -1,9 +1,9 @@
 use crate::agent_status::evidence::{EvidenceNote, RawAgentState};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RuntimeEvent {
-    pub runtime: String,
-    pub event: String,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeEvent<'a> {
+    pub runtime: &'a str,
+    pub event: &'a str,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -28,8 +28,8 @@ pub enum GateEffect {
     Ignore,
 }
 
-pub fn map_event(event: &RuntimeEvent, state: &mut SourceGateState) -> GateEffect {
-    let Some(canonical) = canonical_event(event.runtime.as_str(), event.event.as_str()) else {
+pub fn map_event(event: &RuntimeEvent<'_>, state: &mut SourceGateState) -> GateEffect {
+    let Some(canonical) = canonical_event(event.runtime, event.event) else {
         return GateEffect::Ignore;
     };
     match canonical {

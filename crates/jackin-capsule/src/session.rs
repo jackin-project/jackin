@@ -898,13 +898,7 @@ impl Session {
         use crate::agent_status::gating::{GateEffect, RuntimeEvent, map_event};
 
         let gate = self.gate_states.entry(source_id.to_owned()).or_default();
-        let effect = map_event(
-            &RuntimeEvent {
-                runtime: runtime.to_owned(),
-                event: event.to_owned(),
-            },
-            gate,
-        );
+        let effect = map_event(&RuntimeEvent { runtime, event }, gate);
         let refresh_matching = |authority: &mut Option<AuthorityEvidence>| {
             if let Some(a) = authority
                 && a.source_id == source_id

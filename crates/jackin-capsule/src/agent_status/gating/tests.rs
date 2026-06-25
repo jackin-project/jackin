@@ -1,10 +1,7 @@
 use super::*;
 
-fn event(runtime: &str, event: &str) -> RuntimeEvent {
-    RuntimeEvent {
-        runtime: runtime.to_owned(),
-        event: event.to_owned(),
-    }
+fn event<'a>(runtime: &'a str, event: &'a str) -> RuntimeEvent<'a> {
+    RuntimeEvent { runtime, event }
 }
 
 fn authority_state(effect: GateEffect) -> RawAgentState {
