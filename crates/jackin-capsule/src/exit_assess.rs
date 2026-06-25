@@ -17,7 +17,7 @@ mod tests;
 
 use jackin_core::runner::{CommandRunner, RunOptions};
 use jackin_core::worktree_dirty::{changed_files, unpushed_commit_count};
-use jackin_protocol::CapsuleConfig;
+use jackin_protocol::{CapsuleConfig, EXIT_ACTION_PATH, ExitAction};
 use std::path::Path;
 use std::process::Stdio;
 
@@ -134,4 +134,49 @@ pub async fn assess_dirty(config: &CapsuleConfig) -> Vec<DirtyRepo> {
         }
     }
     dirty
+}
+
+/// What the daemon does when the last live session exits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExitDecision {
+    /// No modal — drain and exit (clean workspace, or policy `keep`/`discard`).
+    Drain,
+    /// Show the dirty-exit modal for these repos (policy `ask` + dirty).
+    ShowModal(Vec<DirtyRepo>),
+}
+
+/// Decide what to do when the last live session exits: show the dirty-exit modal
+/// only when the resolved policy is `ask` and at least one isolated worktree is
+/// dirty; otherwise drain straight to exit.
+pub async fn decide_exit(config: &CapsuleConfig) -> ExitDecision {
+    if !policy_is_ask(config) {
+        return ExitDecision::Drain;
+    }
+    let dirty = assess_dirty(config).await;
+    if dirty.is_empty() {
+        ExitDecision::Drain
+    } else {
+        ExitDecision::ShowModal(dirty)
+    }
+}
+
+/// Record the operator's dirty-exit choice for the host to execute on cleanup.
+/// Writes to [`EXIT_ACTION_PATH`]; the host reads it via `serde_json`.
+///
+/// # Errors
+/// Returns the underlying I/O error if the state file cannot be written.
+pub fn write_exit_action(action: ExitAction) -> std::io::Result<()> {
+    write_exit_action_to(Path::new(EXIT_ACTION_PATH), action)
+}
+
+/// The serialized form the host's `serde` reads back into [`ExitAction`].
+fn exit_action_json(action: ExitAction) -> &'static str {
+    match action {
+        ExitAction::Keep => "\"keep\"",
+        ExitAction::Discard => "\"discard\"",
+    }
+}
+
+fn write_exit_action_to(path: &Path, action: ExitAction) -> std::io::Result<()> {
+    std::fs::write(path, exit_action_json(action))
 }

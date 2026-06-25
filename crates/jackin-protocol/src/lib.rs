@@ -23,6 +23,28 @@ pub const CAPSULE_CONFIG_FILENAME: &str = "agent.toml";
 /// Normalized runtime config path read by Capsule PID 1.
 pub const CAPSULE_CONFIG_PATH: &str = "/jackin/run/agent.toml";
 
+/// Filename the capsule writes the operator's dirty-exit choice to, under the
+/// per-instance state dir, for the host to read and execute on cleanup.
+pub const EXIT_ACTION_FILENAME: &str = "exit-action.json";
+
+/// In-container path the capsule writes [`ExitAction`] to. The host's state-dir
+/// mount makes this readable from outside the container at
+/// `<data_dir>/<container>/state/exit-action.json`.
+pub const EXIT_ACTION_PATH: &str = "/jackin/state/exit-action.json";
+
+/// The operator's choice for dirty isolated work at in-capsule exit. Decided
+/// inside the capsule (the dirty-exit modal); the host only **executes** it,
+/// never prompts. The capsule writes this before draining; the host reads it on
+/// cleanup. Absent file means a clean exit (no dirty work) — nothing to execute.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExitAction {
+    /// Preserve the instance as resumable dirty state.
+    Keep,
+    /// Discard the instance and its dirty work.
+    Discard,
+}
+
 /// Host-validated role/session facts Capsule needs to spawn panes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CapsuleConfig {
