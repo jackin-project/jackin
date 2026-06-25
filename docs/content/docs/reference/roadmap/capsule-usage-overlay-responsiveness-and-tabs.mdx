@@ -1330,9 +1330,9 @@ done vs outstanding in this roadmap item.
 - [ ] Issue 4 — no blocking work on the event/input/render loop (offload + concurrent probes; daemon-wide rule)
   - [x] Host-console mount/create file-browser open and directory navigation paths moved off the manager input/render task into a `BlockingSubscription`; completion is applied through the background-message loop — `ee924d0`
   - [x] Auth source-folder file-browser open and directory navigation paths moved onto the same listing worker for editor and settings auth pickers; hidden-directory home scans no longer run from input handlers — `4366e11`
-  - [ ] File-browser commit validation still canonicalizes and validates credential folders synchronously from commit handlers; move that validation off the input/render task next.
+  - [x] File-browser commit validation canonicalization and auth source-folder credential checks moved off the manager input/render task into a `BlockingSubscription`; completion is applied through the background-message loop — `810e6cc`
 - [ ] Tokio-everywhere audit — enumerate every data-load/I/O path in jackin', confirm each is off-loop + parallel; refactor any blocking/serial (HARDCORE rule)
-  - [ ] File-browser audit in progress: mount/create open/navigation (`ee924d0`) and auth source-folder open/navigation (`4366e11`) are off-loop; commit validation remains UI-reachable blocking I/O.
+  - [ ] File-browser audit in progress: mount/create open/navigation (`ee924d0`), auth source-folder open/navigation (`4366e11`), and commit validation (`810e6cc`) are off-loop; continue auditing other UI-reachable I/O paths.
 - [x] Issue 13 (prereq) — propagate host `TZ` into the capsule (kill UTC-only timestamps class bug) — `d832930`
 - [x] Canonical per-provider section spec + agent→provider resolver (root cause behind 7/8/9/10/11/12/14) — `ed98924` + provider commits
 
