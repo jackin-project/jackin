@@ -129,24 +129,24 @@ fn shell_quote_quotes_shell_metachars() {
 }
 
 #[test]
-fn parse_pr_info_filters_empty_and_non_string_paths() {
-    let json = serde_json::json!({
-        "headRefName": "fix/example",
-        "headRefOid": "abc123",
-        "files": [{"path": "a.rs"}, {"path": ""}, {"additions": 1}, {"path": "b.rs"}],
-    });
-    let info = parse_pr_info(&json).unwrap();
-
-    assert_eq!(info.head_ref_name, "fix/example");
-    assert_eq!(info.head_oid, "abc123");
-    assert_eq!(info.changed_files, vec!["a.rs", "b.rs"]);
+fn parse_pr_refs_reads_head_name_and_oid() {
+    let json = serde_json::json!({ "headRefName": "fix/example", "headRefOid": "abc123" });
+    let (name, oid) = parse_pr_refs(&json).unwrap();
+    assert_eq!(name, "fix/example");
+    assert_eq!(oid, "abc123");
 }
 
 #[test]
-fn parse_pr_info_rejects_missing_files() {
-    let json = serde_json::json!({ "headRefName": "fix/example", "headRefOid": "abc123" });
+fn parse_changed_files_trims_and_drops_blank_lines() {
+    // Mimics `gh pr diff --name-only`, including a path past the old 100-file cap.
+    let out = "a.rs\n  docker/construct/Dockerfile  \n\n\nb.rs\n";
+    let files = parse_changed_files(out).unwrap();
+    assert_eq!(files, vec!["a.rs", "docker/construct/Dockerfile", "b.rs"]);
+}
 
-    assert!(parse_pr_info(&json).is_err());
+#[test]
+fn parse_changed_files_rejects_empty() {
+    assert!(parse_changed_files("\n  \n").is_err());
 }
 
 #[test]

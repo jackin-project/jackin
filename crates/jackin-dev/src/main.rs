@@ -285,34 +285,54 @@ fn pr_info(pr: u64, repo: &str) -> Result<PullRequestInfo> {
             "--repo",
             repo,
             "--json",
-            "headRefName,headRefOid,files",
+            "headRefName,headRefOid",
         ],
     );
     let output = run_output(&mut cmd)?;
     let json: Value = serde_json::from_slice(&output).context("parsing gh pr view JSON")?;
-    parse_pr_info(&json)
-}
+    let (head_ref_name, head_oid) = parse_pr_refs(&json)?;
 
-// A missing or non-array `files` field is a contract break, not a zero-file PR:
-// silently collapsing it to empty would downgrade every `auto_prep` build
-// decision to "not needed" and launch the operator against a stale binary.
-fn parse_pr_info(json: &Value) -> Result<PullRequestInfo> {
-    let head_ref_name = json_string(json, "headRefName")?;
-    let head_oid = json_string(json, "headRefOid")?;
-    let changed_files = match json.get("files") {
-        Some(Value::Array(files)) => files
-            .iter()
-            .filter_map(|file| file.get("path").and_then(Value::as_str))
-            .filter(|path| !path.is_empty())
-            .map(str::to_owned)
-            .collect(),
-        _ => bail!("gh pr view did not return a `files` array"),
-    };
+    // `gh pr view --json files` caps at 100 files, so a large PR (e.g. #528 with
+    // 113) silently drops changed paths like `docker/construct/*` — downgrading
+    // every `auto_prep` build decision to "not needed" and launching against a
+    // stale image. `gh pr diff --name-only` lists every changed path, uncapped.
+    let mut diff_cmd = command(
+        "gh",
+        ["pr", "diff", &pr.to_string(), "--repo", repo, "--name-only"],
+    );
+    let diff_output = run_output(&mut diff_cmd)?;
+    let diff_text = String::from_utf8(diff_output)
+        .context("`gh pr diff --name-only` output was not valid UTF-8")?;
+    let changed_files = parse_changed_files(&diff_text)?;
+
     Ok(PullRequestInfo {
         head_ref_name,
         head_oid,
         changed_files,
     })
+}
+
+fn parse_pr_refs(json: &Value) -> Result<(String, String)> {
+    Ok((
+        json_string(json, "headRefName")?,
+        json_string(json, "headRefOid")?,
+    ))
+}
+
+// An empty file list is a contract break, not a zero-file PR: silently
+// collapsing it to empty would downgrade every `auto_prep` build decision to
+// "not needed" and launch the operator against a stale binary/image.
+fn parse_changed_files(diff_name_only: &str) -> Result<Vec<String>> {
+    let changed_files: Vec<String> = diff_name_only
+        .lines()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(str::to_owned)
+        .collect();
+    if changed_files.is_empty() {
+        bail!("`gh pr diff --name-only` returned no changed files");
+    }
+    Ok(changed_files)
 }
 
 fn json_string(json: &Value, key: &str) -> Result<String> {
