@@ -241,8 +241,42 @@ fn run_agent_setup() -> Result<()> {
         other => bail!("unknown JACKIN_AGENT: {other}"),
     }?;
 
+    // Install/repair the agent-status reporter on every launch (drift repair).
+    // Observability must never break the agent: a failure is logged, not fatal.
+    if let Err(e) = install_agent_status_reporter(&agent) {
+        crate::clog!("agent-status: reporter install for {agent} failed (non-fatal): {e:#}");
+    }
+
     if copy_auth {
         mark_agent_auth_initialized(&marker, &agent)?;
+    }
+    Ok(())
+}
+
+/// Install the container-local agent-status reporter for `agent` into the agent
+/// home, repairing drift each launch. Claude/Codex install too — their forwarded
+/// events are gated to identity/freshness only (Decision 0a), the screen pack
+/// owns their state. Kimi is rule-pack-only (no reporter); unknown/grok have no
+/// reporter yet.
+fn install_agent_status_reporter(agent: &str) -> Result<()> {
+    use crate::agent_status::hook_installer::{
+        AmpPluginInstaller, ClaudeHookInstaller, CodexHookInstaller, HookInstaller,
+        OpenCodePluginInstaller,
+    };
+    let installer: Option<Box<dyn HookInstaller>> = match agent {
+        "claude" => Some(Box::new(ClaudeHookInstaller::default())),
+        "codex" => Some(Box::new(CodexHookInstaller::default())),
+        "amp" => Some(Box::new(AmpPluginInstaller::default())),
+        "opencode" => Some(Box::new(OpenCodePluginInstaller::default())),
+        _ => None,
+    };
+    if let Some(installer) = installer {
+        let home = Path::new("/home/agent");
+        if !installer.verify(home) {
+            installer
+                .install(home)
+                .with_context(|| format!("install {agent} agent-status reporter"))?;
+        }
     }
     Ok(())
 }
