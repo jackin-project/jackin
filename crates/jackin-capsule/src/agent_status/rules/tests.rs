@@ -54,6 +54,33 @@
         assert!(pack.evaluate(&idle).is_none());
     }
 
+    fn pack_with_versions(versions: &str) -> anyhow::Result<RulePack> {
+        let pack: RulePack = toml::from_str(&format!(
+            "schema_version = 1\nagent = \"test\"\nvalidated_versions = \"{versions}\"\n"
+        ))
+        .unwrap();
+        pack.validate().map(|()| pack)
+    }
+
+    #[test]
+    fn validated_versions_must_be_bounded() {
+        // Bounded ranges are accepted.
+        assert!(pack_with_versions(">=2.1.0, <2.3.0").is_ok());
+        assert!(pack_with_versions("=0.14.0").is_ok());
+        // Wildcard and lower-only ranges are rejected — they could never gate a
+        // future CLI whose TUI changed under the pack.
+        assert!(pack_with_versions("*").is_err());
+        assert!(pack_with_versions(">=2.1.0").is_err());
+    }
+
+    #[test]
+    fn accepts_cli_version_gates_the_pinned_window() {
+        let pack = pack_with_versions(">=2.1.173, <2.2.0").unwrap();
+        assert!(pack.accepts_cli_version("2.1.180").unwrap());
+        assert!(!pack.accepts_cli_version("2.2.0").unwrap());
+        assert!(!pack.accepts_cli_version("2.0.9").unwrap());
+    }
+
     #[test]
     fn prompt_caret_regions_isolate_live_prompt() {
         let pack: RulePack = toml::from_str(
@@ -144,7 +171,7 @@
                 r#"
 schema_version = 1
 agent = "{agent}"
-validated_versions = "*"
+validated_versions = ">=1.0.0, <2.0.0"
 
 [[rule]]
 id = "{id}"
@@ -207,7 +234,7 @@ requires_all = ["{needle}"]
             r#"
 schema_version = 1
 agent = "test"
-validated_versions = "*"
+validated_versions = ">=1.0.0, <2.0.0"
 
 [[rule]]
 id = "anchored-spinner"
@@ -273,7 +300,7 @@ regex = ["^\\* thinking"]
             r#"
 schema_version = 1
 agent = "codex"
-validated_versions = "*"
+validated_versions = ">=1.0.0, <2.0.0"
 
 [[rule]]
 id = "title-spinner"
@@ -378,7 +405,7 @@ requires_all = ["cleared"]
             r#"
 schema_version = 1
 agent = "test"
-validated_versions = "*"
+validated_versions = ">=1.0.0, <2.0.0"
 
 [[rule]]
 id = "bundled"

@@ -216,12 +216,47 @@ impl RulePack {
         Ok(pack)
     }
 
+    /// Whether this pack's `validated_versions` range accepts `cli_version`.
+    /// The image-build co-versioning check: a derived image must fail to build
+    /// if a bundled pack does not cover the agent CLI version pinned in that
+    /// image, so a pack and the TUI it targets can never silently drift apart.
+    pub fn accepts_cli_version(&self, cli_version: &str) -> anyhow::Result<bool> {
+        let req = semver::VersionReq::parse(self.validated_versions.trim())?;
+        let version = semver::Version::parse(cli_version.trim())?;
+        Ok(req.matches(&version))
+    }
+
     pub fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(self.schema_version == 1, "unsupported rule schema");
         anyhow::ensure!(!self.agent.trim().is_empty(), "agent is required");
         anyhow::ensure!(
             !self.validated_versions.trim().is_empty(),
             "validated_versions is required"
+        );
+        // validated_versions must be a real, *bounded* semver range so a pack
+        // is pinned to a known CLI window — `*` or a lower-only range (`>=x`)
+        // would silently match any future CLI the agent's TUI may have changed
+        // under. (Image-build enforcement compares this range against the
+        // pinned CLI version; here we reject ranges that could never gate.)
+        let req = semver::VersionReq::parse(self.validated_versions.trim()).with_context(|| {
+            format!("invalid validated_versions in pack {}", self.agent)
+        })?;
+        anyhow::ensure!(
+            !req.comparators.is_empty(),
+            "validated_versions must be a bounded range, not a wildcard, in pack {}",
+            self.agent
+        );
+        anyhow::ensure!(
+            req.comparators.iter().any(|c| matches!(
+                c.op,
+                semver::Op::Exact
+                    | semver::Op::Less
+                    | semver::Op::LessEq
+                    | semver::Op::Tilde
+                    | semver::Op::Caret
+            )),
+            "validated_versions must have an upper bound (no lower-only drift) in pack {}",
+            self.agent
         );
         anyhow::ensure!(self.rule.len() <= 128, "too many rules");
         for rule in &self.rule {

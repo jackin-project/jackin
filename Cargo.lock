@@ -2440,6 +2440,7 @@ dependencies = [
  "ratatui",
  "regex",
  "rusqlite",
+ "semver",
  "serde",
  "serde_json",
  "tempfile",
