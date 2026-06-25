@@ -2,9 +2,7 @@
 title: "Capsule usage overlay — responsiveness, tabs, and layout fixes"
 ---
 
-**Status**: In progress. This item collects operator-reported defects and
-improvements for the in-container usage overlay, each verified against the source. We will
-address them later as one goal. Companion to
+**Status**: In progress. Core architecture and five of seven providers shipped; CI is green. A live in-container smoke (PR 579, 2026-06-25) confirmed Amp, xAI, Z.AI, Kimi, MiniMax correct, but found **two provider-data regressions** (Claude and OpenAI/Codex render only a truncated Session/Weekly snapshot) plus several follow-ups — see [Live smoke verification](#live-smoke-verification--pr-579-2026-06-25). This item collects operator-reported defects and improvements for the in-container usage overlay, each verified against the source. Companion to
 <RepoFile path="docs/content/docs/reference/roadmap/capsule-usage-quota-overlay.mdx" />
 (the binding design for the overlay itself).
 
@@ -12,6 +10,40 @@ address them later as one goal. Companion to
 > captured here verbatim-in-intent so nothing is lost, then extended with the verified root
 > cause and exact change points from the source. Treat this as the single source of truth for
 > the work; extend it as new findings arrive.
+
+## Live smoke verification — PR 579 (2026-06-25)
+
+In-container smoke on branch `feature/capsule-usage-overlay-roadmap` (capsule `0.6.0-dev+213b032`), all seven provider tabs reviewed against CodexBar (cloned source) and the providers' own dashboards. Verdicts:
+
+| Provider | Verdict |
+|---|---|
+| **Amp** | ✅ correct — Amp Free `% left` + reset, Credits `Individual credits: $X`, headline `Free n% · $credits`. |
+| **xAI / Grok** | ✅ correct — single Weekly window `% left` + reset, plan `SuperGrok`. |
+| **Z.AI** | ✅ data correct — Tokens / MCP (`0 / 100 (100 remaining)`) / 5-hour, resets. Order change owed → **F9**. |
+| **Kimi** | ✅ data correct — Weekly + Rate Limit (in-reserve + Lasts on Rate Limit). Order change owed → **F10**. |
+| **MiniMax** | ✅ correct — General·5h / General·Weekly / Video, `Usage: N/100`, `% left`, resets. |
+| **OpenAI / Codex** | ❌ **regressed** — only Session + Weekly render (those are correct, incl. reset + in-reserve + Lasts). Missing Codex Spark 5-hour, Codex Spark Weekly, Limit Reset Credits, Credits, and plan `Pro 20x`. |
+| **Anthropic / Claude** | ❌ **regressed** — Session/Weekly show only `% left`: no reset, no in-reserve, no "Lasts until reset". Sonnet + Daily Routines absent. Account shows `Claude OAuth` not email. |
+
+### RC1 — root cause of the Claude + OpenAI regressions (confirmed)
+
+`usage verify` / `usage accounts` (in-container) show both providers resolve via **`source: "cli"` (`confidence: authoritative`)** with only **2 windows** (Session, Weekly) and `resets_at: null` in the persisted rows:
+
+- Claude `cli` path (`push_claude_cli_bucket`, `usage.rs`) emits only Session/Weekly/Sonnet with no reset, no pace, no Daily Routines — and live drops to 2 rows. The rich path is OAuth `/api/oauth/usage` → `push_claude_window` (emits reset + in-reserve + Sonnet + Daily Routines), but it is shadowed because `cli` wins. OAuth needs Claude creds (keychain / `.credentials.json`) — see the keychain-cred issue.
+- OpenAI `cli` path truncates to Session/Weekly, dropping Codex Spark + Limit Reset Credits + Credits (CodexBar sources these from the Codex CLI RPC `account/rateLimits/read`).
+
+**Fix:** make the authoritative snapshot FULL — parse all windows + reset + credits from the CLI/RPC (CodexBar's Codex CLI RPC proves CLI *can* be complete), or prefer/merge the OAuth path; restore Claude reset/in-reserve/Lasts + Sonnet + Daily Routines and OpenAI Spark + Limit Reset Credits + Credits. Verify each datum against the cloned CodexBar source. (`usage accounts` JSON also serializes `resets_at: null` for every provider while the TUI renders resets for six — a separate reporter/persistence gap to confirm.)
+
+### Live-smoke follow-ups (new operator findings)
+
+- **F1–F3 — usage status-bar lifecycle (architectural, every agent).** The usage segment must: (1) be hidden before the agent has started (today it shows `usage unavailable` during container init); (2) show `refreshing` — one consistent word everywhere — once the agent starts but usage is unknown (not `usage unavailable`, which is misinformation); (3) resolve to the real headline; (4) show `usage unavailable` only when genuinely unavailable. The segment must be **clickable in the unknown/refreshing state** to force a proactive load. Detect agent-start reliably by **routing agent launch through jackin-capsule as a proxy/hook** (instead of exec-ing the agent directly) so the capsule knows the exact start moment and can trigger auth-verify + refresh. Applies to every agent, every surface. Ties to Issues 4/5/7/15.
+- **F7a — plan labels.** Restore full plan label/multiplier: OpenAI shows `pro`, must show `Pro 20x` (CodexBar). Verify derivation in CodexBar `Providers/Codex/`.
+- **F8 — Claude usage credits.** Surface Claude credits as **spent vs available cap** only: `SGD <spent> spent · NN% used` against the monthly cap (e.g. `SGD 78.49 spent · 30% used` of `SGD 260.00`), as on the claude.ai → Settings → Usage page (`claude.ai/api/organizations/{org}/usage`). Not the full cost grid. Verify extraction against CodexBar source before building.
+- **F9 — Z.AI order** → **5-hour · Tokens · MCP** (operator override of CodexBar's Tokens·MCP·5-hour; document the divergence per principle 5).
+- **F10 — Kimi order** → **Rate Limit · Weekly** (operator override of CodexBar's Weekly·Rate Limit). F9+F10 share a principle: put the short/active (5-hour / rate) window on top.
+- **F11 — account label consistency.** Header account string differs in kind across tabs (real email for OpenAI/Amp/xAI; `Claude OAuth` / `*_API_KEY present` / `auth token` for the rest). Make consistent: prefer real account identity (email/handle) where the source provides it — Anthropic must show its email (available via the OAuth path), not `Claude OAuth` — with one consistent fallback phrasing for API-key-only providers.
+
+Not yet captured in this smoke (still owed): hover color + pointer cursor on tab surfaces, status-bar consistency across all screens, no-vertical-jump / centered strip / padding, mid-refresh tab-switch responsiveness + no-refetch-within-TTL.
 
 ## Guiding principles (binding for every item here)
 
@@ -1344,15 +1376,15 @@ done vs outstanding in this roadmap item.
 - [x] Issue 5 — per-provider freshness TTL gating all refresh triggers; `r` forces — `970b9d2`
 
 **C. Per-provider data + display** (verify each against CodexBar docs/source per principle 5)
-- [x] Issue 7 — Amp status-bar headline `Free n% · $credits` — `0f810e0`
-- [x] Issue 8 — Codex: order, Limit Reset Credits, Credits, detail lines — `f3c01e0`
-- [x] Issue 9 — Claude: reset + in-reserve + "Lasts until reset" + Daily Routines + order — `7b89d68`
+- [x] Issue 7 — Amp status-bar headline `Free n% · $credits` — `0f810e0` — ✅ verified live (PR 579)
+- [ ] Issue 8 — Codex: **REGRESSED live** — only Session/Weekly render; Codex Spark 5-hour, Codex Spark Weekly, Limit Reset Credits, Credits, and plan `Pro 20x` all missing (provider resolves via truncated `cli` snapshot — see RC1). Session/Weekly themselves render correctly. Reopened from `f3c01e0`.
+- [ ] Issue 9 — Claude: **REGRESSED live** — Session/Weekly show only `% left` (no reset, no in-reserve, no "Lasts until reset"); Sonnet + Daily Routines absent; account header shows `Claude OAuth` not the email (F11); plan `Max`. Provider resolves via `cli` (2-row snapshot), not the rich OAuth `/api/oauth/usage` path. Reopened from `7b89d68`. See RC1.
 - [x] Issue 10 — status-bar click opens the focused pane's provider — `ed98924`
-- [x] Issue 11 — Z.AI: order Tokens·MCP·5-hour + MCP count line + in-reserve per spec — `324cf2f`
-- [x] Issue 12 — MiniMax: `Usage: N/100` count line + order (keep "% left") — `1e91c01`
-- [x] Issue 14 — Kimi: humanize "Rate Limit" label + order + in-reserve on right bucket + window-duration parse — `24caec6`
-- [x] Issue 16 — Grok: dynamic window label (Weekly/Monthly/Credits) + single percent bar + reset/in-reserve per spec — `aa26f42`
-- [x] Issue 17 — Overview — `63d8099`
+- [x] Issue 11 — Z.AI: MCP count line + in-reserve per spec — `324cf2f` — ✅ data verified live. **Order change owed (F9):** operator wants **5-hour → Tokens → MCP** (override of CodexBar's Tokens·MCP·5-hour).
+- [x] Issue 12 — MiniMax: `Usage: N/100` count line + order (keep "% left") — `1e91c01` — ✅ verified live (PR 579)
+- [x] Issue 14 — Kimi: humanize "Rate Limit" label + in-reserve on Rate Limit + window-duration parse — `24caec6` — ✅ data verified live. **Order change owed (F10):** operator wants **Rate Limit → Weekly** (override of CodexBar's Weekly·Rate Limit).
+- [x] Issue 16 — Grok: dynamic window label (Weekly/Monthly/Credits) + single percent bar + reset/in-reserve per spec — `aa26f42` — ✅ verified live (PR 579)
+- [x] Issue 17 — Overview — `63d8099` — ⚠ Anthropic row missing reset + local time live (F5); blocked on Issue 9 Claude reset data. Other rows ✅.
 
 **D. Layout + format (usage overlay)**
 - [x] Issue 18 — meter empty cells use `░` (not `·`); glyphs as shared constants (builder + predicates + tests) — `b866e1f`
@@ -1361,13 +1393,21 @@ done vs outstanding in this roadmap item.
 - [x] Issue 3 — center the usage tab strip — `b866e1f`
 - [x] Issue 13 — reset/expiry format `Resets in <rel> (<local Mon D, HH:MM>)`, all providers, via one formatter — `d832930`
 
-**F. Final verification (end-to-end, in-container)**
-- [ ] Hover color + pointer cursor on every tab surface (status bar, console, usage overlay)
-- [ ] Status bar consistent on every screen per the display matrix (debug + non-debug)
-- [ ] No vertical jump on usage tab switch; centered strip; correct padding
-- [ ] Left/right tab switch instant even mid-refresh; no repeated provider calls within the TTL
-- [ ] Each provider tab matches its CodexBar reference (sections, order, detail lines, count lines, in-reserve on the right buckets)
-- [ ] All resets/expiries show `relative (local date+time)`; status-bar click opens the focused provider; Amp headline correct
+**F. Final verification (end-to-end, in-container) — PR 579 live smoke (2026-06-25)**
+- [ ] Hover color + pointer cursor on every tab surface (status bar, console, usage overlay) — not yet captured
+- [ ] Status bar consistent on every screen per the display matrix (debug + non-debug) — not yet captured
+- [ ] No vertical jump on usage tab switch; centered strip; correct padding — not yet captured
+- [ ] Left/right tab switch instant even mid-refresh; no repeated provider calls within the TTL — not yet captured
+- [~] Each provider tab matches its CodexBar reference — ✅ Amp · xAI · Z.AI (data) · Kimi (data) · MiniMax; ❌ Claude + OpenAI regressed (Issues 8/9, RC1); order overrides owed (F9/F10)
+- [~] Resets show `relative (local date+time)` — ✅ OpenAI/Amp/xAI/Z.AI/Kimi/MiniMax; ❌ Claude (no reset live); status-bar click ✅; Amp headline ✅
+
+**G. Live-smoke follow-ups (PR 579 — new operator findings; detail in "Live smoke verification" section)**
+- [ ] F1–F3 — usage status-bar lifecycle (every agent): hide before agent start; `refreshing` (one consistent word) on start; resolve; clickable segment forces proactive load; detect agent-start by routing launch through jackin-capsule as a proxy.
+- [ ] F7a — restore full plan labels (OpenAI `Pro 20x`).
+- [ ] F8 — Claude usage credits: show spent vs cap (`SGD <spent> spent · NN% used` of monthly cap) per claude.ai Usage page; verify extraction vs CodexBar source.
+- [ ] F9 — Z.AI order → 5-hour · Tokens · MCP.
+- [ ] F10 — Kimi order → Rate Limit · Weekly.
+- [ ] F11 — consistent account label across tabs (real email/handle where available; Anthropic must not show `Claude OAuth`).
 
 ## Cross-references
 
