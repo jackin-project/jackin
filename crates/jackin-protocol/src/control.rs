@@ -99,7 +99,9 @@ impl FocusedUsageView {
             account: FocusedAccountHeader {
                 provider_label: "Usage".to_owned(),
                 account_label: reason.clone(),
+                username: None,
                 plan_label: None,
+                credential_origin: None,
             },
             buckets: Vec::new(),
             status: UsageSnapshotStatus::Unavailable,
@@ -117,8 +119,19 @@ impl FocusedUsageView {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FocusedAccountHeader {
     pub provider_label: String,
+    /// Account identity: the real account email when the provider exposes one,
+    /// otherwise empty (no fabricated identity). Auth method/source belongs in
+    /// `credential_origin`, not here.
     pub account_label: String,
+    /// Account username/handle, when distinct from the email.
+    #[serde(default)]
+    pub username: Option<String>,
     pub plan_label: Option<String>,
+    /// Where the credential came from (the auth source), never the secret:
+    /// e.g. `OAuth · keychain`, `API token · env ZAI_API_KEY`,
+    /// `API key · amp secrets.json`. `None` until populated.
+    #[serde(default)]
+    pub credential_origin: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

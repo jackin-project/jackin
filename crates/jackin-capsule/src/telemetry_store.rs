@@ -468,7 +468,12 @@ pub(crate) fn focused_usage_view(
         account: jackin_protocol::control::FocusedAccountHeader {
             provider_label: provider,
             account_label: first.account_label.clone(),
+            // username + credential_origin are live-snapshot fields, not
+            // persisted in the store yet; a store-restored header gets them
+            // on the next refresh.
+            username: None,
             plan_label: first.plan_label.clone(),
+            credential_origin: None,
         },
         buckets,
         status,
@@ -815,7 +820,9 @@ mod tests {
             account: FocusedAccountHeader {
                 provider_label: "Codex".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
+                username: None,
                 plan_label: Some("Pro 20x".to_owned()),
+                credential_origin: None,
             },
             buckets: vec![
                 QuotaBucketView {
@@ -862,7 +869,9 @@ mod tests {
             account: FocusedAccountHeader {
                 provider_label: provider.to_owned(),
                 account_label: account.to_owned(),
+                username: None,
                 plan_label: plan.map(str::to_owned),
+                credential_origin: None,
             },
             buckets: vec![QuotaBucketView {
                 label: bucket.to_owned(),

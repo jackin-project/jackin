@@ -567,10 +567,22 @@ impl Dialog {
             ),
             jackin_tui::components::ContainerInfoRow::new("Updated", view.updated_label.clone()),
         ]);
+        if let Some(username) = &view.account.username {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Username",
+                username.clone(),
+            ));
+        }
         if let Some(plan) = &view.account.plan_label {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
                 "Plan",
                 plan.clone(),
+            ));
+        }
+        if let Some(origin) = &view.account.credential_origin {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Auth",
+                origin.clone(),
             ));
         }
         for bucket in &view.buckets {

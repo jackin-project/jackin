@@ -787,7 +787,9 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
         account: jackin_protocol::control::FocusedAccountHeader {
             provider_label: "OpenAI / Codex".to_owned(),
             account_label: "alexey@example.com".to_owned(),
+            username: None,
             plan_label: Some("Pro 20x".to_owned()),
+            credential_origin: None,
         },
         buckets: vec![
             jackin_protocol::control::QuotaBucketView {
@@ -934,7 +936,9 @@ fn provider_usage_view_fixture(
     view.account = jackin_protocol::control::FocusedAccountHeader {
         provider_label: provider_label.to_owned(),
         account_label: account_label.to_owned(),
+        username: None,
         plan_label: plan_label.map(str::to_owned),
+        credential_origin: None,
     };
     view.updated_label = updated_label.to_owned();
     view.buckets = buckets;
@@ -1169,6 +1173,34 @@ fn usage_tab_text_position(d: &Dialog, height: u16, width: u16, label: &str) -> 
         }
     }
     panic!("usage tab label {label:?} not rendered");
+}
+
+#[test]
+fn usage_dialog_renders_auth_source_and_omits_blank_email() {
+    // P1: credential_origin renders as its own "Auth:" line (the source, never
+    // the secret); an empty account_label shows neither an email nor the
+    // "account unavailable" placeholder; username and plan share line 2.
+    let mut view = usage_view_fixture();
+    view.account = jackin_protocol::control::FocusedAccountHeader {
+        provider_label: "Z.AI".to_owned(),
+        account_label: String::new(),
+        username: Some("donbeave".to_owned()),
+        plan_label: Some("GLM Coding".to_owned()),
+        credential_origin: Some("API token \u{b7} env ZAI_API_KEY".to_owned()),
+    };
+    let snapshot = render_usage_dialog_snapshot_for_view(120, 40, UsageDialogTab::Provider, view);
+    assert!(
+        snapshot.contains("Auth: API token \u{b7} env ZAI_API_KEY"),
+        "auth source line missing:\n{snapshot}"
+    );
+    assert!(
+        snapshot.contains("donbeave \u{b7} GLM Coding"),
+        "username \u{b7} plan line missing:\n{snapshot}"
+    );
+    assert!(
+        !snapshot.contains("account unavailable"),
+        "blank email must be omitted, not labelled unavailable:\n{snapshot}"
+    );
 }
 
 #[test]

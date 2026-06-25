@@ -211,7 +211,9 @@ fn control_usage_account_list_uses_in_memory_cache() {
     view.account = jackin_protocol::control::FocusedAccountHeader {
         provider_label: "OpenAI / Codex".to_owned(),
         account_label: "codex@example.com".to_owned(),
+        username: None,
         plan_label: Some("Pro 20x".to_owned()),
+        credential_origin: None,
     };
     view.status = jackin_protocol::control::UsageSnapshotStatus::Fresh;
     view.source = jackin_protocol::control::UsageSource::ProviderApi;
@@ -301,7 +303,9 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
             account: jackin_protocol::control::FocusedAccountHeader {
                 provider_label: "Usage".to_owned(),
                 account_label: "seed".to_owned(),
+                username: None,
                 plan_label: None,
+                credential_origin: None,
             },
             ..jackin_protocol::control::FocusedUsageView::unavailable("seed", 1)
         },
@@ -376,7 +380,9 @@ fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
         account: jackin_protocol::control::FocusedAccountHeader {
             provider_label: "Codex".to_owned(),
             account_label: "alexey@example.com".to_owned(),
+            username: None,
             plan_label: Some("Pro 20x".to_owned()),
+            credential_origin: None,
         },
         buckets: vec![jackin_protocol::control::QuotaBucketView {
             label: "Session".to_owned(),

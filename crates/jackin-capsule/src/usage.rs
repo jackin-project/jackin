@@ -957,7 +957,9 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
         provider,
         surface: UsageSurface::Claude,
         account_label: account,
+        username: None,
         plan_label: oauth.and_then(|credentials| credentials.subscription_type),
+        credential_origin: Some("OAuth · keychain".to_owned()),
         buckets,
         status,
         source: if status == UsageSnapshotStatus::Fresh {
@@ -1095,7 +1097,9 @@ fn codex_snapshot(
         provider,
         surface: UsageSurface::Codex,
         account_label: account,
+        username: None,
         plan_label: quota.and_then(|usage| usage.plan_type.clone()),
+        credential_origin: Some("OAuth · ~/.codex/auth.json".to_owned()),
         buckets,
         status,
         source: if status == UsageSnapshotStatus::Fresh {
@@ -1198,7 +1202,9 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
         provider: None,
         surface: UsageSurface::Amp,
         account_label,
+        username: None,
         plan_label: (api_usage.is_some() || cli_usage.is_some()).then_some("Amp Free".to_owned()),
+        credential_origin: Some("API key · AMP_API_KEY".to_owned()),
         buckets,
         status,
         source: if api_usage.is_some() {
@@ -1294,7 +1300,9 @@ fn grok_snapshot_from_rpc_result(
         provider: None,
         surface: UsageSurface::Grok,
         account_label: account,
+        username: None,
         plan_label: grok_plan_label(auth),
+        credential_origin: Some("OAuth · ~/.grok/auth.json".to_owned()),
         buckets,
         status,
         source: billing_usage
@@ -1371,15 +1379,19 @@ fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView
         agent,
         provider: None,
         surface: UsageSurface::Kimi,
-        account_label: if has_token {
-            "Kimi auth token"
-        } else if has_local {
-            "local Kimi config"
-        } else {
-            "needs Kimi auth"
-        }
-        .to_owned(),
+        account_label: String::new(),
+        username: None,
         plan_label: None,
+        credential_origin: Some(
+            if has_token {
+                "API token · env KIMI_CODE_API_KEY"
+            } else if has_local {
+                "API key · ~/.kimi-code"
+            } else {
+                "needs Kimi auth"
+            }
+            .to_owned(),
+        ),
         buckets,
         status,
         source: if provider_usage.is_some() {
@@ -1444,15 +1456,19 @@ fn minimax_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageV
         agent,
         provider: Some(UsageSurface::Minimax.label()),
         surface: UsageSurface::Minimax,
-        account_label: if has_token {
-            "MiniMax API token"
-        } else {
-            "needs MINIMAX_CODING_API_KEY"
-        }
-        .to_owned(),
+        account_label: String::new(),
+        username: None,
         plan_label: provider_usage
             .as_ref()
             .and_then(MiniMaxUsageResponse::plan_name),
+        credential_origin: Some(
+            if has_token {
+                "API token · env MINIMAX_API_KEY"
+            } else {
+                "needs MINIMAX_CODING_API_KEY"
+            }
+            .to_owned(),
+        ),
         buckets,
         status,
         source: if provider_usage.is_some() {
@@ -1525,14 +1541,16 @@ fn provider_key_snapshot(
         agent,
         provider: Some(surface.label()),
         surface,
-        account_label: if has_key {
-            format!("{key_name} present")
-        } else {
-            format!("needs {key_name}")
-        },
+        account_label: String::new(),
+        username: None,
         plan_label: provider_quota
             .as_ref()
             .and_then(ZaiQuotaResponse::plan_name),
+        credential_origin: Some(if has_key {
+            format!("API token · env {key_name}")
+        } else {
+            format!("needs env {key_name}")
+        }),
         buckets,
         status,
         source: if provider_quota.is_some() {
@@ -1569,7 +1587,9 @@ fn opencode_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUs
         provider,
         surface: UsageSurface::OpenCode,
         account_label: "OpenCode stats source pending".to_owned(),
+        username: None,
         plan_label: None,
+        credential_origin: None,
         buckets: vec![bucket(
             "Usage",
             None,
@@ -1595,7 +1615,9 @@ fn unsupported_snapshot(agent: &str, provider: Option<&str>, now: i64) -> Focuse
         provider,
         surface: UsageSurface::Unsupported,
         account_label: "unsupported focused agent".to_owned(),
+        username: None,
         plan_label: None,
+        credential_origin: None,
         buckets: Vec::new(),
         status: UsageSnapshotStatus::Unsupported,
         source: UsageSource::None,
@@ -1610,7 +1632,9 @@ struct UsageViewInput<'a> {
     provider: Option<&'a str>,
     surface: UsageSurface,
     account_label: String,
+    username: Option<String>,
     plan_label: Option<String>,
+    credential_origin: Option<String>,
     buckets: Vec<QuotaBucketView>,
     status: UsageSnapshotStatus,
     source: UsageSource,
@@ -1635,7 +1659,9 @@ fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
         account: FocusedAccountHeader {
             provider_label: input.surface.account_label().to_owned(),
             account_label: input.account_label,
+            username: input.username,
             plan_label: input.plan_label,
+            credential_origin: input.credential_origin,
         },
         buckets: input.buckets,
         status: input.status,
@@ -5179,7 +5205,9 @@ mod tests {
         view.account = FocusedAccountHeader {
             provider_label: "OpenAI / Codex".to_owned(),
             account_label: "codex@example.com".to_owned(),
+            username: None,
             plan_label: Some("Pro 20x".to_owned()),
+            credential_origin: None,
         };
         view.status = UsageSnapshotStatus::Fresh;
         view.tabs = provider_tabs(UsageSurface::Codex);
@@ -5188,7 +5216,9 @@ mod tests {
         claude.account = FocusedAccountHeader {
             provider_label: "Anthropic / Claude".to_owned(),
             account_label: "claude@example.com".to_owned(),
+            username: None,
             plan_label: Some("Max".to_owned()),
+            credential_origin: None,
         };
         claude.status = UsageSnapshotStatus::Stale;
 
@@ -5423,7 +5453,9 @@ mod tests {
             provider: Some("OpenAI"),
             surface: UsageSurface::Codex,
             account_label: "codex@example.com".to_owned(),
+            username: None,
             plan_label: Some("Pro 20x".to_owned()),
+            credential_origin: None,
             buckets: vec![QuotaBucketView {
                 label: "Session".to_owned(),
                 used_label: Some("63% used".to_owned()),
@@ -5823,7 +5855,9 @@ mod tests {
         cached.account = FocusedAccountHeader {
             provider_label: "OpenAI / Codex".to_owned(),
             account_label: "alexey@example.com".to_owned(),
+            username: None,
             plan_label: Some("Pro 20x".to_owned()),
+            credential_origin: None,
         };
         cached.buckets = vec![QuotaBucketView {
             label: "Weekly".to_owned(),
@@ -5847,7 +5881,9 @@ mod tests {
             view.account = FocusedAccountHeader {
                 provider_label: "OpenAI / Codex".to_owned(),
                 account_label: "alexey@example.com".to_owned(),
+                username: None,
                 plan_label: None,
+                credential_origin: None,
             };
             view.last_error = Some("Codex provider usage unavailable".to_owned());
 

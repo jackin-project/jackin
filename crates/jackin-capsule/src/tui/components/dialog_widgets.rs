@@ -572,7 +572,9 @@ fn usage_info_lines_impl(
     let context = UsageLineContext {
         updated: usage_row_value(state, "Updated"),
         account: usage_row_value(state, "Account"),
+        username: usage_row_value(state, "Username"),
         plan: usage_row_value(state, "Plan"),
+        auth: usage_row_value(state, "Auth"),
         list_layout,
         width: width as usize,
     };
@@ -591,7 +593,9 @@ fn usage_info_lines_impl(
 struct UsageLineContext<'a> {
     updated: Option<&'a str>,
     account: Option<&'a str>,
+    username: Option<&'a str>,
     plan: Option<&'a str>,
+    auth: Option<&'a str>,
     list_layout: bool,
     /// Panel inner width for right-aligned header fields; 0 disables alignment.
     width: usize,
@@ -649,7 +653,9 @@ fn usage_lines_for_row(
                 value,
                 context.updated,
                 context.account,
+                context.username,
                 context.plan,
+                context.auth,
                 context.width,
                 lines,
             );
@@ -663,8 +669,8 @@ fn usage_lines_for_row(
                 ),
             ]));
         }
-        "Provider" | "Account" | "Plan" | "Status" | "Updated" | "Focused" | "Started"
-        | "Today" | "Since start" => {}
+        "Provider" | "Account" | "Username" | "Plan" | "Auth" | "Status" | "Updated"
+        | "Focused" | "Started" | "Today" | "Since start" => {}
         bucket if is_quota_bucket_row(bucket, value) => {
             if context.list_layout {
                 usage_quota_bucket_compact_lines(bucket, value, context.width, lines);
@@ -776,36 +782,58 @@ fn usage_overview_reset_columns(reset: &str) -> (&str, Option<&str>) {
     (reset, None)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn usage_header_lines(
     value: &str,
     updated: Option<&str>,
     account: Option<&str>,
+    username: Option<&str>,
     plan: Option<&str>,
+    auth: Option<&str>,
     width: usize,
     lines: &mut Vec<Line<'static>>,
 ) {
-    // Line 1: provider flush-left, account flush-right (preview layout).
-    let account = account.unwrap_or("account unavailable");
+    // Line 1: provider flush-left, account email flush-right. The email is the
+    // account identity; omit it (no "account unavailable") when the provider
+    // exposes none — the auth source goes on its own line below.
+    let account = account.map(str::trim).filter(|value| !value.is_empty());
     lines.push(usage_header_two_column(
         value,
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        account,
+        account.unwrap_or(""),
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         width,
     ));
 
-    // Line 2: "Updated …" flush-left, plan flush-right.
+    // Line 2: "Updated …" flush-left, "username · plan" flush-right.
     let updated = updated.map(str::trim).filter(|value| !value.is_empty());
+    let username = username.map(str::trim).filter(|value| !value.is_empty());
     let plan = plan.map(str::trim).filter(|value| !value.is_empty());
-    if updated.is_some() || plan.is_some() {
+    let right = match (username, plan) {
+        (Some(user), Some(plan)) => Some(format!("{user} \u{b7} {plan}")),
+        (Some(user), None) => Some(user.to_owned()),
+        (None, Some(plan)) => Some(plan.to_owned()),
+        (None, None) => None,
+    };
+    if updated.is_some() || right.is_some() {
         lines.push(usage_header_two_column(
             updated.unwrap_or(""),
             DIM,
-            plan.unwrap_or(""),
+            right.as_deref().unwrap_or(""),
             DIM,
             width,
         ));
     }
+
+    // Line 3 (new): the credential source — never the secret.
+    if let Some(auth) = auth.map(str::trim).filter(|value| !value.is_empty()) {
+        lines.push(Line::from(vec![
+            usage_content_indent(),
+            Span::styled("Auth: ", DIM),
+            Span::styled(auth.to_owned(), DIM),
+        ]));
+    }
+
     lines.push(usage_separator_line(width));
 }
 
