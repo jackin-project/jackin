@@ -50,6 +50,9 @@ fn process_exit_wins() {
     assert_eq!(result.raw_state, RawAgentState::Idle);
     assert_eq!(result.winner, EvidenceWinner::ProcessExit);
     assert!(result.has_note(EvidenceNote::ProcessExited));
+    // Exit is a definitive idle: Strong so debounce publishes done on this tick,
+    // before the daemon clears authority for the exiting session.
+    assert_eq!(result.confidence, AgentStatusConfidence::Strong);
 }
 
 #[test]
@@ -69,6 +72,7 @@ fn foreground_shell_handoff_wins_as_exit_like_idle() {
     assert!(result.foreground_returned_to_shell);
     assert!(result.has_note(EvidenceNote::ForegroundReturnedToShell));
     assert!(!result.stale_report);
+    assert_eq!(result.confidence, AgentStatusConfidence::Strong);
 }
 
 #[test]

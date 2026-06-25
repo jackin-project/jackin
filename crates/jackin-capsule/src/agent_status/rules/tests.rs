@@ -433,3 +433,62 @@ requires_all = ["bundled"]
     assert_eq!(matched.rule_id, "override");
     assert_eq!(matched.state, Some(RawAgentState::Blocked));
 }
+
+#[test]
+fn finalize_compiles_regexes_used_on_the_production_path() {
+    let pack: RulePack = toml::from_str(
+        "schema_version = 1\n\
+         agent = \"test\"\n\
+         validated_versions = \">=1.0.0, <2\"\n\
+         [[rule]]\n\
+         id = \"numbered-choice\"\n\
+         state = \"blocked\"\n\
+         priority = 100\n\
+         region = \"bottom:5\"\n\
+         line_regex = ['^\\s*\\d+\\.\\s']\n",
+    )
+    .unwrap();
+    // finalize() is the production load path: it compiles every regex once into
+    // the rule, so evaluate() uses the compiled regexes (not the per-call
+    // fallback the validate-only tests above exercise).
+    let pack = pack.finalize().unwrap();
+    assert_eq!(pack.rule[0].compiled_line_regex.len(), 1);
+
+    let rows = vec!["Choose one:".to_owned(), "  1. yes".to_owned()];
+    assert_eq!(
+        pack.evaluate(&rows).unwrap().state,
+        Some(RawAgentState::Blocked),
+        "compiled-regex path must match identically to the fallback path",
+    );
+    assert!(pack.evaluate(&["item 1. done".to_owned()]).is_none());
+}
+
+#[test]
+fn finalize_sorts_rules_by_descending_priority() {
+    // Lower-priority rule declared first; both match the same row. After
+    // finalize the higher-priority rule must win, proving the sort happens at
+    // load (not per evaluation).
+    let pack: RulePack = toml::from_str(
+        "schema_version = 1\n\
+         agent = \"test\"\n\
+         validated_versions = \">=1.0.0, <2\"\n\
+         [[rule]]\n\
+         id = \"low\"\n\
+         state = \"idle\"\n\
+         priority = 1\n\
+         region = \"bottom:1\"\n\
+         requires_all = [\"ready\"]\n\
+         [[rule]]\n\
+         id = \"high\"\n\
+         state = \"blocked\"\n\
+         priority = 100\n\
+         region = \"bottom:1\"\n\
+         requires_all = [\"ready\"]\n",
+    )
+    .unwrap();
+    let pack = pack.finalize().unwrap();
+    assert_eq!(pack.rule[0].id, "high");
+    let matched = pack.evaluate(&["ready".to_owned()]).unwrap();
+    assert_eq!(matched.rule_id, "high");
+    assert_eq!(matched.state, Some(RawAgentState::Blocked));
+}
