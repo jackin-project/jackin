@@ -246,6 +246,17 @@ pub(crate) fn visible_panes_for_layout(
     leaves
         .into_iter()
         .map(|(id, outer)| {
+            // Subdivision must never escape the content rect (a pane top can't
+            // rise above `content_rect.row` == `STATUS_BAR_ROWS` into the status
+            // bar). Production correctness rests on the `leaves()` split
+            // arithmetic, which enforces this structurally; this assert is a
+            // debug/test tripwire that catches a regression in that arithmetic
+            // (release builds drop it, and the `frame-pane` trace is firehose-
+            // gated, so neither fires in a normal release run).
+            debug_assert!(
+                content_rect.contains(outer),
+                "pane {id} outer rect {outer:?} escaped content_rect {content_rect:?}",
+            );
             let focused = Some(id) == focused_id;
             VisiblePane {
                 id,

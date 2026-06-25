@@ -22,11 +22,26 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, OnceLock},
 };
 
-use unicode_width::UnicodeWidthChar;
-
-use crate::cell::{Attrs, Cell, Color};
+use crate::cell::{Attrs, Cell, Color, Hyperlink, UnderlineStyle};
 use crate::damage::{DirtySpans, DirtyTracker};
 use crate::passthrough::{PassthroughBuffer, PassthroughEvent};
+use crate::width::VirtualTerminalProfile;
+
+/// Provenance for one physical grid row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RowWrap {
+    /// Row starts a logical line or came from an explicit line break/edit op.
+    #[default]
+    Hard,
+    /// Row continues the previous logical line because DECAWM soft-wrapped.
+    Soft,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollOp {
+    Up { top: u16, bottom: u16, rows: u16 },
+    Down { top: u16, bottom: u16, rows: u16 },
+}
 
 /// Mouse protocol modes (DEC modes 1000/1002/1003).
 ///
@@ -76,6 +91,7 @@ pub struct DamageGrid {
     // sequences split across PTY read() boundaries to be silently dropped.
     parser: vte::Parser,
     pending_utf8: Vec<u8>,
+    profile: VirtualTerminalProfile,
 
     // ── Grid state ────────────────────────────────────────────────────────────
     rows: u16,
@@ -136,10 +152,12 @@ pub struct DamageGrid {
 
     // ── Current SGR attributes (applied to newly written cells) ───────────────
     current_attrs: Attrs,
+    active_hyperlink: Option<Hyperlink>,
 
     // ── Scroll region ─────────────────────────────────────────────────────────
     scroll_top: u16,    // 0-based, inclusive
     scroll_bottom: u16, // 0-based, inclusive
+    scroll_ops: Vec<ScrollOp>,
 
     /// Kitty keyboard protocol stack pushed by the foreground program.
     /// Each `\x1b[>{flags}u` pushes; each `\x1b[<{n}u` pops `n` levels.
@@ -180,13 +198,6 @@ impl std::fmt::Debug for DamageGrid {
 /// 64 is well past any real terminal program's nested keymap-mode depth.
 const KITTY_KB_STACK_CAP: usize = 64;
 
-/// Fallback OSC 10/11 colors when the attach client could not read the host
-/// terminal's real palette: assumes a typical dark terminal (near-white text
-/// on black). The capsule itself paints default cells with `Color::Reset`,
-/// so these values are a report to querying agents, not what gets rendered.
-const DEFAULT_REPORTED_FG: (u8, u8, u8) = (0xe6, 0xe6, 0xe6);
-const DEFAULT_REPORTED_BG: (u8, u8, u8) = (0x00, 0x00, 0x00);
-
 /// Ring-backed row storage.
 ///
 /// This borrows the core idea from Alacritty's `Storage` grid
@@ -197,6 +208,7 @@ const DEFAULT_REPORTED_BG: (u8, u8, u8) = (0x00, 0x00, 0x00);
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RowStore {
     rows: VecDeque<Vec<Cell>>,
+    wraps: VecDeque<RowWrap>,
     arena: RowArena,
 }
 
@@ -204,6 +216,7 @@ impl RowStore {
     fn blank(rows: u16, cols: u16, arena: RowArena) -> Self {
         Self {
             rows: (0..rows).map(|_| arena.blank_row(cols)).collect(),
+            wraps: (0..rows).map(|_| RowWrap::Hard).collect(),
             arena,
         }
     }
@@ -220,10 +233,15 @@ impl RowStore {
         for row in self.rows.drain(..) {
             self.arena.recycle(row);
         }
+        self.wraps.clear();
     }
 
     pub(crate) fn get(&self, row: usize) -> Option<&Vec<Cell>> {
         self.rows.get(row)
+    }
+
+    pub(crate) fn wrap(&self, row: usize) -> Option<RowWrap> {
+        self.wraps.get(row).copied()
     }
 
     pub(crate) fn iter(&self) -> vec_deque::Iter<'_, Vec<Cell>> {
@@ -235,19 +253,40 @@ impl RowStore {
     }
 
     fn insert(&mut self, index: usize, row: Vec<Cell>) {
-        self.rows.insert(index.min(self.rows.len()), row);
+        self.insert_with_wrap(index, row, RowWrap::Hard);
+    }
+
+    fn insert_with_wrap(&mut self, index: usize, row: Vec<Cell>, wrap: RowWrap) {
+        let index = index.min(self.rows.len());
+        self.rows.insert(index, row);
+        self.wraps.insert(index, wrap);
     }
 
     fn remove(&mut self, index: usize) -> Option<Vec<Cell>> {
-        self.rows.remove(index)
+        let row = self.rows.remove(index);
+        if row.is_some() {
+            let _ = self.wraps.remove(index);
+        }
+        row
     }
 
     fn push_back(&mut self, row: Vec<Cell>) {
+        self.push_back_with_wrap(row, RowWrap::Hard);
+    }
+
+    fn push_back_with_wrap(&mut self, row: Vec<Cell>, wrap: RowWrap) {
         self.rows.push_back(row);
+        self.wraps.push_back(wrap);
     }
 
     fn pop_front(&mut self) -> Option<Vec<Cell>> {
-        self.rows.pop_front()
+        self.pop_front_with_wrap().map(|(row, _wrap)| row)
+    }
+
+    fn pop_front_with_wrap(&mut self) -> Option<(Vec<Cell>, RowWrap)> {
+        let row = self.rows.pop_front()?;
+        let wrap = self.wraps.pop_front().unwrap_or_default();
+        Some((row, wrap))
     }
 
     fn recycle_front(&mut self) {
@@ -360,6 +399,7 @@ impl DamageGrid {
         Self {
             parser: vte::Parser::new(),
             pending_utf8: Vec::new(),
+            profile: VirtualTerminalProfile::default(),
             rows,
             cols,
             primary: blank.clone(),
@@ -367,6 +407,7 @@ impl DamageGrid {
             alt_screen: false,
             scrollback: RowStore {
                 rows: VecDeque::new(),
+                wraps: VecDeque::new(),
                 arena: row_arena,
             },
             scrollback_limit,
@@ -385,11 +426,13 @@ impl DamageGrid {
             bracketed_paste: false,
             application_cursor: false,
             focus_events: false,
-            reported_fg: DEFAULT_REPORTED_FG,
-            reported_bg: DEFAULT_REPORTED_BG,
+            reported_fg: VirtualTerminalProfile::default().default_reported_fg,
+            reported_bg: VirtualTerminalProfile::default().default_reported_bg,
             current_attrs: Attrs::default(),
+            active_hyperlink: None,
             scroll_top: 0,
             scroll_bottom: rows.saturating_sub(1),
+            scroll_ops: Vec::new(),
             kitty_kb_stack: Vec::new(),
             dirty: DirtyTracker::new(rows),
             passthrough: PassthroughBuffer::default(),
@@ -494,12 +537,16 @@ impl DamageGrid {
             .iter()
             .map(|row| row.iter().map(crate::snapshot::SnapCell::from).collect())
             .collect();
+        let row_wraps = (0..screen.len())
+            .map(|idx| screen.wrap(idx).unwrap_or_default())
+            .collect();
         crate::snapshot::GridSnapshot {
             rows: self.rows,
             cols: self.cols,
             cursor: (self.cursor_row, self.cursor_col),
             alternate_screen: self.alt_screen,
             cells,
+            row_wraps,
         }
     }
 
@@ -598,12 +645,25 @@ impl DamageGrid {
         for live_row in live.cells.iter().take(rows_to_draw as usize - prefix) {
             cells.push(live_row.clone());
         }
+        let mut row_wraps = Vec::with_capacity(rows_to_draw as usize);
+        let clamped = offset.min(self.scrollback.len());
+        let start = self.scrollback.len().saturating_sub(clamped);
+        for idx in start..start + prefix {
+            row_wraps.push(self.scrollback.wrap(idx).unwrap_or_default());
+        }
+        row_wraps.extend(
+            live.row_wraps
+                .iter()
+                .copied()
+                .take(rows_to_draw as usize - prefix),
+        );
         crate::snapshot::GridSnapshot {
             rows: rows_to_draw,
             cols: self.cols,
             cursor: live.cursor,
             alternate_screen: live.alternate_screen,
             cells,
+            row_wraps,
         }
     }
 
@@ -656,6 +716,15 @@ impl DamageGrid {
 
     /// Resize the grid. Marks all rows dirty.
     pub fn set_size(&mut self, rows: u16, cols: u16) {
+        // The grid must always keep at least one addressable cell. The parser
+        // indexes `active_grid()[cursor_row]` directly on every erase/write, so
+        // a 0-row or 0-col grid turns the next PTY byte into an out-of-bounds
+        // panic on the empty `VecDeque`. This is reachable in practice: a
+        // capsule pane squeezed below its border height under an extreme
+        // resize hands `set_size` a 0-row inner rect. Clamp to 1×1 so the
+        // model stays well-formed regardless of the geometry the host computes.
+        let rows = rows.max(1);
+        let cols = cols.max(1);
         self.rows = rows;
         self.cols = cols;
         self.primary = resize_grid(&self.primary, rows, cols);
@@ -716,6 +785,18 @@ impl DamageGrid {
     pub fn clear_scrollback(&mut self) {
         self.scrollback.clear();
         self.scrollback_offset = 0;
+    }
+
+    pub fn drain_scroll_ops(&mut self) -> Vec<ScrollOp> {
+        std::mem::take(&mut self.scroll_ops)
+    }
+
+    /// Drop recorded scroll ops, retaining the buffer's capacity. The capsule
+    /// calls this each PTY chunk to bound growth without churning a fresh
+    /// allocation per scroll-heavy chunk (unlike `drain_scroll_ops`, which
+    /// hands off and thus discards the allocation).
+    pub fn clear_scroll_ops(&mut self) {
+        self.scroll_ops.clear();
     }
 
     /// Mouse protocol mode.
@@ -789,17 +870,7 @@ impl DamageGrid {
 
     /// Write a character at the current cursor position, advance cursor.
     fn write_char_at_cursor(&mut self, ch: char) {
-        // DECAWM deferred wrap: a previous last-column write parked here. Now
-        // that another printable has arrived, perform the wrap before writing.
-        if self.pending_wrap {
-            self.pending_wrap = false;
-            self.cursor_col = 0;
-            self.newline_action();
-        }
-        if self.cursor_row >= self.rows || self.cursor_col >= self.cols {
-            return;
-        }
-        let width = UnicodeWidthChar::width(ch).unwrap_or(1) as u16;
+        let width = self.profile.char_width(ch);
         self.mutated_since_preserve = true;
 
         // Grapheme clustering: zero-width input (combining marks, variation
@@ -808,6 +879,18 @@ impl DamageGrid {
         // cluster. Cluster width stays the base width — DECRQM declines mode
         // 2027, so the outer terminal advances by `unicode_width` too.
         if self.append_to_previous_cluster(ch, width) {
+            return;
+        }
+
+        // DECAWM deferred wrap: a previous last-column write parked here. Now
+        // that a new printable (not a cluster continuation) has arrived,
+        // perform the wrap before writing.
+        if self.pending_wrap {
+            self.pending_wrap = false;
+            self.cursor_col = 0;
+            self.newline_action_with_wrap(RowWrap::Soft);
+        }
+        if self.cursor_row >= self.rows || self.cursor_col >= self.cols {
             return;
         }
         let row = self.cursor_row as usize;
@@ -839,19 +922,22 @@ impl DamageGrid {
         let cell = Cell {
             // Phase 4: CompactString stores ch inline (no heap alloc for ASCII + most Unicode).
             contents: compact_str::format_compact!("{ch}"),
-            is_wide: width == 2,
+            is_wide: width > 1,
             is_wide_continuation: false,
             attrs: attrs.clone(),
+            hyperlink: self.active_hyperlink.clone(),
         };
         {
+            let hyperlink = self.active_hyperlink.clone();
             let grid = self.active_grid();
             grid[row][col] = cell;
-            if width == 2 && col + 1 < cols as usize && col + 1 < grid[row].len() {
+            if width > 1 && col + 1 < cols as usize && col + 1 < grid[row].len() {
                 grid[row][col + 1] = Cell {
                     contents: compact_str::CompactString::new(""),
                     is_wide: false,
                     is_wide_continuation: true,
                     attrs: attrs.clone(),
+                    hyperlink,
                 };
             }
         }
@@ -888,47 +974,75 @@ impl DamageGrid {
         };
         let row = self.cursor_row as usize;
         let mut col = target_col as usize;
-        let grid_row_len = {
+        // Resolve the lead cell and snapshot what we need from it under one
+        // borrow, before the cursor/profile reads below re-borrow `self`.
+        let (old_width, attrs, mut joined) = {
             let grid = self.active_grid();
-            grid[row].len()
-        };
-        if col >= grid_row_len {
-            return zero_width;
-        }
-        // Step from a continuation cell back to its wide lead.
-        {
-            let grid = self.active_grid();
+            if col >= grid[row].len() {
+                return zero_width;
+            }
+            // Step from a continuation cell back to its wide lead.
             if grid[row][col].is_wide_continuation && col > 0 {
                 col -= 1;
             }
-        }
-        let continues_zwj = {
-            let grid = self.active_grid();
-            grid[row][col].contents.ends_with('\u{200d}')
+            let cell = &grid[row][col];
+            if !zero_width && !cell.contents.ends_with('\u{200d}') {
+                return false;
+            }
+            if cell.contents.is_empty() && zero_width {
+                // Nothing to join — drop the orphan mark.
+                return true;
+            }
+            (
+                cell_width(cell),
+                cell.attrs.clone(),
+                compact_str::CompactString::new(&cell.contents),
+            )
         };
-        if !zero_width && !continues_zwj {
-            return false;
-        }
-        let grid = self.active_grid();
-        if grid[row][col].contents.is_empty() && zero_width {
-            // Nothing to join — drop the orphan mark.
-            return true;
-        }
-        let mut joined = compact_str::CompactString::new(&grid[row][col].contents);
+        let old_cursor_end = col as u16 + old_width;
         joined.push(ch);
-        grid[row][col].contents = joined;
+        let new_width = self.profile.cluster_width(joined.as_str()).min(2);
+        {
+            let cols = self.cols as usize;
+            let hyperlink = self.active_hyperlink.clone();
+            let grid = self.active_grid();
+            grid[row][col].contents = joined;
+            grid[row][col].hyperlink = hyperlink;
+            set_cell_width(&mut grid[row], col, new_width, attrs, cols);
+        }
+        if self.cursor_row == row as u16
+            && self.cursor_col == old_cursor_end
+            && self.cursor_col < self.cols
+        {
+            self.cursor_col = (col as u16 + new_width).min(self.cols);
+        }
+        if self.cursor_row == row as u16
+            && (self.pending_wrap || self.cursor_col >= self.cols)
+            && col as u16 == self.cols.saturating_sub(1)
+            && new_width > old_width
+        {
+            self.cursor_col = self.cols;
+            self.pending_wrap = true;
+        }
         let mark_start = col as u16;
-        self.dirty
-            .mark_range(self.cursor_row, mark_start, mark_start.saturating_add(2));
+        let mark_end = mark_start.saturating_add(old_width.max(new_width).max(1));
+        self.dirty.mark_range(self.cursor_row, mark_start, mark_end);
         true
     }
 
     /// Scroll the active scroll region up by `n` rows, pushing content to scrollback.
-    fn scroll_up(&mut self, n: u16) {
+    fn scroll_up(&mut self, n: u16, inserted_wrap: RowWrap) {
         self.mutated_since_preserve = true;
         let top = self.scroll_top as usize;
         let bottom = self.scroll_bottom as usize;
         let cols = self.cols;
+        if n > 0 {
+            self.scroll_ops.push(ScrollOp::Up {
+                top: self.scroll_top,
+                bottom: self.scroll_bottom,
+                rows: n,
+            });
+        }
         for _ in 0..n {
             let grid_len = self.active_grid().len();
             if bottom >= grid_len || top >= bottom {
@@ -946,34 +1060,39 @@ impl DamageGrid {
                 // scrollback (no intermediate clone) or is recycled; the new
                 // bottom row is drawn from the arena recycle pool.
                 let blank = self.active_grid().arena.blank_row(cols);
-                let evicted = self.active_grid().pop_front();
-                if let Some(row) = evicted {
+                let evicted = self.active_grid().pop_front_with_wrap();
+                if let Some((row, wrap)) = evicted {
                     if to_scrollback {
                         if self.scrollback.len() >= self.scrollback_limit {
                             self.scrollback.recycle_front();
                         }
-                        self.scrollback.push_back(row);
+                        self.scrollback.push_back_with_wrap(row, wrap);
                     } else {
                         self.active_grid().arena.recycle(row);
                     }
                 }
-                self.active_grid().push_back(blank);
+                self.active_grid().push_back_with_wrap(blank, inserted_wrap);
             } else {
                 // Partial scroll region (DECSTBM margins) or a non-zero top:
                 // the ring cannot rotate without disturbing rows outside the
                 // region, so shift within range.
                 if to_scrollback {
                     let row = self.primary[0].clone();
+                    let wrap = self.primary.wrap(0).unwrap_or_default();
                     if self.scrollback.len() >= self.scrollback_limit {
                         self.scrollback.recycle_front();
                     }
-                    self.scrollback.push_back(row);
+                    self.scrollback.push_back_with_wrap(row, wrap);
                 }
                 let grid = self.active_grid();
                 for r in top..bottom {
                     grid[r] = grid[r + 1].clone();
+                    if let Some(next_wrap) = grid.wrap(r + 1) {
+                        grid.wraps[r] = next_wrap;
+                    }
                 }
                 grid[bottom] = blank_row(cols);
+                grid.wraps[bottom] = inserted_wrap;
             }
         }
         for r in top as u16..=bottom as u16 {
@@ -1044,11 +1163,24 @@ impl DamageGrid {
 
     /// Newline action: move down or scroll.
     fn newline_action(&mut self) {
+        self.newline_action_with_wrap(RowWrap::Hard);
+    }
+
+    fn newline_action_with_wrap(&mut self, wrap: RowWrap) {
         if self.cursor_row == self.scroll_bottom {
-            self.scroll_up(1);
+            self.scroll_up(1, wrap);
         } else {
             self.cursor_row =
                 Self::add_cursor_offset(self.cursor_row, 1, self.rows.saturating_sub(1));
+            self.set_active_row_wrap(self.cursor_row, wrap);
+        }
+    }
+
+    fn set_active_row_wrap(&mut self, row: u16, wrap: RowWrap) {
+        let idx = usize::from(row);
+        let grid = self.active_grid();
+        if let Some(row_wrap) = grid.wraps.get_mut(idx) {
+            *row_wrap = wrap;
         }
     }
 
@@ -1260,7 +1392,9 @@ impl DamageGrid {
                         bell_terminated,
                     )));
             }
-            // OSC 8: hyperlink — emit for capsule to apply URI-scheme safety filter.
+            // OSC 8: hyperlink — model as cell metadata. The capsule applies
+            // URI-scheme safety filtering when converting metadata to frame
+            // OSC 8 spans.
             (Some(8), _) => {
                 let id = params
                     .get(1)
@@ -1273,8 +1407,7 @@ impl DamageGrid {
                     .and_then(|b| std::str::from_utf8(b).ok())
                     .unwrap_or("")
                     .to_owned();
-                self.passthrough
-                    .push(PassthroughEvent::Hyperlink { id, uri });
+                self.active_hyperlink = (!uri.is_empty()).then_some(Hyperlink { id, uri });
             }
             _ => {}
         }
@@ -1286,56 +1419,87 @@ mod perform;
 // ── SGR / DEC helpers ─────────────────────────────────────────────────────
 
 impl DamageGrid {
-    fn apply_sgr(&mut self, params: &[u16]) {
+    fn apply_sgr_params(&mut self, params: &vte::Params) {
+        // Borrow each subparameter slice rather than cloning into owned Vecs —
+        // SGR runs on the per-byte PTY parse hot path.
+        let params = params.iter().collect::<Vec<&[u16]>>();
+        self.apply_sgr(&params);
+    }
+
+    fn apply_sgr(&mut self, params: &[&[u16]]) {
         let mut i = 0;
         if params.is_empty() {
             self.current_attrs = Attrs::default();
             return;
         }
         while i < params.len() {
-            match params[i] {
+            let param = params[i];
+            let code = param.first().copied().unwrap_or(0);
+            match code {
                 0 => {
                     self.current_attrs = Attrs::default();
                 }
                 1 => self.current_attrs.bold = true,
                 2 => self.current_attrs.dim = true,
                 3 => self.current_attrs.italic = true,
-                4 => self.current_attrs.underline = true,
+                4 => {
+                    self.current_attrs.underline_style =
+                        underline_style_from_sgr(param.get(1).copied().unwrap_or(1));
+                }
+                5 => self.current_attrs.slow_blink = true,
+                6 => self.current_attrs.rapid_blink = true,
                 7 => self.current_attrs.inverse = true,
+                8 => self.current_attrs.conceal = true,
+                9 => self.current_attrs.strikethrough = true,
+                21 => self.current_attrs.underline_style = UnderlineStyle::Double,
                 22 => {
                     self.current_attrs.bold = false;
                     self.current_attrs.dim = false;
                 }
                 23 => self.current_attrs.italic = false,
-                24 => self.current_attrs.underline = false,
+                24 => self.current_attrs.underline_style = UnderlineStyle::None,
+                25 => {
+                    self.current_attrs.slow_blink = false;
+                    self.current_attrs.rapid_blink = false;
+                }
                 27 => self.current_attrs.inverse = false,
+                28 => self.current_attrs.conceal = false,
+                29 => self.current_attrs.strikethrough = false,
                 // Standard 16 colors — foreground.
                 30..=37 => {
-                    self.current_attrs.foreground = Color::Idx(params[i] as u8 - 30);
+                    self.current_attrs.foreground = Color::Idx(code as u8 - 30);
                 }
                 38 => {
-                    if let Some(color) = parse_extended_color(params, &mut i) {
+                    if let Some(color) = parse_sgr_color(param, params, &mut i) {
                         self.current_attrs.foreground = color;
                     }
                 }
                 39 => self.current_attrs.foreground = Color::Default,
                 // Standard 16 colors — background.
                 40..=47 => {
-                    self.current_attrs.background = Color::Idx(params[i] as u8 - 40);
+                    self.current_attrs.background = Color::Idx(code as u8 - 40);
                 }
                 48 => {
-                    if let Some(color) = parse_extended_color(params, &mut i) {
+                    if let Some(color) = parse_sgr_color(param, params, &mut i) {
                         self.current_attrs.background = color;
                     }
                 }
                 49 => self.current_attrs.background = Color::Default,
+                53 => self.current_attrs.overline = true,
+                55 => self.current_attrs.overline = false,
+                58 => {
+                    if let Some(color) = parse_sgr_color(param, params, &mut i) {
+                        self.current_attrs.underline_color = color;
+                    }
+                }
+                59 => self.current_attrs.underline_color = Color::Default,
                 // Bright foreground (90-97).
                 90..=97 => {
-                    self.current_attrs.foreground = Color::Idx(params[i] as u8 - 90 + 8);
+                    self.current_attrs.foreground = Color::Idx(code as u8 - 90 + 8);
                 }
                 // Bright background (100-107).
                 100..=107 => {
-                    self.current_attrs.background = Color::Idx(params[i] as u8 - 100 + 8);
+                    self.current_attrs.background = Color::Idx(code as u8 - 100 + 8);
                 }
                 _ => {}
             }
@@ -1484,24 +1648,96 @@ fn reconstruct_csi(params: &vte::Params, intermediates: &[u8], final_byte: u8) -
 }
 
 /// Parse extended color from SGR params starting at `i`.
-/// Advances `i` past the color params consumed. Returns `None` for unknown.
-fn parse_extended_color(params: &[u16], i: &mut usize) -> Option<Color> {
-    match params.get(*i + 1).copied() {
-        Some(2) => {
-            // 38;2;r;g;b
-            let r = params.get(*i + 2).copied().unwrap_or(0) as u8;
-            let g = params.get(*i + 3).copied().unwrap_or(0) as u8;
-            let b = params.get(*i + 4).copied().unwrap_or(0) as u8;
-            *i += 4;
-            Some(Color::Rgb(r, g, b))
+fn underline_style_from_sgr(style: u16) -> UnderlineStyle {
+    match style {
+        0 => UnderlineStyle::None,
+        1 => UnderlineStyle::Single,
+        2 => UnderlineStyle::Double,
+        3 => UnderlineStyle::Curly,
+        4 => UnderlineStyle::Dotted,
+        5 => UnderlineStyle::Dashed,
+        _ => UnderlineStyle::Single,
+    }
+}
+
+/// Parse extended color from either colon subparameters (`38:2:r:g:b`) or
+/// semicolon parameters (`38;2;r;g;b`). Advances `i` for semicolon forms.
+fn parse_sgr_color(current: &[u16], params: &[&[u16]], i: &mut usize) -> Option<Color> {
+    if current.len() > 1 {
+        return parse_sgr_color_values(&current[1..]);
+    }
+    if *i + 1 >= params.len() {
+        return None;
+    }
+    let mode = params[*i + 1].first().copied().unwrap_or(0);
+    match mode {
+        5 => {
+            if *i + 2 < params.len() {
+                let idx = params[*i + 2].first().copied().unwrap_or(0).min(255) as u8;
+                *i += 2;
+                Some(Color::Idx(idx))
+            } else {
+                None
+            }
         }
-        Some(5) => {
-            // 38;5;n
-            let n = params.get(*i + 2).copied().unwrap_or(0) as u8;
-            *i += 2;
-            Some(Color::Idx(n))
+        2 => {
+            if *i + 4 < params.len() {
+                let r = params[*i + 2].first().copied().unwrap_or(0).min(255) as u8;
+                let g = params[*i + 3].first().copied().unwrap_or(0).min(255) as u8;
+                let b = params[*i + 4].first().copied().unwrap_or(0).min(255) as u8;
+                *i += 4;
+                Some(Color::Rgb(r, g, b))
+            } else {
+                None
+            }
         }
         _ => None,
+    }
+}
+
+fn parse_sgr_color_values(values: &[u16]) -> Option<Color> {
+    match values.first().copied()? {
+        5 => values.get(1).map(|idx| Color::Idx((*idx).min(255) as u8)),
+        2 => {
+            let start = if values.len() >= 5 && values[1] == 0 {
+                2
+            } else {
+                1
+            };
+            let r = values.get(start).copied()?.min(255) as u8;
+            let g = values.get(start + 1).copied()?.min(255) as u8;
+            let b = values.get(start + 2).copied()?.min(255) as u8;
+            Some(Color::Rgb(r, g, b))
+        }
+        _ => None,
+    }
+}
+
+fn cell_width(cell: &Cell) -> u16 {
+    if cell.is_wide {
+        2
+    } else {
+        u16::from(!(cell.is_wide_continuation || cell.contents.is_empty()))
+    }
+}
+
+fn set_cell_width(row: &mut [Cell], col: usize, width: u16, attrs: Attrs, cols: usize) {
+    row[col].is_wide = width > 1;
+    row[col].is_wide_continuation = false;
+
+    if col + 1 < cols && col + 1 < row.len() {
+        if width > 1 {
+            let hyperlink = row[col].hyperlink.clone();
+            row[col + 1] = Cell {
+                contents: compact_str::CompactString::new(""),
+                is_wide: false,
+                is_wide_continuation: true,
+                attrs,
+                hyperlink,
+            };
+        } else if row[col + 1].is_wide_continuation {
+            row[col + 1] = Cell::default();
+        }
     }
 }
 
@@ -1521,6 +1757,7 @@ fn resize_grid(grid: &RowStore, rows: u16, cols: u16) -> RowStore {
         if r >= rows as usize {
             break;
         }
+        new.wraps[r] = grid.wrap(r).unwrap_or_default();
         for (c, cell) in row.iter().enumerate() {
             if c < cols as usize {
                 new[r][c] = cell.clone();

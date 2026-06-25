@@ -56,7 +56,7 @@ use crate::git_context::{
 };
 use crate::pr_context::gh_pull_request_info;
 use crate::protocol::attach::{
-    ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server,
+    AttachCapabilities, ClientFrame, ClientTerminal, ServerFrame, SpawnRequest, encode_server,
 };
 use crate::protocol::control::SessionInfo;
 use crate::pull_request::PullRequestInfo;
@@ -238,6 +238,10 @@ pub struct Multiplexer {
     /// follow the terminal the operator is using now rather than the
     /// terminal that launched the container.
     attached_terminal: ClientTerminal,
+    /// Host-adaptive terminal capabilities derived from the active attach
+    /// client. This backend-side record may change on reattach and must not
+    /// alter agent-visible terminal model semantics.
+    attached_capabilities: AttachCapabilities,
     /// Hash of the last multiplexer-owned OSC 2 title sent to the
     /// outer terminal. Gates re-emission on inequality: without the
     /// diff, every full frame would reassert the workspace/PR title
@@ -485,6 +489,7 @@ impl Multiplexer {
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: false,
             attached_terminal: ClientTerminal::default(),
+            attached_capabilities: AttachCapabilities::default(),
             last_outer_terminal_title: None,
             spawn_failure: None,
             hover_target: None,
@@ -688,18 +693,24 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 } = ready;
                 crate::cdebug!("resize-event: source=attach rows={rows} cols={cols}");
                 mux.resize(rows, cols);
-                mux.pointer_shapes_supported = terminal.pointer_shapes_supported();
+                let capabilities = terminal.attach_capabilities();
+                mux.pointer_shapes_supported = capabilities.pointer_shapes;
                 // Attach-handshake outcome (clog tier): the triage line for
                 // "agent themed wrong" reports — None means the client could
                 // not read its terminal's palette and grids keep what they
-                // had.
+                // had. `caps` (with its `sources` provenance) is logged so a
+                // wrong-capability report can be traced to whichever input
+                // (handshake identity, terminfo, color probe, override,
+                // denylist) decided it.
                 crate::clog!(
-                    "attach: client terminal term={:?} colors fg={:?} bg={:?}",
+                    "attach: client terminal term={:?} colors fg={:?} bg={:?} caps={:?}",
                     terminal.term,
                     terminal.default_fg,
                     terminal.default_bg,
+                    capabilities,
                 );
                 mux.attached_terminal = terminal;
+                mux.attached_capabilities = capabilities;
                 mux.apply_client_colors_to_sessions();
                 mux.pointer_shape = PointerShape::Default;
                 if mux.sessions.is_empty()
