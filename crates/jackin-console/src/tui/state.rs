@@ -78,6 +78,7 @@ pub type ManagerInstanceRefreshSnapshot = crate::tui::subscriptions::InstanceRef
     jackin_core::instance::SessionRecord,
     jackin_protocol::InstanceSnapshot,
 >;
+pub type ManagerConfigSaveResult = crate::tui::subscriptions::ConfigSaveResult<AppConfig>;
 
 // ── Type aliases ────────────────────────────────────────────────────────────
 
@@ -311,6 +312,7 @@ pub struct ManagerState<'a> {
         Option<BlockingSubscription<PendingFileBrowserListing>>,
     pub(in crate::tui) file_browser_commit_rx:
         Option<BlockingSubscription<PendingFileBrowserCommit>>,
+    pub(in crate::tui) config_save_rx: Option<BlockingSubscription<ManagerConfigSaveResult>>,
     /// Dedup gate: last error string from `refresh_instances`. Without
     /// this, a persistent parse error would reopen the popup on every
     /// 20 Hz tick — operators would never be able to dismiss it.

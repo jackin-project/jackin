@@ -150,6 +150,47 @@ pub(super) mod config {
         })
     }
 
+    pub(crate) fn start_workspace_save(
+        paths: JackinPaths,
+        mode: WorkspaceSaveMode,
+        original: WorkspaceConfig,
+        pending: WorkspaceConfig,
+        exit_on_success: bool,
+    ) -> jackin_tui::runtime::BlockingSubscription<
+        jackin_console::tui::state::ManagerConfigSaveResult,
+    > {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                save_workspace(
+                    &paths,
+                    WorkspaceSaveInput {
+                        mode,
+                        original: &original,
+                        pending: &pending,
+                    },
+                )
+                .map(|saved| {
+                    jackin_console::tui::subscriptions::WorkspaceSaveResult {
+                        config: saved.config,
+                        current_name: saved.current_name,
+                        pending_rename: saved.pending_rename,
+                    }
+                })
+            })
+            .await
+            .map_err(|error| anyhow::anyhow!("workspace save worker panicked: {error}"))
+            .and_then(std::convert::identity);
+            drop(tx.send(
+                jackin_console::tui::subscriptions::ConfigSaveResult::Workspace {
+                    result,
+                    exit_on_success,
+                },
+            ));
+        });
+        rx
+    }
+
     fn apply_workspace_save_diff_plan(
         editor_doc: &mut jackin_config::ConfigEditor,
         workspace_name: &str,

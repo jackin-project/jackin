@@ -489,9 +489,9 @@ pub(crate) fn execute_workspace_save_effect(
 
 pub(crate) fn execute_workspace_save_write(
     state: &mut ManagerState<'_>,
-    config: &mut AppConfig,
+    _config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
-    cwd: &std::path::Path,
+    _cwd: &std::path::Path,
     input: WorkspaceSaveWriteInput<'_>,
     exit_on_success: bool,
 ) {
@@ -509,12 +509,24 @@ pub(crate) fn execute_workspace_save_write(
             crate::console::services::config::WorkspaceSaveMode::Create { name }
         }
     };
-    let service_input = crate::console::services::config::WorkspaceSaveInput {
+    let rx = crate::console::services::config::start_workspace_save(
+        paths.clone(),
         mode,
-        original: input.original,
-        pending: input.pending,
-    };
-    match crate::console::services::config::save_workspace(paths, service_input) {
+        input.original.clone(),
+        input.pending.clone(),
+        exit_on_success,
+    );
+    state.begin_config_save(rx);
+}
+
+fn apply_workspace_save_write_result(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    cwd: &std::path::Path,
+    result: anyhow::Result<jackin_console::tui::subscriptions::WorkspaceSaveResult<AppConfig>>,
+    exit_on_success: bool,
+) {
+    match result {
         Ok(saved) => {
             *config = saved.config;
             if let ManagerStage::Editor(editor) = &mut state.stage {
@@ -668,6 +680,9 @@ pub(crate) fn poll_background_messages(
     if let Some((cleanup, result)) = state.poll_pending_isolation_cleanup() {
         messages.push(ManagerBackgroundEvent::IsolationCleanupFinished { cleanup, result });
     }
+    if let Some(result) = state.poll_config_save() {
+        messages.push(ManagerBackgroundEvent::ConfigSaveFinished(result));
+    }
     messages
 }
 
@@ -709,6 +724,27 @@ pub(crate) fn apply_background_event(
                 )
             {
                 execute_workspace_save_effect(state, config, paths, cwd, effect);
+            }
+            true
+        }
+        ManagerBackgroundEvent::ConfigSaveFinished(result) => {
+            match result {
+                jackin_console::tui::subscriptions::ConfigSaveResult::Workspace {
+                    result,
+                    exit_on_success,
+                } => {
+                    apply_workspace_save_write_result(state, config, cwd, result, exit_on_success);
+                }
+                jackin_console::tui::subscriptions::ConfigSaveResult::Settings(result) => {
+                    match result {
+                        Ok(saved) => *config = saved,
+                        Err(err) => {
+                            if let ManagerStage::Settings(settings) = &mut state.stage {
+                                settings.mounts.error = Some(err.to_string());
+                            }
+                        }
+                    }
+                }
             }
             true
         }
@@ -801,8 +837,12 @@ mod tests {
         FileBrowserTarget, ManagerEffect, ManagerStage, ManagerState, Modal, SettingsAuthModal,
         SettingsState,
     };
+    use crate::console::tui::{WorkspaceSaveWriteInput, WorkspaceSaveWriteMode};
 
-    use super::{execute_manager_effect, execute_workspace_save_effect, poll_background_messages};
+    use super::{
+        execute_manager_effect, execute_workspace_save_effect, execute_workspace_save_write,
+        poll_background_messages,
+    };
 
     #[tokio::test]
     async fn poll_background_messages_routes_file_browser_poll_through_message() {
@@ -877,6 +917,41 @@ mod tests {
             "workspace save drift detection should run on a worker"
         );
         assert!(matches!(editor.modal, Some(Modal::StatusPopup { .. })));
+    }
+
+    #[tokio::test]
+    async fn workspace_save_write_starts_config_save_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let original = WorkspaceConfig::default();
+        let pending = WorkspaceConfig::default();
+        let editor = EditorState::new_edit("workspace".into(), original.clone());
+        let mut state = ManagerState::from_config(&config, cwd);
+        state.stage = ManagerStage::Editor(editor);
+
+        execute_workspace_save_write(
+            &mut state,
+            &mut config,
+            &paths,
+            cwd,
+            WorkspaceSaveWriteInput {
+                mode: WorkspaceSaveWriteMode::Edit {
+                    original_name: "workspace".into(),
+                    pending_name: None,
+                    effective_removals: Vec::new(),
+                },
+                original: &original,
+                pending: &pending,
+            },
+            false,
+        );
+
+        assert!(
+            state.config_save_in_flight(),
+            "workspace config save should run on a worker"
+        );
     }
 
     #[tokio::test]

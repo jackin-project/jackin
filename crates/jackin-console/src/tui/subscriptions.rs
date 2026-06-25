@@ -35,6 +35,10 @@ pub fn instance_refresh_worker_disconnected_message() -> &'static str {
     "instance refresh worker disconnected"
 }
 
+pub fn config_save_worker_disconnected_message() -> &'static str {
+    "config save worker disconnected"
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InstanceRefreshThrottleState {
     pub in_flight: bool,
@@ -89,6 +93,22 @@ pub struct InstanceRefreshSnapshot<Instance, Session, Snapshot> {
     pub sessions: std::collections::HashMap<String, Vec<Session>>,
     pub session_errors: std::collections::HashSet<String>,
     pub snapshots: std::collections::HashMap<String, Snapshot>,
+}
+
+#[derive(Debug)]
+pub struct WorkspaceSaveResult<AppConfig> {
+    pub config: AppConfig,
+    pub current_name: String,
+    pub pending_rename: Option<String>,
+}
+
+#[derive(Debug)]
+pub enum ConfigSaveResult<AppConfig> {
+    Workspace {
+        result: anyhow::Result<WorkspaceSaveResult<AppConfig>>,
+        exit_on_success: bool,
+    },
+    Settings(anyhow::Result<AppConfig>),
 }
 
 /// In-flight 1Password read triggered by an op picker commit from an auth form.

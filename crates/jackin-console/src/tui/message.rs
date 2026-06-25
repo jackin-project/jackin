@@ -196,7 +196,7 @@ pub enum ConsoleManagerMessage<
 }
 
 #[derive(Debug)]
-pub enum BackgroundEvent<M, RoleLoad, DriftCheck, DriftDetection, IsolationCleanup> {
+pub enum BackgroundEvent<M, RoleLoad, DriftCheck, DriftDetection, IsolationCleanup, ConfigSave> {
     Message(M),
     RoleLoadFinished {
         load: RoleLoad,
@@ -210,6 +210,7 @@ pub enum BackgroundEvent<M, RoleLoad, DriftCheck, DriftDetection, IsolationClean
         cleanup: IsolationCleanup,
         result: anyhow::Result<()>,
     },
+    ConfigSaveFinished(ConfigSave),
 }
 
 #[derive(Debug)]

@@ -38,10 +38,11 @@ use crate::tui::update::{
 };
 
 use super::{
-    EditorState, EditorTab, FieldFocus, ManagerEffect, ManagerInstanceRefreshSnapshot,
-    ManagerStage, ManagerState, Modal, MountScrollFocus, PendingDriftCheck,
-    PendingFileBrowserCommit, PendingFileBrowserListing, PendingIsolationCleanup,
-    PendingMountInfoRefresh, PendingRoleLoad, SecretsScopeTag, SettingsState, SettingsTab,
+    EditorState, EditorTab, FieldFocus, ManagerConfigSaveResult, ManagerEffect,
+    ManagerInstanceRefreshSnapshot, ManagerStage, ManagerState, Modal, MountScrollFocus,
+    PendingDriftCheck, PendingFileBrowserCommit, PendingFileBrowserListing,
+    PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad, SecretsScopeTag,
+    SettingsState, SettingsTab,
 };
 
 // ── Concrete type aliases ──────────────────────────────────────────────────
@@ -73,6 +74,7 @@ pub type ManagerBackgroundEvent = crate::tui::message::BackgroundEvent<
     PendingDriftCheck,
     jackin_core::DriftDetection,
     PendingIsolationCleanup,
+    ManagerConfigSaveResult,
 >;
 
 pub type ManagerUpdate = crate::tui::update::ConsoleUpdate<ManagerEffect>;
