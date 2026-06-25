@@ -27,7 +27,6 @@ pub(super) mod config {
     //! Non-TUI config persistence services.
 
     use crate::paths::JackinPaths;
-    #[cfg(test)]
     use jackin_config::GlobalMountRow;
     use jackin_config::WorkspaceConfig;
     use jackin_config::{AppConfig, RoleSource};
@@ -187,6 +186,54 @@ pub(super) mod config {
                     exit_on_success,
                 },
             ));
+        });
+        rx
+    }
+
+    pub(crate) struct OwnedSettingsSaveInput {
+        pub mounts_original: Vec<GlobalMountRow>,
+        pub mounts_pending: Vec<GlobalMountRow>,
+        pub env_original: jackin_console::tui::state::SettingsEnvConfig,
+        pub env_pending: jackin_console::tui::state::SettingsEnvConfig,
+        pub auth_pending: Vec<jackin_console::tui::state::SettingsAuthRow>,
+        pub original_github_env: std::collections::BTreeMap<String, jackin_core::EnvValue>,
+        pub github_env: std::collections::BTreeMap<String, jackin_core::EnvValue>,
+        pub trust_pending: Vec<jackin_console::tui::state::SettingsTrustRow>,
+        pub git_coauthor_trailer: bool,
+        pub git_dco: bool,
+    }
+
+    impl OwnedSettingsSaveInput {
+        fn as_borrowed(&self) -> SettingsSaveInput<'_> {
+            SettingsSaveInput {
+                mounts_original: &self.mounts_original,
+                mounts_pending: &self.mounts_pending,
+                env_original: &self.env_original,
+                env_pending: &self.env_pending,
+                auth_pending: &self.auth_pending,
+                original_github_env: &self.original_github_env,
+                github_env: &self.github_env,
+                trust_pending: &self.trust_pending,
+                git_coauthor_trailer: self.git_coauthor_trailer,
+                git_dco: self.git_dco,
+            }
+        }
+    }
+
+    pub(crate) fn start_settings_save(
+        paths: JackinPaths,
+        input: OwnedSettingsSaveInput,
+    ) -> jackin_tui::runtime::BlockingSubscription<
+        jackin_console::tui::state::ManagerConfigSaveResult,
+    > {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let result =
+                tokio::task::spawn_blocking(move || save_settings(&paths, input.as_borrowed()))
+                    .await
+                    .map_err(|error| anyhow::anyhow!("settings save worker panicked: {error}"))
+                    .and_then(std::convert::identity);
+            drop(tx.send(jackin_console::tui::subscriptions::ConfigSaveResult::Settings(result)));
         });
         rx
     }

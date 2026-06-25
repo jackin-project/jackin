@@ -586,7 +586,7 @@ pub(crate) fn execute_role_source_persist(
 
 fn execute_settings_save(
     state: &mut ManagerState<'_>,
-    config: &mut AppConfig,
+    _config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
 ) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
@@ -597,21 +597,33 @@ fn execute_settings_save(
     let auth_save = settings.auth.save_refs();
     let trust_save = settings.trust.save_refs();
     let general_save = settings.general.save_refs();
-    match crate::console::services::config::save_settings(
-        paths,
-        crate::console::services::config::SettingsSaveInput {
-            mounts_original: mounts_save.original,
-            mounts_pending: mounts_save.pending,
-            env_original: env_save.original,
-            env_pending: env_save.pending,
-            auth_pending: auth_save.pending,
-            original_github_env: auth_save.original_github_env,
-            github_env: auth_save.github_env,
-            trust_pending: trust_save.pending,
+    let rx = crate::console::services::config::start_settings_save(
+        paths.clone(),
+        crate::console::services::config::OwnedSettingsSaveInput {
+            mounts_original: mounts_save.original.to_vec(),
+            mounts_pending: mounts_save.pending.to_vec(),
+            env_original: env_save.original.clone(),
+            env_pending: env_save.pending.clone(),
+            auth_pending: auth_save.pending.to_vec(),
+            original_github_env: auth_save.original_github_env.clone(),
+            github_env: auth_save.github_env.clone(),
+            trust_pending: trust_save.pending.to_vec(),
             git_coauthor_trailer: general_save.git_coauthor_trailer,
             git_dco: general_save.git_dco,
         },
-    ) {
+    );
+    state.begin_config_save(rx);
+}
+
+fn apply_settings_save_result(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    result: anyhow::Result<AppConfig>,
+) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    match result {
         Ok(saved) => {
             *config = saved;
             settings.mark_saved();
@@ -736,14 +748,7 @@ pub(crate) fn apply_background_event(
                     apply_workspace_save_write_result(state, config, cwd, result, exit_on_success);
                 }
                 jackin_console::tui::subscriptions::ConfigSaveResult::Settings(result) => {
-                    match result {
-                        Ok(saved) => *config = saved,
-                        Err(err) => {
-                            if let ManagerStage::Settings(settings) = &mut state.stage {
-                                settings.mounts.error = Some(err.to_string());
-                            }
-                        }
-                    }
+                    apply_settings_save_result(state, config, result);
                 }
             }
             true
@@ -951,6 +956,29 @@ mod tests {
         assert!(
             state.config_save_in_flight(),
             "workspace config save should run on a worker"
+        );
+    }
+
+    #[tokio::test]
+    async fn settings_save_starts_config_save_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let settings = SettingsState::from_config(&config);
+        let mut state = ManagerState::from_config(&config, cwd);
+        state.stage = ManagerStage::Settings(settings);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ConsoleEffect::SaveSettings.into(),
+        );
+
+        assert!(
+            state.config_save_in_flight(),
+            "settings config save should run on a worker"
         );
     }
 
