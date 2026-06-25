@@ -1015,6 +1015,74 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     })
 }
 
+/// Map a Codex/`ChatGPT` `plan_type` to its display name, mirroring `CodexBar`'s
+/// `CodexPlanFormatting.displayName` (F7a): `pro` → `Pro 20x`, the pro-lite
+/// variants → `Pro 5x`, machine identifiers humanized (`enterprise_cbp_usage_based`
+/// → `Enterprise CBP Usage Based`), already-readable text preserved. Returns
+/// `None` for blank input so an unknown plan is omitted, never shown as `pro`.
+fn codex_plan_display_name(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(exact) = codex_plan_exact_display(trimmed) {
+        return Some(exact);
+    }
+    // Strip boilerplate words (claude/codex/account/plan) the way CodexBar's
+    // `UsageFormatter.cleanPlanName` does, then re-check the exact map.
+    let cleaned = trimmed
+        .split_whitespace()
+        .filter(|word| {
+            !matches!(
+                word.to_ascii_lowercase().as_str(),
+                "claude" | "codex" | "account" | "plan"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let cleaned = cleaned.trim();
+    if cleaned.is_empty() {
+        return Some(trimmed.to_owned());
+    }
+    if let Some(exact) = codex_plan_exact_display(cleaned) {
+        return Some(exact);
+    }
+    let words = cleaned
+        .split(|c: char| c == '_' || c == '-' || c.is_whitespace())
+        .filter(|part| !part.is_empty())
+        .map(codex_plan_word_display)
+        .collect::<Vec<_>>();
+    if words.is_empty() {
+        return Some(cleaned.to_owned());
+    }
+    Some(words.join(" "))
+}
+
+fn codex_plan_exact_display(value: &str) -> Option<String> {
+    match value.to_ascii_lowercase().as_str() {
+        "pro" => Some("Pro 20x".to_owned()),
+        "prolite" | "pro_lite" | "pro-lite" | "pro lite" => Some("Pro 5x".to_owned()),
+        _ => None,
+    }
+}
+
+fn codex_plan_word_display(raw: &str) -> String {
+    let lower = raw.to_ascii_lowercase();
+    if matches!(lower.as_str(), "cbp" | "k12") {
+        return lower.to_ascii_uppercase();
+    }
+    // Preserve existing acronyms (all-caps with a letter, e.g. "AI").
+    if raw == raw.to_ascii_uppercase() && raw.chars().any(char::is_alphabetic) {
+        return raw.to_owned();
+    }
+    match raw.chars().next() {
+        Some(first) if first.is_lowercase() => {
+            first.to_ascii_uppercase().to_string() + &raw[first.len_utf8()..]
+        }
+        _ => raw.to_owned(),
+    }
+}
+
 fn codex_snapshot(
     agent: &str,
     provider: Option<&str>,
@@ -1124,7 +1192,9 @@ fn codex_snapshot(
         surface: UsageSurface::Codex,
         account_label: account,
         username: None,
-        plan_label: quota.and_then(|usage| usage.plan_type.clone()),
+        plan_label: quota
+            .and_then(|usage| usage.plan_type.as_deref())
+            .and_then(codex_plan_display_name),
         credential_origin: Some("OAuth · ~/.codex/auth.json".to_owned()),
         buckets,
         status,
@@ -3739,14 +3809,16 @@ impl ZaiQuotaResponse {
         } else if let Some(limit) = token_limits.first() {
             primary_token_limit = Some(*limit);
         }
+        // F9: render order is 5-hour (short/active), then Tokens, then MCP — an
+        // operator override of CodexBar's Tokens, MCP, 5-hour order.
+        if let Some(limit) = session_token_limit {
+            buckets.push(zai_bucket("5-hour", limit, now));
+        }
         if let Some(limit) = primary_token_limit {
             buckets.push(zai_bucket("Tokens", limit, now));
         }
         if let Some(limit) = time_limit {
             buckets.push(zai_bucket("MCP", limit, now));
-        }
-        if let Some(limit) = session_token_limit {
-            buckets.push(zai_bucket("5-hour", limit, now));
         }
         buckets
     }
@@ -3942,7 +4014,9 @@ impl KimiUsageResponse {
         } else {
             return Vec::new();
         };
-        let mut buckets = vec![kimi_bucket("Weekly", detail, None, now)];
+        // F10: rate (short/active) window on top, then Weekly — an operator
+        // override of CodexBar's Weekly, Rate Limit order.
+        let mut buckets = Vec::new();
         if let Some(rate_limit) = limits.first() {
             buckets.push(kimi_bucket(
                 "Rate Limit",
@@ -3951,6 +4025,7 @@ impl KimiUsageResponse {
                 now,
             ));
         }
+        buckets.push(kimi_bucket("Weekly", detail, None, now));
         buckets
     }
 }
@@ -5652,6 +5727,44 @@ mod tests {
     }
 
     #[test]
+    fn codex_plan_display_name_matches_codexbar() {
+        // F7a: ported from CodexBar's CodexPlanFormatting tests.
+        assert_eq!(codex_plan_display_name("pro").as_deref(), Some("Pro 20x"));
+        assert_eq!(codex_plan_display_name("Pro").as_deref(), Some("Pro 20x"));
+        assert_eq!(
+            codex_plan_display_name("Codex Pro").as_deref(),
+            Some("Pro 20x")
+        );
+        assert_eq!(
+            codex_plan_display_name("prolite").as_deref(),
+            Some("Pro 5x")
+        );
+        assert_eq!(
+            codex_plan_display_name("pro_lite").as_deref(),
+            Some("Pro 5x")
+        );
+        assert_eq!(
+            codex_plan_display_name("Pro Lite").as_deref(),
+            Some("Pro 5x")
+        );
+        assert_eq!(
+            codex_plan_display_name("Codex Pro Lite").as_deref(),
+            Some("Pro 5x")
+        );
+        assert_eq!(codex_plan_display_name(""), None);
+        assert_eq!(codex_plan_display_name("   "), None);
+        assert_eq!(
+            codex_plan_display_name("enterprise_cbp_usage_based").as_deref(),
+            Some("Enterprise CBP Usage Based")
+        );
+        assert_eq!(codex_plan_display_name("k12").as_deref(), Some("K12"));
+        assert_eq!(
+            codex_plan_display_name("Enterprise").as_deref(),
+            Some("Enterprise")
+        );
+    }
+
+    #[test]
     fn status_bar_label_uses_stale_cached_percentages() {
         let buckets = vec![QuotaBucketView {
             label: "Session".to_owned(),
@@ -6946,18 +7059,19 @@ mod tests {
         let buckets = quota.buckets(1_781_185_560);
 
         assert_eq!(quota.plan_name().as_deref(), Some("Coding Pro"));
-        assert_eq!(buckets[0].label, "Tokens");
-        assert_eq!(buckets[0].remaining_percent, Some(10));
+        // F9: render order is 5-hour, Tokens, MCP.
+        assert_eq!(buckets[0].label, "5-hour");
+        assert_eq!(buckets[0].remaining_percent, Some(75));
         assert_eq!(buckets[0].pace_label, None);
-        assert_eq!(buckets[1].label, "MCP");
-        assert_eq!(buckets[1].remaining_percent, Some(75));
+        assert_eq!(buckets[1].label, "Tokens");
+        assert_eq!(buckets[1].remaining_percent, Some(10));
+        assert_eq!(buckets[1].pace_label, None);
+        assert_eq!(buckets[2].label, "MCP");
+        assert_eq!(buckets[2].remaining_percent, Some(75));
         assert_eq!(
-            buckets[1].pace_label.as_deref(),
+            buckets[2].pace_label.as_deref(),
             Some("30 / 120 (90 remaining)")
         );
-        assert_eq!(buckets[2].label, "5-hour");
-        assert_eq!(buckets[2].remaining_percent, Some(75));
-        assert_eq!(buckets[2].pace_label, None);
     }
 
     #[test]
@@ -7008,15 +7122,16 @@ mod tests {
 
         let buckets = usage.buckets(1_781_185_560);
 
-        assert_eq!(buckets[0].label, "Weekly");
-        assert_eq!(buckets[0].used_label.as_deref(), Some("220"));
-        assert_eq!(buckets[0].limit_label.as_deref(), Some("1.0K"));
-        assert_eq!(buckets[0].remaining_percent, Some(78));
-        assert_eq!(buckets[0].pace_label, None);
-        assert_eq!(buckets[1].label, "Rate Limit");
-        assert_eq!(buckets[1].used_label.as_deref(), Some("50"));
-        assert_eq!(buckets[1].remaining_percent, Some(75));
-        assert_eq!(buckets[1].pace_label.as_deref(), Some("30% in reserve"));
+        // F10: render order is Rate Limit, then Weekly.
+        assert_eq!(buckets[0].label, "Rate Limit");
+        assert_eq!(buckets[0].used_label.as_deref(), Some("50"));
+        assert_eq!(buckets[0].remaining_percent, Some(75));
+        assert_eq!(buckets[0].pace_label.as_deref(), Some("30% in reserve"));
+        assert_eq!(buckets[1].label, "Weekly");
+        assert_eq!(buckets[1].used_label.as_deref(), Some("220"));
+        assert_eq!(buckets[1].limit_label.as_deref(), Some("1.0K"));
+        assert_eq!(buckets[1].remaining_percent, Some(78));
+        assert_eq!(buckets[1].pace_label, None);
     }
 
     #[test]

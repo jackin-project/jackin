@@ -518,9 +518,13 @@ fn usage_bucket_order(provider: &str, label: &str) -> usize {
     } else if provider_matches("amp", &provider) {
         &["Amp Free", "Credits", "Individual credits"]
     } else if provider_matches("zai", &provider) || provider_matches("glm", &provider) {
-        &["Tokens", "MCP", "5-hour"]
+        // F9: short/active window first (operator override of CodexBar's
+        // Tokens, MCP, 5-hour order).
+        &["5-hour", "Tokens", "MCP"]
     } else if provider_matches("kimi", &provider) {
-        &["Weekly", "Rate Limit"]
+        // F10: rate (short/active) window on top, then Weekly (operator
+        // override of CodexBar's Weekly, Rate Limit order).
+        &["Rate Limit", "Weekly"]
     } else if provider_matches("minimax", &provider) {
         &["General · 5h", "General · Weekly", "Video"]
     } else {
@@ -1053,7 +1057,7 @@ mod tests {
                 .iter()
                 .map(|bucket| bucket.label.as_str())
                 .collect::<Vec<_>>(),
-            vec!["Tokens", "MCP", "5-hour"]
+            vec!["5-hour", "Tokens", "MCP"]
         );
     }
 
