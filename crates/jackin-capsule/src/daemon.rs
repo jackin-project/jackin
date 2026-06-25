@@ -1239,7 +1239,10 @@ fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg
             accounts: mux.usage_cache.account_snapshot_views(),
         },
         ClientMsg::TokenUsage { session_id } => ServerMsg::TokenUsage {
-            summary: mux.token_monitor.totals(session_id).map(TokenTotals::to_summary),
+            summary: mux
+                .token_monitor
+                .totals(session_id)
+                .map(TokenTotals::to_summary),
         },
         ClientMsg::Unknown => {
             crate::clog!("control: ignoring unknown ClientMsg variant from peer");

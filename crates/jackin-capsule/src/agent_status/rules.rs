@@ -13,11 +13,27 @@ pub struct VirtualRegions<'a> {
     pub osc_progress: Option<&'a str>,
 }
 
+/// Version of the rule-pack evaluation engine in this build. A pack may declare
+/// a `min_engine_version` higher than this to opt out of older engines that
+/// would silently misread a newer gate grammar; such packs are skipped, not
+/// mis-evaluated. Bump this when the engine gains a capability a pack can depend
+/// on (e.g. a richer gate form).
+pub const RULE_ENGINE_VERSION: u32 = 1;
+
+fn default_min_engine_version() -> u32 {
+    1
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct RulePack {
     pub schema_version: u32,
     pub agent: String,
     pub validated_versions: String,
+    /// Minimum [`RULE_ENGINE_VERSION`] this pack needs. Defaults to 1 (every
+    /// engine). A pack authored against a future engine sets this higher so
+    /// older engines skip it instead of misreading unknown gate fields.
+    #[serde(default = "default_min_engine_version")]
+    pub min_engine_version: u32,
     #[serde(default)]
     pub rule: Vec<Rule>,
 }
@@ -220,6 +236,19 @@ impl RulePack {
     pub fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(self.schema_version == 1, "unsupported rule schema");
         anyhow::ensure!(!self.agent.trim().is_empty(), "agent is required");
+        // Forward-compat guard: a pack built against a newer engine is skipped
+        // (the load path logs it) rather than mis-evaluated by this build.
+        anyhow::ensure!(
+            self.min_engine_version >= 1,
+            "min_engine_version must be >= 1 in pack {}",
+            self.agent
+        );
+        anyhow::ensure!(
+            self.min_engine_version <= RULE_ENGINE_VERSION,
+            "pack {} needs rule engine v{} but this build is v{RULE_ENGINE_VERSION}",
+            self.agent,
+            self.min_engine_version
+        );
         anyhow::ensure!(
             !self.validated_versions.trim().is_empty(),
             "validated_versions is required"

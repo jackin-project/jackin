@@ -74,6 +74,32 @@ fn validated_versions_must_be_bounded() {
 }
 
 #[test]
+fn min_engine_version_defaults_and_gates_future_engines() {
+    // Absent field defaults to 1 and validates.
+    let pack = pack_with_versions(">=1.0.0, <2").unwrap();
+    assert_eq!(pack.min_engine_version, 1);
+
+    // A pack needing a future engine is rejected (the load path logs + skips it).
+    let future: RulePack = toml::from_str(&format!(
+        "schema_version = 1\nagent = \"test\"\nvalidated_versions = \">=1.0.0, <2\"\nmin_engine_version = {}\n",
+        RULE_ENGINE_VERSION + 1
+    ))
+    .unwrap();
+    assert_eq!(future.min_engine_version, RULE_ENGINE_VERSION + 1);
+    assert!(
+        future.validate().is_err(),
+        "a pack requiring a newer engine must be rejected"
+    );
+
+    // The current engine version is accepted.
+    let current: RulePack = toml::from_str(&format!(
+        "schema_version = 1\nagent = \"test\"\nvalidated_versions = \">=1.0.0, <2\"\nmin_engine_version = {RULE_ENGINE_VERSION}\n"
+    ))
+    .unwrap();
+    assert!(current.validate().is_ok());
+}
+
+#[test]
 fn accepts_cli_version_gates_the_pinned_window() {
     let pack = pack_with_versions(">=2.1.173, <2.2.0").unwrap();
     assert!(pack.accepts_cli_version("2.1.180").unwrap());
