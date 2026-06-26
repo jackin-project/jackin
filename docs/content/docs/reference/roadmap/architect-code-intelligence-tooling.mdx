@@ -227,26 +227,34 @@ The agent only uses the tools if it is told they exist and which one owns which 
 
 Copy rather than symlink: Codex does not reliably follow symlinked config files ([codex#11314](https://github.com/openai/codex/issues/11314), [codex#8943](https://github.com/openai/codex/issues/8943)), and coding agents increasingly refuse to follow symlinks in config directories as a sandbox-escape defense. The file is static in the image, so a symlink would buy nothing over a copy.
 
-Write **only** these single files. Never overwrite `~/.claude/settings.json` or COPY the `.claude/` directory wholesale — the caveman installer's hooks and the build's `test -f` smoke checks depend on that state (this is also why codedb's installer is skipped). No global `~/.claude/CLAUDE.md` exists in the image today, so the single-file copy is purely additive.
+Write **only** these single files. Never overwrite `~/.claude/settings.json` or COPY the `.claude/` directory wholesale — the caveman installer's hooks and the build's `test -f` smoke checks depend on that state (this is also why codedb's installer is skipped).
+
+<Aside type="caution">
+**A global guidance file now exists — merge into it, do not COPY a second one.** The token-optimisation stack (caveman + RTK + headroom, shipped separately in the-architect) already writes a single `token-optimization.md` to `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.config/amp/AGENTS.md`, `~/.kimi-code/AGENTS.md`, and `~/.grok/AGENTS.md`. A second `COPY code-intelligence.md` to any of those same paths would clobber it (last `COPY` wins) and break the `sha256sum` smoke check below — the earlier "no global `~/.claude/CLAUDE.md` exists" assumption no longer holds. **Decision: consolidate.** The code-intelligence router becomes a section *appended into that one guidance file* (one source → every runtime path), not a competing file. Reconcile the per-runtime path list with the stack's: `amp` reads `~/.config/amp/AGENTS.md` (not `~/.config/AGENTS.md`), `opencode`'s `AGENTS.md` is owned by the caveman plugin, and `kimi` reads `~/.kimi-code/AGENTS.md`.
+</Aside>
 
 ```dockerfile
-# One source file → each runtime's global-instructions path. Real files (not
-# symlinks) so every runtime reads them and the captured home dirs survive
-# default-home seeding cleanly.
-COPY --chown=agent:agent code-intelligence.md /home/agent/.config/AGENTS.md
-COPY --chown=agent:agent code-intelligence.md /home/agent/.claude/CLAUDE.md
-COPY --chown=agent:agent code-intelligence.md /home/agent/.codex/AGENTS.md
-COPY --chown=agent:agent code-intelligence.md /home/agent/.config/opencode/AGENTS.md
+# ONE consolidated guidance file → each runtime's global-instructions path.
+# This is the SAME file the token-optimisation stack ships (caveman + RTK +
+# headroom routing); the code-intelligence router is appended as a section,
+# not COPYed as a separate file. Real files (not symlinks) so every runtime
+# reads them and the captured home dirs survive default-home seeding cleanly.
+COPY --chown=agent:agent agent-instructions.md /home/agent/.claude/CLAUDE.md
+COPY --chown=agent:agent agent-instructions.md /home/agent/.codex/AGENTS.md
+COPY --chown=agent:agent agent-instructions.md /home/agent/.config/amp/AGENTS.md
+COPY --chown=agent:agent agent-instructions.md /home/agent/.kimi-code/AGENTS.md
+COPY --chown=agent:agent agent-instructions.md /home/agent/.grok/AGENTS.md
 ```
 
-Global-instructions path per runtime — each is a copy of the one source file:
+Global-instructions path per runtime — each is a copy of the one consolidated source file (matching the token-optimisation stack's path list):
 
 | Runtime | Global path | Wiring |
 |---|---|---|
-| `amp` | `~/.config/AGENTS.md` | copy (read natively) |
+| `amp` | `~/.config/amp/AGENTS.md` | copy (native `AGENTS.md`) |
 | `claude` | `~/.claude/CLAUDE.md` | copy |
 | `codex` | `~/.codex/AGENTS.md` | copy (native `AGENTS.md`) |
-| `opencode` | `~/.config/opencode/AGENTS.md` | copy (also reads `~/.claude/CLAUDE.md`) |
+| `grok` | `~/.grok/AGENTS.md` | copy (read as a global instruction) |
+| `opencode` | — | caveman plugin owns `~/.config/opencode/AGENTS.md`; do not COPY here |
 | `kimi` | `~/.kimi-code/AGENTS.md` | copy (note: auto-load reliability varies post-v1.29.0 — kimi#850; add `~/.agents/AGENTS.md` as a cross-tool fallback) |
 
 The single source content (markdown, agent-agnostic):
@@ -287,7 +295,7 @@ On `claude`, rust-analyzer powers go-to-definition / find-references / hover / i
 ## How the agent learns the tools
 
 1. The the-architect `Dockerfile` copies the source guidance to each runtime's global-instructions path as a real file (agent layer, on top of the construct).
-2. The copies under `~/.claude/` and `~/.codex/` are captured by the derived layer's default-home step (see <RepoFile path="crates/jackin-image/src/derived_image.rs">crates/jackin-image/src/derived_image.rs</RepoFile>) and reseeded on first boot; `~/.config/AGENTS.md` and `~/.config/opencode/AGENTS.md` are baked into the image and present at runtime.
+2. The copies under `~/.claude/`, `~/.codex/`, `~/.config/amp/`, `~/.kimi-code/`, and `~/.grok/` are captured by the derived layer's default-home step (see <RepoFile path="crates/jackin-image/src/derived_image.rs">crates/jackin-image/src/derived_image.rs</RepoFile>) and reseeded on first boot.
 3. Each runtime reads its global-instructions path at startup, so the guidance — including the router — is in context for every session regardless of which repo the operator mounted.
 
 Because the guidance lives in the agent's home, it applies to every workspace the-architect runs against and never mutates a host repository.
@@ -308,7 +316,7 @@ Inside the container, confirm each surface:
 - `codedb status` reports the **mounted workspace** as the project root (not `~`), and no `~/.claude/hooks/codedb-block-legacy.sh` exists (installer hook was not run).
 - `env | grep CODEDB_NO_TELEMETRY` shows `1`.
 - `cargo nextest run` runs the suite.
-- `sha256sum ~/.config/AGENTS.md ~/.claude/CLAUDE.md ~/.codex/AGENTS.md ~/.config/opencode/AGENTS.md` — all four hashes match (one source).
+- `sha256sum ~/.claude/CLAUDE.md ~/.codex/AGENTS.md ~/.config/amp/AGENTS.md ~/.kimi-code/AGENTS.md ~/.grok/AGENTS.md` — all hashes match (one consolidated source).
 - When asked to find all trait impls or `.unwrap()` calls, the agent reaches for `ast-grep` rather than `rg`; for "who calls X" it reaches for `codedb_callers`, not a text grep. Repeat the launch with `--codex` / `--amp` / `--opencode` to confirm the same guidance and router are in context for each runtime.
 
 ## Success criteria
