@@ -15,7 +15,6 @@ pub(crate) struct ModelPrice {
 /// Estimate cost in USD from token counts using the static pricing table.
 /// Returns `None` when the model is not in the table.
 pub(crate) fn estimate_cost_usd(
-    _agent: &str,
     model: &str,
     input_tokens: u64,
     output_tokens: u64,

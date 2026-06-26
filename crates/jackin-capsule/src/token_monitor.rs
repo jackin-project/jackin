@@ -105,10 +105,8 @@ impl TokenSession {
             // present, else the agent slug (so e.g. Kimi, which carries no model,
             // still prices off its `kimi` row).
             if self.totals.cost_usd.is_none() {
-                let slug = self.agent.slug();
-                let model = self.totals.model.as_deref().unwrap_or(slug);
+                let model = self.totals.model.as_deref().unwrap_or(self.agent.slug());
                 self.totals.cost_usd = pricing::estimate_cost_usd(
-                    slug,
                     model,
                     self.totals.input_tokens,
                     self.totals.output_tokens,
@@ -153,12 +151,21 @@ pub(crate) fn find_provider_files(base_dirs: &[&str], ext: &str) -> Vec<std::pat
     paths
 }
 
-/// Read a file in full, returning its text. Token logs are re-read whole on each
-/// poll (the adapters recompute totals from scratch); this avoids the per-file
-/// byte-offset bookkeeping that silently double-counted when one shared offset
-/// was applied across multiple globbed files.
-pub(crate) fn read_file_text(path: &Path) -> Option<String> {
-    std::fs::read_to_string(path).ok()
+/// Read a file in full for a recompute pass. Token logs are re-read whole each
+/// poll (adapters recompute totals from scratch), avoiding the per-file
+/// byte-offset bookkeeping that silently double-counted across globbed files.
+///
+/// `Ok(None)` is an absent file (expected — the agent simply has not written it).
+/// `Err` is a real IO failure (permission, transient): the caller must NOT treat
+/// that as "the file is empty" and recompute a smaller total — under the SET
+/// model that would silently regress a monotonic counter. Callers abort the
+/// recompute on `Err` and keep the prior totals instead.
+pub(crate) fn read_file_text(path: &Path) -> std::io::Result<Option<String>> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
 }
 
 /// The token monitor manages per-session polling.

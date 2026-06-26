@@ -49,8 +49,14 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
 
     let mut acc = Acc::default();
     for path in &files {
-        let Some(text) = super::read_file_text(path) else {
-            continue;
+        let text = match super::read_file_text(path) {
+            Ok(Some(text)) => text,
+            Ok(None) => continue,
+            // Abort on a real read error; keep prior totals (see claude.rs).
+            Err(e) => {
+                crate::cdebug!("token monitor: kimi read {path:?} failed: {e}");
+                return false;
+            }
         };
         for line in text.lines() {
             if line.trim().is_empty() {

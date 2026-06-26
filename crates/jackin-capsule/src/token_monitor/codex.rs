@@ -90,24 +90,56 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
         return false;
     }
 
-    let mut acc = Acc::default();
+    // Aggregate ACROSS files (one rollout per session; codex retains several).
+    // Each session file is monotonic-cumulative XOR headless-per-call, so take
+    // that file's own total — last cumulative, or its headless sum — and add it
+    // to the running aggregate. A per-`Acc`-across-all-files would instead let
+    // the last-walked file's cumulative overwrite the rest.
+    let mut input = 0u64;
+    let mut output = 0u64;
+    let mut cached = 0u64;
+    let mut total_cost = 0.0;
+    let mut has_cost = false;
+    let mut model = None;
+    let mut seen = false;
     for path in &files {
-        let Some(text) = super::read_file_text(path) else {
-            continue;
+        let text = match super::read_file_text(path) {
+            Ok(Some(text)) => text,
+            Ok(None) => continue,
+            // Abort on a real read error; keep prior totals (see claude.rs).
+            Err(e) => {
+                crate::cdebug!("token monitor: codex read {path:?} failed: {e}");
+                return false;
+            }
         };
+        let mut acc = Acc::default();
         for line in text.lines() {
             if !line.trim().is_empty() {
                 apply_line(line, &mut acc);
             }
         }
+        if !acc.seen {
+            continue;
+        }
+        seen = true;
+        // The file's cumulative counter wins when present; otherwise its headless sum.
+        let (i, o, c) = acc.cumulative.unwrap_or(acc.headless);
+        input += i;
+        output += o;
+        cached += c;
+        if acc.has_cost {
+            total_cost += acc.cost;
+            has_cost = true;
+        }
+        if acc.model.is_some() {
+            model = acc.model;
+        }
     }
-    if !acc.seen {
+    if !seen {
         return false;
     }
 
-    // The cumulative session counter wins when present; otherwise the headless sum.
-    let (input, output, cached) = acc.cumulative.unwrap_or(acc.headless);
-    let cost = acc.has_cost.then_some(acc.cost);
+    let cost = has_cost.then_some(total_cost);
     let changed = input != session.totals.input_tokens
         || output != session.totals.output_tokens
         || cached != session.totals.cache_read_tokens
@@ -119,8 +151,8 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
         if cost.is_some() {
             session.totals.cost_usd = cost;
         }
-        if acc.model.is_some() {
-            session.totals.model = acc.model;
+        if model.is_some() {
+            session.totals.model = model;
         }
     }
     changed

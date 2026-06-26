@@ -32,8 +32,14 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
     let mut last_model: Option<String> = None;
 
     for path in &files {
-        let Ok(content) = fs::read_to_string(path) else {
-            continue;
+        let content = match super::read_file_text(path) {
+            Ok(Some(content)) => content,
+            Ok(None) => continue,
+            // Abort on a real read error; keep prior totals (see claude.rs).
+            Err(e) => {
+                crate::cdebug!("token monitor: amp read {path:?} failed: {e}");
+                return false;
+            }
         };
         let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) else {
             continue;

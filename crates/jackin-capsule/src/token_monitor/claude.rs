@@ -98,8 +98,16 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
 
     let mut acc = Acc::default();
     for path in &files {
-        let Some(text) = super::read_file_text(path) else {
-            continue;
+        let text = match super::read_file_text(path) {
+            Ok(Some(text)) => text,
+            Ok(None) => continue,
+            // A real read error means we cannot recompute this session's true
+            // total; abort and keep the prior totals rather than SET a smaller,
+            // partial value (which would silently regress a monotonic counter).
+            Err(e) => {
+                crate::cdebug!("token monitor: claude read {path:?} failed: {e}");
+                return false;
+            }
         };
         for line in text.lines() {
             if line.trim().is_empty() {
