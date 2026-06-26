@@ -13,7 +13,7 @@ cargo-binstall = "1.20.1"
 "cargo:sccache" = "0.16.0"
 cosign = "3.1.1"
 shellcheck = "0.11.0"
-node = "24.17.0"
+node = "24.18.0"
 syft = "1.45.1"
 zig = "0.16.0"
 # rust is read from `rust-toolchain.toml` via the `idiomatic_version_file`
