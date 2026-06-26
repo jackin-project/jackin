@@ -58,10 +58,7 @@ fn claude_account_path() -> PathBuf {
 }
 
 fn claude_account_path_from(env: Option<&str>) -> PathBuf {
-    match env {
-        Some(dir) => Path::new(dir).join(".claude.json"),
-        None => Path::new(AGENT_HOME).join(".claude.json"),
-    }
+    Path::new(env.unwrap_or(AGENT_HOME)).join(".claude.json")
 }
 
 /// Codex reads `auth.json` and `config.toml` from `CODEX_HOME` (default `~/.codex`).
@@ -422,8 +419,16 @@ fn setup_claude_plugins() {
     for plugin in &config.claude_plugins {
         run_optional_command("claude", &["plugin", "install", plugin.as_str()]);
     }
-    fs::create_dir_all("/home/agent/.claude").ok();
-    fs::write(marker, &fingerprint).ok();
+    if let Err(e) = fs::create_dir_all("/home/agent/.claude") {
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] claude plugins: failed to create marker dir: {e}"
+        ));
+    }
+    if let Err(e) = fs::write(marker, &fingerprint) {
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] claude plugins: failed to write install marker (plugins will re-run next launch): {e}"
+        ));
+    }
 }
 
 /// Stable fingerprint of the declared Claude marketplaces + plugins, stored as

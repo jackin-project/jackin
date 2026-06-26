@@ -838,11 +838,11 @@ fn csi_u_control_byte(codepoint: u32, modifier: Option<u32>) -> Option<u8> {
 }
 
 fn is_ascii_lowercase_codepoint(codepoint: u32) -> bool {
-    (u32::from(b'a')..=u32::from(b'z')).contains(&codepoint)
+    matches!(codepoint, 0x61..=0x7A)
 }
 
 fn is_ascii_uppercase_codepoint(codepoint: u32) -> bool {
-    (u32::from(b'A')..=u32::from(b'Z')).contains(&codepoint)
+    matches!(codepoint, 0x41..=0x5A)
 }
 
 fn classify_x10_mouse(seq: &[u8]) -> Option<InputEvent> {
