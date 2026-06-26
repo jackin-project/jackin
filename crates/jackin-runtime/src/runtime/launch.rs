@@ -790,7 +790,7 @@ pub(super) async fn launch_role_runtime(
     // `--debug` run shows exactly what was enforced. The session contract
     // (emitted below, once credential state is known) is the human-readable
     // summary of the same data.
-    let yn = |enabled: bool| if enabled { "yes" } else { "no" };
+    let yes_no = |enabled: bool| if enabled { "yes" } else { "no" };
     jackin_diagnostics::debug_log!(
         "launch",
         "profile_selected profile={profile} source={profile_source}",
@@ -798,7 +798,7 @@ pub(super) async fn launch_role_runtime(
     jackin_diagnostics::debug_log!(
         "launch",
         "cap_drop_all={} cap_add={}",
-        yn(crate::runtime::docker_profile::drops_all_caps(*profile)),
+        yes_no(crate::runtime::docker_profile::drops_all_caps(*profile)),
         if grants.capabilities_add.is_empty() {
             "-".to_owned()
         } else {
@@ -808,18 +808,18 @@ pub(super) async fn launch_role_runtime(
     jackin_diagnostics::debug_log!(
         "launch",
         "no_new_privileges enforced={}",
-        yn(grants.no_new_privileges),
+        yes_no(grants.no_new_privileges),
     );
     jackin_diagnostics::debug_log!("launch", "seccomp profile=docker-default");
     jackin_diagnostics::debug_log!(
         "launch",
         "apparmor available={} profile=docker-default layer={apparmor_layer}",
-        yn(apparmor_available),
+        yes_no(apparmor_available),
     );
     jackin_diagnostics::debug_log!(
         "launch",
         "read_only_root enforced={} tmpfs={}",
-        yn(!grants.system_writes),
+        yes_no(!grants.system_writes),
         if grants.system_writes {
             "-".to_owned()
         } else {
@@ -1308,8 +1308,8 @@ pub(super) async fn launch_role_runtime(
             format!("sudo provisioning failed for `{profile}` profile; container torn down (fail-closed)."),
         ));
     }
-    for (label, argv, failure_context) in &post_run_steps {
-        let result = runner.run("docker", argv, None, &docker_run_opts).await;
+    for (label, argv, failure_context) in post_run_steps {
+        let result = runner.run("docker", &argv, None, &docker_run_opts).await;
         jackin_diagnostics::debug_log!(
             "launch",
             "{label} exit={}",
@@ -1324,7 +1324,7 @@ pub(super) async fn launch_role_runtime(
                     ),
                 );
             }
-            return Err(err.context(failure_context.clone()));
+            return Err(err.context(failure_context));
         }
     }
 
