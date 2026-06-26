@@ -11,7 +11,7 @@
 
 use std::io;
 
-use jackin_term::Color as TermColor;
+use jackin_term::{Color as TermColor, UnderlineStyle};
 use ratatui::{
     backend::{Backend, ClearType},
     buffer::Cell,
@@ -29,16 +29,22 @@ pub struct SocketBackend {
     /// Tracks the style applied at the cursor position so adjacent cells
     /// with the same style don't re-emit SGR sequences.
     current_style: CellStyle,
+    current_metadata: SgrMetadata,
     /// Hyperlinked cell rects for the current frame: the encoder emits
     /// `OSC 8` open/close brackets around exactly these cells during cell
     /// emission (§3.4 — no raw overlay writes). Consumed by the next `draw`.
     hyperlink_regions: Vec<(ratatui::layout::Rect, String)>,
-    /// One-shot: swallow the screen-erase escape on the next
-    /// `clear_region(ClearType::All)`. `Terminal::clear()` is the only way to
-    /// reset Ratatui's diff baseline, but it unconditionally routes through
-    /// `clear_region(All)`; the compositor's convergence repaint needs the
-    /// baseline reset without blanking the client screen.
-    suppress_next_clear_escape: bool,
+    sgr_regions: Vec<(ratatui::layout::Rect, SgrMetadata)>,
+    /// While armed, swallow every screen-erase escape from
+    /// `clear_region(ClearType::All)`. `Terminal::resize()` resets Ratatui's
+    /// diff baseline AND moves the buffers/`last_known_area` (whereas
+    /// `Terminal::clear()` only resets the baseline), routing through
+    /// `clear_region(All)` once — or twice on a width shrink. The resize
+    /// bookkeeping needs that baseline/geometry reset without blanking the
+    /// client screen or leaking a stray erase that would ride a later frame.
+    /// The single visible wipe is the compositor's `Resize` redraw, emitted
+    /// after suppression is lifted.
+    suppress_clear_escapes: bool,
 }
 
 /// Compact style summary for change-tracking only — enough detail to
@@ -67,8 +73,10 @@ impl SocketBackend {
             size: (cols, rows),
             output: Vec::with_capacity(65536),
             current_style: CellStyle::default(),
+            current_metadata: SgrMetadata::default(),
             hyperlink_regions: Vec::new(),
-            suppress_next_clear_escape: false,
+            sgr_regions: Vec::new(),
+            suppress_clear_escapes: false,
         }
     }
 
@@ -77,18 +85,30 @@ impl SocketBackend {
         self.hyperlink_regions = regions;
     }
 
-    /// Arm the one-shot erase suppression consumed by the next
-    /// `clear_region(ClearType::All)`. See the field doc for why
-    /// `Terminal::clear()` cannot be called without it when the goal is a
-    /// baseline reset rather than a visible wipe.
-    pub fn suppress_next_clear_escape(&mut self) {
-        self.suppress_next_clear_escape = true;
+    pub(crate) fn set_sgr_regions(&mut self, regions: Vec<(ratatui::layout::Rect, SgrMetadata)>) {
+        self.sgr_regions = regions;
+    }
+
+    /// Arm sustained erase suppression: every `clear_region(ClearType::All)`
+    /// resets style/baseline but emits no bytes until `end_clear_suppression`.
+    /// Wrap a `Terminal::resize()` (which clears once, or twice on a width
+    /// shrink) so the geometry/baseline reset stays byte-silent. See the field
+    /// doc for why the visible wipe must come from the compositor instead.
+    pub fn begin_clear_suppression(&mut self) {
+        self.suppress_clear_escapes = true;
+    }
+
+    /// Lift sustained erase suppression. The next `clear_region(All)` — the
+    /// compositor's `Resize` wipe — erases the client screen normally.
+    pub fn end_clear_suppression(&mut self) {
+        self.suppress_clear_escapes = false;
     }
 
     /// Update the terminal size. Called when the daemon receives a resize event.
     pub fn resize(&mut self, cols: u16, rows: u16) {
         self.size = (cols, rows);
         self.current_style = CellStyle::default();
+        self.current_metadata = SgrMetadata::default();
     }
 
     /// Take the accumulated output, leaving the buffer empty.
@@ -104,8 +124,8 @@ impl SocketBackend {
     }
 
     /// Write the SGR sequence for `style` if it differs from the last one emitted.
-    fn apply_style(&mut self, style: CellStyle) {
-        if style == self.current_style {
+    fn apply_style(&mut self, style: CellStyle, metadata: SgrMetadata) {
+        if style == self.current_style && metadata == self.current_metadata {
             return;
         }
         // Full reset then re-apply rather than tracking incremental changes.
@@ -125,8 +145,20 @@ impl SocketBackend {
         if style.modifiers.contains(Modifier::UNDERLINED) {
             self.output.extend_from_slice(b"\x1b[4m");
         }
+        if style.modifiers.contains(Modifier::SLOW_BLINK) {
+            self.output.extend_from_slice(b"\x1b[5m");
+        }
+        if style.modifiers.contains(Modifier::RAPID_BLINK) {
+            self.output.extend_from_slice(b"\x1b[6m");
+        }
         if style.modifiers.contains(Modifier::REVERSED) {
             self.output.extend_from_slice(b"\x1b[7m");
+        }
+        if style.modifiers.contains(Modifier::HIDDEN) {
+            self.output.extend_from_slice(b"\x1b[8m");
+        }
+        if style.modifiers.contains(Modifier::CROSSED_OUT) {
+            self.output.extend_from_slice(b"\x1b[9m");
         }
 
         // Foreground
@@ -134,9 +166,18 @@ impl SocketBackend {
 
         // Background
         write_color_sgr(&mut self.output, style.bg, true);
+        write_sgr_metadata(&mut self.output, metadata);
 
         self.current_style = style;
+        self.current_metadata = metadata;
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct SgrMetadata {
+    pub(crate) underline_style: UnderlineStyle,
+    pub(crate) underline_color: TermColor,
+    pub(crate) overline: bool,
 }
 
 pub(crate) const fn term_color(color: TermColor) -> Color {
@@ -170,23 +211,53 @@ fn write_color_sgr(buf: &mut Vec<u8>, color: Color, is_bg: bool) {
         Color::LightCyan => push_sgr(buf, base + 66),
         Color::Gray => push_sgr(buf, base + 7),
         Color::Indexed(idx) => {
-            let prefix: &[u8] = if is_bg { b"48;5;" } else { b"38;5;" };
-            buf.extend_from_slice(b"\x1b[");
-            buf.extend_from_slice(prefix);
-            push_number(buf, u32::from(idx));
-            buf.push(b'm');
+            buf.extend_from_slice(if is_bg { b"\x1b[48;" } else { b"\x1b[38;" });
+            push_indexed_color_tail(buf, idx);
         }
         Color::Rgb(r, g, b) => {
-            let prefix: &[u8] = if is_bg { b"48;2;" } else { b"38;2;" };
-            buf.extend_from_slice(b"\x1b[");
-            buf.extend_from_slice(prefix);
-            push_number(buf, u32::from(r));
-            buf.push(b';');
-            push_number(buf, u32::from(g));
-            buf.push(b';');
-            push_number(buf, u32::from(b));
-            buf.push(b'm');
+            buf.extend_from_slice(if is_bg { b"\x1b[48;" } else { b"\x1b[38;" });
+            push_rgb_color_tail(buf, r, g, b);
         }
+    }
+}
+
+/// `5;<idx>m` tail of an indexed-color SGR, after the `38;`/`48;`/`58;` opener.
+fn push_indexed_color_tail(buf: &mut Vec<u8>, idx: u8) {
+    buf.extend_from_slice(b"5;");
+    push_number(buf, u32::from(idx));
+    buf.push(b'm');
+}
+
+/// `2;<r>;<g>;<b>m` tail of a truecolor SGR, after the `38;`/`48;`/`58;` opener.
+fn push_rgb_color_tail(buf: &mut Vec<u8>, r: u8, g: u8, b: u8) {
+    buf.extend_from_slice(b"2;");
+    push_number(buf, u32::from(r));
+    buf.push(b';');
+    push_number(buf, u32::from(g));
+    buf.push(b';');
+    push_number(buf, u32::from(b));
+    buf.push(b'm');
+}
+
+fn write_sgr_metadata(buf: &mut Vec<u8>, metadata: SgrMetadata) {
+    match metadata.underline_style {
+        UnderlineStyle::None => {}
+        UnderlineStyle::Single => buf.extend_from_slice(b"\x1b[4m"),
+        UnderlineStyle::Double => buf.extend_from_slice(b"\x1b[4:2m"),
+        UnderlineStyle::Curly => buf.extend_from_slice(b"\x1b[4:3m"),
+        UnderlineStyle::Dotted => buf.extend_from_slice(b"\x1b[4:4m"),
+        UnderlineStyle::Dashed => buf.extend_from_slice(b"\x1b[4:5m"),
+    }
+    if metadata.underline_color != TermColor::Default {
+        buf.extend_from_slice(b"\x1b[58;");
+        match metadata.underline_color {
+            TermColor::Default => {}
+            TermColor::Idx(idx) => push_indexed_color_tail(buf, idx),
+            TermColor::Rgb(r, g, b) => push_rgb_color_tail(buf, r, g, b),
+        }
+    }
+    if metadata.overline {
+        buf.extend_from_slice(b"\x1b[53m");
     }
 }
 
@@ -228,6 +299,7 @@ impl Backend for SocketBackend {
         let mut cursor_row: Option<u16> = None;
         let mut cursor_col: Option<u16> = None;
         let regions = std::mem::take(&mut self.hyperlink_regions);
+        let sgr_regions = std::mem::take(&mut self.sgr_regions);
         let mut open_link: Option<usize> = None;
 
         for (x, y, cell) in content {
@@ -249,6 +321,10 @@ impl Backend for SocketBackend {
                 }
                 open_link = desired_link;
             }
+            let metadata = sgr_regions
+                .iter()
+                .find_map(|(rect, metadata)| rect.contains(Position { x, y }).then_some(*metadata))
+                .unwrap_or_default();
 
             // Emit cursor position only when we are not already there.
             // After writing a single-column cell at (col, row) the terminal
@@ -264,7 +340,7 @@ impl Backend for SocketBackend {
                 cursor_row = Some(row);
             }
 
-            self.apply_style(CellStyle::from_cell(cell));
+            self.apply_style(CellStyle::from_cell(cell), metadata);
             let sym = cell.symbol();
             self.output.extend_from_slice(sym.as_bytes());
 
@@ -322,6 +398,7 @@ impl Backend for SocketBackend {
         // compositor today; reset style tracking and emit nothing so any
         // future caller still cannot blank the client screen.
         self.current_style = CellStyle::default();
+        self.current_metadata = SgrMetadata::default();
         Ok(())
     }
 
@@ -329,10 +406,11 @@ impl Backend for SocketBackend {
         let seq: &[u8] = match clear_type {
             ClearType::All => {
                 self.current_style = CellStyle::default();
-                if self.suppress_next_clear_escape {
-                    // One-shot baseline-reset mode: Terminal::clear() wants the
-                    // diff baseline reset without a visible wipe.
-                    self.suppress_next_clear_escape = false;
+                self.current_metadata = SgrMetadata::default();
+                if self.suppress_clear_escapes {
+                    // Sustained baseline/geometry-reset mode: Terminal::resize()
+                    // wants the diff baseline reset (possibly twice on a width
+                    // shrink) without any visible wipe.
                     return Ok(());
                 }
                 // ED uses the terminal's active SGR background on BCE-capable

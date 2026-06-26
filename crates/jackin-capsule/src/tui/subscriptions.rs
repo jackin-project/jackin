@@ -16,6 +16,12 @@ pub(crate) const PULL_REQUEST_CONTEXT_LOOKUP_INTERVAL: std::time::Duration =
 /// and conservative pull-request context refresh.
 pub(crate) const STATE_TICK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// Daemon-owned provider account refresh scheduler cadence. This does not call
+/// providers every tick; it wakes the in-cache scheduler, which applies the
+/// per-account ~5 minute + jitter due time and keeps renderers Turso-only.
+pub(crate) const USAGE_ACCOUNT_REFRESH_POLL_INTERVAL: std::time::Duration =
+    std::time::Duration::from_secs(30);
+
 /// Render ticker: about 30 fps. Coalesces PTY-output bursts into one frame.
 /// Cadence cap for event-driven composition: a burst coalesces to at most
 /// one frame per this interval, while the first event after an idle gap

@@ -157,6 +157,9 @@ pub fn handle_key(
             EditorModalOutcome::ResolveFileBrowserGitUrl(path) => {
                 state.request_effect(ManagerEffect::ResolveFileBrowserGitUrl(path));
             }
+            EditorModalOutcome::OpenAuthSourceFolderBrowser => {
+                state.request_effect(ManagerEffect::OpenEditorAuthSourceFolderBrowser);
+            }
             EditorModalOutcome::OpenUrl(url) => {
                 state.request_effect(ManagerEffect::OpenUrl(url));
             }
@@ -272,11 +275,23 @@ pub fn handle_key(
             term_size,
             validate_auth_source_folder,
         );
-        if let SettingsAuthOutcome::ValidateOpRef(op_ref) = auth_outcome {
-            state.request_effect(ManagerEffect::ValidateOpCommit {
-                op_ref,
-                is_settings: true,
-            });
+        match auth_outcome {
+            SettingsAuthOutcome::Continue => {}
+            SettingsAuthOutcome::OpenAuthSourceFolderBrowser => {
+                state.request_effect(ManagerEffect::OpenSettingsAuthSourceFolderBrowser);
+            }
+            SettingsAuthOutcome::ApplyFileBrowserOutcome(outcome) => {
+                state.request_effect(ManagerEffect::ApplyFileBrowserOutcome {
+                    context: FileBrowserEffectContext::SettingsAuth,
+                    outcome,
+                });
+            }
+            SettingsAuthOutcome::ValidateOpRef(op_ref) => {
+                state.request_effect(ManagerEffect::ValidateOpCommit {
+                    op_ref,
+                    is_settings: true,
+                });
+            }
         }
         after_settings_event(state);
         return Ok(InputOutcome::Continue);

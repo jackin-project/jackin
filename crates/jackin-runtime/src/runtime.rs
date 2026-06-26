@@ -7,13 +7,18 @@ pub mod attach;
 pub mod caffeinate;
 pub mod cleanup;
 pub mod discovery;
+pub mod docker_profile;
 pub mod drift;
 pub mod exit_summary;
+pub mod host_attach;
+mod host_clipboard;
+mod host_desktop;
 pub mod identity;
 pub mod image;
 pub mod launch;
 pub mod logs;
 pub mod naming;
+pub mod prewarm_trigger;
 pub mod progress;
 pub mod repo_cache;
 pub(crate) mod shared_runner;
@@ -41,6 +46,7 @@ pub use self::discovery::list_role_names;
 pub use self::discovery::{
     list_managed_role_names, list_running_agent_display_names, list_running_agent_names,
 };
+pub use self::docker_profile::{DockerSecurityProfile, ProfileSource, resolve_profile};
 #[cfg(not(test))]
 pub use self::image::{ImagePrewarmStatus, RoleImagePrewarmRow, prewarm_role_images};
 pub use self::launch::{
@@ -48,6 +54,9 @@ pub use self::launch::{
     write_prewarmed_dind_state,
 };
 pub use self::naming::matching_family;
+pub use self::prewarm_trigger::{
+    BackgroundPrewarmTarget, background_prewarm_targets, spawn_background_image_prewarm,
+};
 pub use self::repo_cache::{RepoError, normalize_github_url};
 pub use self::universe::{
     EntryClaim, StartKind, claim_entry as claim_construct_entry, force_boundary_intro_enabled,

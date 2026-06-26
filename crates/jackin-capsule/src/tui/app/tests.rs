@@ -77,6 +77,7 @@ fn pointer_shape_priority_keeps_dialog_and_gestures_visible() {
         chrome_target: None,
         dialog_open: false,
         drag_start_orient: None,
+        link_target_available: false,
         selection_start_available: false,
         no_button_motion: true,
     };
@@ -107,6 +108,13 @@ fn pointer_shape_priority_keeps_dialog_and_gestures_visible() {
             ..base
         }),
         PointerShape::EwResize
+    );
+    assert_eq!(
+        pointer_shape_for_state(PointerShapeState {
+            link_target_available: true,
+            ..base
+        }),
+        PointerShape::Pointer
     );
     assert_eq!(
         pointer_shape_for_state(PointerShapeState {
@@ -152,6 +160,13 @@ fn chrome_hover_priority_matches_visible_layers() {
             ..base
         }),
         Some(HoverTarget::Menu)
+    );
+    assert_eq!(
+        chrome_hover_target_for_state(ChromeHitState {
+            branch_hit: Some(BranchContextBarHit::UsageStatus),
+            ..base
+        }),
+        Some(HoverTarget::UsageStatus)
     );
     assert_eq!(
         chrome_hover_target_for_state(ChromeHitState {

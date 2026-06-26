@@ -5,7 +5,10 @@
 
 use std::time::Instant;
 
-use crate::tui::app::{VisibleAgentState, visible_agent_state_from_protocol};
+use crate::tui::{
+    app::{VisibleAgentState, visible_agent_state_from_protocol},
+    socket_backend::SgrMetadata,
+};
 
 use super::{
     CursorVisibilityState, FullRedrawReason, Multiplexer, Rect, append_osc_window_title,
@@ -45,9 +48,8 @@ impl Multiplexer {
         let started = Instant::now();
         let alloc_before = crate::alloc_telemetry::snapshot();
         if wipe.is_some() {
-            // Terminal::clear() emits the screen erase and resets the diff
-            // baseline; the sentinel fill below then forces a full re-emit
-            // over the freshly blanked screen.
+            // Terminal::clear() emits the screen erase and resets Ratatui's
+            // previous buffer so FirstAttach/Resize get a real baseline reset.
             drop(self.ratatui_terminal.clear());
         }
         let Some(output) = self.compose_ratatui_frame() else {
@@ -112,8 +114,8 @@ impl Multiplexer {
 
     /// Compose one frame of the full widget tree through the Ratatui
     /// `SocketBackend`: status bar, pane bodies, pane borders, scrollbars,
-    /// selection, and the dialog when open. The bottom chrome and cursor are
-    /// still appended as raw ANSI until the chrome-widget step lands.
+    /// selection, dialog, and bottom chrome when open. Cursor/mode state is
+    /// reconciled after cell output as frame state.
     ///
     /// Returns the ANSI output to send to the attach client, or `None` if the
     /// Ratatui terminal fails to draw (the caller then skips the frame).
@@ -121,39 +123,62 @@ impl Multiplexer {
         use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
         use crate::tui::view::{CapsuleRatatuiFrame, PaneScreen, render_capsule_ratatui_frame};
 
-        // Convergence stopgap: force this frame's diff to re-emit every cell
-        // — including cells whose target state is default-blank — with no
-        // screen-erase byte. Resetting the baseline to default cells is not
-        // enough: the diff would skip default-blank cells and residue (dialog
-        // backdrops, selection highlights, glyphs scrolled out of the live
-        // view) would survive on the client. Filling the about-to-become-
-        // previous buffer with a sentinel no widget ever renders makes every
-        // composed cell differ, so the diff repaints the full frame in place.
-        // Until the extra writers are deleted (PR 3 of the capsule rendering
-        // plan), the previous buffer cannot be trusted as the client model.
-        //
-        // ratatui-core ≥ 0.1.2 calls `previous.cell_width()` during the diff,
-        // which triggers a debug_assert on 1-byte ASCII control characters.
-        // Use a private-use BMP scalar (U+E001, 3 bytes in UTF-8) instead of
-        // U+0001: `cell_width` skips the 1-byte fast-path for multi-byte
-        // symbols and calls `unicode_width` directly, avoiding the assert.
-        // U+E001 is never produced by any widget, so the diff still sees every
-        // cell as changed and re-emits the full frame.
-        for cell in &mut self.ratatui_terminal.current_buffer_mut().content {
-            cell.set_symbol("\u{E001}");
-        }
-        self.ratatui_terminal.swap_buffers();
-
         let term_rows = self.term_rows;
         let term_cols = self.term_cols;
         let active_tab = self.active_tab;
+        let usage_status_label = self.focused_usage_snapshot().status_bar_label;
         let tabs = &self.tabs;
         let panes = self.visible_panes();
+        // Frame-geometry trace: the status bar owns rows 0..STATUS_BAR_ROWS, so
+        // every pane's outer rect must start at or below that. A pane whose
+        // `outer.row` is smaller means its top border is being drawn over the
+        // status bar — the resize-residue class. Logged per frame (firehose,
+        // JACKIN_DEBUG only) so a soak run pins the exact offending frame.
+        // Skip the per-pane trace loop entirely unless the firehose is on; the
+        // individual `cdebug!`s self-gate, but the loop and its arg setup would
+        // otherwise run every frame on the compose hot path.
+        if crate::logging::debug_enabled() {
+            let status_rows = crate::tui::components::status_bar::STATUS_BAR_ROWS;
+            crate::cdebug!(
+                "frame-geom: term={}x{} content_rows={} status_rows={} panes={}",
+                term_cols,
+                term_rows,
+                self.content_rows,
+                status_rows,
+                panes.len(),
+            );
+            for pane in &panes {
+                crate::cdebug!(
+                    "frame-pane: id={} outer=row{},col{},rows{},cols{} inner_row={} {}",
+                    pane.id,
+                    pane.outer.row,
+                    pane.outer.col,
+                    pane.outer.rows,
+                    pane.outer.cols,
+                    pane.inner.row,
+                    if pane.outer.row < status_rows {
+                        "VIOLATION-ABOVE-STATUS"
+                    } else {
+                        "ok"
+                    },
+                );
+            }
+        }
         let focused_id = self.active_focused_id();
-        let focus_owner = focused_id.map_or(
-            jackin_tui::components::FocusOwner::TabBar,
-            jackin_tui::components::FocusOwner::Content,
-        );
+        // P5: tab-bar focus is part of the one shared `FocusOwner` model, not a
+        // parallel signal. When the operator has moved focus to the tab bar the
+        // owner is `TabBar` even while a pane is open — so the pane cursor hides
+        // and the active-tab underline goes green through the same abstraction
+        // that drives pane-border focus and cursor visibility. Otherwise the
+        // owner follows the focused pane.
+        let focus_owner = if self.tab_bar_focused {
+            jackin_tui::components::FocusOwner::TabBar
+        } else {
+            focused_id.map_or(
+                jackin_tui::components::FocusOwner::TabBar,
+                jackin_tui::components::FocusOwner::Content,
+            )
+        };
         let zoomed = self.active_zoomed_id().is_some();
         let dialog_open = self.dialog_open();
         // Status-bar inputs snapshotted before the draw closure borrows self.
@@ -354,15 +379,21 @@ impl Multiplexer {
         } else {
             None
         };
-        let palette_key = self.input_parser.palette_key().unwrap_or(0x1C);
         let branch = self.context_bar_branch().map(str::to_owned);
         let pull_request = self.pull_request_context.clone();
         let pull_request_loading = self.pull_request_context_loading();
         let spawn_failure = self.spawn_failure.clone();
+        let palette_key = self.input_parser.palette_key().unwrap_or(0x1C);
+        let clipboard_image_notice = self.clipboard_image_notice.clone();
+        let link_hover_notice = self
+            .link_hover_url
+            .as_ref()
+            .map(|url| format!("Open link: {url}"));
 
         // Frame hyperlink layer (§3.4): the encoder brackets exactly these
         // cells with OSC 8 during emission — no raw overlay writes.
-        let hyperlink_regions =
+        let mut hyperlink_regions = pane_hyperlink_regions(&panes, &pane_screens, &self.sessions);
+        let ui_hyperlink_regions =
             if let Some((DialogRatatuiSnapshot::DebugInfo(state), (row, col, height, width))) =
                 dialog_snapshot.as_ref()
             {
@@ -376,9 +407,14 @@ impl Multiplexer {
             } else {
                 Vec::new()
             };
+        hyperlink_regions.extend(ui_hyperlink_regions);
         self.ratatui_terminal
             .backend_mut()
             .set_hyperlink_regions(hyperlink_regions);
+        let sgr_regions = pane_sgr_regions(&panes, &pane_screens);
+        self.ratatui_terminal
+            .backend_mut()
+            .set_sgr_regions(sgr_regions);
 
         let result = self.ratatui_terminal.draw(|frame| {
             render_capsule_ratatui_frame(
@@ -402,6 +438,7 @@ impl Multiplexer {
                     selection_copied,
                     scrollbars: &pane_scrollbars,
                     branch: branch.as_deref(),
+                    usage_status_label: Some(usage_status_label.as_str()),
                     pull_request: pull_request.as_deref(),
                     pull_request_loading,
                     instance_id_label: self.status_bar.instance_id_label(),
@@ -412,6 +449,8 @@ impl Multiplexer {
                     dialog_hint_spans: dialog_hint_spans.as_deref(),
                     spawn_failure: spawn_failure.as_deref(),
                     palette_key,
+                    clipboard_image_notice: clipboard_image_notice.as_deref(),
+                    link_hover_notice: link_hover_notice.as_deref(),
                 },
             );
         });
@@ -531,3 +570,122 @@ impl Multiplexer {
         self.last_asserted_client_state = Some(desired);
     }
 }
+
+/// Run-length-encode per-row cell metadata into single-row `Rect`s. For each
+/// allowed pane's visible `View`, groups horizontally-adjacent cells sharing
+/// the same run value and emits one `Rect` per run (offset into the pane's
+/// inner area). Shared by the hyperlink and SGR-metadata region builders so the
+/// boundary arithmetic and clamping live in one place.
+///
+/// `probe` opens a run and produces its owned value once at the run's first
+/// cell; `same_run` extends the run by comparing each later cell against that
+/// value. They are split so the (allocating) owned form is built once per run
+/// while extension stays allocation-free — the hyperlink path would otherwise
+/// allocate a `String` per cell.
+fn pane_cell_runs<T>(
+    panes: &[crate::tui::app::VisiblePane],
+    pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
+    allow_pane: impl Fn(u64) -> bool,
+    probe: impl Fn(&jackin_term::Cell) -> Option<T>,
+    same_run: impl Fn(&jackin_term::Cell, &T) -> bool,
+) -> Vec<(ratatui::layout::Rect, T)> {
+    let mut regions = Vec::new();
+    for pane in panes {
+        if !allow_pane(pane.id) {
+            continue;
+        }
+        let Some((_, crate::tui::view::PaneScreen::View(view))) =
+            pane_screens.iter().find(|(id, _)| *id == pane.id)
+        else {
+            continue;
+        };
+        let max_rows = pane.inner.rows.min(view.rows);
+        let max_cols = pane.inner.cols.min(view.cols);
+        for row in 0..max_rows {
+            let mut col = 0;
+            while col < max_cols {
+                let Some(value) = view.cell(row, col).and_then(&probe) else {
+                    col += 1;
+                    continue;
+                };
+                let start = col;
+                col += 1;
+                while col < max_cols
+                    && view
+                        .cell(row, col)
+                        .is_some_and(|cell| same_run(cell, &value))
+                {
+                    col += 1;
+                }
+                regions.push((
+                    ratatui::layout::Rect {
+                        x: pane.inner.col + start,
+                        y: pane.inner.row + row,
+                        width: col - start,
+                        height: 1,
+                    },
+                    value,
+                ));
+            }
+        }
+    }
+    regions
+}
+
+/// The cell's hyperlink target if it carries one that passes the OSC 8 safety
+/// filter. Borrows from the cell — no allocation — so run extension can compare
+/// targets without owning a `String` per cell.
+fn cell_safe_uri(cell: &jackin_term::Cell) -> Option<&str> {
+    cell.hyperlink
+        .as_ref()
+        .map(|link| link.uri.as_str())
+        .filter(|uri| crate::session::osc8_uri_is_safe(uri))
+}
+
+fn pane_hyperlink_regions(
+    panes: &[crate::tui::app::VisiblePane],
+    pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
+    sessions: &std::collections::HashMap<u64, crate::session::Session>,
+) -> Vec<(ratatui::layout::Rect, String)> {
+    pane_cell_runs(
+        panes,
+        pane_screens,
+        |id| {
+            sessions
+                .get(&id)
+                .is_some_and(crate::session::Session::allow_frame_hyperlinks)
+        },
+        |cell| cell_safe_uri(cell).map(str::to_owned),
+        |cell, uri| cell_safe_uri(cell) == Some(uri.as_str()),
+    )
+}
+
+fn pane_sgr_regions(
+    panes: &[crate::tui::app::VisiblePane],
+    pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
+) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
+    pane_cell_runs(
+        panes,
+        pane_screens,
+        |_| true,
+        |cell| {
+            let metadata = cell_sgr_metadata(cell);
+            (metadata != SgrMetadata::default()).then_some(metadata)
+        },
+        |cell, metadata| cell_sgr_metadata(cell) == *metadata,
+    )
+}
+
+fn cell_sgr_metadata(cell: &jackin_term::Cell) -> SgrMetadata {
+    SgrMetadata {
+        underline_style: match cell.attrs.underline_style {
+            jackin_term::UnderlineStyle::Single => jackin_term::UnderlineStyle::None,
+            other => other,
+        },
+        underline_color: cell.attrs.underline_color,
+        overline: cell.attrs.overline,
+    }
+}
+
+#[cfg(test)]
+mod tests;

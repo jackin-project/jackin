@@ -1,4 +1,4 @@
 from_version = "v1alpha2"
-target_version = "v1alpha6"
+target_version = "v1alpha8"
 target_version_shipped = "2026-05-17"
 summary = "Restamps config from v1alpha2 through v1alpha3 (OpenCode), v1alpha4 (Kimi), to v1alpha5. All steps are no-op restamps."

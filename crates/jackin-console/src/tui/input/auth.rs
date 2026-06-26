@@ -29,6 +29,20 @@ use jackin_config::AppConfig;
 use jackin_core::EnvValue;
 use jackin_env::OpCache;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthFormKeyOutcome {
+    Continue,
+    Changed,
+    OpenSourceFolderBrowser,
+}
+
+impl AuthFormKeyOutcome {
+    #[cfg(test)]
+    pub const fn is_dirty(self) -> bool {
+        !matches!(self, Self::Continue)
+    }
+}
+
 /// Open the auth-edit form modal for the row currently under the
 /// cursor on the Auth tab. Pre-populates the form from the row's
 /// effective mode + credential so editing an existing entry shows
@@ -104,9 +118,9 @@ pub fn handle_auth_form_key(
     editor: &mut EditorState<'_>,
     key: KeyEvent,
     op_available: bool,
-) -> bool {
+) -> AuthFormKeyOutcome {
     let Some(current_focus) = editor.active_auth_form_focus() else {
-        return false;
+        return AuthFormKeyOutcome::Continue;
     };
 
     // Esc cancels at every focus. Drain the auth-form return stash too so
@@ -115,7 +129,7 @@ pub fn handle_auth_form_key(
     // commit/cancel) drains it explicitly; Esc must too.
     if key.code == KeyCode::Esc {
         editor.clear_modal_chain();
-        return true;
+        return AuthFormKeyOutcome::Changed;
     }
 
     // `g`/`G` at any focus mints a Claude OAuth token. It opens the
@@ -125,11 +139,11 @@ pub fn handle_auth_form_key(
     if matches!(key.code, KeyCode::Char('g' | 'G'))
         && try_start_token_generate(editor, op_available)
     {
-        return true;
+        return AuthFormKeyOutcome::Changed;
     }
 
     let Some(Modal::AuthForm { state, .. }) = editor.modal.as_ref() else {
-        return false;
+        return AuthFormKeyOutcome::Continue;
     };
     let plan = auth_form_key_plan_with_source_folder(
         current_focus,
@@ -140,12 +154,12 @@ pub fn handle_auth_form_key(
     );
 
     match plan {
-        AuthFormKeyPlan::Stay => false,
+        AuthFormKeyPlan::Stay => AuthFormKeyOutcome::Continue,
         AuthFormKeyPlan::Focus(next) => {
             if let Some(Modal::AuthForm { focus, .. }) = editor.modal.as_mut() {
                 *focus = next;
             }
-            false
+            AuthFormKeyOutcome::Changed
         }
         AuthFormKeyPlan::CycleMode => {
             if let Some(Modal::AuthForm { state, focus, .. }) = editor.modal.as_mut() {
@@ -154,20 +168,34 @@ pub fn handle_auth_form_key(
                     *focus = AuthFormFocus::Mode;
                 }
             }
-            false
+            AuthFormKeyOutcome::Changed
         }
-        AuthFormKeyPlan::OpenSourceFolderBrowser => {
-            open_auth_source_folder_browser_from_form(editor)
-        }
+        AuthFormKeyPlan::OpenSourceFolderBrowser => AuthFormKeyOutcome::OpenSourceFolderBrowser,
         AuthFormKeyPlan::OpenCredentialSource => {
-            open_auth_source_picker_from_form(editor, op_available)
+            if open_auth_source_picker_from_form(editor, op_available) {
+                AuthFormKeyOutcome::Changed
+            } else {
+                AuthFormKeyOutcome::Continue
+            }
         }
-        AuthFormKeyPlan::Save => commit_auth_form_save(editor),
+        AuthFormKeyPlan::Save => {
+            if commit_auth_form_save(editor) {
+                AuthFormKeyOutcome::Changed
+            } else {
+                AuthFormKeyOutcome::Continue
+            }
+        }
         AuthFormKeyPlan::Cancel => {
             editor.clear_modal_chain();
-            true
+            AuthFormKeyOutcome::Changed
         }
-        AuthFormKeyPlan::Reset => reset_auth_form_layer(editor),
+        AuthFormKeyPlan::Reset => {
+            if reset_auth_form_layer(editor) {
+                AuthFormKeyOutcome::Changed
+            } else {
+                AuthFormKeyOutcome::Continue
+            }
+        }
     }
 }
 
@@ -183,19 +211,21 @@ fn try_start_token_generate(editor: &mut EditorState<'_>, op_available: bool) ->
     editor.start_auth_token_generate(generated_token_source_picker_state(op_available))
 }
 
-fn open_auth_source_folder_browser_from_form(editor: &mut EditorState<'_>) -> bool {
+pub fn open_auth_source_folder_browser_from_form_with_state(
+    editor: &mut EditorState<'_>,
+    state: crate::tui::components::file_browser::FileBrowserState,
+) -> bool {
     match crate::tui::auth_config::ModalAuthSourceFolderBrowserOpen::open_auth_source_folder_browser(
         &mut editor.modal,
         &mut editor.modal_parents,
         AuthFormFocus::SourceFolder,
         FileBrowserTarget::AuthFormSourceFolder,
-        crate::services::file_browser::state_from_home_with_hidden,
+        || Ok::<_, std::convert::Infallible>(state),
     ) {
         crate::tui::auth_config::AuthSourceFolderBrowserOpenResult::Opened => true,
         crate::tui::auth_config::AuthSourceFolderBrowserOpenResult::NotAvailable => false,
         crate::tui::auth_config::AuthSourceFolderBrowserOpenResult::BrowserError(error) => {
-            crate::tui::state::open_editor_action_error(editor, &error);
-            true
+            match error {}
         }
     }
 }

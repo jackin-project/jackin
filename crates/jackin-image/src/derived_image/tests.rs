@@ -11,10 +11,11 @@ fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
         None,
         &[Agent::Claude],
         None,
+        &BTreeMap::new(),
+        None,
     );
 
-    // Agent binaries are mounted read-only at run time, not baked — the overlay
-    // carries no agent COPY/install and no plugin block.
+    // No agent_installs → overlay carries no agent COPY/install blocks.
     assert!(!dockerfile.contains("agent-binaries"));
     assert!(!dockerfile.contains("claude plugin"));
     assert!(!dockerfile.contains("WORKDIR"));
@@ -35,6 +36,8 @@ fn renders_runtime_finalization_in_one_layer() {
         None,
         &[Agent::Claude],
         Some(".jackin-runtime/jackin-capsule"),
+        &BTreeMap::new(),
+        None,
     );
 
     assert!(dockerfile.contains(
@@ -44,41 +47,118 @@ fn renders_runtime_finalization_in_one_layer() {
         "COPY --link --chmod=0755 .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule"
     ));
     assert!(!dockerfile.contains("RUN chmod +x /jackin/runtime/"));
+    // The title shim + runtime-dir creation share one finalization RUN (separate
+    // from the now-standalone default-home snapshot for readability).
     assert_eq!(
         dockerfile
-            .matches("&& ( grep -q '__JACKIN_AUTO_TITLE_LOADED'")
+            .matches("( grep -q '__JACKIN_AUTO_TITLE_LOADED'")
             .count(),
         1,
-        "title shim should share the runtime finalization layer: {dockerfile}"
+        "title shim should be in exactly one finalization layer: {dockerfile}"
     );
     assert!(dockerfile.contains(
-        "COPY --link --chown=agent:agent --chmod=0644 .jackin-runtime/zsh-title-shim /jackin/runtime/zsh-title-shim"
+        "COPY --link --chown=agent:0 --chmod=0644 .jackin-runtime/zsh-title-shim /jackin/runtime/zsh-title-shim"
     ));
     assert!(
         dockerfile
-            .contains("cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\\n    && install -d -o agent -g agent /jackin/run /jackin/state"),
+            .contains("cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\\n    && install -d -o agent -g 0 /jackin/run /jackin/state"),
         "runtime dir setup should share finalization and assign ownership at mkdir time: {dockerfile}"
     );
     assert!(
         dockerfile.contains(
-            "RUN install -d -o agent -g agent /jackin/default-home /jackin/default-home/.claude \\\n    && for dir in '.claude'; do"
+            "RUN install -d -o agent -g 0 /jackin/default-home \\\n    && rm -rf '/home/agent/.claude/backups' \\\n    && for dir in '.claude'; do"
         ),
-        "default-home snapshot should share the runtime finalization layer: {dockerfile}"
+        "default-home snapshot creates only the root, never the per-agent targets (else mv nests): {dockerfile}"
+    );
+    // The mv target parent is made at mv time so `.claude` renames onto
+    // /jackin/default-home/.claude rather than moving into a pre-created dir.
+    assert!(
+        dockerfile.contains("mkdir -p \"$(dirname \"/jackin/default-home/$dir\")\""),
+        "mv must create the target parent, not pre-create the target: {dockerfile}"
+    );
+    assert!(
+        !dockerfile.contains("/jackin/default-home/.claude /jackin/default-home/.codex"),
+        "per-agent target dirs must not be pre-created in install -d: {dockerfile}"
     );
     assert_eq!(
-        dockerfile.matches("cp -a \"/home/agent/$dir/.\"").count(),
+        dockerfile.matches("mv \"/home/agent/$dir\"").count(),
         1,
-        "default-home snapshot should use one loop, not one copy command per agent: {dockerfile}"
+        "default-home snapshot should use one mv loop, not one copy command per agent: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("install -d -o agent -g 0 -m 0775 \"/home/agent/$dir\""),
+        "live-home placeholders must be writable by runtime supplementary group 0: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("find /jackin/default-home -type d -exec chmod g+rx {} +"),
+        "default-home snapshot should normalize directory group readability before the guard: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("find /jackin/default-home -type f -exec chmod g+r {} +"),
+        "default-home snapshot should normalize file group readability before the guard: {dockerfile}"
     );
     assert!(!dockerfile.contains("chown -R agent:agent /jackin/default-home"));
     assert!(!dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
-    assert!(!dockerfile.contains("\nRUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED'"));
-    assert!(!dockerfile.contains("\nRUN install -d -o agent -g agent /jackin/run /jackin/state"));
+    // Finalization is its own RUN now (default-home snapshot was pulled out).
+    assert!(dockerfile.contains("\nRUN ( grep -q '__JACKIN_AUTO_TITLE_LOADED'"));
+    assert!(!dockerfile.contains("\nRUN install -d -o agent -g 0 /jackin/run /jackin/state"));
     assert_eq!(
         dockerfile
-            .matches("\nRUN install -d -o agent -g agent /jackin/default-home")
+            .matches("\nRUN install -d -o agent -g 0 /jackin/default-home")
             .count(),
         1
+    );
+    assert!(
+        dockerfile.contains(
+            "RUN bad=\"$(find /jackin/default-home \\( -type d ! -perm -0050 -o -type f ! -perm -0040 \\) -print -quit)\""
+        ),
+        "default-home snapshot should fail fast when a build-time installer bakes unreadable seed files: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("jackin default-home contains a non-group-readable path: $bad"),
+        "default-home guard should explain the unreadable seed path: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains(
+            "RUN install -d -o agent -g 0 -m 0775 /home/agent /home/agent/.cache /home/agent/.cache/mise /home/agent/.config /home/agent/.config/git /home/agent/.config/fish /home/agent/.config/mise /home/agent/.local /home/agent/.local/bin /home/agent/.local/share /home/agent/.local/share/mise /home/agent/.local/share/mise/installs /home/agent/.local/share/mise/plugins /home/agent/.local/share/mise/shims /home/agent/.local/state /home/agent/.local/state/mise /home/agent/.local/state/mise/tracked-configs"
+        ),
+        "runtime home mutable roots must be writable by supplementary group 0: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("chgrp -R 0 /home/agent"),
+        "the whole runtime home must be normalized to supplementary group 0: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("chmod -R g+rwX /home/agent"),
+        "the whole runtime home must be recursively group-writable: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("touch /home/agent/.gitconfig /home/agent/.config/git/config"),
+        "runtime Git config files must exist before permission repair: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("chmod 0664 /home/agent/.gitconfig /home/agent/.config/git/config"),
+        "runtime Git config files must be writable by supplementary group 0: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("for path in /home/agent/.zshrc /home/agent/.config/fish/config.fish"),
+        "runtime shell config files must be repaired after finalization: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains(
+            "jackin runtime home contains a non-group-0 or non-group-writable mutable path: $bad"
+        ),
+        "runtime mutable home dirs should be guarded after permission repair: {dockerfile}"
+    );
+    let finalization_pos = dockerfile
+        .find("cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc")
+        .expect("runtime finalization");
+    let writable_pos = dockerfile
+        .find("Runtime home mutability")
+        .expect("runtime home mutability");
+    assert!(
+        finalization_pos < writable_pos,
+        "runtime home mutability repair must run after finalization creates/appends shell files: {dockerfile}"
     );
 }
 
@@ -89,6 +169,8 @@ fn renders_derived_dockerfile_keeps_construct_agent_identity() {
         None,
         &[Agent::Claude],
         None,
+        &BTreeMap::new(),
+        None,
     );
 
     assert!(!dockerfile.contains("ARG JACKIN_HOST_UID"));
@@ -96,20 +178,11 @@ fn renders_derived_dockerfile_keeps_construct_agent_identity() {
     assert!(!dockerfile.contains("groupmod "));
     assert!(!dockerfile.contains("usermod "));
     assert!(!dockerfile.contains("chown -R agent:agent /home/agent"));
-    // Home is normalized to group 0 / group==owner perms (OpenShift
-    // arbitrary-UID pattern) so the container can run as the host UID in
-    // group 0 with no per-launch chown. Must be the final /home/agent layer.
-    assert!(dockerfile.contains(
-        "chgrp -R 0 /home/agent /jackin/default-home && chmod -R g=u /home/agent /jackin/default-home"
-    ));
-    let normalize_at = dockerfile
-        .find("chgrp -R 0 /home/agent")
-        .expect("home normalization present");
-    let last_user_agent = dockerfile.rfind("USER agent").expect("final USER agent");
-    assert!(
-        normalize_at < last_user_agent,
-        "normalization must precede the final USER agent"
-    );
+    assert!(!dockerfile.contains("chgrp -R 0 /home/agent /jackin/default-home"));
+    assert!(!dockerfile.contains("chmod -R g=u /home/agent"));
+    assert!(dockerfile.contains("COPY --link --chown=agent:0"));
+    assert!(dockerfile.contains("install -d -o agent -g 0 /jackin/default-home"));
+    assert!(dockerfile.contains("-type f ! -perm -0040"));
     assert!(dockerfile.contains("USER agent"));
 }
 
@@ -124,13 +197,15 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
         }),
         &[Agent::Claude],
         None,
+        &BTreeMap::new(),
+        None,
     );
 
     assert!(dockerfile.contains(
-        "COPY --link --chown=agent:agent --chmod=0755 hooks/setup-once.sh /jackin/runtime/hooks/setup-once.sh"
+        "COPY --link --chown=agent:0 --chmod=0755 hooks/setup-once.sh /jackin/runtime/hooks/setup-once.sh"
     ));
     assert!(dockerfile.contains(
-        "RUN install -d /jackin/runtime/hooks \\\n    && install -d -o agent -g agent /jackin/state /jackin/state/hooks"
+        "RUN install -d /jackin/runtime/hooks \\\n    && install -d -o agent -g 0 /jackin/state /jackin/state/hooks"
     ));
     assert_eq!(
         dockerfile
@@ -140,18 +215,21 @@ fn renders_derived_dockerfile_with_runtime_hooks() {
     );
     assert!(!dockerfile.contains("chown -R agent:agent /jackin/state"));
     assert!(dockerfile.contains(
-        "COPY --link --chown=agent:agent --chmod=0755 hooks/source.sh /jackin/runtime/hooks/source.sh"
+        "COPY --link --chown=agent:0 --chmod=0755 hooks/source.sh /jackin/runtime/hooks/source.sh"
     ));
     assert!(dockerfile.contains(
-        "COPY --link --chown=agent:agent --chmod=0755 hooks/preflight.sh /jackin/runtime/hooks/preflight.sh"
+        "COPY --link --chown=agent:0 --chmod=0755 hooks/preflight.sh /jackin/runtime/hooks/preflight.sh"
     ));
     assert!(!dockerfile.contains("chmod +x /jackin/runtime/hooks/"));
     assert!(!dockerfile.contains("\nRUN chmod +x /jackin/runtime/hooks/"));
     assert!(!dockerfile.contains("\nRUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED'"));
     assert!(dockerfile.contains(
-        "COPY --link --chown=agent:agent --chmod=0644 .jackin-runtime/zshenv-source-shim /jackin/runtime/zshenv-source-shim"
+        "COPY --link --chown=agent:0 --chmod=0644 .jackin-runtime/zshenv-source-shim /jackin/runtime/zshenv-source-shim"
     ));
     assert!(dockerfile.contains("cat /jackin/runtime/zshenv-source-shim >> /home/agent/.zshenv"));
+    assert!(dockerfile.contains(
+        "for path in /home/agent/.zshrc /home/agent/.zshenv /home/agent/.config/fish/config.fish"
+    ));
     // Structural shape: the four load-bearing fragments must appear
     // in order — guard test, rc capture, source call, success-only
     // export, file append. A regression that drops the guard, the rc
@@ -189,6 +267,8 @@ fn renders_derived_dockerfile_without_runtime_hooks() {
         None,
         &[Agent::Claude],
         None,
+        &BTreeMap::new(),
+        None,
     );
 
     assert!(!dockerfile.contains("setup-once.sh"));
@@ -225,6 +305,7 @@ agents = ["kimi"]
         None,
         None,
         &[Agent::Kimi],
+        &BTreeMap::new(),
     )
     .unwrap();
     let dockerignore = std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
@@ -328,12 +409,65 @@ fn renders_codex_only_dockerfile_final_user_is_agent() {
         None,
         &[Agent::Codex],
         None,
+        &BTreeMap::new(),
+        None,
     );
     let last_user = dockerfile
         .lines()
         .rfind(|l| l.starts_with("USER "))
         .unwrap();
     assert_eq!(last_user, "USER agent");
+    let cleanup_pos = dockerfile
+        .find("rm -rf '/home/agent/.codex/tmp'")
+        .expect("codex temp cleanup");
+    let snapshot_pos = dockerfile
+        .find("mv \"/home/agent/$dir\" \"/jackin/default-home/$dir\"")
+        .expect("default-home snapshot move");
+    assert!(
+        cleanup_pos < snapshot_pos,
+        "Codex scratch files must be removed before default-home snapshot: {dockerfile}"
+    );
+}
+
+#[test]
+fn default_home_snapshot_removes_agent_generated_private_files_before_move() {
+    let dockerfile = render_derived_dockerfile(
+        "FROM projectjackin/construct:0.1-trixie\n",
+        None,
+        &[Agent::Claude, Agent::Codex, Agent::Opencode],
+        None,
+        &BTreeMap::new(),
+        None,
+    );
+
+    let cleanup_pos = dockerfile.find("rm -rf").expect("cleanup command");
+    let snapshot_pos = dockerfile
+        .find("mv \"/home/agent/$dir\" \"/jackin/default-home/$dir\"")
+        .expect("default-home snapshot move");
+    let chmod_pos = dockerfile
+        .find("find /jackin/default-home -type f -exec chmod g+r {} +")
+        .expect("default-home chmod");
+    let guard_pos = dockerfile
+        .find("jackin default-home contains a non-group-readable path")
+        .expect("default-home guard");
+    for path in [
+        "'/home/agent/.claude/backups'",
+        "'/home/agent/.codex/tmp'",
+        "'/home/agent/.config/opencode/opencode.json'",
+    ] {
+        assert!(
+            dockerfile.contains(path),
+            "missing generated private-file cleanup for {path}: {dockerfile}"
+        );
+    }
+    assert!(
+        cleanup_pos < snapshot_pos,
+        "generated private files must be removed before default-home snapshot: {dockerfile}"
+    );
+    assert!(
+        snapshot_pos < chmod_pos && chmod_pos < guard_pos,
+        "remaining durable seed files must be normalized before the guard: {dockerfile}"
+    );
 }
 
 #[test]
@@ -343,12 +477,14 @@ fn renders_dockerfile_targets_agent_user_not_claude() {
         None,
         &[Agent::Claude],
         None,
+        &BTreeMap::new(),
+        None,
     );
 
     assert!(dockerfile.contains("/home/agent"));
     assert!(!dockerfile.contains("groupmod "));
     assert!(!dockerfile.contains("usermod "));
-    assert!(dockerfile.contains("install -d -o agent -g agent /jackin/run /jackin/state"));
+    assert!(dockerfile.contains("install -d -o agent -g 0 /jackin/run /jackin/state"));
     assert!(!dockerfile.contains("chown agent:agent /jackin/run /jackin/state"));
     assert!(!dockerfile.contains("chown -R agent:agent /jackin/state"));
     assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/jackin-capsule\"]"));
@@ -360,6 +496,8 @@ fn renders_dockerfile_does_not_set_jackin_agent_env() {
         "FROM projectjackin/construct:0.1-trixie\n",
         None,
         &[Agent::Claude, Agent::Codex],
+        None,
+        &BTreeMap::new(),
         None,
     );
 
@@ -497,21 +635,24 @@ fn derived_image_snapshots_agent_home_defaults() {
             Agent::Grok,
         ],
         None,
+        &BTreeMap::new(),
+        None,
     );
 
-    assert!(dockerfile.contains("/jackin/default-home/.claude"));
-    assert!(dockerfile.contains("/jackin/default-home/.codex"));
-    assert!(dockerfile.contains("/jackin/default-home/.local/share/amp"));
-    assert!(dockerfile.contains("/jackin/default-home/.kimi-code"));
-    assert!(dockerfile.contains("/jackin/default-home/.local/share/opencode"));
-    assert!(dockerfile.contains("/jackin/default-home/.grok"));
+    // The snapshot roots (data + paired config) are the `for dir in …` list,
+    // sorted, moved by one templated mv. Targets are NOT pre-created (so the mv
+    // renames onto them instead of nesting `.claude/.claude`).
     assert!(dockerfile.contains(
-        "for dir in '.claude' '.codex' '.grok' '.kimi-code' '.local/share/amp' '.local/share/opencode'; do"
+        "for dir in '.claude' '.codex' '.config/amp' '.config/opencode' '.grok' '.kimi-code' '.local/share/amp' '.local/share/opencode'; do"
     ));
+    assert!(
+        !dockerfile.contains("/jackin/default-home/.claude /jackin/default-home/.codex"),
+        "per-agent targets must not be pre-created in install -d: {dockerfile}"
+    );
     assert_eq!(
-        dockerfile.matches("cp -a \"/home/agent/$dir/.\"").count(),
+        dockerfile.matches("mv \"/home/agent/$dir\"").count(),
         1,
-        "default-home snapshot should not emit one copy command per agent: {dockerfile}"
+        "default-home snapshot should not emit one mv command per agent: {dockerfile}"
     );
 }
 
@@ -522,21 +663,77 @@ fn derived_image_snapshots_only_selected_agent_home_defaults() {
         None,
         &[Agent::Claude],
         None,
+        &BTreeMap::new(),
+        None,
     );
 
-    assert!(dockerfile.contains("/jackin/default-home/.claude"));
-    for path in [
-        "/jackin/default-home/.codex",
-        "/jackin/default-home/.local/share/amp",
-        "/jackin/default-home/.kimi-code",
-        "/jackin/default-home/.local/share/opencode",
-        "/jackin/default-home/.grok",
-    ] {
+    // Only Claude's root is in the snapshot loop; sibling roots are absent.
+    assert!(dockerfile.contains("for dir in '.claude'; do"));
+    for name in ["'.codex'", "'.local/share/amp'", "'.kimi-code'", "'.grok'"] {
         assert!(
-            !dockerfile.contains(path),
-            "selected Claude image should not snapshot sibling home {path}: {dockerfile}"
+            !dockerfile.contains(name),
+            "selected Claude image should not snapshot sibling home {name}: {dockerfile}"
         );
     }
+}
+
+#[test]
+fn claude_plugins_render_one_readable_run_layer() {
+    let claude = ClaudeConfig {
+        model: None,
+        marketplaces: vec![jackin_core::manifest::ClaudeMarketplaceConfig {
+            source: "myorg/marketplace".to_owned(),
+            sparse: vec!["pkg/a".to_owned()],
+        }],
+        plugins: vec!["caveman".to_owned(), "rtk".to_owned()],
+        providers: BTreeMap::new(),
+    };
+    let dockerfile = render_derived_dockerfile(
+        "FROM projectjackin/construct:0.1-trixie\n",
+        None,
+        &[Agent::Claude],
+        None,
+        &BTreeMap::new(),
+        Some(&claude),
+    );
+
+    assert_eq!(
+        dockerfile
+            .matches("RUN set -eu; \\\n    (claude plugin marketplace add anthropics/claude-plugins-official || true)")
+            .count(),
+        1,
+        "Claude plugin installs should share one RUN layer: {dockerfile}"
+    );
+    assert_eq!(
+        dockerfile.matches("claude plugin install ").count(),
+        2,
+        "each plugin command remains visible: {dockerfile}"
+    );
+    assert!(dockerfile.contains("    claude plugin install 'caveman'"));
+    assert!(dockerfile.contains("    claude plugin install 'rtk'"));
+    // Official + configured marketplace are readable, with --sparse passed.
+    assert!(
+        dockerfile
+            .contains("(claude plugin marketplace add anthropics/claude-plugins-official || true)")
+    );
+    assert!(
+        dockerfile
+            .contains("    claude plugin marketplace add 'myorg/marketplace' --sparse 'pkg/a'")
+    );
+    assert!(
+        !dockerfile.contains(" && claude plugin"),
+        "plugin steps must stay as readable continued commands, not && chains: {dockerfile}"
+    );
+    let install_pos = dockerfile
+        .find("    claude plugin install 'rtk'")
+        .expect("plugin install");
+    let cleanup_pos = dockerfile
+        .find("    rm -rf /home/agent/.claude/backups")
+        .expect("claude backup cleanup");
+    assert!(
+        install_pos < cleanup_pos,
+        "Claude plugin rollback backups are transient installer artifacts and must be removed before default-home snapshot: {dockerfile}"
+    );
 }
 
 #[test]
@@ -603,9 +800,22 @@ fn entrypoint_run_hook_helper_captures_rc_before_failure() {
     // silently makes failure exit 0) is caught.
     let helper = extract_block(ENTRYPOINT_SH, "run_hook() {", "\n}\n");
     assert!(helper.contains("local rc=0"));
+    assert!(helper.contains("( cd \"$hook_cwd\" && \"$path\" ) || rc=$?"));
     assert!(helper.contains("\"$path\" || rc=$?"));
     assert!(helper.contains("if [ \"$rc\" -ne 0 ]"));
     assert!(helper.contains("exit \"$rc\""));
+}
+
+#[test]
+fn entrypoint_runs_preflight_from_agent_home() {
+    let preflight = extract_block(
+        ENTRYPOINT_SH,
+        "if [ -x /jackin/runtime/hooks/preflight.sh ]; then",
+        "\nfi\n",
+    );
+    assert!(
+        preflight.contains("run_hook preflight /jackin/runtime/hooks/preflight.sh \"\" \"$HOME\"")
+    );
 }
 
 #[test]
@@ -654,10 +864,12 @@ fn renders_derived_dockerfile_with_only_source_hook() {
         }),
         &[Agent::Claude],
         None,
+        &BTreeMap::new(),
+        None,
     );
 
     assert!(dockerfile.contains(
-        "RUN install -d /jackin/runtime/hooks \\\n    && install -d -o agent -g agent /jackin/state /jackin/state/hooks"
+        "RUN install -d /jackin/runtime/hooks \\\n    && install -d -o agent -g 0 /jackin/state /jackin/state/hooks"
     ));
     assert_eq!(
         dockerfile
@@ -667,7 +879,7 @@ fn renders_derived_dockerfile_with_only_source_hook() {
     );
     assert!(!dockerfile.contains("chown -R agent:agent /jackin/state"));
     assert!(dockerfile.contains(
-        "COPY --link --chown=agent:agent --chmod=0755 hooks/source.sh /jackin/runtime/hooks/source.sh"
+        "COPY --link --chown=agent:0 --chmod=0755 hooks/source.sh /jackin/runtime/hooks/source.sh"
     ));
     assert!(dockerfile.contains(">> /home/agent/.zshenv"));
     assert!(ZSHENV_SOURCE_SHIM.contains("source /jackin/runtime/hooks/source.sh"));
@@ -675,7 +887,7 @@ fn renders_derived_dockerfile_with_only_source_hook() {
     assert!(!dockerfile.contains("preflight.sh"));
     assert_eq!(
         dockerfile
-            .matches("COPY --link --chown=agent:agent --chmod=0755 hooks/")
+            .matches("COPY --link --chown=agent:0 --chmod=0755 hooks/")
             .count(),
         1
     );
@@ -691,6 +903,8 @@ fn source_hook_zshenv_shim_is_not_rendered_for_non_source_hooks() {
             preflight: Some("hooks/preflight.sh".to_owned()),
         }),
         &[Agent::Claude],
+        None,
+        &BTreeMap::new(),
         None,
     );
 
@@ -833,6 +1047,46 @@ plugins = []
     assert!(dockerignore.contains("!.jackin-runtime/"));
     assert!(dockerignore.contains("!.jackin-runtime/entrypoint.sh"));
     assert!(dockerignore.contains("!.jackin-runtime/DerivedDockerfile"));
+}
+
+#[test]
+fn stages_agent_status_reporter_assets_into_the_image() {
+    let repo = tempdir().unwrap();
+    std::fs::write(
+        repo.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.path().join("jackin.role.toml"),
+        "version = \"v1alpha3\"\ndockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+    )
+    .unwrap();
+
+    let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
+    let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
+
+    assert!(
+        build
+            .context_dir
+            .join(".jackin-runtime/agent-status/hooks/claude/report-hook.sh")
+            .is_file()
+    );
+    assert!(
+        build
+            .context_dir
+            .join(".jackin-runtime/agent-status/packs/kimi.toml")
+            .is_file()
+    );
+    let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
+    assert!(
+        dockerfile.contains(
+            "COPY --link --chmod=0755 .jackin-runtime/agent-status /jackin/runtime/agent-status"
+        ),
+        "derived Dockerfile must COPY the agent-status assets"
+    );
+    let dockerignore = std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
+    assert!(dockerignore.contains("!.jackin-runtime/agent-status/"));
 }
 
 #[test]

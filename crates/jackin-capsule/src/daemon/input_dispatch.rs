@@ -1,11 +1,12 @@
 //! Input dispatch methods for the Multiplexer.
 
-use crate::tui::components::branch_context_bar::branch_context_bar_hit;
+use crate::tui::components::branch_context_bar::{branch_context_bar_hit, debug_run_id_label};
 use crate::tui::input::TAB_DOUBLE_CLICK_WINDOW;
 use crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION;
 use crate::tui::update::action_frame_plan;
 use crate::tui::update::prefix_full_redraw_reason;
 use crate::tui::view::encode_osc52_clipboard_write;
+use jackin_protocol::attach::ServerFrame;
 
 use super::{
     Action, ConfirmedActionRoute, Dialog, DialogAction, FullRedrawReason, InputDispatchContext,
@@ -27,6 +28,22 @@ impl Multiplexer {
         if let Some(plan) = action_frame_plan(action) {
             self.invalidate(plan.reason());
         }
+    }
+
+    pub(super) fn open_host_url_from_dialog(&mut self, url: String, opening_allowed: bool) {
+        if !opening_allowed {
+            self.set_clipboard_image_notice(
+                "Host link opening disabled by JACKIN_OPEN_LINKS".to_owned(),
+            );
+            return;
+        }
+        if !jackin_core::url_text::is_host_open_url(&url) {
+            self.set_clipboard_image_notice(
+                "Host link rejected: unsupported URL scheme".to_owned(),
+            );
+            return;
+        }
+        self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
     }
 
     /// Single dispatch point for a `DialogAction`. Both the
@@ -58,6 +75,33 @@ impl Multiplexer {
                 self.dialog_pop_one();
             }
             DialogAction::Redraw | DialogAction::Consume => {}
+            DialogAction::ExitDirty(row) => {
+                use crate::tui::components::dialog::ExitDirtyRow;
+                match row {
+                    // Open the verbatim New-tab agent picker over the exit modal.
+                    // Picking an agent spawns a session and clears the dialog
+                    // stack (SpawnAgent → dialog_clear), dismissing the modal.
+                    ExitDirtyRow::StartNewAgent => {
+                        self.apply_action(Action::OpenAgentPicker(PickerIntent::NewTab));
+                        return;
+                    }
+                    // Push the read-only changed-files list (built when the modal
+                    // was opened); Esc walks back to the exit modal.
+                    ExitDirtyRow::Inspect => {
+                        self.dialog_push(Dialog::new_exit_inspect(self.exit_dirty_inspect.clone()));
+                        self.invalidate(FullRedrawReason::DialogChange);
+                        return;
+                    }
+                    // Record the operator's choice; the event loop writes the
+                    // exit-action file and drains on the next iteration.
+                    ExitDirtyRow::Keep => {
+                        self.exit_request = Some(jackin_protocol::ExitAction::Keep);
+                    }
+                    ExitDirtyRow::Discard => {
+                        self.exit_request = Some(jackin_protocol::ExitAction::Discard);
+                    }
+                }
+            }
             DialogAction::Command(cmd) => {
                 // `handle_palette_command` decides per-arm whether
                 // the command opens a sub-dialog (push) or finishes
@@ -143,6 +187,30 @@ impl Multiplexer {
                 self.dialog_copy_feedback_deadline =
                     Some(Instant::now() + DIALOG_COPY_FEEDBACK_DURATION);
             }
+            DialogAction::OpenHostUrl(url) => {
+                self.open_host_url_from_dialog(url, super::mouse_input::host_url_opening_allowed());
+            }
+            DialogAction::RevealHostPath(path) => {
+                self.send_protocol_frame(ServerFrame::HostRevealPath(path));
+            }
+            DialogAction::ExportFile {
+                path,
+                reveal_after_export,
+                open_after_export,
+            } => {
+                self.dialog_clear();
+                self.export_file_to_host(path, reveal_after_export, open_after_export);
+            }
+            DialogAction::RefreshUsage => {
+                self.request_usage_refresh_for_provider(None);
+            }
+            DialogAction::SwitchUsageProvider { provider_label } => {
+                let view = self.focused_usage_snapshot_for_provider(Some(&provider_label));
+                if let Some(dialog) = self.dialog_top_mut() {
+                    *dialog = Dialog::new_usage(view);
+                }
+                self.request_usage_refresh_for_provider(Some(&provider_label));
+            }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
                 // push it on top of the SplitDirectionPicker so Esc
@@ -173,6 +241,64 @@ impl Multiplexer {
             }
         }
         self.invalidate(frame_plan.reason());
+        // Diagnostic: surface the dirty-exit modal's live selection index after
+        // every dialog action so a "selection stuck" report can be confirmed or
+        // ruled out from telemetry alone (does the index advance on arrows?).
+        if let Some(Dialog::ExitDirty { selected, .. }) = self.dialog_top() {
+            crate::clog!("exit-dirty: selected={selected}");
+        }
+    }
+
+    pub(super) fn send_bytes_to_focused_pane(&mut self, bytes: &[u8]) -> bool {
+        // Any operator keystroke dismisses the spawn-failure banner.
+        if self.spawn_failure.take().is_some() {
+            self.invalidate(FullRedrawReason::StatusChange);
+        }
+        if self.clear_clipboard_image_notice() {
+            self.invalidate(FullRedrawReason::StatusChange);
+        }
+        let cleared_selection = self.selection.is_some() || self.selection_copied;
+        self.pending_selection = None;
+        if cleared_selection {
+            self.selection = None;
+            self.selection_copied = false;
+            self.selection_copy_feedback_deadline = None;
+        }
+        let mut snapped = false;
+        let mut unblocked = false;
+        let mut delivered = false;
+        if let Some(focused) = self.active_focused_id()
+            && let Some(session) = self.sessions.get_mut(&focused)
+        {
+            if session.scrollback_offset() != 0 {
+                session.scroll_to_live();
+                snapped = true;
+            }
+            unblocked = session.mark_operator_input();
+            delivered = session.send_input(bytes);
+        }
+        if cleared_selection {
+            self.invalidate(selection_change_redraw_reason());
+        } else if let Some(reason) = pane_data_redraw_reason(snapped, unblocked) {
+            self.invalidate(reason);
+        }
+        delivered
+    }
+
+    pub(super) fn paste_text_to_focused_pane(&mut self, text: &[u8]) -> bool {
+        let mut paste = Vec::new();
+        let bracketed = self
+            .active_focused_id()
+            .and_then(|focused| self.sessions.get(&focused))
+            .is_some_and(crate::session::Session::bracketed_paste);
+        if bracketed {
+            paste.extend_from_slice(b"\x1b[200~");
+        }
+        paste.extend_from_slice(text);
+        if bracketed {
+            paste.extend_from_slice(b"\x1b[201~");
+        }
+        self.send_bytes_to_focused_pane(&paste)
     }
 
     pub(super) fn apply_action(&mut self, action: Action) {
@@ -201,6 +327,12 @@ impl Multiplexer {
             Action::OpenGithubContext => {
                 self.open_github_context_dialog(Instant::now());
                 self.invalidate_for(&Action::OpenGithubContext);
+            }
+            Action::OpenUsage => {
+                let view = self.focused_usage_snapshot();
+                self.dialog_push(Dialog::new_usage(view));
+                self.request_usage_refresh_for_provider(None);
+                self.invalidate_for(&Action::OpenUsage);
             }
             Action::OpenRenameTab(idx) => {
                 if idx >= self.tabs.len() {
@@ -272,6 +404,10 @@ impl Multiplexer {
                 self.detach_requested = true;
                 self.invalidate_for(&Action::Detach);
             }
+            Action::RefreshUsage => {
+                self.request_usage_refresh_for_provider(None);
+                self.invalidate_for(&Action::RefreshUsage);
+            }
             Action::Palette(cmd) => self.handle_palette_command(cmd),
             Action::Prefix(cmd) => {
                 if !self.dialog_captures_input() {
@@ -301,7 +437,7 @@ impl Multiplexer {
                 }
             }
             Action::MouseChromeUpdate { row, col, button } => {
-                self.update_hover_for_mouse(row, col);
+                self.update_hover_for_mouse(row, col, button);
                 self.update_pointer_shape_for_mouse(row, col, button);
             }
             Action::Wheel { row, col, button } => {
@@ -424,6 +560,16 @@ impl Multiplexer {
                     self.invalidate(reason);
                 }
             }
+            Action::OpenVisibleUrlAt { row, col, button } => {
+                if !self.open_visible_url_at(row, col) && !self.export_visible_file_at(row, col) {
+                    self.apply_action(Action::ForwardMouse {
+                        row,
+                        col,
+                        button,
+                        press: true,
+                    });
+                }
+            }
             Action::PanePrimaryPress { row, col } => {
                 if self.selection.is_some() || self.selection_copied {
                     self.selection = None;
@@ -511,18 +657,24 @@ impl Multiplexer {
                 };
                 if matches!(action, Action::SwitchTab(_)) {
                     self.last_tab_click = tab.map(|idx| (idx, now));
+                    // P5: clicking a tab moves focus onto the tab bar (green
+                    // underline + Left/Right nav until the agent is re-focused).
+                    self.set_tab_bar_focused(true);
                 }
                 self.apply_action(action);
             }
             Action::BranchContextBarClick { row, col } => {
+                let usage_status_label = self.focused_usage_snapshot().status_bar_label;
                 let hit = branch_context_bar_hit(
                     row + 1,
                     col + 1,
                     self.term_rows,
                     self.term_cols,
                     self.context_bar_branch(),
+                    Some(&usage_status_label),
                     self.pull_request_context.as_deref(),
                     self.pull_request_context_loading(),
+                    debug_run_id_label().as_deref(),
                     self.status_bar.instance_id_label(),
                 );
                 let Some(action) = branch_context_bar_click_action(hit) else {
@@ -553,34 +705,7 @@ impl Multiplexer {
                 self.apply_action(action);
             }
             Action::PaneData(bytes) => {
-                // Any operator keystroke dismisses the spawn-failure banner.
-                if self.spawn_failure.take().is_some() {
-                    self.invalidate(FullRedrawReason::StatusChange);
-                }
-                let cleared_selection = self.selection.is_some() || self.selection_copied;
-                self.pending_selection = None;
-                if cleared_selection {
-                    self.selection = None;
-                    self.selection_copied = false;
-                    self.selection_copy_feedback_deadline = None;
-                }
-                let mut snapped = false;
-                let mut unblocked = false;
-                if let Some(focused) = self.active_focused_id()
-                    && let Some(session) = self.sessions.get_mut(&focused)
-                {
-                    if session.scrollback_offset() != 0 {
-                        session.scroll_to_live();
-                        snapped = true;
-                    }
-                    unblocked = session.mark_operator_input();
-                    session.send_input(&bytes);
-                }
-                if cleared_selection {
-                    self.invalidate(selection_change_redraw_reason());
-                } else if let Some(reason) = pane_data_redraw_reason(snapped, unblocked) {
-                    self.invalidate(reason);
-                }
+                self.send_bytes_to_focused_pane(&bytes);
             }
             Action::StartDragResize { row, col } => {
                 self.drag = self.detect_drag_start(row, col);
@@ -627,11 +752,42 @@ impl Multiplexer {
     /// Handle a parsed input event from the client terminal. Handlers only
     /// mutate state and record an invalidation; the render loop composes the
     /// next frame when the generation moved.
+    /// P5: move focus onto/off the agent-tab bar, redrawing the status bar so
+    /// the active-tab underline switches between phosphor-green (focused) and
+    /// neutral white (agent content focused).
+    pub(super) fn set_tab_bar_focused(&mut self, focused: bool) {
+        if self.tab_bar_focused != focused {
+            self.tab_bar_focused = focused;
+            self.invalidate(FullRedrawReason::StatusChange);
+        }
+    }
+
     pub(super) fn handle_input(&mut self, event: InputEvent) {
         if let Some(action) = mouse_chrome_update_action(&event) {
             self.apply_action(action);
         }
         if let InputEvent::Data(bytes) = event {
+            // P5: while the agent-tab bar holds focus, it captures the arrow
+            // keys (Left/Right switch tabs; Down/Esc return focus to the agent).
+            // Any other key also returns focus to the agent and is forwarded as
+            // normal input, so the operator is never trapped in the bar.
+            if self.tab_bar_focused {
+                match tab_bar_focus_key(&bytes) {
+                    Some(TabBarFocusKey::Prev) => {
+                        self.apply_action(Action::PreviousTab);
+                        return;
+                    }
+                    Some(TabBarFocusKey::Next) => {
+                        self.apply_action(Action::NextTab);
+                        return;
+                    }
+                    Some(TabBarFocusKey::Exit) => {
+                        self.set_tab_bar_focused(false);
+                        return;
+                    }
+                    None => self.set_tab_bar_focused(false),
+                }
+            }
             if let Some(action) =
                 self.dispatch_to_dialog_top(|dialog, github| dialog.handle_key(&bytes, github))
             {
@@ -645,6 +801,7 @@ impl Multiplexer {
                 self.apply_action(Action::PaneData(bytes));
             }
         } else {
+            let usage_status_label = self.focused_usage_status_label();
             let branch_context_hit = match &event {
                 InputEvent::MousePress {
                     row,
@@ -656,8 +813,10 @@ impl Multiplexer {
                     self.term_rows,
                     self.term_cols,
                     self.context_bar_branch(),
+                    usage_status_label.as_deref(),
                     self.pull_request_context.as_deref(),
                     self.pull_request_context_loading(),
+                    debug_run_id_label().as_deref(),
                     self.status_bar.instance_id_label(),
                 )
                 .is_some(),
@@ -737,11 +896,102 @@ impl Multiplexer {
                 self.dialog_clear();
                 self.toggle_zoom();
             }
+            PaletteCommandRoute::OpenExportFileDialog {
+                reveal_after_export,
+                open_after_export,
+            } => {
+                let dialog = if open_after_export {
+                    Dialog::new_export_file_and_open()
+                } else if reveal_after_export {
+                    Dialog::new_export_file_and_reveal()
+                } else {
+                    Dialog::new_export_file()
+                };
+                self.dialog_push(dialog);
+            }
+            PaletteCommandRoute::ExportFileUnderCursor {
+                reveal_after_export,
+                open_after_export,
+            } => {
+                self.dialog_clear();
+                if !self.export_file_under_cursor_to_host(reveal_after_export, open_after_export) {
+                    self.set_clipboard_image_notice(
+                        "No exportable file path under focused cursor".to_owned(),
+                    );
+                }
+            }
+            PaletteCommandRoute::ExportSelectedFile {
+                reveal_after_export,
+                open_after_export,
+            } => {
+                self.dialog_clear();
+                if !self.export_selected_file_to_host(reveal_after_export, open_after_export) {
+                    self.set_clipboard_image_notice("No selected file path to export".to_owned());
+                }
+            }
+            PaletteCommandRoute::StageImageFromClipboardPath => {
+                self.dialog_clear();
+                self.set_clipboard_image_notice(
+                    "Image stage requested from host clipboard path".to_owned(),
+                );
+                self.request_clipboard_image_from_text_path();
+            }
+            PaletteCommandRoute::PasteImageFromClipboard => {
+                self.dialog_clear();
+                self.set_clipboard_image_notice(
+                    "Image paste requested from host clipboard".to_owned(),
+                );
+                self.request_clipboard_image_paste();
+            }
+            PaletteCommandRoute::StageImageFromClipboard => {
+                self.dialog_clear();
+                self.set_clipboard_image_notice(
+                    "Image stage requested from host clipboard".to_owned(),
+                );
+                self.request_clipboard_image_stage_only();
+            }
+            PaletteCommandRoute::OpenLinkUnderCursor => {
+                self.dialog_clear();
+                if !super::mouse_input::host_url_opening_allowed() {
+                    self.set_clipboard_image_notice(
+                        "Host link opening disabled by JACKIN_OPEN_LINKS".to_owned(),
+                    );
+                } else if !self.open_visible_url_under_cursor() {
+                    self.set_clipboard_image_notice(
+                        "No host-open link under focused cursor".to_owned(),
+                    );
+                }
+            }
             PaletteCommandRoute::ClearPane => {
                 self.dialog_clear();
                 self.clear_focused_pane();
             }
+            PaletteCommandRoute::OpenUsage => {
+                let view = self.focused_usage_snapshot();
+                self.dialog_push(Dialog::new_usage(view));
+                self.request_usage_refresh_for_provider(None);
+            }
         }
         self.invalidate(palette_route_frame_plan(route).reason());
+    }
+}
+
+/// P5: keys the agent-tab-bar focus mode captures, as raw terminal byte
+/// sequences. `Prev`/`Next` are Left/Right (switch tabs); `Exit` is Down or Esc
+/// (return focus to the agent). Any other key returns `None` — it ends tab-bar
+/// focus and is forwarded to the agent as normal input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TabBarFocusKey {
+    Prev,
+    Next,
+    Exit,
+}
+
+pub(super) fn tab_bar_focus_key(bytes: &[u8]) -> Option<TabBarFocusKey> {
+    match bytes {
+        b"\x1b[D" | b"\x1bOD" => Some(TabBarFocusKey::Prev), // Left
+        b"\x1b[C" | b"\x1bOC" => Some(TabBarFocusKey::Next), // Right
+        b"\x1b[B" | b"\x1bOB" | b"\x1b" => Some(TabBarFocusKey::Exit), // Down / Esc
+        _ => None,
     }
 }

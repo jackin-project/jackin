@@ -65,6 +65,14 @@ fn launch_container_info_keeps_run_id_bare_and_log_path_separate() {
         log_row.href(),
         Some("file:///Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl")
     );
+    let reveal_row = rows
+        .iter()
+        .find(|row| row.value().ends_with("jk-run-b93735.jsonl") && !row.is_copyable())
+        .expect("diagnostics reveal row present");
+    assert_eq!(
+        reveal_row.href(),
+        Some("file:///Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl")
+    );
 }
 
 #[test]
@@ -136,7 +144,7 @@ fn launch_debug_info_keeps_status_footer_visible() {
         true,
         "0.6.0-test",
     );
-    let rect = launch_container_info_rect(area, &state);
+    let rect = launch_container_info_rect(area, &state, true);
     let below_dialog_y = rect.y.saturating_add(rect.height);
     if below_dialog_y < area.height.saturating_sub(3) {
         let below_dialog = row_text(terminal.backend().buffer(), below_dialog_y, area.width);
@@ -145,4 +153,38 @@ fn launch_debug_info_keeps_status_footer_visible() {
             "Debug info hint must not float below the dialog: {below_dialog:?}"
         );
     }
+}
+
+#[test]
+fn launch_debug_info_hides_status_footer_when_debug_disabled() {
+    let area = Rect::new(0, 0, 90, 18);
+    let mut view = view_with_identity();
+    view.container_info_open = true;
+    let backend = TestBackend::new(area.width, area.height);
+    let mut terminal = Terminal::new(backend).expect("test backend should initialize");
+
+    terminal
+        .draw(|frame| {
+            render_launch_frame(
+                frame,
+                &view,
+                "jk-run-c46709",
+                "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-c46709.jsonl",
+                true,
+                None,
+                false,
+                "0.6.0-test",
+            );
+        })
+        .expect("render should succeed");
+
+    let bottom = row_text(terminal.backend().buffer(), area.height - 1, area.width);
+    assert!(
+        bottom.contains("copy value") && bottom.contains("Esc"),
+        "Debug info hint should use the bottom row in non-debug: {bottom:?}"
+    );
+    assert!(
+        !bottom.contains("jk-run-c46709") && !bottom.contains("2y0t4aw6"),
+        "non-debug Debug info must not keep the status footer visible: {bottom:?}"
+    );
 }

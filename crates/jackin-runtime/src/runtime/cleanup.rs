@@ -11,11 +11,12 @@
     reason = "runtime cleanup and GC report operator-visible warnings and results"
 )]
 
-use crate::instance::{InstanceIndex, InstanceStatus};
+use crate::instance::{DockerResources, InstanceIndex, InstanceManifest, InstanceStatus};
+use fs2::FileExt;
 use jackin_core::CommandRunner;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
-use jackin_docker::docker_client::{DockerApi, RemoveImageOutcome};
+use jackin_docker::docker_client::{ContainerState, DockerApi, RemoveImageOutcome};
 use jackin_tui::prune_output;
 use owo_colors::OwoColorize;
 
@@ -103,6 +104,20 @@ async fn purge_container_filesystem(
     // launch with the same container basename would bind-mount the old
     // contents before the host's mkdir + write overwrites them.
     remove_socket_dir(paths, container_name);
+    // Reap the name-claim lock file (D9). The flock is released when the
+    // File handle drops at session end; the file itself must be removed
+    // explicitly so it does not accumulate across launch/purge cycles.
+    let lock_path = paths.data_dir.join(format!("{container_name}.lock"));
+    match std::fs::remove_file(&lock_path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            eprintln!(
+                "jackin: warning: failed to remove name-claim lock {}: {error}",
+                lock_path.display()
+            );
+        }
+    }
     Ok(())
 }
 
@@ -114,20 +129,16 @@ pub async fn eject_role(
     let resources = docker_resources_for_state(paths, container_name);
 
     // Remove containers first so the network has no active endpoints.
-    let (r1, r2) = tokio::join!(
-        docker.remove_container(container_name),
-        docker.remove_container(&resources.dind_container),
-    );
-    r1?;
-    r2?;
+    docker.remove_container(container_name).await?;
+    if let Some(dind_container) = resources.dind_container.as_deref() {
+        docker.remove_container(dind_container).await?;
+    }
 
     // Volume and network are independent of each other once containers are gone.
-    let (r3, r4) = tokio::join!(
-        docker.remove_volume(&resources.certs_volume),
-        docker.remove_network(&resources.network),
-    );
-    r3?;
-    r4?;
+    if let Some(certs_volume) = resources.certs_volume.as_deref() {
+        docker.remove_volume(certs_volume).await?;
+    }
+    docker.remove_network(&resources.network).await?;
 
     // Best-effort host-side socket dir cleanup. Same reason as
     // purge_container_filesystem above: the daemon socket and the
@@ -140,18 +151,23 @@ pub async fn eject_role(
     Ok(())
 }
 
-fn docker_resources_for_state(
-    paths: &JackinPaths,
-    container_name: &str,
-) -> crate::instance::DockerResources {
+fn docker_resources_for_state(paths: &JackinPaths, container_name: &str) -> DockerResources {
     let state_dir = paths.data_dir.join(container_name);
-    crate::instance::InstanceManifest::read_optional(&state_dir)
-        .ok()
-        .flatten()
-        .map_or_else(
-            || crate::instance::DockerResources::from_container_name(container_name),
-            |manifest| manifest.docker,
-        )
+    let manifest = InstanceManifest::read_optional(&state_dir).unwrap_or_else(|err| {
+        // A corrupt manifest falls back to name-derived resources, which can miss
+        // a renamed volume/network and silently leak it. Always-on (not the
+        // debug firehose) because the outcome is an operator-actionable resource
+        // leak, matching the degraded-path warns in runtime/image.rs.
+        tracing::warn!(
+            "reading manifest for {container_name} failed ({err}); deriving docker \
+             resources from the container name (a renamed volume/network may leak)"
+        );
+        None
+    });
+    manifest.map_or_else(
+        || DockerResources::from_container_name(container_name),
+        |manifest| manifest.docker,
+    )
 }
 
 /// Remove the host-side bind-mount directory used to expose the daemon
@@ -523,6 +539,42 @@ pub async fn prune_instances(
             format!("could not read instance index: {error}")
         })?;
 
+    // D9: reconcile stale Active rows whose Docker container is gone.
+    // A crash mid-session can leave an instance in Active status with no
+    // running container. Detect these and transition them to Crashed so they
+    // appear as restore candidates on the next launch.
+    let stale_active: Vec<String> = index
+        .instances
+        .iter()
+        .filter(|e| e.status == InstanceStatus::Active)
+        .map(|e| e.container_base.clone())
+        .collect();
+    for container_base in stale_active {
+        if matches!(
+            docker.inspect_container_state(&container_base).await,
+            ContainerState::NotFound
+        ) {
+            let state_dir = paths.data_dir.join(&container_base);
+            if let Some(mut manifest) =
+                InstanceManifest::read_or_log(&state_dir, "prune reconcile stale-active")
+            {
+                manifest.mark_status(InstanceStatus::Crashed);
+                if let Err(err) = manifest.write(&state_dir) {
+                    eprintln!(
+                        "{} could not update manifest for stale active instance {container_base}: {err}",
+                        "warning:".yellow().bold()
+                    );
+                } else if let Err(err) = InstanceIndex::update_manifest(&paths.data_dir, &manifest)
+                {
+                    eprintln!(
+                        "{} could not update index for stale active instance {container_base}: {err}",
+                        "warning:".yellow().bold()
+                    );
+                }
+            }
+        }
+    }
+
     let prunable = [
         InstanceStatus::CleanExited,
         InstanceStatus::Superseded,
@@ -536,11 +588,6 @@ pub async fn prune_instances(
         .filter(|e| prunable.contains(&e.status))
         .map(|e| e.container_base.clone())
         .collect();
-
-    if candidates.is_empty() {
-        prune_output::ok("no instances to prune");
-        return Ok(());
-    }
 
     let mut removed: Vec<String> = Vec::new();
     let mut skipped: Vec<(String, anyhow::Error)> = Vec::new();
@@ -579,6 +626,8 @@ pub async fn prune_instances(
                 removed.len()
             ));
         }
+    } else if skipped.is_empty() {
+        prune_output::ok("no instances to prune");
     }
 
     if !skipped.is_empty() {
@@ -594,7 +643,58 @@ pub async fn prune_instances(
         );
     }
 
+    // D9: reap orphaned name-claim lock files. Any `<data_dir>/<name>.lock`
+    // that is not currently held by a live process (flock acquirable) and has
+    // no Active index entry is a leftover that `purge_container_filesystem`
+    // should have removed but did not (e.g. the process crashed mid-purge).
+    reap_orphaned_name_locks(paths);
+
     Ok(())
+}
+
+/// Remove stale `<data_dir>/<name>.lock` files left behind by crashed or
+/// interrupted launches (D9). Tries a non-blocking exclusive lock; if the
+/// lock can be acquired the file is unlocked → orphaned → safe to remove.
+/// Files held by a live process are left untouched.
+fn reap_orphaned_name_locks(paths: &JackinPaths) {
+    let Ok(entries) = std::fs::read_dir(&paths.data_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let Some(base) = name.strip_suffix(".lock") else {
+            continue;
+        };
+        // Check whether a live process holds the lock.
+        let lock_path = paths.data_dir.join(name.as_ref());
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "lock-holder check requires opening the file to call try_lock_exclusive"
+        )]
+        let Ok(file) = std::fs::File::open(&lock_path) else {
+            continue;
+        };
+        if file.try_lock_exclusive().is_ok() {
+            // Lock acquired → no live holder → orphaned.
+            drop(file); // Release before removing
+            match std::fs::remove_file(&lock_path) {
+                Ok(()) => {
+                    jackin_diagnostics::debug_log!(
+                        "runtime",
+                        "reap_orphaned_name_locks: removed orphaned lock for {base}",
+                    );
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    eprintln!(
+                        "jackin: warning: could not remove orphaned lock {}: {error}",
+                        lock_path.display()
+                    );
+                }
+            }
+        }
+    }
 }
 
 /// Force-eject all managed Docker resources then purge every instance's
@@ -662,14 +762,13 @@ pub async fn prune_all_instances(
 
 async fn ensure_role_resources_absent_for_purge(
     docker: &impl DockerApi,
-    resources: &crate::instance::DockerResources,
+    resources: &DockerResources,
 ) -> anyhow::Result<()> {
-    let (role_result, dind_result) = tokio::join!(
-        ensure_container_absent_for_purge(docker, &resources.role_container, "role container"),
-        ensure_container_absent_for_purge(docker, &resources.dind_container, "DinD sidecar"),
-    );
-    role_result?;
-    dind_result
+    ensure_container_absent_for_purge(docker, &resources.role_container, "role container").await?;
+    if let Some(dind_container) = resources.dind_container.as_deref() {
+        ensure_container_absent_for_purge(docker, dind_container, "DinD sidecar").await?;
+    }
+    Ok(())
 }
 
 async fn ensure_container_absent_for_purge(
@@ -678,15 +777,15 @@ async fn ensure_container_absent_for_purge(
     resource_label: &str,
 ) -> anyhow::Result<()> {
     let state_phrase = match docker.inspect_container_state(container_name).await {
-        jackin_docker::docker_client::ContainerState::NotFound => return Ok(()),
-        jackin_docker::docker_client::ContainerState::Running => "and is running",
-        jackin_docker::docker_client::ContainerState::Paused => "and is paused",
-        jackin_docker::docker_client::ContainerState::Restarting => "and is restarting",
-        jackin_docker::docker_client::ContainerState::Created => "and is being created",
-        jackin_docker::docker_client::ContainerState::Removing => "and is being removed",
-        jackin_docker::docker_client::ContainerState::Dead => "but is dead",
-        jackin_docker::docker_client::ContainerState::Stopped { .. } => "but is stopped",
-        jackin_docker::docker_client::ContainerState::InspectUnavailable(reason) => {
+        ContainerState::NotFound => return Ok(()),
+        ContainerState::Running => "and is running",
+        ContainerState::Paused => "and is paused",
+        ContainerState::Restarting => "and is restarting",
+        ContainerState::Created => "and is being created",
+        ContainerState::Removing => "and is being removed",
+        ContainerState::Dead => "but is dead",
+        ContainerState::Stopped { .. } => "but is stopped",
+        ContainerState::InspectUnavailable(reason) => {
             anyhow::bail!(
                 "cannot purge local state for `{container_name}` because Docker resource state could not be inspected: {reason}"
             )

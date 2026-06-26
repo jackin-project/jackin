@@ -1,0 +1,4 @@
+from_version = "v1alpha7"
+target_version = "v1alpha8"
+target_version_shipped = "2026-06-26"
+summary = "Restamps workspace as v1alpha8. Adds optional dirty_exit_policy to WorkspaceConfig as per-workspace override for the dirty-exit decision policy. Additive with serde default; no transformation needed."

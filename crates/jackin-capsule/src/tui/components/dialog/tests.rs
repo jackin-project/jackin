@@ -429,9 +429,11 @@ fn container_info_with_diagnostics_fixture() -> Dialog {
         diagnostics: ContainerInfoDiagnostics {
             host_version: "0.6.0-test".to_owned(),
             run_id: "jk-run-b93735".to_owned(),
-            run_log_display: "~/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl".to_owned(),
+            run_log_display: "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
+                .to_owned(),
             run_log_href: Some(
-                "file:///home/agent/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl".to_owned(),
+                "file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
+                    .to_owned(),
             ),
         },
         copied_row: None,
@@ -523,7 +525,15 @@ fn container_info_state_keeps_run_id_bare_and_log_path_separate() {
     assert!(log_row.is_copyable());
     assert_eq!(
         log_row.href(),
-        Some("file:///home/agent/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
+        Some("file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
+    );
+    let reveal_row = rows
+        .iter()
+        .find(|row| row.href().is_some() && !row.is_copyable())
+        .expect("diagnostics reveal row present");
+    assert_eq!(
+        reveal_row.href(),
+        Some("file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
     );
 }
 
@@ -602,8 +612,8 @@ fn container_info_visible_debug_rows_map_to_shared_hit_targets() {
         ("jk-run-b93735", "jk-run-b93735"),
         ("jk-abc123-thearchitect", "jk-abc123-thearchitect"),
         (
-            "/home/agent",
-            "/home/agent/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl",
+            "/Users/operator",
+            "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl",
         ),
     ];
 
@@ -623,6 +633,62 @@ fn container_info_visible_debug_rows_map_to_shared_hit_targets() {
             "visible {visible_text:?} should hit its matching shared Debug-info row"
         );
     }
+}
+
+#[test]
+fn container_info_r_reveals_host_diagnostics_log_path() {
+    let mut d = container_info_with_diagnostics_fixture();
+    match d.handle_key(b"r", None) {
+        DialogAction::RevealHostPath(path) => {
+            assert_eq!(
+                path,
+                "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
+            );
+        }
+        other => panic!("R must request host diagnostics reveal, got {other:?}"),
+    }
+}
+
+#[test]
+fn container_info_o_reveals_host_diagnostics_log_path() {
+    let mut d = container_info_with_diagnostics_fixture();
+    match d.handle_key(b"o", None) {
+        DialogAction::RevealHostPath(path) => {
+            assert_eq!(
+                path,
+                "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
+            );
+        }
+        other => panic!("O must request host diagnostics reveal, got {other:?}"),
+    }
+}
+
+#[test]
+fn container_info_o_does_not_open_github_context_url() {
+    let pr = pull_request_fixture();
+    let view = github_view_for_fixture(&pr);
+    let mut d = container_info_with_diagnostics_fixture();
+    match d.handle_key(b"o", Some(&view)) {
+        DialogAction::RevealHostPath(path) => {
+            assert_eq!(
+                path,
+                "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
+            );
+        }
+        other => panic!("ContainerInfo O must stay diagnostics reveal, got {other:?}"),
+    }
+}
+
+#[test]
+fn container_info_r_without_diagnostics_log_redraws() {
+    let mut d = container_info_fixture();
+    assert_eq!(d.handle_key(b"r", None), DialogAction::Redraw);
+}
+
+#[test]
+fn container_info_o_without_diagnostics_log_redraws() {
+    let mut d = container_info_fixture();
+    assert_eq!(d.handle_key(b"o", None), DialogAction::Redraw);
 }
 
 #[test]
@@ -736,6 +802,48 @@ fn github_context_enter_copies_pr_url_and_shows_feedback() {
 }
 
 #[test]
+fn github_context_o_opens_pr_url() {
+    let pr = pull_request_fixture();
+    let view = github_view_for_fixture(&pr);
+    let mut d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
+
+    match d.handle_key(b"o", Some(&view)) {
+        DialogAction::OpenHostUrl(url) => {
+            assert_eq!(url, "https://github.com/jackin-project/jackin/pull/123");
+        }
+        other => panic!("O must request host PR open, got {other:?}"),
+    }
+}
+
+#[test]
+fn github_context_c_opens_ci_url_when_available() {
+    let mut pr = pull_request_fixture();
+    pr.checks = Some(
+        crate::pull_request::PullRequestChecks::from_buckets(["fail"]).with_ci_url(Some(
+            "https://github.com/jackin-project/jackin/actions/runs/1/job/2".to_owned(),
+        )),
+    );
+    let view = github_view_for_fixture(&pr);
+    let mut d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
+
+    match d.handle_key(b"c", Some(&view)) {
+        DialogAction::OpenHostUrl(url) => {
+            assert_eq!(
+                url,
+                "https://github.com/jackin-project/jackin/actions/runs/1/job/2"
+            );
+        }
+        other => panic!("C must request host CI open, got {other:?}"),
+    }
+}
+
+#[test]
 fn github_context_url_click_copies_pr_url() {
     let pr = pull_request_fixture();
     let view = github_view_for_fixture(&pr);
@@ -753,6 +861,67 @@ fn github_context_url_click_copies_pr_url() {
         other => panic!("GitHub URL row click must request clipboard copy, got {other:?}"),
     }
     assert!(d.has_copy_feedback());
+}
+
+#[test]
+fn github_context_open_rows_click_open_urls() {
+    let mut pr = pull_request_fixture();
+    pr.checks = Some(
+        crate::pull_request::PullRequestChecks::from_buckets(["fail"]).with_ci_url(Some(
+            "https://github.com/jackin-project/jackin/actions/runs/1/job/2".to_owned(),
+        )),
+    );
+    let view = github_view_for_fixture(&pr);
+    let mut d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
+    let (row, col, _, _) = d.box_rect(40, 120);
+
+    assert!(d.clickable_at(row + 7, col + 18, 40, 120, Some(&view)));
+    match d.handle_click(row + 7, col + 18, 40, 120, Some(&view)) {
+        DialogAction::OpenHostUrl(url) => {
+            assert_eq!(url, "https://github.com/jackin-project/jackin/pull/123");
+        }
+        other => panic!("Open PR row click must request host open, got {other:?}"),
+    }
+
+    assert!(d.clickable_at(row + 8, col + 18, 40, 120, Some(&view)));
+    match d.handle_click(row + 8, col + 18, 40, 120, Some(&view)) {
+        DialogAction::OpenHostUrl(url) => {
+            assert_eq!(
+                url,
+                "https://github.com/jackin-project/jackin/actions/runs/1/job/2"
+            );
+        }
+        other => panic!("Open CI row click must request host open, got {other:?}"),
+    }
+}
+
+#[test]
+fn github_context_unavailable_ci_row_is_not_clickable() {
+    let pr = pull_request_fixture();
+    let view = github_view_for_fixture(&pr);
+    let mut d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
+    let (row, col, _, _) = d.box_rect(40, 120);
+
+    assert!(
+        !d.clickable_at(row + 8, col + 18, 40, 120, Some(&view)),
+        "unavailable CI row must not advertise a clickable host-open target"
+    );
+    assert_eq!(
+        d.handle_click(row + 8, col + 18, 40, 120, Some(&view)),
+        DialogAction::Consume,
+        "clicking unavailable CI should be consumed inside the dialog"
+    );
+    assert_eq!(
+        d.handle_key(b"c", Some(&view)),
+        DialogAction::Redraw,
+        "C shortcut should not open a host URL without a CI target"
+    );
 }
 
 #[test]
@@ -778,6 +947,1131 @@ fn github_context_uses_shared_focused_info_dialog() {
         state.rows()[3].is_copyable(),
         "GitHub URL should be the copyable shared info row"
     );
+}
+
+fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+    jackin_protocol::control::FocusedUsageView {
+        focused_agent: Some("codex".to_owned()),
+        focused_provider: Some("OpenAI".to_owned()),
+        account: jackin_protocol::control::FocusedAccountHeader {
+            provider_label: "OpenAI / Codex".to_owned(),
+            account_label: "alexey@example.com".to_owned(),
+            username: None,
+            plan_label: Some("Pro 20x".to_owned()),
+            credential_origin: None,
+        },
+        buckets: vec![
+            jackin_protocol::control::QuotaBucketView {
+                label: "Session".to_owned(),
+                used_label: Some("63% used".to_owned()),
+                limit_label: Some("100%".to_owned()),
+                remaining_percent: Some(37),
+                reset_label: Some("Resets 15:07".to_owned()),
+                resets_at: None,
+                status_slot: None,
+                pace_label: Some("10% in reserve".to_owned()),
+                status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+            },
+            jackin_protocol::control::QuotaBucketView {
+                label: "Credits".to_owned(),
+                used_label: None,
+                limit_label: None,
+                remaining_percent: None,
+                reset_label: None,
+                resets_at: None,
+                status_slot: None,
+                pace_label: Some("ACP billing unavailable".to_owned()),
+                status: jackin_protocol::control::UsageSnapshotStatus::Unsupported,
+            },
+        ],
+        status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        source: jackin_protocol::control::UsageSource::Cli,
+        confidence: jackin_protocol::control::UsageConfidence::Authoritative,
+        fetched_at_epoch: 1_781_185_560,
+        updated_label: "Updated just now".to_owned(),
+        status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
+        tabs: vec![
+            jackin_protocol::control::UsageProviderTab {
+                label: "Codex".to_owned(),
+                status_label: "37% left · Resets in 1h 21m (Jun 17, 23:15)".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("Pro 20x".to_owned()),
+                source_label: Some("fresh · provider".to_owned()),
+                active: true,
+            },
+            jackin_protocol::control::UsageProviderTab {
+                label: "Claude".to_owned(),
+                status_label: "16% left · Resets in 46m (Jun 17, 22:40)".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("Max".to_owned()),
+                source_label: Some("stale · provider".to_owned()),
+                active: false,
+            },
+            jackin_protocol::control::UsageProviderTab {
+                label: "Amp".to_owned(),
+                status_label: "unsupported".to_owned(),
+                account_label: "account unavailable".to_owned(),
+                plan_label: None,
+                source_label: None,
+                active: false,
+            },
+            jackin_protocol::control::UsageProviderTab {
+                label: "Grok Build".to_owned(),
+                status_label: "needs login".to_owned(),
+                account_label: "account unavailable".to_owned(),
+                plan_label: None,
+                source_label: Some("needs-login · provider".to_owned()),
+                active: false,
+            },
+            jackin_protocol::control::UsageProviderTab {
+                label: "GLM / Z.AI".to_owned(),
+                status_label: "88% left · Resets in 4d (Jun 21, 00:00)".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("GLM Coding".to_owned()),
+                source_label: Some("fresh · provider".to_owned()),
+                active: false,
+            },
+            jackin_protocol::control::UsageProviderTab {
+                label: "Kimi".to_owned(),
+                status_label: "72% left · Resets in 13h (Jun 18, 11:00)".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("Moonshot".to_owned()),
+                source_label: Some("fresh · provider".to_owned()),
+                active: false,
+            },
+            jackin_protocol::control::UsageProviderTab {
+                label: "MiniMax".to_owned(),
+                status_label: "100% left".to_owned(),
+                account_label: "alexey@example.com".to_owned(),
+                plan_label: Some("M1 Coding".to_owned()),
+                source_label: Some("fresh · provider".to_owned()),
+                active: false,
+            },
+        ],
+        last_error: None,
+    }
+}
+
+fn usage_status_bucket(
+    label: &str,
+    status: jackin_protocol::control::UsageSnapshotStatus,
+) -> jackin_protocol::control::QuotaBucketView {
+    jackin_protocol::control::QuotaBucketView {
+        label: label.to_owned(),
+        used_label: None,
+        limit_label: None,
+        remaining_percent: None,
+        reset_label: None,
+        resets_at: None,
+        status_slot: None,
+        pace_label: None,
+        status,
+    }
+}
+
+fn quota_bucket(
+    label: &str,
+    remaining_percent: u8,
+    reset_label: Option<&str>,
+    pace_label: Option<&str>,
+) -> jackin_protocol::control::QuotaBucketView {
+    jackin_protocol::control::QuotaBucketView {
+        label: label.to_owned(),
+        used_label: Some(format!("{}% used", 100u8.saturating_sub(remaining_percent))),
+        limit_label: Some("100%".to_owned()),
+        remaining_percent: Some(remaining_percent),
+        reset_label: reset_label.map(str::to_owned),
+        resets_at: None,
+        status_slot: None,
+        pace_label: pace_label.map(str::to_owned),
+        status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+    }
+}
+
+fn text_bucket(label: &str, value: &str) -> jackin_protocol::control::QuotaBucketView {
+    jackin_protocol::control::QuotaBucketView {
+        label: label.to_owned(),
+        used_label: None,
+        limit_label: None,
+        remaining_percent: None,
+        reset_label: None,
+        resets_at: None,
+        status_slot: None,
+        pace_label: Some(value.to_owned()),
+        status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+    }
+}
+
+fn provider_usage_view_fixture(
+    tab_label: &str,
+    provider_label: &str,
+    account_label: &str,
+    plan_label: Option<&str>,
+    updated_label: &str,
+    buckets: Vec<jackin_protocol::control::QuotaBucketView>,
+) -> jackin_protocol::control::FocusedUsageView {
+    let mut view = usage_view_fixture();
+    view.focused_provider = Some(provider_label.to_owned());
+    view.account = jackin_protocol::control::FocusedAccountHeader {
+        provider_label: provider_label.to_owned(),
+        account_label: account_label.to_owned(),
+        username: None,
+        plan_label: plan_label.map(str::to_owned),
+        credential_origin: None,
+    };
+    view.updated_label = updated_label.to_owned();
+    view.buckets = buckets;
+    for tab in &mut view.tabs {
+        tab.active = tab.label == tab_label;
+    }
+    view
+}
+
+fn openai_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+    let mut credits = quota_bucket("Credits", 0, None, None);
+    credits.used_label = None;
+    credits.limit_label = Some("1K tokens".to_owned());
+    provider_usage_view_fixture(
+        "Codex",
+        "OpenAI",
+        "alexey@chainargos.com",
+        Some("Pro 20x"),
+        "Updated 1m ago",
+        vec![
+            quota_bucket("Session", 97, Some("Resets 19:45"), Some("33% in reserve")),
+            quota_bucket(
+                "Weekly",
+                19,
+                Some("Resets tomorrow, 04:18"),
+                Some("12% in reserve"),
+            ),
+            quota_bucket("Codex Spark 5-hour", 100, Some("Resets 21:31"), None),
+            quota_bucket(
+                "Codex Spark Weekly",
+                100,
+                Some("Resets Jul 1 at 16:31"),
+                None,
+            ),
+            text_bucket(
+                "Limit Reset Credits",
+                "2 manual resets available · Next expires Jul 12 at 08:14",
+            ),
+            credits,
+        ],
+    )
+}
+
+fn anthropic_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+    provider_usage_view_fixture(
+        "Claude",
+        "Anthropic",
+        "alexey@chainargos.com",
+        Some("Max"),
+        "Updated 2m ago",
+        vec![
+            quota_bucket(
+                "Session",
+                89,
+                Some("Resets in 2h 12m (Jun 17, 19:19)"),
+                Some("34% in reserve"),
+            ),
+            quota_bucket(
+                "Weekly",
+                55,
+                Some("Resets in 1w 1d (Jun 26, 13:59)"),
+                Some("28% in reserve"),
+            ),
+            quota_bucket("Sonnet", 85, Some("Resets in 1w 1d (Jun 26, 13:59)"), None),
+            quota_bucket("Daily Routines", 100, None, None),
+        ],
+    )
+}
+
+fn amp_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+    provider_usage_view_fixture(
+        "Amp",
+        "Amp",
+        "alexey@zhokhov.com",
+        Some("Amp Free"),
+        "Updated just now",
+        vec![
+            jackin_protocol::control::QuotaBucketView {
+                label: "Amp Free".to_owned(),
+                used_label: Some("$9.60".to_owned()),
+                limit_label: Some("$10".to_owned()),
+                remaining_percent: Some(4),
+                reset_label: Some("Resets in 22h 40m".to_owned()),
+                resets_at: None,
+                status_slot: None,
+                pace_label: None,
+                status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+            },
+            jackin_protocol::control::QuotaBucketView {
+                label: "Individual credits".to_owned(),
+                used_label: None,
+                limit_label: Some("$4.76".to_owned()),
+                remaining_percent: None,
+                reset_label: None,
+                resets_at: None,
+                status_slot: None,
+                pace_label: Some("Individual credits: $4.76".to_owned()),
+                status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+            },
+        ],
+    )
+}
+
+fn xai_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+    provider_usage_view_fixture(
+        "Grok Build",
+        "xAI",
+        "alexey@chainargos.com",
+        Some("SuperGrok"),
+        "Updated 4m ago",
+        vec![quota_bucket(
+            "Weekly",
+            18,
+            Some("Resets Jul 1 at 07:00"),
+            None,
+        )],
+    )
+}
+
+fn zai_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+    provider_usage_view_fixture(
+        "GLM / Z.AI",
+        "Z.AI",
+        "alexey@chainargos.com",
+        None,
+        "Updated 2m ago",
+        vec![
+            quota_bucket("Tokens", 99, Some("Resets Jun 27 at 15:27"), None),
+            quota_bucket(
+                "MCP",
+                100,
+                Some("Resets Jul 13 at 15:27"),
+                Some("0 / 100 (100 remaining)"),
+            ),
+            quota_bucket("5-hour", 100, Some("Resets 5 hours window"), None),
+        ],
+    )
+}
+
+fn kimi_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+    provider_usage_view_fixture(
+        "Kimi",
+        "Kimi",
+        "alexey@chainargos.com",
+        None,
+        "Updated 4m ago",
+        vec![
+            quota_bucket("Weekly", 100, Some("Resets Jul 1 at 15:17"), None),
+            quota_bucket(
+                "Rate Limit",
+                100,
+                Some("Resets 17:17"),
+                Some("86% in reserve"),
+            ),
+        ],
+    )
+}
+
+fn minimax_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
+    provider_usage_view_fixture(
+        "MiniMax",
+        "MiniMax",
+        "alexey@chainargos.com",
+        None,
+        "Updated 3m ago",
+        vec![
+            quota_bucket(
+                "General · 5h",
+                100,
+                Some("Resets 28m"),
+                Some("Usage: 0 / 100"),
+            ),
+            quota_bucket(
+                "General · Weekly",
+                99,
+                Some("Resets 4d"),
+                Some("Usage: 1 / 100"),
+            ),
+            quota_bucket("Video", 100, Some("Resets 14h"), Some("Usage: 0 / 100")),
+        ],
+    )
+}
+
+fn render_usage_dialog_snapshot(width: u16, height: u16, tab: UsageDialogTab) -> String {
+    render_usage_dialog_snapshot_for_view(width, height, tab, usage_view_fixture())
+}
+
+fn render_usage_dialog_snapshot_for_view(
+    width: u16,
+    height: u16,
+    tab: UsageDialogTab,
+    view: jackin_protocol::control::FocusedUsageView,
+) -> String {
+    let d = Dialog::new_usage_with_tab(view, tab);
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(height, width);
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    (0..height)
+        .map(|y| {
+            (0..width)
+                .map(|x| buf[(x, y)].symbol())
+                .collect::<String>()
+                .trim_end()
+                .to_owned()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn usage_tab_text_position(d: &Dialog, height: u16, width: u16, label: &str) -> (u16, u16) {
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(height, width);
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    for y in 0..height {
+        let line = (0..width).map(|x| buf[(x, y)].symbol()).collect::<String>();
+        if let Some(x) = line.find(label) {
+            return (y, u16::try_from(x).expect("tab label column fits u16"));
+        }
+    }
+    panic!("usage tab label {label:?} not rendered");
+}
+
+#[test]
+fn usage_dialog_renders_auth_source_and_omits_blank_email() {
+    // P1: credential_origin renders as its own "Auth:" line (the source, never
+    // the secret); an empty account_label shows neither an email nor the
+    // "account unavailable" placeholder; username and plan share line 2.
+    let mut view = usage_view_fixture();
+    view.account = jackin_protocol::control::FocusedAccountHeader {
+        provider_label: "Z.AI".to_owned(),
+        account_label: String::new(),
+        username: Some("donbeave".to_owned()),
+        plan_label: Some("GLM Coding".to_owned()),
+        credential_origin: Some("API token \u{b7} env ZAI_API_KEY".to_owned()),
+    };
+    let snapshot = render_usage_dialog_snapshot_for_view(120, 40, UsageDialogTab::Provider, view);
+    assert!(
+        snapshot.contains("Auth: API token \u{b7} env ZAI_API_KEY"),
+        "auth source line missing:\n{snapshot}"
+    );
+    assert!(
+        snapshot.contains("donbeave \u{b7} GLM Coding"),
+        "username \u{b7} plan line missing:\n{snapshot}"
+    );
+    assert!(
+        !snapshot.contains("account unavailable"),
+        "blank email must be omitted, not labelled unavailable:\n{snapshot}"
+    );
+}
+
+#[test]
+fn usage_dialog_renders_usage_status_rows_for_error_and_stale_states() {
+    let mut values = Vec::new();
+    for status in [
+        jackin_protocol::control::UsageSnapshotStatus::NeedsLogin,
+        jackin_protocol::control::UsageSnapshotStatus::Stale,
+        jackin_protocol::control::UsageSnapshotStatus::Unsupported,
+        jackin_protocol::control::UsageSnapshotStatus::Error,
+    ] {
+        let mut view = usage_view_fixture();
+        view.status = status;
+        let d = Dialog::new_usage(view);
+        values.extend(
+            d.usage_state()
+                .expect("usage state")
+                .rows()
+                .iter()
+                .map(|row| row.value().to_owned()),
+        );
+    }
+
+    assert!(values.iter().any(|value| value == "needs login"));
+    assert!(values.iter().any(|value| value == "stale"));
+    assert!(values.iter().any(|value| value == "unsupported"));
+    assert!(values.iter().any(|value| value == "error"));
+}
+
+#[test]
+fn usage_dialog_renders_bucket_status_rows_for_error_states() {
+    let mut view = usage_view_fixture();
+    view.buckets = vec![
+        usage_status_bucket(
+            "Tokens",
+            jackin_protocol::control::UsageSnapshotStatus::NeedsLogin,
+        ),
+        usage_status_bucket(
+            "Weekly",
+            jackin_protocol::control::UsageSnapshotStatus::Stale,
+        ),
+        usage_status_bucket(
+            "Credits",
+            jackin_protocol::control::UsageSnapshotStatus::Unsupported,
+        ),
+        usage_status_bucket(
+            "Detail",
+            jackin_protocol::control::UsageSnapshotStatus::Error,
+        ),
+    ];
+    let d = Dialog::new_usage(view);
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
+
+    assert!(values.iter().any(|value| value.contains("needs login")));
+    assert!(values.iter().any(|value| value.contains("stale")));
+    assert!(values.iter().any(|value| value.contains("unsupported")));
+    assert!(values.iter().any(|value| value.contains("error")));
+}
+
+#[test]
+fn usage_dialog_rows_render_provider_quota_snapshot() {
+    let d = Dialog::new_usage(usage_view_fixture());
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
+
+    assert_eq!(state.rows()[0].label(), "Focused");
+    assert!(values.contains(&"codex · OpenAI · alexey@example.com"));
+    assert!(values.iter().any(|value| {
+        value.starts_with("████")
+            && value.contains("37% left")
+            && value.contains("10% in reserve")
+            && value.contains("Resets 15:07")
+            && !value.contains("used / 100%")
+    }));
+    assert!(values.contains(&"ACP billing unavailable · unsupported"));
+    assert!(values.contains(&"fresh"));
+    assert!(values.contains(&"Updated just now"));
+    let rows_debug = format!("{:?}", state.rows());
+    assert!(!rows_debug.contains("Account availability"));
+    assert!(rows_debug.contains("Header"));
+    assert!(!rows_debug.contains("Instance"));
+    assert!(!values.contains(&"local diagnostic detail"));
+}
+
+#[test]
+fn usage_dialog_renders_shared_provider_tab_strip_labels() {
+    let d = Dialog::new_usage(usage_view_fixture());
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(32, 120);
+    let backend = TestBackend::new(120, 32);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..32)
+        .map(|y| (0..120).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Overview"), "{rendered}");
+    assert!(rendered.contains("OpenAI"), "{rendered}");
+    assert!(rendered.contains("Anthropic"), "{rendered}");
+    assert!(rendered.contains("Amp"), "{rendered}");
+}
+
+#[test]
+fn usage_dialog_provider_tabs_are_clickable() {
+    let mut d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Overview);
+    let (tab_row, tab_col) = usage_tab_text_position(&d, 32, 120, "Anthropic");
+
+    assert!(d.clickable_at(tab_row, tab_col, 32, 120, None));
+    match d.handle_click(tab_row, tab_col, 32, 120, None) {
+        DialogAction::SwitchUsageProvider { provider_label } => {
+            assert_eq!(provider_label, "Claude");
+        }
+        other => panic!("expected provider switch, got {other:?}"),
+    }
+}
+
+#[test]
+fn usage_dialog_provider_tab_hover_uses_shared_tab_hover_color() {
+    let mut d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Overview);
+    let (tab_row, tab_col) = usage_tab_text_position(&d, 32, 120, "Anthropic");
+
+    assert!(d.set_usage_tab_hover(tab_row, tab_col, 32, 120));
+
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(32, 120);
+    let backend = TestBackend::new(120, 32);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    assert_eq!(
+        terminal.backend().buffer()[(tab_col, tab_row)].bg,
+        jackin_tui::theme::TAB_BG_INACTIVE_HOVER
+    );
+}
+
+#[test]
+fn usage_dialog_overview_tab_click_selects_overview() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+    let (tab_row, tab_col) = usage_tab_text_position(&d, 32, 120, "Overview");
+
+    assert_eq!(
+        d.handle_click(tab_row, tab_col, 32, 120, None),
+        DialogAction::Redraw
+    );
+    assert_eq!(d.usage_selected_tab(), Some(UsageDialogTab::Overview));
+}
+
+#[test]
+fn usage_dialog_renders_deficit_and_runout_quota_labels() {
+    let mut view = usage_view_fixture();
+    view.buckets
+        .push(jackin_protocol::control::QuotaBucketView {
+            label: "Weekly".to_owned(),
+            used_label: Some("40% used".to_owned()),
+            limit_label: Some("100%".to_owned()),
+            remaining_percent: Some(60),
+            reset_label: Some("Resets Jun 17 at 23:15".to_owned()),
+            resets_at: None,
+            status_slot: None,
+            pace_label: Some("31% in deficit · Runs out in 21h 45m".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        });
+    let d = Dialog::new_usage(view);
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
+
+    assert!(values.iter().any(|value| {
+        value.contains("60% left")
+            && value.contains("31% in deficit")
+            && value.contains("Runs out in 21h 45m")
+            && value.contains("Resets Jun 17 at 23:15")
+    }));
+
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(40, 100);
+    let backend = TestBackend::new(100, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..40)
+        .map(|y| (0..100).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Weekly"), "{rendered}");
+    assert!(rendered.contains("31% in deficit"), "{rendered}");
+    assert!(rendered.contains("Runs out in 21h 45m"), "{rendered}");
+    assert!(rendered.contains("Lasts until reset"), "{rendered}");
+}
+
+#[test]
+fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
+    let mut view = usage_view_fixture();
+    view.buckets = vec![
+        jackin_protocol::control::QuotaBucketView {
+            label: "Tokens".to_owned(),
+            used_label: Some("400M".to_owned()),
+            limit_label: Some("1B".to_owned()),
+            remaining_percent: Some(60),
+            reset_label: Some("Resets Jun 17 at 23:15".to_owned()),
+            resets_at: None,
+            status_slot: None,
+            pace_label: Some("31% in deficit · Runs out in 21h 45m".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+        jackin_protocol::control::QuotaBucketView {
+            label: "MCP".to_owned(),
+            used_label: Some("2h".to_owned()),
+            limit_label: Some("5h".to_owned()),
+            remaining_percent: Some(60),
+            reset_label: Some("Resets 18:00".to_owned()),
+            resets_at: None,
+            status_slot: None,
+            pace_label: Some("5 hours window".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+        jackin_protocol::control::QuotaBucketView {
+            label: "Amp Free".to_owned(),
+            used_label: Some("$12.00".to_owned()),
+            limit_label: Some("$25.00".to_owned()),
+            remaining_percent: Some(52),
+            reset_label: None,
+            resets_at: None,
+            status_slot: None,
+            pace_label: Some("replenishes +$1.00/hour".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+        jackin_protocol::control::QuotaBucketView {
+            label: "MiniMax M1 Coding plan".to_owned(),
+            used_label: Some("12K".to_owned()),
+            limit_label: Some("100K".to_owned()),
+            remaining_percent: Some(88),
+            reset_label: Some("Resets tomorrow, 02:00".to_owned()),
+            resets_at: None,
+            status_slot: None,
+            pace_label: Some("Coding plan".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+    ];
+
+    let d = Dialog::new_usage(view);
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(40, 120);
+    let backend = TestBackend::new(120, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..40)
+        .map(|y| (0..120).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Tokens"), "{rendered}");
+    assert!(rendered.contains("60% left"), "{rendered}");
+    assert!(rendered.contains("31% in deficit"), "{rendered}");
+    assert!(rendered.contains("MCP"), "{rendered}");
+    assert!(rendered.contains("5 hours window"), "{rendered}");
+    assert!(rendered.contains("Amp Free"), "{rendered}");
+    assert!(rendered.contains("replenishes +$1.00/hour"), "{rendered}");
+    assert!(rendered.contains("MiniMax M1 Coding plan"), "{rendered}");
+    assert!(rendered.contains("88% left"), "{rendered}");
+    assert!(rendered.contains("████"), "{rendered}");
+    assert!(
+        rendered
+            .lines()
+            .any(|line| line.chars().filter(|ch| matches!(*ch, '█' | '·')).count() >= 70),
+        "quota meters must span the available dialog width: {rendered}"
+    );
+}
+
+#[test]
+fn usage_dialog_renders_extra_usage_monthly_cap() {
+    let mut view = usage_view_fixture();
+    view.buckets
+        .push(jackin_protocol::control::QuotaBucketView {
+            label: "Extra usage".to_owned(),
+            used_label: Some("SGD 78.49".to_owned()),
+            limit_label: Some("SGD 260.00".to_owned()),
+            remaining_percent: Some(70),
+            reset_label: None,
+            resets_at: None,
+            status_slot: None,
+            pace_label: None,
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        });
+    let d = Dialog::new_usage(view);
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
+
+    assert!(values.iter().any(|value| {
+        value.contains("30% used") && value.contains("Monthly cap: SGD 78.49 / SGD 260.00")
+    }));
+
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(40, 100);
+    let backend = TestBackend::new(100, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..40)
+        .map(|y| (0..100).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Extra usage"), "{rendered}");
+    assert!(rendered.contains("30% used"), "{rendered}");
+    assert!(
+        rendered.contains("Monthly cap: SGD 78.49 / SGD 260.00"),
+        "{rendered}"
+    );
+    let monthly = rendered
+        .find("Monthly cap: SGD 78.49 / SGD 260.00")
+        .expect("monthly cap");
+    let used = rendered.find("30% used").expect("used percent");
+    assert!(used < monthly, "{rendered}");
+}
+
+#[test]
+fn usage_dialog_overview_tab_renders_cross_provider_summary() {
+    let d = Dialog::new_usage_with_tab(usage_view_fixture(), UsageDialogTab::Overview);
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
+    let rows_debug = format!("{:?}", state.rows());
+
+    assert!(!rows_debug.contains("Focused agent"));
+    assert!(!rows_debug.contains("Focused account"));
+    assert!(rows_debug.contains("OpenAI"));
+    assert!(rows_debug.contains("Anthropic"));
+    assert!(rows_debug.contains("xAI"));
+    assert!(rows_debug.contains("Z.AI"));
+    assert!(values.contains(&"37% left · Resets in 1h 21m (Jun 17, 23:15)"));
+    assert!(values.contains(&"16% left · Resets in 46m (Jun 17, 22:40)"));
+    assert!(values.contains(&"unsupported"));
+    assert!(!rows_debug.contains("fresh · provider"));
+    assert!(!rows_debug.contains("stale · provider"));
+
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(32, 100);
+    let backend = TestBackend::new(100, 32);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..32)
+        .map(|y| (0..100).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("OpenAI      37% left"), "{rendered}");
+    assert!(rendered.contains("Anthropic   16% left"), "{rendered}");
+    assert!(rendered.contains("Resets in 1h 21m"), "{rendered}");
+    assert!(rendered.contains("(Jun 17, 23:15)"), "{rendered}");
+    assert!(rendered.contains("xAI        needs login"), "{rendered}");
+    assert!(!rendered.contains("alexey@example.com"), "{rendered}");
+    assert!(!rendered.contains("Pro 20x"), "{rendered}");
+    assert!(!rendered.contains("fresh"), "{rendered}");
+    assert!(rendered.contains("unsupported"), "{rendered}");
+}
+
+#[test]
+fn usage_dialog_renders_amp_individual_credits_as_credits_section() {
+    let d = Dialog::new_usage(amp_usage_view_fixture());
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(32, 100);
+    let backend = TestBackend::new(100, 32);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..32)
+        .map(|y| (0..100).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Amp"), "{rendered}");
+    assert!(rendered.contains("alexey@zhokhov.com"), "{rendered}");
+    assert!(rendered.contains("Amp Free"), "{rendered}");
+    assert!(rendered.contains("4% left"), "{rendered}");
+    assert!(rendered.contains("Resets in 22h 40m"), "{rendered}");
+    assert!(rendered.contains("Credits"), "{rendered}");
+    assert!(rendered.contains("Individual credits: $4.76"), "{rendered}");
+    assert!(
+        !rendered.contains("Individual credits  remaining"),
+        "{rendered}"
+    );
+}
+
+#[test]
+fn usage_dialog_right_arrow_switches_to_next_provider() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+
+    assert_eq!(
+        d.handle_key(b"\x1b[C", None),
+        DialogAction::SwitchUsageProvider {
+            provider_label: "Claude".to_owned()
+        }
+    );
+}
+
+#[test]
+fn usage_dialog_tab_key_moves_focus_to_content() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+
+    assert_eq!(d.handle_key(b"\t", None), DialogAction::Redraw);
+    let Dialog::Usage {
+        tab_bar_focused, ..
+    } = d
+    else {
+        panic!("usage dialog");
+    };
+    assert!(!tab_bar_focused);
+}
+
+#[test]
+fn usage_dialog_left_arrow_from_first_provider_switches_to_overview() {
+    let mut d = Dialog::new_usage(usage_view_fixture());
+
+    assert_eq!(d.handle_key(b"\x1b[D", None), DialogAction::Redraw);
+    let state = d.usage_state().expect("usage state");
+    assert_eq!(state.rows()[0].label(), "OpenAI");
+    assert_eq!(
+        state.rows()[0].value(),
+        "37% left · Resets in 1h 21m (Jun 17, 23:15)"
+    );
+}
+
+#[test]
+fn usage_dialog_renders_inside_narrow_terminal() {
+    let d = Dialog::new_usage(usage_view_fixture());
+    let snapshot = d.to_ratatui_snapshot(None);
+    let rect = d.box_rect(18, 60);
+    let backend = TestBackend::new(60, 18);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| {
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(frame, rect, &snapshot);
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let rendered = (0..18)
+        .map(|y| (0..60).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("Usage"), "{rendered}");
+    assert!(rendered.contains("OpenAI"), "{rendered}");
+    assert!(!rendered.contains("OpenAI / Codex"), "{rendered}");
+    assert!(rendered.contains("alexey@example.com"), "{rendered}");
+    assert!(rendered.contains("Pro 20x"), "{rendered}");
+    assert!(rendered.contains("Updated just now"), "{rendered}");
+    assert!(!rendered.contains("Account availability"), "{rendered}");
+    assert!(!rendered.contains("2 buckets"), "{rendered}");
+    assert!(!rendered.contains("Overview  Codex"), "{rendered}");
+    assert!(!rendered.contains("████"), "{rendered}");
+    assert!(rendered.contains("Session  37% left"), "{rendered}");
+    assert!(!rendered.contains("Focused :"), "{rendered}");
+    assert!(
+        rendered.contains("┃") || rendered.contains("·"),
+        "{rendered}"
+    );
+}
+
+#[test]
+fn usage_dialog_stays_above_bottom_chrome_on_default_terminal() {
+    let d = Dialog::new_usage_with_tab(zai_usage_view_fixture(), UsageDialogTab::Provider);
+    let (row, _, height, _) = d.box_rect(24, 80);
+    let content_bottom = crate::tui::components::status_bar::STATUS_BAR_ROWS
+        + crate::tui::layout::available_content_rows(24);
+
+    assert!(
+        row + height <= content_bottom,
+        "usage dialog must not overlap hint/footer chrome: row={row} height={height} content_bottom={content_bottom}"
+    );
+}
+
+#[test]
+fn snapshot_usage_dialog_narrow_60x18() {
+    insta::assert_snapshot!(
+        "usage_dialog_narrow_60x18",
+        render_usage_dialog_snapshot(60, 18, UsageDialogTab::Provider)
+    );
+}
+
+#[test]
+fn snapshot_usage_dialog_medium_100x32_overview() {
+    insta::assert_snapshot!(
+        "usage_dialog_medium_100x32_overview",
+        render_usage_dialog_snapshot(100, 32, UsageDialogTab::Overview)
+    );
+}
+
+#[test]
+fn snapshot_usage_dialog_wide_120x40() {
+    insta::assert_snapshot!(
+        "usage_dialog_wide_120x40",
+        render_usage_dialog_snapshot(120, 40, UsageDialogTab::Provider)
+    );
+}
+
+#[test]
+fn snapshot_usage_dialog_openai_provider_120x48() {
+    insta::assert_snapshot!(
+        "usage_dialog_openai_provider_120x48",
+        render_usage_dialog_snapshot_for_view(
+            120,
+            48,
+            UsageDialogTab::Provider,
+            openai_usage_view_fixture()
+        )
+    );
+}
+
+#[test]
+fn snapshot_usage_dialog_anthropic_provider_120x42() {
+    insta::assert_snapshot!(
+        "usage_dialog_anthropic_provider_120x42",
+        render_usage_dialog_snapshot_for_view(
+            120,
+            42,
+            UsageDialogTab::Provider,
+            anthropic_usage_view_fixture()
+        )
+    );
+}
+
+#[test]
+fn snapshot_usage_dialog_amp_wide_100x32() {
+    insta::assert_snapshot!(
+        "usage_dialog_amp_wide_100x32",
+        render_usage_dialog_snapshot_for_view(
+            100,
+            32,
+            UsageDialogTab::Provider,
+            amp_usage_view_fixture()
+        )
+    );
+}
+
+#[test]
+fn snapshot_usage_dialog_xai_provider_100x28() {
+    insta::assert_snapshot!(
+        "usage_dialog_xai_provider_100x28",
+        render_usage_dialog_snapshot_for_view(
+            100,
+            28,
+            UsageDialogTab::Provider,
+            xai_usage_view_fixture()
+        )
+    );
+}
+
+#[test]
+fn snapshot_usage_dialog_zai_provider_100x34() {
+    insta::assert_snapshot!(
+        "usage_dialog_zai_provider_100x34",
+        render_usage_dialog_snapshot_for_view(
+            100,
+            34,
+            UsageDialogTab::Provider,
+            zai_usage_view_fixture()
+        )
+    );
+}
+
+#[test]
+fn snapshot_usage_dialog_kimi_provider_100x30() {
+    insta::assert_snapshot!(
+        "usage_dialog_kimi_provider_100x30",
+        render_usage_dialog_snapshot_for_view(
+            100,
+            30,
+            UsageDialogTab::Provider,
+            kimi_usage_view_fixture()
+        )
+    );
+}
+
+#[test]
+fn snapshot_usage_dialog_minimax_provider_100x32() {
+    insta::assert_snapshot!(
+        "usage_dialog_minimax_provider_100x32",
+        render_usage_dialog_snapshot_for_view(
+            100,
+            32,
+            UsageDialogTab::Provider,
+            minimax_usage_view_fixture()
+        )
+    );
+}
+
+#[test]
+fn usage_dialog_geometry_counts_rendered_section_lines() {
+    let mut view = usage_view_fixture();
+    view.buckets.extend([
+        jackin_protocol::control::QuotaBucketView {
+            label: "Tokens".to_owned(),
+            used_label: Some("100K".to_owned()),
+            limit_label: Some("1M".to_owned()),
+            remaining_percent: Some(90),
+            reset_label: Some("Resets Jun 17 at 14:00".to_owned()),
+            resets_at: None,
+            status_slot: None,
+            pace_label: Some("20% in reserve".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+        jackin_protocol::control::QuotaBucketView {
+            label: "MCP".to_owned(),
+            used_label: Some("2".to_owned()),
+            limit_label: Some("100".to_owned()),
+            remaining_percent: Some(98),
+            reset_label: Some("Resets Jul 1 at 14:00".to_owned()),
+            resets_at: None,
+            status_slot: None,
+            pace_label: Some("2 / 100 (98 remaining)".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        },
+    ]);
+    let d = Dialog::new_usage(view);
+    let state = d.usage_state().expect("usage state");
+    let usage_height = crate::tui::components::dialog_widgets::usage_info_required_height(&state);
+
+    assert!(usage_height >= 7);
+    assert_eq!(d.box_rect(50, 120).2, usage_height);
+    let axes = d.body_scroll_axes(18, 60, None);
+    assert!(axes.vertical);
 }
 
 #[test]
@@ -884,4 +2178,102 @@ fn agent_picker_section_labels_are_bare_not_dash_padded() {
     } else {
         panic!("expected FilterPicker snapshot");
     }
+}
+
+#[test]
+fn exit_dirty_enter_routes_each_row() {
+    let expected = [
+        ExitDirtyRow::StartNewAgent,
+        ExitDirtyRow::Inspect,
+        ExitDirtyRow::Keep,
+        ExitDirtyRow::Discard,
+    ];
+    for (steps, want) in expected.iter().enumerate() {
+        let mut d = Dialog::new_exit_dirty(vec!["jackin   1 changed".to_owned()]);
+        for _ in 0..steps {
+            d.handle_key(b"\x1b[B", None);
+        }
+        match d.handle_key(b"\r", None) {
+            DialogAction::ExitDirty(row) => assert_eq!(row, *want),
+            other => panic!("row {steps}: expected ExitDirty, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn exit_dirty_esc_and_ctrl_c_keep_and_exit() {
+    // Reuses the shared FilterListAction::Dismiss path like every other dialog,
+    // mapping dismiss to keep-and-exit so the operator never loses work and the
+    // global Ctrl+C contract is preserved (no swallowed keys).
+    let mut esc = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    assert_eq!(
+        esc.handle_key(b"\x1b", None),
+        DialogAction::ExitDirty(ExitDirtyRow::Keep)
+    );
+    let mut ctrl_c = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    assert_eq!(
+        ctrl_c.handle_key(b"\x03", None),
+        DialogAction::ExitDirty(ExitDirtyRow::Keep)
+    );
+}
+
+#[test]
+fn exit_dirty_navigation_clamps_at_ends() {
+    // Up at the top stays on the first row.
+    let mut top = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    top.handle_key(b"\x1b[A", None);
+    assert!(matches!(
+        top.handle_key(b"\r", None),
+        DialogAction::ExitDirty(ExitDirtyRow::StartNewAgent)
+    ));
+    // Down past the end clamps to the last row.
+    let mut bottom = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    for _ in 0..10 {
+        bottom.handle_key(b"\x1b[B", None);
+    }
+    assert!(matches!(
+        bottom.handle_key(b"\r", None),
+        DialogAction::ExitDirty(ExitDirtyRow::Discard)
+    ));
+}
+
+#[test]
+fn exit_inspect_esc_walks_back() {
+    let mut d = Dialog::new_exit_inspect(vec![
+        InspectRow::Repo("jackin".to_owned()),
+        InspectRow::File("M a.rs".to_owned()),
+    ]);
+    assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
+}
+
+#[test]
+fn exit_dirty_selection_marker_moves_on_down_arrow() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    fn marker_row(d: &Dialog) -> Option<u16> {
+        let backend = TestBackend::new(60, 20);
+        let mut term = Terminal::new(backend).expect("backend");
+        term.draw(|f| {
+            let snap = d.to_ratatui_snapshot(None);
+            let rect = d.box_rect(20, 60);
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(f, rect, &snap);
+        })
+        .expect("draw");
+        let buf = term.backend().buffer().clone();
+        (0..buf.area.height).find(|&y| {
+            (0..buf.area.width)
+                .map(|x| buf[(x, y)].symbol().to_owned())
+                .any(|s| s == "▸")
+        })
+    }
+
+    let mut d = Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]);
+    let before = marker_row(&d).expect("marker visible initially");
+    assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
+    let after = marker_row(&d).expect("marker visible after down");
+    assert!(
+        after > before,
+        "down-arrow must move the ▸ marker down: before row {before}, after row {after}"
+    );
 }

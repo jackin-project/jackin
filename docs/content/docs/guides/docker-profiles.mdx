@@ -1,0 +1,309 @@
+---
+title: Docker Security Profiles
+description: Configure how much capability a role container is granted — from minimal (locked) to full compatibility (compat).
+---
+
+jackin' applies a **capability grant model** to every container it starts. Instead of giving every container everything and trying to restrict it down, a container starts from a defined capability bundle (the *profile*) and the operator can explicitly grant additional capabilities on top.
+
+The agent binaries run with full bypass flags (`--dangerously-skip-permissions`, `--dangerously-allow-all`, etc.) inside the container by design — jackin' is a no-interruption autonomous agent environment. The Docker container is the enforcement boundary, not the agent binary. Docker profiles let you control exactly what that boundary permits.
+
+## Profiles
+
+Four profiles are available, ordered from least to most capable:
+
+| Profile | Network | DinD | Sudo | Root filesystem | Memory limit |
+|---|---|---|---|---|---|
+| `locked` | Allowlist (model API only) | None (opt-in via grant) | No | Read-only | 4 GiB hard |
+| `hardened` | Allowlist (model API + GitHub) | None (opt-in via grant) | No | Read-only | 16 GiB hard |
+| `standard` | Open | None (opt-in via grant) | Opt-in | Writable | 16 GiB hard |
+| `compat` | Open | Privileged | Yes | Writable | None |
+
+**`compat`** is the current default — it matches today's behavior exactly. `standard` becomes the default once the compatibility matrix for standard-profile workloads is green.
+
+### `locked` — minimal grant
+
+The agent can read files, think, and call its model API. Nothing else is granted by default.
+
+Use when:
+- Reviewing a PR diff from an unfamiliar source
+- Running a read-only code analysis agent
+- Maximum confidence that the container cannot change anything on your machine
+
+```toml
+[docker]
+profile = "locked"
+```
+
+### `hardened` — restricted coding
+
+Real coding work — editing files, running tests, `git push`, GitHub CLI — without DinD and with network limited to the model API and GitHub. The best practical profile for autonomous agents working against untrusted repos.
+
+Use when:
+- Running an agent against a cloned repo from an organization you don't fully trust
+- Long autonomous runs where you want egress limited to the model and GitHub
+- Roles whose images are purpose-built (all tools pre-installed at `docker build` time)
+
+```toml
+[docker]
+profile = "hardened"
+```
+
+### `standard` — everyday dev work
+
+Full development capability with resource protection. `apt install`, Docker Compose, Testcontainers, `gh pr create` all work. Equivalent to working in a well-configured dev container.
+
+Use when:
+- Working with trusted role repos built by your team
+- Roles that install packages at runtime
+
+```toml
+[docker]
+profile = "standard"
+```
+
+### `compat` — maximum compatibility
+
+Today's exact behavior. Privileged DinD sidecar, open network, full sudo, no resource limits. Required for complex Docker workflows, multi-stage builds, and any role that needs privileged operations inside the container.
+
+Use when:
+- Docker Compose workflows inside the agent
+- Java Testcontainers with `--privileged` requirements
+- Exact backward compatibility needed
+
+## CLI override
+
+Override the profile for a single launch:
+
+```sh
+jackin load the-architect . --docker-profile hardened
+jackin load reviewer .     --docker-profile locked
+jackin load fullstack .    --docker-profile compat
+```
+
+## Explicit grants
+
+A profile sets defaults for all six capability dimensions. Use `[docker.grants]` to raise a single dimension above the profile default without choosing a more permissive profile for everything.
+
+```toml
+[docker]
+profile = "hardened"
+
+[docker.grants]
+dind = "rootless"               # allow rootless DinD even under hardened
+allowed_hosts = ["registry.npmjs.org"]  # allow npm registry
+memory = "32G"                  # bigger memory ceiling for this machine
+```
+
+Grants can only raise a dimension. To get a lower tier, choose a stricter profile.
+
+### Network grants
+
+```toml
+[docker.grants]
+network = "open"       # "none" | "allowlist" | "open"
+
+# When network = "allowlist":
+allowed_hosts = [
+    "registry.npmjs.org",   # domain
+    "pypi.org",
+    "1.2.3.0/24",           # IPv4 CIDR
+    "*.cdn.example.com",    # wildcard subdomain
+]
+```
+
+**Allowlist enforcement:** when `network = "allowlist"`, jackin' installs an outbound allowlist firewall in the container before the agent session starts, and the launch fails closed if that firewall cannot be applied. The allowlist always includes the configured agent's model API endpoint and the telemetry (OTLP) host automatically, so you never have to add them by hand.
+
+Enforcement quality depends on other grants:
+- `full` — when `sudo = false` and `dind = "none"` (the agent cannot reach the firewall rules)
+- `partial` — when `sudo = true` (the agent can flush the firewall rules)
+- `partial` — when DinD is active (inner containers have their own network path and bypass the host firewall)
+
+The active enforcement quality is reported in the launch summary and in `--debug` output.
+
+### DinD grants
+
+```toml
+[docker.grants]
+dind = "none"        # "none" | "rootless" | "privileged"
+```
+
+`rootless` runs DinD without `--privileged`. Most Compose/build workflows work. It requires cgroup v2 on the host and fails closed on cgroup v1. Rootless DinD is experimental and is not yet a default for any profile — opt in via a grant or role declaration.
+
+### User and privilege grants
+
+```toml
+[docker.grants]
+user = "agent"    # "agent" (default) | "root" | any image username
+sudo = false      # NOPASSWD:ALL sudo
+
+# Validation error: user = "root" and sudo = true are mutually exclusive.
+```
+
+### Filesystem grant
+
+```toml
+[docker.grants]
+system_writes = true   # false = --read-only root; true = writable root
+```
+
+`system_writes = false` enables `--read-only` on the container root filesystem, with writable in-memory scratch space for the paths a process legitimately needs to write at runtime. Compatible only with roles where all tools are pre-installed in the Dockerfile — `apt install` at runtime fails because package installation writes to read-only image paths.
+
+### Resource grants
+
+```toml
+[docker.grants]
+memory = "32G"               # --memory (hard limit); omit = unlimited
+memory_reservation = "24G"  # --memory-reservation (soft); must be ≤ memory
+cpus = 8.0                  # --cpus; omit = unlimited
+pids = 4096                 # --pids-limit; omit = unlimited
+nofile = 16384              # --ulimit nofile=N:N; omit = system default
+```
+
+Size strings: `"512M"`, `"4G"`, `"32G"`. Omit any field for no limit on that resource. `memory_reservation` cannot exceed `memory` — launch fails with a clear error if violated.
+
+### Linux capability grants
+
+```toml
+[docker.grants]
+capabilities_add = ["NET_RAW", "SYS_PTRACE"]
+```
+
+Adds Linux capabilities beyond the profile's base set. Valid names (without `CAP_` prefix): `AUDIT_CONTROL`, `AUDIT_READ`, `AUDIT_WRITE`, `BPF`, `BLOCK_SUSPEND`, `CHECKPOINT_RESTORE`, `CHOWN`, `DAC_OVERRIDE`, `DAC_READ_SEARCH`, `FOWNER`, `FSETID`, `IPC_LOCK`, `IPC_OWNER`, `KILL`, `LEASE`, `LINUX_IMMUTABLE`, `MAC_ADMIN`, `MAC_OVERRIDE`, `MKNOD`, `NET_ADMIN`, `NET_BIND_SERVICE`, `NET_BROADCAST`, `NET_RAW`, `PERFMON`, `SETFCAP`, `SETGID`, `SETPCAP`, `SETUID`, `SYS_ADMIN`, `SYS_BOOT`, `SYS_CHROOT`, `SYS_MODULE`, `SYS_NICE`, `SYS_PACCT`, `SYS_PTRACE`, `SYS_RAWIO`, `SYS_RESOURCE`, `SYS_TIME`, `SYS_TTY_CONFIG`, `WAKE_ALARM`.
+
+Common additions: `NET_RAW` for `tcpdump`/`nmap`/`ping`; `SYS_PTRACE` for debuggers (`gdb`, `strace`); `NET_BIND_SERVICE` for servers binding ports < 1024.
+
+`NET_ADMIN` and `NET_RAW` are implicitly granted when `network = "allowlist"` — they are prerequisites for iptables and do not need to be listed explicitly.
+
+## Workspace-level override
+
+Set a profile for one workspace without changing the global default:
+
+```toml
+# ~/.config/jackin/workspaces/my-service.toml
+[docker]
+profile = "hardened"
+
+[docker.grants]
+allowed_hosts = ["registry.npmjs.org"]
+```
+
+Workspace grants layer on top of global grants. Workspace profile overrides the global `profile`.
+
+## Role manifest declarations
+
+Role authors can declare the minimum profile their role requires and any DinD tier the role needs:
+
+```toml
+# jackin.role.toml
+[docker]
+min_profile = "standard"          # launch fails if profile < standard
+dind = "rootless"                 # role needs rootless DinD (cgroup v2)
+allowed_hosts = ["crates.io", "static.crates.io"]   # added to allowlist
+
+[capabilities]
+capabilities_add = ["SYS_PTRACE"]  # role needs ptrace for its debugger
+```
+
+`min_profile` is the lowest profile the role can run under. Attempting to launch under `locked` or `hardened` with `min_profile = "standard"` fails with a clear message: `"role declares min_profile = \"standard\"; the active profile \"hardened\" is below that minimum"`.
+
+## Validation errors
+
+These are caught at launch time before any container starts:
+
+| Error | Message |
+|---|---|
+| `user = "root"` and `sudo = true` | `grants.user = "root" and grants.sudo = true are mutually exclusive` |
+| Unknown capability | `unknown Linux capability "CAP_MAGIC"` with full valid-values list |
+| `memory_reservation > memory` | `grants.memory_reservation must be ≤ grants.memory` |
+| Unparseable size | `cannot parse "16 gigabytes" as a size — use format "512M", "4G"` |
+| Profile below role minimum | `role declares min_profile = "…"; active profile "…" is below that minimum` |
+
+## What you cannot change
+
+**Agent bypass flags are not configurable per profile.** Every agent binary runs with its maximum-bypass flag: `claude --dangerously-skip-permissions`, `codex --dangerously-bypass-approvals-and-sandbox`, `amp --dangerously-allow-all`, `kimi --yolo`, `opencode` with full permissions. These are hard-coded in the container entrypoint and cannot be disabled from a Docker profile.
+
+This is intentional: jackin' is a no-interruption autonomous agent environment. The Docker container is the enforcement boundary. If the container has no outbound network, it does not matter that the agent might try to exfiltrate data — the packet never leaves. The profile controls what the container can do; the agent binary operates freely within that container boundary.
+
+## Debug output
+
+Run any launch with `--debug` to see how the profile was resolved and which controls were applied:
+
+```sh
+jackin load the-architect . --docker-profile hardened --debug
+```
+
+`--debug` prints a per-control summary of the active profile: which profile was selected and why, the resolved Linux capability set, the no-new-privileges and seccomp/AppArmor posture, the read-only-root and resource-limit decisions, the DinD tier, the network enforcement mode and its quality, and the residual risk that remains. This lets you confirm at launch time exactly what the container boundary permits before the agent session starts.
+
+## What the profiles cannot guarantee
+
+- **Shared host kernel.** Containers share the host kernel. A kernel exploit can escape the container regardless of profile. microVM-based backends (tracked in the roadmap) are the path to stronger isolation.
+- **Writable workspace mounts.** Even under `locked` with read-only root, the workspace bind mounts are writable if the mount was configured as writable. The profile does not retroactively make mounts read-only.
+- **DinD with `standard`/`compat`.** When DinD is active, inner containers can bypass network allowlists (they have their own network path). Enforcement quality is `partial` and is reported in the launch summary and `--debug` output.
+- **Credential files inside the container.** Auth tokens copied into the container via `sync` mode are readable by the agent. A future release will add a telemetry note for `hardened`/`locked` profiles recommending `api_key` or `oauth_token` mode over `sync`; enforcement is not planned.
+
+For the full design rationale and phased implementation plan, see the [Docker Runtime Hardening Contract](/reference/roadmap/docker-runtime-hardening-contract/) roadmap item.
+
+## What's in place today vs. what comes next
+
+### Status: under active development
+
+The profile model and most controls are live; a few items remain deferred. This section is the honest split — do not rely on an in-development control for isolation until it moves to "Enforced today."
+
+**Enforced today:**
+- All four profiles with enforced capability sets (`locked`, `hardened`, `standard`, `compat`) and `no-new-privileges` on by default outside `compat`
+- `[docker.grants]` in config and workspace for per-dimension overrides
+- `[docker]` in `jackin.role.toml` for role declarations (`min_profile`, `dind`, `allowed_hosts`, `capabilities_add`)
+- `standard`/`hardened`/`locked` sudo off by default; `compat` keeps sudo on unchanged
+- Runtime sudo provisioning when `sudo = true` is granted (off by default outside `compat`)
+- DinD off by default in `standard`/`hardened`/`locked`, on in `compat` — the per-profile default and skip-when-disabled behavior
+- The `allowlist` network tier — the outbound allowlist firewall is applied at launch, fails closed if it cannot be installed, and always includes the model API and telemetry endpoints
+- The `locked` Docker-internal network
+- Rootless DinD tier (`dind = "rootless"`) — experimental, requires cgroup v2, fails closed on v1, and is not yet a profile default
+- cgroup v2 required for `hardened`/`locked` — launches fail-closed on v1 hosts with a clear error; `standard` warns
+- The launch session contract and per-decision `--debug` telemetry
+- All validation errors at launch time (bad cap names, user+sudo conflict, memory sizing, profile conflicts)
+
+**Deferred (described above as the target, not yet shipped):**
+- `standard` becoming the compiled-in default — waiting on the workload compatibility matrix
+- Credential env-only posture under `hardened`/`locked` — preferring `api_key`/`oauth_token` over `sync` mode
+- The non-HTTP network proxy sidecar (protocol-level egress allowlist beyond HTTP)
+
+See the [Docker Runtime Hardening Contract](/reference/roadmap/docker-runtime-hardening-contract/) roadmap item for the remaining work and status.
+
+### Current default: `compat`
+
+Every launch uses `compat` by default — this is the same behavior as before profiles existed. Nothing breaks for anyone who doesn't opt in.
+
+To use a stricter profile today: pass `--docker-profile <profile>` or set `[docker] profile = "…"` in config.
+
+### What will change in a future release
+
+**`standard` will become the default** once the compatibility matrix for standard-profile workloads (Testcontainers, Compose, BuildKit, common runtimes on cgroup v2 hosts) is green. Until then, the default stays `compat` and no existing user is affected.
+
+After the flip, `compat` remains available as an explicit opt-down for workflows needing privileged DinD or any other capability that `standard` doesn't grant.
+
+### The `compat` profile stays permanently
+
+`compat` is not a temporary workaround — it is a valid named profile for roles that need privileged DinD, `apt install` at runtime, or any other capability that `standard` doesn't grant. After `standard` becomes the default, `compat` requires explicit opt-in:
+```sh
+jackin load fullstack . --docker-profile compat
+```
+or
+```toml
+[docker]
+profile = "compat"
+```
+
+or in a role manifest:
+```toml
+[docker]
+min_profile = "compat"   # role needs full sudo + apt install at runtime
+```
+
+### Deferred items
+
+| Item | Status |
+|---|---|
+| `standard` as compiled-in default | Deferred — waiting on workload compatibility matrix (cgroup v2 hosts) |
+| Credential posture: prefer `api_key`/`oauth_token` under `hardened`/`locked`; emit telemetry note on `sync` mode | Deferred — owned by [Container credential exposure](/reference/roadmap/container-credential-exposure/) |
+| Network proxy sidecar (non-HTTP protocol allowlist) | Deferred — separate research; see [Network egress policy](/reference/roadmap/network-egress-policy/) |

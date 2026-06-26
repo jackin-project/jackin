@@ -529,6 +529,7 @@ fn story_status_footer_launch_progress(frame: &mut Frame<'_>, area: Rect) {
         1.0, // fully opaque — the real launch cockpit fades in over ~30 frames
         StatusFooterHover {
             left: true,
+            usage: false,
             right: false,
             right_debug: false,
         },
@@ -560,6 +561,7 @@ fn story_status_footer_cockpit_chrome(frame: &mut Frame<'_>, area: Rect) {
         1.0,
         StatusFooterHover {
             left: false,
+            usage: false,
             right: false,
             right_debug: false,
         },

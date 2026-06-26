@@ -16,23 +16,34 @@ use tempfile::{TempDir, tempdir};
 struct Env {
     _temp: TempDir,
     home: PathBuf,
+    config_dir: PathBuf,
+    jackin_home: PathBuf,
 }
 
 fn setup_env() -> Env {
     let temp = tempdir().unwrap();
     let home = temp.path().join("home");
+    let config_dir = temp.path().join("config");
+    let jackin_home = home.join(".jackin");
     fs::create_dir_all(&home).unwrap();
-    Env { _temp: temp, home }
+    Env {
+        _temp: temp,
+        home,
+        config_dir,
+        jackin_home,
+    }
 }
 
 fn jackin(env: &Env) -> Command {
     let mut cmd = Command::cargo_bin("jackin").unwrap();
     cmd.env("HOME", &env.home);
+    cmd.env("JACKIN_CONFIG_DIR", &env.config_dir);
+    cmd.env("JACKIN_HOME_DIR", &env.jackin_home);
     cmd
 }
 
 fn config_path(env: &Env) -> PathBuf {
-    env.home.join(".config/jackin/config.toml")
+    env.config_dir.join("config.toml")
 }
 
 fn read_config(env: &Env) -> String {
@@ -41,8 +52,8 @@ fn read_config(env: &Env) -> String {
 
 fn read_workspace_config(env: &Env, name: &str) -> String {
     fs::read_to_string(
-        env.home
-            .join(".config/jackin/workspaces")
+        env.config_dir
+            .join("workspaces")
             .join(format!("{name}.toml")),
     )
     .unwrap()

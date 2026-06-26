@@ -573,7 +573,7 @@ fn filebrowser_open_git_url_returns_typed_outcome() {
 }
 
 #[test]
-fn mounts_add_opens_file_browser_directly() {
+fn mounts_add_starts_file_browser_listing_worker() {
     let ws = WorkspaceConfig::default();
     let mut state = editor_on_mounts_tab(ws, 0);
     let mut config = AppConfig::default();
@@ -597,10 +597,11 @@ fn mounts_add_opens_file_browser_directly() {
         panic!("expected editor stage");
     };
     assert!(
-        matches!(editor.modal, Some(Modal::FileBrowser { .. })),
-        "expected FileBrowser modal; got {:?}",
+        editor.modal.is_none(),
+        "file browser modal should wait for the listing worker; got {:?}",
         editor.modal
     );
+    assert!(state.file_browser_listing_in_flight());
 }
 
 #[test]
