@@ -158,10 +158,12 @@ RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master
     git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-/home/agent/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
 
 COPY --chown=agent:0 --chmod=0664 zshrc /home/agent/.zshrc
-COPY --chown=agent:0 --chmod=0664 starship.toml /home/agent/.config/starship.toml
 
 # Fish config — opt-in alternative shell. Same Starship prompt and
 # auto-title behaviour as zsh so the operator's pane border title
 # does not regress when switching shells.
-RUN install -d -o agent -g 0 -m 0775 /home/agent/.config/fish
+# install -d creates /home/agent/.config/ here so the starship.toml
+# COPY below does not auto-create it as root-owned.
+RUN install -d -o agent -g 0 -m 0775 /home/agent/.config /home/agent/.config/fish
 COPY --chown=agent:0 --chmod=0664 fish-config.fish /home/agent/.config/fish/config.fish
+COPY --chown=agent:0 --chmod=0664 starship.toml /home/agent/.config/starship.toml
