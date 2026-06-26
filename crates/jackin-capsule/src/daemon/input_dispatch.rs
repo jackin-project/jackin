@@ -213,9 +213,7 @@ impl Multiplexer {
         // Diagnostic: surface the dirty-exit modal's live selection index after
         // every dialog action so a "selection stuck" report can be confirmed or
         // ruled out from telemetry alone (does the index advance on arrows?).
-        if let Some(crate::tui::components::dialog::Dialog::ExitDirty { selected, .. }) =
-            self.dialog_top()
-        {
+        if let Some(Dialog::ExitDirty { selected, .. }) = self.dialog_top() {
             crate::clog!("exit-dirty: selected={selected}");
         }
     }
