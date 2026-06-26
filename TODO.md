@@ -39,6 +39,32 @@ Markers without TODO.md entry OK for transient in-flight work, but anything outl
 - **Last verified:** 2026-06-22 — checked v0.3.10 release assets; only `x86_64-linux.tar.xz` ships for Linux. PR #632 now builds/restores the pinned binary outside Docker and copies it from `docker/construct/prebuilt/shellfirm`.
 - **Done when:** shellfirm release at or after fix publishes `shellfirm-v<ver>-aarch64-linux.tar.xz` (or equivalent name) alongside existing x86_64 tarball. Replace the CI prebuild/staging step with TARGETARCH-aware curl + `tar -xJ` in the Dockerfile (mirror tirith pattern), then remove this TODO.
 
+### Docker security profile — flip default from `compat` to `standard`
+
+- **What:** `DockerSecurityProfile::Compat` is the current `Default::default()` in [`src/runtime/docker_profile.rs`](src/runtime/docker_profile.rs). Once the base-image sudo audit below resolves, change the default to `Standard` and flip `profile_base_grants(Standard).sudo` from `true` → `false`. Also enable `--security-opt no-new-privileges` for the `standard` profile (currently schema-present but not enforced due to the sudo blocker).
+- **Why:** `compat` was made the compiled-in default because the sudo audit is unresolved. After the audit, every new launch gets `standard` behavior (resource limits, DinD with resource caps, `no-new-privileges`) without any operator action. `compat` remains a valid profile — it just requires explicit opt-in instead of being the default.
+- **Blocked by:** `TODO(docker-security-profile-sudo-audit)` below.
+- **Code change:** one line in `impl Default for DockerSecurityProfile` in `src/runtime/docker_profile.rs`; one field change in `profile_base_grants(Standard)` (`sudo: false`); remove the "deferred pending sudo audit" note from the `no_new_privileges` block in `launch_role_runtime`.
+- **Done when:** `NOPASSWD:ALL` is removed from the base image, the sudo audit entry below is resolved, and the two-line code change is made. Update the profile defaults table in `docs/content/docs/reference/roadmap/docker-runtime-hardening-contract.mdx` and `docs/content/docs/guides/docker-profiles.mdx`.
+- **Marker:** `TODO(docker-security-profile-default)` — in `src/runtime/docker_profile.rs`, `impl Default for DockerSecurityProfile`.
+
+### Docker security profile — audit `NOPASSWD:ALL` sudo in base image
+
+- **What:** [`docker/construct/Dockerfile`](docker/construct/Dockerfile) at line 113 grants `agent ALL=(ALL) NOPASSWD:ALL`. This is incompatible with `--security-opt no-new-privileges` (sudo needs setuid-root escalation; `no-new-privileges` blocks it at the kernel level). Audit every privileged operation the base image and built-in agent images call at runtime via `sudo`, and replace each with a file capability (`setcap`) on the specific binary, or restructure so the operation runs before the `USER agent` switch.
+- **Why:** until this is resolved, `standard` profile cannot enable `no-new-privileges` (it would silently break `sudo apt install` and any agent script that calls `sudo`). This blocks `standard` from becoming the default and blocks the full privilege dimension of the hardening contract.
+- **Findings so far (2026-06-04):** zero `sudo` calls in jackin'-controlled runtime code (`entrypoint.sh`, `jackin-capsule runtime-setup`). The `NOPASSWD:ALL` entry exists for role-authored hook scripts and agent binaries (e.g., `apt install` during `setup-once.sh`). The network allowlist firewall init (`init-firewall.sh`) runs via `docker exec --user root` from the host — it does NOT call sudo inside the container and does not conflict.
+- **Resolution path:** (a) Replace `NOPASSWD:ALL` with a scoped sudoers entry for each privileged binary the base image ships (if any). (b) For roles that call `sudo` in hooks, role authors must either declare `min_profile = "standard"` (keeping full sudo) or replace sudo calls with file capabilities in their Dockerfile. (c) Update `profile_base_grants(Standard)` and the default to flip after this lands.
+- **Done when:** `NOPASSWD:ALL` is removed from `Dockerfile:113`, every built-in agent runtime (`the-architect`, `agent-smith`) passes the compatibility test matrix under `standard` profile with `no-new-privileges` enforced, and the `TODO(docker-security-profile-default)` entry above is executed.
+- **Marker:** `TODO(docker-security-profile-sudo-audit)` — add to `docker/construct/Dockerfile` near line 113.
+
+### Docker security profile — rootless DinD requires cgroup v2 confirmation
+
+- **What:** The DinD sidecar start in `src/runtime/launch.rs` has a `TODO(docker-security-profile-rootless-dind)` marker on the block that starts `docker:dind`. When `grants.dind == DindGrant::Rootless`, the image should switch to `docker:dind-rootless` and drop `--privileged`. This requires: (a) detecting cgroup v2 on the host, (b) confirming the rootless image works with Testcontainers/Compose on cgroup v2, (c) updating the DinD start block to use `docker:dind-rootless` and remove `--privileged`.
+- **Why:** `standard` profile uses `DindGrant::Rootless` as its DinD default on cgroup v2 hosts, but the code currently falls back to `docker:dind --privileged` regardless (the TODO is in place). Rootless DinD reduces the blast radius of a sidecar compromise.
+- **Blocked by:** compatibility test matrix (Testcontainers, Compose, BuildKit on rootless) — see [Docker Runtime Hardening Contract](/reference/roadmap/docker-runtime-hardening-contract/) Phase B.
+- **Done when:** `grants.dind == Rootless` uses `docker:dind-rootless` + no `--privileged` on cgroup v2 hosts; falls back to `docker:dind --privileged` on cgroup v1 with a session-contract note; compatibility matrix passes.
+- **Marker:** `TODO(docker-security-profile-rootless-dind)` — in `src/runtime/launch.rs` near the DinD sidecar start block.
+
 ### Internal cleanups
 
 #### `lychee-no-files-warn` — investigate "No files found for this input source" in deploy link check

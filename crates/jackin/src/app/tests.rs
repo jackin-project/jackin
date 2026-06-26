@@ -43,9 +43,9 @@ fn resolve_instance_reference_matches_manifest_instance_id() {
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
             role_container: "jk-k7p9m2xq-workspace-agentsmith".to_owned(),
-            dind_container: "jk-k7p9m2xq-workspace-agentsmith-dind".to_owned(),
+            dind_container: Some("jk-k7p9m2xq-workspace-agentsmith-dind".to_owned()),
             network: "jk-k7p9m2xq-workspace-agentsmith-net".to_owned(),
-            certs_volume: "jk-k7p9m2xq-workspace-agentsmith-dind-certs".to_owned(),
+            certs_volume: Some("jk-k7p9m2xq-workspace-agentsmith-dind-certs".to_owned()),
         },
     });
     let state_dir = paths.data_dir.join(&manifest.container_base);
@@ -78,9 +78,9 @@ fn resolve_instance_reference_ignores_purged_tombstones() {
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
             role_container: "jk-k7p9m2xq-workspace-agentsmith".to_owned(),
-            dind_container: "jk-k7p9m2xq-workspace-agentsmith-dind".to_owned(),
+            dind_container: Some("jk-k7p9m2xq-workspace-agentsmith-dind".to_owned()),
             network: "jk-k7p9m2xq-workspace-agentsmith-net".to_owned(),
-            certs_volume: "jk-k7p9m2xq-workspace-agentsmith-dind-certs".to_owned(),
+            certs_volume: Some("jk-k7p9m2xq-workspace-agentsmith-dind-certs".to_owned()),
         },
     });
     manifest.mark_status(instance::InstanceStatus::Purged);
@@ -294,9 +294,9 @@ fn ad_hoc_manifest_for_workdir(workdir: &std::path::Path) -> instance::InstanceM
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
             role_container: "jk-k7p9m2xq-agentsmith".to_owned(),
-            dind_container: "jk-k7p9m2xq-agentsmith-dind".to_owned(),
+            dind_container: Some("jk-k7p9m2xq-agentsmith-dind".to_owned()),
             network: "jk-k7p9m2xq-agentsmith-net".to_owned(),
-            certs_volume: "jk-k7p9m2xq-agentsmith-dind-certs".to_owned(),
+            certs_volume: Some("jk-k7p9m2xq-agentsmith-dind-certs".to_owned()),
         },
     })
 }
@@ -373,9 +373,9 @@ async fn hardline_restore_candidate_marks_missing_manifest_available() {
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
             role_container: container.to_owned(),
-            dind_container: format!("{container}-dind"),
+            dind_container: Some(format!("{container}-dind")),
             network: format!("{container}-net"),
-            certs_volume: format!("{container}-dind-certs"),
+            certs_volume: Some(format!("{container}-dind-certs")),
         },
     });
     manifest.mark_status(instance::InstanceStatus::Crashed);
@@ -419,9 +419,9 @@ async fn hardline_restore_candidate_errors_when_docker_unavailable() {
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
             role_container: container.to_owned(),
-            dind_container: format!("{container}-dind"),
+            dind_container: Some(format!("{container}-dind")),
             network: format!("{container}-net"),
-            certs_volume: format!("{container}-dind-certs"),
+            certs_volume: Some(format!("{container}-dind-certs")),
         },
     });
     manifest.mark_status(instance::InstanceStatus::Crashed);
@@ -482,6 +482,7 @@ fn workspace_show_includes_isolation_column() {
         grok: None,
         github: None,
         git_pull_on_entry: false,
+        docker: None,
     };
     let out = render_workspace_show(&AppConfig::default(), "jackin", &ws);
     assert!(out.contains("Isolation"));

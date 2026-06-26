@@ -1,4 +1,4 @@
 from_version = "v1alpha4"
-target_version = "v1alpha5"
-target_version_shipped = "2026-06-10"
-summary = "Restamps role manifest as v1alpha5. Adds optional [<agent>.providers.<id>] tables for per-provider model overrides (Claude/Codex/OpenCode); additive, so the migration is a no-op restamp and existing manifests load unchanged."
+target_version = "v1alpha6"
+target_version_shipped = "2026-06-18"
+summary = "Restamps a v1alpha4 role manifest to the current schema. The chain passes through v1alpha5 (per-provider [<agent>.providers.<id>] model overrides) and v1alpha6 (optional role [docker] security settings); both hops are additive with serde defaults, so the migration is a no-op restamp and existing manifests load unchanged."

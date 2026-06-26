@@ -147,6 +147,7 @@ fn resolve_agent_from_context_matches_workspace_from_nested_mount_path() {
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            docker: None,
         },
     );
 
@@ -199,6 +200,7 @@ fn resolve_agent_from_context_matches_workspace_from_host_workdir_root() {
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            docker: None,
         },
     );
 
@@ -250,6 +252,7 @@ fn resolve_agent_from_context_ignores_stale_last_agent() {
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            docker: None,
         },
     );
 
@@ -309,6 +312,7 @@ fn config_with_workspace(
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            docker: None,
         },
     );
     config
@@ -393,9 +397,9 @@ async fn resolve_running_container_from_context_uses_indexed_unique_instance() {
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
             role_container: "jk-k7p9m2xq-myapp-agentsmith".to_owned(),
-            dind_container: "jk-k7p9m2xq-myapp-agentsmith-dind".to_owned(),
+            dind_container: Some("jk-k7p9m2xq-myapp-agentsmith-dind".to_owned()),
             network: "jk-k7p9m2xq-myapp-agentsmith-net".to_owned(),
-            certs_volume: "jk-k7p9m2xq-myapp-agentsmith-dind-certs".to_owned(),
+            certs_volume: Some("jk-k7p9m2xq-myapp-agentsmith-dind-certs".to_owned()),
         },
     });
     let state_dir = paths.data_dir.join(&manifest.container_base);
@@ -440,9 +444,9 @@ async fn resolve_running_container_from_context_uses_ad_hoc_indexed_instance() {
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
             role_container: "jk-k7p9m2xq-agentsmith".to_owned(),
-            dind_container: "jk-k7p9m2xq-agentsmith-dind".to_owned(),
+            dind_container: Some("jk-k7p9m2xq-agentsmith-dind".to_owned()),
             network: "jk-k7p9m2xq-agentsmith-net".to_owned(),
-            certs_volume: "jk-k7p9m2xq-agentsmith-dind-certs".to_owned(),
+            certs_volume: Some("jk-k7p9m2xq-agentsmith-dind-certs".to_owned()),
         },
     });
     let state_dir = paths.data_dir.join(&manifest.container_base);
@@ -482,9 +486,9 @@ fn hardline_candidate_prompt_label_includes_manifest_and_docker_state() {
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
             role_container: container.to_owned(),
-            dind_container: format!("{container}-dind"),
+            dind_container: Some(format!("{container}-dind")),
             network: format!("{container}-net"),
-            certs_volume: format!("{container}-dind-certs"),
+            certs_volume: Some(format!("{container}-dind-certs")),
         },
     });
     manifest.mark_status(instance::InstanceStatus::RestoreAvailable);
@@ -526,9 +530,9 @@ fn hardline_candidate_prompt_label_counts_running_agent_sessions() {
         image_tag: "jk_agent-smith",
         docker: instance::DockerResources {
             role_container: container.to_owned(),
-            dind_container: format!("{container}-dind"),
+            dind_container: Some(format!("{container}-dind")),
             network: format!("{container}-net"),
-            certs_volume: format!("{container}-dind-certs"),
+            certs_volume: Some(format!("{container}-dind-certs")),
         },
     });
     manifest.write(&paths.data_dir.join(container)).unwrap();

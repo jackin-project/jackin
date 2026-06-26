@@ -32,6 +32,7 @@ fn edit_workspace_leaves_original_value_when_validation_fails() {
         grok: None,
         github: None,
         git_pull_on_entry: false,
+        docker: None,
     };
     config
         .create_workspace("big-monorepo", original.clone())

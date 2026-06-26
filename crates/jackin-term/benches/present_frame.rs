@@ -10,10 +10,9 @@
 //! cargo bench -p jackin-term --bench present_frame --features dhat-heap
 //! ```
 
-use std::hint::black_box;
-
 use criterion::{BatchSize, Criterion};
 use jackin_term::{DamageGrid, DirtySpans};
+use std::hint::black_box;
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]

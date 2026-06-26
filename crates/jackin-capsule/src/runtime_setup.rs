@@ -1165,7 +1165,7 @@ fn gh_auth_status_ok() -> bool {
         .is_ok_and(|status| status.success())
 }
 
-fn run_command(program: &str, args: &[&str]) -> Result<()> {
+pub(crate) fn run_command(program: &str, args: &[&str]) -> Result<()> {
     let mut command = Command::new(program);
     command.args(args);
     let output = runtime_setup_output(&mut command)

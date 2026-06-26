@@ -84,18 +84,7 @@ pub async fn run_status() -> Result<()> {
                 "daemon replied with ServerMsg::Unknown for Status — peer is newer than this CLI"
             )
         }
-        ServerMsg::Snapshot { .. } => {
-            anyhow::bail!("daemon replied with Snapshot for Status request")
-        }
-        ServerMsg::AgentRegistry { .. } => {
-            anyhow::bail!("daemon replied with AgentRegistry for Status request")
-        }
-        ServerMsg::UsageFocused { .. } => {
-            anyhow::bail!("daemon replied with UsageFocused for Status request")
-        }
-        ServerMsg::UsageAccounts { .. } => {
-            anyhow::bail!("daemon replied with UsageAccounts for Status request")
-        }
+        other => anyhow::bail!("daemon replied with {} for Status request", other.kind()),
     };
     crate::output::stdout_line(format_args!("Sessions: {}", sessions.len()));
     for s in &sessions {
@@ -112,87 +101,6 @@ pub async fn run_status() -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::PathBuf;
-    use tempfile::TempDir;
-    use tokio::net::UnixListener;
-
-    #[tokio::test]
-    async fn attach_proxy_relays_binary_bytes_without_interpreting_frames() {
-        let tmp = TempDir::new().unwrap();
-        let socket_path = short_socket_path(&tmp, "proxy.sock");
-        let listener = UnixListener::bind(&socket_path).unwrap();
-
-        let client_frame = vec![0x01, 0x00, 0x00, 0x00, 0x02, 0xff, 0x00];
-        let server_frame = vec![0x82, 0x00, 0x00, 0x00, 0x03, b'o', b'u', b't'];
-        let expected_client_frame = client_frame.clone();
-        let server_frame_for_task = server_frame.clone();
-
-        let server = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut received = vec![0u8; expected_client_frame.len()];
-            stream.read_exact(&mut received).await.unwrap();
-            assert_eq!(received, expected_client_frame);
-            stream.write_all(&server_frame_for_task).await.unwrap();
-            stream.shutdown().await.unwrap();
-        });
-
-        let input = tokio::io::duplex(1024);
-        let output = tokio::io::duplex(1024);
-        let (mut input_writer, input_reader) = input;
-        let (output_writer, mut output_reader) = output;
-
-        input_writer.write_all(&client_frame).await.unwrap();
-        input_writer.shutdown().await.unwrap();
-
-        run_attach_proxy_at(socket_path.to_str().unwrap(), input_reader, output_writer)
-            .await
-            .unwrap();
-
-        let mut received = Vec::new();
-        output_reader.read_to_end(&mut received).await.unwrap();
-        assert_eq!(received, server_frame);
-        server.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn attach_proxy_exits_when_socket_closes_before_stdin() {
-        let tmp = TempDir::new().unwrap();
-        let socket_path = short_socket_path(&tmp, "proxy.sock");
-        let listener = UnixListener::bind(&socket_path).unwrap();
-        let server_frame = vec![0x84, 0x00, 0x00, 0x00, 0x00];
-        let server_frame_for_task = server_frame.clone();
-
-        let server = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            stream.write_all(&server_frame_for_task).await.unwrap();
-            stream.shutdown().await.unwrap();
-        });
-
-        let (_input_writer, input_reader) = tokio::io::duplex(1024);
-        let (output_writer, mut output_reader) = tokio::io::duplex(1024);
-
-        tokio::time::timeout(
-            std::time::Duration::from_secs(1),
-            run_attach_proxy_at(socket_path.to_str().unwrap(), input_reader, output_writer),
-        )
-        .await
-        .expect("proxy should exit after socket EOF")
-        .unwrap();
-
-        let mut received = Vec::new();
-        output_reader.read_to_end(&mut received).await.unwrap();
-        assert_eq!(received, server_frame);
-        server.await.unwrap();
-    }
-
-    fn short_socket_path(tmp: &TempDir, file_name: &str) -> PathBuf {
-        tmp.path().join(file_name)
-    }
-}
-
 /// Query the daemon for the tab/pane snapshot and print as JSON.
 /// Output shape is `ServerMsg::Snapshot` verbatim so the host
 /// console can deserialize the same struct it shares with the
@@ -206,18 +114,7 @@ pub async fn run_snapshot() -> Result<()> {
                 "daemon replied with ServerMsg::Unknown for Snapshot — peer is newer than this CLI"
             )
         }
-        ServerMsg::SessionList { .. } => {
-            anyhow::bail!("daemon replied with SessionList for Snapshot request")
-        }
-        ServerMsg::AgentRegistry { .. } => {
-            anyhow::bail!("daemon replied with AgentRegistry for Snapshot request")
-        }
-        ServerMsg::UsageFocused { .. } => {
-            anyhow::bail!("daemon replied with UsageFocused for Snapshot request")
-        }
-        ServerMsg::UsageAccounts { .. } => {
-            anyhow::bail!("daemon replied with UsageAccounts for Snapshot request")
-        }
+        other => anyhow::bail!("daemon replied with {} for Snapshot request", other.kind()),
     };
     let payload = serde_json::json!({
         "tabs": tabs,
@@ -247,18 +144,7 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
                 "daemon replied with ServerMsg::Unknown for Agents — peer is newer than this CLI"
             )
         }
-        ServerMsg::SessionList { .. } => {
-            anyhow::bail!("daemon replied with SessionList for Agents request")
-        }
-        ServerMsg::Snapshot { .. } => {
-            anyhow::bail!("daemon replied with Snapshot for Agents request")
-        }
-        ServerMsg::UsageFocused { .. } => {
-            anyhow::bail!("daemon replied with UsageFocused for Agents request")
-        }
-        ServerMsg::UsageAccounts { .. } => {
-            anyhow::bail!("daemon replied with UsageAccounts for Agents request")
-        }
+        other => anyhow::bail!("daemon replied with {} for Agents request", other.kind()),
     };
 
     // Determine caller's own codename and annotate matching records.
@@ -365,7 +251,7 @@ async fn usage_accounts() -> Result<Vec<AccountUsageSnapshotView>> {
         ServerMsg::UsageAccounts { accounts } => Ok(accounts),
         other => anyhow::bail!(
             "daemon replied with {} for UsageAccountList request",
-            msg_kind(&other)
+            other.kind()
         ),
     }
 }
@@ -467,18 +353,21 @@ fn usage_row_proves_live_quota(row: &AccountUsageSnapshotView) -> bool {
 }
 
 fn usage_provider_matches(needle: &str, provider: &str) -> bool {
+    // Interchangeable provider/agent labels: a match needs one member of a group
+    // on each side. Bidirectional and extensible — add a group, not two arms.
+    const SYNONYMS: &[&[&str]] = &[
+        &["openai", "codex"],
+        &["anthropic", "claude"],
+        &["xai", "grok"],
+        &["zai", "glm"],
+    ];
     let needle = normalize_usage_provider_label(needle);
     let provider = normalize_usage_provider_label(provider);
     provider.contains(&needle)
         || needle.contains(&provider)
-        || (needle.contains("openai") && provider.contains("codex"))
-        || (needle.contains("codex") && provider.contains("openai"))
-        || (needle.contains("anthropic") && provider.contains("claude"))
-        || (needle.contains("claude") && provider.contains("anthropic"))
-        || (needle.contains("xai") && provider.contains("grok"))
-        || (needle.contains("grok") && provider.contains("xai"))
-        || (needle.contains("zai") && provider.contains("glm"))
-        || (needle.contains("glm") && provider.contains("zai"))
+        || SYNONYMS.iter().any(|group| {
+            group.iter().any(|m| needle.contains(m)) && group.iter().any(|m| provider.contains(m))
+        })
 }
 
 fn normalize_usage_provider_label(value: &str) -> String {
@@ -513,99 +402,5 @@ async fn request_control(request: &ClientMsg) -> Result<ServerMsg> {
     Ok(serde_json::from_slice(&body)?)
 }
 
-fn msg_kind(msg: &ServerMsg) -> &'static str {
-    match msg {
-        ServerMsg::SessionList { .. } => "SessionList",
-        ServerMsg::Snapshot { .. } => "Snapshot",
-        ServerMsg::AgentRegistry { .. } => "AgentRegistry",
-        ServerMsg::UsageFocused { .. } => "UsageFocused",
-        ServerMsg::UsageAccounts { .. } => "UsageAccounts",
-        ServerMsg::Unknown => "Unknown",
-    }
-}
-
 #[cfg(test)]
-mod usage_tests {
-    use super::*;
-
-    fn account(
-        provider: &str,
-        status: &str,
-        source: &str,
-        confidence: &str,
-    ) -> AccountUsageSnapshotView {
-        AccountUsageSnapshotView {
-            provider: provider.to_owned(),
-            account_label: format!("{provider} account"),
-            source: source.to_owned(),
-            confidence: confidence.to_owned(),
-            window_kind: "Session".to_owned(),
-            used_amount: Some(63),
-            used_unit: Some("percent".to_owned()),
-            limit_amount: Some(100),
-            limit_unit: Some("percent".to_owned()),
-            resets_at: Some(1_781_186_000),
-            fetched_at: 1_781_185_680,
-            expires_at: None,
-            status: status.to_owned(),
-            last_error: None,
-        }
-    }
-
-    #[test]
-    fn usage_verify_accepts_trusted_rows_for_every_provider() {
-        let accounts = [
-            account("Codex", "fresh", "provider_api", "authoritative"),
-            account("Claude", "fresh", "cli", "authoritative"),
-            account("Amp", "fresh", "provider_api", "authoritative"),
-            account("Grok Build", "fresh", "cli", "authoritative"),
-            account("GLM / Z.AI", "fresh", "provider_api", "authoritative"),
-            account("Kimi", "fresh", "provider_api", "authoritative"),
-            account("MiniMax", "fresh", "provider_api", "authoritative"),
-        ];
-
-        let checks = verify_usage_accounts(&accounts);
-
-        assert_eq!(checks.len(), 7);
-        assert!(
-            checks.iter().all(|check| check.status == "ok"),
-            "{checks:?}"
-        );
-    }
-
-    #[test]
-    fn usage_verify_reports_missing_and_untrusted_providers() {
-        let mut untrusted = account("Codex", "needs_login", "none", "none");
-        untrusted.account_label = "needs Codex login".to_owned();
-        untrusted.last_error = Some("Codex auth not available".to_owned());
-        let accounts = [
-            untrusted,
-            account("Amp", "fresh", "provider_api", "authoritative"),
-        ];
-
-        let checks = verify_usage_accounts(&accounts);
-
-        let codex = checks
-            .iter()
-            .find(|check| check.label == "OpenAI")
-            .expect("OpenAI check");
-        assert_eq!(codex.status, "untrusted");
-        assert!(
-            codex
-                .detail
-                .as_deref()
-                .is_some_and(|detail| detail.contains("needs_login")),
-            "{codex:?}"
-        );
-        let anthropic = checks
-            .iter()
-            .find(|check| check.label == "Anthropic")
-            .expect("Anthropic check");
-        assert_eq!(anthropic.status, "missing");
-        let amp = checks
-            .iter()
-            .find(|check| check.label == "Amp")
-            .expect("Amp check");
-        assert_eq!(amp.status, "ok");
-    }
-}
+mod tests;

@@ -10,6 +10,7 @@
     "run-telemetry",
     "authentication",
     "tmux",
+    "docker-profiles",
     "security-model",
     "comparison"
   ]
