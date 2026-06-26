@@ -1,4 +1,4 @@
 from_version = "v1alpha4"
-target_version = "v1alpha6"
+target_version = "v1alpha8"
 target_version_shipped = "2026-05-26"
 summary = "Moves the workspace-level op_account onto each op:// env ref as a per-ref account key so refs from different 1Password accounts resolve, then removes the top-level op_account."

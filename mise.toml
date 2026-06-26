@@ -22,6 +22,7 @@ zig = "0.16.0"
 [settings]
 cargo.binstall = true
 idiomatic_version_file_enable_tools = ["rust"]
+lockfile = true
 
 # Construct image tasks. Each delegates to the `jackin-xtask` Rust binary
 # via `cargo xtask construct <sub>`; all task logic lives in Rust, not shell.

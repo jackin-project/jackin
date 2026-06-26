@@ -88,18 +88,19 @@ The original target API was:
 | `session.attach` | 3 | Return a PTY attachment handle so the client can connect |
 | `events` | 3 | Upgrade connection to a streaming event channel |
 
-**Deferred event stream:** `session-started`, `session-ended`, `all-sessions-ended`, `agent-state-changed {session_id, state}`. The shipped Phase 3 control channel exposes one-shot `status` and `snapshot`; streaming state belongs to Phase 4 daemon integration.
+**Event stream:** not yet implemented. The control channel is strictly request/reply today (`Status`, `Snapshot`, `Agents`, `ReportRuntimeEvent`, `StatusCapture`, the `Usage*` quota reads, and `TokenUsage`); there is no `EventsSubscribe` / streaming `AgentStateChanged` / `SessionSpawned` / `SessionExited` / `WorkspaceStatusChanged` channel. Per-session token spend ships as the polled `TokenUsage` request/reply method, **not** a `TokenUsageChanged` event. A streaming event channel for the Phase 4 host daemon to consume across containers (instead of polling) remains open.
 
 ### Agent state model
 
-Each session tracks one of four states. These states are inferred from PTY output activity and foreground process state — no agent hooks or configuration required.
+Each session tracks the public status vocabulary owned by the [agent runtime status authority](/reference/roadmap/agent-runtime-status/). Status is derived from semantic runtime reports, visible-screen rule packs, OSC evidence, process ownership, and watchdog checks; PTY output activity only schedules reevaluation and feeds stuck diagnostics.
 
 | State | Meaning |
 |---|---|
-| `working` | Output flowing or foreground process actively running |
-| `blocked` | Silent for N seconds with a foreground process present — waiting for operator input |
+| `working` | Reliable evidence says the agent is actively generating, running tools, or processing |
+| `blocked` | Reliable evidence says the agent is waiting on an operator decision or interactive input |
 | `done` | Work finished; the operator has not yet reviewed the output |
-| `idle` | Reviewed or no work in progress |
+| `idle` | Reviewed, no work in progress, or a shell pane |
+| `unknown` | No reliable state evidence |
 
 The two-stage `done` / `idle` split is important: a `done` slot should not be automatically refilled by the autonomous task queue or cleaned up from the console until the operator has acknowledged the output. This distinction drives the "ready for review" indicator in the desktop app and the dispatch logic in future autonomous queue work.
 
@@ -151,7 +152,7 @@ The [Herdr](https://github.com/ogulcancelik/herdr) study under "Prior art: Herdr
 
 - **Top-of-screen chrome.** The top chrome renders ` jackin' ` on the left followed by one tab per active jackin session. Active tab gets a distinct graphite background plus white underline/bold treatment; inactive tabs are dimmed; tab labels include the rolled-up state glyph. Operators sharing a screen recognise the brand pill at a glance without confusing it for the selected tab.
 - **Empty initial state when no agent is preselected.** When no initial agent argv is provided at daemon launch, the multiplexer can come up with the brand header, zero tabs, and a centred hint listing the agents from `/jackin/run/agent.toml` plus `Shell`. The operator picks one with the prefix key and the first tab spawns into that selection. When the host passes an initial agent argv, the daemon spawns the first tab with that agent automatically — matching the historical direct-into-agent UX.
-- **Per-tab "most urgent" state roll-up.** A tab containing any `blocked` pane is `blocked`; otherwise any `done` pane makes it `done`; otherwise `working`; otherwise `idle`. Same urgency order herdr uses. This drives the tab-strip glyph and feeds the future `agent-state-changed` event stream. Once a pane reaches `blocked`, the attention glyph stays visible until explicit operator keyboard input reaches that pane; incidental PTY output is not enough to clear it.
+- **Per-tab "most urgent" state roll-up.** A tab containing any `blocked` pane is `blocked`; otherwise any `done` pane makes it `done`; otherwise `working`; otherwise `idle`. Same urgency order Herdr uses. This drives the tab-strip glyph and feeds the status event stream. Once a pane reaches `blocked`, the attention glyph stays visible until explicit operator keyboard input reaches that pane; incidental PTY output is not enough to clear it.
 
 These are *interface* borrows. Herdr's internal layout (workspaces, sidebar, pane-focus suppression rules, ghostty embedding, kitty graphics passthrough, plugin hooks) is not part of jackin' scope and is not copied.
 
@@ -275,6 +276,7 @@ The rewrite produces this layout under `crates/jackin-capsule/src/`:
 | `protocol/control.rs` | Newline-delimited JSON request/response types for `status`, `session.create`, etc. |
 | `protocol/attach.rs` | Tag-plus-length binary framing for the attach channel |
 | `session.rs` | One PTY + one `DamageGrid` + state-inference timer; `Session::spawn`, `Session::feed_pty`, mode/OSC passthrough state |
+| `token_monitor.rs` | Per-session token-spend reader (provider JSONL / OpenCode turso SQLite); reconciled against live agent sessions + polled on the state tick, served via the `TokenUsage` control method |
 | `layout.rs` | Pane tree (kept, border math fixed) |
 | `tab.rs` | Tab struct + tab strip ordering |
 | `statusbar.rs` | Top-chrome renderer (brand pill, tabs, active-tab underline) |
@@ -426,7 +428,7 @@ The deeper architectural difference: Herdr wraps **bare host processes**. jackin
 
 **Blocking `wait` semantics on the socket.** Herdr's socket API lets callers block until a status transition (`herdr wait agent-status 1-1 --status done`). This is a better interface than polling for automation scripts and for the daemon's event subscription. The `events` stream in Phase 3 should support the same pattern: a subscriber blocks on the stream and receives the event when the transition occurs.
 
-**Layered state authority.** Herdr detects agent state by combining foreground process state, visible terminal-screen signals, and semantic integration reports. `jackin-capsule` will use the same concept — with the advantage that it runs inside the container and reads the agent's real PTY and process tree directly rather than through a `docker attach` wrapper. Output activity remains a weak `working` signal, but silence alone must not mean `blocked`; the dedicated [agent runtime status authority](/reference/roadmap/agent-runtime-status/) owns the full arbitration model.
+**Layered state authority.** Herdr detects agent state by combining foreground process state, visible terminal-screen signals, and semantic integration reports. `jackin-capsule` uses the same concept — with the advantage that it runs inside the container and reads the agent's real PTY and process tree directly rather than through a `docker attach` wrapper. PTY output recency feeds scheduling and stuck diagnostics but never authors `working`, `blocked`, or `idle`; the dedicated [agent runtime status authority](/reference/roadmap/agent-runtime-status/) owns the full arbitration model.
 
 ### What not to borrow from Herdr
 
@@ -470,14 +472,14 @@ The first Phase 3 attempt landed PID 1 ownership, the PTY layer, a binary pane t
 
 Phase 3 also keeps the control-channel work the first attempt completed:
 
-- Implement the [agent runtime status authority](/reference/roadmap/agent-runtime-status/): raw `working` / `blocked` / `idle` / `unknown`, derived `done`, foreground-process detection, semantic runtime reports, visible-screen signals, stale-report arbitration, and stuck diagnostics. Silence alone is not a blocker signal.
+- Shipped the [agent runtime status authority](/reference/roadmap/agent-runtime-status/): raw `working` / `blocked` / `idle` / `unknown`, derived `done`, foreground-process detection, semantic runtime reports, visible-screen signals, stale-report arbitration, and stuck diagnostics. Silence alone is not a blocker signal.
 - Implement the two-stage `done` / `idle` split and the operator-acknowledgement mechanism.
 - Expand control-channel API: `session.create`, `session.kill`, `session.title`, `events`.
-- Implement event stream: `session-started`, `session-ended`, `agent-state-changed`.
+- Per-session token spend ships as the polled `TokenUsage` request/reply method. The streaming event channel (`EventsSubscribe` with `AgentStateChanged` / `SessionSpawned` / `SessionExited` / `TokenUsageChanged` / `WorkspaceStatusChanged`) remains open — the control channel is request/reply only today.
 - Implement per-tab status roll-up (`blocked > done > working > idle > unknown`) on the host side, consuming events from the control channel.
 - Remove `tmux` from the derived image (<RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile>).
 - Replace all `docker exec tmux …` call sites in the host CLI with control-channel calls.
-- Update console session panel to consume `agent-state-changed` events rather than polling.
+- Update console session indicators to consume status authority output rather than inventing state from host-side polling.
 - Update attention prompts to subscribe to `blocked` state events rather than doing PTY polling from the host.
 
 `session.attach` is intentionally *not* on the control channel — attach is the persistent binary attach channel defined in "Wire protocol". The first attempt accidentally collapsed the two into one socket; the rewrite separates them.
@@ -493,7 +495,7 @@ Phase 3 also keeps the control-channel work the first attempt completed:
 
 - **[Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)** — Herdr is evaluated there as the strongest prior art for the multiplexer vision. The full comparative table (Herdr vs. jackin' values) lives in the research overview.
 - **[Console agent session control](/reference/roadmap/console-agent-session-control/)** — Phase 4 of that item unblocks once Phase 2 of this item ships: the binary exposes live session state, eliminating manifest-snapshot reconciliation.
-- **[Agent runtime status authority](/reference/roadmap/agent-runtime-status/)** — the `agent-state-changed` event stream from Phase 3 is the delivery mechanism for blocked/working/done/idle/stuck indicators in the console and hardline.
+- **[Agent runtime status authority](/reference/roadmap/agent-runtime-status/)** — the Phase 3 event stream is the delivery mechanism for blocked/working/done/idle/stuck indicators in the console and hardline.
 - **[Agent attention prompts](/reference/roadmap/agent-attention-prompts/)** — `blocked` events replace PTY polling from the host; `done` events trigger the "ready for review" notification path.
 - **[jackin' daemon](/reference/roadmap/jackin-daemon/)** — `jackin-capsule` is the per-container endpoint the daemon subscribes to. Phase 4 of this item and the daemon's container-watch phase are designed together.
 - **[jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/)** — Phase 3 of this item is the prerequisite: the desktop app's live session view is driven by `jackin-capsule` socket events aggregated by the daemon.

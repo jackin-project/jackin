@@ -13,6 +13,7 @@
 pub mod branch;
 pub mod cleanup;
 pub mod finalize;
+pub mod git_inspect;
 pub mod materialize;
 pub mod state;
 

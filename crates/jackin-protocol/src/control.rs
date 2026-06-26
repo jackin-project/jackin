@@ -7,6 +7,8 @@
 //! disconnects.
 use serde::{Deserialize, Serialize};
 
+use crate::agent_status::AgentStatusReport;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
@@ -16,6 +18,27 @@ pub enum ClientMsg {
     Snapshot,
     /// Request the agent registry (codenames, agent types, providers, timestamps).
     Agents,
+    /// Forward a runtime hook/plugin event for a session from an in-container
+    /// reporter. The daemon maps and gates it (events, never states); the
+    /// reporter only forwards. Acked immediately so the reporter never blocks
+    /// an agent hook.
+    ReportRuntimeEvent {
+        session_id: u64,
+        /// Unique per session+runtime, e.g. `hook-<runtime>-<session>`.
+        source_id: String,
+        /// Agent runtime slug (`claude`, `codex`, `opencode`, `amp`, …).
+        runtime: String,
+        /// Vendor event name (`Stop`, `permission.asked`, …) or a canonical name.
+        event: String,
+        /// Optional raw JSON payload from the hook's stdin (unused for now).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payload: Option<String>,
+    },
+    /// Ask the daemon to snapshot a session's live grid + evidence bundle into a
+    /// new capture fixture directory (a contributor diagnostic: turn a live
+    /// mis-detection into a regression fixture). The daemon owns the grid, so it
+    /// writes the files; the client only triggers and is Acked.
+    StatusCapture { session_id: u64 },
     /// Request the usage/quota snapshot for the currently focused pane.
     UsageFocused,
     /// Ask the daemon to refresh focused usage/quota data, then return the
@@ -23,9 +46,29 @@ pub enum ClientMsg {
     UsageRefreshFocused,
     /// Return every account/quota snapshot currently known to the daemon cache.
     UsageAccountList,
+    /// Request the per-session token-spend summary for one session, read from
+    /// the daemon's token monitor (provider JSONL/SQLite totals).
+    TokenUsage { session_id: u64 },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
+}
+
+impl ServerMsg {
+    /// Variant name for diagnostics. Canonical home for the variant→label map so
+    /// consumers across crates don't each re-spell it.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::SessionList { .. } => "SessionList",
+            Self::Snapshot { .. } => "Snapshot",
+            Self::AgentRegistry { .. } => "AgentRegistry",
+            Self::UsageFocused { .. } => "UsageFocused",
+            Self::UsageAccounts { .. } => "UsageAccounts",
+            Self::TokenUsage { .. } => "TokenUsage",
+            Self::Ack => "Ack",
+            Self::Unknown => "Unknown",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,15 +87,34 @@ pub enum ServerMsg {
     },
     /// Agent registry: every tab ever opened in this container lifetime.
     AgentRegistry { records: Vec<AgentRegistryEntry> },
+    /// Acknowledgement for a fire-and-forget request (e.g. `ReportRuntimeEvent`).
+    Ack,
     /// Usage/quota data for the focused pane.
     UsageFocused { usage: Box<FocusedUsageView> },
     /// Account/quota snapshots known to the daemon cache.
     UsageAccounts {
         accounts: Vec<AccountUsageSnapshotView>,
     },
+    /// Per-session token-spend summary; `None` when the session is unknown to
+    /// the token monitor (never registered, or already exited).
+    TokenUsage { summary: Option<TokenUsageSummary> },
     /// Forward-compat sink for variants added by a newer peer.
     #[serde(other)]
     Unknown,
+}
+
+/// Per-session token-spend totals reported by the in-container token monitor.
+/// Mirrors `token_monitor::TokenTotals::to_summary` on the wire.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TokenUsageSummary {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_write_tokens: u64,
+    /// Provider-supplied cost when the source reports it directly.
+    pub cost_usd: Option<f64>,
+    /// Most recently used model in the session.
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -273,6 +335,11 @@ pub struct PaneSnapshot {
     /// `None` for shell sessions; the agent slug otherwise.
     pub agent: Option<String>,
     pub state: AgentState,
+    /// Full evidence-arbitration status report. `None` until the capsule
+    /// populates it from `SessionStatus::report` (Phase 3/10 wiring); the host
+    /// console renders `state` until then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_status_report: Option<AgentStatusReport>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -282,6 +349,8 @@ pub enum AgentState {
     Blocked,
     Done,
     Idle,
+    /// No reliable evidence about the agent's state. Safer than guessing.
+    Unknown,
 }
 
 impl AgentState {
@@ -291,6 +360,7 @@ impl AgentState {
             Self::Blocked => "blocked",
             Self::Done => "done",
             Self::Idle => "idle",
+            Self::Unknown => "unknown",
         }
     }
 }

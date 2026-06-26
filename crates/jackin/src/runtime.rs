@@ -9,6 +9,9 @@ pub mod attach {
 pub mod drift {
     pub use jackin_runtime::runtime::drift::*;
 }
+pub mod docker_profile {
+    pub use jackin_runtime::runtime::docker_profile::*;
+}
 pub mod logs {
     pub use jackin_runtime::runtime::logs::*;
 }
@@ -22,6 +25,7 @@ pub mod snapshot {
     pub use jackin_runtime::runtime::snapshot::*;
 }
 
+pub use jackin_runtime::runtime::DockerSecurityProfile;
 pub(crate) use jackin_runtime::runtime::RepoError;
 pub(crate) use jackin_runtime::runtime::docker_unavailable_msg;
 pub use jackin_runtime::runtime::matching_family;
@@ -41,6 +45,7 @@ pub(crate) use jackin_runtime::runtime::{
     release_entry_if_idle,
 };
 pub use jackin_runtime::runtime::{LoadOptions, load_role};
+pub use jackin_runtime::runtime::{background_prewarm_targets, spawn_background_image_prewarm};
 pub use jackin_runtime::runtime::{
     eject_role, exile_all, prune_all_instances, prune_cache, prune_diagnostics, prune_images,
     prune_instances, prune_jackin_home, prune_roles, purge_class_data, purge_container_state,

@@ -1,0 +1,21 @@
+# Launch never reconnects to a live instance
+
+Status: accepted
+
+A launch (operator picks workspace + role + agent) only ever **creates** a new instance, or **restores** an un-cleanly-terminated one (crashed, killed, interrupted). It never attaches to a healthy live instance. Reconnect (hardline) is reachable only by explicitly selecting a concrete instance from the instance/Running view. The two surfaces are orthogonal: **launch = create or restore-dead; instance selection = reconnect/manage live.**
+
+## Why this is recorded
+
+PR #576 ("instant launch fast paths") made a launch pick silently attach to the first running instance of the same role+agent. A future reader seeing the launch path return into the reconnect path would reasonably assume that is intended fast-launch behavior. It is not: it violates operator intent, because the operator selected an identity, not an instance.
+
+## Considered options
+
+- **Silent auto-attach on running (the #576 behavior).** Rejected: the operator never chose that instance, so reconnecting hijacks a "start work" intent into "return to existing work." Fast, but wrong.
+- **Show running instances on the launch resume screen alongside crashed ones.** Rejected: blurs the two surfaces and re-admits implicit reconnect. A healthy live instance is not a restore candidate.
+- **Launch is create-or-restore-dead; reconnect is explicit-only (chosen).** A launch with no restore candidate starts a new instance. A launch with un-cleanly-terminated candidates shows resume-or-new (start-new default). Reconnect lives only on explicit instance selection.
+
+## Consequences
+
+- Multiple live instances of the same workspace + role + agent are allowed and expected; a launch while one runs starts another. There is no one-live-instance cap.
+- The "instant launch" speed goal is preserved where it belongs — fast image materialization and the reconnect path once an instance is explicitly chosen — not by short-circuiting launch into reconnect.
+- The restore-candidate set excludes healthy running instances; it is only un-cleanly-terminated state (crashed / preserved-dirty / preserved-unpushed / restore-available) and stale index rows whose container is gone.

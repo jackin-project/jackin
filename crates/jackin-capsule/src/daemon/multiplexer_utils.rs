@@ -398,12 +398,14 @@ impl Multiplexer {
                             label: session.label.clone(),
                             agent: session.agent.clone(),
                             state: session.state,
+                            agent_status_report: Some(session.status.report(session.agent.clone())),
                         },
                         None => PaneSnapshot {
                             session_id: id,
                             label: "(missing)".to_owned(),
                             agent: None,
                             state: crate::protocol::control::AgentState::Idle,
+                            agent_status_report: None,
                         },
                     })
                     .collect();

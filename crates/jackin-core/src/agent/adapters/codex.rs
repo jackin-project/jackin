@@ -27,8 +27,10 @@ impl AgentRuntime for CodexRuntime {
         format!(
             "\
 USER agent
-COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.local/bin/codex
+COPY --link --chown=agent:0 --chmod=0755 {source} /home/agent/.local/bin/codex
 ENV PATH=\"/home/agent/.local/bin:${{PATH}}\"
+RUN set -euxo pipefail && \\
+    codex --version
 "
         )
     }
@@ -67,9 +69,15 @@ ENV PATH=\"/home/agent/.local/bin:${{PATH}}\"
     fn state_paths(&self) -> AgentStatePaths {
         AgentStatePaths {
             credential_dir: ".codex",
+            config_dir: None, // all durable state under ~/.codex
             credential_file: Some(".codex/auth.json"),
             folder_env_var: Some("CODEX_HOME"),
+            home_files: &[],
         }
+    }
+
+    fn default_home_exclude_paths(&self) -> &'static [&'static str] {
+        &[".codex/tmp"]
     }
 
     fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {

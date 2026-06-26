@@ -129,9 +129,19 @@ pub fn handle_list_key(
             match workspace_list_new_session_open_plan(
                 workspace_list_new_session_plan(state.selected_row()),
                 |workspace_idx, instance_idx| {
+                    // Tree rows index the visible list (live + failed). A new
+                    // session can only attach to a live container, so resolve
+                    // by visible index but yield a container only when running.
                     state
-                        .workspace_active_instances(workspace_idx)
+                        .workspace_visible_instances(workspace_idx)
                         .get(instance_idx)
+                        .filter(|entry| {
+                            matches!(
+                                entry.status,
+                                jackin_core::instance::InstanceStatus::Active
+                                    | jackin_core::instance::InstanceStatus::Running
+                            )
+                        })
                         .map(|entry| entry.container_base.clone())
                 },
             ) {
@@ -332,9 +342,9 @@ fn handle_list_left_right(
         selected,
         horizontal_delta,
         state.current_dir_expanded,
-        state.has_current_dir_active_instances(),
+        state.has_current_dir_visible_instances(),
         |idx| state.is_workspace_expanded(idx),
-        |idx| state.has_active_instances(idx),
+        |idx| state.has_visible_instances(idx),
     ) {
         WorkspaceListHorizontalPlan::CollapseTree => {
             dispatch_manager(state, ManagerMessage::CollapseSelectedTree);
@@ -407,11 +417,11 @@ fn selected_direct_instance<'a>(
 ) -> Option<&'a jackin_core::instance::InstanceIndexEntry> {
     match workspace_idx {
         Some(ws_idx) => state
-            .workspace_active_instances(ws_idx)
+            .workspace_visible_instances(ws_idx)
             .get(instance_idx)
             .copied(),
         None => state
-            .current_dir_active_instances()
+            .current_dir_visible_instances()
             .get(instance_idx)
             .copied(),
     }

@@ -145,21 +145,29 @@ pub struct ParseAgentError {
     got: String,
 }
 
+impl Agent {
+    /// Parse a canonical agent slug without allocating. Returns `None` on an
+    /// unrecognized slug — the hot path (per-process `/proc` sampling) prefers
+    /// this over `FromStr`, whose error payload allocates a `String` on every
+    /// miss.
+    pub fn from_slug(s: &str) -> Option<Self> {
+        match s {
+            "claude" => Some(Self::Claude),
+            "codex" => Some(Self::Codex),
+            "amp" => Some(Self::Amp),
+            "kimi" => Some(Self::Kimi),
+            "opencode" => Some(Self::Opencode),
+            "grok" => Some(Self::Grok),
+            _ => None,
+        }
+    }
+}
+
 impl FromStr for Agent {
     type Err = ParseAgentError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "claude" => Ok(Self::Claude),
-            "codex" => Ok(Self::Codex),
-            "amp" => Ok(Self::Amp),
-            "kimi" => Ok(Self::Kimi),
-            "opencode" => Ok(Self::Opencode),
-            "grok" => Ok(Self::Grok),
-            other => Err(ParseAgentError {
-                got: other.to_owned(),
-            }),
-        }
+        Self::from_slug(s).ok_or_else(|| ParseAgentError { got: s.to_owned() })
     }
 }
 
