@@ -586,6 +586,17 @@ fn build_exit_inspect_rows(
 /// isolated work, the modal is shown (no teardown); otherwise the container
 /// drains and exits, preserving the original non-clean-exit reason.
 async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>) -> bool {
+    // This runs on every client frame while no sessions are live (not just on
+    // the session-exit transition). If a dialog is already open, the dirty-exit
+    // flow is already active — the modal, its Inspect view, or the New-tab
+    // picker spawned from "Start a new agent" (with zero live sessions, the only
+    // way to have an open dialog is this flow). Re-entering here would push a
+    // fresh modal and re-run the git assessment on every keypress, resetting the
+    // selection to 0 — so the operator could never move past the first row.
+    // Defer until the current dialog is resolved.
+    if mux.dialog_open() {
+        return false;
+    }
     match crate::exit_assess::decide_exit(&mux.launch_config).await {
         crate::exit_assess::ExitDecision::Drain => {
             if let Some(reason) = reason {

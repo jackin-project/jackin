@@ -6326,3 +6326,43 @@ fn exit_dirty_marker_moves_after_session_exits_realistic() {
         "down arrow must move the rendered marker on the operator's screen: before={before:?} after={after:?}"
     );
 }
+
+#[tokio::test]
+async fn last_session_exit_does_not_repush_modal_while_dialog_open() {
+    // Regression: the event loop calls handle_last_session_exit on every client
+    // frame while no sessions are live. With the dirty-exit modal already open,
+    // re-entering must NOT push a second modal (which reset the selection to 0
+    // every keypress, capping navigation at row 1).
+    let mut mux = test_mux(44, 157);
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    let depth_before = mux.dialog_stack.len();
+
+    let exited = handle_last_session_exit(&mut mux, None).await;
+
+    assert!(!exited, "must keep the loop alive while the modal is open");
+    assert_eq!(
+        mux.dialog_stack.len(),
+        depth_before,
+        "must not re-push the modal while a dialog is already open"
+    );
+}
+
+#[test]
+fn exit_dirty_down_arrow_reaches_last_row() {
+    // The selection must advance all the way to the final row (Discard), not cap
+    // at row 1 — guards against an off-by-one or re-push regression.
+    let mut mux = test_mux(44, 157);
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    for _ in 0..5 {
+        mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42])); // down
+    }
+    match mux.dialog_top() {
+        Some(Dialog::ExitDirty { selected, .. }) => {
+            assert_eq!(
+                *selected, 3,
+                "five downs must land on the last row (Discard)"
+            );
+        }
+        other => panic!("expected ExitDirty, got {other:?}"),
+    }
+}
