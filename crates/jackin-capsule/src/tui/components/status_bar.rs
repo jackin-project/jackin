@@ -199,10 +199,10 @@ pub struct StatusBarPlan {
     pub(crate) overflow_col: Option<u16>,
 }
 
-pub(crate) fn button_text_for(prefix_mode: PrefixMode) -> String {
+pub(crate) fn button_text_for(prefix_mode: PrefixMode) -> &'static str {
     match prefix_mode {
-        PrefixMode::Idle => " ☰Menu ".to_owned(),
-        PrefixMode::Awaiting => " prefix… ".to_owned(),
+        PrefixMode::Idle => " ☰Menu ",
+        PrefixMode::Awaiting => " prefix… ",
     }
 }
 
@@ -217,7 +217,7 @@ pub fn status_bar_plan(
     prefix_mode: PrefixMode,
 ) -> StatusBarPlan {
     let hint_text = button_text_for(prefix_mode);
-    let hint_cols = display_cols(&hint_text);
+    let hint_cols = display_cols(hint_text);
     let reserve_right: u16 = hint_cols + 2; // 1 col padding + 1 trailing space
 
     let resolved: Vec<(String, TabGlyph, bool)> = tabs
@@ -271,7 +271,7 @@ pub fn status_bar_plan(
 
     StatusBarPlan {
         cells,
-        hint_text,
+        hint_text: hint_text.to_owned(),
         hint_cols,
         hint_start,
         overflow_col,

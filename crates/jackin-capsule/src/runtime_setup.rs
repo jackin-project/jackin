@@ -373,12 +373,13 @@ fn setup_claude() -> Result<()> {
 }
 
 /// Install the Claude plugin marketplaces and plugins declared by the role
-/// manifest, once per home.
+/// manifest, once per declared plugin set.
 ///
 /// Plugin setup moved here from the image build: the `claude` binary is now
 /// bind-mounted read-only at `docker run` (not baked into the derived image), so
-/// there is no longer a build step to run `claude plugin install`. Idempotent via
-/// a marker so re-launches and sibling tabs do not re-run it.
+/// there is no longer a build step to run `claude plugin install`. Idempotent:
+/// a fingerprint marker prevents re-install on re-launches and sibling tabs
+/// unless the declared plugin set changes.
 fn setup_claude_plugins() {
     let Some(config) = crate::config::load_optional() else {
         return;
@@ -387,8 +388,7 @@ fn setup_claude_plugins() {
         return;
     }
     // Re-run when the declared plugin set changes. The marker records the exact
-    // marketplaces+plugins it was written for (the old image build keyed its
-    // bundle cache on a hash of the same commands); a bare exists() check would
+    // marketplaces+plugins it was written for; a bare exists() check would
     // shadow a `jackin.role.toml` plugin edit forever.
     let config_dir = claude_config_dir();
     let marker = config_dir.join(".jackin-plugins.done");
@@ -396,9 +396,9 @@ fn setup_claude_plugins() {
     if fs::read_to_string(&marker).is_ok_and(|s| s == fingerprint) {
         return;
     }
-    // The official marketplace backs the common plugins; tolerate it already
-    // being registered.
-    run_optional_command(
+    // The official marketplace backs the common plugins; non-fatal if already
+    // registered (failure logged via clog!, not propagated).
+    let mut all_ok = run_optional_command(
         "claude",
         &[
             "plugin",
@@ -413,15 +413,23 @@ fn setup_claude_plugins() {
             args.push("--sparse");
             args.extend(marketplace.sparse.iter().map(String::as_str));
         }
-        run_optional_command("claude", &args);
+        all_ok &= run_optional_command("claude", &args);
     }
     for plugin in &config.claude_plugins {
-        run_optional_command("claude", &["plugin", "install", plugin.as_str()]);
+        all_ok &= run_optional_command("claude", &["plugin", "install", plugin.as_str()]);
+    }
+    if !all_ok {
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] claude plugins: one or more installs failed; marker not written, will retry on next launch"
+        ));
+        return;
     }
     if let Err(e) = fs::create_dir_all(&config_dir) {
         crate::output::stderr_line(format_args!(
-            "[entrypoint] claude plugins: failed to create marker dir: {e}"
+            "[entrypoint] claude plugins: failed to create marker dir {}: {e} (plugins will re-run next launch)",
+            config_dir.display()
         ));
+        return;
     }
     if let Err(e) = fs::write(&marker, &fingerprint) {
         crate::output::stderr_line(format_args!(
@@ -1344,7 +1352,7 @@ fn runtime_setup_output(command: &mut Command) -> io::Result<Output> {
     command.output()
 }
 
-fn run_optional_command(program: &str, args: &[&str]) {
+fn run_optional_command(program: &str, args: &[&str]) -> bool {
     let mut command = Command::new(program);
     command.args(args);
     if !env_is_one("JACKIN_DEBUG") {
@@ -1355,12 +1363,13 @@ fn run_optional_command(program: &str, args: &[&str]) {
     // call leaves the role launched without the MCP wired up, so log
     // the exact failure to the multiplexer log for operator triage.
     match command.status() {
-        Ok(status) if status.success() => {}
+        Ok(status) if status.success() => true,
         Ok(status) => {
             crate::clog!(
                 "optional command {} exited with status {status}",
                 format_command(program, args)
             );
+            false
         }
         Err(e) => {
             crate::clog!(
@@ -1368,6 +1377,7 @@ fn run_optional_command(program: &str, args: &[&str]) {
                 format_command(program, args),
                 e.raw_os_error()
             );
+            false
         }
     }
 }

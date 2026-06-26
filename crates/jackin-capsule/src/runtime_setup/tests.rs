@@ -54,6 +54,66 @@ fn codex_home_honors_env_else_defaults() {
     );
 }
 
+// ── claude_plugin_fingerprint ────────────────────────────────────────
+
+#[test]
+fn fingerprint_empty_config_is_empty() {
+    let config = jackin_protocol::CapsuleConfig::default();
+    assert_eq!(claude_plugin_fingerprint(&config), "");
+}
+
+#[test]
+fn fingerprint_marketplace_no_sparse() {
+    let config = jackin_protocol::CapsuleConfig {
+        claude_marketplaces: vec![jackin_protocol::ClaudeMarketplace {
+            source: "org/repo".to_owned(),
+            sparse: vec![],
+        }],
+        ..Default::default()
+    };
+    assert_eq!(claude_plugin_fingerprint(&config), "m:org/repo\n");
+}
+
+#[test]
+fn fingerprint_marketplace_with_sparse_paths() {
+    let config = jackin_protocol::CapsuleConfig {
+        claude_marketplaces: vec![jackin_protocol::ClaudeMarketplace {
+            source: "org/repo".to_owned(),
+            sparse: vec!["tools/a".to_owned(), "tools/b".to_owned()],
+        }],
+        ..Default::default()
+    };
+    assert_eq!(
+        claude_plugin_fingerprint(&config),
+        "m:org/repo tools/a tools/b\n"
+    );
+}
+
+#[test]
+fn fingerprint_plugin_only() {
+    let config = jackin_protocol::CapsuleConfig {
+        claude_plugins: vec!["my-plugin".to_owned()],
+        ..Default::default()
+    };
+    assert_eq!(claude_plugin_fingerprint(&config), "p:my-plugin\n");
+}
+
+#[test]
+fn fingerprint_mixed_marketplace_and_plugins() {
+    let config = jackin_protocol::CapsuleConfig {
+        claude_marketplaces: vec![jackin_protocol::ClaudeMarketplace {
+            source: "org/tools".to_owned(),
+            sparse: vec!["fmt".to_owned()],
+        }],
+        claude_plugins: vec!["fmt-plugin".to_owned(), "lint-plugin".to_owned()],
+        ..Default::default()
+    };
+    assert_eq!(
+        claude_plugin_fingerprint(&config),
+        "m:org/tools fmt\np:fmt-plugin\np:lint-plugin\n"
+    );
+}
+
 #[test]
 fn xdg_data_home_drives_amp_and_opencode() {
     assert_eq!(
