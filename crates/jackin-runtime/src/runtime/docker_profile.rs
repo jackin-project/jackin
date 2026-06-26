@@ -167,20 +167,21 @@ pub fn parse_memory_bytes(s: &str) -> Option<u64> {
     let number: u64 = s[..split].trim().parse().ok()?;
     let suffix = s[split..].trim().to_ascii_uppercase();
     let multiplier = match suffix.as_str() {
-        "K" | "KB" => 1_024,
-        "M" | "MB" => 1_024 * 1_024,
-        "G" | "GB" => 1_024 * 1_024 * 1_024,
-        "T" | "TB" => 1_024 * 1_024 * 1_024 * 1_024,
+        "K" | "KB" => KB,
+        "M" | "MB" => MB,
+        "G" | "GB" => GB,
+        "T" | "TB" => GB * 1_024,
         "" => 1,
         _ => return None,
     };
     number.checked_mul(multiplier)
 }
 
+const KB: u64 = 1_024;
+const MB: u64 = KB * 1_024;
+const GB: u64 = MB * 1_024;
+
 fn format_bytes(bytes: u64) -> String {
-    const GB: u64 = 1_024 * 1_024 * 1_024;
-    const MB: u64 = 1_024 * 1_024;
-    const KB: u64 = 1_024;
     if bytes.is_multiple_of(GB) {
         format!("{}G", bytes / GB)
     } else if bytes.is_multiple_of(MB) {
@@ -311,7 +312,6 @@ pub struct EffectiveGrants {
 /// Per-profile base grants. Explicit [`DockerGrants`] are layered on top via
 /// [`apply_grants`].
 pub fn profile_base_grants(profile: DockerSecurityProfile) -> EffectiveGrants {
-    const GB: u64 = 1_024 * 1_024 * 1_024;
     match profile {
         DockerSecurityProfile::Locked => EffectiveGrants {
             network: NetworkGrant::Allowlist,
@@ -586,7 +586,7 @@ pub fn network_enforcement_label(grants: &EffectiveGrants) -> &'static str {
     }
     if grants.sudo || grants.user == "root" {
         "partial (sudo grants iptables access)"
-    } else if grants.dind != DindGrant::None {
+    } else if dind_enabled(grants) {
         "partial (DinD inner containers bypass host iptables)"
     } else {
         "full"
@@ -648,7 +648,7 @@ pub fn format_session_contract(
         "not forwarded"
     };
     let residual_base = "shared host kernel; writable workspace mounts can still be changed";
-    let residual = if grants.dind != DindGrant::None {
+    let residual = if dind_enabled(grants) {
         format!("{residual_base}; DinD sidecar has kernel access")
     } else if grants.system_writes {
         format!("{residual_base}; writable container root")
@@ -914,6 +914,12 @@ pub fn dind_enabled(grants: &EffectiveGrants) -> bool {
     grants.dind != DindGrant::None
 }
 
+/// Returns `true` when the container gets no Docker network at all (`--network
+/// none`): the `none` tier with no `DinD` sidecar needing the bridge.
+pub fn network_disabled(grants: &EffectiveGrants) -> bool {
+    grants.network == NetworkGrant::None && !dind_enabled(grants)
+}
+
 /// Returns `true` when the effective `DinD` tier is `Privileged`.
 pub fn dind_privileged(grants: &EffectiveGrants) -> bool {
     grants.dind == DindGrant::Privileged
@@ -1046,15 +1052,17 @@ pub fn parse_apparmor_from_docker_info(security_options: &str) -> (bool, &'stati
     (available, layer)
 }
 
-/// Validate cgroup version against profile requirements, returning an error
-/// message if the combination is unsupported.
+/// Validate cgroup version against profile requirements. `Err` = unsupported
+/// (fail-closed); `Ok(Some(warning))` = supported but degraded, for the caller
+/// to surface; `Ok(None)` = fully supported.
 ///
 /// Decision 14: `hardened`/`locked` require cgroup v2; fail-closed on v1.
-/// `standard` degrades `memory_reservation` on v1 (warn only).
+/// `standard` degrades `memory_reservation` on v1 (warn only). Pure policy — the
+/// caller owns telemetry emission.
 pub fn validate_cgroup_for_profile(
     profile: DockerSecurityProfile,
     cgroup_version: &str,
-) -> Result<(), String> {
+) -> Result<Option<&'static str>, String> {
     if cgroup_version == "v1" {
         match profile {
             DockerSecurityProfile::Locked | DockerSecurityProfile::Hardened => {
@@ -1065,15 +1073,14 @@ pub fn validate_cgroup_for_profile(
                 ));
             }
             DockerSecurityProfile::Standard => {
-                jackin_diagnostics::debug_log!(
-                    "launch",
-                    "cgroup v1 host: memory_reservation will not be enforced under `standard` profile (requires v2)"
-                );
+                return Ok(Some(
+                    "cgroup v1 host: memory_reservation will not be enforced under `standard` profile (requires v2)",
+                ));
             }
             DockerSecurityProfile::Compat => {}
         }
     }
-    Ok(())
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -1738,7 +1745,7 @@ mod tests {
     fn validate_cgroup_standard_warns_on_v1() {
         let result = validate_cgroup_for_profile(DockerSecurityProfile::Standard, "v1");
         assert!(
-            result.is_ok(),
+            matches!(result, Ok(Some(_))),
             "standard must not hard-fail on cgroup v1 (warn only)"
         );
     }

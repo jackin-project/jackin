@@ -634,12 +634,15 @@ pub(super) async fn launch_role_runtime(
 
     let certs_volume = dind_certs_volume(container_name);
     let dind_enabled = crate::runtime::docker_profile::dind_enabled(grants);
-    let network_disabled =
-        grants.network == crate::runtime::docker_profile::NetworkGrant::None && !dind_enabled;
+    let network_disabled = crate::runtime::docker_profile::network_disabled(grants);
 
     let cgroup_version = crate::runtime::docker_profile::probe_cgroup_version();
-    crate::runtime::docker_profile::validate_cgroup_for_profile(*profile, cgroup_version)
-        .map_err(|msg| anyhow::anyhow!(msg))?;
+    if let Some(warning) =
+        crate::runtime::docker_profile::validate_cgroup_for_profile(*profile, cgroup_version)
+            .map_err(|msg| anyhow::anyhow!(msg))?
+    {
+        jackin_diagnostics::debug_log!("launch", "{warning}");
+    }
     // WP4 Part B: rootless DinD requires cgroup v2 — fail closed on v1 rather
     // than silently falling back to a privileged sidecar.
     crate::runtime::docker_profile::validate_dind_grant_for_cgroup(grants.dind, cgroup_version)

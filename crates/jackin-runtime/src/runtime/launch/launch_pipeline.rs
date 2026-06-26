@@ -127,16 +127,21 @@ pub async fn resolve_supported_agents_for_console(
 
 /// Instrument the full launch pipeline so every stage appears as a
 /// child span in the diagnostics run log so stage events carry real `span_id` correlation.
-/// Validate one source's docker grants, prefixing each error with its source
-/// tag (`config`/`workspace`/`role`) for the operator-facing message.
+/// Prefix each validation error with its source tag (`config`/`workspace`/
+/// `role`/`merged`) for the operator-facing message.
+fn tag_errors<E: std::fmt::Display>(tag: &str, errors: Vec<E>) -> Vec<String> {
+    errors
+        .into_iter()
+        .map(|error| format!("  - [{tag}] {error}"))
+        .collect()
+}
+
+/// Validate one source's docker grants, tagged for the operator-facing message.
 fn tagged_grant_errors(
     tag: &str,
     grants: &crate::runtime::docker_profile::DockerGrants,
 ) -> Vec<String> {
-    crate::runtime::docker_profile::validate_grants(grants)
-        .into_iter()
-        .map(|error| format!("  - [{tag}] {error}"))
-        .collect()
+    tag_errors(tag, crate::runtime::docker_profile::validate_grants(grants))
 }
 
 /// Bail with the standard "docker grants validation failed" message when any
@@ -1182,12 +1187,10 @@ pub(crate) async fn load_role_with(
                 effective_grants.dind = crate::runtime::docker_profile::DindGrant::None;
             }
         }
-        bail_on_grant_errors(
-            crate::runtime::docker_profile::validate_effective_grants(&effective_grants)
-                .into_iter()
-                .map(|error| format!("  - [merged] {error}"))
-                .collect(),
-        )?;
+        bail_on_grant_errors(tag_errors(
+            "merged",
+            crate::runtime::docker_profile::validate_effective_grants(&effective_grants),
+        ))?;
         let dind_started = crate::runtime::docker_profile::dind_enabled(&effective_grants);
         // Arm cleanup immediately after adoption, before any fallible step.
         // When a prewarmed DinD sidecar was adopted, its container, network,
@@ -1379,8 +1382,7 @@ pub(crate) async fn load_role_with(
         // WP4 Part B: the sidecar tier (rootless vs privileged image/flags).
         let sidecar_dind_grant = effective_grants.dind;
         let sidecar_network_disabled =
-            effective_grants.network == crate::runtime::docker_profile::NetworkGrant::None
-                && !dind_started;
+            crate::runtime::docker_profile::network_disabled(&effective_grants);
         // WP2: `locked` runs on a Docker-internal network (no off-bridge route)
         // independent of the in-container iptables allowlist; every other
         // profile uses a routable network.
