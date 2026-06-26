@@ -95,13 +95,9 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
     // that file's own total — last cumulative, or its headless sum — and add it
     // to the running aggregate. A per-`Acc`-across-all-files would instead let
     // the last-walked file's cumulative overwrite the rest.
-    let mut input = 0u64;
-    let mut output = 0u64;
-    let mut cached = 0u64;
-    let mut total_cost = 0.0;
-    let mut has_cost = false;
-    let mut model = None;
-    let mut seen = false;
+    // Codex carries no cache-write dimension, so `cache_write` stays 0; the
+    // shared `SpendAcc::commit` then writes the aggregate onto the session.
+    let mut total = super::SpendAcc::default();
     for path in &files {
         let text = match super::read_file_text(path) {
             Ok(Some(text)) => text,
@@ -121,41 +117,24 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
         if !acc.seen {
             continue;
         }
-        seen = true;
+        total.seen = true;
         // The file's cumulative counter wins when present; otherwise its headless sum.
         let (i, o, c) = acc.cumulative.unwrap_or(acc.headless);
-        input += i;
-        output += o;
-        cached += c;
+        total.input += i;
+        total.output += o;
+        total.cache_read += c;
         if acc.has_cost {
-            total_cost += acc.cost;
-            has_cost = true;
+            total.cost += acc.cost;
+            total.has_cost = true;
         }
         if acc.model.is_some() {
-            model = acc.model;
+            total.model = acc.model;
         }
     }
-    if !seen {
+    if !total.seen {
         return false;
     }
-
-    let cost = has_cost.then_some(total_cost);
-    let changed = input != session.totals.input_tokens
-        || output != session.totals.output_tokens
-        || cached != session.totals.cache_read_tokens
-        || (cost.is_some() && cost != session.totals.cost_usd);
-    if changed {
-        session.totals.input_tokens = input;
-        session.totals.output_tokens = output;
-        session.totals.cache_read_tokens = cached;
-        if cost.is_some() {
-            session.totals.cost_usd = cost;
-        }
-        if model.is_some() {
-            session.totals.model = model;
-        }
-    }
-    changed
+    total.commit(&mut session.totals)
 }
 
 #[cfg(test)]
