@@ -132,6 +132,40 @@ fn xdg_data_home_drives_amp_and_opencode() {
 }
 
 #[test]
+fn seed_home_dir_absent_dst_uses_atomic_rename() {
+    // When dst does not exist, seed_home_dir must create it atomically (via a
+    // staging dir + rename) and signal FirstSeed. Tests the rename path missed
+    // by the other seed tests which pre-create dst.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let src = tmp.path().join("src");
+    let dst = tmp.path().join("dst"); // NOT created — exercises the rename path
+    fs::create_dir_all(&src).unwrap();
+    fs::write(src.join("config.json"), b"{}").unwrap();
+
+    let outcome = seed_home_dir(&src, &dst).expect("atomic seed should succeed");
+    assert_eq!(outcome, SeedOutcome::FirstSeed);
+    assert!(dst.join("config.json").exists(), "renamed tree must contain seeded file");
+    // No stale staging dirs should remain beside dst after a successful rename.
+    let siblings: Vec<_> = fs::read_dir(tmp.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert!(
+        !siblings
+            .iter()
+            .any(|e| e.file_name().to_string_lossy().starts_with(".jackin-seed")),
+        "staging dir must be cleaned up after successful rename"
+    );
+}
+
+#[test]
+fn is_dir_empty_treats_read_error_as_nonempty() {
+    // A path that does not exist causes read_dir to fail; must return false
+    // (non-empty = conservative) rather than true (empty = would trigger first-seed).
+    assert!(!is_dir_empty(Path::new("/nonexistent/path/that/cannot/exist")));
+}
+
+#[test]
 fn runtime_setup_runs_agent_setup_while_container_init_is_foreground() {
     // A two-party Barrier proves the foreground and agent-setup closures run
     // concurrently without a flaky bounded spin: foreground cannot pass the

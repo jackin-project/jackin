@@ -646,12 +646,13 @@ fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> Option<Option<InputEvent
     if seq == b"\x1b[O" {
         return Some(Some(InputEvent::FocusOut));
     }
-    // Kitty / CSI-u Escape. Once a focused agent enables the kitty
-    // keyboard protocol, many terminals encode Esc as `CSI 27 ... u`
-    // instead of a bare `ESC`; dialogs must still receive the same
-    // byte their dismiss logic matches. Release events are suppressed
-    // like kitty arrow releases because dialog and agent paths only
-    // care about key press / repeat.
+    // Kitty / CSI-u Escape and control keys. Once a focused agent enables the
+    // kitty keyboard protocol, many terminals encode Esc as `CSI 27 ... u`
+    // instead of a bare `ESC`; dialogs must still receive the same byte their
+    // dismiss logic matches. Release events are suppressed like kitty arrow
+    // releases because dialog and agent paths only care about key press / repeat.
+    // Control-byte press/repeat events (palette key, Ctrl+Q, etc.) are
+    // dispatched through the global keymap before being forwarded to the agent.
     if let Some(rest) = seq
         .strip_prefix(b"\x1b[")
         .and_then(|body| body.strip_suffix(b"u"))
@@ -689,6 +690,9 @@ fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> Option<Option<InputEvent
     if let Some((13, 2)) = parse_xterm_modify_other_keys(seq) {
         return Some(Some(InputEvent::Data(b"\x1b[13;2u".to_vec())));
     }
+    // Other Ctrl+key combos (palette key, Ctrl+Q, …) encoded as xterm
+    // modifyOtherKeys by terminals that haven't negotiated CSI-u mode — dispatch
+    // through the same control-byte path as the CSI-u block above.
     if let Some((codepoint, modifier)) = parse_xterm_modify_other_keys(seq)
         && let Some(control) = csi_u_control_byte(codepoint, Some(modifier))
     {
@@ -799,6 +803,9 @@ fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> Option<Option<InputEvent
     None
 }
 
+/// Dispatch a bare control byte through the capsule-level keymap. Returns the
+/// mapped `InputEvent` (palette open, request-exit, pane-resize, …) or `None`
+/// when the byte has no capsule binding and should pass through to the agent.
 fn dispatch_control_byte(control: u8, palette_key: Option<u8>) -> Option<InputEvent> {
     if Some(control) == palette_key {
         return Some(InputEvent::OpenPalette);
@@ -811,6 +818,10 @@ fn dispatch_control_byte(control: u8, palette_key: Option<u8>) -> Option<InputEv
     None
 }
 
+/// Map a CSI-u codepoint+modifier pair to a bare control byte (0x00–0x1F), or
+/// `None` when the key is not a control byte. C0 codepoints pass through
+/// directly. For printable codepoints, Ctrl must be held — CSI-u encodes
+/// modifiers as a 1-based bitmask, so bit 2 of `modifier − 1` is the Ctrl bit.
 fn csi_u_control_byte(codepoint: u32, modifier: Option<u32>) -> Option<u8> {
     if (0x00..=0x1f).contains(&codepoint) {
         return u8::try_from(codepoint).ok();
@@ -820,27 +831,15 @@ fn csi_u_control_byte(codepoint: u32, modifier: Option<u32>) -> Option<u8> {
     if !ctrl_held {
         return None;
     }
-    if is_ascii_lowercase_codepoint(codepoint) {
-        return u8::try_from(codepoint - u32::from(b'a') + 1).ok();
-    }
-    if is_ascii_uppercase_codepoint(codepoint) {
-        return u8::try_from(codepoint - u32::from(b'A') + 1).ok();
-    }
     match u8::try_from(codepoint).ok()? {
+        byte @ b'a'..=b'z' => Some(byte - b'a' + 1),
+        byte @ b'A'..=b'Z' => Some(byte - b'A' + 1),
         b'\\' => Some(0x1C),
         b']' => Some(0x1D),
         b'^' => Some(0x1E),
         b'_' => Some(0x1F),
         _ => None,
     }
-}
-
-fn is_ascii_lowercase_codepoint(codepoint: u32) -> bool {
-    matches!(codepoint, 0x61..=0x7A)
-}
-
-fn is_ascii_uppercase_codepoint(codepoint: u32) -> bool {
-    matches!(codepoint, 0x41..=0x5A)
 }
 
 fn classify_x10_mouse(seq: &[u8]) -> Option<InputEvent> {

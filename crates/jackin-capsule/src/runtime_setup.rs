@@ -273,9 +273,9 @@ pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
 
 fn run_agent_setup() -> Result<()> {
     let agent = std::env::var("JACKIN_AGENT").context("JACKIN_AGENT must be set")?;
-    // D6/D19: home emptiness is the gate. First seed copies auth; subsequent
-    // starts leave in-container credentials untouched (agent refreshes tokens
-    // in-place inside the durable home). No external marker file.
+    // Home emptiness is the gate: first seed copies auth; subsequent starts
+    // leave in-container credentials untouched (agent refreshes tokens in-place
+    // inside the durable home). No external marker file.
     match agent.as_str() {
         "claude" => setup_claude(),
         "codex" => setup_codex(),
@@ -397,8 +397,10 @@ fn setup_claude_plugins() {
         return;
     }
     // The official marketplace backs the common plugins; non-fatal if already
-    // registered (failure logged via clog!, not propagated).
-    let mut all_ok = run_optional_command(
+    // registered (failure logged via clog!, not propagated). Its result does not
+    // gate the user-declared installs or the marker — the infrastructure add is
+    // best-effort.
+    run_optional_command(
         "claude",
         &[
             "plugin",
@@ -407,6 +409,7 @@ fn setup_claude_plugins() {
             "anthropics/claude-plugins-official",
         ],
     );
+    let mut all_ok = true;
     for marketplace in &config.claude_marketplaces {
         let mut args = vec!["plugin", "marketplace", "add", marketplace.source.as_str()];
         if !marketplace.sparse.is_empty() {
@@ -461,10 +464,10 @@ fn claude_plugin_fingerprint(config: &jackin_protocol::CapsuleConfig) -> String 
 
 fn setup_codex() -> Result<()> {
     let copy_auth = seed_agent_home_from_enum(jackin_core::Agent::Codex)?.is_first_seed();
-    // Provider config is idempotent and runs every start; the credential copy is
-    // gated on first-seed only (D6/D19 home-emptiness, decided above), so it never
-    // re-copies over an in-container-refreshed token regardless of ordering.
-    write_codex_provider_config(Path::new("/home/agent/.codex"))?;
+    // Provider config is idempotent and runs every start; auth copy is gated on
+    // first-seed only (decided above) so it never re-copies over a token the
+    // agent refreshed in-container, regardless of ordering.
+    write_codex_provider_config(&codex_home())?;
     if copy_auth {
         let auth_path = codex_auth_path();
         if Path::new("/jackin/codex/auth.json").is_file() {
@@ -963,7 +966,7 @@ fn opencode_provider_block(
 
 /// Whether a durable home was empty and got seeded on this start. Named instead
 /// of a bare `bool` so the seed/auth contract is explicit at every call site:
-/// auth handoff is copied only on [`SeedOutcome::FirstSeed`] (D19).
+/// auth handoff is copied only on [`SeedOutcome::FirstSeed`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SeedOutcome {
     /// The home was empty (or absent); defaults were seeded and first-start auth
@@ -975,17 +978,17 @@ enum SeedOutcome {
 }
 
 impl SeedOutcome {
-    /// True on the first seed, when first-start auth handoff must run (D19).
+    /// True on the first seed, when first-start auth handoff must run.
     fn is_first_seed(self) -> bool {
         matches!(self, Self::FirstSeed)
     }
 }
 
-/// D5/D6: empty-dir gate + first seed.
+/// Seed `src` into `dst`, gated on `dst` being empty.
 ///
 /// Returns [`SeedOutcome::FirstSeed`] when dst was empty, [`SeedOutcome::AlreadySeeded`]
 /// when dst already has entries (seeded on a prior start; in-container files are
-/// authoritative). Auth is copied by the caller only on `FirstSeed` (D19).
+/// authoritative). Auth is copied by the caller only on `FirstSeed`.
 ///
 /// If `dst` already exists, it may be a Docker bind mount target; seed it in
 /// place because POSIX cannot rename over a mount point.
@@ -1040,9 +1043,9 @@ fn seed_home_dir(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<SeedOut
     Ok(SeedOutcome::FirstSeed)
 }
 
-/// D4/D6: seed an agent's durable home, gated on the primary data root's
-/// emptiness, and — for agents that persist a separate config root — seed that
-/// paired config root in the same first-seed pass (two sequential seeds, not one
+/// Seed an agent's durable home, gated on the primary data root's emptiness,
+/// and — for agents that persist a separate config root — seed that paired
+/// config root in the same first-seed pass (two sequential seeds, not one
 /// atomic transaction). Both roots share one lifecycle: empty data root means
 /// first start (seed both, returning
 /// [`SeedOutcome::FirstSeed`] so the caller copies auth); if *either* root already
@@ -1074,7 +1077,7 @@ fn seed_agent_home(
 /// paired-config roots from the agent enum
 /// ([`AgentStatePaths`](jackin_core::agent::runtime::AgentStatePaths)) so the
 /// per-agent folder layout has one source of truth. Returns the first-seed
-/// outcome; the caller copies auth only on [`SeedOutcome::FirstSeed`] (D19).
+/// outcome; the caller copies auth only on [`SeedOutcome::FirstSeed`].
 fn seed_agent_home_from_enum(agent: jackin_core::Agent) -> Result<SeedOutcome> {
     let paths = agent.runtime().state_paths();
     let data_default = format!("/jackin/default-home/{}", paths.credential_dir);
@@ -1094,7 +1097,13 @@ fn seed_agent_home_from_enum(agent: jackin_core::Agent) -> Result<SeedOutcome> {
 }
 
 fn is_dir_empty(path: &Path) -> bool {
-    fs::read_dir(path).map_or(true, |mut d| d.next().is_none())
+    // Treat read errors as non-empty: conservatively prevents an I/O failure
+    // from being mistaken for an empty dir and triggering a first-seed copy
+    // over credentials that may have been refreshed in-container.
+    match fs::read_dir(path) {
+        Ok(mut d) => d.next().is_none(),
+        Err(_) => false,
+    }
 }
 
 fn copy_dir_contents(src: &Path, dst: &Path) -> Result<()> {

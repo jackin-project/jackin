@@ -7487,3 +7487,39 @@ fn exit_dirty_down_arrow_reaches_last_row() {
         other => panic!("expected ExitDirty, got {other:?}"),
     }
 }
+
+#[test]
+fn build_exit_inspect_rows_groups_repos_with_header_and_file_rows() {
+    use crate::exit_assess::DirtyRepo;
+    use crate::tui::components::dialog::InspectRow;
+    use jackin_core::worktree_dirty::ChangedFile;
+
+    let repos = vec![
+        DirtyRepo {
+            path: "/workspace/alpha".to_owned(),
+            changed: vec![
+                ChangedFile { status: 'M', path: "src/main.rs".to_owned() },
+                ChangedFile { status: '?', path: "new.rs".to_owned() },
+            ],
+            unpushed: 0,
+        },
+        DirtyRepo {
+            path: "/workspace/beta".to_owned(),
+            changed: vec![],
+            unpushed: 1,
+        },
+    ];
+    let rows = build_exit_inspect_rows(&repos);
+    // First entry must be a Repo header.
+    assert!(matches!(rows.first(), Some(InspectRow::Repo(_))));
+    // Two repos → exactly two Repo headers.
+    let repo_count = rows.iter().filter(|r| matches!(r, InspectRow::Repo(_))).count();
+    assert_eq!(repo_count, 2, "one header per repo");
+    // alpha has two changed files → two File rows follow its header.
+    let file_count = rows.iter().filter(|r| matches!(r, InspectRow::File(_))).count();
+    assert_eq!(file_count, 2, "only changed files produce File rows");
+    // Repo labels are derived from the final path component.
+    if let Some(InspectRow::Repo(label)) = rows.first() {
+        assert_eq!(label, "alpha");
+    }
+}

@@ -747,42 +747,40 @@ fn build_exit_inspect_rows(
 }
 
 /// Handle the last live session exiting. Returns `true` when the daemon should
-/// exit (the caller `return`s) and `false` when a dirty-exit modal was opened
-/// instead and the event loop must keep running. With policy `ask` and dirty
-/// isolated work, the modal is shown (no teardown); otherwise the container
-/// drains and exits, preserving the original non-clean-exit reason.
+/// exit and `false` to keep the event loop running — either because a dirty-exit
+/// modal was just opened, or because the modal flow is already in progress
+/// (re-entry guard). With policy `ask` and dirty isolated work the modal is
+/// shown (no teardown); otherwise the container drains and exits, preserving the
+/// original non-clean-exit reason.
 async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>) -> bool {
-    // This runs on every client frame while no sessions are live (not just on
-    // the session-exit transition). If a dialog is already open, the dirty-exit
-    // flow is already active — the modal, its Inspect view, or the New-tab
-    // picker spawned from "Start a new agent" (with zero live sessions, the only
-    // way to have an open dialog is this flow). Re-entering here would push a
-    // fresh modal and re-run the git assessment on every keypress, resetting the
-    // selection to 0 — so the operator could never move past the first row.
-    // Defer until the current dialog is resolved.
+    // Called from two sites: the session-exit event handler (once, on last-session
+    // exit) and the client-frame handler (on every frame while no sessions remain).
+    // The guard below handles the client-frame re-entry case: if a dialog is already
+    // open (modal, Inspect view, or New-tab picker launched from "Start a new agent")
+    // the dirty-exit flow is already active. Re-entering would push a fresh modal
+    // and re-run the git assessment on every keypress, resetting selection to 0 —
+    // so the operator could never move past the first row. Defer until resolved.
     if mux.dialog_open() {
         return false;
     }
     match crate::exit_assess::decide_exit(&mux.launch_config).await {
         crate::exit_assess::ExitDecision::Drain => {
-            if let Some(reason) = reason {
-                crate::clog!("session: final session exited: {reason}");
-                drain_and_exit_with_reason(mux, Some(reason)).await;
-            } else {
-                drain_and_exit(mux).await;
+            if let Some(ref r) = reason {
+                crate::clog!("session: final session exited: {r}");
             }
+            drain_and_exit_with_reason(mux, reason).await;
             true
         }
         crate::exit_assess::ExitDecision::DrainWithAction(action) => {
             // Policy keep/discard: record the action for the host, no prompt.
+            // Write failure is logged but does not block exit — a configured
+            // policy path cannot stall indefinitely waiting for a broken fs.
             if let Err(error) = crate::exit_assess::write_exit_action(action) {
-                crate::clog!("exit: failed to write exit-action file: {error}");
+                crate::output::stderr_line(format_args!(
+                    "[daemon] exit: failed to write exit-action file, policy will not be applied: {error}"
+                ));
             }
-            if let Some(reason) = reason {
-                drain_and_exit_with_reason(mux, Some(reason)).await;
-            } else {
-                drain_and_exit(mux).await;
-            }
+            drain_and_exit_with_reason(mux, reason).await;
             true
         }
         crate::exit_assess::ExitDecision::ShowModal(repos) => {
@@ -910,10 +908,18 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
         // the operator's choice for the host, then drain and exit.
         if let Some(action) = mux.exit_request.take() {
             if let Err(error) = crate::exit_assess::write_exit_action(action) {
-                crate::clog!("exit: failed to write exit-action file: {error}");
+                // The operator explicitly chose keep/discard. Draining without
+                // writing the file would lose their choice and silently apply
+                // the wrong host cleanup. Log to stderr (operator-visible) and
+                // retry next loop iteration instead of draining.
+                crate::output::stderr_line(format_args!(
+                    "[daemon] exit: failed to write exit-action file, retrying: {error}"
+                ));
+                mux.exit_request = Some(action);
+            } else {
+                drain_and_exit(&mut mux).await;
+                return Ok(());
             }
-            drain_and_exit(&mut mux).await;
-            return Ok(());
         }
         if mux.input_parser.esc_pending() {
             if esc_deadline.is_none() {

@@ -46,6 +46,20 @@ fn csi_u_control_release_is_suppressed() {
 }
 
 #[test]
+fn csi_u_lowercase_ctrl_converts_to_control_byte() {
+    assert_eq!(csi_u_control_byte(u32::from(b'a'), Some(5)), Some(0x01));
+    assert_eq!(csi_u_control_byte(u32::from(b'z'), Some(5)), Some(0x1A));
+}
+
+#[test]
+fn csi_u_no_ctrl_modifier_returns_none() {
+    // Shift-only (modifier=2) must not produce a control byte.
+    assert_eq!(csi_u_control_byte(u32::from(b'a'), Some(2)), None);
+    // No modifier at all must not produce a control byte.
+    assert_eq!(csi_u_control_byte(u32::from(b'a'), None), None);
+}
+
+#[test]
 fn csi_u_uppercase_ctrl_converts_to_control_byte() {
     // Terminals in CSI-u mode encode Ctrl+A (uppercase) as codepoint=65, modifier=5.
     // `csi_u_control_byte` must map that to 0x01 so it can be dispatched against

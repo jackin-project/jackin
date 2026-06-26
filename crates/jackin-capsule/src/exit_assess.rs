@@ -205,5 +205,8 @@ fn exit_action_json(action: ExitAction) -> &'static str {
 }
 
 fn write_exit_action_to(path: &Path, action: ExitAction) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     std::fs::write(path, exit_action_json(action))
 }

@@ -241,11 +241,9 @@ impl Multiplexer {
             }
         }
         self.invalidate(frame_plan.reason());
-        // Diagnostic: surface the dirty-exit modal's live selection index after
-        // every dialog action so a "selection stuck" report can be confirmed or
-        // ruled out from telemetry alone (does the index advance on arrows?).
+        // Per-keypress selection trace — firehose, gated on JACKIN_DEBUG=1.
         if let Some(Dialog::ExitDirty { selected, .. }) = self.dialog_top() {
-            crate::clog!("exit-dirty: selected={selected}");
+            crate::cdebug!("exit-dirty: selected={selected}");
         }
     }
 
