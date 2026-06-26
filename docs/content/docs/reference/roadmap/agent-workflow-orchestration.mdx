@@ -149,7 +149,7 @@ The recommendation survives the second-pass research, but it should be narrowed:
 | Adopt a library runner | Avoids reimplementing branch/sandbox/hooks/logging. | Sandcastle is the clearest version of this approach. | Adds cross-language/runtime coupling and may import host hook semantics that conflict with jackin' rules. |
 | MCP-first control plane | Lets external orchestrators drive jackin' sessions without jackin' owning workflow semantics. | Good interoperability story and aligns with tool ecosystem direction. | MCP tools are not a durable workflow model; a raw tool surface can become unsafe remote control without policy and run state. |
 | GitHub-native workflow first | Puts state where review already happens. | GitHub checks/comments/issues are durable and familiar. | Hosted GitHub execution cannot replace local jackin' hardware, roles, credentials, or visible terminal hijack. |
-| Optio-style daemon/queue first | Complete issue-to-merged-PR automation and feedback loops. | Best fit for overnight/task-queue ambition. | Too much blast radius before status authority, policy, cost controls, and operator gates exist. |
+| Optio-style daemon/queue first | Complete issue-to-merged-PR automation and feedback loops. | Best fit for overnight/task-queue ambition. | Too much blast radius before durable policy, cost controls, event storage, and operator gates exist. |
 
 The best next step is therefore not "build the orchestrator" but "build the smallest state spine that every option needs." That means run records, event types, GitHub reporter, CLI/manual phase controls, and explicit intervention events. Capsule automation can follow after the state spine proves useful during manual runs.
 
@@ -197,7 +197,7 @@ Other pieces should stay intentionally dumb until real runs prove the contract:
 
 ### Do not build yet
 
-- Do not build an autonomous overnight queue before agent runtime status authority and durable event storage.
+- Do not build an autonomous overnight queue before durable event storage, cost/resource controls, and explicit operator gates.
 - Do not build a declarative workflow DSL before hardcoded runs reveal stable step kinds.
 - Do not build a dashboard until GitHub/CLI state semantics are proven.
 - Do not build auto-merge or automatic branch cleanup for workflow runs.
@@ -469,7 +469,7 @@ Expose jackin' as an execution substrate for external orchestrators through MCP 
 - Should operator intervention automatically pause the workflow, or should it mark the phase dirty and continue after a verification step?
 - How should the workflow represent review quality: Claude-only, MCO/Hive-style consensus, GitHub Code Review, or a configurable reviewer chain?
 - How much of `/goal` should jackin' rely on for Codex, and how much run state should be owned by jackin' itself?
-- What is the minimum reliable completion signal before [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) ships?
+- Now that [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) has shipped, what additional verification or review signal should a workflow require before it advances from "agent is done" to "task is ready"?
 - What memory should be injected automatically for each profile, and how should the operator inspect or override the brief before launch?
 - Should workflow profiles be a distinct config surface, or should the first profile definitions live entirely in Rust until memory/run semantics settle?
 - Should declarative workflow files live in the jackin' repo, role repos, workspace config, or all three with precedence rules?

@@ -1,0 +1,35 @@
+schema_version = 1
+agent = "kimi"
+validated_versions = ">=0.14.0, <0.15.0"
+
+[[rule]]
+id = "permission-prompt"
+state = "blocked"
+priority = 900
+region = "bottom:24"
+strength = "strong"
+requires_all = ["kimi wants permission", "approve"]
+
+[[rule]]
+id = "thinking"
+state = "working"
+priority = 700
+region = "bottom:24"
+strength = "strong"
+requires_any = ["thinking...", "processing..."]
+
+[[rule]]
+id = "ready-text"
+state = "idle"
+priority = 500
+region = "bottom:24"
+strength = "strong"
+requires_all = ["kimi ready"]
+
+[[rule]]
+id = "arrow-prompt"
+state = "idle"
+priority = 490
+region = "last_nonempty_line"
+strength = "strong"
+requires_all = [">"]

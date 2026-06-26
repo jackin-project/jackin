@@ -37,6 +37,7 @@ tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.1"
+semver = "1"
 tokio = { version = "1", features = ["rt", "io-util", "io-std", "sync", "macros", "time", "net", "signal"] }
 crossterm = "0.29"
 portable-pty = "0.9"
@@ -47,6 +48,7 @@ jackin-term = { version = "0.6.0-dev", path = "../jackin-term" }
 url = "2"
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls"] }
 turso = { version = "0.7.0-pre.7", default-features = false }
 sha2 = "0.11"
@@ -58,6 +60,9 @@ dhat = { version = "0.3.3", optional = true }
 # the capsule's owned-grid model. The custom cell widget approach is used instead.
 # Atomic first-seed of agent home dirs (D6): copy to sibling temp then rename.
 tempfile = "=3.27.0"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+procfs = "0.18"
 
 [build-dependencies]
 jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }

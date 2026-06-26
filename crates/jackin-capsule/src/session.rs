@@ -34,18 +34,23 @@ use anyhow::{Context, Result};
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tokio::sync::mpsc;
 
+use crate::agent_status::SessionStatus;
 use crate::protocol::AgentState;
 use crate::pull_request::PullRequestInfo;
 use crate::tui::render::RowSnapshot;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
-const BLOCKED_AFTER: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Lines of scrollback every PTY session retains. ~1.5 MB worst-case
 /// per session at 200 cols. Empty cells cost less. Operators need
 /// scrollback to read Codex / Claude responses that exceed one
 /// viewport, so this stays generous.
 pub const SCROLLBACK_LEN: usize = 10_000;
+
+/// Cap on retained OSC-evidence string payloads (e.g. the window title). OSC
+/// content is untrusted model output; retaining unbounded text would let an
+/// agent grow capsule memory by spamming long titles.
+const OSC_EVIDENCE_MAX_CHARS: usize = 256;
 
 pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
     "GIT_AUTHOR_NAME",
@@ -209,6 +214,23 @@ pub struct SessionProvider {
     pub env_overrides: Vec<(String, String)>,
 }
 
+/// A published public-state change emitted by [`Session::advance_status`].
+#[derive(Debug, Clone)]
+pub struct StatusTransition {
+    pub previous: AgentState,
+    pub effective: AgentState,
+    pub winner: crate::agent_status::evidence::EvidenceWinner,
+}
+
+/// Outcome of one [`Session::advance_status`] tick for the daemon to react to:
+/// `transition` is `Some` when a public state change published; `stuck` flags a
+/// watchdog demotion for telemetry.
+#[derive(Debug, Clone)]
+pub struct StatusTick {
+    pub transition: Option<StatusTransition>,
+    pub stuck: bool,
+}
+
 #[expect(
     missing_debug_implementations,
     reason = "Session owns PTY and child-killer trait objects; capsule logs expose session identity and state."
@@ -217,11 +239,46 @@ pub struct Session {
     pub label: String,
     pub agent: Option<String>,
     pub provider: Option<SessionProvider>,
+    /// Published effective state. Authored solely by evidence arbitration on the
+    /// daemon tick (see `agent_status`); kept in sync with `status.effective`.
     pub state: AgentState,
+    /// Per-session evidence-arbitration status (raw state, confidence, seen,
+    /// revision, last evidence summary). The single source of `state`.
+    pub status: SessionStatus,
+    /// Debounce bookkeeping for the inferred working→idle hold.
+    pub pending_transition: crate::agent_status::policy::PendingTransition,
+    /// Per-source gate state for runtime-event reporters (one per hook/plugin
+    /// source addressing this session).
+    pub gate_states:
+        std::collections::HashMap<String, crate::agent_status::gating::SourceGateState>,
+    /// Current semantic authority derived from runtime events, consumed by
+    /// arbitration. `None` until a state-authoring event arrives (Claude/Codex
+    /// are identity-only and never set this — Decision 0a).
+    pub authority: Option<crate::agent_status::evidence::AuthorityEvidence>,
+    /// Active descendant/subagent count from gating, surfaced in evidence.
+    pub subagents_active: u32,
+    /// PID of the spawned child (agent or shell), anchor for `/proc` physics.
+    /// `None` for test sessions with no real process.
+    pub child_pid: Option<u32>,
+    /// Rolling CPU-jiffies sample for the watchdog's busy/quiet delta.
+    cpu_sample: Option<crate::agent_status::process::ProcessCpuSample>,
+    /// `true` once the agent has been seen owning the pane foreground — gates
+    /// the foreground-returned-to-shell exit edge (only meaningful after the
+    /// agent was actually in front).
+    saw_agent_foreground: bool,
+    /// Terminal-protocol evidence captured from the PTY parse and fed into the
+    /// evidence snapshot. The agent-authored signals (title, OSC 9;4 progress)
+    /// are wiped when the foreground is no longer the agent; the shell-authored
+    /// OSC 133 `shell_state` persists (it belongs to the shell, not the agent).
+    osc: crate::agent_status::evidence::OscEvidence,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
     pub last_output_at: std::time::Instant,
+    /// Last time the operator sent explicit keyboard input to this pane.
+    /// Recency evidence only — never authors state (see the agent runtime
+    /// status authority; the watchdog uses output, not input).
+    pub last_input_at: std::time::Instant,
     /// `true` once the PTY has produced any output. Stays `false`
     /// during the brief window between `Session::spawn` and the
     /// child's first write — when the grid's cursor sits at (0, 0)
@@ -447,7 +504,7 @@ impl Session {
         label: impl Into<String>,
         agent: Option<String>,
         provider: Option<SessionProvider>,
-        cmd: CommandBuilder,
+        mut cmd: CommandBuilder,
         terminal: SessionTerminal,
         event_tx: mpsc::UnboundedSender<SessionEvent>,
     ) -> Result<(Self, u64)> {
@@ -470,6 +527,11 @@ impl Session {
         let master = pair.master;
         let slave = pair.slave;
 
+        // Session id must exist before the child spawns so the agent-status
+        // reporter env can carry it. (Assigned here, used for the Session below.)
+        let sid = next_id();
+        inject_status_env(&mut cmd, sid, agent.as_deref());
+
         let mut child = slave
             .spawn_command(cmd)
             .context("failed to spawn session process")?;
@@ -486,7 +548,6 @@ impl Session {
 
         let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
-        let sid = next_id();
         let event_tx_output = event_tx.clone();
         let event_tx_exit = event_tx.clone();
         let event_tx_writer_err = event_tx.clone();
@@ -658,11 +719,21 @@ impl Session {
                 label,
                 agent,
                 provider,
-                state: AgentState::Working,
+                state: AgentState::Unknown,
+                status: SessionStatus::new(),
+                pending_transition: crate::agent_status::policy::PendingTransition::default(),
+                gate_states: std::collections::HashMap::new(),
+                authority: None,
+                subagents_active: 0,
+                child_pid,
+                cpu_sample: None,
+                saw_agent_foreground: false,
+                osc: crate::agent_status::evidence::OscEvidence::default(),
                 input_tx,
                 pty_master: master,
                 child_killer,
                 last_output_at: std::time::Instant::now(),
+                last_input_at: std::time::Instant::now(),
                 received_output: false,
                 shadow_grid: {
                     let mut grid = Box::new(jackin_term::DamageGrid::with_row_arena(
@@ -814,9 +885,253 @@ impl Session {
     /// Returns true when this clears a previously latched blocked state.
     pub fn mark_operator_input(&mut self) -> bool {
         let was_blocked = self.state == AgentState::Blocked;
-        self.last_output_at = std::time::Instant::now();
-        self.state = AgentState::Working;
+        // Operator input updates recency evidence only. It never authors state
+        // (that was the old flap bug: a keystroke in a blocked dialog flipped
+        // Blocked→Working). State comes from evidence arbitration.
+        self.last_input_at = std::time::Instant::now();
         was_blocked
+    }
+
+    /// Apply a forwarded runtime hook/plugin event from an in-container reporter.
+    /// Maps the event through the daemon-owned gating table and updates this
+    /// session's semantic authority (consumed by arbitration). Reporters forward
+    /// events only — all mapping/gating lives here, never in the reporter.
+    /// `seq` is assigned in arrival order per session.
+    pub fn apply_runtime_event(
+        &mut self,
+        source_id: &str,
+        runtime: &str,
+        event: &str,
+        now: std::time::Instant,
+    ) {
+        use crate::agent_status::evidence::AuthorityEvidence;
+        use crate::agent_status::gating::{GateEffect, RuntimeEvent, map_event};
+
+        let gate = self.gate_states.entry(source_id.to_owned()).or_default();
+        let effect = map_event(&RuntimeEvent { runtime, event }, gate);
+        let refresh_matching = |authority: &mut Option<AuthorityEvidence>| {
+            if let Some(a) = authority
+                && a.source_id == source_id
+            {
+                a.last_event = now;
+            }
+        };
+        match effect {
+            GateEffect::Authority {
+                state,
+                pending_permission,
+                subagents_active,
+                notes,
+            } => {
+                self.subagents_active = subagents_active;
+                self.authority = Some(AuthorityEvidence {
+                    source_id: source_id.to_owned(),
+                    grade: grade_for_runtime(runtime),
+                    mapped_state: state,
+                    pending_permission,
+                    last_event: now,
+                    notes,
+                });
+            }
+            GateEffect::CounterOnly { subagents_active } => {
+                self.subagents_active = subagents_active;
+                refresh_matching(&mut self.authority);
+            }
+            GateEffect::Heartbeat => refresh_matching(&mut self.authority),
+            GateEffect::Clear => {
+                self.gate_states.remove(source_id);
+                if self
+                    .authority
+                    .as_ref()
+                    .is_some_and(|a| a.source_id == source_id)
+                {
+                    self.authority = None;
+                    self.subagents_active = 0;
+                }
+            }
+            GateEffect::Ignore => {
+                // An event this build does not map (runtime/version skew renamed
+                // it). The reporter's authority silently goes dark; leave a
+                // firehose breadcrumb so JACKIN_DEBUG=1 surfaces the drift.
+                crate::cdebug!(
+                    "agent-status: unmapped runtime event runtime={runtime} event={event} \
+                     source={source_id}"
+                );
+            }
+        }
+    }
+
+    /// Clear runtime-event authority and per-source gate state after an exit /
+    /// foreground-returned-to-shell transition has been published, so a stale
+    /// semantic report cannot outlive the process it described.
+    pub fn clear_runtime_authority(&mut self) {
+        self.authority = None;
+        self.gate_states.clear();
+        self.saw_agent_foreground = false;
+        self.subagents_active = 0;
+        // A new foreground process must not inherit the previous agent's
+        // title/progress evidence.
+        self.osc.clear_agent_signals();
+    }
+
+    /// Agent-authored terminal-protocol evidence for the evidence snapshot.
+    pub fn osc_evidence(&self) -> &crate::agent_status::evidence::OscEvidence {
+        &self.osc
+    }
+
+    /// Plain-text rows of the current visible viewport (top to bottom), for the
+    /// screen rule-pack engine. Operator scrollback never affects detection —
+    /// only the live screen is read.
+    pub fn visible_screen_rows(&self) -> Vec<String> {
+        let (_, cols) = self.shadow_grid.size();
+        self.render_content_snapshot(cols)
+            .iter()
+            .map(|row| row.text_range(0, cols))
+            .collect()
+    }
+
+    /// Sample `/proc` physics for this session's child, producing the
+    /// `ProcessEvidence` arbitration consumes. Off-Linux (or with no child PID)
+    /// returns default evidence with `physics_sampled = false` — "no evidence",
+    /// never "quiet", so the watchdog cannot false-demote. On Linux a missing
+    /// process is a real exit.
+    pub fn sample_process_evidence(
+        &mut self,
+        now: std::time::Instant,
+    ) -> crate::agent_status::evidence::ProcessEvidence {
+        use crate::agent_status::evidence::ProcessEvidence;
+        use crate::agent_status::process::{
+            self, descendant_process_count, detect_foreground_agent, physics_available,
+            read_process_info, sample_cpu_jiffies_delta,
+        };
+
+        let Some(pid) = self.child_pid else {
+            return ProcessEvidence::default();
+        };
+        if !physics_available() {
+            return ProcessEvidence::default();
+        }
+        let Some(info) = read_process_info(pid) else {
+            // Linux + PID gone = a real process exit.
+            self.cpu_sample = None;
+            return ProcessEvidence {
+                process_exited: true,
+                physics_sampled: true,
+                ..ProcessEvidence::default()
+            };
+        };
+
+        let foreground = detect_foreground_agent(&info);
+        let foreground_is_agent = foreground.is_agent();
+        let foreground_pgid = foreground.pgid();
+        let child_process_count = descendant_process_count(pid);
+        let cpu_jiffies_delta = sample_cpu_jiffies_delta(pid, &mut self.cpu_sample, now);
+        let root_is_agent = process::identify_agent(&info).is_some();
+
+        if foreground_is_agent {
+            self.saw_agent_foreground = true;
+        }
+        // Returned to shell: the agent owned the pane earlier, the child is still
+        // alive, the foreground group is now a non-agent (shell), and no
+        // descendant work remains.
+        let foreground_returned_to_shell = self.saw_agent_foreground
+            && !foreground_is_agent
+            && foreground.has_group()
+            && child_process_count == 0;
+
+        ProcessEvidence {
+            process_exited: false,
+            foreground_returned_to_shell,
+            child_alive: true,
+            root_is_agent,
+            foreground_is_agent,
+            foreground_pgid,
+            child_process_count,
+            cpu_jiffies_delta,
+            physics_sampled: true,
+        }
+    }
+
+    /// Advance the agent-status state machine by one tick: sample evidence,
+    /// run the screen rule pack, arbitrate, debounce, and publish. This is the
+    /// sole path that authors public agent state — the daemon only reacts to the
+    /// returned [`StatusTick`] (redraw + telemetry). Exit clears runtime
+    /// authority only after the exit transition has published, so a stale
+    /// semantic report can never outlive the process it described.
+    pub fn advance_status(
+        &mut self,
+        rule_registry: Option<&crate::agent_status::rules::RulePackRegistry>,
+        now: std::time::Instant,
+    ) -> StatusTick {
+        use crate::agent_status::arbitrate::arbitrate;
+        use crate::agent_status::evidence::{
+            ActivityEvidence, EvidenceNote, EvidenceSnapshot, ScreenEvidence,
+        };
+        use crate::agent_status::policy::{apply_watchdog, debounce};
+        use crate::agent_status::rules::VirtualRegions;
+
+        let process = self.sample_process_evidence(now);
+        let exiting = process.process_exited || process.foreground_returned_to_shell;
+        // Screen rule-pack evaluation over the live viewport: the universal
+        // detector and the sole state source for identity-only runtimes
+        // (Claude/Codex) and Kimi.
+        let screen = rule_registry
+            .and_then(|registry| {
+                let rows = self.visible_screen_rows();
+                let osc = self.osc_evidence();
+                let virtuals = VirtualRegions {
+                    osc_title: osc.title.as_deref(),
+                    osc_progress: osc.progress_raw.as_deref(),
+                };
+                registry.evaluate_with_virtuals(self.agent.as_deref(), &rows, virtuals)
+            })
+            .map_or_else(ScreenEvidence::default, |m| ScreenEvidence {
+                state: m.state,
+                rule_id: Some(m.rule_id),
+                strong: m.strong,
+                freeze: m.freeze,
+            });
+        let snapshot = EvidenceSnapshot {
+            authority: self.authority.clone(),
+            subagents_active: self.subagents_active,
+            osc: self.osc_evidence().clone(),
+            screen,
+            process,
+            activity: ActivityEvidence {
+                last_output: Some(self.last_output_at),
+                last_input: Some(self.last_input_at),
+            },
+        };
+        let candidate = apply_watchdog(arbitrate(&snapshot, self.status.raw, now), now);
+        // Stuck telemetry: a watchdog demotion means a witness claimed `working`
+        // while physics went quiet (the interrupt hole / a hung authority).
+        let stuck = candidate
+            .notes
+            .iter()
+            .any(|n| matches!(n, EvidenceNote::WatchdogDemoted));
+        // Debounce gates whether the candidate becomes a public transition
+        // (immediate for blocked/working/exit/strong-idle; inferred idle needs
+        // confirmation + CPU/OSC-quiet). Only commit through SessionStatus when
+        // it permits.
+        let mut transition = None;
+        if debounce(self.state, &candidate, &mut self.pending_transition, now).is_some() {
+            let previous = self.state;
+            // Clone the winner only on the committing tick — most ticks debounce
+            // suppresses the transition, and the winner now carries a String.
+            let winner = candidate.winner.clone();
+            if let Some(effective) = self.status.publish_raw(candidate) {
+                self.state = effective;
+                transition = Some(StatusTransition {
+                    previous,
+                    effective,
+                    winner,
+                });
+            }
+        }
+        if exiting {
+            self.clear_runtime_authority();
+        }
+        StatusTick { transition, stuck }
     }
 
     /// True when the session's program has enabled any mouse protocol
@@ -938,8 +1253,45 @@ impl Session {
             );
         }
 
+        // PTY output updates recency evidence only. It never authors state
+        // (the old flap bug: any byte flipped Idle→Working, and a blocked
+        // dialog repaint flipped Blocked→Working). State comes from evidence
+        // arbitration over the rule pack / OSC / authority / physics.
         self.last_output_at = std::time::Instant::now();
-        self.state = state_after_pty_output(self.state);
+
+        // OSC 133 shell-integration marks (emitted by the container shell rc,
+        // not by agents) are strong shell-state evidence: PreExec → working,
+        // PromptEnd / CommandFinished → idle. Captured here as evidence, never
+        // authoring state directly.
+        if let Some(mark) = crate::agent_status::scan_osc133(bytes) {
+            use crate::agent_status::OscShellMark;
+            use crate::agent_status::evidence::RawAgentState;
+            let shell_state = match mark {
+                OscShellMark::PreExec => Some(RawAgentState::Working),
+                OscShellMark::PromptEnd | OscShellMark::CommandFinished { .. } => {
+                    Some(RawAgentState::Idle)
+                }
+                OscShellMark::PromptStart => None,
+            };
+            if let Some(state) = shell_state {
+                self.osc.shell_state = Some(state);
+            }
+        }
+
+        // OSC 9;4 (ConEmu progress): state 0 = clear (done-ish hint), 1/2/3 =
+        // active, 4 = paused. Not surfaced as a passthrough event, so scanned
+        // from the raw stream. Progress-active is never working-proof (Claude
+        // animates it during approval prompts); arbitration treats the clear
+        // edge as a hint only.
+        if let Some(state) = crate::agent_status::scan_osc9_progress(bytes) {
+            self.osc.progress_raw = Some(format!("4;{state}"));
+            if state == 0 {
+                self.osc.progress_active = false;
+                self.osc.progress_cleared_at = Some(std::time::Instant::now());
+            } else {
+                self.osc.progress_active = true;
+            }
+        }
     }
 
     /// Drain the grid's typed `PassthroughEvent`s, apply the session's
@@ -960,6 +1312,11 @@ impl Session {
             match event {
                 PassthroughEvent::TitleChanged(ref title) => {
                     self.title = Some(title.clone());
+                    // Agent-status evidence: retain the title (capped — OSC
+                    // content is untrusted model output). The rule pack's
+                    // `osc_title` virtual region reads this.
+                    let capped: String = title.chars().take(OSC_EVIDENCE_MAX_CHARS).collect();
+                    self.osc.title = Some(capped);
                     if self.osc_policy.allow_title()
                         && let Some(bytes) = event.encode()
                     {
@@ -987,6 +1344,10 @@ impl Session {
                     }
                 }
                 PassthroughEvent::Notification(_) => {
+                    // Plain OSC 9 desktop notification is forwarded to the host
+                    // per policy. OSC 9;4 progress is decoded separately from the
+                    // raw stream in `feed_pty` — jackin-term does not surface it
+                    // here.
                     if self.osc_policy.allow_notify()
                         && let Some(bytes) = event.encode()
                     {
@@ -1159,17 +1520,6 @@ impl Session {
         // scrollback the offset was clamped against.
         self.shadow_grid.set_scrollback(self.scrollback_offset());
     }
-
-    pub fn refresh_state(&mut self) {
-        // `AgentState::Done` is part of the protocol surface but never
-        // produced: `remove_exited_session` removes the Session entry
-        // the moment the PTY's child reaper fires (see daemon.rs
-        // SessionEvent::Exited handler), so there is no live `Session`
-        // instance to refresh past that point. Operators experience
-        // tab removal directly; no transient `○ Done` glyph.
-        let elapsed = self.last_output_at.elapsed();
-        self.state = state_after_refresh(self.state, elapsed);
-    }
 }
 
 fn child_exit_reason(status: Result<&portable_pty::ExitStatus, &std::io::Error>) -> Option<String> {
@@ -1203,11 +1553,21 @@ impl Session {
             label,
             agent,
             provider,
-            state: AgentState::Working,
+            state: AgentState::Unknown,
+            status: SessionStatus::new(),
+            pending_transition: crate::agent_status::policy::PendingTransition::default(),
+            gate_states: std::collections::HashMap::new(),
+            authority: None,
+            subagents_active: 0,
+            child_pid: None,
+            cpu_sample: None,
+            saw_agent_foreground: false,
+            osc: crate::agent_status::evidence::OscEvidence::default(),
             input_tx,
             pty_master,
             child_killer,
             last_output_at: std::time::Instant::now(),
+            last_input_at: std::time::Instant::now(),
             received_output: true,
             shadow_grid: Box::new(jackin_term::DamageGrid::new(size.0, size.1, scrollback_len)),
             osc_policy: OscPolicy::default(),
@@ -1235,21 +1595,6 @@ fn parse_modify_other_keys(raw: &[u8]) -> Option<u16> {
     std::str::from_utf8(level).ok()?.parse::<u16>().ok()
 }
 
-fn state_after_pty_output(current: AgentState) -> AgentState {
-    match current {
-        AgentState::Blocked | AgentState::Done => current,
-        AgentState::Working | AgentState::Idle => AgentState::Working,
-    }
-}
-
-fn state_after_refresh(current: AgentState, elapsed: std::time::Duration) -> AgentState {
-    match current {
-        AgentState::Blocked | AgentState::Done => current,
-        AgentState::Working | AgentState::Idle if elapsed < BLOCKED_AFTER => AgentState::Working,
-        AgentState::Working | AgentState::Idle => AgentState::Blocked,
-    }
-}
-
 /// Reject agent-slug strings that are flags (start with `-`), empty,
 /// contain whitespace / control characters, or — when the launch
 /// config lists supported agents — do not appear in that allowlist.
@@ -1274,6 +1619,34 @@ pub fn validate_agent_slug<'a>(
         return Err("not in launch config allowlist");
     }
     Ok(raw)
+}
+
+/// Inject the agent-status reporter environment into a session's command,
+/// keyed on the session id assigned at spawn. Agent panes get the full set so
+/// hook/plugin reporters can address this session; shell panes get only the
+/// socket var (no runtime to report for). State is never authored from these —
+/// reporters forward events, the daemon maps and gates them.
+fn inject_status_env(cmd: &mut CommandBuilder, session_id: u64, agent: Option<&str>) {
+    cmd.env("JACKIN_STATUS_SOCKET", crate::socket::SOCKET_PATH);
+    if let Some(runtime) = agent {
+        cmd.env("JACKIN_SESSION_ID", session_id.to_string());
+        cmd.env("JACKIN_AGENT_RUNTIME", runtime);
+        cmd.env(
+            "JACKIN_STATUS_SOURCE",
+            format!("hook-{runtime}-{session_id}"),
+        );
+    }
+}
+
+/// Authority grade for a runtime's semantic source. `opencode` ships a complete
+/// lifecycle event stream (Complete); `amp` and other event sources have partial
+/// coverage. Claude/Codex are identity-only (Decision 0a) and never reach this.
+fn grade_for_runtime(runtime: &str) -> crate::agent_status::evidence::AuthorityGrade {
+    use crate::agent_status::evidence::AuthorityGrade;
+    match runtime {
+        "opencode" => AuthorityGrade::Complete,
+        _ => AuthorityGrade::Partial,
+    }
 }
 
 /// Build a `CommandBuilder` for an agent session.

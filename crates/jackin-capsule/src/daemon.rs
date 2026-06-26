@@ -40,6 +40,7 @@ use tokio::time::{Duration, interval};
 
 use portable_pty::CommandBuilder;
 
+use crate::agent_status::rules::RulePackRegistry;
 use crate::attach_protocol::{
     AttachHandshake, ControlRequest, detach_attached_task, detach_client, drain_and_exit,
     drain_and_exit_with_reason, handle_attach_client, initial_spawn_request, perform_handshake,
@@ -69,6 +70,7 @@ use crate::session::{
     SessionEvent, build_agent_command, build_shell_command,
 };
 use crate::socket;
+use crate::token_monitor::{TokenMonitor, TokenTotals};
 use crate::tui::app::{
     ChromeHitState, CursorVisibilityState, DragState, HoverState, HoverTarget, MuxMode,
     MuxModeState, PointerShape, PointerShapeState, VisiblePane, chrome_hover_target_for_state,
@@ -130,6 +132,7 @@ use crate::tui::update::{
 };
 use crate::tui::view::spawn_request_failure_message;
 use crate::usage::UsageCache;
+use jackin_core::agent::Agent;
 use jackin_protocol::control::{ClientMsg, ServerMsg};
 
 mod compositor;
@@ -346,6 +349,10 @@ pub struct Multiplexer {
     /// Daemon-owned focused usage/quota cache. Capsule UI renders this cache;
     /// it does not poll providers from render code.
     usage_cache: UsageCache,
+    /// Daemon-owned per-session token-spend monitor. Reconciled against the
+    /// live agent sessions and polled on the state tick; provider reads are
+    /// owned here, never in render or client code.
+    token_monitor: TokenMonitor,
     /// Provider tab requested by the usage overlay. The normal usage refresh
     /// ticker consumes this as a focused-first target so opening/switching tabs
     /// stays non-blocking but the selected provider refreshes next.
@@ -556,6 +563,7 @@ impl Multiplexer {
             agent_history: Vec::new(),
             resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
             usage_cache: UsageCache::default(),
+            token_monitor: TokenMonitor::new(),
             pending_usage_refresh: None,
             usage_refresh_task: None,
             wordlist_offset: {
@@ -837,6 +845,16 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let mut pending_initial_spawn = Some(initial_spawn);
 
     let mut new_clients = socket::start_listener()?;
+    // Screen rule packs: the universal detector. Loaded once; the embedded
+    // packs are validated, so a load failure means a broken build — log and
+    // run without screen evidence rather than killing the daemon.
+    let rule_registry = match RulePackRegistry::bundled() {
+        Ok(registry) => Some(registry),
+        Err(e) => {
+            crate::clog!("agent-status: rule packs failed to load, screen detection off: {e:#}");
+            None
+        }
+    };
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
     let mut state_ticker = interval(STATE_TICK_INTERVAL);
     let mut usage_account_ticker = interval(USAGE_ACCOUNT_REFRESH_POLL_INTERVAL);
@@ -1314,6 +1332,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             _ = state_ticker.tick() => {
                 mux.log_resource_metrics().await;
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
+                // Reap idle clipboard-image transfers and surface a notice. Must
+                // NOT short-circuit the tick: agent-state advancement below is the
+                // 1 Hz floor — every session re-evaluates each tick — and a
+                // clipboard reap is an orthogonal concern that must not freeze it.
+                // The `invalidate` guarantees the notice repaints even if no agent
+                // state changed this tick (otherwise the no-change `continue` below
+                // would leave the frame clean and the notice never painted).
                 let stale_image_transfers = mux
                     .clipboard_image_transfers
                     .abort_idle_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
@@ -1328,8 +1353,26 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         if stale_image_transfers == 1 { "" } else { "s" }
                     ));
                     mux.invalidate(status_change_redraw_reason());
-                    continue;
                 }
+                // Evidence arbitration is the ONLY path that authors agent state.
+                // Each session assembles an EvidenceSnapshot (authority, process,
+                // OSC, screen) in `advance_status`, arbitrates to a raw state +
+                // confidence, and publishes through SessionStatus (which derives
+                // the public `effective` state, incl. done-from-seen).
+                let now = Instant::now();
+                // Token-spend monitor: keep it synced to the live agent sessions
+                // and poll any due providers. `poll_due_sessions` self-throttles
+                // to the 30s/60s cadence, so calling it each state tick is cheap.
+                let token_sessions: Vec<(u64, Agent)> = mux
+                    .sessions
+                    .iter()
+                    .filter_map(|(id, s)| Some((*id, Agent::from_slug(s.agent.as_deref()?)?)))
+                    .collect();
+                mux.token_monitor.reconcile_sessions(&token_sessions);
+                // Returned changed-id list is unused for now (no live event
+                // stream yet); the poll updates the cached per-session totals
+                // that `ClientMsg::TokenUsage` reads.
+                drop(mux.token_monitor.poll_due_sessions().await);
                 // Snapshot visible agent state, refresh, snapshot again. The
                 // ticker's only time-based effect is Working→Idle transitions;
                 // tab labels derive from state and the status bar has no
@@ -1338,8 +1381,36 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // a constant flicker, so skip it unless state actually changed.
                 let states_before: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
-                for session in mux.sessions.values_mut() {
-                    session.refresh_state();
+                for (&session_id, session) in &mut mux.sessions {
+                    // Session::advance_status is the sole state-authoring path;
+                    // the daemon only reacts to the resulting transition.
+                    let tick = session.advance_status(rule_registry.as_ref(), now);
+                    if let Some(transition) = tick.transition {
+                        // Flap-rate telemetry: every public transition is logged
+                        // with the deciding evidence so a regression (an agent
+                        // update breaking a pack) shows up as a burst.
+                        crate::clog!(
+                            "agent-status: session {session_id} {} -> {} (winner={:?})",
+                            transition.previous.label(),
+                            transition.effective.label(),
+                            transition.winner
+                        );
+                    }
+                    if tick.stuck {
+                        crate::clog!(
+                            "status.stuck: session {session_id} demoted to unknown — \
+                             working claimed with no output/CPU/children past the watchdog window"
+                        );
+                    }
+                }
+                // Seen/ack: the focused pane is being reviewed, so it must never
+                // linger on `done`. Acknowledge it each tick (idempotent — only
+                // done→idle changes anything), which records the seen revision.
+                if let Some(focused) = mux.active_focused_id()
+                    && let Some(session) = mux.sessions.get_mut(&focused)
+                    && let Some(effective) = session.status.acknowledge()
+                {
+                    session.state = effective;
                 }
                 let states_after: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
@@ -1360,9 +1431,8 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     continue;
                 }
                 // A modal owns the whole screen behind an opaque backdrop;
-                // repainting the status/branch chrome here would draw it
-                // back over the fill. The hidden tab-state glyph has nothing
-                // to refresh, so skip the chrome frame while a dialog is open.
+                // repainting the status/branch chrome here would draw it back
+                // over the fill, so skip the chrome frame while a dialog is open.
                 if mux.dialog_open() {
                     continue;
                 }
@@ -1374,6 +1444,30 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             }
         }
     }
+}
+
+/// Write a capture fixture for `session`: its live visible grid (`visible.txt`)
+/// and the current evidence report (`evidence.json`), under
+/// `/jackin/state/agent-status/captures/<id>-<seq>/`. Turns a live
+/// mis-detection into a regression fixture in one command.
+fn write_status_capture(session_id: u64, session: &Session) -> Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static CAPTURE_SEQ: AtomicU64 = AtomicU64::new(0);
+    let seq = CAPTURE_SEQ.fetch_add(1, Ordering::Relaxed);
+    let dir =
+        PathBuf::from("/jackin/state/agent-status/captures").join(format!("{session_id}-{seq}"));
+    std::fs::create_dir_all(&dir)?;
+    std::fs::write(
+        dir.join("visible.txt"),
+        session.visible_screen_rows().join("\n"),
+    )?;
+    let report = session.status.report(session.agent.clone());
+    std::fs::write(
+        dir.join("evidence.json"),
+        serde_json::to_string_pretty(&report)?,
+    )?;
+    crate::clog!("status.capture: wrote {}", dir.display());
+    Ok(())
 }
 
 fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg {
@@ -1388,6 +1482,33 @@ fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg
         ClientMsg::Agents => ServerMsg::AgentRegistry {
             records: mux.agent_registry_snapshot(),
         },
+        // Forwarded in-container reporter event: apply it to the addressed
+        // session's authority and Ack immediately (never block the agent hook).
+        ClientMsg::ReportRuntimeEvent {
+            session_id,
+            source_id,
+            runtime,
+            event,
+            payload: _,
+        } => {
+            if let Some(session) = mux.sessions.get_mut(&session_id) {
+                session.apply_runtime_event(&source_id, &runtime, &event, Instant::now());
+            } else {
+                crate::cdebug!("agent-status: runtime event for unknown session {session_id}");
+            }
+            ServerMsg::Ack
+        }
+        // Contributor diagnostic: snapshot the live grid + evidence to a fixture.
+        ClientMsg::StatusCapture { session_id } => {
+            if let Some(session) = mux.sessions.get(&session_id) {
+                if let Err(e) = write_status_capture(session_id, session) {
+                    crate::clog!("status.capture: session {session_id} failed: {e:#}");
+                }
+            } else {
+                crate::clog!("status.capture: no live session {session_id} to capture");
+            }
+            ServerMsg::Ack
+        }
         ClientMsg::UsageFocused => ServerMsg::UsageFocused {
             usage: Box::new(mux.focused_usage_snapshot()),
         },
@@ -1399,6 +1520,12 @@ fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg
         }
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
             accounts: mux.usage_cache.account_snapshot_views(),
+        },
+        ClientMsg::TokenUsage { session_id } => ServerMsg::TokenUsage {
+            summary: mux
+                .token_monitor
+                .totals(session_id)
+                .map(TokenTotals::to_summary),
         },
         ClientMsg::Unknown => {
             crate::clog!("control: ignoring unknown ClientMsg variant from peer");
