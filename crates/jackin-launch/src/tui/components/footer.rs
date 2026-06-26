@@ -1,6 +1,8 @@
 //! Launch cockpit footer helpers.
 
-use jackin_tui::components::render_status_footer;
+use jackin_tui::components::{
+    BottomChromeAreas, StatusRightGroup, bottom_chrome_areas, render_status_footer_right_group,
+};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 
@@ -40,15 +42,46 @@ pub fn render_footer(
     // gradually with the rain rather than popping in.
     #[allow(clippy::cast_precision_loss)]
     let alpha = (view.frame as f32 / 30.0).min(1.0);
-    render_status_footer(
+    render_status_footer_right_group(
         frame,
         area,
         &format_activity(&view.status),
-        &instance,
-        debug_chip,
+        StatusRightGroup {
+            usage: None,
+            container: &instance,
+            run_id: debug_chip,
+        },
         alpha,
         view.footer_hover,
     );
+}
+
+#[must_use]
+pub const fn launch_overlay_chrome_areas(area: Rect, debug_mode: bool) -> BottomChromeAreas {
+    if debug_mode {
+        return bottom_chrome_areas(area);
+    }
+    // spacer and footer collapse to a zero-height row past the bottom edge.
+    let collapsed = Rect {
+        x: area.x,
+        y: area.y + area.height,
+        width: area.width,
+        height: 0,
+    };
+    BottomChromeAreas {
+        body: Rect {
+            height: area.height.saturating_sub(1),
+            ..area
+        },
+        hint: Rect {
+            x: area.x,
+            y: area.y + area.height.saturating_sub(1),
+            width: area.width,
+            height: if area.height >= 1 { 1 } else { 0 },
+        },
+        spacer: collapsed,
+        footer: collapsed,
+    }
 }
 
 /// The container's short instance id once the container is named, else empty.

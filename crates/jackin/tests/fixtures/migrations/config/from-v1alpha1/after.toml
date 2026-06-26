@@ -1,4 +1,4 @@
-version = "v1alpha6"
+version = "v1alpha7"
 data_dir = "/tmp/jackin"
 
 [roles.agent-smith]

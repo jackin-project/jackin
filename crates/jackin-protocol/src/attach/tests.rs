@@ -234,12 +234,232 @@ fn server_frames_roundtrip() {
             reason: Some("agent exited with code 2".to_owned()),
         },
         ServerFrame::Bell,
+        ServerFrame::HostOpenUrl("https://github.com/jackin-project/jackin/actions/runs/1".into()),
+        ServerFrame::HostOpenUrl("mailto:operator@example.com".into()),
+        ServerFrame::HostRevealPath(
+            "/Users/operator/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl".into(),
+        ),
+        ServerFrame::HostStageImageFromClipboardPath,
+        ServerFrame::HostPasteImageFromClipboard,
+        ServerFrame::HostStageImageFromClipboard,
     ] {
         let bytes = encode_server(frame.clone());
         let tag = bytes[0];
         let payload = bytes[5..].to_vec();
         assert_eq!(decode_server(tag, payload).unwrap(), frame);
     }
+}
+
+#[test]
+fn host_reveal_path_rejects_empty_and_oversized_payloads() {
+    assert!(
+        decode_server(TAG_HOST_REVEAL_PATH, Vec::new())
+            .unwrap_err()
+            .to_string()
+            .contains("empty")
+    );
+    assert!(
+        decode_server(
+            TAG_HOST_REVEAL_PATH,
+            vec![b'x'; MAX_HOST_REVEAL_PATH_BYTES + 1],
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("exceeds cap")
+    );
+}
+
+#[test]
+fn file_export_server_frames_roundtrip() {
+    let digest = [0x5au8; FILE_EXPORT_DIGEST_BYTES];
+    for frame in [
+        ServerFrame::FileExportStart(FileExportStart {
+            transfer_id: 7,
+            source_path: "/workspace/report.txt".into(),
+            file_name: "report.txt".into(),
+            size: 11,
+            reveal_after_export: true,
+            open_after_export: false,
+        }),
+        ServerFrame::FileExportChunk(FileExportChunk {
+            transfer_id: 7,
+            offset: 0,
+            bytes: b"hello".to_vec(),
+        }),
+        ServerFrame::FileExportEnd(FileExportEnd {
+            transfer_id: 7,
+            sha256: digest,
+        }),
+    ] {
+        let bytes = encode_server(frame.clone());
+        let tag = bytes[0];
+        let payload = bytes[5..].to_vec();
+        assert_eq!(decode_server(tag, payload).unwrap(), frame);
+    }
+}
+
+#[test]
+fn file_export_decode_rejects_malformed_payloads() {
+    assert!(decode_server(TAG_FILE_EXPORT_START, Vec::new()).is_err());
+    assert!(decode_server(TAG_FILE_EXPORT_CHUNK, vec![0; 16]).is_err());
+    assert!(decode_server(TAG_FILE_EXPORT_END, vec![0; 8]).is_err());
+
+    let mut bad_reveal_flag = Vec::new();
+    bad_reveal_flag.extend_from_slice(&1u64.to_be_bytes());
+    bad_reveal_flag.extend_from_slice(&1u64.to_be_bytes());
+    bad_reveal_flag.extend_from_slice(&1u16.to_be_bytes());
+    bad_reveal_flag.extend_from_slice(&1u16.to_be_bytes());
+    bad_reveal_flag.push(2);
+    bad_reveal_flag.extend_from_slice(b"s");
+    bad_reveal_flag.extend_from_slice(b"n");
+    assert!(decode_server(TAG_FILE_EXPORT_START, bad_reveal_flag).is_err());
+
+    let mut bad_open_flag = Vec::new();
+    bad_open_flag.extend_from_slice(&1u64.to_be_bytes());
+    bad_open_flag.extend_from_slice(&1u64.to_be_bytes());
+    bad_open_flag.extend_from_slice(&1u16.to_be_bytes());
+    bad_open_flag.extend_from_slice(&1u16.to_be_bytes());
+    bad_open_flag.push(0);
+    bad_open_flag.push(2);
+    bad_open_flag.extend_from_slice(b"s");
+    bad_open_flag.extend_from_slice(b"n");
+    assert!(decode_server(TAG_FILE_EXPORT_START, bad_open_flag).is_err());
+}
+
+#[test]
+fn clipboard_image_transfer_client_frames_roundtrip() {
+    let start = ClientFrame::ClipboardImageStart(ClipboardImageStart {
+        transfer_id: 42,
+        format: ClipboardImageFormat::Png,
+        size: 12,
+    });
+    let chunk = ClientFrame::ClipboardImageChunk(ClipboardImageChunk {
+        transfer_id: 42,
+        offset: 0,
+        bytes: b"\x89PNG\r\n\x1a\nrest".to_vec(),
+    });
+    let end = ClientFrame::ClipboardImageEnd(ClipboardImageEnd {
+        transfer_id: 42,
+        sha256: [7; FILE_EXPORT_DIGEST_BYTES],
+    });
+
+    for frame in [start, chunk, end] {
+        let bytes = encode_client(frame.clone()).unwrap();
+        let decoded = decode_client(bytes[0], bytes[5..].to_vec()).unwrap();
+        assert_eq!(decoded, frame);
+    }
+}
+
+#[test]
+fn clipboard_image_error_client_frame_roundtrips() {
+    let frame = ClientFrame::ClipboardImageError("host path is not an image".to_owned());
+    let bytes = encode_client(frame.clone()).unwrap();
+    assert_eq!(bytes[0], TAG_CLIPBOARD_IMAGE_ERROR);
+
+    let decoded = decode_client(bytes[0], bytes[5..].to_vec()).unwrap();
+    assert_eq!(decoded, frame);
+}
+
+#[test]
+fn host_notice_client_frame_roundtrips() {
+    let frame = ClientFrame::HostNotice("File exported: ~/Downloads/jackin/report.txt".to_owned());
+    let bytes = encode_client(frame.clone()).unwrap();
+    assert_eq!(bytes[0], TAG_HOST_NOTICE);
+
+    let decoded = decode_client(bytes[0], bytes[5..].to_vec()).unwrap();
+    assert_eq!(decoded, frame);
+}
+
+#[test]
+fn clipboard_image_transfer_decode_rejects_malformed_payloads() {
+    assert!(decode_client(TAG_CLIPBOARD_IMAGE_START, Vec::new()).is_err());
+
+    let mut empty_size = Vec::new();
+    empty_size.extend_from_slice(&1u64.to_be_bytes());
+    empty_size.push(ClipboardImageFormat::Png.tag());
+    empty_size.extend_from_slice(&0u64.to_be_bytes());
+    assert!(decode_client(TAG_CLIPBOARD_IMAGE_START, empty_size).is_err());
+
+    let mut empty_chunk = Vec::new();
+    empty_chunk.extend_from_slice(&1u64.to_be_bytes());
+    empty_chunk.extend_from_slice(&0u64.to_be_bytes());
+    assert!(decode_client(TAG_CLIPBOARD_IMAGE_CHUNK, empty_chunk).is_err());
+
+    let mut short_end = Vec::new();
+    short_end.extend_from_slice(&1u64.to_be_bytes());
+    short_end.extend_from_slice(&[0; 3]);
+    assert!(decode_client(TAG_CLIPBOARD_IMAGE_END, short_end).is_err());
+
+    assert!(decode_client(TAG_CLIPBOARD_IMAGE_ERROR, Vec::new()).is_err());
+    assert!(decode_client(TAG_HOST_NOTICE, Vec::new()).is_err());
+}
+
+#[test]
+fn clipboard_image_roundtrips() {
+    let image = ClipboardImage {
+        format: ClipboardImageFormat::Png,
+        bytes: b"\x89PNG\r\n\x1a\npayload".to_vec(),
+    };
+    let bytes = encode_client(ClientFrame::ClipboardImage(image.clone())).unwrap();
+    assert_eq!(bytes[0], TAG_CLIPBOARD_IMAGE);
+    let payload = bytes[5..].to_vec();
+    assert_eq!(
+        decode_client(TAG_CLIPBOARD_IMAGE, payload).unwrap(),
+        ClientFrame::ClipboardImage(image)
+    );
+}
+
+#[test]
+fn clipboard_image_rejects_empty_payload() {
+    let err = encode_client(ClientFrame::ClipboardImage(ClipboardImage {
+        format: ClipboardImageFormat::Png,
+        bytes: Vec::new(),
+    }))
+    .expect_err("empty image payload must be rejected");
+    assert!(format!("{err:#}").contains("empty"));
+
+    assert!(decode_client(TAG_CLIPBOARD_IMAGE, vec![1]).is_err());
+}
+
+#[test]
+fn clipboard_image_rejects_unknown_format() {
+    assert!(decode_client(TAG_CLIPBOARD_IMAGE, vec![99, 0x42]).is_err());
+}
+
+#[test]
+fn clipboard_image_rejects_over_cap_payload_at_encode() {
+    let err = encode_client(ClientFrame::ClipboardImage(ClipboardImage {
+        format: ClipboardImageFormat::Png,
+        bytes: vec![0x42; MAX_CLIPBOARD_IMAGE_BYTES + 1],
+    }))
+    .expect_err("over-cap image payload must be rejected");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("clipboard image payload"), "got: {msg}");
+    assert!(
+        msg.contains(&MAX_CLIPBOARD_IMAGE_BYTES.to_string()),
+        "got: {msg}"
+    );
+}
+
+#[test]
+fn clipboard_image_rejects_over_cap_payload_at_decode() {
+    let mut payload = Vec::with_capacity(MAX_CLIPBOARD_IMAGE_BYTES + 2);
+    payload.push(1);
+    payload.extend(std::iter::repeat_n(0x42, MAX_CLIPBOARD_IMAGE_BYTES + 1));
+    let err = decode_client(TAG_CLIPBOARD_IMAGE, payload)
+        .expect_err("over-cap image payload must be rejected at decode");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("clipboard image payload"), "got: {msg}");
+    assert!(
+        msg.contains(&MAX_CLIPBOARD_IMAGE_BYTES.to_string()),
+        "got: {msg}"
+    );
+}
+
+#[test]
+fn host_open_url_rejects_disallowed_schemes() {
+    assert!(decode_server(TAG_HOST_OPEN_URL, b"file:///tmp/report.html".to_vec()).is_err());
+    assert!(decode_server(TAG_HOST_OPEN_URL, b"javascript:alert(1)".to_vec()).is_err());
 }
 
 #[test]
@@ -296,6 +516,43 @@ fn read_client_frame_accepts_exact_max_payload() {
         match frame {
             ClientFrame::Input(bytes) => assert_eq!(bytes.len(), MAX_FRAME_PAYLOAD),
             other => panic!("expected Input, got {other:?}"),
+        }
+    });
+}
+
+#[test]
+fn read_client_frame_accepts_large_clipboard_image_payload() {
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::UnixStream;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let (mut a, mut b) = UnixStream::pair().unwrap();
+        let image_len = MAX_FRAME_PAYLOAD + 128;
+        let payload_len = 1 + image_len;
+        let write_task = tokio::spawn(async move {
+            a.write_all(&(payload_len as u32).to_be_bytes())
+                .await
+                .unwrap();
+            a.write_all(&[ClipboardImageFormat::Png.tag()])
+                .await
+                .unwrap();
+            a.write_all(&vec![0x42u8; image_len]).await.unwrap();
+            a.shutdown().await.unwrap();
+        });
+        let result = read_client_frame(&mut b, TAG_CLIPBOARD_IMAGE).await;
+        write_task.await.unwrap();
+        let frame = result
+            .expect("large clipboard image frame must be accepted")
+            .expect("frame present");
+        match frame {
+            ClientFrame::ClipboardImage(image) => {
+                assert_eq!(image.format, ClipboardImageFormat::Png);
+                assert_eq!(image.bytes.len(), image_len);
+            }
+            other => panic!("expected ClipboardImage, got {other:?}"),
         }
     });
 }
@@ -438,6 +695,7 @@ fn hello_with_client_terminal_round_trips() {
         colorterm: Some("truecolor".to_owned()),
         default_fg: Some((0xe6, 0xe6, 0xe6)),
         default_bg: Some((0x17, 0x17, 0x17)),
+        ..ClientTerminal::default()
     };
     let bytes = encode_client(ClientFrame::Hello {
         rows: 24,
@@ -495,6 +753,116 @@ fn client_terminal_detects_known_pointer_shape_support() {
     assert!(!generic_xterm.pointer_shapes_supported());
     assert!(!warp.pointer_shapes_supported());
     assert!(!dumb.pointer_shapes_supported());
+}
+
+#[test]
+fn client_terminal_derives_attach_capabilities() {
+    let kitty = ClientTerminal {
+        term: Some("xterm-kitty".to_owned()),
+        colorterm: Some("truecolor".to_owned()),
+        ..ClientTerminal::default()
+    };
+    let caps = kitty.attach_capabilities();
+    assert!(caps.pointer_shapes);
+    assert!(caps.truecolor);
+    assert!(caps.synchronized_output);
+    assert!(caps.osc8_hyperlinks);
+    assert!(caps.underline_style);
+    assert_eq!(caps.image_protocol, ImageProtocolCapability::Kitty);
+
+    let dumb = ClientTerminal {
+        term: Some("dumb".to_owned()),
+        ..ClientTerminal::default()
+    };
+    let caps = dumb.attach_capabilities();
+    assert!(!caps.pointer_shapes);
+    assert!(!caps.synchronized_output);
+    assert!(!caps.osc8_hyperlinks);
+    assert_eq!(caps.image_protocol, ImageProtocolCapability::Unsupported);
+}
+
+#[test]
+fn client_terminal_records_capability_sources_and_overrides() {
+    let terminal = ClientTerminal {
+        term: Some("xterm-256color".to_owned()),
+        colorterm: Some("truecolor".to_owned()),
+        default_fg: Some((1, 2, 3)),
+        capability_overrides: AttachCapabilityOverrides {
+            osc8_hyperlinks: Some(false),
+            image_protocol: Some(ImageProtocolCapability::Kitty),
+            ..AttachCapabilityOverrides::default()
+        },
+        ..ClientTerminal::default()
+    };
+
+    let caps = terminal.attach_capabilities();
+
+    assert!(caps.sources.handshake_identity);
+    assert!(caps.sources.terminfo_name);
+    assert!(caps.sources.safe_color_probe);
+    assert!(caps.sources.user_override);
+    assert!(!caps.sources.denylist);
+    assert!(caps.truecolor);
+    assert!(!caps.osc8_hyperlinks);
+    assert_eq!(caps.image_protocol, ImageProtocolCapability::Kitty);
+}
+
+#[test]
+fn hello_round_trips_capability_overrides() {
+    let frame = ClientFrame::Hello {
+        rows: 24,
+        cols: 80,
+        spawn: None,
+        env: Vec::new(),
+        focus_session: None,
+        terminal: ClientTerminal {
+            term: Some("xterm-kitty".to_owned()),
+            capability_overrides: AttachCapabilityOverrides {
+                pointer_shapes: Some(false),
+                synchronized_output: Some(true),
+                underline_style: Some(false),
+                image_protocol: Some(ImageProtocolCapability::Unsupported),
+                ..AttachCapabilityOverrides::default()
+            },
+            ..ClientTerminal::default()
+        },
+    };
+
+    let encoded = encode_client(frame.clone()).expect("encode hello");
+    let decoded = decode_client(encoded[0], encoded[5..].to_vec()).expect("decode hello");
+
+    assert_eq!(decoded, frame);
+}
+
+#[test]
+fn hello_without_capability_override_tail_decodes_as_default() {
+    let mut encoded = encode_client(ClientFrame::Hello {
+        rows: 24,
+        cols: 80,
+        spawn: None,
+        env: Vec::new(),
+        focus_session: None,
+        terminal: ClientTerminal {
+            term: Some("xterm-ghostty".to_owned()),
+            default_fg: Some((1, 2, 3)),
+            default_bg: Some((4, 5, 6)),
+            ..ClientTerminal::default()
+        },
+    })
+    .expect("encode hello");
+    encoded.truncate(encoded.len() - 6);
+
+    let decoded = decode_client(TAG_HELLO, encoded[5..].to_vec()).expect("decode old hello");
+
+    match decoded {
+        ClientFrame::Hello { terminal, .. } => {
+            assert_eq!(
+                terminal.capability_overrides,
+                AttachCapabilityOverrides::default()
+            );
+        }
+        other => panic!("expected Hello, got {other:?}"),
+    }
 }
 
 #[test]
@@ -590,10 +958,10 @@ fn hello_rejects_unknown_color_presence_byte() {
         focus_session: None,
     })
     .expect("hello encode");
-    // Both colors are None, so the fg presence byte is the second-to-last
-    // payload byte. Corrupt it to an undefined discriminant.
+    // Both colors are None and precede the six capability override bytes.
+    // Corrupt the fg presence byte to an undefined discriminant.
     let mut payload = bytes[5..].to_vec();
-    let fg_presence = payload.len() - 2;
+    let fg_presence = payload.len() - 8;
     payload[fg_presence] = 2;
     let err = decode_client(TAG_HELLO, payload).expect_err("presence byte 2 must fail");
     assert!(
@@ -601,9 +969,9 @@ fn hello_rejects_unknown_color_presence_byte() {
         "unexpected error: {err:#}"
     );
 
-    // Same body, bg label: the final payload byte is the bg presence.
+    // Same body, bg label: bg is immediately before override bytes.
     let mut payload = bytes[5..].to_vec();
-    let bg_presence = payload.len() - 1;
+    let bg_presence = payload.len() - 7;
     payload[bg_presence] = 7;
     let err = decode_client(TAG_HELLO, payload).expect_err("presence byte 7 must fail");
     assert!(

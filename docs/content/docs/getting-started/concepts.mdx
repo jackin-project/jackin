@@ -69,6 +69,7 @@ From an operator's point of view, the Capsule is what makes a running instance f
 - It keeps agent sessions running after your terminal disconnects, so closing a terminal tab detaches from the instance instead of killing the agent.
 - It lets you reconnect with `jackin hardline`, start another agent tab with `jackin hardline --new`, or open a shell tab with `jackin hardline --shell`.
 - It reports live session inventory back to `jackin console` and `jackin hardline --inspect`, including which agent tabs exist and which one is focused.
+- It owns explicit host-affordance actions during host attach, such as making a copied host image available to the agent, opening GitHub context URLs on the host, and exporting an allowed container file to the host Downloads folder.
 - It performs container-local setup before an agent starts, such as preparing the durable agent home and applying the auth handoff that jackin' already decided at launch.
 
 The visible result is the two-line jackin' chrome at the top of an attached terminal. The first line identifies the session and tabs; the second line shows the running instance identity and opens **Container info** when clicked. The rest of the terminal belongs to the focused agent or shell pane. Agent shortcuts, editors, full-screen TUIs, bracketed paste, mouse reporting, wheel scrolling, and normal terminal output still go to the focused pane unless the Capsule UI is explicitly active. Normal-screen panes use jackin' scrollback and scroll chrome only when terminal history exists, including rows preserved before normal-screen clear/redraw; empty-history wheel gestures stay local to jackin' instead of becoming prompt cursor keys. Full-screen TUIs that opt into mouse reporting receive pane-local mouse events.
@@ -83,6 +84,8 @@ That means one running instance can hold a small working room:
 All of those tabs share the same mounted files, branch, role tooling, forwarded credentials, and private Docker-in-Docker sidecar. They do **not** share conversation context: each agent runtime still owns its own prompt history and state.
 
 The Capsule is not another agent and it is not a separate container. It is jackin'-owned runtime plumbing inside the role container. You normally interact with it through `jackin load`, `jackin console`, and `jackin hardline`, not by running `jackin-capsule` yourself.
+
+Host affordances such as clipboard image staging, GitHub URL opening, and file export are documented in [Host Affordances](/guides/host-affordances/). They are currently opt-in through `JACKIN_HOST_ATTACH=1` while live terminal validation continues.
 
 ## The construct
 

@@ -60,7 +60,9 @@ impl FullRedrawReason {
 
 pub(crate) fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {
     match cmd {
-        PrefixCommand::NewTab | PrefixCommand::Palette => FullRedrawReason::PaletteOverlay,
+        PrefixCommand::NewTab | PrefixCommand::Palette | PrefixCommand::Usage => {
+            FullRedrawReason::PaletteOverlay
+        }
         PrefixCommand::NextTab | PrefixCommand::PrevTab | PrefixCommand::JumpTab(_) => {
             FullRedrawReason::TabSwitch
         }
@@ -136,10 +138,15 @@ pub(crate) fn dialog_action_frame_plan(action: &DialogAction) -> DialogActionFra
             PickerIntent::NewTab => DialogActionFramePlan::Full(FullRedrawReason::TabSwitch),
             PickerIntent::Split(_) => DialogActionFramePlan::Full(FullRedrawReason::LayoutChange),
         },
-        DialogAction::SplitDirection(_)
+        DialogAction::RefreshUsage
+        | DialogAction::SwitchUsageProvider { .. }
+        | DialogAction::SplitDirection(_)
         | DialogAction::PickedCloseTarget(_)
         | DialogAction::RenameTab { .. }
+        | DialogAction::ExportFile { .. }
         | DialogAction::CopyToClipboard(_)
+        | DialogAction::OpenHostUrl(_)
+        | DialogAction::RevealHostPath(_)
         | DialogAction::Dismiss
         | DialogAction::Redraw
         | DialogAction::Consume => DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange),
@@ -149,7 +156,7 @@ pub(crate) fn dialog_action_frame_plan(action: &DialogAction) -> DialogActionFra
 pub(crate) fn action_frame_plan(action: &Action) -> Option<ActionFramePlan> {
     match action {
         Action::OpenPalette => Some(ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)),
-        Action::OpenContainerInfo | Action::OpenGithubContext => {
+        Action::OpenContainerInfo | Action::OpenGithubContext | Action::OpenUsage => {
             Some(ActionFramePlan::Overlay(FullRedrawReason::DialogChange))
         }
         Action::OpenRenameTab(_) => Some(ActionFramePlan::Overlay(FullRedrawReason::DialogChange)),
@@ -169,6 +176,7 @@ pub(crate) fn action_frame_plan(action: &Action) -> Option<ActionFramePlan> {
         }
         Action::ClearFocusedPane => Some(ActionFramePlan::Diff(FullRedrawReason::PaneClear)),
         Action::Detach => Some(ActionFramePlan::Full(FullRedrawReason::ExplicitRedraw)),
+        Action::RefreshUsage => Some(ActionFramePlan::Overlay(FullRedrawReason::DialogChange)),
         _ => None,
     }
 }
@@ -244,13 +252,23 @@ pub(crate) fn palette_route_frame_plan(route: PaletteCommandRoute) -> ActionFram
         PaletteCommandRoute::OpenSplitDirectionPicker
         | PaletteCommandRoute::OpenAgentPicker(_)
         | PaletteCommandRoute::ConfirmAction(_)
-        | PaletteCommandRoute::OpenCloseTargetPicker => {
+        | PaletteCommandRoute::OpenCloseTargetPicker
+        | PaletteCommandRoute::OpenExportFileDialog { .. }
+        | PaletteCommandRoute::OpenUsage => {
             ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
         }
         PaletteCommandRoute::NextTab | PaletteCommandRoute::PreviousTab => {
             ActionFramePlan::Full(FullRedrawReason::TabSwitch)
         }
         PaletteCommandRoute::ToggleZoom => ActionFramePlan::Full(FullRedrawReason::ZoomChange),
+        PaletteCommandRoute::StageImageFromClipboardPath
+        | PaletteCommandRoute::PasteImageFromClipboard
+        | PaletteCommandRoute::StageImageFromClipboard
+        | PaletteCommandRoute::ExportFileUnderCursor { .. }
+        | PaletteCommandRoute::ExportSelectedFile { .. }
+        | PaletteCommandRoute::OpenLinkUnderCursor => {
+            ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
+        }
         PaletteCommandRoute::ClearPane => ActionFramePlan::Diff(FullRedrawReason::PaneClear),
     }
 }

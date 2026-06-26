@@ -30,6 +30,24 @@ fn main_view_hint_omits_scroll_when_focused_pane_fits() {
 }
 
 #[test]
+fn usage_hint_names_provider_switch_focus_refresh_and_close() {
+    let hint = labels(&usage_hint(jackin_tui::components::ScrollAxes {
+        vertical: true,
+        horizontal: false,
+    }));
+
+    assert!(hint.contains("←→ switch provider"), "hint: {hint}");
+    assert!(hint.contains("Tab focus content"), "hint: {hint}");
+    assert!(hint.contains("r refresh"), "hint: {hint}");
+    assert!(hint.contains("↑↓/j/k scroll"), "hint: {hint}");
+    assert!(hint.contains("Esc close"), "hint: {hint}");
+    assert!(
+        !hint.contains("copy"),
+        "usage overlay must not reuse copy-dialog hints: {hint}"
+    );
+}
+
+#[test]
 fn main_view_hint_advertises_only_visible_scroll_axis() {
     let hint = labels(&main_view_hint(
         false,

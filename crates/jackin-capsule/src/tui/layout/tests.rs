@@ -127,6 +127,29 @@ fn shrink_by_zero_is_noop() {
 }
 
 #[test]
+fn contains_holds_for_enclosed_and_equal_rects() {
+    let outer = Rect::new(2, 0, 20, 80);
+    assert!(outer.contains(outer), "a rect contains itself");
+    assert!(
+        outer.contains(Rect::new(2, 0, 10, 40)),
+        "top-left subdivision"
+    );
+    assert!(
+        outer.contains(Rect::new(12, 40, 10, 40)),
+        "bottom-right subdivision"
+    );
+}
+
+#[test]
+fn contains_rejects_rects_escaping_any_edge() {
+    let outer = Rect::new(2, 0, 20, 80);
+    // A pane whose top rises above the content rect (into the status bar).
+    assert!(!outer.contains(Rect::new(1, 0, 5, 10)), "top escapes");
+    assert!(!outer.contains(Rect::new(2, 0, 21, 80)), "bottom escapes");
+    assert!(!outer.contains(Rect::new(2, 0, 20, 81)), "right escapes");
+}
+
+#[test]
 fn split_spawn_inner_size_uses_future_half_pane() {
     let rect = Rect::new(0, 0, 24, 80);
     assert_eq!(

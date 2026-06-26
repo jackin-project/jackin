@@ -7,8 +7,12 @@ pub mod attach;
 pub mod caffeinate;
 pub mod cleanup;
 pub mod discovery;
+pub mod docker_profile;
 pub mod drift;
 pub mod exit_summary;
+pub mod host_attach;
+mod host_clipboard;
+mod host_desktop;
 pub mod identity;
 pub mod image;
 pub mod launch;
@@ -41,6 +45,7 @@ pub use self::discovery::list_role_names;
 pub use self::discovery::{
     list_managed_role_names, list_running_agent_display_names, list_running_agent_names,
 };
+pub use self::docker_profile::{DockerSecurityProfile, ProfileSource, resolve_profile};
 #[cfg(not(test))]
 pub use self::image::{ImagePrewarmStatus, RoleImagePrewarmRow, prewarm_role_images};
 pub use self::launch::{

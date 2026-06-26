@@ -714,6 +714,8 @@ fn container_info_footer_derives_scroll_axes_from_dialog_rect() {
             "scroll",
             "↵",
             "copy value",
+            "R/O",
+            "reveal diagnostics",
             "Esc",
             "dismiss",
             "click",

@@ -8,6 +8,7 @@ use jackin_core::constants::instance_id_from_container_base as instance_id_from_
 
 pub const JACKIN_CONTAINER_NAME_ENV: &str = "JACKIN_CONTAINER_NAME";
 pub const JACKIN_INSTANCE_ID_ENV: &str = "JACKIN_INSTANCE_ID";
+pub const JACKIN_RUN_DIAGNOSTICS_PATH_ENV: &str = "JACKIN_RUN_DIAGNOSTICS_PATH";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusIdentity {
@@ -47,22 +48,42 @@ pub fn resolve_container_diagnostics() -> ContainerDiagnostics {
     let host_version =
         std::env::var("JACKIN_HOST_VERSION").unwrap_or_else(|_| "unknown".to_owned());
     let run_id = std::env::var("JACKIN_RUN_ID").unwrap_or_default();
-    let (run_log_display, run_log_href) = if run_id.is_empty() {
-        ("(not set)".to_owned(), None)
-    } else {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_owned());
-        let full_path = format!("{home}/.jackin/data/diagnostics/runs/{run_id}.jsonl");
-        (
-            format!("~/.jackin/data/diagnostics/runs/{run_id}.jsonl"),
-            Some(format!("file://{full_path}")),
-        )
-    };
+    let diagnostics_path = std::env::var(JACKIN_RUN_DIAGNOSTICS_PATH_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_owned());
+    let (run_log_display, run_log_href) =
+        resolve_run_log_location(&run_id, diagnostics_path.as_deref(), &home);
     ContainerDiagnostics {
         host_version,
         run_id,
         run_log_display,
         run_log_href,
     }
+}
+
+fn resolve_run_log_location(
+    run_id: &str,
+    diagnostics_path: Option<&str>,
+    home: &str,
+) -> (String, Option<String>) {
+    if run_id.is_empty() {
+        return ("(not set)".to_owned(), None);
+    }
+    if let Some(path) = diagnostics_path {
+        return (path.to_owned(), file_href_for_path(path));
+    }
+    let full_path = format!("{home}/.jackin/data/diagnostics/runs/{run_id}.jsonl");
+    (
+        format!("~/.jackin/data/diagnostics/runs/{run_id}.jsonl"),
+        file_href_for_path(&full_path),
+    )
+}
+
+fn file_href_for_path(path: &str) -> Option<String> {
+    url::Url::from_file_path(path)
+        .ok()
+        .map(|url| url.to_string())
 }
 
 fn resolve_container_name() -> String {
@@ -105,4 +126,41 @@ fn resolve_instance_id(container_name: &str) -> String {
             instance_id_from_container_name(container_name)
                 .map_or_else(|| container_name.to_owned(), str::to_owned)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_run_log_location;
+
+    #[test]
+    fn diagnostics_path_prefers_host_supplied_path() {
+        let (display, href) = resolve_run_log_location(
+            "jk-run-abc123",
+            Some("/Users/operator/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl"),
+            "/home/agent",
+        );
+
+        assert_eq!(
+            display,
+            "/Users/operator/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl"
+        );
+        assert_eq!(
+            href.as_deref(),
+            Some("file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl")
+        );
+    }
+
+    #[test]
+    fn diagnostics_path_falls_back_to_container_home_for_older_launches() {
+        let (display, href) = resolve_run_log_location("jk-run-abc123", None, "/home/agent");
+
+        assert_eq!(
+            display,
+            "~/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl"
+        );
+        assert_eq!(
+            href.as_deref(),
+            Some("file:///home/agent/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl")
+        );
+    }
 }

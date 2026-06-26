@@ -89,7 +89,32 @@ Trying to set one of these is rejected before the agent launches.
 
 `JACKIN_AGENT` is scoped to an agent session, not the whole container. jackin' passes the initial agent to the PID 1 multiplexer as an argv value, then sets `JACKIN_AGENT` only when spawning a real agent pane. Shell panes do not receive it.
 
-Role identity, workspace workdir, supported agent slugs, and manifest model overrides are handed to Capsule through a generated launch config instead of being duplicated as container-wide environment variables. The [Capsule reference](/reference/capsule//#how-state-moves-across-the-boundary) documents the internal handoff.
+Role identity, workspace workdir, supported agent slugs, and manifest model overrides are handed to Capsule through a generated launch config instead of being duplicated as container-wide environment variables. Runtime metadata that must be visible inside Capsule, such as `JACKIN_RUN_ID`, `JACKIN_RUN_DIAGNOSTICS_PATH`, and `JACKIN_HOST_VERSION`, is injected by jackin' at launch time and is not read from operator env scopes. The [Capsule reference](/reference/capsule//#how-state-moves-across-the-boundary) documents the internal handoff.
+
+## Host attach validation
+
+`JACKIN_HOST_ATTACH=1` is an opt-in host-side launch flag. Set it on the command that starts or attaches to an instance when testing host affordances:
+
+```bash
+JACKIN_HOST_ATTACH=1 jackin load <role>
+JACKIN_HOST_ATTACH=1 jackin hardline <instance>
+```
+
+With this flag, the `jackin` host process owns the interactive attach loop instead of using the in-container `docker exec -it /jackin/runtime/jackin-capsule` client. That enables explicit host actions such as clipboard image staging, GitHub PR/CI opening, and file export. See [Host Affordances](/guides/host-affordances/) for the current behavior and validation checklist.
+
+`JACKIN_PASTE_IMAGE_PATHS` controls auto-staging of pasted host image paths under host attach. It is on by default: when a single paste's entire content is one absolute host path or `file://` URL that resolves to a real image file, jackin' stages the image and inserts the container path, which makes a normal `Cmd+V` paste work for screenshot tools that copy a file path. Set it to `0`, `false`, `no`, or `off` to disable that and keep every paste as ordinary text:
+
+```bash
+JACKIN_HOST_ATTACH=1 JACKIN_PASTE_IMAGE_PATHS=0 jackin load <role>
+```
+
+`JACKIN_OPEN_LINKS=deny` disables jackin' host browser-open actions while leaving ordinary terminal output and OSC 8 passthrough under their separate policies:
+
+```bash
+JACKIN_HOST_ATTACH=1 JACKIN_OPEN_LINKS=deny jackin load <role>
+```
+
+The same opt-out also accepts `off` and `no`. It suppresses explicit jackin' actions such as GitHub **Open PR**, GitHub **Open CI**, visible URL modified-click, and **Open link under cursor**; it does not rewrite agent output or block native terminal hyperlink rendering.
 
 ## Pane terminal defaults
 

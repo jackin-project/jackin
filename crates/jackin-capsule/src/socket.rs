@@ -30,7 +30,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Semaphore, mpsc};
 
-use crate::protocol::control::{ClientMsg, ServerMsg, SessionInfo, frame};
+use crate::protocol::control::{ClientMsg, ServerMsg, frame};
 
 type ClientPermit = tokio::sync::OwnedSemaphorePermit;
 type ListenerReceiver = mpsc::UnboundedReceiver<(UnixStream, ClientPermit)>;
@@ -261,41 +261,11 @@ async fn read_payload_lazy(
     Ok(buf)
 }
 
-/// Handle a one-shot control request and close the connection.
-pub async fn handle_control_request(
-    mut stream: UnixStream,
-    first_byte: u8,
-    sessions: Vec<SessionInfo>,
-    tabs: Vec<crate::protocol::control::TabSnapshot>,
-    history: Vec<jackin_protocol::control::AgentRegistryEntry>,
-    active_tab: u32,
-) {
-    let msg = match read_control_msg(&mut stream, first_byte).await {
-        Ok(msg) => msg,
-        Err(e) => {
-            crate::clog!("control: rejecting malformed request: {e:#}");
-            return;
-        }
-    };
-    let reply = match msg {
-        ClientMsg::Status => ServerMsg::SessionList { sessions },
-        ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
-        ClientMsg::Agents => ServerMsg::AgentRegistry { records: history },
-        ClientMsg::Unknown => {
-            // Reply with `Unknown` so the peer's `read_exact` returns
-            // immediately rather than hanging until SOCKET_TIMEOUT.
-            crate::clog!("control: ignoring unknown ClientMsg variant from peer");
-            ServerMsg::Unknown
-        }
-    };
-    // Bound the reply write so a peer that disappeared between request
-    // decode and reply write cannot wedge this task forever holding the
-    // attach-concurrency permit. 2 s is generous for a single localhost
-    // socket write; anything slower is the peer being unresponsive.
-    match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(&reply))).await {
+pub async fn write_control_reply(mut stream: UnixStream, reply: &ServerMsg) {
+    match tokio::time::timeout(Duration::from_secs(2), stream.write_all(&frame(reply))).await {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => crate::clog!("control reply write failed (msg={msg:?}): {e}"),
-        Err(_) => crate::clog!("control reply write timed out after 2 s (msg={msg:?})"),
+        Ok(Err(e)) => crate::clog!("control reply write failed: {e}"),
+        Err(_) => crate::clog!("control reply write timed out after 2 s"),
     }
 }
 

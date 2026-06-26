@@ -73,25 +73,31 @@ impl<'a> PullRequestStatus<'a> {
 }
 
 use jackin_tui::HintSpan;
-use jackin_tui::components::{
-    CONFIRM_KEYMAP, ConfirmAction as SharedConfirmAction, raw_bytes_to_chord,
-};
+use jackin_tui::components::{CONFIRM_KEYMAP, ConfirmAction as SharedConfirmAction};
+use jackin_tui::keymap::raw_bytes_to_chord;
 
 use crate::tui::keymap::{FILTER_LIST_KEYMAP, FilterListAction, READ_ONLY_DISMISS_KEYMAP};
 
 const PALETTE_WIDTH: u16 = 50;
 const CONTAINER_INFO_WIDTH: u16 = 86;
+const GITHUB_URL_ROW: usize = 3;
+const GITHUB_OPEN_PR_ROW: usize = 5;
+const GITHUB_OPEN_CI_ROW: usize = 6;
+
+fn file_url_path(href: &str) -> Option<&str> {
+    href.strip_prefix("file://").filter(|path| !path.is_empty())
+}
 mod input;
 use input::{
-    PickerRow, close_target_filtered_indices, dialog_list_row_clickable, first_selectable_idx,
-    picker_filtered_rows, printable_filter_char, rename_tab_handle_key,
+    PickerRow, close_target_filtered_indices, dialog_list_row_clickable, export_file_handle_key,
+    first_selectable_idx, picker_filtered_rows, printable_filter_char, rename_tab_handle_key,
     split_direction_filtered_indices, step_selectable,
 };
 mod hint;
 pub(crate) use hint::main_view_hint;
 use hint::{
-    confirm_hint, info_dialog_hint, palette_hint, picker_hint, provider_hint, read_only_hint,
-    rename_hint,
+    confirm_hint, export_file_hint, info_dialog_hint, palette_hint, picker_hint, provider_hint,
+    read_only_hint, rename_hint, usage_hint,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,6 +182,15 @@ pub enum Dialog {
         tab_idx: usize,
         input: jackin_tui::TextField,
     },
+    /// Text-input modal opened from the command palette. The operator
+    /// types a workspace-relative path, workspace absolute path, or a
+    /// `/jackin/run/` path; the daemon validates and transfers it over
+    /// the host attach protocol.
+    ExportFile {
+        input: jackin_tui::TextField,
+        reveal_after_export: bool,
+        open_after_export: bool,
+    },
     /// Read-only modal opened when the operator clicks the
     /// container-name segment of the bottom branch/PR context bar.
     /// Surfaces role key, focused-agent runtime, full container ID,
@@ -209,6 +224,14 @@ pub enum Dialog {
     GitHubContext {
         copied: bool,
         /// Persisted scroll offsets (rebuilt each frame like `ContainerInfo`).
+        scroll: jackin_tui::components::DialogBodyScroll,
+    },
+    /// Read-only usage/quota modal for the focused pane.
+    Usage {
+        view: Box<jackin_protocol::control::FocusedUsageView>,
+        selected: UsageDialogTab,
+        tab_bar_focused: bool,
+        hovered_tab: Option<usize>,
         scroll: jackin_tui::components::DialogBodyScroll,
     },
     /// Direction sub-dialog opened when the operator picks "Split pane"
@@ -307,6 +330,12 @@ pub enum DialogAction {
     /// `label` clears the existing custom label and re-enables
     /// auto-naming.
     RenameTab { tab_idx: usize, label: String },
+    /// Operator typed a path for explicit host file export.
+    ExportFile {
+        path: String,
+        reveal_after_export: bool,
+        open_after_export: bool,
+    },
     /// Operator clicked or pressed Enter on the `ContainerInfo` copy
     /// target — copy the carried payload to the operator's clipboard
     /// via OSC 52 and keep the dialog open for visible feedback.
@@ -315,13 +344,28 @@ pub enum DialogAction {
     /// it from the dialog) keeps the dialog the single source of
     /// truth for what gets copied.
     CopyToClipboard(String),
+    /// Ask the host attach client to open an allowlisted host URL.
+    OpenHostUrl(String),
+    /// Ask the host attach client to reveal an allowlisted jackin-owned host
+    /// path. Host side validates the path before touching the OS.
+    RevealHostPath(String),
     /// User dismissed with Escape.
     Dismiss,
+    /// Request a daemon-side focused usage refresh.
+    RefreshUsage,
+    /// Request a daemon-side usage snapshot for a specific provider tab.
+    SwitchUsageProvider { provider_label: String },
     /// Dialog is still open; redraw.
     Redraw,
     /// Mouse event lands somewhere with no semantic effect (border,
     /// padding row). Swallow it so it does not reach the focused pane.
     Consume,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsageDialogTab {
+    Overview,
+    Provider,
 }
 
 /// Items in the `SplitDirectionPicker` sub-dialog. Prefer the common
@@ -348,6 +392,29 @@ impl Dialog {
     pub fn new_rename_tab(tab_idx: usize, initial: impl Into<String>) -> Self {
         let input = jackin_tui::TextField::new(initial.into()).with_max_chars(MAX_CUSTOM_LABEL_LEN);
         Self::RenameTab { tab_idx, input }
+    }
+
+    pub fn new_export_file() -> Self {
+        Self::new_export_file_with_post_action(false, false)
+    }
+
+    pub fn new_export_file_and_reveal() -> Self {
+        Self::new_export_file_with_post_action(true, false)
+    }
+
+    pub fn new_export_file_and_open() -> Self {
+        Self::new_export_file_with_post_action(false, true)
+    }
+
+    fn new_export_file_with_post_action(
+        reveal_after_export: bool,
+        open_after_export: bool,
+    ) -> Self {
+        Self::ExportFile {
+            input: jackin_tui::TextField::new("").with_max_chars(4096),
+            reveal_after_export,
+            open_after_export,
+        }
     }
 
     pub fn new_split_direction_picker() -> Self {
@@ -449,6 +516,15 @@ impl Dialog {
             diagnostics_log_path: log_path,
         }
         .into_state();
+        if debug && let Some(href) = diagnostics.run_log_href.as_deref() {
+            state.push_row(
+                jackin_tui::components::ContainerInfoRow::new(
+                    "Reveal diagnostics",
+                    diagnostics.run_log_display.clone(),
+                )
+                .hyperlink(href.to_owned()),
+            );
+        }
         if let Some(row) = *copied_row {
             state.mark_copied(row);
         }
@@ -504,17 +580,323 @@ impl Dialog {
             url_row,
             jackin_tui::components::ContainerInfoRow::new("CI Status", ci),
         ]);
+        if let Some(pr) = pr {
+            rows.push(
+                jackin_tui::components::ContainerInfoRow::new("Open PR", pr.url.clone())
+                    .hyperlink(pr.url.clone()),
+            );
+            let ci_url = pr
+                .checks
+                .as_ref()
+                .and_then(crate::pull_request::PullRequestChecks::ci_url);
+            let mut ci_row = jackin_tui::components::ContainerInfoRow::new(
+                "Open CI",
+                ci_url.unwrap_or("(unavailable)"),
+            );
+            if let Some(ci_url) = ci_url {
+                ci_row = ci_row.hyperlink(ci_url.to_owned());
+            }
+            rows.push(ci_row);
+        }
         let mut state = jackin_tui::components::ContainerInfoState::new("GitHub context", rows);
         if *copied {
-            state.mark_copied(3);
+            state.mark_copied(GITHUB_URL_ROW);
         }
         state.scroll = scroll.clone();
         Some(state)
     }
 
+    pub(crate) fn usage_state(&self) -> Option<jackin_tui::components::ContainerInfoState> {
+        let Self::Usage {
+            view,
+            selected,
+            scroll,
+            ..
+        } = self
+        else {
+            return None;
+        };
+        if *selected == UsageDialogTab::Overview {
+            return Some(Self::usage_overview_state(view, scroll.clone()));
+        }
+        let mut rows = Vec::new();
+        rows.extend([
+            jackin_tui::components::ContainerInfoRow::new(
+                "Focused",
+                Self::usage_focused_label(view),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Header",
+                Self::usage_provider_header_label(&view.account.provider_label),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Provider",
+                view.account.provider_label.clone(),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Account",
+                view.account.account_label.clone(),
+            ),
+            jackin_tui::components::ContainerInfoRow::new(
+                "Status",
+                Self::usage_status_label(view.status),
+            ),
+            jackin_tui::components::ContainerInfoRow::new("Updated", view.updated_label.clone()),
+        ]);
+        if let Some(username) = &view.account.username {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Username",
+                username.clone(),
+            ));
+        }
+        if let Some(plan) = &view.account.plan_label {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Plan",
+                plan.clone(),
+            ));
+        }
+        if let Some(origin) = &view.account.credential_origin {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Auth",
+                origin.clone(),
+            ));
+        }
+        for bucket in &view.buckets {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                bucket.label.clone(),
+                Self::usage_bucket_value(bucket),
+            ));
+        }
+        if let Some(error) = &view.last_error {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Detail",
+                error.clone(),
+            ));
+        }
+        let mut state = jackin_tui::components::ContainerInfoState::new("Usage", rows);
+        state.scroll = scroll.clone();
+        Some(state)
+    }
+
+    fn usage_overview_state(
+        view: &jackin_protocol::control::FocusedUsageView,
+        scroll: jackin_tui::components::DialogBodyScroll,
+    ) -> jackin_tui::components::ContainerInfoState {
+        let mut rows = Vec::new();
+        if view.tabs.is_empty() {
+            rows.push(jackin_tui::components::ContainerInfoRow::new(
+                "Providers",
+                "usage unavailable",
+            ));
+        } else {
+            for tab in &view.tabs {
+                // One quota-focused line per provider, matching the Overview
+                // preview: "<provider>  <quota summary / lifecycle>". The
+                // account identity lives in the focused header above, not on
+                // every row. status_label is the daemon-enriched
+                // "Session 37% left · Resets in 1h 21m" (or a lifecycle word).
+                let quota = if tab.status_label.trim().is_empty() {
+                    "status unavailable"
+                } else {
+                    tab.status_label.trim()
+                };
+                let value = quota.to_owned();
+                rows.push(jackin_tui::components::ContainerInfoRow::new(
+                    Self::usage_provider_header_label(&tab.label),
+                    value,
+                ));
+            }
+        }
+        let mut state = jackin_tui::components::ContainerInfoState::new("Usage", rows);
+        state.scroll = scroll;
+        state
+    }
+
+    fn usage_focused_label(view: &jackin_protocol::control::FocusedUsageView) -> String {
+        let account = view.account.account_label.trim();
+        let account = if account.is_empty() {
+            "account unavailable"
+        } else {
+            account
+        };
+        match (&view.focused_agent, &view.focused_provider) {
+            (Some(agent), Some(provider)) => format!("{agent} · {provider} · {account}"),
+            (Some(agent), None) => format!("{agent} · {account}"),
+            (None, Some(provider)) => format!("{provider} · {account}"),
+            (None, None) => format!("no focused agent · {account}"),
+        }
+    }
+
+    fn usage_provider_header_label(label: &str) -> String {
+        crate::tui::components::dialog_widgets::usage_provider_display_label(label).to_owned()
+    }
+
+    fn usage_tab_index_at(
+        view: &jackin_protocol::control::FocusedUsageView,
+        selected: UsageDialogTab,
+        area: ratatui::layout::Rect,
+        row: u16,
+        col: u16,
+    ) -> Option<usize> {
+        let inner = crate::tui::components::dialog_widgets::usage_dialog_inner_area(area);
+        let tabs = crate::tui::components::dialog_widgets::usage_tab_strip_labels(view, selected);
+        let tab_area = crate::tui::components::dialog_widgets::usage_tab_strip_area(inner, &tabs);
+        let row0 = if row == tab_area.y.saturating_add(1) {
+            row.saturating_sub(1)
+        } else {
+            row
+        };
+        let col0 = if col >= tab_area.x.saturating_add(1) {
+            col.saturating_sub(1)
+        } else {
+            col
+        };
+        if row0 != tab_area.y {
+            return None;
+        }
+        crate::tui::components::dialog_widgets::usage_tab_strip_index_at(&tabs, tab_area, col0)
+    }
+
+    fn usage_provider_tab_target(&mut self, step: isize) -> Option<String> {
+        let Self::Usage { view, selected, .. } = self else {
+            return None;
+        };
+        if view.tabs.is_empty() {
+            return None;
+        }
+        if *selected == UsageDialogTab::Overview {
+            // tabs is non-empty (guarded above), so first/last are always Some.
+            let target = if step >= 0 {
+                view.tabs.first()
+            } else {
+                view.tabs.last()
+            };
+            return target.map(|tab| tab.label.clone());
+        }
+        let current = view.tabs.iter().position(|tab| tab.active).unwrap_or(0);
+        if step < 0 && current == 0 {
+            *selected = UsageDialogTab::Overview;
+            return None;
+        }
+        let next = if step >= 0 && current + 1 >= view.tabs.len() {
+            *selected = UsageDialogTab::Overview;
+            return None;
+        } else if step >= 0 {
+            current + 1
+        } else {
+            current - 1
+        };
+        Some(view.tabs[next].label.clone())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn usage_selected_tab(&self) -> Option<UsageDialogTab> {
+        let Self::Usage { selected, .. } = self else {
+            return None;
+        };
+        Some(*selected)
+    }
+
+    fn usage_bucket_value(bucket: &jackin_protocol::control::QuotaBucketView) -> String {
+        let mut parts = Vec::new();
+        if bucket.label == "Extra usage" {
+            if let Some(remaining) = bucket.remaining_percent {
+                let used = 100u8.saturating_sub(remaining);
+                parts.push(format!("{} {used}% used", Self::usage_meter(used)));
+            }
+            match (&bucket.used_label, &bucket.limit_label) {
+                (Some(used), Some(limit)) => parts.push(format!("Monthly cap: {used} / {limit}")),
+                (Some(used), None) => parts.push(used.clone()),
+                (None, Some(limit)) => parts.push(limit.clone()),
+                (None, None) => {}
+            }
+            if parts.is_empty()
+                || bucket.status != jackin_protocol::control::UsageSnapshotStatus::Fresh
+            {
+                parts.push(Self::usage_status_label(bucket.status));
+            }
+            return parts.join(" · ");
+        }
+        if let Some(remaining) = bucket.remaining_percent {
+            if bucket.label == "Credits" && remaining == 0 && bucket.limit_label.is_some() {
+                parts.push(format!("{} 0 left", Self::usage_meter(remaining)));
+            } else {
+                parts.push(format!(
+                    "{} {remaining}% left",
+                    Self::usage_meter(remaining)
+                ));
+            }
+        }
+        // Normal buckets show only `N% left · pace · Resets in …` on the
+        // stats line (the roadmap previews never put a used/limit token there;
+        // only `Extra usage`, handled above, shows a cap).
+        if let Some(pace) = &bucket.pace_label {
+            parts.push(pace.clone());
+        }
+        if let Some(reset) = &bucket.reset_label {
+            parts.push(reset.clone());
+        }
+        if bucket.label == "Credits"
+            && bucket.remaining_percent == Some(0)
+            && let Some(limit) = &bucket.limit_label
+        {
+            parts.push(limit.clone());
+        }
+        if parts.is_empty() || bucket.status != jackin_protocol::control::UsageSnapshotStatus::Fresh
+        {
+            parts.push(Self::usage_status_label(bucket.status));
+        }
+        parts.join(" · ")
+    }
+
+    fn usage_meter(remaining_percent: u8) -> String {
+        const WIDTH: usize = 32;
+        let remaining = usize::from(remaining_percent.min(100));
+        let filled = if remaining >= 100 {
+            WIDTH
+        } else {
+            remaining * WIDTH / 100
+        };
+        format!(
+            "{}{}",
+            "█".repeat(filled),
+            "·".repeat(WIDTH.saturating_sub(filled))
+        )
+    }
+
+    fn usage_status_label(status: jackin_protocol::control::UsageSnapshotStatus) -> String {
+        match status {
+            jackin_protocol::control::UsageSnapshotStatus::Fresh => "fresh",
+            jackin_protocol::control::UsageSnapshotStatus::Stale => "stale",
+            jackin_protocol::control::UsageSnapshotStatus::NeedsLogin => "needs login",
+            jackin_protocol::control::UsageSnapshotStatus::NeedsSecret => "needs secret",
+            jackin_protocol::control::UsageSnapshotStatus::Unsupported => "unsupported",
+            jackin_protocol::control::UsageSnapshotStatus::Unavailable => "unavailable",
+            jackin_protocol::control::UsageSnapshotStatus::Error => "error",
+        }
+        .to_owned()
+    }
+
     pub fn new_github_context() -> Self {
         Self::GitHubContext {
             copied: false,
+            scroll: jackin_tui::components::DialogBodyScroll::new(),
+        }
+    }
+
+    pub fn new_usage(view: jackin_protocol::control::FocusedUsageView) -> Self {
+        Self::new_usage_with_tab(view, UsageDialogTab::Provider)
+    }
+
+    pub(crate) fn new_usage_with_tab(
+        view: jackin_protocol::control::FocusedUsageView,
+        selected: UsageDialogTab,
+    ) -> Self {
+        Self::Usage {
+            view: Box::new(view),
+            selected,
+            tab_bar_focused: true,
+            hovered_tab: None,
             scroll: jackin_tui::components::DialogBodyScroll::new(),
         }
     }
@@ -526,7 +908,9 @@ impl Dialog {
         &mut self,
     ) -> Option<&mut jackin_tui::components::DialogBodyScroll> {
         match self {
-            Self::ContainerInfo { scroll, .. } | Self::GitHubContext { scroll, .. } => Some(scroll),
+            Self::ContainerInfo { scroll, .. }
+            | Self::GitHubContext { scroll, .. }
+            | Self::Usage { scroll, .. } => Some(scroll),
             _ => None,
         }
     }
@@ -556,15 +940,29 @@ impl Dialog {
                     rect,
                 );
             }
-        } else if matches!(self, Self::GitHubContext { .. }) {
-            let Some(state) = self.github_context_state(github) else {
-                return;
+        } else if matches!(self, Self::GitHubContext { .. } | Self::Usage { .. }) {
+            let is_usage = matches!(self, Self::Usage { .. });
+            let state = if matches!(self, Self::GitHubContext { .. }) {
+                let Some(state) = self.github_context_state(github) else {
+                    return;
+                };
+                state
+            } else {
+                let Some(state) = self.usage_state() else {
+                    return;
+                };
+                state
             };
-            if let Self::GitHubContext { scroll, .. } = self {
+            if let Self::GitHubContext { scroll, .. } | Self::Usage { scroll, .. } = self {
+                let (content_width, content_height) = if is_usage {
+                    crate::tui::components::dialog_widgets::usage_info_content_size(&state)
+                } else {
+                    (state.content_width(), state.content_height())
+                };
                 jackin_tui::components::clamp_container_info_scroll(
                     scroll,
-                    state.content_width(),
-                    state.content_height(),
+                    content_width,
+                    content_height,
                     rect,
                 );
             }
@@ -594,10 +992,28 @@ impl Dialog {
                 rect,
             );
         }
-        if matches!(self, Self::GitHubContext { .. }) {
-            let Some(state) = self.github_context_state(github) else {
-                return jackin_tui::components::ScrollAxes::none();
+        if matches!(self, Self::GitHubContext { .. } | Self::Usage { .. }) {
+            let is_usage = matches!(self, Self::Usage { .. });
+            let state = if matches!(self, Self::GitHubContext { .. }) {
+                let Some(state) = self.github_context_state(github) else {
+                    return jackin_tui::components::ScrollAxes::none();
+                };
+                state
+            } else {
+                let Some(state) = self.usage_state() else {
+                    return jackin_tui::components::ScrollAxes::none();
+                };
+                state
             };
+            if is_usage {
+                let (content_width, content_height) =
+                    crate::tui::components::dialog_widgets::usage_info_content_size(&state);
+                return jackin_tui::components::dialog_scroll_axes(
+                    content_width,
+                    content_height,
+                    rect,
+                );
+            }
             return jackin_tui::components::dialog_scroll_axes(
                 state.content_width(),
                 state.content_height(),
@@ -651,12 +1067,81 @@ impl Dialog {
         if let Self::RenameTab { tab_idx, input } = self {
             return rename_tab_handle_key(*tab_idx, input, key);
         }
+        if let Self::ExportFile {
+            input,
+            reveal_after_export,
+            open_after_export,
+        } = self
+        {
+            return export_file_handle_key(input, *reveal_after_export, *open_after_export, key);
+        }
         // Read-only info dialogs (ContainerInfo, GitHubContext): Esc /
         // dismiss keys close, Enter copies the dialog's value to the
         // operator's clipboard with the `copied` flag flipped to true
         // so the next render's "Copied!" indicator confirms the OSC 52
         // fired. The dialog stays open until dismissed so the feedback
         // is actually visible.
+        if matches!(self, Self::Usage { .. }) {
+            if matches!(key, b"r" | b"R") {
+                return DialogAction::RefreshUsage;
+            }
+            if matches!(key, b"\t" | b"\x1b[Z") {
+                if let Self::Usage {
+                    tab_bar_focused, ..
+                } = self
+                {
+                    *tab_bar_focused = !*tab_bar_focused;
+                }
+                return DialogAction::Redraw;
+            }
+            let tab_bar_focused = matches!(
+                self,
+                Self::Usage {
+                    tab_bar_focused: true,
+                    ..
+                }
+            );
+            if tab_bar_focused {
+                if raw_bytes_to_chord(key)
+                    .and_then(|chord| READ_ONLY_DISMISS_KEYMAP.dispatch(chord))
+                    .is_some()
+                {
+                    return DialogAction::Dismiss;
+                }
+                if let Some(provider_label) = match key {
+                    b"\x1b[C" => self.usage_provider_tab_target(1),
+                    b"\x1b[D" => self.usage_provider_tab_target(-1),
+                    _ => None,
+                } {
+                    return DialogAction::SwitchUsageProvider { provider_label };
+                }
+                return DialogAction::Redraw;
+            }
+            if raw_bytes_to_chord(key)
+                .and_then(|chord| READ_ONLY_DISMISS_KEYMAP.dispatch(chord))
+                .is_some()
+            {
+                if let Self::Usage {
+                    tab_bar_focused, ..
+                } = self
+                {
+                    *tab_bar_focused = true;
+                }
+                return DialogAction::Redraw;
+            }
+            if let Self::Usage { scroll, .. } = self
+                && scroll.handle_raw_key_for_axes(
+                    key,
+                    jackin_tui::components::ScrollAxes {
+                        vertical: true,
+                        horizontal: true,
+                    },
+                )
+            {
+                return DialogAction::Redraw;
+            }
+            return DialogAction::Redraw;
+        }
         if matches!(
             self,
             Self::ContainerInfo { .. } | Self::GitHubContext { .. }
@@ -711,6 +1196,42 @@ impl Dialog {
                     } else {
                         DialogAction::Redraw
                     }
+                }
+                b"o" | b"O" => match self {
+                    Self::GitHubContext { .. } => github
+                        .and_then(|view| view.status.loaded())
+                        .map_or(DialogAction::Redraw, |pr| {
+                            DialogAction::OpenHostUrl(pr.url.clone())
+                        }),
+                    Self::ContainerInfo { diagnostics, .. } => diagnostics
+                        .run_log_href
+                        .as_deref()
+                        .and_then(file_url_path)
+                        .map_or(DialogAction::Redraw, |path| {
+                            DialogAction::RevealHostPath(path.to_owned())
+                        }),
+                    _ => DialogAction::Redraw,
+                },
+                b"c" | b"C" => {
+                    if !matches!(self, Self::GitHubContext { .. }) {
+                        return DialogAction::Redraw;
+                    }
+                    github
+                        .and_then(|view| view.status.loaded())
+                        .and_then(|pr| pr.checks.as_ref())
+                        .and_then(crate::pull_request::PullRequestChecks::ci_url)
+                        .map_or(DialogAction::Redraw, |url| {
+                            DialogAction::OpenHostUrl(url.to_owned())
+                        })
+                }
+                b"r" | b"R" => {
+                    if let Self::ContainerInfo { diagnostics, .. } = self
+                        && let Some(path) =
+                            diagnostics.run_log_href.as_deref().and_then(file_url_path)
+                    {
+                        return DialogAction::RevealHostPath(path.to_owned());
+                    }
+                    DialogAction::Redraw
                 }
                 _ => DialogAction::Redraw,
             };
@@ -772,8 +1293,10 @@ impl Dialog {
                         }
                     }
                     Self::RenameTab { .. }
+                    | Self::ExportFile { .. }
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
+                    | Self::Usage { .. }
                     | Self::ConfirmAction { .. } => {}
                 }
                 DialogAction::Redraw
@@ -821,8 +1344,10 @@ impl Dialog {
                         }
                     }
                     Self::RenameTab { .. }
+                    | Self::ExportFile { .. }
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
+                    | Self::Usage { .. }
                     | Self::ConfirmAction { .. } => {}
                 }
                 DialogAction::Redraw
@@ -981,7 +1506,7 @@ impl Dialog {
         // Text-input dialog has no clickable rows — clicks inside the
         // box are just swallowed so they don't dismiss or reach the
         // pane underneath.
-        if matches!(self, Self::RenameTab { .. }) {
+        if matches!(self, Self::RenameTab { .. } | Self::ExportFile { .. }) {
             return DialogAction::Consume;
         }
         // ContainerInfo: any copyable row (Container ID, Run ID, Diagnostics
@@ -991,13 +1516,17 @@ impl Dialog {
             let hit = self.container_info_state().and_then(|state| {
                 jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
             });
-            return match hit {
-                Some((hit_row, payload)) => {
-                    if let Self::ContainerInfo { copied_row, .. } = self {
-                        *copied_row = Some(hit_row);
-                    }
-                    DialogAction::CopyToClipboard(payload)
+            if let Some((hit_row, payload)) = hit {
+                if let Self::ContainerInfo { copied_row, .. } = self {
+                    *copied_row = Some(hit_row);
                 }
+                return DialogAction::CopyToClipboard(payload);
+            }
+            let reveal_hit = self.container_info_state().and_then(|state| {
+                jackin_tui::components::container_info_hyperlink_payload_at(area, &state, col, row)
+            });
+            return match reveal_hit.and_then(|(_, href)| file_url_path(&href).map(str::to_owned)) {
+                Some(path) => DialogAction::RevealHostPath(path),
                 None => DialogAction::Consume,
             };
         }
@@ -1011,14 +1540,36 @@ impl Dialog {
             let hit = self.github_context_state(github).and_then(|state| {
                 jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
             });
-            return match hit {
-                Some((_hit_row, payload)) => {
-                    if let Self::GitHubContext { copied, .. } = self {
-                        *copied = true;
-                    }
-                    DialogAction::CopyToClipboard(payload)
+            if let Some((_hit_row, payload)) = hit {
+                if let Self::GitHubContext { copied, .. } = self {
+                    *copied = true;
                 }
-                _ => DialogAction::Consume,
+                return DialogAction::CopyToClipboard(payload);
+            }
+            let open_hit = self.github_context_state(github).and_then(|state| {
+                jackin_tui::components::container_info_hyperlink_payload_at(area, &state, col, row)
+            });
+            return match open_hit {
+                Some((GITHUB_OPEN_PR_ROW | GITHUB_OPEN_CI_ROW, payload)) => {
+                    DialogAction::OpenHostUrl(payload)
+                }
+                Some(_) | None => DialogAction::Consume,
+            };
+        }
+        if let Self::Usage { view, selected, .. } = self {
+            let tab = Self::usage_tab_index_at(view, *selected, area, row, col);
+            return match tab {
+                Some(0) => {
+                    *selected = UsageDialogTab::Overview;
+                    DialogAction::Redraw
+                }
+                Some(idx) => view.tabs.get(idx.saturating_sub(1)).map_or_else(
+                    || DialogAction::Consume,
+                    |tab| DialogAction::SwitchUsageProvider {
+                        provider_label: tab.label.clone(),
+                    },
+                ),
+                None => DialogAction::Consume,
             };
         }
         // ConfirmAction: only the visible Yes/No button cells confirm
@@ -1104,8 +1655,10 @@ impl Dialog {
                 picker_filtered_rows(agents, filter).len() as u16
             }
             Self::RenameTab { .. }
+            | Self::ExportFile { .. }
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
+            | Self::Usage { .. }
             | Self::ConfirmAction { .. }
             | Self::ProviderPicker { .. } => 0,
         };
@@ -1170,11 +1723,13 @@ impl Dialog {
                     }
                 }
             }
-            // RenameTab, ContainerInfo, ConfirmAction, and ProviderPicker
+            // Text-input, ContainerInfo, ConfirmAction, and ProviderPicker
             // clicks were already handled by early returns above.
             Self::RenameTab { .. }
+            | Self::ExportFile { .. }
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
+            | Self::Usage { .. }
             | Self::ConfirmAction { .. }
             | Self::ProviderPicker { .. } => DialogAction::Consume,
         }
@@ -1192,13 +1747,19 @@ impl Dialog {
         github: Option<&GithubContextView<'_>>,
     ) -> bool {
         let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
+        let area = ratatui::layout::Rect {
+            x: box_col,
+            y: box_row,
+            width,
+            height,
+        };
         let inside_box =
             row >= box_row && row < box_row + height && col >= box_col && col < box_col + width;
         if !inside_box {
             return false;
         }
         match self {
-            Self::RenameTab { .. } => false,
+            Self::RenameTab { .. } | Self::ExportFile { .. } => false,
             Self::ContainerInfo { .. } => {
                 let area = ratatui::layout::Rect {
                     x: box_col,
@@ -1209,6 +1770,10 @@ impl Dialog {
                 self.container_info_state().is_some_and(|state| {
                     jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
                         .is_some()
+                        || jackin_tui::components::container_info_hyperlink_payload_at(
+                            area, &state, col, row,
+                        )
+                        .is_some_and(|(_, href)| file_url_path(&href).is_some())
                 })
             }
             Self::GitHubContext { .. } => {
@@ -1221,7 +1786,16 @@ impl Dialog {
                 self.github_context_state(github).is_some_and(|state| {
                     jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
                         .is_some()
+                        || jackin_tui::components::container_info_hyperlink_payload_at(
+                            area, &state, col, row,
+                        )
+                        .is_some_and(|(idx, _)| {
+                            matches!(idx, GITHUB_OPEN_PR_ROW | GITHUB_OPEN_CI_ROW)
+                        })
                 })
+            }
+            Self::Usage { view, selected, .. } => {
+                Self::usage_tab_index_at(view, *selected, area, row, col).is_some()
             }
             Self::ConfirmAction { .. } => true,
             Self::CommandPalette {
@@ -1273,9 +1847,11 @@ impl Dialog {
     /// stays in a recoverable state regardless.
     pub(crate) fn box_rect(&self, term_rows: u16, term_cols: u16) -> (u16, u16, u16, u16) {
         let width = match self {
-            Self::ContainerInfo { .. } | Self::GitHubContext { .. } => CONTAINER_INFO_WIDTH
-                .min(term_cols.saturating_sub(4))
-                .max(PALETTE_WIDTH),
+            Self::ContainerInfo { .. } | Self::GitHubContext { .. } | Self::Usage { .. } => {
+                CONTAINER_INFO_WIDTH
+                    .min(term_cols.saturating_sub(4))
+                    .max(PALETTE_WIDTH)
+            }
             // Exit data-loss confirm has two warning notes wider than PALETTE_WIDTH.
             // Use the shared Details width percentage (70%) so the notes don't truncate.
             Self::ConfirmAction {
@@ -1312,11 +1888,14 @@ impl Dialog {
                 let items = picker_filtered_rows(agents, filter).len() as u16;
                 items + 4
             }
-            Self::RenameTab { .. } => 5,
+            Self::RenameTab { .. } | Self::ExportFile { .. } => 5,
             Self::ContainerInfo { .. } => self.container_info_state().map_or(10, |state| {
                 jackin_tui::components::container_info_required_height(&state)
             }),
-            Self::GitHubContext { .. } => 9,
+            Self::GitHubContext { .. } => 11,
+            Self::Usage { .. } => self.usage_state().map_or(10, |state| {
+                crate::tui::components::dialog_widgets::usage_info_required_height(&state)
+            }),
             // 9 = border(2) + leading(1) + question(1) + empty(1) + message(1) + spacer(1) + button(1) + trailing(1)
             // Matches the canonical symmetric dialog layout (Defect 5).
             // Exit shows the shared data-loss variant (extra warning notes), so
@@ -1330,13 +1909,19 @@ impl Dialog {
             // No filter row: top border + items + bottom border.
             Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
         };
-        let max_height = term_rows
-            .saturating_sub(crate::tui::components::status_bar::STATUS_BAR_ROWS)
-            .saturating_sub(1)
-            .max(3);
+        let content_height = crate::tui::layout::available_content_rows(term_rows).max(3);
+        let max_height = if matches!(self, Self::Usage { .. }) {
+            content_height.saturating_sub(1).max(3)
+        } else {
+            content_height
+        };
         let height = natural_height.min(max_height);
-        let row = crate::tui::components::status_bar::STATUS_BAR_ROWS
-            + (max_height.saturating_sub(height)) / 2;
+        let top_row = crate::tui::components::status_bar::STATUS_BAR_ROWS;
+        let row = if matches!(self, Self::Usage { .. }) {
+            top_row.saturating_add(1)
+        } else {
+            top_row + (content_height.saturating_sub(height)) / 2
+        };
         let col = (term_cols.saturating_sub(width)) / 2;
         (row, col, height, width)
     }
@@ -1361,14 +1946,32 @@ impl Dialog {
             | Self::CloseTargetPicker { .. } => picker_hint(),
             Self::ProviderPicker { .. } => provider_hint(),
             Self::RenameTab { .. } => rename_hint(),
+            Self::ExportFile { .. } => export_file_hint(),
             Self::ContainerInfo { .. } => info_dialog_hint("copy value", axes),
             Self::GitHubContext { .. } => {
                 if github.and_then(|view| view.status.loaded()).is_some() {
-                    info_dialog_hint("copy GitHub URL", axes)
+                    let mut spans = info_dialog_hint("copy GitHub URL", axes);
+                    let insert_at = spans
+                        .iter()
+                        .rposition(|span| matches!(span, HintSpan::Key("Esc")))
+                        .unwrap_or(spans.len());
+                    spans.splice(
+                        insert_at..insert_at,
+                        [
+                            HintSpan::Key("O"),
+                            HintSpan::Text("open PR"),
+                            HintSpan::GroupSep,
+                            HintSpan::Key("C"),
+                            HintSpan::Text("open CI"),
+                            HintSpan::GroupSep,
+                        ],
+                    );
+                    spans
                 } else {
                     read_only_hint()
                 }
             }
+            Self::Usage { .. } => usage_hint(axes),
             Self::ConfirmAction { .. } => confirm_hint(),
         }
     }
@@ -1399,6 +2002,35 @@ impl Dialog {
             && *hovered_row != hit
         {
             *hovered_row = hit;
+            return true;
+        }
+        false
+    }
+
+    pub fn set_usage_tab_hover(
+        &mut self,
+        row: u16,
+        col: u16,
+        term_rows: u16,
+        term_cols: u16,
+    ) -> bool {
+        let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
+        let area = ratatui::layout::Rect {
+            x: box_col,
+            y: box_row,
+            width,
+            height,
+        };
+        let hit = match self {
+            Self::Usage { view, selected, .. } => {
+                Self::usage_tab_index_at(view, *selected, area, row, col)
+            }
+            _ => None,
+        };
+        if let Self::Usage { hovered_tab, .. } = self
+            && *hovered_tab != hit
+        {
+            *hovered_tab = hit;
             return true;
         }
         false

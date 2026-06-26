@@ -1,0 +1,24 @@
+---
+source: crates/jackin-capsule/src/tui/components/dialog/tests.rs
+expression: "render_usage_dialog_snapshot_for_view(100, 30, UsageDialogTab::Provider,\nkimi_usage_view_fixture())"
+---
+
+
+
+       ┌ Usage ─────────────────────────────────────────────────────────────────────────────┐
+       │         Overview   OpenAI   Anthropic   Amp   xAI   Z.AI   Kimi   MiniMax          │
+       │                                                           ━━━━━━                   │
+       │────────────────────────────────────────────────────────────────────────────────────│
+       │  Kimi                                                       alexey@chainargos.com  │
+       │  Updated 4m ago                                                                    │
+       │────────────────────────────────────────────────────────────────────────────────────│
+       │  Weekly                                                                            │
+       │  ████████████████████████████████████████████████████████████████████████████████  │
+       │  100% left                                                  Resets Jul 1 at 15:17  │
+       │                                                                                    │
+       │  Rate Limit                                                                        │
+       │  ████████████████████████████████████████████████████████████████████████████████  │
+       │  100% left                                                           Resets 17:17  │
+       │  86% in reserve                                                 Lasts until reset  │
+       │                                                                                    │
+       └────────────────────────────────────────────────────────────────────────────────────┘

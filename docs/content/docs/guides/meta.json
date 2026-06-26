@@ -5,10 +5,12 @@
     "mounts",
     "parallel-agents",
     "parallel-agent-coordination",
+    "host-affordances",
     "environment-variables",
     "run-telemetry",
     "authentication",
     "tmux",
+    "docker-profiles",
     "security-model",
     "comparison"
   ]

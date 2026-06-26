@@ -114,20 +114,16 @@ pub async fn eject_role(
     let resources = docker_resources_for_state(paths, container_name);
 
     // Remove containers first so the network has no active endpoints.
-    let (r1, r2) = tokio::join!(
-        docker.remove_container(container_name),
-        docker.remove_container(&resources.dind_container),
-    );
-    r1?;
-    r2?;
+    docker.remove_container(container_name).await?;
+    if let Some(dind_container) = resources.dind_container.as_deref() {
+        docker.remove_container(dind_container).await?;
+    }
 
     // Volume and network are independent of each other once containers are gone.
-    let (r3, r4) = tokio::join!(
-        docker.remove_volume(&resources.certs_volume),
-        docker.remove_network(&resources.network),
-    );
-    r3?;
-    r4?;
+    if let Some(certs_volume) = resources.certs_volume.as_deref() {
+        docker.remove_volume(certs_volume).await?;
+    }
+    docker.remove_network(&resources.network).await?;
 
     // Best-effort host-side socket dir cleanup. Same reason as
     // purge_container_filesystem above: the daemon socket and the
@@ -664,12 +660,11 @@ async fn ensure_role_resources_absent_for_purge(
     docker: &impl DockerApi,
     resources: &crate::instance::DockerResources,
 ) -> anyhow::Result<()> {
-    let (role_result, dind_result) = tokio::join!(
-        ensure_container_absent_for_purge(docker, &resources.role_container, "role container"),
-        ensure_container_absent_for_purge(docker, &resources.dind_container, "DinD sidecar"),
-    );
-    role_result?;
-    dind_result
+    ensure_container_absent_for_purge(docker, &resources.role_container, "role container").await?;
+    if let Some(dind_container) = resources.dind_container.as_deref() {
+        ensure_container_absent_for_purge(docker, dind_container, "DinD sidecar").await?;
+    }
+    Ok(())
 }
 
 async fn ensure_container_absent_for_purge(

@@ -17,6 +17,7 @@ fn pull_request_fixture(number: u64) -> PullRequestInfo {
 fn widget_bar(
     cols: u16,
     branch: Option<&str>,
+    usage_status_label: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     loading: bool,
     container: &str,
@@ -27,6 +28,7 @@ fn widget_bar(
     let mut buf = ratatui::buffer::Buffer::empty(area);
     crate::tui::components::chrome::BottomChromeWidget {
         branch,
+        usage_status_label,
         pull_request,
         pull_request_loading: loading,
         instance_id_label: container,
@@ -50,6 +52,7 @@ fn renders_pr_id_title_and_container_without_url() {
     let (text, buf) = widget_bar(
         120,
         Some("asa/pr-context"),
+        None,
         Some(&pr),
         false,
         "jk-test-container",
@@ -74,6 +77,7 @@ fn renders_non_default_branch_without_pr() {
         80,
         Some("feature/no-pr"),
         None,
+        None,
         false,
         "jk-test-container",
         None,
@@ -87,6 +91,7 @@ fn shows_pr_lookup_in_progress() {
     let (text, _) = widget_bar(
         100,
         Some("feature/slow-gh"),
+        None,
         None,
         true,
         "jk-test-container",
@@ -103,6 +108,7 @@ fn truncates_left_chunk_on_narrow_terminal() {
     let (text, _) = widget_bar(
         20,
         Some("feature/x"),
+        None,
         Some(&pr),
         false,
         "jk-test-container-with-extra-long-suffix",
@@ -116,21 +122,130 @@ fn truncates_left_chunk_on_narrow_terminal() {
 }
 
 #[test]
+fn renders_usage_signal_with_branch_context() {
+    let (text, _) = widget_bar(
+        120,
+        Some("feature/usage"),
+        Some("Codex Session: 63% used · 37% left"),
+        None,
+        false,
+        "jk-test-container",
+        None,
+    );
+    assert!(text.contains("Branch · feature/usage"));
+    assert!(text.contains("Codex Session: 63% used · 37% left"));
+    assert!(
+        text.find("Branch · feature/usage") < text.find("Codex Session: 63% used · 37% left"),
+        "{text:?}"
+    );
+}
+
+#[test]
+fn narrow_usage_signal_keeps_session_quota_before_weekly() {
+    let (text, _) = widget_bar(
+        44,
+        Some("feature/very-long-branch-name"),
+        Some("Session 37% · Weekly 10%"),
+        None,
+        false,
+        "jk-test-container",
+        None,
+    );
+
+    assert!(text.contains("Session 37%"), "{text:?}");
+    assert!(!text.contains("Weekly 10%"), "{text:?}");
+    assert!(!text.contains("feature/very-long-branch-name"), "{text:?}");
+}
+
+#[test]
+fn narrow_usage_signal_keeps_state_when_no_quota_exists() {
+    let (text, _) = widget_bar(
+        42,
+        Some("feature/very-long-branch-name"),
+        Some("Amp · account unavailable login"),
+        None,
+        false,
+        "jk-test-container",
+        None,
+    );
+
+    assert!(text.contains("login"), "{text:?}");
+    assert!(!text.contains("feature/very-long-branch-name"), "{text:?}");
+}
+
+#[test]
+fn right_chunks_order_usage_container_run_id() {
+    let layout = branch_context_bar_layout(
+        24,
+        100,
+        Some("feature/status"),
+        Some("Session 37%"),
+        None,
+        false,
+        Some("18bc138751b01628"),
+        "sx02yp2x",
+    )
+    .expect("layout");
+
+    let usage = layout.usage_region.expect("usage region");
+    let container = layout.container_region.expect("container region");
+    let run = layout.debug_chip_region.expect("run id region");
+
+    assert!(
+        usage.start < container.start,
+        "usage should render left of container"
+    );
+    assert!(
+        container.start < run.start,
+        "container should render left of run id"
+    );
+}
+
+#[test]
 fn layout_returns_none_for_zero_dimensions() {
     let pr = pull_request_fixture(1);
     assert!(
-        branch_context_bar_layout(0, 80, Some("feature/x"), Some(&pr), false, "jk-test").is_none()
+        branch_context_bar_layout(
+            0,
+            80,
+            Some("feature/x"),
+            None,
+            Some(&pr),
+            false,
+            None,
+            "jk-test"
+        )
+        .is_none()
     );
     assert!(
-        branch_context_bar_layout(24, 0, Some("feature/x"), Some(&pr), false, "jk-test").is_none()
+        branch_context_bar_layout(
+            24,
+            0,
+            Some("feature/x"),
+            None,
+            Some(&pr),
+            false,
+            None,
+            "jk-test"
+        )
+        .is_none()
     );
 }
 
 #[test]
 fn hit_rejects_columns_outside_region() {
     let pr = pull_request_fixture(7);
-    let layout = branch_context_bar_layout(24, 120, Some("feature/x"), Some(&pr), false, "jk-test")
-        .expect("layout fits");
+    let layout = branch_context_bar_layout(
+        24,
+        120,
+        Some("feature/x"),
+        None,
+        Some(&pr),
+        false,
+        None,
+        "jk-test",
+    )
+    .expect("layout fits");
     let region = layout.left_region.expect("left region present");
     let left_start = region.start;
     let left_end = region.end;
@@ -141,8 +256,10 @@ fn hit_rejects_columns_outside_region() {
             24,
             120,
             Some("feature/x"),
+            None,
             Some(&pr),
             false,
+            None,
             "jk-test"
         ),
         Some(BranchContextBarHit::Context)
@@ -154,8 +271,10 @@ fn hit_rejects_columns_outside_region() {
             24,
             120,
             Some("feature/x"),
+            None,
             Some(&pr),
             false,
+            None,
             "jk-test"
         ),
         Some(BranchContextBarHit::Context)
@@ -166,8 +285,10 @@ fn hit_rejects_columns_outside_region() {
         24,
         120,
         Some("feature/x"),
+        None,
         Some(&pr),
         false,
+        None,
         "jk-test",
     );
     assert!(matches!(
@@ -181,8 +302,10 @@ fn hit_rejects_columns_outside_region() {
             24,
             120,
             Some("feature/x"),
+            None,
             Some(&pr),
             false,
+            None,
             "jk-test"
         ),
         None
@@ -196,6 +319,7 @@ fn hover_highlights_click_targets() {
     let (_, ctx) = widget_bar(
         120,
         Some("asa/pr-context"),
+        None,
         Some(&pr),
         false,
         "jk-test-container",
@@ -206,6 +330,7 @@ fn hover_highlights_click_targets() {
     let (text, container) = widget_bar(
         120,
         Some("asa/pr-context"),
+        None,
         Some(&pr),
         false,
         "jk-test-container",
@@ -218,18 +343,45 @@ fn hover_highlights_click_targets() {
         hover_bg,
         "hovered container chunk lifts"
     );
+
+    let (text, usage) = widget_bar(
+        120,
+        Some("asa/pr-context"),
+        Some("Session 37% · Weekly 10%"),
+        Some(&pr),
+        false,
+        "jk-test-container",
+        Some(crate::tui::app::HoverTarget::UsageStatus),
+    );
+    let chunk_x = text.find("Session 37%").expect("usage chunk") as u16;
+    assert_eq!(
+        usage[(chunk_x, 23)].bg,
+        hover_bg,
+        "hovered usage chunk lifts"
+    );
 }
 
 #[test]
 fn leaves_left_side_empty_when_branch_filtered_out() {
-    let (text, _) = widget_bar(80, None, None, false, "jk-test-container", None);
+    let (text, _) = widget_bar(80, None, None, None, false, "jk-test-container", None);
     assert!(text.contains("jk-test-container"));
     assert!(!text.contains("jackin"));
     assert!(!text.contains("Branch ·"));
     assert!(!text.contains("Resolving PR"));
     assert!(!text.contains("PR #"));
     assert_eq!(
-        branch_context_bar_hit(24, 2, 24, 80, None, None, false, "jk-test-container"),
+        branch_context_bar_hit(
+            24,
+            2,
+            24,
+            80,
+            None,
+            None,
+            None,
+            false,
+            None,
+            "jk-test-container"
+        ),
         None
     );
 }
@@ -250,6 +402,7 @@ fn snapshot_branch_context_bar_with_pr_120x24() {
     let (text, _) = widget_bar(
         120,
         Some("feature/tui-architecture"),
+        None,
         Some(&pr),
         false,
         "jk-test-container",
@@ -263,6 +416,7 @@ fn snapshot_branch_context_bar_no_pr_80x24() {
     let (text, _) = widget_bar(
         80,
         Some("feature/tui-architecture"),
+        None,
         None,
         false,
         "jk-test-container",

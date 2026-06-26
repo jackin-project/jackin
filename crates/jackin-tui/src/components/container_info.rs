@@ -64,6 +64,11 @@ impl ContainerInfoRow {
     }
 
     #[must_use]
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    #[must_use]
     pub fn value(&self) -> &str {
         &self.value
     }
@@ -177,8 +182,17 @@ impl ContainerInfoState {
     }
 
     #[must_use]
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    #[must_use]
     pub fn rows(&self) -> &[ContainerInfoRow] {
         &self.rows
+    }
+
+    pub fn push_row(&mut self, row: ContainerInfoRow) {
+        self.rows.push(row);
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<()> {
@@ -363,6 +377,10 @@ pub fn debug_info_hint_spans(axes: crate::components::ScrollAxes) -> Vec<crate::
     spans.push(crate::HintSpan::Key("↵"));
     spans.push(crate::HintSpan::Text("copy value"));
     spans.push(crate::HintSpan::GroupSep);
+    // UNREGISTERABLE(container-info-reveal): R/O toggle reveals diagnostics inline; no ContainerInfo keymap.
+    spans.push(crate::HintSpan::Key("R/O"));
+    spans.push(crate::HintSpan::Text("reveal diagnostics"));
+    spans.push(crate::HintSpan::GroupSep);
     // UNREGISTERABLE(container-info-no-keymap): Esc dismisses inline.
     spans.push(crate::HintSpan::Key("Esc"));
     spans.push(crate::HintSpan::Text("dismiss"));
@@ -420,6 +438,24 @@ pub fn copy_payload_at(
                 && col < p.screen_x.saturating_add(p.visible_target_cols)
         })
         .map(|p| (p.idx, state.rows[p.idx].value.clone()))
+}
+
+#[must_use]
+pub fn hyperlink_payload_at(
+    area: Rect,
+    state: &ContainerInfoState,
+    col: u16,
+    row: u16,
+) -> Option<(usize, String)> {
+    value_placements(area, state)
+        .into_iter()
+        .find(|p| {
+            state.rows[p.idx].href.is_some()
+                && row == p.screen_y
+                && col >= p.screen_x
+                && col < p.screen_x.saturating_add(p.visible_target_cols)
+        })
+        .and_then(|p| state.rows[p.idx].href.clone().map(|href| (p.idx, href)))
 }
 
 /// Visible hyperlink cells for the encoder's frame-layer OSC 8 emission:

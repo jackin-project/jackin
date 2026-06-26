@@ -1,35 +1,24 @@
-FROM rust:1.96.0-trixie@sha256:c6811167278337db5f3b0234964ced5f538f154a2a20f09ec03721d7411c933d AS security-tools
+ARG SHELLFIRM_VERSION
+
+# shellfirm has no Debian package, so build it from source in a throwaway Rust
+# stage (the documented cargo-install fallback) and copy only the binary into
+# the final image. Building inside Docker — rather than prebuilding on the host —
+# keeps it off the host's mise/cargo-binstall environment and produces the
+# binary for the target image architecture.
+FROM rust:1.96.0-trixie AS shellfirm-builder
 
 ARG SHELLFIRM_VERSION
 
-# Install sccache (pinned) so the shellfirm compile below reuses compiled
-# artifacts from the /sccache-build cache mount instead of starting cold
-# whenever SHELLFIRM_VERSION changes.
-ARG TARGETARCH
-RUN case "${TARGETARCH}" in \
-      amd64) sccache_arch=x86_64 ;; \
-      arm64) sccache_arch=aarch64 ;; \
-      *) printf 'unsupported TARGETARCH for sccache: %s\n' "${TARGETARCH}" >&2 && exit 1 ;; \
-    esac && \
-    curl -fsSL "https://github.com/mozilla/sccache/releases/download/v0.15.0/sccache-v0.15.0-${sccache_arch}-unknown-linux-musl.tar.gz" \
-      -o /tmp/sccache.tar.gz && \
-    tar -xzf /tmp/sccache.tar.gz -C /usr/local/bin --strip-components=1 \
-      "sccache-v0.15.0-${sccache_arch}-unknown-linux-musl/sccache" && \
-    chmod 0755 /usr/local/bin/sccache && \
-    rm /tmp/sccache.tar.gz && \
-    sccache --version
-
-# Install shellfirm
-# TODO(shellfirm-aarch64-linux-binary): switch to prebuilt download — see TODO.md.
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,target=/sccache-build \
-    RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache-build \
-    cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked
+RUN cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked --root /opt/shellfirm && \
+    /opt/shellfirm/bin/shellfirm --version | grep -F "${SHELLFIRM_VERSION}"
 
 FROM debian:trixie-20260610@sha256:fe7312b5f05bf5f43fad76bcd8945642e4e47a68aefd1b73f447615899d0fac1
 
-COPY --from=security-tools /usr/local/cargo/bin/shellfirm /usr/local/bin/shellfirm
+ARG SHELLFIRM_VERSION
+
+COPY --from=shellfirm-builder /opt/shellfirm/bin/shellfirm /usr/local/bin/shellfirm
+RUN chmod 0755 /usr/local/bin/shellfirm && \
+    shellfirm --version | grep -F "${SHELLFIRM_VERSION}"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -45,6 +34,7 @@ RUN apt-get update && \
     bash \
     ca-certificates \
     curl \
+    dnsutils \
     fd-find \
     fish \
     fzf \
@@ -55,8 +45,14 @@ RUN apt-get update && \
     openssh-client \
     procps \
     ripgrep \
+    ipset \
+    iptables \
     sudo \
+    tzdata \
     tree \
+    wl-clipboard \
+    xauth \
+    xclip \
     yq \
     zsh && \
     ln -sf /usr/bin/fdfind /usr/local/bin/fd && \
@@ -134,11 +130,17 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
            /var/cache/apt/* \
            /tmp/*
 
-# Create runtime user
+# Create runtime user. No baked sudoers — sudo is provisioned at runtime via
+# `docker exec --user root jackin-capsule sudo-provision`, only for profiles
+# that grant it (JACKIN_SUDO=1). The `sudo` package stays installed so the
+# grant can write /etc/sudoers.d/agent at launch.
 RUN groupadd -g "$GID" agent && \
     useradd -m -u "$UID" -g "$GID" -s /bin/zsh agent && \
-    echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent && \
     install -d -o agent -g agent /home/agent/.claude /home/agent/.codex /home/agent/.jackin
+
+# Install starship prompt as root so the installer can write to /usr/local/bin
+# without needing to escalate privileges.
+RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
 # Default to a UTF-8 locale so shell prompts and CLI output render correctly,
 # including `docker exec` sessions that bypass jackin's runtime entrypoint.
@@ -152,9 +154,6 @@ ENV PATH="/home/agent/.local/share/mise/shims:/home/agent/.local/bin:${PATH}"
 # Install oh-my-zsh and plugins
 RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended && \
     git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-/home/agent/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
-
-# Install starship prompt
-RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
 COPY --chown=agent:agent zshrc /home/agent/.zshrc
 

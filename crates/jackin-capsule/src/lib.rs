@@ -4,6 +4,7 @@
 //! Not responsible for: protocol encoding (see `jackin-protocol`), host-side
 //! launch orchestration, or config schema migration.
 
+pub mod agent_status;
 pub(crate) mod alloc_telemetry;
 pub mod attach_context;
 /// Library target so integration tests under `tests/` can exercise
@@ -12,10 +13,12 @@ pub mod attach_context;
 pub mod attach_protocol;
 pub mod client;
 pub(crate) mod client_writer;
+pub(crate) mod clipboard;
 pub mod config;
 pub mod container_context;
 pub mod daemon;
 pub(crate) mod debug_panic;
+pub mod firewall;
 pub mod git_context;
 pub mod logging;
 pub mod output;
@@ -27,7 +30,11 @@ pub mod runtime_setup;
 pub mod services;
 pub mod session;
 pub mod socket;
+pub mod sudo_provision;
 pub mod telemetry;
+pub(crate) mod telemetry_store;
+pub(crate) mod token_monitor;
+pub(crate) mod usage;
 pub mod util;
 
 /// Terminal-rendering code — all UI paint/layout lives here.

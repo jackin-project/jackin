@@ -92,6 +92,32 @@ impl LaunchHostTerminal for HostTerminal {
             .and_then(|()| out.flush())
             .is_ok()
     }
+
+    fn reveal_file(&self, path: &std::path::Path) -> bool {
+        match super::host_desktop::reveal_host_file(path) {
+            Ok(()) => true,
+            Err(err) => {
+                jackin_diagnostics::emit_compact_line(
+                    "launch-reveal",
+                    &format!("failed to reveal {}: {err:#}", path.display()),
+                );
+                false
+            }
+        }
+    }
+
+    fn open_file(&self, path: &std::path::Path) -> bool {
+        match super::host_desktop::open_host_file(path) {
+            Ok(()) => true,
+            Err(err) => {
+                jackin_diagnostics::emit_compact_line(
+                    "launch-open-file",
+                    &format!("failed to open {}: {err:#}", path.display()),
+                );
+                false
+            }
+        }
+    }
 }
 
 static HOST_TERMINAL: HostTerminal = HostTerminal;

@@ -102,7 +102,7 @@ fn clamp_container_info_scroll(view: &mut LaunchView, ctx: CockpitContext<'_>) {
         ctx.terminal.is_debug_mode(),
         ctx.jackin_version,
     );
-    let rect = launch_container_info_rect(ctx.area, &state);
+    let rect = launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
     jackin_tui::components::clamp_container_info_scroll(
         &mut view.container_info_scroll,
         state.content_width(),
@@ -236,7 +236,7 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             ctx.terminal.is_debug_mode(),
             ctx.jackin_version,
         );
-        let rect = launch_container_info_rect(ctx.area, &state);
+        let rect = launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
         if jackin_tui::components::classify_click(rect, col, row)
             == jackin_tui::components::ModalClickResult::OutsideDismiss
         {
@@ -253,8 +253,14 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         }
         // Click inside with no copy target → no-op (Defect 11: inside click swallowed).
     } else if let Some(failure) = v.failure.as_ref() {
-        if let Some(target) = failure_copy_target_at(ctx.area, failure, ctx.run_id, col, row)
-            && let Some(payload) = failure_copy_payload(failure, ctx.run_id, target)
+        if let Some(target) = failure_copy_target_at(
+            ctx.area,
+            failure,
+            ctx.run_id,
+            ctx.terminal.is_debug_mode(),
+            col,
+            row,
+        ) && let Some(payload) = failure_copy_payload(failure, ctx.run_id, target)
         {
             if ctx.terminal.copy_to_clipboard(&payload) {
                 let _dirty = update_launch_view(v, LaunchMessage::FailureCopied(target));
@@ -302,7 +308,7 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             ctx.terminal.is_debug_mode(),
             ctx.jackin_version,
         );
-        let rect = launch_container_info_rect(ctx.area, &state);
+        let rect = launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
         let hover = jackin_tui::components::container_info_copy_payload_at(rect, &state, col, row)
             .map(|(idx, _)| idx);
         if hover != v.container_info_hover {
@@ -312,7 +318,14 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         return;
     }
     if let Some(failure) = v.failure.as_ref() {
-        let hover = failure_copy_target_at(ctx.area, failure, ctx.run_id, col, row);
+        let hover = failure_copy_target_at(
+            ctx.area,
+            failure,
+            ctx.run_id,
+            ctx.terminal.is_debug_mode(),
+            col,
+            row,
+        );
         if hover != v.failure_copy_hover {
             let _dirty = update_launch_view(v, LaunchMessage::FailureCopyHovered(hover));
             ctx.terminal.set_pointer_shape(hover.is_some());
@@ -351,6 +364,7 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         });
     let hover = StatusFooterHover {
         left: activity_hovering,
+        usage: false,
         right: container_hovering,
         right_debug: debug_chip_hovering,
     };
@@ -475,7 +489,11 @@ pub fn handle_cockpit_input(
                             ctx.terminal.is_debug_mode(),
                             ctx.jackin_version,
                         );
-                        let rect = launch_container_info_rect(ctx.area, &state);
+                        let rect = launch_container_info_rect(
+                            ctx.area,
+                            &state,
+                            ctx.terminal.is_debug_mode(),
+                        );
                         let axes = jackin_tui::components::dialog_scroll_axes(
                             state.content_width(),
                             state.content_height(),
@@ -510,7 +528,8 @@ pub fn handle_cockpit_input(
                     ctx.terminal.is_debug_mode(),
                     ctx.jackin_version,
                 );
-                let rect = launch_container_info_rect(ctx.area, &state);
+                let rect =
+                    launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
                 let axes = jackin_tui::components::dialog_scroll_axes(
                     state.content_width(),
                     state.content_height(),
