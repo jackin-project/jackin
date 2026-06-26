@@ -67,6 +67,24 @@ impl HookInstaller for ClaudeHookInstaller {
     }
 }
 
+/// Claude reporter events written under `hooks.<Event>`, paired with each event's
+/// `async` flag. `PermissionRequest` is synchronous so Claude reads the continue
+/// ack; every other event fires async.
+const CLAUDE_HOOK_EVENTS: &[(&str, bool)] = &[
+    ("UserPromptSubmit", true),
+    ("PreToolUse", true),
+    ("PostToolUse", true),
+    ("PostToolUseFailure", true),
+    ("PermissionRequest", false),
+    ("PermissionDenied", true),
+    ("Notification", true),
+    ("Stop", true),
+    ("StopFailure", true),
+    ("SubagentStart", true),
+    ("SubagentStop", true),
+    ("SessionEnd", true),
+];
+
 impl ClaudeHookInstaller {
     fn command_for_event(&self, event: &str) -> String {
         format!("{} --event {event}", self.hook_script_path)
@@ -83,26 +101,6 @@ impl ClaudeHookInstaller {
         })
     }
 
-    /// Returns the expected hooks configuration as a mapping of event name
-    /// to `async_flag`.
-    fn expected_events(&self) -> Vec<(&'static str, bool)> {
-        vec![
-            ("UserPromptSubmit", true),
-            ("PreToolUse", true),
-            ("PostToolUse", true),
-            ("PostToolUseFailure", true),
-            // PermissionRequest is synchronous so Claude reads the continue ack.
-            ("PermissionRequest", false),
-            ("PermissionDenied", true),
-            ("Notification", true),
-            ("Stop", true),
-            ("StopFailure", true),
-            ("SubagentStart", true),
-            ("SubagentStop", true),
-            ("SessionEnd", true),
-        ]
-    }
-
     fn merge_hook_entries(&self, mut settings: serde_json::Value) -> serde_json::Value {
         // Start from the existing hooks map (if any); our command entries merge
         // in below and the whole map is written back to `settings` at the end.
@@ -113,7 +111,7 @@ impl ClaudeHookInstaller {
             .unwrap_or_default();
 
         // Install or repair only our command entry inside each event array.
-        for (event, async_flag) in self.expected_events() {
+        for &(event, async_flag) in CLAUDE_HOOK_EVENTS {
             let expected_command = self.command_for_event(event);
             let mut entries = hooks_obj
                 .remove(event)
@@ -164,7 +162,7 @@ impl ClaudeHookInstaller {
         let Some(hooks) = settings.get("hooks").and_then(|h| h.as_object()) else {
             return false;
         };
-        for (event, async_flag) in self.expected_events() {
+        for &(event, async_flag) in CLAUDE_HOOK_EVENTS {
             let expected_command = self.command_for_event(event);
             let Some(arr) = hooks.get(event).and_then(|v| v.as_array()) else {
                 return false;

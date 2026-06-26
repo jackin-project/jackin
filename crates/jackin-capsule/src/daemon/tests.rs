@@ -8,6 +8,7 @@ use crate::pr_context::{command_output_or_lookup_error, command_stdout_trimmed};
 use crate::protocol::attach::read_server_frame;
 use crate::tui::components::dialog::PullRequestStatus;
 use portable_pty::{ChildKiller, MasterPty, PtySize};
+use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
 struct NullChildKiller;
@@ -106,6 +107,8 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             initial_provider: None,
             claude_marketplaces: Vec::new(),
             claude_plugins: Vec::new(),
+            dirty_exit_policy: None,
+            isolated_worktrees: Vec::new(),
         },
     )
     .unwrap_or_else(|error| panic!("test multiplexer construction failed: {error}"))
@@ -3344,6 +3347,35 @@ fn pointer_shape_updates_only_when_shape_changes() {
     mux.update_pointer_shape_for_mouse(23, hit.start, SGR_NO_BUTTON_MOTION);
     mux.client.flush_out_of_band();
     assert!(rx.try_recv().is_err(), "unchanged shape should not re-emit");
+}
+
+#[tokio::test]
+async fn drain_and_exit_delivers_shutdown_before_closing_attach_socket() {
+    let mut mux = test_mux(24, 80);
+    let (daemon_stream, mut client_stream) = tokio::net::UnixStream::pair().unwrap();
+    let (out_tx, out_rx) = mpsc::unbounded_channel();
+    let (cmd_tx, _cmd_rx) = mpsc::unbounded_channel();
+    mux.client.attach(out_tx);
+    mux.attached_task = Some(tokio::spawn(handle_attach_client(
+        daemon_stream,
+        out_rx,
+        cmd_tx,
+    )));
+
+    let read_shutdown = async {
+        let mut tag = [0u8; 1];
+        client_stream
+            .read_exact(&mut tag)
+            .await
+            .expect("shutdown tag should be readable");
+        read_server_frame(&mut client_stream, tag[0])
+            .await
+            .expect("shutdown frame should decode")
+            .expect("shutdown frame should be present")
+    };
+
+    let ((), frame) = tokio::join!(drain_and_exit(&mut mux), read_shutdown);
+    assert_eq!(frame, ServerFrame::Shutdown { reason: None });
 }
 
 #[test]
@@ -7270,4 +7302,185 @@ fn render_perf_probe() {
         );
     }
     assert_frame_conformance(&mut mux, &client, "perf probe end");
+}
+
+fn exit_dirty_selected_value(mux: &Multiplexer) -> usize {
+    match mux.dialog_top() {
+        Some(Dialog::ExitDirty { selected, .. }) => *selected,
+        other => panic!("expected ExitDirty on top, got {other:?}"),
+    }
+}
+
+#[test]
+fn exit_dirty_down_arrow_advances_selection_via_handle_input() {
+    // Zero live panes — exactly the dirty-exit modal scenario.
+    let mut mux = test_mux(30, 100);
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    assert_eq!(exit_dirty_selected_value(&mux), 0);
+
+    // Down arrow, as the input parser hands it to handle_input.
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
+    assert_eq!(
+        exit_dirty_selected_value(&mux),
+        1,
+        "down arrow must advance the dirty-exit selection through the full daemon path"
+    );
+
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
+    assert_eq!(exit_dirty_selected_value(&mux), 2);
+
+    // Up arrow walks back.
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x41]));
+    assert_eq!(exit_dirty_selected_value(&mux), 1);
+}
+
+#[test]
+fn exit_dirty_down_arrow_recomposes_a_changed_frame() {
+    let mut mux = test_mux(30, 100);
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    // Paint the modal once so rendered == frame generation.
+    let first = mux.compose_pending_frame();
+
+    // Down arrow should invalidate and produce a non-empty, *changed* frame.
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
+    assert!(
+        mux.has_pending_render(),
+        "down arrow on the modal must mark a pending render"
+    );
+    let second = mux.compose_pending_frame();
+    assert!(!second.is_empty(), "down arrow must recompose a frame");
+    assert_ne!(
+        first, second,
+        "the recomposed frame must differ once the selection moved"
+    );
+}
+
+// End-to-end screen repro: replay the daemon's emitted ANSI bytes into a real
+// terminal grid (the same vte-backed emulator the capsule uses for PTY output)
+// and read where the selection marker actually lands on screen.
+fn marker_row_on_screen(grid: &DamageGrid, rows: u16, cols: u16) -> Option<u16> {
+    for row in 0..rows {
+        for col in 0..cols {
+            if grid
+                .cell(row, col)
+                .is_some_and(|c| c.contents() == "\u{25b8}")
+            {
+                return Some(row);
+            }
+        }
+    }
+    None
+}
+
+#[test]
+fn exit_dirty_marker_moves_on_screen_with_zero_panes() {
+    let (rows, cols) = (44u16, 157u16);
+    let mut mux = test_mux(rows, cols);
+    mux.dialog_push(Dialog::new_exit_dirty(vec![
+        "holla   1 changed \u{b7} 3 unpushed".to_owned(),
+    ]));
+    mux.invalidate(FullRedrawReason::DialogChange);
+    let mut grid = DamageGrid::new(rows, cols, 0);
+
+    grid.process(&mux.compose_pending_frame());
+    let before = marker_row_on_screen(&grid, rows, cols);
+
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42])); // down
+    grid.process(&mux.compose_pending_frame());
+    let after = marker_row_on_screen(&grid, rows, cols);
+
+    assert!(
+        before.is_some(),
+        "marker must be visible on screen initially"
+    );
+    assert!(
+        after > before,
+        "down arrow must move the rendered \u{25b8} marker: before={before:?} after={after:?}"
+    );
+}
+
+#[test]
+fn exit_dirty_marker_moves_after_session_exits_realistic() {
+    // Reproduce the real path: a live agent pane, the session exits, the
+    // dirty-exit modal opens with zero panes, then the operator presses down.
+    // The client is a persistent VirtualClient (its grid carries the agent
+    // screen forward), so this exercises the exact diff baseline the operator's
+    // terminal sees — unlike a modal opened on a blank mux.
+    let (rows, cols) = (44u16, 157u16);
+    let mut mux = single_pane_tab_mux_with_size(rows, cols);
+    let (session, _rx) = test_session(rows, cols);
+    mux.sessions.insert(1, session);
+    let mut client = VirtualClient::new(rows, cols);
+
+    // Agent paints something; the client mirrors it.
+    feed_and_compose(&mut mux, &mut client, 1, b"agent output here\r\n");
+
+    // The session exits — the daemon removes it (zero panes now).
+    mux.remove_exited_session(1);
+
+    // handle_last_session_exit opens the modal and invalidates.
+    mux.dialog_push(Dialog::new_exit_dirty(vec![
+        "holla   1 changed \u{b7} 3 unpushed".to_owned(),
+    ]));
+    mux.invalidate(FullRedrawReason::DialogChange);
+    let frame = mux.compose_pending_frame();
+    client.apply(&frame);
+    let before = marker_row_on_screen(&client.grid, rows, cols);
+
+    // Operator presses down.
+    dispatch_and_compose(
+        &mut mux,
+        &mut client,
+        InputEvent::Data(vec![0x1b, 0x5b, 0x42]),
+    );
+    let after = marker_row_on_screen(&client.grid, rows, cols);
+
+    assert!(
+        before.is_some(),
+        "modal marker must be visible after session exit"
+    );
+    assert!(
+        after > before,
+        "down arrow must move the rendered marker on the operator's screen: before={before:?} after={after:?}"
+    );
+}
+
+#[tokio::test]
+async fn last_session_exit_does_not_repush_modal_while_dialog_open() {
+    // Regression: the event loop calls handle_last_session_exit on every client
+    // frame while no sessions are live. With the dirty-exit modal already open,
+    // re-entering must NOT push a second modal (which reset the selection to 0
+    // every keypress, capping navigation at row 1).
+    let mut mux = test_mux(44, 157);
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    let depth_before = mux.dialog_stack.len();
+
+    let exited = handle_last_session_exit(&mut mux, None).await;
+
+    assert!(!exited, "must keep the loop alive while the modal is open");
+    assert_eq!(
+        mux.dialog_stack.len(),
+        depth_before,
+        "must not re-push the modal while a dialog is already open"
+    );
+}
+
+#[test]
+fn exit_dirty_down_arrow_reaches_last_row() {
+    // The selection must advance all the way to the final row (Discard), not cap
+    // at row 1 — guards against an off-by-one or re-push regression.
+    let mut mux = test_mux(44, 157);
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    for _ in 0..5 {
+        mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42])); // down
+    }
+    match mux.dialog_top() {
+        Some(Dialog::ExitDirty { selected, .. }) => {
+            assert_eq!(
+                *selected, 3,
+                "five downs must land on the last row (Discard)"
+            );
+        }
+        other => panic!("expected ExitDirty, got {other:?}"),
+    }
 }

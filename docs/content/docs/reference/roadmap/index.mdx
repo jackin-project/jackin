@@ -23,7 +23,7 @@ jackin' is a functional proof of concept, not a stable product line. **`Claude C
 - Derived `Dockerfile` generation with UID/GID remapping
 - State persistence across sessions
 - Agent identity (display names)
-- UID/GID host user mapping
+- UID/GID host user mapping at runtime — `docker run --user $HOST_UID:$HOST_GID --group-add 0` plus `libnss-extrausers` passwd/group entries and group-0 image home permissions make host-owned bind-mounts transparently writable without baking the UID/GID into the image; see [Construct Image: User Creation Responsibility](/reference/roadmap/construct-user-creation/) for the design and the documented `usermod` + `gosu` alternative
 - GitHub CLI authentication state persists across container restarts (forwarding host login on launch is tracked separately under [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/))
 - Homebrew distribution via [`jackin-project/homebrew-tap`](https://github.com/jackin-project/homebrew-tap)
 - Namespaced roles (e.g., `chainargos/frontend-engineer`)
@@ -77,6 +77,7 @@ jackin' is a functional proof of concept, not a stable product line. **`Claude C
 - [Agent codenames for parallel session coordination](/reference/roadmap/agent-codenames/) — Phase 1 shipped: `JACKIN_AGENT_CODENAME` env var injected into every process in a tab (never reused within a container lifetime), `jackin-capsule agents` registry command with `--format json`, and tab hover tooltip; Phase 2 (operator docs) and Phase 3 (deferred integration) remain open
 - [Operator CLI hygiene](/reference/roadmap/operator-cli-hygiene/) — Phases 1–4 shipped: `jackin doctor` with 12 pre-flight checks, `jackin status`/`ps` three-level fleet overview (workspace → instance list → full detail with PR/CI/agents), `--format json` for workspace list/show and status/doctor, `jackin load --dry-run` plan preview, `JackinError` E001–E015 friendly error layer; Phase 5 (first-run wizard) deferred pending UX design
 - [Security threat model & signed releases](/reference/roadmap/security-threat-model-and-signed-releases/) — security implementation doc, CI signing (cosign + SLSA + SBOM) for all release/preview workflows, operator verification guide, and `sigstore-rs` in-process capsule manifest verification with embedded Rekor key shipped; CI signing activates on the first preview/release published after merge, and the in-process verification path awaits its first end-to-end run against a real signed bundle
+- [Runtime Restore and Image Architecture](/reference/roadmap/instant-launch-architecture/) — image-backed restore, born-correct derived images, durable-home seeding, host UID/GID identity, the launch/restore TUI, shared dirty-detection in `jackin-core`, and the in-capsule dirty-exit modal (all four rows: start new agent, inspect changes, exit-and-keep, exit-and-discard) have landed as code; remaining work is full operator end-to-end verification of every feature group
 
 ## Planned
 

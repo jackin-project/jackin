@@ -76,7 +76,7 @@ The construct source starts at <RepoFile path="docker/construct/Dockerfile">dock
 
 <RepoFile path="docker/construct/versions.env">docker/construct/versions.env</RepoFile> remains the source of truth for the pinned `tirith`, `shellfirm`, and `MISE_VERSION` build args used by <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile>. `mise` is installed with the official standalone installer during the Docker build, which downloads the pinned version's release asset from GitHub — where every version stays available, so the pin never goes stale. The pinned version gives Buildx a stable cache key, and Renovate bumps invalidate the mise install layer when upstream publishes a new release.
 
-The pinned `shellfirm` binary is prepared before Docker Buildx runs and staged at `docker/construct/prebuilt/shellfirm`. CI builds or restores that native binary per architecture from the GitHub Actions cache, then the Dockerfile copies it into the image. This keeps the heavy Rust compile out of the Docker build while upstream still lacks a Linux arm64 release artifact.
+The pinned `shellfirm` binary is prepared before Docker Buildx runs and staged in the construct context as `prebuilt/shellfirm`. CI builds or restores that native binary per architecture from the GitHub Actions cache, then the Dockerfile copies it into the image. This keeps the heavy Rust compile out of the Docker build while upstream still lacks a Linux arm64 release artifact.
 
 ## Build workflow
 

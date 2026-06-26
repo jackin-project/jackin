@@ -99,10 +99,10 @@ fn host_attach_transport_falls_back_when_socket_inode_refuses_connect() {
 
 #[test]
 fn insert_run_as_user_places_flag_immediately_after_exec() {
-    let user = Some("1001:0".to_owned());
+    let user = Some("1001:20".to_owned());
     let mut args = vec!["exec", "-it", "ctr", "cmd"];
     insert_run_as_user(&mut args, user.as_deref());
-    assert_eq!(args, vec!["exec", "--user", "1001:0", "-it", "ctr", "cmd"]);
+    assert_eq!(args, vec!["exec", "--user", "1001:20", "-it", "ctr", "cmd"]);
 }
 
 #[test]
@@ -325,6 +325,10 @@ async fn hardline_new_session_execs_entrypoint_in_running_container() {
             network: format!("{container_name}-net"),
             certs_volume: Some(format!("{container_name}-dind-certs")),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
     });
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
@@ -388,6 +392,10 @@ async fn hardline_new_session_forwards_coauthor_trailer_env_when_enabled() {
             network: format!("{container_name}-net"),
             certs_volume: Some(format!("{container_name}-dind-certs")),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
     });
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
@@ -461,6 +469,10 @@ async fn hardline_new_session_forwards_dco_env_when_enabled() {
             network: format!("{container_name}-net"),
             certs_volume: Some(format!("{container_name}-dind-certs")),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
     });
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([
@@ -688,6 +700,10 @@ async fn hardline_marks_missing_manifest_restore_available() {
             network: format!("{container_name}-net"),
             certs_volume: Some(format!("{container_name}-dind-certs")),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
     });
     manifest.mark_status(InstanceStatus::Crashed);
     let state_dir = paths.data_dir.join(container_name);
@@ -729,6 +745,10 @@ async fn inspect_hardline_instance_reports_state_without_attaching() {
             network: format!("{container_name}-net"),
             certs_volume: Some(format!("{container_name}-dind-certs")),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
     });
     manifest.mark_status(InstanceStatus::PreservedDirty);
     manifest.last_attach_outcome = Some("exit:137".to_owned());
@@ -887,6 +907,10 @@ async fn inspect_hardline_instance_still_reports_manifest_when_docker_unavailabl
             network: format!("{container_name}-net"),
             certs_volume: Some(format!("{container_name}-dind-certs")),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
     });
     manifest
         .write(&paths.data_dir.join(container_name))

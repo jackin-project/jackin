@@ -53,14 +53,14 @@ fn workspace_list_footer_facts_for_state(
     let show_expand = workspace_row_owns_right(
         selected,
         state.current_dir_expanded,
-        state.has_current_dir_active_instances(),
+        state.has_current_dir_visible_instances(),
         |idx| state.is_workspace_expanded(idx),
-        |idx| !state.workspace_active_instances(idx).is_empty(),
+        |idx| state.has_visible_instances(idx),
     );
     let show_collapse = workspace_row_owns_left(
         selected,
         state.current_dir_expanded,
-        state.has_current_dir_active_instances(),
+        state.has_current_dir_visible_instances(),
         |idx| state.is_workspace_expanded(idx),
     );
     let workspace_scroll_axes =
@@ -72,6 +72,7 @@ fn workspace_list_footer_facts_for_state(
         inline_role_picker: state.inline_role_picker.is_some(),
         preview_focused: state.preview_focused,
         selected_instance_has_snapshot: selected_instance_has_snapshot(state, selected),
+        selected_instance_is_live: selected_instance_is_live(state, selected),
         show_expand,
         show_collapse,
         workspace_scroll_axes,
@@ -149,17 +150,47 @@ fn selected_instance_has_snapshot(state: &ManagerState<'_>, selected: ManagerLis
         selected,
         |ws_idx, inst_idx| {
             state
-                .workspace_active_instances(ws_idx)
+                .workspace_visible_instances(ws_idx)
                 .get(inst_idx)
                 .copied()
                 .is_some_and(|entry| state.instance_snapshots.contains_key(&entry.container_base))
         },
         |inst_idx| {
             state
-                .current_dir_active_instances()
+                .current_dir_visible_instances()
                 .get(inst_idx)
                 .copied()
                 .is_some_and(|entry| state.instance_snapshots.contains_key(&entry.container_base))
+        },
+    )
+}
+
+/// Whether the selected tree row is a live (`Active`/`Running`) instance. Drives
+/// which instance-row footer actions to surface: live rows offer new-session /
+/// shell / stop; failed/stopped rows offer restart instead (D15).
+fn selected_instance_is_live(state: &ManagerState<'_>, selected: ManagerListRow) -> bool {
+    let is_live = |entry: &jackin_core::instance::InstanceIndexEntry| {
+        matches!(
+            entry.status,
+            jackin_core::instance::InstanceStatus::Active
+                | jackin_core::instance::InstanceStatus::Running
+        )
+    };
+    selected_instance_snapshot_available(
+        selected,
+        |ws_idx, inst_idx| {
+            state
+                .workspace_visible_instances(ws_idx)
+                .get(inst_idx)
+                .copied()
+                .is_some_and(is_live)
+        },
+        |inst_idx| {
+            state
+                .current_dir_visible_instances()
+                .get(inst_idx)
+                .copied()
+                .is_some_and(is_live)
         },
     )
 }

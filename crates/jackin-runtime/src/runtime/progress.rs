@@ -75,6 +75,11 @@ impl LaunchHostTerminal for HostTerminal {
         tracing::info!(kind, "{line}");
     }
 
+    fn emit_debug_line(&self, category: &str, line: &str) {
+        jackin_diagnostics::emit_debug_line(category, line);
+        tracing::debug!(category, "{line}");
+    }
+
     fn set_pointer_shape(&self, pointer: bool) {
         let seq = if pointer {
             jackin_tui::ansi::POINTER_HAND
@@ -165,6 +170,36 @@ pub fn standalone_error_popup(title: &str, message: &str) -> anyhow::Result<()> 
     jackin_launch::progress::standalone_error_popup(
         title,
         message,
+        host_terminal(),
+        env!("JACKIN_VERSION"),
+    )
+}
+
+/// D23/D24 standalone exit dialog with inspect support.
+pub fn standalone_exit_dialog_with_inspect(
+    title: &str,
+    context: &[PromptContextLine],
+    options: Vec<String>,
+    worktrees_per_record: &[Vec<jackin_launch::WorktreeInspect>],
+) -> anyhow::Result<usize> {
+    jackin_launch::progress::standalone_exit_dialog_with_inspect(
+        title,
+        context,
+        options,
+        worktrees_per_record,
+        host_terminal(),
+        env!("JACKIN_VERSION"),
+    )
+}
+
+/// D23/D21 standalone launch dialog with delete-in-place support.
+pub fn standalone_launch_dialog(
+    title: &str,
+    candidates: &[jackin_launch::LaunchCandidate],
+) -> anyhow::Result<jackin_launch::LaunchDialogResult> {
+    jackin_launch::progress::standalone_launch_dialog(
+        title,
+        candidates,
         host_terminal(),
         env!("JACKIN_VERSION"),
     )

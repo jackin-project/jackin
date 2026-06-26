@@ -12,9 +12,9 @@ use std::process::{Command, Output, Stdio};
 
 use anyhow::{Context, Result, bail};
 use serde_json::json;
+use tempfile::Builder as TempfileBuilder;
 
 const CONTAINER_INIT_MARKER: &str = "/jackin/state/container-init.done";
-const AGENT_AUTH_MARKER_DIR: &str = "/jackin/state/agent-auth";
 
 // Container home for the `agent` user. Every default agent config/credential
 // location hangs off this. The per-agent resolvers below honor an agent's
@@ -276,36 +276,16 @@ pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
 
 fn run_agent_setup() -> Result<()> {
     let agent = std::env::var("JACKIN_AGENT").context("JACKIN_AGENT must be set")?;
-    let marker = agent_auth_marker_path(&agent);
-    // First-setup-only credential copy. Once an agent has been set up in this
-    // container it owns its credential files in place (OAuth refresh rotates
-    // them); re-copying the host snapshot — or running the no-snapshot removal
-    // arms in the setup_* functions — would clobber a live token and 401 every
-    // tab. The per-agent marker, written only after a successful copy, scopes
-    // this to once-per-agent.
-    //
-    // Known gap: the marker lives on the /jackin/state host bind-mount, so it
-    // survives container recreation. A restore that recreates the container
-    // after a host re-login keeps the stale token until the host/daemon token
-    // protocol lands (auth-reliability-program roadmap). warn_if_credentials_missing
-    // surfaces a no-credential start so that gap shows up in the log instead of
-    // failing silently.
-    let copy_auth = should_copy_auth(&marker);
-    if !copy_auth {
-        let marker_path = marker.display();
-        crate::clog!(
-            "agent {agent}: auth marker present at {marker_path}; skipping host-snapshot copy (in-container credentials left untouched)"
-        );
-        warn_if_credentials_missing(&agent);
-    }
-
+    // D6/D19: home emptiness is the gate. First seed copies auth; subsequent
+    // starts leave in-container credentials untouched (agent refreshes tokens
+    // in-place inside the durable home). No external marker file.
     match agent.as_str() {
-        "claude" => setup_claude(copy_auth),
-        "codex" => setup_codex(copy_auth),
-        "amp" => setup_amp(copy_auth),
-        "kimi" => setup_kimi(copy_auth),
-        "opencode" => setup_opencode(copy_auth),
-        "grok" => setup_grok(copy_auth),
+        "claude" => setup_claude(),
+        "codex" => setup_codex(),
+        "amp" => setup_amp(),
+        "kimi" => setup_kimi(),
+        "opencode" => setup_opencode(),
+        "grok" => setup_grok(),
         other => bail!("unknown JACKIN_AGENT: {other}"),
     }?;
 
@@ -315,9 +295,6 @@ fn run_agent_setup() -> Result<()> {
         crate::clog!("agent-status: reporter install for {agent} failed (non-fatal): {e:#}");
     }
 
-    if copy_auth {
-        mark_agent_auth_initialized(&marker, &agent)?;
-    }
     Ok(())
 }
 
@@ -355,53 +332,8 @@ fn install_agent_status_reporter(agent: &str) -> Result<()> {
     Ok(())
 }
 
-/// Copy host credentials only when the per-agent marker is absent — the agent's
-/// first setup in this container, not a later tab. See [`run_agent_setup`].
-fn should_copy_auth(marker: &Path) -> bool {
-    !marker.exists()
-}
-
-/// In-container credential file each agent reads, probed on the skip path to
-/// surface a start with no forwarded credential. `None` for kimi (directory copy
-/// or env-key auth, no single file).
-fn agent_live_credential_path(agent: &str) -> Option<PathBuf> {
-    match agent {
-        "claude" => Some(claude_credentials_path()),
-        "codex" => Some(codex_auth_path()),
-        "amp" => Some(amp_secrets_path()),
-        "opencode" => Some(opencode_auth_path()),
-        "grok" => Some(PathBuf::from(GROK_AUTH_PATH)),
-        _ => None,
-    }
-}
-
-/// Warn when the skip path runs but the agent's credential file is gone (logout,
-/// or a recreate after a host re-login), so it shows up in the log instead of a
-/// silently unauthenticated start.
-fn warn_if_credentials_missing(agent: &str) {
-    if let Some(cred) = agent_live_credential_path(agent)
-        && !cred.is_file()
-    {
-        crate::clog!(
-            "agent {agent}: WARNING auth marker present but no credential file at {}; agent will start unauthenticated unless an API-key env var is set",
-            cred.display()
-        );
-    }
-}
-
-fn agent_auth_marker_path(agent: &str) -> PathBuf {
-    Path::new(AGENT_AUTH_MARKER_DIR).join(format!("{agent}.done"))
-}
-
-fn mark_agent_auth_initialized(marker: &Path, agent: &str) -> Result<()> {
-    write_done_marker(marker, &format!("agent {agent} auth"))
-}
-
-fn setup_claude(copy_auth: bool) -> Result<()> {
-    // Seed into the resolved config dir so baked global instructions
-    // (CLAUDE.md, settings) land where the CLI reads them under any
-    // CLAUDE_CONFIG_DIR, not only the default ~/.claude.
-    seed_home_dir("/jackin/default-home/.claude", claude_config_dir())?;
+fn setup_claude() -> Result<()> {
+    let copy_auth = seed_agent_home_from_enum(jackin_core::Agent::Claude)?.is_first_seed();
     if copy_auth {
         if Path::new("/jackin/claude/account.json").is_file() {
             copy_file_with_mode("/jackin/claude/account.json", claude_account_path(), 0o600)?;
@@ -515,14 +447,12 @@ fn claude_plugin_fingerprint(config: &jackin_protocol::CapsuleConfig) -> String 
     out
 }
 
-fn setup_codex(copy_auth: bool) -> Result<()> {
-    let codex_home = codex_home();
-    seed_home_dir("/jackin/default-home/.codex", &codex_home)?;
-    // Provider config (idempotent, runs every tab) before the credential copy so
-    // the copy is the last fallible step: the auth marker then gates strictly on
-    // copy success, not on a post-copy write that could fail and force a re-copy
-    // over a refreshed token on the next launch.
-    write_codex_provider_config(&codex_home)?;
+fn setup_codex() -> Result<()> {
+    let copy_auth = seed_agent_home_from_enum(jackin_core::Agent::Codex)?.is_first_seed();
+    // Provider config is idempotent and runs every start; the credential copy is
+    // gated on first-seed only (D6/D19 home-emptiness, decided above), so it never
+    // re-copies over an in-container-refreshed token regardless of ordering.
+    write_codex_provider_config(Path::new("/home/agent/.codex"))?;
     if copy_auth {
         let auth_path = codex_auth_path();
         if Path::new("/jackin/codex/auth.json").is_file() {
@@ -788,12 +718,9 @@ fn build_minimax_catalog(
     json!({ "models": [entry] })
 }
 
-fn setup_amp(copy_auth: bool) -> Result<()> {
+fn setup_amp() -> Result<()> {
+    let copy_auth = seed_agent_home_from_enum(jackin_core::Agent::Amp)?.is_first_seed();
     let secrets_path = amp_secrets_path();
-    seed_home_dir(
-        "/jackin/default-home/.local/share/amp",
-        xdg_data_home().join("amp"),
-    )?;
     if copy_auth {
         if Path::new("/jackin/amp/secrets.json").is_file() {
             crate::output::stderr_line(format_args!(
@@ -814,19 +741,15 @@ fn setup_amp(copy_auth: bool) -> Result<()> {
     Ok(())
 }
 
-fn setup_kimi(copy_auth: bool) -> Result<()> {
-    seed_home_dir("/jackin/default-home/.kimi-code", "/home/agent/.kimi-code")?;
+fn setup_kimi() -> Result<()> {
+    let copy_auth = seed_agent_home_from_enum(jackin_core::Agent::Kimi)?.is_first_seed();
     if copy_auth {
         let kimi_src = Path::new("/jackin/kimi-code");
         if kimi_src.is_dir() && dir_nonempty(kimi_src)? {
             crate::output::stderr_line(format_args!(
                 "[entrypoint] kimi: copying provisioned credentials into ~/.kimi-code/"
             ));
-            copy_dir_contents(
-                kimi_src,
-                Path::new("/home/agent/.kimi-code"),
-                CopyMode::Overwrite,
-            )?;
+            copy_dir_contents(kimi_src, Path::new("/home/agent/.kimi-code"))?;
         } else if kimi_src.is_dir() {
             crate::output::stderr_line(format_args!(
                 "[entrypoint] kimi: sync mode active but host ~/.kimi-code was absent at provision time - Kimi will start without forwarded auth"
@@ -844,16 +767,13 @@ fn setup_kimi(copy_auth: bool) -> Result<()> {
     Ok(())
 }
 
-fn setup_opencode(copy_auth: bool) -> Result<()> {
+fn setup_opencode() -> Result<()> {
+    let copy_auth = seed_agent_home_from_enum(jackin_core::Agent::Opencode)?.is_first_seed();
+    // Runtime provider config is written every start, layered on top of the
+    // seeded `.config/opencode` defaults: it embeds live API keys from container
+    // env, so it is never baked into default-home. Written before the credential
+    // copy — see setup_codex for why the copy must be the last fallible step.
     let auth_path = opencode_auth_path();
-    seed_home_dir(
-        "/jackin/default-home/.local/share/opencode",
-        xdg_data_home().join("opencode"),
-    )?;
-    // Config write before the credential copy — see setup_codex for why the copy
-    // must be the last fallible step. opencode reads its config from
-    // XDG_CONFIG_HOME (distinct from the XDG_DATA_HOME auth dir); the role does
-    // not override that here, so the fixed ~/.config/opencode path stands.
     use std::os::unix::fs::DirBuilderExt as _;
     fs::DirBuilder::new()
         .recursive(true)
@@ -881,8 +801,8 @@ fn setup_opencode(copy_auth: bool) -> Result<()> {
     Ok(())
 }
 
-fn setup_grok(copy_auth: bool) -> Result<()> {
-    seed_home_dir("/jackin/default-home/.grok", "/home/agent/.grok")?;
+fn setup_grok() -> Result<()> {
+    let copy_auth = seed_agent_home_from_enum(jackin_core::Agent::Grok)?.is_first_seed();
     if copy_auth {
         if Path::new("/jackin/grok/auth.json").is_file() {
             crate::output::stderr_line(format_args!(
@@ -1029,23 +949,143 @@ fn opencode_provider_block(
     })
 }
 
-fn seed_home_dir(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<()> {
+/// Whether a durable home was empty and got seeded on this start. Named instead
+/// of a bare `bool` so the seed/auth contract is explicit at every call site:
+/// auth handoff is copied only on [`SeedOutcome::FirstSeed`] (D19).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SeedOutcome {
+    /// The home was empty (or absent); defaults were seeded and first-start auth
+    /// handoff should be copied.
+    FirstSeed,
+    /// The home already held durable state; nothing was touched and auth must
+    /// not be re-copied over in-container credentials.
+    AlreadySeeded,
+}
+
+impl SeedOutcome {
+    /// True on the first seed, when first-start auth handoff must run (D19).
+    fn is_first_seed(self) -> bool {
+        matches!(self, Self::FirstSeed)
+    }
+}
+
+/// D5/D6: empty-dir gate + first seed.
+///
+/// Returns [`SeedOutcome::FirstSeed`] when dst was empty, [`SeedOutcome::AlreadySeeded`]
+/// when dst already has entries (seeded on a prior start; in-container files are
+/// authoritative). Auth is copied by the caller only on `FirstSeed` (D19).
+///
+/// If `dst` already exists, it may be a Docker bind mount target; seed it in
+/// place because POSIX cannot rename over a mount point.
+fn seed_home_dir(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<SeedOutcome> {
     let src = src.as_ref();
     let dst = dst.as_ref();
-    fs::create_dir_all(dst).with_context(|| format!("failed to create {}", dst.display()))?;
-    if src.is_dir() {
-        copy_dir_contents(src, dst, CopyMode::SkipExisting)?;
+
+    // D5: gate on emptiness — non-empty dst is authoritative, skip
+    if dst.is_dir() && !is_dir_empty(dst) {
+        return Ok(SeedOutcome::AlreadySeeded);
     }
-    Ok(())
+
+    if !src.is_dir() {
+        // No baked defaults; dst stays empty (or absent) — still first setup
+        return Ok(SeedOutcome::FirstSeed);
+    }
+
+    if dst.exists() {
+        // In-place copy is NOT atomic (a crash mid-copy leaves a partial home the
+        // emptiness gate then treats as durable). Accepted because `dst` here is a
+        // Docker bind-mount target, which POSIX cannot `rename` over — the atomic
+        // rename path below applies only when `dst` is absent.
+        copy_dir_contents(src, dst)?;
+        return Ok(SeedOutcome::FirstSeed);
+    }
+
+    // Atomic seed: copy to sibling temp (same mount → rename is atomic on POSIX)
+    let parent = dst.parent().unwrap_or(Path::new("/"));
+    fs::create_dir_all(parent)
+        .with_context(|| format!("failed to create parent {}", parent.display()))?;
+    let tmp = TempfileBuilder::new()
+        .prefix(".jackin-seed")
+        .tempdir_in(parent)
+        .with_context(|| format!("failed to create seed temp dir in {}", parent.display()))?;
+    copy_dir_contents(src, tmp.path())?;
+    let tmp_path = tmp.keep(); // keep() returns PathBuf, prevents Drop removal
+    // dst does not exist here (the dst.exists() branch above handled that), so
+    // rename the staged tree onto it directly.
+    if let Err(err) = fs::rename(&tmp_path, dst) {
+        // keep() defused the Drop guard, so a failed rename would orphan the
+        // staging dir next to the durable home — remove it before surfacing.
+        let _unused = fs::remove_dir_all(&tmp_path);
+        return Err(err).with_context(|| {
+            format!(
+                "atomic seed: rename {} → {}",
+                tmp_path.display(),
+                dst.display()
+            )
+        });
+    }
+
+    Ok(SeedOutcome::FirstSeed)
 }
 
-#[derive(Clone, Copy)]
-enum CopyMode {
-    SkipExisting,
-    Overwrite,
+/// D4/D6: seed an agent's durable home, gated on the primary data root's
+/// emptiness, and — for agents that persist a separate config root — seed that
+/// paired config root in the same first-seed pass (two sequential seeds, not one
+/// atomic transaction). Both roots share one lifecycle: empty data root means
+/// first start (seed both, returning
+/// [`SeedOutcome::FirstSeed`] so the caller copies auth); if *either* root already
+/// holds durable content, treat the agent as existing state and leave both
+/// untouched ([`SeedOutcome::AlreadySeeded`]).
+fn seed_agent_home(
+    data_default: &str,
+    data_dst: &str,
+    config: Option<(&str, &str)>,
+) -> Result<SeedOutcome> {
+    if let Some((config_default, config_dst)) = config {
+        // A config root with durable content means the agent is already set up,
+        // even if the data root looks empty (e.g. a partially recreated mount):
+        // never re-seed or re-copy auth over it.
+        let config_path = Path::new(config_dst);
+        if config_path.is_dir() && !is_dir_empty(config_path) {
+            return Ok(SeedOutcome::AlreadySeeded);
+        }
+        let outcome = seed_home_dir(data_default, data_dst)?;
+        if outcome.is_first_seed() {
+            seed_home_dir(config_default, config_dst)?;
+        }
+        return Ok(outcome);
+    }
+    seed_home_dir(data_default, data_dst)
 }
 
-fn copy_dir_contents(src: &Path, dst: &Path, mode: CopyMode) -> Result<()> {
+/// Seed `agent`'s durable home from `/jackin/default-home`, deriving the data and
+/// paired-config roots from the agent enum
+/// ([`AgentStatePaths`](jackin_core::agent::runtime::AgentStatePaths)) so the
+/// per-agent folder layout has one source of truth. Returns the first-seed
+/// outcome; the caller copies auth only on [`SeedOutcome::FirstSeed`] (D19).
+fn seed_agent_home_from_enum(agent: jackin_core::Agent) -> Result<SeedOutcome> {
+    let paths = agent.runtime().state_paths();
+    let data_default = format!("/jackin/default-home/{}", paths.credential_dir);
+    let data_dst = format!("/home/agent/{}", paths.credential_dir);
+    match paths.config_dir {
+        Some(config_dir) => {
+            let config_default = format!("/jackin/default-home/{config_dir}");
+            let config_dst = format!("/home/agent/{config_dir}");
+            seed_agent_home(
+                &data_default,
+                &data_dst,
+                Some((&config_default, &config_dst)),
+            )
+        }
+        None => seed_agent_home(&data_default, &data_dst, None),
+    }
+}
+
+fn is_dir_empty(path: &Path) -> bool {
+    fs::read_dir(path).map_or(true, |mut d| d.next().is_none())
+}
+
+fn copy_dir_contents(src: &Path, dst: &Path) -> Result<()> {
     fs::create_dir_all(dst).with_context(|| format!("failed to create {}", dst.display()))?;
     for entry in fs::read_dir(src).with_context(|| format!("failed to read {}", src.display()))? {
         let entry = entry?;
@@ -1055,8 +1095,8 @@ fn copy_dir_contents(src: &Path, dst: &Path, mode: CopyMode) -> Result<()> {
             .metadata()
             .with_context(|| format!("failed to stat {}", entry_src.display()))?;
         if metadata.is_dir() {
-            copy_dir_contents(&entry_src, &entry_dst, mode)?;
-        } else if matches!(mode, CopyMode::Overwrite) || !entry_dst.exists() {
+            copy_dir_contents(&entry_src, &entry_dst)?;
+        } else {
             copy_file_preserving_mode(&entry_src, &entry_dst)?;
         }
     }

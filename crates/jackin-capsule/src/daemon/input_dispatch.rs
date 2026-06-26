@@ -75,6 +75,33 @@ impl Multiplexer {
                 self.dialog_pop_one();
             }
             DialogAction::Redraw | DialogAction::Consume => {}
+            DialogAction::ExitDirty(row) => {
+                use crate::tui::components::dialog::ExitDirtyRow;
+                match row {
+                    // Open the verbatim New-tab agent picker over the exit modal.
+                    // Picking an agent spawns a session and clears the dialog
+                    // stack (SpawnAgent → dialog_clear), dismissing the modal.
+                    ExitDirtyRow::StartNewAgent => {
+                        self.apply_action(Action::OpenAgentPicker(PickerIntent::NewTab));
+                        return;
+                    }
+                    // Push the read-only changed-files list (built when the modal
+                    // was opened); Esc walks back to the exit modal.
+                    ExitDirtyRow::Inspect => {
+                        self.dialog_push(Dialog::new_exit_inspect(self.exit_dirty_inspect.clone()));
+                        self.invalidate(FullRedrawReason::DialogChange);
+                        return;
+                    }
+                    // Record the operator's choice; the event loop writes the
+                    // exit-action file and drains on the next iteration.
+                    ExitDirtyRow::Keep => {
+                        self.exit_request = Some(jackin_protocol::ExitAction::Keep);
+                    }
+                    ExitDirtyRow::Discard => {
+                        self.exit_request = Some(jackin_protocol::ExitAction::Discard);
+                    }
+                }
+            }
             DialogAction::Command(cmd) => {
                 // `handle_palette_command` decides per-arm whether
                 // the command opens a sub-dialog (push) or finishes
@@ -214,6 +241,12 @@ impl Multiplexer {
             }
         }
         self.invalidate(frame_plan.reason());
+        // Diagnostic: surface the dirty-exit modal's live selection index after
+        // every dialog action so a "selection stuck" report can be confirmed or
+        // ruled out from telemetry alone (does the index advance on arrows?).
+        if let Some(Dialog::ExitDirty { selected, .. }) = self.dialog_top() {
+            crate::clog!("exit-dirty: selected={selected}");
+        }
     }
 
     pub(super) fn send_bytes_to_focused_pane(&mut self, bytes: &[u8]) -> bool {

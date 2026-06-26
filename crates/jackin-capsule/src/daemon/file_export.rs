@@ -11,6 +11,7 @@ use jackin_protocol::attach::{
 use sha2::{Digest, Sha256};
 
 use super::Multiplexer;
+use crate::tui::render::RowSnapshot;
 use crate::tui::selection::{selection_text, word_bounds_in_row};
 
 const JACKIN_RUN_DIR: &str = "/jackin/run";
@@ -100,9 +101,7 @@ impl Multiplexer {
         let (cursor_row, cursor_col) = session.shadow_grid.cursor_position();
         let rows = session.render_content_snapshot(inner.cols);
         let row = rows.get(usize::from(cursor_row))?;
-        let (start_col, end_col) = word_bounds_in_row(row, cursor_col)?;
-        let token = row.text_range(start_col, end_col).trim().to_owned();
-        (!token.is_empty()).then_some(token)
+        word_token(row, cursor_col)
     }
 
     fn export_path_at_mouse_cell(&self, row: u16, col: u16) -> Option<String> {
@@ -110,9 +109,7 @@ impl Multiplexer {
         let session = self.sessions.get(&candidate.session_id)?;
         let rows = session.render_content_snapshot(candidate.inner.cols);
         let row = rows.get(candidate.anchor_row)?;
-        let (start_col, end_col) = word_bounds_in_row(row, candidate.anchor_col)?;
-        let token = row.text_range(start_col, end_col).trim().to_owned();
-        (!token.is_empty()).then_some(token)
+        word_token(row, candidate.anchor_col)
     }
 
     fn send_file_export_frames(
@@ -125,6 +122,7 @@ impl Multiplexer {
         let source = candidate.source;
         let metadata = candidate.metadata;
         let file_name = candidate.file_name;
+        let canonical_workdir = candidate.canonical_workdir;
         #[expect(
             clippy::disallowed_methods,
             reason = "file export is an explicit bounded operator action, not render emission"
@@ -166,7 +164,7 @@ impl Multiplexer {
             transfer_id,
             sha256,
         }));
-        let source_category = self.export_source_category(&source);
+        let source_category = export_source_category(&source, &canonical_workdir);
         crate::cdebug!(
             "file-export: queued transfer_id={} source_category={} basename={:?} bytes={} sha256={} reveal_after_export={} open_after_export={}",
             transfer_id,
@@ -191,7 +189,7 @@ impl Multiplexer {
     }
 
     fn resolve_export_candidate(&self, requested_path: &str) -> Result<ExportCandidate> {
-        let source = self.resolve_export_source(requested_path)?;
+        let (source, canonical_workdir) = self.resolve_export_source(requested_path)?;
         let metadata = source
             .metadata()
             .with_context(|| format!("reading metadata for {}", source.display()))?;
@@ -215,10 +213,14 @@ impl Multiplexer {
             source,
             metadata,
             file_name,
+            canonical_workdir,
         })
     }
 
-    fn resolve_export_source(&self, requested_path: &str) -> Result<PathBuf> {
+    /// Returns the canonicalized export source alongside the canonicalized
+    /// workdir it was validated against, so callers reuse the single workdir
+    /// `canonicalize()` rather than re-stat it.
+    fn resolve_export_source(&self, requested_path: &str) -> Result<(PathBuf, PathBuf)> {
         let trimmed = requested_path.trim();
         if trimmed.is_empty() {
             bail!("path is empty");
@@ -238,30 +240,36 @@ impl Multiplexer {
             .with_context(|| format!("resolving workdir {}", self.workdir.display()))?;
         let jackin_run = Path::new(JACKIN_RUN_DIR);
         if source.starts_with(&workdir) || source.starts_with(jackin_run) {
-            return Ok(source);
+            return Ok((source, workdir));
         }
         bail!("path must be inside the workspace or {JACKIN_RUN_DIR}");
     }
+}
 
-    fn export_source_category(&self, source: &Path) -> &'static str {
-        if self
-            .workdir
-            .canonicalize()
-            .is_ok_and(|workdir| source.starts_with(workdir))
-        {
-            return "workspace";
-        }
-        if source.starts_with(Path::new(JACKIN_RUN_DIR)) {
-            return "jackin-run";
-        }
-        "unknown"
+fn export_source_category(source: &Path, canonical_workdir: &Path) -> &'static str {
+    if source.starts_with(canonical_workdir) {
+        return "workspace";
     }
+    if source.starts_with(Path::new(JACKIN_RUN_DIR)) {
+        return "jackin-run";
+    }
+    "unknown"
 }
 
 struct ExportCandidate {
     source: PathBuf,
     metadata: Metadata,
     file_name: String,
+    canonical_workdir: PathBuf,
+}
+
+/// Extract the trimmed word token straddling `col` in `row`, or `None` when no
+/// word covers the cell or the token is blank. Shared tail of the cursor-cell
+/// and mouse-cell export-path probes.
+fn word_token(row: &RowSnapshot, col: u16) -> Option<String> {
+    let (start_col, end_col) = word_bounds_in_row(row, col)?;
+    let token = row.text_range(start_col, end_col).trim().to_owned();
+    (!token.is_empty()).then_some(token)
 }
 
 fn export_file_name(path: &Path) -> Result<String> {
@@ -350,6 +358,8 @@ mod tests {
                 initial_provider: None,
                 claude_marketplaces: Vec::new(),
                 claude_plugins: Vec::new(),
+                dirty_exit_policy: None,
+                isolated_worktrees: Vec::new(),
             },
         )
         .expect("test multiplexer");
@@ -607,14 +617,17 @@ mod tests {
         std::fs::create_dir(&workdir).unwrap();
         let report = workdir.join("report.txt");
         std::fs::write(&report, b"report").unwrap();
-        let mux = test_mux(&workdir);
+        let canonical_workdir = workdir.canonicalize().unwrap();
 
         assert_eq!(
-            mux.export_source_category(&report.canonicalize().unwrap()),
+            export_source_category(&report.canonicalize().unwrap(), &canonical_workdir),
             "workspace"
         );
         assert_eq!(
-            mux.export_source_category(Path::new("/jackin/run/clipboard/image.png")),
+            export_source_category(
+                Path::new("/jackin/run/clipboard/image.png"),
+                &canonical_workdir
+            ),
             "jackin-run"
         );
     }

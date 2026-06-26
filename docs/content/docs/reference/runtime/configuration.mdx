@@ -42,7 +42,7 @@ Saved workspaces live one-per-file under `~/.config/jackin/workspaces/` rather t
 - **Restore the full setup on a new machine** by checking out the dotfile repo and running `chezmoi apply` (or equivalent), with no manual TOML reconstruction.
 - **Diff a single workspace** in PR review without seeing churn in unrelated workspaces, which is impossible when every change touches a shared `[workspaces.*]` block.
 
-Each file carries its own `version = "v1alpha7"` stamp, so a dotfile-managed setup that is partially old (some workspaces stamped, some not) migrates per-file on first load. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
+Each file carries its own `version = "v1alpha8"` stamp, so a dotfile-managed setup that is partially old (some workspaces stamped, some not) migrates per-file on first load. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
 
 ## config.toml schema
 
@@ -51,7 +51,7 @@ The configuration is TOML. Global settings live at
 `~/.config/jackin/workspaces/`. The CLI and console manage both locations
 for you, so you generally don't need to edit them by hand.
 
-Top-level `version` is the config schema version. jackin' writes `version = "v1alpha7"` today. Older config files with no `version` are treated as legacy and migrated automatically on startup before parsing. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
+Top-level `version` is the config schema version. jackin' writes `version = "v1alpha8"` today. Older config files with no `version` are treated as legacy and migrated automatically on startup before parsing. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
 
 ### Agent auth-forward settings
 
@@ -59,7 +59,7 @@ Top-level `version` is the config schema version. jackin' writes `version = "v1a
 layers, with most-specific wins:
 
 ```toml
-version = "v1alpha7"
+version = "v1alpha8"
 
 # Layer 1 — global default (per agent)
 [claude]
@@ -316,7 +316,7 @@ coauthor_trailer = true  # enable Co-authored-by agent trailer
 dco = true               # enable Signed-off-by DCO trailer
 ```
 
-The `[git]` table is omitted from `config.toml` when all fields are at their defaults (the table is not written unless the operator sets it). See [Schema Versions](/reference/runtime/schema-versions/#v1alpha7) for the field-level reference.
+The `[git]` table is omitted from `config.toml` when all fields are at their defaults (the table is not written unless the operator sets it). See [Schema Versions](/reference/runtime/schema-versions/) for the field-level reference.
 
 ## Persisted state
 

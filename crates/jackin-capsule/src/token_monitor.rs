@@ -166,13 +166,27 @@ impl TokenSession {
     }
 }
 
-/// Recursively walk `base_dirs` and return every file with extension `ext`.
-/// Providers nest session logs at varying depths — Claude one level
-/// (`projects/<dir>/*.jsonl`), Codex three (`sessions/YYYY/MM/DD/*.jsonl`) — so
-/// the walk is fully recursive (bounded by `MAX_WALK_DEPTH` against a pathological
-/// tree). A missing or unreadable directory yields no files, never an error.
-pub(crate) fn find_provider_files(base_dirs: &[&str], ext: &str) -> Vec<std::path::PathBuf> {
-    const MAX_WALK_DEPTH: usize = 8;
+/// Read a `u64` field from a JSON object, defaulting to 0 when the key is
+/// absent or not an unsigned integer. Folds the `get(..).and_then(as_u64)
+/// .unwrap_or(0)` chain repeated across every provider's usage parse.
+pub(crate) fn json_u64(v: &serde_json::Value, key: &str) -> u64 {
+    v.get(key).and_then(serde_json::Value::as_u64).unwrap_or(0)
+}
+
+/// Default recursion bound for providers that nest session logs (Claude one
+/// level `projects/<dir>/*.jsonl`, Codex three `sessions/YYYY/MM/DD/*.jsonl`);
+/// also a guard against a pathological tree.
+pub(crate) const PROVIDER_WALK_DEPTH: usize = 8;
+
+/// Walk `base_dirs` up to `max_depth` levels deep and return every file with
+/// extension `ext`. `max_depth = 0` reads only the top level of each base dir
+/// (Amp's flat `threads/*.json`); deeper providers pass [`PROVIDER_WALK_DEPTH`].
+/// A missing or unreadable directory yields no files, never an error.
+pub(crate) fn find_provider_files(
+    base_dirs: &[&str],
+    ext: &str,
+    max_depth: usize,
+) -> Vec<std::path::PathBuf> {
     let mut paths = Vec::new();
     let mut stack: Vec<(std::path::PathBuf, usize)> = base_dirs
         .iter()
@@ -185,7 +199,7 @@ pub(crate) fn find_provider_files(base_dirs: &[&str], ext: &str) -> Vec<std::pat
         for entry in entries.flatten() {
             let p = entry.path();
             if p.is_dir() {
-                if depth < MAX_WALK_DEPTH {
+                if depth < max_depth {
                     stack.push((p, depth + 1));
                 }
             } else if p.extension().and_then(|e| e.to_str()) == Some(ext) {

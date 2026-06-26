@@ -60,12 +60,9 @@ pub enum OscShellMark {
 /// (`\x07`) or ST (`\x1b\\`). Model-independent: works with both the
 /// current vt100-based session and the future DamageGrid-based session.
 pub fn scan_osc133(bytes: &[u8]) -> Option<OscShellMark> {
-    // Minimum sequence: \x1b]133;A\x07 = 8 bytes
+    // Minimum sequence: \x1b]133;A\x07 = 8 bytes; the `i + 7 < len` loop bound
+    // already yields `None` for anything shorter.
     let len = bytes.len();
-    if len < 8 {
-        return None;
-    }
-
     let mut i = 0;
     while i + 7 < len {
         // Look for ESC ] 1 3 3 ;

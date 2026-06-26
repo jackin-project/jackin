@@ -145,6 +145,7 @@ pub(crate) fn dialog_action_frame_plan(action: &DialogAction) -> DialogActionFra
         | DialogAction::RenameTab { .. }
         | DialogAction::ExportFile { .. }
         | DialogAction::CopyToClipboard(_)
+        | DialogAction::ExitDirty(_)
         | DialogAction::OpenHostUrl(_)
         | DialogAction::RevealHostPath(_)
         | DialogAction::Dismiss

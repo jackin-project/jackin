@@ -183,38 +183,20 @@ use progress_helpers::{
     sensitive_mount_prompt,
 };
 
-/// Read-only bind-mount specs (`host:container:ro`) for every agent CLI binary
-/// cached on the host. The agent binaries are mounted at `docker run` instead of
-/// baked into the derived image, so an agent version bump no longer rebuilds the
-/// image — the newest cached binary is mounted onto the PATH location the image's
-/// `ENV PATH` already covers. Agents with no cached binary are skipped.
-async fn agent_binary_mount_specs(paths: &JackinPaths, supported: &[String]) -> Vec<String> {
-    // Resolve straight from the authoritative supported-slug list (`FromStr`
-    // surfaces a junk slug as a skip, vs. scanning every `Agent::ALL` and string
-    // comparing). The per-agent cache lookup is blocking filesystem IO, so run the
-    // whole resolution off the async reactor.
-    let paths = paths.clone();
-    let agents: Vec<jackin_core::Agent> = supported.iter().filter_map(|s| s.parse().ok()).collect();
-    tokio::task::spawn_blocking(move || {
-        agents
-            .into_iter()
-            .filter_map(|agent| {
-                let host = jackin_image::agent_binary::runtime_mount_binary_path(&paths, agent)?
-                    .to_str()?
-                    .to_owned();
-                Some((agent, host))
-            })
-            .flat_map(|(agent, host)| {
-                agent
-                    .runtime()
-                    .container_binary_paths()
-                    .iter()
-                    .map(move |path| format!("{host}:{path}:ro"))
-            })
-            .collect()
-    })
-    .await
-    .unwrap_or_default()
+/// Emit the durable-home bind mounts for `agent`, derived from its
+/// [`AgentStatePaths`](jackin_core::agent::runtime::AgentStatePaths) so the
+/// per-agent home layout (data root, paired config root, standalone home files)
+/// lives only in the agent enum. Auth-handoff mounts are agent-specific and stay
+/// inline in [`agent_mounts`].
+fn push_agent_home_mounts(mounts: &mut Vec<String>, root: &Path, agent: jackin_core::Agent) {
+    let paths = agent.runtime().state_paths();
+    let home = root.join("home");
+    for entry in paths.home_dirs().chain(paths.home_files.iter().copied()) {
+        mounts.push(format!(
+            "{}:/home/agent/{entry}",
+            home.join(entry).display()
+        ));
+    }
 }
 
 /// Returns the per-agent mount strings in jackin's `src:dst[:ro]` idiom for
@@ -226,20 +208,14 @@ async fn agent_binary_mount_specs(paths: &JackinPaths, supported: &[String]) -> 
 /// tabs opened via `hardline --new --agent <other>` find their homes
 /// bind-mounted from the start.
 fn agent_mounts(state: &RoleState) -> Vec<String> {
+    use jackin_core::Agent;
     let mut mounts = vec![format!(
         "{}:/jackin/state",
         state.root.join("state").display()
     )];
 
     if let Some(claude) = &state.auth.claude {
-        mounts.push(format!(
-            "{}:/home/agent/.claude",
-            state.root.join("home/.claude").display()
-        ));
-        mounts.push(format!(
-            "{}:/home/agent/.claude.json",
-            state.root.join("home/.claude.json").display()
-        ));
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Claude);
         // `forward_auth = true` for Sync (host-derived credentials) and
         // OAuthToken (the onboarding skeleton). ApiKey and Ignore set it
         // to false so a `{}` placeholder left behind by `wipe_claude_state`
@@ -263,20 +239,14 @@ fn agent_mounts(state: &RoleState) -> Vec<String> {
     }
 
     if let Some(codex) = &state.auth.codex {
-        mounts.push(format!(
-            "{}:/home/agent/.codex",
-            state.root.join("home/.codex").display()
-        ));
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Codex);
         if let Some(auth_json) = &codex.auth_json {
             mounts.push(format!("{}:/jackin/codex/auth.json", auth_json.display()));
         }
     }
 
     if let Some(amp) = &state.auth.amp {
-        mounts.push(format!(
-            "{}:/home/agent/.local/share/amp",
-            state.root.join("home/.local/share/amp").display()
-        ));
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Amp);
         // Bound RW at the docker level so future plumbing (symlink / bind
         // re-mount) for live bidirectional sync — see
         // `roadmap/live-auth-sync.mdx` — can rely on a writable target.
@@ -291,10 +261,7 @@ fn agent_mounts(state: &RoleState) -> Vec<String> {
     }
 
     if let Some(kimi) = &state.auth.kimi {
-        mounts.push(format!(
-            "{}:/home/agent/.kimi-code",
-            state.root.join("home/.kimi-code").display()
-        ));
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Kimi);
         if kimi.forward_auth {
             mounts.push(format!(
                 "{}:/jackin/kimi-code",
@@ -304,10 +271,7 @@ fn agent_mounts(state: &RoleState) -> Vec<String> {
     }
 
     if let Some(opencode) = &state.auth.opencode {
-        mounts.push(format!(
-            "{}:/home/agent/.local/share/opencode",
-            state.root.join("home/.local/share/opencode").display()
-        ));
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Opencode);
         if let Some(auth_json) = &opencode.auth_json {
             mounts.push(format!(
                 "{}:/jackin/opencode/auth.json",
@@ -317,10 +281,7 @@ fn agent_mounts(state: &RoleState) -> Vec<String> {
     }
 
     if let Some(grok) = &state.auth.grok {
-        mounts.push(format!(
-            "{}:/home/agent/.grok",
-            state.root.join("home/.grok").display()
-        ));
+        push_agent_home_mounts(&mut mounts, &state.root, Agent::Grok);
         if let Some(auth_json) = &grok.auth_json {
             mounts.push(format!("{}:/jackin/grok/auth.json", auth_json.display()));
         }
@@ -549,6 +510,8 @@ pub(super) fn capsule_config(
     workdir: &str,
     manifest: &jackin_manifest::RoleManifest,
     initial_provider: Option<jackin_protocol::InitialProvider>,
+    dirty_exit_policy: &str,
+    isolated_worktrees: Vec<String>,
 ) -> jackin_protocol::CapsuleConfig {
     let mut agents = Vec::new();
     let mut models = std::collections::BTreeMap::new();
@@ -568,20 +531,6 @@ pub(super) fn capsule_config(
             provider_models.insert(agent.slug().to_owned(), inner);
         }
     }
-    let (claude_marketplaces, claude_plugins) = manifest.claude.as_ref().map_or_else(
-        || (Vec::new(), Vec::new()),
-        |claude| {
-            let marketplaces = claude
-                .marketplaces
-                .iter()
-                .map(|m| jackin_protocol::ClaudeMarketplace {
-                    source: m.source.clone(),
-                    sparse: m.sparse.clone(),
-                })
-                .collect();
-            (marketplaces, claude.plugins.clone())
-        },
-    );
     jackin_protocol::CapsuleConfig {
         role: selector.key(),
         workdir: workdir.to_owned(),
@@ -589,8 +538,10 @@ pub(super) fn capsule_config(
         models,
         provider_models,
         initial_provider,
-        claude_marketplaces,
-        claude_plugins,
+        claude_marketplaces: Vec::new(),
+        claude_plugins: Vec::new(),
+        dirty_exit_policy: Some(dirty_exit_policy.to_owned()),
+        isolated_worktrees,
     }
 }
 
@@ -734,7 +685,6 @@ pub(super) async fn launch_role_runtime(
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let agent_specific_mounts = agent_mounts(state);
-    let agent_binary_mounts = agent_binary_mount_specs(paths, &capsule_config.agents).await;
     let gh_config_mount = github_config_mount(state);
     let certs_agent_mount = format!("{certs_volume}:/jackin/run/dind-certs/client:ro");
 
@@ -864,7 +814,14 @@ pub(super) async fn launch_role_runtime(
     // even before any passwd lookup.
     let run_as_user = crate::runtime::identity::host_run_as_user();
     if let Some(ref user) = run_as_user {
-        run_args.extend_from_slice(&["--user", user.as_str(), "-e", "HOME=/home/agent"]);
+        run_args.extend_from_slice(&[
+            "--user",
+            user.as_str(),
+            "--group-add",
+            "0",
+            "-e",
+            "HOME=/home/agent",
+        ]);
     }
 
     run_args.extend_from_slice(&[
@@ -1156,25 +1113,36 @@ pub(super) async fn launch_role_runtime(
     // Host-side bind-mount of the daemon's socket directory. Pre-create
     // host-side so Docker does not materialise the target itself as
     // root:root 0755. The dir is owned by the host operator (this process)
-    // and the container runs as that same UID (`--user`), so the `agent`
+    // and the container runs as that same UID/GID (`--user`), so the `agent`
     // user creates jackin.sock with no special directory mode. The socket
     // file itself gets 0o600 from inside the capsule. The same directory
     // carries Capsule's normalized launch config.
     let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
     let capsule_config_contents = toml::to_string(capsule_config)
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
-    // Runtime passwd entry for the host UID so `getpwuid`/`$HOME` resolve to
-    // the `agent` user inside the container even though the image only bakes
-    // UID 1000. Consumed via `libnss-extrausers` (see docker/construct). One
-    // shared file, content depends only on the host UID; written atomically
-    // (per-container temp + rename) so a concurrent launch can't read a torn
-    // file at mount time, and only when the bytes actually change (see the
-    // no-churn guard below) so the rename can't swap the inode out from under
-    // a live `:ro` bind mount in an already-running container.
+    // Runtime passwd/group entries for the host UID/GID so `getpwuid`/`$HOME`
+    // resolve to the `agent` user inside the container even though the image
+    // only bakes UID 1000. Consumed via `libnss-extrausers` (see
+    // docker/construct). Shared files depend only on the host UID/GID; written
+    // atomically (per-container temp + rename) so a concurrent launch can't
+    // read torn files at mount time, and only when the bytes actually change
+    // so the rename can't swap the inode out from under a live `:ro` bind
+    // mount in an already-running container.
     let extrausers_passwd = paths.jackin_home.join("extrausers").join("passwd");
-    let extrausers_line = crate::runtime::identity::host_uid()
-        .map(|uid| format!("agent:x:{uid}:0:agent:/home/agent:/bin/zsh\n"));
+    let extrausers_group = paths.jackin_home.join("extrausers").join("group");
+    let extrausers_entries = match (
+        crate::runtime::identity::host_uid(),
+        crate::runtime::identity::host_gid(),
+    ) {
+        (Some(uid), Some(gid)) => Some((
+            format!("agent:x:{uid}:{gid}:agent:/home/agent:/bin/zsh\n"),
+            format!("agent-host:x:{gid}:agent\n"),
+        )),
+        _ => None,
+    };
     let extrausers_tmp = extrausers_passwd.with_file_name(format!("passwd.{container_name}.tmp"));
+    let extrausers_group_tmp =
+        extrausers_group.with_file_name(format!("group.{container_name}.tmp"));
     // Run the filesystem syscalls on the blocking pool — the tokio
     // runtime is built without the `fs` feature here, and blocking on
     // a slow / NFS host parks the worker driving the docker-run RPC
@@ -1182,7 +1150,8 @@ pub(super) async fn launch_role_runtime(
     let socket_dir_for_mkdir = socket_dir.clone();
     let capsule_config_contents_for_write = capsule_config_contents.clone();
     let extrausers_passwd_for_write = extrausers_passwd.clone();
-    let extrausers_line_for_write = extrausers_line.clone();
+    let extrausers_group_for_write = extrausers_group.clone();
+    let extrausers_entries_for_write = extrausers_entries.clone();
     jackin_diagnostics::active_timing_started(
         "capsule",
         "prepare_socket_dir",
@@ -1194,26 +1163,20 @@ pub(super) async fn launch_role_runtime(
             socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
             capsule_config_contents_for_write,
         )?;
-        if let Some(line) = extrausers_line_for_write {
+        if let Some((passwd_line, group_line)) = extrausers_entries_for_write {
             if let Some(parent) = extrausers_passwd_for_write.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            // No-churn guard: this shared passwd file is bind-mounted `:ro`
-            // into every running container. Its content depends only on the
-            // host UID, so a concurrent launch produces identical bytes — but
-            // the temp+rename below replaces the inode, which on macOS
-            // invalidates the live single-file bind mount in containers that
-            // are already running, breaking `getpwuid`/`$HOME` for the agent.
-            // Skip the rename when the bytes already match. Byte compare (not
-            // `read_to_string`) so a transient non-UTF-8 read can't silently
-            // fall through to the inode-swapping rewrite. Mirrors the auth
-            // provisioner's no-churn guard (see `instance::auth`).
-            let unchanged = std::fs::read(&extrausers_passwd_for_write)
-                .is_ok_and(|existing| existing == line.as_bytes());
-            if !unchanged {
-                std::fs::write(&extrausers_tmp, &line)?;
-                std::fs::rename(&extrausers_tmp, &extrausers_passwd_for_write)?;
-            }
+            write_if_changed_atomic(
+                &extrausers_passwd_for_write,
+                &extrausers_tmp,
+                passwd_line.as_bytes(),
+            )?;
+            write_if_changed_atomic(
+                &extrausers_group_for_write,
+                &extrausers_group_tmp,
+                group_line.as_bytes(),
+            )?;
         }
         Ok(())
     })
@@ -1248,20 +1211,20 @@ pub(super) async fn launch_role_runtime(
     })?;
     let socket_mount = format!("{socket_dir_str}:/jackin/run");
     run_args.extend_from_slice(&["-v", &socket_mount]);
-    // Mount each cached agent CLI binary read-only onto its PATH location. The
-    // binaries are not baked into the image (see `render_derived_dockerfile`), so
-    // an agent version bump is picked up here without an image rebuild.
-    for mount in &agent_binary_mounts {
-        run_args.extend_from_slice(&["-v", mount]);
-    }
-    // Mount the host-UID passwd line where libnss-extrausers reads it.
-    let extrausers_mount = extrausers_line.as_ref().and_then(|_| {
-        extrausers_passwd
+    // Mount the host UID/GID entries where libnss-extrausers reads them.
+    let extrausers_mounts = if extrausers_entries.is_some() {
+        let passwd_mount = extrausers_passwd
             .to_str()
-            .map(|p| format!("{p}:/var/lib/extrausers/passwd:ro"))
-    });
-    if let Some(ref mount) = extrausers_mount {
-        run_args.extend_from_slice(&["-v", mount]);
+            .map(|p| format!("{p}:/var/lib/extrausers/passwd:ro"));
+        let group_mount = extrausers_group
+            .to_str()
+            .map(|p| format!("{p}:/var/lib/extrausers/group:ro"));
+        passwd_mount.into_iter().chain(group_mount).collect()
+    } else {
+        Vec::new()
+    };
+    for mount in &extrausers_mounts {
+        run_args.extend_from_slice(&["-v", mount.as_str()]);
     }
     jackin_diagnostics::debug_log!(
         "launch",
@@ -1434,12 +1397,20 @@ pub(super) async fn launch_role_runtime(
         {
             return Err(diag);
         }
-        let attach_error =
+        // `diagnose_with_state` returned `None`, so PID 1 exited cleanly: the
+        // in-capsule dirty-exit modal already made any keep/discard decision and
+        // recorded it in exit-action.json. The non-zero `docker exec` result is
+        // the attach socket-close race at clean shutdown, not a failed session,
+        // so fall through to a successful return — the pipeline then runs
+        // finalize, which reads exit-action.json and executes the choice. The
+        // attach detail is kept only as a diagnostic breadcrumb.
+        let attach_detail =
             attach_failure_error(container_name, &err, &capsule_log_path, &capsule_log_str);
-        if let Some(run) = jackin_diagnostics::active_run() {
-            run.error("attach_error", &attach_error.to_string());
-        }
-        return Err(attach_error);
+        jackin_diagnostics::debug_log!(
+            "session",
+            "clean container exit for {container_name}; proceeding to finalize \
+             (attach shutdown detail: {attach_detail})"
+        );
     }
     if let Some(progress) = steps.progress_mut() {
         progress.stage_done(super::progress::LaunchStage::Hardline, "open");
@@ -1998,12 +1969,14 @@ pub(super) async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum RestoreResolution {
     StartFresh,
-    AttachCurrentRole(String),
     StartCurrentRole(String),
     RecreateCurrentRole(String),
     RestoreCurrentRole(String),
     RecoverRelatedRole(String),
     RebuildRelatedRole(Box<InstanceManifest>),
+    /// D21: operator deleted this instance from the launch dialog.
+    /// Caller must purge the state dir then proceed as `StartFresh`.
+    PurgeAndRestartFresh(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2319,7 +2292,6 @@ pub(super) async fn resolve_unselected_current_restore_candidate_with_agent_time
 
 fn current_restore_timing_detail(resolution: &RestoreResolution) -> &'static str {
     match resolution {
-        RestoreResolution::AttachCurrentRole(_) => "attach_existing",
         RestoreResolution::StartCurrentRole(_) => "start_stopped",
         RestoreResolution::RecreateCurrentRole(_) => "create_from_valid_image",
         _ => "other",
@@ -2335,10 +2307,13 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
     role_key: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<UnselectedCurrentRestoreResolution>> {
+    // D10: launch dialog shows only un-cleanly-terminated instances; live
+    // containers (Active/Running) are excluded because D13 means the launch
+    // path never re-attaches to a live instance.
     let candidates =
         matching_current_role_manifests(paths, workspace_name, workspace_label, workdir, role_key)?
             .into_iter()
-            .filter(InstanceManifest::is_restore_candidate)
+            .filter(InstanceManifest::is_launch_restore_candidate)
             .collect::<Vec<_>>();
 
     if candidates.is_empty() {
@@ -2377,10 +2352,16 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
         }
         match docker_state {
             ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-                runnable.push(UnselectedCurrentRestoreResolution {
-                    resolution: RestoreResolution::AttachCurrentRole(manifest.container_base),
-                    agent,
-                });
+                // D13: launch never reconnects to a live instance (ADR 0001).
+                // Running instances are reachable from the console via explicit
+                // instance selection (hardline); the launch path always creates
+                // a new container or restores an un-cleanly-terminated one.
+                emit_rejected_launch_plan(
+                    LaunchPlan::AttachExisting,
+                    "launch_never_reconnects_to_live_instance",
+                    Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
+                );
             }
             ContainerState::Stopped { .. } | ContainerState::Created => {
                 runnable.push(UnselectedCurrentRestoreResolution {
@@ -2442,26 +2423,6 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
     }
 
     match runnable.as_slice() {
-        [
-            UnselectedCurrentRestoreResolution {
-                resolution: RestoreResolution::AttachCurrentRole(container),
-                agent,
-            },
-        ] => {
-            emit_launch_plan(
-                LaunchPlan::AttachExisting,
-                if multiple_candidates {
-                    "only_viable_current_role_agent_container_running"
-                } else {
-                    "single_current_role_agent_container_running"
-                },
-                Some(container),
-            );
-            Ok(Some(UnselectedCurrentRestoreResolution {
-                resolution: RestoreResolution::AttachCurrentRole(container.clone()),
-                agent: *agent,
-            }))
-        }
         [
             UnselectedCurrentRestoreResolution {
                 resolution: RestoreResolution::StartCurrentRole(container),
@@ -2561,14 +2522,13 @@ pub(super) async fn resolve_current_restore_candidate(
         }
         match docker_state {
             ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-                emit_launch_plan(
+                // D13: launch never reconnects to a live instance (ADR 0001).
+                emit_rejected_launch_plan(
                     LaunchPlan::AttachExisting,
-                    "current_role_container_running",
+                    "launch_never_reconnects_to_live_instance",
                     Some(&manifest.container_base),
+                    Some(docker_state.short_label().as_str()),
                 );
-                return Ok(Some(RestoreResolution::AttachCurrentRole(
-                    manifest.container_base.clone(),
-                )));
             }
             ContainerState::Stopped { .. } | ContainerState::Created => {
                 emit_launch_plan(
@@ -2647,6 +2607,19 @@ use auth_error::{
 use auth_error::{LaunchError, append_no_proxy_host};
 #[cfg(not(test))]
 use auth_error::{LaunchError, append_no_proxy_host};
+
+fn write_if_changed_atomic(path: &Path, tmp: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    // Single-file bind mounts keep the original inode alive in running
+    // containers. Skip the temp+rename when the content already matches so a
+    // concurrent launch cannot invalidate getpwuid/getgrgid lookups in an
+    // already-running container.
+    let unchanged = std::fs::read(path).is_ok_and(|existing| existing == bytes);
+    if !unchanged {
+        std::fs::write(tmp, bytes)?;
+        std::fs::rename(tmp, path)?;
+    }
+    Ok(())
+}
 
 pub(super) struct LoadCleanup {
     container_name: String,

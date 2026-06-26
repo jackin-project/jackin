@@ -9,7 +9,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use super::TokenSession;
+use super::{TokenSession, json_u64};
 
 fn find_wire_files() -> Vec<PathBuf> {
     let mut paths = Vec::new();
@@ -21,11 +21,11 @@ fn find_wire_files() -> Vec<PathBuf> {
         let Ok(sessions) = fs::read_dir(group.path()) else {
             continue;
         };
+        // No `exists()` stat: a non-existent wire file reads as absent
+        // (`read_file_text` maps `NotFound` to `Ok(None)`), so the recompute
+        // simply skips it.
         for session in sessions.flatten() {
-            let wire = session.path().join("wire.jsonl");
-            if wire.exists() {
-                paths.push(wire);
-            }
+            paths.push(session.path().join("wire.jsonl"));
         }
     }
     paths
@@ -46,22 +46,10 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
             }
             // StatusUpdate messages carry this turn's token_usage.
             if let Some(usage) = val.get("token_usage") {
-                acc.input += usage
-                    .get("input_other")
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(0);
-                acc.output += usage
-                    .get("output")
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(0);
-                acc.cache_read += usage
-                    .get("input_cache_read")
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(0);
-                acc.cache_write += usage
-                    .get("input_cache_creation")
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(0);
+                acc.input += json_u64(usage, "input_other");
+                acc.output += json_u64(usage, "output");
+                acc.cache_read += json_u64(usage, "input_cache_read");
+                acc.cache_write += json_u64(usage, "input_cache_creation");
                 acc.seen = true;
             }
         }
