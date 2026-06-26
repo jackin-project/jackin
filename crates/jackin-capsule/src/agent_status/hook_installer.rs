@@ -43,34 +43,10 @@ impl Default for ClaudeHookInstaller {
 impl HookInstaller for ClaudeHookInstaller {
     fn install(&self, agent_home: &Path) -> anyhow::Result<()> {
         let settings_path = agent_home.join(".claude").join("settings.json");
-        if let Some(parent) = settings_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        // Read existing settings.json if present; start from empty object if not.
-        // Claude Code owns this file (model, theme, permissions, MCP config), so a
-        // parse failure or a non-object root must NOT be silently overwritten with
-        // jackin's hooks alone — that would permanently destroy the operator's
-        // settings on every drift-repair launch. Bail instead: the error is logged
-        // non-fatally at the install call site and `verify` keeps reporting drift.
-        let existing: serde_json::Value = if settings_path.exists() {
-            let content = fs::read_to_string(&settings_path)?;
-            let value: serde_json::Value = serde_json::from_str(&content).with_context(|| {
-                format!(
-                    "{} is not valid JSON; refusing to overwrite agent settings",
-                    settings_path.display()
-                )
-            })?;
-            anyhow::ensure!(
-                value.is_object(),
-                "{} root is not a JSON object; refusing to overwrite agent settings",
-                settings_path.display()
-            );
-            value
-        } else {
-            serde_json::json!({})
-        };
-
+        // Claude Code owns this file (model, theme, permissions, MCP config), so
+        // we merge our hooks into the existing object and never overwrite it; the
+        // shared helper bails on a corrupt file rather than destroying it.
+        let existing = serde_json::Value::Object(read_existing_json_object(&settings_path)?);
         let updated = self.merge_hook_entries(existing);
         write_json_file(&settings_path, &updated)?;
         Ok(())
@@ -215,9 +191,10 @@ impl ClaudeHookInstaller {
     }
 }
 
-/// Installer for the `plugins.json`-style reporters (Amp, `OpenCode`): agents
-/// that register a plugin by writing `{"plugins": [path]}` under
-/// `~/.config/<agent>/plugins.json`. Only the config subdir + plugin path vary.
+/// Installer for the `plugins.json`-style reporter used by `OpenCode`: it
+/// registers a plugin by writing `{"plugins": [path]}` under
+/// `~/.config/opencode/plugins.json`. (Amp was assumed to share this model but
+/// does not — see `install_agent_status_reporter`.)
 #[derive(Debug)]
 pub struct PluginInstaller {
     config_dir: &'static str,
@@ -225,13 +202,6 @@ pub struct PluginInstaller {
 }
 
 impl PluginInstaller {
-    pub fn amp() -> Self {
-        Self {
-            config_dir: "amp",
-            plugin_path: "/jackin/runtime/agent-status/hooks/amp/plugin.js".to_owned(),
-        }
-    }
-
     pub fn opencode() -> Self {
         Self {
             config_dir: "opencode",
@@ -249,10 +219,27 @@ impl PluginInstaller {
 
 impl HookInstaller for PluginInstaller {
     fn install(&self, agent_home: &Path) -> anyhow::Result<()> {
-        write_json_file(
-            &self.config_path(agent_home),
-            &serde_json::json!({ "plugins": [self.plugin_path] }),
-        )
+        // Merge into any existing plugins.json rather than overwriting it, so a
+        // drift-repair launch never destroys the operator's / role's own
+        // plugins. Bail on a corrupt file instead of clobbering it.
+        let path = self.config_path(agent_home);
+        let mut root = read_existing_json_object(&path)?;
+        let plugins = root
+            .entry("plugins".to_owned())
+            .or_insert_with(|| serde_json::json!([]));
+        let arr = plugins.as_array_mut().with_context(|| {
+            format!(
+                "{} `plugins` is not an array; refusing to overwrite",
+                path.display()
+            )
+        })?;
+        if !arr
+            .iter()
+            .any(|p| p.as_str() == Some(self.plugin_path.as_str()))
+        {
+            arr.push(serde_json::json!(self.plugin_path));
+        }
+        write_json_file(&path, &serde_json::Value::Object(root))
     }
 
     fn verify(&self, agent_home: &Path) -> bool {
@@ -274,10 +261,56 @@ impl Default for CodexHookInstaller {
     }
 }
 
+/// Codex reporter events written under `hooks.<Event>`. `Stop` carries
+/// turn-complete (Codex's separate `notify` program is a `config.toml` setting,
+/// not a `hooks.json` field — and current Codex rejects any top-level key other
+/// than `hooks`, discarding the whole file, so we never write one).
+const CODEX_HOOK_EVENTS: &[&str] = &[
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PermissionRequest",
+    "PostToolUse",
+    "SubagentStart",
+    "SubagentStop",
+    "Stop",
+];
+
 impl HookInstaller for CodexHookInstaller {
     fn install(&self, agent_home: &Path) -> anyhow::Result<()> {
         let hooks_path = agent_home.join(".codex").join("hooks.json");
-        write_json_file(&hooks_path, &self.hooks_json())
+        // Merge into any existing hooks.json rather than overwriting it: the
+        // operator or role may own Codex hooks, and a drift-repair launch must
+        // not destroy them. `read_existing_json_object` bails on a corrupt file
+        // instead of clobbering it.
+        let mut root = read_existing_json_object(&hooks_path)?;
+        let hooks = root
+            .entry("hooks".to_owned())
+            .or_insert_with(|| serde_json::json!({}));
+        let hooks_obj = hooks.as_object_mut().with_context(|| {
+            format!(
+                "{} `hooks` is not an object; refusing to overwrite",
+                hooks_path.display()
+            )
+        })?;
+        for event in CODEX_HOOK_EVENTS {
+            let command = format!("{} --event {event}", self.hook_script_path);
+            let entry = hooks_obj
+                .entry((*event).to_owned())
+                .or_insert_with(|| serde_json::json!([]));
+            let arr = entry.as_array_mut().with_context(|| {
+                format!(
+                    "{} `hooks.{event}` is not an array; refusing to overwrite",
+                    hooks_path.display()
+                )
+            })?;
+            let present = arr.iter().any(|e| {
+                e.get("command").and_then(serde_json::Value::as_str) == Some(command.as_str())
+            });
+            if !present {
+                arr.push(serde_json::json!({ "command": command }));
+            }
+        }
+        write_json_file(&hooks_path, &serde_json::Value::Object(root))
     }
 
     fn verify(&self, agent_home: &Path) -> bool {
@@ -286,21 +319,34 @@ impl HookInstaller for CodexHookInstaller {
     }
 }
 
-impl CodexHookInstaller {
-    fn hooks_json(&self) -> serde_json::Value {
-        let command = |event: &str| format!("{} --event {event}", self.hook_script_path);
-        serde_json::json!({
-            "hooks": {
-                "UserPromptSubmit": [{ "command": command("UserPromptSubmit") }],
-                "PreToolUse": [{ "command": command("PreToolUse") }],
-                "PermissionRequest": [{ "command": command("PermissionRequest") }],
-                "PostToolUse": [{ "command": command("PostToolUse") }],
-                "SubagentStart": [{ "command": command("SubagentStart") }],
-                "SubagentStop": [{ "command": command("SubagentStop") }],
-                "Stop": [{ "command": command("Stop") }]
-            },
-            "notify": format!("{} --event turn-complete", self.hook_script_path)
-        })
+/// Read an existing JSON-object config, or an empty object when the file is
+/// absent. **Bails** (rather than returning empty) when the file exists but is
+/// not valid JSON or its root is not an object — every installer merges its
+/// reporter into this object and writes it back, so returning empty here would
+/// silently overwrite (destroy) the operator's / role's config on every
+/// drift-repair launch. The error is logged non-fatally at the install call
+/// site and `verify` keeps reporting drift. This is the single chokepoint that
+/// makes "a reporter never clobbers agent config" a structural guarantee for
+/// every installer, not a per-installer habit.
+fn read_existing_json_object(
+    path: &Path,
+) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
+    if !path.exists() {
+        return Ok(serde_json::Map::new());
+    }
+    let content = fs::read_to_string(path)?;
+    let value: serde_json::Value = serde_json::from_str(&content).with_context(|| {
+        format!(
+            "{} is not valid JSON; refusing to overwrite agent config",
+            path.display()
+        )
+    })?;
+    match value {
+        serde_json::Value::Object(map) => Ok(map),
+        _ => anyhow::bail!(
+            "{} root is not a JSON object; refusing to overwrite agent config",
+            path.display()
+        ),
     }
 }
 

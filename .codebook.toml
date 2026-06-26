@@ -948,6 +948,7 @@ words = [
   "cmdline",
   "rollouts",
   "globbed",
+  "chokepoint",
   "Notif",
   "epoll",
   "Acks",

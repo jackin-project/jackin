@@ -31,10 +31,6 @@ const AGENT_STATUS_ASSETS: &[(&str, &str)] = &[
         include_str!("../../../docker/runtime/agent-status/hooks/codex/report-hook.sh"),
     ),
     (
-        "hooks/amp/plugin.js",
-        include_str!("../../../docker/runtime/agent-status/hooks/amp/plugin.js"),
-    ),
-    (
         "hooks/opencode/report-hook.sh",
         include_str!("../../../docker/runtime/agent-status/hooks/opencode/report-hook.sh"),
     ),

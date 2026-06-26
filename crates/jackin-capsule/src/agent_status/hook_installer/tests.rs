@@ -85,7 +85,7 @@ fn claude_stop_hook_is_async_and_permission_request_is_sync() {
 }
 
 #[test]
-fn codex_notify_reports_turn_complete() {
+fn codex_hooks_json_has_no_unknown_top_level_keys() {
     let dir = TempDir::new().unwrap();
     let home = dir.path().to_path_buf();
     CodexHookInstaller::default().install(&home).unwrap();
@@ -93,9 +93,23 @@ fn codex_notify_reports_turn_complete() {
     let content = fs::read_to_string(hooks_path).unwrap();
     let val: serde_json::Value = serde_json::from_str(&content).unwrap();
 
+    // Current Codex rejects any top-level key other than `hooks` (it discards
+    // the whole file on "unknown field, expected `hooks`"), so the only key
+    // must be `hooks` — in particular NOT the old top-level `notify`.
+    let obj = val.as_object().expect("hooks.json is a JSON object");
     assert_eq!(
-        val.get("notify").and_then(serde_json::Value::as_str),
-        Some("/jackin/runtime/agent-status/hooks/codex/report-hook.sh --event turn-complete")
+        obj.keys().collect::<Vec<_>>(),
+        vec!["hooks"],
+        "hooks.json must carry only the `hooks` key, got {:?}",
+        obj.keys().collect::<Vec<_>>()
+    );
+    assert!(val.get("notify").is_none(), "top-level notify must be gone");
+
+    // Turn-complete is carried by the Stop hook; PermissionRequest reporter wired.
+    assert_eq!(
+        val.pointer("/hooks/Stop/0/command")
+            .and_then(serde_json::Value::as_str),
+        Some("/jackin/runtime/agent-status/hooks/codex/report-hook.sh --event Stop")
     );
     assert_eq!(
         val.pointer("/hooks/PermissionRequest/0/command")
@@ -171,26 +185,91 @@ fn claude_hook_installer_preserves_unrelated_hook_entries() {
 }
 
 #[test]
+fn codex_install_preserves_existing_hooks_and_bails_on_corrupt() {
+    let dir = TempDir::new().unwrap();
+    let home = dir.path().to_path_buf();
+    let codex_dir = home.join(".codex");
+    fs::create_dir_all(&codex_dir).unwrap();
+    // Operator/role owns a custom hook + a custom event the reporter never touches.
+    let existing = serde_json::json!({
+        "hooks": {
+            "UserPromptSubmit": [{ "command": "/role/own-hook.sh" }],
+            "CustomEvent": [{ "command": "/role/custom.sh" }]
+        }
+    });
+    let path = codex_dir.join("hooks.json");
+    fs::write(&path, serde_json::to_string_pretty(&existing).unwrap()).unwrap();
+
+    CodexHookInstaller::default().install(&home).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+
+    // The role's hook + custom event survive; our reporter command is added.
+    let ups = val["hooks"]["UserPromptSubmit"].as_array().unwrap();
+    assert!(ups.iter().any(|e| e["command"] == "/role/own-hook.sh"));
+    assert!(ups.iter().any(|e| e["command"]
+        == "/jackin/runtime/agent-status/hooks/codex/report-hook.sh --event UserPromptSubmit"));
+    assert_eq!(val["hooks"]["CustomEvent"][0]["command"], "/role/custom.sh");
+    // Idempotent: a second install does not duplicate our entry.
+    CodexHookInstaller::default().install(&home).unwrap();
+    let val2: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(
+        val2["hooks"]["UserPromptSubmit"].as_array().unwrap().len(),
+        2
+    );
+
+    // A corrupt file is never clobbered.
+    fs::write(&path, "{ not json").unwrap();
+    assert!(CodexHookInstaller::default().install(&home).is_err());
+    assert_eq!(fs::read_to_string(&path).unwrap(), "{ not json");
+}
+
+#[test]
+fn opencode_install_preserves_existing_plugins() {
+    let dir = TempDir::new().unwrap();
+    let home = dir.path().to_path_buf();
+    let oc_dir = home.join(".config").join("opencode");
+    fs::create_dir_all(&oc_dir).unwrap();
+    let path = oc_dir.join("plugins.json");
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&serde_json::json!({ "plugins": ["/role/own-plugin.js"] }))
+            .unwrap(),
+    )
+    .unwrap();
+
+    PluginInstaller::opencode().install(&home).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let plugins = val["plugins"].as_array().unwrap();
+    assert!(plugins.iter().any(|p| p == "/role/own-plugin.js"));
+    assert!(
+        plugins
+            .iter()
+            .any(|p| p.as_str().unwrap().contains("opencode"))
+    );
+    // Idempotent.
+    PluginInstaller::opencode().install(&home).unwrap();
+    let val2: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(val2["plugins"].as_array().unwrap().len(), 2);
+}
+
+#[test]
 fn plugin_installer_writes_and_verifies() {
-    for (installer, dir_seg) in [
-        (PluginInstaller::amp(), "amp"),
-        (PluginInstaller::opencode(), "opencode"),
-    ] {
-        let dir = TempDir::new().unwrap();
-        let home = dir.path().to_path_buf();
-        installer.install(&home).unwrap();
-        let path = home.join(".config").join(dir_seg).join("plugins.json");
-        assert!(path.exists(), "{dir_seg} plugins.json written");
-        let val: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert!(
-            val["plugins"].as_array().unwrap()[0]
-                .as_str()
-                .unwrap()
-                .contains(dir_seg)
-        );
-        assert!(installer.verify(&home));
-    }
+    let installer = PluginInstaller::opencode();
+    let dir = TempDir::new().unwrap();
+    let home = dir.path().to_path_buf();
+    installer.install(&home).unwrap();
+    let path = home.join(".config").join("opencode").join("plugins.json");
+    assert!(path.exists(), "opencode plugins.json written");
+    let val: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert!(
+        val["plugins"].as_array().unwrap()[0]
+            .as_str()
+            .unwrap()
+            .contains("opencode")
+    );
+    assert!(installer.verify(&home));
 }
 
 #[test]

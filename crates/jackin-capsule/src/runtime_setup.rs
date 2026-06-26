@@ -256,7 +256,9 @@ fn run_agent_setup() -> Result<()> {
 /// Install the container-local agent-status reporter for `agent` into the agent
 /// home, repairing drift each launch. Claude/Codex install too — their forwarded
 /// events are gated to identity/freshness only (Decision 0a), the screen pack
-/// owns their state. Kimi is rule-pack-only (no reporter); unknown/grok have no
+/// owns their state. Kimi is rule-pack-only (no reporter); Amp installs no
+/// reporter (it has no plugins.json node-plugin mechanism — writing one crashes
+/// it; a real Amp reporter needs its MCP/toolbox surface); unknown/grok have no
 /// reporter yet.
 fn install_agent_status_reporter(agent: &str) -> Result<()> {
     use crate::agent_status::hook_installer::{
@@ -265,7 +267,12 @@ fn install_agent_status_reporter(agent: &str) -> Result<()> {
     let installer: Option<Box<dyn HookInstaller>> = match agent {
         "claude" => Some(Box::new(ClaudeHookInstaller::default())),
         "codex" => Some(Box::new(CodexHookInstaller::default())),
-        "amp" => Some(Box::new(PluginInstaller::amp())),
+        // Amp has no `~/.config/amp/plugins.json` node-plugin mechanism (that
+        // was assumed from OpenCode's model); writing one crashes Amp on load. A
+        // reporter must never break the agent it observes, so Amp installs no
+        // reporter — its status falls back to screen + physics evidence. A real
+        // Amp reporter needs Amp's actual extension surface (MCP/toolbox) and is
+        // tracked as remaining work.
         "opencode" => Some(Box::new(PluginInstaller::opencode())),
         _ => None,
     };
