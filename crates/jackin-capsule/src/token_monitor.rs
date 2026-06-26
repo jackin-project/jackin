@@ -37,6 +37,51 @@ pub(crate) struct TokenTotals {
     pub(crate) window_start: Option<SystemTime>,
 }
 
+/// Recompute accumulator shared by the sum-per-message adapters (Claude, Kimi,
+/// Amp). Each poll re-reads the provider logs whole and folds every message's
+/// usage in here, then `commit`s the result by SET (never `+=`), so a re-read
+/// never double-counts. (Codex keeps its own accumulator — its wire format is a
+/// monotonic cumulative, not a per-message sum.)
+#[derive(Debug, Default)]
+pub(crate) struct SpendAcc {
+    pub(crate) input: u64,
+    pub(crate) output: u64,
+    pub(crate) cache_read: u64,
+    pub(crate) cache_write: u64,
+    pub(crate) cost: f64,
+    pub(crate) has_cost: bool,
+    pub(crate) model: Option<String>,
+    pub(crate) seen: bool,
+}
+
+impl SpendAcc {
+    /// Write this recomputed pass onto `totals` by assignment (never addition),
+    /// so polling the same logs twice yields the same totals. A model/cost is
+    /// only written when this pass actually resolved one, so a model-less pass
+    /// never clobbers a previously-resolved model. Returns whether anything moved.
+    pub(crate) fn commit(self, totals: &mut TokenTotals) -> bool {
+        let cost = self.has_cost.then_some(self.cost);
+        let changed = self.input != totals.input_tokens
+            || self.output != totals.output_tokens
+            || self.cache_read != totals.cache_read_tokens
+            || self.cache_write != totals.cache_write_tokens
+            || (cost.is_some() && cost != totals.cost_usd);
+        if changed {
+            totals.input_tokens = self.input;
+            totals.output_tokens = self.output;
+            totals.cache_read_tokens = self.cache_read;
+            totals.cache_write_tokens = self.cache_write;
+            if cost.is_some() {
+                totals.cost_usd = cost;
+            }
+            if self.model.is_some() {
+                totals.model = self.model;
+            }
+        }
+        changed
+    }
+}
+
 impl TokenTotals {
     pub(crate) fn to_summary(&self) -> TokenUsageSummary {
         TokenUsageSummary {

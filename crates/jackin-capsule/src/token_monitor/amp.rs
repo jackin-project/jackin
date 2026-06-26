@@ -24,13 +24,8 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
         return false;
     }
 
-    // Compute totals from scratch (Amp has no per-file byte offset).
-    let mut scratch_input: u64 = 0;
-    let mut scratch_output: u64 = 0;
-    let mut scratch_cache_read: u64 = 0;
-    let mut scratch_cache_write: u64 = 0;
-    let mut last_model: Option<String> = None;
-
+    // Recompute totals whole each poll (Amp has no per-file byte offset).
+    let mut acc = super::SpendAcc::default();
     for path in &files {
         let content = match super::read_file_text(path) {
             Ok(Some(content)) => content,
@@ -72,35 +67,22 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
                     .get("cache_creation_input_tokens")
                     .and_then(serde_json::Value::as_u64)
                     .unwrap_or(0);
-                scratch_input = scratch_input.saturating_add(input);
-                scratch_output = scratch_output.saturating_add(output);
-                scratch_cache_read = scratch_cache_read.saturating_add(cache_read);
-                scratch_cache_write = scratch_cache_write.saturating_add(cache_write);
+                acc.input = acc.input.saturating_add(input);
+                acc.output = acc.output.saturating_add(output);
+                acc.cache_read = acc.cache_read.saturating_add(cache_read);
+                acc.cache_write = acc.cache_write.saturating_add(cache_write);
+                acc.seen = true;
             }
             if let Some(model) = msg.get("model").and_then(|v| v.as_str()) {
-                last_model = Some(model.to_owned());
+                acc.model = Some(model.to_owned());
             }
         }
     }
 
-    // Only report changed if the totals actually moved.
-    let changed = scratch_input != session.totals.input_tokens
-        || scratch_output != session.totals.output_tokens
-        || scratch_cache_read != session.totals.cache_read_tokens
-        || scratch_cache_write != session.totals.cache_write_tokens;
-
-    if changed {
-        session.totals.input_tokens = scratch_input;
-        session.totals.output_tokens = scratch_output;
-        session.totals.cache_read_tokens = scratch_cache_read;
-        session.totals.cache_write_tokens = scratch_cache_write;
-        // Only update the model when this pass saw one — never clobber a
-        // previously-resolved model with `None` (matches the other adapters).
-        if last_model.is_some() {
-            session.totals.model = last_model;
-        }
+    if !acc.seen {
+        return false;
     }
-    changed
+    acc.commit(&mut session.totals)
 }
 
 #[cfg(test)]

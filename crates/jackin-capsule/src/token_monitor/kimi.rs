@@ -31,23 +31,13 @@ fn find_wire_files() -> Vec<PathBuf> {
     paths
 }
 
-#[derive(Default)]
-struct Acc {
-    input: u64,
-    output: u64,
-    cache_read: u64,
-    cache_write: u64,
-    model: Option<String>,
-    seen: bool,
-}
-
 pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
     let files = find_wire_files();
     if files.is_empty() {
         return false;
     }
 
-    let mut acc = Acc::default();
+    let mut acc = super::SpendAcc::default();
     for path in &files {
         let text = match super::read_file_text(path) {
             Ok(Some(text)) => text,
@@ -93,21 +83,7 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
     if !acc.seen {
         return false;
     }
-
-    let changed = acc.input != session.totals.input_tokens
-        || acc.output != session.totals.output_tokens
-        || acc.cache_read != session.totals.cache_read_tokens
-        || acc.cache_write != session.totals.cache_write_tokens;
-    if changed {
-        session.totals.input_tokens = acc.input;
-        session.totals.output_tokens = acc.output;
-        session.totals.cache_read_tokens = acc.cache_read;
-        session.totals.cache_write_tokens = acc.cache_write;
-        if acc.model.is_some() {
-            session.totals.model = acc.model;
-        }
-    }
-    changed
+    acc.commit(&mut session.totals)
 }
 
 #[cfg(test)]

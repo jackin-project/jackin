@@ -77,26 +77,13 @@ fn find_jsonl_files() -> Vec<PathBuf> {
     )
 }
 
-/// Recomputed session totals over one poll pass.
-#[derive(Default)]
-struct Acc {
-    input: u64,
-    output: u64,
-    cache_read: u64,
-    cache_write: u64,
-    cost: f64,
-    has_cost: bool,
-    model: Option<String>,
-    seen: bool,
-}
-
 pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
     let files = find_jsonl_files();
     if files.is_empty() {
         return false;
     }
 
-    let mut acc = Acc::default();
+    let mut acc = super::SpendAcc::default();
     for path in &files {
         let text = match super::read_file_text(path) {
             Ok(Some(text)) => text,
@@ -140,26 +127,9 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
         return false;
     }
 
-    let cost = acc.has_cost.then_some(acc.cost);
-    let changed = acc.input != session.totals.input_tokens
-        || acc.output != session.totals.output_tokens
-        || acc.cache_read != session.totals.cache_read_tokens
-        || acc.cache_write != session.totals.cache_write_tokens
-        || (cost.is_some() && cost != session.totals.cost_usd);
-    if changed {
-        session.totals.input_tokens = acc.input;
-        session.totals.output_tokens = acc.output;
-        session.totals.cache_read_tokens = acc.cache_read;
-        session.totals.cache_write_tokens = acc.cache_write;
-        if cost.is_some() {
-            session.totals.cost_usd = cost;
-        }
-        if acc.model.is_some() {
-            session.totals.model = acc.model;
-        }
-        if session.totals.window_start.is_none() {
-            session.totals.window_start = Some(SystemTime::now());
-        }
+    let changed = acc.commit(&mut session.totals);
+    if changed && session.totals.window_start.is_none() {
+        session.totals.window_start = Some(SystemTime::now());
     }
     changed
 }
