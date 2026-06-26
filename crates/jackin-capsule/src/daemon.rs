@@ -82,8 +82,8 @@ use crate::tui::components::branch_context_bar::branch_context_bar_layout;
 #[cfg(test)]
 use crate::tui::components::dialog::ConfirmKind;
 use crate::tui::components::dialog::{
-    Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand, PickerIntent,
-    SplitDirection, github_context_view_from_state,
+    Dialog, DialogAction, GithubContextView, InspectRow, PaletteCloseLabel, PaletteCommand,
+    PickerIntent, SplitDirection, github_context_view_from_state,
 };
 use crate::tui::components::status_bar::prefix_mode_for_mux_mode;
 use crate::tui::components::status_bar::{STATUS_BAR_ROWS, StatusBar};
@@ -183,9 +183,6 @@ pub struct Multiplexer {
     /// Set by the dirty-exit modal's keep/discard rows; the event loop writes
     /// the host exit-action file and drains on the next iteration.
     exit_request: Option<jackin_protocol::ExitAction>,
-    /// Pre-built read-only Inspect rows (status + path, grouped by repo) for the
-    /// dirty-exit modal's Inspect row. Populated when the modal is opened.
-    exit_dirty_inspect: Vec<crate::tui::components::dialog::InspectRow>,
     env_passthrough: Vec<(String, String)>,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
     event_rx: mpsc::UnboundedReceiver<SessionEvent>,
@@ -509,7 +506,6 @@ impl Multiplexer {
             available_agents: agents,
             launch_config,
             exit_request: None,
-            exit_dirty_inspect: Vec::new(),
             env_passthrough,
             event_tx,
             event_rx,
@@ -732,18 +728,16 @@ use crate::client_writer::scan_emitted_frame;
 
 /// Build the read-only Inspect rows for the dirty-exit modal: a section header
 /// per dirty repo followed by its `<status> <path>` change rows.
-fn build_exit_inspect_rows(
-    repos: &[crate::exit_assess::DirtyRepo],
-) -> Vec<crate::tui::components::dialog::InspectRow> {
+fn build_exit_inspect_rows(repos: &[crate::exit_assess::DirtyRepo]) -> Arc<[InspectRow]> {
     use crate::tui::components::dialog::InspectRow;
     let mut rows = Vec::new();
     for repo in repos {
         rows.push(InspectRow::Repo(repo.label().to_owned()));
-        for line in repo.inspect_rows() {
-            rows.push(InspectRow::File(line));
+        for f in &repo.changed {
+            rows.push(InspectRow::File(format!("{} {}", f.status, f.path)));
         }
     }
-    rows
+    rows.into()
 }
 
 /// Handle the last live session exiting. Returns `true` when the daemon should
@@ -792,8 +786,8 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
                 .iter()
                 .map(crate::exit_assess::DirtyRepo::summary_line)
                 .collect();
-            mux.exit_dirty_inspect = build_exit_inspect_rows(&repos);
-            mux.dialog_push(Dialog::new_exit_dirty(summary));
+            let inspect_rows = build_exit_inspect_rows(&repos);
+            mux.dialog_push(Dialog::new_exit_dirty(summary, inspect_rows));
             mux.invalidate(FullRedrawReason::DialogChange);
             false
         }

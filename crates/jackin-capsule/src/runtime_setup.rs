@@ -32,6 +32,13 @@ const GROK_AUTH_PATH: &str = "/home/agent/.grok/auth.json";
 // racy across parallel tests and `unsafe` under Rust 2024). Same split as
 // `write_codex_provider_config` / `write_codex_provider_config_inner`.
 
+/// Resolve a path under `AGENT_HOME` honoring an optional env override.
+/// When `env` is set, its value is used verbatim; otherwise falls back to
+/// `AGENT_HOME/subpath`. Shared by all three standard env-override resolvers.
+fn env_or_agent_home(env: Option<&str>, subpath: &str) -> PathBuf {
+    env.map_or_else(|| Path::new(AGENT_HOME).join(subpath), PathBuf::from)
+}
+
 /// Resolve Claude Code's config directory, honoring `CLAUDE_CONFIG_DIR` when the
 /// role sets it (default `~/.claude`). Claude reads `.credentials.json` — and,
 /// when the env var is set, `.claude.json` — from this directory.
@@ -40,7 +47,7 @@ fn claude_config_dir() -> PathBuf {
 }
 
 fn claude_config_dir_from(env: Option<&str>) -> PathBuf {
-    env.map_or_else(|| Path::new(AGENT_HOME).join(".claude"), PathBuf::from)
+    env_or_agent_home(env, ".claude")
 }
 
 /// `.credentials.json` always lives inside the resolved Claude config dir.
@@ -67,7 +74,7 @@ fn codex_home() -> PathBuf {
 }
 
 fn codex_home_from(env: Option<&str>) -> PathBuf {
-    env.map_or_else(|| Path::new(AGENT_HOME).join(".codex"), PathBuf::from)
+    env_or_agent_home(env, ".codex")
 }
 
 fn codex_auth_path() -> PathBuf {
@@ -80,7 +87,7 @@ fn xdg_data_home() -> PathBuf {
 }
 
 fn xdg_data_home_from(env: Option<&str>) -> PathBuf {
-    env.map_or_else(|| Path::new(AGENT_HOME).join(".local/share"), PathBuf::from)
+    env_or_agent_home(env, ".local/share")
 }
 
 fn amp_secrets_path() -> PathBuf {
@@ -1097,13 +1104,9 @@ fn seed_agent_home_from_enum(agent: jackin_core::Agent) -> Result<SeedOutcome> {
 }
 
 fn is_dir_empty(path: &Path) -> bool {
-    // Treat read errors as non-empty: conservatively prevents an I/O failure
-    // from being mistaken for an empty dir and triggering a first-seed copy
-    // over credentials that may have been refreshed in-container.
-    match fs::read_dir(path) {
-        Ok(mut d) => d.next().is_none(),
-        Err(_) => false,
-    }
+    // Conservative on error: treat an unreadable directory as non-empty to
+    // prevent an I/O failure from being mistaken for a first-seed opportunity.
+    !dir_nonempty(path).unwrap_or(true)
 }
 
 fn copy_dir_contents(src: &Path, dst: &Path) -> Result<()> {

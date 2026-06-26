@@ -7318,7 +7318,7 @@ fn exit_dirty_selected_value(mux: &Multiplexer) -> usize {
 fn exit_dirty_down_arrow_advances_selection_via_handle_input() {
     // Zero live panes — exactly the dirty-exit modal scenario.
     let mut mux = test_mux(30, 100);
-    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()], Arc::from([])));
     assert_eq!(exit_dirty_selected_value(&mux), 0);
 
     // Down arrow, as the input parser hands it to handle_input.
@@ -7340,7 +7340,7 @@ fn exit_dirty_down_arrow_advances_selection_via_handle_input() {
 #[test]
 fn exit_dirty_down_arrow_recomposes_a_changed_frame() {
     let mut mux = test_mux(30, 100);
-    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()], Arc::from([])));
     // Paint the modal once so rendered == frame generation.
     let first = mux.compose_pending_frame();
 
@@ -7379,9 +7379,7 @@ fn marker_row_on_screen(grid: &DamageGrid, rows: u16, cols: u16) -> Option<u16> 
 fn exit_dirty_marker_moves_on_screen_with_zero_panes() {
     let (rows, cols) = (44u16, 157u16);
     let mut mux = test_mux(rows, cols);
-    mux.dialog_push(Dialog::new_exit_dirty(vec![
-        "holla   1 changed \u{b7} 3 unpushed".to_owned(),
-    ]));
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed \u{b7} 3 unpushed".to_owned()], Arc::from([])));
     mux.invalidate(FullRedrawReason::DialogChange);
     let mut grid = DamageGrid::new(rows, cols, 0);
 
@@ -7422,9 +7420,7 @@ fn exit_dirty_marker_moves_after_session_exits_realistic() {
     mux.remove_exited_session(1);
 
     // handle_last_session_exit opens the modal and invalidates.
-    mux.dialog_push(Dialog::new_exit_dirty(vec![
-        "holla   1 changed \u{b7} 3 unpushed".to_owned(),
-    ]));
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed \u{b7} 3 unpushed".to_owned()], Arc::from([])));
     mux.invalidate(FullRedrawReason::DialogChange);
     let frame = mux.compose_pending_frame();
     client.apply(&frame);
@@ -7455,7 +7451,7 @@ async fn last_session_exit_does_not_repush_modal_while_dialog_open() {
     // re-entering must NOT push a second modal (which reset the selection to 0
     // every keypress, capping navigation at row 1).
     let mut mux = test_mux(44, 157);
-    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()], Arc::from([])));
     let depth_before = mux.dialog_stack.len();
 
     let exited = handle_last_session_exit(&mut mux, None).await;
@@ -7473,7 +7469,7 @@ fn exit_dirty_down_arrow_reaches_last_row() {
     // The selection must advance all the way to the final row (Discard), not cap
     // at row 1 — guards against an off-by-one or re-push regression.
     let mut mux = test_mux(44, 157);
-    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()], Arc::from([])));
     for _ in 0..5 {
         mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42])); // down
     }
@@ -7522,4 +7518,10 @@ fn build_exit_inspect_rows_groups_repos_with_header_and_file_rows() {
     if let Some(InspectRow::Repo(label)) = rows.first() {
         assert_eq!(label, "alpha");
     }
+    // File rows are formatted as "<status> <path>".
+    let file_rows: Vec<_> = rows
+        .iter()
+        .filter_map(|r| if let InspectRow::File(s) = r { Some(s.as_str()) } else { None })
+        .collect();
+    assert_eq!(file_rows, ["M src/main.rs", "? new.rs"]);
 }

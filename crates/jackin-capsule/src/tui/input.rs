@@ -832,8 +832,7 @@ fn csi_u_control_byte(codepoint: u32, modifier: Option<u32>) -> Option<u8> {
         return None;
     }
     match u8::try_from(codepoint).ok()? {
-        byte @ b'a'..=b'z' => Some(byte - b'a' + 1),
-        byte @ b'A'..=b'Z' => Some(byte - b'A' + 1),
+        byte @ (b'a'..=b'z' | b'A'..=b'Z') => Some(byte.to_ascii_lowercase() - b'a' + 1),
         b'\\' => Some(0x1C),
         b']' => Some(0x1D),
         b'^' => Some(0x1E),

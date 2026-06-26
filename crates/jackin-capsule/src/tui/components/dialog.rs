@@ -24,6 +24,8 @@
 /// - **Hint footer** follows the console TUI's structured format:
 ///   `Key WHITE+BOLD`, label `PHOSPHOR_GREEN`, dot separator
 ///   `PHOSPHOR_DARK`, three-space group gap between logical groups.
+use std::sync::Arc;
+
 use crate::pull_request::PullRequestInfo;
 
 /// Borrowed snapshot of multiplexer PR state, so `GitHubContext`
@@ -272,12 +274,15 @@ pub enum Dialog {
         summary: Vec<String>,
         /// Focused choice row, `0..EXIT_DIRTY_ROWS.len()`.
         selected: usize,
+        /// Pre-built Inspect rows (section header + file rows per repo). Shared
+        /// with `ExitInspect` via `Arc` so opening Inspect is a ref-count bump.
+        inspect_rows: Arc<[InspectRow]>,
     },
     /// Read-only changed-files list opened from the `ExitDirty` modal's Inspect
     /// row. `Esc` walks back to the exit modal (modal stack).
     ExitInspect {
         /// Changed-file rows grouped by repo via section headers.
-        lines: Vec<InspectRow>,
+        lines: Arc<[InspectRow]>,
         /// Focused row for scrolling.
         selected: usize,
     },
@@ -1105,18 +1110,20 @@ impl Dialog {
         }
     }
 
-    /// Build the in-capsule dirty-exit modal from per-repo summary lines.
+    /// Build the in-capsule dirty-exit modal from per-repo summary lines and
+    /// the pre-built inspect rows (shared with the Inspect sub-dialog).
     #[must_use]
-    pub fn new_exit_dirty(summary: Vec<String>) -> Self {
+    pub fn new_exit_dirty(summary: Vec<String>, inspect_rows: Arc<[InspectRow]>) -> Self {
         Self::ExitDirty {
             summary,
             selected: 0,
+            inspect_rows,
         }
     }
 
     /// Build the read-only Inspect list opened from the dirty-exit modal.
     #[must_use]
-    pub fn new_exit_inspect(lines: Vec<InspectRow>) -> Self {
+    pub fn new_exit_inspect(lines: Arc<[InspectRow]>) -> Self {
         Self::ExitInspect { lines, selected: 0 }
     }
 

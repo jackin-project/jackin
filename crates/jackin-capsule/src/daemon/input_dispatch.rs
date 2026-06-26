@@ -1,5 +1,7 @@
 //! Input dispatch methods for the Multiplexer.
 
+use std::sync::Arc;
+
 use crate::tui::components::branch_context_bar::{branch_context_bar_hit, debug_run_id_label};
 use crate::tui::input::TAB_DOUBLE_CLICK_WINDOW;
 use crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION;
@@ -85,10 +87,16 @@ impl Multiplexer {
                         self.apply_action(Action::OpenAgentPicker(PickerIntent::NewTab));
                         return;
                     }
-                    // Push the read-only changed-files list (built when the modal
-                    // was opened); Esc walks back to the exit modal.
+                    // Push the read-only changed-files list stored in the
+                    // ExitDirty variant; Arc::clone is O(1). Esc walks back.
                     ExitDirtyRow::Inspect => {
-                        self.dialog_push(Dialog::new_exit_inspect(self.exit_dirty_inspect.clone()));
+                        let rows = match self.dialog_top() {
+                            Some(Dialog::ExitDirty { inspect_rows, .. }) => {
+                                Arc::clone(inspect_rows)
+                            }
+                            _ => return,
+                        };
+                        self.dialog_push(Dialog::new_exit_inspect(rows));
                         self.invalidate(FullRedrawReason::DialogChange);
                         return;
                     }

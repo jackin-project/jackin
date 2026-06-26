@@ -1,5 +1,7 @@
 //! Tests for `jackin-capsule` dialog components.
 #![allow(clippy::too_many_lines)]
+use std::sync::Arc;
+
 use super::*;
 use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
@@ -2189,7 +2191,7 @@ fn exit_dirty_enter_routes_each_row() {
         ExitDirtyRow::Discard,
     ];
     for (steps, want) in expected.iter().enumerate() {
-        let mut d = Dialog::new_exit_dirty(vec!["jackin   1 changed".to_owned()]);
+        let mut d = Dialog::new_exit_dirty(vec!["jackin   1 changed".to_owned()], Arc::from([]));
         for _ in 0..steps {
             d.handle_key(b"\x1b[B", None);
         }
@@ -2205,12 +2207,12 @@ fn exit_dirty_esc_and_ctrl_c_keep_and_exit() {
     // Reuses the shared FilterListAction::Dismiss path like every other dialog,
     // mapping dismiss to keep-and-exit so the operator never loses work and the
     // global Ctrl+C contract is preserved (no swallowed keys).
-    let mut esc = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    let mut esc = Dialog::new_exit_dirty(vec!["x".to_owned()], Arc::from([]));
     assert_eq!(
         esc.handle_key(b"\x1b", None),
         DialogAction::ExitDirty(ExitDirtyRow::Keep)
     );
-    let mut ctrl_c = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    let mut ctrl_c = Dialog::new_exit_dirty(vec!["x".to_owned()], Arc::from([]));
     assert_eq!(
         ctrl_c.handle_key(b"\x03", None),
         DialogAction::ExitDirty(ExitDirtyRow::Keep)
@@ -2220,14 +2222,14 @@ fn exit_dirty_esc_and_ctrl_c_keep_and_exit() {
 #[test]
 fn exit_dirty_navigation_clamps_at_ends() {
     // Up at the top stays on the first row.
-    let mut top = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    let mut top = Dialog::new_exit_dirty(vec!["x".to_owned()], Arc::from([]));
     top.handle_key(b"\x1b[A", None);
     assert!(matches!(
         top.handle_key(b"\r", None),
         DialogAction::ExitDirty(ExitDirtyRow::StartNewAgent)
     ));
     // Down past the end clamps to the last row.
-    let mut bottom = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    let mut bottom = Dialog::new_exit_dirty(vec!["x".to_owned()], Arc::from([]));
     for _ in 0..10 {
         bottom.handle_key(b"\x1b[B", None);
     }
@@ -2239,10 +2241,10 @@ fn exit_dirty_navigation_clamps_at_ends() {
 
 #[test]
 fn exit_inspect_esc_walks_back() {
-    let mut d = Dialog::new_exit_inspect(vec![
+    let mut d = Dialog::new_exit_inspect(Arc::from([
         InspectRow::Repo("jackin".to_owned()),
         InspectRow::File("M a.rs".to_owned()),
-    ]);
+    ]));
     assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
 }
 
@@ -2268,7 +2270,7 @@ fn exit_dirty_selection_marker_moves_on_down_arrow() {
         })
     }
 
-    let mut d = Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]);
+    let mut d = Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()], Arc::from([]));
     let before = marker_row(&d).expect("marker visible initially");
     assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
     let after = marker_row(&d).expect("marker visible after down");

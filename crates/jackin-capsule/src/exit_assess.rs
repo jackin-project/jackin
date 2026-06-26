@@ -57,14 +57,6 @@ impl DirtyRepo {
         format!("{}   {}", self.label(), parts.join(" · "))
     }
 
-    /// Read-only Inspect rows for this repo: `M path`, `?? path`, etc.
-    #[must_use]
-    pub fn inspect_rows(&self) -> Vec<String> {
-        self.changed
-            .iter()
-            .map(|file| format!("{} {}", file.status, file.path))
-            .collect()
-    }
 }
 
 /// Synchronous in-container git runner. The assessment helpers only call
