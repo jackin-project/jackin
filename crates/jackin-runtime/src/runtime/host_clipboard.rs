@@ -175,12 +175,12 @@ pub(super) async fn read_image_from_pasted_path(input: &[u8]) -> Result<Option<C
         if let Some(image) = image_from_path_text(&owned)? {
             return Ok(Some(image));
         }
-        // Terminals shell-escape pasted paths; retry once de-escaped.
-        let unescaped = unescape_shell_path(&owned);
-        if unescaped == owned {
-            return Ok(None);
+        // Terminals shell-escape pasted paths; retry once de-escaped when there
+        // is anything to de-escape.
+        if owned.contains('\\') {
+            return image_from_path_text(&unescape_shell_path(&owned));
         }
-        image_from_path_text(&unescaped)
+        Ok(None)
     })
     .await
     .map_err(|err| anyhow::anyhow!("joining pasted-path image reader: {err}"))?
