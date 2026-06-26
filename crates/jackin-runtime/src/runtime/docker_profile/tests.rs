@@ -235,6 +235,33 @@ fn readonly_root_flags_empty_for_compat() {
     assert!(flags.is_empty());
 }
 
+/// Sudo granted on a read-only-root profile mounts a writable tmpfs over
+/// /etc/sudoers.d so `sudo-provision` can write the sudoers entry (otherwise
+/// EROFS on the read-only /etc fails the launch). No sudo → no such mount.
+#[test]
+fn readonly_root_flags_mount_sudoers_tmpfs_only_when_sudo_granted() {
+    let no_sudo = profile_base_grants(DockerSecurityProfile::Hardened);
+    assert!(!no_sudo.sudo);
+    let flags = readonly_root_flags(DockerSecurityProfile::Hardened, &no_sudo);
+    assert!(
+        !flags.iter().any(|f| f.starts_with("/etc/sudoers.d")),
+        "no sudo grant must not mount the sudoers tmpfs"
+    );
+
+    let with_sudo = EffectiveGrants {
+        sudo: true,
+        no_new_privileges: false,
+        ..profile_base_grants(DockerSecurityProfile::Hardened)
+    };
+    let flags = readonly_root_flags(DockerSecurityProfile::Hardened, &with_sudo);
+    assert!(
+        flags
+            .iter()
+            .any(|f| f == "/etc/sudoers.d:rw,nosuid,nodev,mode=0755"),
+        "sudo on read-only root must mount a root-owned /etc/sudoers.d tmpfs, got {flags:?}"
+    );
+}
+
 #[test]
 fn apply_grants_raises_network() {
     let base = profile_base_grants(DockerSecurityProfile::Locked);

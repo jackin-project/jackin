@@ -929,6 +929,14 @@ pub fn readonly_home_env(grants: &EffectiveGrants) -> Vec<String> {
 
 /// Emit `--read-only` plus a `--tmpfs <path>:rw,nosuid,nodev` pair for every
 /// [`tmpfs_paths`] entry. Empty for writable-root profiles.
+///
+/// When sudo is granted on a read-only-root profile (`hardened`/`locked` with an
+/// explicit `sudo = true`), a narrow tmpfs is also mounted over `/etc/sudoers.d`
+/// so the post-run `sudo-provision` step can write `/etc/sudoers.d/agent` — `/etc`
+/// is otherwise read-only and the write would EROFS-fail the launch. The mount is
+/// `mode=0755` (root-owned), so only the root `docker exec` provision step can
+/// write it; an agent-owned file would be ignored by sudo regardless, and the
+/// agent already has passwordless root via the grant, so this is no new escalation.
 pub fn readonly_root_flags(
     profile: DockerSecurityProfile,
     grants: &EffectiveGrants,
@@ -940,6 +948,10 @@ pub fn readonly_root_flags(
     for path in tmpfs_paths(profile) {
         flags.push("--tmpfs".to_owned());
         flags.push(format!("{path}:rw,nosuid,nodev"));
+    }
+    if grants.sudo {
+        flags.push("--tmpfs".to_owned());
+        flags.push("/etc/sudoers.d:rw,nosuid,nodev,mode=0755".to_owned());
     }
     flags
 }
