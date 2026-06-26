@@ -403,42 +403,39 @@ where
                     Ok(n) => n,
                 };
                 let input = &stdin_buf[..n];
-                let image_paste_trigger = is_image_paste_trigger(input);
-                if image_paste_trigger {
+                // The two image sources are mutually exclusive by construction:
+                // Ctrl+V is the explicit clipboard trigger, while the pasted-path
+                // probe only matches a bracketed paste (never the lone Ctrl+V
+                // byte). Branch on the trigger so that exclusivity is structural.
+                let image = if is_image_paste_trigger(input) {
                     log_clipboard_image_paste_trigger();
-                }
-                let mut image = match read_image_for_paste_trigger(input).await {
-                    Ok(Some(image)) => {
-                        jackin_diagnostics::debug_log!(
-                            "attach",
-                            "host clipboard image paste: format={:?} bytes={}",
-                            image.format,
-                            image.bytes.len()
-                        );
-                        Some(image)
-                    }
-                    Ok(None) => {
-                        if image_paste_trigger {
-                            log_clipboard_image_no_image_forwarded();
+                    match read_image_for_paste_trigger(input).await {
+                        Ok(Some(image)) => {
+                            jackin_diagnostics::debug_log!(
+                                "attach",
+                                "host clipboard image paste: format={:?} bytes={}",
+                                image.format,
+                                image.bytes.len()
+                            );
+                            Some(image)
                         }
-                        None
-                    }
-                    Err(err) => {
-                        jackin_diagnostics::debug_log!(
-                            "attach",
-                            "host clipboard image paste probe failed: {err:#}"
-                        );
-                        if image_paste_trigger {
+                        Ok(None) => {
                             log_clipboard_image_no_image_forwarded();
+                            None
                         }
-                        None
+                        Err(err) => {
+                            jackin_diagnostics::debug_log!(
+                                "attach",
+                                "host clipboard image paste probe failed: {err:#}"
+                            );
+                            log_clipboard_image_no_image_forwarded();
+                            None
+                        }
                     }
-                };
-                // Cmd+V parity: a Ctrl+V trigger never carries a path, so only
-                // probe plain pastes. A bracketed paste whose sole content is a
-                // real host image file is auto-staged; the staged container path
-                // replaces the raw host path. Everything else forwards as text.
-                if image.is_none() && !image_paste_trigger {
+                } else {
+                    // Cmd+V parity: a bracketed paste whose sole content is a real
+                    // host image file is auto-staged, and the staged container path
+                    // replaces the raw host path. Everything else forwards as text.
                     match read_image_from_pasted_path(input).await {
                         Ok(Some(staged)) => {
                             jackin_diagnostics::debug_log!(
@@ -448,17 +445,18 @@ where
                                 staged.bytes.len()
                             );
                             log_clipboard_image_pasted_path_staged();
-                            image = Some(staged);
+                            Some(staged)
                         }
-                        Ok(None) => {}
+                        Ok(None) => None,
                         Err(err) => {
                             jackin_diagnostics::debug_log!(
                                 "attach",
                                 "host pasted-path image probe failed: {err:#}"
                             );
+                            None
                         }
                     }
-                }
+                };
                 if let Some(image) = image {
                     if let Err(err) = write_clipboard_image_frames(&mut server_writer, image).await {
                         jackin_diagnostics::debug_log!(
