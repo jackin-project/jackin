@@ -18,26 +18,38 @@ pub fn list_names_content_width(state: &ManagerState<'_>, viewport: usize) -> us
             visual_rows: &visual_rows,
             visual_selected: state.visual_selected(),
             list_names_focused: state.list_names_focused(),
-            current_dir_has_instances: state.has_current_dir_active_instances(),
+            current_dir_has_instances: state.has_current_dir_visible_instances(),
             viewport,
         },
         |inst_idx| {
             state
-                .current_dir_active_instances()
+                .current_dir_visible_instances()
                 .get(inst_idx)
-                .map(|entry| (entry.instance_id.clone(), entry.role_key.clone()))
+                .map(|entry| {
+                    (
+                        entry.instance_id.clone(),
+                        entry.role_key.clone(),
+                        entry.status,
+                    )
+                })
         },
         |idx| {
             state
                 .workspaces
                 .get(idx)
-                .map(|ws| (ws.name.clone(), state.has_active_instances(idx)))
+                .map(|ws| (ws.name.clone(), state.has_visible_instances(idx)))
         },
         |ws_idx, inst_idx| {
             state
-                .workspace_active_instances(ws_idx)
+                .workspace_visible_instances(ws_idx)
                 .get(inst_idx)
-                .map(|entry| (entry.instance_id.clone(), entry.role_key.clone()))
+                .map(|entry| {
+                    (
+                        entry.instance_id.clone(),
+                        entry.role_key.clone(),
+                        entry.status,
+                    )
+                })
         },
     )
 }

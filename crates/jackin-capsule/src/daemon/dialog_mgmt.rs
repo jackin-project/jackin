@@ -163,6 +163,30 @@ impl Multiplexer {
         true
     }
 
+    pub(super) fn set_clipboard_image_notice(&mut self, message: String) {
+        self.clipboard_image_notice = Some(message);
+        self.clipboard_image_notice_deadline =
+            Some(Instant::now() + crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION);
+        self.invalidate(super::status_change_redraw_reason());
+    }
+
+    pub(super) fn clear_clipboard_image_notice(&mut self) -> bool {
+        let had_notice = self.clipboard_image_notice.take().is_some()
+            || self.clipboard_image_notice_deadline.is_some();
+        self.clipboard_image_notice_deadline = None;
+        had_notice
+    }
+
+    pub(super) fn expire_clipboard_image_notice(&mut self, now: Instant) -> bool {
+        let Some(deadline) = self.clipboard_image_notice_deadline else {
+            return false;
+        };
+        if now < deadline {
+            return false;
+        }
+        self.clear_clipboard_image_notice()
+    }
+
     /// Drop saved gesture state when the pane geometry it referenced
     /// is about to change. Cheaper than per-motion re-validation.
     pub(super) fn cancel_drag(&mut self) {
@@ -171,5 +195,6 @@ impl Multiplexer {
         self.pending_selection = None;
         self.selection_copied = false;
         self.selection_copy_feedback_deadline = None;
+        self.clear_clipboard_image_notice();
     }
 }

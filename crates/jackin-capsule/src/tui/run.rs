@@ -126,6 +126,37 @@ pub async fn run_client(
                             break Err(anyhow::anyhow!("stdout flush failed after Bell: {e}"));
                         }
                     }
+                    ServerFrame::HostOpenUrl(url) => {
+                        let redacted = jackin_core::url_text::redact_url_for_log(&url);
+                        crate::cdebug!(
+                            "attach-client: ignoring host-open-url frame in in-container client: {redacted:?}"
+                        );
+                    }
+                    ServerFrame::HostRevealPath(_) => {
+                        crate::cdebug!(
+                            "attach-client: ignoring host-reveal-path frame in in-container client"
+                        );
+                    }
+                    ServerFrame::HostStageImageFromClipboardPath => {
+                        crate::cdebug!(
+                            "attach-client: ignoring host-stage-image-path frame in in-container client"
+                        );
+                    }
+                    ServerFrame::HostPasteImageFromClipboard => {
+                        crate::cdebug!(
+                            "attach-client: ignoring host-paste-image frame in in-container client"
+                        );
+                    }
+                    ServerFrame::HostStageImageFromClipboard => {
+                        crate::cdebug!(
+                            "attach-client: ignoring host-stage-image frame in in-container client"
+                        );
+                    }
+                    ServerFrame::FileExportStart(_)
+                    | ServerFrame::FileExportChunk(_)
+                    | ServerFrame::FileExportEnd(_) => {
+                        crate::cdebug!("attach-client: ignoring host file-export frame");
+                    }
                     ServerFrame::Welcome { .. } | ServerFrame::SessionList(_) => {}
                 }
             }

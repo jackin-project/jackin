@@ -21,6 +21,10 @@ use jackin_core::JackinPaths;
 /// Spans editor (rename modal) and save (commit) — a true cross-flow
 /// test that doesn't fit cleanly inside either submodule.
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "test waits for an owned background save worker to publish its subscription result"
+)]
 fn create_mode_save_uses_updated_pending_name() {
     let (tmp, paths, mut config) = {
         let tmp = tempfile::tempdir().unwrap();
@@ -79,6 +83,22 @@ fn create_mode_save_uses_updated_pending_name() {
         cwd,
     )
     .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while std::time::Instant::now() < deadline {
+        if let Some(result) = state.poll_config_save() {
+            crate::console::effects::apply_background_event(
+                &mut state,
+                &mut config,
+                &paths,
+                cwd,
+                jackin_console::tui::state::update::ManagerBackgroundEvent::ConfigSaveFinished(
+                    result,
+                ),
+            );
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
 
     let reloaded = AppConfig::load_or_init(&paths).unwrap();
     assert!(

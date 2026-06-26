@@ -1077,7 +1077,7 @@ pub fn workspace_delete_confirm_state(name: &str) -> jackin_tui::components::Con
 #[must_use]
 pub fn instance_purge_confirm_state(label: &str) -> jackin_tui::components::ConfirmState {
     jackin_tui::components::ConfirmState::new(format!(
-        "Purge \"{label}\"?\nThis removes the role container, DinD sidecar, volume, network, AND local recovery state. Cannot be undone."
+        "Purge \"{label}\"?\nRemoves the role container, DinD sidecar, volume, network, and local recovery state."
     ))
 }
 

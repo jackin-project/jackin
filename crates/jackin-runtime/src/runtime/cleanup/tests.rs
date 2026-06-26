@@ -2,6 +2,7 @@
 use super::super::naming::matching_family;
 use super::super::test_support::FakeRunner;
 use super::*;
+use crate::instance::{DockerResources, InstanceManifest};
 use crate::runtime::test_support::FakeDockerClient;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
@@ -32,7 +33,7 @@ async fn purge_all_removes_matching_state_directories() {
     let paths = JackinPaths::for_tests(temp.path());
     let primary = "jk-k7p9m2xq-agentsmith";
     let second = "jk-a1b2c3d4-workspace-agentsmith";
-    let manifest = crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+    let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
         container_base: primary,
         workspace_name: Some("workspace"),
         workspace_label: "workspace",
@@ -44,35 +45,42 @@ async fn purge_all_removes_matching_state_directories() {
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
-        docker: crate::instance::DockerResources {
+        docker: DockerResources {
             role_container: primary.into(),
-            dind_container: format!("{primary}-dind"),
+            dind_container: Some(format!("{primary}-dind")),
             network: format!("{primary}-net"),
-            certs_volume: format!("{primary}-dind-certs"),
+            certs_volume: Some(format!("{primary}-dind-certs")),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
     });
     manifest.write(&paths.data_dir.join(primary)).unwrap();
     InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
-    let second_manifest =
-        crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
-            container_base: second,
-            workspace_name: Some("workspace"),
-            workspace_label: "workspace",
-            workdir: "/workspace",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "agent-smith",
-            role_display_name: "Agent Smith",
-            agent_runtime: jackin_core::agent::Agent::Claude,
-            role_source_git: "https://example.invalid/agent-smith.git",
-            role_source_ref: None,
-            image_tag: "jk_agent-smith",
-            docker: crate::instance::DockerResources {
-                role_container: second.into(),
-                dind_container: format!("{second}-dind"),
-                network: format!("{second}-net"),
-                certs_volume: format!("{second}-dind-certs"),
-            },
-        });
+    let second_manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
+        container_base: second,
+        workspace_name: Some("workspace"),
+        workspace_label: "workspace",
+        workdir: "/workspace",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: "agent-smith",
+        role_display_name: "Agent Smith",
+        agent_runtime: jackin_core::agent::Agent::Claude,
+        role_source_git: "https://example.invalid/agent-smith.git",
+        role_source_ref: None,
+        image_tag: "jk_agent-smith",
+        docker: DockerResources {
+            role_container: second.into(),
+            dind_container: Some(format!("{second}-dind")),
+            network: format!("{second}-net"),
+            certs_volume: Some(format!("{second}-dind-certs")),
+        },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
+    });
     second_manifest.write(&paths.data_dir.join(second)).unwrap();
     InstanceIndex::update_manifest(&paths.data_dir, &second_manifest).unwrap();
     let unrelated = "jk-w9x8y7z6-chainargos-thearchitect";
@@ -217,7 +225,7 @@ async fn eject_agent_removes_manifest_recorded_sidecar_resources() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let container = "jk-agent-smith";
-    let manifest = crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+    let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
         container_base: container,
         workspace_name: Some("workspace"),
         workspace_label: "workspace",
@@ -229,12 +237,16 @@ async fn eject_agent_removes_manifest_recorded_sidecar_resources() {
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
-        docker: crate::instance::DockerResources {
+        docker: DockerResources {
             role_container: container.to_owned(),
-            dind_container: "jk-prewarm-dind-dind".to_owned(),
+            dind_container: Some("jk-prewarm-dind-dind".to_owned()),
             network: "jk-prewarm-dind-net".to_owned(),
-            certs_volume: "jk-prewarm-dind-certs".to_owned(),
+            certs_volume: Some("jk-prewarm-dind-certs".to_owned()),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
     });
     manifest.write(&paths.data_dir.join(container)).unwrap();
 
@@ -710,26 +722,29 @@ async fn prune_dir_is_ok_when_directory_absent() {
 // ── prune_instances ──────────────────────────────────────────────────────
 
 fn make_instance_at(paths: &JackinPaths, container: &str, status: InstanceStatus) {
-    let mut manifest =
-        crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
-            container_base: container,
-            workspace_name: Some("ws"),
-            workspace_label: "ws",
-            workdir: "/ws",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "agent-smith",
-            role_display_name: "Agent Smith",
-            agent_runtime: jackin_core::agent::Agent::Claude,
-            role_source_git: "https://example.invalid/agent-smith.git",
-            role_source_ref: None,
-            image_tag: "jk_agent-smith",
-            docker: crate::instance::DockerResources {
-                role_container: container.to_owned(),
-                dind_container: format!("{container}-dind"),
-                network: format!("{container}-net"),
-                certs_volume: format!("{container}-dind-certs"),
-            },
-        });
+    let mut manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
+        container_base: container,
+        workspace_name: Some("ws"),
+        workspace_label: "ws",
+        workdir: "/ws",
+        host_workdir_fingerprint: "sha256:test",
+        role_key: "agent-smith",
+        role_display_name: "Agent Smith",
+        agent_runtime: jackin_core::agent::Agent::Claude,
+        role_source_git: "https://example.invalid/agent-smith.git",
+        role_source_ref: None,
+        image_tag: "jk_agent-smith",
+        docker: DockerResources {
+            role_container: container.to_owned(),
+            dind_container: Some(format!("{container}-dind")),
+            network: format!("{container}-net"),
+            certs_volume: Some(format!("{container}-dind-certs")),
+        },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
+    });
     manifest.mark_status(status);
     let state_dir = paths.data_dir.join(container);
     std::fs::create_dir_all(&state_dir).unwrap();
@@ -790,6 +805,63 @@ async fn prune_instances_is_ok_when_data_dir_absent() {
     let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
     prune_instances(&paths, &docker, &mut runner).await.unwrap();
+}
+
+#[tokio::test]
+async fn prune_instances_reconciles_stale_active_to_crashed() {
+    // D9: an Active row whose container is gone (crash mid-session) must become
+    // a Crashed restore candidate, not vanish and not stay falsely Active.
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let container = "jk-k7p9m2xq-agentsmith";
+    make_instance_at(&paths, container, InstanceStatus::Active);
+
+    let docker = FakeDockerClient::default(); // inspect → NotFound
+    let mut runner = FakeRunner::default();
+    prune_instances(&paths, &docker, &mut runner).await.unwrap();
+
+    // Row survives (Crashed is not prunable) and is now Crashed in both surfaces.
+    assert!(paths.data_dir.join(container).exists());
+    let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
+    let entry = index
+        .instances
+        .iter()
+        .find(|e| e.container_base == container)
+        .expect("row retained");
+    assert_eq!(entry.status, InstanceStatus::Crashed);
+    let manifest =
+        InstanceManifest::read_or_log(&paths.data_dir.join(container), "test").expect("manifest");
+    assert_eq!(manifest.status, InstanceStatus::Crashed);
+}
+
+#[tokio::test]
+async fn prune_instances_reaps_only_unheld_name_locks() {
+    use fs2::FileExt as _;
+    // D9: an orphaned `<name>.lock` (no live holder) is removed; one still held
+    // by a live process is left untouched.
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    std::fs::create_dir_all(&paths.data_dir).unwrap();
+    let held = paths.data_dir.join("jk-held.lock");
+    let orphan = paths.data_dir.join("jk-orphan.lock");
+    std::fs::write(&held, b"").unwrap();
+    std::fs::write(&orphan, b"").unwrap();
+    // Hold an exclusive flock on `held` for the duration of the prune; flock
+    // conflicts across separate open descriptions, so the reaper's try_lock fails.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test holds a real flock to verify the reaper skips a held lock"
+    )]
+    let held_file = std::fs::File::open(&held).unwrap();
+    held_file.try_lock_exclusive().unwrap();
+
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+    prune_instances(&paths, &docker, &mut runner).await.unwrap();
+
+    assert!(held.exists(), "a held name-lock must not be reaped");
+    assert!(!orphan.exists(), "an unheld name-lock must be reaped");
+    held_file.unlock().unwrap();
 }
 
 // ── prune_images ─────────────────────────────────────────────────────────
@@ -1010,7 +1082,7 @@ async fn prune_instances_prunes_purged_tombstone_with_no_state_directory() {
     let paths = JackinPaths::for_tests(temp.path());
     let container = "jk-k7p9m2xq-agentsmith";
     // Register in the index but do NOT create the state directory.
-    let manifest = crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+    let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
         container_base: container,
         workspace_name: Some("ws"),
         workspace_label: "ws",
@@ -1022,12 +1094,16 @@ async fn prune_instances_prunes_purged_tombstone_with_no_state_directory() {
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
-        docker: crate::instance::DockerResources {
+        docker: DockerResources {
             role_container: container.to_owned(),
-            dind_container: format!("{container}-dind"),
+            dind_container: Some(format!("{container}-dind")),
             network: format!("{container}-net"),
-            certs_volume: format!("{container}-dind-certs"),
+            certs_volume: Some(format!("{container}-dind-certs")),
         },
+        role_git_sha: None,
+        base_image_ref: None,
+        base_image_digest: None,
+        supported_agents: vec![],
     });
     let mut manifest = manifest;
     manifest.mark_status(InstanceStatus::Purged);

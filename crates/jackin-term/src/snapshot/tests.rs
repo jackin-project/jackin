@@ -11,8 +11,17 @@ fn snap_cell_blank_detection() {
         bold: false,
         italic: false,
         underline: false,
+        underline_style: UnderlineStyle::None,
+        underline_color: Color::Default,
         inverse: false,
         dim: false,
+        strikethrough: false,
+        slow_blink: false,
+        rapid_blink: false,
+        conceal: false,
+        overline: false,
+        hyperlink_id: None,
+        hyperlink_uri: None,
     };
     assert!(c.is_blank());
     assert!(!c.has_contents());
@@ -29,8 +38,17 @@ fn snap_cell_non_blank() {
         bold: false,
         italic: false,
         underline: false,
+        underline_style: UnderlineStyle::None,
+        underline_color: Color::Default,
         inverse: false,
         dim: false,
+        strikethrough: false,
+        slow_blink: false,
+        rapid_blink: false,
+        conceal: false,
+        overline: false,
+        hyperlink_id: None,
+        hyperlink_uri: None,
     };
     assert!(!c.is_blank());
     assert!(c.has_contents());

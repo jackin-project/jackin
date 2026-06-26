@@ -195,20 +195,40 @@ pub fn new_workspace_display_row(selected: bool, hovered: bool) -> WorkspaceList
     }
 }
 
+/// Backing data a tree instance row needs to render its label: the id, role,
+/// and status (status drives the compact `[state]` tag for failed instances).
+#[derive(Debug, Clone)]
+pub struct InstanceRowLabel {
+    pub instance_id: String,
+    pub role_key: String,
+    pub status: jackin_core::instance::InstanceStatus,
+}
+
 #[must_use]
-pub fn workspace_instance_list_label(instance_id: &str, role_key: &str) -> String {
-    format!("{instance_id}  {role_key}")
+pub fn workspace_instance_list_label(
+    instance_id: &str,
+    role_key: &str,
+    status: jackin_core::instance::InstanceStatus,
+) -> String {
+    use jackin_core::instance::InstanceStatus as S;
+    match status {
+        // Live instances read as today; failed/stopped ones carry a compact
+        // state tag so the operator can tell them apart in the tree (D15).
+        S::Active | S::Running => format!("{instance_id}  {role_key}"),
+        other => format!("{instance_id}  {role_key}  [{}]", other.short_label()),
+    }
 }
 
 #[must_use]
 pub fn workspace_instance_display_row(
     instance_id: &str,
     role_key: &str,
+    status: jackin_core::instance::InstanceStatus,
     selected: bool,
     hovered: bool,
 ) -> WorkspaceListDisplayRow {
     WorkspaceListDisplayRow {
-        label: workspace_instance_list_label(instance_id, role_key),
+        label: workspace_instance_list_label(instance_id, role_key, status),
         tone: WorkspaceListRowTone::Instance,
         expanded: false,
         has_instances: false,
@@ -220,9 +240,9 @@ pub fn workspace_instance_display_row(
 #[must_use]
 pub fn workspace_list_display_row_for_row(
     facts: WorkspaceListDisplayRowFacts,
-    current_dir_instance: impl FnOnce(usize) -> Option<(String, String)>,
+    current_dir_instance: impl FnOnce(usize) -> Option<InstanceRowLabel>,
     saved_workspace: impl FnOnce(usize) -> Option<(String, bool, bool)>,
-    workspace_instance: impl FnOnce(usize, usize) -> Option<(String, String)>,
+    workspace_instance: impl FnOnce(usize, usize) -> Option<InstanceRowLabel>,
 ) -> Option<WorkspaceListDisplayRow> {
     match facts.row {
         ManagerListRow::CurrentDirectory => Some(current_directory_display_row(
@@ -232,10 +252,11 @@ pub fn workspace_list_display_row_for_row(
             facts.hovered,
         )),
         ManagerListRow::CurrentDirectoryInstance(inst_idx) => {
-            current_dir_instance(inst_idx).map(|(instance_id, role_key)| {
+            current_dir_instance(inst_idx).map(|row| {
                 workspace_instance_display_row(
-                    &instance_id,
-                    &role_key,
+                    &row.instance_id,
+                    &row.role_key,
+                    row.status,
                     facts.selected,
                     facts.hovered,
                 )
@@ -252,10 +273,11 @@ pub fn workspace_list_display_row_for_row(
             })
         }
         ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => workspace_instance(ws_idx, inst_idx)
-            .map(|(instance_id, role_key)| {
+            .map(|row| {
                 workspace_instance_display_row(
-                    &instance_id,
-                    &role_key,
+                    &row.instance_id,
+                    &row.role_key,
+                    row.status,
                     facts.selected,
                     facts.hovered,
                 )
@@ -269,9 +291,9 @@ pub fn workspace_list_display_row_for_row(
 #[must_use]
 pub fn workspace_list_display_rows(
     facts: WorkspaceListDisplayRowsFacts<'_>,
-    mut current_dir_instance: impl FnMut(usize) -> Option<(String, String)>,
+    mut current_dir_instance: impl FnMut(usize) -> Option<InstanceRowLabel>,
     mut saved_workspace: impl FnMut(usize) -> Option<(String, bool, bool)>,
-    mut workspace_instance: impl FnMut(usize, usize) -> Option<(String, String)>,
+    mut workspace_instance: impl FnMut(usize, usize) -> Option<InstanceRowLabel>,
 ) -> Vec<Option<WorkspaceListDisplayRow>> {
     facts
         .visual_rows

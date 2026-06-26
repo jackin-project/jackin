@@ -43,14 +43,46 @@ pub fn store_version(paths: &JackinPaths, agent: Agent, image: &str, version: &s
     }
 }
 
-pub async fn needs_agent_update(paths: &JackinPaths, image: &str, agent: Agent) -> bool {
+/// Result of comparing an image's baked agent version against the latest
+/// available release.
+///
+/// `Unknown` is deliberately distinct from `UpToDate`: it means the check could
+/// not be completed because a recorded baseline could not be matched against a
+/// resolvable latest release (e.g. the latest version could not be fetched).
+/// The caller surfaces `Unknown` so a persistently degraded version-resolution
+/// path is visible instead of silently masquerading as "fresh". A *missing*
+/// cache entry maps to `UpToDate`, not `Unknown` — that is the expected
+/// first-build state and must not warn or trigger a rebuild.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentVersionCheck {
+    /// The baked version differs from the latest release — rebuild.
+    Stale,
+    /// The baked version matches the latest release, or there is no baseline to
+    /// compare (first build). Neither rebuilds nor warns.
+    UpToDate,
+    /// The check could not complete (latest release unresolvable). Does not
+    /// rebuild, but the caller should warn that staleness is undetermined.
+    Unknown,
+}
+
+pub async fn needs_agent_update(
+    paths: &JackinPaths,
+    image: &str,
+    agent: Agent,
+) -> AgentVersionCheck {
     let Some(installed) = stored_version(paths, agent, image) else {
-        return false;
+        // No baseline cached → expected on first build; treat as fresh.
+        return AgentVersionCheck::UpToDate;
     };
     let Some(latest) = crate::agent_binary::latest_release(paths, agent).await else {
-        return false;
+        // Had a baseline but could not resolve the latest release to compare.
+        return AgentVersionCheck::Unknown;
     };
-    installed != latest.version
+    if installed == latest.version {
+        AgentVersionCheck::UpToDate
+    } else {
+        AgentVersionCheck::Stale
+    }
 }
 
 /// File that records the last `JACKIN_CACHE_BUST` value used to build an image.

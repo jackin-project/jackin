@@ -98,3 +98,40 @@ fn build_log_overlay_keeps_status_footer_in_debug_mode() {
         "instance footer should stay visible while build log is open: {footer:?}"
     );
 }
+
+#[test]
+fn build_log_overlay_hides_status_footer_when_debug_disabled() {
+    let area = Rect::new(0, 0, 80, 12);
+    let mut view = crate::tui::update::initial_view();
+    view.build_log_open = true;
+    view.build_log_active = true;
+    view.frame = 30;
+    view.status = "building docker image".to_owned();
+    view.identity = Some(LaunchIdentity {
+        role: "the-architect".to_owned(),
+        agent: "claude".to_owned(),
+        target_kind: LaunchTargetKind::Directory,
+        target_label: ".".to_owned(),
+        mounts: Vec::new(),
+        image: None,
+        container: Some("jk-2y0t4aw6-the-architect".to_owned()),
+    });
+    view.build_log_lines = (0..30).map(|idx| format!("line {idx}")).collect();
+    refresh_build_log_layout(&mut view, area, true);
+
+    let backend = TestBackend::new(area.width, area.height);
+    let mut terminal = Terminal::new(backend).expect("test backend should initialize");
+    terminal
+        .draw(|frame| render_build_log_dialog(frame, area, &view, "jk-run-c46709", false))
+        .expect("render should succeed");
+
+    let bottom = row_text(terminal.backend().buffer(), area.height - 1, area.width);
+    assert!(
+        bottom.contains("Esc"),
+        "build log hint should use the bottom row in non-debug: {bottom:?}"
+    );
+    assert!(
+        !bottom.contains("jk-run-c46709") && !bottom.contains("2y0t4aw6"),
+        "non-debug build-log overlay must not render the status footer: {bottom:?}"
+    );
+}

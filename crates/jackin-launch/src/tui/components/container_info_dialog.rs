@@ -3,16 +3,15 @@
 use jackin_tui::HintSpan;
 use jackin_tui::centered_rect;
 use jackin_tui::components::{
-    ContainerInfoState, DebugInfo, ModalBackdrop, bottom_chrome_areas,
-    container_info_required_height, debug_info_hint_spans, dialog_scroll_axes,
-    render_container_info, render_hint_bar,
+    ContainerInfoRow, ContainerInfoState, DebugInfo, ModalBackdrop, container_info_required_height,
+    debug_info_hint_spans, dialog_scroll_axes, render_container_info, render_hint_bar,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Clear;
 
 use crate::LaunchView;
-use crate::tui::components::footer::render_footer;
+use crate::tui::components::footer::{launch_overlay_chrome_areas, render_footer};
 
 #[must_use]
 pub fn launch_container_info_state(
@@ -42,6 +41,10 @@ pub fn launch_container_info_state(
         capsule_version: None,
     };
     let mut state = info.into_state();
+    if debug_mode {
+        let href = format!("file://{run_log_path}");
+        state.push_row(ContainerInfoRow::new("Reveal diagnostics", run_log_path).hyperlink(href));
+    }
     if let Some(row) = view.container_info_copied {
         state.mark_copied(row);
     }
@@ -59,24 +62,33 @@ pub fn render_launch_container_info(
     debug_mode: bool,
     jackin_version: &'static str,
 ) {
-    let chrome = bottom_chrome_areas(area);
+    let chrome = launch_overlay_chrome_areas(area, debug_mode);
     let state = launch_container_info_state(view, run_id, run_log_path, debug_mode, jackin_version);
-    let rect = launch_container_info_rect(area, &state);
+    let rect = launch_container_info_rect(area, &state, debug_mode);
     frame.render_widget(ModalBackdrop, chrome.body);
     render_container_info(frame, rect, &state);
     let axes = dialog_scroll_axes(state.content_width(), state.content_height(), rect);
     let mut hint_spans = debug_info_hint_spans(axes);
     hint_spans.push(HintSpan::GroupSep);
     hint_spans.extend(crate::tui::keymap::cockpit_global_hint_spans());
+    if !debug_mode {
+        frame.render_widget(Clear, chrome.hint);
+    }
     render_hint_bar(frame, chrome.hint, &hint_spans);
-    frame.render_widget(Clear, chrome.spacer);
-    render_footer(frame, chrome.footer, view, run_id, debug_mode);
+    if debug_mode {
+        frame.render_widget(Clear, chrome.spacer);
+        render_footer(frame, chrome.footer, view, run_id, true);
+    }
 }
 
 #[must_use]
-pub fn launch_container_info_rect(area: Rect, state: &ContainerInfoState) -> Rect {
+pub fn launch_container_info_rect(
+    area: Rect,
+    state: &ContainerInfoState,
+    debug_mode: bool,
+) -> Rect {
     // Structural exception: launch supplies surface width while shared Debug info owns row height and rendering.
-    let body = bottom_chrome_areas(area).body;
+    let body = launch_overlay_chrome_areas(area, debug_mode).body;
     let width = (body.width.saturating_mul(3) / 5).clamp(40, body.width.max(40));
     let height = container_info_required_height(state);
     centered_rect(width, height.min(body.height), body)

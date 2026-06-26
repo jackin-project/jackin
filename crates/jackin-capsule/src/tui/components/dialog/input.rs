@@ -17,12 +17,33 @@ pub(super) fn rename_tab_handle_key(
     input: &mut jackin_tui::TextField,
     key: &[u8],
 ) -> DialogAction {
+    text_input_handle_key(input, key, |value| DialogAction::RenameTab {
+        tab_idx,
+        label: value,
+    })
+}
+
+pub(super) fn export_file_handle_key(
+    input: &mut jackin_tui::TextField,
+    reveal_after_export: bool,
+    open_after_export: bool,
+    key: &[u8],
+) -> DialogAction {
+    text_input_handle_key(input, key, |path| DialogAction::ExportFile {
+        path,
+        reveal_after_export,
+        open_after_export,
+    })
+}
+
+fn text_input_handle_key(
+    input: &mut jackin_tui::TextField,
+    key: &[u8],
+    commit: impl FnOnce(String) -> DialogAction,
+) -> DialogAction {
     match raw_bytes_to_chord(key).and_then(|chord| RENAME_KEYMAP.dispatch(chord)) {
         Some(RenameAction::Dismiss) => DialogAction::Dismiss,
-        Some(RenameAction::Save) => DialogAction::RenameTab {
-            tab_idx,
-            label: input.trimmed_value(),
-        },
+        Some(RenameAction::Save) => commit(input.trimmed_value()),
         Some(RenameAction::FieldBackspace) => {
             input.backspace();
             DialogAction::Redraw
@@ -30,10 +51,9 @@ pub(super) fn rename_tab_handle_key(
         None => {
             // Accept any valid UTF-8 chunk one char at a time so CJK /
             // emoji / combining-mark labels reach `TextField` and match
-            // the unicode-width measurement `lay_out_tabs` uses for
-            // tab-strip rendering. C0 controls (other than the explicit
-            // Esc / Enter / Backspace arms above) and invalid UTF-8
-            // chunks fall through as a Redraw no-op.
+            // the unicode-width measurement the tab strip and dialogs use.
+            // C0 controls (other than the explicit Esc / Enter / Backspace
+            // arms above) and invalid UTF-8 chunks fall through as redraw no-ops.
             let Ok(s) = std::str::from_utf8(key) else {
                 return DialogAction::Redraw;
             };

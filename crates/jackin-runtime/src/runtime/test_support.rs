@@ -217,7 +217,12 @@ pub mod fake_docker {
             std::cell::RefCell<std::collections::VecDeque<Option<NetworkRow>>>,
         pub fail_with: Vec<(String, String)>,
         pub created_containers: std::cell::RefCell<Vec<(String, ContainerSpec)>>,
-        pub created_networks: std::cell::RefCell<Vec<(String, HashMap<String, String>)>>,
+        /// `(name, labels, internal)` — tracks networks created via `DockerApi::create_network`.
+        #[expect(
+            clippy::type_complexity,
+            reason = "test record tuple mirrors the API signature; factoring adds indirection without clarity"
+        )]
+        pub created_networks: std::cell::RefCell<Vec<(String, HashMap<String, String>, bool)>>,
     }
 
     impl Default for FakeDockerClient {
@@ -398,12 +403,13 @@ pub mod fake_docker {
             &self,
             name: &str,
             labels: HashMap<String, String>,
+            internal: bool,
         ) -> anyhow::Result<()> {
             let op = format!("docker network create {name}");
             self.record(&op);
             self.created_networks
                 .borrow_mut()
-                .push((name.to_owned(), labels));
+                .push((name.to_owned(), labels, internal));
             self.check_fail(&op)
         }
 
