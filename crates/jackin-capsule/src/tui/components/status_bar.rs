@@ -203,16 +203,9 @@ pub struct StatusBarPlan {
     pub(crate) overflow_col: Option<u16>,
 }
 
-pub(crate) fn button_text_for(prefix_mode: PrefixMode, palette_key_glyph: Option<&str>) -> String {
+pub(crate) fn button_text_for(prefix_mode: PrefixMode, _palette_key_glyph: Option<&str>) -> String {
     match prefix_mode {
-        PrefixMode::Idle => match palette_key_glyph {
-            // Show configured shortcut key in the label so the operator can see
-            // which chord opens the palette — meaningful when JACKIN_PALETTE_KEY
-            // is overridden from the default Ctrl+\.
-            Some(glyph) => format!(" {glyph} Menu "),
-            // Palette shortcut disabled — fall back to the visual ☰ icon only.
-            None => " ☰Menu ".to_owned(),
-        },
+        PrefixMode::Idle => " Menu ".to_owned(),
         PrefixMode::Awaiting => " prefix… ".to_owned(),
     }
 }

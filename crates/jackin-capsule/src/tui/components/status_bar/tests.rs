@@ -53,7 +53,7 @@ fn idle_hint_is_planned() {
     let mut bar = StatusBar::new();
     let plan = status_bar_plan(80, &[], 0, &[], PrefixMode::Idle, None);
     bar.set_click_regions_from_plan(&plan);
-    assert_eq!(plan.hint_text, " ☰Menu ");
+    assert_eq!(plan.hint_text, " Menu ");
     assert!(bar.hint_at(1, 75), "menu hint should be clickable");
 }
 
@@ -64,11 +64,11 @@ fn awaiting_prefix_hint_is_planned() {
 }
 
 #[test]
-fn configured_palette_glyph_appears_in_hint_text() {
+fn idle_menu_hint_ignores_configured_palette_glyph() {
     let plan = status_bar_plan(80, &[], 0, &[], PrefixMode::Idle, Some("C-\\"));
-    assert_eq!(plan.hint_text, " C-\\ Menu ");
+    assert_eq!(plan.hint_text, " Menu ");
     let plan_disabled = status_bar_plan(80, &[], 0, &[], PrefixMode::Idle, None);
-    assert_eq!(plan_disabled.hint_text, " ☰Menu ");
+    assert_eq!(plan_disabled.hint_text, " Menu ");
 }
 
 #[test]
