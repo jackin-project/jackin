@@ -49,22 +49,21 @@ pub(super) async fn read_image_from_clipboard_text_path() -> Result<Option<Clipb
 const PASTE_IMAGE_PATHS_ENV: &str = "JACKIN_PASTE_IMAGE_PATHS";
 const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
 const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
-const IMAGE_PATH_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "tiff", "tif"];
+/// Dotted so the suffix test needs no per-call allocation.
+const IMAGE_PATH_EXTENSIONS: &[&str] = &[".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff", ".tif"];
 
 /// Auto-staging of a `Cmd+V`-pasted host image path (the `CleanShot` flow: tools
 /// that copy a *file path* to the clipboard, which the terminal pastes as
 /// bracketed-paste text). On by default whenever host attach is active; set
 /// `JACKIN_PASTE_IMAGE_PATHS` to `0`/`false`/`no`/`off` to keep every paste as
-/// ordinary terminal text.
+/// ordinary terminal text. Resolved once — the value is fixed for the process.
 #[must_use]
 pub(super) fn paste_image_paths_enabled() -> bool {
-    match std::env::var(PASTE_IMAGE_PATHS_ENV) {
-        Ok(value) => !matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "0" | "false" | "no" | "off" | "deny"
-        ),
-        Err(_) => true,
-    }
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var_os(PASTE_IMAGE_PATHS_ENV)
+            .is_none_or(|value| super::universe::env_flag_enabled(Some(value)))
+    })
 }
 
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -76,21 +75,30 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-/// Recover the pasted text from one input read. If the read contains a bracketed
-/// paste (`ESC[200~ … ESC[201~`), return the bytes between the markers, tolerating
-/// any leading/trailing bytes the terminal added. If there are no markers — some
-/// terminals do not wrap a file-path paste — fall back to the whole read. The
-/// caller still requires the result to be a single absolute image path, so plain
-/// typed input is not hijacked.
-fn paste_body(input: &[u8]) -> &[u8] {
-    let Some(start) = find_subsequence(input, BRACKETED_PASTE_START) else {
-        return input;
-    };
+/// Strip one matched pair of surrounding single or double quotes. Terminals and
+/// "copy as pathname" sources sometimes wrap a pasted path in quotes.
+fn strip_surrounding_quotes(text: &str) -> &str {
+    text.strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .or_else(|| {
+            text.strip_prefix('\'')
+                .and_then(|value| value.strip_suffix('\''))
+        })
+        .unwrap_or(text)
+}
+
+/// Recover the body of a bracketed paste (`ESC[200~ … ESC[201~`), tolerating any
+/// leading/trailing bytes the terminal added around the markers. Returns `None`
+/// when the read carries no paste-start marker, so typed input is never treated
+/// as a paste candidate. (A paste split across reads is out of scope: only the
+/// read carrying the start marker is inspected.)
+fn paste_body(input: &[u8]) -> Option<&[u8]> {
+    let start = find_subsequence(input, BRACKETED_PASTE_START)?;
     let after = &input[start + BRACKETED_PASTE_START.len()..];
-    match find_subsequence(after, BRACKETED_PASTE_END) {
+    Some(match find_subsequence(after, BRACKETED_PASTE_END) {
         Some(end) => &after[..end],
         None => after,
-    }
+    })
 }
 
 /// Cheap pre-check: does the pasted text look like a single absolute image-file
@@ -104,21 +112,19 @@ fn looks_like_image_path(text: &str) -> bool {
     {
         return false;
     }
-    let unquoted = trimmed
-        .strip_prefix('"')
-        .and_then(|value| value.strip_suffix('"'))
-        .or_else(|| {
-            trimmed
-                .strip_prefix('\'')
-                .and_then(|value| value.strip_suffix('\''))
-        })
-        .unwrap_or(trimmed);
+    let unquoted = strip_surrounding_quotes(trimmed);
     let is_absolute = unquoted.starts_with("file://") || unquoted.starts_with('/');
-    let lower = unquoted.to_ascii_lowercase();
     is_absolute
         && IMAGE_PATH_EXTENSIONS
             .iter()
-            .any(|ext| lower.ends_with(&format!(".{ext}")))
+            .any(|ext| has_extension(unquoted, ext))
+}
+
+/// Case-insensitive suffix test without allocating (no full-string lowercasing).
+fn has_extension(path: &str, dotted_ext: &str) -> bool {
+    path.len() >= dotted_ext.len()
+        && path.as_bytes()[path.len() - dotted_ext.len()..]
+            .eq_ignore_ascii_case(dotted_ext.as_bytes())
 }
 
 /// Drop one level of shell backslash-escaping. Terminals escape pasted file
@@ -147,13 +153,16 @@ pub(super) async fn read_image_from_pasted_path(input: &[u8]) -> Result<Option<C
     if !paste_image_paths_enabled() {
         return Ok(None);
     }
-    let Ok(text) = std::str::from_utf8(paste_body(input)) else {
+    let Some(body) = paste_body(input) else {
         return Ok(None);
     };
-    let text = text.trim();
+    let Ok(text) = std::str::from_utf8(body) else {
+        return Ok(None);
+    };
     if !looks_like_image_path(text) {
         return Ok(None);
     }
+    let text = text.trim();
     // A candidate image-path paste was recognized; record it (path only, no
     // bytes) so a `--debug` run shows whether the host file resolved.
     jackin_diagnostics::debug_log!(
@@ -432,15 +441,7 @@ fn image_from_path_text(text: &str) -> Result<Option<ClipboardImage>> {
     if trimmed.is_empty() || trimmed.len() > MAX_CLIPBOARD_TEXT_PATH_BYTES {
         return Ok(None);
     }
-    let unquoted = trimmed
-        .strip_prefix('"')
-        .and_then(|value| value.strip_suffix('"'))
-        .or_else(|| {
-            trimmed
-                .strip_prefix('\'')
-                .and_then(|value| value.strip_suffix('\''))
-        })
-        .unwrap_or(trimmed);
+    let unquoted = strip_surrounding_quotes(trimmed);
     let path_buf;
     let path = if unquoted.starts_with("file://") {
         let url = url::Url::parse(unquoted).context("parsing clipboard file URL")?;
@@ -692,20 +693,23 @@ mod tests {
     }
 
     #[test]
-    fn paste_body_recovers_text_with_or_without_markers() {
+    fn paste_body_requires_a_start_marker_and_tolerates_surrounding_bytes() {
         // Clean bracketed paste.
         assert_eq!(
             paste_body(&bracketed("/tmp/x.png")),
-            b"/tmp/x.png".as_slice()
+            Some(b"/tmp/x.png".as_slice())
         );
-        // Tolerates leading/trailing bytes the terminal added around the markers.
+        // Tolerates trailing bytes the terminal added after the end marker.
         let mut trailing = bracketed("/tmp/x.png");
         trailing.extend_from_slice(b"\x1b[<0;1;1M");
-        assert_eq!(paste_body(&trailing), b"/tmp/x.png".as_slice());
-        // No markers (terminal did not wrap the paste) — fall back to the whole read.
-        assert_eq!(paste_body(b"/tmp/x.png"), b"/tmp/x.png".as_slice());
-        // Open paste (rare split mid-marker): take the tail after the start marker.
-        assert_eq!(paste_body(b"\x1b[200~/tmp/x.png"), b"/tmp/x.png".as_slice());
+        assert_eq!(paste_body(&trailing), Some(b"/tmp/x.png".as_slice()));
+        // Open paste (start marker, end not yet arrived): take the tail.
+        assert_eq!(
+            paste_body(b"\x1b[200~/tmp/x.png"),
+            Some(b"/tmp/x.png".as_slice())
+        );
+        // No start marker — typed input is never treated as a paste.
+        assert_eq!(paste_body(b"/tmp/x.png"), None);
     }
 
     #[test]
@@ -742,12 +746,12 @@ mod tests {
         assert_eq!(staged.format, ClipboardImageFormat::Png);
         assert_eq!(staged.bytes, b"\x89PNG\r\n\x1a\npayload");
 
-        // A real image path also stages when the terminal did not wrap the paste.
+        // Without bracketed-paste markers the read is treated as typed input.
         assert!(
             read_image_from_pasted_path(path.display().to_string().as_bytes())
                 .await
                 .unwrap()
-                .is_some()
+                .is_none()
         );
 
         // A non-image path, a missing file, and prose all forward as text.
