@@ -157,9 +157,6 @@ ENV PATH="/home/agent/.local/share/mise/shims:/home/agent/.local/bin:${PATH}"
 RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended && \
     git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-/home/agent/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
 
-# Install starship prompt
-RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
-
 COPY --chown=agent:0 --chmod=0664 zshrc /home/agent/.zshrc
 COPY --chown=agent:0 --chmod=0664 starship.toml /home/agent/.config/starship.toml
 
