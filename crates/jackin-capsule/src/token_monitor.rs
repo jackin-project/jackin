@@ -213,6 +213,34 @@ pub(crate) fn read_file_text(path: &Path) -> std::io::Result<Option<String>> {
     }
 }
 
+/// Recompute a session's spend by reading every provider file whole and folding
+/// each file's text into a `SpendAcc` via `fold`. This is the outer shape every
+/// adapter shares; only `fold` (the per-file parse) differs.
+///
+/// Returns `None` — meaning "do not change the session totals" — in both the
+/// no-file-contributed case and on a real read failure (which is logged with
+/// `label` + path). Both collapse to the same caller action: keep the prior
+/// totals rather than SET a partial recompute that could regress a monotonic
+/// counter. `Some(acc)` is a complete pass the caller commits.
+pub(crate) fn recompute_spend(
+    files: &[std::path::PathBuf],
+    label: &str,
+    mut fold: impl FnMut(&str, &mut SpendAcc),
+) -> Option<SpendAcc> {
+    let mut acc = SpendAcc::default();
+    for path in files {
+        match read_file_text(path) {
+            Ok(Some(text)) => fold(&text, &mut acc),
+            Ok(None) => {}
+            Err(e) => {
+                crate::cdebug!("token monitor: {label} read {path:?} failed: {e}");
+                return None;
+            }
+        }
+    }
+    acc.seen.then_some(acc)
+}
+
 /// The token monitor manages per-session polling.
 #[derive(Debug, Default)]
 pub(crate) struct TokenMonitor {

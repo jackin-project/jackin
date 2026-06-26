@@ -20,35 +20,18 @@ fn find_thread_files() -> Vec<PathBuf> {
 
 pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
     let files = find_thread_files();
-    if files.is_empty() {
-        return false;
-    }
-
-    // Recompute totals whole each poll (Amp has no per-file byte offset).
-    let mut acc = super::SpendAcc::default();
-    for path in &files {
-        let content = match super::read_file_text(path) {
-            Ok(Some(content)) => content,
-            Ok(None) => continue,
-            // Abort on a real read error; keep prior totals (see claude.rs).
-            Err(e) => {
-                crate::cdebug!("token monitor: amp read {path:?} failed: {e}");
-                return false;
-            }
+    super::recompute_spend(&files, "amp", |content, acc| {
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(content) else {
+            return;
         };
-        let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) else {
-            continue;
-        };
-
-        // Thread JSON: array of messages, each may have usage metadata
+        // Thread JSON: array of messages, each may have usage metadata.
         let messages: &[serde_json::Value] = match val.as_array() {
             Some(arr) => arr,
             None => match val.get("messages").and_then(|m| m.as_array()) {
                 Some(arr) => arr,
-                None => continue,
+                None => return,
             },
         };
-
         for msg in messages {
             if let Some(usage) = msg.get("usage") {
                 let input = usage
@@ -77,12 +60,8 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
                 acc.model = Some(model.to_owned());
             }
         }
-    }
-
-    if !acc.seen {
-        return false;
-    }
-    acc.commit(&mut session.totals)
+    })
+    .is_some_and(|acc| acc.commit(&mut session.totals))
 }
 
 #[cfg(test)]

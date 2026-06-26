@@ -79,23 +79,7 @@ fn find_jsonl_files() -> Vec<PathBuf> {
 
 pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
     let files = find_jsonl_files();
-    if files.is_empty() {
-        return false;
-    }
-
-    let mut acc = super::SpendAcc::default();
-    for path in &files {
-        let text = match super::read_file_text(path) {
-            Ok(Some(text)) => text,
-            Ok(None) => continue,
-            // A real read error means we cannot recompute this session's true
-            // total; abort and keep the prior totals rather than SET a smaller,
-            // partial value (which would silently regress a monotonic counter).
-            Err(e) => {
-                crate::cdebug!("token monitor: claude read {path:?} failed: {e}");
-                return false;
-            }
-        };
+    let Some(acc) = super::recompute_spend(&files, "claude", |text, acc| {
         for line in text.lines() {
             if line.trim().is_empty() {
                 continue;
@@ -122,10 +106,9 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
             }
             acc.seen = true;
         }
-    }
-    if !acc.seen {
+    }) else {
         return false;
-    }
+    };
 
     let changed = acc.commit(&mut session.totals);
     if changed && session.totals.window_start.is_none() {

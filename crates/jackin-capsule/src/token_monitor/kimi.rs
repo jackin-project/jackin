@@ -33,21 +33,7 @@ fn find_wire_files() -> Vec<PathBuf> {
 
 pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
     let files = find_wire_files();
-    if files.is_empty() {
-        return false;
-    }
-
-    let mut acc = super::SpendAcc::default();
-    for path in &files {
-        let text = match super::read_file_text(path) {
-            Ok(Some(text)) => text,
-            Ok(None) => continue,
-            // Abort on a real read error; keep prior totals (see claude.rs).
-            Err(e) => {
-                crate::cdebug!("token monitor: kimi read {path:?} failed: {e}");
-                return false;
-            }
-        };
+    super::recompute_spend(&files, "kimi", |text, acc| {
         for line in text.lines() {
             if line.trim().is_empty() {
                 continue;
@@ -79,11 +65,8 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
                 acc.seen = true;
             }
         }
-    }
-    if !acc.seen {
-        return false;
-    }
-    acc.commit(&mut session.totals)
+    })
+    .is_some_and(|acc| acc.commit(&mut session.totals))
 }
 
 #[cfg(test)]
