@@ -411,9 +411,7 @@ fn setup_claude_plugins() {
         let mut args = vec!["plugin", "marketplace", "add", marketplace.source.as_str()];
         if !marketplace.sparse.is_empty() {
             args.push("--sparse");
-            for path in &marketplace.sparse {
-                args.push(path.as_str());
-            }
+            args.extend(marketplace.sparse.iter().map(String::as_str));
         }
         run_optional_command("claude", &args);
     }
