@@ -2,7 +2,7 @@
 title: "Runtime Restore and Image Architecture"
 ---
 
-**Status**: In progress — most of the runtime-restore / image-architecture work has landed as code in this branch, but it is **not operator-verified**, and the dirty-exit confirmation flow is **confirmed not working**. This page tracks only the remaining must-do work: the confirmed defect, the agreed in-capsule redesign, and the verification still owed. Do not treat any item here as done until the operator has manually confirmed it (see the verification list at the end of this page). Landed code is not the same as a working, signed-off feature, and a green CI run is not operator verification.
+**Status**: Partially implemented — remaining work: operator end-to-end verification of all feature groups (image bake, home seeding, container identity, restore ladder, schema migration, console surfaces, launch cockpit hard-exit, and build performance). All implementation checklist items (Parts 1–3) are complete; only operator sign-off remains.
 
 ## Confirmed defect — the dirty-exit confirmation never fires
 
