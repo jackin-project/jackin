@@ -106,13 +106,15 @@ pub(super) async fn run_dind_sidecar_headless(
     .await
 }
 
-pub(crate) async fn create_role_network(
-    container_name: &str,
+/// `docker.create_network` wrapped in the shared `sidecar`/`create_network`
+/// timing span. `create_network` is idempotent, hence the `created_or_exists`
+/// success label.
+async fn create_network_timed(
     network: &str,
+    labels: std::collections::HashMap<String, String>,
     internal: bool,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
-    let labels = DindSidecarOwner::Role(container_name).labels(None);
     jackin_diagnostics::active_timing_started("sidecar", "create_network", Some(network));
     let result = docker.create_network(network, labels, internal).await;
     jackin_diagnostics::active_timing_done(
@@ -125,6 +127,16 @@ pub(crate) async fn create_role_network(
         },
     );
     result
+}
+
+pub(crate) async fn create_role_network(
+    container_name: &str,
+    network: &str,
+    internal: bool,
+    docker: &impl DockerApi,
+) -> anyhow::Result<()> {
+    let labels = DindSidecarOwner::Role(container_name).labels(None);
+    create_network_timed(network, labels, internal, docker).await
 }
 
 async fn run_dind_sidecar_headless_with_owner(
@@ -140,20 +152,8 @@ async fn run_dind_sidecar_headless_with_owner(
     // classic `docker:dind` + `--privileged` path.
     let (dind_image, dind_privileged) =
         crate::runtime::docker_profile::dind_image_and_privileged(grant);
-    // Create Docker network
-    let network_labels = owner.labels(None);
-    jackin_diagnostics::active_timing_started("sidecar", "create_network", Some(network));
-    let create_network_result = docker.create_network(network, network_labels, false).await;
-    jackin_diagnostics::active_timing_done(
-        "sidecar",
-        "create_network",
-        if create_network_result.is_ok() {
-            Some("created_or_exists")
-        } else {
-            Some("error")
-        },
-    );
-    create_network_result?;
+    // Create Docker network (sidecar networks are never internal).
+    create_network_timed(network, owner.labels(None), false, docker).await?;
 
     jackin_diagnostics::active_timing_started("sidecar", "dind_image_lookup", Some(dind_image));
     let dind_image_tags = docker.list_image_tags(dind_image).await;

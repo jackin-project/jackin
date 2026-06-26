@@ -1017,14 +1017,15 @@ pub(super) async fn launch_role_runtime(
     // always included (Decision 9) so telemetry keeps flowing. Only the
     // allowlist tier installs a firewall; open/none get none.
     if grants.network == crate::runtime::docker_profile::NetworkGrant::Allowlist {
-        let mut github_hosts: Vec<String> = Vec::new();
-        if gh_token.is_some() {
-            github_hosts.push("github.com".to_owned());
-            github_hosts.push("api.github.com".to_owned());
-            if let Some(host) = github_env.get(jackin_core::env_model::GH_HOST_ENV_NAME) {
-                github_hosts.push(host.clone());
-            }
-        }
+        let github_hosts = if gh_token.is_some() {
+            crate::runtime::docker_profile::github_allowlist_hosts(
+                github_env
+                    .get(jackin_core::env_model::GH_HOST_ENV_NAME)
+                    .map(String::as_str),
+            )
+        } else {
+            Vec::new()
+        };
         let otlp_host = container_otlp.as_ref().map(|_| "host.docker.internal");
         let allowlist = crate::runtime::docker_profile::allowlist_hosts(
             agent.slug(),

@@ -72,25 +72,6 @@ pub const MINIMUM_CAPABILITIES: &[&str] = &[
     "KILL",
 ];
 
-/// Docker's 14-cap default. Applied under `standard` and `compat` (no explicit
-/// `--cap-drop` / `--cap-add` flags are emitted for these profiles).
-pub const DEFAULT_CAPABILITIES: &[&str] = &[
-    "CHOWN",
-    "DAC_OVERRIDE",
-    "FSETID",
-    "FOWNER",
-    "MKNOD",
-    "NET_RAW",
-    "SETGID",
-    "SETUID",
-    "SETFCAP",
-    "SETPCAP",
-    "NET_BIND_SERVICE",
-    "SYS_CHROOT",
-    "KILL",
-    "AUDIT_WRITE",
-];
-
 // ── Validation ───────────────────────────────────────────────────────────────
 
 /// Errors produced by [`validate_grants`] before any container is started.
@@ -385,6 +366,15 @@ pub fn profile_base_grants(profile: DockerSecurityProfile) -> EffectiveGrants {
 /// more capable of the profile default and the explicit override.
 ///
 /// Grants must already have been validated by [`validate_grants`].
+/// Raise `slot` to `candidate` when it's larger (or unset). Grants only ever
+/// widen a resource ceiling, never lower it.
+fn raise_to_max<T: PartialOrd>(slot: &mut Option<T>, candidate: T) {
+    match slot {
+        Some(existing) if *existing >= candidate => {}
+        _ => *slot = Some(candidate),
+    }
+}
+
 pub fn apply_grants(mut base: EffectiveGrants, grants: &DockerGrants) -> EffectiveGrants {
     if let Some(network) = grants.network
         && network > base.network
@@ -414,24 +404,21 @@ pub fn apply_grants(mut base: EffectiveGrants, grants: &DockerGrants) -> Effecti
     if let Some(ref mem) = grants.memory
         && let Some(bytes) = parse_memory_bytes(mem)
     {
-        base.memory_bytes = Some(base.memory_bytes.map_or(bytes, |b| b.max(bytes)));
+        raise_to_max(&mut base.memory_bytes, bytes);
     }
     if let Some(ref res) = grants.memory_reservation
         && let Some(bytes) = parse_memory_bytes(res)
     {
-        base.memory_reservation_bytes = Some(
-            base.memory_reservation_bytes
-                .map_or(bytes, |b| b.max(bytes)),
-        );
+        raise_to_max(&mut base.memory_reservation_bytes, bytes);
     }
     if let Some(cpus) = grants.cpus {
-        base.cpus = Some(base.cpus.map_or(cpus, |c: f64| c.max(cpus)));
+        raise_to_max(&mut base.cpus, cpus);
     }
     if let Some(pids) = grants.pids {
-        base.pids = Some(base.pids.map_or(pids, |p| p.max(pids)));
+        raise_to_max(&mut base.pids, pids);
     }
     if let Some(nofile) = grants.nofile {
-        base.nofile = Some(base.nofile.map_or(nofile, |n| n.max(nofile)));
+        raise_to_max(&mut base.nofile, nofile);
     }
     for cap in &grants.capabilities_add {
         let normalized = normalize_cap(cap);
@@ -720,6 +707,17 @@ pub fn default_allowed_hosts_for_agent(agent: &str) -> &'static [&'static str] {
         "opencode" => &["api.z.ai", "api.anthropic.com", "api.openai.com"],
         _ => &[],
     }
+}
+
+/// Fixed GitHub egress endpoints added to the allowlist when a GitHub token is
+/// forwarded, plus the operator's enterprise `GH_HOST` when set. Sibling policy
+/// to [`default_allowed_hosts_for_agent`] — the GitHub half of the egress set.
+pub fn github_allowlist_hosts(gh_host: Option<&str>) -> Vec<String> {
+    let mut hosts = vec!["github.com".to_owned(), "api.github.com".to_owned()];
+    if let Some(host) = gh_host {
+        hosts.push(host.to_owned());
+    }
+    hosts
 }
 
 /// WP1: assemble the full egress allowlist injected as `JACKIN_ALLOWED_HOSTS`.
@@ -1038,12 +1036,9 @@ pub fn probe_cgroup_version() -> &'static str {
 /// the host's filesystem — it is a weaker boundary than host-native `AppArmor`.
 pub fn parse_apparmor_from_docker_info(security_options: &str) -> (bool, &'static str) {
     let available = security_options.contains("apparmor");
-    // On Docker Desktop and OrbStack the engine runs in a Linux VM; the host OS
-    // is macOS. AppArmor in the VM protects the VM but not the macOS host.
-    // Detect by checking whether `/proc/version` contains "Darwin" or whether
-    // the security options mention OrbStack/Docker Desktop — but since we only
-    // have the `docker info` security string here, we use a simpler heuristic:
-    // the host is macOS when `/usr/bin/sw_vers` exists (macOS-only binary).
+    // On a macOS host (Docker Desktop / OrbStack) the engine runs in a Linux VM,
+    // so AppArmor protects the VM but not the host. `/usr/bin/sw_vers` is a
+    // macOS-only binary, so its presence flags the backend-VM layer.
     let layer = if std::path::Path::new("/usr/bin/sw_vers").exists() {
         "backend-vm"
     } else {
