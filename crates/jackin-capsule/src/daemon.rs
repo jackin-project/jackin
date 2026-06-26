@@ -1252,7 +1252,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // clipboard reap is an orthogonal concern that must not freeze it.
                 // The `invalidate` guarantees the notice repaints even if no agent
                 // state changed this tick (otherwise the no-change `continue` below
-                // would leave the frame clean and the notice undrawn).
+                // would leave the frame clean and the notice never painted).
                 let stale_image_transfers = mux
                     .clipboard_image_transfers
                     .abort_idle_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
