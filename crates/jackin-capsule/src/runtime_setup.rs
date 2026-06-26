@@ -390,9 +390,10 @@ fn setup_claude_plugins() {
     // marketplaces+plugins it was written for (the old image build keyed its
     // bundle cache on a hash of the same commands); a bare exists() check would
     // shadow a `jackin.role.toml` plugin edit forever.
-    let marker = Path::new("/home/agent/.claude/.jackin-plugins.done");
+    let config_dir = claude_config_dir();
+    let marker = config_dir.join(".jackin-plugins.done");
     let fingerprint = claude_plugin_fingerprint(&config);
-    if fs::read_to_string(marker).is_ok_and(|s| s == fingerprint) {
+    if fs::read_to_string(&marker).is_ok_and(|s| s == fingerprint) {
         return;
     }
     // The official marketplace backs the common plugins; tolerate it already
@@ -419,12 +420,12 @@ fn setup_claude_plugins() {
     for plugin in &config.claude_plugins {
         run_optional_command("claude", &["plugin", "install", plugin.as_str()]);
     }
-    if let Err(e) = fs::create_dir_all("/home/agent/.claude") {
+    if let Err(e) = fs::create_dir_all(&config_dir) {
         crate::output::stderr_line(format_args!(
             "[entrypoint] claude plugins: failed to create marker dir: {e}"
         ));
     }
-    if let Err(e) = fs::write(marker, &fingerprint) {
+    if let Err(e) = fs::write(&marker, &fingerprint) {
         crate::output::stderr_line(format_args!(
             "[entrypoint] claude plugins: failed to write install marker (plugins will re-run next launch): {e}"
         ));

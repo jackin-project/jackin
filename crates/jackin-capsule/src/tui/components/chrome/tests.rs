@@ -8,7 +8,7 @@ use ratatui::{Terminal, backend::TestBackend};
 fn status_bar_renders_without_tabs() {
     let backend = TestBackend::new(80, 2);
     let mut terminal = Terminal::new(backend).unwrap();
-    let plan = status_bar_plan(80, &[], 0, &[], PrefixMode::Idle, None);
+    let plan = status_bar_plan(80, &[], 0, &[], PrefixMode::Idle);
     terminal
         .draw(|frame| {
             frame.render_widget(
@@ -37,7 +37,7 @@ fn status_bar_renders_shared_tab_underline() {
     ];
     let backend = TestBackend::new(80, 2);
     let mut terminal = Terminal::new(backend).unwrap();
-    let plan = status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle, None);
+    let plan = status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle);
     terminal
         .draw(|frame| {
             frame.render_widget(
@@ -67,7 +67,7 @@ fn status_bar_resets_canvas_across_unused_columns() {
     ];
     let backend = TestBackend::new(100, 2);
     let mut terminal = Terminal::new(backend).unwrap();
-    let plan = status_bar_plan(100, &tabs, 1, &[], PrefixMode::Idle, None);
+    let plan = status_bar_plan(100, &tabs, 1, &[], PrefixMode::Idle);
     terminal
         .draw(|frame| {
             frame.render_widget(

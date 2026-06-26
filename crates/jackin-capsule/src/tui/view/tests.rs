@@ -29,7 +29,6 @@ fn chrome_frame(
         0,
         &[],
         PrefixMode::Idle,
-        None,
     );
     terminal
         .draw(|frame| {
@@ -193,7 +192,6 @@ fn non_debug_dialog_hides_bottom_status_bar() {
         0,
         &[],
         PrefixMode::Idle,
-        None,
     );
 
     terminal
@@ -316,7 +314,6 @@ fn clipboard_image_notice_takes_priority_over_selection_copy_toast() {
         0,
         &[],
         PrefixMode::Idle,
-        None,
     );
 
     terminal
@@ -399,7 +396,6 @@ fn debug_dialog_keeps_status_bar_visible() {
         0,
         &[],
         PrefixMode::Idle,
-        None,
     );
 
     terminal
@@ -484,7 +480,6 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
         0,
         &[],
         PrefixMode::Idle,
-        None,
     );
 
     terminal

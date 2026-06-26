@@ -82,9 +82,6 @@ pub struct StatusBar {
     /// lossy short form `thearchitect`, not the canonical
     /// `the-architect` selector the operator typed).
     pub role: String,
-    /// Short display label for the configured palette key (e.g. `"C-\\"` for
-    /// the default `Ctrl+\`). `None` if the palette shortcut is disabled.
-    pub palette_key_glyph: Option<String>,
 }
 
 impl Default for StatusBar {
@@ -115,7 +112,6 @@ impl StatusBar {
             identity_label,
             instance_id_label,
             role,
-            palette_key_glyph: Some("C-\\".to_owned()),
         }
     }
 
@@ -203,7 +199,7 @@ pub struct StatusBarPlan {
     pub(crate) overflow_col: Option<u16>,
 }
 
-pub(crate) fn button_text_for(prefix_mode: PrefixMode, _palette_key_glyph: Option<&str>) -> String {
+pub(crate) fn button_text_for(prefix_mode: PrefixMode) -> String {
     match prefix_mode {
         PrefixMode::Idle => " ☰Menu ".to_owned(),
         PrefixMode::Awaiting => " prefix… ".to_owned(),
@@ -219,9 +215,8 @@ pub fn status_bar_plan(
     active_tab: usize,
     sessions_state: &[(u64, VisibleAgentState)],
     prefix_mode: PrefixMode,
-    palette_key_glyph: Option<&str>,
 ) -> StatusBarPlan {
-    let hint_text = button_text_for(prefix_mode, palette_key_glyph);
+    let hint_text = button_text_for(prefix_mode);
     let hint_cols = display_cols(&hint_text);
     let reserve_right: u16 = hint_cols + 2; // 1 col padding + 1 trailing space
 
