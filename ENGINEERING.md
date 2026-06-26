@@ -2,6 +2,10 @@
 
 Cross-cutting code-craft rules for every session: dependency choices, DRY, telemetry, comments. Apply to Rust source, Dockerfile snippets in `docker/`, shell scripts under `docker/runtime/` and `docker/construct/`, `justfile` recipes, CI workflow steps, TypeScript helpers under `docs/scripts/`.
 
+## Rust-first implementation default
+
+Prefer Rust for new project-owned automation, CLIs, release tooling, parsers, state machines, and long-lived helpers. Use another language only where the surrounding ecosystem makes it the natural fit (for example docs-site TypeScript, shell inside container entrypoints, or tiny glue that must run before Rust tooling exists), and keep that exception local rather than growing a parallel implementation stack.
+
 ## Prefer libraries over hand-rolled parsers / serializers / format handlers
 
 **Default to maintained crate. Hand-roll only when crate unmaintained, API awkward for call site, or usage trivially small.**
