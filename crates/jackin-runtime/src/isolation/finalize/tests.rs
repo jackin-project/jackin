@@ -1,33 +1,43 @@
 //! Tests for `finalize`.
 use super::*;
+use jackin_config::DirtyExitPolicy;
 use tempfile::TempDir;
 
 struct NoPrompt;
 impl FinalizerPrompt for NoPrompt {
-    fn ask_unsafe_cleanup(
+    fn ask_exit_dialog(
         &mut self,
         _c: &str,
-        _w: &str,
-        _r: PreservedReason,
-    ) -> anyhow::Result<usize> {
+        _records: &[(IsolationRecord, PreservedReason)],
+    ) -> anyhow::Result<ExitDialogChoice> {
         panic!("prompt should not be called in this test");
     }
 }
 
 #[test]
-fn rich_cleanup_prompt_preserves_when_rich_dialog_is_unavailable() {
+fn rich_exit_dialog_keeps_all_when_rich_dialog_is_unavailable() {
+    use crate::isolation::MountIsolation;
+    use crate::isolation::state::{CleanupStatus, IsolationRecord};
     let mut prompt = RichCleanupPrompt;
+    let record = IsolationRecord {
+        workspace: "test".into(),
+        mount_dst: "/workspace/test".into(),
+        original_src: "/tmp/repo".into(),
+        isolation: MountIsolation::Worktree,
+        worktree_path: "/tmp/jackin-preserved-worktree".into(),
+        scratch_branch: "jackin/scratch/test".into(),
+        base_commit: "abc".into(),
+        selector_key: "test".into(),
+        container_name: "jk-test".into(),
+        cleanup_status: CleanupStatus::Active,
+    };
     let choice = prompt
-        .ask_unsafe_cleanup(
-            "jk-test",
-            "/tmp/jackin-preserved-worktree",
-            PreservedReason::Dirty,
-        )
+        .ask_exit_dialog("jk-test", &[(record, PreservedReason::Dirty)])
         .unwrap();
-
     assert_eq!(
-        choice, 1,
-        "without a rich dialog, cleanup must preserve instead of falling back to a numbered CLI prompt"
+        choice,
+        ExitDialogChoice::KeepAll,
+        "without a rich dialog, exit must keep all instead of falling back to a numbered CLI prompt"
     );
 }
 
@@ -47,6 +57,7 @@ async fn still_running_with_zero_sessions_cleans() {
         dir.path(),
         AttachOutcome::still_running(),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut r,
@@ -70,6 +81,7 @@ async fn still_running_with_unparseable_status_preserves_records() {
         dir.path(),
         AttachOutcome::still_running(),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut r,
@@ -95,6 +107,7 @@ async fn still_running_with_sessions_preserves() {
         dir.path(),
         AttachOutcome::still_running(),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut r,
@@ -115,6 +128,7 @@ async fn stopped_non_zero_preserves_records() {
         dir.path(),
         AttachOutcome::stopped(137),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut r,
@@ -135,6 +149,7 @@ async fn oom_killed_preserves_records() {
         dir.path(),
         AttachOutcome::oom_killed(),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut r,
@@ -198,6 +213,7 @@ async fn clean_worktree_with_head_equal_base_deletes_record() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -238,6 +254,7 @@ async fn clean_worktree_with_pushed_commits_deletes_record() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -275,6 +292,7 @@ async fn clean_worktree_with_unpushed_commits_preserves() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -305,6 +323,7 @@ async fn clean_worktree_no_upstream_preserves_when_head_diverged() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -316,44 +335,44 @@ async fn clean_worktree_no_upstream_preserves_when_head_diverged() {
     assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
 }
 
-struct ScriptedPrompt(VecDeque<usize>);
+struct ScriptedPrompt(VecDeque<ExitDialogChoice>);
 impl FinalizerPrompt for ScriptedPrompt {
-    fn ask_unsafe_cleanup(
+    fn ask_exit_dialog(
         &mut self,
         _c: &str,
-        _w: &str,
-        _r: PreservedReason,
-    ) -> anyhow::Result<usize> {
+        _records: &[(IsolationRecord, PreservedReason)],
+    ) -> anyhow::Result<ExitDialogChoice> {
         Ok(self.0.pop_front().expect("scripted prompt exhausted"))
     }
 }
 
-/// Capture-and-assert version of `ScriptedPrompt`: records every
-/// reason it was passed so tests can pin the per-assessment wording
-/// path through the prompt.
+/// Capture-and-assert version of `ScriptedPrompt`: records the reasons
+/// passed per record so tests can pin that the correct assessment wording
+/// reaches the dialog (D23: all records shown in one call).
 struct RecordingPrompt {
-    answers: VecDeque<usize>,
+    answer: ExitDialogChoice,
     seen: Vec<PreservedReason>,
 }
 
 impl RecordingPrompt {
-    fn new(answers: impl IntoIterator<Item = usize>) -> Self {
+    fn new(answer: ExitDialogChoice) -> Self {
         Self {
-            answers: VecDeque::from_iter(answers),
+            answer,
             seen: Vec::new(),
         }
     }
 }
 
 impl FinalizerPrompt for RecordingPrompt {
-    fn ask_unsafe_cleanup(
+    fn ask_exit_dialog(
         &mut self,
         _c: &str,
-        _w: &str,
-        r: PreservedReason,
-    ) -> anyhow::Result<usize> {
-        self.seen.push(r);
-        Ok(self.answers.pop_front().expect("scripted prompt exhausted"))
+        records: &[(IsolationRecord, PreservedReason)],
+    ) -> anyhow::Result<ExitDialogChoice> {
+        for (_, r) in records {
+            self.seen.push(*r);
+        }
+        Ok(self.answer)
     }
 }
 
@@ -364,13 +383,14 @@ async fn dirty_worktree_interactive_preserve_choice_keeps_state() {
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
     let mut runner = fake_with_outputs(&[" M file\n"]);
-    let mut p = ScriptedPrompt(VecDeque::from([1]));
+    let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::KeepAll]));
     let docker = crate::runtime::test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
         AttachOutcome::stopped(0),
         true,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -389,13 +409,14 @@ async fn dirty_worktree_interactive_force_delete_runs_cleanup() {
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
     let mut runner = fake_with_outputs(&[" M file\n"]);
-    let mut p = ScriptedPrompt(VecDeque::from([2]));
+    let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
     let docker = crate::runtime::test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
         AttachOutcome::stopped(0),
         true,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -419,13 +440,14 @@ async fn dirty_worktree_interactive_return_to_agent_signals_caller() {
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
     let mut runner = fake_with_outputs(&[" M file\n"]);
-    let mut p = ScriptedPrompt(VecDeque::from([0]));
+    let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::ReturnToRole]));
     let docker = crate::runtime::test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
         AttachOutcome::stopped(0),
         true,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -451,6 +473,7 @@ async fn dirty_worktree_non_interactive_prints_warning_and_preserves() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -493,6 +516,7 @@ async fn assess_cleanup_status_capture_failure_preserves_unpushed() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -528,6 +552,7 @@ async fn assess_cleanup_for_each_ref_failure_preserves_unpushed() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -572,6 +597,7 @@ async fn assess_cleanup_rev_list_failure_preserves_unpushed() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -622,13 +648,14 @@ async fn multi_mount_force_delete_on_each_cleans_all_records() {
     // Both records assess to PreservedDirty (status returns dirty for each).
     let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
     // Operator chooses option 2 (force delete) for both.
-    let mut p = ScriptedPrompt(VecDeque::from([2, 2]));
+    let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
     let docker = crate::runtime::test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
         AttachOutcome::stopped(0),
         true,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -652,26 +679,26 @@ async fn multi_mount_force_delete_on_each_cleans_all_records() {
     );
 }
 
-/// Multi-mount workspace where the operator force-deletes one and
-/// preserves the other. The container must NOT be torn down (only one
-/// of two records was actually cleaned), and the second worktree must
-/// remain on disk with its preserved status.
+/// Multi-mount workspace with two preserved records; operator picks "keep all"
+/// via the D23 one-screen dialog. Both records remain on disk and the caller
+/// gets `Preserved` so the container is not torn down.
 #[tokio::test]
-async fn multi_mount_mixed_decision_signals_preserved() {
+async fn multi_mount_keep_all_signals_preserved() {
     let dir = TempDir::new().unwrap();
     let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
     let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
     std::fs::create_dir_all(&r1.original_src).unwrap();
     write_records(dir.path(), &[r1, r2]).unwrap();
     let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
-    // First record force-deleted, second preserved.
-    let mut p = ScriptedPrompt(VecDeque::from([2, 1]));
+    // D23: one dialog for all records; operator picks keep all.
+    let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::KeepAll]));
     let docker = crate::runtime::test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
         AttachOutcome::stopped(0),
         true,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -681,41 +708,33 @@ async fn multi_mount_mixed_decision_signals_preserved() {
     assert_eq!(
         dec,
         FinalizeDecision::Preserved,
-        "must NOT signal Cleaned when any record was preserved — the \
-             container would be torn down and the preserved worktree's only \
-             reconnection path (jackin hardline) would be lost",
+        "KeepAll must signal Preserved so the container is not torn down",
     );
     let recs = read_records(dir.path()).unwrap();
-    assert_eq!(recs.len(), 1);
-    assert_eq!(recs[0].mount_dst, "/workspace/b");
-    assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedDirty);
+    assert_eq!(recs.len(), 2, "both records must remain preserved");
 }
 
-/// `ReturnToAgent` chosen on the SECOND prompt of a 3-record loop
-/// must short-circuit immediately. Records 3..N are never prompted,
-/// no further force-delete runs, and the caller restarts the
-/// container. Both records 1 (force-deleted) and 2 (pending decision)
-/// would have left state somewhere — this pins that the early-return
-/// happens cleanly.
+/// `ReturnToAgent` on the D23 one-screen dialog returns to the role without
+/// deleting any records. All three records remain and the caller gets
+/// `ReturnToAgent` so the container is restarted.
 #[tokio::test]
-async fn multi_mount_return_to_agent_on_second_prompt_short_circuits() {
+async fn multi_mount_return_to_agent_signals_return_to_agent() {
     let dir = TempDir::new().unwrap();
     let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
     let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
     let r3 = rec_at(dir.path(), "/workspace/c", "jackin/scratch/x-c");
     std::fs::create_dir_all(&r1.original_src).unwrap();
     write_records(dir.path(), &[r1, r2, r3]).unwrap();
-    // All three records assess to PreservedDirty.
     let mut runner = fake_with_outputs(&[" M f1\n", " M f2\n", " M f3\n"]);
-    // Operator: force-delete first, then return-to-role on second.
-    // Third should never be prompted.
-    let mut p = ScriptedPrompt(VecDeque::from([2, 0]));
+    // D23: one dialog for all records; operator returns to role.
+    let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::ReturnToRole]));
     let docker = crate::runtime::test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
         AttachOutcome::stopped(0),
         true,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -723,21 +742,17 @@ async fn multi_mount_return_to_agent_on_second_prompt_short_circuits() {
     .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::ReturnToAgent);
-    // First was force-deleted; second and third remain on disk.
+    // No worktrees removed — all three records still on disk.
     let recs = read_records(dir.path()).unwrap();
-    assert_eq!(recs.len(), 2);
-    let mut dsts: Vec<_> = recs.iter().map(|r| r.mount_dst.clone()).collect();
-    dsts.sort();
-    assert_eq!(dsts, vec!["/workspace/b", "/workspace/c"]);
-    // Exactly one worktree-remove ran (for record 1 only).
+    assert_eq!(recs.len(), 3, "ReturnToAgent must not delete any records");
     let removes = runner
         .run_recorded
         .iter()
         .filter(|c| c.contains("worktree remove --force"))
         .count();
     assert_eq!(
-        removes, 1,
-        "ReturnToAgent on the 2nd prompt must NOT trigger cleanup of records 3..N; recorded={:?}",
+        removes, 0,
+        "ReturnToAgent must run no worktree-remove; recorded={:?}",
         runner.run_recorded
     );
 }
@@ -776,13 +791,14 @@ async fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
         ..FakeRunner::default()
     };
     // Operator force-deletes both.
-    let mut p = ScriptedPrompt(VecDeque::from([2, 2]));
+    let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
     let docker = crate::runtime::test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
         AttachOutcome::stopped(0),
         true,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -822,6 +838,7 @@ async fn multi_mount_non_interactive_marks_all_preserved() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -856,6 +873,7 @@ async fn assess_cleanup_empty_for_each_ref_preserves_unpushed() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -906,6 +924,7 @@ async fn renamed_branch_pushed_clean_is_safe_to_delete() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -945,6 +964,7 @@ async fn squash_merged_pruned_branch_is_safe_to_delete() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -983,6 +1003,7 @@ async fn renamed_branch_no_upstream_preserves_unpushed() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -1016,6 +1037,7 @@ async fn renamed_branch_with_unpushed_commits_preserves() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -1053,6 +1075,7 @@ async fn multiple_branches_all_safe_deletes_record() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -1098,6 +1121,7 @@ async fn multiple_branches_one_unsafe_preserves() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -1122,13 +1146,14 @@ async fn unpushed_branch_prompts_with_unpushed_reason() {
     let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
     // status clean → for-each-ref → ahead+no-upstream → preserve
     let mut runner = fake_with_outputs(&["", &branches]);
-    let mut p = RecordingPrompt::new([1]); // operator picks "preserve"
+    let mut p = RecordingPrompt::new(ExitDialogChoice::KeepAll); // operator picks "preserve"
     let docker = crate::runtime::test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
         AttachOutcome::stopped(0),
         true,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -1148,13 +1173,14 @@ async fn dirty_worktree_prompts_with_dirty_reason() {
     std::fs::create_dir_all(&r.original_src).unwrap();
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
     let mut runner = fake_with_outputs(&[" M file\n"]);
-    let mut p = RecordingPrompt::new([1]);
+    let mut p = RecordingPrompt::new(ExitDialogChoice::KeepAll);
     let docker = crate::runtime::test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
         AttachOutcome::stopped(0),
         true,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -1190,6 +1216,7 @@ async fn assess_cleanup_malformed_row_empty_name_preserves_unpushed() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -1218,6 +1245,7 @@ async fn assess_cleanup_malformed_row_empty_tip_preserves_unpushed() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -1252,6 +1280,7 @@ async fn unpushed_worktree_non_interactive_prints_warning_and_preserves() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -1277,13 +1306,14 @@ async fn unpushed_branch_interactive_force_delete_runs_cleanup() {
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
     let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
-    let mut p = ScriptedPrompt(VecDeque::from([2]));
+    let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::DiscardAll]));
     let docker = crate::runtime::test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
         AttachOutcome::stopped(0),
         true,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -1308,13 +1338,14 @@ async fn unpushed_branch_interactive_return_to_agent_signals_caller() {
     write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
     let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
     let mut runner = fake_with_outputs(&["", &branches]);
-    let mut p = ScriptedPrompt(VecDeque::from([0]));
+    let mut p = ScriptedPrompt(VecDeque::from([ExitDialogChoice::ReturnToRole]));
     let docker = crate::runtime::test_support::FakeDockerClient::default();
     let dec = finalize_foreground_session(
         "jackin-x",
         dir.path(),
         AttachOutcome::stopped(0),
         true,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -1354,6 +1385,7 @@ async fn bare_gone_track_is_safe_to_delete() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -1395,6 +1427,7 @@ async fn detached_head_past_base_preserves_unpushed() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -1425,6 +1458,7 @@ async fn detached_head_at_base_is_safe_to_delete() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -1449,6 +1483,7 @@ async fn has_jackin_sessions_error_treated_as_sessions_present() {
         dir.path(),
         AttachOutcome::still_running(),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut r,
@@ -1478,6 +1513,7 @@ async fn detached_head_rev_parse_failure_preserves_unpushed() {
         dir.path(),
         AttachOutcome::stopped(0),
         false,
+        DirtyExitPolicy::Ask,
         &mut p,
         &docker,
         &mut runner,
@@ -1487,4 +1523,161 @@ async fn detached_head_rev_parse_failure_preserves_unpushed() {
     assert_eq!(dec, FinalizeDecision::Preserved);
     let recs = read_records(dir.path()).unwrap();
     assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
+}
+
+// ---------------------------------------------------------------
+// D8: dirty_exit_policy = keep / discard — no prompt needed.
+// ---------------------------------------------------------------
+
+/// `dirty_exit_policy = keep` preserves all dirty records without prompting.
+#[tokio::test]
+async fn keep_policy_preserves_dirty_record_without_prompt() {
+    let dir = TempDir::new().unwrap();
+    let r = rec(dir.path());
+    std::fs::create_dir_all(&r.original_src).unwrap();
+    write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+    let mut runner = fake_with_outputs(&[" M file\n"]);
+    // NoPrompt panics if called; keep-policy must never call the dialog.
+    let mut p = NoPrompt;
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    let dec = finalize_foreground_session(
+        "jackin-x",
+        dir.path(),
+        AttachOutcome::stopped(0),
+        true,
+        DirtyExitPolicy::Keep,
+        &mut p,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+    assert_eq!(dec, FinalizeDecision::Preserved);
+    let recs = read_records(dir.path()).unwrap();
+    assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedDirty);
+}
+
+/// `dirty_exit_policy = discard` skips the dialog and attempts to force-delete
+/// all dirty records. Whether the git cleanup succeeds depends on runner state,
+/// but the dialog must never be called (`NoPrompt` would panic if it were).
+#[tokio::test]
+async fn discard_policy_skips_dialog_on_dirty_record() {
+    let dir = TempDir::new().unwrap();
+    let r = rec(dir.path());
+    std::fs::create_dir_all(&r.original_src).unwrap();
+    write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+    let mut runner = fake_with_outputs(&[" M file\n"]);
+    // NoPrompt panics if called; discard-policy must never call the dialog.
+    let mut p = NoPrompt;
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    let dec = finalize_foreground_session(
+        "jackin-x",
+        dir.path(),
+        AttachOutcome::stopped(0),
+        true,
+        DirtyExitPolicy::Discard,
+        &mut p,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+    // Either Cleaned (git cleanup succeeded) or Preserved (git cleanup failed
+    // because runner queue is empty). Key: ReturnToAgent must never happen.
+    assert!(
+        matches!(dec, FinalizeDecision::Cleaned | FinalizeDecision::Preserved),
+        "discard policy must never return ReturnToAgent; got {dec:?}"
+    );
+}
+
+#[test]
+fn exit_action_prompt_reads_recorded_choice() {
+    let dir = TempDir::new().expect("tempdir");
+    let mut prompt = ExitActionPrompt {
+        state_dir: dir.path().to_path_buf(),
+    };
+    // Absent file → KeepAll (never lose at-risk work).
+    assert_eq!(
+        prompt.ask_exit_dialog("c", &[]).expect("prompt"),
+        ExitDialogChoice::KeepAll
+    );
+    // Discard recorded → DiscardAll.
+    std::fs::write(dir.path().join("exit-action.json"), "\"discard\"").expect("write");
+    assert_eq!(
+        prompt.ask_exit_dialog("c", &[]).expect("prompt"),
+        ExitDialogChoice::DiscardAll
+    );
+    // Keep recorded → KeepAll.
+    std::fs::write(dir.path().join("exit-action.json"), "\"keep\"").expect("write");
+    assert_eq!(
+        prompt.ask_exit_dialog("c", &[]).expect("prompt"),
+        ExitDialogChoice::KeepAll
+    );
+}
+
+#[test]
+fn read_exit_action_none_when_absent_or_garbage() {
+    let dir = TempDir::new().expect("tempdir");
+    assert_eq!(read_exit_action(dir.path()), None);
+    std::fs::write(dir.path().join("exit-action.json"), "not json").expect("write");
+    assert_eq!(read_exit_action(dir.path()), None);
+}
+
+#[tokio::test]
+async fn exit_action_keep_preserves_via_finalize() {
+    let dir = TempDir::new().unwrap();
+    let r = rec(dir.path());
+    std::fs::create_dir_all(&r.original_src).unwrap();
+    write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+    let state_dir = dir.path().join("state");
+    std::fs::create_dir_all(&state_dir).unwrap();
+    std::fs::write(state_dir.join("exit-action.json"), "\"keep\"").unwrap();
+    let mut runner = fake_with_outputs(&[" M file\n"]);
+    let mut prompt = ExitActionPrompt { state_dir };
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    let dec = finalize_foreground_session(
+        "jackin-x",
+        dir.path(),
+        AttachOutcome::stopped(0),
+        true,
+        DirtyExitPolicy::Ask,
+        &mut prompt,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+    assert_eq!(dec, FinalizeDecision::Preserved);
+    assert_eq!(
+        read_records(dir.path()).unwrap()[0].cleanup_status,
+        CleanupStatus::PreservedDirty
+    );
+}
+
+#[tokio::test]
+async fn exit_action_discard_cleans_via_finalize() {
+    let dir = TempDir::new().unwrap();
+    let r = rec(dir.path());
+    std::fs::create_dir_all(&r.original_src).unwrap();
+    write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
+    let state_dir = dir.path().join("state");
+    std::fs::create_dir_all(&state_dir).unwrap();
+    std::fs::write(state_dir.join("exit-action.json"), "\"discard\"").unwrap();
+    let mut runner = fake_with_outputs(&[" M file\n"]);
+    let mut prompt = ExitActionPrompt { state_dir };
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    let dec = finalize_foreground_session(
+        "jackin-x",
+        dir.path(),
+        AttachOutcome::stopped(0),
+        true,
+        DirtyExitPolicy::Ask,
+        &mut prompt,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+    assert_eq!(dec, FinalizeDecision::Cleaned);
+    assert!(read_records(dir.path()).unwrap().is_empty());
 }

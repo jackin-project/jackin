@@ -2709,7 +2709,6 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "sha2 0.11.0",
  "tabled",
  "tempfile",
  "thiserror 2.0.18",
@@ -2803,16 +2802,18 @@ dependencies = [
  "anstyle-parse",
  "anyhow",
  "directories",
+ "hex",
  "owo-colors 4.3.0",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "jackin-dev"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "anyhow",
  "clap",
@@ -2888,6 +2889,7 @@ dependencies = [
  "base64 0.22.1",
  "filetime",
  "flate2",
+ "hex",
  "jackin-build-meta",
  "jackin-core",
  "jackin-diagnostics",
@@ -3022,6 +3024,7 @@ dependencies = [
  "jackin-core",
  "owo-colors 4.3.0",
  "ratatui",
+ "similar",
  "tokio",
  "tui-scrollbar",
  "unicode-width 0.2.2",

@@ -7,6 +7,7 @@
 //! Public surface: `Agent`, `MountIsolation`, `AuthForwardMode`, and shared
 //! string constants.
 
+pub mod account_key;
 pub mod agent;
 pub mod ansi_text;
 pub mod auth;
@@ -28,6 +29,7 @@ pub mod prune_output;
 pub mod runner;
 pub mod selector;
 pub mod url_text;
+pub mod worktree_dirty;
 
 pub use agent::{
     Agent, ParseAgentError,

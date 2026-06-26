@@ -44,7 +44,6 @@ toml = "1.1"
 directories = "6.0"
 thiserror = "2.0"
 tempfile = "3.20"
-sha2 = "0.11"
 turso = { version = "0.7.0-pre.7", default-features = false }
 owo-colors = { version = "4", features = ["supports-colors"] }
 ratatui = "0.30"

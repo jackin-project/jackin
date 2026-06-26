@@ -5,6 +5,42 @@ use jackin_core::paths::JackinPaths;
 use jackin_docker::docker_client::DockerApi;
 use std::path::PathBuf;
 
+#[cfg(test)]
+mod tests;
+
+/// Build a `LaunchCandidate` for an `InstanceManifest` by reading its
+/// isolation records and pre-fetching changed file content for D24 inspect.
+fn launch_candidate_for_manifest(
+    paths: &JackinPaths,
+    manifest: &InstanceManifest,
+    label: String,
+) -> jackin_launch::LaunchCandidate {
+    let state_dir = paths.data_dir.join(&manifest.container_base);
+    let records = crate::isolation::state::read_records(&state_dir).unwrap_or_default();
+    let is_dirty = records.iter().any(|r| {
+        matches!(
+            r.cleanup_status,
+            jackin_core::isolation_record::CleanupStatus::PreservedDirty
+                | jackin_core::isolation_record::CleanupStatus::PreservedUnpushed
+        )
+    });
+    let inspect = records
+        .iter()
+        .map(|rec| crate::isolation::git_inspect::worktree_inspect(&rec.worktree_path))
+        .collect();
+    jackin_launch::LaunchCandidate {
+        label,
+        is_dirty,
+        inspect,
+    }
+}
+
+/// D23/D21: launch dialog with Del-to-delete and I-to-inspect (D24).
+///
+/// Builds `LaunchCandidate` objects from `candidates` + `related`, shows the
+/// picker through the live launch surface or a standalone surface, and maps
+/// the result back to `RestoreResolution`. `Delete(i)` returns
+/// `PurgeAndRestartFresh` — the caller purges then restarts fresh.
 pub(super) fn present_restore_choice(
     progress: Option<&mut crate::runtime::progress::LaunchProgress>,
     paths: &JackinPaths,
@@ -13,17 +49,19 @@ pub(super) fn present_restore_choice(
     candidates: Vec<InstanceManifest>,
     related: &[RelatedRestoreCandidate],
 ) -> anyhow::Result<RestoreResolution> {
-    let mut labels = vec!["Start fresh instance".to_owned()];
-    labels.extend(
-        candidates
-            .iter()
-            .map(|manifest| restore_candidate_label(paths, manifest)),
-    );
-    labels.extend(related.iter().map(|candidate| {
-        format!(
+    // Build candidate list (same-role first, then related).
+    let mut launch_candidates: Vec<jackin_launch::LaunchCandidate> = candidates
+        .iter()
+        .map(|manifest| {
+            launch_candidate_for_manifest(paths, manifest, restore_candidate_label(paths, manifest))
+        })
+        .collect();
+    launch_candidates.extend(related.iter().map(|candidate| {
+        let label = format!(
             "Recover other role with hardline {}",
             related_restore_candidate_label(paths, candidate)
-        )
+        );
+        launch_candidate_for_manifest(paths, &candidate.manifest, label)
     }));
 
     let Some(progress) = progress else {
@@ -35,17 +73,32 @@ pub(super) fn present_restore_choice(
             "unfinished jackin instances exist for workspace `{workspace_label}` and role `{role_key}` but the rich launch dialog is unavailable; run {hint} to inspect or recover, or purge stale instances before a fresh load"
         );
     };
-    let choice = progress.select_choice("Unfinished jackin instances", labels)?;
 
-    if choice == 0 {
-        supersede_restore_candidates(paths, candidates)?;
-        Ok(RestoreResolution::StartFresh)
-    } else if choice <= candidates.len() {
-        Ok(RestoreResolution::RestoreCurrentRole(
-            candidates[choice - 1].container_base.clone(),
-        ))
-    } else {
-        recover_related_restore_candidate(&related[choice - 1 - candidates.len()])
+    let result =
+        progress.launch_dialog_progress("Unfinished jackin instances", &launch_candidates)?;
+
+    match result {
+        jackin_launch::LaunchDialogResult::StartFresh => {
+            supersede_restore_candidates(paths, candidates)?;
+            Ok(RestoreResolution::StartFresh)
+        }
+        jackin_launch::LaunchDialogResult::Restore(i) if i < candidates.len() => Ok(
+            RestoreResolution::RestoreCurrentRole(candidates[i].container_base.clone()),
+        ),
+        jackin_launch::LaunchDialogResult::Restore(i) => {
+            recover_related_restore_candidate(&related[i - candidates.len()])
+        }
+        jackin_launch::LaunchDialogResult::Delete(i) => {
+            let container = if i < candidates.len() {
+                candidates[i].container_base.clone()
+            } else {
+                related[i - candidates.len()]
+                    .manifest
+                    .container_base
+                    .clone()
+            };
+            Ok(RestoreResolution::PurgeAndRestartFresh(container))
+        }
     }
 }
 

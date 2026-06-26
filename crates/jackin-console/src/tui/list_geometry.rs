@@ -6,6 +6,10 @@ use jackin_tui::components::ScrollAxes;
 
 use crate::tui::screens::workspaces::model::ManagerListRow;
 
+/// Backing data an instance row needs to size its label: id, role, and status
+/// (status drives the `[state]` tag width for failed/stopped instances — D15).
+type InstanceRowWidthFacts = (String, String, jackin_core::instance::InstanceStatus);
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ListColumns {
     pub names: Rect,
@@ -41,9 +45,9 @@ pub fn manager_list_row_width(
     row: ManagerListRow,
     selected_with_cursor: bool,
     current_dir_has_instances: bool,
-    current_dir_instance: impl FnOnce(usize) -> Option<(String, String)>,
+    current_dir_instance: impl FnOnce(usize) -> Option<InstanceRowWidthFacts>,
     saved_workspace: impl FnOnce(usize) -> Option<(String, bool)>,
-    workspace_instance: impl FnOnce(usize, usize) -> Option<(String, String)>,
+    workspace_instance: impl FnOnce(usize, usize) -> Option<InstanceRowWidthFacts>,
 ) -> Option<usize> {
     match row {
         ManagerListRow::CurrentDirectory => Some(workspace_row_width(
@@ -52,16 +56,16 @@ pub fn manager_list_row_width(
             selected_with_cursor,
         )),
         ManagerListRow::CurrentDirectoryInstance(inst_idx) => {
-            current_dir_instance(inst_idx).map(|(instance_id, role_key)| {
-                instance_row_width(instance_id, &role_key, selected_with_cursor)
+            current_dir_instance(inst_idx).map(|(instance_id, role_key, status)| {
+                instance_row_width(instance_id, &role_key, status, selected_with_cursor)
             })
         }
         ManagerListRow::SavedWorkspace(idx) => saved_workspace(idx).map(|(name, has_instances)| {
             workspace_row_width(&name, has_instances, selected_with_cursor)
         }),
         ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => workspace_instance(ws_idx, inst_idx)
-            .map(|(instance_id, role_key)| {
-                instance_row_width(instance_id, &role_key, selected_with_cursor)
+            .map(|(instance_id, role_key, status)| {
+                instance_row_width(instance_id, &role_key, status, selected_with_cursor)
             }),
         ManagerListRow::NewWorkspace => Some(workspace_row_width(
             crate::tui::screens::workspaces::view::new_workspace_list_label(),
@@ -83,9 +87,9 @@ pub struct ManagerListNamesContentWidthFacts<'a> {
 #[must_use]
 pub fn manager_list_names_content_width(
     facts: ManagerListNamesContentWidthFacts<'_>,
-    mut current_dir_instance: impl FnMut(usize) -> Option<(String, String)>,
+    mut current_dir_instance: impl FnMut(usize) -> Option<InstanceRowWidthFacts>,
     mut saved_workspace: impl FnMut(usize) -> Option<(String, bool)>,
-    mut workspace_instance: impl FnMut(usize, usize) -> Option<(String, String)>,
+    mut workspace_instance: impl FnMut(usize, usize) -> Option<InstanceRowWidthFacts>,
 ) -> usize {
     list_names_content_width(
         facts
@@ -197,9 +201,17 @@ pub fn workspace_row_width(name: &str, has_instances: bool, selected_with_cursor
 pub fn instance_row_width(
     instance_id: impl std::fmt::Display,
     role_key: &str,
+    status: jackin_core::instance::InstanceStatus,
     selected_with_cursor: bool,
 ) -> usize {
-    let width = 5 + jackin_tui::display_cols(&format!("{instance_id}  {role_key}"));
+    // Width must match the rendered label, including the `[state]` tag that
+    // failed/stopped instances carry (D15).
+    let label = crate::tui::screens::workspaces::view::workspace_instance_list_label(
+        &instance_id.to_string(),
+        role_key,
+        status,
+    );
+    let width = 5 + jackin_tui::display_cols(&label);
     if selected_with_cursor {
         width
     } else {

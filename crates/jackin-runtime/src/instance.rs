@@ -493,7 +493,6 @@ impl RoleState {
         let host_home_path = host_home.to_path_buf();
         let root_path = root.clone();
         let home_path = home_dir.clone();
-        let paths_for_grok = paths.clone();
 
         let (gh_provision_outcome, auth_provisions) = std::thread::scope(|scope| {
             let handles: Vec<(jackin_core::agent::Agent, _)> = supported_auth
@@ -503,12 +502,10 @@ impl RoleState {
                     let home_dir = home_path.clone();
                     let host_home = host_home_path.clone();
                     let sync_src = sync_src.clone();
-                    let paths = paths_for_grok.clone();
                     let supported = *supported;
                     let mode = *mode;
                     let handle = scope.spawn(move || {
                         Self::provision_agent_auth_slot(
-                            &paths,
                             &root,
                             &home_dir,
                             &host_home,
@@ -658,7 +655,6 @@ impl RoleState {
         let host_home_path = host_home.to_path_buf();
         let root_path = root.clone();
         let home_path = home_dir.clone();
-        let paths_for_grok = paths.clone();
 
         let prepared_auth = std::thread::scope(|scope| {
             let handles = supported_auth
@@ -668,12 +664,10 @@ impl RoleState {
                     let home_dir = home_path.clone();
                     let host_home = host_home_path.clone();
                     let sync_src = sync_src.clone();
-                    let paths = paths_for_grok.clone();
                     let supported = *supported;
                     let mode = *mode;
                     scope.spawn(move || {
                         Self::provision_agent_auth_slot(
-                            &paths,
                             &root,
                             &home_dir,
                             &host_home,
@@ -698,7 +692,6 @@ impl RoleState {
     }
 
     fn provision_agent_auth_slot(
-        paths: &JackinPaths,
         root: &Path,
         home_dir: &Path,
         host_home: &Path,
@@ -753,9 +746,8 @@ impl RoleState {
                     Ok((ProvisionedAuthSlot::Opencode(slot), outcome))
                 }
                 jackin_core::agent::Agent::Grok => {
-                    let (slot, outcome) = Self::provision_grok_slot(
-                        paths, root, home_dir, mode, host_home, sync_src,
-                    )?;
+                    let (slot, outcome) =
+                        Self::provision_grok_slot(root, home_dir, mode, host_home, sync_src)?;
                     Ok((ProvisionedAuthSlot::Grok(slot), outcome))
                 }
             };
@@ -840,6 +832,7 @@ impl RoleState {
         let amp_home_dir = home_dir.join(".local/share/amp");
         std::fs::create_dir_all(&amp_dir)?;
         std::fs::create_dir_all(&amp_home_dir)?;
+        std::fs::create_dir_all(home_dir.join(".config/amp"))?;
         let secrets_json_path = amp_dir.join("secrets.json");
         let (outcome, secrets_json) = if let Some(source_dir) = sync_source_dir {
             Self::provision_amp_auth_from_source_dir(&secrets_json_path, mode, source_dir)?
@@ -879,6 +872,7 @@ impl RoleState {
         let opencode_home_dir = home_dir.join(".local/share/opencode");
         std::fs::create_dir_all(&opencode_dir)?;
         std::fs::create_dir_all(&opencode_home_dir)?;
+        std::fs::create_dir_all(home_dir.join(".config/opencode"))?;
         let auth_json_path = opencode_dir.join("auth.json");
         let (outcome, auth_json) = if let Some(source_dir) = sync_source_dir {
             Self::provision_opencode_auth_from_source_dir(&auth_json_path, mode, source_dir)?
@@ -889,7 +883,6 @@ impl RoleState {
     }
 
     fn provision_grok_slot(
-        paths: &JackinPaths,
         root: &Path,
         home_dir: &Path,
         mode: AuthForwardMode,
@@ -906,77 +899,6 @@ impl RoleState {
         } else {
             Self::provision_grok_auth(&auth_json_path, mode, host_home)?
         };
-
-        // Populate the prepared host-side ~/.grok/bin/grok (plus "agent" symlink)
-        // from the (linux) agent cache. The bind-mount of this dir into the
-        // container (for credential forwarding of auth.json etc.) would otherwise
-        // overlay/hide the binary that the role image baked via the grok
-        // install_block (and that the official install.sh creates under
-        // ~/.grok/bin). By seeding the *source* of the mount we make the
-        // "installed" grok CLI visible at the expected path inside the container
-        // (matching both the script and our image layer), so `grok` is on PATH
-        // and `ls ~/.grok` shows the bin/ like users expect. The copy is a no-op
-        // if no cached binary (e.g. role didn't declare grok support).
-        if let Some((_, _, src)) = jackin_image::agent_binary::newest_cached_executable_release(
-            paths,
-            jackin_core::agent::Agent::Grok,
-        ) {
-            let bin_dir = grok_home_dir.join("bin");
-            std::fs::create_dir_all(&bin_dir).with_context(|| {
-                format!("failed to create grok bin dir at {}", bin_dir.display())
-            })?;
-            let dst = bin_dir.join("grok");
-            match std::fs::copy(&src, &dst) {
-                Err(e) => {
-                    jackin_diagnostics::emit_compact_line(
-                        "grok",
-                        &format!(
-                            "warning: could not stage grok binary at {}: {e}; \
-                             grok will be unavailable in container",
-                            dst.display()
-                        ),
-                    );
-                }
-                Ok(_) => {
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt as _;
-                        if let Err(e) =
-                            std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o755))
-                        {
-                            jackin_diagnostics::emit_compact_line(
-                                "grok",
-                                &format!(
-                                    "warning: could not make grok binary executable at {}: {e}; \
-                                 grok may fail to start in container",
-                                    dst.display()
-                                ),
-                            );
-                        }
-                        let agent_link = bin_dir.join("agent");
-                        if let Err(e) = std::os::unix::fs::symlink("grok", &agent_link)
-                            && e.kind() != std::io::ErrorKind::AlreadyExists
-                        {
-                            jackin_diagnostics::emit_compact_line(
-                                "grok",
-                                &format!(
-                                    "warning: could not create grok agent symlink at {}: {e}; \
-                                 tools invoking `agent` may fail in container",
-                                    agent_link.display()
-                                ),
-                            );
-                        }
-                    }
-                    #[cfg(not(unix))]
-                    {
-                        // On non-Unix (e.g. Windows host), the prepared dir is only used as
-                        // mount source for Linux container; copy the binary under both names
-                        // so both `grok` and `agent` resolve without symlinks.
-                        let _ = std::fs::copy(&dst, bin_dir.join("agent"));
-                    }
-                }
-            }
-        }
 
         Ok((GrokAuth { auth_json }, outcome))
     }

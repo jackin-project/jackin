@@ -74,6 +74,12 @@ pub(super) const LABEL_IMAGE_RECIPE_HASH: &str = "jackin.image.recipe.hash";
 /// changes invalidate old labels with a clear reason.
 pub(super) const LABEL_IMAGE_RECIPE_VERSION: &str = "jackin.image.recipe.version";
 
+/// Prefix for per-agent baked-binary version labels.
+/// Full key: `jackin.agent.<slug>.version`.
+/// Stamps which version of each agent binary was baked into the image (D3/D20).
+/// Diagnostic — not part of the recipe hash.
+pub(super) const LABEL_IMAGE_AGENT_VERSION_PREFIX: &str = "jackin.agent";
+
 /// Format a human-friendly role name from a container name and its display label.
 ///
 /// Examples:

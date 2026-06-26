@@ -65,8 +65,7 @@ where
             break;
         }
         match tokio::time::timeout(remaining, reader.read(&mut chunk)).await {
-            Ok(Ok(0)) | Err(_) => break,
-            Ok(Err(_)) => break,
+            Ok(Ok(0) | Err(_)) | Err(_) => break,
             Ok(Ok(n)) => {
                 buf.extend_from_slice(&chunk[..n]);
                 let parsed = extract_color_replies(&buf);

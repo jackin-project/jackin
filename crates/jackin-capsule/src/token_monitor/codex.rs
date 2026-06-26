@@ -8,7 +8,11 @@ use std::path::PathBuf;
 use super::TokenSession;
 
 fn find_jsonl_files() -> Vec<PathBuf> {
-    super::find_provider_files(&["/home/agent/.codex/sessions"], "jsonl")
+    super::find_provider_files(
+        &["/home/agent/.codex/sessions"],
+        "jsonl",
+        super::PROVIDER_WALK_DEPTH,
+    )
 }
 
 fn parse_raw_usage(obj: &serde_json::Value) -> (u64, u64, u64) {

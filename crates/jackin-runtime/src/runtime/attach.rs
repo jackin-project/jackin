@@ -277,11 +277,11 @@ fn host_alt_screen_exec_flag() -> Option<&'static str> {
     jackin_diagnostics::host_screen_owned().then_some("-e=JACKIN_HOST_ALT_SCREEN=1")
 }
 
-/// Insert `--user <host-uid>:0` right after `exec` so a `docker exec` shell
-/// runs as the same host UID the container was launched with (`--user` on
-/// `docker run`). Without it the exec would default to the image's baked
-/// `agent` user (UID 1000) and hit the same bind-mount ownership mismatch the
-/// run-time UID mapping exists to remove. No-op on non-unix hosts.
+/// Insert `--user <host-uid>:<host-gid>` right after `exec` so a `docker exec`
+/// shell runs as the same host identity the container was launched with
+/// (`--user` on `docker run`). Without it the exec would default to the image's
+/// baked `agent` user (UID 1000) and hit the same bind-mount ownership mismatch
+/// the run-time identity mapping exists to remove. No-op on non-unix hosts.
 fn insert_run_as_user<'a>(args: &mut Vec<&'a str>, run_as_user: Option<&'a str>) {
     if let Some(user) = run_as_user {
         args.insert(1, user);
@@ -754,7 +754,17 @@ pub async fn hardline_agent_with_focus(
             )
         }
     };
-    attach_outcome?;
+    // A clean last-session shutdown surfaces as a non-zero attach result (the
+    // capsule client hits the socket close as `early eof`). Do not short-circuit
+    // on it: `finalize_reconnected_foreground_session` re-inspects the container
+    // and reads exit-action.json, so it handles both a clean exit and a genuine
+    // failure. Only a clean exit reaches here in practice; log and proceed.
+    if let Err(err) = attach_outcome {
+        jackin_diagnostics::debug_log!(
+            "hardline",
+            "attach for {container_name} ended with ({err}); proceeding to finalize"
+        );
+    }
 
     finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
 }
@@ -780,7 +790,11 @@ async fn finalize_reconnected_foreground_session(
     );
     super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
     let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
-    let mut prompt = crate::isolation::finalize::RichCleanupPrompt;
+    // The dirty-exit decision is made in-capsule (the dirty-exit modal) and
+    // recorded in exit-action.json; the host only executes it — no host dialog.
+    let mut prompt = crate::isolation::finalize::ExitActionPrompt {
+        state_dir: paths.data_dir.join(container_name).join("state"),
+    };
     jackin_diagnostics::active_timing_started(
         "hardline",
         "foreground_session_finalize",
@@ -791,6 +805,7 @@ async fn finalize_reconnected_foreground_session(
         &paths.data_dir.join(container_name),
         outcome,
         interactive,
+        jackin_config::DirtyExitPolicy::Ask,
         &mut prompt,
         docker,
         runner,
@@ -830,6 +845,7 @@ async fn finalize_reconnected_foreground_session(
             &paths.data_dir.join(container_name),
             outcome,
             interactive,
+            jackin_config::DirtyExitPolicy::Ask,
             &mut prompt,
             docker,
             runner,

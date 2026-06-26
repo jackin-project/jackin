@@ -18,6 +18,7 @@ pub mod config;
 pub mod container_context;
 pub mod daemon;
 pub(crate) mod debug_panic;
+pub mod exit_assess;
 pub mod firewall;
 pub mod git_context;
 pub mod logging;

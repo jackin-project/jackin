@@ -54,8 +54,8 @@ pub use resolve::{
     resolve_load_workspace, saved_workspace_match_depth,
 };
 pub use schema::{
-    DockerConfig, DockerMounts, GitConfig, GlobalMountConfig, KeepAwakeConfig, MountConfig,
-    MountEntry, ResolvedWorkspace, RoleSource, WorkspaceConfig, WorkspaceDockerConfig,
+    DirtyExitPolicy, DockerConfig, DockerMounts, GitConfig, GlobalMountConfig, KeepAwakeConfig,
+    MountConfig, MountEntry, ResolvedWorkspace, RoleSource, WorkspaceConfig, WorkspaceDockerConfig,
     WorkspaceEdit, WorkspaceRoleOverride, validate_mount_paths, validate_mount_specs,
     validate_mounts,
 };

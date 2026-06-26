@@ -497,6 +497,7 @@ fn validate_workspace_config_surfaces_isolation_layout_errors() {
         grok: None,
         github: None,
         git_pull_on_entry: false,
+        dirty_exit_policy: None,
         docker: None,
     };
     let err = validate_workspace_config("ws", &workspace).unwrap_err();

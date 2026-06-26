@@ -656,6 +656,50 @@ fn instance_shortcuts_return_selected_workspace_actions() {
 }
 
 #[test]
+fn crashed_instance_is_visible_in_tree_and_enter_restarts_via_ladder() {
+    // D15: a failed/stopped instance appears in the console tree, the
+    // workspace expands to show it, and selecting + Enter routes it into the
+    // restore ladder (the Reconnect action).
+    let workdir = "/workspace/demo";
+    let ws = WorkspaceConfig {
+        workdir: workdir.into(),
+        mounts: vec![],
+        ..Default::default()
+    };
+    let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+    state.instances = vec![instance_entry(
+        "jackin-demo-architect-crashed",
+        InstanceStatus::Crashed,
+        workdir,
+    )];
+
+    assert!(
+        state.has_visible_instances(0),
+        "a crashed instance must make the workspace expandable"
+    );
+    state.expand_workspace(0);
+    state.selected = state
+        .index_of_row(crate::tui::state::ManagerListRow::WorkspaceInstance(0, 0))
+        .expect("crashed instance row must be selectable in the tree");
+
+    let outcome = handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        tmp.path(),
+        key(KeyCode::Enter),
+    )
+    .unwrap();
+    match outcome {
+        InputOutcome::InstanceAction { container, action } => {
+            assert_eq!(container, "jackin-demo-architect-crashed");
+            assert_eq!(action, ConsoleInstanceAction::Reconnect);
+        }
+        other => panic!("expected reconnect (restart) instance action; got {other:?}"),
+    }
+}
+
+#[test]
 fn confirm_instance_purge_n_dismisses_without_dispatch() {
     let workdir = "/workspace/demo";
     let ws = WorkspaceConfig {

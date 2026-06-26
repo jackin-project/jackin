@@ -22,6 +22,8 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, OnceLock},
 };
 
+use smallvec::SmallVec;
+
 use crate::cell::{Attrs, Cell, Color, Hyperlink, UnderlineStyle};
 use crate::damage::{DirtySpans, DirtyTracker};
 use crate::passthrough::{PassthroughBuffer, PassthroughEvent};
@@ -998,7 +1000,7 @@ impl DamageGrid {
         let hyperlink_id = self.active_hyperlink_token;
         let cell = Cell {
             // Phase 4: CompactString stores ch inline (no heap alloc for ASCII + most Unicode).
-            contents: compact_str::format_compact!("{ch}"),
+            contents: compact_str::CompactString::from(&*ch.encode_utf8(&mut [0u8; 4])),
             is_wide: width > 1,
             is_wide_continuation: false,
             attrs: attrs.clone(),
@@ -1511,7 +1513,7 @@ impl DamageGrid {
     fn apply_sgr_params(&mut self, params: &vte::Params) {
         // Borrow each subparameter slice rather than cloning into owned Vecs —
         // SGR runs on the per-byte PTY parse hot path.
-        let params = params.iter().collect::<Vec<&[u16]>>();
+        let params: SmallVec<[&[u16]; 8]> = params.iter().collect();
         self.apply_sgr(&params);
     }
 
