@@ -1,0 +1,4 @@
+from_version = "v1alpha5"
+target_version = "v1alpha6"
+target_version_shipped = "2026-06-18"
+summary = "Restamps role manifest as v1alpha6. Adds optional role [docker] security settings (min_profile, dind, allowed_hosts, capabilities_add); additive with serde defaults, so the migration is a no-op restamp and existing manifests load unchanged. A manifest stamped older than v1alpha6 that uses a [docker] table is rejected with a `jackin role migrate` hint."

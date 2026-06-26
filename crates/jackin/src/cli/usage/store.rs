@@ -43,14 +43,7 @@ async fn open_store(path: &Path) -> Result<Connection> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create host usage cache dir {}", parent.display()))?;
     }
-    let path = path
-        .to_str()
-        .ok_or_else(|| anyhow::anyhow!("host usage cache path is not UTF-8"))?;
-    let db = turso::Builder::new_local(path)
-        .build()
-        .await
-        .context("open host usage cache")?;
-    let conn = db.connect().context("connect host usage cache")?;
+    let conn = open_existing_store(path).await?;
     initialize_schema(&conn).await?;
     Ok(conn)
 }

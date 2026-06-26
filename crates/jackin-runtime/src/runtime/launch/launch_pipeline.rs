@@ -127,6 +127,32 @@ pub async fn resolve_supported_agents_for_console(
 
 /// Instrument the full launch pipeline so every stage appears as a
 /// child span in the diagnostics run log so stage events carry real `span_id` correlation.
+/// Prefix each validation error with its source tag (`config`/`workspace`/
+/// `role`/`merged`) for the operator-facing message.
+fn tag_errors<E: std::fmt::Display>(tag: &str, errors: Vec<E>) -> Vec<String> {
+    errors
+        .into_iter()
+        .map(|error| format!("  - [{tag}] {error}"))
+        .collect()
+}
+
+/// Validate one source's docker grants, tagged for the operator-facing message.
+fn tagged_grant_errors(
+    tag: &str,
+    grants: &crate::runtime::docker_profile::DockerGrants,
+) -> Vec<String> {
+    tag_errors(tag, crate::runtime::docker_profile::validate_grants(grants))
+}
+
+/// Bail with the standard "docker grants validation failed" message when any
+/// tagged errors were collected; no-op otherwise.
+fn bail_on_grant_errors(errors: Vec<String>) -> anyhow::Result<()> {
+    if errors.is_empty() {
+        return Ok(());
+    }
+    anyhow::bail!("docker grants validation failed:\n{}", errors.join("\n"))
+}
+
 #[tracing::instrument(
     skip_all,
     fields(role = %selector.key())
@@ -1097,14 +1123,69 @@ pub(crate) async fn load_role_with(
             || DockerResources::from_container_name(&container_name),
             |sidecar| DockerResources {
                 role_container: container_name.clone(),
-                dind_container: sidecar.sidecar.dind.clone(),
+                dind_container: Some(sidecar.sidecar.dind.clone()),
                 network: sidecar.sidecar.network.clone(),
-                certs_volume: sidecar.sidecar.certs_volume.clone(),
+                certs_volume: Some(sidecar.sidecar.certs_volume.clone()),
             },
         );
         let network = resources.network.clone();
-        let dind = resources.dind_container.clone();
-        let certs_volume = resources.certs_volume.clone();
+        // Adoption-aware: when a prewarmed sidecar was adopted, the role connects
+        // to (and teardown must remove) the adopted DinD container, not the
+        // role-default name. `resources.dind_container` is always `Some` — set
+        // from the adopted sidecar or `from_container_name`.
+        let dind = resources
+            .dind_container
+            .clone()
+            .unwrap_or_else(|| crate::runtime::naming::dind_container_name(&container_name));
+        let certs_volume = crate::runtime::naming::dind_certs_volume(&container_name);
+        let workspace_docker_for_grants = config
+            .workspaces
+            .get(&workspace.label)
+            .and_then(|wc| wc.docker.as_ref());
+        let resolved_profile = crate::runtime::docker_profile::resolve_profile(
+            opts.docker_profile,
+            workspace_docker_for_grants.and_then(|wd| wd.profile),
+            config.docker.profile,
+        );
+        let mut grant_errors = Vec::new();
+        if let Some(grants) = config.docker.grants.as_ref() {
+            grant_errors.extend(tagged_grant_errors("config", grants));
+        }
+        if let Some(grants) = workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()) {
+            grant_errors.extend(tagged_grant_errors("workspace", grants));
+        }
+        bail_on_grant_errors(grant_errors)?;
+        let mut effective_grants = crate::runtime::docker_profile::resolve_effective_grants(
+            resolved_profile.0,
+            config.docker.grants.as_ref(),
+            workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()),
+        );
+        if let Some(min) = validated_repo.manifest.docker.as_ref().and_then(|d| d.min_profile)
+            && !crate::runtime::docker_profile::profile_meets_floor(resolved_profile.0, min)
+        {
+            anyhow::bail!(
+                "role `{}` requires Docker profile `{min}` or more capable; resolved `{}` from {}",
+                selector.key(),
+                resolved_profile.0,
+                resolved_profile.1,
+            );
+        }
+        if let Some(docker_cfg) = validated_repo.manifest.docker.as_ref() {
+            let role_grants = crate::runtime::docker_profile::DockerGrants {
+                dind: docker_cfg.dind,
+                allowed_hosts: docker_cfg.allowed_hosts.clone(),
+                capabilities_add: docker_cfg.capabilities_add.clone(),
+                ..Default::default()
+            };
+            bail_on_grant_errors(tagged_grant_errors("role", &role_grants))?;
+            effective_grants =
+                crate::runtime::docker_profile::fold_role_grants(effective_grants, &role_grants);
+        }
+        bail_on_grant_errors(tag_errors(
+            "merged",
+            crate::runtime::docker_profile::validate_effective_grants(&effective_grants),
+        ))?;
+        let dind_started = crate::runtime::docker_profile::dind_enabled(&effective_grants);
         // Arm cleanup immediately after adoption, before any fallible step.
         // When a prewarmed DinD sidecar was adopted, its container, network,
         // and certs volume are already *running* and the on-disk prewarm state
@@ -1140,9 +1221,9 @@ pub(crate) async fn load_role_with(
             image_tag: &image,
             docker: DockerResources {
                 role_container: container_name.clone(),
-                dind_container: dind.clone(),
+                dind_container: dind_started.then(|| dind.clone()),
                 network: network.clone(),
-                certs_volume: certs_volume.clone(),
+                certs_volume: dind_started.then(|| certs_volume.clone()),
             },
         });
         // `read_optional` already separates "manifest absent" (fall back
@@ -1292,15 +1373,35 @@ pub(crate) async fn load_role_with(
         let sidecar_network = network.clone();
         let sidecar_dind = dind.clone();
         let sidecar_certs_volume = certs_volume.clone();
+        // WP4 Part B: the sidecar tier (rootless vs privileged image/flags).
+        let sidecar_dind_grant = effective_grants.dind;
+        let sidecar_network_disabled =
+            crate::runtime::docker_profile::network_disabled(&effective_grants);
+        // WP2: `locked` runs on a Docker-internal network (no off-bridge route)
+        // independent of the in-container iptables allowlist; every other
+        // profile uses a routable network.
+        let role_network_internal =
+            crate::runtime::docker_profile::role_network_internal(resolved_profile.0);
         let sidecar = async move {
             if adopted_sidecar.is_some() {
                 Ok(())
-            } else {
+            } else if dind_started {
                 super::run_dind_sidecar_headless(
                     &sidecar_container,
                     &sidecar_network,
                     &sidecar_dind,
                     &sidecar_certs_volume,
+                    sidecar_dind_grant,
+                    docker,
+                )
+                .await
+            } else if sidecar_network_disabled {
+                Ok(())
+            } else {
+                super::create_role_network(
+                    &sidecar_container,
+                    &sidecar_network,
+                    role_network_internal,
                     docker,
                 )
                 .await
@@ -1611,6 +1712,9 @@ pub(crate) async fn load_role_with(
             capsule_config: &launch_config,
             resolved_env: &resolved_env,
             github_env: &github_resolved_env,
+            profile: resolved_profile.0,
+            profile_source: resolved_profile.1,
+            grants: &effective_grants,
             paths,
             selected_image_refresh: selected_refresh_reason.map(|reason| super::SelectedImageRefresh {
                 role_git: &source.git,
@@ -1959,3 +2063,6 @@ fn known_agent_credential_env(key: &str) -> bool {
         })
         .any(|credential_key| credential_key == key)
 }
+
+#[cfg(test)]
+mod tests;

@@ -906,12 +906,20 @@ pub async fn inspect_hardline_instance(
 
     let (role_container_state, dind_state_raw, network_result) = tokio::join!(
         docker.inspect_container_state(container_name),
-        docker.inspect_container_state(&dind_name),
+        async {
+            if let Some(dind_name) = dind_name.as_deref() {
+                Some(docker.inspect_container_state(dind_name).await)
+            } else {
+                None
+            }
+        },
         inspect_docker_network(docker, &network_name),
     );
     let sessions = inspect_agent_sessions(docker, container_name, &role_container_state).await;
     let role_state = role_container_state.inspect_label();
-    let dind_state = dind_state_raw.inspect_label();
+    let dind_state = dind_state_raw
+        .as_ref()
+        .map_or_else(|| "disabled".to_owned(), ContainerState::inspect_label);
     let network_state = describe_network_state(network_result);
     let mounts = describe_mount_state(&state_dir);
 
@@ -948,9 +956,15 @@ pub async fn inspect_hardline_instance(
     lines.extend([
         format!("Role container: {container_name} ({role_state})"),
         format!("Agent sessions: {}", describe_agent_sessions(&sessions)),
-        format!("DinD container: {dind_name} ({dind_state})"),
+        format!(
+            "DinD container: {} ({dind_state})",
+            dind_name.as_deref().unwrap_or("none")
+        ),
         format!("Docker network: {network_name} ({network_state})"),
-        format!("DinD cert volume: {certs_volume}"),
+        format!(
+            "DinD cert volume: {}",
+            certs_volume.as_deref().unwrap_or("none")
+        ),
         format!("Mounts: {mounts}"),
     ]);
     Ok(lines.join("\n"))

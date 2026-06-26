@@ -26,9 +26,15 @@ const INSTANCE_INDEX_LOCK_FILE: &str = "instances.json.lock";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DockerResources {
     pub role_container: String,
-    pub dind_container: String,
+    /// `DinD` sidecar container name. `None` when the launch used
+    /// `dind = "none"` (DinD-free role or `locked`/`hardened` profile without
+    /// an explicit `DinD` grant).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dind_container: Option<String>,
     pub network: String,
-    pub certs_volume: String,
+    /// `DinD` TLS cert volume name. `None` when there is no `DinD` sidecar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub certs_volume: Option<String>,
 }
 
 impl DockerResources {
@@ -40,9 +46,9 @@ impl DockerResources {
     pub fn from_container_name(container_name: &str) -> Self {
         Self {
             role_container: container_name.to_owned(),
-            dind_container: crate::runtime::naming::dind_container_name(container_name),
+            dind_container: Some(crate::runtime::naming::dind_container_name(container_name)),
             network: crate::runtime::naming::role_network_name(container_name),
-            certs_volume: crate::runtime::naming::dind_certs_volume(container_name),
+            certs_volume: Some(crate::runtime::naming::dind_certs_volume(container_name)),
         }
     }
 }

@@ -54,6 +54,23 @@ pub enum ClientMsg {
     Unknown,
 }
 
+impl ServerMsg {
+    /// Variant name for diagnostics. Canonical home for the variant→label map so
+    /// consumers across crates don't each re-spell it.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::SessionList { .. } => "SessionList",
+            Self::Snapshot { .. } => "Snapshot",
+            Self::AgentRegistry { .. } => "AgentRegistry",
+            Self::UsageFocused { .. } => "UsageFocused",
+            Self::UsageAccounts { .. } => "UsageAccounts",
+            Self::TokenUsage { .. } => "TokenUsage",
+            Self::Ack => "Ack",
+            Self::Unknown => "Unknown",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {

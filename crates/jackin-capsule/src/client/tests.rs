@@ -84,6 +84,7 @@ fn usage_verify_reports_missing_and_untrusted_providers() {
         .expect("Amp check");
     assert_eq!(amp.status, "ok");
 }
+
 #[tokio::test]
 async fn attach_proxy_relays_binary_bytes_without_interpreting_frames() {
     let tmp = TempDir::new().unwrap();

@@ -47,6 +47,19 @@ pub const GITHUB_TOKEN_ENV_NAME: &str = "GITHUB_TOKEN";
 pub const GH_HOST_ENV_NAME: &str = "GH_HOST";
 pub const GH_ENTERPRISE_TOKEN_ENV_NAME: &str = "GH_ENTERPRISE_TOKEN";
 
+/// Network mode injected by jackin into role containers (`allowlist`, `open`, `none`).
+pub const JACKIN_NETWORK_MODE_ENV_NAME: &str = "JACKIN_NETWORK_MODE";
+/// Comma-separated list of allowlisted hostnames/IPs when `JACKIN_NETWORK_MODE=allowlist`.
+pub const JACKIN_ALLOWED_HOSTS_ENV_NAME: &str = "JACKIN_ALLOWED_HOSTS";
+/// Informational flag set by the entrypoint after firewall-apply completes.
+/// Informational only — must not error on absence (firewall installs post-start).
+pub const JACKIN_FIREWALL_INSTALLED_ENV_NAME: &str = "JACKIN_FIREWALL_INSTALLED";
+/// Network enforcement quality label: `full`, `partial (sudo grants iptables access)`, etc.
+pub const JACKIN_NETWORK_ENFORCEMENT_ENV_NAME: &str = "JACKIN_NETWORK_ENFORCEMENT";
+/// Set to `1` when the `sudo` grant is active; absent otherwise.
+/// The capsule entrypoint writes `/etc/sudoers.d/agent` only when this env is present.
+pub const JACKIN_SUDO_ENV_NAME: &str = "JACKIN_SUDO";
+
 /// All runtime-reserved env var names with their fixed values (or `None` for
 /// runtime-generated values).
 pub const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
@@ -64,6 +77,11 @@ pub const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     ("DOCKER_TLS_VERIFY", None),
     ("DOCKER_CERT_PATH", None),
     (TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME, None),
+    (JACKIN_NETWORK_MODE_ENV_NAME, None),
+    (JACKIN_ALLOWED_HOSTS_ENV_NAME, None),
+    (JACKIN_FIREWALL_INSTALLED_ENV_NAME, None),
+    (JACKIN_NETWORK_ENFORCEMENT_ENV_NAME, None),
+    (JACKIN_SUDO_ENV_NAME, None),
 ];
 
 /// Returns `true` if `name` is a runtime-reserved env var name.
