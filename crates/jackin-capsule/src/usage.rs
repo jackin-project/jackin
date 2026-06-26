@@ -49,6 +49,12 @@ pub(crate) struct UsageCache {
     grok_rpc_gate: ManagedCliLaunchGate,
     refresh_schedule: UsageRefreshSchedule,
     telemetry_store_path: PathBuf,
+    /// Latched on persistence failure so a persistent fault (e.g. read-only
+    /// `/jackin/state`, disk-full, DB corruption) logs once on transition via
+    /// always-on `clog!` rather than every 5-minute refresh — and is never
+    /// invisible the way the firehose-only `cdebug!` would be in production.
+    telemetry_persist_failed: bool,
+    accounts_materialize_failed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -274,17 +280,23 @@ impl UsageCache {
             self.refresh_schedule.mark_refreshed(&target, now, &view);
             stored_views.push(view);
         }
-        if !stored_views.is_empty()
-            && let Err(error) = crate::telemetry_store::store_usage_snapshots(
+        if !stored_views.is_empty() {
+            let result = crate::telemetry_store::store_usage_snapshots(
                 &self.telemetry_store_path,
                 &stored_views,
-            )
-        {
-            crate::cdebug!("usage telemetry store write failed: {error}");
+            );
+            self.telemetry_persist_failed = log_persist_transition(
+                "usage telemetry store write",
+                self.telemetry_persist_failed,
+                result,
+            );
         }
-        if let Err(error) = self.materialize_accounts(now_epoch()) {
-            crate::cdebug!("usage accounts materialization failed: {error}");
-        }
+        let materialize = self.materialize_accounts(now_epoch());
+        self.accounts_materialize_failed = log_persist_transition(
+            "usage accounts materialization",
+            self.accounts_materialize_failed,
+            materialize,
+        );
         self.refresh_schedule.in_flight = false;
     }
 
@@ -393,6 +405,27 @@ where
     results
 }
 
+/// Log a persistence outcome at the right tier: always-on `clog!` once when a
+/// fault starts and once when it clears, plus a per-cycle `cdebug!` firehose
+/// line while it persists. Returns the new "failed" latch for the caller to store.
+fn log_persist_transition(what: &str, was_failed: bool, result: Result<(), String>) -> bool {
+    match result {
+        Ok(()) => {
+            if was_failed {
+                crate::clog!("{what} recovered");
+            }
+            false
+        }
+        Err(error) => {
+            if !was_failed {
+                crate::clog!("{what} failed (suppressing repeats until recovery): {error}");
+            }
+            crate::cdebug!("{what} failed: {error}");
+            true
+        }
+    }
+}
+
 impl Default for UsageCache {
     fn default() -> Self {
         Self {
@@ -401,6 +434,8 @@ impl Default for UsageCache {
             grok_rpc_gate: ManagedCliLaunchGate::default(),
             refresh_schedule: UsageRefreshSchedule::default(),
             telemetry_store_path: PathBuf::from(TELEMETRY_STORE_PATH),
+            telemetry_persist_failed: false,
+            accounts_materialize_failed: false,
         }
     }
 }

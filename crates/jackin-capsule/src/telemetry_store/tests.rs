@@ -126,6 +126,83 @@ fn account_snapshot_rows_are_persisted_and_upserted() {
     assert_eq!(session.plan_label.as_deref(), Some("Pro 20x"));
 }
 
+/// Opening a pre-v4 store (a table missing the 10 columns
+/// `ensure_account_snapshot_columns` adds) must ALTER them in and preserve
+/// existing rows with the declared defaults. Every other test starts from a
+/// fresh DB where the `CREATE TABLE` already has all columns, so the ALTER loop
+/// is otherwise never exercised — yet an operator upgrading capsule over an
+/// existing `/jackin/state` usage.db is exactly the caller who hits it.
+#[test]
+fn schema_migration_adds_columns_to_pre_v4_table() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db = dir.path().join("usage.db");
+    let path = db.to_str().expect("utf8 path").to_owned();
+
+    // Seed a legacy table: the original 16 columns only, plus one row.
+    block_on_store(async move {
+        let conn = turso::Builder::new_local(&path)
+            .build()
+            .await
+            .map_err(|e| e.to_string())?
+            .connect()
+            .map_err(|e| e.to_string())?;
+        conn.execute_batch(
+            "CREATE TABLE account_usage_snapshots (
+                id INTEGER PRIMARY KEY,
+                provider TEXT NOT NULL,
+                account_key_hash TEXT NOT NULL,
+                account_label TEXT NOT NULL,
+                source TEXT NOT NULL,
+                confidence TEXT NOT NULL,
+                window_kind TEXT NOT NULL,
+                used_amount INTEGER,
+                used_unit TEXT,
+                limit_amount INTEGER,
+                limit_unit TEXT,
+                resets_at INTEGER,
+                fetched_at INTEGER NOT NULL,
+                expires_at INTEGER,
+                status TEXT NOT NULL,
+                last_error TEXT,
+                UNIQUE(provider, account_key_hash, source, window_kind)
+            );",
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO account_usage_snapshots
+             (provider, account_key_hash, account_label, source, confidence, window_kind, fetched_at, status)
+             VALUES ('Codex', 'sha256:legacy', 'a@b', 'cli', 'authoritative', 'Session', 100, 'fresh')",
+            (),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        Ok::<(), String>(())
+    })
+    .expect("seed pre-v4 db");
+
+    // Opening the store runs ensure_account_snapshot_columns (the ALTER loop).
+    store_usage_snapshot(&db, &usage_view()).expect("store after migration");
+
+    let rows = stored_account_snapshots(&db).expect("read migrated rows");
+    let legacy = rows
+        .iter()
+        .find(|r| r.account_key_hash == "sha256:legacy")
+        .expect("legacy row survived the migration");
+    // New columns were added with their ALTER-clause defaults on the old row.
+    assert_eq!(legacy.view_status, "unavailable");
+    assert_eq!(legacy.updated_label, "Unavailable");
+    assert_eq!(legacy.status_bar_label, "usage unavailable");
+    assert!(legacy.plan_label.is_none());
+    assert!(legacy.remaining_percent.is_none());
+    // The fresh write landed too, and the schema version is stamped current.
+    assert!(rows.iter().any(|r| r.account_key_hash != "sha256:legacy"));
+    assert_eq!(
+        schema_version(&db).expect("schema version"),
+        Some("4".to_owned())
+    );
+}
+
 #[test]
 fn focused_usage_view_rebuilds_snapshot_from_account_rows() {
     let dir = tempfile::tempdir().expect("tempdir");

@@ -80,6 +80,10 @@ impl Multiplexer {
             if let Some(orphan) = self.sessions.remove(&new_id) {
                 orphan.terminate();
             }
+            // The history record was pushed at spawn (above), before placement
+            // could be confirmed. Stamp its exit now so the reaped orphan is not
+            // reported as a permanently "active" agent in the registry snapshot.
+            self.mark_agent_session_exited(new_id);
             crate::clog!(
                 "action: split aborted — from_id={from_id} no longer in tab tree; reaped orphan id={new_id}",
             );
