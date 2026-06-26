@@ -18,6 +18,10 @@ fn manifest_v2_backend_roundtrips_and_legacy_v1_deserializes() {
             role_source_ref: Some("main"),
             image_tag: "img",
             docker: DockerResources::from_container_name("jackin-x"),
+            role_git_sha: None,
+            base_image_ref: None,
+            base_image_digest: None,
+            supported_agents: vec![],
         },
         BackendResources::AppleContainer(AppleContainerResources {
             container_name: "jackin-x".to_owned(),

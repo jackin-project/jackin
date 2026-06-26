@@ -332,6 +332,10 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
             role_source_ref,
             image_tag,
             docker: DockerResources::from_container_name(container_name),
+            role_git_sha: None,
+            base_image_ref: None,
+            base_image_digest: None,
+            supported_agents: vec![],
         },
         BackendResources::AppleContainer(AppleContainerResources {
             container_name: container_name.to_owned(),

@@ -360,6 +360,7 @@ mod tests {
                 claude_plugins: Vec::new(),
                 dirty_exit_policy: None,
                 isolated_worktrees: Vec::new(),
+                exec_bindings: Vec::new(),
             },
         )
         .expect("test multiplexer");

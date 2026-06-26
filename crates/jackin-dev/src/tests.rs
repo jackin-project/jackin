@@ -193,20 +193,6 @@ fn mise_exec_command_runs_inside_project_tool_env() {
 }
 
 #[test]
-fn parse_pr_info_filters_empty_and_non_string_paths() {
-    let json = serde_json::json!({
-        "headRefName": "fix/example",
-        "headRefOid": "abc123",
-        "files": [{"path": "a.rs"}, {"path": ""}, {"additions": 1}, {"path": "b.rs"}],
-    });
-    let info = parse_pr_info(&json).unwrap();
-
-    assert_eq!(info.head_ref_name, "fix/example");
-    assert_eq!(info.head_oid, "abc123");
-    assert_eq!(info.changed_files, vec!["a.rs", "b.rs"]);
-}
-
-#[test]
 fn checkout_reset_guard_rejects_dirty_worktree() {
     let temp = git_repo_with_commit();
     fs::write(temp.path().join("tracked.txt"), "dirty\n").unwrap();
@@ -241,13 +227,6 @@ fn checkout_reset_guard_force_allows_dirty_worktree() {
     fs::write(temp.path().join("tracked.txt"), "dirty\n").unwrap();
 
     ensure_checkout_reset_safe(temp.path(), "feature", "HEAD", true).unwrap();
-}
-
-#[test]
-fn parse_pr_info_rejects_missing_files() {
-    let json = serde_json::json!({ "headRefName": "fix/example", "headRefOid": "abc123" });
-
-    assert!(parse_pr_info(&json).is_err());
 }
 
 #[test]
