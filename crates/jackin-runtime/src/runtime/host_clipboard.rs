@@ -385,7 +385,7 @@ end try";
 
 #[cfg(target_os = "linux")]
 fn read_linux_clipboard_image() -> Result<Option<ClipboardImage>> {
-    validate_linux_clipboard_image_backend()?;
+    validate_linux_clipboard_backend_env("Linux host clipboard image reader")?;
 
     if std::env::var_os("WAYLAND_DISPLAY").is_some()
         && let Some(wl_paste) = find_program_in_path("wl-paste")
@@ -414,7 +414,7 @@ fn read_linux_clipboard_image() -> Result<Option<ClipboardImage>> {
 
 #[cfg(target_os = "linux")]
 fn read_linux_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
-    validate_linux_clipboard_text_backend()?;
+    validate_linux_clipboard_backend_env("Linux host clipboard text reader")?;
 
     if std::env::var_os("WAYLAND_DISPLAY").is_some()
         && let Some(wl_paste) = find_program_in_path("wl-paste")
@@ -502,8 +502,19 @@ fn image_from_bytes(bytes: Vec<u8>) -> Result<Option<ClipboardImage>> {
     Ok(Some(ClipboardImage { format, bytes }))
 }
 
+/// Spawn `program` and read its stdout, capping the kept bytes at `max_bytes`
+/// (one extra byte is read to detect overflow). Returns `Ok(None)` when the
+/// command exits non-zero, produces no output, or exceeds `max_bytes` (the child
+/// is killed in that case rather than draining an unbounded clipboard payload);
+/// spawn and I/O failures propagate as `Err`. `what` ("text"/"image") names the
+/// probe so a failure points at the right reader.
 #[cfg(any(target_os = "linux", test))]
-fn read_text_command<I, S>(program: &Path, args: I) -> Result<Option<String>>
+fn read_command_stdout_bounded<I, S>(
+    program: &Path,
+    args: I,
+    max_bytes: usize,
+    what: &str,
+) -> Result<Option<Vec<u8>>>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -514,22 +525,20 @@ where
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .with_context(|| format!("spawning clipboard text command {}", program.display()))?;
+        .with_context(|| format!("spawning clipboard {what} command {}", program.display()))?;
     let mut stdout = child
         .stdout
         .take()
-        .context("clipboard text command did not expose stdout")?;
+        .with_context(|| format!("clipboard {what} command did not expose stdout"))?;
     let mut bytes = Vec::new();
     {
-        let mut limited = stdout
-            .by_ref()
-            .take((MAX_CLIPBOARD_TEXT_PATH_BYTES + 1) as u64);
+        let mut limited = stdout.by_ref().take((max_bytes + 1) as u64);
         limited
             .read_to_end(&mut bytes)
-            .context("reading clipboard text command stdout")?;
+            .with_context(|| format!("reading clipboard {what} command stdout"))?;
     }
     drop(stdout);
-    if bytes.len() > MAX_CLIPBOARD_TEXT_PATH_BYTES {
+    if bytes.len() > max_bytes {
         drop(child.kill());
         drop(child.wait());
         return Ok(None);
@@ -537,11 +546,23 @@ where
 
     let status = child
         .wait()
-        .context("waiting for clipboard text command to exit")?;
+        .with_context(|| format!("waiting for clipboard {what} command to exit"))?;
     if !status.success() || bytes.is_empty() {
         return Ok(None);
     }
-    Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+    Ok(Some(bytes))
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn read_text_command<I, S>(program: &Path, args: I) -> Result<Option<String>>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    Ok(
+        read_command_stdout_bounded(program, args, MAX_CLIPBOARD_TEXT_PATH_BYTES, "text")?
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned()),
+    )
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -550,40 +571,10 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let mut child = Command::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .with_context(|| format!("spawning clipboard image command {}", program.display()))?;
-    let mut stdout = child
-        .stdout
-        .take()
-        .context("clipboard image command did not expose stdout")?;
-    let mut bytes = Vec::new();
-    {
-        let mut limited = stdout
-            .by_ref()
-            .take((MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES + 1) as u64);
-        limited
-            .read_to_end(&mut bytes)
-            .context("reading clipboard image command stdout")?;
+    match read_command_stdout_bounded(program, args, MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES, "image")? {
+        Some(bytes) => image_from_bytes(bytes),
+        None => Ok(None),
     }
-    drop(stdout);
-    if bytes.len() > MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES {
-        drop(child.kill());
-        drop(child.wait());
-        return Ok(None);
-    }
-
-    let status = child
-        .wait()
-        .context("waiting for clipboard image command to exit")?;
-    if !status.success() || bytes.is_empty() {
-        return Ok(None);
-    }
-    image_from_bytes(bytes)
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -603,34 +594,16 @@ fn find_program_in_path(program: &str) -> Option<PathBuf> {
     find_program_in_path_value(program, &path)
 }
 
+/// Probe the live host environment (display-server vars + tool availability) and
+/// validate it. `label` names the caller so the failure message points at the
+/// image or text reader.
 #[cfg(target_os = "linux")]
-fn validate_linux_clipboard_image_backend() -> Result<()> {
+fn validate_linux_clipboard_backend_env(label: &str) -> Result<()> {
     let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
     let display = std::env::var_os("DISPLAY").is_some();
     let wl_paste = find_program_in_path("wl-paste").is_some();
     let xclip = find_program_in_path("xclip").is_some();
-    validate_linux_clipboard_backend(
-        wayland,
-        display,
-        wl_paste,
-        xclip,
-        "Linux host clipboard image reader",
-    )
-}
-
-#[cfg(target_os = "linux")]
-fn validate_linux_clipboard_text_backend() -> Result<()> {
-    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
-    let display = std::env::var_os("DISPLAY").is_some();
-    let wl_paste = find_program_in_path("wl-paste").is_some();
-    let xclip = find_program_in_path("xclip").is_some();
-    validate_linux_clipboard_backend(
-        wayland,
-        display,
-        wl_paste,
-        xclip,
-        "Linux host clipboard text reader",
-    )
+    validate_linux_clipboard_backend(wayland, display, wl_paste, xclip, label)
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -644,26 +617,18 @@ fn validate_linux_clipboard_backend(
     if !wayland && !display {
         anyhow::bail!("{label} needs WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip");
     }
-    if wayland && wl_paste {
+    if (wayland && wl_paste) || (display && xclip) {
         return Ok(());
     }
-    if display && xclip {
-        return Ok(());
+    // Reached only with a display server set but its tool absent. The final bail
+    // is exhaustive: `!wayland` here implies `display`, since no-display bailed above.
+    if wayland && display {
+        anyhow::bail!("{label} needs wl-paste or xclip in host PATH");
     }
-    match (wayland, display, wl_paste, xclip) {
-        (true, false, false, _) => {
-            anyhow::bail!("{label} needs wl-paste in host PATH because WAYLAND_DISPLAY is set")
-        }
-        (false, true, _, false) => {
-            anyhow::bail!("{label} needs xclip in host PATH because DISPLAY is set")
-        }
-        (true, true, false, false) => {
-            anyhow::bail!("{label} needs wl-paste or xclip in host PATH")
-        }
-        (true, true, false, true) | (false, true, _, true) => Ok(()),
-        (true, true, true, false) | (true, false, true, _) => Ok(()),
-        _ => anyhow::bail!("{label} has no usable Wayland or X11 clipboard backend"),
+    if wayland {
+        anyhow::bail!("{label} needs wl-paste in host PATH because WAYLAND_DISPLAY is set");
     }
+    anyhow::bail!("{label} needs xclip in host PATH because DISPLAY is set")
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -1008,6 +973,67 @@ mod tests {
     }
 
     #[test]
+    fn bounded_reader_kills_and_drops_output_over_the_cap() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("payload.bin");
+        std::fs::write(&path, b"0123456789").unwrap();
+
+        // Exactly at the cap is kept; one byte over is dropped (the child is killed
+        // rather than draining an unbounded payload).
+        assert_eq!(
+            read_command_stdout_bounded(Path::new("/bin/cat"), [path.as_os_str()], 10, "text")
+                .unwrap()
+                .as_deref(),
+            Some(b"0123456789".as_slice())
+        );
+        assert!(
+            read_command_stdout_bounded(Path::new("/bin/cat"), [path.as_os_str()], 9, "text")
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn bounded_reader_maps_empty_and_failed_commands_to_none() {
+        let temp = tempfile::tempdir().unwrap();
+        let empty = temp.path().join("empty.bin");
+        std::fs::write(&empty, b"").unwrap();
+
+        // Success with empty stdout → None (an empty clipboard is "nothing", not "").
+        assert!(
+            read_command_stdout_bounded(Path::new("/bin/cat"), [empty.as_os_str()], 10, "text")
+                .unwrap()
+                .is_none()
+        );
+        // Non-zero exit → None even with bytes on stdout (exercises the
+        // `!status.success()` arm independently of the empty-output arm).
+        assert!(
+            read_command_stdout_bounded(
+                Path::new("/bin/sh"),
+                ["-c", "printf hi; exit 1"],
+                10,
+                "text"
+            )
+            .unwrap()
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn bounded_reader_propagates_spawn_failure_as_error() {
+        // A missing program is a real error, not an empty-clipboard `None`.
+        assert!(
+            read_command_stdout_bounded(
+                Path::new("/nonexistent/jackin-no-such-binary"),
+                Vec::<&OsStr>::new(),
+                10,
+                "text",
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn finds_program_in_explicit_path_value() {
         let temp = tempfile::tempdir().unwrap();
         let tool = temp.path().join("wl-paste");
@@ -1079,6 +1105,20 @@ mod tests {
     }
 
     #[test]
+    fn linux_clipboard_backend_reports_both_tools_missing_when_both_servers_set() {
+        let err = validate_linux_clipboard_backend(
+            true,
+            true,
+            false,
+            false,
+            "Linux host clipboard image reader",
+        )
+        .expect_err("both servers set but neither tool present should explain setup");
+
+        assert!(format!("{err:#}").contains("needs wl-paste or xclip in host PATH"));
+    }
+
+    #[test]
     fn linux_clipboard_backend_accepts_any_available_display_tool_pair() {
         validate_linux_clipboard_backend(
             true,
@@ -1096,5 +1136,14 @@ mod tests {
             "Linux host clipboard image reader",
         )
         .expect("X11 with xclip should work");
+        // Both servers advertised, only one tool present → still accepted.
+        validate_linux_clipboard_backend(
+            true,
+            true,
+            true,
+            false,
+            "Linux host clipboard image reader",
+        )
+        .expect("both servers with only wl-paste should work");
     }
 }

@@ -318,17 +318,10 @@ where
                         )
                         .await;
                     }
-                    ServerFrame::HostPasteImageFromClipboard => {
-                        write_clipboard_image_request_result(
-                            &mut server_writer,
-                            read_image_from_clipboard().await,
-                            "host clipboard does not contain a readable image",
-                            "host clipboard image probe failed",
-                            "host clipboard image response failed",
-                        )
-                        .await;
-                    }
-                    ServerFrame::HostStageImageFromClipboard => {
+                    // Paste and Stage differ on the Capsule side; the host response
+                    // (probe the clipboard for a readable image) is identical.
+                    ServerFrame::HostPasteImageFromClipboard
+                    | ServerFrame::HostStageImageFromClipboard => {
                         write_clipboard_image_request_result(
                             &mut server_writer,
                             read_image_from_clipboard().await,
