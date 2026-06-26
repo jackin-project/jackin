@@ -181,6 +181,16 @@ fn shell_quote_quotes_shell_metachars() {
 }
 
 #[test]
+fn mise_exec_command_runs_inside_project_tool_env() {
+    let cmd = mise_exec_command("cargo", ["run", "--bin", "build-jackin-capsule"]);
+
+    assert_eq!(
+        display_command(&cmd),
+        "mise exec -- cargo run --bin build-jackin-capsule"
+    );
+}
+
+#[test]
 fn parse_pr_info_filters_empty_and_non_string_paths() {
     let json = serde_json::json!({
         "headRefName": "fix/example",

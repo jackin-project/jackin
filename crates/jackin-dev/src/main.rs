@@ -201,7 +201,7 @@ fn sync(args: SyncArgs) -> Result<()> {
     )?;
     run_checked(command("mise", ["trust"]).current_dir(&paths.repo))?;
     run_checked(command("mise", ["install"]).current_dir(&paths.repo))?;
-    run_checked(command("cargo", ["build", "--bin", "jackin"]).current_dir(&paths.repo))?;
+    run_checked(mise_exec_command("cargo", ["build", "--bin", "jackin"]).current_dir(&paths.repo))?;
 
     prepare_config(args.config, &paths.config, &home)?;
     fs::create_dir_all(&paths.home)
@@ -703,7 +703,7 @@ fn local_dependency_closure(packages: &[WorkspacePackage], root: &str) -> Result
 // stderr). If that output format changes, this match must change with it.
 fn build_capsule_export(repo_dir: &Path) -> Result<String> {
     let output = run_output(
-        command(
+        mise_exec_command(
             "cargo",
             ["run", "--bin", "build-jackin-capsule", "--", "--export"],
         )
@@ -732,6 +732,17 @@ where
     S: AsRef<OsStr>,
 {
     let mut cmd = Command::new(program);
+    cmd.args(args);
+    cmd
+}
+
+fn mise_exec_command<I, S>(program: &str, args: I) -> Command
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let mut cmd = Command::new("mise");
+    cmd.args(["exec", "--", program]);
     cmd.args(args);
     cmd
 }
