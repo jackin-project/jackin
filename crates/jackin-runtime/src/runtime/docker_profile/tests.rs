@@ -199,6 +199,28 @@ fn capability_flags_compat_empty() {
 }
 
 #[test]
+fn capability_flags_compat_adds_extra_without_drop_all() {
+    // Non-drop-all profile: extra caps are added, but no --cap-drop=ALL.
+    let flags = capability_flags(DockerSecurityProfile::Compat, &["NET_ADMIN".to_owned()]);
+    assert!(!flags.iter().any(|f| f == "--cap-drop=ALL"));
+    assert!(flags.windows(2).any(|w| w == ["--cap-add", "NET_ADMIN"]));
+}
+
+#[test]
+fn capability_flags_hardened_adds_extra_on_top_of_minimum() {
+    // Drop-all profile: --cap-drop=ALL + the minimum set + the extra cap.
+    let flags = capability_flags(
+        DockerSecurityProfile::Hardened,
+        &["CAP_NET_ADMIN".to_owned()],
+    );
+    assert!(flags.contains(&"--cap-drop=ALL".to_owned()));
+    // Extra cap is normalized (CAP_ prefix stripped) and added.
+    assert!(flags.windows(2).any(|w| w == ["--cap-add", "NET_ADMIN"]));
+    // The minimum set is still present alongside the extra.
+    assert!(flags.windows(2).any(|w| w == ["--cap-add", "SETUID"]));
+}
+
+#[test]
 fn readonly_root_flags_for_locked() {
     let grants = profile_base_grants(DockerSecurityProfile::Locked);
     let flags = readonly_root_flags(DockerSecurityProfile::Locked, &grants);
