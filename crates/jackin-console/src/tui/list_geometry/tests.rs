@@ -1,6 +1,7 @@
 //! Tests for `list_geometry`.
 use super::*;
 use crate::tui::screens::workspaces::model::ManagerListRow;
+use jackin_core::instance::InstanceStatus;
 
 #[test]
 fn workspace_rows_account_for_cursor_and_instances() {
@@ -75,8 +76,14 @@ fn split_list_columns_allocates_preview_remainder() {
 
 #[test]
 fn instance_rows_leave_indent_when_not_selected() {
-    assert_eq!(instance_row_width("i-1", "role", true), 14);
-    assert_eq!(instance_row_width("i-1", "role", false), 19);
+    assert_eq!(
+        instance_row_width("i-1", "role", InstanceStatus::Running, true),
+        14
+    );
+    assert_eq!(
+        instance_row_width("i-1", "role", InstanceStatus::Running, false),
+        19
+    );
 }
 
 #[test]
@@ -114,20 +121,41 @@ fn manager_list_row_width_routes_all_row_kinds() {
             false,
             |_| None,
             |_| None,
-            |ws, inst| (ws == 1 && inst == 3).then(|| ("i-1".to_owned(), "role".to_owned())),
+            |ws, inst| {
+                (ws == 1 && inst == 3)
+                    .then(|| ("i-1".to_owned(), "role".to_owned(), InstanceStatus::Running))
+            },
         ),
-        Some(instance_row_width("i-1", "role", false))
+        Some(instance_row_width(
+            "i-1",
+            "role",
+            InstanceStatus::Running,
+            false
+        ))
     );
     assert_eq!(
         manager_list_row_width(
             ManagerListRow::CurrentDirectoryInstance(4),
             true,
             false,
-            |inst| (inst == 4).then(|| ("i-cwd".to_owned(), "agent".to_owned())),
+            |inst| {
+                (inst == 4).then(|| {
+                    (
+                        "i-cwd".to_owned(),
+                        "agent".to_owned(),
+                        InstanceStatus::Running,
+                    )
+                })
+            },
             |_| None,
             |_, _| None,
         ),
-        Some(instance_row_width("i-cwd", "agent", true))
+        Some(instance_row_width(
+            "i-cwd",
+            "agent",
+            InstanceStatus::Running,
+            true
+        ))
     );
     assert_eq!(
         manager_list_row_width(
@@ -181,9 +209,18 @@ fn manager_list_names_content_width_uses_visual_rows() {
         |_| None,
         |idx| (idx == 2).then(|| ("workspace".to_owned(), true)),
         |ws_idx, inst_idx| {
-            (ws_idx == 2 && inst_idx == 1).then(|| ("instance-123".to_owned(), "role".to_owned()))
+            (ws_idx == 2 && inst_idx == 1).then(|| {
+                (
+                    "instance-123".to_owned(),
+                    "role".to_owned(),
+                    InstanceStatus::Running,
+                )
+            })
         },
     );
 
-    assert_eq!(width, instance_row_width("instance-123", "role", true));
+    assert_eq!(
+        width,
+        instance_row_width("instance-123", "role", InstanceStatus::Running, true)
+    );
 }

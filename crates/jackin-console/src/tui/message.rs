@@ -15,6 +15,8 @@ pub enum ConsoleManagerMessage<
     CreatePrelude,
     Editor,
     Settings,
+    FileBrowserCommit,
+    FileBrowserListing,
     InstanceRefreshSnapshot,
     MountInfoRefresh,
     OpRef,
@@ -48,6 +50,8 @@ pub enum ConsoleManagerMessage<
         kind: AuthKind,
     },
     EnterSettings(Settings),
+    FileBrowserCommitValidated(FileBrowserCommit),
+    FileBrowserListingLoaded(FileBrowserListing),
     InstancesRefreshed(Result<InstanceRefreshSnapshot, String>),
     MountInfoRefreshed(MountInfoRefresh),
     OpCommitResolved {
@@ -192,7 +196,7 @@ pub enum ConsoleManagerMessage<
 }
 
 #[derive(Debug)]
-pub enum BackgroundEvent<M, RoleLoad, DriftCheck, DriftDetection, IsolationCleanup> {
+pub enum BackgroundEvent<M, RoleLoad, DriftCheck, DriftDetection, IsolationCleanup, ConfigSave> {
     Message(M),
     RoleLoadFinished {
         load: RoleLoad,
@@ -206,6 +210,7 @@ pub enum BackgroundEvent<M, RoleLoad, DriftCheck, DriftDetection, IsolationClean
         cleanup: IsolationCleanup,
         result: anyhow::Result<()>,
     },
+    ConfigSaveFinished(ConfigSave),
 }
 
 #[derive(Debug)]
@@ -327,6 +332,7 @@ pub enum ConsoleEditorModalOutcome<RoleSelector, RoleSource, OpRef> {
     },
     ApplyFileBrowserOutcome(crate::tui::components::file_browser::FileBrowserOutcome<PathBuf>),
     ResolveFileBrowserGitUrl(PathBuf),
+    OpenAuthSourceFolderBrowser,
     OpenUrl(String),
     ValidateOpRef(OpRef),
 }
@@ -344,6 +350,8 @@ pub enum ConsoleSettingsModalOutcome {
 #[derive(Debug)]
 pub enum ConsoleSettingsAuthOutcome<OpRef> {
     Continue,
+    OpenAuthSourceFolderBrowser,
+    ApplyFileBrowserOutcome(crate::tui::components::file_browser::FileBrowserOutcome<PathBuf>),
     ValidateOpRef(OpRef),
 }
 

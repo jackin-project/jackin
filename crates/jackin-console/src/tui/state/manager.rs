@@ -35,10 +35,11 @@ use crate::tui::update::{
 use jackin_env::OpCache;
 
 use super::{
-    DEFAULT_SPLIT_PCT, ManagerEffect, ManagerInstanceRefreshSnapshot, ManagerListRow, ManagerStage,
-    ManagerState, Modal, MountInfoCache, MountInfoRefreshTarget, MountScrollFocus,
-    PendingDriftCheck, PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad,
-    PendingTokenGenerate, WorkspaceSummary, active_instances_matching,
+    DEFAULT_SPLIT_PCT, ManagerConfigSaveResult, ManagerEffect, ManagerInstanceRefreshSnapshot,
+    ManagerListRow, ManagerStage, ManagerState, Modal, MountInfoCache, MountInfoRefreshTarget,
+    MountScrollFocus, PendingDriftCheck, PendingFileBrowserCommit, PendingFileBrowserListing,
+    PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad, PendingTokenGenerate,
+    WorkspaceSummary, active_instances_matching,
 };
 
 impl ManagerState<'_> {
@@ -170,6 +171,9 @@ impl ManagerState<'_> {
             instances_refresh_generation: 0,
             instances_refresh_rx: None,
             mount_info_refresh_rx: None,
+            file_browser_listing_rx: None,
+            file_browser_commit_rx: None,
+            config_save_rx: None,
             instances_last_error: None,
             expanded_workspaces: BTreeSet::new(),
             current_dir_expanded: false,
@@ -262,6 +266,73 @@ impl ManagerState<'_> {
         active_instances_matching(&self.instances, query).collect()
     }
 
+    /// All instances shown in the tree for workspace `ws_idx` — live and
+    /// failed/stopped alike, everything except `Purged` / `Superseded` (D15).
+    #[must_use]
+    pub fn workspace_visible_instances(
+        &self,
+        ws_idx: usize,
+    ) -> Vec<&jackin_core::instance::InstanceIndexEntry> {
+        let Some(ws) = self.workspaces.get(ws_idx) else {
+            return Vec::new();
+        };
+        let query = jackin_core::instance::InstanceQuery {
+            workspace_name: Some(ws.name.as_str()),
+            workspace_label: ws.name.as_str(),
+            workdir: ws.workdir.as_str(),
+            role_key: None,
+            agent_runtime: None,
+        };
+        crate::tui::state::visible_instances_matching(&self.instances, query).collect()
+    }
+
+    #[must_use]
+    pub fn has_visible_instances(&self, ws_idx: usize) -> bool {
+        let Some(ws) = self.workspaces.get(ws_idx) else {
+            return false;
+        };
+        let query = jackin_core::instance::InstanceQuery {
+            workspace_name: Some(ws.name.as_str()),
+            workspace_label: ws.name.as_str(),
+            workdir: ws.workdir.as_str(),
+            role_key: None,
+            agent_runtime: None,
+        };
+        crate::tui::state::visible_instances_matching(&self.instances, query)
+            .next()
+            .is_some()
+    }
+
+    #[must_use]
+    pub fn has_current_dir_visible_instances(&self) -> bool {
+        let current_dir = self.current_dir.as_str();
+        let query = jackin_core::instance::InstanceQuery {
+            workspace_name: None,
+            workspace_label: current_dir,
+            workdir: current_dir,
+            role_key: None,
+            agent_runtime: None,
+        };
+        crate::tui::state::visible_instances_matching(&self.instances, query)
+            .next()
+            .is_some()
+    }
+
+    /// Tree instances for the synthetic "Current directory" row — live and
+    /// failed/stopped alike, everything except `Purged` / `Superseded` (D15).
+    #[must_use]
+    pub fn current_dir_visible_instances(&self) -> Vec<&jackin_core::instance::InstanceIndexEntry> {
+        let current_dir = self.current_dir.as_str();
+        let query = jackin_core::instance::InstanceQuery {
+            workspace_name: None,
+            workspace_label: current_dir,
+            workdir: current_dir,
+            role_key: None,
+            agent_runtime: None,
+        };
+        crate::tui::state::visible_instances_matching(&self.instances, query).collect()
+    }
+
     /// Flat ordered list of selectable rows accounting for tree expansion.
     /// Instance rows appear immediately after their parent workspace row.
     fn selectable_rows_vec(&self) -> Vec<ManagerListRow> {
@@ -269,7 +340,7 @@ impl ManagerState<'_> {
         crate::tui::screens::workspaces::update::selectable_rows(
             crate::tui::screens::workspaces::update::WorkspaceRowLayout {
                 current_dir_expanded: self.current_dir_expanded,
-                current_dir_instance_count: self.current_dir_active_instances().len(),
+                current_dir_instance_count: self.current_dir_visible_instances().len(),
                 workspace_instance_counts: &workspace_instance_counts,
                 expanded_workspaces: &self.expanded_workspaces,
             },
@@ -283,7 +354,7 @@ impl ManagerState<'_> {
         crate::tui::screens::workspaces::update::visual_rows(
             crate::tui::screens::workspaces::update::WorkspaceRowLayout {
                 current_dir_expanded: self.current_dir_expanded,
-                current_dir_instance_count: self.current_dir_active_instances().len(),
+                current_dir_instance_count: self.current_dir_visible_instances().len(),
                 workspace_instance_counts: &workspace_instance_counts,
                 expanded_workspaces: &self.expanded_workspaces,
             },
@@ -299,7 +370,7 @@ impl ManagerState<'_> {
         self.workspaces
             .iter()
             .enumerate()
-            .map(|(i, _)| self.workspace_active_instances(i).len())
+            .map(|(i, _)| self.workspace_visible_instances(i).len())
             .collect()
     }
 
@@ -455,9 +526,9 @@ impl ManagerState<'_> {
     // ── Tree expand / collapse ────────────────────────────────────
 
     /// Expand the workspace tree node at `ws_idx`. No-op when already
-    /// expanded or when there are no active instances.
+    /// expanded or when there are no visible instances.
     pub fn expand_workspace(&mut self, ws_idx: usize) {
-        if !self.workspace_active_instances(ws_idx).is_empty() {
+        if self.has_visible_instances(ws_idx) {
             self.expanded_workspaces.insert(ws_idx);
         }
     }
@@ -465,7 +536,7 @@ impl ManagerState<'_> {
     /// Expand the synthetic "Current directory" row. No-op when
     /// already expanded or when no instances point at the cwd.
     pub fn expand_current_dir(&mut self) {
-        if self.has_current_dir_active_instances() {
+        if self.has_current_dir_visible_instances() {
             self.current_dir_expanded = true;
         }
     }
@@ -544,6 +615,36 @@ impl ManagerState<'_> {
         self.mount_info_refresh_rx = Some(rx);
     }
 
+    pub fn begin_file_browser_listing(
+        &mut self,
+        rx: BlockingSubscription<PendingFileBrowserListing>,
+    ) {
+        self.file_browser_listing_rx = Some(rx);
+    }
+
+    pub const fn file_browser_listing_in_flight(&self) -> bool {
+        self.file_browser_listing_rx.is_some()
+    }
+
+    pub fn begin_file_browser_commit(
+        &mut self,
+        rx: BlockingSubscription<PendingFileBrowserCommit>,
+    ) {
+        self.file_browser_commit_rx = Some(rx);
+    }
+
+    pub const fn file_browser_commit_in_flight(&self) -> bool {
+        self.file_browser_commit_rx.is_some()
+    }
+
+    pub fn begin_config_save(&mut self, rx: BlockingSubscription<ManagerConfigSaveResult>) {
+        self.config_save_rx = Some(rx);
+    }
+
+    pub const fn config_save_in_flight(&self) -> bool {
+        self.config_save_rx.is_some()
+    }
+
     pub fn poll_mount_info_refresh(&mut self) -> Option<PendingMountInfoRefresh> {
         let rx = self.mount_info_refresh_rx.as_mut()?;
         let result = match rx.poll_next() {
@@ -555,6 +656,50 @@ impl ManagerState<'_> {
             }
         };
         self.mount_info_refresh_rx = None;
+        Some(result)
+    }
+
+    pub fn poll_file_browser_listing(&mut self) -> Option<PendingFileBrowserListing> {
+        let rx = self.file_browser_listing_rx.as_mut()?;
+        let result = match rx.poll_next() {
+            SubscriptionPoll::Ready(result) => result,
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => {
+                self.file_browser_listing_rx = None;
+                return None;
+            }
+        };
+        self.file_browser_listing_rx = None;
+        Some(result)
+    }
+
+    pub fn poll_file_browser_commit(&mut self) -> Option<PendingFileBrowserCommit> {
+        let rx = self.file_browser_commit_rx.as_mut()?;
+        let result = match rx.poll_next() {
+            SubscriptionPoll::Ready(result) => result,
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => {
+                self.file_browser_commit_rx = None;
+                return None;
+            }
+        };
+        self.file_browser_commit_rx = None;
+        Some(result)
+    }
+
+    pub fn poll_config_save(&mut self) -> Option<ManagerConfigSaveResult> {
+        let rx = self.config_save_rx.as_mut()?;
+        let result = match rx.poll_next() {
+            SubscriptionPoll::Ready(result) => result,
+            SubscriptionPoll::Pending => return None,
+            SubscriptionPoll::Closed => {
+                self.config_save_rx = None;
+                return Some(ManagerConfigSaveResult::Settings(Err(anyhow::anyhow!(
+                    crate::tui::subscriptions::config_save_worker_disconnected_message()
+                ))));
+            }
+        };
+        self.config_save_rx = None;
         Some(result)
     }
 

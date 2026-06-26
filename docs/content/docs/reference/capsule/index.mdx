@@ -49,9 +49,9 @@ codex`. The daemon uses that argv value only to choose the first tab.
 `/jackin/runtime/entrypoint.sh` runs, so the container's ambient environment
 does not imply that every pane is the same agent.
 
-**Attach client mode (PID ≠ 1).** When the operator runs `docker exec -it <container> jackin-capsule`, the binary connects to the daemon socket, bridges the operator's terminal to the active session, and forwards attach frames between the terminal and daemon.
+**Attach client mode (PID ≠ 1).** When the operator runs `docker exec -it <container> jackin-capsule`, the binary connects to the daemon socket, bridges the operator's terminal to the active session, and forwards attach frames between the terminal and daemon. The opt-in host-owned attach path moves terminal ownership into the `jackin` host process instead; when the host cannot connect to the bind-mounted socket directly, `jackin-capsule attach-proxy` relays the same binary attach bytes over stdio inside the container.
 
-**Runtime setup subcommand (PID ≠ 1).** `/jackin/runtime/entrypoint.sh` calls `jackin-capsule runtime-setup` before each agent exec. The subcommand performs idempotent container setup (git identity, GitHub HTTPS rewrites, and the `gh` credential helper), installs the shared git trailer hook on demand, and refreshes per-agent home/auth handoff state. The hook at `/jackin/state/git-hooks/prepare-commit-msg` is a symlink back to `/jackin/runtime/jackin-capsule`, so Git invokes Rust code directly for `Co-authored-by` and `Signed-off-by` normalization instead of a shell script. The container init marker lives under `/jackin/state`, so global git/GitHub setup runs once per running container; per-session auth handoff still refreshes before every agent launch.
+**Runtime setup subcommand (PID ≠ 1).** `/jackin/runtime/entrypoint.sh` calls `jackin-capsule runtime-setup` before each agent exec. The subcommand performs idempotent container setup (git identity, GitHub HTTPS rewrites, and the `gh` credential helper), installs the shared git trailer hook on demand, refreshes per-agent home/auth handoff state, and repairs container-local agent status reporter config. For Codex, that includes `~/.codex/hooks.json` plus `[tui]` notification settings in `~/.codex/config.toml` so `agent-turn-complete` and `approval-requested` reach the capsule as OSC 9 notifications. The hook at `/jackin/state/git-hooks/prepare-commit-msg` is a symlink back to `/jackin/runtime/jackin-capsule`, so Git invokes Rust code directly for `Co-authored-by` and `Signed-off-by` normalization instead of a shell script. The container init marker lives under `/jackin/state`, so global git/GitHub setup runs once per running container; per-session auth handoff still refreshes before every agent launch.
 
 Those modes deliberately keep ownership narrow:
 
@@ -59,7 +59,8 @@ Those modes deliberately keep ownership narrow:
 |---|---|---|---|
 | `jackin` host CLI | Host process | Docker lifecycle, image build, socket mount path, final cleanup, operator prompts | Agent PTYs, pane layout, terminal rendering |
 | `jackin-capsule` daemon | PID 1 inside role container | PTYs, tabs/panes, socket listener, render loop, session inventory, child reaping | Host config, host git state, host credentials |
-| `jackin-capsule` attach client | Short-lived `docker exec` process | Host terminal raw mode, attach protocol bridge | Session state after detach |
+| `jackin-capsule` attach client / `attach-proxy` | Short-lived `docker exec` process | In-container socket bridge for legacy attach or host stdio fallback | Session state after detach, host browser/clipboard/filesystem actions |
+| `jackin` host attach client | Host process | Host terminal raw mode, direct/proxy attach transport, explicit host-open/file-export destinations | Agent PTYs, daemon session state |
 | `/jackin/runtime/entrypoint.sh` | Agent child process path | Runtime dispatch to Claude/Codex/Amp/Kimi/OpenCode | Socket protocol, PTY lifecycle |
 | `jackin-capsule runtime-setup` | Called by entrypoint before each agent exec | Idempotent in-container setup and auth/home handoff | Host-side mutations |
 
@@ -79,12 +80,12 @@ The same bind-mounted `/jackin/run` directory also carries `agent.toml`. The hos
 
 Two protocols share the same socket. The first byte sent by a client selects which one the daemon dispatches:
 
-- **Control channel** — first byte `0x00`, interpreted as the first byte of a four-byte big-endian length prefix. The rest of the frame is a UTF-8 JSON request. The daemon reads one request, writes one length-prefixed JSON response, then closes the connection. This is used for one-shot status and snapshot queries.
+- **Control channel** — first byte `0x00`, interpreted as the first byte of a four-byte big-endian length prefix. The rest of the frame is a UTF-8 JSON request. The daemon reads one request, writes one length-prefixed JSON response, then closes the connection. This is used for one-shot status, snapshot, agent-registry, and cached usage queries.
 - **Attach channel** — any non-zero first byte, interpreted as an attach-frame tag. Every frame is `[tag: u8][payload_len: u32 big-endian][payload bytes]`. Interactive terminal bytes stay raw on this hot path; they are not JSON-wrapped or base64-encoded.
 
 Both channels cap a single payload at 4 MiB. The control channel rejects malformed JSON and unknown structural shapes. Unknown tagged message variants decode as `Unknown` so a newer peer can fail fast instead of hanging on a read. The attach channel rejects unknown tags, truncated payloads, and oversized lengths.
 
-The authoritative control-channel wire types live in <RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile> so the host CLI and the in-container binary share the same serde schema without making `jackin` depend on `jackin-capsule`'s PTY and terminal stack. The attach-channel frame codec lives in <RepoFile path="crates/jackin-capsule/src/protocol/attach.rs">crates/jackin-capsule/src/protocol/attach.rs</RepoFile> because it is only used by interactive Capsule clients.
+The authoritative control-channel wire types live in <RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile> so the host CLI and the in-container binary share the same serde schema without making `jackin` depend on `jackin-capsule`'s PTY and terminal stack. The attach-channel frame codec lives in <RepoFile path="crates/jackin-protocol/src/attach.rs">crates/jackin-protocol/src/attach.rs</RepoFile> because both the host attach client and the in-container Capsule daemon need the same binary framing.
 
 Current control messages:
 
@@ -92,8 +93,33 @@ Current control messages:
 |---|---|---|
 | `{"type":"status"}` | `{"type":"session_list","sessions":[...]}` | `jackin-capsule status`, host session inventory, `hardline --inspect` |
 | `{"type":"snapshot"}` | `{"type":"snapshot","tabs":[...],"active_tab":N}` | `jackin console` live preview and pane picker |
+| `{"type":"wait_session_status",...}` | `{"type":"session_status_result",...}` | Scripts that block until a session reaches one of the requested public states |
+| `{"type":"session_read_visible",...}` | `{"type":"session_visible",...}` | Diagnostic tooling that needs the current visible grid for one pane |
+| `{"type":"session_status_explain",...}` | `{"type":"session_status_explain",...}` | `jackin-capsule status explain` and `status capture` |
+| `{"type":"report_runtime_event",...}` | one-way forwarded to the daemon loop | Agent hook and plugin reporters |
+| `{"type":"report_child_agent_state",...}` | one-way forwarded to the daemon loop | Bridge reporters that roll descendant agent work into a parent pane |
+| `{"type":"events_subscribe",...}` | persistent stream of `ServerMsg` events | Host daemons and tools that need live session, token, and workspace status changes |
+| `{"type":"agents"}` | `{"type":"agent_registry","records":[...]}` | `jackin-capsule agents`, per-container agent inventory |
+| `{"type":"usage_focused"}` | `{"type":"usage_focused","usage":{...}}` | Capsule prefix-`u` overlay and active-tab status signal |
+| `{"type":"usage_refresh_focused"}` | `{"type":"usage_focused","usage":{...}}` | Capsule overlay refresh action; refresh runs inside the daemon cache |
+| `{"type":"usage_account_list"}` | `{"type":"usage_accounts","accounts":[...]}` | `jackin-capsule usage accounts` |
 
-`SessionInfo` carries `id`, `label`, optional `agent`, public `state`, and `active`. `TabSnapshot` carries render-order tabs, each tab's focused pane id, and one `PaneSnapshot` per pane leaf. `PaneSnapshot` carries `session_id`, label, optional agent slug, and state. The public states are `working`, `blocked`, `done`, and `idle`; today they are derived inside `crates/jackin-capsule/src/session.rs`, with the fuller state authority tracked in [Agent runtime status authority](/reference/roadmap/agent-runtime-status/).
+`SessionInfo` carries `id`, `label`, optional `agent`, public `state`, and `active`. `TabSnapshot` carries render-order tabs, each tab's focused pane id, and one `PaneSnapshot` per pane leaf. `PaneSnapshot` carries `session_id`, label, optional agent slug, public state, and an `AgentStatusReport` when the daemon has evidence. The report exposes the raw detector state, source, confidence, detected agent, foreground pgid, visible-screen booleans, `process_exited`, `foreground_returned_to_shell`, `stale_report`, `subagents_active`, and revision fields. The public states are `working`, `blocked`, `done`, `idle`, and `unknown`; `stuck` is a diagnostic overlay exposed in `status explain`, not a replacement state. Raw detector states are `unknown`, `working`, `blocked`, and `idle`; `done` is derived when raw idle returns after work and the pane has not yet been acknowledged by focus or attach. The authority is implemented by <RepoFile path="crates/jackin-capsule/src/agent_status.rs" />, with the evidence snapshot in <RepoFile path="crates/jackin-capsule/src/agent_status/evidence.rs" />, arbitration in <RepoFile path="crates/jackin-capsule/src/agent_status/arbitrate.rs" />, debounce/watchdog policy in <RepoFile path="crates/jackin-capsule/src/agent_status/policy.rs" />, and rule-pack engine in <RepoFile path="crates/jackin-capsule/src/agent_status/rules.rs" />. Rule packs load from embedded fallbacks, then `/jackin/runtime/agent-status/packs/`, then the operator override directory selected by `JACKIN_STATUS_PACK_DIR` or `$HOME/.jackin/agent-status/packs/`.
+
+`EventsSubscribe` keeps the control connection open after the initial request and sends length-prefixed `ServerMsg` frames. The live event stream includes `AgentStateChanged` for per-session effective-state transitions, `SessionSpawned`, `SessionExited`, `TokenUsageChanged`, and `WorkspaceStatusChanged`. `WorkspaceStatusChanged` is emitted when the daemon's aggregate status snapshot changes; it carries the rolled-up `effective` status plus `session_count`, `blocked_count`, `done_count`, and `working_count`. The roll-up precedence is `blocked > done > working > idle > unknown`, matching the status authority contract used by console badges and future host-daemon consumers.
+
+Usage control replies are daemon-cache reads. Capsule renderers and one-shot
+clients do not call provider APIs directly; refresh cadence, timeouts, stale
+states, and provider-child cooldowns stay owned by the PID 1 daemon.
+The usage surface is account-quota-only: the obsolete workspace/session spend
+summary messages and CLI subcommands were removed with the Capsule usage overlay
+cleanup. Per-message token/cost attribution belongs to
+[Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/), not this
+control surface.
+`jackin-capsule usage claude-cli` is intentionally outside the control channel:
+it is an explicit operator diagnostic that runs `claude -p /usage` on demand and
+prints the raw CLI stdout/stderr/status as JSON for debugging Claude OAuth
+snapshot failures.
 
 Current attach frames:
 
@@ -105,18 +131,25 @@ Current attach frames:
 | `Command` | client → daemon | Reserved for future structured client commands |
 | `Detach` | client → daemon | Request client detach |
 | `FocusIn` / `FocusOut` | client → daemon | Outer terminal focus changed |
+| `ClipboardImage` | client → daemon | Host attach client sends a bounded small image payload for Capsule validation and staging under `/jackin/run/clipboard/` |
+| `ClipboardImageStart` / `ClipboardImageChunk` / `ClipboardImageEnd` | client → daemon | Host attach client streams a larger clipboard image with chunk offsets and SHA-256 verification before Capsule stages and pastes the container path |
+| `ClipboardImageError` | client → daemon | Host attach client reports a visible failure for an explicit image-stage request it could not satisfy |
 | `Welcome` | daemon → client | Handshake response |
 | `Output` | daemon → client | Terminal bytes to render |
 | `SessionList` | daemon → client | Typed session inventory |
 | `Shutdown` | daemon → client | All sessions exited; client should exit; failed final sessions include a short reason payload |
+| `HostOpenUrl` | daemon → client | Host attach client opens an explicit HTTP(S) URL selected from jackin-owned UI, such as the GitHub context dialog |
+| `HostStageImageFromClipboardPath` | daemon → client | Host attach client reads host clipboard text for the explicit image-path staging action and replies with image frames or `ClipboardImageError` |
+| `FileExportStart` / `FileExportChunk` / `FileExportEnd` | daemon → client | Host attach client writes one validated regular file to `~/Downloads/jackin/<instance>/` with chunk offsets and SHA-256 verification |
 
-The interactive attach path is long-lived. The short-lived `docker exec` client connects, sends `Hello`, then forwards operator terminal input as `Input` frames and terminal resizes as `Resize` frames. The daemon replies with `Welcome`, then streams rendered terminal output as `Output` frames. When the operator detaches, the client sends `Detach` and exits; the daemon keeps every PTY running. When the last live session ends, the daemon sends `Shutdown`, drains the final frame, exits as PID 1, and Docker reports the role container stopped. Clean exits use an empty `Shutdown` payload. Failed final sessions send a short reason payload so the attach client prints the error and exits non-zero instead of returning a silent success.
+The interactive attach path is long-lived. The short-lived `docker exec` client connects, sends `Hello`, then forwards operator terminal input as `Input` frames and terminal resizes as `Resize` frames. The daemon replies with `Welcome`, then streams rendered terminal output as `Output` frames. When the operator detaches, the client sends `Detach` and exits; the daemon keeps every PTY running. When the last live session ends, the daemon sends `Shutdown`, drains the final frame, exits as PID 1, and Docker reports the role container stopped.
 
 The attach protocol is intentionally not a general RPC surface. It is optimized for terminal traffic and has three constraints:
 
 1. **Raw terminal bytes stay raw.** Keystrokes, paste payloads, mouse sequences, ANSI output, and OSC passthrough use `Input` / `Output` frames without JSON, escaping, or base64.
 2. **Structured control stays out of the hot path.** Inventory and snapshots use the one-shot control channel. Future high-level actions should prefer the control channel unless they are part of an active terminal attach.
 3. **The daemon is authoritative.** A client can request a new shell or agent in `Hello`, but it cannot directly mutate the session table. The daemon validates the request, spawns the PTY, and then reports the resulting state.
+4. **Host-affordance frames are explicit.** Clipboard images, host URL opens, and file exports are typed attach frames triggered by operator actions. They do not expose a general host clipboard, browser, or writable host mount to agents.
 
 ### How State Moves Across the Boundary
 
@@ -126,6 +159,7 @@ The host and Capsule intentionally exchange only a small set of facts:
 - **Initial agent selection** crosses from host to container as argv on `docker run`, not as a container-wide `JACKIN_AGENT` environment variable. The daemon uses it only to spawn the first tab.
 - **Per-session agent identity** is set later by the daemon immediately before it spawns `/jackin/runtime/entrypoint.sh` for an agent pane. Shell panes get no `JACKIN_AGENT`.
 - **Terminal input** crosses through the attach channel as raw bytes in `Input` frames. The daemon either consumes bytes that target Capsule UI (palette, prefix commands, tab chrome, dialog controls) or writes them to the active PTY unchanged.
+- **Host-affordance actions** cross only through explicit attach frames while the host-owned attach client is active. `Ctrl+V` can become a `ClipboardImage` frame when the host clipboard contains supported image data; the command palette's **Stage image from clipboard path** action emits `HostStageImageFromClipboardPath` and expects image frames or `ClipboardImageError` in response; GitHub context rows can emit `HostOpenUrl`; and the command palette's **Export file**, **Export file and reveal**, and **Export file and open** dialogs ask Capsule to validate one workspace or `/jackin/run/` regular file before streaming it to the host download directory. The reveal/open variants set explicit post-export flags on `FileExportStart`; the host attach client acts only after byte count and SHA-256 verification.
 - **Wheel input** is routed by focused-pane state. Mouse-enabled programs receive re-encoded pane-local SGR or xterm mouse events. Normal-screen panes that did not request mouse reporting use jackin' scrollback only when the grid has retained history, including rows preserved before normal-screen clear/redraw and top-anchored scroll-region movement; that same retained history is the only source for pane scroll chrome. When retained history is empty, wheel input stays local to jackin' so it cannot mutate the prompt as cursor keys, whether the pane was spawned as an agent or shell. Alternate-screen panes without mouse reporting receive cursor-key fallback, matching terminal emulator alternate-screen scroll behavior.
 - **Terminal output** is read by a per-session PTY reader, parsed into that pane's `DamageGrid`, composed with Capsule chrome, and sent back to the attached client as raw ANSI bytes in `Output` frames.
 - **Session inventory** is read from the daemon's in-memory session table and returned through the control channel as typed JSON. The host does not scrape rendered terminal text to learn which sessions exist.
@@ -191,7 +225,7 @@ host:
   -> render console preview / pane picker
 ```
 
-On Docker Desktop, the host cannot open the Linux VM's Unix socket path directly even though the parent directory is bind-mounted. In that case <RepoFile path="crates/jackin-runtime/src/runtime/snapshot.rs">crates/jackin-runtime/src/runtime/snapshot.rs</RepoFile> falls back to `docker exec ... /jackin/runtime/jackin-capsule snapshot`; the in-container client still speaks the same control protocol to the same daemon socket, then prints the JSON response for the host to read.
+On Docker Desktop, the host cannot open the Linux VM's Unix socket path directly even though the parent directory is bind-mounted. In that case <RepoFile path="crates/jackin-runtime/src/runtime/snapshot.rs" /> falls back to `docker exec ... /jackin/runtime/jackin-capsule snapshot`; the in-container client still speaks the same control protocol to the same daemon socket, then prints the JSON response for the host to read.
 
 ### Failure and Security Boundaries
 
@@ -233,21 +267,17 @@ Tab
 
 ### Virtual terminal emulator
 
-Each pane owns one PTY and one `DamageGrid` (from the <RepoFile path="crates/jackin-term/src/grid.rs">crates/jackin-term/src/grid.rs</RepoFile> jackin-term crate). The grid feeds PTY bytes through a `vte::Parser` and maintains the cell grid, alternate screen, scrollback, cursor, and mode state, while a typed passthrough stream (`drain_passthrough()`) surfaces the OSC and extension sequences that need focused-pane forwarding. When the operator switches tabs, splits, or reattaches, the compositor re-renders the saved grid to the host terminal. Wide glyph continuation cells are skipped during replay so CJK and emoji output keeps the same column layout the agent drew.
+Each pane owns one PTY and one `DamageGrid` (from the <RepoFile path="crates/jackin-term/src/grid.rs" /> jackin-term crate). The grid feeds PTY bytes through a `vte::Parser` and maintains the cell grid, alternate screen, scrollback, cursor, and mode state, while a typed passthrough stream (`drain_passthrough()`) surfaces the OSC and extension sequences that need focused-pane forwarding. When the operator switches tabs, splits, or reattaches, the compositor re-renders the saved grid to the host terminal. Wide glyph continuation cells are skipped during replay so CJK and emoji output keeps the same column layout the agent drew.
 
-### Render model
+### Dirty-output renderer
 
-`jackin-capsule` is a re-emitting terminal multiplexer: it reads each pane's PTY into an owned jackin-term `DamageGrid`, then composes the operator's visible screen from those grids plus jackin' chrome. The current renderer has exactly one emit path. Every visible update is one `ratatui::Terminal::draw` of the full widget tree — status bar, pane bodies, borders, shared scrollbars, bottom chrome, dialogs, text selection, and transient banners — encoded by <RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs">crates/jackin-capsule/src/tui/socket_backend.rs</RepoFile> and written by <RepoFile path="crates/jackin-capsule/src/client_writer.rs">crates/jackin-capsule/src/client_writer.rs</RepoFile> inside synchronized-output brackets.
+`jackin-capsule` uses an internal dirty-row layer over the jackin-term `DamageGrid`. The decision follows the Zellij model: keep per-pane terminal state, track changed visible lines, and serialize only the changed pane body rows when the rest of the frame is still valid. Focused live pane-only updates encode borrowed `GridPatch` rows directly through <RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs" />; full redraws, scrollback views, dialogs, selection, and chrome still render through Ratatui widgets. Zellij's `OutputBuffer` / `changed_lines` design was the primary reference; tmux's grid/screen/redraw split was the baseline for separating pane content from status bar and pane chrome.
 
-The one-path rule exists because the old mixed renderer had three writers sharing one client-screen baseline: Ratatui frames, a focused-pane dirty-patch tier, and raw appends for chrome, cursor/mode assertions, hyperlinks, and banners. That shape made stale cells structural: a glyph that changed and changed back between Ratatui frames could be skipped forever because the patch path had already mutated the real terminal while Ratatui's previous buffer never learned about it. It also made scrollback and focus changes fragile because a handler could mutate state without requesting the exact repaint tier that happened to refresh both body and footer. The shipped renderer removes the class, not just the observed failures: handlers mutate state and record an invalidation, the render loop composes when `frame_generation` moves, and `ClientWriter` is the only object that can reach the attach socket.
+The terminal engine is jackin-term's owned `DamageGrid`, which records dirty rows at mutation time (`DirtyTracker`) instead of diffing whole screens, emits typed OSC/CSI passthrough events directly, and keeps primary, alternate, and scrollback rows in a shared daemon `RowArena`. There is no alternate terminal model in `jackin-capsule`: no feature flag, fallback path, source-policy exception, or dependency remains for the retired external parser. The [Capsule Terminal Model](/reference/capsule/terminal-model/) page records why the old `vt100` fork was retired and how `jackin-term` differs.
 
-Damage tracking still matters, but only as a "did anything change?" signal and as the observation API for tests and future tooling. `DamageGrid` records dirty rows at mutation time, owns primary/alternate/scrollback rows, cursor state, modes, grapheme cells, and typed passthrough events, and is the only terminal model in the daemon. The compositor no longer serializes `GridPatch` rows directly to the client. Pane bodies borrow `GridView` data during the Ratatui draw, and the buffer diff is the only "what changed on the client?" computation. The [Capsule Terminal Model](/reference/capsule/terminal-model/) page records why the old `vt100` fork and the temporary patch tier were retired.
+The shipped layer is `DamageGrid` dirty tracking plus `SocketBackend` patch encoding. PTY output marks only that pane dirty. The render ticker coalesces bursts at roughly 30 fps; when the focused live pane is the only dirty surface, the compositor drains `dirty_spans()`, borrows a `GridPatch`, and emits cursor moves plus ANSI for changed rows only. The status bar, dialogs, selection overlay, layout, and full-frame lifecycle stay separate and use the Ratatui frame path.
 
-A real screen erase (`\x1b[2J`) is intentionally rare: first attach and resize only. Tab switches, focus swaps, scrollback movement, dialog open/close, selection changes, session exit banners, and repaint convergence all redraw in place. `ClientWriter` wraps every non-empty frame in `\x1b[?2026h` / `\x1b[?2026l`, so the outer terminal applies the frame atomically instead of showing a partially repainted intermediate state. Out-of-band sequences such as clipboard writes, pointer-shape hints, allowed OSC passthrough, and keyboard-protocol passthrough are queued and flushed at frame boundaries rather than interleaved inside a frame.
-
-The frame model carries more than cells. `SocketBackend` reconciles cursor visibility, cursor shape, bracketed paste, application cursor keys, kitty keyboard level, and hyperlink regions from the focused pane's grid on every frame. Focus swap is therefore a normal render, not a special reset path, and the cursor stays hidden while browsing scrollback because the focused pane's view state says it should. With `JACKIN_DEBUG=1`, render logs include invalidation reason, wipe policy, generation, emitted bytes, and compose timing so frame behavior can be reconstructed from an operator debug run.
-
-The correctness trade-off is explicit. The deleted dirty-patch tier was cheaper on the wire for a focused 80x24 stream, but it made the physical client terminal a second untracked model. The full-widget-tree path measured well below one frame budget and is mechanically checked by the echo-back conformance harness: each composed frame is fed into a second `DamageGrid` acting as the client terminal, then the test asserts that the client screen equals each pane model inside its pane rectangle. If a future pathological terminal size needs optimization, the allowed escape hatch is to skip re-rendering clean pane widgets into the Ratatui buffer; it must not add a second emit path or writer.
+Full-frame redraws are still intentional and named in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />: first attach, resize, tab switch, layout change, split/close, zoom/unzoom, scrollback browsing, pane clear, dialog/palette/confirm overlays, selection repaint, focus/style changes, session exit, cache miss, and unsafe partial cases all take the full path. With `JACKIN_DEBUG=1`, each render logs its kind (`full` or `partial`), reason, dirty pane count, rows emitted, bytes emitted, and duration in microseconds so regressions can be compared against the old full-pane path from logs.
 
 ### Status bar
 
@@ -257,7 +287,7 @@ The top two rows of the host terminal are owned by `jackin-capsule` and never yi
 - **Session tabs** — one tab per session. Active tab is bold white text on a lifted graphite background, separate from the brand green, with the white underline as the primary active cue. Inactive tabs are grey. Mouse-clickable tabs lift their background on hover. Tabs show a state glyph for the session roll-up. The blocked attention glyph is latched: incidental PTY output does not clear it, and explicit operator keyboard input to that pane does.
 - **Menu button** — the right side of row 0 keeps a padded, clickable `☰Menu` button. It uses blue chrome rather than the green brand/focus color, lifts on hover, and switches the pointer cursor where supported. When prefix mode is enabled and awaiting the next key, the button changes to `prefix…` so the operator can see that Capsule has consumed the prefix byte and is waiting for the command key.
 
-Capsule always reserves the bottom terminal row for the white session context bar. The right side shows the short jackin instance ID from `JACKIN_INSTANCE_ID`, such as `spamcw91` for `jk-spamcw91-jackin-thearchitect`. The launcher injects both `JACKIN_CONTAINER_NAME` and `JACKIN_INSTANCE_ID` before the capsule daemon starts, so the first frame can render the instance ID without waiting for GitHub, branch polling, shell startup, or a later hostname update. The left side is reserved for branch or pull request context only: when the workspace workdir's current branch has an open GitHub pull request, it shows `PR #<number> · <title>`. While `gh` is still resolving an open pull request for a branch, it shows `Resolving PR · <branch>` instead of pretending there is no pull request. On a non-`main` / non-`master` branch without an open PR, the same row shows `Branch · <branch>` on the left. On `main`, `master`, or a directory without a recognizable branch, the left side stays empty and only the instance ID remains visible. The PR or branch portion opens a GitHub context modal with branch, URL, title, best-effort `gh pr checks` status, and an `Enter` hint for copying the PR URL when a pull request exists. Opening that modal schedules a fresh background `gh` lookup for the current branch and `HEAD`, bypassing a recent cached "no PR" answer and still trying the lookup if startup missed `gh` availability. The empty left side on the default branch is not a GitHub-context target. The GitHub URL value is the emphasized clickable copy target. The right side opens Debug info with the full container name, role, active pane's agent, current workdir, run id when available, and diagnostics path when available. Enter copies the first copyable value in the shared row order (`Run ID` whenever present), and clicking a copyable value copies that row. All click targets switch to a pointer cursor on supported terminals and lift their color while hovered. The daemon watches the container-side Git metadata directory for `HEAD` changes, so branch switches invalidate stale PR context immediately without a hot polling loop. A once-per-second poll remains as a fallback for missed filesystem events and `HEAD` movement that does not rewrite `HEAD`. Background `gh` PR/check lookups stay cached for the current branch plus `HEAD` and refresh on a conservative cadence; switching to `main` or `master` clears the branch/PR detail while keeping the always-on instance ID.
+Capsule always reserves the bottom terminal row for the white session context bar. The right side shows the short jackin instance ID from `JACKIN_INSTANCE_ID`, such as `spamcw91` for `jk-spamcw91-jackin-thearchitect`. The launcher injects both `JACKIN_CONTAINER_NAME` and `JACKIN_INSTANCE_ID` before the capsule daemon starts, so the first frame can render the instance ID without waiting for GitHub, branch polling, shell startup, or a later hostname update. The left side is reserved for branch or pull request context only: when the workspace workdir's current branch has an open GitHub pull request, it shows `PR #<number> · <title>`. While `gh` is still resolving an open pull request for a branch, it shows `Resolving PR · <branch>` instead of pretending there is no pull request. On a non-`main` / non-`master` branch without an open PR, the same row shows `Branch · <branch>` on the left. On `main`, `master`, or a directory without a recognizable branch, the left side stays empty and only the instance ID remains visible. The PR or branch portion opens a GitHub context modal with branch, URL, title, best-effort `gh pr checks` status, and separate copy/open actions when a pull request exists. Opening that modal schedules a fresh background `gh` lookup for the current branch and `HEAD`, bypassing a recent cached "no PR" answer and still trying the lookup if startup missed `gh` availability. The empty left side on the default branch is not a GitHub-context target. The GitHub URL row is the emphasized clickable copy target; the `Open PR` and `Open CI` rows request a host browser open through the host attach path. The right side opens Debug info with the full container name, role, active pane's agent, current workdir, run id when available, and diagnostics path when available. Enter copies the first copyable value in the shared row order (`Run ID` whenever present), and clicking a copyable value copies that row. All click targets switch to a pointer cursor on supported terminals and lift their color while hovered. The daemon watches the container-side Git metadata directory for `HEAD` changes, so branch switches invalidate stale PR context immediately without a hot polling loop. A once-per-second poll remains as a fallback for missed filesystem events and `HEAD` movement that does not rewrite `HEAD`. Background `gh` PR/check lookups stay cached for the current branch plus `HEAD` and refresh on a conservative cadence; switching to `main` or `master` clears the branch/PR detail while keeping the always-on instance ID.
 
 Most Capsule dialogs render through the same full-frame overlay path. That path paints an opaque solid-black backdrop over the content area and then draws the active dialog on top: pane bodies, pane borders, active-pane focus chrome, and scrollbars are hidden behind the fill, not dimmed. (Dimming the live content read as unstable, so the modal hides it outright.) The dialog footer hint renders above the bottom status row with one blank spacer row between them, so modal key hints stay in the bottom chrome area instead of inside or next to the dialog.
 
@@ -301,6 +331,7 @@ Modern terminals interpret OSC escape sequences agents emit for window titles, c
 | `JACKIN_OSC_TITLE` | OSC 0 / 1 / 2 window-title and icon-name updates |
 | `JACKIN_OSC_NOTIFY` | OSC 9 desktop notifications |
 | `JACKIN_OSC_HYPERLINK` | OSC 8 clickable hyperlinks |
+| `JACKIN_OPEN_LINKS` | jackin' host browser-open actions, including GitHub open rows, visible URL modified-click, and command-palette link open |
 
 OSC 7 (current working directory) is never forwarded — it would tell the operator's host terminal to track the *container's* cwd, which has no meaning outside the container; jackin-capsule captures it locally for the pane title and stops. OSC 8 forwarding additionally rejects any URI whose scheme is not `http`, `https`, or `mailto` (so a compromised agent cannot ship a `javascript:` or `file://` hyperlink that would script the operator's host terminal on click).
 
@@ -323,11 +354,11 @@ The policy is read once per session at spawn time; an agent that exports the env
 
 ## Distribution and versioning
 
-`jackin-capsule` is versioned identically to the `jackin` CLI. Both binaries use the shared <RepoFile path="crates/jackin-build-meta/src/lib.rs">jackin-build-meta</RepoFile> build-script helper: local and pull-request builds fall back to `{cargo_pkg_version}+{7-char-git-sha}`, which is currently the `0.6.0-dev+<sha>` shape, while the main-branch preview workflow injects the published `0.6.0-preview.<count>+<sha>` string through `JACKIN_VERSION_OVERRIDE`. The host CLI, `jackin-role`, and `jackin-capsule --version` output must match the version string embedded in the artifact being tested or published.
+`jackin-capsule` is versioned identically to the `jackin` CLI — both use the same <RepoFile path="crates/jackin/build.rs" /> logic that produces `{cargo_pkg_version}+{7-char-git-sha}`. The host CLI's version string and the binary's `--version` output always match.
 
 ### How jackin' acquires the binary
 
-`ensure_available` in <RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile> resolves the binary in priority order:
+`ensure_available` in <RepoFile path="crates/jackin-image/src/capsule_binary.rs" /> resolves the binary in priority order:
 
 1. **`JACKIN_CAPSULE_BIN=/path/to/binary` (env var set)** — jackin' uses that path directly. No cache lookup, no download. The binary can come from anywhere: a local build, a CI artifact, a closed-source build. jackin' validates only that the file exists and is executable.
 
@@ -341,7 +372,7 @@ jackin' itself has no knowledge of how to build `jackin-capsule` from source. Bu
 
 ### Building for local development
 
-Use the `build-jackin-capsule` binary (defined in <RepoFile path="crates/jackin/src/bin/build_jackin_capsule.rs">crates/jackin/src/bin/build_jackin_capsule.rs</RepoFile>) to compile `jackin-capsule` for Linux and populate the cache. It uses `cargo-zigbuild` with Zig as the linker — no Docker required — and targets a glibc 2.17 floor to match CI:
+Use the `build-jackin-capsule` binary (defined in <RepoFile path="crates/jackin/src/bin/build_jackin_capsule.rs" />) to compile `jackin-capsule` for Linux and populate the cache. It uses `cargo-zigbuild` with Zig as the linker — no Docker required — and targets a glibc 2.17 floor to match CI:
 
 - `arm64` → `aarch64-unknown-linux-gnu.2.17`
 - `amd64` → `x86_64-unknown-linux-gnu.2.17`
@@ -373,7 +404,7 @@ The binary is written to the standard cache path and subsequent `jackin load` in
 | `--debug` | Convenience alias for `--profile debug`. |
 | `--export` | Print only `export JACKIN_CAPSULE_BIN=<path>` for `eval` |
 
-Prerequisites: `zig` and `cargo-zigbuild` must be installed. Both are declared in <RepoFile path="mise.toml">mise.toml</RepoFile>; run `mise install zig cargo:cargo-zigbuild` if missing.
+Prerequisites: `zig` and `cargo-zigbuild` must be installed. Both are declared in <RepoFile path="mise.toml" />; run `mise install zig cargo:cargo-zigbuild` if missing.
 
 First build takes 2–3 minutes; subsequent builds are incremental via cargo's dependency cache.
 
@@ -381,20 +412,20 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 
 ### Derived image build
 
-<RepoFile path="crates/jackin-image/src/derived_image.rs">crates/jackin-image/src/derived_image.rs</RepoFile> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/jackin/runtime/jackin-capsule` the base image provides.
+<RepoFile path="crates/jackin-image/src/derived_image.rs" /> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/jackin/runtime/jackin-capsule` the base image provides.
 
 ## Relationship to the rest of jackin'
 
 | Component | Relationship |
 |---|---|
-| <RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile> | Resolves the binary path: `JACKIN_CAPSULE_BIN` override → cache hit → download from GitHub Releases |
-| <RepoFile path="crates/jackin/src/bin/build_jackin_capsule.rs">crates/jackin/src/bin/build_jackin_capsule.rs</RepoFile> | Developer tool: `cargo run --bin build-jackin-capsule` — builds via `cargo-zigbuild` and populates the cache |
-| <RepoFile path="crates/jackin-image/src/derived_image.rs">crates/jackin-image/src/derived_image.rs</RepoFile> | Copies binary into derived image build context |
-| <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> | Implements `jackin-capsule runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |
-| <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |
-| <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> | Queries socket for session list; spawns new sessions via `jackin-capsule new` |
-| <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs">crates/jackin-runtime/src/isolation/finalize.rs</RepoFile> | Queries socket to detect live sessions before cleanup |
-| [Agent runtime status authority roadmap item](/reference/roadmap/agent-runtime-status/) | Defines the in-container state authority and consumes agent-state events from the socket once the event stream is implemented |
+| <RepoFile path="crates/jackin-image/src/capsule_binary.rs" /> | Resolves the binary path: `JACKIN_CAPSULE_BIN` override → cache hit → download from GitHub Releases |
+| <RepoFile path="crates/jackin/src/bin/build_jackin_capsule.rs" /> | Developer tool: `cargo run --bin build-jackin-capsule` — builds via `cargo-zigbuild` and populates the cache |
+| <RepoFile path="crates/jackin-image/src/derived_image.rs" /> | Copies binary into derived image build context |
+| <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> | Implements `jackin-capsule runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |
+| <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |
+| <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-capsule new` |
+| <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> | Queries socket to detect live sessions before cleanup |
+| [Agent runtime status authority roadmap item](/reference/roadmap/agent-runtime-status/) | Design record and regression checklist for the shipped in-container state authority |
 | [jackin' daemon roadmap item](/reference/roadmap/jackin-daemon/) | The daemon will subscribe to each container's socket and maintain a cross-instance session index |
 | [Multiplexer Design Rules](/reference/capsule/multiplexer-design-rules/) | Passthrough contract, input routing rules, verification checklist |
 

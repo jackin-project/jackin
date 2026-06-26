@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -13,9 +14,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  cache-usage:
+    name: Cache usage review
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Summarize GitHub Actions cache usage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          usage_json=$(gh api "repos/${GITHUB_REPOSITORY}/actions/cache/usage")
+          active_count=$(jq -r ".active_caches_count" <<< "$usage_json")
+          active_bytes=$(jq -r ".active_caches_size_in_bytes" <<< "$usage_json")
+          active_gib=$(awk -v bytes="$active_bytes" 'BEGIN { printf "%.6f", bytes / 1024 / 1024 / 1024 }')
+
+          {
+            echo "### GitHub Actions cache usage"
+            printf -- "- Active caches: %s\n" "$active_count"
+            printf -- "- Active cache size: %.2f GiB\n" "$active_gib"
+            echo
+            echo "| Cache key | Size | Last accessed |"
+            echo "| --- | ---: | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          gh api "repos/${GITHUB_REPOSITORY}/actions/caches?per_page=10&sort=size_in_bytes&direction=desc" \
+            --jq ".actions_caches[] | [.key, .size_in_bytes, .last_accessed_at] | @tsv" |
+            while IFS=$'\t' read -r key size_bytes last_accessed; do
+              size_mib=$(awk -v bytes="$size_bytes" 'BEGIN { printf "%.6f", bytes / 1024 / 1024 }')
+              printf "| \`%s\` | %.1f MiB | %s |\n" "$key" "$size_mib" "$last_accessed" >> "$GITHUB_STEP_SUMMARY"
+            done
+
   scheduled-hygiene:
     name: Scheduled hygiene
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TERM_COLOR: always
@@ -30,21 +64,20 @@ jobs:
           key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
-      - name: Cache mise cargo tools
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ~/.local/share/mise/installs/cargo-*
-          key: mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-deny-fuzz-hack-${{ hashFiles('mise.toml') }}
-          restore-keys: |
-            mise-cargo-tools-${{ runner.os }}-${{ runner.arch }}-deny-fuzz-hack-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
-          install_args: "rust cargo:cargo-deny cargo:cargo-fuzz cargo:cargo-hack"
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust cargo:cargo-deny cargo:cargo-fuzz cargo:cargo-hack"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: ${{ github.job }}
+          shared-key: ci-policy-workspace-v2
           cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
@@ -54,4 +87,39 @@ jobs:
       - name: Long jackin-term fuzz run
         run: |
           cd crates/jackin-term
-          cargo fuzz run --sanitizer none damage_grid_process -- -max_total_time=300
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu damage_grid_process -- -max_total_time=300
+
+  native-macos:
+    name: Native macOS smoke
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "rust"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: native-macos-workspace-v2
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - run: cargo build --release --locked
+      - run: cargo test --workspace --locked

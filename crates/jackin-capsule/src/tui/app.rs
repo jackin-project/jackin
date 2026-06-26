@@ -7,6 +7,7 @@
 use crate::protocol::AgentState;
 use crate::tui::components::branch_context_bar::BranchContextBarHit;
 use crate::tui::layout::{Rect, SplitOrient, Tab};
+pub(crate) use jackin_tui::PointerShape;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MuxMode {
@@ -49,29 +50,6 @@ pub(crate) fn mux_mode_for_state(state: MuxModeState) -> MuxMode {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PointerShape {
-    Default,
-    Pointer,
-    Text,
-    EwResize,
-    NsResize,
-    Grabbing,
-}
-
-impl PointerShape {
-    pub(crate) fn as_osc22_name(self) -> &'static str {
-        match self {
-            Self::Default => "default",
-            Self::Pointer => "pointer",
-            Self::Text => "text",
-            Self::EwResize => "ew-resize",
-            Self::NsResize => "ns-resize",
-            Self::Grabbing => "grabbing",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PointerShapeState {
     pub(crate) dragging: bool,
@@ -80,6 +58,7 @@ pub(crate) struct PointerShapeState {
     pub(crate) dialog_open: bool,
     pub(crate) drag_start_orient: Option<SplitOrient>,
     pub(crate) selection_start_available: bool,
+    pub(crate) link_target_available: bool,
     pub(crate) no_button_motion: bool,
 }
 
@@ -102,6 +81,9 @@ pub(crate) fn pointer_shape_for_state(state: PointerShapeState) -> PointerShape 
             SplitOrient::Vertical => PointerShape::NsResize,
         };
     }
+    if state.link_target_available {
+        return PointerShape::Pointer;
+    }
     if state.no_button_motion && state.selection_start_available {
         return PointerShape::Text;
     }
@@ -113,6 +95,7 @@ pub(crate) enum HoverTarget {
     Tab(usize),
     Menu,
     BranchContext,
+    UsageStatus,
     Container,
     /// The red debug run-id chip at the bottom-right when `--debug` is active.
     DebugChip,
@@ -142,6 +125,7 @@ pub(crate) fn chrome_hover_target_for_state(state: ChromeHitState) -> Option<Hov
     }
     match state.branch_hit {
         Some(BranchContextBarHit::Context) => Some(HoverTarget::BranchContext),
+        Some(BranchContextBarHit::UsageStatus) => Some(HoverTarget::UsageStatus),
         Some(BranchContextBarHit::Container) => Some(HoverTarget::Container),
         Some(BranchContextBarHit::DebugChip) => Some(HoverTarget::DebugChip),
         None => None,
@@ -194,6 +178,12 @@ pub fn visible_agent_state_from_protocol(state: AgentState) -> VisibleAgentState
         AgentState::Working => VisibleAgentState::Working,
         AgentState::Done => VisibleAgentState::Done,
         AgentState::Blocked => VisibleAgentState::Blocked,
+        // The tab-strip glyph is attention-only: it flags blocked/done and shows
+        // nothing for working/idle. `unknown` ("no evidence") is likewise not an
+        // attention state, so it shares the no-glyph path. The full
+        // working/blocked/done/idle/unknown vocabulary is shown by the host
+        // console's per-pane state label (`AgentState::label`).
+        AgentState::Unknown => VisibleAgentState::Idle,
     }
 }
 
@@ -246,6 +236,17 @@ pub(crate) fn visible_panes_for_layout(
     leaves
         .into_iter()
         .map(|(id, outer)| {
+            // Subdivision must never escape the content rect (a pane top can't
+            // rise above `content_rect.row` == `STATUS_BAR_ROWS` into the status
+            // bar). Production correctness rests on the `leaves()` split
+            // arithmetic, which enforces this structurally; this assert is a
+            // debug/test tripwire that catches a regression in that arithmetic
+            // (release builds drop it, and the `frame-pane` trace is firehose-
+            // gated, so neither fires in a normal release run).
+            debug_assert!(
+                content_rect.contains(outer),
+                "pane {id} outer rect {outer:?} escaped content_rect {content_rect:?}",
+            );
             let focused = Some(id) == focused_id;
             VisiblePane {
                 id,

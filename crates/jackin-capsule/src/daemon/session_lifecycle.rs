@@ -82,6 +82,7 @@ impl Multiplexer {
         );
         for id in tab_ids {
             if let Some(session) = self.sessions.remove(&id) {
+                self.mark_agent_session_exited(id);
                 session.terminate();
             }
         }
@@ -182,6 +183,7 @@ impl Multiplexer {
             }
         }
         self.sessions.remove(&session_id);
+        self.mark_agent_session_exited(session_id);
         self.zoomed = self.zoomed.filter(|&id| id != session_id);
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
@@ -199,7 +201,9 @@ impl Multiplexer {
                 {
                     anyhow::bail!("rejected agent {agent_slug:?}: {reason}");
                 }
-                self.spawn_session(Some(agent_slug), env_overrides, None)
+                let id = self.spawn_session(Some(agent_slug), env_overrides, None)?;
+                self.note_agent_started();
+                Ok(id)
             }
             SpawnRequest::AgentWithProvider {
                 slug,
@@ -222,10 +226,21 @@ impl Multiplexer {
                     );
                     env_overrides.to_vec()
                 };
-                self.spawn_session(Some(slug), &resolved_env, Some(&provider_label))
+                let id = self.spawn_session(Some(slug), &resolved_env, Some(&provider_label))?;
+                self.note_agent_started();
+                Ok(id)
             }
             SpawnRequest::Shell => self.spawn_session(None, env_overrides, None),
         }
+    }
+
+    /// P3: an agent session just spawned — the start moment the usage lifecycle
+    /// hangs off. Kick a usage refresh now so the focused segment moves from
+    /// `refreshing` to a real headline promptly rather than waiting for the next
+    /// poll cycle. (The daemon already owns this moment via `SpawnRequest`, so no
+    /// separate launch proxy is needed.)
+    fn note_agent_started(&mut self) {
+        self.spawn_active_usage_account_refresh(std::time::Instant::now());
     }
 
     pub(super) fn session_launch(
@@ -281,6 +296,17 @@ impl Multiplexer {
             .find(|r| r.codename == codename)
         {
             record.exited_at = Some(Utc::now());
+        }
+    }
+
+    pub(super) fn mark_agent_session_exited(&mut self, session_id: u64) {
+        if let Some(record) = self
+            .agent_history
+            .iter_mut()
+            .rev()
+            .find(|record| record.session_id == session_id)
+        {
+            record.exited_at.get_or_insert_with(Utc::now);
         }
     }
 
@@ -385,22 +411,7 @@ impl Multiplexer {
             self.active_tab = self.tabs.len() - 1;
         }
         self.codename_live.insert(codename.clone());
-        // Use the explicit provider label when given; otherwise infer the default
-        // provider from the agent slug so the registry always shows a meaningful value.
-        let provider = provider_label
-            .map(str::to_owned)
-            .or_else(|| match agent.as_deref() {
-                Some("claude") => Some("anthropic".to_owned()),
-                Some("codex") => Some("openai".to_owned()),
-                _ => None,
-            });
-        self.agent_history.push(AgentRecord {
-            codename,
-            agent: agent.clone(),
-            provider,
-            started_at: Utc::now(),
-            exited_at: None,
-        });
+        self.record_agent_history(id, codename, agent.clone(), provider_label);
         // Reflow so the new pane's PTY gets the correct interior
         // dimensions (outer rect minus border rows/cols). Without
         // this, the session keeps its initial `content_rows ×
@@ -415,6 +426,33 @@ impl Multiplexer {
             tab_idx = self.active_tab
         );
         Ok(id)
+    }
+
+    /// Append a session to the agent registry. Uses the explicit provider label
+    /// when given; otherwise infers the default provider from the agent slug so
+    /// the registry always shows a meaningful value.
+    pub(super) fn record_agent_history(
+        &mut self,
+        session_id: u64,
+        codename: String,
+        agent: Option<String>,
+        provider_label: Option<&str>,
+    ) {
+        let provider = provider_label
+            .map(str::to_owned)
+            .or_else(|| match agent.as_deref() {
+                Some("claude") => Some("anthropic".to_owned()),
+                Some("codex") => Some("openai".to_owned()),
+                _ => None,
+            });
+        self.agent_history.push(AgentRecord {
+            session_id,
+            codename,
+            agent,
+            provider,
+            started_at: Utc::now(),
+            exited_at: None,
+        });
     }
 
     pub(super) fn toggle_zoom(&mut self) {

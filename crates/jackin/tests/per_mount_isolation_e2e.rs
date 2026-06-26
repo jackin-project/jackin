@@ -8,9 +8,11 @@ mod common;
 use jackin::docker::{CommandRunner, RunOptions};
 use jackin::isolation::MountIsolation;
 use jackin::isolation::finalize::{
-    AttachOutcome, FinalizeDecision, FinalizerPrompt, PreservedReason, finalize_foreground_session,
+    AttachOutcome, ExitDialogChoice, FinalizeDecision, FinalizerPrompt, PreservedReason,
+    finalize_foreground_session,
 };
 use jackin::isolation::materialize::{PreflightContext, materialize_workspace};
+use jackin::isolation::state::IsolationRecord;
 use jackin::isolation::state::{CleanupStatus, read_records};
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
 use std::collections::VecDeque;
@@ -19,12 +21,11 @@ use tempfile::TempDir;
 
 struct NoPrompt;
 impl FinalizerPrompt for NoPrompt {
-    fn ask_unsafe_cleanup(
+    fn ask_exit_dialog(
         &mut self,
         _c: &str,
-        _w: &str,
-        _r: PreservedReason,
-    ) -> anyhow::Result<usize> {
+        _records: &[(IsolationRecord, PreservedReason)],
+    ) -> anyhow::Result<ExitDialogChoice> {
         panic!("prompt should not be called");
     }
 }
@@ -196,6 +197,7 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
         &cdir,
         AttachOutcome::stopped(0),
         false,
+        jackin::workspace::DirtyExitPolicy::Ask,
         &mut prompt,
         &docker,
         &mut finalize_runner,

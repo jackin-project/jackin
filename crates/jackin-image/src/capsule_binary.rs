@@ -453,7 +453,7 @@ fn rekor_verification_keys()
              verify the key matches logId wNI9atQG... in trusted_root.json",
         );
         let key_id_hex =
-            hex_lower(&BASE64.decode(SIGSTORE_REKOR_KEY_ID).expect(
+            hex::encode(BASE64.decode(SIGSTORE_REKOR_KEY_ID).expect(
                 "SIGSTORE_REKOR_KEY_ID is malformed base64; update it with the Rekor log ID",
             ));
         std::collections::BTreeMap::from([
@@ -632,8 +632,8 @@ fn normalize_sigstore_v03_bundle(raw: &str) -> Result<String> {
     let body = json_pointer_string(entry, "/canonicalizedBody")?;
     let integrated_time = json_pointer_i64(entry, "/integratedTime")?;
     let log_index = json_pointer_i64(entry, "/logIndex")?;
-    let log_id = hex_lower(
-        &BASE64
+    let log_id = hex::encode(
+        BASE64
             .decode(json_pointer_string(entry, "/logId/keyId")?)
             .context("base64-decoding Sigstore bundle v0.3 logId.keyId")?,
     );
@@ -685,16 +685,6 @@ fn der_cert_to_pem(der: &[u8]) -> String {
     }
     pem.push_str("-----END CERTIFICATE-----\n");
     pem
-}
-
-fn hex_lower(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        out.push(char::from(HEX[usize::from(byte >> 4)]));
-        out.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    out
 }
 
 /// Failure is a hard abort — no warn-and-continue fallback.

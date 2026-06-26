@@ -29,7 +29,25 @@ fn fresh_op_cache() -> std::rc::Rc<std::cell::RefCell<OpCache>> {
 /// Test wrapper around `handle_auth_form_key` with
 /// `op_available = true`.
 fn drive_key(editor: &mut EditorState<'_>, k: KeyEvent) -> bool {
-    handle_auth_form_key(editor, k, true)
+    handle_auth_form_key(editor, k, true).is_dirty()
+}
+
+fn complete_source_folder_browser_open(editor: &mut EditorState<'_>) {
+    let outcome = handle_auth_form_key(editor, key(KeyCode::Enter), true);
+    assert_eq!(
+        outcome,
+        AuthFormKeyOutcome::OpenSourceFolderBrowser,
+        "source-folder Enter should request async browser open"
+    );
+    let listing = crate::tui::components::file_browser::FolderListing {
+        root: PathBuf::from("/host"),
+        cwd: PathBuf::from("/host"),
+        entries: Vec::new(),
+    };
+    assert!(open_auth_source_folder_browser_from_form_with_state(
+        editor,
+        crate::tui::components::file_browser::FileBrowserState::from_listing(listing),
+    ));
 }
 
 /// Return the flat-row index for `WorkspaceMode { Claude }`.
@@ -368,7 +386,7 @@ fn auth_form_source_folder_browse_stages_and_save_persists_workspace_layer() {
     };
     assert_eq!(*focus, AuthFormFocus::SourceFolder);
 
-    drive_key(editor, key(KeyCode::Enter));
+    complete_source_folder_browser_open(editor);
     assert!(matches!(
         editor.modal,
         Some(Modal::FileBrowser {
@@ -435,7 +453,7 @@ fn auth_form_source_folder_save_persists_role_layer() {
     };
     assert_eq!(*focus, AuthFormFocus::SourceFolder);
 
-    drive_key(editor, key(KeyCode::Enter));
+    complete_source_folder_browser_open(editor);
     apply_source_folder_to_auth_form(editor, PathBuf::from("/host/role-claude"));
     let closed = drive_key(editor, key(KeyCode::Enter));
     assert!(closed, "save must close the modal");
@@ -468,7 +486,7 @@ fn auth_form_source_folder_browser_cancel_keeps_pending_untouched() {
     open_auth_form_modal(editor, &cfg);
     drive_key(editor, key(KeyCode::Char(' '))); // unset → sync
     drive_key(editor, key(KeyCode::Tab));
-    drive_key(editor, key(KeyCode::Enter));
+    complete_source_folder_browser_open(editor);
 
     editor.pop_modal_chain();
     assert!(matches!(editor.modal, Some(Modal::AuthForm { .. })));
