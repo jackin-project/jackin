@@ -71,6 +71,16 @@ pub struct Rule {
     /// cannot express an anchored pattern.
     #[serde(default)]
     forbids_regex: Vec<String>,
+    /// Recursive boolean gate, combined by logical AND with the flat matchers
+    /// above. Expresses
+    /// nested `all`/`any`/`not` that the flat lists cannot — a shared positive
+    /// prefix needing its own nested OR (e.g. Claude's bash-permission prompt:
+    /// `contains "do you want to proceed?"` AND `any` of the bash markers AND
+    /// `any` numbered choice), which flattened into one `requires_any` would
+    /// leak its branches across each other and over-match. `None` (the common
+    /// case) leaves a rule on the flat matchers alone.
+    #[serde(default)]
+    gate: Option<Gate>,
     // Regexes compiled once by `RulePack::finalize` at load (parallel to the
     // pattern vecs above). `matches` falls back to per-eval compilation if these
     // are absent, so a pack that skipped finalize still matches — just slower.
@@ -80,6 +90,76 @@ pub struct Rule {
     compiled_line_regex: Vec<regex::Regex>,
     #[serde(skip)]
     compiled_forbids_regex: Vec<regex::Regex>,
+}
+
+/// Recursive boolean gate for rules whose match logic needs nested
+/// `all`/`any`/`not` beyond the flat matcher lists. Externally tagged: each node
+/// is a one-key table — `{ all = [..] }`, `{ any = [..] }`, `{ not = {..} }`,
+/// `{ contains = ".." }`, `{ regex = ".." }`, `{ line_regex = ".." }`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Gate {
+    /// Every sub-gate must match.
+    All(Vec<Gate>),
+    /// At least one sub-gate must match.
+    Any(Vec<Gate>),
+    /// The sub-gate must not match.
+    Not(Box<Gate>),
+    /// Case-insensitive substring present in the joined region text.
+    Contains(String),
+    /// Case-insensitive regex matches the joined region text.
+    Regex(String),
+    /// Case-insensitive regex matches some single line of the region.
+    LineRegex(String),
+}
+
+impl Gate {
+    /// `region` is the raw extracted lines; `text` is their lowercased join (so
+    /// it mirrors the flat matcher path, which lowercases the joined region and
+    /// matches `line_regex` against raw lines under a case-insensitive regex).
+    fn eval(&self, region: &[String], text: &str) -> bool {
+        match self {
+            Self::All(gates) => gates.iter().all(|g| g.eval(region, text)),
+            Self::Any(gates) => gates.iter().any(|g| g.eval(region, text)),
+            Self::Not(gate) => !gate.eval(region, text),
+            Self::Contains(s) => text.contains(&s.to_ascii_lowercase()),
+            Self::Regex(p) => build_regex(p).is_ok_and(|re| re.is_match(text)),
+            Self::LineRegex(p) => {
+                build_regex(p).is_ok_and(|re| region.iter().any(|line| re.is_match(line)))
+            }
+        }
+    }
+
+    /// Number of leaf matchers in the tree — counted toward the per-rule matcher
+    /// cap so a deeply nested gate cannot evade the pathological-pack guard.
+    fn leaf_count(&self) -> usize {
+        match self {
+            Self::All(gates) | Self::Any(gates) => gates.iter().map(Self::leaf_count).sum(),
+            Self::Not(gate) => gate.leaf_count(),
+            Self::Contains(_) | Self::Regex(_) | Self::LineRegex(_) => 1,
+        }
+    }
+
+    /// Compile-check every regex leaf at load so a broken pattern fails loudly
+    /// here instead of silently never matching at runtime, and enforce the same
+    /// matcher-length cap on leaf strings.
+    fn validate(&self, rule_id: &str) -> anyhow::Result<()> {
+        match self {
+            Self::All(gates) | Self::Any(gates) => {
+                gates.iter().try_for_each(|g| g.validate(rule_id))
+            }
+            Self::Not(gate) => gate.validate(rule_id),
+            Self::Contains(s) => {
+                anyhow::ensure!(s.len() <= 512, "matcher too long in rule {rule_id} gate");
+                Ok(())
+            }
+            Self::Regex(p) | Self::LineRegex(p) => {
+                anyhow::ensure!(p.len() <= 512, "matcher too long in rule {rule_id} gate");
+                build_regex(p).with_context(|| format!("invalid regex in rule {rule_id} gate"))?;
+                Ok(())
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -285,8 +365,12 @@ impl RulePack {
                 + rule.forbids.len()
                 + rule.regex.len()
                 + rule.line_regex.len()
-                + rule.forbids_regex.len();
+                + rule.forbids_regex.len()
+                + rule.gate.as_ref().map_or(0, Gate::leaf_count);
             anyhow::ensure!(matcher_count <= 32, "too many matchers in {}", rule.id);
+            if let Some(gate) = &rule.gate {
+                gate.validate(&rule.id)?;
+            }
             for matcher in rule
                 .requires_all
                 .iter()
@@ -418,6 +502,8 @@ impl Rule {
             && regex_all(&self.forbids_regex, &self.compiled_forbids_regex, |re| {
                 !region.iter().any(|line| re.is_match(line))
             })
+            // Recursive nested gate (ANDed with the flat matchers); absent on most rules.
+            && self.gate.as_ref().is_none_or(|gate| gate.eval(&region, &text))
     }
 
     fn to_match(&self) -> RuleMatch {

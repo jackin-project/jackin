@@ -518,3 +518,105 @@ fn finalize_sorts_rules_by_descending_priority() {
     assert_eq!(matched.rule_id, "high");
     assert_eq!(matched.state, Some(RawAgentState::Blocked));
 }
+
+#[test]
+fn gate_nested_all_any_not_matches() {
+    // Claude bash-permission shape: a shared positive prefix ("do you want to
+    // proceed?") with its OWN sub-OR (bash markers) plus a numbered-choice line,
+    // and a negative guard. Flattening this into one `requires_any` would let the
+    // branches leak and over-match — the nested gate keeps them scoped.
+    let pack = toml::from_str::<RulePack>(
+        r#"
+schema_version = 1
+agent = "test"
+validated_versions = ">=1.0.0, <2"
+
+[[rule]]
+id = "bash-permission"
+state = "blocked"
+priority = 100
+region = "bottom:8"
+
+[rule.gate]
+all = [
+  { contains = "do you want to proceed?" },
+  { any = [ { contains = "bash command" }, { contains = "run shell" } ] },
+  { not = { contains = "cancelled" } },
+]
+"#,
+    )
+    .unwrap()
+    .finalize()
+    .unwrap();
+
+    // prefix + one of the OR branch + no negative -> blocked.
+    let hit = vec![
+        "Bash command: ls -la".to_owned(),
+        "Do you want to proceed?".to_owned(),
+    ];
+    assert_eq!(
+        pack.evaluate(&hit).unwrap().state,
+        Some(RawAgentState::Blocked)
+    );
+
+    // prefix present but NEITHER OR branch -> no match (sub-OR is scoped).
+    let no_or = vec![
+        "Edit file foo.rs".to_owned(),
+        "Do you want to proceed?".to_owned(),
+    ];
+    assert!(pack.evaluate(&no_or).is_none());
+
+    // all positives but the `not` guard fires -> no match.
+    let cancelled = vec![
+        "Bash command: ls".to_owned(),
+        "Do you want to proceed?".to_owned(),
+        "(cancelled)".to_owned(),
+    ];
+    assert!(pack.evaluate(&cancelled).is_none());
+}
+
+#[test]
+fn gate_invalid_regex_fails_validation() {
+    let pack: RulePack = toml::from_str(
+        r#"
+schema_version = 1
+agent = "test"
+validated_versions = ">=1.0.0, <2"
+
+[[rule]]
+id = "bad-gate-regex"
+state = "blocked"
+priority = 100
+region = "bottom:5"
+
+[rule.gate]
+any = [ { regex = "(unclosed" } ]
+"#,
+    )
+    .unwrap();
+    // The broken regex inside the gate must fail loudly at load, not silently
+    // never match at runtime.
+    assert!(pack.validate().is_err());
+}
+
+#[test]
+fn gate_leaf_count_counts_toward_matcher_cap() {
+    let leaves = (0..33)
+        .map(|i| format!("{{ contains = \"m{i}\" }}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let pack: RulePack = toml::from_str(&format!(
+        "schema_version = 1\n\
+         agent = \"test\"\n\
+         validated_versions = \">=1.0.0, <2\"\n\
+         [[rule]]\n\
+         id = \"too-many\"\n\
+         state = \"blocked\"\n\
+         priority = 100\n\
+         region = \"bottom:5\"\n\
+         gate = {{ all = [{leaves}] }}\n"
+    ))
+    .unwrap();
+    // 33 gate leaves exceed the 32-matcher pathological-pack cap.
+    assert!(pack.validate().is_err());
+}
