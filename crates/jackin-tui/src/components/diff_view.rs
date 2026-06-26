@@ -99,25 +99,15 @@ impl DiffViewState {
                             equal.push(text);
                         }
                         ChangeTag::Delete => {
-                            if is_equal_block && !equal.is_empty() {
-                                for e in equal.drain(..) {
-                                    rows.push(SideBySideRow {
-                                        left: Some((ChangeTag::Equal, e.clone())),
-                                        right: Some((ChangeTag::Equal, e)),
-                                    });
-                                }
+                            if is_equal_block {
+                                flush_equal(&mut rows, &mut equal);
                             }
                             is_equal_block = false;
                             removed.push(text);
                         }
                         ChangeTag::Insert => {
-                            if is_equal_block && !equal.is_empty() {
-                                for e in equal.drain(..) {
-                                    rows.push(SideBySideRow {
-                                        left: Some((ChangeTag::Equal, e.clone())),
-                                        right: Some((ChangeTag::Equal, e)),
-                                    });
-                                }
+                            if is_equal_block {
+                                flush_equal(&mut rows, &mut equal);
                             }
                             is_equal_block = false;
                             inserted.push(text);
@@ -125,12 +115,7 @@ impl DiffViewState {
                     }
                 }
                 // Flush trailing equal
-                for e in equal.drain(..) {
-                    rows.push(SideBySideRow {
-                        left: Some((ChangeTag::Equal, e.clone())),
-                        right: Some((ChangeTag::Equal, e)),
-                    });
-                }
+                flush_equal(&mut rows, &mut equal);
                 pair_into(&mut rows, &mut removed, &mut inserted);
             }
         }
@@ -210,6 +195,15 @@ impl DiffViewState {
 }
 
 /// Pair removed/inserted lines into side-by-side rows.
+fn flush_equal(rows: &mut Vec<SideBySideRow>, equal: &mut Vec<String>) {
+    for e in equal.drain(..) {
+        rows.push(SideBySideRow {
+            left: Some((ChangeTag::Equal, e.clone())),
+            right: Some((ChangeTag::Equal, e)),
+        });
+    }
+}
+
 fn pair_into(rows: &mut Vec<SideBySideRow>, removed: &mut Vec<String>, inserted: &mut Vec<String>) {
     let count = removed.len().max(inserted.len());
     for i in 0..count {

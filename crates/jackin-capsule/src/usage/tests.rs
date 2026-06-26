@@ -2285,3 +2285,110 @@ fn minimax_remains_urls_accept_override_and_api_host_alias() {
         ]
     );
 }
+
+#[test]
+fn usage_surface_synonyms_are_lowercase() {
+    // surface_from_text lowercases the haystack before comparing, so any
+    // uppercase synonym entry would be permanently unmatchable.
+    for surface in UsageSurface::ALL {
+        for syn in surface.synonyms() {
+            assert_eq!(
+                *syn,
+                syn.to_ascii_lowercase(),
+                "synonym {syn:?} for {surface:?} must be lowercase"
+            );
+        }
+    }
+}
+
+#[test]
+fn usage_surface_all_lists_every_variant() {
+    // `guard` has no wildcard arm: adding a UsageSurface variant makes it fail to
+    // compile, forcing the author to this test. `variants` then drives the runtime
+    // check that each variant is present in ALL — a variant missing from ALL is
+    // silently unmatchable in surface_from_text. The len check catches the reverse.
+    fn guard(surface: UsageSurface) {
+        match surface {
+            UsageSurface::Claude
+            | UsageSurface::Codex
+            | UsageSurface::Amp
+            | UsageSurface::Grok
+            | UsageSurface::Zai
+            | UsageSurface::Kimi
+            | UsageSurface::Minimax
+            | UsageSurface::OpenCode
+            | UsageSurface::Unsupported => {}
+        }
+    }
+    let variants = [
+        UsageSurface::Claude,
+        UsageSurface::Codex,
+        UsageSurface::Amp,
+        UsageSurface::Grok,
+        UsageSurface::Zai,
+        UsageSurface::Kimi,
+        UsageSurface::Minimax,
+        UsageSurface::OpenCode,
+        UsageSurface::Unsupported,
+    ];
+    for surface in variants {
+        guard(surface);
+        assert!(
+            UsageSurface::ALL.contains(&surface),
+            "{surface:?} missing from UsageSurface::ALL"
+        );
+    }
+    assert_eq!(
+        UsageSurface::ALL.len(),
+        variants.len(),
+        "UsageSurface::ALL has an entry this test does not cover"
+    );
+}
+
+#[test]
+fn provider_outcome_maps_presence_states() {
+    use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus, UsageSource};
+    assert_eq!(
+        provider_outcome(ProviderPresence {
+            has_data: true,
+            has_secret: true
+        }),
+        (
+            UsageSnapshotStatus::Fresh,
+            UsageSource::ProviderApi,
+            UsageConfidence::Authoritative
+        )
+    );
+    assert_eq!(
+        provider_outcome(ProviderPresence {
+            has_data: false,
+            has_secret: true
+        }),
+        (
+            UsageSnapshotStatus::Unsupported,
+            UsageSource::None,
+            UsageConfidence::PresenceOnly
+        )
+    );
+    assert_eq!(
+        provider_outcome(ProviderPresence {
+            has_data: false,
+            has_secret: false
+        }),
+        (
+            UsageSnapshotStatus::NeedsSecret,
+            UsageSource::None,
+            UsageConfidence::None
+        )
+    );
+}
+
+#[test]
+fn split_fetch_partitions_ok_err_and_absent() {
+    assert_eq!(split_fetch(Some(Ok::<_, String>(7u64))), (Some(7), None));
+    assert_eq!(
+        split_fetch(Some(Err::<u64, _>("boom".to_owned()))),
+        (None, Some("boom".to_owned()))
+    );
+    assert_eq!(split_fetch(None::<Result<u64, String>>), (None, None));
+}

@@ -826,7 +826,7 @@ pub(crate) async fn load_role_with(
     // tab reads its key from that env at `docker run`, so gating a supported
     // agent's key out would start that tab without auth. Only credentials for
     // agents the role cannot launch are skipped.
-    let credential_agents = validated_repo.manifest.supported_agents();
+    let credential_agents = supported_agents.clone();
     let operator_env_needed = |key: &str| credential_key_needed_for_role(&credential_agents, key);
     let operator_env = if jackin_env::has_operator_env_matching(
         config,
@@ -1063,7 +1063,7 @@ pub(crate) async fn load_role_with(
                 // only the selected agent makes sibling tabs crash on a missing
                 // binary. The selected agent still drives the version label and
                 // the foreground session; the others must simply be present.
-                let image_agents = validated_repo.manifest.supported_agents();
+                let image_agents = supported_agents.clone();
                 let runtime_binaries = if let Some(progress) = steps.progress_mut() {
                     crate::runtime::image::prepare_runtime_binaries_for_agents(
                         paths,
@@ -1241,7 +1241,7 @@ pub(crate) async fn load_role_with(
             role_git_sha: recipe_role_git_sha,
             base_image_ref: recipe_base_image_ref,
             base_image_digest: None, // D16: populated when Docker reports digest post-build
-            supported_agents: validated_repo.manifest.supported_agents(),
+            supported_agents: supported_agents.clone(),
         });
         // `read_optional` already separates "manifest absent" (fall back
         // to `new_manifest` and re-record the recovered identity) from

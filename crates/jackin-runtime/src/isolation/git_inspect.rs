@@ -10,15 +10,10 @@
 use std::path::Path;
 use std::process::Stdio;
 
-/// One line from `git status --porcelain`.
-#[derive(Debug, Clone)]
-pub struct ChangedFile {
-    /// Porcelain status code — `M` modified, `A` added, `D` deleted,
-    /// `?` untracked, etc. Multi-char codes use the first non-space character.
-    pub status: char,
-    /// Path relative to the worktree root, as reported by `--porcelain`.
-    pub path: String,
-}
+// One source of truth for the porcelain shape: reuse jackin-core's `ChangedFile`
+// + `parse_porcelain` rather than duplicating the type and parser here. Imported
+// privately — callers needing the type take it from `jackin_core` directly.
+use jackin_core::worktree_dirty::{ChangedFile, parse_porcelain};
 
 /// Run `git -C <worktree> status --porcelain` and parse the output into a list
 /// of changed files.
@@ -40,18 +35,6 @@ pub fn changed_files_sync(worktree_path: &str) -> Vec<ChangedFile> {
     }
     let text = String::from_utf8_lossy(&output.stdout);
     parse_porcelain(&text)
-}
-
-fn parse_porcelain(text: &str) -> Vec<ChangedFile> {
-    text.lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| {
-            // Porcelain v1: "XY filename" — 2-char status code then a space then path.
-            let status = line.chars().find(|c| !c.is_whitespace()).unwrap_or('?');
-            let path = line.get(3..).unwrap_or("").trim().to_owned();
-            ChangedFile { status, path }
-        })
-        .collect()
 }
 
 /// Read the HEAD version of `rel_path` relative to `worktree_path`.

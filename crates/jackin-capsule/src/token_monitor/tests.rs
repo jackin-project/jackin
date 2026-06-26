@@ -64,7 +64,7 @@ fn find_provider_files_walks_nested_dirs_and_filters_extension() {
     std::fs::write(base.join("top.jsonl"), "{}").unwrap();
     std::fs::write(nested.join("ignore.txt"), "x").unwrap();
 
-    let mut found = find_provider_files(&[base.to_str().unwrap()], "jsonl");
+    let mut found = find_provider_files(&[base.to_str().unwrap()], "jsonl", PROVIDER_WALK_DEPTH);
     found.sort();
     assert_eq!(
         found.len(),
@@ -73,6 +73,12 @@ fn find_provider_files_walks_nested_dirs_and_filters_extension() {
     );
     assert!(found.iter().any(|p| p.ends_with("rollout-1.jsonl")));
     assert!(found.iter().any(|p| p.ends_with("top.jsonl")));
+
+    // max_depth 0 reads only the top level (Amp's flat layout): the nested
+    // rollout is excluded, the top-level file is kept.
+    let flat = find_provider_files(&[base.to_str().unwrap()], "jsonl", 0);
+    assert_eq!(flat.len(), 1, "flat walk keeps only the top-level jsonl");
+    assert!(flat[0].ends_with("top.jsonl"));
 }
 
 #[test]

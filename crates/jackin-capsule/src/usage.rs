@@ -133,6 +133,39 @@ impl UsageSurface {
             Self::Unsupported => "Usage",
         }
     }
+
+    /// Every surface, in resolution-precedence order. The single source of truth
+    /// for "which providers exist" — iterate this instead of re-listing variants.
+    const ALL: &'static [UsageSurface] = &[
+        Self::Claude,
+        Self::Codex,
+        Self::Amp,
+        Self::Grok,
+        Self::Zai,
+        Self::Kimi,
+        Self::Minimax,
+        Self::OpenCode,
+        Self::Unsupported,
+    ];
+
+    /// Canonical identity tokens for free-text provider matching — the one alias
+    /// table per variant. `surface_from_text` substring-scans these (Amp on a word
+    /// boundary); `OpenCode`/`Unsupported` carry none so unknown text resolves to
+    /// no surface. Entries must be lowercase: `surface_from_text` lowercases the
+    /// haystack before comparing, so an uppercase token would never match. Order
+    /// within a variant is a match-only alias set — not significant.
+    fn synonyms(self) -> &'static [&'static str] {
+        match self {
+            Self::Claude => &["claude", "anthropic"],
+            Self::Codex => &["codex", "openai"],
+            Self::Amp => &["amp"],
+            Self::Grok => &["grok", "xai"],
+            Self::Zai => &["glm", "z.ai", "zai"],
+            Self::Kimi => &["kimi"],
+            Self::Minimax => &["minimax"],
+            Self::OpenCode | Self::Unsupported => &[],
+        }
+    }
 }
 
 impl UsageCache {
@@ -160,8 +193,12 @@ impl UsageCache {
         focused_provider: Option<&str>,
     ) -> Option<String> {
         let agent = focused_agent?;
-        if let Some(view) = self.cached_focused_usage_view(agent, focused_provider) {
-            return Some(view.status_bar_label);
+        // Label-only fast path: the status bar needs just `status_bar_label`, which
+        // `cached_focused_usage_view`'s clone + enrich/mark-active never touch. Read
+        // it straight from the stored view instead of cloning the whole snapshot.
+        let cache_key = canonical_usage_cache_key(agent, focused_provider);
+        if let Some(cached) = self.snapshots.get(&cache_key) {
+            return Some(cached.view.status_bar_label.clone());
         }
         // A focused agent with no snapshot yet is mid-load — show `refreshing`
         // (clickable to force a load), never blank or a stale headline. The
@@ -922,6 +959,57 @@ fn resolve_surface(agent: &str, provider: Option<&str>) -> UsageSurface {
     }
 }
 
+/// Split an optional provider fetch into its `(data, error)` pair: `None` token
+/// → no attempt, `Some(Ok)` → data, `Some(Err)` → error. Replaces the
+/// `match token { Some => match fetch { … }, None => (None, None) }` boilerplate
+/// at every provider fetch site (`token.map(fetch)` feeds this).
+fn split_fetch<U>(result: Option<Result<U, String>>) -> (Option<U>, Option<String>) {
+    match result {
+        Some(Ok(value)) => (Some(value), None),
+        Some(Err(error)) => (None, Some(error)),
+        None => (None, None),
+    }
+}
+
+/// Inputs to [`provider_outcome`]. Named fields so the two booleans can't be
+/// silently swapped at a call site.
+struct ProviderPresence {
+    has_data: bool,
+    has_secret: bool,
+}
+
+/// Lifecycle triad for the simple "API key or nothing" providers: data present →
+/// fresh/authoritative; a secret present but no data → unsupported/presence-only;
+/// neither → needs-secret. Providers with login/CLI/error nuances (Claude, Codex,
+/// Amp, Grok) keep their bespoke logic.
+fn provider_outcome(
+    presence: ProviderPresence,
+) -> (UsageSnapshotStatus, UsageSource, UsageConfidence) {
+    let ProviderPresence {
+        has_data,
+        has_secret,
+    } = presence;
+    if has_data {
+        (
+            UsageSnapshotStatus::Fresh,
+            UsageSource::ProviderApi,
+            UsageConfidence::Authoritative,
+        )
+    } else if has_secret {
+        (
+            UsageSnapshotStatus::Unsupported,
+            UsageSource::None,
+            UsageConfidence::PresenceOnly,
+        )
+    } else {
+        (
+            UsageSnapshotStatus::NeedsSecret,
+            UsageSource::None,
+            UsageConfidence::None,
+        )
+    }
+}
+
 fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
     let config =
         std::env::var("CLAUDE_CONFIG_DIR").map_or_else(|_| home_path(".claude"), PathBuf::from);
@@ -971,21 +1059,13 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     } else {
         None
     };
-    let (oauth_quota, oauth_error) = match oauth.as_ref() {
-        Some(credentials) => match fetch_claude_oauth_usage(&credentials.access_token) {
-            Ok(usage) => (Some(usage), None),
-            Err(error) => (None, Some(error)),
-        },
-        None => (None, None),
-    };
-    let (cli_usage, cli_error) = if oauth_quota.is_none() && oauth.is_some() {
-        match fetch_claude_cli_usage() {
-            Ok(usage) => (Some(usage), None),
-            Err(error) => (None, Some(error)),
-        }
-    } else {
-        (None, None)
-    };
+    let (oauth_quota, oauth_error) = split_fetch(
+        oauth
+            .as_ref()
+            .map(|credentials| fetch_claude_oauth_usage(&credentials.access_token)),
+    );
+    let (cli_usage, cli_error) =
+        split_fetch((oauth_quota.is_none() && oauth.is_some()).then(fetch_claude_cli_usage));
     let provider_error = if oauth_quota.is_some() || cli_usage.is_some() {
         None
     } else {
@@ -1182,20 +1262,16 @@ fn codex_snapshot(
         Err(error) => (None, Some(error)),
     };
     let rpc_quota = rpc_usage.as_ref().map(|usage| &usage.response);
-    let (oauth_quota, oauth_error) = match credentials.as_ref() {
-        Some(credentials) => match fetch_codex_oauth_usage(credentials, &codex_home) {
-            Ok(mut usage) => {
-                usage.reset_credits = fetch_codex_oauth_reset_credits(credentials, &codex_home)
-                    .inspect_err(|error| {
-                        crate::cdebug!("codex reset-credits fetch failed: {error}");
-                    })
-                    .ok();
-                (Some(usage), None)
-            }
-            Err(error) => (None, Some(error)),
-        },
-        None => (None, None),
-    };
+    let (oauth_quota, oauth_error) = split_fetch(credentials.as_ref().map(|credentials| {
+        fetch_codex_oauth_usage(credentials, &codex_home).map(|mut usage| {
+            usage.reset_credits = fetch_codex_oauth_reset_credits(credentials, &codex_home)
+                .inspect_err(|error| {
+                    crate::cdebug!("codex reset-credits fetch failed: {error}");
+                })
+                .ok();
+            usage
+        })
+    }));
     let provider_error = rpc_error.as_ref().or(oauth_error.as_ref()).cloned();
     let quota = rpc_quota.or(oauth_quota.as_ref());
     let account = rpc_usage
@@ -1316,21 +1392,8 @@ fn amp_snapshot(agent: &str, now: i64) -> FocusedUsageView {
     let amp_api_key = amp_env_key
         .clone()
         .or_else(|| amp_file.as_ref().map(|(_, key)| key.clone()));
-    let (api_usage, api_error) = match amp_api_key.as_deref() {
-        Some(token) => match fetch_amp_api_usage(token) {
-            Ok(usage) => (Some(usage), None),
-            Err(error) => (None, Some(error)),
-        },
-        None => (None, None),
-    };
-    let (cli_usage, cli_error) = if api_usage.is_none() {
-        match fetch_amp_cli_usage() {
-            Ok(usage) => (Some(usage), None),
-            Err(error) => (None, Some(error)),
-        }
-    } else {
-        (None, None)
-    };
+    let (api_usage, api_error) = split_fetch(amp_api_key.as_deref().map(fetch_amp_api_usage));
+    let (cli_usage, cli_error) = split_fetch(api_usage.is_none().then(fetch_amp_cli_usage));
     let provider_error = api_error.as_ref().or(cli_error.as_ref()).cloned();
     let has_auth = amp_api_key.is_some() || amp_secrets.exists() || handoff_secrets.exists();
     // credential_origin names the file that actually produced the key (env wins
@@ -1535,20 +1598,11 @@ fn grok_snapshot_from_rpc_result(
 fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView {
     let has_local = home_path(".kimi-code").exists() || home_path(".kimi").exists();
     let has_token = token.is_some_and(|value| !value.is_empty());
-    let (provider_usage, provider_error) = match token {
-        Some(token) => match fetch_kimi_usage(token) {
-            Ok(usage) => (Some(usage), None),
-            Err(error) => (None, Some(error)),
-        },
-        None => (None, None),
-    };
-    let status = if provider_usage.is_some() {
-        UsageSnapshotStatus::Fresh
-    } else if has_token || has_local {
-        UsageSnapshotStatus::Unsupported
-    } else {
-        UsageSnapshotStatus::NeedsSecret
-    };
+    let (provider_usage, provider_error) = split_fetch(token.map(fetch_kimi_usage));
+    let (status, source, confidence) = provider_outcome(ProviderPresence {
+        has_data: provider_usage.is_some(),
+        has_secret: has_token || has_local,
+    });
     let buckets = provider_usage
         .as_ref()
         .map(|usage| usage.buckets(now))
@@ -1598,18 +1652,8 @@ fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView
         ),
         buckets,
         status,
-        source: if provider_usage.is_some() {
-            UsageSource::ProviderApi
-        } else {
-            UsageSource::None
-        },
-        confidence: if provider_usage.is_some() {
-            UsageConfidence::Authoritative
-        } else if has_token || has_local {
-            UsageConfidence::PresenceOnly
-        } else {
-            UsageConfidence::None
-        },
+        source,
+        confidence,
         now,
         last_error: match status {
             UsageSnapshotStatus::NeedsSecret => {
@@ -1625,20 +1669,11 @@ fn kimi_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView
 
 fn minimax_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageView {
     let has_token = token.is_some_and(|value| !value.is_empty());
-    let (provider_usage, provider_error) = match token {
-        Some(token) => match fetch_minimax_usage(token) {
-            Ok(usage) => (Some(usage), None),
-            Err(error) => (None, Some(error)),
-        },
-        None => (None, None),
-    };
-    let status = if provider_usage.is_some() {
-        UsageSnapshotStatus::Fresh
-    } else if has_token {
-        UsageSnapshotStatus::Unsupported
-    } else {
-        UsageSnapshotStatus::NeedsSecret
-    };
+    let (provider_usage, provider_error) = split_fetch(token.map(fetch_minimax_usage));
+    let (status, source, confidence) = provider_outcome(ProviderPresence {
+        has_data: provider_usage.is_some(),
+        has_secret: has_token,
+    });
     let buckets = provider_usage
         .as_ref()
         .map(|usage| usage.buckets(now))
@@ -1675,18 +1710,8 @@ fn minimax_snapshot(agent: &str, token: Option<&str>, now: i64) -> FocusedUsageV
         ),
         buckets,
         status,
-        source: if provider_usage.is_some() {
-            UsageSource::ProviderApi
-        } else {
-            UsageSource::None
-        },
-        confidence: if provider_usage.is_some() {
-            UsageConfidence::Authoritative
-        } else if has_token {
-            UsageConfidence::PresenceOnly
-        } else {
-            UsageConfidence::None
-        },
+        source,
+        confidence,
         now,
         last_error: match status {
             UsageSnapshotStatus::NeedsSecret => {
@@ -1710,20 +1735,14 @@ fn provider_key_snapshot(
     now: i64,
 ) -> FocusedUsageView {
     let has_key = key.is_some_and(|value| !value.is_empty());
-    let (provider_quota, provider_error) = match (surface, key) {
-        (UsageSurface::Zai, Some(token)) => match fetch_zai_usage(token) {
-            Ok(quota) => (Some(quota), None),
-            Err(error) => (None, Some(error)),
-        },
-        _ => (None, None),
-    };
-    let status = if provider_quota.is_some() {
-        UsageSnapshotStatus::Fresh
-    } else if has_key {
-        UsageSnapshotStatus::Unsupported
-    } else {
-        UsageSnapshotStatus::NeedsSecret
-    };
+    let (provider_quota, provider_error) = split_fetch(
+        key.filter(|_| matches!(surface, UsageSurface::Zai))
+            .map(fetch_zai_usage),
+    );
+    let (status, source, confidence) = provider_outcome(ProviderPresence {
+        has_data: provider_quota.is_some(),
+        has_secret: has_key,
+    });
     let buckets = provider_quota
         .as_ref()
         .map(|quota| quota.buckets(now))
@@ -1757,18 +1776,8 @@ fn provider_key_snapshot(
         }),
         buckets,
         status,
-        source: if provider_quota.is_some() {
-            UsageSource::ProviderApi
-        } else {
-            UsageSource::None
-        },
-        confidence: if provider_quota.is_some() {
-            UsageConfidence::Authoritative
-        } else if has_key {
-            UsageConfidence::PresenceOnly
-        } else {
-            UsageConfidence::None
-        },
+        source,
+        confidence,
         now,
         last_error: match status {
             UsageSnapshotStatus::NeedsSecret => {
@@ -2012,24 +2021,18 @@ fn contains_word(text: &str, word: &str) -> bool {
 /// and synonym-aware. `None` for text that names no known provider.
 fn surface_from_text(text: &str) -> Option<UsageSurface> {
     let text = text.to_ascii_lowercase();
-    let surface = if text.contains("claude") || text.contains("anthropic") {
-        UsageSurface::Claude
-    } else if text.contains("codex") || text.contains("openai") {
-        UsageSurface::Codex
-    } else if contains_word(&text, "amp") {
-        UsageSurface::Amp
-    } else if text.contains("grok") || text.contains("xai") {
-        UsageSurface::Grok
-    } else if text.contains("glm") || text.contains("z.ai") || text.contains("zai") {
-        UsageSurface::Zai
-    } else if text.contains("kimi") {
-        UsageSurface::Kimi
-    } else if text.contains("minimax") {
-        UsageSurface::Minimax
-    } else {
-        return None;
-    };
-    Some(surface)
+    UsageSurface::ALL.iter().copied().find(|&surface| {
+        surface.synonyms().iter().any(|syn| {
+            // Amp matches only on a word boundary so labels like `example` or
+            // `ramp` don't false-link; every other token keeps the historical
+            // case-insensitive substring policy.
+            if matches!(surface, UsageSurface::Amp) {
+                contains_word(&text, syn)
+            } else {
+                text.contains(syn)
+            }
+        })
+    })
 }
 
 fn provider_matches_usage_label(provider: &str, account_provider: &str) -> bool {
@@ -2596,26 +2599,22 @@ fn claude_window_seconds(label: &str) -> Option<i64> {
 }
 
 fn fetch_claude_oauth_usage(access_token: &str) -> Result<ClaudeOAuthUsageResponse, String> {
-    let client = provider_http_client()?;
     let user_agent = claude_code_user_agent();
-    let response = client
-        .get("https://api.anthropic.com/api/oauth/usage")
-        .bearer_auth(access_token)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .header("anthropic-beta", "oauth-2025-04-20")
-        // The OAuth usage endpoint is gated to the Claude Code client UA;
-        // a generic UA is rejected.
-        .header(reqwest::header::USER_AGENT, user_agent)
-        .send()
-        .map_err(|err| format!("Claude OAuth usage request failed: {err}"))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!("Claude OAuth usage HTTP {status}"));
-    }
-    response
-        .json()
-        .map_err(|err| format!("Claude OAuth usage decode failed: {err}"))
+    get_json_bearer(
+        "Claude OAuth usage",
+        "https://api.anthropic.com/api/oauth/usage",
+        access_token,
+        &[
+            (reqwest::header::CONTENT_TYPE, "application/json"),
+            (
+                reqwest::header::HeaderName::from_static("anthropic-beta"),
+                "oauth-2025-04-20",
+            ),
+            // The OAuth usage endpoint is gated to the Claude Code client UA;
+            // a generic UA is rejected.
+            (reqwest::header::USER_AGENT, &user_agent),
+        ],
+    )
 }
 
 fn claude_code_user_agent() -> String {
@@ -3962,52 +3961,48 @@ fn fetch_codex_oauth_usage(
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,
 ) -> Result<CodexUsageResponse, String> {
-    let client = provider_http_client()?;
-    let mut request = client
-        .get(resolve_codex_usage_url(codex_home))
-        .bearer_auth(&credentials.access_token)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .header(reqwest::header::USER_AGENT, "jackin-capsule/usage");
+    let mut headers = vec![(reqwest::header::USER_AGENT, "jackin-capsule/usage")];
     if let Some(account_id) = &credentials.account_id {
-        request = request.header("ChatGPT-Account-Id", account_id);
+        headers.push((
+            reqwest::header::HeaderName::from_static("chatgpt-account-id"),
+            account_id.as_str(),
+        ));
     }
-    let response = request
-        .send()
-        .map_err(|err| format!("Codex OAuth usage request failed: {err}"))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!("Codex OAuth usage HTTP {status}"));
-    }
-    response
-        .json()
-        .map_err(|err| format!("Codex OAuth usage decode failed: {err}"))
+    get_json_bearer(
+        "Codex OAuth usage",
+        &resolve_codex_usage_url(codex_home),
+        &credentials.access_token,
+        &headers,
+    )
 }
 
 fn fetch_codex_oauth_reset_credits(
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,
 ) -> Result<CodexResetCredits, String> {
-    let client = provider_http_client()?;
-    let mut request = client
-        .get(resolve_codex_reset_credits_url(codex_home))
-        .bearer_auth(&credentials.access_token)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .header(reqwest::header::USER_AGENT, "jackin-capsule/usage")
-        .header("OpenAI-Beta", "codex-1")
-        .header("originator", "Codex Desktop");
+    let mut headers = vec![
+        (reqwest::header::USER_AGENT, "jackin-capsule/usage"),
+        (
+            reqwest::header::HeaderName::from_static("openai-beta"),
+            "codex-1",
+        ),
+        (
+            reqwest::header::HeaderName::from_static("originator"),
+            "Codex Desktop",
+        ),
+    ];
     if let Some(account_id) = &credentials.account_id {
-        request = request.header("ChatGPT-Account-Id", account_id);
+        headers.push((
+            reqwest::header::HeaderName::from_static("chatgpt-account-id"),
+            account_id.as_str(),
+        ));
     }
-    let response = request
-        .send()
-        .map_err(|err| format!("Codex reset credits request failed: {err}"))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!("Codex reset credits HTTP {status}"));
-    }
-    let credits = response
-        .json::<CodexResetCredits>()
-        .map_err(|err| format!("Codex reset credits decode failed: {err}"))?;
+    let credits: CodexResetCredits = get_json_bearer(
+        "Codex reset credits",
+        &resolve_codex_reset_credits_url(codex_home),
+        &credentials.access_token,
+        &headers,
+    )?;
     if credits.available_count < 0 {
         return Err("Codex reset credits invalid available count".to_owned());
     }
@@ -4091,6 +4086,37 @@ fn provider_http_client() -> Result<reqwest::blocking::Client, String> {
         .connect_timeout(PROVIDER_HTTP_TIMEOUT)
         .build()
         .map_err(|err| format!("provider HTTP client unavailable: {err}"))
+}
+
+/// Shared GET → bearer-auth → JSON skeleton for provider quota endpoints. The
+/// caller supplies the human label (used verbatim in every error string so the
+/// per-provider wording is unchanged), the URL, the bearer token, and any extra
+/// request headers beyond the always-sent `Accept: application/json`. Per-
+/// provider response validation stays at the call site.
+fn get_json_bearer<T: serde::de::DeserializeOwned>(
+    label: &str,
+    url: &str,
+    token: &str,
+    extra_headers: &[(reqwest::header::HeaderName, &str)],
+) -> Result<T, String> {
+    let client = provider_http_client()?;
+    let mut request = client
+        .get(url)
+        .bearer_auth(token)
+        .header(reqwest::header::ACCEPT, "application/json");
+    for (name, value) in extra_headers {
+        request = request.header(name.clone(), *value);
+    }
+    let response = request
+        .send()
+        .map_err(|err| format!("{label} request failed: {err}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("{label} HTTP {status}"));
+    }
+    response
+        .json::<T>()
+        .map_err(|err| format!("{label} decode failed: {err}"))
 }
 
 #[derive(Debug, Deserialize)]
@@ -4262,20 +4288,7 @@ fn zai_count_line(limit: &ZaiLimitRaw) -> Option<String> {
 
 fn fetch_zai_usage(token: &str) -> Result<ZaiQuotaResponse, String> {
     let url = resolve_zai_quota_url();
-    let client = provider_http_client()?;
-    let response = client
-        .get(&url)
-        .bearer_auth(token)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .send()
-        .map_err(|err| format!("Z.AI quota request failed: {err}"))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!("Z.AI quota HTTP {status}"));
-    }
-    let quota = response
-        .json::<ZaiQuotaResponse>()
-        .map_err(|err| format!("Z.AI quota decode failed: {err}"))?;
+    let quota: ZaiQuotaResponse = get_json_bearer("Z.AI quota", &url, token, &[])?;
     if quota.success == Some(false) || quota.code.is_some_and(|code| code != 200) {
         return Err(format!(
             "Z.AI quota rejected response: {}",
@@ -4477,21 +4490,12 @@ fn kimi_window_seconds(label: &str, window: Option<&KimiWindow>) -> Option<i64> 
 }
 
 fn fetch_kimi_usage(token: &str) -> Result<KimiUsageResponse, String> {
-    let client = provider_http_client()?;
-    let response = client
-        .get("https://api.kimi.com/coding/v1/usages")
-        .bearer_auth(token)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .header(reqwest::header::USER_AGENT, "jackin-capsule/usage")
-        .send()
-        .map_err(|err| format!("Kimi usage request failed: {err}"))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!("Kimi usage HTTP {status}"));
-    }
-    response
-        .json()
-        .map_err(|err| format!("Kimi usage decode failed: {err}"))
+    get_json_bearer(
+        "Kimi usage",
+        "https://api.kimi.com/coding/v1/usages",
+        token,
+        &[(reqwest::header::USER_AGENT, "jackin-capsule/usage")],
+    )
 }
 
 fn load_kimi_local_token(now: i64) -> Option<String> {

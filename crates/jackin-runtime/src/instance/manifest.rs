@@ -314,7 +314,7 @@ pub fn host_path_fingerprint(path: &str) -> String {
         }
     };
     let digest = Sha256::digest(canonical.as_bytes());
-    format!("sha256:{}", crate::instance::naming::hex_lower(&digest))
+    format!("sha256:{}", hex::encode(digest))
 }
 
 impl InstanceIndex {

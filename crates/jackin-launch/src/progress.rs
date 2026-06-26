@@ -106,52 +106,40 @@ impl LaunchProgress {
         self.update_view(LaunchMessage::IdentityUpdated(identity));
     }
 
-    pub fn stage_started(&mut self, stage: LaunchStage, detail: impl Into<String>) {
+    fn emit_stage(
+        &mut self,
+        stage: LaunchStage,
+        status: StageStatus,
+        kind: &str,
+        detail: impl Into<String>,
+    ) {
         let detail = detail.into();
+        // The activity spinner tracks in-progress stages: set it iff the stage is
+        // still running. Done/Skipped are terminal and clear it.
+        let set_activity = matches!(status, StageStatus::Running);
         self.update_view(LaunchMessage::StageStatus {
             stage,
-            status: StageStatus::Running,
+            status,
             detail: detail.clone(),
-            set_activity: true,
+            set_activity,
         });
-        self.diagnostics
-            .stage("stage_started", stage.label(), &detail, None);
+        self.diagnostics.stage(kind, stage.label(), &detail, None);
+    }
+
+    pub fn stage_started(&mut self, stage: LaunchStage, detail: impl Into<String>) {
+        self.emit_stage(stage, StageStatus::Running, "stage_started", detail);
     }
 
     pub fn stage_progress(&mut self, stage: LaunchStage, detail: impl Into<String>) {
-        let detail = detail.into();
-        self.update_view(LaunchMessage::StageStatus {
-            stage,
-            status: StageStatus::Running,
-            detail: detail.clone(),
-            set_activity: true,
-        });
-        self.diagnostics
-            .stage("stage_progress", stage.label(), &detail, None);
+        self.emit_stage(stage, StageStatus::Running, "stage_progress", detail);
     }
 
     pub fn stage_done(&mut self, stage: LaunchStage, detail: impl Into<String>) {
-        let detail = detail.into();
-        self.update_view(LaunchMessage::StageStatus {
-            stage,
-            status: StageStatus::Done,
-            detail: detail.clone(),
-            set_activity: false,
-        });
-        self.diagnostics
-            .stage("stage_done", stage.label(), &detail, None);
+        self.emit_stage(stage, StageStatus::Done, "stage_done", detail);
     }
 
     pub fn stage_skipped(&mut self, stage: LaunchStage, reason: impl Into<String>) {
-        let reason = reason.into();
-        self.update_view(LaunchMessage::StageStatus {
-            stage,
-            status: StageStatus::Skipped,
-            detail: reason.clone(),
-            set_activity: false,
-        });
-        self.diagnostics
-            .stage("stage_skipped", stage.label(), &reason, None);
+        self.emit_stage(stage, StageStatus::Skipped, "stage_skipped", reason);
     }
 
     pub async fn stage_failed(&mut self, mut failure: LaunchFailure) {

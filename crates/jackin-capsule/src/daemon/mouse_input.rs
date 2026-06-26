@@ -778,8 +778,14 @@ impl Multiplexer {
 }
 
 pub(super) fn host_url_opening_allowed() -> bool {
-    let value = std::env::var(jackin_core::env_model::JACKIN_OPEN_LINKS_ENV_NAME).ok();
-    host_url_opening_allowed_for(value.as_deref())
+    // `JACKIN_OPEN_LINKS` is process-launch config, never mutated at runtime, but
+    // this is read up to ~2x per mouse-move. Resolve the env var once and cache
+    // the parsed verdict so the hot path skips the syscall + allocation.
+    static ALLOWED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ALLOWED.get_or_init(|| {
+        let value = std::env::var(jackin_core::env_model::JACKIN_OPEN_LINKS_ENV_NAME).ok();
+        host_url_opening_allowed_for(value.as_deref())
+    })
 }
 
 pub(super) fn host_url_opening_allowed_for(value: Option<&str>) -> bool {

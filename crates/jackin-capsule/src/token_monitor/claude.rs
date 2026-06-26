@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-use super::TokenSession;
+use super::{TokenSession, json_u64};
 
 /// Per-line token fields from Claude JSONL.
 #[derive(Debug, Default)]
@@ -28,42 +28,21 @@ fn parse_line(line: &str) -> Option<ClaudeUsageLine> {
     let msg = val.get("message")?;
     let usage = msg.get("usage")?;
 
-    let input_tokens = usage
-        .get("input_tokens")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    let output_tokens = usage
-        .get("output_tokens")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    let cache_creation = usage
-        .get("cache_creation_input_tokens")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    let cache_read = usage
-        .get("cache_read_input_tokens")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    let cost_usd = val.get("costUSD").and_then(serde_json::Value::as_f64);
-    let model = msg.get("model").and_then(|v| v.as_str()).map(str::to_owned);
-    let is_error = val
-        .get("isApiErrorMessage")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-    let is_sidechain = val
-        .get("isSidechain")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-
     Some(ClaudeUsageLine {
-        input_tokens,
-        output_tokens,
-        cache_creation_input_tokens: cache_creation,
-        cache_read_input_tokens: cache_read,
-        cost_usd,
-        model,
-        is_error,
-        is_sidechain,
+        input_tokens: json_u64(usage, "input_tokens"),
+        output_tokens: json_u64(usage, "output_tokens"),
+        cache_creation_input_tokens: json_u64(usage, "cache_creation_input_tokens"),
+        cache_read_input_tokens: json_u64(usage, "cache_read_input_tokens"),
+        cost_usd: val.get("costUSD").and_then(serde_json::Value::as_f64),
+        model: msg.get("model").and_then(|v| v.as_str()).map(str::to_owned),
+        is_error: val
+            .get("isApiErrorMessage")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+        is_sidechain: val
+            .get("isSidechain")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
     })
 }
 
@@ -74,6 +53,7 @@ fn find_jsonl_files() -> Vec<PathBuf> {
             "/home/agent/.claude/projects",
         ],
         "jsonl",
+        super::PROVIDER_WALK_DEPTH,
     )
 }
 

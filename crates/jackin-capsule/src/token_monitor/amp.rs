@@ -2,54 +2,29 @@
 //!
 //! Reads `~/.local/share/amp/threads/*.json`.
 
-use std::fs;
-use std::path::PathBuf;
-
-use super::TokenSession;
-
-fn find_thread_files() -> Vec<PathBuf> {
-    let base = "/home/agent/.local/share/amp/threads";
-    let Ok(dir) = fs::read_dir(base) else {
-        return Vec::new();
-    };
-    dir.flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("json"))
-        .collect()
-}
+use super::{TokenSession, json_u64};
 
 pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
-    let files = find_thread_files();
+    // Amp keeps thread files flat directly under `threads/` — top level only
+    // (max_depth 0), so unrelated nested JSON never inflates the spend total.
+    let files = super::find_provider_files(&["/home/agent/.local/share/amp/threads"], "json", 0);
     super::recompute_spend(&files, "amp", |content, acc| {
         let Ok(val) = serde_json::from_str::<serde_json::Value>(content) else {
             return;
         };
         // Thread JSON: array of messages, each may have usage metadata.
-        let messages: &[serde_json::Value] = match val.as_array() {
-            Some(arr) => arr,
-            None => match val.get("messages").and_then(|m| m.as_array()) {
-                Some(arr) => arr,
-                None => return,
-            },
+        let Some(messages) = val
+            .as_array()
+            .or_else(|| val.get("messages").and_then(|m| m.as_array()))
+        else {
+            return;
         };
         for msg in messages {
             if let Some(usage) = msg.get("usage") {
-                let input = usage
-                    .get("input_tokens")
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(0);
-                let output = usage
-                    .get("output_tokens")
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(0);
-                let cache_read = usage
-                    .get("cache_read_input_tokens")
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(0);
-                let cache_write = usage
-                    .get("cache_creation_input_tokens")
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(0);
+                let input = json_u64(usage, "input_tokens");
+                let output = json_u64(usage, "output_tokens");
+                let cache_read = json_u64(usage, "cache_read_input_tokens");
+                let cache_write = json_u64(usage, "cache_creation_input_tokens");
                 acc.input = acc.input.saturating_add(input);
                 acc.output = acc.output.saturating_add(output);
                 acc.cache_read = acc.cache_read.saturating_add(cache_read);
