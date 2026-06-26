@@ -27,7 +27,7 @@ tui-scrollbar = "0.2.4"
 unicode-width = "0.2"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt", "test-util"] }
+tokio = { version = "=1.52.3", features = ["macros", "rt", "test-util"] }
 
 [lints]
 workspace = true

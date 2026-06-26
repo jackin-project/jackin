@@ -5,14 +5,14 @@ ARG SHELLFIRM_VERSION
 # the final image. Building inside Docker — rather than prebuilding on the host —
 # keeps it off the host's mise/cargo-binstall environment and produces the
 # binary for the target image architecture.
-FROM rust:1.96.0-trixie AS shellfirm-builder
+FROM rust:1.96.0-trixie@sha256:6df234c1eb92b0545468fab8c18fc5f9adfb994e7d4f67d81d45fe2fcabf5657 AS shellfirm-builder
 
 ARG SHELLFIRM_VERSION
 
 RUN cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked --root /opt/shellfirm && \
     /opt/shellfirm/bin/shellfirm --version | grep -F "${SHELLFIRM_VERSION}"
 
-FROM debian:trixie-20260610@sha256:fe7312b5f05bf5f43fad76bcd8945642e4e47a68aefd1b73f447615899d0fac1
+FROM debian:trixie-20260623@sha256:d07d1b51c39f51188e60be9b64e6bf769fa94e187f092bc32b91305cfa34ba5a
 
 ARG SHELLFIRM_VERSION
 

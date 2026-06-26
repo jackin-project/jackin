@@ -32,6 +32,7 @@ exceptions = [
     { crate = "foldhash@0.2.0", allow = ["Zlib"] },
     { crate = "hyper-rustls@0.27.9", allow = ["Apache-2.0", "ISC", "MIT"] },
     { crate = "icu_collator@2.2.0", allow = ["Unicode-3.0"] },
+    { crate = "icu_collator@2.2.1", allow = ["Unicode-3.0"] },
     { crate = "icu_collator_data@2.2.0", allow = ["Unicode-3.0"] },
     { crate = "icu_collections@2.2.0", allow = ["Unicode-3.0"] },
     { crate = "icu_locale@2.2.0", allow = ["Unicode-3.0"] },
@@ -92,6 +93,11 @@ exceptions = [
     { crate = "zerovec@0.11.6", allow = ["Unicode-3.0"] },
     { crate = "zerovec-derive@0.11.3", allow = ["Unicode-3.0"] },
 ]
+
+[[licenses.clarify]]
+crate = "cfg_block@0.1.1"
+expression = "Apache-2.0"
+license-files = [{ path = "LICENSE", hash = 0xc9663a1e }]
 
 [[licenses.clarify]]
 crate = "sigstore-protobuf-specs-derive@0.0.1"
