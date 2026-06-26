@@ -6280,3 +6280,49 @@ fn exit_dirty_marker_moves_on_screen_with_zero_panes() {
         "down arrow must move the rendered \u{25b8} marker: before={before:?} after={after:?}"
     );
 }
+
+#[test]
+fn exit_dirty_marker_moves_after_session_exits_realistic() {
+    // Reproduce the real path: a live agent pane, the session exits, the
+    // dirty-exit modal opens with zero panes, then the operator presses down.
+    // The client is a persistent VirtualClient (its grid carries the agent
+    // screen forward), so this exercises the exact diff baseline the operator's
+    // terminal sees — unlike a modal opened on a blank mux.
+    let (rows, cols) = (44u16, 157u16);
+    let mut mux = single_pane_tab_mux_with_size(rows, cols);
+    let (session, _rx) = test_session(rows, cols);
+    mux.sessions.insert(1, session);
+    let mut client = VirtualClient::new(rows, cols);
+
+    // Agent paints something; the client mirrors it.
+    feed_and_compose(&mut mux, &mut client, 1, b"agent output here\r\n");
+
+    // The session exits — the daemon removes it (zero panes now).
+    mux.remove_exited_session(1);
+
+    // handle_last_session_exit opens the modal and invalidates.
+    mux.dialog_push(Dialog::new_exit_dirty(vec![
+        "holla   1 changed \u{b7} 3 unpushed".to_owned(),
+    ]));
+    mux.invalidate(FullRedrawReason::DialogChange);
+    let frame = mux.compose_pending_frame();
+    client.apply(&frame);
+    let before = marker_row_on_screen(&client.grid, rows, cols);
+
+    // Operator presses down.
+    dispatch_and_compose(
+        &mut mux,
+        &mut client,
+        InputEvent::Data(vec![0x1b, 0x5b, 0x42]),
+    );
+    let after = marker_row_on_screen(&client.grid, rows, cols);
+
+    assert!(
+        before.is_some(),
+        "modal marker must be visible after session exit"
+    );
+    assert!(
+        after > before,
+        "down arrow must move the rendered marker on the operator's screen: before={before:?} after={after:?}"
+    );
+}
