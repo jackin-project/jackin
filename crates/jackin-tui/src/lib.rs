@@ -161,6 +161,10 @@ pub const LINK_FG_HOVER: Rgb = Rgb::new(130, 240, 240);
 /// a `--debug` run. Readable on the white status-bar band.
 pub const DEBUG_AMBER: Rgb = Rgb::new(204, 92, 0);
 
+/// Amber — used for the Stuck tab glyph and token rate bar below 20% threshold.
+/// `#ffaa00`
+pub const AMBER: Rgb = Rgb::new(255, 170, 0);
+
 /// Neutral gray for unfocused chrome borders — the in-container multiplexer's
 /// inactive pane border and the host's full-screen non-interactive frames
 /// (the launch cockpit box, the exit summary box) so chrome reads identically
@@ -252,6 +256,7 @@ pub mod ansi {
             (80, 80, 80) => "\x1b[38;2;80;80;80m",
             (255, 255, 255) => "\x1b[38;2;255;255;255m",
             (0, 0, 0) => "\x1b[38;2;0;0;0m",
+            (255, 170, 0) => "\x1b[38;2;255;170;0m",
             (180, 255, 180) => "\x1b[38;2;180;255;180m", // ACTION_ACCENT
             _ => "",
         }

@@ -204,6 +204,55 @@ fn control_reply_for_request_shapes_usage_variants() {
 }
 
 #[test]
+fn control_reply_report_runtime_event_applies_to_session_and_acks() {
+    let mut mux = single_pane_tab_mux();
+    let (session, _session_rx) = test_session_with_agent(24, 80, Some("opencode".to_owned()));
+    mux.sessions.insert(1, session);
+
+    let reply = control_reply_for_request(
+        &mut mux,
+        ClientMsg::ReportRuntimeEvent {
+            session_id: 1,
+            source_id: "hook-opencode-1".to_owned(),
+            runtime: "opencode".to_owned(),
+            event: "permission.asked".to_owned(),
+            payload: None,
+        },
+    );
+
+    assert!(matches!(reply, ServerMsg::Ack));
+    let authority = mux.sessions[&1]
+        .authority
+        .as_ref()
+        .expect("event applied to the addressed session's authority");
+    assert_eq!(authority.source_id, "hook-opencode-1");
+    assert!(authority.pending_permission);
+}
+
+#[test]
+fn control_reply_runtime_event_and_capture_for_unknown_session_still_ack() {
+    // The hook must never be blocked or failed by a stale/wrong session id: both
+    // control messages Ack (and do not panic) when the session is absent.
+    let mut mux = single_pane_tab_mux();
+
+    let event_reply = control_reply_for_request(
+        &mut mux,
+        ClientMsg::ReportRuntimeEvent {
+            session_id: 999,
+            source_id: "hook-opencode-1".to_owned(),
+            runtime: "opencode".to_owned(),
+            event: "permission.asked".to_owned(),
+            payload: None,
+        },
+    );
+    assert!(matches!(event_reply, ServerMsg::Ack));
+
+    let capture_reply =
+        control_reply_for_request(&mut mux, ClientMsg::StatusCapture { session_id: 999 });
+    assert!(matches!(capture_reply, ServerMsg::Ack));
+}
+
+#[test]
 fn control_usage_account_list_uses_in_memory_cache() {
     let mut mux = single_pane_tab_mux();
     let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 123);

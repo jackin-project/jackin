@@ -55,6 +55,7 @@ clap_mangen = "0.3"
 tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
 futures-util = "0.3"
 fs2 = "0.4"
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
 
 [build-dependencies]
 jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }

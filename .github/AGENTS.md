@@ -106,6 +106,7 @@ Inside container, operator must verify:
 - `Ctrl+\` opens command palette (override with `JACKIN_PALETTE_KEY`)
 - Mouse clicks, arrow keys, paste reach agent unmodified
 - The specific behavior changed by the PR was observed to work — one sentence (e.g. "Split pane rendered after `Ctrl+\ → Split pane │`", "Session switch preserved agent output")
+- **Reporter acceptance (any PR touching `agent_status/hook_installer` or `runtime_setup`):** launch each affected agent and confirm it starts with **no config-parse error or crash from the installed reporter** (e.g. Codex must not print `failed to parse hooks config … unknown field`; Amp must not crash on load). Installer unit tests assert what is *written*, not what the agent *accepts* — only a live launch catches agent config-schema drift, and CI cannot (the e2e roles are not authenticated real agents). This is the standing guard for the "installer writes agent-breaking config" class.
 
 PRs touching tmux-style prefix surface (`Ctrl+B Space` palette, `Ctrl+B "` / `Ctrl+B %` splits, `Ctrl+B d` detach) must opt in before launching + call out surface in verify list:
 

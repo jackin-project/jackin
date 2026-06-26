@@ -287,7 +287,7 @@ pub struct ClaudeMarketplaceConfig {
     pub sparse: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ClaudeConfig {
     /// Optional model override; passed to Claude Code with `--model`

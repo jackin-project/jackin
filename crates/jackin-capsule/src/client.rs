@@ -27,6 +27,20 @@ pub async fn run_client(
     crate::tui::run::run_client(spawn_request, focus_session).await
 }
 
+/// Forward a runtime hook/plugin event to the daemon for the current session.
+///
+/// Invoked as `jackin-capsule report-event --event <name> [--payload-stdin]`
+/// from a container-local hook/plugin. Reads `JACKIN_SESSION_ID`,
+/// `JACKIN_STATUS_SOURCE`, `JACKIN_AGENT_RUNTIME` from the spawn env. Always
+/// exits 0 — a reporter must never break the agent's hook — so all failures are
+/// logged and swallowed.
+pub async fn run_report_event(args: &[String]) -> Result<()> {
+    if let Err(e) = try_report_event(args).await {
+        crate::clog!("report-event: {e:#}");
+    }
+    Ok(())
+}
+
 /// Relay attach-protocol bytes between stdio and the daemon socket.
 ///
 /// This is the fallback transport for hosts that can run `docker exec -i` but
@@ -74,12 +88,59 @@ where
     Ok(())
 }
 
+async fn try_report_event(args: &[String]) -> Result<()> {
+    let event = flag_value(args, "--event").context("report-event requires --event <name>")?;
+    let session_id: u64 = std::env::var("JACKIN_SESSION_ID")
+        .context("JACKIN_SESSION_ID unset")?
+        .parse()
+        .context("JACKIN_SESSION_ID not a u64")?;
+    let source_id = std::env::var("JACKIN_STATUS_SOURCE").context("JACKIN_STATUS_SOURCE unset")?;
+    let runtime = std::env::var("JACKIN_AGENT_RUNTIME").context("JACKIN_AGENT_RUNTIME unset")?;
+
+    // Drain stdin when asked so the hook's pipe never breaks; the payload is
+    // forwarded but unused by gating today.
+    let payload = if args.iter().any(|a| a == "--payload-stdin") {
+        let mut buf = String::new();
+        let _read = tokio::io::stdin().read_to_string(&mut buf).await;
+        (!buf.is_empty()).then_some(buf)
+    } else {
+        None
+    };
+
+    let mut stream = connect_and_send(&ClientMsg::ReportRuntimeEvent {
+        session_id,
+        source_id,
+        runtime,
+        event,
+        payload,
+    })
+    .await?;
+    // Read the bounded Ack so the daemon ingests the event before we exit; the
+    // content is irrelevant.
+    let mut len_buf = [0u8; 4];
+    let _ack = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        stream.read_exact(&mut len_buf),
+    )
+    .await;
+    Ok(())
+}
+
+/// The first arg after `flag` — works for both `--flag value` and a positional
+/// marker like the `<session_id>` after `explain`.
+fn flag_value(args: &[String], flag: &str) -> Option<String> {
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+}
+
 /// Query the daemon for current session list and print it.
 pub async fn run_status() -> Result<()> {
     let msg = request_control(&ClientMsg::Status).await?;
     let sessions = match msg {
         ServerMsg::SessionList { sessions } => sessions,
-        ServerMsg::Unknown => {
+        ServerMsg::Ack | ServerMsg::Unknown => {
             anyhow::bail!(
                 "daemon replied with ServerMsg::Unknown for Status — peer is newer than this CLI"
             )
@@ -101,6 +162,84 @@ pub async fn run_status() -> Result<()> {
     Ok(())
 }
 
+/// `jackin-capsule status explain <session_id>` — dump the agent-status
+/// evidence bundle (the arbitration report: raw state, winning source,
+/// confidence, visible flags, foreground pgid, subagent count, revisions) for
+/// one session, as pretty JSON. Reads the same `Snapshot` the console consumes,
+/// so it needs no extra protocol surface.
+pub async fn run_status_explain(args: &[String]) -> Result<()> {
+    let session_id: u64 = flag_value(args, "explain")
+        .context("usage: jackin-capsule status explain <session_id>")?
+        .parse()
+        .context("session_id must be a u64")?;
+
+    let ServerMsg::Snapshot { tabs, .. } = request_control(&ClientMsg::Snapshot).await? else {
+        anyhow::bail!("daemon did not reply with a snapshot");
+    };
+    let pane = tabs
+        .iter()
+        .flat_map(|tab| tab.panes.iter())
+        .find(|pane| pane.session_id == session_id)
+        .with_context(|| format!("no session {session_id} in the current snapshot"))?;
+    let payload = serde_json::json!({
+        "session_id": pane.session_id,
+        "label": pane.label,
+        "agent": pane.agent,
+        "effective_state": pane.state.label(),
+        "report": pane.agent_status_report,
+    });
+    crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&payload)?));
+    Ok(())
+}
+
+/// `jackin-capsule status capture <session_id>` — ask the daemon to write a
+/// capture fixture (live grid + evidence) for one session. The daemon owns the
+/// grid, so it does the write; the client triggers and waits for the Ack.
+pub async fn run_status_capture(args: &[String]) -> Result<()> {
+    let session_id: u64 = flag_value(args, "capture")
+        .context("usage: jackin-capsule status capture <session_id>")?
+        .parse()
+        .context("session_id must be a u64")?;
+
+    let mut stream = connect_and_send(&ClientMsg::StatusCapture { session_id }).await?;
+    // The daemon writes the fixture synchronously before replying, so reading the
+    // reply's length prefix is enough to know the capture ran; the small Ack body
+    // is intentionally not drained (the connection closes next).
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).await?;
+    crate::output::stdout_line(format_args!(
+        "capture requested for session {session_id}; \
+         see /jackin/state/agent-status/captures/"
+    ));
+    Ok(())
+}
+
+/// `jackin-capsule token-usage <session_id>` — print the per-session token-spend
+/// summary as JSON, or a no-data line when the session is unknown to the monitor.
+pub async fn run_token_usage(args: &[String]) -> Result<()> {
+    let session_id: u64 = flag_value(args, "token-usage")
+        .context("usage: jackin-capsule token-usage <session_id>")?
+        .parse()
+        .context("session_id must be a u64")?;
+    match request_control(&ClientMsg::TokenUsage { session_id }).await? {
+        ServerMsg::TokenUsage {
+            summary: Some(summary),
+        } => {
+            crate::output::stdout_line(format_args!("{}", serde_json::to_string_pretty(&summary)?));
+        }
+        ServerMsg::TokenUsage { summary: None } => {
+            crate::output::stdout_line(format_args!(
+                "no token data for session {session_id} (not an agent session, or already exited)"
+            ));
+        }
+        other => anyhow::bail!(
+            "daemon replied with {} for TokenUsage request",
+            other.kind()
+        ),
+    }
+    Ok(())
+}
+
 /// Query the daemon for the tab/pane snapshot and print as JSON.
 /// Output shape is `ServerMsg::Snapshot` verbatim so the host
 /// console can deserialize the same struct it shares with the
@@ -109,7 +248,7 @@ pub async fn run_snapshot() -> Result<()> {
     let msg = request_control(&ClientMsg::Snapshot).await?;
     let (tabs, active_tab) = match msg {
         ServerMsg::Snapshot { tabs, active_tab } => (tabs, active_tab),
-        ServerMsg::Unknown => {
+        ServerMsg::Ack | ServerMsg::Unknown => {
             anyhow::bail!(
                 "daemon replied with ServerMsg::Unknown for Snapshot — peer is newer than this CLI"
             )
@@ -139,7 +278,7 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
     let msg = request_control(&ClientMsg::Agents).await?;
     let records = match msg {
         ServerMsg::AgentRegistry { records } => records,
-        ServerMsg::Unknown => {
+        ServerMsg::Ack | ServerMsg::Unknown => {
             anyhow::bail!(
                 "daemon replied with ServerMsg::Unknown for Agents — peer is newer than this CLI"
             )
@@ -378,12 +517,18 @@ fn normalize_usage_provider_label(value: &str) -> String {
         .to_ascii_lowercase()
 }
 
-async fn request_control(request: &ClientMsg) -> Result<ServerMsg> {
+/// Connect to the daemon control socket and send one length-prefixed request,
+/// returning the open stream so the caller can read (or ignore) the reply.
+async fn connect_and_send(request: &ClientMsg) -> Result<UnixStream> {
     let mut stream = UnixStream::connect(SOCKET_PATH)
         .await
         .context("cannot connect to jackin-capsule daemon")?;
-
     stream.write_all(&control_frame(request)).await?;
+    Ok(stream)
+}
+
+async fn request_control(request: &ClientMsg) -> Result<ServerMsg> {
+    let mut stream = connect_and_send(request).await?;
 
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await?;

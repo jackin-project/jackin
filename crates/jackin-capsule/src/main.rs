@@ -74,8 +74,16 @@ connecting as a client.",
                 ));
                 Ok(())
             }
+            Some("status") if args.get(2).map(String::as_str) == Some("explain") => {
+                client::run_status_explain(&args).await
+            }
+            Some("status") if args.get(2).map(String::as_str) == Some("capture") => {
+                client::run_status_capture(&args).await
+            }
             Some("status") => client::run_status().await,
             Some("snapshot") => client::run_snapshot().await,
+            Some("report-event") => client::run_report_event(&args).await,
+            Some("token-usage") => client::run_token_usage(&args).await,
             Some("attach-proxy") => client::run_attach_proxy().await,
             Some("usage") => run_usage_subcommand(&args).await,
             Some("agents") => {
@@ -136,7 +144,7 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, attach-proxy, usage accounts, usage verify, usage claude-cli, agents [--format json], runtime-setup, sudo-provision, firewall-apply, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, status explain <id>, status capture <id>, snapshot, attach-proxy, usage accounts, usage verify, usage claude-cli, token-usage <id>, agents [--format json], report-event --event <name> [--payload-stdin], runtime-setup, sudo-provision, firewall-apply, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }

@@ -2706,6 +2706,7 @@ dependencies = [
  "owo-colors 4.3.0",
  "predicates",
  "ratatui",
+ "rustls",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -2741,8 +2742,11 @@ dependencies = [
  "jackin-tui",
  "nix 0.31.3",
  "portable-pty",
+ "procfs",
  "ratatui",
+ "regex",
  "reqwest",
+ "semver",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -2808,7 +2812,7 @@ dependencies = [
 
 [[package]]
 name = "jackin-dev"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "clap",
@@ -4458,6 +4462,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "procfs"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25485360a54d6861439d60facef26de713b1e126bf015ec8f98239467a2b82f7"
+dependencies = [
+ "bitflags 2.13.0",
+ "chrono",
+ "flate2",
+ "procfs-core",
+ "rustix 1.1.4",
+]
+
+[[package]]
+name = "procfs-core"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6401bf7b6af22f78b563665d15a22e9aef27775b79b149a66ca022468a4e405"
+dependencies = [
+ "bitflags 2.13.0",
+ "chrono",
+ "hex",
 ]
 
 [[package]]

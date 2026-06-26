@@ -851,6 +851,46 @@ plugins = []
 }
 
 #[test]
+fn stages_agent_status_reporter_assets_into_the_image() {
+    let repo = tempdir().unwrap();
+    std::fs::write(
+        repo.path().join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo.path().join("jackin.role.toml"),
+        "version = \"v1alpha3\"\ndockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+    )
+    .unwrap();
+
+    let validated = jackin_manifest::validate_role_repo(repo.path()).unwrap();
+    let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
+
+    assert!(
+        build
+            .context_dir
+            .join(".jackin-runtime/agent-status/hooks/claude/report-hook.sh")
+            .is_file()
+    );
+    assert!(
+        build
+            .context_dir
+            .join(".jackin-runtime/agent-status/packs/kimi.toml")
+            .is_file()
+    );
+    let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
+    assert!(
+        dockerfile.contains(
+            "COPY --link --chmod=0755 .jackin-runtime/agent-status /jackin/runtime/agent-status"
+        ),
+        "derived Dockerfile must COPY the agent-status assets"
+    );
+    let dockerignore = std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
+    assert!(dockerignore.contains("!.jackin-runtime/agent-status/"));
+}
+
+#[test]
 fn uses_base_image_override_instead_of_workspace_dockerfile() {
     let repo = tempdir().unwrap();
     std::fs::write(

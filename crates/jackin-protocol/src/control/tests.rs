@@ -33,6 +33,45 @@ fn known_variants_roundtrip() {
 }
 
 #[test]
+fn report_runtime_event_roundtrips_and_omits_none_payload() {
+    let msg = ClientMsg::ReportRuntimeEvent {
+        session_id: 7,
+        source_id: "hook-claude-7".to_owned(),
+        runtime: "claude".to_owned(),
+        event: "Stop".to_owned(),
+        payload: None,
+    };
+    let json = serde_json::to_string(&msg).unwrap();
+    assert!(
+        !json.contains("payload"),
+        "a None payload must be omitted from the wire: {json}"
+    );
+    match serde_json::from_str::<ClientMsg>(&json).unwrap() {
+        ClientMsg::ReportRuntimeEvent {
+            session_id, event, ..
+        } => {
+            assert_eq!(session_id, 7);
+            assert_eq!(event, "Stop");
+        }
+        other => panic!("decoded wrong variant: {other:?}"),
+    }
+}
+
+#[test]
+fn status_capture_and_ack_roundtrip() {
+    let json = serde_json::to_string(&ClientMsg::StatusCapture { session_id: 3 }).unwrap();
+    assert!(matches!(
+        serde_json::from_str::<ClientMsg>(&json).unwrap(),
+        ClientMsg::StatusCapture { session_id: 3 }
+    ));
+    let ack = serde_json::to_string(&ServerMsg::Ack).unwrap();
+    assert!(matches!(
+        serde_json::from_str::<ServerMsg>(&ack).unwrap(),
+        ServerMsg::Ack
+    ));
+}
+
+#[test]
 fn usage_focused_roundtrips() {
     let usage = FocusedUsageView::unavailable("no focused agent session", 123);
     let json = serde_json::to_string(&ServerMsg::UsageFocused {
@@ -47,6 +86,41 @@ fn usage_focused_roundtrips() {
         }
         other => panic!("unexpected variant {other:?}"),
     }
+}
+
+#[test]
+fn token_usage_roundtrips_present_and_absent() {
+    // Request side.
+    let json = serde_json::to_string(&ClientMsg::TokenUsage { session_id: 9 }).unwrap();
+    assert!(matches!(
+        serde_json::from_str::<ClientMsg>(&json).unwrap(),
+        ClientMsg::TokenUsage { session_id: 9 }
+    ));
+
+    // Reply with a summary.
+    let summary = TokenUsageSummary {
+        input_tokens: 100,
+        output_tokens: 40,
+        cache_read_tokens: 10,
+        cache_write_tokens: 5,
+        cost_usd: Some(0.25),
+        model: Some("claude-opus-4-8".to_owned()),
+    };
+    let json = serde_json::to_string(&ServerMsg::TokenUsage {
+        summary: Some(summary.clone()),
+    })
+    .unwrap();
+    match serde_json::from_str::<ServerMsg>(&json).unwrap() {
+        ServerMsg::TokenUsage { summary: Some(s) } => assert_eq!(s, summary),
+        other => panic!("unexpected variant {other:?}"),
+    }
+
+    // Reply for an unknown session.
+    let json = serde_json::to_string(&ServerMsg::TokenUsage { summary: None }).unwrap();
+    assert!(matches!(
+        serde_json::from_str::<ServerMsg>(&json).unwrap(),
+        ServerMsg::TokenUsage { summary: None }
+    ));
 }
 
 #[test]
