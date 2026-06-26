@@ -116,14 +116,27 @@ pub(super) fn provider_hint() -> Vec<HintSpan<'static>> {
     filter_list_hint("select", false)
 }
 
-pub(super) fn rename_hint() -> Vec<HintSpan<'static>> {
-    let mut spans = Vec::with_capacity(7);
+/// Shared single-line text-input hint (commit + dismiss), plus an optional
+/// `trailing` affordance span. Tab rename passes "empty = auto name"; file export
+/// passes `None` because an empty export path is rejected, never auto-named.
+fn text_input_hint(trailing: Option<&'static str>) -> Vec<HintSpan<'static>> {
+    let mut spans = Vec::with_capacity(if trailing.is_some() { 7 } else { 5 });
     RENAME_KEYMAP.push_spans_for(RenameAction::Save, &mut spans);
     spans.push(HintSpan::GroupSep);
     RENAME_KEYMAP.push_spans_for(RenameAction::Dismiss, &mut spans);
-    spans.push(HintSpan::GroupSep);
-    spans.push(HintSpan::Text("empty = auto name"));
+    if let Some(text) = trailing {
+        spans.push(HintSpan::GroupSep);
+        spans.push(HintSpan::Text(text));
+    }
     spans
+}
+
+pub(super) fn rename_hint() -> Vec<HintSpan<'static>> {
+    text_input_hint(Some("empty = auto name"))
+}
+
+pub(super) fn export_file_hint() -> Vec<HintSpan<'static>> {
+    text_input_hint(None)
 }
 
 /// Read-only info-dialog hint: copy key, the *available* scroll axes (per

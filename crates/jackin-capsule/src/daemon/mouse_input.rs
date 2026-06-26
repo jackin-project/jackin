@@ -1,11 +1,13 @@
 //! Mouse, pointer, hover, and text-selection methods for the Multiplexer.
 
+use jackin_protocol::attach::ServerFrame;
 use jackin_tui::components::HoverTracker;
 use ratatui::layout::Rect;
 
 use crate::tui::components::branch_context_bar::{
     BranchContextBarHit, ColRange, branch_context_bar_layout, debug_run_id_label,
 };
+use crate::tui::render::RowSnapshot;
 use crate::tui::terminal::osc22_pointer_shape;
 use crate::tui::view::encode_osc52_clipboard_write;
 
@@ -34,6 +36,11 @@ pub(super) struct PanePress {
     pub(super) at: Instant,
 }
 
+enum HostOpenTarget {
+    Allowed(String),
+    Rejected { token: String },
+}
+
 impl Multiplexer {
     pub(super) fn set_pointer_shape(&mut self, shape: PointerShape) {
         if !self.pointer_shapes_supported || self.pointer_shape == shape {
@@ -51,8 +58,9 @@ impl Multiplexer {
         self.set_pointer_shape(shape);
     }
 
-    pub(super) fn update_hover_for_mouse(&mut self, row: u16, col: u16) {
+    pub(super) fn update_hover_for_mouse(&mut self, row: u16, col: u16, button: u8) {
         let next = self.hover_target_at(row, col);
+        let next_link = self.link_hover_url_at(row, col, button);
         // The shared Debug info dialog brightens the hovered copyable row, so a
         // move between two copyable rows must redraw even though hover_target
         // stays DialogCopyTarget. Track the per-row hover separately.
@@ -63,10 +71,11 @@ impl Multiplexer {
             dialog.set_container_info_hover(row, col, term_rows, term_cols)
                 || dialog.set_usage_tab_hover(row, col, term_rows, term_cols)
         });
-        if self.hover_target == next && !row_hover_changed {
+        if self.hover_target == next && self.link_hover_url == next_link && !row_hover_changed {
             return;
         }
         self.hover_target = next;
+        self.link_hover_url = next_link;
         match hover_frame_plan(self.dialog_open()) {
             HoverFramePlan::DialogOverlay(reason) => self.invalidate(reason),
             HoverFramePlan::ChromeHover => self.invalidate(status_change_redraw_reason()),
@@ -179,8 +188,19 @@ impl Multiplexer {
             dialog_open: self.dialog_top().is_some(),
             drag_start_orient: self.detect_drag_start(row, col).map(|drag| drag.orient),
             selection_start_available: self.detect_selection_start(row, col).is_some(),
+            link_target_available: self.link_hover_url_at(row, col, button).is_some(),
             no_button_motion: button == SGR_NO_BUTTON_MOTION,
         })
+    }
+
+    fn link_hover_url_at(&self, row: u16, col: u16, button: u8) -> Option<String> {
+        if self.dialog_top().is_some()
+            || !host_url_opening_allowed()
+            || !is_host_url_hover_button(button)
+        {
+            return None;
+        }
+        self.resolve_http_url_at_mouse_cell(row, col, None)
     }
 
     /// Re-encode an SGR mouse event in the focused pane's local
@@ -455,11 +475,7 @@ impl Multiplexer {
     /// double-click word selection (which resolves word bounds from the
     /// same rows it copies; the snapshot is a full-grid copy worth taking
     /// once).
-    fn copy_selection_rows(
-        &mut self,
-        sel: &SelectionState,
-        rows: &[crate::tui::render::RowSnapshot],
-    ) {
+    fn copy_selection_rows(&mut self, sel: &SelectionState, rows: &[RowSnapshot]) {
         let text = selection_text(rows, sel);
         let copied = !text.is_empty() && self.client.is_attached();
         if copied {
@@ -541,6 +557,233 @@ impl Multiplexer {
         self.invalidate(selection_change_redraw_reason());
         true
     }
+
+    /// Resolve a modified click in a mouse-disabled pane to a visible host-open
+    /// URL and ask the host attach process to open it. Non-URL clicks return
+    /// `false` so the caller can preserve the existing raw-mouse fallback.
+    pub(super) fn open_visible_url_at(&mut self, row: u16, col: u16) -> bool {
+        if !host_url_opening_allowed() {
+            crate::cdebug!(
+                "visible url open skipped: host link opening disabled by JACKIN_OPEN_LINKS"
+            );
+            return false;
+        }
+        match self.resolve_host_open_target_at_mouse_cell(row, col, Some("pane")) {
+            Some(HostOpenTarget::Allowed(url)) => self.send_host_open_url("pane", url),
+            Some(HostOpenTarget::Rejected { token }) => {
+                self.reject_host_open_url("pane", &token);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Resolve the focused pane's terminal cursor to a visible host-open URL
+    /// and ask the host attach process to open it. This backs the command
+    /// palette path for terminals or operators that prefer not to use a
+    /// mouse-modifier gesture.
+    pub(super) fn open_visible_url_under_cursor(&mut self) -> bool {
+        let Some(session_id) = self.active_focused_id() else {
+            crate::cdebug!("visible url open skipped: no focused pane");
+            return false;
+        };
+        let Some(inner) = self.active_focused_inner_rect() else {
+            crate::cdebug!("visible url open skipped: focused pane has no visible rect");
+            return false;
+        };
+        let Some(session) = self.sessions.get(&session_id) else {
+            crate::cdebug!("visible url open skipped: focused session={session_id} gone");
+            return false;
+        };
+        if session.scrollback_offset() != 0 {
+            crate::cdebug!(
+                "visible url open skipped: focused session={session_id} is in scrollback"
+            );
+            return false;
+        }
+        let (cursor_row, cursor_col) = session.shadow_grid.cursor_position();
+        let rows = session.render_content_snapshot(inner.cols);
+        if rows.get(usize::from(cursor_row)).is_none() {
+            crate::cdebug!(
+                "visible url open skipped: focused session={session_id} cursor row={cursor_row} missing"
+            );
+            return false;
+        }
+        let Some(target) = self.resolve_host_open_target_at_content_cell(
+            session_id,
+            &rows,
+            usize::from(cursor_row),
+            cursor_col,
+            Some("focused-cursor"),
+        ) else {
+            return false;
+        };
+        match target {
+            HostOpenTarget::Allowed(url) => self.send_host_open_url("focused-cursor", url),
+            HostOpenTarget::Rejected { token } => {
+                self.reject_host_open_url("focused-cursor", &token);
+                true
+            }
+        }
+    }
+
+    fn resolve_host_open_target_at_mouse_cell(
+        &self,
+        row: u16,
+        col: u16,
+        log_suffix: Option<&str>,
+    ) -> Option<HostOpenTarget> {
+        let Some(candidate) = self.detect_selection_start(row, col) else {
+            if let Some(log_suffix) = log_suffix {
+                crate::cdebug!(
+                    "visible url open skipped ({log_suffix}): no mouse-disabled pane at ({row},{col})"
+                );
+            }
+            return None;
+        };
+        let Some(session) = self.sessions.get(&candidate.session_id) else {
+            if let Some(log_suffix) = log_suffix {
+                crate::cdebug!(
+                    "visible url open skipped ({log_suffix}): session={} gone",
+                    candidate.session_id
+                );
+            }
+            return None;
+        };
+        let rows = session.render_content_snapshot(candidate.inner.cols);
+        self.resolve_host_open_target_at_content_cell(
+            candidate.session_id,
+            &rows,
+            candidate.anchor_row,
+            candidate.anchor_col,
+            log_suffix,
+        )
+    }
+
+    fn resolve_host_open_target_at_content_cell(
+        &self,
+        session_id: u64,
+        rows: &[RowSnapshot],
+        row_idx: usize,
+        anchor_col: u16,
+        log_suffix: Option<&str>,
+    ) -> Option<HostOpenTarget> {
+        let Some(session) = self.sessions.get(&session_id) else {
+            if let Some(log_suffix) = log_suffix {
+                crate::cdebug!(
+                    "visible url open skipped ({log_suffix}): session={session_id} gone"
+                );
+            }
+            return None;
+        };
+
+        if let Some(osc8_target) = session.hyperlink_target_at_content_row(row_idx, anchor_col) {
+            if jackin_core::url_text::is_host_open_url(osc8_target) {
+                if let Some(log_suffix) = log_suffix {
+                    crate::cdebug!(
+                        "host-affordance: resolved {log_suffix} OSC8 url: {}",
+                        jackin_core::url_text::redact_url_for_log(osc8_target)
+                    );
+                }
+                return Some(HostOpenTarget::Allowed(osc8_target.to_owned()));
+            }
+            if !jackin_core::url_text::has_url_scheme(osc8_target) {
+                if let Some(log_suffix) = log_suffix {
+                    crate::cdebug!(
+                        "visible url open skipped ({log_suffix}): OSC8 target has no URL scheme at session={session_id} content_row={row_idx} col={anchor_col} token={osc8_target:?}"
+                    );
+                }
+                return None;
+            }
+            if let Some(log_suffix) = log_suffix {
+                crate::cdebug!(
+                    "visible url open skipped ({log_suffix}): disallowed OSC8 token at session={session_id} content_row={row_idx} col={anchor_col} token={osc8_target:?}"
+                );
+            }
+            return Some(HostOpenTarget::Rejected {
+                token: osc8_target.to_owned(),
+            });
+        }
+
+        let Some(row) = rows.get(row_idx) else {
+            if let Some(log_suffix) = log_suffix {
+                crate::cdebug!(
+                    "visible url open skipped ({log_suffix}): row {row_idx} missing for session={session_id}"
+                );
+            }
+            return None;
+        };
+        let Some((start_col, end_col)) = word_bounds_in_row(row, anchor_col) else {
+            if let Some(log_suffix) = log_suffix {
+                crate::cdebug!(
+                    "visible url open skipped ({log_suffix}): no word at session={session_id} content_row={row_idx} col={anchor_col}"
+                );
+            }
+            return None;
+        };
+        let url = row.text_range(start_col, end_col);
+        if !jackin_core::url_text::is_host_open_url(&url) {
+            if !jackin_core::url_text::has_url_scheme(&url) {
+                if let Some(log_suffix) = log_suffix {
+                    crate::cdebug!(
+                        "visible url open skipped ({log_suffix}): token has no URL scheme at session={session_id} content_row={row_idx} cols={start_col}..={end_col} token={url:?}"
+                    );
+                }
+                return None;
+            }
+            if let Some(log_suffix) = log_suffix {
+                crate::cdebug!(
+                    "visible url open skipped ({log_suffix}): disallowed token at session={session_id} content_row={row_idx} cols={start_col}..={end_col} token={url:?}"
+                );
+            }
+            return Some(HostOpenTarget::Rejected { token: url });
+        }
+        if let Some(log_suffix) = log_suffix {
+            crate::cdebug!(
+                "host-affordance: resolved {log_suffix} visible-token url: {}",
+                jackin_core::url_text::redact_url_for_log(&url)
+            );
+        }
+        Some(HostOpenTarget::Allowed(url))
+    }
+
+    fn resolve_http_url_at_mouse_cell(
+        &self,
+        row: u16,
+        col: u16,
+        log_suffix: Option<&str>,
+    ) -> Option<String> {
+        match self.resolve_host_open_target_at_mouse_cell(row, col, log_suffix) {
+            Some(HostOpenTarget::Allowed(url)) => Some(url),
+            Some(HostOpenTarget::Rejected { .. }) | None => None,
+        }
+    }
+
+    fn send_host_open_url(&mut self, log_suffix: &str, url: String) -> bool {
+        crate::clog!(
+            "host-affordance: opening {log_suffix} visible url from pane: {}",
+            jackin_core::url_text::redact_url_for_log(&url)
+        );
+        self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
+        true
+    }
+
+    fn reject_host_open_url(&mut self, log_suffix: &str, token: &str) {
+        crate::clog!(
+            "host-affordance: rejected {log_suffix} visible url from pane: {}",
+            jackin_core::url_text::redact_url_for_log(token)
+        );
+        self.set_clipboard_image_notice("Host link rejected: unsupported URL scheme".to_owned());
+    }
+}
+
+pub(super) fn host_url_opening_allowed() -> bool {
+    let value = std::env::var(jackin_core::env_model::JACKIN_OPEN_LINKS_ENV_NAME).ok();
+    host_url_opening_allowed_for(value.as_deref())
+}
+
+pub(super) fn host_url_opening_allowed_for(value: Option<&str>) -> bool {
+    jackin_core::env_model::open_links_allowed(value)
 }
 
 /// Two presses form a double-click when they land on the same content cell
@@ -551,6 +794,17 @@ pub(super) fn is_double_click(previous: &PanePress, press: &PanePress) -> bool {
         && previous.content_row == press.content_row
         && previous.col == press.col
         && press.at.duration_since(previous.at) <= DOUBLE_CLICK_WINDOW
+}
+
+fn is_host_url_hover_button(button: u8) -> bool {
+    const ALT_MODIFIER: u8 = 8;
+    const CTRL_MODIFIER: u8 = 16;
+    const MOTION_MODIFIER: u8 = 32;
+
+    let no_button_motion = button & 0b11 == 3;
+    let modified = button & (ALT_MODIFIER | CTRL_MODIFIER) != 0;
+    let motion = button & MOTION_MODIFIER != 0;
+    no_button_motion && modified && motion
 }
 
 fn register_row0_range_1based(
