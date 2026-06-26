@@ -32,8 +32,8 @@ use super::attach::{
     HostAttachTransportPlan, attach_proxy_exec_args, select_host_attach_transport,
 };
 use super::host_clipboard::{
-    is_image_paste_trigger, paste_surrounding_bytes, read_image_for_paste_trigger,
-    read_image_from_clipboard, read_image_from_clipboard_text_path, read_image_from_pasted_path,
+    is_image_paste_trigger, read_image_for_paste_trigger, read_image_from_clipboard,
+    read_image_from_clipboard_text_path, read_image_from_pasted_path,
 };
 use super::host_desktop::{open_host_file, open_host_url, reveal_host_file};
 
@@ -442,7 +442,7 @@ where
                         // forwarding the raw path text (the container path is
                         // substituted downstream). Everything else forwards as text.
                         match read_image_from_pasted_path(input).await {
-                            Ok(Some(image)) => {
+                            Ok(Some((image, prefix, suffix))) => {
                                 jackin_diagnostics::debug_log!(
                                     "attach",
                                     "host pasted-path image: format={:?} bytes={}",
@@ -450,7 +450,6 @@ where
                                     image.bytes.len()
                                 );
                                 log_clipboard_image_pasted_path_staged();
-                                let (prefix, suffix) = paste_surrounding_bytes(input);
                                 Some((image, prefix, suffix))
                             }
                             Ok(None) => None,
@@ -467,22 +466,12 @@ where
                     // Bytes typed before the paste must reach the agent ahead of the
                     // image, preserving wire order (prefix → image → suffix).
                     if !prefix.is_empty() {
-                        let msg = encode_client(ClientFrame::Input(prefix.to_vec()))
-                            .context("encoding paste-prefix Input frame")?;
-                        server_writer
-                            .write_all(&msg)
-                            .await
-                            .context("attach socket write failed (paste prefix)")?;
+                        write_input_frame(&mut server_writer, prefix, "paste prefix").await?;
                     }
                     match write_clipboard_image_frames(&mut server_writer, image).await {
                         Ok(()) => {
                             if !suffix.is_empty() {
-                                let msg = encode_client(ClientFrame::Input(suffix.to_vec()))
-                                    .context("encoding paste-suffix Input frame")?;
-                                server_writer
-                                    .write_all(&msg)
-                                    .await
-                                    .context("attach socket write failed (paste suffix)")?;
+                                write_input_frame(&mut server_writer, suffix, "paste suffix").await?;
                             }
                         }
                         Err(err) => {
@@ -490,26 +479,15 @@ where
                                 "attach",
                                 "host clipboard image frame rejected; forwarding original input: {err:#}"
                             );
-                            // The prefix already went out, so forward the remainder
-                            // of the read verbatim (the bracketed paste with its
-                            // markers, plus any suffix) to reconstruct the original
-                            // input exactly — no double-send.
-                            let rest = &input[prefix.len()..];
-                            let msg = encode_client(ClientFrame::Input(rest.to_vec()))
-                                .context("encoding fallback Input frame")?;
-                            server_writer
-                                .write_all(&msg)
-                                .await
-                                .context("attach socket write failed (input fallback)")?;
+                            // The prefix already went out, so forward the remainder of
+                            // the read verbatim (markers + body + suffix) to reconstruct
+                            // the original input exactly — no double-send.
+                            write_input_frame(&mut server_writer, &input[prefix.len()..], "input fallback")
+                                .await?;
                         }
                     }
                 } else {
-                    let msg = encode_client(ClientFrame::Input(input.to_vec()))
-                        .context("encoding Input frame")?;
-                    server_writer
-                        .write_all(&msg)
-                        .await
-                        .context("attach socket write failed (input)")?;
+                    write_input_frame(&mut server_writer, input, "input").await?;
                 }
             }
 
@@ -835,6 +813,20 @@ fn host_file_basename(path: &Path) -> String {
         .filter(|name| !name.is_empty())
         .unwrap_or("jackin-export")
         .to_owned()
+}
+
+/// Encode and send `bytes` as one `Input` frame. `what` names the call site for
+/// the socket-write error context (e.g. "paste prefix").
+async fn write_input_frame<W>(writer: &mut W, bytes: &[u8], what: &str) -> Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    let msg = encode_client(ClientFrame::Input(bytes.to_vec())).context("encoding Input frame")?;
+    writer
+        .write_all(&msg)
+        .await
+        .with_context(|| format!("attach socket write failed ({what})"))?;
+    Ok(())
 }
 
 async fn write_clipboard_image_frames<W>(writer: &mut W, image: ClipboardImage) -> Result<()>

@@ -94,35 +94,23 @@ fn strip_surrounding_quotes(text: &str) -> &str {
         .unwrap_or(text)
 }
 
-/// Recover the body of a bracketed paste (`ESC[200~ … ESC[201~`), tolerating any
-/// leading/trailing bytes the terminal added around the markers. Returns `None`
-/// when the read carries no paste-start marker, so typed input is never treated
-/// as a paste candidate. (A paste split across reads is out of scope: only the
-/// read carrying the start marker is inspected.)
-fn paste_body(input: &[u8]) -> Option<&[u8]> {
+/// Split one read carrying a bracketed paste (`ESC[200~ … ESC[201~`) into
+/// `(prefix, body, suffix)` such that `prefix + START + body + END + suffix`
+/// reconstructs `input`. Returns `None` when the read has no start marker, so
+/// typed input is never treated as a paste. Leading/trailing bytes are tolerated;
+/// a missing end marker (paste split across reads) puts the rest in `body` and
+/// leaves an empty `suffix`. The `prefix`/`suffix` still have to reach the agent
+/// so a coincident keystroke or mouse report sharing the read is not dropped when
+/// the body is consumed as an image.
+fn split_paste(input: &[u8]) -> Option<(&[u8], &[u8], &[u8])> {
     let start = find_subsequence(input, BRACKETED_PASTE_START)?;
-    let after = &input[start + BRACKETED_PASTE_START.len()..];
-    Some(match find_subsequence(after, BRACKETED_PASTE_END) {
-        Some(end) => &after[..end],
-        None => after,
-    })
-}
-
-/// The bytes of `input` outside the bracketed paste whose body was staged:
-/// anything before `ESC[200~` and anything after the matching `ESC[201~`. When
-/// the paste body is consumed as an image, these still have to reach the agent
-/// so a coincident keystroke or mouse report sharing the read is not dropped.
-pub(super) fn paste_surrounding_bytes(input: &[u8]) -> (&[u8], &[u8]) {
-    let Some(start) = find_subsequence(input, BRACKETED_PASTE_START) else {
-        return (input, &[]);
-    };
     let prefix = &input[..start];
     let after = &input[start + BRACKETED_PASTE_START.len()..];
-    let suffix = match find_subsequence(after, BRACKETED_PASTE_END) {
-        Some(end) => &after[end + BRACKETED_PASTE_END.len()..],
-        None => &[],
+    let (body, suffix) = match find_subsequence(after, BRACKETED_PASTE_END) {
+        Some(end) => (&after[..end], &after[end + BRACKETED_PASTE_END.len()..]),
+        None => (after, &[][..]),
     };
-    (prefix, suffix)
+    Some((prefix, body, suffix))
 }
 
 /// Cheap pre-check: does the pasted text look like a single absolute image-file
@@ -172,14 +160,17 @@ fn unescape_shell_path(text: &str) -> String {
 /// Auto-stage path for `Cmd+V` parity: if `input` carries a bracketed-paste
 /// start marker (leading/trailing bytes and a missing end marker are tolerated)
 /// and the paste body is a single real, magic-validated host image file, return
-/// that image so the caller stages it and inserts the container path instead of
-/// the raw host path. Anything else returns `None` and is forwarded as ordinary
-/// text.
-pub(super) async fn read_image_from_pasted_path(input: &[u8]) -> Result<Option<ClipboardImage>> {
+/// that image plus the `prefix`/`suffix` bytes sharing the read around the paste,
+/// so the caller stages the image, inserts the container path instead of the raw
+/// host path, and still forwards the surrounding bytes. Anything else returns
+/// `None` and is forwarded as ordinary text.
+pub(super) async fn read_image_from_pasted_path(
+    input: &[u8],
+) -> Result<Option<(ClipboardImage, &[u8], &[u8])>> {
     if !paste_image_paths_enabled() {
         return Ok(None);
     }
-    let Some(body) = paste_body(input) else {
+    let Some((prefix, body, suffix)) = split_paste(input) else {
         return Ok(None);
     };
     let Ok(text) = std::str::from_utf8(body) else {
@@ -209,19 +200,20 @@ pub(super) async fn read_image_from_pasted_path(input: &[u8]) -> Result<Option<C
         Ok(None)
     })
     .await
-    .map_err(|err| anyhow::anyhow!("joining pasted-path image reader: {err}"))?;
-    // A recognized candidate that did not resolve (missing file, unreadable, not
-    // an image) is rare, so logging it is not firehose. It still forwards as
-    // ordinary text rather than nagging — the implicit paste did not ask to
-    // stage — but a `--debug` run can now see that a recognized candidate failed
-    // to stage (the path itself was logged above).
-    if matches!(resolved, Ok(None)) {
+    .map_err(|err| anyhow::anyhow!("joining pasted-path image reader: {err}"))??;
+    let Some(image) = resolved else {
+        // A recognized candidate that did not resolve (missing file, unreadable,
+        // not an image) is rare, so logging it is not firehose. It still forwards
+        // as ordinary text rather than nagging — the implicit paste did not ask to
+        // stage — but a `--debug` run can now see that a recognized candidate
+        // failed (the path was logged above).
         jackin_diagnostics::debug_log!(
             "clipboard-image",
             "pasted-path candidate did not resolve to a readable image"
         );
-    }
-    resolved
+        return Ok(None);
+    };
+    Ok(Some((image, prefix, suffix)))
 }
 
 #[cfg(target_os = "macos")]
@@ -731,23 +723,34 @@ mod tests {
     }
 
     #[test]
-    fn paste_body_requires_a_start_marker_and_tolerates_surrounding_bytes() {
-        // Clean bracketed paste.
+    fn split_paste_requires_a_start_marker_and_partitions_the_read() {
+        let e = b"".as_slice();
+        // Clean bracketed paste: empty prefix/suffix, body between markers.
         assert_eq!(
-            paste_body(&bracketed("/tmp/x.png")),
-            Some(b"/tmp/x.png".as_slice())
+            split_paste(&bracketed("/tmp/x.png")),
+            Some((e, b"/tmp/x.png".as_slice(), e))
         );
-        // Tolerates trailing bytes the terminal added after the end marker.
+        // Trailing bytes after the end marker become the suffix.
         let mut trailing = bracketed("/tmp/x.png");
         trailing.extend_from_slice(b"\x1b[<0;1;1M");
-        assert_eq!(paste_body(&trailing), Some(b"/tmp/x.png".as_slice()));
-        // Open paste (start marker, end not yet arrived): take the tail.
         assert_eq!(
-            paste_body(b"\x1b[200~/tmp/x.png"),
-            Some(b"/tmp/x.png".as_slice())
+            split_paste(&trailing),
+            Some((e, b"/tmp/x.png".as_slice(), b"\x1b[<0;1;1M".as_slice()))
+        );
+        // Leading typed bytes before the start marker become the prefix.
+        let mut leading = b"ab".to_vec();
+        leading.extend_from_slice(&bracketed("/tmp/x.png"));
+        assert_eq!(
+            split_paste(&leading),
+            Some((b"ab".as_slice(), b"/tmp/x.png".as_slice(), e))
+        );
+        // Open paste (start marker, end not yet arrived): tail is the body.
+        assert_eq!(
+            split_paste(b"\x1b[200~/tmp/x.png"),
+            Some((e, b"/tmp/x.png".as_slice(), e))
         );
         // No start marker — typed input is never treated as a paste.
-        assert_eq!(paste_body(b"/tmp/x.png"), None);
+        assert_eq!(split_paste(b"/tmp/x.png"), None);
     }
 
     #[test]
@@ -777,12 +780,13 @@ mod tests {
         let path = temp.path().join("shot.png");
         std::fs::write(&path, b"\x89PNG\r\n\x1a\npayload").unwrap();
 
-        let staged = read_image_from_pasted_path(&bracketed(&path.display().to_string()))
+        let input = bracketed(&path.display().to_string());
+        let staged = read_image_from_pasted_path(&input)
             .await
             .unwrap()
             .expect("bracketed image path should stage");
-        assert_eq!(staged.format, ClipboardImageFormat::Png);
-        assert_eq!(staged.bytes, b"\x89PNG\r\n\x1a\npayload");
+        assert_eq!(staged.0.format, ClipboardImageFormat::Png);
+        assert_eq!(staged.0.bytes, b"\x89PNG\r\n\x1a\npayload");
 
         // Without bracketed-paste markers the read is treated as typed input.
         assert!(
@@ -825,11 +829,12 @@ mod tests {
         std::fs::write(&path, b"\x89PNG\r\n\x1a\npayload").unwrap();
 
         let escaped = path.display().to_string().replace(' ', "\\ ");
-        let staged = read_image_from_pasted_path(&bracketed(&escaped))
+        let input = bracketed(&escaped);
+        let staged = read_image_from_pasted_path(&input)
             .await
             .unwrap()
             .expect("shell-escaped image path should resolve");
-        assert_eq!(staged.format, ClipboardImageFormat::Png);
+        assert_eq!(staged.0.format, ClipboardImageFormat::Png);
     }
 
     #[tokio::test]
@@ -855,11 +860,12 @@ mod tests {
         std::fs::write(&path, b"\x89PNG\r\n\x1a\npayload").unwrap();
         let url = url::Url::from_file_path(&path).expect("temp path should map to file URL");
 
-        let staged = read_image_from_pasted_path(&bracketed(url.as_str()))
+        let input = bracketed(url.as_str());
+        let staged = read_image_from_pasted_path(&input)
             .await
             .unwrap()
             .expect("bracketed file:// image URL should stage");
-        assert_eq!(staged.format, ClipboardImageFormat::Png);
+        assert_eq!(staged.0.format, ClipboardImageFormat::Png);
     }
 
     #[tokio::test]
@@ -876,38 +882,7 @@ mod tests {
             .await
             .unwrap()
             .expect("open bracketed paste should stage from the tail");
-        assert_eq!(staged.format, ClipboardImageFormat::Png);
-    }
-
-    #[test]
-    fn paste_surrounding_bytes_splits_around_the_paste() {
-        // A coincident mouse report after the end marker is the suffix.
-        let mut input = bracketed("/tmp/x.png");
-        input.extend_from_slice(b"\x1b[<0;1;1M");
-        assert_eq!(
-            paste_surrounding_bytes(&input),
-            (b"".as_slice(), b"\x1b[<0;1;1M".as_slice())
-        );
-        // Leading typed bytes before the start marker are the prefix.
-        let mut leading = b"ab".to_vec();
-        leading.extend_from_slice(&bracketed("/tmp/x.png"));
-        assert_eq!(
-            paste_surrounding_bytes(&leading),
-            (b"ab".as_slice(), b"".as_slice())
-        );
-        // No start marker (cannot happen on a stage) — treat all as prefix.
-        assert_eq!(
-            paste_surrounding_bytes(b"plain"),
-            (b"plain".as_slice(), b"".as_slice())
-        );
-        // The realistic Cmd+V case: type-ahead before, mouse report after.
-        let mut both = b"ab".to_vec();
-        both.extend_from_slice(&bracketed("/tmp/x.png"));
-        both.extend_from_slice(b"\x1b[<0;1;1M");
-        assert_eq!(
-            paste_surrounding_bytes(&both),
-            (b"ab".as_slice(), b"\x1b[<0;1;1M".as_slice())
-        );
+        assert_eq!(staged.0.format, ClipboardImageFormat::Png);
     }
 
     #[test]
