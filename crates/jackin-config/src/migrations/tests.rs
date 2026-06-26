@@ -46,7 +46,7 @@ fn already_current_workspace_is_a_no_op() {
     let path = temp.path().join("prod.toml");
     std::fs::write(
         &path,
-        &format!("version = \"{CURRENT_WORKSPACE_VERSION}\"\nworkdir = \"/workspace/prod\"\n"),
+        format!("version = \"{CURRENT_WORKSPACE_VERSION}\"\nworkdir = \"/workspace/prod\"\n"),
     )
     .unwrap();
 
