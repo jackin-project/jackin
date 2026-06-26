@@ -96,25 +96,16 @@ pub fn apply() -> Result<()> {
     // Fail-closed: deny by default, then permit loopback and established flows
     // before anything fallible runs, so a mid-apply error cannot leave egress
     // open.
-    iptables(&["-P", "OUTPUT", "DROP"])?;
-    iptables(&["-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT"])?;
-    iptables(&[
-        "-A",
-        "OUTPUT",
-        "-m",
-        "state",
-        "--state",
-        "ESTABLISHED,RELATED",
-        "-j",
-        "ACCEPT",
-    ])?;
+    for rule in BASE_DENY_RULES {
+        iptables(rule)?;
+    }
 
     // The allowlist ipset is IPv4-only (`inet`), so the allowlist cannot admit
     // any IPv6 destination. Deny all IPv6 egress fail-closed rather than leave
     // the v6 OUTPUT policy at its ACCEPT default — otherwise an agent on a
     // dual-stack network bypasses the entire allowlist over IPv6. Loopback and
     // established return traffic stay permitted, mirroring the IPv4 policy.
-    for rule in IPV6_DENY_RULES {
+    for rule in BASE_DENY_RULES {
         ip6tables(rule)?;
     }
 
@@ -262,10 +253,11 @@ fn iptables(args: &[&str]) -> Result<()> {
     run_command("iptables", args)
 }
 
-/// IPv6 fail-closed program, ordered so the default-`DROP` policy lands before
-/// the loopback/established accepts. No allowlist accepts — the ipset is
-/// IPv4-only, so IPv6 is deny-all (loopback + established return traffic only).
-const IPV6_DENY_RULES: &[&[&str]] = &[
+/// Shared fail-closed base program, ordered so the default-`DROP` policy lands
+/// before the loopback/established accepts. Applied to both `iptables` and
+/// `ip6tables`: IPv4 layers DNS + the allowlist accepts on top, while IPv6 keeps
+/// it deny-all (the ipset is IPv4-only, so v6 gets loopback + established only).
+const BASE_DENY_RULES: &[&[&str]] = &[
     &["-P", "OUTPUT", "DROP"],
     &["-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT"],
     &[

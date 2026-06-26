@@ -86,13 +86,22 @@ pub enum NetworkGrant {
     Open,
 }
 
+impl NetworkGrant {
+    /// Lowercase wire/label string for this tier. Single source for `Display`
+    /// and the runtime `network_grant_label` / `JACKIN_NETWORK_MODE` value, so
+    /// the contract label can never drift from the serde vocabulary.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Allowlist => "allowlist",
+            Self::Open => "open",
+        }
+    }
+}
+
 impl std::fmt::Display for NetworkGrant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::None => write!(f, "none"),
-            Self::Allowlist => write!(f, "allowlist"),
-            Self::Open => write!(f, "open"),
-        }
+        f.write_str(self.as_str())
     }
 }
 

@@ -580,13 +580,10 @@ fn apply_implicit_grants(mut grants: EffectiveGrants) -> EffectiveGrants {
 
 // ── Docker flag emission ─────────────────────────────────────────────────────
 
-/// The `JACKIN_NETWORK_MODE` / contract label for a network tier.
+/// The `JACKIN_NETWORK_MODE` / contract label for a network tier. Delegates to
+/// [`NetworkGrant::as_str`] so the label tracks the serde vocabulary.
 pub fn network_grant_label(network: NetworkGrant) -> &'static str {
-    match network {
-        NetworkGrant::Allowlist => "allowlist",
-        NetworkGrant::Open => "open",
-        NetworkGrant::None => "none",
-    }
+    network.as_str()
 }
 
 /// Returns the network enforcement quality label.

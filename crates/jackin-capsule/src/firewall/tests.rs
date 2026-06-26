@@ -115,17 +115,17 @@ fn ipset_restore_stream_empty_is_create_flush_only() {
 fn ipv6_deny_rules_drop_first_loopback_and_established_only() {
     // Fail-closed ordering: the default-DROP policy must be the first rule, so a
     // mid-apply error can never leave IPv6 OUTPUT at ACCEPT.
-    assert_eq!(IPV6_DENY_RULES[0], ["-P", "OUTPUT", "DROP"]);
+    assert_eq!(BASE_DENY_RULES[0], ["-P", "OUTPUT", "DROP"]);
     // Loopback + established return traffic permitted.
-    assert!(IPV6_DENY_RULES.iter().any(|r| r.contains(&"lo")));
+    assert!(BASE_DENY_RULES.iter().any(|r| r.contains(&"lo")));
     assert!(
-        IPV6_DENY_RULES
+        BASE_DENY_RULES
             .iter()
             .any(|r| r.contains(&"ESTABLISHED,RELATED"))
     );
     // Deny-all: no destination/allowlist accept (the ipset is IPv4-only).
     assert!(
-        !IPV6_DENY_RULES
+        !BASE_DENY_RULES
             .iter()
             .any(|r| r.contains(&"-d") || r.contains(&"--match-set")),
         "IPv6 must have no allowlist accept — it is deny-all"
