@@ -7,11 +7,11 @@ use crate::tui::layout::list::{
     sidebar_inputs_for_workspace,
 };
 use crate::tui::screens::workspaces::view::{
-    WorkspaceInstanceLivePaneFacts, WorkspaceInstanceLiveTabFacts, WorkspaceInstancePane,
-    WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow, WorkspaceListDisplayRowsFacts,
-    WorkspaceListNamesRenderFacts, WorkspacePreviewPanePlan, WorkspaceSidebarFacts,
-    WorkspaceSidebarPlan, current_directory_workspace_title, global_mounts_title,
-    list_name_lines as workspace_list_name_lines, render_agent_picker_sidebar,
+    InstanceRowLabel, WorkspaceInstanceLivePaneFacts, WorkspaceInstanceLiveTabFacts,
+    WorkspaceInstancePane, WorkspaceInstancePaneContent, WorkspaceInstanceSessionRow,
+    WorkspaceListDisplayRowsFacts, WorkspaceListNamesRenderFacts, WorkspacePreviewPanePlan,
+    WorkspaceSidebarFacts, WorkspaceSidebarPlan, current_directory_workspace_title,
+    global_mounts_title, list_name_lines as workspace_list_name_lines, render_agent_picker_sidebar,
     render_compact_instances_summary, render_config_mounts_subpanel, render_config_roles_subpanel,
     render_environments_subpanel, render_general_subpanel, render_global_mount_rows_section,
     render_instance_details_pane as render_workspace_instance_details_pane,
@@ -59,8 +59,8 @@ pub fn render_list_body(
             instance_idx,
         } => {
             let instances = match workspace_idx {
-                Some(ws_idx) => state.workspace_active_instances(ws_idx),
-                None => state.current_dir_active_instances(),
+                Some(ws_idx) => state.workspace_visible_instances(ws_idx),
+                None => state.current_dir_visible_instances(),
             };
             if let Some(entry) = instances.get(instance_idx).copied() {
                 let sessions = state.sessions_for_instance(&entry.container_base);
@@ -104,28 +104,36 @@ pub fn list_name_lines(
             visual_selected,
             hovered_row,
             current_dir_expanded: state.current_dir_expanded,
-            current_dir_has_instances: state.has_current_dir_active_instances(),
+            current_dir_has_instances: state.has_current_dir_visible_instances(),
         },
         |inst_idx| {
             state
-                .current_dir_active_instances()
+                .current_dir_visible_instances()
                 .get(inst_idx)
-                .map(|entry| (entry.instance_id.clone(), entry.role_key.clone()))
+                .map(|entry| InstanceRowLabel {
+                    instance_id: entry.instance_id.clone(),
+                    role_key: entry.role_key.clone(),
+                    status: entry.status,
+                })
         },
         |idx| {
             state.workspaces.get(idx).map(|ws| {
                 (
                     ws.name.clone(),
                     state.is_workspace_expanded(idx),
-                    state.has_active_instances(idx),
+                    state.has_visible_instances(idx),
                 )
             })
         },
         |ws_idx, inst_idx| {
             state
-                .workspace_active_instances(ws_idx)
+                .workspace_visible_instances(ws_idx)
                 .get(inst_idx)
-                .map(|entry| (entry.instance_id.clone(), entry.role_key.clone()))
+                .map(|entry| InstanceRowLabel {
+                    instance_id: entry.instance_id.clone(),
+                    role_key: entry.role_key.clone(),
+                    status: entry.status,
+                })
         },
     );
     workspace_list_name_lines(&display_rows, viewport, show_cursor)

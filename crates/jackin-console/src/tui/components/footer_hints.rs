@@ -35,6 +35,7 @@ pub enum WorkspaceListFooterMode {
     PreviewPane,
     InstanceRow {
         has_snapshot: bool,
+        is_live: bool,
     },
     WorkspaceRow {
         scroll_axes: ScrollAxes,
@@ -54,6 +55,7 @@ pub struct WorkspaceListFooterFacts {
     pub selected_instance: bool,
     pub preview_focused: bool,
     pub selected_instance_has_snapshot: bool,
+    pub selected_instance_is_live: bool,
     pub selected_saved_workspace: bool,
     pub selected_new_workspace: bool,
     pub show_prewarm: bool,
@@ -70,6 +72,7 @@ pub struct WorkspaceListFooterInputFacts {
     pub inline_role_picker: bool,
     pub preview_focused: bool,
     pub selected_instance_has_snapshot: bool,
+    pub selected_instance_is_live: bool,
     pub show_expand: bool,
     pub show_collapse: bool,
     pub workspace_scroll_axes: ScrollAxes,
@@ -130,6 +133,7 @@ pub const fn workspace_list_footer_facts(
         selected_instance: row_facts.selected_instance,
         preview_focused: facts.preview_focused,
         selected_instance_has_snapshot: facts.selected_instance_has_snapshot,
+        selected_instance_is_live: facts.selected_instance_is_live,
         selected_saved_workspace: row_facts.selected_saved_workspace,
         selected_new_workspace: row_facts.selected_new_workspace,
         // Surface the `W` prewarm hint exactly when a saved workspace is
@@ -309,6 +313,7 @@ pub fn workspace_list_footer_mode_for_facts(
         }
         return WorkspaceListFooterMode::InstanceRow {
             has_snapshot: facts.selected_instance_has_snapshot,
+            is_live: facts.selected_instance_is_live,
         };
     }
     WorkspaceListFooterMode::WorkspaceRow {
@@ -352,31 +357,53 @@ pub fn workspace_list_footer_items(mode: WorkspaceListFooterMode) -> Vec<HintSpa
                 HintSpan::Text("back"),
             ]
         }
-        WorkspaceListFooterMode::InstanceRow { has_snapshot } => {
+        WorkspaceListFooterMode::InstanceRow {
+            has_snapshot,
+            is_live,
+        } => {
             // Glyphs derive from WORKSPACE_LIST_KEYMAP (the dispatch table);
             // labels are instance-row-specific and supplied here.
             let g = |a| WORKSPACE_LIST_KEYMAP.glyph_for(a);
-            let mut items = vec![
-                HintSpan::Key(g(WorkspaceListAction::NavigateUp)),
-                HintSpan::Sep,
-                HintSpan::Key(g(WorkspaceListAction::Enter)),
-                HintSpan::Text("reconnect"),
-                HintSpan::Sep,
-                HintSpan::Key(g(WorkspaceListAction::NewSession)),
-                HintSpan::Text("new session"),
-                HintSpan::Sep,
-                HintSpan::Key(g(WorkspaceListAction::InstanceShell)),
-                HintSpan::Text("shell"),
-                HintSpan::Sep,
-                HintSpan::Key(g(WorkspaceListAction::InstanceStop)),
-                HintSpan::Text("stop"),
-                HintSpan::Sep,
-                HintSpan::Key(g(WorkspaceListAction::ConfirmPurge)),
-                HintSpan::Text("purge"),
-                HintSpan::Sep,
-                HintSpan::Key(g(WorkspaceListAction::InstanceInspect)),
-                HintSpan::Text("info"),
-            ];
+            // A failed/stopped instance has no live daemon: new-session, shell,
+            // and stop are meaningless. `Enter` enters the restore ladder
+            // (docker start + reconnect, or recreate from image) — that is the
+            // "restart" verb — so it is labelled accordingly (D15).
+            let mut items = if is_live {
+                vec![
+                    HintSpan::Key(g(WorkspaceListAction::NavigateUp)),
+                    HintSpan::Sep,
+                    HintSpan::Key(g(WorkspaceListAction::Enter)),
+                    HintSpan::Text("reconnect"),
+                    HintSpan::Sep,
+                    HintSpan::Key(g(WorkspaceListAction::NewSession)),
+                    HintSpan::Text("new session"),
+                    HintSpan::Sep,
+                    HintSpan::Key(g(WorkspaceListAction::InstanceShell)),
+                    HintSpan::Text("shell"),
+                    HintSpan::Sep,
+                    HintSpan::Key(g(WorkspaceListAction::InstanceStop)),
+                    HintSpan::Text("stop"),
+                    HintSpan::Sep,
+                    HintSpan::Key(g(WorkspaceListAction::ConfirmPurge)),
+                    HintSpan::Text("purge"),
+                    HintSpan::Sep,
+                    HintSpan::Key(g(WorkspaceListAction::InstanceInspect)),
+                    HintSpan::Text("info"),
+                ]
+            } else {
+                vec![
+                    HintSpan::Key(g(WorkspaceListAction::NavigateUp)),
+                    HintSpan::Sep,
+                    HintSpan::Key(g(WorkspaceListAction::Enter)),
+                    HintSpan::Text("restart"),
+                    HintSpan::Sep,
+                    HintSpan::Key(g(WorkspaceListAction::ConfirmPurge)),
+                    HintSpan::Text("delete"),
+                    HintSpan::Sep,
+                    HintSpan::Key(g(WorkspaceListAction::InstanceInspect)),
+                    HintSpan::Text("info"),
+                ]
+            };
             if has_snapshot {
                 items.push(HintSpan::Sep);
                 items.push(HintSpan::Key(g(WorkspaceListAction::EnterPreview)));

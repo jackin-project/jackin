@@ -48,7 +48,7 @@ Each pull request gets one self-contained bundle:
 
 `sync` defaults to the safe real-world profile: copy the operator's real jackin' configuration into the bundle, replace the prior copied config on each sync, and keep runtime state empty and bundle-local. If no real configuration exists, it creates an empty config directory. Clean-room verification stays available as an explicit `--config blank` override, but normal PR bodies stay flagless because `--config copy` is the default.
 
-`sync` also decides expensive prep from the pull request diff. If the pull request touches `crates/jackin-capsule/` or the shared protocol surface the capsule consumes, it builds and exports the PR's `jackin-capsule` binary into `env.sh`. If the pull request touches construct image inputs, it builds the local construct image and exports `JACKIN_CONSTRUCT_IMAGE`. Routine PR instructions stay flagless; the command explains what it auto-enabled and why.
+`sync` also decides expensive prep from the pull request diff. If the pull request touches `crates/jackin-capsule/` or the shared protocol surface the capsule consumes, it builds and exports the PR's `jackin-capsule` binary into `env.sh`. If the pull request touches construct image inputs, it builds the local construct image and exports `JACKIN_CONSTRUCT_IMAGE`. Routine PR instructions stay flagless; `jackin-dev pr explain <PR_NUMBER>` previews the same decisions without cloning or building and prints the changed files/rules behind each auto-enabled prep step.
 
 The first command set is:
 
@@ -58,9 +58,10 @@ jackin-dev pr clean <PR_NUMBER>
 jackin-dev pr env <PR_NUMBER>
 jackin-dev pr path <PR_NUMBER>
 jackin-dev pr status <PR_NUMBER>
+jackin-dev pr explain <PR_NUMBER>
 ```
 
-`clean` removes the PR bundle. `env` prints the shell commands needed to enter the synced checkout and source its environment. `path` prints the bundle root for scripts and docs snippets. `status` reports whether the local checkout exists, which head SHA it has, which PR head SHA GitHub currently reports, whether the bundle is fresh or stale, and whether `env.sh` plus the state directories exist.
+`clean` removes the PR bundle. `env` prints the shell commands needed to enter the synced checkout and source its environment. `path` prints the bundle root for scripts and docs snippets. `status` reports whether the local checkout exists, which head SHA it has, which PR head SHA GitHub currently reports, whether the bundle is fresh or stale, and whether `env.sh` plus the state directories exist. `explain` reports the capsule and construct prep plan before spending time on a checkout, capsule export, or construct image build.
 
 Responsibility stays split cleanly: `jackin-dev` owns outside-the-repo orchestration, while `cargo xtask` remains for tasks that only make sense once a checkout already exists, such as construct build/publish helpers, docs/sidebar maintenance, schema checks, PTY fixture extraction, and PR body skeleton generation.
 

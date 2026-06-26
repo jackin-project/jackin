@@ -1222,7 +1222,7 @@ fn claude_keychain_service_for_config_dir(source_dir: &Path, host_home: &Path) -
     }
 
     let digest = Sha256::digest(source_dir.to_string_lossy().as_bytes());
-    let mut suffix = crate::instance::naming::hex_lower(&digest);
+    let mut suffix = hex::encode(digest);
     suffix.truncate(8);
     format!("{CLAUDE_KEYCHAIN_SERVICE_BASE}-{suffix}")
 }

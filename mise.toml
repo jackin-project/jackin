@@ -1,16 +1,18 @@
 [tools]
 actionlint = "1.7.12"
 bun = "1.3.14"
-cosign = "3.1.1"
-shellcheck = "0.11.0"
+cargo-binstall = "1.20.1"
 "cargo:cargo-audit" = "0.22.2"
 "cargo:cargo-deny" = "0.19.8"
 "cargo:cargo-fuzz" = "0.13.1"
 "cargo:cargo-hack" = "0.6.45"
-"cargo:codebook-lsp" = "0.3.41"
 "cargo:cargo-nextest" = "0.9.136"
 "cargo:cargo-shear" = "1.13.0"
 "cargo:cargo-zigbuild" = "0.23.0"
+"cargo:codebook-lsp" = "0.3.41"
+"cargo:sccache" = "0.16.0"
+cosign = "3.1.1"
+shellcheck = "0.11.0"
 node = "24.17.0"
 syft = "1.45.1"
 zig = "0.16.0"
@@ -18,7 +20,9 @@ zig = "0.16.0"
 # setting below — single source of truth for the toolchain channel and components.
 
 [settings]
+cargo.binstall = true
 idiomatic_version_file_enable_tools = ["rust"]
+lockfile = true
 
 # Construct image tasks. Each delegates to the `jackin-xtask` Rust binary
 # via `cargo xtask construct <sub>`; all task logic lives in Rust, not shell.

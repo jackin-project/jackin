@@ -38,8 +38,9 @@ use crate::tui::update::{
 };
 
 use super::{
-    EditorState, EditorTab, FieldFocus, ManagerEffect, ManagerInstanceRefreshSnapshot,
-    ManagerStage, ManagerState, Modal, MountScrollFocus, PendingDriftCheck,
+    EditorState, EditorTab, FieldFocus, ManagerConfigSaveResult, ManagerEffect,
+    ManagerInstanceRefreshSnapshot, ManagerStage, ManagerState, Modal, MountScrollFocus,
+    PendingDriftCheck, PendingFileBrowserCommit, PendingFileBrowserListing,
     PendingIsolationCleanup, PendingMountInfoRefresh, PendingRoleLoad, SecretsScopeTag,
     SettingsState, SettingsTab,
 };
@@ -51,6 +52,8 @@ pub type ManagerMessage = crate::tui::message::ConsoleManagerMessage<
     super::CreatePreludeState<'static>,
     EditorState<'static>,
     SettingsState<'static>,
+    PendingFileBrowserCommit,
+    PendingFileBrowserListing,
     ManagerInstanceRefreshSnapshot,
     PendingMountInfoRefresh,
     jackin_core::OpRef,
@@ -71,6 +74,7 @@ pub type ManagerBackgroundEvent = crate::tui::message::BackgroundEvent<
     PendingDriftCheck,
     jackin_core::DriftDetection,
     PendingIsolationCleanup,
+    ManagerConfigSaveResult,
 >;
 
 pub type ManagerUpdate = crate::tui::update::ConsoleUpdate<ManagerEffect>;
@@ -102,6 +106,12 @@ pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> 
         ManagerMessage::EnterEditorAuthKind { kind } => enter_editor_auth_kind(state, kind),
         ManagerMessage::EnterSettings(settings) => {
             apply_manager_stage(state, ManagerStage::Settings(settings));
+        }
+        ManagerMessage::FileBrowserCommitValidated(result) => {
+            crate::tui::file_browser::apply_file_browser_commit_result(state, result);
+        }
+        ManagerMessage::FileBrowserListingLoaded(result) => {
+            crate::tui::file_browser::apply_file_browser_listing_result(state, result);
         }
         ManagerMessage::InstancesRefreshed(result) => state.apply_instance_refresh(result),
         ManagerMessage::MountInfoRefreshed(result) => {

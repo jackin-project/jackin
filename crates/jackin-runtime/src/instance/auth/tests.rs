@@ -474,6 +474,81 @@ fn sync_source_dir_copies_direct_grok_auth_json() {
 }
 
 #[test]
+fn sync_refreshes_changed_single_file_provider_credentials() {
+    let temp = tempdir().unwrap();
+
+    let codex_target = temp.path().join("codex-auth.json");
+    let codex_source = temp.path().join("codex-source");
+    std::fs::create_dir_all(&codex_source).unwrap();
+    std::fs::write(codex_source.join("auth.json"), r#"{"token":"old-codex"}"#).unwrap();
+    let (outcome, mounted) = RoleState::provision_codex_auth_from_source_dir(
+        &codex_target,
+        AuthForwardMode::Sync,
+        &codex_source,
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(codex_target.as_path()));
+    std::fs::write(codex_source.join("auth.json"), r#"{"token":"new-codex"}"#).unwrap();
+    let (outcome, mounted) = RoleState::provision_codex_auth_from_source_dir(
+        &codex_target,
+        AuthForwardMode::Sync,
+        &codex_source,
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(codex_target.as_path()));
+    assert_eq!(
+        std::fs::read_to_string(&codex_target).unwrap(),
+        r#"{"token":"new-codex"}"#
+    );
+
+    let amp_target = temp.path().join("secrets.json");
+    let amp_source = temp.path().join("amp-source");
+    std::fs::create_dir_all(&amp_source).unwrap();
+    std::fs::write(amp_source.join("secrets.json"), r#"{"amp":"old"}"#).unwrap();
+    RoleState::provision_amp_auth_from_source_dir(&amp_target, AuthForwardMode::Sync, &amp_source)
+        .unwrap();
+    std::fs::write(amp_source.join("secrets.json"), r#"{"amp":"new"}"#).unwrap();
+    let (outcome, mounted) = RoleState::provision_amp_auth_from_source_dir(
+        &amp_target,
+        AuthForwardMode::Sync,
+        &amp_source,
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(amp_target.as_path()));
+    assert_eq!(
+        std::fs::read_to_string(&amp_target).unwrap(),
+        r#"{"amp":"new"}"#
+    );
+
+    let grok_target = temp.path().join("grok-auth.json");
+    let grok_source = temp.path().join("grok-source");
+    std::fs::create_dir_all(&grok_source).unwrap();
+    std::fs::write(grok_source.join("auth.json"), r#"{"grok":"old"}"#).unwrap();
+    RoleState::provision_grok_auth_from_source_dir(
+        &grok_target,
+        AuthForwardMode::Sync,
+        &grok_source,
+    )
+    .unwrap();
+    std::fs::write(grok_source.join("auth.json"), r#"{"grok":"new"}"#).unwrap();
+    let (outcome, mounted) = RoleState::provision_grok_auth_from_source_dir(
+        &grok_target,
+        AuthForwardMode::Sync,
+        &grok_source,
+    )
+    .unwrap();
+    assert_eq!(outcome, AuthProvisionOutcome::Synced);
+    assert_eq!(mounted.as_deref(), Some(grok_target.as_path()));
+    assert_eq!(
+        std::fs::read_to_string(&grok_target).unwrap(),
+        r#"{"grok":"new"}"#
+    );
+}
+
+#[test]
 fn sync_mode_overwrites_existing() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -1349,6 +1424,9 @@ fn surfaces_unreadable_host_secrets_json_as_error() {
     )
     .unwrap();
     std::fs::set_permissions(&host_secrets, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read_to_string(&host_secrets).is_ok() {
+        return;
+    }
 
     let result = RoleState::provision_amp_auth(&secrets_json, AuthForwardMode::Sync, &host_home);
 
@@ -2658,6 +2736,9 @@ fn surfaces_unreadable_credential_file_as_error() {
 
     let cred = host_home.join(".kimi-code/credentials/access_token");
     std::fs::set_permissions(&cred, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read_to_string(&cred).is_ok() {
+        return;
+    }
 
     let result = RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home);
 
@@ -2684,6 +2765,9 @@ fn surfaces_unreadable_config_toml_as_error() {
 
     let cfg = host_home.join(".kimi-code/config.toml");
     std::fs::set_permissions(&cfg, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read_to_string(&cfg).is_ok() {
+        return;
+    }
 
     let result = RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home);
 

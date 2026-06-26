@@ -6,8 +6,8 @@
 use std::io::Write;
 
 use anyhow::{Context, Result};
+use jackin_tui::PointerShape;
 
-use crate::tui::app::PointerShape;
 use crate::tui::components::status_bar::STATUS_BAR_ROWS;
 
 pub const DEFAULT_ROWS: u16 = 24;
@@ -71,7 +71,7 @@ pub(crate) fn client_owned_mode_state() -> &'static [u8] {
 }
 
 pub(crate) fn osc22_pointer_shape(shape: PointerShape) -> Vec<u8> {
-    format!("\x1b]22;{}\x1b\\", shape.as_osc22_name()).into_bytes()
+    jackin_tui::osc22_pointer_shape(shape).into_bytes()
 }
 
 pub(crate) fn enter_attach_terminal(stdout: &mut std::io::Stdout) -> Result<RawModeGuard> {

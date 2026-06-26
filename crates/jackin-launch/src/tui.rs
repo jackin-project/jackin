@@ -3,6 +3,7 @@
 pub mod app;
 pub mod components;
 pub mod effect;
+pub mod input;
 pub mod keymap;
 pub mod message;
 pub mod run;
