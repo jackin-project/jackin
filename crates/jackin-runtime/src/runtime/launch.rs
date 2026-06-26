@@ -766,11 +766,8 @@ pub(super) async fn launch_role_runtime(
         &workspace.workdir,
     ];
 
-    if network_disabled {
-        run_args.extend_from_slice(&["--network", "none"]);
-    } else {
-        run_args.extend_from_slice(&["--network", network]);
-    }
+    let network = if network_disabled { "none" } else { network };
+    run_args.extend_from_slice(&["--network", network]);
 
     if workspace.keep_awake_enabled {
         run_args.extend_from_slice(&["--label", LABEL_KEEP_AWAKE]);

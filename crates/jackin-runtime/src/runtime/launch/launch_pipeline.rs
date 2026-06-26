@@ -127,6 +127,27 @@ pub async fn resolve_supported_agents_for_console(
 
 /// Instrument the full launch pipeline so every stage appears as a
 /// child span in the diagnostics run log so stage events carry real `span_id` correlation.
+/// Validate one source's docker grants, prefixing each error with its source
+/// tag (`config`/`workspace`/`role`) for the operator-facing message.
+fn tagged_grant_errors(
+    tag: &str,
+    grants: &crate::runtime::docker_profile::DockerGrants,
+) -> Vec<String> {
+    crate::runtime::docker_profile::validate_grants(grants)
+        .into_iter()
+        .map(|error| format!("  - [{tag}] {error}"))
+        .collect()
+}
+
+/// Bail with the standard "docker grants validation failed" message when any
+/// tagged errors were collected; no-op otherwise.
+fn bail_on_grant_errors(errors: Vec<String>) -> anyhow::Result<()> {
+    if errors.is_empty() {
+        return Ok(());
+    }
+    anyhow::bail!("docker grants validation failed:\n{}", errors.join("\n"))
+}
+
 #[tracing::instrument(
     skip_all,
     fields(role = %selector.key())
@@ -1123,25 +1144,12 @@ pub(crate) async fn load_role_with(
         );
         let mut grant_errors = Vec::new();
         if let Some(grants) = config.docker.grants.as_ref() {
-            grant_errors.extend(
-                crate::runtime::docker_profile::validate_grants(grants)
-                    .into_iter()
-                    .map(|error| format!("  - [config] {error}")),
-            );
+            grant_errors.extend(tagged_grant_errors("config", grants));
         }
         if let Some(grants) = workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()) {
-            grant_errors.extend(
-                crate::runtime::docker_profile::validate_grants(grants)
-                    .into_iter()
-                    .map(|error| format!("  - [workspace] {error}")),
-            );
+            grant_errors.extend(tagged_grant_errors("workspace", grants));
         }
-        if !grant_errors.is_empty() {
-            anyhow::bail!(
-                "docker grants validation failed:\n{}",
-                grant_errors.join("\n")
-            );
-        }
+        bail_on_grant_errors(grant_errors)?;
         let mut effective_grants = crate::runtime::docker_profile::resolve_effective_grants(
             resolved_profile.0,
             config.docker.grants.as_ref(),
@@ -1158,50 +1166,28 @@ pub(crate) async fn load_role_with(
             );
         }
         if let Some(docker_cfg) = validated_repo.manifest.docker.as_ref() {
-            if let Some(role_dind) = docker_cfg.dind
-                && effective_grants.dind < role_dind
-            {
-                let role_grants = crate::runtime::docker_profile::DockerGrants {
-                    dind: Some(role_dind),
-                    ..Default::default()
-                };
-                effective_grants =
-                    crate::runtime::docker_profile::apply_grants(effective_grants, &role_grants);
-            }
-            if !docker_cfg.allowed_hosts.is_empty() || !docker_cfg.capabilities_add.is_empty() {
-                let role_grants = crate::runtime::docker_profile::DockerGrants {
-                    allowed_hosts: docker_cfg.allowed_hosts.clone(),
-                    capabilities_add: docker_cfg.capabilities_add.clone(),
-                    ..Default::default()
-                };
-                let role_errors = crate::runtime::docker_profile::validate_grants(&role_grants);
-                if !role_errors.is_empty() {
-                    let rendered = role_errors
-                        .into_iter()
-                        .map(|error| format!("  - [role] {error}"))
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    anyhow::bail!("docker grants validation failed:\n{rendered}");
-                }
-                effective_grants =
-                    crate::runtime::docker_profile::apply_grants(effective_grants, &role_grants);
-            }
-            if docker_cfg.dind == Some(crate::runtime::docker_profile::DindGrant::None)
-                && effective_grants.dind != crate::runtime::docker_profile::DindGrant::None
-            {
+            // A role manifest can raise grants (dind tier, extra allowed hosts /
+            // capabilities) — `apply_grants` only ever raises — then pin dind back
+            // OFF, the one down-force `apply_grants` cannot express.
+            let role_grants = crate::runtime::docker_profile::DockerGrants {
+                dind: docker_cfg.dind,
+                allowed_hosts: docker_cfg.allowed_hosts.clone(),
+                capabilities_add: docker_cfg.capabilities_add.clone(),
+                ..Default::default()
+            };
+            bail_on_grant_errors(tagged_grant_errors("role", &role_grants))?;
+            effective_grants =
+                crate::runtime::docker_profile::apply_grants(effective_grants, &role_grants);
+            if docker_cfg.dind == Some(crate::runtime::docker_profile::DindGrant::None) {
                 effective_grants.dind = crate::runtime::docker_profile::DindGrant::None;
             }
         }
-        let merged_errors =
-            crate::runtime::docker_profile::validate_effective_grants(&effective_grants);
-        if !merged_errors.is_empty() {
-            let rendered = merged_errors
+        bail_on_grant_errors(
+            crate::runtime::docker_profile::validate_effective_grants(&effective_grants)
                 .into_iter()
                 .map(|error| format!("  - [merged] {error}"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            anyhow::bail!("docker grants validation failed:\n{rendered}");
-        }
+                .collect(),
+        )?;
         let dind_started = crate::runtime::docker_profile::dind_enabled(&effective_grants);
         // Arm cleanup immediately after adoption, before any fallible step.
         // When a prewarmed DinD sidecar was adopted, its container, network,
