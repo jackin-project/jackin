@@ -13,6 +13,7 @@ pub mod attach_context;
 pub mod attach_protocol;
 pub mod client;
 pub(crate) mod client_writer;
+pub(crate) mod clipboard;
 pub mod config;
 pub mod container_context;
 pub mod daemon;

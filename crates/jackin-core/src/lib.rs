@@ -26,6 +26,7 @@ pub mod paths;
 pub mod prune_output;
 pub mod runner;
 pub mod selector;
+pub mod url_text;
 
 pub use agent::{
     Agent, ParseAgentError,

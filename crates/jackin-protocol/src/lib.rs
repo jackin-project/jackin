@@ -8,6 +8,7 @@
 //! here too so the two binaries cannot drift.
 
 pub mod agent_status;
+pub mod attach;
 pub mod control;
 pub mod provider_adapter;
 pub mod snapshot;

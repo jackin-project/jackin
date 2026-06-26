@@ -2732,6 +2732,7 @@ dependencies = [
  "criterion",
  "crossterm",
  "dhat",
+ "hex",
  "insta",
  "jackin-build-meta",
  "jackin-core",
@@ -2947,9 +2948,11 @@ dependencies = [
 name = "jackin-protocol"
 version = "0.6.0-dev"
 dependencies = [
+ "anyhow",
  "jackin-core",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -2958,10 +2961,12 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "chrono",
+ "crossterm",
  "dialoguer",
  "directories",
  "fs2",
  "futures-util",
+ "hex",
  "jackin-build-meta",
  "jackin-config",
  "jackin-core",
@@ -2988,6 +2993,7 @@ dependencies = [
  "toml",
  "toml_edit",
  "tracing",
+ "url",
 ]
 
 [[package]]

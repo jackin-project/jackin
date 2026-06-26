@@ -54,6 +54,7 @@ SUBCOMMANDS:
     new [<agent>]                  Spawn a new agent session (default: shell)
     status                         Print daemon status to stdout
     snapshot                       Write a screen snapshot to stdout
+    attach-proxy                   Relay attach protocol bytes over stdio
     usage accounts                 Print cached account quota rows as JSON
     usage verify                   Verify all provider quota rows are cached and trusted
     usage claude-cli               Explicitly run Claude Code /usage diagnostic
@@ -81,6 +82,7 @@ connecting as a client.",
             Some("snapshot") => client::run_snapshot().await,
             Some("report-event") => client::run_report_event(&args).await,
             Some("token-usage") => client::run_token_usage(&args).await,
+            Some("attach-proxy") => client::run_attach_proxy().await,
             Some("usage") => run_usage_subcommand(&args).await,
             Some("agents") => {
                 let json_format = args.iter().any(|a| a == "--format=json")
@@ -138,7 +140,7 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, status explain <id>, status capture <id>, snapshot, usage accounts, usage verify, usage claude-cli, token-usage <id>, agents [--format json], report-event --event <name> [--payload-stdin], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, status explain <id>, status capture <id>, snapshot, attach-proxy, usage accounts, usage verify, usage claude-cli, token-usage <id>, agents [--format json], report-event --event <name> [--payload-stdin], runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
@@ -188,8 +190,8 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
         // --focus. Scan past the end of args so a stray --focus is
         // ignored instead of silently consumed.
         Some(
-            "status" | "snapshot" | "usage" | "agents" | "runtime-setup" | "prepare-commit-msg"
-            | "--version" | "-V" | "--help" | "-h",
+            "status" | "snapshot" | "attach-proxy" | "usage" | "agents" | "runtime-setup"
+            | "prepare-commit-msg" | "--version" | "-V" | "--help" | "-h",
         ) => args.len(),
         // `jackin-capsule --focus 5` (no subcommand) or no args at
         // all — scan from index 1.

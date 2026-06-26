@@ -23,6 +23,10 @@ pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
 pub const JACKIN_WORKDIR_ENV_NAME: &str = "JACKIN_WORKDIR";
 pub const JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME: &str = "JACKIN_GIT_COAUTHOR_TRAILER";
 pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
+/// Per-container opt-out for host browser-open affordances. `deny`, `off`,
+/// and `no` suppress explicit jackin' host-open URL actions while leaving
+/// normal terminal OSC 8 passthrough under `JACKIN_OSC_HYPERLINK`.
+pub const JACKIN_OPEN_LINKS_ENV_NAME: &str = "JACKIN_OPEN_LINKS";
 pub const ZAI_API_KEY_ENV_NAME: &str = "ZAI_API_KEY";
 pub const ANTHROPIC_API_KEY_ENV_NAME: &str = "ANTHROPIC_API_KEY";
 pub const OPENAI_API_KEY_ENV_NAME: &str = "OPENAI_API_KEY";
@@ -67,6 +71,19 @@ pub fn is_reserved(name: &str) -> bool {
     RESERVED_RUNTIME_ENV_VARS
         .iter()
         .any(|(reserved, _)| *reserved == name)
+}
+
+/// Shared boolean-deny convention used by operator-controlled environment
+/// switches. The exact accepted values intentionally match the OSC passthrough
+/// gates so safety controls read consistently across docs and code.
+pub fn env_value_is_deny(value: &str) -> bool {
+    matches!(value, "deny" | "off" | "no")
+}
+
+/// Return whether a host URL-open action is allowed for the given
+/// `JACKIN_OPEN_LINKS` value.
+pub fn open_links_allowed(value: Option<&str>) -> bool {
+    value.is_none_or(|value| !env_value_is_deny(value))
 }
 
 /// Extract `${env.VAR_NAME}` interpolation placeholder names from a string.
@@ -143,4 +160,24 @@ pub fn topological_env_order(
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_links_allowed_accepts_unset_and_non_deny_values() {
+        assert!(open_links_allowed(None));
+        assert!(open_links_allowed(Some("")));
+        assert!(open_links_allowed(Some("allow")));
+        assert!(open_links_allowed(Some("yes")));
+    }
+
+    #[test]
+    fn open_links_allowed_rejects_deny_values() {
+        for value in ["deny", "off", "no"] {
+            assert!(!open_links_allowed(Some(value)));
+        }
+    }
 }

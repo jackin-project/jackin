@@ -58,6 +58,7 @@ pub(crate) struct PointerShapeState {
     pub(crate) dialog_open: bool,
     pub(crate) drag_start_orient: Option<SplitOrient>,
     pub(crate) selection_start_available: bool,
+    pub(crate) link_target_available: bool,
     pub(crate) no_button_motion: bool,
 }
 
@@ -79,6 +80,9 @@ pub(crate) fn pointer_shape_for_state(state: PointerShapeState) -> PointerShape 
             SplitOrient::Horizontal => PointerShape::EwResize,
             SplitOrient::Vertical => PointerShape::NsResize,
         };
+    }
+    if state.link_target_available {
+        return PointerShape::Pointer;
     }
     if state.no_button_motion && state.selection_start_available {
         return PointerShape::Text;
