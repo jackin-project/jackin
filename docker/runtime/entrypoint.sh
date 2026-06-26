@@ -37,16 +37,13 @@ run_hook() {
 
 # ── Network allowlist (allowlist tier) ────────────────────────────────
 # The firewall (`jackin-capsule firewall-apply`) is run by jackin' via
-# `docker exec --user root` BEFORE the agent session starts, not here in the
-# entrypoint. This avoids a conflict with --security-opt no-new-privileges
-# (docker exec as root does not require setuid escalation; sudo inside the
-# container does). JACKIN_NETWORK_MODE is available here for informational
-# use only.
-if [ "${JACKIN_NETWORK_MODE:-open}" = "allowlist" ] && \
-   [ "${JACKIN_FIREWALL_INSTALLED:-0}" != "1" ]; then
-    echo "[entrypoint] WARNING: network=allowlist but firewall not installed" \
-         "(JACKIN_FIREWALL_INSTALLED not set by host)" >&2
-fi
+# `docker exec --user root` AFTER this entrypoint starts but BEFORE the agent
+# session begins, not here in the entrypoint. This avoids a conflict with
+# --security-opt no-new-privileges (docker exec as root needs no setuid
+# escalation; sudo inside the container does). The host blocks the session on a
+# non-zero firewall-apply (fail-closed), so the entrypoint neither needs nor can
+# verify install state here — a post-start exec cannot mutate this PID 1
+# environment. JACKIN_NETWORK_MODE is informational only.
 
 # ── agent-specific setup ───────────────────────────────────────────
 #

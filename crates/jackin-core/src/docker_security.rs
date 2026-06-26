@@ -6,6 +6,13 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Named Docker isolation profile.
+///
+/// **ORDER IS SEMANTIC.** Variants ascend by capability/permissiveness
+/// (`Locked` < `Hardened` < `Standard` < `Compat`); the derived `Ord` is relied
+/// on by the role `min_profile` floor (`resolved < min` rejects an under-capable
+/// profile). Reordering variants silently inverts that gate — guarded by
+/// `ord_ascending_capability`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DockerSecurityProfile {
@@ -62,11 +69,20 @@ impl std::fmt::Display for ParseProfileError {
 
 impl std::error::Error for ParseProfileError {}
 
+/// Network egress tier.
+///
+/// **ORDER IS SEMANTIC.** Variants ascend by permissiveness
+/// (`None` < `Allowlist` < `Open`); the derived `Ord` is relied on by
+/// `apply_grants` (`network > base.network` raises, never lowers). Reordering
+/// silently breaks the monotone-raise guarantee — guarded by `network_grant_ord`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum NetworkGrant {
+    /// No network at all (`--network none`).
     None,
+    /// Routable network with an iptables OUTPUT egress allowlist.
     Allowlist,
+    /// Unrestricted egress.
     Open,
 }
 
@@ -80,11 +96,20 @@ impl std::fmt::Display for NetworkGrant {
     }
 }
 
+/// Docker-in-Docker sidecar tier.
+///
+/// **ORDER IS SEMANTIC.** Variants ascend by privilege
+/// (`None` < `Rootless` < `Privileged`); the derived `Ord` is relied on by
+/// `apply_grants` (`dind > base.dind` raises, never lowers). Reordering silently
+/// breaks the monotone-raise guarantee — guarded by `dind_grant_ord`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DindGrant {
+    /// No `DinD` sidecar.
     None,
+    /// `docker:dind-rootless` sidecar, no `--privileged`.
     Rootless,
+    /// `docker:dind` sidecar with `--privileged`.
     Privileged,
 }
 

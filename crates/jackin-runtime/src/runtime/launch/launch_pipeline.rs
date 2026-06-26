@@ -1161,7 +1161,7 @@ pub(crate) async fn load_role_with(
             workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()),
         );
         if let Some(min) = validated_repo.manifest.docker.as_ref().and_then(|d| d.min_profile)
-            && resolved_profile.0 < min
+            && !crate::runtime::docker_profile::profile_meets_floor(resolved_profile.0, min)
         {
             anyhow::bail!(
                 "role `{}` requires Docker profile `{min}` or more capable; resolved `{}` from {}",
@@ -1171,9 +1171,6 @@ pub(crate) async fn load_role_with(
             );
         }
         if let Some(docker_cfg) = validated_repo.manifest.docker.as_ref() {
-            // A role manifest can raise grants (dind tier, extra allowed hosts /
-            // capabilities) — `apply_grants` only ever raises — then pin dind back
-            // OFF, the one down-force `apply_grants` cannot express.
             let role_grants = crate::runtime::docker_profile::DockerGrants {
                 dind: docker_cfg.dind,
                 allowed_hosts: docker_cfg.allowed_hosts.clone(),
@@ -1182,10 +1179,7 @@ pub(crate) async fn load_role_with(
             };
             bail_on_grant_errors(tagged_grant_errors("role", &role_grants))?;
             effective_grants =
-                crate::runtime::docker_profile::apply_grants(effective_grants, &role_grants);
-            if docker_cfg.dind == Some(crate::runtime::docker_profile::DindGrant::None) {
-                effective_grants.dind = crate::runtime::docker_profile::DindGrant::None;
-            }
+                crate::runtime::docker_profile::fold_role_grants(effective_grants, &role_grants);
         }
         bail_on_grant_errors(tag_errors(
             "merged",

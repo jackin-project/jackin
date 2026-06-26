@@ -174,10 +174,6 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
-/// Validate explicit grants, returning all errors found (not just the first).
-///
-/// Called at launch time before any container is started. A non-empty error
-/// list aborts the launch with clear, actionable messages.
 /// Parse a `--memory`-style size grant and range-check it for the Docker/Bollard
 /// `i64` boundary, pushing the matching validation error on failure. Returns the
 /// parsed bytes (even when out of range) so cross-field comparisons can proceed.
@@ -203,6 +199,10 @@ fn parse_size_field(
     Some(bytes)
 }
 
+/// Validate explicit grants, returning all errors found (not just the first).
+///
+/// Called at launch time before any container is started. A non-empty error
+/// list aborts the launch with clear, actionable messages.
 pub fn validate_grants(grants: &DockerGrants) -> Vec<GrantValidationError> {
     let mut errors = Vec::new();
 
@@ -430,6 +430,29 @@ pub fn apply_grants(mut base: EffectiveGrants, grants: &DockerGrants) -> Effecti
     // No implicit cap injection here: apply_grants() is a pure layering function.
     // Injecting caps based on the merged network value would fire on every source
     // layer, producing duplicates. apply_implicit_grants() fires once post-merge.
+}
+
+/// Layer a role manifest's docker grants onto resolved effective grants.
+///
+/// [`apply_grants`] raises dind/network/hosts/caps (never lowers); then the role
+/// may pin dind back to `None` — the **only** down-force in the grant system,
+/// which `apply_grants` cannot express. A role that forbids `DinD` must override an
+/// otherwise more-capable profile/config/workspace tier.
+pub fn fold_role_grants(effective: EffectiveGrants, role: &DockerGrants) -> EffectiveGrants {
+    let mut folded = apply_grants(effective, role);
+    if role.dind == Some(DindGrant::None) {
+        folded.dind = DindGrant::None;
+    }
+    folded
+}
+
+/// Whether the resolved profile satisfies a role's `min_profile` floor: at least
+/// as capable as `min` in the ascending-capability [`DockerSecurityProfile`] Ord.
+///
+/// Note the direction: a floor of `hardened` rejects `locked` (locked is *more*
+/// restrictive, *less* capable) and accepts `standard`/`compat`.
+pub fn profile_meets_floor(resolved: DockerSecurityProfile, min: DockerSecurityProfile) -> bool {
+    resolved >= min
 }
 
 // ── Profile resolution ───────────────────────────────────────────────────────
@@ -705,6 +728,7 @@ pub fn default_allowed_hosts_for_agent(agent: &str) -> &'static [&'static str] {
         "amp" => &["ampcode.com", "sourcegraph.com"],
         "kimi" => &["api.kimi.com", "kimi.moonshot.cn"],
         "opencode" => &["api.z.ai", "api.anthropic.com", "api.openai.com"],
+        "grok" => &["api.x.ai"],
         _ => &[],
     }
 }
@@ -1334,6 +1358,126 @@ mod tests {
         assert!(DindGrant::Rootless < DindGrant::Privileged);
     }
 
+    #[test]
+    fn apply_grants_raises_all_resource_ceilings() {
+        let base = profile_base_grants(DockerSecurityProfile::Locked);
+        let grants = DockerGrants {
+            memory: Some("64G".to_owned()),
+            cpus: Some(16.0),
+            pids: Some(99_999),
+            nofile: Some(1_048_576),
+            dind: Some(DindGrant::Privileged),
+            ..Default::default()
+        };
+        let e = apply_grants(base, &grants);
+        assert_eq!(e.memory_bytes, Some(64 * 1024 * 1024 * 1024));
+        assert_eq!(e.cpus, Some(16.0));
+        assert_eq!(e.pids, Some(99_999));
+        assert_eq!(e.nofile, Some(1_048_576));
+        assert_eq!(e.dind, DindGrant::Privileged);
+    }
+
+    #[test]
+    fn apply_grants_never_lowers_resource_ceilings() {
+        let base = EffectiveGrants {
+            memory_bytes: Some(8 * 1024 * 1024 * 1024),
+            cpus: Some(4.0),
+            pids: Some(4096),
+            nofile: Some(65536),
+            ..profile_base_grants(DockerSecurityProfile::Standard)
+        };
+        let grants = DockerGrants {
+            memory: Some("1G".to_owned()),
+            cpus: Some(0.5),
+            pids: Some(1),
+            nofile: Some(8),
+            ..Default::default()
+        };
+        let e = apply_grants(base, &grants);
+        assert_eq!(e.memory_bytes, Some(8 * 1024 * 1024 * 1024));
+        assert_eq!(e.cpus, Some(4.0));
+        assert_eq!(e.pids, Some(4096));
+        assert_eq!(e.nofile, Some(65536));
+    }
+
+    #[test]
+    fn apply_grants_cannot_lower_dind() {
+        let base = profile_base_grants(DockerSecurityProfile::Compat);
+        assert_eq!(base.dind, DindGrant::Privileged);
+        let grants = DockerGrants {
+            dind: Some(DindGrant::Rootless),
+            ..Default::default()
+        };
+        assert_eq!(apply_grants(base, &grants).dind, DindGrant::Privileged);
+    }
+
+    #[test]
+    fn fold_role_grants_pins_dind_off_over_capable_profile() {
+        // The only down-force in the grant system: a role can pin DinD OFF even
+        // after a more capable profile raised it.
+        let base = profile_base_grants(DockerSecurityProfile::Compat);
+        assert_eq!(base.dind, DindGrant::Privileged);
+        let role = DockerGrants {
+            dind: Some(DindGrant::None),
+            ..Default::default()
+        };
+        assert_eq!(fold_role_grants(base, &role).dind, DindGrant::None);
+    }
+
+    #[test]
+    fn fold_role_grants_pin_off_does_not_strip_other_raises() {
+        let base = profile_base_grants(DockerSecurityProfile::Standard);
+        let role = DockerGrants {
+            dind: Some(DindGrant::None),
+            capabilities_add: vec!["NET_ADMIN".to_owned()],
+            ..Default::default()
+        };
+        let folded = fold_role_grants(base, &role);
+        assert_eq!(folded.dind, DindGrant::None);
+        assert!(folded.capabilities_add.iter().any(|c| c == "NET_ADMIN"));
+    }
+
+    #[test]
+    fn fold_role_grants_raises_dind_when_not_pinned() {
+        let base = profile_base_grants(DockerSecurityProfile::Standard);
+        assert_eq!(base.dind, DindGrant::None);
+        let role = DockerGrants {
+            dind: Some(DindGrant::Rootless),
+            ..Default::default()
+        };
+        assert_eq!(fold_role_grants(base, &role).dind, DindGrant::Rootless);
+    }
+
+    #[test]
+    fn profile_meets_floor_respects_ascending_capability() {
+        use DockerSecurityProfile::{Compat, Hardened, Locked};
+        // Floor `hardened`: `locked` is more restrictive (less capable) → rejected.
+        assert!(!profile_meets_floor(Locked, Hardened));
+        assert!(profile_meets_floor(Hardened, Hardened));
+        assert!(profile_meets_floor(Compat, Hardened));
+    }
+
+    #[test]
+    fn github_allowlist_hosts_default_and_enterprise() {
+        assert_eq!(
+            github_allowlist_hosts(None),
+            vec!["github.com".to_owned(), "api.github.com".to_owned()]
+        );
+        assert_eq!(
+            github_allowlist_hosts(Some("ghe.corp.example")),
+            vec![
+                "github.com".to_owned(),
+                "api.github.com".to_owned(),
+                "ghe.corp.example".to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn grok_has_default_allowed_host() {
+        assert!(default_allowed_hosts_for_agent("grok").contains(&"api.x.ai"));
+    }
+
     // ── validate_effective_grants ─────────────────────────────────────────────
 
     #[test]
@@ -1740,8 +1884,8 @@ mod tests {
     fn validate_cgroup_standard_warns_on_v1() {
         let result = validate_cgroup_for_profile(DockerSecurityProfile::Standard, "v1");
         assert!(
-            matches!(result, Ok(Some(_))),
-            "standard must not hard-fail on cgroup v1 (warn only)"
+            matches!(result, Ok(Some(w)) if w.contains("memory_reservation")),
+            "standard on v1 must warn about memory_reservation (warn only, no hard fail)"
         );
     }
 

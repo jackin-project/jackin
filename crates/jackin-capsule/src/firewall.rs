@@ -11,12 +11,13 @@
 //! Requires `CAP_NET_ADMIN` + `CAP_NET_RAW` and the `iptables`/`ipset` binaries
 //! in the image. Domain resolution uses libc `getaddrinfo` (no `dig`).
 //!
-//! IPv4 only: enforcement is an `iptables` (IPv4) OUTPUT chain over an `inet`
-//! ipset, so only IPv4 addresses/CIDRs are allowlistable. IPv6 entries and AAAA
-//! records are skipped (with a warning) rather than added — a single IPv6 member
-//! would otherwise abort the whole `ipset restore` batch. IPv6 egress is left
-//! unfiltered, exactly as the predecessor shell script left it; closing that gap
-//! (an `ip6tables` policy) is a separate hardening item.
+//! IPv4 allowlist, IPv6 deny-all: the *allowlist* is an `iptables` (IPv4) OUTPUT
+//! chain over an `inet` ipset, so only IPv4 addresses/CIDRs are allowlistable.
+//! IPv6 entries and AAAA records are skipped (with a warning) rather than added —
+//! a single IPv6 member would otherwise abort the whole `ipset restore` batch.
+//! Because no IPv6 destination can be allowlisted, IPv6 egress is denied
+//! wholesale via an `ip6tables` `-P OUTPUT DROP` (loopback + established only),
+//! so a dual-stack agent cannot bypass the allowlist over IPv6.
 //!
 //! Fail-closed: the default-`DROP` policy plus the loopback/established accepts
 //! are installed *first*, so any mid-apply error leaves egress denied rather than
@@ -89,6 +90,7 @@ pub fn apply() -> Result<()> {
     // tool yields an actionable error rather than a bare "No such file" after a
     // partial install.
     ensure_tool("iptables")?;
+    ensure_tool("ip6tables")?;
     ensure_tool("ipset")?;
 
     // Fail-closed: deny by default, then permit loopback and established flows
@@ -107,9 +109,29 @@ pub fn apply() -> Result<()> {
         "ACCEPT",
     ])?;
 
+    // The allowlist ipset is IPv4-only (`inet`), so the allowlist cannot admit
+    // any IPv6 destination. Deny all IPv6 egress fail-closed rather than leave
+    // the v6 OUTPUT policy at its ACCEPT default — otherwise an agent on a
+    // dual-stack network bypasses the entire allowlist over IPv6. Loopback and
+    // established return traffic stay permitted, mirroring the IPv4 policy.
+    ip6tables(&["-P", "OUTPUT", "DROP"])?;
+    ip6tables(&["-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT"])?;
+    ip6tables(&[
+        "-A",
+        "OUTPUT",
+        "-m",
+        "state",
+        "--state",
+        "ESTABLISHED,RELATED",
+        "-j",
+        "ACCEPT",
+    ])?;
+
     if entries.is_empty() {
         // network=allowlist with no hosts is fail-closed (no egress), not open.
-        crate::clog!("firewall: JACKIN_ALLOWED_HOSTS is empty; DROP-only policy (no egress)");
+        crate::clog!(
+            "firewall: JACKIN_ALLOWED_HOSTS is empty; DROP-only policy (no IPv4/IPv6 egress)"
+        );
         return Ok(());
     }
 
@@ -167,7 +189,7 @@ pub fn apply() -> Result<()> {
     ])?;
 
     crate::clog!(
-        "firewall: OUTPUT allowlist active: {} IPv4 entries",
+        "firewall: OUTPUT allowlist active: {} IPv4 entries; IPv6 egress denied",
         members.len()
     );
     Ok(())
@@ -247,6 +269,11 @@ fn install_ipset(members: &BTreeSet<String>) -> Result<()> {
 /// Run one `iptables` invocation, erroring (fail-closed) on non-zero exit.
 fn iptables(args: &[&str]) -> Result<()> {
     run_command("iptables", args)
+}
+
+/// Run one `ip6tables` invocation, erroring (fail-closed) on non-zero exit.
+fn ip6tables(args: &[&str]) -> Result<()> {
+    run_command("ip6tables", args)
 }
 
 /// Verify a required firewall binary is present, with an actionable error.

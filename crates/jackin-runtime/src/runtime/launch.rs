@@ -183,14 +183,6 @@ use progress_helpers::{
     sensitive_mount_prompt,
 };
 
-/// Returns the per-agent mount strings in jackin's `src:dst[:ro]`
-/// idiom for `docker run -v`.
-///
-/// Every provisioned agent is represented on `state.auth`, so the mount block
-/// checks `auth.*` flags rather than matching the selected-agent variant. The
-/// foreground launch path provisions all manifest-supported agents so sibling
-/// tabs opened via `hardline --new --agent <other>` find their homes
-/// bind-mounted from the start.
 /// Read-only bind-mount specs (`host:container:ro`) for every agent CLI binary
 /// cached on the host. The agent binaries are mounted at `docker run` instead of
 /// baked into the derived image, so an agent version bump no longer rebuilds the
@@ -225,6 +217,14 @@ async fn agent_binary_mount_specs(paths: &JackinPaths, supported: &[String]) -> 
     .unwrap_or_default()
 }
 
+/// Returns the per-agent mount strings in jackin's `src:dst[:ro]` idiom for
+/// `docker run -v`.
+///
+/// Every provisioned agent is represented on `state.auth`, so the mount block
+/// checks `auth.*` flags rather than matching the selected-agent variant. The
+/// foreground launch path provisions all manifest-supported agents so sibling
+/// tabs opened via `hardline --new --agent <other>` find their homes
+/// bind-mounted from the start.
 fn agent_mounts(state: &RoleState) -> Vec<String> {
     let mut mounts = vec![format!(
         "{}:/jackin/state",
@@ -661,17 +661,24 @@ pub(super) async fn launch_role_runtime(
         );
     }
     // AppArmor only feeds the `--debug` telemetry + session contract, so skip the
-    // `docker info` round-trip on the common non-debug launch.
+    // `docker info` round-trip on the common non-debug launch. On a probe error,
+    // report layer `unknown` rather than letting a failed round-trip masquerade
+    // as a genuine `available=no` in the audit surface.
     let (apparmor_available, apparmor_layer) = if *debug {
-        let apparmor_info = runner
+        match runner
             .capture(
                 "docker",
                 &["info", "--format", "{{.SecurityOptions}}"],
                 None,
             )
             .await
-            .unwrap_or_default();
-        crate::runtime::docker_profile::parse_apparmor_from_docker_info(&apparmor_info)
+        {
+            Ok(info) => crate::runtime::docker_profile::parse_apparmor_from_docker_info(&info),
+            Err(err) => {
+                jackin_diagnostics::debug_log!("launch", "apparmor probe failed: {err:#}");
+                (false, "unknown")
+            }
+        }
     } else {
         (false, "host")
     };
@@ -1054,6 +1061,7 @@ pub(super) async fn launch_role_runtime(
             "amp" => state.auth.amp.is_some(),
             "kimi" => state.auth.kimi.is_some(),
             "opencode" => state.auth.opencode.is_some(),
+            "grok" => state.auth.grok.is_some(),
             _ => false,
         };
         let session_contract = crate::runtime::docker_profile::format_session_contract(
