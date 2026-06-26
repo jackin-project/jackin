@@ -450,7 +450,26 @@ where
                             log_clipboard_image_pasted_path_staged();
                             image = Some(staged);
                         }
-                        Ok(None) => {}
+                        Ok(None) => {
+                            // Diagnostic for the image-path auto-stage: capture the
+                            // exact shape of a paste-like read that did not stage so
+                            // a --debug run reveals whether the paste arrived
+                            // unbracketed, split, or with trailing bytes.
+                            let has_marker = |marker: &[u8]| {
+                                input.windows(marker.len()).any(|window| window == marker)
+                            };
+                            let looks_pastey =
+                                input.len() > 24 || has_marker(b"\x1b[200~") || has_marker(b"\x1b[201~");
+                            if looks_pastey {
+                                let capped = &input[..input.len().min(300)];
+                                jackin_diagnostics::debug_log!(
+                                    "attach",
+                                    "pasted-path no-stage: len={} bytes={}",
+                                    input.len(),
+                                    String::from_utf8_lossy(capped).escape_default()
+                                );
+                            }
+                        }
                         Err(err) => {
                             jackin_diagnostics::debug_log!(
                                 "attach",
