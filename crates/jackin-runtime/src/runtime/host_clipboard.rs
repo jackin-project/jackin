@@ -67,19 +67,30 @@ pub(super) fn paste_image_paths_enabled() -> bool {
     }
 }
 
-/// The payload of a single self-contained bracketed paste, or `None` when
-/// `input` is not exactly `ESC[200~ <content> ESC[201~`. Typed input, a partial
-/// paste, or a paste mixed with other bytes is rejected so ordinary terminal
-/// input is never hijacked.
-fn sole_bracketed_paste_payload(input: &[u8]) -> Option<&[u8]> {
-    let body = input
-        .strip_prefix(BRACKETED_PASTE_START)?
-        .strip_suffix(BRACKETED_PASTE_END)?;
-    let contains = |needle: &[u8]| body.windows(needle.len()).any(|window| window == needle);
-    if body.is_empty() || contains(BRACKETED_PASTE_START) || contains(BRACKETED_PASTE_END) {
+fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
         return None;
     }
-    Some(body)
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+/// Recover the pasted text from one input read. If the read contains a bracketed
+/// paste (`ESC[200~ … ESC[201~`), return the bytes between the markers, tolerating
+/// any leading/trailing bytes the terminal added. If there are no markers — some
+/// terminals do not wrap a file-path paste — fall back to the whole read. The
+/// caller still requires the result to be a single absolute image path, so plain
+/// typed input is not hijacked.
+fn paste_body(input: &[u8]) -> &[u8] {
+    let Some(start) = find_subsequence(input, BRACKETED_PASTE_START) else {
+        return input;
+    };
+    let after = &input[start + BRACKETED_PASTE_START.len()..];
+    match find_subsequence(after, BRACKETED_PASTE_END) {
+        Some(end) => &after[..end],
+        None => after,
+    }
 }
 
 /// Cheap pre-check: does the pasted text look like a single absolute image-file
@@ -136,15 +147,20 @@ pub(super) async fn read_image_from_pasted_path(input: &[u8]) -> Result<Option<C
     if !paste_image_paths_enabled() {
         return Ok(None);
     }
-    let Some(payload) = sole_bracketed_paste_payload(input) else {
+    let Ok(text) = std::str::from_utf8(paste_body(input)) else {
         return Ok(None);
     };
-    let Ok(text) = std::str::from_utf8(payload) else {
-        return Ok(None);
-    };
+    let text = text.trim();
     if !looks_like_image_path(text) {
         return Ok(None);
     }
+    // A candidate image-path paste was recognized; record it (path only, no
+    // bytes) so a `--debug` run shows whether the host file resolved.
+    jackin_diagnostics::debug_log!(
+        "clipboard-image",
+        "pasted-path candidate: {}",
+        text.escape_default()
+    );
     let owned = text.to_owned();
     tokio::task::spawn_blocking(move || -> Result<Option<ClipboardImage>> {
         if let Some(image) = image_from_path_text(&owned)? {
@@ -676,18 +692,20 @@ mod tests {
     }
 
     #[test]
-    fn sole_bracketed_paste_payload_extracts_only_self_contained_pastes() {
+    fn paste_body_recovers_text_with_or_without_markers() {
+        // Clean bracketed paste.
         assert_eq!(
-            sole_bracketed_paste_payload(&bracketed("/tmp/x.png")),
-            Some(b"/tmp/x.png".as_slice())
+            paste_body(&bracketed("/tmp/x.png")),
+            b"/tmp/x.png".as_slice()
         );
-        // Typed input, partial paste, trailing bytes, and nested markers reject.
-        assert!(sole_bracketed_paste_payload(b"/tmp/x.png").is_none());
-        assert!(sole_bracketed_paste_payload(b"\x1b[200~/tmp/x.png").is_none());
-        assert!(sole_bracketed_paste_payload(b"\x1b[200~\x1b[201~").is_none());
+        // Tolerates leading/trailing bytes the terminal added around the markers.
         let mut trailing = bracketed("/tmp/x.png");
-        trailing.extend_from_slice(b"more");
-        assert!(sole_bracketed_paste_payload(&trailing).is_none());
+        trailing.extend_from_slice(b"\x1b[<0;1;1M");
+        assert_eq!(paste_body(&trailing), b"/tmp/x.png".as_slice());
+        // No markers (terminal did not wrap the paste) — fall back to the whole read.
+        assert_eq!(paste_body(b"/tmp/x.png"), b"/tmp/x.png".as_slice());
+        // Open paste (rare split mid-marker): take the tail after the start marker.
+        assert_eq!(paste_body(b"\x1b[200~/tmp/x.png"), b"/tmp/x.png".as_slice());
     }
 
     #[test]
@@ -724,9 +742,19 @@ mod tests {
         assert_eq!(staged.format, ClipboardImageFormat::Png);
         assert_eq!(staged.bytes, b"\x89PNG\r\n\x1a\npayload");
 
-        // Not a paste, a non-image path, and a missing file all forward as text.
+        // A real image path also stages when the terminal did not wrap the paste.
         assert!(
             read_image_from_pasted_path(path.display().to_string().as_bytes())
+                .await
+                .unwrap()
+                .is_some()
+        );
+
+        // A non-image path, a missing file, and prose all forward as text.
+        let notes = temp.path().join("notes.txt");
+        std::fs::write(&notes, b"hello").unwrap();
+        assert!(
+            read_image_from_pasted_path(&bracketed(&notes.display().to_string()))
                 .await
                 .unwrap()
                 .is_none()
@@ -734,6 +762,12 @@ mod tests {
         let missing = temp.path().join("missing.png");
         assert!(
             read_image_from_pasted_path(&bracketed(&missing.display().to_string()))
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            read_image_from_pasted_path(b"just some pasted prose")
                 .await
                 .unwrap()
                 .is_none()
