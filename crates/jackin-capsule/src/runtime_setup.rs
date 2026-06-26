@@ -390,9 +390,9 @@ fn setup_claude_plugins() {
     // marketplaces+plugins it was written for (the old image build keyed its
     // bundle cache on a hash of the same commands); a bare exists() check would
     // shadow a `jackin.role.toml` plugin edit forever.
-    let fingerprint = claude_plugin_fingerprint(&config);
     let marker = Path::new("/home/agent/.claude/.jackin-plugins.done");
-    if fs::read_to_string(marker).ok().as_deref() == Some(fingerprint.as_str()) {
+    let fingerprint = claude_plugin_fingerprint(&config);
+    if fs::read_to_string(marker).is_ok_and(|s| s == fingerprint) {
         return;
     }
     // The official marketplace backs the common plugins; tolerate it already
