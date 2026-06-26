@@ -227,7 +227,7 @@ impl HookInstaller for PluginInstaller {
         upsert_into_json_array(
             &mut root,
             "plugins",
-            serde_json::json!(self.plugin_path),
+            || serde_json::json!(self.plugin_path),
             |p| p.as_str() == Some(self.plugin_path.as_str()),
             &path,
         )?;
@@ -289,7 +289,7 @@ impl HookInstaller for CodexHookInstaller {
             upsert_into_json_array(
                 hooks_obj,
                 event,
-                serde_json::json!({ "command": command }),
+                || serde_json::json!({ "command": command }),
                 |e| e.get("command").and_then(serde_json::Value::as_str) == Some(command.as_str()),
                 &hooks_path,
             )?;
@@ -343,7 +343,9 @@ fn read_existing_json_object(
 fn upsert_into_json_array(
     map: &mut serde_json::Map<String, serde_json::Value>,
     key: &str,
-    value: serde_json::Value,
+    // Built lazily — only when the value is actually missing — so the common
+    // already-present path on a drift-repair launch allocates nothing.
+    value: impl FnOnce() -> serde_json::Value,
     eq: impl Fn(&serde_json::Value) -> bool,
     label: &Path,
 ) -> anyhow::Result<()> {
@@ -357,7 +359,7 @@ fn upsert_into_json_array(
         )
     })?;
     if !arr.iter().any(eq) {
-        arr.push(value);
+        arr.push(value());
     }
     Ok(())
 }
