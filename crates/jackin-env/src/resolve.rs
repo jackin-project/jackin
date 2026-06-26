@@ -421,7 +421,7 @@ pub fn collect_on_demand_bindings(
     config: &AppConfig,
     role_selector: Option<&str>,
     workspace_name: Option<&str>,
-) -> Vec<(String, String, String)> {
+) -> Vec<jackin_protocol::ExecBinding> {
     // BTreeMap iteration is already ordered by key, so the result is sorted.
     build_attributed_layers(config, role_selector, workspace_name)
         .into_iter()
@@ -440,7 +440,7 @@ pub fn collect_on_demand_bindings(
                 // defensively as a literal rather than panicking.
                 EnvValue::Plain(s) => ("literal".to_owned(), s),
             };
-            (name, kind, source)
+            jackin_protocol::ExecBinding { name, kind, source }
         })
         .collect()
 }
@@ -799,21 +799,21 @@ mod tests {
         assert_eq!(
             bindings,
             vec![
-                (
-                    "ENV_DEMAND".to_owned(),
-                    "env".to_owned(),
-                    "$HOST_TOK".to_owned()
-                ),
-                (
-                    "LIT_DEMAND".to_owned(),
-                    "literal".to_owned(),
-                    "literal".to_owned()
-                ),
-                (
-                    "OP_DEMAND".to_owned(),
-                    "op".to_owned(),
-                    "op://v/i/key".to_owned()
-                ),
+                jackin_protocol::ExecBinding {
+                    name: "ENV_DEMAND".to_owned(),
+                    kind: "env".to_owned(),
+                    source: "$HOST_TOK".to_owned(),
+                },
+                jackin_protocol::ExecBinding {
+                    name: "LIT_DEMAND".to_owned(),
+                    kind: "literal".to_owned(),
+                    source: "literal".to_owned(),
+                },
+                jackin_protocol::ExecBinding {
+                    name: "OP_DEMAND".to_owned(),
+                    kind: "op".to_owned(),
+                    source: "op://v/i/key".to_owned(),
+                },
             ]
         );
     }

@@ -23,7 +23,7 @@ fn validate_op_source_rejects_flag_segments() {
 /// Drive `handle_connection` over an in-memory socket pair and return the
 /// decoded JSON reply (`{"values":…}` or `{"error":…}`).
 async fn roundtrip(
-    allowed: Vec<ExecCredRef>,
+    allowed: Vec<ExecBinding>,
     request_refs: serde_json::Value,
 ) -> serde_json::Value {
     let (mut client, server) = UnixStream::pair().unwrap();
@@ -48,7 +48,7 @@ async fn roundtrip(
 
 #[tokio::test]
 async fn approved_literal_ref_resolves() {
-    let allowed = vec![ExecCredRef {
+    let allowed = vec![ExecBinding {
         name: "TOKEN".into(),
         kind: "literal".into(),
         source: "s3cr3t".into(),
@@ -67,7 +67,7 @@ async fn unapproved_source_is_rejected() {
     // Same name + kind, but a `source` the operator never approved. A
     // name-only match would let a compromised container swap the source to
     // read a different secret — the allow-list must reject this.
-    let allowed = vec![ExecCredRef {
+    let allowed = vec![ExecBinding {
         name: "TOKEN".into(),
         kind: "literal".into(),
         source: "approved".into(),
@@ -91,7 +91,7 @@ async fn approved_env_ref_resolves_from_host_env() {
     // Use an existing var (PATH is always set) — the crate forbids `unsafe`, so
     // `std::env::set_var` is unavailable.
     let expected = std::env::var("PATH").expect("PATH is set in the test env");
-    let allowed = vec![ExecCredRef {
+    let allowed = vec![ExecBinding {
         name: "X".into(),
         kind: "env".into(),
         source: "$PATH".into(),
@@ -106,7 +106,7 @@ async fn approved_env_ref_resolves_from_host_env() {
 
 #[tokio::test]
 async fn unknown_name_is_rejected() {
-    let allowed = vec![ExecCredRef {
+    let allowed = vec![ExecBinding {
         name: "TOKEN".into(),
         kind: "literal".into(),
         source: "x".into(),

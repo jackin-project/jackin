@@ -31,6 +31,25 @@ pub struct ExecBinding {
     pub source: String,
 }
 
+/// `jackin-exec` host.sock request: the operator-selected credentials the
+/// in-container capsule asks the host resolver to resolve. Framed with
+/// [`control::frame`], same as the control socket.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CredRequest {
+    pub refs: Vec<ExecBinding>,
+}
+
+/// `jackin-exec` host.sock reply. Internally tagged so the capsule decodes it
+/// in one parse instead of trying success-then-error struct shapes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum CredReply {
+    /// Every requested credential resolved: `name -> value`.
+    Ok { values: BTreeMap<String, String> },
+    /// Resolution failed; `error` is operator-facing (no secret material).
+    Error { error: String },
+}
+
 /// Filename written under `/jackin/run/` by the host launcher.
 pub const CAPSULE_CONFIG_FILENAME: &str = "agent.toml";
 

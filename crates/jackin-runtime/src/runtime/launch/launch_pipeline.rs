@@ -916,14 +916,11 @@ pub(crate) async fn load_role_with(
     // always-available var the entrypoint turns into a system-prompt block. The
     // full (name, kind, source) triples flow host-side to the credential
     // resolver via `capsule_config.exec_bindings` below.
-    let exec_bindings: Vec<jackin_protocol::ExecBinding> = jackin_env::collect_on_demand_bindings(
+    let exec_bindings = jackin_env::collect_on_demand_bindings(
         config,
         Some(role_key.as_str()),
         workspace_name.as_deref(),
-    )
-    .into_iter()
-    .map(|(name, kind, source)| jackin_protocol::ExecBinding { name, kind, source })
-    .collect();
+    );
     if !exec_bindings.is_empty() {
         let names = super::exec_binding_names(&exec_bindings);
         merged_vars.retain(|(k, _)| k != "JACKIN_EXEC_BINDINGS");
@@ -1632,8 +1629,8 @@ pub(crate) async fn load_role_with(
         // sidecar so it is never started; it cannot be validated without macOS
         // 26 ARM hardware, so for now the sidecar is started and immediately
         // reclaimed.)
-        if super::resolve_backend(config, workspace_name.as_deref())
-            == crate::apple_container_client::BACKEND_NAME
+        if super::resolve_backend(config, workspace_name.as_deref())?
+            == super::Backend::AppleContainer
         {
             cleanup.run(docker).await;
             let mount_pairs = super::build_workspace_mount_pairs(&materialized);

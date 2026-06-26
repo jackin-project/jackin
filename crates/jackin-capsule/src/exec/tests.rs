@@ -33,9 +33,9 @@ fn redact_pem_redacts_block_and_counts() {
 
 #[test]
 fn selected_refs_wire_shape_is_stable() {
-    // The host (src/exec_host.rs) deserializes this exact JSON into its own
-    // ExecCredRef. A field rename on either side breaks credential resolution
-    // silently, so pin the on-the-wire shape here.
+    // The host (jackin-runtime exec_host) deserializes this exact JSON via the
+    // shared `jackin_protocol::CredRequest`/`ExecBinding`. A field rename breaks
+    // credential resolution silently, so pin the on-the-wire shape here.
     let state = ExecPickerState {
         command: "gh".to_owned(),
         args: vec![],
@@ -48,7 +48,7 @@ fn selected_refs_wire_shape_is_stable() {
         }],
         cursor: 0,
     };
-    let req = CredRequest {
+    let req = jackin_protocol::CredRequest {
         refs: state.selected_refs(),
     };
     assert_eq!(

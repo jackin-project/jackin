@@ -1159,17 +1159,29 @@ agents = ["amp"]
 fn resolve_backend_defaults_docker_and_workspace_overrides_config() {
     let mut config = jackin_config::AppConfig::default();
     // No selection anywhere → Docker.
-    assert_eq!(resolve_backend(&config, None), "docker");
+    assert_eq!(resolve_backend(&config, None).unwrap(), Backend::Docker);
     // Host-wide default applies.
     config.runtime.default_backend = Some("apple-container".to_owned());
-    assert_eq!(resolve_backend(&config, None), "apple-container");
+    assert_eq!(
+        resolve_backend(&config, None).unwrap(),
+        Backend::AppleContainer
+    );
     // Per-workspace backend overrides the host-wide default.
     let mut ws = jackin_config::WorkspaceConfig::default();
     ws.runtime.backend = Some("docker".to_owned());
     config.workspaces.insert("prod".to_owned(), ws);
-    assert_eq!(resolve_backend(&config, Some("prod")), "docker");
+    assert_eq!(
+        resolve_backend(&config, Some("prod")).unwrap(),
+        Backend::Docker
+    );
     // A workspace without an override falls back to the host-wide default.
-    assert_eq!(resolve_backend(&config, Some("absent")), "apple-container");
+    assert_eq!(
+        resolve_backend(&config, Some("absent")).unwrap(),
+        Backend::AppleContainer
+    );
+    // An unrecognised backend fails closed instead of silently launching Docker.
+    config.runtime.default_backend = Some("aple-container".to_owned());
+    assert!(resolve_backend(&config, None).is_err());
 }
 
 #[tokio::test]

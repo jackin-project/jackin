@@ -384,16 +384,38 @@ fn build_workspace_mount_strings(
     out
 }
 
+/// The container backend selected for a launch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Backend {
+    Docker,
+    AppleContainer,
+}
+
 /// Resolve the container backend for a launch. A per-workspace
 /// `[runtime].backend` overrides the host-wide `[runtime].default_backend`,
-/// which defaults to Docker when unset. Returns the backend name
-/// (`"docker"` or `"apple-container"`).
-pub(super) fn resolve_backend(config: &AppConfig, workspace_name: Option<&str>) -> String {
-    workspace_name
+/// which defaults to Docker when unset.
+///
+/// The backend fields are free-text strings in the config schema, so an
+/// unrecognised value is rejected here rather than silently falling through to
+/// Docker — a typo must fail closed, not launch the wrong (weaker-isolation)
+/// backend behind the operator's back.
+pub(super) fn resolve_backend(
+    config: &AppConfig,
+    workspace_name: Option<&str>,
+) -> anyhow::Result<Backend> {
+    let selected = workspace_name
         .and_then(|name| config.workspaces.get(name))
         .and_then(|ws| ws.runtime.backend.clone())
-        .or_else(|| config.runtime.default_backend.clone())
-        .unwrap_or_else(|| crate::apple_container_client::DOCKER_BACKEND_NAME.to_owned())
+        .or_else(|| config.runtime.default_backend.clone());
+    match selected.as_deref() {
+        None | Some(crate::apple_container_client::DOCKER_BACKEND_NAME) => Ok(Backend::Docker),
+        Some(crate::apple_container_client::BACKEND_NAME) => Ok(Backend::AppleContainer),
+        Some(other) => anyhow::bail!(
+            "unknown runtime backend {other:?}: expected `{}` or `{}`",
+            crate::apple_container_client::DOCKER_BACKEND_NAME,
+            crate::apple_container_client::BACKEND_NAME,
+        ),
+    }
 }
 
 /// Translate a [`MaterializedWorkspace`] into `(host, guest)` mount pairs for

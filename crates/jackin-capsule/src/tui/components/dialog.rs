@@ -343,7 +343,7 @@ pub enum DialogAction {
     ExecConfirm {
         command: String,
         args: Vec<String>,
-        selected: Vec<crate::exec::CredRef>,
+        selected: Vec<jackin_protocol::ExecBinding>,
     },
     /// Operator cancelled the `jackin-exec` picker (Esc) — daemon replies
     /// `ExecDenied` and runs nothing.

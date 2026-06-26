@@ -16,8 +16,8 @@
 //! The listener validates every incoming resolution request against the
 //! `allowed_bindings` set configured at session start. Only (name, kind,
 //! source) triples that exactly match an operator-configured binding are
-//! resolved. Unknown refs are rejected with a `CredError` without calling
-//! `op` or reading any host env var. This prevents a compromised in-container
+//! resolved. Unknown refs are rejected with a `CredReply::Error` without
+//! calling `op` or reading any host env var. This prevents a compromised in-container
 //! process from requesting arbitrary secret resolution via the host socket.
 //!
 //! For `kind = "op"`, `source` must start with `op://` and the `--`
@@ -28,49 +28,10 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use anyhow::{Context as _, Result};
-use serde::{Deserialize, Serialize};
+use jackin_protocol::control::frame;
+use jackin_protocol::{CredReply, CredRequest, ExecBinding};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
-
-/// A single on-demand credential binding resolved by the host.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecCredRef {
-    /// The env var name that will be injected (e.g. "`GH_TOKEN`").
-    pub name: String,
-    /// Resolution kind: "op" → `op read <source>`, "env" → host env var,
-    /// "literal" → return source verbatim.
-    pub kind: String,
-    /// The source to resolve: `op://` URI, `$VAR_NAME`, or literal string.
-    pub source: String,
-}
-
-impl From<&jackin_protocol::ExecBinding> for ExecCredRef {
-    fn from(b: &jackin_protocol::ExecBinding) -> Self {
-        Self {
-            name: b.name.clone(),
-            kind: b.kind.clone(),
-            source: b.source.clone(),
-        }
-    }
-}
-
-/// Request from capsule → host.
-#[derive(Debug, Deserialize)]
-struct CredRequest {
-    refs: Vec<ExecCredRef>,
-}
-
-/// Success response from host → capsule.
-#[derive(Debug, Serialize)]
-struct CredResponse {
-    values: std::collections::BTreeMap<String, String>,
-}
-
-/// Error response from host → capsule.
-#[derive(Debug, Serialize)]
-struct CredError {
-    error: String,
-}
 
 /// Start the host.sock listener.
 ///
@@ -85,7 +46,7 @@ struct CredError {
 #[allow(clippy::print_stderr)]
 pub fn start(
     sock_path: PathBuf,
-    allowed_bindings: Vec<ExecCredRef>,
+    allowed_bindings: Vec<ExecBinding>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         if let Err(e) = run_listener(&sock_path, &allowed_bindings).await {
@@ -109,17 +70,16 @@ pub fn start(
 pub fn start_for_container(
     jackin_home: &Path,
     container_name: &str,
-    exec_bindings: &[jackin_protocol::ExecBinding],
+    exec_bindings: &[ExecBinding],
 ) -> tokio::task::JoinHandle<()> {
     let sock_path = jackin_home
         .join("sockets")
         .join(container_name)
         .join("host.sock");
-    let allowed = exec_bindings.iter().map(ExecCredRef::from).collect();
-    start(sock_path, allowed)
+    start(sock_path, exec_bindings.to_vec())
 }
 
-async fn run_listener(sock_path: &Path, allowed_bindings: &[ExecCredRef]) -> Result<()> {
+async fn run_listener(sock_path: &Path, allowed_bindings: &[ExecBinding]) -> Result<()> {
     // Remove stale socket from a previous session.
     drop(std::fs::remove_file(sock_path));
     if let Some(parent) = sock_path.parent() {
@@ -162,7 +122,7 @@ async fn run_listener(sock_path: &Path, allowed_bindings: &[ExecCredRef]) -> Res
     }
 }
 
-async fn handle_connection(mut stream: UnixStream, allowed_bindings: &[ExecCredRef]) -> Result<()> {
+async fn handle_connection(mut stream: UnixStream, allowed_bindings: &[ExecBinding]) -> Result<()> {
     const MAX_REQ: usize = 512 * 1024;
     // Read 4-byte BE length + JSON body (same framing as control channel).
     let mut len_buf = [0u8; 4];
@@ -191,16 +151,13 @@ async fn handle_connection(mut stream: UnixStream, allowed_bindings: &[ExecCredR
                 r.kind,
                 r.source
             );
-            let err = CredError {
+            let reply = CredReply::Error {
                 error: format!(
                     "credential {:?} is not in the approved binding set for this session",
                     r.name
                 ),
             };
-            let reply_bytes = serde_json::to_vec(&err)?;
-            let len_bytes = (reply_bytes.len() as u32).to_be_bytes();
-            stream.write_all(&len_bytes).await?;
-            stream.write_all(&reply_bytes).await?;
+            stream.write_all(&frame(&reply)).await?;
             return Ok(());
         }
     }
@@ -211,27 +168,19 @@ async fn handle_connection(mut stream: UnixStream, allowed_bindings: &[ExecCredR
         req.refs.len()
     );
 
-    let reply_bytes = match resolve_all(&req.refs).await {
-        Ok(values) => {
-            let resp = CredResponse { values };
-            serde_json::to_vec(&resp)?
-        }
-        Err(e) => {
-            let err = CredError {
-                error: format!("{e:#}"),
-            };
-            serde_json::to_vec(&err)?
-        }
+    let reply = match resolve_all(&req.refs).await {
+        Ok(values) => CredReply::Ok { values },
+        Err(e) => CredReply::Error {
+            error: format!("{e:#}"),
+        },
     };
-
-    // Write 4-byte length + JSON body.
-    let len_bytes = (reply_bytes.len() as u32).to_be_bytes();
-    stream.write_all(&len_bytes).await?;
-    stream.write_all(&reply_bytes).await?;
+    // Reuse the canonical control-socket encoder so both ends of host.sock
+    // frame identically.
+    stream.write_all(&frame(&reply)).await?;
     Ok(())
 }
 
-async fn resolve_all(refs: &[ExecCredRef]) -> Result<std::collections::BTreeMap<String, String>> {
+async fn resolve_all(refs: &[ExecBinding]) -> Result<std::collections::BTreeMap<String, String>> {
     // Resolve concurrently: each `op` kind spawns an `op read` subprocess
     // (network + a possible Touch ID prompt, ~1-3s each), so serial resolution
     // would make interactive `jackin-exec` latency scale with the number of
@@ -260,18 +209,23 @@ fn validate_op_source(source: &str) -> Result<()> {
     Ok(())
 }
 
-async fn resolve_one(r: &ExecCredRef) -> Result<String> {
+async fn resolve_one(r: &ExecBinding) -> Result<String> {
     match r.kind.as_str() {
         "op" => {
             validate_op_source(&r.source).with_context(|| format!("credential {:?}", r.name))?;
             resolve_op(&r.source).await
         }
         "env" => {
-            // Strip leading `$`, optional `{`, and trailing `}` to extract the var name.
-            let src = r.source.as_str();
-            let var_name = src
-                .strip_prefix('$')
-                .map_or(src, |s| s.trim_matches('{').trim_matches('}'));
+            // Reuse the canonical `$VAR` / `${VAR}` parser the binding collector
+            // used to classify this source, so producer and consumer can't drift
+            // on the host-ref grammar.
+            let var_name = jackin_env::parse_host_ref(&r.source).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "env credential {:?}: source {:?} is not a $VAR host reference",
+                    r.name,
+                    r.source
+                )
+            })?;
             std::env::var(var_name).with_context(|| format!("host env var {var_name:?} is not set"))
         }
         "literal" => Ok(r.source.clone()),

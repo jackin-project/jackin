@@ -6,9 +6,10 @@
 //!    control socket, sends `ExecCommand`, waits for `ExecResult` or
 //!    `ExecDenied`, and writes the output to the terminal.
 //!
-//! 2. **Shared types** (`ExecPickerState`, `CredRef`, …) and helpers
+//! 2. **Shared types** (`ExecPickerState`, …) and helpers
 //!    (`resolve_credentials`, `execute_command`): used by the daemon to drive
-//!    the credential picker and run the approved command.
+//!    the credential picker and run the approved command. The host.sock wire
+//!    types (`ExecBinding`, `CredRequest`, `CredReply`) live in `jackin-protocol`.
 
 use anyhow::{Context as _, Result, bail};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -109,12 +110,12 @@ impl ExecPickerState {
         }
     }
 
-    /// Returns the set of selected items, formatted for the host.sock request.
-    pub fn selected_refs(&self) -> Vec<CredRef> {
+    /// Returns the selected items as host.sock credential bindings.
+    pub fn selected_refs(&self) -> Vec<jackin_protocol::ExecBinding> {
         self.items
             .iter()
             .filter(|i| i.selected)
-            .map(|i| CredRef {
+            .map(|i| jackin_protocol::ExecBinding {
                 name: i.name.clone(),
                 kind: i.kind.as_str().to_owned(),
                 source: i.source.clone(),
@@ -141,42 +142,20 @@ impl ExecPickerState {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Host.sock protocol types
-// ---------------------------------------------------------------------------
-
-/// One on-demand credential ref sent to the host.sock listener.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct CredRef {
-    pub name: String,
-    pub kind: String,
-    pub source: String,
-}
-
-/// Request sent capsule → host.sock.
-#[derive(Debug, serde::Serialize)]
-pub struct CredRequest {
-    pub refs: Vec<CredRef>,
-}
-
-/// Success response from host.sock → capsule.
-#[derive(Debug, serde::Deserialize)]
-pub struct CredResponse {
-    pub values: std::collections::BTreeMap<String, String>,
-}
-
-/// Error response from host.sock → capsule.
-#[derive(Debug, serde::Deserialize)]
-pub struct CredError {
-    pub error: String,
-}
-
 /// Resolve on-demand credentials via the host.sock listener.
 /// `host_sock_path` is `/jackin/run/host.sock` inside the container.
+///
+/// Uses the shared `jackin_protocol` wire types ([`CredRequest`]/[`CredReply`])
+/// and the canonical [`frame`] encoder, so the host.sock and control-socket
+/// paths cannot drift. The read intentionally has no timeout — the host
+/// resolver may block on `op read`'s Touch ID prompt for as long as the
+/// operator takes.
 pub async fn resolve_credentials(
     host_sock_path: &str,
-    refs: Vec<CredRef>,
+    refs: Vec<jackin_protocol::ExecBinding>,
 ) -> Result<std::collections::BTreeMap<String, String>> {
+    use jackin_protocol::{CredReply, CredRequest};
+
     if refs.is_empty() {
         return Ok(std::collections::BTreeMap::default());
     }
@@ -185,8 +164,6 @@ pub async fn resolve_credentials(
         .await
         .with_context(|| format!("connecting to host credential resolver at {host_sock_path}"))?;
 
-    // Same 4-byte-BE-length + JSON framing as the control socket — reuse the
-    // canonical encoder so the two wire paths cannot drift.
     stream.write_all(&frame(&CredRequest { refs })).await?;
 
     let mut len_buf = [0u8; 4];
@@ -201,14 +178,10 @@ pub async fn resolve_credentials(
     let mut reply_body = vec![0u8; reply_len];
     stream.read_exact(&mut reply_body).await?;
 
-    // Try success response first, then error.
-    if let Ok(ok) = serde_json::from_slice::<CredResponse>(&reply_body) {
-        return Ok(ok.values);
+    match serde_json::from_slice::<CredReply>(&reply_body).context("parsing host.sock reply")? {
+        CredReply::Ok { values } => Ok(values),
+        CredReply::Error { error } => bail!("{error}"),
     }
-    if let Ok(err) = serde_json::from_slice::<CredError>(&reply_body) {
-        bail!("{}", err.error);
-    }
-    bail!("unrecognised host.sock response");
 }
 
 /// Execute a command with the given environment additions.

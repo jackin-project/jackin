@@ -216,14 +216,23 @@ impl Multiplexer {
     /// control reply channel so confirm/cancel can answer it later. Built from
     /// the workspace's on-demand bindings (carried on the launch config); the
     /// container only ever sees binding names + sources, never resolved values.
-    /// A new request supersedes any picker already pending — the prior client's
-    /// reply sender drops and it reports the closed socket.
     pub(super) fn begin_exec_picker(
         &mut self,
         command: String,
         args: Vec<String>,
         reply_tx: tokio::sync::oneshot::Sender<jackin_protocol::control::ServerMsg>,
     ) {
+        // Supersede any picker already in flight: deny its deferred reply (so
+        // that client gets an answer instead of a closed socket) and drop its
+        // now-stale dialog so confirm/cancel can't act on it.
+        if let Some(prev) = self.pending_exec_reply.take() {
+            drop(prev.send(jackin_protocol::control::ServerMsg::ExecDenied {
+                reason: "superseded by a newer jackin-exec request".to_owned(),
+            }));
+            if matches!(self.dialog_top(), Some(Dialog::ExecPicker(_))) {
+                self.dialog_pop_one();
+            }
+        }
         let state = crate::exec::ExecPickerState::from_bindings(
             command,
             args,
@@ -889,7 +898,7 @@ pub(super) fn tab_bar_focus_key(bytes: &[u8]) -> Option<TabBarFocusKey> {
 async fn run_exec_selected(
     command: String,
     args: Vec<String>,
-    selected: Vec<crate::exec::CredRef>,
+    selected: Vec<jackin_protocol::ExecBinding>,
 ) -> jackin_protocol::control::ServerMsg {
     use jackin_protocol::control::ServerMsg;
 
