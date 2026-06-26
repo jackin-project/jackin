@@ -1,4 +1,3 @@
-
 use crate::tui::components::dialog::Dialog;
 
 use jackin_protocol::control::{

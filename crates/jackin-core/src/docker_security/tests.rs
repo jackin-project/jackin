@@ -36,7 +36,11 @@ fn dind_grant_ord_ascending() {
 /// vocabulary (the guarantee `as_str`'s doc comment claims).
 #[test]
 fn as_str_matches_serde() {
-    for grant in [NetworkGrant::None, NetworkGrant::Allowlist, NetworkGrant::Open] {
+    for grant in [
+        NetworkGrant::None,
+        NetworkGrant::Allowlist,
+        NetworkGrant::Open,
+    ] {
         let serde_form = serde_json::to_string(&grant).expect("serialize NetworkGrant");
         // serde_json wraps the unit variant in quotes, e.g. "\"none\"".
         assert_eq!(serde_form, format!("{:?}", grant.as_str()));

@@ -647,7 +647,10 @@ fn validate_grants_memory_overflow_is_error() {
     assert!(
         errors.iter().any(|e| matches!(
             e,
-            GrantValidationError::ValueOutOfRange { field: "memory", .. }
+            GrantValidationError::ValueOutOfRange {
+                field: "memory",
+                ..
+            }
         )),
         "memory > i64::MAX must be ValueOutOfRange, got {errors:?}"
     );
@@ -683,7 +686,10 @@ fn validate_grants_nofile_zero_is_error() {
     assert!(
         errors.iter().any(|e| matches!(
             e,
-            GrantValidationError::ValueOutOfRange { field: "nofile", .. }
+            GrantValidationError::ValueOutOfRange {
+                field: "nofile",
+                ..
+            }
         )),
         "nofile=0 must be ValueOutOfRange, got {errors:?}"
     );
