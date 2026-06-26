@@ -90,6 +90,11 @@ pub struct Rule {
     compiled_line_regex: Vec<regex::Regex>,
     #[serde(skip)]
     compiled_forbids_regex: Vec<regex::Regex>,
+    // The gate's regex leaves, compiled once by `finalize` (parallel to the
+    // vecs above). `matches` falls back to the raw `Gate` (per-eval compile)
+    // when this is absent, so a pack that skipped finalize still matches — just slower.
+    #[serde(skip)]
+    compiled_gate: Option<CompiledGate>,
 }
 
 /// Recursive boolean gate for rules whose match logic needs nested
@@ -114,9 +119,33 @@ pub enum Gate {
 }
 
 impl Gate {
-    /// `region` is the raw extracted lines; `text` is their lowercased join (so
-    /// it mirrors the flat matcher path, which lowercases the joined region and
-    /// matches `line_regex` against raw lines under a case-insensitive regex).
+    /// Compile every regex leaf once into a [`CompiledGate`] — the gate analogue
+    /// of the flat path's `compiled_regex`, built by `RulePack::finalize` so the
+    /// hot evaluation never compiles a pattern twice.
+    fn compile(&self) -> anyhow::Result<CompiledGate> {
+        Ok(match self {
+            Self::All(gates) => CompiledGate::All(
+                gates
+                    .iter()
+                    .map(Self::compile)
+                    .collect::<anyhow::Result<_>>()?,
+            ),
+            Self::Any(gates) => CompiledGate::Any(
+                gates
+                    .iter()
+                    .map(Self::compile)
+                    .collect::<anyhow::Result<_>>()?,
+            ),
+            Self::Not(gate) => CompiledGate::Not(Box::new(gate.compile()?)),
+            Self::Contains(s) => CompiledGate::Contains(s.to_ascii_lowercase()),
+            Self::Regex(p) => CompiledGate::Regex(build_regex(p)?),
+            Self::LineRegex(p) => CompiledGate::LineRegex(build_regex(p)?),
+        })
+    }
+
+    /// Per-evaluation fallback used only when a pack skipped `finalize` (mirrors
+    /// `regex_all`'s per-call compilation fallback). `region` is the raw extracted
+    /// lines; `text` is their lowercased join.
     fn eval(&self, region: &[String], text: &str) -> bool {
         match self {
             Self::All(gates) => gates.iter().all(|g| g.eval(region, text)),
@@ -158,6 +187,33 @@ impl Gate {
                 build_regex(p).with_context(|| format!("invalid regex in rule {rule_id} gate"))?;
                 Ok(())
             }
+        }
+    }
+}
+
+/// A [`Gate`] with its regex leaves compiled once (built by `RulePack::finalize`,
+/// the gate parallel to the flat path's `compiled_regex`). `Contains` strings are
+/// pre-lowercased so the hot path matches against the already-lowercased region
+/// text with no per-call allocation.
+#[derive(Debug, Clone)]
+enum CompiledGate {
+    All(Vec<CompiledGate>),
+    Any(Vec<CompiledGate>),
+    Not(Box<CompiledGate>),
+    Contains(String),
+    Regex(regex::Regex),
+    LineRegex(regex::Regex),
+}
+
+impl CompiledGate {
+    fn eval(&self, region: &[String], text: &str) -> bool {
+        match self {
+            Self::All(gates) => gates.iter().all(|g| g.eval(region, text)),
+            Self::Any(gates) => gates.iter().any(|g| g.eval(region, text)),
+            Self::Not(gate) => !gate.eval(region, text),
+            Self::Contains(s) => text.contains(s.as_str()),
+            Self::Regex(re) => re.is_match(text),
+            Self::LineRegex(re) => region.iter().any(|line| re.is_match(line)),
         }
     }
 }
@@ -407,6 +463,7 @@ impl RulePack {
             rule.compiled_regex = compile_all(&rule.regex, &rule.id)?;
             rule.compiled_line_regex = compile_all(&rule.line_regex, &rule.id)?;
             rule.compiled_forbids_regex = compile_all(&rule.forbids_regex, &rule.id)?;
+            rule.compiled_gate = rule.gate.as_ref().map(Gate::compile).transpose()?;
         }
         Ok(self)
     }
@@ -502,8 +559,14 @@ impl Rule {
             && regex_all(&self.forbids_regex, &self.compiled_forbids_regex, |re| {
                 !region.iter().any(|line| re.is_match(line))
             })
-            // Recursive nested gate (combined by AND with the flat matchers); absent on most rules.
-            && self.gate.as_ref().is_none_or(|gate| gate.eval(&region, &text))
+            // Recursive nested gate (combined by AND with the flat matchers);
+            // absent on most rules. Prefer the finalize-compiled gate; fall back
+            // to per-eval compilation only for a pack that skipped finalize.
+            && match (self.compiled_gate.as_ref(), self.gate.as_ref()) {
+                (Some(compiled), _) => compiled.eval(&region, &text),
+                (None, Some(gate)) => gate.eval(&region, &text),
+                (None, None) => true,
+            }
     }
 
     fn to_match(&self) -> RuleMatch {
