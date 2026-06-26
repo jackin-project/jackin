@@ -18,11 +18,22 @@ pub struct VirtualRegions<'a> {
 /// would silently misread a newer gate grammar; such packs are skipped, not
 /// mis-evaluated. Bump this when the engine gains a capability a pack can depend
 /// on (e.g. a richer gate form).
-pub const RULE_ENGINE_VERSION: u32 = 1;
+///
+/// - v1: flat matchers + `line_regex`/`forbids_regex`.
+/// - v2: the recursive nested-gate grammar (`gate = { all/any/not/… }`). A pack
+///   using `gate` must declare `min_engine_version = 2`, so a v1 engine — which
+///   has no `gate` field and would silently drop it (serde ignores unknown keys),
+///   evaluating only the flat matchers and over-matching — skips the pack instead.
+pub const RULE_ENGINE_VERSION: u32 = 2;
 
 fn default_min_engine_version() -> u32 {
     1
 }
+
+/// Maximum nesting depth for a rule's recursive `Gate`. Packs are operator
+/// authored, so this is a fail-loudly-at-load guard against a malformed deep
+/// nest, not a security boundary; far beyond any pattern a real rule needs.
+const MAX_GATE_DEPTH: usize = 16;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RulePack {
@@ -72,13 +83,13 @@ pub struct Rule {
     #[serde(default)]
     forbids_regex: Vec<String>,
     /// Recursive boolean gate, combined by logical AND with the flat matchers
-    /// above. Expresses
-    /// nested `all`/`any`/`not` that the flat lists cannot — a shared positive
-    /// prefix needing its own nested OR (e.g. Claude's bash-permission prompt:
-    /// `contains "do you want to proceed?"` AND `any` of the bash markers AND
-    /// `any` numbered choice), which flattened into one `requires_any` would
-    /// leak its branches across each other and over-match. `None` (the common
-    /// case) leaves a rule on the flat matchers alone.
+    /// above. Expresses nested `all`/`any`/`not` that the flat lists cannot — a
+    /// shared positive prefix needing its own nested OR (e.g. a hypothetical
+    /// Claude bash-permission rule: `contains "do you want to proceed?"` AND
+    /// `any` of the bash markers AND `any` numbered choice), which flattened into
+    /// one `requires_any` would leak its branches across each other and
+    /// over-match. `None` (the common case) leaves a rule on the flat matchers
+    /// alone. Gate-using packs must declare `min_engine_version = 2`.
     #[serde(default)]
     gate: Option<Gate>,
     // Regexes compiled once by `RulePack::finalize` at load (parallel to the
@@ -103,7 +114,7 @@ pub struct Rule {
 /// `{ contains = ".." }`, `{ regex = ".." }`, `{ line_regex = ".." }`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Gate {
+pub(crate) enum Gate {
     /// Every sub-gate must match.
     All(Vec<Gate>),
     /// At least one sub-gate must match.
@@ -170,14 +181,24 @@ impl Gate {
     }
 
     /// Compile-check every regex leaf at load so a broken pattern fails loudly
-    /// here instead of silently never matching at runtime, and enforce the same
-    /// matcher-length cap on leaf strings.
-    fn validate(&self, rule_id: &str) -> anyhow::Result<()> {
+    /// here instead of silently never matching at runtime; enforce the same
+    /// matcher-length cap on leaf strings; reject vacuous `all`/`any` (`all = []`
+    /// is a silent no-op, `any = []` silently makes the rule unmatchable); and
+    /// bound nesting depth so an over-nested pack fails at load rather than
+    /// recursing unbounded through `compile`/`eval`.
+    fn validate(&self, rule_id: &str, depth: usize) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            depth <= MAX_GATE_DEPTH,
+            "gate nested deeper than {MAX_GATE_DEPTH} in rule {rule_id}"
+        );
         match self {
             Self::All(gates) | Self::Any(gates) => {
-                gates.iter().try_for_each(|g| g.validate(rule_id))
+                anyhow::ensure!(!gates.is_empty(), "empty all/any gate in rule {rule_id}");
+                gates
+                    .iter()
+                    .try_for_each(|g| g.validate(rule_id, depth + 1))
             }
-            Self::Not(gate) => gate.validate(rule_id),
+            Self::Not(gate) => gate.validate(rule_id, depth + 1),
             Self::Contains(s) => {
                 anyhow::ensure!(s.len() <= 512, "matcher too long in rule {rule_id} gate");
                 Ok(())
@@ -425,7 +446,7 @@ impl RulePack {
                 + rule.gate.as_ref().map_or(0, Gate::leaf_count);
             anyhow::ensure!(matcher_count <= 32, "too many matchers in {}", rule.id);
             if let Some(gate) = &rule.gate {
-                gate.validate(&rule.id)?;
+                gate.validate(&rule.id, 0)?;
             }
             for matcher in rule
                 .requires_all
