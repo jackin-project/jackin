@@ -205,7 +205,7 @@ pub struct StatusBarPlan {
 
 pub(crate) fn button_text_for(prefix_mode: PrefixMode, _palette_key_glyph: Option<&str>) -> String {
     match prefix_mode {
-        PrefixMode::Idle => " Menu ".to_owned(),
+        PrefixMode::Idle => " ☰Menu ".to_owned(),
         PrefixMode::Awaiting => " prefix… ".to_owned(),
     }
 }

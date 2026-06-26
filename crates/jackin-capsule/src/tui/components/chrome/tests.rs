@@ -213,3 +213,28 @@ fn truncate_spans_keeps_fitting_groups_drops_overflowing() {
     );
     let _ = full; // suppress unused warning
 }
+
+#[test]
+fn dynamic_key_hint_uses_key_style() {
+    let area = Rect::new(0, 0, 40, 4);
+    let mut buf = Buffer::empty(area);
+    render_hint_spans_row(
+        &mut buf,
+        area,
+        &[
+            jackin_tui::HintSpan::DynKey("Ctrl-\\".to_owned()),
+            jackin_tui::HintSpan::Text("menu"),
+        ],
+    );
+
+    let key_cell = (0..area.width)
+        .find(|x| buf[(*x, 1)].symbol() == "C")
+        .expect("key rendered");
+    assert_eq!(buf[(key_cell, 1)].fg, color(jackin_tui::WHITE));
+    assert!(
+        buf[(key_cell, 1)]
+            .style()
+            .add_modifier
+            .contains(Modifier::BOLD)
+    );
+}

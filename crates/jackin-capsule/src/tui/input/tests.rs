@@ -23,6 +23,34 @@ fn ctrl_q_requests_exit() {
 }
 
 #[test]
+fn csi_u_ctrl_backslash_opens_palette_by_default() {
+    let events = parse_all_default(b"\x1b[92;5u");
+    assert_eq!(events, vec![InputEvent::OpenPalette]);
+    let events = parse_all_default(b"\x1b[28u");
+    assert_eq!(events, vec![InputEvent::OpenPalette]);
+}
+
+#[test]
+fn csi_u_ctrl_q_requests_exit() {
+    let events = parse_all_default(b"\x1b[113;5u");
+    assert_eq!(events, vec![InputEvent::RequestExit]);
+}
+
+#[test]
+fn csi_u_control_release_is_suppressed() {
+    let events = parse_all_default(b"\x1b[92;5:3u");
+    assert!(events.is_empty(), "release must be dropped: {events:?}");
+}
+
+#[test]
+fn xterm_modify_other_keys_global_shortcuts_are_intercepted() {
+    let events = parse_all_default(b"\x1b[27;5;92~");
+    assert_eq!(events, vec![InputEvent::OpenPalette]);
+    let events = parse_all_default(b"\x1b[27;5;113~");
+    assert_eq!(events, vec![InputEvent::RequestExit]);
+}
+
+#[test]
 fn lone_lf_passes_through_with_default_palette_key() {
     // Bracketed paste / multi-line input continuation must reach
     // the PTY as `\n` under the default palette binding.
