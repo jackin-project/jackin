@@ -1246,13 +1246,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             _ = state_ticker.tick() => {
                 mux.log_resource_metrics().await;
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
-                // Reap idle clipboard-image transfers and surface a notice. This
-                // must NOT short-circuit the tick (main's old code did, but it only
-                // skipped the cheap flap-refresh): agent-state advancement below is
-                // the design's 1 Hz floor — every session re-evaluates each tick —
-                // and a clipboard reap is an orthogonal concern that must not freeze
-                // it. The `invalidate` here just guarantees the notice repaints even
-                // if no agent state changed this tick.
+                // Reap idle clipboard-image transfers and surface a notice. Must
+                // NOT short-circuit the tick: agent-state advancement below is the
+                // 1 Hz floor — every session re-evaluates each tick — and a
+                // clipboard reap is an orthogonal concern that must not freeze it.
+                // The `invalidate` guarantees the notice repaints even if no agent
+                // state changed this tick (otherwise the no-change `continue` below
+                // would leave the frame clean and the notice undrawn).
                 let stale_image_transfers = mux
                     .clipboard_image_transfers
                     .abort_idle_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
