@@ -1,0 +1,280 @@
+---
+title: "Source Branch Policy for Isolated Mounts"
+---
+
+**Status**: Open — design proposal (Phase 1, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
+
+## Problem
+
+`worktree` and `clone` mount isolation let multiple agents work against the same project without sharing one writable checkout, but the branch each isolated checkout starts from is still implicit. Today `worktree` materialization uses the host repository's current `HEAD`, and `clone` follows the host repository's current checked-out state. That is convenient when the operator is already on the exact base they want, but it breaks the common workflow where the host checkout sits on one branch while a new agent should start from `main`, a release branch, a specific feature branch, or an operator-selected branch at launch time.
+
+This is especially visible when the operator keeps the host repo on a long-running work branch. Starting a new jackin' agent from that branch by accident makes the isolated checkout inherit the wrong context, while switching the host checkout first is exactly the kind of host-side workflow mutation jackin' should avoid requiring.
+
+## Why It Matters
+
+- **Parallel agents need intentional starting points.** The operator may want three agents to branch from `main`, one from `release/2026-06`, and one from the host's current exploratory branch without touching the host checkout between launches.
+- **Isolation should remove host choreography.** A feature whose promise is "each agent gets its own checkout" should not make the operator manually `git switch main` on the host before launching a clean agent.
+- **The current TUI control is too shallow.** Cycling `shared → worktree → clone` on the mount row works while isolation is a single enum, but source branch policy adds nested settings per isolation type. The editor needs a mount-isolation settings dialog rather than one inline toggle.
+- **This is easy to explain as a product advantage.** "Launch every agent from the right branch, without moving your host checkout" is a crisp operator-facing promise and a natural upgrade to the per-mount isolation story.
+
+## Product Positioning
+
+This feature should be sold as **branch-safe parallelism**: jackin' already lets every agent have its own working copy; source branch policy makes the starting point explicit, repeatable, and visible. The operator should understand the value without reading internals:
+
+> Start agents from `main`, your current branch, a release branch, or a branch you pick at launch — while your host checkout stays exactly where it is.
+
+The launch summary and editor should use that language. Avoid making the feature sound like a low-level Git ref option. The visible story is: each isolated mount has a **source branch policy**, and jackin' uses that policy to choose the base for the agent's private checkout.
+
+## Desired Policy Vocabulary
+
+The policy should live on each isolated mount and apply only when `isolation` is `worktree` or `clone`:
+
+| Policy | Meaning | Recommended label |
+|---|---|---|
+| Host `HEAD` | Use the exact commit currently checked out in the host repository. This preserves today's behavior and works for detached HEAD. | `Host HEAD` |
+| Host branch | Resolve the host repository's current branch name and start from that branch tip. Fails with a clear error on detached HEAD. | `Current branch` |
+| Default branch | Resolve the repository default branch, preferably from `origin/HEAD`, then fall back to a configured default or clear error. | `Default branch` |
+| Named branch | Use a branch or remote-tracking ref named in the workspace mount settings. | `Named branch` |
+| Ask every launch | Prompt during launch and persist nothing except the policy itself. The selected branch applies to that launch only. | `Ask on launch` |
+
+Recommended default for existing configs: **Host `HEAD`**. It preserves current behavior exactly, supports detached HEAD, and avoids surprising operators after migration. New UI affordances can steer operators toward `Default branch` or `Ask on launch` for fresh isolated mounts without changing existing workspaces.
+
+## TUI Direction
+
+The workspace editor should replace the current one-key isolation cycling model with a focused **Mount settings** dialog. The mount row can still show compact source/destination/mode badges, but editing a mount should open a modal where the operator can change the host source folder, the container destination folder, read-only state, isolation type, and the settings that belong to that isolation type. This should follow the auth source-folder pattern already used in the workspace/settings auth dialogs: one modal owns a staged form, rows appear only when the selected mode supports them, browsing a folder or picking a source opens a sub-modal, returning from that sub-modal updates the staged form, and the outer workspace save flow persists all changes together.
+
+The important design shift is that **isolation is not a row toggle anymore**. It becomes one field inside the mount editor. When the operator changes the isolation type to `worktree` or `clone`, the same dialog immediately reveals the source branch controls; when the operator changes it back to `shared`, branch controls disappear and the preview explains that the host path is mounted directly. This mirrors the auth dialog where `Source folder` exists only for sync-capable modes and is hidden for modes that cannot use it.
+
+### Mounts tab row
+
+The mounts table should keep one row per mount and make the source policy visible only when it matters. `Enter` should edit the selected mount, not just add/remove surrounding rows:
+
+```text
+Mounts
+
+▸ ~/Projects/api          → /workspace/api      rw   worktree   source: default branch
+  ~/.cache/jackin/target  → /workspace/api/target rw shared     source: host path
+  ~/Projects/docs         → /workspace/docs     rw   clone      source: ask on launch
+```
+
+Footer hint when a mount row is focused:
+
+```text
+Enter edit mount · A add mount · D remove · Esc back
+```
+
+`I` can remain as an optional shortcut, but it should open the same mount settings dialog focused on the `Isolation` row instead of cycling through every mode. Fast cycling made sense when the only decision was `shared | worktree | clone`; once each mode has settings, cycling hides important state and makes accidental changes easy.
+
+### Mount settings dialog
+
+The dialog should use the existing console modal vocabulary: centered panel, one focused control at a time, footer-only hints, staged edits, and a visible summary of what will happen. Model it as a form, like the auth source-folder dialog, rather than as separate one-off prompts. Source and destination should be normal editable rows; `Source folder…` opens the existing file-browser/source-folder picker shape, `Container destination` opens a text input seeded from the current `dst`, `Readonly` toggles in place, and `Isolation` cycles or opens an inline choice inside the form. The source branch group is mode-gated by the staged isolation value.
+
+```text
+╭─ jackin' · mount settings ───────────────────────────────────────╮
+│ Mount                                                             │
+│ ▸ Source folder       ~/Projects/api                              │
+│   Container path      /workspace/api                              │
+│   Access              read/write                                  │
+│                                                                   │
+│ Isolation                                                         │
+│   shared             Use the host path directly                    │
+│ ▸ worktree           Private git worktree; host refs stay visible  │
+│   clone              Private local clone; refs isolated until push │
+│                                                                   │
+│ Source branch                                                     │
+│ ▸ Default branch     Start each agent from origin/HEAD             │
+│   Current branch     Follow the branch checked out on the host     │
+│   Host HEAD           Preserve today's exact-commit behavior       │
+│   Named branch        Choose a specific branch                     │
+│   Ask on launch       Prompt before materializing this mount       │
+│                                                                   │
+│ Preview                                                           │
+│   New agents mount /workspace/api from a private worktree based on │
+│   the repository default branch. Your host checkout is unchanged.  │
+╰───────────────────────────────────────────────────────────────────╯
+  ↑/↓ row · Enter edit row · Space toggle · Tab buttons · Esc cancel
+```
+
+When `shared` is selected, the `Source branch` group should disappear or render disabled with `not used for shared mounts`. When `clone` is selected, the same policy labels apply, but the preview should say `private clone` rather than `private worktree`. If the staged destination changes, the preview should update immediately so the operator sees the real container path before saving.
+
+### Source folder and destination editing
+
+The source-folder row should reuse the same interaction shape as auth source folders: pressing `Enter` opens a folder browser, cancel restores the staged form unchanged, and commit returns to the form with the selected path displayed as the explicit value. For existing mounts, the form starts from the pending workspace mount; for new mounts, the form can start with an empty source and a suggested destination derived from the source basename once a source is chosen.
+
+The destination row should be editable in the same modal instead of forcing remove-and-add. Pressing `Enter` opens a text input with the current destination. Validation should run before the dialog can apply: destination must be absolute, cannot be empty, cannot duplicate another mount destination unless this edit is replacing that mount, and must still satisfy the existing nested-isolation/collapse rules when combined with the rest of the pending mount list.
+
+```text
+╭─ jackin' · edit container path ──────────────────────────────────╮
+│ Mount source  ~/Projects/api                                      │
+│                                                                   │
+│ Container path                                                    │
+│ /workspace/api                                                    │
+│                                                                   │
+│ This is where the agent sees the mounted folder inside the role    │
+│ container. Changing it may also change the workspace workdir.      │
+╰───────────────────────────────────────────────────────────────────╯
+  Enter apply · Esc cancel
+```
+
+The save preview should show source/destination/isolation/source-branch changes as one mount edit, not as an unrelated remove plus add, unless the implementation truly has to model it as remove/add internally. The operator is editing one mount.
+
+### Named branch picker
+
+Named branch should be a second-step picker instead of a free-text-only field. The first implementation can allow manual entry, but the target UX should list local branches and remote-tracking branches from the mount's host repo and include a search filter.
+
+```text
+╭─ jackin' · choose source branch ──────────────────────────────────╮
+│ Repo  ~/Projects/api                                               │
+│                                                                   │
+│ Filter: release                                                   │
+│ ▸ origin/release/2026-06        remote                             │
+│   release/2026-06               local                              │
+│   origin/release/2026-05        remote                             │
+│                                                                   │
+│ Manual ref:                                                       │
+│   release/2026-06                                                 │
+╰───────────────────────────────────────────────────────────────────╯
+  ↑/↓ choose · Enter use branch · Ctrl-E edit manual ref · Esc back
+```
+
+The picker should make remote/local identity visible because `feature/foo` and `origin/feature/foo` are not the same starting point. It should not fetch implicitly unless a future implementation adds an explicit opt-in refresh action; reading local refs is safe, while hidden network fetches would be a surprising host-side operation.
+
+### Ask-on-launch dialog
+
+When a workspace mount uses `Ask on launch`, the launch cockpit should stop at the workspace/materialization stage and show a forced-choice dialog before any isolated checkout is created.
+
+```text
+╭─ jackin' · source branch required ────────────────────────────────╮
+│ Workspace  api                                                     │
+│ Mount      /workspace/api                                          │
+│ Isolation  worktree                                                │
+│                                                                   │
+│ Choose the branch this agent should start from. Your host checkout │
+│ stays unchanged.                                                   │
+│                                                                   │
+│ ▸ Default branch        origin/HEAD → main                         │
+│   Current branch        feature/search-api                         │
+│   Host HEAD             4f7c2b1                                    │
+│   Named branch…                                                  │
+╰───────────────────────────────────────────────────────────────────╯
+  ↑/↓ choose · Enter launch from selection · Esc cancel launch
+```
+
+If multiple mounts ask, the launch surface should show one dialog per mount in deterministic mount order. A later enhancement can group same-repo mounts, but V1 should prefer clarity over clever batching.
+
+## Data Model
+
+This is a workspace-file schema change because the policy is part of `MountConfig`. A compact shape keeps the default simple while leaving room for mode-specific fields:
+
+```toml
+[[mounts]]
+src = "~/Projects/api"
+dst = "/workspace/api"
+isolation = "worktree"
+source_branch_policy = "default"
+
+[[mounts]]
+src = "~/Projects/docs"
+dst = "/workspace/docs"
+isolation = "clone"
+source_branch_policy = "named"
+source_branch = "release/2026-06"
+```
+
+Recommended persisted values:
+
+| Value | Meaning |
+|---|---|
+| `host_head` | Exact commit from host `HEAD`; default and migration target. |
+| `current_branch` | Host current branch name. |
+| `default` | Repository default branch from local metadata. |
+| `named` | Branch/ref in `source_branch`. |
+| `ask` | Prompt at launch. |
+
+Validation should reject `source_branch_policy` on `shared` mounts unless it is absent or defaulted to `host_head`, reject `source_branch` unless the policy is `named`, and reject `named` without a non-empty `source_branch`. The editor should prevent invalid combinations before save; the parser still needs hard errors for hand-edited files.
+
+<Aside type="caution">
+Because this changes `WorkspaceConfig`, the implementing PR must ship the full versioned-schema set required by the pre-release schema rule: bump `CURRENT_WORKSPACE_VERSION`, add a `WORKSPACE_MIGRATIONS` step in <RepoFile path="crates/jackin-config/src/migrations.rs" />, add a new workspace migration fixture from the predecessor version, re-bake every existing workspace fixture's `after.toml`, and add a Schema Versions timeline entry under `/reference/runtime/schema-versions/`. Existing configs should migrate by stamping no new field and relying on the serde default, or by explicitly writing `host_head` on the next save if the current writer emits defaults.
+</Aside>
+
+## Runtime Semantics
+
+Materialization should resolve the source branch policy before creating the worktree or clone:
+
+1. Validate the mount source is a git repository root and passes the existing dirty/rebase/merge checks.
+2. Resolve the policy to a concrete ref or commit without changing the host checkout.
+3. For `worktree`, create the scratch worktree from that ref/commit, then continue to use the scratch branch for agent work.
+4. For `clone`, create the local clone, then check out the resolved ref/branch inside the clone without changing the host repository.
+5. Persist the resolved base commit in the isolation record so cleanup/finalization can continue comparing agent work against the actual starting point.
+
+The policy resolver must never run `git switch`, `git checkout`, `git pull`, or `git fetch` in the host repository implicitly. Reading refs, branch names, `origin/HEAD`, and commit IDs is fine. Network refresh belongs behind an explicit future action if operators ask for it.
+
+## CLI Surface
+
+The CLI should support both workspace creation and editing:
+
+```sh
+jackin workspace create api \
+  --workdir /workspace/api \
+  --mount ~/Projects/api:/workspace/api \
+  --mount-isolation /workspace/api=worktree \
+  --mount-source-branch /workspace/api=default
+
+jackin workspace edit api \
+  --mount-source-branch /workspace/api=named:release/2026-06
+```
+
+Candidate grammar:
+
+| Argument | Meaning |
+|---|---|
+| `<dst>=host-head` | Exact host `HEAD`. |
+| `<dst>=current-branch` | Host current branch. |
+| `<dst>=default` | Default branch. |
+| `<dst>=ask` | Prompt on launch. |
+| `<dst>=named:<branch>` | Explicit branch/ref. |
+
+The CLI should reject source-branch overrides for unknown destinations the same way `--mount-isolation` does. If the destination is currently `shared`, the edit can either reject immediately or accept the setting only when the same command also switches the mount to `worktree`/`clone`; the latter is friendlier and mirrors existing mount-edit planning.
+
+## Implementation Notes
+
+- <RepoFile path="crates/jackin-config/src/schema.rs" /> — extend `MountConfig` with the policy fields and serde defaults.
+- <RepoFile path="crates/jackin-config/src/migrations.rs" /> — workspace schema bump and migration chain.
+- <RepoFile path="crates/jackin-runtime/src/isolation/materialize.rs" /> — resolve the policy before `worktree add` / `clone` materialization and use the resolved commit/ref without mutating the host checkout.
+- <RepoFile path="crates/jackin-runtime/src/isolation/state.rs" /> — confirm the existing `base_commit` remains sufficient; add the resolved policy/ref only if cleanup or diagnostics needs it.
+- <RepoFile path="crates/jackin/src/cli/workspace.rs" /> — parse `--mount-source-branch` for create/edit.
+- <RepoFile path="crates/jackin/src/console/tui.rs" /> — replace isolation cycling with the mount settings dialog, staged mount form, source-folder browser handoff, destination text input, and mode-gated source branch rows (inline `state` and `input::editor` modules).
+- <RepoFile path="crates/jackin-runtime/src/runtime/progress.rs" /> — reuse the existing launch dialog surface for `ask` policies instead of adding a separate prompt renderer.
+
+## Scope (V1)
+
+- Workspace schema for per-mount source branch policy.
+- Runtime resolution for `worktree` and `clone` mounts.
+- CLI create/edit support.
+- Console editor mount settings dialog for source folder, container destination, read-only state, isolation type, and mode-gated source branch policy.
+- Launch cockpit prompt for `Ask on launch`.
+- Docs updates for the Workspaces guide, Mounts guide, workspace command reference, configuration reference, and schema versions.
+- Tests covering parsing, migration, policy resolution, `worktree` materialization, `clone` materialization, invalid combinations, and TUI state transitions.
+
+## Defer
+
+- Implicit fetch/pull of branch lists. V1 reads local refs only; a later `Refresh branches` action can be explicit.
+- Per-role defaults for source branch policy. Workspace mounts are the right first scope.
+- Grouped multi-mount ask dialog. V1 prompts one mount at a time.
+- Branch policy for `shared`, `tmpfs`, or `ephemeral` modes. Only git-backed isolated checkouts need a source branch.
+- Automatic PR branch discovery. A future workflow feature can offer `PR branch` as a launch-time option once PR/task orchestration has a stable source model.
+
+## Open Questions
+
+- Should fresh isolated mounts created in the console default to `Default branch` instead of `Host HEAD` while migrated configs keep `Host HEAD`? Recommended: yes, if the editor makes the default visible in the preview before save.
+- Should `current_branch` store the branch name at save time or resolve it at launch time? Recommended: resolve at launch time, because the label means "whatever branch the host checkout currently has"; use `named` when the operator wants a pinned branch.
+- Should `default` prefer `origin/HEAD` or ask when `origin/HEAD` is missing? Recommended: prefer `origin/HEAD`, then local `init.defaultBranch` / `main` only if the repo actually has that ref, otherwise fail with a dialog that offers `Host HEAD`, `Current branch`, and `Named branch`.
+- Should the TUI still support one-key cycling for power users? Recommended: no for V1. Keep `I` as the shortcut into the dialog; add a later quick-cycle only if the dialog proves too slow.
+- Should mount editing reuse the generic auth/source picker component directly or introduce a mount-specific wrapper around the same row/sub-modal pattern? Recommended: introduce a mount-specific form state that reuses shared primitives (`text_input`, file browser/source picker, footer hints) rather than coupling mount semantics to auth-specific types.
+
+## Related Roadmap Items
+
+- [Ephemeral mount modes](/reference/roadmap/ephemeral-mount-modes/) — another sign that isolation is becoming a configurable mount strategy, not a single enum.
+- [Session keep and resume](/reference/roadmap/session-keep-and-resume/) — resume becomes more predictable when every isolated checkout records exactly which branch/commit it started from.
+- [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) — provides the rich launch dialog surface for `Ask on launch`.
+- [Task source abstraction](/reference/roadmap/task-source-abstraction/) — future PR/task flows can reuse this policy once a task carries its own branch source.

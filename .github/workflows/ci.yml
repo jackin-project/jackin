@@ -492,7 +492,8 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - run: cargo shear
+      - run: cargo shear --deny-warnings
+      - run: bash scripts/ci/check-agent-status-truthful.sh
       - run: cargo deny check licenses bans sources
 
   check-default:

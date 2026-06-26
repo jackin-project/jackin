@@ -35,7 +35,7 @@ pub use sensitive::{SensitiveMount, confirm_sensitive_mounts, find_sensitive_mou
 
 /// Re-exported schema types from `jackin-config`.
 pub use jackin_config::{
-    KeepAwakeConfig, MountConfig, MountIsolation, WorkspaceConfig, WorkspaceEdit,
+    DirtyExitPolicy, KeepAwakeConfig, MountConfig, MountIsolation, WorkspaceConfig, WorkspaceEdit,
     WorkspaceRoleOverride,
 };
 

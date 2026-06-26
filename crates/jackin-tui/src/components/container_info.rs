@@ -191,6 +191,10 @@ impl ContainerInfoState {
         &self.rows
     }
 
+    pub fn push_row(&mut self, row: ContainerInfoRow) {
+        self.rows.push(row);
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<()> {
         // Viewport is unknown here; pass 0 so the key is accepted and the
         // render-time clamp settles the final offset, and advertise both axes.
@@ -373,6 +377,10 @@ pub fn debug_info_hint_spans(axes: crate::components::ScrollAxes) -> Vec<crate::
     spans.push(crate::HintSpan::Key("↵"));
     spans.push(crate::HintSpan::Text("copy value"));
     spans.push(crate::HintSpan::GroupSep);
+    // UNREGISTERABLE(container-info-reveal): R/O toggle reveals diagnostics inline; no ContainerInfo keymap.
+    spans.push(crate::HintSpan::Key("R/O"));
+    spans.push(crate::HintSpan::Text("reveal diagnostics"));
+    spans.push(crate::HintSpan::GroupSep);
     // UNREGISTERABLE(container-info-no-keymap): Esc dismisses inline.
     spans.push(crate::HintSpan::Key("Esc"));
     spans.push(crate::HintSpan::Text("dismiss"));
@@ -414,6 +422,29 @@ pub fn render_container_info(frame: &mut Frame<'_>, area: Rect, state: &Containe
     render_scrollable_dialog_body(frame, area, inner, &lines, &mut scroll);
 }
 
+/// Hit-test the value placements at `(col, row)`, returning the first row whose
+/// rendered value cell contains the cursor and satisfies `predicate`, mapped
+/// through `extractor`. Both `copy_payload_at` and `hyperlink_payload_at` share
+/// this geometry; they differ only in the row predicate and payload extractor.
+fn payload_at(
+    area: Rect,
+    state: &ContainerInfoState,
+    col: u16,
+    row: u16,
+    predicate: impl Fn(&ContainerInfoRow) -> bool,
+    extractor: impl Fn(usize, &ContainerInfoRow) -> Option<(usize, String)>,
+) -> Option<(usize, String)> {
+    value_placements(area, state)
+        .into_iter()
+        .find(|p| {
+            predicate(&state.rows[p.idx])
+                && row == p.screen_y
+                && col >= p.screen_x
+                && col < p.screen_x.saturating_add(p.visible_target_cols)
+        })
+        .and_then(|p| extractor(p.idx, &state.rows[p.idx]))
+}
+
 #[must_use]
 pub fn copy_payload_at(
     area: Rect,
@@ -421,15 +452,31 @@ pub fn copy_payload_at(
     col: u16,
     row: u16,
 ) -> Option<(usize, String)> {
-    value_placements(area, state)
-        .into_iter()
-        .find(|p| {
-            state.rows[p.idx].copyable
-                && row == p.screen_y
-                && col >= p.screen_x
-                && col < p.screen_x.saturating_add(p.visible_target_cols)
-        })
-        .map(|p| (p.idx, state.rows[p.idx].value.clone()))
+    payload_at(
+        area,
+        state,
+        col,
+        row,
+        |r| r.copyable,
+        |idx, r| Some((idx, r.value.clone())),
+    )
+}
+
+#[must_use]
+pub fn hyperlink_payload_at(
+    area: Rect,
+    state: &ContainerInfoState,
+    col: u16,
+    row: u16,
+) -> Option<(usize, String)> {
+    payload_at(
+        area,
+        state,
+        col,
+        row,
+        |r| r.href.is_some(),
+        |idx, r| r.href.clone().map(|href| (idx, href)),
+    )
 }
 
 /// Visible hyperlink cells for the encoder's frame-layer OSC 8 emission:

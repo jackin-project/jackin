@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use jackin_core::account_key::account_key_hash;
 use jackin_protocol::control::AccountUsageSnapshotView;
-use sha2::{Digest, Sha256};
 use turso::{Connection, Row, params};
 
 use crate::paths::JackinPaths;
@@ -43,14 +43,7 @@ async fn open_store(path: &Path) -> Result<Connection> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create host usage cache dir {}", parent.display()))?;
     }
-    let path = path
-        .to_str()
-        .ok_or_else(|| anyhow::anyhow!("host usage cache path is not UTF-8"))?;
-    let db = turso::Builder::new_local(path)
-        .build()
-        .await
-        .context("open host usage cache")?;
-    let conn = db.connect().context("connect host usage cache")?;
+    let conn = open_existing_store(path).await?;
     initialize_schema(&conn).await?;
     Ok(conn)
 }
@@ -236,21 +229,6 @@ async fn read_account_rows(conn: &Connection) -> Result<Vec<AccountUsageSnapshot
         });
     }
     Ok(accounts)
-}
-
-fn account_key_hash(provider: &str, account_label: &str) -> String {
-    let digest = Sha256::digest(format!("{provider}\0{account_label}").as_bytes());
-    format!("sha256:{}", hex_lower(&digest))
-}
-
-fn hex_lower(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        out.push(char::from(HEX[usize::from(byte >> 4)]));
-        out.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    out
 }
 
 #[cfg(test)]

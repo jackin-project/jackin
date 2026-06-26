@@ -17,10 +17,12 @@
 //! Neither crate is a dependency; only the design pattern is borrowed.
 
 use std::{
-    collections::{VecDeque, vec_deque},
+    collections::{HashMap, VecDeque, vec_deque},
     ops::{Index, IndexMut},
     sync::{Arc, Mutex, MutexGuard, OnceLock},
 };
+
+use smallvec::SmallVec;
 
 use crate::cell::{Attrs, Cell, Color, Hyperlink, UnderlineStyle};
 use crate::damage::{DirtySpans, DirtyTracker};
@@ -136,6 +138,14 @@ pub struct DamageGrid {
     mutated_since_preserve: bool,
     /// The exact rows the last preserve pushed, for byte-equality dedupe.
     last_preserved_block: Option<Vec<Vec<Cell>>>,
+    /// Active OSC 8 token while writing cells.
+    active_hyperlink_token: u32,
+    /// OSC 8 id → internal token mapping.
+    osc8_id_to_token: HashMap<String, u32>,
+    /// Internal token → hyperlink target mapping.
+    hyperlink_targets: HashMap<u32, String>,
+    /// Next hyperlink token to allocate.
+    next_hyperlink_token: u32,
     bracketed_paste: bool,
     application_cursor: bool,
     focus_events: bool,
@@ -396,10 +406,13 @@ impl DamageGrid {
         row_arena: RowArena,
     ) -> Self {
         let blank = make_blank_grid(rows, cols, row_arena.clone());
+        let profile = VirtualTerminalProfile::default();
+        let reported_fg = profile.default_reported_fg;
+        let reported_bg = profile.default_reported_bg;
         Self {
             parser: vte::Parser::new(),
             pending_utf8: Vec::new(),
-            profile: VirtualTerminalProfile::default(),
+            profile,
             rows,
             cols,
             primary: blank.clone(),
@@ -423,11 +436,15 @@ impl DamageGrid {
             cursor_style: 0,
             mutated_since_preserve: false,
             last_preserved_block: None,
+            active_hyperlink_token: 0,
+            osc8_id_to_token: HashMap::new(),
+            hyperlink_targets: HashMap::new(),
+            next_hyperlink_token: 1,
             bracketed_paste: false,
             application_cursor: false,
             focus_events: false,
-            reported_fg: VirtualTerminalProfile::default().default_reported_fg,
-            reported_bg: VirtualTerminalProfile::default().default_reported_bg,
+            reported_fg,
+            reported_bg,
             current_attrs: Attrs::default(),
             active_hyperlink: None,
             scroll_top: 0,
@@ -843,6 +860,7 @@ impl DamageGrid {
         self.application_cursor = false;
         self.focus_events = false;
         self.scrollback_offset = 0;
+        self.clear_active_hyperlink_state();
     }
 
     /// Top of the kitty-keyboard stack (`0` when empty). The capsule
@@ -866,6 +884,66 @@ impl DamageGrid {
         } else {
             &mut self.primary
         }
+    }
+
+    fn alloc_hyperlink_token(&mut self, id: &str) -> u32 {
+        if let Some(&token) = self.osc8_id_to_token.get(id) {
+            return token;
+        }
+        let token = self.next_hyperlink_token;
+        self.next_hyperlink_token = self.next_hyperlink_token.saturating_add(1);
+        if self.next_hyperlink_token == 0 {
+            self.next_hyperlink_token = 1;
+        }
+        self.osc8_id_to_token.insert(id.to_owned(), token);
+        token
+    }
+
+    fn active_content_row_cells(&self, content_row: usize) -> Option<&[Cell]> {
+        if self.scrollback_offset == 0 {
+            let screen = if self.alt_screen {
+                &self.alternate
+            } else {
+                &self.primary
+            };
+            return screen.get(content_row).map(Vec::as_slice);
+        }
+
+        let screen = if self.alt_screen {
+            &self.alternate
+        } else {
+            &self.primary
+        };
+        let viewport_rows = self.rows as usize;
+        let start = self
+            .scrollback
+            .len()
+            .saturating_sub(self.scrollback_offset.min(self.scrollback.len()));
+        let prefix =
+            ((start + viewport_rows).min(self.scrollback.len()) - start).min(viewport_rows);
+
+        if content_row < prefix {
+            return self.scrollback.get(start + content_row).map(Vec::as_slice);
+        }
+        screen
+            .get(content_row.saturating_sub(prefix))
+            .map(Vec::as_slice)
+    }
+
+    /// Resolve a URL target from a content-cell hyperlink id.
+    /// The mapping survives normal clears and scrollback scroll.
+    pub fn hyperlink_target_at_content_row(&self, content_row: usize, col: u16) -> Option<&str> {
+        let col = col as usize;
+        let cells = self.active_content_row_cells(content_row)?;
+        let token = cells.get(col)?.hyperlink_id;
+        if token == 0 {
+            return None;
+        }
+        self.hyperlink_targets.get(&token).map(String::as_str)
+    }
+
+    fn clear_active_hyperlink_state(&mut self) {
+        self.active_hyperlink_token = 0;
     }
 
     /// Write a character at the current cursor position, advance cursor.
@@ -919,12 +997,14 @@ impl DamageGrid {
 
         let attrs = self.current_attrs.clone();
         let cols = self.cols;
+        let hyperlink_id = self.active_hyperlink_token;
         let cell = Cell {
             // Phase 4: CompactString stores ch inline (no heap alloc for ASCII + most Unicode).
-            contents: compact_str::format_compact!("{ch}"),
+            contents: compact_str::CompactString::from(&*ch.encode_utf8(&mut [0u8; 4])),
             is_wide: width > 1,
             is_wide_continuation: false,
             attrs: attrs.clone(),
+            hyperlink_id,
             hyperlink: self.active_hyperlink.clone(),
         };
         {
@@ -937,6 +1017,7 @@ impl DamageGrid {
                     is_wide: false,
                     is_wide_continuation: true,
                     attrs: attrs.clone(),
+                    hyperlink_id,
                     hyperlink,
                 };
             }
@@ -1407,6 +1488,16 @@ impl DamageGrid {
                     .and_then(|b| std::str::from_utf8(b).ok())
                     .unwrap_or("")
                     .to_owned();
+                if uri.is_empty() {
+                    self.clear_active_hyperlink_state();
+                } else {
+                    let token = self.alloc_hyperlink_token(&id);
+                    self.active_hyperlink_token = token;
+                    self.hyperlink_targets.insert(token, uri.clone());
+                }
+                // OSC 8 is modeled as cell metadata (both the interned token for
+                // hover lookup and the inline `Hyperlink` the renderer reads) and
+                // deliberately NOT re-emitted as raw passthrough.
                 self.active_hyperlink = (!uri.is_empty()).then_some(Hyperlink { id, uri });
             }
             _ => {}
@@ -1422,7 +1513,7 @@ impl DamageGrid {
     fn apply_sgr_params(&mut self, params: &vte::Params) {
         // Borrow each subparameter slice rather than cloning into owned Vecs —
         // SGR runs on the per-byte PTY parse hot path.
-        let params = params.iter().collect::<Vec<&[u16]>>();
+        let params: SmallVec<[&[u16]; 8]> = params.iter().collect();
         self.apply_sgr(&params);
     }
 
@@ -1616,6 +1707,7 @@ impl DamageGrid {
 
     fn set_alt_screen(&mut self, active: bool) {
         self.alt_screen = active;
+        self.clear_active_hyperlink_state();
         self.dirty.mark_all();
     }
 }
@@ -1728,11 +1820,13 @@ fn set_cell_width(row: &mut [Cell], col: usize, width: u16, attrs: Attrs, cols: 
     if col + 1 < cols && col + 1 < row.len() {
         if width > 1 {
             let hyperlink = row[col].hyperlink.clone();
+            let hyperlink_id = row[col].hyperlink_id;
             row[col + 1] = Cell {
                 contents: compact_str::CompactString::new(""),
                 is_wide: false,
                 is_wide_continuation: true,
                 attrs,
+                hyperlink_id,
                 hyperlink,
             };
         } else if row[col + 1].is_wide_continuation {

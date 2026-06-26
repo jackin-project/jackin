@@ -23,6 +23,10 @@ pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
 pub const JACKIN_WORKDIR_ENV_NAME: &str = "JACKIN_WORKDIR";
 pub const JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME: &str = "JACKIN_GIT_COAUTHOR_TRAILER";
 pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
+/// Per-container opt-out for host browser-open affordances. `deny`, `off`,
+/// and `no` suppress explicit jackin' host-open URL actions while leaving
+/// normal terminal OSC 8 passthrough under `JACKIN_OSC_HYPERLINK`.
+pub const JACKIN_OPEN_LINKS_ENV_NAME: &str = "JACKIN_OPEN_LINKS";
 pub const ZAI_API_KEY_ENV_NAME: &str = "ZAI_API_KEY";
 pub const ANTHROPIC_API_KEY_ENV_NAME: &str = "ANTHROPIC_API_KEY";
 pub const OPENAI_API_KEY_ENV_NAME: &str = "OPENAI_API_KEY";
@@ -43,6 +47,19 @@ pub const GITHUB_TOKEN_ENV_NAME: &str = "GITHUB_TOKEN";
 pub const GH_HOST_ENV_NAME: &str = "GH_HOST";
 pub const GH_ENTERPRISE_TOKEN_ENV_NAME: &str = "GH_ENTERPRISE_TOKEN";
 
+/// Network mode injected by jackin into role containers (`allowlist`, `open`, `none`).
+pub const JACKIN_NETWORK_MODE_ENV_NAME: &str = "JACKIN_NETWORK_MODE";
+/// Comma-separated list of allowlisted hostnames/IPs when `JACKIN_NETWORK_MODE=allowlist`.
+pub const JACKIN_ALLOWED_HOSTS_ENV_NAME: &str = "JACKIN_ALLOWED_HOSTS";
+/// Informational flag set by the entrypoint after firewall-apply completes.
+/// Informational only — must not error on absence (firewall installs post-start).
+pub const JACKIN_FIREWALL_INSTALLED_ENV_NAME: &str = "JACKIN_FIREWALL_INSTALLED";
+/// Network enforcement quality label: `full`, `partial (sudo grants iptables access)`, etc.
+pub const JACKIN_NETWORK_ENFORCEMENT_ENV_NAME: &str = "JACKIN_NETWORK_ENFORCEMENT";
+/// Set to `1` when the `sudo` grant is active; absent otherwise.
+/// The capsule entrypoint writes `/etc/sudoers.d/agent` only when this env is present.
+pub const JACKIN_SUDO_ENV_NAME: &str = "JACKIN_SUDO";
+
 /// All runtime-reserved env var names with their fixed values (or `None` for
 /// runtime-generated values).
 pub const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
@@ -60,6 +77,11 @@ pub const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     ("DOCKER_TLS_VERIFY", None),
     ("DOCKER_CERT_PATH", None),
     (TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME, None),
+    (JACKIN_NETWORK_MODE_ENV_NAME, None),
+    (JACKIN_ALLOWED_HOSTS_ENV_NAME, None),
+    (JACKIN_FIREWALL_INSTALLED_ENV_NAME, None),
+    (JACKIN_NETWORK_ENFORCEMENT_ENV_NAME, None),
+    (JACKIN_SUDO_ENV_NAME, None),
 ];
 
 /// Returns `true` if `name` is a runtime-reserved env var name.
@@ -67,6 +89,19 @@ pub fn is_reserved(name: &str) -> bool {
     RESERVED_RUNTIME_ENV_VARS
         .iter()
         .any(|(reserved, _)| *reserved == name)
+}
+
+/// Shared boolean-deny convention used by operator-controlled environment
+/// switches. The exact accepted values intentionally match the OSC passthrough
+/// gates so safety controls read consistently across docs and code.
+pub fn env_value_is_deny(value: &str) -> bool {
+    matches!(value, "deny" | "off" | "no")
+}
+
+/// Return whether a host URL-open action is allowed for the given
+/// `JACKIN_OPEN_LINKS` value.
+pub fn open_links_allowed(value: Option<&str>) -> bool {
+    value.is_none_or(|value| !env_value_is_deny(value))
 }
 
 /// Extract `${env.VAR_NAME}` interpolation placeholder names from a string.
@@ -143,4 +178,24 @@ pub fn topological_env_order(
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_links_allowed_accepts_unset_and_non_deny_values() {
+        assert!(open_links_allowed(None));
+        assert!(open_links_allowed(Some("")));
+        assert!(open_links_allowed(Some("allow")));
+        assert!(open_links_allowed(Some("yes")));
+    }
+
+    #[test]
+    fn open_links_allowed_rejects_deny_values() {
+        for value in ["deny", "off", "no"] {
+            assert!(!open_links_allowed(Some(value)));
+        }
+    }
 }

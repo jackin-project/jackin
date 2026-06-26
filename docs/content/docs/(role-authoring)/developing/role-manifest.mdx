@@ -20,9 +20,14 @@ jackin' enforces **strict parsing** — unknown fields are rejected with an erro
 ## Full schema
 
 ```toml title="jackin.role.toml"
-version = "v1alpha4"
+version = "v1alpha6"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex", "amp", "kimi", "opencode"]
+
+[docker]
+min_profile = "standard"          # refuse to run under locked/hardened
+# dind absent = DinD controlled by operator profile (default)
+allowed_hosts = ["crates.io"]      # extra hosts for allowlist network mode
 
 [identity]
 name = "The Architect"
@@ -321,6 +326,56 @@ if [ -n "${CONTEXT7_API_KEY:-}" ]; then
 fi
 ```
 
+## `[docker]`
+
+Declare Docker security requirements for this role. All fields are optional — absence means "accept whatever the operator's profile provides."
+
+| Field | Type | Description |
+|---|---|---|
+| `min_profile` | string | Minimum security profile this role requires. Launch fails if the active profile is below this value. Valid values: `locked`, `hardened`, `standard`, `compat`. |
+| `dind` | string | DinD tier this role needs: `"none"` = skip DinD entirely (even under `standard`/`compat`), `"rootless"` = requires rootless DinD, `"privileged"` = requires privileged DinD. Omit = DinD controlled by operator profile. |
+| `allowed_hosts` | array of strings | Extra hosts/IPs merged into `JACKIN_ALLOWED_HOSTS` when the operator's network grant is `allowlist`. Same format as `[docker.grants] allowed_hosts` in config. Each entry is a domain, IPv4/IPv6 CIDR, wildcard subdomain (`*.example.com`), or `domain:port`. |
+| `capabilities_add` | array of strings | Linux capabilities to add beyond the profile's base set (`--cap-add`). Each entry is a cap name without `CAP_` prefix, case-insensitive (e.g. `"NET_RAW"`, `"SYS_PTRACE"`). Validated against the full list at launch — unknown names fail loudly. |
+
+**Profile ordering (ascending capability):** `locked < hardened < standard < compat`. `min_profile = "standard"` means the role refuses to run under `locked` or `hardened`.
+
+**Practical use:**
+
+```toml title="jackin.role.toml — role that needs DinD and ptrace"
+version = "v1alpha6"
+dockerfile = "Dockerfile"
+
+[docker]
+min_profile = "standard"
+dind = "rootless"
+capabilities_add = ["SYS_PTRACE"]
+allowed_hosts = ["registry.npmjs.org", "crates.io", "static.crates.io"]
+```
+
+```toml title="jackin.role.toml — pure read-only analysis role"
+version = "v1alpha6"
+dockerfile = "Dockerfile"
+
+[docker]
+min_profile = "locked"
+dind = "none"  # skip DinD sidecar
+```
+
+```toml title="jackin.role.toml — role that doesn't need DinD under any profile"
+version = "v1alpha6"
+dockerfile = "Dockerfile"
+
+[docker]
+dind = "none"  # skip DinD sidecar
+```
+
+**Validation errors at launch:**
+
+- `min_profile = "standard"` + operator uses `--docker-profile hardened` → `"role declares min_profile = \"standard\"; the active profile \"hardened\" is below that minimum"`
+- Unknown capability in `capabilities_add` → `"unknown Linux capability \"CAP_MAGIC\" — valid values: AUDIT_CONTROL, …"`
+
+For full documentation of profiles, grants, and operator-level configuration, see [Docker Security Profiles](/guides/docker-profiles/).
+
 ## `[env.<NAME>]`
 
 Declare environment variables that the agent needs at runtime. Each variable is a TOML table under `[env]`.
@@ -443,7 +498,7 @@ Interactive prompts happen before the Docker image build, so you won't wait thro
 The smallest valid manifest:
 
 ```toml title="jackin.role.toml"
-version = "v1alpha4"
+version = "v1alpha6"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -453,7 +508,7 @@ plugins = []
 ## Complete example
 
 ```toml title="jackin.role.toml"
-version = "v1alpha4"
+version = "v1alpha6"
 dockerfile = "docker/Dockerfile.agent"
 
 [identity]

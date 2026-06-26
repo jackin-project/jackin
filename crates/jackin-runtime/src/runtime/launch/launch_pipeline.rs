@@ -127,6 +127,32 @@ pub async fn resolve_supported_agents_for_console(
 
 /// Instrument the full launch pipeline so every stage appears as a
 /// child span in the diagnostics run log so stage events carry real `span_id` correlation.
+/// Prefix each validation error with its source tag (`config`/`workspace`/
+/// `role`/`merged`) for the operator-facing message.
+fn tag_errors<E: std::fmt::Display>(tag: &str, errors: Vec<E>) -> Vec<String> {
+    errors
+        .into_iter()
+        .map(|error| format!("  - [{tag}] {error}"))
+        .collect()
+}
+
+/// Validate one source's docker grants, tagged for the operator-facing message.
+fn tagged_grant_errors(
+    tag: &str,
+    grants: &crate::runtime::docker_profile::DockerGrants,
+) -> Vec<String> {
+    tag_errors(tag, crate::runtime::docker_profile::validate_grants(grants))
+}
+
+/// Bail with the standard "docker grants validation failed" message when any
+/// tagged errors were collected; no-op otherwise.
+fn bail_on_grant_errors(errors: Vec<String>) -> anyhow::Result<()> {
+    if errors.is_empty() {
+        return Ok(());
+    }
+    anyhow::bail!("docker grants validation failed:\n{}", errors.join("\n"))
+}
+
 #[tracing::instrument(
     skip_all,
     fields(role = %selector.key())
@@ -177,6 +203,9 @@ pub(crate) async fn load_role_with(
 
     let mut steps = super::StepCounter::new(&selector.name);
     if let Some(run) = jackin_diagnostics::active_run() {
+        #[cfg(test)]
+        let mut progress = crate::runtime::progress::LaunchProgress::for_test(run);
+        #[cfg(not(test))]
         let mut progress = crate::runtime::progress::LaunchProgress::new(
             run,
             std::env::var_os("JACKIN_NO_MOTION").is_some(),
@@ -243,16 +272,6 @@ pub(crate) async fn load_role_with(
             )
             .await?
             {
-                Some(super::RestoreResolution::AttachCurrentRole(container)) => {
-                    jackin_diagnostics::debug_log!(
-                        "restore",
-                        "attaching current running instance {container} before role repo, credentials, and image prep"
-                    );
-                    return restore_current_role_now(
-                        paths, &container, docker, runner, &mut steps, false,
-                    )
-                    .await;
-                }
                 Some(super::RestoreResolution::StartCurrentRole(container)) => {
                     jackin_diagnostics::debug_log!(
                         "restore",
@@ -283,19 +302,6 @@ pub(crate) async fn load_role_with(
             )
             .await?
             {
-                Some(super::UnselectedCurrentRestoreResolution {
-                    resolution: super::RestoreResolution::AttachCurrentRole(container),
-                    ..
-                }) => {
-                    jackin_diagnostics::debug_log!(
-                        "restore",
-                        "attaching single-agent current instance {container} before role repo, credentials, and image prep"
-                    );
-                    return restore_current_role_now(
-                        paths, &container, docker, runner, &mut steps, false,
-                    )
-                    .await;
-                }
                 Some(super::UnselectedCurrentRestoreResolution {
                     resolution: super::RestoreResolution::StartCurrentRole(container),
                     ..
@@ -524,6 +530,9 @@ pub(crate) async fn load_role_with(
         }
     }
 
+    // Pinned role SHA from the stored launch recipe (D7/Tier 3).  Set in the
+    // `RecreateCurrentRole` arm below when the manifest has a recorded SHA.
+    let mut restore_pinned_sha: Option<String> = None;
     let restore_container = if early_restore_container.is_some() {
         early_restore_container
     } else if let Some(container) = opts.restore_container_base.as_ref() {
@@ -532,7 +541,7 @@ pub(crate) async fn load_role_with(
         // `--rebuild` skips the early gate above (it is `&& !opts.rebuild`), so
         // a forced rebuild actually falls through to *this* resolution. Without
         // the same guard here, `resolve_restore_candidate` would still return
-        // `AttachCurrentRole`/`StartCurrentRole` and `return` straight into the
+        // `StartCurrentRole`/`RecreateCurrentRole` and `return` straight into the
         // existing container — silently skipping the build the operator asked
         // for. Leave `restore_container` `None` so the normal pipeline runs
         // `decide_agent_image` -> `ExplicitRebuild` and always rebuilds;
@@ -552,16 +561,6 @@ pub(crate) async fn load_role_with(
         .await?
         {
             super::RestoreResolution::StartFresh => None,
-            super::RestoreResolution::AttachCurrentRole(container) => {
-                jackin_diagnostics::debug_log!(
-                    "restore",
-                    "attaching current running instance {container} before credentials and image prep"
-                );
-                return restore_current_role_now(
-                    paths, &container, docker, runner, &mut steps, false,
-                )
-                .await;
-            }
             super::RestoreResolution::StartCurrentRole(container) => {
                 jackin_diagnostics::debug_log!(
                     "restore",
@@ -577,9 +576,22 @@ pub(crate) async fn load_role_with(
                     "restore",
                     "recreating missing current instance {container} with normal image decision"
                 );
+                // D7: extract pinned recipe so Tier 3 rebuild uses the original
+                // role SHA rather than current HEAD of the cached repo.
+                let container_state = paths.data_dir.join(&container);
+                if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
+                    restore_pinned_sha = stored.role_git_sha;
+                }
                 Some(container)
             }
-            super::RestoreResolution::RestoreCurrentRole(container) => Some(container),
+            super::RestoreResolution::RestoreCurrentRole(container) => {
+                // D7: same pinned-SHA extraction as RecreateCurrentRole.
+                let container_state = paths.data_dir.join(&container);
+                if let Ok(Some(stored)) = InstanceManifest::read_optional(&container_state) {
+                    restore_pinned_sha = stored.role_git_sha;
+                }
+                Some(container)
+            }
             super::RestoreResolution::RecoverRelatedRole(container) => {
                 steps.finish_progress();
                 let load_result = hardline_agent(paths, &container, docker, runner)
@@ -622,10 +634,31 @@ pub(crate) async fn load_role_with(
                     }
                 }
             }
+            // D21: operator deleted a candidate from the launch dialog.
+            // Purge its state then fall through to StartFresh (None).
+            super::RestoreResolution::PurgeAndRestartFresh(container) => {
+                // Best-effort: a failed purge leaves stale state the next prune
+                // reaps, but trace it so a delete-then-launch that didn't clean
+                // up is diagnosable rather than silent.
+                if let Err(err) = crate::runtime::cleanup::purge_container_state(
+                    paths, &container, docker, runner,
+                )
+                .await
+                {
+                    jackin_diagnostics::debug_log!(
+                        "instance",
+                        "purge after launch-dialog delete failed for {container}: {err}; \
+                         state will be removed on next prune",
+                    );
+                }
+                None
+            }
         }
     };
 
-    if workspace.git_pull_on_entry {
+    // D7: skip git pull when restoring — restore replays the pinned recipe;
+    // pulling would advance the role repo past the pinned SHA.
+    if restore_container.is_none() && workspace.git_pull_on_entry {
         let sources = super::git_pull_sources(workspace);
         if let Some(progress) = steps.progress_mut() {
             if sources.is_empty() {
@@ -750,6 +783,7 @@ pub(crate) async fn load_role_with(
         &validated_repo,
         rebuild,
         opts.role_branch.as_deref(),
+        restore_pinned_sha.as_deref(),
         docker,
         runner,
     )
@@ -792,7 +826,7 @@ pub(crate) async fn load_role_with(
     // tab reads its key from that env at `docker run`, so gating a supported
     // agent's key out would start that tab without auth. Only credentials for
     // agents the role cannot launch are skipped.
-    let credential_agents = validated_repo.manifest.supported_agents();
+    let credential_agents = supported_agents.clone();
     let operator_env_needed = |key: &str| credential_key_needed_for_role(&credential_agents, key);
     let operator_env = if jackin_env::has_operator_env_matching(
         config,
@@ -932,6 +966,10 @@ pub(crate) async fn load_role_with(
         );
     }
 
+    // D7: capture recipe fields before image_decision is consumed by match below.
+    let recipe_role_git_sha = image_decision.role_git_sha();
+    let recipe_base_image_ref = image_decision.base_image_ref().map(ToOwned::to_owned);
+
     let selected_refresh_reason = match &image_decision {
         crate::runtime::image::ImageDecision::RefreshInBackground { reason, .. } => Some(*reason),
         crate::runtime::image::ImageDecision::Reuse { .. }
@@ -1025,7 +1063,7 @@ pub(crate) async fn load_role_with(
                 // only the selected agent makes sibling tabs crash on a missing
                 // binary. The selected agent still drives the version label and
                 // the foreground session; the others must simply be present.
-                let image_agents = validated_repo.manifest.supported_agents();
+                let image_agents = supported_agents.clone();
                 let runtime_binaries = if let Some(progress) = steps.progress_mut() {
                     crate::runtime::image::prepare_runtime_binaries_for_agents(
                         paths,
@@ -1097,14 +1135,69 @@ pub(crate) async fn load_role_with(
             || DockerResources::from_container_name(&container_name),
             |sidecar| DockerResources {
                 role_container: container_name.clone(),
-                dind_container: sidecar.sidecar.dind.clone(),
+                dind_container: Some(sidecar.sidecar.dind.clone()),
                 network: sidecar.sidecar.network.clone(),
-                certs_volume: sidecar.sidecar.certs_volume.clone(),
+                certs_volume: Some(sidecar.sidecar.certs_volume.clone()),
             },
         );
         let network = resources.network.clone();
-        let dind = resources.dind_container.clone();
-        let certs_volume = resources.certs_volume.clone();
+        // Adoption-aware: when a prewarmed sidecar was adopted, the role connects
+        // to (and teardown must remove) the adopted DinD container, not the
+        // role-default name. `resources.dind_container` is always `Some` — set
+        // from the adopted sidecar or `from_container_name`.
+        let dind = resources
+            .dind_container
+            .clone()
+            .unwrap_or_else(|| crate::runtime::naming::dind_container_name(&container_name));
+        let certs_volume = crate::runtime::naming::dind_certs_volume(&container_name);
+        let workspace_docker_for_grants = config
+            .workspaces
+            .get(&workspace.label)
+            .and_then(|wc| wc.docker.as_ref());
+        let resolved_profile = crate::runtime::docker_profile::resolve_profile(
+            opts.docker_profile,
+            workspace_docker_for_grants.and_then(|wd| wd.profile),
+            config.docker.profile,
+        );
+        let mut grant_errors = Vec::new();
+        if let Some(grants) = config.docker.grants.as_ref() {
+            grant_errors.extend(tagged_grant_errors("config", grants));
+        }
+        if let Some(grants) = workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()) {
+            grant_errors.extend(tagged_grant_errors("workspace", grants));
+        }
+        bail_on_grant_errors(grant_errors)?;
+        let mut effective_grants = crate::runtime::docker_profile::resolve_effective_grants(
+            resolved_profile.0,
+            config.docker.grants.as_ref(),
+            workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()),
+        );
+        if let Some(min) = validated_repo.manifest.docker.as_ref().and_then(|d| d.min_profile)
+            && !crate::runtime::docker_profile::profile_meets_floor(resolved_profile.0, min)
+        {
+            anyhow::bail!(
+                "role `{}` requires Docker profile `{min}` or more capable; resolved `{}` from {}",
+                selector.key(),
+                resolved_profile.0,
+                resolved_profile.1,
+            );
+        }
+        if let Some(docker_cfg) = validated_repo.manifest.docker.as_ref() {
+            let role_grants = crate::runtime::docker_profile::DockerGrants {
+                dind: docker_cfg.dind,
+                allowed_hosts: docker_cfg.allowed_hosts.clone(),
+                capabilities_add: docker_cfg.capabilities_add.clone(),
+                ..Default::default()
+            };
+            bail_on_grant_errors(tagged_grant_errors("role", &role_grants))?;
+            effective_grants =
+                crate::runtime::docker_profile::fold_role_grants(effective_grants, &role_grants);
+        }
+        bail_on_grant_errors(tag_errors(
+            "merged",
+            crate::runtime::docker_profile::validate_effective_grants(&effective_grants),
+        ))?;
+        let dind_started = crate::runtime::docker_profile::dind_enabled(&effective_grants);
         // Arm cleanup immediately after adoption, before any fallible step.
         // When a prewarmed DinD sidecar was adopted, its container, network,
         // and certs volume are already *running* and the on-disk prewarm state
@@ -1140,10 +1233,15 @@ pub(crate) async fn load_role_with(
             image_tag: &image,
             docker: DockerResources {
                 role_container: container_name.clone(),
-                dind_container: dind.clone(),
+                dind_container: dind_started.then(|| dind.clone()),
                 network: network.clone(),
-                certs_volume: certs_volume.clone(),
+                certs_volume: dind_started.then(|| certs_volume.clone()),
             },
+            // D7: pin the launch recipe for faithful restore.
+            role_git_sha: recipe_role_git_sha,
+            base_image_ref: recipe_base_image_ref,
+            base_image_digest: None, // D16: populated when Docker reports digest post-build
+            supported_agents: supported_agents.clone(),
         });
         // `read_optional` already separates "manifest absent" (fall back
         // to `new_manifest` and re-record the recovered identity) from
@@ -1292,15 +1390,35 @@ pub(crate) async fn load_role_with(
         let sidecar_network = network.clone();
         let sidecar_dind = dind.clone();
         let sidecar_certs_volume = certs_volume.clone();
+        // WP4 Part B: the sidecar tier (rootless vs privileged image/flags).
+        let sidecar_dind_grant = effective_grants.dind;
+        let sidecar_network_disabled =
+            crate::runtime::docker_profile::network_disabled(&effective_grants);
+        // WP2: `locked` runs on a Docker-internal network (no off-bridge route)
+        // independent of the in-container iptables allowlist; every other
+        // profile uses a routable network.
+        let role_network_internal =
+            crate::runtime::docker_profile::role_network_internal(resolved_profile.0);
         let sidecar = async move {
             if adopted_sidecar.is_some() {
                 Ok(())
-            } else {
+            } else if dind_started {
                 super::run_dind_sidecar_headless(
                     &sidecar_container,
                     &sidecar_network,
                     &sidecar_dind,
                     &sidecar_certs_volume,
+                    sidecar_dind_grant,
+                    docker,
+                )
+                .await
+            } else if sidecar_network_disabled {
+                Ok(())
+            } else {
+                super::create_role_network(
+                    &sidecar_container,
+                    &sidecar_network,
+                    role_network_internal,
                     docker,
                 )
                 .await
@@ -1588,11 +1706,23 @@ pub(crate) async fn load_role_with(
             progress.stage_done(crate::runtime::progress::LaunchStage::Workspace, "materialized");
         }
 
+        let dirty_exit_policy =
+            config.resolve_dirty_exit_policy(config.workspaces.get(workspace_label));
+        // The in-capsule dirty-exit modal assesses every isolated worktree/clone
+        // mount; `shared` mounts are host-owned and never checked.
+        let isolated_worktrees = materialized
+            .mounts
+            .iter()
+            .filter(|mount| !mount.isolation.is_shared())
+            .map(|mount| mount.dst.clone())
+            .collect();
         let launch_config = super::capsule_config(
             selector,
             &workspace.workdir,
             &validated_repo.manifest,
             opts.initial_provider(),
+            dirty_exit_policy.as_str(),
+            isolated_worktrees,
         );
         let ctx = super::LaunchContext {
             container_name: &container_name,
@@ -1611,6 +1741,9 @@ pub(crate) async fn load_role_with(
             capsule_config: &launch_config,
             resolved_env: &resolved_env,
             github_env: &github_resolved_env,
+            profile: resolved_profile.0,
+            profile_source: resolved_profile.1,
+            grants: &effective_grants,
             paths,
             selected_image_refresh: selected_refresh_reason.map(|reason| super::SelectedImageRefresh {
                 role_git: &source.git,
@@ -1672,7 +1805,14 @@ pub(crate) async fn load_role_with(
         // exactly once so the operator can address the dirty state inside the
         // role, then the safe cleanup is retried.
         let interactive_finalize = true;
-        let mut prompt = crate::isolation::finalize::RichCleanupPrompt;
+        // The dirty-exit decision is made in-capsule (the dirty-exit modal) and
+        // recorded in exit-action.json; the host only executes it — no host dialog.
+        let mut prompt = crate::isolation::finalize::ExitActionPrompt {
+            state_dir: paths.data_dir.join(&container_name).join("state"),
+        };
+        let dirty_exit_policy = config.resolve_dirty_exit_policy(
+            workspace_name.as_deref().and_then(|n| config.workspaces.get(n)),
+        );
         let outcome = super::inspect_attach_outcome(docker, &container_name).await?;
         super::write_instance_attach_outcome(paths, &container_state, &mut instance_manifest, outcome)?;
         let mut decision = crate::isolation::finalize::finalize_foreground_session(
@@ -1680,6 +1820,7 @@ pub(crate) async fn load_role_with(
             &paths.data_dir.join(&container_name),
             outcome,
             interactive_finalize,
+            dirty_exit_policy,
             &mut prompt,
             docker,
             runner,
@@ -1713,6 +1854,7 @@ pub(crate) async fn load_role_with(
                 &paths.data_dir.join(&container_name),
                 outcome2,
                 interactive_finalize,
+                dirty_exit_policy,
                 &mut prompt,
                 docker,
                 runner,
@@ -1794,13 +1936,17 @@ pub(crate) async fn load_role_with(
                 exit_code: 0,
                 oom_killed: false,
             } => {
-                super::write_instance_status(
+                cleanup.run(docker).await;
+                purge_or_mark_clean_exited(
                     paths,
+                    &container_name,
                     &container_state,
                     &mut instance_manifest,
-                    InstanceStatus::CleanExited,
-                )?;
-                cleanup.run(docker).await;
+                    docker,
+                    runner,
+                    "clean exit",
+                )
+                .await?;
             }
             ContainerState::Stopped { .. }
             | ContainerState::Created
@@ -1834,13 +1980,18 @@ pub(crate) async fn load_role_with(
                 cleanup.run(docker).await;
             }
             ContainerState::NotFound => {
-                super::write_instance_status(
+                cleanup.run(docker).await;
+                // D9: container already gone — purge local state inline.
+                purge_or_mark_clean_exited(
                     paths,
+                    &container_name,
                     &container_state,
                     &mut instance_manifest,
-                    InstanceStatus::CleanExited,
-                )?;
-                cleanup.run(docker).await;
+                    docker,
+                    runner,
+                    "NotFound clean exit",
+                )
+                .await?;
             }
         }
 
@@ -1959,3 +2110,32 @@ fn known_agent_credential_env(key: &str) -> bool {
         })
         .any(|credential_key| credential_key == key)
 }
+
+/// D9: purge per-instance data, the name-claim lock, and the index row inline on
+/// a clean terminal outcome so no manual prune is needed. If the purge itself
+/// fails, fall back to stamping `CleanExited` so the next prune removes the row.
+/// Shared by the clean-exit and `NotFound` arms, which differ only in `context`.
+async fn purge_or_mark_clean_exited(
+    paths: &JackinPaths,
+    container_name: &str,
+    state_dir: &std::path::Path,
+    manifest: &mut InstanceManifest,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    context: &str,
+) -> anyhow::Result<()> {
+    if let Err(err) =
+        crate::runtime::cleanup::purge_container_state(paths, container_name, docker, runner).await
+    {
+        jackin_diagnostics::debug_log!(
+            "instance",
+            "inline cleanup after {context} failed for {container_name}: {err}; \
+             state will be removed on next prune",
+        );
+        super::write_instance_status(paths, state_dir, manifest, InstanceStatus::CleanExited)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

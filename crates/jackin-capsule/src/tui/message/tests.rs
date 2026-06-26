@@ -34,6 +34,45 @@ fn mouse_press_updates_chrome_before_main_action() {
 }
 
 #[test]
+fn modified_primary_press_maps_to_visible_url_open_intent() {
+    for button in [8u8, 16, 24] {
+        assert_eq!(
+            input_event_action(
+                &InputEvent::MousePress {
+                    row: 2,
+                    col: 3,
+                    button,
+                },
+                InputDispatchContext::default(),
+            ),
+            Some(Action::OpenVisibleUrlAt {
+                row: 2,
+                col: 3,
+                button,
+            }),
+            "button {button} should be host-open-url intent",
+        );
+    }
+    assert_eq!(
+        input_event_action(
+            &InputEvent::MousePress {
+                row: 2,
+                col: 3,
+                button: 4,
+            },
+            InputDispatchContext::default(),
+        ),
+        Some(Action::ForwardMouse {
+            row: 2,
+            col: 3,
+            button: 4,
+            press: true,
+        }),
+        "shift-only primary press should keep the existing mouse fallback",
+    );
+}
+
+#[test]
 fn dialog_captures_mouse_press_and_release() {
     let context = InputDispatchContext {
         dialog_captures_input: true,
@@ -141,6 +180,85 @@ fn palette_command_route_keeps_dialog_drill_down_semantics() {
     assert_eq!(
         palette_command_route(PaletteCommand::Close, 2),
         PaletteCommandRoute::OpenCloseTargetPicker
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::ExportFile, 2),
+        PaletteCommandRoute::OpenExportFileDialog {
+            reveal_after_export: false,
+            open_after_export: false
+        }
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::ExportFileAndReveal, 2),
+        PaletteCommandRoute::OpenExportFileDialog {
+            reveal_after_export: true,
+            open_after_export: false
+        }
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::ExportFileAndOpen, 2),
+        PaletteCommandRoute::OpenExportFileDialog {
+            reveal_after_export: false,
+            open_after_export: true
+        }
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::ExportFileUnderCursor, 2),
+        PaletteCommandRoute::ExportFileUnderCursor {
+            reveal_after_export: false,
+            open_after_export: false
+        }
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::ExportFileUnderCursorAndReveal, 2),
+        PaletteCommandRoute::ExportFileUnderCursor {
+            reveal_after_export: true,
+            open_after_export: false
+        }
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::ExportFileUnderCursorAndOpen, 2),
+        PaletteCommandRoute::ExportFileUnderCursor {
+            reveal_after_export: false,
+            open_after_export: true
+        }
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::ExportSelectedFile, 2),
+        PaletteCommandRoute::ExportSelectedFile {
+            reveal_after_export: false,
+            open_after_export: false
+        }
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::ExportSelectedFileAndReveal, 2),
+        PaletteCommandRoute::ExportSelectedFile {
+            reveal_after_export: true,
+            open_after_export: false
+        }
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::ExportSelectedFileAndOpen, 2),
+        PaletteCommandRoute::ExportSelectedFile {
+            reveal_after_export: false,
+            open_after_export: true
+        }
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::StageImageFromClipboardPath, 2),
+        PaletteCommandRoute::StageImageFromClipboardPath
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::PasteImageFromClipboard, 2),
+        PaletteCommandRoute::PasteImageFromClipboard
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::StageImageFromClipboard, 2),
+        PaletteCommandRoute::StageImageFromClipboard
+    );
+    assert_eq!(
+        palette_command_route(PaletteCommand::OpenLinkUnderCursor, 2),
+        PaletteCommandRoute::OpenLinkUnderCursor
     );
     assert_eq!(
         palette_command_route(PaletteCommand::Exit, 2),

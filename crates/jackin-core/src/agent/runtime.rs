@@ -73,8 +73,10 @@ pub trait AgentRuntime: Send + Sync + 'static + private::Sealed {
     /// Human-readable label for TUI surfaces.
     fn label(&self) -> &'static str;
 
-    /// Dockerfile `RUN` block that installs this agent's CLI from a
-    /// pre-fetched binary at `source` (relative path inside the image).
+    /// Dockerfile block that installs this agent's CLI from a pre-fetched
+    /// binary at `source` (relative path inside the image) and verifies the
+    /// resulting executable with `<agent> --version` so build logs expose the
+    /// baked version for every supported agent.
     fn install_block(&self, source: &str) -> String;
 
     /// Absolute in-container path(s) where this agent's CLI binary lives on
@@ -107,6 +109,13 @@ pub trait AgentRuntime: Send + Sync + 'static + private::Sealed {
     /// credentials into the role-state directory.
     fn state_paths(&self) -> AgentStatePaths;
 
+    /// Non-durable paths under `/home/agent` that installers may create inside
+    /// durable home roots but that must not be captured in the default-home
+    /// image seed. These are scratch/rollback artifacts, not user state.
+    fn default_home_exclude_paths(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     /// Extract a bare semver string from the raw output of `<agent> --version`.
     ///
     /// Returns a subslice of `raw` that looks like a version token, or `None`
@@ -123,8 +132,17 @@ pub trait AgentRuntime: Send + Sync + 'static + private::Sealed {
 /// with the actual `host_home` value at runtime.
 #[derive(Debug, Clone)]
 pub struct AgentStatePaths {
-    /// Relative path to the directory the agent's credential lives in.
+    /// Relative path to the directory the agent's credential lives in. This is
+    /// the agent's primary *data* root, used as the first-seed emptiness gate
+    /// (D6) and as the default-home snapshot root (D4).
     pub credential_dir: &'static str,
+    /// Relative path to the agent's separate *config* root, when it persists one
+    /// apart from `credential_dir` (e.g. Amp `.config/amp`, `OpenCode`
+    /// `.config/opencode`). Baked into `/jackin/default-home` and seeded in the
+    /// same first-seed transaction as `credential_dir` (D4); both roots share one
+    /// lifecycle. `None` when the agent keeps all durable state under
+    /// `credential_dir`.
+    pub config_dir: Option<&'static str>,
     /// Relative path to the specific credential file, if the provisioning
     /// path copies a single file.  `None` for directory-based provisioning
     /// (Kimi, Claude multi-file).
@@ -133,6 +151,23 @@ pub struct AgentStatePaths {
     /// directory — used as the operator hint in the Source Folder picker
     /// (Defect 46 Phase B).
     pub folder_env_var: Option<&'static str>,
+    /// Standalone durable home *files* the agent persists outside its
+    /// directories (e.g. Claude `.claude.json`). Bind-mounted alongside the
+    /// home dirs so they survive across container recreation. Empty for agents
+    /// that keep all state inside their dirs. Listed here so this struct is the
+    /// single source of truth for everything jackin mounts under the agent home.
+    pub home_files: &'static [&'static str],
+}
+
+impl AgentStatePaths {
+    /// Every durable home *directory* this agent persists, in mount/snapshot
+    /// order: the primary data root first, then the paired config root if any.
+    /// Callers (docker mounts, default-home snapshot, runtime seeding) iterate
+    /// this instead of re-listing the per-agent paths, so adding a root in one
+    /// place wires it everywhere.
+    pub fn home_dirs(&self) -> impl Iterator<Item = &'static str> {
+        std::iter::once(self.credential_dir).chain(self.config_dir)
+    }
 }
 
 // The five concrete adapters live as siblings in `agent/adapters.rs`

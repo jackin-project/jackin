@@ -24,13 +24,52 @@ The split-workspace layout described in [Configuration File](/reference/runtime/
 
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
-| `~/.config/jackin/config.toml` | `v1alpha6` | jackin | Automatic on startup |
-| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha6` | jackin | Automatic on startup |
-| `jackin.role.toml` | `v1alpha5` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
+| `~/.config/jackin/config.toml` | `v1alpha8` | jackin | Automatic on startup |
+| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha8` | jackin | Automatic on startup |
+| `jackin.role.toml` | `v1alpha6` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
 
 ## Timeline
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="crates/jackin/tests/migration_fixtures.rs">crates/jackin/tests/migration_fixtures.rs</RepoFile> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+
+### `v1alpha8` — 2026-06-26
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `v1alpha7` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha7/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha7/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha7` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha7/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha7/meta.toml</RepoFile> |
+
+**Summary**: adds optional `dirty_exit_policy` to the global config and workspace config. The workspace value overrides the global value; absence at both layers resolves to the built-in `ask` behavior. This is additive with a `serde` default of `None`, so existing files round-trip cleanly and the migration is a no-op restamp.
+
+The policy controls the dirty/unpushed exit path for preserved instances: `ask` prompts, `keep` preserves without prompting, and `discard` deletes dirty/unpushed instance state without prompting. Clean and pushed exits still follow the normal automatic cleanup path.
+
+**Before** (v1alpha7 config):
+
+```toml
+version = "v1alpha7"
+```
+
+**After** (v1alpha8 — no change needed; dirty_exit_policy defaults to None):
+
+```toml
+version = "v1alpha8"
+```
+
+### `v1alpha7` — 2026-06-09
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml</RepoFile> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml</RepoFile> |
+
+**Summary**: adds optional global and per-workspace Docker security profile/grants config. This is additive with serde defaults, so existing files round-trip cleanly and the migration is a no-op restamp.
+
+**Example with explicit policy**:
+
+```toml
+version = "v1alpha7"
+dirty_exit_policy = "keep"
+```
 
 ### Manifest `v1alpha5` — 2026-06-10
 
@@ -107,6 +146,60 @@ version = "v1alpha6"
 [claude]
 auth_forward = "sync"
 sync_source_dir = "/Users/alice/company/.claude"
+```
+
+### `v1alpha7` — 2026-06-09
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml" /> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml" /> |
+
+**Summary**: introduces `[docker].profile` (optional string: `locked`, `hardened`, `standard`, `compat`) and `[docker].grants` (optional table with per-dimension capability overrides) on both `config.toml` and workspace files. Both fields are additive with serde defaults — absent means no profile override / no grants. The migration is a no-op restamp for both file kinds.
+
+**Before** (v1alpha6 config):
+
+```toml
+version = "v1alpha6"
+
+[roles.the-architect]
+git = "https://github.com/jackin-project/jackin-the-architect.git"
+trusted = true
+```
+
+**After** (v1alpha7):
+
+```toml
+version = "v1alpha7"
+
+[roles.the-architect]
+git = "https://github.com/jackin-project/jackin-the-architect.git"
+trusted = true
+```
+
+### Manifest `v1alpha6` — 2026-06-18
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Role manifest (`jackin.role.toml`) | `v1alpha5` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` | <RepoFile path="crates/jackin/tests/fixtures/migrations/manifest/from-v1alpha5/meta.toml" /> |
+
+**Summary**: introduces the optional role `[docker]` security block — `[docker].min_profile` (optional string), `[docker].dind` (optional string), `[docker].allowed_hosts` (optional array of strings), and `[docker].capabilities_add` (optional array of strings). All additive with serde defaults, so existing manifests round-trip cleanly and the migration is a no-op restamp. A manifest stamped older than `v1alpha6` that uses a `[docker]` table is rejected with a `jackin role migrate` hint, the same way the per-provider (`v1alpha5`), OpenCode (`v1alpha3`), and Kimi (`v1alpha4`) fields are gated.
+
+**Before** (v1alpha5 manifest):
+
+```toml
+version = "v1alpha5"
+dockerfile = "Dockerfile"
+```
+
+**After** (v1alpha6 — no change needed unless a `[docker]` block is added):
+
+```toml
+version = "v1alpha6"
+dockerfile = "Dockerfile"
+
+[docker]
+min_profile = "hardened"
 ```
 
 ### Workspace `v1alpha5` — 2026-05-26
@@ -335,11 +428,12 @@ config, jackin migrates this automatically before parsing.
 
 The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs as a separate startup migration alongside the version stamp; see [Configuration File](/reference/runtime/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha6`
+### `v1alpha8`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha6` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha8` |
+| `dirty_exit_policy` | string | No | `v1alpha8` | `ask`, `keep`, or `discard`; global dirty/unpushed exit policy; omitted means built-in `ask` |
 | `[claude].auth_forward` | string | No | `legacy` | `sync`, `api_key`, `oauth_token`, or `ignore` |
 | `[claude].sync_source_dir` | string | No | `v1alpha6` | Host folder override for `sync` auth forwarding; omitted means use the per-agent default |
 | `[codex].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
@@ -358,6 +452,8 @@ The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs a
 | `[roles.<role>].trusted` | bool | No | `legacy` | Trust-on-first-use state |
 | `[roles.<role>.env]` | table | No | `legacy` | Per-role operator env layer |
 | `[docker.mounts]` | table | No | `legacy` | Global and scoped Docker mount config |
+| `[docker].profile` | string | No | `v1alpha7` | Global default Docker security profile: `locked`, `hardened`, `standard`, or `compat` |
+| `[docker.grants]` | table | No | `v1alpha7` | Global capability/resource grants layered on top of the resolved Docker profile |
 | `[git].coauthor_trailer` | bool | No | `v1alpha5` | Enable `Co-authored-by` agent trailer via `prepare-commit-msg` hook; omitted when `false` |
 | `[git].dco` | bool | No | `v1alpha5` | Enable `Signed-off-by` DCO trailer via `prepare-commit-msg` hook; omitted when `false` |
 | `[workspaces]` | table | No | `legacy` | Legacy read-only compatibility location; migrated into workspace files |
@@ -383,17 +479,20 @@ a `[workspaces.<name>]` table embedded in legacy `config.toml`.
 
 Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per-workspace files by a separate startup migration; see [Configuration File](/reference/runtime/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha6`
+### `v1alpha8`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha6` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha8` |
 | `workdir` | string | Yes | `legacy` | Container working directory |
 | `allowed_roles` | string array | No | `legacy` | Roles allowed in this workspace |
 | `default_role` | string | No | `legacy` | Preferred role for new sessions |
 | `default_agent` | string | No | `legacy` | `claude`, `codex`, `amp`, `kimi`, or `opencode`; omitted lets launch resolution use the role manifest or prompt |
 | `last_role` | string | No | `legacy` | Last role selected by the operator |
 | `git_pull_on_entry` | bool | No | `legacy` | Pull mounted repositories on entry |
+| `dirty_exit_policy` | string | No | `v1alpha8` | `ask`, `keep`, or `discard`; workspace override for dirty/unpushed exit policy; omitted means inherit from global config |
+| `[docker].profile` | string | No | `v1alpha7` | Workspace Docker security profile override |
+| `[docker.grants]` | table | No | `v1alpha7` | Workspace capability/resource grants layered after global grants |
 | `[env]` | table | No | `legacy` | Workspace operator env layer; each `op://` reference carries an optional `account` (the 1Password account it resolves against), since `v1alpha5` |
 | `[[mounts]]` | array of tables | No | `legacy` | Workspace mounts |
 | `[[mounts]].src` | string | Yes | `legacy` | Host path |
@@ -445,11 +544,11 @@ automated migration jobs.
 | Removed | None |
 | Renamed | None |
 
-### `v1alpha4`
+### `v1alpha6`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha4` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha6` |
 | `dockerfile` | string | Yes | `legacy` | Relative path to role Dockerfile |
 | `published_image` | string | No | `legacy` | Pre-built role image override |
 | `agents` | string array | No | `legacy` | `claude`, `codex`, or `amp`; `opencode` added in `v1alpha3`; `kimi` added in `v1alpha4`; omitted means Claude-only |
@@ -463,6 +562,11 @@ automated migration jobs.
 | `[amp]` | table | No | `legacy` | Empty marker table for Amp support |
 | `[kimi].model` | string | No | `v1alpha4` | Kimi model override passed to `kimi --model` |
 | `[opencode].model` | string | No | `v1alpha3` | `OpenCode` model override in `provider/model` format (e.g. `zai-coding-plan/glm-5.1`) |
+| `[<agent>.providers.<id>].model` | string | No | `v1alpha5` | Per-provider model override for `[claude]`, `[codex]`, and `[opencode]`; map defaults to empty |
+| `[docker].min_profile` | string | No | `v1alpha6` | Lowest security profile the role accepts: `locked`, `hardened`, `standard`, or `compat` |
+| `[docker].dind` | string | No | `v1alpha6` | Inner Docker requirement: `none`, `rootless`, or `privileged` |
+| `[docker].allowed_hosts` | string array | No | `v1alpha6` | Hosts the role needs reachable under an allowlist network profile |
+| `[docker].capabilities_add` | string array | No | `v1alpha6` | Linux capabilities the role needs added back on top of the profile defaults |
 | `[hooks].setup_once` | string | No | `legacy` | Relative path to a one-time install script that runs on first launch only |
 | `[hooks].source` | string | No | `legacy` | Relative path to a script dot-sourced into the entrypoint shell so `export` and `PATH` mutations reach the launched agent |
 | `[hooks].preflight` | string | No | `legacy` | Relative path to a per-start preflight script |

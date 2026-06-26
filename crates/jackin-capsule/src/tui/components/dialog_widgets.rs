@@ -261,6 +261,22 @@ impl Dialog {
                 value: input.value().to_owned(),
                 cursor: input.cursor(),
             },
+            Dialog::ExportFile {
+                input,
+                reveal_after_export,
+                open_after_export,
+            } => DialogRatatuiSnapshot::TextInputDialog {
+                dialog_title: if *open_after_export {
+                    "Export file and open".into()
+                } else if *reveal_after_export {
+                    "Export file and reveal".into()
+                } else {
+                    "Export file".into()
+                },
+                label: "Path".into(),
+                value: input.value().to_owned(),
+                cursor: input.cursor(),
+            },
 
             Dialog::ContainerInfo { .. } => DialogRatatuiSnapshot::DebugInfo(
                 self.container_info_state()
@@ -272,6 +288,45 @@ impl Dialog {
                     .expect("github_context_state is Some for GitHubContext"),
             ),
 
+            Dialog::ExitDirty { summary, selected } => {
+                use crate::tui::components::dialog::EXIT_DIRTY_ROWS;
+                // Per-repo summary lines render as non-selectable section rows
+                // above the four choice rows.
+                let mut items: Vec<PickerItem> = summary
+                    .iter()
+                    .map(|line| PickerItem::Section(line.clone()))
+                    .collect();
+                let first_choice = items.len();
+                for (_, label) in EXIT_DIRTY_ROWS {
+                    items.push(PickerItem::Item(label.to_owned()));
+                }
+                let last_choice = EXIT_DIRTY_ROWS.len().saturating_sub(1);
+                DialogRatatuiSnapshot::FilterPicker {
+                    title: "Unsaved work — exit?".into(),
+                    filter: String::new(),
+                    items,
+                    selected: first_choice + (*selected).min(last_choice),
+                    show_filter: false,
+                }
+            }
+
+            Dialog::ExitInspect { lines, selected } => {
+                use crate::tui::components::dialog::InspectRow;
+                let items = lines
+                    .iter()
+                    .map(|row| match row {
+                        InspectRow::Repo(label) => PickerItem::Section(label.clone()),
+                        InspectRow::File(line) => PickerItem::Item(line.clone()),
+                    })
+                    .collect();
+                DialogRatatuiSnapshot::FilterPicker {
+                    title: "Inspect changes".into(),
+                    filter: String::new(),
+                    items,
+                    selected: *selected,
+                    show_filter: false,
+                }
+            }
             Dialog::Usage {
                 view,
                 selected,
@@ -1215,9 +1270,7 @@ fn is_known_quota_bucket(label: &str) -> bool {
 }
 
 fn quota_value_has_meter(value: &str) -> bool {
-    value
-        .split_once(' ')
-        .is_some_and(|(meter, _)| meter.chars().all(usage_meter_char))
+    usage_meter_parts(value).1.is_some()
 }
 
 fn render_filter_picker(
