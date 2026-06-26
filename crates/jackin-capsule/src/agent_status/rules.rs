@@ -502,7 +502,7 @@ impl Rule {
             && regex_all(&self.forbids_regex, &self.compiled_forbids_regex, |re| {
                 !region.iter().any(|line| re.is_match(line))
             })
-            // Recursive nested gate (ANDed with the flat matchers); absent on most rules.
+            // Recursive nested gate (combined by AND with the flat matchers); absent on most rules.
             && self.gate.as_ref().is_none_or(|gate| gate.eval(&region, &text))
     }
 
