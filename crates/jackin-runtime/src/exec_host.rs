@@ -29,7 +29,7 @@ use std::process::Stdio;
 
 use anyhow::{Context as _, Result};
 use jackin_protocol::control::frame;
-use jackin_protocol::{CredReply, CredRequest, ExecBinding};
+use jackin_protocol::{CredReply, CredRequest, ExecBinding, ExecKind};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
@@ -210,12 +210,12 @@ fn validate_op_source(source: &str) -> Result<()> {
 }
 
 async fn resolve_one(r: &ExecBinding) -> Result<String> {
-    match r.kind.as_str() {
-        "op" => {
+    match r.kind {
+        ExecKind::Op => {
             validate_op_source(&r.source).with_context(|| format!("credential {:?}", r.name))?;
             resolve_op(&r.source).await
         }
-        "env" => {
+        ExecKind::Env => {
             // Reuse the canonical `$VAR` / `${VAR}` parser the binding collector
             // used to classify this source, so producer and consumer can't drift
             // on the host-ref grammar.
@@ -228,8 +228,7 @@ async fn resolve_one(r: &ExecBinding) -> Result<String> {
             })?;
             std::env::var(var_name).with_context(|| format!("host env var {var_name:?} is not set"))
         }
-        "literal" => Ok(r.source.clone()),
-        other => anyhow::bail!("unknown credential kind {other:?}"),
+        ExecKind::Literal => Ok(r.source.clone()),
     }
 }
 

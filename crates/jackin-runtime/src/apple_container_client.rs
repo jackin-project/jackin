@@ -107,6 +107,34 @@ impl AppleContainerClient {
     pub const fn new() -> Self {
         Self
     }
+
+    /// Run a no-output `container <sub> <name>` lifecycle command, logging the
+    /// outcome and bailing on a non-zero exit. Shared by `stop`/`remove`, which
+    /// differ only in the subcommand.
+    async fn lifecycle(&self, name: &str, sub: &str) -> Result<()> {
+        jackin_diagnostics::debug_log!(
+            "apple-container",
+            "container_state action={sub} name={name}"
+        );
+        let output = tokio::process::Command::new("container")
+            .args([sub, name])
+            .output()
+            .await?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            jackin_diagnostics::debug_log!(
+                "apple-container",
+                "container_state action={sub} name={name} result=failure reason={}",
+                stderr.trim()
+            );
+            anyhow::bail!("container {sub} failed: {}", stderr.trim());
+        }
+        jackin_diagnostics::debug_log!(
+            "apple-container",
+            "container_state action={sub} name={name} result=ok"
+        );
+        Ok(())
+    }
 }
 
 impl Default for AppleContainerClient {
@@ -163,50 +191,11 @@ impl AppleContainerApi for AppleContainerClient {
     }
 
     async fn stop_container(&self, name: &str) -> Result<()> {
-        jackin_diagnostics::debug_log!(
-            "apple-container",
-            "container_state action=stop name={name}"
-        );
-        let output = tokio::process::Command::new("container")
-            .args(["stop", name])
-            .output()
-            .await?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            jackin_diagnostics::debug_log!(
-                "apple-container",
-                "container_state action=stop name={name} result=failure reason={}",
-                stderr.trim()
-            );
-            anyhow::bail!("container stop failed: {}", stderr.trim());
-        }
-        jackin_diagnostics::debug_log!(
-            "apple-container",
-            "container_state action=stop name={name} result=ok"
-        );
-        Ok(())
+        self.lifecycle(name, "stop").await
     }
 
     async fn remove_container(&self, name: &str) -> Result<()> {
-        jackin_diagnostics::debug_log!("apple-container", "container_state action=rm name={name}");
-        let output = tokio::process::Command::new("container")
-            .args(["rm", name])
-            .output()
-            .await?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            jackin_diagnostics::debug_log!(
-                "apple-container",
-                "container_state action=rm name={name} result=failure reason={}",
-                stderr.trim()
-            );
-            anyhow::bail!("container rm failed: {}", stderr.trim());
-        }
-        jackin_diagnostics::debug_log!(
-            "apple-container",
-            "container_state action=rm name={name} result=ok"
-        );
-        Ok(())
+        self.lifecycle(name, "rm").await
     }
 
     async fn inspect_container(&self, name: &str) -> Result<Option<AppleContainerInfo>> {

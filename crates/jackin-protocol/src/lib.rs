@@ -17,17 +17,28 @@ pub use snapshot::InstanceSnapshot;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// How an [`ExecBinding`]'s `source` is resolved by the host credential
+/// resolver. Serializes as `"op"` / `"env"` / `"literal"`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecKind {
+    /// Resolve via `op read <source>` on the host.
+    Op,
+    /// Read the host env var named by `source` (a `$VAR` / `${VAR}` reference).
+    Env,
+    /// Return `source` verbatim.
+    Literal,
+}
+
 /// One on-demand credential binding the operator configured for a session.
 ///
 /// Built host-side from the workspace's `on_demand` env entries and handed to
 /// the host credential resolver (`jackin-runtime`'s `exec_host`) as the
-/// allow-list of (name, kind, source) triples it will resolve. `kind` is
-/// `"op"` (resolve via `op read <source>`), `"env"` (read host env named by
-/// `source`), or `"literal"` (return `source` verbatim).
+/// allow-list of (name, kind, source) triples it will resolve.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExecBinding {
     pub name: String,
-    pub kind: String,
+    pub kind: ExecKind,
     pub source: String,
 }
 

@@ -58,7 +58,7 @@ impl ExecPickerState {
             .map(|b| {
                 // Literals have no meaningful source to show; everything else
                 // displays its source (op:// path or $VAR), never a secret.
-                let display = if b.kind == "literal" {
+                let display = if b.kind == jackin_protocol::ExecKind::Literal {
                     b.name.clone()
                 } else {
                     b.source.clone()

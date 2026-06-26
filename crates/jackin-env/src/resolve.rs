@@ -427,18 +427,19 @@ pub fn collect_on_demand_bindings(
         .into_iter()
         .filter(|(_, (_, v))| v.is_on_demand())
         .map(|(name, (_, value))| {
+            use jackin_protocol::ExecKind;
             let (kind, source) = match value {
-                EnvValue::OpRef(r) => ("op".to_owned(), r.op),
+                EnvValue::OpRef(r) => (ExecKind::Op, r.op),
                 EnvValue::Extended(e) => {
                     if parse_host_ref(&e.value).is_some() {
-                        ("env".to_owned(), e.value)
+                        (ExecKind::Env, e.value)
                     } else {
-                        ("literal".to_owned(), e.value)
+                        (ExecKind::Literal, e.value)
                     }
                 }
                 // Plain is never on_demand, so the filter excludes it; map
                 // defensively as a literal rather than panicking.
-                EnvValue::Plain(s) => ("literal".to_owned(), s),
+                EnvValue::Plain(s) => (ExecKind::Literal, s),
             };
             jackin_protocol::ExecBinding { name, kind, source }
         })
@@ -801,17 +802,17 @@ mod tests {
             vec![
                 jackin_protocol::ExecBinding {
                     name: "ENV_DEMAND".to_owned(),
-                    kind: "env".to_owned(),
+                    kind: jackin_protocol::ExecKind::Env,
                     source: "$HOST_TOK".to_owned(),
                 },
                 jackin_protocol::ExecBinding {
                     name: "LIT_DEMAND".to_owned(),
-                    kind: "literal".to_owned(),
+                    kind: jackin_protocol::ExecKind::Literal,
                     source: "literal".to_owned(),
                 },
                 jackin_protocol::ExecBinding {
                     name: "OP_DEMAND".to_owned(),
-                    kind: "op".to_owned(),
+                    kind: jackin_protocol::ExecKind::Op,
                     source: "op://v/i/key".to_owned(),
                 },
             ]

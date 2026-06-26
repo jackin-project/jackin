@@ -2017,12 +2017,12 @@ fn exec_picker_space_toggles_enter_confirms_esc_cancels() {
     let bindings = vec![
         jackin_protocol::ExecBinding {
             name: "GH_TOKEN".into(),
-            kind: "env".into(),
+            kind: jackin_protocol::ExecKind::Env,
             source: "$GH_TOKEN".into(),
         },
         jackin_protocol::ExecBinding {
             name: "API_KEY".into(),
-            kind: "op".into(),
+            kind: jackin_protocol::ExecKind::Op,
             source: "op://v/i/f".into(),
         },
     ];
@@ -2048,7 +2048,7 @@ fn exec_picker_space_toggles_enter_confirms_esc_cancels() {
     assert_eq!(args, vec!["sentry".to_owned()]);
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].name, "GH_TOKEN");
-    assert_eq!(selected[0].kind, "env");
+    assert_eq!(selected[0].kind, jackin_protocol::ExecKind::Env);
     assert_eq!(selected[0].source, "$GH_TOKEN");
 
     // Esc cancels with no command run.

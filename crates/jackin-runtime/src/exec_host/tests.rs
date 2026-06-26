@@ -50,7 +50,7 @@ async fn roundtrip(
 async fn approved_literal_ref_resolves() {
     let allowed = vec![ExecBinding {
         name: "TOKEN".into(),
-        kind: "literal".into(),
+        kind: ExecKind::Literal,
         source: "s3cr3t".into(),
     }];
     let reply = roundtrip(
@@ -69,7 +69,7 @@ async fn unapproved_source_is_rejected() {
     // read a different secret — the allow-list must reject this.
     let allowed = vec![ExecBinding {
         name: "TOKEN".into(),
-        kind: "literal".into(),
+        kind: ExecKind::Literal,
         source: "approved".into(),
     }];
     let reply = roundtrip(
@@ -93,7 +93,7 @@ async fn approved_env_ref_resolves_from_host_env() {
     let expected = std::env::var("PATH").expect("PATH is set in the test env");
     let allowed = vec![ExecBinding {
         name: "X".into(),
-        kind: "env".into(),
+        kind: ExecKind::Env,
         source: "$PATH".into(),
     }];
     let reply = roundtrip(
@@ -108,7 +108,7 @@ async fn approved_env_ref_resolves_from_host_env() {
 async fn unknown_name_is_rejected() {
     let allowed = vec![ExecBinding {
         name: "TOKEN".into(),
-        kind: "literal".into(),
+        kind: ExecKind::Literal,
         source: "x".into(),
     }];
     let reply = roundtrip(
