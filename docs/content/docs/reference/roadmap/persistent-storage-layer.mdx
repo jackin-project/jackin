@@ -101,9 +101,12 @@ alone is the right choice for jackin'.
 
 One SQLite database **per instance**, at
 `~/.jackin/data/<container>/jackin.db`. Schema versioned via
-embedded migrations. Async access should follow the Capsule-local Turso
-decision once the host-global store starts; document the production
-rationale in an ADR before promoting the current in-container cache pattern.
+embedded migrations. "SQLite-first" names the on-disk **format**, not the
+client: all SQLite access uses `turso` (the workspace's single, async DB stack,
+already used by the Capsule-local cache) — never `rusqlite`, Diesel-on-SQLite,
+or any other binding. A sync caller makes its path async rather than reaching
+for a sync client. Document the production rationale in an ADR before promoting
+the current in-container cache pattern.
 
 ### Tables (V1)
 

@@ -2,15 +2,11 @@
 title: "Token & Cost Telemetry"
 ---
 
-**Status**: Open — design proposal (Phase 3, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
+**Status**: Partially implemented (Phase 3, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
 
-**Implementation note**: The Capsule usage overlay work has landed the
-account-quota side of this design: a Capsule-local Turso
-`account_usage_snapshots` cache feeds the focused status signal and provider
-overlay. It deliberately removed the earlier local `usage_samples` bridge,
-workspace/session summaries, price-table estimates, and cost grids. The
-per-message token/cost plane described below remains open and still belongs to
-the final host-global telemetry daemon.
+**Implementation note**: Both halves of the design have a landed Capsule slice. The **account-quota** side shipped with the Capsule usage overlay (a Capsule-local Turso `account_usage_snapshots` cache feeding the focused status signal + provider overlay). The **token-spend** side shipped in #532: the in-container token monitor reads each agent's provider logs (Claude/Codex/Kimi JSONL, Amp thread JSON, OpenCode via the async `turso` reader), recomputes per-session totals idempotently each poll, fills cost from the provider stream or the static pricing table, and the daemon polls it on a self-throttled 30s/60s cadence; totals are exposed as `TokenUsageSummary` over the control channel and printed by `jackin-capsule token-usage <id>`. That code (`crates/jackin-capsule/src/token_monitor.rs`) is the source of truth; this page tracks only the remaining work below.
+
+**Adapter hardening still open**: each provider reader currently globs *all* of that provider's session logs in the container and attributes them to the polling session, so two concurrent same-provider agents see the union of both — per-session file correlation (by cwd / session metadata) is the remaining accuracy work, and the field/path assumptions want validation against real provider output (Implementation sequence steps 2–3). **Host-global telemetry still open**: per-instance `usage_samples` storage substrate, workspace/session spend summaries, the shared `account/*` and `usage/*` daemon API + `jackin usage --json` CLI, and the console/Desktop spend badges. The quota-window cards and richer model catalog were deliberately dropped from the Capsule slice (they duplicate the shipped account-quota plane).
 
 ## Problem
 
@@ -72,6 +68,7 @@ jackin' pricing pluggable across runtimes.
 - CodexBar — https://github.com/steipete/CodexBar
 - CodexBar provider / refresh documentation — https://github.com/steipete/CodexBar/tree/main/docs
 - OpenUsage — https://github.com/robinebers/openusage
+- OpenUsage plugin API — https://github.com/robinebers/openusage/tree/main/docs
 
 CodexBar and OpenUsage are better references for account-limit telemetry than for jackin' session telemetry. Both are menu-bar-first tools that collect provider usage from existing local state or provider APIs, then render quota bars, reset countdowns, and stale/error states. CodexBar is broader and deeper on local/provider source handling: it supports Claude, Codex, Amp, Kimi, OpenCode, and many providers outside jackin'; exposes configurable refresh cadences; renders reset windows; ships a CLI for local cost scans; and treats browser cookies / API keys / OAuth / local CLI state as provider-specific source strategies. OpenUsage is the cleaner product reference: a lightweight menu-bar panel, automatic refresh, global shortcut, local HTTP API on `127.0.0.1`, proxy support, and an explicit plugin direction for adding providers.
 

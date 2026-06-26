@@ -40,10 +40,15 @@ use tokio::time::{Duration, interval};
 
 use portable_pty::CommandBuilder;
 
+use crate::agent_status::rules::RulePackRegistry;
 use crate::attach_protocol::{
     AttachHandshake, ControlRequest, detach_attached_task, detach_client, drain_and_exit,
     drain_and_exit_with_reason, handle_attach_client, initial_spawn_request, perform_handshake,
     spawn_request_label,
+};
+use crate::clipboard::{
+    CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT, ClipboardImageTransfers, cleanup_clipboard_run_dir,
+    stage_clipboard_image,
 };
 #[cfg(test)]
 use crate::git_context::{
@@ -65,6 +70,7 @@ use crate::session::{
     SessionEvent, build_agent_command, build_shell_command,
 };
 use crate::socket;
+use crate::token_monitor::{TokenMonitor, TokenTotals};
 use crate::tui::app::{
     ChromeHitState, CursorVisibilityState, DragState, HoverState, HoverTarget, MuxMode,
     MuxModeState, PointerShape, PointerShapeState, VisiblePane, chrome_hover_target_for_state,
@@ -126,11 +132,13 @@ use crate::tui::update::{
 };
 use crate::tui::view::spawn_request_failure_message;
 use crate::usage::UsageCache;
+use jackin_core::agent::Agent;
 use jackin_protocol::control::{ClientMsg, ServerMsg};
 
 mod compositor;
 mod context_mgmt;
 mod dialog_mgmt;
+mod file_export;
 mod input_dispatch;
 mod mouse_input;
 mod multiplexer_utils;
@@ -179,6 +187,12 @@ pub struct Multiplexer {
     /// with `ExecDenied { reason: "superseded …" }` (in `begin_exec_picker`) so
     /// that client gets a structured answer rather than a dropped connection.
     pending_exec_reply: Option<tokio::sync::oneshot::Sender<ServerMsg>>,
+    /// Set by the dirty-exit modal's keep/discard rows; the event loop writes
+    /// the host exit-action file and drains on the next iteration.
+    exit_request: Option<jackin_protocol::ExitAction>,
+    /// Pre-built read-only Inspect rows (status + path, grouped by repo) for the
+    /// dirty-exit modal's Inspect row. Populated when the modal is opened.
+    exit_dirty_inspect: Vec<crate::tui::components::dialog::InspectRow>,
     env_passthrough: Vec<(String, String)>,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
     event_rx: mpsc::UnboundedReceiver<SessionEvent>,
@@ -216,6 +230,12 @@ pub struct Multiplexer {
     /// visible. Cleared by the next click or typed input.
     selection_copied: bool,
     selection_copy_feedback_deadline: Option<Instant>,
+    /// Transient operator-facing result of a host clipboard image paste:
+    /// staged path, dialog-owned-input warning, or rejected payload reason.
+    clipboard_image_notice: Option<String>,
+    clipboard_image_notice_deadline: Option<Instant>,
+    clipboard_image_transfers: ClipboardImageTransfers,
+    clipboard_image_insert_mode: ClipboardImageInsertMode,
     /// Monotonic state-change counter: every mutation that can affect the
     /// visible frame bumps it via `invalidate`. The render loop composes
     /// when it moved past `rendered_generation` — there are no repaint
@@ -262,6 +282,9 @@ pub struct Multiplexer {
     /// next operator keystroke clears it.
     spawn_failure: Option<String>,
     hover_target: Option<HoverTarget>,
+    /// Link target under an Alt/Ctrl hover in a mouse-disabled pane. Rendered
+    /// as a compositor-owned notice so no hover bytes are written into the PTY.
+    link_hover_url: Option<String>,
     /// P5: focus is on the agent-tab bar (green underline + Left/Right switch
     /// tabs; Down/Esc/click returns focus to the agent content). `false` means
     /// the agent terminal holds focus, the default.
@@ -333,6 +356,10 @@ pub struct Multiplexer {
     /// Daemon-owned focused usage/quota cache. Capsule UI renders this cache;
     /// it does not poll providers from render code.
     usage_cache: UsageCache,
+    /// Daemon-owned per-session token-spend monitor. Reconciled against the
+    /// live agent sessions and polled on the state tick; provider reads are
+    /// owned here, never in render or client code.
+    token_monitor: TokenMonitor,
     /// Provider tab requested by the usage overlay. The normal usage refresh
     /// ticker consumes this as a focused-first target so opening/switching tabs
     /// stays non-blocking but the selected provider refreshes next.
@@ -492,6 +519,8 @@ impl Multiplexer {
             available_agents: agents,
             launch_config,
             pending_exec_reply: None,
+            exit_request: None,
+            exit_dirty_inspect: Vec::new(),
             env_passthrough,
             event_tx,
             event_rx,
@@ -507,6 +536,10 @@ impl Multiplexer {
             last_pane_press: None,
             selection_copied: false,
             selection_copy_feedback_deadline: None,
+            clipboard_image_notice: None,
+            clipboard_image_notice_deadline: None,
+            clipboard_image_transfers: ClipboardImageTransfers::default(),
+            clipboard_image_insert_mode: ClipboardImageInsertMode::PastePath,
             frame_generation: 0,
             rendered_generation: 0,
             wipe_pending: None,
@@ -519,6 +552,7 @@ impl Multiplexer {
             last_outer_terminal_title: None,
             spawn_failure: None,
             hover_target: None,
+            link_hover_url: None,
             tab_bar_focused: false,
             dialog_copy_feedback_deadline: None,
             pull_request_context_branch: None,
@@ -537,6 +571,7 @@ impl Multiplexer {
             agent_history: Vec::new(),
             resource_metrics: resource_metrics::ResourceMetricsSampler::default(),
             usage_cache: UsageCache::default(),
+            token_monitor: TokenMonitor::new(),
             pending_usage_refresh: None,
             usage_refresh_task: None,
             wordlist_offset: {
@@ -559,10 +594,224 @@ impl Multiplexer {
     pub(crate) fn send_out_of_band(&mut self, bytes: Vec<u8>) {
         self.client.enqueue_out_of_band(bytes);
     }
+
+    /// Send a typed attach protocol frame that is not terminal output.
+    fn send_protocol_frame(&mut self, frame: ServerFrame) {
+        self.client.send_protocol_frame(frame);
+    }
+
+    fn request_clipboard_image_from_text_path(&mut self) {
+        self.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+        self.send_protocol_frame(ServerFrame::HostStageImageFromClipboardPath);
+    }
+
+    fn request_clipboard_image_paste(&mut self) {
+        self.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+        self.send_protocol_frame(ServerFrame::HostPasteImageFromClipboard);
+    }
+
+    fn request_clipboard_image_stage_only(&mut self) {
+        self.clipboard_image_insert_mode = ClipboardImageInsertMode::StageOnly;
+        self.send_protocol_frame(ServerFrame::HostStageImageFromClipboard);
+    }
+
+    fn stage_clipboard_image_response(&mut self, image: jackin_protocol::attach::ClipboardImage) {
+        self.stage_clipboard_image_response_with(image, stage_clipboard_image);
+    }
+
+    fn stage_clipboard_image_response_with<F>(
+        &mut self,
+        image: jackin_protocol::attach::ClipboardImage,
+        stage: F,
+    ) where
+        F: FnOnce(&jackin_protocol::attach::ClipboardImage) -> Result<PathBuf>,
+    {
+        let insert_mode = std::mem::take(&mut self.clipboard_image_insert_mode);
+        match stage(&image) {
+            Ok(path) => {
+                let path = path.to_string_lossy();
+                let bytes = image.bytes.len();
+                crate::clog!(
+                    "clipboard-image: staged extension={} bytes={} path={path}",
+                    image.format.extension(),
+                    bytes
+                );
+                if insert_mode == ClipboardImageInsertMode::StageOnly {
+                    self.set_clipboard_image_notice(format!(
+                        "Image staged: {path} ({bytes} bytes)"
+                    ));
+                } else if self.dialog_captures_input() {
+                    crate::clog!(
+                        "clipboard-image: ignored staged path because a dialog owns input"
+                    );
+                    self.set_clipboard_image_notice(format!(
+                        "Image staged: {path} ({bytes} bytes; dialog focused; not pasted)"
+                    ));
+                } else if self.paste_text_to_focused_pane(path.as_bytes()) {
+                    self.set_clipboard_image_notice(format!(
+                        "Image staged: {path} ({bytes} bytes)"
+                    ));
+                } else {
+                    crate::clog!(
+                        "clipboard-image: staged path not pasted because no writable focused pane was available"
+                    );
+                    self.set_clipboard_image_notice(format!(
+                        "Image staged: {path} ({bytes} bytes; no writable focused pane; not pasted)"
+                    ));
+                }
+            }
+            Err(err) => {
+                log_clipboard_image_rejection("payload", &err);
+                self.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
+            }
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum ClipboardImageInsertMode {
+    #[default]
+    PastePath,
+    StageOnly,
+}
+
+fn log_clipboard_image_rejection(stage: &str, err: &anyhow::Error) {
+    let reason = clipboard_image_error_reason(err);
+    crate::clog!("clipboard-image: rejected reason={reason} stage={stage}");
+    crate::cdebug!("clipboard-image: rejected stage={stage} detail={err:#}");
+}
+
+fn clipboard_image_error_reason(err: &anyhow::Error) -> &'static str {
+    classify_clipboard_image_error(&format!("{err:#}"))
+}
+
+fn clipboard_image_host_error_reason(message: &str) -> &'static str {
+    classify_clipboard_image_error(message)
+}
+
+fn classify_clipboard_image_error(message: &str) -> &'static str {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("empty") {
+        "empty"
+    } else if lower.contains("exceeds cap")
+        || lower.contains("too large")
+        || lower.contains("over cap")
+    {
+        "oversize"
+    } else if lower.contains("magic")
+        || lower.contains("signature")
+        || lower.contains("not an image")
+        || lower.contains("unsupported image")
+    {
+        "signature-mismatch"
+    } else if lower.contains("sha-256") || lower.contains("digest") {
+        "digest-mismatch"
+    } else if lower.contains("offset") || lower.contains("did not match expected") {
+        "offset-mismatch"
+    } else if lower.contains("no active start") {
+        "missing-transfer"
+    } else if lower.contains("already active") {
+        "duplicate-transfer"
+    } else if lower.contains("display")
+        || lower.contains("wayland")
+        || lower.contains("xclip")
+        || lower.contains("wl-paste")
+        || lower.contains("wl-copy")
+    {
+        "backend-unavailable"
+    } else if lower.contains("create")
+        || lower.contains("creating")
+        || lower.contains("open")
+        || lower.contains("opening")
+        || lower.contains("write")
+        || lower.contains("writing")
+        || lower.contains("flush")
+        || lower.contains("flushing")
+        || lower.contains("permission")
+        || lower.contains("metadata")
+        || lower.contains("read")
+        || lower.contains("reading")
+    {
+        "staging-io"
+    } else {
+        "invalid-payload"
+    }
 }
 
 #[cfg(test)]
 use crate::client_writer::scan_emitted_frame;
+
+/// Build the read-only Inspect rows for the dirty-exit modal: a section header
+/// per dirty repo followed by its `<status> <path>` change rows.
+fn build_exit_inspect_rows(
+    repos: &[crate::exit_assess::DirtyRepo],
+) -> Vec<crate::tui::components::dialog::InspectRow> {
+    use crate::tui::components::dialog::InspectRow;
+    let mut rows = Vec::new();
+    for repo in repos {
+        rows.push(InspectRow::Repo(repo.label().to_owned()));
+        for line in repo.inspect_rows() {
+            rows.push(InspectRow::File(line));
+        }
+    }
+    rows
+}
+
+/// Handle the last live session exiting. Returns `true` when the daemon should
+/// exit (the caller `return`s) and `false` when a dirty-exit modal was opened
+/// instead and the event loop must keep running. With policy `ask` and dirty
+/// isolated work, the modal is shown (no teardown); otherwise the container
+/// drains and exits, preserving the original non-clean-exit reason.
+async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>) -> bool {
+    // This runs on every client frame while no sessions are live (not just on
+    // the session-exit transition). If a dialog is already open, the dirty-exit
+    // flow is already active — the modal, its Inspect view, or the New-tab
+    // picker spawned from "Start a new agent" (with zero live sessions, the only
+    // way to have an open dialog is this flow). Re-entering here would push a
+    // fresh modal and re-run the git assessment on every keypress, resetting the
+    // selection to 0 — so the operator could never move past the first row.
+    // Defer until the current dialog is resolved.
+    if mux.dialog_open() {
+        return false;
+    }
+    match crate::exit_assess::decide_exit(&mux.launch_config).await {
+        crate::exit_assess::ExitDecision::Drain => {
+            if let Some(reason) = reason {
+                crate::clog!("session: final session exited: {reason}");
+                drain_and_exit_with_reason(mux, Some(reason)).await;
+            } else {
+                drain_and_exit(mux).await;
+            }
+            true
+        }
+        crate::exit_assess::ExitDecision::DrainWithAction(action) => {
+            // Policy keep/discard: record the action for the host, no prompt.
+            if let Err(error) = crate::exit_assess::write_exit_action(action) {
+                crate::clog!("exit: failed to write exit-action file: {error}");
+            }
+            if let Some(reason) = reason {
+                drain_and_exit_with_reason(mux, Some(reason)).await;
+            } else {
+                drain_and_exit(mux).await;
+            }
+            true
+        }
+        crate::exit_assess::ExitDecision::ShowModal(repos) => {
+            crate::clog!(
+                "exit: {} dirty repo(s) with policy ask — showing in-capsule dirty-exit modal",
+                repos.len()
+            );
+            let summary = repos
+                .iter()
+                .map(crate::exit_assess::DirtyRepo::summary_line)
+                .collect();
+            mux.exit_dirty_inspect = build_exit_inspect_rows(&repos);
+            mux.dialog_push(Dialog::new_exit_dirty(summary));
+            mux.invalidate(FullRedrawReason::DialogChange);
+            false
+        }
+    }
+}
 
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
 pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> Result<()> {
@@ -604,6 +853,16 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     let mut pending_initial_spawn = Some(initial_spawn);
 
     let mut new_clients = socket::start_listener()?;
+    // Screen rule packs: the universal detector. Loaded once; the embedded
+    // packs are validated, so a load failure means a broken build — log and
+    // run without screen evidence rather than killing the daemon.
+    let rule_registry = match RulePackRegistry::bundled() {
+        Ok(registry) => Some(registry),
+        Err(e) => {
+            crate::clog!("agent-status: rule packs failed to load, screen detection off: {e:#}");
+            None
+        }
+    };
     let mut branch_context_ticker = interval(GIT_BRANCH_CONTEXT_POLL_INTERVAL);
     let mut state_ticker = interval(STATE_TICK_INTERVAL);
     let mut usage_account_ticker = interval(USAGE_ACCOUNT_REFRESH_POLL_INTERVAL);
@@ -658,6 +917,15 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // `?2026` brackets, not from pacing.
     let mut last_frame_at: Option<tokio::time::Instant> = None;
     loop {
+        // The dirty-exit modal's keep/discard rows set `exit_request`; record
+        // the operator's choice for the host, then drain and exit.
+        if let Some(action) = mux.exit_request.take() {
+            if let Err(error) = crate::exit_assess::write_exit_action(action) {
+                crate::clog!("exit: failed to write exit-action file: {error}");
+            }
+            drain_and_exit(&mut mux).await;
+            return Ok(());
+        }
         if mux.input_parser.esc_pending() {
             if esc_deadline.is_none() {
                 esc_deadline = Some(tokio::time::Instant::now() + escape_time);
@@ -680,10 +948,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
 
             _ = sigterm.recv() => {
                 detach_client(&mut mux).await;
+                cleanup_clipboard_run_dir();
                 return Ok(());
             }
             _ = sigint.recv() => {
                 detach_client(&mut mux).await;
+                cleanup_clipboard_run_dir();
                 return Ok(());
             }
 
@@ -886,8 +1156,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     mux.detach_requested = false;
                     detach_client(&mut mux).await;
                 }
-                if mux.no_live_sessions() {
-                    drain_and_exit(&mut mux).await;
+                if mux.no_live_sessions()
+                    && handle_last_session_exit(&mut mux, None).await
+                {
+                    cleanup_clipboard_run_dir();
                     return Ok(());
                 }
             }
@@ -971,13 +1243,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         // the agent crashed — there is nothing left to
                         // attach to. Tear down the container so the
                         // host cleanup path fires.
-                        if mux.no_live_sessions() {
-                            if let Some(reason) = reason {
-                                crate::clog!("session {session_id}: final session exited: {reason}");
-                                drain_and_exit_with_reason(&mut mux, Some(reason)).await;
-                            } else {
-                                drain_and_exit(&mut mux).await;
-                            }
+                        if mux.no_live_sessions()
+                            && handle_last_session_exit(&mut mux, reason).await
+                        {
                             return Ok(());
                         }
                     }
@@ -1079,6 +1347,47 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             _ = state_ticker.tick() => {
                 mux.log_resource_metrics().await;
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
+                // Reap idle clipboard-image transfers and surface a notice. Must
+                // NOT short-circuit the tick: agent-state advancement below is the
+                // 1 Hz floor — every session re-evaluates each tick — and a
+                // clipboard reap is an orthogonal concern that must not freeze it.
+                // The `invalidate` guarantees the notice repaints even if no agent
+                // state changed this tick (otherwise the no-change `continue` below
+                // would leave the frame clean and the notice never painted).
+                let stale_image_transfers = mux
+                    .clipboard_image_transfers
+                    .abort_idle_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
+                if stale_image_transfers > 0 {
+                    crate::clog!(
+                        "clipboard-image: cleaned up {stale_image_transfers} idle transfer{}",
+                        if stale_image_transfers == 1 { "" } else { "s" }
+                    );
+                    mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+                    mux.set_clipboard_image_notice(format!(
+                        "Image paste interrupted: cleaned up {stale_image_transfers} idle transfer{}",
+                        if stale_image_transfers == 1 { "" } else { "s" }
+                    ));
+                    mux.invalidate(status_change_redraw_reason());
+                }
+                // Evidence arbitration is the ONLY path that authors agent state.
+                // Each session assembles an EvidenceSnapshot (authority, process,
+                // OSC, screen) in `advance_status`, arbitrates to a raw state +
+                // confidence, and publishes through SessionStatus (which derives
+                // the public `effective` state, incl. done-from-seen).
+                let now = Instant::now();
+                // Token-spend monitor: keep it synced to the live agent sessions
+                // and poll any due providers. `poll_due_sessions` self-throttles
+                // to the 30s/60s cadence, so calling it each state tick is cheap.
+                let token_sessions: Vec<(u64, Agent)> = mux
+                    .sessions
+                    .iter()
+                    .filter_map(|(id, s)| Some((*id, Agent::from_slug(s.agent.as_deref()?)?)))
+                    .collect();
+                mux.token_monitor.reconcile_sessions(&token_sessions);
+                // Returned changed-id list is unused for now (no live event
+                // stream yet); the poll updates the cached per-session totals
+                // that `ClientMsg::TokenUsage` reads.
+                drop(mux.token_monitor.poll_due_sessions().await);
                 // Snapshot visible agent state, refresh, snapshot again. The
                 // ticker's only time-based effect is Working→Idle transitions;
                 // tab labels derive from state and the status bar has no
@@ -1087,8 +1396,36 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // a constant flicker, so skip it unless state actually changed.
                 let states_before: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
-                for session in mux.sessions.values_mut() {
-                    session.refresh_state();
+                for (&session_id, session) in &mut mux.sessions {
+                    // Session::advance_status is the sole state-authoring path;
+                    // the daemon only reacts to the resulting transition.
+                    let tick = session.advance_status(rule_registry.as_ref(), now);
+                    if let Some(transition) = tick.transition {
+                        // Flap-rate telemetry: every public transition is logged
+                        // with the deciding evidence so a regression (an agent
+                        // update breaking a pack) shows up as a burst.
+                        crate::clog!(
+                            "agent-status: session {session_id} {} -> {} (winner={:?})",
+                            transition.previous.label(),
+                            transition.effective.label(),
+                            transition.winner
+                        );
+                    }
+                    if tick.stuck {
+                        crate::clog!(
+                            "status.stuck: session {session_id} demoted to unknown — \
+                             working claimed with no output/CPU/children past the watchdog window"
+                        );
+                    }
+                }
+                // Seen/ack: the focused pane is being reviewed, so it must never
+                // linger on `done`. Acknowledge it each tick (idempotent — only
+                // done→idle changes anything), which records the seen revision.
+                if let Some(focused) = mux.active_focused_id()
+                    && let Some(session) = mux.sessions.get_mut(&focused)
+                    && let Some(effective) = session.status.acknowledge()
+                {
+                    session.state = effective;
                 }
                 let states_after: Vec<_> =
                     mux.sessions.iter().map(|(id, s)| (*id, s.state)).collect();
@@ -1100,14 +1437,17 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     mux.invalidate(selection_change_redraw_reason());
                     continue;
                 }
+                if mux.expire_clipboard_image_notice(Instant::now()) {
+                    mux.invalidate(status_change_redraw_reason());
+                    continue;
+                }
                 if mux.refresh_open_usage_dialog_from_cache() {
                     mux.invalidate(dialog_change_redraw_reason());
                     continue;
                 }
                 // A modal owns the whole screen behind an opaque backdrop;
-                // repainting the status/branch chrome here would draw it
-                // back over the fill. The hidden tab-state glyph has nothing
-                // to refresh, so skip the chrome frame while a dialog is open.
+                // repainting the status/branch chrome here would draw it back
+                // over the fill, so skip the chrome frame while a dialog is open.
                 if mux.dialog_open() {
                     continue;
                 }
@@ -1119,6 +1459,30 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             }
         }
     }
+}
+
+/// Write a capture fixture for `session`: its live visible grid (`visible.txt`)
+/// and the current evidence report (`evidence.json`), under
+/// `/jackin/state/agent-status/captures/<id>-<seq>/`. Turns a live
+/// mis-detection into a regression fixture in one command.
+fn write_status_capture(session_id: u64, session: &Session) -> Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static CAPTURE_SEQ: AtomicU64 = AtomicU64::new(0);
+    let seq = CAPTURE_SEQ.fetch_add(1, Ordering::Relaxed);
+    let dir =
+        PathBuf::from("/jackin/state/agent-status/captures").join(format!("{session_id}-{seq}"));
+    std::fs::create_dir_all(&dir)?;
+    std::fs::write(
+        dir.join("visible.txt"),
+        session.visible_screen_rows().join("\n"),
+    )?;
+    let report = session.status.report(session.agent.clone());
+    std::fs::write(
+        dir.join("evidence.json"),
+        serde_json::to_string_pretty(&report)?,
+    )?;
+    crate::clog!("status.capture: wrote {}", dir.display());
+    Ok(())
 }
 
 fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg {
@@ -1133,6 +1497,33 @@ fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg
         ClientMsg::Agents => ServerMsg::AgentRegistry {
             records: mux.agent_registry_snapshot(),
         },
+        // Forwarded in-container reporter event: apply it to the addressed
+        // session's authority and Ack immediately (never block the agent hook).
+        ClientMsg::ReportRuntimeEvent {
+            session_id,
+            source_id,
+            runtime,
+            event,
+            payload: _,
+        } => {
+            if let Some(session) = mux.sessions.get_mut(&session_id) {
+                session.apply_runtime_event(&source_id, &runtime, &event, Instant::now());
+            } else {
+                crate::cdebug!("agent-status: runtime event for unknown session {session_id}");
+            }
+            ServerMsg::Ack
+        }
+        // Contributor diagnostic: snapshot the live grid + evidence to a fixture.
+        ClientMsg::StatusCapture { session_id } => {
+            if let Some(session) = mux.sessions.get(&session_id) {
+                if let Err(e) = write_status_capture(session_id, session) {
+                    crate::clog!("status.capture: session {session_id} failed: {e:#}");
+                }
+            } else {
+                crate::clog!("status.capture: no live session {session_id} to capture");
+            }
+            ServerMsg::Ack
+        }
         ClientMsg::UsageFocused => ServerMsg::UsageFocused {
             usage: Box::new(mux.focused_usage_snapshot()),
         },
@@ -1154,6 +1545,12 @@ fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg
                 reason: "jackin-exec must be dispatched through the credential picker".to_owned(),
             }
         }
+        ClientMsg::TokenUsage { session_id } => ServerMsg::TokenUsage {
+            summary: mux
+                .token_monitor
+                .totals(session_id)
+                .map(TokenTotals::to_summary),
+        },
         ClientMsg::Unknown => {
             crate::clog!("control: ignoring unknown ClientMsg variant from peer");
             ServerMsg::Unknown
@@ -1200,6 +1597,45 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         }
         ClientFrame::Command(_payload) => {
             // Reserved for future structured commands from the host CLI.
+        }
+        ClientFrame::ClipboardImage(image) => mux.stage_clipboard_image_response(image),
+        ClientFrame::ClipboardImageStart(start) => {
+            let size = start.size;
+            if let Err(err) = mux.clipboard_image_transfers.start(start) {
+                log_clipboard_image_rejection("transfer-start", &err);
+                mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+                mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
+            } else if mux.clipboard_image_insert_mode == ClipboardImageInsertMode::StageOnly {
+                mux.set_clipboard_image_notice(format!("Image staging: receiving {size} bytes"));
+            } else {
+                mux.set_clipboard_image_notice(format!("Image paste: receiving {size} bytes"));
+            }
+        }
+        ClientFrame::ClipboardImageChunk(chunk) => {
+            if let Err(err) = mux.clipboard_image_transfers.chunk(chunk) {
+                log_clipboard_image_rejection("transfer-chunk", &err);
+                mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+                mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
+            }
+        }
+        ClientFrame::ClipboardImageEnd(end) => match mux.clipboard_image_transfers.end(end) {
+            Ok(image) => mux.stage_clipboard_image_response(image),
+            Err(err) => {
+                log_clipboard_image_rejection("transfer-end", &err);
+                mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+                mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
+            }
+        },
+        ClientFrame::ClipboardImageError(message) => {
+            let reason = clipboard_image_host_error_reason(&message);
+            crate::clog!("clipboard-image: host request failed reason={reason}");
+            crate::cdebug!("clipboard-image: host request failed detail={message}");
+            mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+            mux.set_clipboard_image_notice(format!("Image paste rejected: {message}"));
+        }
+        ClientFrame::HostNotice(message) => {
+            crate::clog!("host-affordance: {message}");
+            mux.set_clipboard_image_notice(message);
         }
         ClientFrame::Detach => {
             mux.detach_requested = true;

@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use jackin_capsule::{
-    client, config, daemon, exec, mcp_server, output, protocol::attach::SpawnRequest,
-    runtime_setup, session::validate_agent_slug,
+    client, config, daemon, exec, firewall, mcp_server, output, protocol::attach::SpawnRequest,
+    runtime_setup, session::validate_agent_slug, sudo_provision,
 };
 use std::path::Path;
 
@@ -66,6 +66,7 @@ SUBCOMMANDS:
     new [<agent>]                  Spawn a new agent session (default: shell)
     status                         Print daemon status to stdout
     snapshot                       Write a screen snapshot to stdout
+    attach-proxy                   Relay attach protocol bytes over stdio
     usage accounts                 Print cached account quota rows as JSON
     usage verify                   Verify all provider quota rows are cached and trusted
     usage claude-cli               Explicitly run Claude Code /usage diagnostic
@@ -73,6 +74,8 @@ SUBCOMMANDS:
     exec <command> [args…]         Run a command with operator-approved on-demand credentials
     mcp-server                     Run the jackin-exec MCP stdio server (spawned by the agent)
     runtime-setup                  First-boot environment setup (run by entrypoint)
+    sudo-provision                 Enforce per-profile sudo grant (run as root via docker exec)
+    firewall-apply                 Apply the in-container network allowlist
     prepare-commit-msg <file>      Git hook integration
 
 OPTIONS:
@@ -85,8 +88,17 @@ connecting as a client.",
                 ));
                 Ok(())
             }
+            Some("status") if args.get(2).map(String::as_str) == Some("explain") => {
+                client::run_status_explain(&args).await
+            }
+            Some("status") if args.get(2).map(String::as_str) == Some("capture") => {
+                client::run_status_capture(&args).await
+            }
             Some("status") => client::run_status().await,
             Some("snapshot") => client::run_snapshot().await,
+            Some("report-event") => client::run_report_event(&args).await,
+            Some("token-usage") => client::run_token_usage(&args).await,
+            Some("attach-proxy") => client::run_attach_proxy().await,
             Some("usage") => run_usage_subcommand(&args).await,
             Some("agents") => {
                 let json_format = args.iter().any(|a| a == "--format=json")
@@ -102,6 +114,8 @@ connecting as a client.",
             }
             Some("runtime-setup") => runtime_setup::run(),
             Some("mcp-server") => mcp_server::run().await,
+            Some("sudo-provision") => sudo_provision::provision(),
+            Some("firewall-apply") => firewall::apply(),
             Some("prepare-commit-msg") => runtime_setup::run_prepare_commit_msg_hook(&args[2..]),
             Some("new") => {
                 let supported_agents = config::load_optional()
@@ -145,7 +159,7 @@ connecting as a client.",
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, usage accounts, usage verify, usage claude-cli, agents [--format json], exec <command>, mcp-server, runtime-setup, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, status explain <id>, status capture <id>, snapshot, attach-proxy, usage accounts, usage verify, usage claude-cli, token-usage <id>, agents [--format json], report-event --event <name> [--payload-stdin], exec <command>, mcp-server, runtime-setup, sudo-provision, firewall-apply, prepare-commit-msg, new <agent>, --focus <session_id>, --version, --help"
                 )
             }
         }
@@ -252,8 +266,9 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
         // --focus. Scan past the end of args so a stray --focus is
         // ignored instead of silently consumed.
         Some(
-            "status" | "snapshot" | "usage" | "agents" | "runtime-setup" | "mcp-server"
-            | "prepare-commit-msg" | "--version" | "-V" | "--help" | "-h",
+            "status" | "snapshot" | "attach-proxy" | "usage" | "agents" | "runtime-setup"
+            | "mcp-server" | "prepare-commit-msg" | "sudo-provision" | "firewall-apply"
+            | "--version" | "-V" | "--help" | "-h",
         ) => args.len(),
         // `jackin-capsule --focus 5` (no subcommand) or no args at
         // all — scan from index 1.

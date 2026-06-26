@@ -4,6 +4,9 @@ data_dir = "/tmp/jackin"
 [claude]
 auth_forward = "sync"
 
+[codex]
+auth_forward = "api_key"
+
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true

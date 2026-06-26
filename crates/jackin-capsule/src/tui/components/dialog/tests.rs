@@ -429,9 +429,11 @@ fn container_info_with_diagnostics_fixture() -> Dialog {
         diagnostics: ContainerInfoDiagnostics {
             host_version: "0.6.0-test".to_owned(),
             run_id: "jk-run-b93735".to_owned(),
-            run_log_display: "~/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl".to_owned(),
+            run_log_display: "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
+                .to_owned(),
             run_log_href: Some(
-                "file:///home/agent/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl".to_owned(),
+                "file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
+                    .to_owned(),
             ),
         },
         copied_row: None,
@@ -523,7 +525,15 @@ fn container_info_state_keeps_run_id_bare_and_log_path_separate() {
     assert!(log_row.is_copyable());
     assert_eq!(
         log_row.href(),
-        Some("file:///home/agent/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
+        Some("file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
+    );
+    let reveal_row = rows
+        .iter()
+        .find(|row| row.href().is_some() && !row.is_copyable())
+        .expect("diagnostics reveal row present");
+    assert_eq!(
+        reveal_row.href(),
+        Some("file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
     );
 }
 
@@ -602,8 +612,8 @@ fn container_info_visible_debug_rows_map_to_shared_hit_targets() {
         ("jk-run-b93735", "jk-run-b93735"),
         ("jk-abc123-thearchitect", "jk-abc123-thearchitect"),
         (
-            "/home/agent",
-            "/home/agent/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl",
+            "/Users/operator",
+            "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl",
         ),
     ];
 
@@ -623,6 +633,62 @@ fn container_info_visible_debug_rows_map_to_shared_hit_targets() {
             "visible {visible_text:?} should hit its matching shared Debug-info row"
         );
     }
+}
+
+#[test]
+fn container_info_r_reveals_host_diagnostics_log_path() {
+    let mut d = container_info_with_diagnostics_fixture();
+    match d.handle_key(b"r", None) {
+        DialogAction::RevealHostPath(path) => {
+            assert_eq!(
+                path,
+                "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
+            );
+        }
+        other => panic!("R must request host diagnostics reveal, got {other:?}"),
+    }
+}
+
+#[test]
+fn container_info_o_reveals_host_diagnostics_log_path() {
+    let mut d = container_info_with_diagnostics_fixture();
+    match d.handle_key(b"o", None) {
+        DialogAction::RevealHostPath(path) => {
+            assert_eq!(
+                path,
+                "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
+            );
+        }
+        other => panic!("O must request host diagnostics reveal, got {other:?}"),
+    }
+}
+
+#[test]
+fn container_info_o_does_not_open_github_context_url() {
+    let pr = pull_request_fixture();
+    let view = github_view_for_fixture(&pr);
+    let mut d = container_info_with_diagnostics_fixture();
+    match d.handle_key(b"o", Some(&view)) {
+        DialogAction::RevealHostPath(path) => {
+            assert_eq!(
+                path,
+                "/Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl"
+            );
+        }
+        other => panic!("ContainerInfo O must stay diagnostics reveal, got {other:?}"),
+    }
+}
+
+#[test]
+fn container_info_r_without_diagnostics_log_redraws() {
+    let mut d = container_info_fixture();
+    assert_eq!(d.handle_key(b"r", None), DialogAction::Redraw);
+}
+
+#[test]
+fn container_info_o_without_diagnostics_log_redraws() {
+    let mut d = container_info_fixture();
+    assert_eq!(d.handle_key(b"o", None), DialogAction::Redraw);
 }
 
 #[test]
@@ -736,6 +802,48 @@ fn github_context_enter_copies_pr_url_and_shows_feedback() {
 }
 
 #[test]
+fn github_context_o_opens_pr_url() {
+    let pr = pull_request_fixture();
+    let view = github_view_for_fixture(&pr);
+    let mut d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
+
+    match d.handle_key(b"o", Some(&view)) {
+        DialogAction::OpenHostUrl(url) => {
+            assert_eq!(url, "https://github.com/jackin-project/jackin/pull/123");
+        }
+        other => panic!("O must request host PR open, got {other:?}"),
+    }
+}
+
+#[test]
+fn github_context_c_opens_ci_url_when_available() {
+    let mut pr = pull_request_fixture();
+    pr.checks = Some(
+        crate::pull_request::PullRequestChecks::from_buckets(["fail"]).with_ci_url(Some(
+            "https://github.com/jackin-project/jackin/actions/runs/1/job/2".to_owned(),
+        )),
+    );
+    let view = github_view_for_fixture(&pr);
+    let mut d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
+
+    match d.handle_key(b"c", Some(&view)) {
+        DialogAction::OpenHostUrl(url) => {
+            assert_eq!(
+                url,
+                "https://github.com/jackin-project/jackin/actions/runs/1/job/2"
+            );
+        }
+        other => panic!("C must request host CI open, got {other:?}"),
+    }
+}
+
+#[test]
 fn github_context_url_click_copies_pr_url() {
     let pr = pull_request_fixture();
     let view = github_view_for_fixture(&pr);
@@ -753,6 +861,67 @@ fn github_context_url_click_copies_pr_url() {
         other => panic!("GitHub URL row click must request clipboard copy, got {other:?}"),
     }
     assert!(d.has_copy_feedback());
+}
+
+#[test]
+fn github_context_open_rows_click_open_urls() {
+    let mut pr = pull_request_fixture();
+    pr.checks = Some(
+        crate::pull_request::PullRequestChecks::from_buckets(["fail"]).with_ci_url(Some(
+            "https://github.com/jackin-project/jackin/actions/runs/1/job/2".to_owned(),
+        )),
+    );
+    let view = github_view_for_fixture(&pr);
+    let mut d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
+    let (row, col, _, _) = d.box_rect(40, 120);
+
+    assert!(d.clickable_at(row + 7, col + 18, 40, 120, Some(&view)));
+    match d.handle_click(row + 7, col + 18, 40, 120, Some(&view)) {
+        DialogAction::OpenHostUrl(url) => {
+            assert_eq!(url, "https://github.com/jackin-project/jackin/pull/123");
+        }
+        other => panic!("Open PR row click must request host open, got {other:?}"),
+    }
+
+    assert!(d.clickable_at(row + 8, col + 18, 40, 120, Some(&view)));
+    match d.handle_click(row + 8, col + 18, 40, 120, Some(&view)) {
+        DialogAction::OpenHostUrl(url) => {
+            assert_eq!(
+                url,
+                "https://github.com/jackin-project/jackin/actions/runs/1/job/2"
+            );
+        }
+        other => panic!("Open CI row click must request host open, got {other:?}"),
+    }
+}
+
+#[test]
+fn github_context_unavailable_ci_row_is_not_clickable() {
+    let pr = pull_request_fixture();
+    let view = github_view_for_fixture(&pr);
+    let mut d = Dialog::GitHubContext {
+        copied: false,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
+    let (row, col, _, _) = d.box_rect(40, 120);
+
+    assert!(
+        !d.clickable_at(row + 8, col + 18, 40, 120, Some(&view)),
+        "unavailable CI row must not advertise a clickable host-open target"
+    );
+    assert_eq!(
+        d.handle_click(row + 8, col + 18, 40, 120, Some(&view)),
+        DialogAction::Consume,
+        "clicking unavailable CI should be consumed inside the dialog"
+    );
+    assert_eq!(
+        d.handle_key(b"c", Some(&view)),
+        DialogAction::Redraw,
+        "C shortcut should not open a host URL without a CI target"
+    );
 }
 
 #[test]
@@ -2058,4 +2227,102 @@ fn exec_picker_space_toggles_enter_confirms_esc_cancels() {
         &bindings,
     ));
     assert_eq!(cancel.handle_key(b"\x1b", None), DialogAction::ExecCancel);
+}
+
+#[test]
+fn exit_dirty_enter_routes_each_row() {
+    let expected = [
+        ExitDirtyRow::StartNewAgent,
+        ExitDirtyRow::Inspect,
+        ExitDirtyRow::Keep,
+        ExitDirtyRow::Discard,
+    ];
+    for (steps, want) in expected.iter().enumerate() {
+        let mut d = Dialog::new_exit_dirty(vec!["jackin   1 changed".to_owned()]);
+        for _ in 0..steps {
+            d.handle_key(b"\x1b[B", None);
+        }
+        match d.handle_key(b"\r", None) {
+            DialogAction::ExitDirty(row) => assert_eq!(row, *want),
+            other => panic!("row {steps}: expected ExitDirty, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn exit_dirty_esc_and_ctrl_c_keep_and_exit() {
+    // Reuses the shared FilterListAction::Dismiss path like every other dialog,
+    // mapping dismiss to keep-and-exit so the operator never loses work and the
+    // global Ctrl+C contract is preserved (no swallowed keys).
+    let mut esc = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    assert_eq!(
+        esc.handle_key(b"\x1b", None),
+        DialogAction::ExitDirty(ExitDirtyRow::Keep)
+    );
+    let mut ctrl_c = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    assert_eq!(
+        ctrl_c.handle_key(b"\x03", None),
+        DialogAction::ExitDirty(ExitDirtyRow::Keep)
+    );
+}
+
+#[test]
+fn exit_dirty_navigation_clamps_at_ends() {
+    // Up at the top stays on the first row.
+    let mut top = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    top.handle_key(b"\x1b[A", None);
+    assert!(matches!(
+        top.handle_key(b"\r", None),
+        DialogAction::ExitDirty(ExitDirtyRow::StartNewAgent)
+    ));
+    // Down past the end clamps to the last row.
+    let mut bottom = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    for _ in 0..10 {
+        bottom.handle_key(b"\x1b[B", None);
+    }
+    assert!(matches!(
+        bottom.handle_key(b"\r", None),
+        DialogAction::ExitDirty(ExitDirtyRow::Discard)
+    ));
+}
+
+#[test]
+fn exit_inspect_esc_walks_back() {
+    let mut d = Dialog::new_exit_inspect(vec![
+        InspectRow::Repo("jackin".to_owned()),
+        InspectRow::File("M a.rs".to_owned()),
+    ]);
+    assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
+}
+
+#[test]
+fn exit_dirty_selection_marker_moves_on_down_arrow() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    fn marker_row(d: &Dialog) -> Option<u16> {
+        let backend = TestBackend::new(60, 20);
+        let mut term = Terminal::new(backend).expect("backend");
+        term.draw(|f| {
+            let snap = d.to_ratatui_snapshot(None);
+            let rect = d.box_rect(20, 60);
+            crate::tui::components::dialog_widgets::render_dialog_ratatui(f, rect, &snap);
+        })
+        .expect("draw");
+        let buf = term.backend().buffer().clone();
+        (0..buf.area.height).find(|&y| {
+            (0..buf.area.width)
+                .map(|x| buf[(x, y)].symbol().to_owned())
+                .any(|s| s == "▸")
+        })
+    }
+
+    let mut d = Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]);
+    let before = marker_row(&d).expect("marker visible initially");
+    assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
+    let after = marker_row(&d).expect("marker visible after down");
+    assert!(
+        after > before,
+        "down-arrow must move the ▸ marker down: before row {before}, after row {after}"
+    );
 }

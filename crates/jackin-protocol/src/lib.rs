@@ -7,6 +7,8 @@
 //! small constants that name the host↔Capsule runtime contract live
 //! here too so the two binaries cannot drift.
 
+pub mod agent_status;
+pub mod attach;
 pub mod control;
 pub mod provider_adapter;
 pub mod snapshot;
@@ -74,6 +76,28 @@ pub const CAPSULE_CONFIG_PATH: &str = "/jackin/run/agent.toml";
 /// cannot drift.
 pub const HOST_SOCK_CONTAINER_PATH: &str = "/jackin/run/host.sock";
 
+/// Filename the capsule writes the operator's dirty-exit choice to, under the
+/// per-instance state dir, for the host to read and execute on cleanup.
+pub const EXIT_ACTION_FILENAME: &str = "exit-action.json";
+
+/// In-container path the capsule writes [`ExitAction`] to. The host's state-dir
+/// mount makes this readable from outside the container at
+/// `<data_dir>/<container>/state/exit-action.json`.
+pub const EXIT_ACTION_PATH: &str = "/jackin/state/exit-action.json";
+
+/// The operator's choice for dirty isolated work at in-capsule exit. Decided
+/// inside the capsule (the dirty-exit modal); the host only **executes** it,
+/// never prompts. The capsule writes this before draining; the host reads it on
+/// cleanup. Absent file means a clean exit (no dirty work) — nothing to execute.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExitAction {
+    /// Preserve the instance as resumable dirty state.
+    Keep,
+    /// Discard the instance and its dirty work.
+    Discard,
+}
+
 /// Host-validated role/session facts Capsule needs to spawn panes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CapsuleConfig {
@@ -110,6 +134,18 @@ pub struct CapsuleConfig {
     /// resolved values. Empty when the workspace declares no on-demand vars.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exec_bindings: Vec<ExecBinding>,
+    /// Resolved dirty-exit policy (`"ask"` | `"keep"` | `"discard"`). The
+    /// in-container daemon shows the dirty-exit modal only when this is `"ask"`;
+    /// `"keep"`/`"discard"` exit straight to the host executing that policy.
+    /// `None` resolves to `"ask"`. Carried as a string so `jackin-protocol` need
+    /// not depend on `jackin-config`'s `DirtyExitPolicy`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dirty_exit_policy: Option<String>,
+    /// Container-side paths of isolated `worktree`/`clone` mounts the daemon
+    /// assesses for dirty/unpushed work at last-session exit. `shared` mounts are
+    /// never listed (host-owned).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub isolated_worktrees: Vec<String>,
 }
 
 /// A Claude plugin marketplace the capsule registers at container start via

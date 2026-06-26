@@ -289,14 +289,13 @@ impl Multiplexer {
     pub(super) fn retire_codename(&mut self, codename: &str) {
         self.codename_live.remove(codename);
         self.codename_retired.insert(codename.to_owned());
-        let now = Utc::now();
         if let Some(record) = self
             .agent_history
             .iter_mut()
             .rev()
             .find(|r| r.codename == codename)
         {
-            record.exited_at = Some(now);
+            record.exited_at = Some(Utc::now());
         }
     }
 

@@ -33,8 +33,17 @@ const MANIFEST_MIGRATIONS: &[jackin_config::MigrationStep] = &[
         to: "v1alpha4",
         migrate: jackin_config::noop_migration,
     },
+    // v1alpha4 -> v1alpha5: add optional `[<agent>.providers.<id>]` per-provider
+    // model overrides. Additive with serde defaults; no transformation needed.
     jackin_config::MigrationStep {
         from: "v1alpha4",
+        to: "v1alpha5",
+        migrate: jackin_config::noop_migration,
+    },
+    // v1alpha5 -> v1alpha6: add optional role `[docker]` security settings.
+    // Additive with serde defaults; no transformation needed.
+    jackin_config::MigrationStep {
+        from: "v1alpha5",
         to: CURRENT_MANIFEST_VERSION,
         migrate: jackin_config::noop_migration,
     },

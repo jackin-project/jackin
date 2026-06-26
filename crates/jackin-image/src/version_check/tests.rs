@@ -43,7 +43,10 @@ async fn needs_update_when_versions_differ() {
     store_version(&paths, Agent::Claude, "jk_agent-smith", "2.1.91");
     seed_latest(&paths, Agent::Claude, "2.1.92");
 
-    assert!(needs_agent_update(&paths, "jk_agent-smith", Agent::Claude).await);
+    assert_eq!(
+        needs_agent_update(&paths, "jk_agent-smith", Agent::Claude).await,
+        AgentVersionCheck::Stale
+    );
 }
 
 #[tokio::test]
@@ -55,7 +58,10 @@ async fn no_update_when_versions_match() {
     store_version(&paths, Agent::Claude, "jk_agent-smith", "2.1.92");
     seed_latest(&paths, Agent::Claude, "2.1.92");
 
-    assert!(!needs_agent_update(&paths, "jk_agent-smith", Agent::Claude).await);
+    assert_eq!(
+        needs_agent_update(&paths, "jk_agent-smith", Agent::Claude).await,
+        AgentVersionCheck::UpToDate
+    );
 }
 
 #[tokio::test]
@@ -64,8 +70,12 @@ async fn no_update_on_first_build() {
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
 
+    // No stored baseline → first build → UpToDate (never warns/rebuilds).
     seed_latest(&paths, Agent::Claude, "2.1.92");
-    assert!(!needs_agent_update(&paths, "jk_agent-smith", Agent::Claude).await);
+    assert_eq!(
+        needs_agent_update(&paths, "jk_agent-smith", Agent::Claude).await,
+        AgentVersionCheck::UpToDate
+    );
 }
 
 #[test]
@@ -124,7 +134,10 @@ async fn opencode_needs_update_when_versions_differ() {
     store_version(&paths, Agent::Opencode, "jk_the-architect", "1.14.47");
     seed_latest(&paths, Agent::Opencode, "1.14.48");
 
-    assert!(needs_agent_update(&paths, "jk_the-architect", Agent::Opencode).await);
+    assert_eq!(
+        needs_agent_update(&paths, "jk_the-architect", Agent::Opencode).await,
+        AgentVersionCheck::Stale
+    );
 }
 
 #[tokio::test]
@@ -136,7 +149,10 @@ async fn opencode_no_update_when_versions_match() {
     store_version(&paths, Agent::Opencode, "jk_the-architect", "1.14.48");
     seed_latest(&paths, Agent::Opencode, "1.14.48");
 
-    assert!(!needs_agent_update(&paths, "jk_the-architect", Agent::Opencode).await);
+    assert_eq!(
+        needs_agent_update(&paths, "jk_the-architect", Agent::Opencode).await,
+        AgentVersionCheck::UpToDate
+    );
 }
 
 #[test]

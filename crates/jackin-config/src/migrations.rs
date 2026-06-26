@@ -53,17 +53,24 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
         to: "v1alpha5",
         migrate: noop_migration,
     },
-    // v1alpha5 → v1alpha6: add optional `sync_source_dir` to AgentAuthConfig.
-    // Additive with serde default; no transformation needed.
     MigrationStep {
         from: "v1alpha5",
         to: "v1alpha6",
         migrate: noop_migration,
     },
-    // v1alpha6 → v1alpha7: add optional `[runtime].default_backend` for
-    // selectable container backends. Additive with serde default; no transform.
+    // v1alpha6 → v1alpha7: add optional Docker profile/grants config and
+    // selectable container backends (`[runtime].default_backend`). Additive
+    // with serde defaults; no transformation needed.
     MigrationStep {
         from: "v1alpha6",
+        to: "v1alpha7",
+        migrate: noop_migration,
+    },
+    // v1alpha7 → v1alpha8: add optional `dirty_exit_policy` to AppConfig and
+    // WorkspaceConfig, and exec control-protocol types. Additive with serde
+    // defaults; no transformation needed.
+    MigrationStep {
+        from: "v1alpha7",
         to: CURRENT_CONFIG_VERSION,
         migrate: noop_migration,
     },
@@ -94,18 +101,24 @@ pub const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
         to: "v1alpha5",
         migrate: migrate_workspace_op_account_to_refs,
     },
-    // v1alpha5 → v1alpha6: add optional `sync_source_dir` to AgentAuthConfig.
-    // Additive with serde default; no transformation needed.
     MigrationStep {
         from: "v1alpha5",
         to: "v1alpha6",
         migrate: noop_migration,
     },
-    // v1alpha6 → v1alpha7: add optional on-demand env metadata (`on_demand`)
-    // and optional `[runtime].backend` per-workspace override. Additive with
-    // serde defaults; no transformation needed.
+    // v1alpha6 → v1alpha7: add optional workspace Docker profile/grants config,
+    // optional on-demand env metadata (`on_demand`), and optional
+    // `[runtime].backend` per-workspace override. Additive with serde defaults;
+    // no transformation needed.
     MigrationStep {
         from: "v1alpha6",
+        to: "v1alpha7",
+        migrate: noop_migration,
+    },
+    // v1alpha7 → v1alpha8: add optional `dirty_exit_policy` to WorkspaceConfig.
+    // Additive with serde default; no transformation needed.
+    MigrationStep {
+        from: "v1alpha7",
         to: CURRENT_WORKSPACE_VERSION,
         migrate: noop_migration,
     },

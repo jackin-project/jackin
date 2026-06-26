@@ -26,9 +26,15 @@ const INSTANCE_INDEX_LOCK_FILE: &str = "instances.json.lock";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DockerResources {
     pub role_container: String,
-    pub dind_container: String,
+    /// `DinD` sidecar container name. `None` when the launch used
+    /// `dind = "none"` (DinD-free role or `locked`/`hardened` profile without
+    /// an explicit `DinD` grant).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dind_container: Option<String>,
     pub network: String,
-    pub certs_volume: String,
+    /// `DinD` TLS cert volume name. `None` when there is no `DinD` sidecar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub certs_volume: Option<String>,
 }
 
 /// Resources backing an apple-container instance. The lifecycle CLI
@@ -66,9 +72,9 @@ impl DockerResources {
     pub fn from_container_name(container_name: &str) -> Self {
         Self {
             role_container: container_name.to_owned(),
-            dind_container: crate::runtime::naming::dind_container_name(container_name),
+            dind_container: Some(crate::runtime::naming::dind_container_name(container_name)),
             network: crate::runtime::naming::role_network_name(container_name),
-            certs_volume: crate::runtime::naming::dind_certs_volume(container_name),
+            certs_volume: Some(crate::runtime::naming::dind_certs_volume(container_name)),
         }
     }
 }
@@ -100,6 +106,24 @@ pub struct InstanceManifest {
     pub backend: Option<BackendResources>,
     #[serde(default)]
     pub sessions: Vec<SessionRecord>,
+    /// Pinned role-repo commit SHA baked into the image at launch (D7).
+    /// Consumed by Tier 3 rebuild so restore does not re-resolve HEAD.
+    #[serde(default)]
+    pub role_git_sha: Option<String>,
+    /// Base/construct image tag used when this image was built (D7/D16).
+    /// Persisted now for the planned faithful Tier-3 base pinning; not yet read
+    /// back (current Tier 3 rebuilds from `role_git_sha` only).
+    #[serde(default)]
+    pub base_image_ref: Option<String>,
+    /// Base/construct image digest at launch time (D16). Reserved for faithful
+    /// Tier-3 base pinning; always written as `None` today and not yet consumed.
+    #[serde(default)]
+    pub base_image_digest: Option<String>,
+    /// Agents baked into the image at launch (D7). Persisted for restore
+    /// diagnostics; the live supported-agent set is read from the role manifest,
+    /// so this field is not yet read back. Serializes as the lowercase slugs.
+    #[serde(default)]
+    pub supported_agents: Vec<Agent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,6 +146,14 @@ pub struct NewInstanceManifest<'a> {
     pub role_source_ref: Option<&'a str>,
     pub image_tag: &'a str,
     pub docker: DockerResources,
+    /// Pinned role-repo commit SHA at launch time (D7).
+    pub role_git_sha: Option<String>,
+    /// Base/construct image tag at launch time (D7/D16).
+    pub base_image_ref: Option<String>,
+    /// Base/construct image digest at launch time (D16).
+    pub base_image_digest: Option<String>,
+    /// Agents baked into the image at launch (D7).
+    pub supported_agents: Vec<Agent>,
 }
 
 impl InstanceManifest {
@@ -165,6 +197,10 @@ impl InstanceManifest {
             docker: input.docker,
             backend,
             sessions: Vec::new(),
+            role_git_sha: input.role_git_sha,
+            base_image_ref: input.base_image_ref,
+            base_image_digest: input.base_image_digest,
+            supported_agents: input.supported_agents,
         }
     }
 
@@ -227,6 +263,22 @@ impl InstanceManifest {
             InstanceStatus::Active
                 | InstanceStatus::Running
                 | InstanceStatus::Crashed
+                | InstanceStatus::PreservedDirty
+                | InstanceStatus::PreservedUnpushed
+                | InstanceStatus::RestoreAvailable
+                | InstanceStatus::FailedSetup
+        )
+    }
+
+    /// Whether this instance should appear in the launch dialog (D10).
+    ///
+    /// Stricter than `is_restore_candidate`: excludes `Active`/`Running`
+    /// because D13 means the launch path never re-attaches to a live
+    /// container. Live instances only appear in the console instance picker.
+    pub const fn is_launch_restore_candidate(&self) -> bool {
+        matches!(
+            self.status,
+            InstanceStatus::Crashed
                 | InstanceStatus::PreservedDirty
                 | InstanceStatus::PreservedUnpushed
                 | InstanceStatus::RestoreAvailable
@@ -307,7 +359,7 @@ pub fn host_path_fingerprint(path: &str) -> String {
         }
     };
     let digest = Sha256::digest(canonical.as_bytes());
-    format!("sha256:{}", crate::instance::naming::hex_lower(&digest))
+    format!("sha256:{}", hex::encode(digest))
 }
 
 impl InstanceIndex {

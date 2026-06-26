@@ -38,6 +38,12 @@ exclude = [
   # nngroup.com (Nielsen Norman Group) returns 403 to automated clients; the
   # article is browser-visible. Cited from docs/reference/tui/navigation.mdx.
   "https://www\\.nngroup\\.com/",
+  # code.visualstudio.com is browser-visible but its WAF intermittently returns
+  # 403 to automated clients (lychee). Cited from reference/research-watchlist.mdx.
+  "https://code\\.visualstudio\\.com/",
+  # wezterm.org is browser-visible but CI lychee intermittently fails to connect
+  # to it. Cited from reference/tui and capsule terminal-model docs.
+  "https://wezterm\\.org/",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]

@@ -40,7 +40,7 @@ fn claim_token() -> String {
     format!("{}-{}-{counter}", std::process::id(), now_millis())
 }
 
-fn env_flag_enabled(value: Option<impl AsRef<std::ffi::OsStr>>) -> bool {
+pub(super) fn env_flag_enabled(value: Option<impl AsRef<std::ffi::OsStr>>) -> bool {
     let Some(value) = value else {
         return false;
     };

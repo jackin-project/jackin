@@ -75,6 +75,10 @@ pub struct Cell {
     pub is_wide: bool,
     /// True for the phantom continuation column of a wide character.
     pub is_wide_continuation: bool,
+    /// Hyperlink id for OSC 8 regions.
+    ///
+    /// `0` means no hyperlink for this cell.
+    pub hyperlink_id: u32,
     pub attrs: Attrs,
     pub hyperlink: Option<Hyperlink>,
 }

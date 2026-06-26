@@ -3,7 +3,7 @@
 use jackin_tui::HintSpan;
 use jackin_tui::centered_rect;
 use jackin_tui::components::{
-    ContainerInfoState, DebugInfo, ModalBackdrop, container_info_required_height,
+    ContainerInfoRow, ContainerInfoState, DebugInfo, ModalBackdrop, container_info_required_height,
     debug_info_hint_spans, dialog_scroll_axes, render_container_info, render_hint_bar,
 };
 use ratatui::Frame;
@@ -41,6 +41,10 @@ pub fn launch_container_info_state(
         capsule_version: None,
     };
     let mut state = info.into_state();
+    if debug_mode {
+        let href = format!("file://{run_log_path}");
+        state.push_row(ContainerInfoRow::new("Reveal diagnostics", run_log_path).hyperlink(href));
+    }
     if let Some(row) = view.container_info_copied {
         state.mark_copied(row);
     }

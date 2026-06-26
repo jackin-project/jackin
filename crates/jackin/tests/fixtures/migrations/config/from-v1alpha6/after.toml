@@ -1,8 +1,11 @@
-version = "v1alpha7"
+version = "v1alpha8"
 data_dir = "/tmp/jackin"
 
 [claude]
 auth_forward = "sync"
+
+[codex]
+auth_forward = "api_key"
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"

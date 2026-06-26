@@ -498,6 +498,8 @@ fn validate_workspace_config_surfaces_isolation_layout_errors() {
         github: None,
         git_pull_on_entry: false,
         runtime: jackin_config::WorkspaceRuntimeConfig::default(),
+        dirty_exit_policy: None,
+        docker: None,
     };
     let err = validate_workspace_config("ws", &workspace).unwrap_err();
     let msg = err.to_string();

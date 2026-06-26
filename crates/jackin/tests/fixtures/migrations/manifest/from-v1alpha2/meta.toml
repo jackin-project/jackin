@@ -1,4 +1,4 @@
 from_version = "v1alpha2"
-target_version = "v1alpha5"
-target_version_shipped = "2026-05-14"
-summary = "Restamps role manifest from v1alpha2 through v1alpha3 (OpenCode), v1alpha4 (Kimi), to v1alpha5 (per-provider model overrides). All steps are no-op restamps."
+target_version = "v1alpha6"
+target_version_shipped = "2026-06-18"
+summary = "Restamps role manifest from v1alpha2 through v1alpha3 (OpenCode), v1alpha4 (Kimi), v1alpha5 (per-provider model overrides), to v1alpha6 (role Docker security settings). All steps are no-op restamps."

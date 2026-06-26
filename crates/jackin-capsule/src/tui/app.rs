@@ -58,6 +58,7 @@ pub(crate) struct PointerShapeState {
     pub(crate) dialog_open: bool,
     pub(crate) drag_start_orient: Option<SplitOrient>,
     pub(crate) selection_start_available: bool,
+    pub(crate) link_target_available: bool,
     pub(crate) no_button_motion: bool,
 }
 
@@ -79,6 +80,9 @@ pub(crate) fn pointer_shape_for_state(state: PointerShapeState) -> PointerShape 
             SplitOrient::Horizontal => PointerShape::EwResize,
             SplitOrient::Vertical => PointerShape::NsResize,
         };
+    }
+    if state.link_target_available {
+        return PointerShape::Pointer;
     }
     if state.no_button_motion && state.selection_start_available {
         return PointerShape::Text;
@@ -174,6 +178,12 @@ pub fn visible_agent_state_from_protocol(state: AgentState) -> VisibleAgentState
         AgentState::Working => VisibleAgentState::Working,
         AgentState::Done => VisibleAgentState::Done,
         AgentState::Blocked => VisibleAgentState::Blocked,
+        // The tab-strip glyph is attention-only: it flags blocked/done and shows
+        // nothing for working/idle. `unknown` ("no evidence") is likewise not an
+        // attention state, so it shares the no-glyph path. The full
+        // working/blocked/done/idle/unknown vocabulary is shown by the host
+        // console's per-pane state label (`AgentState::label`).
+        AgentState::Unknown => VisibleAgentState::Idle,
     }
 }
 

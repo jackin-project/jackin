@@ -157,25 +157,9 @@ fn request_control_inner(path: &Path, request: &ClientMsg) -> Result<ServerMsg> 
 fn snapshot_from_msg(msg: ServerMsg) -> Result<InstanceSnapshot> {
     match msg {
         ServerMsg::Snapshot { tabs, active_tab } => Ok(InstanceSnapshot { tabs, active_tab }),
-        ServerMsg::SessionList { .. } => {
-            bail!("daemon replied with SessionList; expected Snapshot")
-        }
-        ServerMsg::AgentRegistry { .. } => {
-            bail!("daemon replied with AgentRegistry; expected Snapshot")
-        }
-        ServerMsg::UsageFocused { .. } => {
-            bail!("daemon replied with UsageFocused; expected Snapshot")
-        }
-        ServerMsg::UsageAccounts { .. } => {
-            bail!("daemon replied with UsageAccounts; expected Snapshot")
-        }
-        ServerMsg::ExecResult { .. } => {
-            bail!("daemon replied with ExecResult; expected Snapshot")
-        }
-        ServerMsg::ExecDenied { .. } => {
-            bail!("daemon replied with ExecDenied; expected Snapshot")
-        }
+        // `Unknown` is the `#[serde(other)]` sink for variants from a newer daemon.
         ServerMsg::Unknown => bail!("daemon replied with an unknown ServerMsg variant"),
+        other => bail!("daemon replied with {}; expected Snapshot", other.kind()),
     }
 }
 
@@ -184,7 +168,7 @@ fn accounts_from_msg(msg: ServerMsg) -> Result<Vec<AccountUsageSnapshotView>> {
         ServerMsg::UsageAccounts { accounts } => Ok(accounts),
         other => bail!(
             "daemon replied with {}; expected UsageAccounts",
-            server_msg_kind(&other)
+            other.kind()
         ),
     }
 }
@@ -318,19 +302,6 @@ fn snapshot_from_cli_stdout(stdout: &str) -> Result<InstanceSnapshot> {
 
 fn usage_accounts_from_cli_stdout(stdout: &str) -> Result<Vec<AccountUsageSnapshotView>> {
     serde_json::from_str(stdout).context("parsing jackin-capsule usage accounts JSON")
-}
-
-fn server_msg_kind(msg: &ServerMsg) -> &'static str {
-    match msg {
-        ServerMsg::SessionList { .. } => "SessionList",
-        ServerMsg::Snapshot { .. } => "Snapshot",
-        ServerMsg::AgentRegistry { .. } => "AgentRegistry",
-        ServerMsg::UsageFocused { .. } => "UsageFocused",
-        ServerMsg::UsageAccounts { .. } => "UsageAccounts",
-        ServerMsg::ExecResult { .. } => "ExecResult",
-        ServerMsg::ExecDenied { .. } => "ExecDenied",
-        ServerMsg::Unknown => "Unknown",
-    }
 }
 
 #[cfg(test)]
