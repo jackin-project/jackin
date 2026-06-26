@@ -67,7 +67,8 @@ pub(super) fn paste_image_paths_enabled() -> bool {
 }
 
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() || haystack.len() < needle.len() {
+    if needle.is_empty() {
+        // `windows(0)` panics; a shorter haystack already yields no windows.
         return None;
     }
     haystack
