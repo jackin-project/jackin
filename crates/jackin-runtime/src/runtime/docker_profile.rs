@@ -269,8 +269,11 @@ pub struct EffectiveGrants {
     /// Merged list of allowed hosts for the `allowlist` network tier.
     pub allowed_hosts: Vec<String>,
     pub dind: DindGrant,
-    /// Username passed to `--user` on `docker run`. `"agent"` means no
-    /// explicit `--user` flag (the image's `USER` directive governs).
+    /// Configured container username. Only `"root"` is load-bearing — it is
+    /// compared against `sudo` for the mutually-exclusive check and feeds the
+    /// network-enforcement label; the default `"agent"` is an inert sentinel.
+    /// The actual `--user` flag is governed by `identity::host_run_as_user`, not
+    /// this field.
     pub user: String,
     pub sudo: bool,
     pub system_writes: bool,
@@ -565,12 +568,13 @@ fn apply_implicit_grants(mut grants: EffectiveGrants) -> EffectiveGrants {
             }
         }
     }
-    // WP-SUDO: no_new_privileges on whenever sudo is off. Keeps standard
-    // sudo-free by default while allowing an explicit `sudo = true` grant to
-    // disable it (to avoid the silent-sudo-failure trap with no-new-privileges).
-    if !grants.sudo {
-        grants.no_new_privileges = true;
-    }
+    // WP-SUDO: no_new_privileges is exactly the negation of the resolved sudo
+    // grant. Set it bidirectionally so an explicit `sudo = true` under a profile
+    // whose base is `no_new_privileges: true` (hardened/locked) actually clears
+    // it — otherwise sudo is provisioned but no-new-privileges blocks the setuid
+    // escalation, the silent-sudo-failure trap. Resolved post-merge so the final
+    // sudo value governs.
+    grants.no_new_privileges = !grants.sudo;
     grants
 }
 
@@ -1801,6 +1805,23 @@ mod tests {
         assert!(
             !grants.no_new_privileges,
             "compat profile: sudo=true so no_new_privileges must be false"
+        );
+    }
+
+    #[test]
+    fn hardened_sudo_grant_clears_no_new_privileges() {
+        // hardened base is no_new_privileges:true + sudo:false. An explicit
+        // sudo=true grant must clear no_new_privileges, else sudo is provisioned
+        // but no-new-privileges blocks the setuid escalation (silent failure).
+        let config = DockerGrants {
+            sudo: Some(true),
+            ..Default::default()
+        };
+        let grants = resolve_effective_grants(DockerSecurityProfile::Hardened, Some(&config), None);
+        assert!(grants.sudo);
+        assert!(
+            !grants.no_new_privileges,
+            "hardened + sudo=true must clear no_new_privileges so sudo works"
         );
     }
 

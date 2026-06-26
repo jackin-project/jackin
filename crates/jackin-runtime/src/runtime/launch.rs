@@ -641,7 +641,9 @@ pub(super) async fn launch_role_runtime(
         crate::runtime::docker_profile::validate_cgroup_for_profile(*profile, cgroup_version)
             .map_err(|msg| anyhow::anyhow!(msg))?
     {
-        jackin_diagnostics::debug_log!("launch", "{warning}");
+        // Always-on (not --debug): a silently-dropped resource limit is operator-
+        // visible degradation, like the privileged-DinD warning below.
+        jackin_diagnostics::emit_compact_line("warning", warning);
     }
     // WP4 Part B: rootless DinD requires cgroup v2 — fail closed on v1 rather
     // than silently falling back to a privileged sidecar.
