@@ -40,10 +40,12 @@ fn selected_refs_wire_shape_is_stable() {
         command: "gh".to_owned(),
         args: vec![],
         items: vec![ExecPickerItem {
-            name: "GH_TOKEN".to_owned(),
+            binding: jackin_protocol::ExecBinding {
+                name: "GH_TOKEN".to_owned(),
+                kind: "op".to_owned(),
+                source: "op://vault/item/field".to_owned(),
+            },
             display: "gh".to_owned(),
-            kind: ExecItemKind::Op,
-            source: "op://vault/item/field".to_owned(),
             selected: true,
         }],
         cursor: 0,

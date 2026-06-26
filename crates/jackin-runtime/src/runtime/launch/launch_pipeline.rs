@@ -956,6 +956,12 @@ pub(crate) async fn load_role_with(
         | crate::runtime::image::ImageDecision::BuildFromWorkspace { .. } => None,
     };
 
+    // Validate the selected backend up front, before any container-lifecycle
+    // work (DinD sidecar, network, certs) runs — a config typo fails closed
+    // here instead of after paying for Docker provisioning. `Backend` is `Copy`,
+    // so the dispatch below reads the cached value.
+    let backend = super::resolve_backend(config, workspace_name.as_deref())?;
+
     let load_result: anyhow::Result<String> = async {
         // Step 2: Prepare runtime assets and build the derived image when the
         // earlier image decision proved the local recipe is missing/stale.
@@ -1629,12 +1635,14 @@ pub(crate) async fn load_role_with(
         // sidecar so it is never started; it cannot be validated without macOS
         // 26 ARM hardware, so for now the sidecar is started and immediately
         // reclaimed.)
-        if super::resolve_backend(config, workspace_name.as_deref())?
-            == super::Backend::AppleContainer
-        {
-            cleanup.run(docker).await;
-            let mount_pairs = super::build_workspace_mount_pairs(&materialized);
-            return crate::runtime::apple_container::launch(
+        // Exhaustive match (not an `if`) so a future backend variant is a
+        // compile error here instead of silently taking the Docker path.
+        match backend {
+            super::Backend::Docker => {}
+            super::Backend::AppleContainer => {
+                cleanup.run(docker).await;
+                let mount_pairs = super::build_workspace_mount_pairs(&materialized);
+                return crate::runtime::apple_container::launch(
                 crate::runtime::apple_container::AppleContainerLaunch {
                     paths,
                     container_name: &container_name,
@@ -1654,9 +1662,10 @@ pub(crate) async fn load_role_with(
                     capsule_config: &launch_config,
                     debug: opts.debug,
                 },
-            )
-            .await
-            .map(|()| container_name.clone());
+                )
+                .await
+                .map(|()| container_name.clone());
+            }
         }
 
         let ctx = super::LaunchContext {

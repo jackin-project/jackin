@@ -27,50 +27,18 @@ pub struct ExecPickerState {
     pub cursor: usize,
 }
 
-/// A single on-demand credential that can be attached to the exec command.
+/// A single on-demand credential row in the picker. Carries the underlying
+/// [`ExecBinding`] verbatim (so a confirm sends it back unchanged) plus a
+/// human-readable display label and the operator's selection state.
 #[derive(Debug, Clone)]
 pub struct ExecPickerItem {
-    /// Env var name (e.g. `GH_TOKEN`).
-    pub name: String,
-    /// Human-readable label: `OpRef.path` or `Extended.value`.
+    /// The binding sent to the host resolver if this row is selected.
+    pub binding: jackin_protocol::ExecBinding,
+    /// Human-readable label (the source for `op`/`env`, the name for literals).
+    /// Never a resolved secret value.
     pub display: String,
-    /// Source kind for the host.sock request.
-    pub kind: ExecItemKind,
-    /// The raw source value (`op://` URI, `$VAR`, or literal).
-    pub source: String,
     /// Whether the operator has selected this item.
     pub selected: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExecItemKind {
-    /// Resolved via `op read <source>` on the host.
-    Op,
-    /// Resolved from the host's environment (`$VAR` syntax).
-    Env,
-    /// Already resolved — return `source` verbatim.
-    Literal,
-}
-
-impl ExecItemKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Op => "op",
-            Self::Env => "env",
-            Self::Literal => "literal",
-        }
-    }
-
-    /// Parse a binding `kind` string (`"op"`/`"env"`/`"literal"`). Anything
-    /// unrecognised maps to `Literal` (returned verbatim, never resolved
-    /// through `op` or host env) — the fail-safe choice for an unknown kind.
-    pub fn from_kind_str(kind: &str) -> Self {
-        match kind {
-            "op" => Self::Op,
-            "env" => Self::Env,
-            _ => Self::Literal,
-        }
-    }
 }
 
 impl ExecPickerState {
@@ -88,16 +56,16 @@ impl ExecPickerState {
         let items = bindings
             .iter()
             .map(|b| {
-                let kind = ExecItemKind::from_kind_str(&b.kind);
-                let display = match kind {
-                    ExecItemKind::Literal => b.name.clone(),
-                    ExecItemKind::Op | ExecItemKind::Env => b.source.clone(),
+                // Literals have no meaningful source to show; everything else
+                // displays its source (op:// path or $VAR), never a secret.
+                let display = if b.kind == "literal" {
+                    b.name.clone()
+                } else {
+                    b.source.clone()
                 };
                 ExecPickerItem {
-                    name: b.name.clone(),
+                    binding: b.clone(),
                     display,
-                    kind,
-                    source: b.source.clone(),
                     selected: false,
                 }
             })
@@ -115,11 +83,7 @@ impl ExecPickerState {
         self.items
             .iter()
             .filter(|i| i.selected)
-            .map(|i| jackin_protocol::ExecBinding {
-                name: i.name.clone(),
-                kind: i.kind.as_str().to_owned(),
-                source: i.source.clone(),
-            })
+            .map(|i| i.binding.clone())
             .collect()
     }
 
@@ -140,6 +104,23 @@ impl ExecPickerState {
             self.cursor += 1;
         }
     }
+}
+
+/// Read a 4-byte-BE-length-prefixed payload, bounding the declared length by
+/// `max`. The mirror of [`frame`] for the read side, shared by the host.sock
+/// and control-socket clients here. No read timeout: both callers intentionally
+/// block for as long as the operator takes (picker confirm, `op` Touch ID).
+async fn read_framed(stream: &mut UnixStream, max: usize) -> Result<Vec<u8>> {
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).await?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    anyhow::ensure!(
+        len <= max,
+        "framed reply too large: {len} bytes (max {max})"
+    );
+    let mut body = vec![0u8; len];
+    stream.read_exact(&mut body).await?;
+    Ok(body)
 }
 
 /// Resolve on-demand credentials via the host.sock listener.
@@ -166,17 +147,10 @@ pub async fn resolve_credentials(
 
     stream.write_all(&frame(&CredRequest { refs })).await?;
 
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await?;
-    let reply_len = u32::from_be_bytes(len_buf) as usize;
     const MAX_REPLY: usize = 1024 * 1024;
-    anyhow::ensure!(
-        reply_len <= MAX_REPLY,
-        "host.sock reply too large: {reply_len}"
-    );
-
-    let mut reply_body = vec![0u8; reply_len];
-    stream.read_exact(&mut reply_body).await?;
+    let reply_body = read_framed(&mut stream, MAX_REPLY)
+        .await
+        .context("reading host.sock reply")?;
 
     match serde_json::from_slice::<CredReply>(&reply_body).context("parsing host.sock reply")? {
         CredReply::Ok { values } => Ok(values),
@@ -332,21 +306,10 @@ pub async fn run_capture(args: &[String]) -> Result<ExecCapture> {
         .await
         .context("sending ExecCommand")?;
 
-    let mut len_buf = [0u8; 4];
-    stream
-        .read_exact(&mut len_buf)
-        .await
-        .context("reading ExecResult length")?;
-    let len = u32::from_be_bytes(len_buf) as usize;
     const MAX_REPLY: usize = 8 * 1024 * 1024;
-    if len > MAX_REPLY {
-        bail!("ExecResult reply too large: {len} bytes");
-    }
-    let mut body = vec![0u8; len];
-    stream
-        .read_exact(&mut body)
+    let body = read_framed(&mut stream, MAX_REPLY)
         .await
-        .context("reading ExecResult body")?;
+        .context("reading ExecResult")?;
 
     let reply: ServerMsg = serde_json::from_slice(&body).context("parsing ExecResult")?;
 

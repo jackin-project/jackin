@@ -405,9 +405,9 @@ pub(super) fn resolve_backend(
 ) -> anyhow::Result<Backend> {
     let selected = workspace_name
         .and_then(|name| config.workspaces.get(name))
-        .and_then(|ws| ws.runtime.backend.clone())
-        .or_else(|| config.runtime.default_backend.clone());
-    match selected.as_deref() {
+        .and_then(|ws| ws.runtime.backend.as_deref())
+        .or(config.runtime.default_backend.as_deref());
+    match selected {
         None | Some(crate::apple_container_client::DOCKER_BACKEND_NAME) => Ok(Backend::Docker),
         Some(crate::apple_container_client::BACKEND_NAME) => Ok(Backend::AppleContainer),
         Some(other) => anyhow::bail!(

@@ -204,7 +204,7 @@ impl Dialog {
                     .iter()
                     .map(|item| {
                         let mark = if item.selected { "[x]" } else { "[ ]" };
-                        PickerItem::Item(format!("{mark} {}  {}", item.name, item.display))
+                        PickerItem::Item(format!("{mark} {}  {}", item.binding.name, item.display))
                     })
                     .collect();
                 DialogRatatuiSnapshot::FilterPicker {
